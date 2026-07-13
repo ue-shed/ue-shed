@@ -1,0 +1,16 @@
+[
+	{
+		"Name": "Left_Alpha",
+		"Target": {
+			"DataTable": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+			"RowName": "Right_Alpha"
+		}
+	},
+	{
+		"Name": "Left_Beta",
+		"Target": {
+			"DataTable": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+			"RowName": "Right_Beta"
+		}
+	}
+]

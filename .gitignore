@@ -17,5 +17,6 @@ fixtures/unreal-project/DerivedDataCache/
 fixtures/unreal-project/Intermediate/
 fixtures/unreal-project/Saved/
 fixtures/unreal-project/.vs/
+fixtures/unreal-project/*.sln
 unreal/Plugins/*/Binaries/
 unreal/Plugins/*/Intermediate/

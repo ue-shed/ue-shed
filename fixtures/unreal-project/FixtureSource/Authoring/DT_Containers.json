@@ -1,0 +1,17 @@
+[
+	{
+		"Name": "Container_Mixed",
+		"Sequence": [1, 2, 3],
+		"Labels": ["North", "South"],
+		"Weights": {
+			"Light": 1,
+			"Heavy": 10
+		}
+	},
+	{
+		"Name": "Container_Empty",
+		"Sequence": [],
+		"Labels": [],
+		"Weights": {}
+	}
+]

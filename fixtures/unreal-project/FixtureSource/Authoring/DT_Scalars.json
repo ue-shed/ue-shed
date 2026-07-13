@@ -1,0 +1,18 @@
+[
+	{
+		"Name": "Scalar_Alpha",
+		"Enabled": true,
+		"Count": 7,
+		"Ratio": 0.25,
+		"Key": "Alpha",
+		"Notes": "First deterministic scalar row."
+	},
+	{
+		"Name": "Scalar_Beta",
+		"Enabled": false,
+		"Count": 42,
+		"Ratio": 0.75,
+		"Key": "Beta",
+		"Notes": "Base value overridden by the second composite parent."
+	}
+]

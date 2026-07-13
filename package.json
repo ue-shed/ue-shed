@@ -6,6 +6,9 @@
 	"type": "module",
 	"scripts": {
 		"check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
+		"fixture:build": "node scripts/unreal-fixture.mjs build",
+		"fixture:generate": "node scripts/unreal-fixture.mjs generate",
+		"fixture:verify": "node scripts/unreal-fixture.mjs verify",
 		"typecheck": "pnpm -r --if-present typecheck",
 		"lint": "oxlint .",
 		"lint:fix": "oxlint --fix .",

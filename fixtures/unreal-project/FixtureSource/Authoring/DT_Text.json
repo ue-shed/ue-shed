@@ -1,0 +1,10 @@
+[
+	{
+		"Name": "Text_Hello",
+		"DisplayName": "Hello fixture"
+	},
+	{
+		"Name": "Text_Goodbye",
+		"DisplayName": "Goodbye fixture"
+	}
+]

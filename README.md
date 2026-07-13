@@ -13,9 +13,9 @@ start.
 
 ## Status
 
-This is an architectural scaffold, not a release. The first proving slice will connect a generic
-Unreal fixture to the CLI and Workbench, then deliver a real-time actor observatory demo. A
-batteries-included DataTable authoring product is also a first-class track, not merely an SDK example.
+This is an architectural scaffold, not a release. The first proving domain is the batteries-included
+DataTable authoring product, beginning with a reproducible Unreal fixture and a headless read-only
+spine. The actor observatory follows as the first data-plane and real-time domain.
 
 Read [the vision and architecture](docs/vision-and-architecture.md) for the decisions, repository
 shape, first MVP, and open-source guardrails. Read

@@ -1,0 +1,28 @@
+[
+	{
+		"Name": "Struct_One",
+		"Nested": {
+			"Count": 3,
+			"Label": "One",
+			"Offset": {
+				"X": 10.0,
+				"Y": 20.0,
+				"Z": 30.0
+			}
+		},
+		"Label": "First nested row"
+	},
+	{
+		"Name": "Struct_Two",
+		"Nested": {
+			"Count": 6,
+			"Label": "Two",
+			"Offset": {
+				"X": -10.0,
+				"Y": 0.0,
+				"Z": 10.0
+			}
+		},
+		"Label": "Second nested row"
+	}
+]

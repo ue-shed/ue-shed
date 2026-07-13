@@ -1,0 +1,175 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { describe, expect, it } from "vitest";
+
+type DataTableContract = {
+	readonly kind: "data-table";
+	readonly assetPath: string;
+	readonly rowStruct: string;
+	readonly source: string;
+	readonly rows: readonly string[];
+	readonly fieldFamilies: readonly string[];
+};
+
+type CompositeTableContract = {
+	readonly kind: "composite-data-table";
+	readonly assetPath: string;
+	readonly rowStruct: string;
+	readonly parents: readonly string[];
+	readonly rows: readonly string[];
+	readonly fieldFamilies: readonly string[];
+};
+
+type FixtureContract = {
+	readonly schemaVersion: number;
+	readonly fixtureVersion: string;
+	readonly engine: { readonly major: number; readonly minor: number };
+	readonly contentRoot: string;
+	readonly tables: readonly (DataTableContract | CompositeTableContract)[];
+};
+
+const fixtureRoot = dirname(fileURLToPath(import.meta.url));
+
+function readJson(path: string): unknown {
+	return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readContract(): FixtureContract {
+	const value = readJson(join(fixtureRoot, "fixture-contract.json"));
+	if (
+		!isRecord(value) ||
+		typeof value.schemaVersion !== "number" ||
+		typeof value.fixtureVersion !== "string" ||
+		!isRecord(value.engine) ||
+		typeof value.engine.major !== "number" ||
+		typeof value.engine.minor !== "number" ||
+		typeof value.contentRoot !== "string" ||
+		!Array.isArray(value.tables)
+	) {
+		throw new Error("fixture-contract.json does not match the fixture contract envelope");
+	}
+	return value as FixtureContract;
+}
+
+function sourceRowNames(sourcePath: string): readonly string[] {
+	const value = readJson(resolve(fixtureRoot, sourcePath));
+	if (!Array.isArray(value)) {
+		throw new Error(`${sourcePath} must contain an array of rows`);
+	}
+	return value.map((row, index) => {
+		if (!isRecord(row) || typeof row.Name !== "string" || row.Name.length === 0) {
+			throw new Error(`${sourcePath} row ${index} must have a non-empty Name`);
+		}
+		return row.Name;
+	});
+}
+
+function generatedAssetPath(assetPath: string): string {
+	const packagePath = assetPath.slice("/Game/".length).split(".")[0];
+	return join(fixtureRoot, "Content", `${packagePath}.uasset`);
+}
+
+describe("generic Unreal fixture contract", () => {
+	const contract = readContract();
+
+	it("declares an inspectable version and stock engine baseline", () => {
+		expect(contract.schemaVersion).toBe(1);
+		expect(contract.fixtureVersion).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(contract.engine).toEqual({ major: 5, minor: 7 });
+		expect(contract.contentRoot).toBe("/Game/Fixture/Authoring");
+	});
+
+	it("keeps table identities and row identities unique", () => {
+		const assetPaths = contract.tables.map((table) => table.assetPath);
+		expect(new Set(assetPaths).size).toBe(assetPaths.length);
+		for (const table of contract.tables) {
+			expect(table.assetPath.startsWith(`${contract.contentRoot}/`)).toBe(true);
+			expect(table.rowStruct.startsWith("/Script/UEShedFixture.")).toBe(true);
+			expect(new Set(table.rows).size).toBe(table.rows.length);
+		}
+	});
+
+	it("keeps every ordinary table reproducible from reviewable source", () => {
+		for (const table of contract.tables) {
+			if (table.kind !== "data-table") {
+				continue;
+			}
+			expect(sourceRowNames(table.source)).toEqual(table.rows);
+		}
+	});
+
+	it("commits every generated asset declared by the contract", () => {
+		for (const table of contract.tables) {
+			expect(existsSync(generatedAssetPath(table.assetPath)), table.assetPath).toBe(true);
+		}
+	});
+
+	it("defines composite parent precedence without mixed row structures", () => {
+		const tablesByPath = new Map(contract.tables.map((table) => [table.assetPath, table]));
+		for (const table of contract.tables) {
+			if (table.kind !== "composite-data-table") {
+				continue;
+			}
+			const parents = table.parents.map((parentPath) => tablesByPath.get(parentPath));
+			expect(parents.every((parent) => parent?.kind === "data-table")).toBe(true);
+			expect(parents.every((parent) => parent?.rowStruct === table.rowStruct)).toBe(true);
+			const composedRows = [...new Set(parents.flatMap((parent) => parent?.rows ?? []))];
+			expect(composedRows).toEqual(table.rows);
+		}
+	});
+
+	it("covers the field families required before public API design", () => {
+		const families = new Set(contract.tables.flatMap((table) => table.fieldFamilies));
+		for (const family of [
+			"boolean",
+			"integer",
+			"float",
+			"enum",
+			"localized-text",
+			"nested-struct",
+			"soft-object-reference",
+			"data-table-row-handle",
+			"array",
+			"set",
+			"map",
+			"opaque-structured-value",
+			"composite-table"
+		]) {
+			expect(families.has(family), family).toBe(true);
+		}
+	});
+
+	it("contains no machine-specific paths in its portable inputs", () => {
+		const portableFiles = [
+			"fixture-contract.json",
+			"UEShedFixture.uproject",
+			...contract.tables.flatMap((table) =>
+				table.kind === "data-table" ? [table.source] : []
+			)
+		];
+		for (const relativePath of portableFiles) {
+			const contents = readFileSync(resolve(fixtureRoot, relativePath), "utf8");
+			expect(contents, relativePath).not.toMatch(/\b[A-Za-z]:[\\/]/);
+			expect(contents, relativePath).not.toMatch(/\/(?:Users|home|mnt)\//);
+		}
+	});
+});
+
+describe("fixture project", () => {
+	it("enables the stock Remote Control plugin without private dependencies", () => {
+		const project = readJson(join(fixtureRoot, "UEShedFixture.uproject"));
+		if (!isRecord(project) || !Array.isArray(project.Plugins)) {
+			throw new Error("UEShedFixture.uproject has no plugin list");
+		}
+		const pluginNames = project.Plugins.flatMap((plugin) =>
+			isRecord(plugin) && typeof plugin.Name === "string" ? [plugin.Name] : []
+		);
+		expect(pluginNames).toEqual(["RemoteControl"]);
+	});
+});

@@ -1,0 +1,10 @@
+[
+	{
+		"Name": "Asset_Default",
+		"Asset": "/Engine/EngineResources/DefaultTexture.DefaultTexture"
+	},
+	{
+		"Name": "Asset_None",
+		"Asset": "None"
+	}
+]

@@ -1,0 +1,102 @@
+{
+	"schemaVersion": 1,
+	"fixtureVersion": "1.0.0",
+	"engine": {
+		"major": 5,
+		"minor": 7
+	},
+	"contentRoot": "/Game/Fixture/Authoring",
+	"tables": [
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureScalarsRow",
+			"source": "FixtureSource/Authoring/DT_Scalars.json",
+			"rows": ["Scalar_Alpha", "Scalar_Beta"],
+			"fieldFamilies": ["boolean", "integer", "float", "name", "string", "metadata"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureScalarsRow",
+			"source": "FixtureSource/Authoring/DT_ScalarsOverride.json",
+			"rows": ["Scalar_Beta", "Scalar_Gamma"],
+			"fieldFamilies": ["composite-parent"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_Enums.DT_Enums",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureEnumRow",
+			"source": "FixtureSource/Authoring/DT_Enums.json",
+			"rows": ["Enum_Common", "Enum_Rare"],
+			"fieldFamilies": ["enum"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_Structs.DT_Structs",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureStructRow",
+			"source": "FixtureSource/Authoring/DT_Structs.json",
+			"rows": ["Struct_One", "Struct_Two"],
+			"fieldFamilies": ["nested-struct", "vector"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_Text.DT_Text",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureTextRow",
+			"source": "FixtureSource/Authoring/DT_Text.json",
+			"rows": ["Text_Hello", "Text_Goodbye"],
+			"fieldFamilies": ["localized-text"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_AssetReferences.DT_AssetReferences",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureAssetReferenceRow",
+			"source": "FixtureSource/Authoring/DT_AssetReferences.json",
+			"rows": ["Asset_Default", "Asset_None"],
+			"fieldFamilies": ["soft-object-reference"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureRightReferenceRow",
+			"source": "FixtureSource/Authoring/DT_RightReferences.json",
+			"rows": ["Right_Alpha", "Right_Beta"],
+			"fieldFamilies": ["row-reference-target"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureLeftReferenceRow",
+			"source": "FixtureSource/Authoring/DT_LeftReferences.json",
+			"rows": ["Left_Alpha", "Left_Beta"],
+			"fieldFamilies": ["data-table-row-handle"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_Containers.DT_Containers",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureContainerRow",
+			"source": "FixtureSource/Authoring/DT_Containers.json",
+			"rows": ["Container_Mixed", "Container_Empty"],
+			"fieldFamilies": ["array", "set", "map"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_Opaque.DT_Opaque",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureOpaqueRow",
+			"source": "FixtureSource/Authoring/DT_Opaque.json",
+			"rows": ["Opaque_Known"],
+			"fieldFamilies": ["opaque-structured-value"]
+		},
+		{
+			"kind": "composite-data-table",
+			"assetPath": "/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureScalarsRow",
+			"parents": [
+				"/Game/Fixture/Authoring/DT_Scalars.DT_Scalars",
+				"/Game/Fixture/Authoring/DT_ScalarsOverride.DT_ScalarsOverride"
+			],
+			"rows": ["Scalar_Alpha", "Scalar_Beta", "Scalar_Gamma"],
+			"fieldFamilies": ["composite-table", "parent-override"]
+		}
+	]
+}

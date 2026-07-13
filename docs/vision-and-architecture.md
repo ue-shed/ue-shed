@@ -182,9 +182,11 @@ The suite is therefore separately enabled:
 | `UEShedCameras`     | Camera definition metadata, capture, and review artifacts                        |
 | `UEShedScenarios`   | Scenario discovery, parameterization, execution, and results                     |
 
-The first implementation should create `UEShedCore` and `UEShedObservatory`; the other plugin
-directories are roadmap boundaries. Features should stay usable with stock APIs when their companion
-plugin is absent, and degrade through explicit capability states rather than hidden failures.
+The first implementation creates `UEShedCore` and the minimum `UEShedAuthoring` surface needed by the
+authoring proving slice. `UEShedObservatory` follows as the first data-plane plugin; the remaining
+plugin directories are roadmap boundaries. Features should stay usable with stock APIs when their
+companion plugin is absent, and degrade through explicit capability states rather than hidden
+failures.
 
 ## Generic fixture policy
 
@@ -204,17 +206,19 @@ They are not fixture prerequisites.
 
 Before building a broad UI, establish one thin end-to-end path:
 
-1. Discover a supported installed Unreal editor and a generic fixture project.
+1. Discover a supported installed Unreal editor and the generic fixture project.
 2. Launch or attach without hardcoded machine paths.
 3. Query the `UEShedCore` capability manifest through `unreal-rc`.
-4. Expose the same connection from a TypeScript library and `ue-shed doctor` /
-   `ue-shed capabilities`.
-5. Show the connected engine, project, world, and capabilities in Workbench using only those APIs.
-6. Prove a named-pipe hello/health stream with reconnect and bounded buffering tests.
-7. Build the actor observatory on that spine.
+4. Discover fixture DataTables, inspect a reflected schema, and load a typed snapshot through the
+   narrowest supported stock or `UEShedAuthoring` capability.
+5. Expose the same connection and read-only authoring operations from TypeScript libraries and the
+   CLI.
+6. Show connection health and a read-only default table view in Workbench using only those APIs.
+7. Add the safe editing loop, then prove named-pipe hello/health before the actor observatory.
 
 This sequence proves install discovery, generic integration, capability negotiation, headless access,
-showcase parity, and the future data path before the first domain accumulates special cases.
+showcase parity, and a real domain workflow. The later named-pipe step proves the shared data path
+before the first real-time domain accumulates special cases.
 
 ## Actor observatory MVP
 

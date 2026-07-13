@@ -1,0 +1,18 @@
+[
+	{
+		"Name": "Scalar_Beta",
+		"Enabled": true,
+		"Count": 84,
+		"Ratio": 0.5,
+		"Key": "BetaOverride",
+		"Notes": "Deterministic composite override."
+	},
+	{
+		"Name": "Scalar_Gamma",
+		"Enabled": true,
+		"Count": 99,
+		"Ratio": 1.0,
+		"Key": "Gamma",
+		"Notes": "Row provided only by the second composite parent."
+	}
+]

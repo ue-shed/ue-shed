@@ -1,0 +1,10 @@
+[
+	{
+		"Name": "Right_Alpha",
+		"Description": "First reference target"
+	},
+	{
+		"Name": "Right_Beta",
+		"Description": "Second reference target"
+	}
+]

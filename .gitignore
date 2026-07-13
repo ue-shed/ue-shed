@@ -1,0 +1,21 @@
+node_modules/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Generated or locally installed Unreal content
+fixtures/unreal-project/Binaries/
+fixtures/unreal-project/DerivedDataCache/
+fixtures/unreal-project/Intermediate/
+fixtures/unreal-project/Saved/
+fixtures/unreal-project/.vs/
+unreal/Plugins/*/Binaries/
+unreal/Plugins/*/Intermediate/

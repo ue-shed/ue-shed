@@ -89,6 +89,55 @@ utilization remained near 29%; `CaptureScene()` submission and world-tick pressu
 Large 1440p frames instead saturated the raw pipe/host path near 1.0–1.05 GB/s. These are machine and
 scene measurements, not product constants.
 
+UE 5.7's supported shared `ISceneRenderBuilder` path now batches all cameras due in one scheduler
+tick and orders each asynchronous readback after its corresponding renderer. It removes a repeated
+end-of-frame flush and builder execution per camera, but it did not increase the measured Observation
+ceiling: each camera still creates and executes a separate scene renderer and render graph. Batch
+size and submission time remain visible so a future linked-view or atlas experiment can be compared
+against this baseline.
+
+The cadence scheduler now retains deadline phase rather than rescheduling from the current tick. It
+skips and counts missed intervals without issuing catch-up bursts. A 1/8/16/32-camera sweep at
+640×360 and 30 FPS showed the world tick rate falling from roughly 409 to 260, 65.5, then 16.9
+ticks/s. The first three envelopes met their requested aggregate cadence; 32 cameras delivered about
+524 of 960 requested captures/s while explicitly counting the remainder as missed intervals. That
+isolates serialized renderer/frame backpressure as the next investigation: the scheduler is asking
+for the work, but Unreal cannot advance world frames quickly enough to issue it.
+
+An Unreal Insights capture localized that backpressure. At 16 cameras, `FEngineLoop::Tick` averaged
+15.2 ms and `GameThreadWaitForTask` averaged 13.4 ms. At 32 cameras they rose to 53.6 ms and 47.5 ms
+respectively, so about 89% of the game-thread frame was spent at UE's frame-end render fence. The
+corresponding GPU `WorldTick` averaged 49.0 ms. Render-thread evidence also showed one transient D3D12
+committed-resource creation per capture at roughly 0.60 ms each. This explains why aggregate Task
+Manager graphs looked underused: one serialized render dependency chain governed progress while
+other CPU cores and GPU engines retained headroom.
+
+Typed `full_pipeline`, `render_only`, and `schedule_only` experiment modes then separated the work.
+At 32 cameras, 640×360, 30 FPS, and the Observation profile, schedule-only reached roughly 963
+logical captures/s and render-only reached 942–949 renders/s. The original full path reached only
+about 472 frames/s. UE 5.7 source documents `FRHIGPUTextureReadback` as reusable, but the plugin had
+destroyed and recreated it after every frame. Retaining both per-camera staging objects, with
+dimension-aware recreation after a resize, raised full delivery to about 788 frames/s (24.6 FPS per
+camera), a 67% gain, with zero new readback resources and zero staging drops during the measured
+window. This falsifies per-view scene rendering as the dominant fixture bottleneck and identifies
+readback allocation/copy granularity as the next target.
+
+A resolution sweep after reuse delivered about 884 frames/s at 320×180, 788 at 640×360, and 383 at
+960×540. The largest case held near 794 MB/s and replaced frames between rendering and delivery,
+showing the transition from per-copy readback pressure to raw local transport bandwidth. A shared
+atlas remains valuable, but now for one reusable staging copy/map per batch rather than as a rescue
+for an allegedly exhausted scene renderer.
+
+A short controlled focus comparison at the 32-camera 640×360 envelope delivered about 718 frames/s
+with Unreal foregrounded and 701 with Workbench foregrounded. Background throttling is therefore
+measurable on this machine, but its roughly 2–3% effect does not explain the earlier twofold collapse.
+
+Designers can choose a reversible Observation render profile that retains geometry, materials,
+basic lighting, and dynamic shadows while disabling advanced and post-processing features. The
+generic fixture gains only about 5.5% because it has no meaningful production post stack; projects
+with volumetrics, reflections, grading, or post-process materials should expose a larger difference
+through the same profile and metrics.
+
 ### Raw locally; compress for durability or distance
 
 | Situation                    | Starting point                       |

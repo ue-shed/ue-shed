@@ -6,6 +6,19 @@
 
 struct FUEShedCameraRuntime;
 
+enum class EUEShedCameraRenderProfile : uint8
+{
+	FullFidelity,
+	Observation
+};
+
+enum class EUEShedCameraPipelineMode : uint8
+{
+	FullPipeline,
+	RenderOnly,
+	ScheduleOnly
+};
+
 USTRUCT()
 struct FUEShedCameraScheduleConfig
 {
@@ -18,6 +31,8 @@ struct FUEShedCameraScheduleConfig
 	double FocusedFps = 8.0;
 	bool bPaused = false;
 	bool bActorPov = false;
+	EUEShedCameraPipelineMode PipelineMode = EUEShedCameraPipelineMode::FullPipeline;
+	EUEShedCameraRenderProfile RenderProfile = EUEShedCameraRenderProfile::FullFidelity;
 	int32 CaptureWidth = 320;
 	int32 CaptureHeight = 180;
 };

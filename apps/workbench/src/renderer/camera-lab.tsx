@@ -33,6 +33,8 @@ const defaultConfig: CameraScheduleConfig = {
 	focusedCameraIndex: 0,
 	focusedFps: 8,
 	paused: false,
+	pipelineMode: "full_pipeline",
+	renderProfile: "full_fidelity",
 	resolution: "320x180",
 	viewMode: "overview"
 };
@@ -71,6 +73,7 @@ function CameraTile(props: {
 	readonly index: number;
 	readonly onFocus: () => void;
 	readonly onTelemetry: (value: TileTelemetry) => void;
+	readonly pipelineMode: CameraScheduleConfig["pipelineMode"];
 }) {
 	let canvas: HTMLCanvasElement | undefined;
 	let presenter: FramePresenter | undefined;
@@ -108,12 +111,22 @@ function CameraTile(props: {
 			<canvas ref={(element) => (canvas = element)} {...stylex.props(styles.canvas)} />
 			<div {...stylex.props(styles.tileTop)}>
 				<span>CAM {String(props.index + 1).padStart(2, "0")}</span>
-				<span {...stylex.props(styles.liveDot)}>LIVE</span>
+				<span {...stylex.props(styles.liveDot)}>
+					{props.pipelineMode === "full_pipeline" ? "LIVE" : "ISOLATED"}
+				</span>
 			</div>
 			<Show when={!props.frame}>
 				<div {...stylex.props(styles.awaiting)}>
-					<span>NO SIGNAL</span>
-					<small>waiting for Unreal producer</small>
+					<span>
+						{props.pipelineMode === "full_pipeline" ? "NO SIGNAL" : "OUTPUT MUTED"}
+					</span>
+					<small>
+						{props.pipelineMode === "render_only"
+							? "rendering without GPU readback"
+							: props.pipelineMode === "schedule_only"
+								? "measuring scheduler without rendering"
+								: "waiting for Unreal producer"}
+					</small>
 				</div>
 			</Show>
 		</button>
@@ -162,8 +175,33 @@ export function CameraLab() {
 				: config().focusedFps + config().backgroundFps * (cameraCount - 1);
 		return (width * height * 4 * aggregateFps) / 1_000_000;
 	});
+	const averageCaptureBatch = createMemo(() => {
+		const stats = status()?.stats;
+		if (!stats || stats.captureBatchesSubmitted === 0) return "—";
+		const batchCount = stats.captureBatchesSubmitted;
+		return `${(stats.capturesRequested / batchCount).toFixed(1)} / ${(stats.totalCaptureBatchSubmissionMs / batchCount).toFixed(2)} ms`;
+	});
+	const maxCaptureBatch = createMemo(() => {
+		const stats = status()?.stats;
+		return stats
+			? `${stats.maxCaptureBatchSize} / ${stats.maxCaptureBatchSubmissionMs.toFixed(1)} ms`
+			: "—";
+	});
+	const captureCadence = createMemo(() => {
+		const stats = status()?.stats;
+		if (!stats || stats.camerasDue === 0) return "—";
+		return `${stats.cadenceIntervalsSkipped} skip · ${(stats.totalCaptureLatenessMs / stats.camerasDue).toFixed(1)} / ${stats.maxCaptureLatenessMs.toFixed(1)} ms`;
+	});
+	const experimentRate = (count: number | undefined) => {
+		const elapsedMs = status()?.stats.experimentElapsedMs ?? 0;
+		return elapsedMs > 0 && count !== undefined ? (count * 1_000) / elapsedMs : 0;
+	};
 
 	const applyConfig = async (next: CameraScheduleConfig) => {
+		if (next.pipelineMode !== "full_pipeline") {
+			setFrames(new Map());
+			setTelemetry(new Map());
+		}
 		setConfig(next);
 		setControlState("updating");
 		try {
@@ -188,6 +226,17 @@ export function CameraLab() {
 			() => void window.ueShed.getMetrics().then(setMetrics),
 			750
 		);
+		const statusTimer = window.setInterval(() => {
+			if (controlState() === "updating") return;
+			void window.ueShed
+				.getStatus()
+				.then((value) => {
+					setStatus(value);
+					setConfig(value.config);
+					setControlState("connected");
+				})
+				.catch(() => setControlState("unavailable"));
+		}, 1_000);
 		void window.ueShed
 			.getStatus()
 			.then((value) => {
@@ -200,6 +249,7 @@ export function CameraLab() {
 		onCleanup(() => {
 			unsubscribe();
 			window.clearInterval(timer);
+			window.clearInterval(statusTimer);
 		});
 	});
 
@@ -232,6 +282,42 @@ export function CameraLab() {
 				/>
 				<Metric label="HOST FRAMES" value={String(metrics()?.framesReceived ?? 0)} />
 				<Metric
+					label="EXPERIMENT SCHEDULED"
+					value={`${experimentRate(status()?.stats.experimentScheduledCaptures).toFixed(1)} /s`}
+				/>
+				<Metric
+					label="EXPERIMENT RENDERED"
+					value={`${experimentRate(status()?.stats.experimentRenderedCaptures).toFixed(1)} /s`}
+				/>
+				<Metric
+					label="EXPERIMENT DELIVERED"
+					value={`${experimentRate(status()?.stats.experimentFramesDelivered).toFixed(1)} /s`}
+				/>
+				<Metric
+					label="EXPERIMENT TICKS"
+					value={`${experimentRate(status()?.stats.experimentSchedulerTicks).toFixed(1)} /s`}
+				/>
+				<Metric
+					label="SKIP / DROP / REPLACE"
+					value={`${status()?.stats.experimentCadenceIntervalsSkipped ?? 0} / ${status()?.stats.experimentReadbackDrops ?? 0} / ${status()?.stats.experimentTransportReplacements ?? 0}`}
+					warn={
+						(status()?.stats.experimentCadenceIntervalsSkipped ?? 0) > 0 ||
+						(status()?.stats.experimentReadbackDrops ?? 0) > 0 ||
+						(status()?.stats.experimentTransportReplacements ?? 0) > 0
+					}
+				/>
+				<Metric
+					label="READBACK ALLOCATIONS"
+					value={`${status()?.stats.experimentReadbackResourcesCreated ?? 0} window · ${status()?.stats.readbackResourcesCreated ?? 0} total`}
+				/>
+				<Metric label="AVG UE BATCH" value={averageCaptureBatch()} />
+				<Metric label="MAX UE BATCH" value={maxCaptureBatch()} />
+				<Metric
+					label="CADENCE AVG / MAX"
+					value={captureCadence()}
+					warn={(status()?.stats.cadenceIntervalsSkipped ?? 0) > 0}
+				/>
+				<Metric
 					label="MALFORMED"
 					value={String(metrics()?.malformedFrames ?? 0)}
 					warn={(metrics()?.malformedFrames ?? 0) > 0}
@@ -256,6 +342,7 @@ export function CameraLab() {
 										index={index}
 										frame={frames().get(index)}
 										focused={config().focusedCameraIndex === index}
+										pipelineMode={config().pipelineMode}
 										onFocus={() =>
 											void applyConfig({
 												...config(),
@@ -304,6 +391,36 @@ export function CameraLab() {
 							})
 						}
 					/>
+					<div {...stylex.props(styles.viewMode)}>
+						<span>PIPELINE ISOLATION</span>
+						<div>
+							<For
+								each={
+									[
+										["full_pipeline", "FULL"],
+										["render_only", "RENDER"],
+										["schedule_only", "SCHEDULE"]
+									] as const
+								}
+							>
+								{([pipelineMode, label]) => (
+									<button
+										type="button"
+										onClick={() =>
+											void applyConfig({ ...config(), pipelineMode })
+										}
+										{...stylex.props(
+											styles.pipelineButton,
+											config().pipelineMode === pipelineMode &&
+												styles.modeButtonActive
+										)}
+									>
+										{label}
+									</button>
+								)}
+							</For>
+						</div>
+					</div>
 					<Slider
 						label="FOCUSED RATE"
 						value={config().focusedFps}
@@ -366,6 +483,40 @@ export function CameraLab() {
 						</div>
 					</div>
 					<div {...stylex.props(styles.viewMode)}>
+						<span>RENDER PROFILE</span>
+						<div>
+							<button
+								type="button"
+								onClick={() =>
+									void applyConfig({
+										...config(),
+										renderProfile: "full_fidelity"
+									})
+								}
+								{...stylex.props(
+									styles.modeButton,
+									config().renderProfile === "full_fidelity" &&
+										styles.modeButtonActive
+								)}
+							>
+								FULL FIDELITY
+							</button>
+							<button
+								type="button"
+								onClick={() =>
+									void applyConfig({ ...config(), renderProfile: "observation" })
+								}
+								{...stylex.props(
+									styles.modeButton,
+									config().renderProfile === "observation" &&
+										styles.modeButtonActive
+								)}
+							>
+								OBSERVATION
+							</button>
+						</div>
+					</div>
+					<div {...stylex.props(styles.viewMode)}>
 						<span>VIEWPOINT</span>
 						<div>
 							<button
@@ -404,6 +555,9 @@ export function CameraLab() {
 					<div {...stylex.props(styles.budgetNote)}>
 						<strong>{config().resolution.replace("x", " × ")} · BGRA8</strong>
 						<span>{estimatedRawThroughput().toFixed(2)} MB/s estimated raw</span>
+						<span>{config().renderProfile.replace("_", " ")} render profile</span>
+						<span>{config().pipelineMode.replaceAll("_", " ")} experiment</span>
+						<span>revision {status()?.stats.experimentRevision ?? "—"}</span>
 						<span>latest frame wins</span>
 						<span>{metrics()?.presentationReplacements ?? 0} display coalesced</span>
 						<span>2 staging slots / camera</span>
@@ -639,6 +793,16 @@ const styles = stylex.create({
 		padding: "9px 5px",
 		cursor: "pointer",
 		fontSize: "9px",
+		":hover": { color: "#e8ebe5", borderColor: "#717c74" }
+	},
+	pipelineButton: {
+		width: "33.333%",
+		border: "1px solid #3a413d",
+		backgroundColor: "transparent",
+		color: "#7f8982",
+		padding: "9px 2px",
+		cursor: "pointer",
+		fontSize: "8px",
 		":hover": { color: "#e8ebe5", borderColor: "#717c74" }
 	},
 	modeButtonActive: {

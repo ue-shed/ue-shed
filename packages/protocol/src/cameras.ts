@@ -10,6 +10,8 @@ export const CameraScheduleConfig = Schema.Struct({
 	focusedCameraIndex: Schema.NullOr(Schema.Number.pipe(Schema.int(), Schema.between(0, 31))),
 	focusedFps: Schema.Number.pipe(Schema.between(0.1, 60)),
 	paused: Schema.Boolean,
+	pipelineMode: Schema.Literal("full_pipeline", "render_only", "schedule_only"),
+	renderProfile: Schema.Literal("full_fidelity", "observation"),
 	resolution: Schema.Literal(
 		"160x90",
 		"320x180",
@@ -25,10 +27,34 @@ export type CameraScheduleConfig = Schema.Schema.Type<typeof CameraScheduleConfi
 
 export const CameraStreamStats = Schema.Struct({
 	bytesSent: Schema.Number,
+	captureBatchesSubmitted: Schema.Number,
+	cadenceIntervalsSkipped: Schema.Number,
+	camerasDue: Schema.Number,
 	capturesRequested: Schema.Number,
+	experimentBytesSent: Schema.Number,
+	experimentCadenceIntervalsSkipped: Schema.Number,
+	experimentElapsedMs: Schema.Number,
+	experimentFramesDelivered: Schema.Number,
+	experimentReadbackDrops: Schema.Number,
+	experimentReadbackResourcesCreated: Schema.Number,
+	experimentReadbacksEnqueued: Schema.Number,
+	experimentRenderedCaptures: Schema.Number,
+	experimentRevision: Schema.Number,
+	experimentSchedulerTicks: Schema.Number,
+	experimentScheduledCaptures: Schema.Number,
+	experimentTransportReplacements: Schema.Number,
 	framesDelivered: Schema.Number,
+	lastCaptureBatchSize: Schema.Number,
+	lastCaptureBatchSubmissionMs: Schema.Number,
+	maxCaptureBatchSize: Schema.Number,
+	maxCaptureBatchSubmissionMs: Schema.Number,
+	maxCaptureLatenessMs: Schema.Number,
 	pipeConnected: Schema.Boolean,
 	readbackDrops: Schema.Number,
+	readbackResourcesCreated: Schema.Number,
+	schedulerTicks: Schema.Number,
+	totalCaptureBatchSubmissionMs: Schema.Number,
+	totalCaptureLatenessMs: Schema.Number,
 	transportReplacements: Schema.Number
 }).annotations({ identifier: "CameraStreamStats" });
 export type CameraStreamStats = Schema.Schema.Type<typeof CameraStreamStats>;

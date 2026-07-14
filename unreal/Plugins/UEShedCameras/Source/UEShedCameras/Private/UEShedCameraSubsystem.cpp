@@ -11,11 +11,14 @@
 #include "HAL/Runnable.h"
 #include "HAL/RunnableThread.h"
 #include "Misc/ScopeLock.h"
+#include "ProfilingDebugging/MiscTrace.h"
 #include "TextureResource.h"
 #include "RHIGPUReadback.h"
+#include "SceneRenderBuilderInterface.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "ShowFlags.h"
 #include "UEShedCameraSource.h"
 
 #if PLATFORM_WINDOWS
@@ -39,6 +42,8 @@ struct FReadbackSlot
 	double WorldSeconds = 0;
 	int32 Width = 0;
 	int32 Height = 0;
+	int32 StagingWidth = 0;
+	int32 StagingHeight = 0;
 	uint64 Sequence = 0;
 };
 
@@ -46,6 +51,8 @@ struct FCameraState
 {
 	TWeakObjectPtr<AUEShedCameraSource> Source;
 	FTransform OverviewTransform;
+	FEngineShowFlags FullFidelityShowFlags{ ESFIM_Game };
+	EUEShedCameraRenderProfile AppliedRenderProfile = EUEShedCameraRenderProfile::FullFidelity;
 	double NextCaptureSeconds = 0;
 	uint64 Sequence = 0;
 	TStaticArray<TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>, 2> Slots;
@@ -178,8 +185,33 @@ struct FUEShedCameraRuntime
 	TUniquePtr<FCameraPipeWriter> Writer;
 	FGuid ProducerId = FGuid::NewGuid();
 	FGuid SessionId = FGuid::NewGuid();
+	uint64 CaptureBatchesSubmitted = 0;
+	uint64 CadenceIntervalsSkipped = 0;
+	uint64 CamerasDue = 0;
 	uint64 CapturesRequested = 0;
+	uint64 ExperimentBytesSentBaseline = 0;
+	uint64 ExperimentCadenceIntervalsSkipped = 0;
+	double ExperimentStartedSeconds = FPlatformTime::Seconds();
+	uint64 ExperimentFramesDeliveredBaseline = 0;
+	uint64 ExperimentReadbackDrops = 0;
+	uint64 ExperimentReadbackResourcesCreatedBaseline = 0;
+	uint64 ExperimentReadbacksEnqueued = 0;
+	uint64 ExperimentRenderedCaptures = 0;
+	uint64 ExperimentRevision = 0;
+	uint64 ExperimentSchedulerTicks = 0;
+	uint64 ExperimentScheduledCaptures = 0;
+	uint64 ExperimentTransportReplacementsBaseline = 0;
+	double LastCaptureBatchSubmissionMs = 0;
+	int32 LastCaptureBatchSize = 0;
+	double MaxCaptureBatchSubmissionMs = 0;
+	int32 MaxCaptureBatchSize = 0;
+	double MaxCaptureLatenessMs = 0;
 	uint64 ReadbackDrops = 0;
+	TAtomic<uint64> ReadbackResourcesCreated{ 0 };
+	uint64 SchedulerTicks = 0;
+	double TotalCaptureBatchSubmissionMs = 0;
+	double TotalCaptureLatenessMs = 0;
+	uint64 TraceRegionId = 0;
 	int32 SchedulerCursor = 0;
 };
 
@@ -205,6 +237,10 @@ void UUEShedCameraSubsystem::Deinitialize()
 {
 	if (Runtime)
 	{
+		if (Runtime->TraceRegionId != 0)
+		{
+			TRACE_END_REGION_WITH_ID(Runtime->TraceRegionId);
+		}
 		Runtime->Writer.Reset();
 		FlushRenderingCommands();
 		Runtime.Reset();
@@ -228,6 +264,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 			FCameraState& State = Runtime->Cameras.AddDefaulted_GetRef();
 			State.Source = Source;
 			State.OverviewTransform = Source->GetActorTransform();
+			State.FullFidelityShowFlags = Source->GetCaptureComponent2D()->ShowFlags;
 			for (TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : State.Slots)
 			{
 				Slot = MakeShared<FReadbackSlot, ESPMode::ThreadSafe>();
@@ -248,6 +285,20 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 		else if (!Source->GetActorTransform().Equals(Camera.OverviewTransform))
 		{
 			Source->SetActorTransform(Camera.OverviewTransform);
+		}
+		if (Camera.AppliedRenderProfile != Runtime->Config.RenderProfile)
+		{
+			USceneCaptureComponent2D* Capture = Source->GetCaptureComponent2D();
+			Capture->ShowFlags = Camera.FullFidelityShowFlags;
+			if (Runtime->Config.RenderProfile == EUEShedCameraRenderProfile::Observation)
+			{
+				Capture->ShowFlags.DisableAdvancedFeatures();
+				Capture->ShowFlags.SetPostProcessing(false);
+				Capture->ShowFlags.SetMotionBlur(false);
+				Capture->ShowFlags.SetBloom(false);
+				Capture->ShowFlags.SetAntiAliasing(false);
+			}
+			Camera.AppliedRenderProfile = Runtime->Config.RenderProfile;
 		}
 	}
 
@@ -276,7 +327,6 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 							}
 						}
 						Slot->Readback->Unlock();
-						Slot->Readback.Reset();
 						Slot->ReadbackLatencyMs = FPlatformTime::Seconds() * 1000.0
 							- Slot->CaptureMonotonicMs;
 						Slot->State.Store(2);
@@ -348,13 +398,27 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	if (Runtime->Config.bPaused || !Runtime->Writer->bConnected.Load()
-		|| Runtime->Cameras.IsEmpty()) return;
+	if (Runtime->Config.bPaused || Runtime->Cameras.IsEmpty()) return;
+	if (Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::FullPipeline
+		&& !Runtime->Writer->bConnected.Load()) return;
 
-	const double Now = GetWorld()->GetTimeSeconds();
+	UWorld* World = GetWorld();
+	if (World == nullptr || World->Scene == nullptr) return;
+
+	struct FPendingCapture
+	{
+		USceneCaptureComponent2D* Component = nullptr;
+		TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe> Slot;
+	};
+
+	const double Now = World->GetTimeSeconds();
 	const int32 ActiveCameraCount = FMath::Min(
 		Runtime->Config.ActiveCameraCount, Runtime->Cameras.Num());
 	Runtime->SchedulerCursor %= ActiveCameraCount;
+	TArray<FPendingCapture> PendingCaptures;
+	PendingCaptures.Reserve(Runtime->Config.CaptureBudgetPerTick);
+	Runtime->SchedulerTicks++;
+	Runtime->ExperimentSchedulerTicks++;
 	int32 Captured = 0;
 	for (int32 Offset = 0; Offset < ActiveCameraCount
 		&& Captured < Runtime->Config.CaptureBudgetPerTick; ++Offset)
@@ -362,45 +426,128 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 		const int32 Index = (Runtime->SchedulerCursor + Offset) % ActiveCameraCount;
 		FCameraState& Camera = Runtime->Cameras[Index];
 		AUEShedCameraSource* Source = Camera.Source.Get();
-		if (Source == nullptr || Now < Camera.NextCaptureSeconds) continue;
+		if (Source == nullptr) continue;
 		const double Fps = Source->CameraIndex == Runtime->Config.FocusedCameraIndex
 			? Runtime->Config.FocusedFps : Runtime->Config.BackgroundFps;
-		TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe> Available;
-		for (const TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : Camera.Slots)
+		const double CaptureIntervalSeconds = 1.0 / FMath::Max(0.1, Fps);
+		if (Camera.NextCaptureSeconds <= 0)
 		{
-			if (Slot->State.Load() == 0)
-			{
-				Available = Slot;
-				break;
-			}
+			Camera.NextCaptureSeconds = Now;
 		}
-		Camera.NextCaptureSeconds = Now + 1.0 / FMath::Max(0.1, Fps);
-		if (!Available)
+		if (Now < Camera.NextCaptureSeconds) continue;
+
+		const double CaptureLatenessSeconds = Now - Camera.NextCaptureSeconds;
+		const int64 IntervalsAdvanced = FMath::Max<int64>(1,
+			FMath::FloorToInt64(CaptureLatenessSeconds / CaptureIntervalSeconds) + 1);
+		Camera.NextCaptureSeconds += IntervalsAdvanced * CaptureIntervalSeconds;
+		Runtime->CadenceIntervalsSkipped += static_cast<uint64>(IntervalsAdvanced - 1);
+		Runtime->ExperimentCadenceIntervalsSkipped +=
+			static_cast<uint64>(IntervalsAdvanced - 1);
+		Runtime->CamerasDue++;
+		const double CaptureLatenessMs = CaptureLatenessSeconds * 1000.0;
+		Runtime->TotalCaptureLatenessMs += CaptureLatenessMs;
+		Runtime->MaxCaptureLatenessMs =
+			FMath::Max(Runtime->MaxCaptureLatenessMs, CaptureLatenessMs);
+		Runtime->ExperimentScheduledCaptures++;
+		if (Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::ScheduleOnly)
 		{
-			Runtime->ReadbackDrops++;
+			Captured++;
+			Runtime->SchedulerCursor = (Index + 1) % ActiveCameraCount;
 			continue;
+		}
+		TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe> Available;
+		if (Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::FullPipeline)
+		{
+			for (const TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : Camera.Slots)
+			{
+				if (Slot->State.Load() == 0)
+				{
+					Available = Slot;
+					break;
+				}
+			}
+			if (!Available)
+			{
+				Runtime->ReadbackDrops++;
+				Runtime->ExperimentReadbackDrops++;
+				continue;
+			}
 		}
 		UTextureRenderTarget2D* Target = Source->GetCaptureComponent2D()->TextureTarget;
 		if (Target == nullptr) continue;
-		Available->CaptureMonotonicMs = FPlatformTime::Seconds() * 1000.0;
-		Available->WorldSeconds = Now;
-		Available->Pixels.SetNumUninitialized(Source->CaptureWidth * Source->CaptureHeight * 4);
-		Available->Width = Source->CaptureWidth;
-		Available->Height = Source->CaptureHeight;
-		Available->Sequence = Camera.Sequence++;
-		Available->State.Store(1);
-		Source->GetCaptureComponent2D()->CaptureScene();
-		FTextureRenderTargetResource* Resource = Target->GameThread_GetRenderTargetResource();
-		ENQUEUE_RENDER_COMMAND(UEShedStartCameraReadback)(
-			[Available, Resource](FRHICommandListImmediate& RHICmdList)
-			{
-				Available->Readback = MakeUnique<FRHIGPUTextureReadback>(TEXT("UEShedCameraReadback"));
-				Available->Readback->EnqueueCopy(RHICmdList, Resource->GetRenderTargetTexture());
-			});
-		Runtime->CapturesRequested++;
+		if (Available)
+		{
+			Available->CaptureMonotonicMs = FPlatformTime::Seconds() * 1000.0;
+			Available->WorldSeconds = Now;
+			Available->Pixels.SetNumUninitialized(Source->CaptureWidth * Source->CaptureHeight * 4);
+			Available->Width = Source->CaptureWidth;
+			Available->Height = Source->CaptureHeight;
+			Available->Sequence = Camera.Sequence++;
+			Available->State.Store(1);
+		}
+		PendingCaptures.Add({ Source->GetCaptureComponent2D(), Available });
 		Captured++;
 		Runtime->SchedulerCursor = (Index + 1) % ActiveCameraCount;
 	}
+
+	if (PendingCaptures.IsEmpty()) return;
+
+	// CaptureScene() creates and executes a render builder for every component. Collecting all due
+	// cameras into one builder lets Unreal process them as one scene-render workload and avoids an
+	// end-of-frame update flush per camera. Readbacks are interleaved after their corresponding
+	// renderer so each copy observes the frame that was just rendered into that camera's target.
+	const double BatchSubmissionStartSeconds = FPlatformTime::Seconds();
+	World->SendAllEndOfFrameUpdates();
+	TUniquePtr<ISceneRenderBuilder> SceneRenderBuilder = ISceneRenderBuilder::Create(World->Scene);
+	int32 SubmittedCaptureCount = 0;
+	for (FPendingCapture& Pending : PendingCaptures)
+	{
+		UTextureRenderTarget2D* PendingTarget = Pending.Component->TextureTarget;
+		if (PendingTarget == nullptr)
+		{
+			if (Pending.Slot)
+			{
+				Pending.Slot->State.Store(0);
+			}
+			continue;
+		}
+
+		Pending.Component->UpdateSceneCaptureContents(World->Scene, *SceneRenderBuilder);
+		if (Pending.Slot)
+		{
+			FTextureRenderTargetResource* Resource =
+				PendingTarget->GameThread_GetRenderTargetResource();
+			FUEShedCameraRuntime* RuntimePtr = Runtime.Get();
+			SceneRenderBuilder->AddRenderCommand(
+				[Slot = Pending.Slot, Resource, RuntimePtr](FRHICommandListImmediate& RHICmdList)
+				{
+					if (!Slot->Readback || Slot->StagingWidth != Slot->Width
+						|| Slot->StagingHeight != Slot->Height)
+					{
+						Slot->Readback =
+							MakeUnique<FRHIGPUTextureReadback>(TEXT("UEShedCameraReadback"));
+						Slot->StagingWidth = Slot->Width;
+						Slot->StagingHeight = Slot->Height;
+						RuntimePtr->ReadbackResourcesCreated++;
+					}
+					Slot->Readback->EnqueueCopy(RHICmdList, Resource->GetRenderTargetTexture());
+				});
+			Runtime->ExperimentReadbacksEnqueued++;
+		}
+		Runtime->CapturesRequested++;
+		Runtime->ExperimentRenderedCaptures++;
+		SubmittedCaptureCount++;
+	}
+	SceneRenderBuilder->Execute();
+	const double BatchSubmissionMs =
+		(FPlatformTime::Seconds() - BatchSubmissionStartSeconds) * 1000.0;
+	Runtime->CaptureBatchesSubmitted++;
+	Runtime->LastCaptureBatchSize = SubmittedCaptureCount;
+	Runtime->MaxCaptureBatchSize = FMath::Max(Runtime->MaxCaptureBatchSize, SubmittedCaptureCount);
+	Runtime->LastCaptureBatchSubmissionMs = BatchSubmissionMs;
+	Runtime->MaxCaptureBatchSubmissionMs =
+		FMath::Max(Runtime->MaxCaptureBatchSubmissionMs, BatchSubmissionMs);
+	Runtime->TotalCaptureBatchSubmissionMs += BatchSubmissionMs;
 }
 
 TStatId UUEShedCameraSubsystem::GetStatId() const
@@ -423,13 +570,49 @@ bool UUEShedCameraSubsystem::ApplyConfigJson(const FString& ConfigJson, FString&
 	double CaptureBudget;
 	double ActiveCameraCount;
 	bool bPaused;
+	FString PipelineMode;
+	FString RenderProfile;
 	if (!Root->TryGetNumberField(TEXT("activeCameraCount"), ActiveCameraCount)
 		|| !Root->TryGetNumberField(TEXT("backgroundFps"), BackgroundFps)
 		|| !Root->TryGetNumberField(TEXT("focusedFps"), FocusedFps)
 		|| !Root->TryGetNumberField(TEXT("captureBudgetPerTick"), CaptureBudget)
-		|| !Root->TryGetBoolField(TEXT("paused"), bPaused))
+		|| !Root->TryGetBoolField(TEXT("paused"), bPaused)
+		|| !Root->TryGetStringField(TEXT("pipelineMode"), PipelineMode)
+		|| !Root->TryGetStringField(TEXT("renderProfile"), RenderProfile))
 	{
 		Error = TEXT("missing-required-field");
+		return false;
+	}
+	EUEShedCameraPipelineMode DesiredPipelineMode;
+	if (PipelineMode == TEXT("full_pipeline"))
+	{
+		DesiredPipelineMode = EUEShedCameraPipelineMode::FullPipeline;
+	}
+	else if (PipelineMode == TEXT("render_only"))
+	{
+		DesiredPipelineMode = EUEShedCameraPipelineMode::RenderOnly;
+	}
+	else if (PipelineMode == TEXT("schedule_only"))
+	{
+		DesiredPipelineMode = EUEShedCameraPipelineMode::ScheduleOnly;
+	}
+	else
+	{
+		Error = TEXT("invalid-pipeline-mode");
+		return false;
+	}
+	EUEShedCameraRenderProfile DesiredRenderProfile;
+	if (RenderProfile == TEXT("full_fidelity"))
+	{
+		DesiredRenderProfile = EUEShedCameraRenderProfile::FullFidelity;
+	}
+	else if (RenderProfile == TEXT("observation"))
+	{
+		DesiredRenderProfile = EUEShedCameraRenderProfile::Observation;
+	}
+	else
+	{
+		Error = TEXT("invalid-render-profile");
 		return false;
 	}
 	FString ViewMode;
@@ -467,6 +650,8 @@ bool UUEShedCameraSubsystem::ApplyConfigJson(const FString& ConfigJson, FString&
 	Runtime->Config.CaptureBudgetPerTick = FMath::Clamp(FMath::RoundToInt(CaptureBudget), 1, 32);
 	Runtime->Config.bPaused = bPaused;
 	Runtime->Config.bActorPov = bActorPov;
+	Runtime->Config.PipelineMode = DesiredPipelineMode;
+	Runtime->Config.RenderProfile = DesiredRenderProfile;
 	Runtime->Config.CaptureWidth = CaptureWidth;
 	Runtime->Config.CaptureHeight = CaptureHeight;
 	Runtime->Config.FocusedCameraIndex = -1;
@@ -477,6 +662,41 @@ bool UUEShedCameraSubsystem::ApplyConfigJson(const FString& ConfigJson, FString&
 			FMath::RoundToInt((*Focused)->AsNumber()), 0,
 			Runtime->Config.ActiveCameraCount - 1);
 	}
+	for (FCameraState& Camera : Runtime->Cameras)
+	{
+		Camera.NextCaptureSeconds = 0;
+	}
+	Runtime->ExperimentBytesSentBaseline = Runtime->Writer->BytesSent.Load();
+	Runtime->ExperimentCadenceIntervalsSkipped = 0;
+	Runtime->ExperimentFramesDeliveredBaseline = Runtime->Writer->FramesDelivered.Load();
+	Runtime->ExperimentReadbackDrops = 0;
+	Runtime->ExperimentReadbackResourcesCreatedBaseline =
+		Runtime->ReadbackResourcesCreated.Load();
+	Runtime->ExperimentReadbacksEnqueued = 0;
+	Runtime->ExperimentRenderedCaptures = 0;
+	Runtime->ExperimentRevision++;
+	Runtime->ExperimentSchedulerTicks = 0;
+	Runtime->ExperimentScheduledCaptures = 0;
+	Runtime->ExperimentTransportReplacementsBaseline =
+		Runtime->Writer->TransportReplacements.Load();
+	Runtime->ExperimentStartedSeconds = FPlatformTime::Seconds();
+	if (Runtime->TraceRegionId != 0)
+	{
+		TRACE_END_REGION_WITH_ID(Runtime->TraceRegionId);
+	}
+	const TCHAR* PipelineModeName = Runtime->Config.PipelineMode
+		== EUEShedCameraPipelineMode::FullPipeline ? TEXT("FullPipeline")
+		: Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::RenderOnly
+			? TEXT("RenderOnly") : TEXT("ScheduleOnly");
+	const FString TraceRegionName = FString::Printf(TEXT("UEShedCameras_%02d_%dx%d_%s_%s"),
+		Runtime->Config.ActiveCameraCount,
+		Runtime->Config.CaptureWidth,
+		Runtime->Config.CaptureHeight,
+		PipelineModeName,
+		Runtime->Config.RenderProfile == EUEShedCameraRenderProfile::Observation
+			? TEXT("Observation") : TEXT("FullFidelity"));
+	Runtime->TraceRegionId = TRACE_BEGIN_REGION_WITH_ID(*TraceRegionName, TEXT("UEShedCameras"));
+	TRACE_BOOKMARK(TEXT("%s"), *TraceRegionName);
 	return true;
 }
 
@@ -495,6 +715,14 @@ FString UUEShedCameraSubsystem::StatusJson() const
 	else Config->SetField(TEXT("focusedCameraIndex"), MakeShared<FJsonValueNull>());
 	Config->SetNumberField(TEXT("focusedFps"), Runtime->Config.FocusedFps);
 	Config->SetBoolField(TEXT("paused"), Runtime->Config.bPaused);
+	Config->SetStringField(TEXT("pipelineMode"),
+		Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::FullPipeline
+			? TEXT("full_pipeline")
+			: Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::RenderOnly
+				? TEXT("render_only") : TEXT("schedule_only"));
+	Config->SetStringField(TEXT("renderProfile"),
+		Runtime->Config.RenderProfile == EUEShedCameraRenderProfile::Observation
+			? TEXT("observation") : TEXT("full_fidelity"));
 	Config->SetStringField(TEXT("resolution"), FString::Printf(TEXT("%dx%d"),
 		Runtime->Config.CaptureWidth, Runtime->Config.CaptureHeight));
 	Config->SetStringField(TEXT("viewMode"),
@@ -516,10 +744,49 @@ FString UUEShedCameraSubsystem::StatusJson() const
 	Root->SetArrayField(TEXT("cameras"), Cameras);
 	const TSharedRef<FJsonObject> Stats = MakeShared<FJsonObject>();
 	Stats->SetNumberField(TEXT("bytesSent"), Runtime->Writer->BytesSent.Load());
+	Stats->SetNumberField(TEXT("captureBatchesSubmitted"), Runtime->CaptureBatchesSubmitted);
+	Stats->SetNumberField(TEXT("cadenceIntervalsSkipped"), Runtime->CadenceIntervalsSkipped);
+	Stats->SetNumberField(TEXT("camerasDue"), Runtime->CamerasDue);
 	Stats->SetNumberField(TEXT("capturesRequested"), Runtime->CapturesRequested);
+	Stats->SetNumberField(TEXT("experimentBytesSent"),
+		Runtime->Writer->BytesSent.Load() - Runtime->ExperimentBytesSentBaseline);
+	Stats->SetNumberField(TEXT("experimentCadenceIntervalsSkipped"),
+		Runtime->ExperimentCadenceIntervalsSkipped);
+	Stats->SetNumberField(TEXT("experimentElapsedMs"),
+		(FPlatformTime::Seconds() - Runtime->ExperimentStartedSeconds) * 1000.0);
+	Stats->SetNumberField(TEXT("experimentFramesDelivered"),
+		Runtime->Writer->FramesDelivered.Load() - Runtime->ExperimentFramesDeliveredBaseline);
+	Stats->SetNumberField(TEXT("experimentReadbackDrops"), Runtime->ExperimentReadbackDrops);
+	Stats->SetNumberField(TEXT("experimentReadbackResourcesCreated"),
+		Runtime->ReadbackResourcesCreated.Load()
+			- Runtime->ExperimentReadbackResourcesCreatedBaseline);
+	Stats->SetNumberField(TEXT("experimentReadbacksEnqueued"),
+		Runtime->ExperimentReadbacksEnqueued);
+	Stats->SetNumberField(TEXT("experimentRenderedCaptures"),
+		Runtime->ExperimentRenderedCaptures);
+	Stats->SetNumberField(TEXT("experimentRevision"), Runtime->ExperimentRevision);
+	Stats->SetNumberField(TEXT("experimentSchedulerTicks"), Runtime->ExperimentSchedulerTicks);
+	Stats->SetNumberField(TEXT("experimentScheduledCaptures"),
+		Runtime->ExperimentScheduledCaptures);
+	Stats->SetNumberField(TEXT("experimentTransportReplacements"),
+		Runtime->Writer->TransportReplacements.Load()
+			- Runtime->ExperimentTransportReplacementsBaseline);
 	Stats->SetNumberField(TEXT("framesDelivered"), Runtime->Writer->FramesDelivered.Load());
+	Stats->SetNumberField(TEXT("lastCaptureBatchSize"), Runtime->LastCaptureBatchSize);
+	Stats->SetNumberField(TEXT("lastCaptureBatchSubmissionMs"),
+		Runtime->LastCaptureBatchSubmissionMs);
+	Stats->SetNumberField(TEXT("maxCaptureBatchSize"), Runtime->MaxCaptureBatchSize);
+	Stats->SetNumberField(TEXT("maxCaptureBatchSubmissionMs"),
+		Runtime->MaxCaptureBatchSubmissionMs);
+	Stats->SetNumberField(TEXT("maxCaptureLatenessMs"), Runtime->MaxCaptureLatenessMs);
 	Stats->SetBoolField(TEXT("pipeConnected"), Runtime->Writer->bConnected.Load());
 	Stats->SetNumberField(TEXT("readbackDrops"), Runtime->ReadbackDrops);
+	Stats->SetNumberField(TEXT("readbackResourcesCreated"),
+		Runtime->ReadbackResourcesCreated.Load());
+	Stats->SetNumberField(TEXT("schedulerTicks"), Runtime->SchedulerTicks);
+	Stats->SetNumberField(TEXT("totalCaptureBatchSubmissionMs"),
+		Runtime->TotalCaptureBatchSubmissionMs);
+	Stats->SetNumberField(TEXT("totalCaptureLatenessMs"), Runtime->TotalCaptureLatenessMs);
 	Stats->SetNumberField(TEXT("transportReplacements"),
 		Runtime->Writer->TransportReplacements.Load());
 	Root->SetObjectField(TEXT("stats"), Stats);

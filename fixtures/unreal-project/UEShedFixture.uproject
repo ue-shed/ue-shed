@@ -30,6 +30,10 @@
 		{
 			"Name": "UEShedAuthoring",
 			"Enabled": true
+		},
+		{
+			"Name": "UEShedCameras",
+			"Enabled": true
 		}
 	]
 }

@@ -2,3 +2,7 @@ packages:
     - "apps/*"
     - "packages/*"
     - "extensions/*"
+
+onlyBuiltDependencies:
+    - electron
+    - esbuild

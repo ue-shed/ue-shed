@@ -3,6 +3,13 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/CompositeDataTable.h"
 #include "Engine/DataTable.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/SkyLight.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Components/StaticMeshComponent.h"
+#include "Factories/WorldFactory.h"
 #include "HAL/FileManager.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -16,11 +23,15 @@
 #include "UObject/SavePackage.h"
 #include "UEShedAuthoringLibrary.h"
 #include "UEShedFixtureTypes.h"
+#include "UEShedFixtureMover.h"
+#include "UEShedCameraSource.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(UEShedBuildFixtureCommandlet)
 
 namespace
 {
+constexpr int32 CameraFixtureCount = 32;
+
 struct FFixtureTableDefinition
 {
 	const TCHAR* AssetName;
@@ -69,7 +80,9 @@ FString ObjectPath(const FFixtureTableDefinition& Definition)
 bool SaveAsset(UPackage* Package, UObject* Asset)
 {
 	const FString Filename = FPackageName::LongPackageNameToFilename(
-		Package->GetName(), FPackageName::GetAssetPackageExtension());
+		Package->GetName(), Asset->IsA<UWorld>()
+			? FPackageName::GetMapPackageExtension()
+			: FPackageName::GetAssetPackageExtension());
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
 
 	FSavePackageArgs SaveArgs;
@@ -284,6 +297,133 @@ bool VerifyComposite()
 	}
 	return Composite->GetRowMap().Num() == ExpectedRows.Num();
 }
+
+bool GenerateCameraMap()
+{
+	static const TCHAR* PackageName = TEXT("/Game/Fixture/Cameras/L_CameraLoad");
+	static const TCHAR* AssetName = TEXT("L_CameraLoad");
+	UPackage* Package = FindOrCreatePackage(PackageName);
+	if (Package == nullptr) return false;
+	UWorld* World = UWorld::FindWorldInPackage(Package);
+	const bool bCreatedWorld = World == nullptr;
+	if (World == nullptr)
+	{
+		UWorldFactory* Factory = NewObject<UWorldFactory>();
+		Factory->WorldType = EWorldType::Editor;
+		Factory->bCreateWorldPartition = false;
+		World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package, AssetName,
+			RF_Public | RF_Standalone, nullptr, GWarn));
+	}
+	if (World == nullptr) return false;
+	if (!bCreatedWorld)
+	{
+		int32 ExistingMovers = 0;
+		int32 ExistingCameras = 0;
+		for (AActor* Actor : World->PersistentLevel->Actors)
+		{
+			if (Actor == nullptr) continue;
+			ExistingMovers += Actor->IsA<AUEShedFixtureMover>() ? 1 : 0;
+			ExistingCameras += Actor->IsA<AUEShedCameraSource>() ? 1 : 0;
+		}
+		bool bAllCamerasBound = true;
+		for (AActor* Actor : World->PersistentLevel->Actors)
+		{
+			if (const AUEShedCameraSource* Camera = Cast<AUEShedCameraSource>(Actor))
+			{
+				bAllCamerasBound = bAllCamerasBound && Camera->ObservationTarget != nullptr;
+			}
+		}
+		if (ExistingMovers == CameraFixtureCount && ExistingCameras == CameraFixtureCount
+			&& bAllCamerasBound)
+		{
+			UE_LOG(LogTemp, Display, TEXT("Camera fixture map already matches its contract"));
+			return true;
+		}
+	}
+
+	TArray<AActor*> Existing;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor != nullptr && (Actor->ActorHasTag(TEXT("UEShedCameraFixture"))
+			|| Actor->IsA<AUEShedFixtureMover>() || Actor->IsA<AUEShedCameraSource>()))
+			Existing.Add(Actor);
+	}
+	for (AActor* Actor : Existing) World->EditorDestroyActor(Actor, true);
+
+	AStaticMeshActor* Floor = World->SpawnActor<AStaticMeshActor>(FVector(0, 0, -80), FRotator::ZeroRotator);
+	Floor->Tags.Add(TEXT("UEShedCameraFixture"));
+	Floor->SetActorLabel(TEXT("Observation Floor"));
+	Floor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Plane.Plane")));
+	Floor->SetActorScale3D(FVector(45, 45, 1));
+
+	ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(FVector::ZeroVector,
+		FRotator(-45, -25, 0));
+	Sun->Tags.Add(TEXT("UEShedCameraFixture"));
+	Sun->SetActorLabel(TEXT("Fixture Sun"));
+	ASkyLight* Sky = World->SpawnActor<ASkyLight>();
+	Sky->Tags.Add(TEXT("UEShedCameraFixture"));
+	Sky->SetActorLabel(TEXT("Fixture Sky"));
+
+	for (int32 Index = 0; Index < CameraFixtureCount; ++Index)
+	{
+		const double Angle = UE_TWO_PI * Index / CameraFixtureCount;
+		const double RingRadius = 850.0 + (Index % 4) * 260.0;
+		const FVector Origin(FMath::Cos(Angle) * RingRadius,
+			FMath::Sin(Angle) * RingRadius, 120.0);
+		AUEShedFixtureMover* Mover = World->SpawnActor<AUEShedFixtureMover>(Origin, FRotator::ZeroRotator);
+		Mover->Tags.Add(TEXT("UEShedCameraFixture"));
+		Mover->LogicalIndex = Index;
+		Mover->Motion = static_cast<EUEShedFixtureMotion>(Index % 3);
+		Mover->Radius = 180.0f + Index * 18.0f;
+		Mover->Speed = 0.45f + Index * 0.055f;
+		Mover->SetActorLabel(FString::Printf(TEXT("Mover %02d"), Index + 1));
+
+		const FVector CameraLocation(FMath::Cos(Angle) * 2600.0,
+			FMath::Sin(Angle) * 2600.0, 1150.0 + (Index % 2) * 250.0);
+		const FRotator CameraRotation = (Origin - CameraLocation).Rotation();
+		AUEShedCameraSource* Camera = World->SpawnActor<AUEShedCameraSource>(
+			CameraLocation, CameraRotation);
+		Camera->Tags.Add(TEXT("UEShedCameraFixture"));
+		Camera->CameraIndex = Index;
+		Camera->CameraId = FGuid(0x55455348, 0x45444341, 0x4D000000 | Index, 0x00000001);
+		Camera->ObservationTarget = Mover;
+		Camera->SetActorLabel(FString::Printf(TEXT("Camera %02d"), Index + 1));
+	}
+
+	Package->MarkPackageDirty();
+	const bool bSaved = SaveAsset(Package, World);
+	if (bCreatedWorld) World->CleanupWorld();
+	if (!bSaved) return false;
+	UE_LOG(LogTemp, Display, TEXT("Generated %s with %d movers and %d camera sources"),
+		PackageName, CameraFixtureCount, CameraFixtureCount);
+	return true;
+}
+
+bool VerifyCameraMap()
+{
+	UPackage* Package = LoadPackage(nullptr, TEXT("/Game/Fixture/Cameras/L_CameraLoad"), LOAD_None);
+	UWorld* World = Package == nullptr ? nullptr : UWorld::FindWorldInPackage(Package);
+	if (World == nullptr) return false;
+	int32 Movers = 0;
+	int32 Cameras = 0;
+	int32 BoundCameras = 0;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor == nullptr) continue;
+		Movers += Actor->IsA<AUEShedFixtureMover>() ? 1 : 0;
+		Cameras += Actor->IsA<AUEShedCameraSource>() ? 1 : 0;
+		if (const AUEShedCameraSource* Camera = Cast<AUEShedCameraSource>(Actor))
+		{
+			BoundCameras += Camera->ObservationTarget != nullptr ? 1 : 0;
+		}
+	}
+	UE_LOG(LogTemp, Display,
+		TEXT("Camera fixture verification found %d movers, %d cameras, and %d POV bindings"),
+		Movers, Cameras, BoundCameras);
+	return Movers == CameraFixtureCount && Cameras == CameraFixtureCount
+		&& BoundCameras == CameraFixtureCount;
+}
 }
 
 UUEShedBuildFixtureCommandlet::UUEShedBuildFixtureCommandlet()
@@ -394,6 +534,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			Succeeded = GenerateTable(Definition) && Succeeded;
 		}
 		Succeeded = GenerateComposite() && Succeeded;
+		Succeeded = GenerateCameraMap() && Succeeded;
 	}
 	else
 	{
@@ -402,6 +543,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			Succeeded = VerifyTable(Definition) && Succeeded;
 		}
 		Succeeded = VerifyComposite() && Succeeded;
+		Succeeded = VerifyCameraMap() && Succeeded;
 	}
 
 	UE_LOG(LogTemp, Display, TEXT("UE Shed fixture %s %s"),

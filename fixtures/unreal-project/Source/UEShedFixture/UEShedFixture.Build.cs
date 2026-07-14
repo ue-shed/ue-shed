@@ -11,7 +11,8 @@ public class UEShedFixture : ModuleRules
 			{
 				"Core",
 				"CoreUObject",
-				"Engine"
+				"Engine",
+				"UEShedCameras"
 			}
 		);
 	}

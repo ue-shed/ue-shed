@@ -27,6 +27,16 @@ type FixtureContract = {
 	readonly fixtureVersion: string;
 	readonly engine: { readonly major: number; readonly minor: number };
 	readonly contentRoot: string;
+	readonly cameraLoad: {
+		readonly map: string;
+		readonly movingActors: number;
+		readonly cameraSources: number;
+		readonly capture: {
+			readonly width: number;
+			readonly height: number;
+			readonly pixelFormat: string;
+		};
+	};
 	readonly tables: readonly (DataTableContract | CompositeTableContract)[];
 };
 
@@ -47,6 +57,7 @@ function readContract(): FixtureContract {
 		typeof value.schemaVersion !== "number" ||
 		typeof value.fixtureVersion !== "string" ||
 		!isRecord(value.engine) ||
+		!isRecord(value.cameraLoad) ||
 		typeof value.engine.major !== "number" ||
 		typeof value.engine.minor !== "number" ||
 		typeof value.contentRoot !== "string" ||
@@ -93,6 +104,18 @@ describe("generic Unreal fixture contract", () => {
 			expect(table.rowStruct.startsWith("/Script/UEShedFixture.")).toBe(true);
 			expect(new Set(table.rows).size).toBe(table.rows.length);
 		}
+	});
+
+	it("declares the reproducible multi-camera load map", () => {
+		expect(contract.cameraLoad).toEqual({
+			map: "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad",
+			movingActors: 32,
+			cameraSources: 32,
+			capture: { width: 320, height: 180, pixelFormat: "BGRA8" }
+		});
+		expect(existsSync(join(fixtureRoot, "Content/Fixture/Cameras/L_CameraLoad.umap"))).toBe(
+			true
+		);
 	});
 
 	it("keeps every ordinary table reproducible from reviewable source", () => {
@@ -170,6 +193,11 @@ describe("fixture project", () => {
 		const pluginNames = project.Plugins.flatMap((plugin) =>
 			isRecord(plugin) && typeof plugin.Name === "string" ? [plugin.Name] : []
 		);
-		expect(pluginNames).toEqual(["RemoteControl", "UEShedCore", "UEShedAuthoring"]);
+		expect(pluginNames).toEqual([
+			"RemoteControl",
+			"UEShedCore",
+			"UEShedAuthoring",
+			"UEShedCameras"
+		]);
 	});
 });

@@ -1,6 +1,6 @@
 # Live Unreal camera feeds
 
-> Status: product vision with technical footholds
+> Status: local 32-camera load slice implemented and measured
 
 ## Ambition
 
@@ -82,6 +82,12 @@ Use asynchronous texture readback and a bounded staging ring:
 
 Instrument capture GPU time, readback latency, stage occupancy, drops, copy time, transport latency,
 and presentation latency.
+
+The first measured fixture disproved GPU readback as the universal first limit. On the development
+machine, 32 cameras at 640×360 reached roughly 567 captures/s with zero readback drops while GPU 3D
+utilization remained near 29%; `CaptureScene()` submission and world-tick pressure became limiting.
+Large 1440p frames instead saturated the raw pipe/host path near 1.0–1.05 GB/s. These are machine and
+scene measurements, not product constants.
 
 ### Raw locally; compress for durability or distance
 

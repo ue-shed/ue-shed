@@ -6,6 +6,16 @@
 		"minor": 7
 	},
 	"contentRoot": "/Game/Fixture/Authoring",
+	"cameraLoad": {
+		"map": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad",
+		"movingActors": 32,
+		"cameraSources": 32,
+		"capture": {
+			"width": 320,
+			"height": 180,
+			"pixelFormat": "BGRA8"
+		}
+	},
 	"tables": [
 		{
 			"kind": "data-table",

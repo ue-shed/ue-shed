@@ -15,6 +15,7 @@ public class UEShedFixtureEditor : ModuleRules
 				"Engine",
 				"Json",
 				"UEShedAuthoring",
+				"UEShedCameras",
 				"UEShedFixture",
 				"UnrealEd"
 			}

@@ -1,0 +1,23 @@
+@font-face {
+	font-family: "Workbench Mono";
+	src: local("Cascadia Mono"), local("Consolas");
+}
+
+* {
+	box-sizing: border-box;
+}
+html,
+body,
+#root {
+	min-height: 100%;
+	margin: 0;
+}
+body {
+	background: #0b0d0d;
+	color: #e8ebe5;
+	font-family: "Workbench Mono", monospace;
+}
+button,
+input {
+	font: inherit;
+}

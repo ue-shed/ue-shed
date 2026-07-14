@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "UE Shed Cameras",
+	"Description": "Demand-driven sparse camera capture and bounded local frame streaming.",
+	"Category": "UE Shed",
+	"EnabledByDefault": false,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "UEShedCameras",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

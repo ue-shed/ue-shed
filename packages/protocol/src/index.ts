@@ -103,3 +103,4 @@ export type ConnectionState =
 
 export * from "./authoring.js";
 export * from "./companion.js";
+export * from "./cameras.js";

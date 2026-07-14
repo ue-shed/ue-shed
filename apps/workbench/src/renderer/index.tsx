@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { CameraLab } from "./camera-lab.js";
+import { AppShell } from "./app-shell.js";
 import "./reset.css";
 
-render(() => <CameraLab />, document.getElementById("root")!);
+render(() => <AppShell />, document.getElementById("root")!);

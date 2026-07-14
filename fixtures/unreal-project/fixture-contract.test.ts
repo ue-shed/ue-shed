@@ -37,7 +37,25 @@ type FixtureContract = {
 			readonly pixelFormat: string;
 		};
 	};
+	readonly textureAudit: {
+		readonly contentRoot: string;
+		readonly source: string;
+		readonly rules: string;
+		readonly textures: readonly TextureContract[];
+	};
 	readonly tables: readonly (DataTableContract | CompositeTableContract)[];
+};
+
+type TextureContract = {
+	readonly objectPath: string;
+	readonly width: number;
+	readonly height: number;
+	readonly sourceFormat: string;
+	readonly textureGroup: string;
+	readonly compression: string;
+	readonly sRGB: boolean;
+	readonly mipGeneration: string;
+	readonly expectedFindingIds: readonly string[];
 };
 
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
@@ -58,10 +76,12 @@ function readContract(): FixtureContract {
 		typeof value.fixtureVersion !== "string" ||
 		!isRecord(value.engine) ||
 		!isRecord(value.cameraLoad) ||
+		!isRecord(value.textureAudit) ||
 		typeof value.engine.major !== "number" ||
 		typeof value.engine.minor !== "number" ||
 		typeof value.contentRoot !== "string" ||
-		!Array.isArray(value.tables)
+		!Array.isArray(value.tables) ||
+		!Array.isArray(value.textureAudit.textures)
 	) {
 		throw new Error("fixture-contract.json does not match the fixture contract envelope");
 	}
@@ -133,6 +153,46 @@ describe("generic Unreal fixture contract", () => {
 		}
 	});
 
+	it("declares a portable, reproducible texture audit corpus", () => {
+		const audit = contract.textureAudit;
+		expect(audit.contentRoot).toBe("/Game/Fixture/Audits/Textures");
+		expect(audit.textures).toHaveLength(5);
+		const source = readJson(resolve(fixtureRoot, audit.source));
+		expect(Array.isArray(source)).toBe(true);
+		expect(source).toEqual(
+			expect.arrayContaining(
+				audit.textures.map(({ expectedFindingIds: _, ...texture }) =>
+					expect.objectContaining(texture)
+				)
+			)
+		);
+		const objectPaths = audit.textures.map((texture) => texture.objectPath);
+		expect(new Set(objectPaths).size).toBe(objectPaths.length);
+		for (const texture of audit.textures) {
+			expect(texture.objectPath.startsWith(`${audit.contentRoot}/`)).toBe(true);
+			expect(texture.width).toBeGreaterThan(0);
+			expect(texture.height).toBeGreaterThan(0);
+			expect(texture.width).toBeLessThanOrEqual(4096);
+			expect(texture.height).toBeLessThanOrEqual(4096);
+			expect(texture.sourceFormat).toBe("TSF_BGRA8");
+			expect(existsSync(generatedAssetPath(texture.objectPath)), texture.objectPath).toBe(
+				true
+			);
+		}
+		const findings = audit.textures.flatMap((texture) => texture.expectedFindingIds);
+		expect(findings.sort()).toEqual(["dimensions.power_of_two", "dimensions.ui_max_512"]);
+		const rules = readJson(resolve(fixtureRoot, audit.rules));
+		expect(rules).toEqual(
+			expect.objectContaining({
+				schemaVersion: 1,
+				rules: expect.arrayContaining([
+					expect.objectContaining({ id: "dimensions.power_of_two" }),
+					expect.objectContaining({ id: "dimensions.ui_max_512" })
+				])
+			})
+		);
+	});
+
 	it("defines composite parent precedence without mixed row structures", () => {
 		const tablesByPath = new Map(contract.tables.map((table) => [table.assetPath, table]));
 		for (const table of contract.tables) {
@@ -172,6 +232,8 @@ describe("generic Unreal fixture contract", () => {
 		const portableFiles = [
 			"fixture-contract.json",
 			"UEShedFixture.uproject",
+			contract.textureAudit.source,
+			contract.textureAudit.rules,
 			...contract.tables.flatMap((table) =>
 				table.kind === "data-table" ? [table.source] : []
 			)

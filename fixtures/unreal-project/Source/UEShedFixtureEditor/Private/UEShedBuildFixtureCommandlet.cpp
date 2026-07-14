@@ -6,6 +6,7 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/SkyLight.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Components/StaticMeshComponent.h"
@@ -39,6 +40,90 @@ struct FFixtureTableDefinition
 	const TCHAR* SourcePath;
 	UScriptStruct* RowStruct;
 };
+
+struct FFixtureTextureDefinition
+{
+	FString Name;
+	FString ObjectPath;
+	int32 Width = 0;
+	int32 Height = 0;
+	FString Pattern;
+	TextureGroup Group = TEXTUREGROUP_World;
+	TextureCompressionSettings Compression = TC_Default;
+	bool bSRGB = true;
+	TextureMipGenSettings MipGeneration = TMGS_FromTextureGroup;
+};
+
+bool ParseTextureGroup(const FString& Value, TextureGroup& Result)
+{
+	if (Value == TEXT("TEXTUREGROUP_World")) Result = TEXTUREGROUP_World;
+	else if (Value == TEXT("TEXTUREGROUP_UI")) Result = TEXTUREGROUP_UI;
+	else if (Value == TEXT("TEXTUREGROUP_Effects")) Result = TEXTUREGROUP_Effects;
+	else return false;
+	return true;
+}
+
+bool ParseTextureCompression(const FString& Value, TextureCompressionSettings& Result)
+{
+	if (Value == TEXT("TC_Default")) Result = TC_Default;
+	else if (Value == TEXT("TC_EditorIcon")) Result = TC_EditorIcon;
+	else return false;
+	return true;
+}
+
+bool ParseMipGeneration(const FString& Value, TextureMipGenSettings& Result)
+{
+	if (Value == TEXT("TMGS_FromTextureGroup")) Result = TMGS_FromTextureGroup;
+	else if (Value == TEXT("TMGS_NoMipmaps")) Result = TMGS_NoMipmaps;
+	else return false;
+	return true;
+}
+
+bool LoadTextureDefinitions(TArray<FFixtureTextureDefinition>& Definitions)
+{
+	const FString Filename = FPaths::ConvertRelativePathToFull(
+		FPaths::ProjectDir(), TEXT("FixtureSource/Audits/textures.json"));
+	FString Json;
+	if (!FFileHelper::LoadFileToString(Json, *Filename))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Could not read texture fixture source %s"), *Filename);
+		return false;
+	}
+	TArray<TSharedPtr<FJsonValue>> Values;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Values)) return false;
+	for (const TSharedPtr<FJsonValue>& Value : Values)
+	{
+		const TSharedPtr<FJsonObject> Object = Value->AsObject();
+		FFixtureTextureDefinition Definition;
+		FString Format;
+		FString Group;
+		FString Compression;
+		FString MipGeneration;
+		if (!Object.IsValid()
+			|| !Object->TryGetStringField(TEXT("name"), Definition.Name)
+			|| !Object->TryGetStringField(TEXT("objectPath"), Definition.ObjectPath)
+			|| !Object->TryGetNumberField(TEXT("width"), Definition.Width)
+			|| !Object->TryGetNumberField(TEXT("height"), Definition.Height)
+			|| !Object->TryGetStringField(TEXT("sourceFormat"), Format)
+			|| !Object->TryGetStringField(TEXT("pattern"), Definition.Pattern)
+			|| !Object->TryGetStringField(TEXT("textureGroup"), Group)
+			|| !Object->TryGetStringField(TEXT("compression"), Compression)
+			|| !Object->TryGetBoolField(TEXT("sRGB"), Definition.bSRGB)
+			|| !Object->TryGetStringField(TEXT("mipGeneration"), MipGeneration)
+			|| Format != TEXT("TSF_BGRA8")
+			|| (Definition.Pattern != TEXT("checker") && Definition.Pattern != TEXT("stripes"))
+			|| !ParseTextureGroup(Group, Definition.Group)
+			|| !ParseTextureCompression(Compression, Definition.Compression)
+			|| !ParseMipGeneration(MipGeneration, Definition.MipGeneration)
+			|| Definition.Width <= 0 || Definition.Height <= 0)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Invalid or unsupported texture fixture definition"));
+			return false;
+		}
+		Definitions.Add(MoveTemp(Definition));
+	}
+	return Definitions.Num() == 5;
+}
 
 TArray<FFixtureTableDefinition> GetTableDefinitions()
 {
@@ -100,6 +185,102 @@ UPackage* FindOrCreatePackage(const TCHAR* PackageName)
 	}
 
 	return CreatePackage(PackageName);
+}
+
+TArray<uint8> GenerateTexturePixels(const FFixtureTextureDefinition& Definition)
+{
+	TArray<uint8> Pixels;
+	Pixels.SetNumUninitialized(Definition.Width * Definition.Height * 4);
+	for (int32 Y = 0; Y < Definition.Height; ++Y)
+	{
+		for (int32 X = 0; X < Definition.Width; ++X)
+		{
+			const bool bAccent = Definition.Pattern == TEXT("checker")
+				? ((X / 16) + (Y / 16)) % 2 == 0
+				: (X / 24) % 2 == 0;
+			const int32 Offset = (Y * Definition.Width + X) * 4;
+			Pixels[Offset] = bAccent ? 42 : 188;
+			Pixels[Offset + 1] = bAccent ? 166 : 55;
+			Pixels[Offset + 2] = bAccent ? 232 : 28;
+			Pixels[Offset + 3] = 255;
+		}
+	}
+	return Pixels;
+}
+
+bool GenerateAuditTextures()
+{
+	TArray<FFixtureTextureDefinition> Definitions;
+	if (!LoadTextureDefinitions(Definitions)) return false;
+	bool bSucceeded = true;
+	for (const FFixtureTextureDefinition& Definition : Definitions)
+	{
+		const FString PackageName = FPackageName::ObjectPathToPackageName(Definition.ObjectPath);
+		UPackage* Package = FindOrCreatePackage(*PackageName);
+		if (Package == nullptr)
+		{
+			bSucceeded = false;
+			continue;
+		}
+		UTexture2D* Texture = FindObject<UTexture2D>(Package, *Definition.Name);
+		const bool bWasCreated = Texture == nullptr;
+		if (bWasCreated)
+		{
+			Texture = NewObject<UTexture2D>(Package, *Definition.Name,
+				RF_Public | RF_Standalone | RF_Transactional);
+		}
+		const TArray<uint8> Pixels = GenerateTexturePixels(Definition);
+		Texture->PreEditChange(nullptr);
+		Texture->Source.Init(Definition.Width, Definition.Height, 1, 1, TSF_BGRA8, Pixels.GetData());
+		Texture->LODGroup = Definition.Group;
+		Texture->CompressionSettings = Definition.Compression;
+		Texture->SRGB = Definition.bSRGB;
+		Texture->MipGenSettings = Definition.MipGeneration;
+		Texture->PostEditChange();
+		if (bWasCreated) FAssetRegistryModule::AssetCreated(Texture);
+		Package->MarkPackageDirty();
+		if (!SaveAsset(Package, Texture))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Could not save %s"), *PackageName);
+			bSucceeded = false;
+		}
+		else
+		{
+			UE_LOG(LogTemp, Display, TEXT("Generated %s (%dx%d)"),
+				*Definition.ObjectPath, Definition.Width, Definition.Height);
+		}
+	}
+	return bSucceeded;
+}
+
+bool VerifyAuditTextures()
+{
+	TArray<FFixtureTextureDefinition> Definitions;
+	if (!LoadTextureDefinitions(Definitions)) return false;
+	bool bSucceeded = true;
+	for (const FFixtureTextureDefinition& Definition : Definitions)
+	{
+		const UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *Definition.ObjectPath);
+		const bool bMatches = Texture != nullptr
+			&& Texture->Source.GetSizeX() == Definition.Width
+			&& Texture->Source.GetSizeY() == Definition.Height
+			&& Texture->Source.GetNumSlices() == 1
+			&& Texture->Source.GetNumMips() == 1
+			&& Texture->Source.GetFormat() == TSF_BGRA8
+			&& Texture->LODGroup == Definition.Group
+			&& Texture->CompressionSettings == Definition.Compression
+			&& Texture->SRGB == Definition.bSRGB
+			&& Texture->MipGenSettings == Definition.MipGeneration;
+		if (!bMatches)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Texture fixture does not match: %s"),
+				*Definition.ObjectPath);
+			bSucceeded = false;
+		}
+	}
+	UE_LOG(LogTemp, Display, TEXT("Texture fixture verification checked %d assets"),
+		Definitions.Num());
+	return bSucceeded;
 }
 
 bool GenerateTable(const FFixtureTableDefinition& Definition)
@@ -535,6 +716,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		}
 		Succeeded = GenerateComposite() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
+		Succeeded = GenerateAuditTextures() && Succeeded;
 	}
 	else
 	{
@@ -544,6 +726,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		}
 		Succeeded = VerifyComposite() && Succeeded;
 		Succeeded = VerifyCameraMap() && Succeeded;
+		Succeeded = VerifyAuditTextures() && Succeeded;
 	}
 
 	UE_LOG(LogTemp, Display, TEXT("UE Shed fixture %s %s"),

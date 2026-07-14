@@ -17,6 +17,7 @@
 		"lint:fix": "oxlint --fix .",
 		"format": "oxfmt --write .",
 		"format:check": "oxfmt --check .",
+		"showcase": "node scripts/showcase.mjs",
 		"test": "vitest run",
 		"ue-shed": "tsx apps/cli/src/index.ts"
 	},

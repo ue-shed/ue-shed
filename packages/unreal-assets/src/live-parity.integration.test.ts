@@ -13,7 +13,9 @@ const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", im
 
 describe.skipIf(!executable || !liveDirectory)("saved and live authoring parity", () => {
 	it("produces the same semantic fingerprint for every fixture table", async () => {
-		const assets = await Effect.runPromise(discoverSavedAssets(fixtureRoot));
+		const assets = (await Effect.runPromise(discoverSavedAssets(fixtureRoot))).filter(
+			(assetPath) => assetPath.includes("Authoring")
+		);
 		for (const assetPath of assets) {
 			const name = basename(assetPath, ".uasset");
 			const saved = await Effect.runPromise(

@@ -16,6 +16,68 @@
 			"pixelFormat": "BGRA8"
 		}
 	},
+	"textureAudit": {
+		"contentRoot": "/Game/Fixture/Audits/Textures",
+		"source": "FixtureSource/Audits/textures.json",
+		"rules": "FixtureSource/Audits/texture-rules.json",
+		"textures": [
+			{
+				"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_World_256.T_Audit_World_256",
+				"width": 256,
+				"height": 256,
+				"sourceFormat": "TSF_BGRA8",
+				"textureGroup": "TEXTUREGROUP_World",
+				"compression": "TC_Default",
+				"sRGB": true,
+				"mipGeneration": "TMGS_FromTextureGroup",
+				"expectedFindingIds": []
+			},
+			{
+				"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_World_512x256.T_Audit_World_512x256",
+				"width": 512,
+				"height": 256,
+				"sourceFormat": "TSF_BGRA8",
+				"textureGroup": "TEXTUREGROUP_World",
+				"compression": "TC_Default",
+				"sRGB": true,
+				"mipGeneration": "TMGS_FromTextureGroup",
+				"expectedFindingIds": []
+			},
+			{
+				"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_UI_1024x512.T_Audit_UI_1024x512",
+				"width": 1024,
+				"height": 512,
+				"sourceFormat": "TSF_BGRA8",
+				"textureGroup": "TEXTUREGROUP_UI",
+				"compression": "TC_EditorIcon",
+				"sRGB": true,
+				"mipGeneration": "TMGS_NoMipmaps",
+				"expectedFindingIds": ["dimensions.ui_max_512"]
+			},
+			{
+				"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.T_Audit_NonPowerOfTwo_300x180",
+				"width": 300,
+				"height": 180,
+				"sourceFormat": "TSF_BGRA8",
+				"textureGroup": "TEXTUREGROUP_Effects",
+				"compression": "TC_Default",
+				"sRGB": false,
+				"mipGeneration": "TMGS_NoMipmaps",
+				"expectedFindingIds": ["dimensions.power_of_two"]
+			},
+			{
+				"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_Defaults_256.T_Audit_Defaults_256",
+				"width": 256,
+				"height": 256,
+				"sourceFormat": "TSF_BGRA8",
+				"textureGroup": "TEXTUREGROUP_World",
+				"compression": "TC_Default",
+				"sRGB": true,
+				"mipGeneration": "TMGS_FromTextureGroup",
+				"expectedFindingIds": []
+			}
+		]
+	},
 	"tables": [
 		{
 			"kind": "data-table",

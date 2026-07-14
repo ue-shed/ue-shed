@@ -46,6 +46,18 @@ TypeScript, Effect, SolidJS, StyleX, observability, and testing.
 
 ```powershell
 pnpm install
+pnpm showcase
+```
+
+The showcase opens the Workbench catalog with fixture presets for the three executable slices:
+headless DataTable authoring, saved-asset texture audits, and the live Camera Load Lab. Saved-asset
+inspection requires a compatible `uasset` reader; Camera Load Lab additionally requires the fixture
+running in Unreal. See [the showcase walkthrough](docs/showcase.md) for prerequisites and exact demo
+flows.
+
+For development and headless use:
+
+```powershell
 pnpm check
 pnpm ue-shed --help
 ```

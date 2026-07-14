@@ -5,14 +5,27 @@ import {
 	type CameraFeedServer,
 	type CameraFrame
 } from "@ue-shed/cameras";
+import {
+	scanTextureAudit,
+	type TextureAuditRunResult,
+	type TextureAuditScanError
+} from "@ue-shed/asset-audits";
 import type { CameraScheduleConfig } from "@ue-shed/protocol";
 import { Effect } from "effect";
-import electron, { type BrowserWindow as BrowserWindowInstance } from "electron/main";
+import {
+	BrowserWindow,
+	app,
+	dialog,
+	ipcMain,
+	type BrowserWindow as BrowserWindowInstance
+} from "electron/main";
+import { clipboard } from "electron";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { ShowcaseContext } from "./preload.js";
 
 const remoteControlEndpoint =
 	process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001";
-const { app, BrowserWindow, ipcMain } = electron;
 let feed: CameraFeedServer | undefined;
 let window: BrowserWindowInstance | undefined;
 const pendingPresentationFrames = new Map<number, CameraFrame>();
@@ -21,6 +34,29 @@ let presentationFramesSent = 0;
 let presentationReplacements = 0;
 let presentationBudgetMbPerSecond = 80;
 let nextPresentationAt = 0;
+
+ipcMain.handle("showcase:context", (): ShowcaseContext => {
+	const projectRoot = process.env.UE_SHED_PROJECT_ROOT;
+	const ruleFile = process.env.UE_SHED_TEXTURE_AUDIT_RULES;
+	const readerExecutable = process.env.UE_SHED_UASSET_EXECUTABLE;
+	return {
+		authoringCommand:
+			"pnpm ue-shed authoring inspect fixtures\\unreal-project\\Content\\Fixture\\Authoring\\DT_Scalars.uasset",
+		fixtureConfigured: Boolean(
+			projectRoot && ruleFile && existsSync(projectRoot) && existsSync(ruleFile)
+		),
+		...(projectRoot ? { projectRoot } : {}),
+		reader: readerExecutable ? "configured" : "path",
+		...(ruleFile ? { ruleFile } : {})
+	};
+});
+
+ipcMain.handle("showcase:copy", (_event, value: unknown): void => {
+	if (typeof value !== "string" || value.length > 4_096) {
+		throw new TypeError("Copy text must be a string no longer than 4,096 characters");
+	}
+	clipboard.writeText(value);
+});
 
 function schedulePresentationFrame() {
 	if (presentationTimer || pendingPresentationFrames.size === 0) return;
@@ -54,7 +90,7 @@ async function createWindow() {
 		minHeight: 720,
 		minWidth: 1120,
 		show: false,
-		title: "UE Shed · Camera Load Lab",
+		title: "UE Shed Workbench",
 		webPreferences: {
 			contextIsolation: true,
 			preload: join(import.meta.dirname, "preload.cjs"),
@@ -70,6 +106,60 @@ async function createWindow() {
 	window.once("ready-to-show", () => window?.show());
 	await window.loadFile(join(import.meta.dirname, "../renderer/index.html"));
 }
+
+async function runTextureScan(
+	projectRoot: string,
+	ruleFile: string
+): Promise<TextureAuditRunResult> {
+	try {
+		const report = await Effect.runPromise(scanTextureAudit({ projectRoot, ruleFile }));
+		return { status: "completed", report };
+	} catch (cause) {
+		const error = cause as Partial<TextureAuditScanError>;
+		return {
+			status: "failed",
+			error: {
+				code: error.code ?? "scan_failed",
+				message: error.message ?? "Texture audit failed.",
+				recovery: error.recovery ?? "Check the project, rule file, and saved-asset reader.",
+				retrySafe: error.retrySafe ?? true
+			}
+		};
+	}
+}
+
+ipcMain.handle(
+	"asset-audits:textures:configured-scan",
+	async (): Promise<TextureAuditRunResult> => {
+		const projectRoot = process.env.UE_SHED_PROJECT_ROOT;
+		const ruleFile = process.env.UE_SHED_TEXTURE_AUDIT_RULES;
+		if (!projectRoot || !ruleFile) return { status: "not_configured" };
+		return runTextureScan(projectRoot, ruleFile);
+	}
+);
+
+ipcMain.handle(
+	"asset-audits:textures:choose-and-scan",
+	async (): Promise<TextureAuditRunResult> => {
+		const projectChoice = await dialog.showOpenDialog(window!, {
+			properties: ["openDirectory"],
+			title: "Choose an Unreal project"
+		});
+		const projectRoot = projectChoice.filePaths[0];
+		if (projectChoice.canceled || !projectRoot) return { status: "cancelled" };
+		let ruleFile = process.env.UE_SHED_TEXTURE_AUDIT_RULES;
+		if (!ruleFile) {
+			const ruleChoice = await dialog.showOpenDialog(window!, {
+				filters: [{ name: "JSON rule set", extensions: ["json"] }],
+				properties: ["openFile"],
+				title: "Choose texture audit rules"
+			});
+			ruleFile = ruleChoice.filePaths[0];
+			if (ruleChoice.canceled || !ruleFile) return { status: "cancelled" };
+		}
+		return runTextureScan(projectRoot, ruleFile);
+	}
+);
 
 ipcMain.handle("camera:metrics", () => {
 	const metrics = feed?.getMetrics();

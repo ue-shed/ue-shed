@@ -7,17 +7,16 @@ The renderer uses SolidJS and composes shared StyleX themes/primitives with inde
 product-extension styles. Workbench may select a theme but must not repair extensions through global
 CSS overrides.
 
-The first implemented extension is Camera Load Lab: a SolidJS/StyleX wall backed only by
-`@ue-shed/cameras`. It can drive and observe up to 32 camera sources while presenting eight tiles at
-once behind an independent display-byte budget. Producer, transport, process-memory, and
-presentation measurements remain separate, and engine schedule controls use the public Remote
-Control adapter.
+Workbench opens on a showcase catalog for the three implemented proving slices: DataTable authoring,
+Texture Asset Audit, and Camera Load Lab. The catalog exposes each slice's runtime mode and readiness
+instead of assuming Unreal is running. Camera Load Lab can drive and observe up to 32 camera sources
+while presenting eight tiles at once behind an independent display-byte budget.
 
-Build and launch it with:
+From the repository root, launch the fixture-configured showcase with:
 
 ```text
-pnpm --filter @ue-shed/workbench build
-pnpm --filter @ue-shed/workbench start
+pnpm showcase
 ```
 
-The fixture game must be running with `/Game/Fixture/Cameras/L_CameraLoad` and Remote Control enabled.
+See [`docs/showcase.md`](../../docs/showcase.md) for the saved-asset reader, fixture, and live Unreal
+instructions. Direct Workbench build and start commands remain available for host development.

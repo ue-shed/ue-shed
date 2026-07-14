@@ -11,7 +11,9 @@
 	},
 	"dependencies": {
 		"@stylexjs/stylex": "^0.19.0",
+		"@ue-shed/asset-audits": "workspace:*",
 		"@ue-shed/cameras": "workspace:*",
+		"@ue-shed/extension-asset-audits": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"effect": "^3.22.0",
 		"solid-js": "^1.9.14"

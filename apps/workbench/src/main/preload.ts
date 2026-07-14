@@ -15,7 +15,25 @@ export interface WorkbenchCameraMetrics extends CameraFeedMetrics {
 	readonly presentationReplacements: number;
 }
 
+export interface ShowcaseContext {
+	readonly authoringCommand: string;
+	readonly fixtureConfigured: boolean;
+	readonly projectRoot?: string;
+	readonly reader: "configured" | "path";
+	readonly ruleFile?: string;
+}
+
 contextBridge.exposeInMainWorld("ueShed", {
+	showcase: {
+		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context"),
+		copy: (value: string): Promise<void> => ipcRenderer.invoke("showcase:copy", value)
+	},
+	assetAudits: {
+		loadConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:configured-scan"),
+		chooseProjectAndScan: (): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:choose-and-scan")
+	},
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),
 	getMetrics: (): Promise<WorkbenchCameraMetrics> => ipcRenderer.invoke("camera:metrics"),

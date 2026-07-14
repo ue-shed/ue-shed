@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { scanTextureAudit } from "@ue-shed/asset-audits";
 import {
 	appendCommandGroup,
 	acceptSaveResult,
@@ -21,6 +22,7 @@ import { Effect } from "effect";
 const help = `UE Shed — External tools for Unreal Engine development.
 
 Usage:
+  ue-shed audit textures <project-root> --rules <rule-file> [--reader <path>]
   ue-shed authoring inspect <asset> [--reader <path>]
   ue-shed authoring live inspect <endpoint> <table>
   ue-shed authoring session create <asset> <session-file> [--reader <path>]
@@ -49,6 +51,38 @@ function takeReader(args: readonly string[]): { args: string[]; reader?: string 
 
 function printJson(value: unknown): void {
 	process.stdout.write(`${JSON.stringify(value, null, "\t")}\n`);
+}
+
+async function audit(args: readonly string[]): Promise<void> {
+	const [kind, projectRoot, ...flags] = args;
+	if (kind !== "textures" || !projectRoot) {
+		throw new Error("audit textures requires a project root\n\n" + help);
+	}
+	let ruleFile: string | undefined;
+	let reader: string | undefined;
+	for (let index = 0; index < flags.length; index += 2) {
+		const flag = flags[index];
+		const value = flags[index + 1];
+		if (!flag || !value) throw new Error(`${flag ?? "Audit flag"} requires a value`);
+		if (flag === "--rules") {
+			if (ruleFile) throw new Error("--rules may only be provided once");
+			ruleFile = value;
+		} else if (flag === "--reader") {
+			if (reader) throw new Error("--reader may only be provided once");
+			reader = value;
+		} else {
+			throw new Error(`Unknown audit option: ${flag}`);
+		}
+	}
+	if (!ruleFile) throw new Error("audit textures requires --rules <rule-file>");
+	const report = await Effect.runPromise(
+		scanTextureAudit({
+			projectRoot,
+			ruleFile,
+			...(reader ? { readerExecutable: reader } : {})
+		})
+	);
+	printJson(report);
 }
 
 async function authoring(args: readonly string[]): Promise<void> {
@@ -176,6 +210,9 @@ async function authoring(args: readonly string[]): Promise<void> {
 async function main(args: readonly string[]): Promise<void> {
 	const [command, ...rest] = args;
 	switch (command) {
+		case "audit":
+			await audit(rest);
+			return;
 		case "authoring":
 			await authoring(rest);
 			return;

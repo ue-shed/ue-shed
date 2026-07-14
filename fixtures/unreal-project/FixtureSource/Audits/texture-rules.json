@@ -1,0 +1,18 @@
+{
+	"schemaVersion": 1,
+	"name": "UE Shed fixture texture rules",
+	"rules": [
+		{
+			"id": "dimensions.power_of_two",
+			"kind": "dimensions_power_of_two",
+			"severity": "warning"
+		},
+		{
+			"id": "dimensions.ui_max_512",
+			"kind": "max_dimension_for_texture_group",
+			"textureGroup": "TEXTUREGROUP_UI",
+			"maximum": 512,
+			"severity": "warning"
+		}
+	]
+}

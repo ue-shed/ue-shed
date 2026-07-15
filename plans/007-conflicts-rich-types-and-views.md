@@ -11,7 +11,7 @@
 - **Priority**: P1
 - **Effort**: XL (several multi-day vertical slices)
 - **Risk**: HIGH — merge semantics and rich serialization can lose authored meaning if guessed
-- **Depends on**: Plan 006
+- **Depends on**: Plans 006 and 015
 - **Planned at**: commit `52df5c0`, 2026-07-15
 
 ## Outcome

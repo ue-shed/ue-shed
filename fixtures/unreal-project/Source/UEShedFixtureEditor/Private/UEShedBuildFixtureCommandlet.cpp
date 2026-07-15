@@ -12,6 +12,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Factories/WorldFactory.h"
 #include "HAL/FileManager.h"
+#include "Internationalization/StringTable.h"
+#include "Internationalization/StringTableCore.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Misc/FileHelper.h"
@@ -479,6 +481,83 @@ bool VerifyComposite()
 	return Composite->GetRowMap().Num() == ExpectedRows.Num();
 }
 
+bool GenerateGameTextCorpus()
+{
+	static const TCHAR* StringTablePackageName = TEXT("/Game/Fixture/Text/ST_Game");
+	static const TCHAR* StringTableAssetName = TEXT("ST_Game");
+	UPackage* StringTablePackage = FindOrCreatePackage(StringTablePackageName);
+	if (StringTablePackage == nullptr) return false;
+	UStringTable* StringTable = FindObject<UStringTable>(StringTablePackage, StringTableAssetName);
+	const bool bStringTableCreated = StringTable == nullptr;
+	if (bStringTableCreated)
+	{
+		StringTable = NewObject<UStringTable>(StringTablePackage, StringTableAssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+	}
+	FStringTableRef MutableTable = StringTable->GetMutableStringTable();
+	MutableTable->ClearSourceStrings();
+	MutableTable->SetNamespace(FTextKey(TEXT("Fixture.StringTable")));
+	MutableTable->SetSourceString(FTextKey(TEXT("PromptContinue")), TEXT("Continue"));
+	MutableTable->SetSourceString(FTextKey(TEXT("StatusSaving")), TEXT("Saving progress…"));
+	MutableTable->SetSourceString(FTextKey(TEXT("PromptHold")), TEXT("Hold to skip"));
+	if (bStringTableCreated) FAssetRegistryModule::AssetCreated(StringTable);
+	StringTablePackage->MarkPackageDirty();
+	if (!SaveAsset(StringTablePackage, StringTable)) return false;
+
+	static const TCHAR* TextAssetPackageName = TEXT("/Game/Fixture/Text/DA_TextOccurrences");
+	static const TCHAR* TextAssetName = TEXT("DA_TextOccurrences");
+	UPackage* TextAssetPackage = FindOrCreatePackage(TextAssetPackageName);
+	if (TextAssetPackage == nullptr) return false;
+	UUEShedFixtureTextAsset* TextAsset =
+		FindObject<UUEShedFixtureTextAsset>(TextAssetPackage, TextAssetName);
+	const bool bTextAssetCreated = TextAsset == nullptr;
+	if (bTextAssetCreated)
+	{
+		TextAsset = NewObject<UUEShedFixtureTextAsset>(TextAssetPackage, TextAssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+	}
+	const FText Shared = FText::ChangeKey(FTextKey(TEXT("Fixture.Shared")),
+		FTextKey(TEXT("SharedHoldPrompt")), FText::FromString(TEXT("Hold to skip")));
+	TextAsset->SharedPrimary = Shared;
+	TextAsset->SharedSecondary = Shared;
+	TextAsset->EqualSourceFirst = FText::ChangeKey(FTextKey(TEXT("Fixture.Context")),
+		FTextKey(TEXT("ConfirmAction")), FText::FromString(TEXT("Confirm")));
+	TextAsset->EqualSourceSecond = FText::ChangeKey(FTextKey(TEXT("Fixture.Context")),
+		FTextKey(TEXT("ConfirmDeletion")), FText::FromString(TEXT("Confirm")));
+	TextAsset->StringTableReference = FText::FromStringTable(
+		StringTable->GetStringTableId(), FTextKey(TEXT("PromptContinue")));
+	if (bTextAssetCreated) FAssetRegistryModule::AssetCreated(TextAsset);
+	TextAssetPackage->MarkPackageDirty();
+	return SaveAsset(TextAssetPackage, TextAsset);
+}
+
+bool VerifyGameTextCorpus()
+{
+	const UStringTable* StringTable = LoadObject<UStringTable>(
+		nullptr, TEXT("/Game/Fixture/Text/ST_Game.ST_Game"));
+	if (StringTable == nullptr || StringTable->GetStringTable()->GetNamespace()
+		!= TEXT("Fixture.StringTable")) return false;
+	FString ContinueSource;
+	if (!StringTable->GetStringTable()->GetSourceString(
+		FTextKey(TEXT("PromptContinue")), ContinueSource)
+		|| ContinueSource != TEXT("Continue")) return false;
+
+	const UUEShedFixtureTextAsset* TextAsset = LoadObject<UUEShedFixtureTextAsset>(
+		nullptr, TEXT("/Game/Fixture/Text/DA_TextOccurrences.DA_TextOccurrences"));
+	if (TextAsset == nullptr) return false;
+	const TOptional<FString> SharedNamespace = FTextInspector::GetNamespace(TextAsset->SharedPrimary);
+	const TOptional<FString> SharedKey = FTextInspector::GetKey(TextAsset->SharedPrimary);
+	return SharedNamespace == FString(TEXT("Fixture.Shared"))
+		&& SharedKey == FString(TEXT("SharedHoldPrompt"))
+		&& FTextInspector::GetNamespace(TextAsset->SharedSecondary) == SharedNamespace
+		&& FTextInspector::GetKey(TextAsset->SharedSecondary) == SharedKey
+		&& TextAsset->EqualSourceFirst.ToString() == TEXT("Confirm")
+		&& TextAsset->EqualSourceSecond.ToString() == TEXT("Confirm")
+		&& FTextInspector::GetKey(TextAsset->EqualSourceFirst)
+			!= FTextInspector::GetKey(TextAsset->EqualSourceSecond)
+		&& TextAsset->StringTableReference.IsFromStringTable();
+}
+
 bool GenerateCameraMap()
 {
 	static const TCHAR* PackageName = TEXT("/Game/Fixture/Cameras/L_CameraLoad");
@@ -728,6 +807,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			Succeeded = GenerateTable(Definition) && Succeeded;
 		}
 		Succeeded = GenerateComposite() && Succeeded;
+		Succeeded = GenerateGameTextCorpus() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 	}
@@ -738,6 +818,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			Succeeded = VerifyTable(Definition) && Succeeded;
 		}
 		Succeeded = VerifyComposite() && Succeeded;
+		Succeeded = VerifyGameTextCorpus() && Succeeded;
 		Succeeded = VerifyCameraMap() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
 	}

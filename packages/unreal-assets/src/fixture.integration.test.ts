@@ -54,7 +54,7 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 		);
 		expect(inspections).toHaveLength(5);
 		for (const inspection of inspections) {
-			expect(inspection.schema_version).toBe(6);
+			expect(inspection.schema_version).toBe(7);
 			const texture = inspection.assets.find(
 				(asset) =>
 					asset.kind === "UObject" && asset.class_path === "/Script/Engine.Texture2D"

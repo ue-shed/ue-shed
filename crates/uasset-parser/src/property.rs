@@ -60,9 +60,16 @@ pub enum RawReason {
     DecoderRejected(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TextHistory {
+    None,
+    Base { namespace: String, key: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TextValue {
     pub source: String,
+    pub history: TextHistory,
 }
 
 #[derive(Clone, Debug, PartialEq)]

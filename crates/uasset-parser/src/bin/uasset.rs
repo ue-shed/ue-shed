@@ -19,7 +19,7 @@ use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageSummary};
 
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_MALFORMED: u8 = 2;
 const EXIT_UNSUPPORTED: u8 = 3;
@@ -767,7 +767,7 @@ impl AuthoringValueOutput {
             PropertyValueOutput::String { value } => Self::String {
                 value: value.clone(),
             },
-            PropertyValueOutput::Text { value } => Self::Text {
+            PropertyValueOutput::Text { value, .. } => Self::Text {
                 value: value.clone(),
             },
             PropertyValueOutput::Vector { x, y, z } => Self::Vector {
@@ -1334,9 +1334,7 @@ impl PropertyOutput {
             PropertyValue::String(value) => PropertyValueOutput::String {
                 value: value.clone(),
             },
-            PropertyValue::Text(text) => PropertyValueOutput::Text {
-                value: text.source.clone(),
-            },
+            PropertyValue::Text(text) => text_value_output(text),
             PropertyValue::Vector(vector) => PropertyValueOutput::Vector {
                 x: vector.x,
                 y: vector.y,
@@ -1405,25 +1403,72 @@ struct MapEntryOutput {
 #[derive(Serialize)]
 #[serde(tag = "value_kind", rename_all = "snake_case")]
 enum PropertyValueOutput {
-    Bool { value: bool },
-    Int { value: i64 },
-    Uint { value: u64 },
-    Float { value: f32 },
-    Double { value: f64 },
-    Name { value: String },
-    Enum { value: String },
-    String { value: String },
-    Text { value: String },
-    Vector { x: f32, y: f32, z: f32 },
-    IntPoint { x: i32, y: i32 },
-    ObjectRef { value: Option<String> },
-    Guid { value: String },
-    SoftObjectPath { value: String },
-    Array { values: Vec<PropertyValueOutput> },
-    Set { values: Vec<PropertyValueOutput> },
-    Map { entries: Vec<MapEntryOutput> },
-    Struct { properties: Vec<PropertyOutput> },
-    Raw { reason: String, size: u64 },
+    Bool {
+        value: bool,
+    },
+    Int {
+        value: i64,
+    },
+    Uint {
+        value: u64,
+    },
+    Float {
+        value: f32,
+    },
+    Double {
+        value: f64,
+    },
+    Name {
+        value: String,
+    },
+    Enum {
+        value: String,
+    },
+    String {
+        value: String,
+    },
+    Text {
+        value: String,
+        history: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        namespace: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+    },
+    Vector {
+        x: f32,
+        y: f32,
+        z: f32,
+    },
+    IntPoint {
+        x: i32,
+        y: i32,
+    },
+    ObjectRef {
+        value: Option<String>,
+    },
+    Guid {
+        value: String,
+    },
+    SoftObjectPath {
+        value: String,
+    },
+    Array {
+        values: Vec<PropertyValueOutput>,
+    },
+    Set {
+        values: Vec<PropertyValueOutput>,
+    },
+    Map {
+        entries: Vec<MapEntryOutput>,
+    },
+    Struct {
+        properties: Vec<PropertyOutput>,
+    },
+    Raw {
+        reason: String,
+        size: u64,
+    },
 }
 
 fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput {
@@ -1442,9 +1487,7 @@ fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput
         PropertyValue::String(value) => PropertyValueOutput::String {
             value: value.clone(),
         },
-        PropertyValue::Text(text) => PropertyValueOutput::Text {
-            value: text.source.clone(),
-        },
+        PropertyValue::Text(text) => text_value_output(text),
         PropertyValue::Vector(vector) => PropertyValueOutput::Vector {
             x: vector.x,
             y: vector.y,
@@ -1498,6 +1541,25 @@ fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput
     }
 }
 
+fn text_value_output(text: &uasset_parser::property::TextValue) -> PropertyValueOutput {
+    use uasset_parser::property::TextHistory;
+
+    match &text.history {
+        TextHistory::None => PropertyValueOutput::Text {
+            value: text.source.clone(),
+            history: "none",
+            namespace: None,
+            key: None,
+        },
+        TextHistory::Base { namespace, key } => PropertyValueOutput::Text {
+            value: text.source.clone(),
+            history: "base",
+            namespace: Some(namespace.clone()),
+            key: Some(key.clone()),
+        },
+    }
+}
+
 impl PropertyValueOutput {
     fn render(&self) -> String {
         match self {
@@ -1509,7 +1571,7 @@ impl PropertyValueOutput {
             Self::Name { value } => value.clone(),
             Self::Enum { value } => value.clone(),
             Self::String { value } => format!("{value:?}"),
-            Self::Text { value } => format!("{value:?}"),
+            Self::Text { value, .. } => format!("{value:?}"),
             Self::Vector { x, y, z } => format!("({x}, {y}, {z})"),
             Self::IntPoint { x, y } => format!("({x}, {y})"),
             Self::ObjectRef { value } => value.clone().unwrap_or_else(|| "null".to_owned()),

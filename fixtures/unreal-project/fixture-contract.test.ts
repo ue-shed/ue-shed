@@ -27,6 +27,24 @@ type FixtureContract = {
 	readonly fixtureVersion: string;
 	readonly engine: { readonly major: number; readonly minor: number };
 	readonly contentRoot: string;
+	readonly gameText: {
+		readonly contentRoot: string;
+		readonly stringTable: {
+			readonly assetPath: string;
+			readonly namespace: string;
+			readonly entries: readonly string[];
+		};
+		readonly occurrenceAsset: {
+			readonly assetPath: string;
+			readonly sharedIdentity: {
+				readonly namespace: string;
+				readonly key: string;
+				readonly occurrences: number;
+			};
+			readonly equalSourceDistinctKeys: readonly string[];
+			readonly stringTableReference: string;
+		};
+	};
 	readonly cameraLoad: {
 		readonly map: string;
 		readonly movingActors: number;
@@ -76,6 +94,7 @@ function readContract(): FixtureContract {
 		typeof value.fixtureVersion !== "string" ||
 		!isRecord(value.engine) ||
 		!isRecord(value.cameraLoad) ||
+		!isRecord(value.gameText) ||
 		!isRecord(value.textureAudit) ||
 		typeof value.engine.major !== "number" ||
 		typeof value.engine.minor !== "number" ||
@@ -136,6 +155,24 @@ describe("generic Unreal fixture contract", () => {
 		expect(existsSync(join(fixtureRoot, "Content/Fixture/Cameras/L_CameraLoad.umap"))).toBe(
 			true
 		);
+	});
+
+	it("declares identity-focused game text evidence", () => {
+		expect(contract.gameText.contentRoot).toBe("/Game/Fixture/Text");
+		expect(contract.gameText.stringTable).toEqual({
+			assetPath: "/Game/Fixture/Text/ST_Game.ST_Game",
+			namespace: "Fixture.StringTable",
+			entries: ["PromptContinue", "StatusSaving", "PromptHold"]
+		});
+		expect(contract.gameText.occurrenceAsset.sharedIdentity.occurrences).toBe(2);
+		expect(new Set(contract.gameText.occurrenceAsset.equalSourceDistinctKeys).size).toBe(2);
+		for (const assetPath of [
+			contract.gameText.stringTable.assetPath,
+			contract.gameText.occurrenceAsset.assetPath
+		]) {
+			expect(assetPath.startsWith(`${contract.gameText.contentRoot}/`)).toBe(true);
+			expect(existsSync(generatedAssetPath(assetPath)), assetPath).toBe(true);
+		}
 	});
 
 	it("keeps every ordinary table reproducible from reviewable source", () => {

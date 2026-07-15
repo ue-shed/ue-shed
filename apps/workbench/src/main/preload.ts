@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld("ueShed", {
 		preview: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:preview", objectPath)
 	},
+	gameText: {
+		loadConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:configured-scan"),
+		chooseProjectAndScan: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:choose-and-scan")
+	},
 	authoring: {
 		beginSession: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("authoring:session:begin", objectPath),

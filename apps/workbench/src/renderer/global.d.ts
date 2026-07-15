@@ -18,6 +18,10 @@ declare global {
 				readonly chooseProjectAndScan: () => Promise<unknown>;
 				readonly preview: (objectPath: string) => Promise<unknown>;
 			};
+			readonly gameText: {
+				readonly loadConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndScan: () => Promise<unknown>;
+			};
 			readonly authoring: {
 				readonly beginSession: (objectPath: string) => Promise<unknown>;
 				readonly editSession: (intent: AuthoringSetCellsIntent) => Promise<unknown>;

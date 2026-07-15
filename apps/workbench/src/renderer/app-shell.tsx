@@ -2,16 +2,19 @@ import * as stylex from "@stylexjs/stylex";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { AuthoringRoute } from "@ue-shed/extension-data-authoring";
+import { GameTextRoute } from "@ue-shed/extension-game-text";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
 import type { ShowcaseContext } from "../main/preload.js";
 import { assetAuditsClient } from "./asset-audits-client.js";
 import { authoringClient } from "./authoring-client.js";
+import { gameTextClient } from "./game-text-client.js";
 import { CameraLab } from "./camera-lab.js";
 
 const routes = [
 	{ href: "#/", label: "Showcase", route: "#/" },
 	{ href: "#/authoring", label: "Data Authoring", route: "#/authoring" },
+	{ href: "#/game-text", label: "Game Text", route: "#/game-text" },
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/camera-lab", label: "Camera Lab", route: "#/camera-lab" }
 ] as const;
@@ -45,6 +48,15 @@ const demos = [
 			"Drive 32 camera sources through a bounded data plane and see where scheduling, readback, or presentation bends.",
 		capabilities: ["bounded frames", "pipeline isolation", "live telemetry"],
 		tone: "blue" as const
+	},
+	{
+		index: "04",
+		kind: "HEADLESS · LANGUAGE CORPUS",
+		title: "Game Text Workbench",
+		description:
+			"Search player-facing language across saved DataTables, String Tables, and asset properties without flattening Unreal identity.",
+		capabilities: ["identity-aware search", "occurrence evidence", "coverage gaps"],
+		tone: "coral" as const
 	}
 ] as const;
 
@@ -92,6 +104,9 @@ export function AppShell() {
 				</Match>
 				<Match when={route() === "#/asset-audits/textures"}>
 					<TextureAuditRoute client={assetAuditsClient} />
+				</Match>
+				<Match when={route() === "#/game-text"}>
+					<GameTextRoute client={gameTextClient} />
 				</Match>
 				<Match when={route() === "#/camera-lab"}>
 					<CameraLab />
@@ -177,6 +192,11 @@ function ShowcaseHome() {
 							<Show when={demo.index === "03"}>
 								<a href="#/camera-lab" {...stylex.props(styles.action)}>
 									OPEN LOAD LAB <span>→</span>
+								</a>
+							</Show>
+							<Show when={demo.index === "04"}>
+								<a href="#/game-text" {...stylex.props(styles.action)}>
+									OPEN CORPUS <span>→</span>
 								</a>
 							</Show>
 						</article>
@@ -328,7 +348,7 @@ const styles = stylex.create({
 	statusDot: { width: 7, height: 7, borderRadius: "50%" },
 	ready: { backgroundColor: "#8fcf71", boxShadow: "0 0 10px #8fcf7166" },
 	optional: { backgroundColor: "#715f4c" },
-	demoGrid: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 },
+	demoGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 },
 	demo: {
 		minHeight: 350,
 		padding: 22,
@@ -340,6 +360,7 @@ const styles = stylex.create({
 	green: { borderTop: "3px solid #91c976" },
 	amber: { borderTop: "3px solid #d98f53" },
 	blue: { borderTop: "3px solid #70a9b2" },
+	coral: { borderTop: "3px solid #e76b49" },
 	demoTop: { display: "flex", justifyContent: "space-between", alignItems: "center" },
 	demoIndex: { fontFamily: "Georgia, serif", fontSize: 30, color: "#59615b" },
 	kind: { color: "#79827c", fontSize: 9, letterSpacing: "0.12em" },

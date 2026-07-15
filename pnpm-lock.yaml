@@ -38,6 +38,9 @@ importers:
       '@ue-shed/authoring-catalog':
         specifier: workspace:*
         version: link:../../packages/authoring-catalog
+      '@ue-shed/game-text':
+        specifier: workspace:*
+        version: link:../../packages/game-text
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -77,6 +80,12 @@ importers:
       '@ue-shed/extension-data-authoring':
         specifier: workspace:*
         version: link:../../extensions/data-authoring
+      '@ue-shed/extension-game-text':
+        specifier: workspace:*
+        version: link:../../extensions/game-text
+      '@ue-shed/game-text':
+        specifier: workspace:*
+        version: link:../../packages/game-text
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -154,6 +163,18 @@ importers:
         specifier: ^1.9.14
         version: 1.9.14
 
+  extensions/game-text:
+    dependencies:
+      '@stylexjs/stylex':
+        specifier: ^0.19.0
+        version: 0.19.0
+      '@ue-shed/game-text':
+        specifier: workspace:*
+        version: link:../../packages/game-text
+      solid-js:
+        specifier: ^1.9.14
+        version: 1.9.14
+
   packages/asset-audits:
     dependencies:
       '@ue-shed/protocol':
@@ -207,6 +228,15 @@ importers:
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../protocol
+      effect:
+        specifier: ^3.22.0
+        version: 3.22.0
+
+  packages/game-text:
+    dependencies:
+      '@ue-shed/unreal-assets':
+        specifier: workspace:*
+        version: link:../unreal-assets
       effect:
         specifier: ^3.22.0
         version: 3.22.0

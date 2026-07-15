@@ -24,6 +24,7 @@ import {
 	type AuthoringSessionResult,
 	type AuthoringSessionView
 } from "@ue-shed/authoring-sdk";
+import { scanTextCorpus, type TextCorpusRunResult } from "@ue-shed/game-text";
 import { decodeCompanionCapabilityManifest, type CameraScheduleConfig } from "@ue-shed/protocol";
 import { discoverSavedTables, readSavedTable } from "@ue-shed/unreal-assets";
 import { connectUnrealAuthoring, type UnrealAuthoringConnection } from "@ue-shed/unreal-connection";
@@ -494,6 +495,51 @@ async function runTextureScan(
 		};
 	}
 }
+
+async function runGameTextScan(projectRoot: string): Promise<TextCorpusRunResult> {
+	try {
+		const readerExecutable = process.env.UE_SHED_UASSET_EXECUTABLE;
+		const corpus = await Effect.runPromise(
+			scanTextCorpus({
+				projectRoot,
+				...(readerExecutable ? { readerExecutable } : {})
+			})
+		);
+		return { status: "completed", corpus };
+	} catch (cause) {
+		const error = cause as {
+			code?: "invalid_project" | "scan_limit_exceeded";
+			message?: string;
+			recovery?: string;
+			retrySafe?: boolean;
+		};
+		return {
+			status: "failed",
+			error: {
+				code: error.code ?? "invalid_project",
+				message: error.message ?? "Game text scan failed.",
+				recovery:
+					error.recovery ??
+					"Choose a readable Unreal project and verify the saved-asset reader.",
+				retrySafe: error.retrySafe ?? true
+			}
+		};
+	}
+}
+
+ipcMain.handle("game-text:configured-scan", async (): Promise<TextCorpusRunResult> => {
+	const projectRoot = process.env.UE_SHED_PROJECT_ROOT;
+	return projectRoot ? runGameTextScan(projectRoot) : { status: "not_configured" };
+});
+
+ipcMain.handle("game-text:choose-and-scan", async (): Promise<TextCorpusRunResult> => {
+	const choice = await dialog.showOpenDialog(window!, {
+		properties: ["openDirectory"],
+		title: "Choose an Unreal project for Game Text"
+	});
+	const projectRoot = choice.filePaths[0];
+	return choice.canceled || !projectRoot ? { status: "cancelled" } : runGameTextScan(projectRoot);
+});
 
 ipcMain.handle(
 	"asset-audits:textures:configured-scan",

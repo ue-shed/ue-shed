@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataAsset.h"
 #include "Engine/DataTable.h"
 #include "UEShedFixtureTypes.generated.h"
 
@@ -127,4 +128,26 @@ struct UESHEDFIXTURE_API FUEShedFixtureOpaqueRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
 	FIntPoint OpaqueValue = FIntPoint::ZeroValue;
+};
+
+UCLASS(BlueprintType)
+class UESHEDFIXTURE_API UUEShedFixtureTextAsset : public UDataAsset
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	FText SharedPrimary;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	FText SharedSecondary;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	FText EqualSourceFirst;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	FText EqualSourceSecond;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fixture")
+	FText StringTableReference;
 };

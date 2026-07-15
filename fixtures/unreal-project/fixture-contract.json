@@ -6,6 +6,24 @@
 		"minor": 7
 	},
 	"contentRoot": "/Game/Fixture/Authoring",
+	"gameText": {
+		"contentRoot": "/Game/Fixture/Text",
+		"stringTable": {
+			"assetPath": "/Game/Fixture/Text/ST_Game.ST_Game",
+			"namespace": "Fixture.StringTable",
+			"entries": ["PromptContinue", "StatusSaving", "PromptHold"]
+		},
+		"occurrenceAsset": {
+			"assetPath": "/Game/Fixture/Text/DA_TextOccurrences.DA_TextOccurrences",
+			"sharedIdentity": {
+				"namespace": "Fixture.Shared",
+				"key": "SharedHoldPrompt",
+				"occurrences": 2
+			},
+			"equalSourceDistinctKeys": ["ConfirmAction", "ConfirmDeletion"],
+			"stringTableReference": "PromptContinue"
+		}
+	},
 	"cameraLoad": {
 		"map": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad",
 		"movingActors": 32,

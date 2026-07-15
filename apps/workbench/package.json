@@ -18,6 +18,8 @@
 		"@ue-shed/cameras": "workspace:*",
 		"@ue-shed/extension-asset-audits": "workspace:*",
 		"@ue-shed/extension-data-authoring": "workspace:*",
+		"@ue-shed/extension-game-text": "workspace:*",
+		"@ue-shed/game-text": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",
 		"@ue-shed/unreal-assets": "workspace:*",

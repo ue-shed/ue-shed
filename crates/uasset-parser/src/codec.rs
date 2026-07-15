@@ -4,7 +4,7 @@ use crate::archive::Reader;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
     IntPointValue, MapEntry, PropertyError, PropertyRecord, PropertyStream, PropertyTagFlags,
-    PropertyTypeName, PropertyValue, RawReason, TextValue, VectorValue,
+    PropertyTypeName, PropertyValue, RawReason, TextHistory, TextValue, VectorValue,
     read_tagged_property_stream,
 };
 
@@ -719,14 +719,18 @@ fn decode_text_value(
             read_archive_bool(payload, &format!("{path}.CultureInvariant"))?;
         return Ok(Some(TextValue {
             source: String::new(),
+            history: TextHistory::None,
         }));
     }
 
     if history_type == 0 {
-        let _namespace = payload.read_fstring(&format!("{path}.Namespace"))?;
-        let _key = payload.read_fstring(&format!("{path}.Key"))?;
+        let namespace = payload.read_fstring(&format!("{path}.Namespace"))?;
+        let key = payload.read_fstring(&format!("{path}.Key"))?;
         let source = payload.read_fstring(&format!("{path}.SourceString"))?;
-        return Ok(Some(TextValue { source }));
+        return Ok(Some(TextValue {
+            source,
+            history: TextHistory::Base { namespace, key },
+        }));
     }
 
     Ok(None)
@@ -778,7 +782,7 @@ mod tests {
     use crate::package::test_package;
     use crate::property::{
         PropertyError, PropertyErrorKind, PropertyRecord, PropertyStream, PropertyTagFlags,
-        PropertyTypeName, PropertyValue, RawReason, TextValue, VectorValue,
+        PropertyTypeName, PropertyValue, RawReason, TextHistory, TextValue, VectorValue,
         read_tagged_property_stream,
     };
     use crate::schema::{ClassSchema, SchemaProvider, StructSchema};
@@ -1051,6 +1055,7 @@ mod tests {
             value,
             PropertyValue::Text(TextValue {
                 source: String::new(),
+                history: TextHistory::None,
             })
         );
     }
@@ -1070,6 +1075,10 @@ mod tests {
             value,
             PropertyValue::Text(TextValue {
                 source: "Hello".to_owned(),
+                history: TextHistory::Base {
+                    namespace: String::new(),
+                    key: "deadbeef".to_owned(),
+                },
             })
         );
     }

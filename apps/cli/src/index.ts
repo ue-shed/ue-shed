@@ -16,6 +16,7 @@ import {
 	workingTable
 } from "@ue-shed/authoring";
 import { discoverAuthoringProjectCatalog } from "@ue-shed/authoring-catalog";
+import { scanTextCorpus, searchTextCorpus } from "@ue-shed/game-text";
 import { CURRENT_PROTOCOL_VERSION, decodeAuthoringValue } from "@ue-shed/protocol";
 import { discoverSavedTables, readSavedTable } from "@ue-shed/unreal-assets";
 import { connectUnrealAuthoring } from "@ue-shed/unreal-connection";
@@ -45,6 +46,8 @@ Usage:
   ue-shed authoring apply <session-file> <endpoint>
   ue-shed authoring apply-status <endpoint> <operation-id>
   ue-shed authoring save <session-file> <endpoint>
+  ue-shed text scan <project-root> [--reader <path>]
+  ue-shed text search <project-root> <query> [--reader <path>]
   ue-shed version
   ue-shed help
 
@@ -550,6 +553,34 @@ async function authoring(args: readonly string[]): Promise<void> {
 	throw new Error(`Unknown authoring command\n\n${help}`);
 }
 
+async function textCorpus(args: readonly string[]): Promise<void> {
+	const parsed = takeReader(args);
+	const [action, projectRoot, ...queryParts] = parsed.args;
+	if ((action !== "scan" && action !== "search") || !projectRoot) {
+		throw new Error("text requires scan <project-root> or search <project-root> <query>");
+	}
+	const corpus = await Effect.runPromise(
+		scanTextCorpus({
+			projectRoot,
+			...(parsed.reader ? { readerExecutable: parsed.reader } : {})
+		})
+	);
+	if (action === "scan") {
+		printJson(corpus);
+		return;
+	}
+	const query = queryParts.join(" ").trim();
+	if (!query) throw new Error("text search requires a non-empty query");
+	printJson({
+		schemaVersion: corpus.schemaVersion,
+		status: corpus.status,
+		query,
+		coverage: corpus.coverage,
+		matches: searchTextCorpus(corpus, query),
+		diagnostics: corpus.diagnostics
+	});
+}
+
 async function main(args: readonly string[]): Promise<void> {
 	const [command, ...rest] = args;
 	switch (command) {
@@ -558,6 +589,9 @@ async function main(args: readonly string[]): Promise<void> {
 			return;
 		case "authoring":
 			await authoring(rest);
+			return;
+		case "text":
+			await textCorpus(rest);
 			return;
 		case "version":
 		case "--version":

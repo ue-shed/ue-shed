@@ -44,8 +44,20 @@ export type SavedPropertyValue =
 	| { readonly value_kind: "int" | "uint"; readonly value: number }
 	| { readonly value_kind: "float" | "double"; readonly value: number }
 	| {
-			readonly value_kind: "name" | "enum" | "string" | "text" | "guid" | "soft_object_path";
+			readonly value_kind: "name" | "enum" | "string" | "guid" | "soft_object_path";
 			readonly value: string;
+	  }
+	| {
+			readonly value_kind: "text";
+			readonly value: string;
+			readonly history: "none";
+	  }
+	| {
+			readonly value_kind: "text";
+			readonly value: string;
+			readonly history: "base";
+			readonly namespace: string;
+			readonly key: string;
 	  }
 	| { readonly value_kind: "object_ref"; readonly value: string | null }
 	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
@@ -74,7 +86,7 @@ const SavedProperty: Schema.Schema<SavedProperty> = Schema.suspend(() =>
 	Schema.extend(SavedPropertyValue, Schema.Struct({ name: Schema.String, type: Schema.String }))
 ).annotations({ identifier: "SavedProperty" });
 
-const stringKinds = ["name", "enum", "string", "text", "guid", "soft_object_path"] as const;
+const stringKinds = ["name", "enum", "string", "guid", "soft_object_path"] as const;
 
 const SavedPropertyValueUnion: Schema.Schema<SavedPropertyValue> = Schema.Union(
 	Schema.Struct({ value_kind: Schema.Literal("bool"), value: Schema.Boolean }),
@@ -83,6 +95,18 @@ const SavedPropertyValueUnion: Schema.Schema<SavedPropertyValue> = Schema.Union(
 	...stringKinds.map((kind) =>
 		Schema.Struct({ value_kind: Schema.Literal(kind), value: Schema.String })
 	),
+	Schema.Struct({
+		value_kind: Schema.Literal("text"),
+		value: Schema.String,
+		history: Schema.Literal("none")
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literal("text"),
+		value: Schema.String,
+		history: Schema.Literal("base"),
+		namespace: Schema.String,
+		key: Schema.String
+	}),
 	Schema.Struct({
 		value_kind: Schema.Literal("object_ref"),
 		value: Schema.NullOr(Schema.String)
@@ -118,7 +142,7 @@ const SavedPropertyValueUnion: Schema.Schema<SavedPropertyValue> = Schema.Union(
 );
 
 export const SavedAssetInspection = Schema.Struct({
-	schema_version: Schema.Literal(6),
+	schema_version: Schema.Literal(7),
 	status: Schema.Literal("ok", "partial"),
 	path: Schema.String,
 	package: Schema.Struct({
@@ -136,6 +160,14 @@ export const SavedAssetInspection = Schema.Struct({
 	}),
 	assets: Schema.Array(
 		Schema.Union(
+			Schema.Struct({
+				kind: Schema.Literal("StringTable"),
+				object_path: Schema.String,
+				string_table_namespace: Schema.String,
+				string_table_entries: Schema.Array(
+					Schema.Struct({ key: Schema.String, source: Schema.String })
+				)
+			}),
 			Schema.Struct({
 				kind: Schema.Literal("UObject"),
 				object_path: Schema.String,
@@ -192,7 +224,7 @@ export const SavedAssetCatalogInspection = Schema.Struct({
 	),
 	package: Schema.Struct({ name: Schema.String }),
 	path: Schema.String,
-	schema_version: Schema.Literal(6),
+	schema_version: Schema.Literal(7),
 	status: Schema.Literal("ok", "partial")
 });
 export type SavedAssetCatalogInspection = Schema.Schema.Type<typeof SavedAssetCatalogInspection>;

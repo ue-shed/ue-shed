@@ -23,7 +23,7 @@ describe("saved DataTable catalog", () => {
 			],
 			package: { name: "/Game/Data/DT_Items" },
 			path: "C:/Project/Content/Data/DT_Items.uasset",
-			schema_version: 6,
+			schema_version: 7,
 			status: "ok"
 		});
 
@@ -43,7 +43,7 @@ describe("saved DataTable catalog", () => {
 			decode_errors: [{ message: "unsupported field", object_path: "/Game/Data/DT_Partial" }],
 			package: { name: "/Game/Data/DT_Partial" },
 			path: "C:/Project/Content/Data/DT_Partial.uasset",
-			schema_version: 6,
+			schema_version: 7,
 			status: "partial"
 		});
 

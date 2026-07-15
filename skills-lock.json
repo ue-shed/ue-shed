@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "effect": {
+      "source": "kitlangton/skills",
+      "sourceType": "github",
+      "skillPath": "skills/effect/SKILL.md",
+      "computedHash": "fc4d31101425b3f40813388b51fec8786d9b6d8a488828774a78b3ccbb47eef5"
+    }
+  }
+}

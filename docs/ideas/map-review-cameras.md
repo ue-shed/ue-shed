@@ -1,6 +1,6 @@
 # Map review camera system
 
-> Status: product vision with technical footholds
+> Status: graduated to the [Map Review product plan](../products/map-review.md)
 
 ## Ambition
 

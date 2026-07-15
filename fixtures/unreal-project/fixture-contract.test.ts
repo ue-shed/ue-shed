@@ -4,14 +4,27 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-type DataTableContract = {
+type DataTableContractBase = {
 	readonly kind: "data-table";
 	readonly assetPath: string;
 	readonly rowStruct: string;
-	readonly source: string;
-	readonly rows: readonly string[];
 	readonly fieldFamilies: readonly string[];
 };
+
+type SourceDataTableContract = DataTableContractBase & {
+	readonly source: string;
+	readonly rows: readonly string[];
+};
+
+type GeneratedDataTableContract = DataTableContractBase & {
+	readonly generatedRows: {
+		readonly generator: "scalar-load-v1";
+		readonly count: number;
+		readonly namePrefix: string;
+	};
+};
+
+type DataTableContract = SourceDataTableContract | GeneratedDataTableContract;
 
 type CompositeTableContract = {
 	readonly kind: "composite-data-table";
@@ -141,7 +154,9 @@ describe("generic Unreal fixture contract", () => {
 		for (const table of contract.tables) {
 			expect(table.assetPath.startsWith(`${contract.contentRoot}/`)).toBe(true);
 			expect(table.rowStruct.startsWith("/Script/UEShedFixture.")).toBe(true);
-			expect(new Set(table.rows).size).toBe(table.rows.length);
+			if ("rows" in table) {
+				expect(new Set(table.rows).size).toBe(table.rows.length);
+			}
 		}
 	});
 
@@ -155,6 +170,17 @@ describe("generic Unreal fixture contract", () => {
 		expect(existsSync(join(fixtureRoot, "Content/Fixture/Cameras/L_CameraLoad.umap"))).toBe(
 			true
 		);
+	});
+
+	it("declares a portable durable-loop Review Set and stable subject", () => {
+		expect(contract.mapReview).toEqual({
+			map: "/Game/Fixture/Cameras/L_CameraLoad",
+			reviewSet: ".ue-shed/review/sets/fixture-structure.json",
+			subject:
+				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+			views: ["structure-context"]
+		});
+		expect(existsSync(join(fixtureRoot, contract.mapReview.reviewSet))).toBe(true);
 	});
 
 	it("declares identity-focused game text evidence", () => {
@@ -177,11 +203,26 @@ describe("generic Unreal fixture contract", () => {
 
 	it("keeps every ordinary table reproducible from reviewable source", () => {
 		for (const table of contract.tables) {
-			if (table.kind !== "data-table") {
+			if (table.kind !== "data-table" || !("source" in table)) {
 				continue;
 			}
 			expect(sourceRowNames(table.source)).toEqual(table.rows);
 		}
+	});
+
+	it("declares a deterministic large table for editing-load exercises", () => {
+		const table = contract.tables.find(
+			(candidate) =>
+				candidate.assetPath === "/Game/Fixture/Authoring/DT_LargeScalars.DT_LargeScalars"
+		);
+		expect(table).toMatchObject({
+			fieldFamilies: ["large-table", "editing-load"],
+			generatedRows: {
+				count: 10000,
+				generator: "scalar-load-v1",
+				namePrefix: "Load_"
+			}
+		});
 	});
 
 	it("commits every generated asset declared by the contract", () => {
@@ -272,7 +313,7 @@ describe("generic Unreal fixture contract", () => {
 			contract.textureAudit.source,
 			contract.textureAudit.rules,
 			...contract.tables.flatMap((table) =>
-				table.kind === "data-table" ? [table.source] : []
+				table.kind === "data-table" && "source" in table ? [table.source] : []
 			)
 		];
 		for (const relativePath of portableFiles) {

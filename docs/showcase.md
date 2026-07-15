@@ -34,6 +34,9 @@ available. A missing live endpoint does not prevent the saved-asset demos from o
 
 ## Demo 1: DataTable authoring
 
+The fixture also includes `DT_LargeScalars`, a deterministic 10,000-row table for exercising
+catalog, snapshot, search, grid virtualization, and editing performance without using studio data.
+
 Choose **Open table** on the showcase home. Workbench reads the committed scalar table directly from
 its saved package, presents its typed rows and fields, and keeps authority and partial-package
 diagnostics visible without opening Unreal. Use **Open saved table** to inspect another DataTable
@@ -81,3 +84,33 @@ pnpm showcase
 
 Workbench remains a client of public packages. Deleting it does not remove the CLI or any domain
 capability demonstrated here.
+
+## Record a review video
+
+Record the deterministic saved-data journey without launching Unreal:
+
+```powershell
+pnpm showcase:record
+```
+
+The command builds Workbench, opens it through Playwright, and records Data Authoring, Texture Audit,
+and Game Text. Every invocation writes a new timestamped review bundle under
+`test-results/showcase`; earlier recordings are never replaced. A successful bundle contains
+`demo.webm`, chapter screenshots, `trace.zip`, `workbench.log`, and a versioned `run.json` manifest.
+During local iteration, pass `--no-build` to reuse the existing Workbench build:
+
+```powershell
+pnpm showcase:record --no-build
+```
+
+To showcase Map Review by creating fresh evidence and comparing it with the prior Capture Run:
+
+```powershell
+pnpm showcase:record map-review
+```
+
+This journey requires one prior successful Capture Run. It launches or reuses the configured Unreal
+fixture before recording, then captures the approved Review Set live, verifies the new immutable run
+and its 1280x720 image, and demonstrates before-and-after history navigation. Fixture startup stays
+out of the review video; a failed live capture fails the recording rather than presenting stale
+evidence as a successful showcase.

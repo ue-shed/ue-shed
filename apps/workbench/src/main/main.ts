@@ -1,10 +1,27 @@
 import {
+	approveFramingCandidate,
+	captureReviewSet,
 	configureCameras,
+	decodeApproveReviewCandidateIntent,
+	generateFramingCandidates,
 	getCameraStatus,
+	inspectReviewSelection,
+	listCaptureRuns,
+	loadCaptureRun,
+	loadReviewSet,
 	openCameraFeedServer,
+	previewReviewCandidate,
+	saveReviewSet,
 	type CameraFeedServer,
 	type CameraFrame
 } from "@ue-shed/cameras";
+import type {
+	MapReviewApprovalResult,
+	MapReviewAuthoringResult,
+	MapReviewCandidatePreviewResult,
+	MapReviewResult,
+	MapReviewRunView
+} from "@ue-shed/extension-camera-review/client";
 import {
 	readLiveTexturePreview,
 	scanTextureAudit,
@@ -38,7 +55,8 @@ import {
 } from "electron/main";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { FixtureLaunchResult, ShowcaseContext } from "./preload.js";
 
 const remoteControlEndpoint =
@@ -52,6 +70,264 @@ let presentationReplacements = 0;
 let presentationBudgetMbPerSecond = 80;
 let nextPresentationAt = 0;
 let fixtureLaunch: Promise<FixtureLaunchResult> | undefined;
+let fixtureReviewLaunch: Promise<FixtureLaunchResult> | undefined;
+
+function mapReviewConfiguration():
+	| { readonly projectRoot: string; readonly reviewSetPath: string }
+	| undefined {
+	const projectRoot = process.env.UE_SHED_PROJECT_ROOT;
+	if (!projectRoot) return undefined;
+	return {
+		projectRoot,
+		reviewSetPath:
+			process.env.UE_SHED_REVIEW_SET ??
+			join(projectRoot, ".ue-shed", "review", "sets", "fixture-structure.json")
+	};
+}
+
+function mapReviewFailure(cause: unknown): MapReviewResult {
+	const error = cause as { readonly message?: string; readonly recovery?: string };
+	return {
+		error: {
+			message: error.message ?? String(cause),
+			recovery:
+				error.recovery ??
+				"Verify the Review Set, project directory, and local evidence store."
+		},
+		status: "failed"
+	};
+}
+
+async function loadMapReview(): Promise<MapReviewResult> {
+	const configuration = mapReviewConfiguration();
+	if (!configuration) return { status: "not_configured" };
+	try {
+		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
+		const summaries = await Effect.runPromise(listCaptureRuns(configuration.projectRoot));
+		const runs = await Promise.all(
+			summaries.map(async (summary): Promise<MapReviewRunView> => {
+				const run = await Effect.runPromise(loadCaptureRun(summary.path));
+				const captured = run.results.find((result) => result.status === "captured");
+				const view = captured
+					? reviewSet.views.find((candidate) => candidate.id === captured.viewId)
+					: undefined;
+				return {
+					...summary,
+					...(captured
+						? {
+								preview: {
+									bytes: new Uint8Array(
+										await readFile(
+											join(
+												dirname(summary.path),
+												captured.artifact.relativePath
+											)
+										)
+									),
+									height: captured.artifact.height,
+									viewName: view?.displayName ?? captured.viewId,
+									width: captured.artifact.width
+								}
+							}
+						: {})
+				};
+			})
+		);
+		return {
+			reviewSet: {
+				displayName: reviewSet.displayName,
+				mapPath: reviewSet.project.mapPath,
+				viewCount: reviewSet.views.length
+			},
+			runs,
+			status: "ready"
+		};
+	} catch (cause) {
+		return mapReviewFailure(cause);
+	}
+}
+
+async function captureMapReview(): Promise<MapReviewResult> {
+	const configuration = mapReviewConfiguration();
+	if (!configuration) return { status: "not_configured" };
+	try {
+		await Effect.runPromise(
+			captureReviewSet({
+				endpoint: remoteControlEndpoint,
+				projectRoot: configuration.projectRoot,
+				reviewSetPath: configuration.reviewSetPath
+			})
+		);
+		return await loadMapReview();
+	} catch (cause) {
+		return mapReviewFailure(cause);
+	}
+}
+
+function mapReviewAuthoringFailure(
+	cause: unknown
+): Extract<MapReviewAuthoringResult, { status: "failed" }> {
+	const error = cause as { readonly message?: string; readonly recovery?: string };
+	return {
+		error: {
+			message: error.message ?? String(cause),
+			recovery:
+				error.recovery ??
+				"Verify the editor selection and Map Review authoring capability, then retry."
+		},
+		status: "failed"
+	};
+}
+
+async function authorMapReviewFromSelection(): Promise<MapReviewAuthoringResult> {
+	const configuration = mapReviewConfiguration();
+	if (!configuration) {
+		return mapReviewAuthoringFailure(new Error("No review project is configured."));
+	}
+	try {
+		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
+		const selection = await Effect.runPromise(inspectReviewSelection(remoteControlEndpoint));
+		if (selection.status === "failed") {
+			return {
+				error: { message: selection.message, recovery: selection.recovery },
+				status: "failed"
+			};
+		}
+		if (selection.mapPath !== reviewSet.project.mapPath) {
+			return mapReviewAuthoringFailure({
+				message: `The selected actor belongs to ${selection.mapPath}, not ${reviewSet.project.mapPath}.`,
+				recovery: "Open the Review Set map and select exactly one subject actor."
+			});
+		}
+		const view = reviewSet.views[0];
+		if (!view) throw new Error("The configured Review Set has no Review View to reframe.");
+		const profile = reviewSet.captureProfiles.find(
+			(candidate) => candidate.id === view.captureProfileId
+		);
+		if (!profile) throw new Error(`Review View ${view.id} has no capture profile.`);
+		const candidates = generateFramingCandidates(selection);
+		const rendered = candidates.map((candidate) => ({
+			diagnostics: candidate.diagnostics,
+			displayName: candidate.displayName,
+			id: candidate.id,
+			pose: candidate.approvedPose,
+			preset: candidate.recipe.preset,
+			preview: { status: "pending" as const }
+		}));
+		return {
+			candidates: rendered,
+			selection: {
+				actorPath: selection.actorPath,
+				displayName: selection.displayName,
+				mapPath: selection.mapPath
+			},
+			status: "ready",
+			viewId: view.id
+		};
+	} catch (cause) {
+		return mapReviewAuthoringFailure(cause);
+	}
+}
+
+async function previewMapReviewCandidate(
+	candidateId: unknown
+): Promise<MapReviewCandidatePreviewResult> {
+	const configuration = mapReviewConfiguration();
+	if (!configuration) {
+		return mapReviewAuthoringFailure(new Error("No review project is configured."));
+	}
+	try {
+		if (typeof candidateId !== "string") throw new Error("Candidate ID must be a string.");
+		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
+		const selection = await Effect.runPromise(inspectReviewSelection(remoteControlEndpoint));
+		if (selection.status === "failed") {
+			return {
+				error: { message: selection.message, recovery: selection.recovery },
+				status: "failed"
+			};
+		}
+		const candidate = generateFramingCandidates(selection).find(
+			(candidate) => candidate.id === candidateId
+		);
+		if (!candidate) throw new Error(`Candidate ${candidateId} is no longer available.`);
+		const view = reviewSet.views[0];
+		const profile = view
+			? reviewSet.captureProfiles.find((candidate) => candidate.id === view.captureProfileId)
+			: undefined;
+		if (!profile) throw new Error("The Review View has no capture profile for previews.");
+		const preview = await Effect.runPromise(
+			previewReviewCandidate({
+				candidate,
+				endpoint: remoteControlEndpoint,
+				mapPath: selection.mapPath,
+				profile: { ...profile, resolution: { height: 360, width: 640 } },
+				subject: {
+					actorPath: selection.actorPath,
+					displayName: selection.displayName
+				}
+			})
+		);
+		return { ...preview, status: "ready" };
+	} catch (cause) {
+		return mapReviewAuthoringFailure(cause);
+	}
+}
+
+async function approveMapReviewCandidate(intent: unknown): Promise<MapReviewApprovalResult> {
+	const configuration = mapReviewConfiguration();
+	if (!configuration) {
+		return { ...mapReviewAuthoringFailure(new Error("No review project is configured.")) };
+	}
+	try {
+		const approvedIntent = decodeApproveReviewCandidateIntent(intent);
+		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
+		const selection = await Effect.runPromise(inspectReviewSelection(remoteControlEndpoint));
+		if (selection.status === "failed") {
+			return {
+				error: { message: selection.message, recovery: selection.recovery },
+				status: "failed"
+			};
+		}
+		if (selection.actorPath !== approvedIntent.sourceActorPath) {
+			throw new Error(
+				"The selected actor changed after these framing candidates were generated. Reframe the selected actor before keeping a view."
+			);
+		}
+		const candidate = generateFramingCandidates(selection).find(
+			(candidate) => candidate.id === approvedIntent.candidateId
+		);
+		if (!candidate)
+			throw new Error(`Candidate ${approvedIntent.candidateId} is no longer available.`);
+		if (
+			JSON.stringify(candidate.approvedPose) !== JSON.stringify(approvedIntent.candidatePose)
+		) {
+			throw new Error(
+				"The selected actor bounds or framing inputs changed after this preview was generated. Reframe before keeping the view so the saved pose matches what you reviewed."
+			);
+		}
+		const approved = approveFramingCandidate({
+			candidate,
+			...(approvedIntent.manualPose ? { manualPose: approvedIntent.manualPose } : {}),
+			...(approvedIntent.manualReason ? { manualReason: approvedIntent.manualReason } : {}),
+			reviewSet,
+			subject: {
+				actorPath: selection.actorPath,
+				diagnosticLabel: selection.displayName,
+				kind: "actor_path"
+			},
+			viewId: approvedIntent.viewId
+		});
+		if (approved.status === "view_not_found") {
+			throw new Error(`Review View ${approved.viewId} was not found.`);
+		}
+		await Effect.runPromise(
+			saveReviewSet({ path: configuration.reviewSetPath, reviewSet: approved.reviewSet })
+		);
+		return { candidateId: candidate.id, status: "approved" };
+	} catch (cause) {
+		return mapReviewAuthoringFailure(cause);
+	}
+}
 
 type AuthoringIpcResult =
 	| { readonly status: "ready"; readonly snapshot: unknown }
@@ -312,7 +588,7 @@ function unavailablePreview(
 	};
 }
 
-async function remoteControlAvailable(): Promise<boolean> {
+async function remoteControlAvailable(requiredCapability?: "map-review"): Promise<boolean> {
 	try {
 		const response = await fetch(new URL("/remote/object/call", remoteControlEndpoint), {
 			body: JSON.stringify({
@@ -337,17 +613,41 @@ async function remoteControlAvailable(): Promise<boolean> {
 		}
 		const manifest = decodeCompanionCapabilityManifest(JSON.parse(envelope.ResultJson));
 		const expectedProject = process.env.UE_SHED_PROJECT_NAME;
-		return (
+		const matchesFixture =
 			manifest.producerKind === "unreal_editor" &&
-			(!expectedProject || manifest.projectName === expectedProject)
-		);
+			(!expectedProject || manifest.projectName === expectedProject);
+		if (!matchesFixture || requiredCapability !== "map-review") return matchesFixture;
+
+		const reviewResponse = await fetch(new URL("/remote/object/call", remoteControlEndpoint), {
+			body: JSON.stringify({
+				generateTransaction: false,
+				functionName: "CaptureReviewView",
+				objectPath: "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary",
+				parameters: { RequestJson: "{}" }
+			}),
+			headers: { "content-type": "application/json" },
+			method: "PUT",
+			signal: AbortSignal.timeout(1_500)
+		});
+		return reviewResponse.ok;
 	} catch {
 		return false;
 	}
 }
 
-async function launchConfiguredFixture(): Promise<FixtureLaunchResult> {
-	if (await remoteControlAvailable()) return { status: "ready" };
+async function launchConfiguredFixture(
+	action: "launch" | "launch-authoring" = "launch"
+): Promise<FixtureLaunchResult> {
+	const requiredCapability = action === "launch-authoring" ? "map-review" : undefined;
+	if (await remoteControlAvailable(requiredCapability)) return { status: "ready" };
+	if (requiredCapability && (await remoteControlAvailable())) {
+		return {
+			status: "failed",
+			message: "The configured endpoint is running Unreal without Map Review capture.",
+			recovery:
+				"Close the -game fixture or choose another endpoint, then launch the editor fixture."
+		};
+	}
 	const repositoryRoot = process.env.UE_SHED_REPOSITORY_ROOT;
 	const launchScript = repositoryRoot
 		? join(repositoryRoot, "scripts", "unreal-fixture.mjs")
@@ -361,9 +661,9 @@ async function launchConfiguredFixture(): Promise<FixtureLaunchResult> {
 	}
 
 	const launched = await new Promise<FixtureLaunchResult>((resolveLaunch) => {
-		const child = spawn(process.execPath, [launchScript, "launch"], {
+		const child = spawn(process.execPath, [launchScript, action], {
 			cwd: repositoryRoot,
-			env: process.env,
+			env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
 			stdio: ["ignore", "ignore", "pipe"],
 			windowsHide: true
 		});
@@ -395,7 +695,7 @@ async function launchConfiguredFixture(): Promise<FixtureLaunchResult> {
 
 	const deadline = Date.now() + 180_000;
 	while (Date.now() < deadline) {
-		if (await remoteControlAvailable()) return { status: "ready" };
+		if (await remoteControlAvailable(requiredCapability)) return { status: "ready" };
 		await new Promise((resolveWait) => setTimeout(resolveWait, 1_000));
 	}
 	return {
@@ -410,6 +710,13 @@ ipcMain.handle("fixture:launch", async (): Promise<FixtureLaunchResult> => {
 		fixtureLaunch = undefined;
 	});
 	return fixtureLaunch;
+});
+
+ipcMain.handle("fixture:launch-review", async (): Promise<FixtureLaunchResult> => {
+	fixtureReviewLaunch ??= launchConfiguredFixture("launch-authoring").finally(() => {
+		fixtureReviewLaunch = undefined;
+	});
+	return fixtureReviewLaunch;
 });
 
 ipcMain.handle("showcase:context", (): ShowcaseContext => {
@@ -826,6 +1133,15 @@ ipcMain.handle("camera:presentation-budget", (_event, value: unknown) => {
 ipcMain.handle("camera:status", () => getCameraStatus(remoteControlEndpoint));
 ipcMain.handle("camera:configure", (_event, config: CameraScheduleConfig) =>
 	configureCameras(remoteControlEndpoint, config)
+);
+ipcMain.handle("map-review:load", () => loadMapReview());
+ipcMain.handle("map-review:capture", () => captureMapReview());
+ipcMain.handle("map-review:author-from-selection", () => authorMapReviewFromSelection());
+ipcMain.handle("map-review:preview-candidate", (_event, candidateId: unknown) =>
+	previewMapReviewCandidate(candidateId)
+);
+ipcMain.handle("map-review:approve-candidate", (_event, intent: unknown) =>
+	approveMapReviewCandidate(intent)
 );
 
 app.whenReady()

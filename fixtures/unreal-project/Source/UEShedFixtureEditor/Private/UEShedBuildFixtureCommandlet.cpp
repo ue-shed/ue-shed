@@ -34,6 +34,7 @@
 namespace
 {
 constexpr int32 CameraFixtureCount = 32;
+constexpr int32 LargeTableRowCount = 10000;
 
 struct FFixtureTableDefinition
 {
@@ -41,6 +42,7 @@ struct FFixtureTableDefinition
 	const TCHAR* PackageName;
 	const TCHAR* SourcePath;
 	UScriptStruct* RowStruct;
+	int32 GeneratedRowCount = 0;
 };
 
 struct FFixtureTextureDefinition
@@ -155,7 +157,9 @@ TArray<FFixtureTableDefinition> GetTableDefinitions()
 			TEXT("FixtureSource/Authoring/DT_Containers.json"),
 			FUEShedFixtureContainerRow::StaticStruct() },
 		{ TEXT("DT_Opaque"), TEXT("/Game/Fixture/Authoring/DT_Opaque"),
-			TEXT("FixtureSource/Authoring/DT_Opaque.json"), FUEShedFixtureOpaqueRow::StaticStruct() }
+			TEXT("FixtureSource/Authoring/DT_Opaque.json"), FUEShedFixtureOpaqueRow::StaticStruct() },
+		{ TEXT("DT_LargeScalars"), TEXT("/Game/Fixture/Authoring/DT_LargeScalars"), nullptr,
+			FUEShedFixtureScalarsRow::StaticStruct(), LargeTableRowCount }
 	};
 }
 
@@ -287,13 +291,16 @@ bool VerifyAuditTextures()
 
 bool GenerateTable(const FFixtureTableDefinition& Definition)
 {
-	const FString SourceFilename = FPaths::ConvertRelativePathToFull(
-		FPaths::ProjectDir(), Definition.SourcePath);
 	FString Json;
-	if (!FFileHelper::LoadFileToString(Json, *SourceFilename))
+	if (Definition.SourcePath != nullptr)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Could not read fixture source %s"), *SourceFilename);
-		return false;
+		const FString SourceFilename = FPaths::ConvertRelativePathToFull(
+			FPaths::ProjectDir(), Definition.SourcePath);
+		if (!FFileHelper::LoadFileToString(Json, *SourceFilename))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Could not read fixture source %s"), *SourceFilename);
+			return false;
+		}
 	}
 
 	UPackage* Package = FindOrCreatePackage(Definition.PackageName);
@@ -320,7 +327,24 @@ bool GenerateTable(const FFixtureTableDefinition& Definition)
 		Table->EmptyTable();
 	}
 	Table->RowStruct = Definition.RowStruct;
-	const TArray<FString> Problems = Table->CreateTableFromJSONString(Json);
+	TArray<FString> Problems;
+	if (Definition.GeneratedRowCount > 0)
+	{
+		for (int32 Index = 0; Index < Definition.GeneratedRowCount; ++Index)
+		{
+			FUEShedFixtureScalarsRow Row;
+			Row.Enabled = Index % 2 == 0;
+			Row.Count = Index % 101;
+			Row.Ratio = static_cast<float>(Index % 101) / 100.0f;
+			Row.Key = FName(*FString::Printf(TEXT("LoadKey_%05d"), Index));
+			Row.Notes = FString::Printf(TEXT("Deterministic load fixture row %05d."), Index);
+			Table->AddRow(FName(*FString::Printf(TEXT("Load_%05d"), Index)), Row);
+		}
+	}
+	else
+	{
+		Problems = Table->CreateTableFromJSONString(Json);
+	}
 	for (const FString& Problem : Problems)
 	{
 		UE_LOG(LogTemp, Error, TEXT("%s: %s"), Definition.AssetName, *Problem);
@@ -419,6 +443,32 @@ bool VerifyTable(const FFixtureTableDefinition& Definition)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Fixture table %s has no rows"), *ObjectPath(Definition));
 		return false;
+	}
+
+	if (Definition.GeneratedRowCount > 0)
+	{
+		const TArray<FName> RowNames = Table->GetRowNames();
+		const FName FirstRowName(TEXT("Load_00000"));
+		const FName LastRowName(*FString::Printf(
+			TEXT("Load_%05d"), Definition.GeneratedRowCount - 1));
+		const FName LastRowKey(*FString::Printf(
+			TEXT("LoadKey_%05d"), Definition.GeneratedRowCount - 1));
+		const FUEShedFixtureScalarsRow* FirstRow = Table->FindRow<FUEShedFixtureScalarsRow>(
+			FirstRowName, TEXT("fixture verification"), false);
+		const FUEShedFixtureScalarsRow* LastRow = Table->FindRow<FUEShedFixtureScalarsRow>(
+			LastRowName, TEXT("fixture verification"), false);
+		const bool bMatches = RowNames.Num() == Definition.GeneratedRowCount
+			&& RowNames[0] == FirstRowName
+			&& RowNames.Last() == LastRowName
+			&& FirstRow != nullptr && FirstRow->Enabled && FirstRow->Count == 0
+			&& LastRow != nullptr && !LastRow->Enabled
+			&& LastRow->Key == LastRowKey;
+		if (!bMatches)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Generated load table does not match: %s"),
+				*ObjectPath(Definition));
+		}
+		return bMatches;
 	}
 
 	const FString SourceFilename = FPaths::ConvertRelativePathToFull(
@@ -579,11 +629,13 @@ bool GenerateCameraMap()
 	{
 		int32 ExistingMovers = 0;
 		int32 ExistingCameras = 0;
+		bool bHasReviewSubject = false;
 		for (AActor* Actor : World->PersistentLevel->Actors)
 		{
 			if (Actor == nullptr) continue;
 			ExistingMovers += Actor->IsA<AUEShedFixtureMover>() ? 1 : 0;
 			ExistingCameras += Actor->IsA<AUEShedCameraSource>() ? 1 : 0;
+			bHasReviewSubject = bHasReviewSubject || Actor->GetFName() == TEXT("ReviewSubject");
 		}
 		bool bAllCamerasBound = true;
 		for (AActor* Actor : World->PersistentLevel->Actors)
@@ -594,7 +646,7 @@ bool GenerateCameraMap()
 			}
 		}
 		if (ExistingMovers == CameraFixtureCount && ExistingCameras == CameraFixtureCount
-			&& bAllCamerasBound)
+			&& bAllCamerasBound && bHasReviewSubject)
 		{
 			UE_LOG(LogTemp, Display, TEXT("Camera fixture map already matches its contract"));
 			return true;
@@ -624,6 +676,19 @@ bool GenerateCameraMap()
 	ASkyLight* Sky = World->SpawnActor<ASkyLight>();
 	Sky->Tags.Add(TEXT("UEShedCameraFixture"));
 	Sky->SetActorLabel(TEXT("Fixture Sky"));
+
+	FActorSpawnParameters ReviewSubjectSpawn;
+	ReviewSubjectSpawn.Name = TEXT("ReviewSubject");
+	ReviewSubjectSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	AStaticMeshActor* ReviewSubject = World->SpawnActor<AStaticMeshActor>(
+		FVector(0, 0, 220), FRotator::ZeroRotator, ReviewSubjectSpawn);
+	if (ReviewSubject == nullptr) return false;
+	ReviewSubject->Tags.Add(TEXT("UEShedCameraFixture"));
+	ReviewSubject->Tags.Add(TEXT("UEShedReviewSubject"));
+	ReviewSubject->SetActorLabel(TEXT("Review Subject"));
+	ReviewSubject->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Cube.Cube")));
+	ReviewSubject->SetActorScale3D(FVector(5.0, 3.0, 4.5));
 
 	for (int32 Index = 0; Index < CameraFixtureCount; ++Index)
 	{
@@ -668,11 +733,13 @@ bool VerifyCameraMap()
 	int32 Movers = 0;
 	int32 Cameras = 0;
 	int32 BoundCameras = 0;
+	bool bHasReviewSubject = false;
 	for (AActor* Actor : World->PersistentLevel->Actors)
 	{
 		if (Actor == nullptr) continue;
 		Movers += Actor->IsA<AUEShedFixtureMover>() ? 1 : 0;
 		Cameras += Actor->IsA<AUEShedCameraSource>() ? 1 : 0;
+		bHasReviewSubject = bHasReviewSubject || Actor->GetFName() == TEXT("ReviewSubject");
 		if (const AUEShedCameraSource* Camera = Cast<AUEShedCameraSource>(Actor))
 		{
 			BoundCameras += Camera->ObservationTarget != nullptr ? 1 : 0;
@@ -682,7 +749,7 @@ bool VerifyCameraMap()
 		TEXT("Camera fixture verification found %d movers, %d cameras, and %d POV bindings"),
 		Movers, Cameras, BoundCameras);
 	return Movers == CameraFixtureCount && Cameras == CameraFixtureCount
-		&& BoundCameras == CameraFixtureCount;
+		&& BoundCameras == CameraFixtureCount && bHasReviewSubject;
 }
 }
 

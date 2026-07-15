@@ -13,8 +13,13 @@ test-results/
 .DS_Store
 Thumbs.db
 
-# Project-local UE Shed sessions, caches, and user state
-.ue-shed/
+# Project-local UE Shed sessions, caches, and user state. Portable Review Sets are source material;
+# generated runs and other local state remain ignored.
+**/.ue-shed/*
+!**/.ue-shed/review/
+**/.ue-shed/review/*
+!**/.ue-shed/review/sets/
+!**/.ue-shed/review/sets/**
 
 # Generated or locally installed Unreal content
 fixtures/unreal-project/Binaries/

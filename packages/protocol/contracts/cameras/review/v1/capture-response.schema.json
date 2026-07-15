@@ -1,0 +1,83 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/review/v1/capture-response.schema.json",
+	"title": "UE Shed Map Review capture response v1",
+	"oneOf": [
+		{
+			"type": "object",
+			"required": [
+				"contract",
+				"status",
+				"operationId",
+				"viewId",
+				"actorPath",
+				"mapPath",
+				"stagingPath",
+				"width",
+				"height",
+				"captureDurationMs",
+				"mapPackageDirtyBefore",
+				"mapPackageDirtyAfter"
+			],
+			"properties": {
+				"contract": { "$ref": "#/$defs/contract" },
+				"status": { "const": "captured" },
+				"operationId": { "type": "string", "minLength": 1 },
+				"viewId": { "$ref": "#/$defs/safeId" },
+				"actorPath": { "type": "string", "minLength": 1 },
+				"mapPath": { "type": "string", "minLength": 1 },
+				"stagingPath": { "type": "string", "minLength": 1 },
+				"width": { "type": "integer", "minimum": 1 },
+				"height": { "type": "integer", "minimum": 1 },
+				"captureDurationMs": { "type": "number", "minimum": 0 },
+				"mapPackageDirtyBefore": { "type": "boolean" },
+				"mapPackageDirtyAfter": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"required": [
+				"contract",
+				"status",
+				"operationId",
+				"viewId",
+				"code",
+				"message",
+				"recovery",
+				"retrySafe"
+			],
+			"properties": {
+				"contract": { "$ref": "#/$defs/contract" },
+				"status": { "const": "failed" },
+				"operationId": { "type": "string" },
+				"viewId": { "type": "string" },
+				"code": { "type": "string", "minLength": 1 },
+				"message": { "type": "string", "minLength": 1 },
+				"recovery": { "type": "string", "minLength": 1 },
+				"retrySafe": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		}
+	],
+	"$defs": {
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-capture" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "type": "integer", "minimum": 0 }
+					}
+				}
+			}
+		},
+		"safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+	}
+}

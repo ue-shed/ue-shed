@@ -23,6 +23,7 @@
 		"format:check": "oxfmt --check .",
 		"prepare": "lefthook install",
 		"showcase": "node scripts/showcase.mjs",
+		"showcase:record": "node scripts/record-showcase.mjs",
 		"test": "node scripts/test.mjs",
 		"test:components": "node scripts/test.mjs --project component",
 		"test:coverage": "node scripts/test.mjs --coverage",

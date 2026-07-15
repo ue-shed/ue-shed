@@ -19,6 +19,14 @@ const scalarAsset = join(
 	"DT_Scalars.uasset"
 );
 const scalarTable = "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars";
+const fixtureProject = join(repositoryRoot, "fixtures", "unreal-project");
+const fixtureReviewSet = join(
+	fixtureProject,
+	".ue-shed",
+	"review",
+	"sets",
+	"fixture-structure.json"
+);
 
 interface CliResult {
 	readonly status: number | null;
@@ -138,6 +146,27 @@ describe("ue-shed CLI process", () => {
 			expect(redone.commands).toEqual(edited.commands);
 		} finally {
 			await rm(directory, { force: true, recursive: true });
+		}
+	});
+
+	it("validates the portable fixture Review Set and lists empty local history", async () => {
+		const validation = parseRecord(
+			runSuccessfulCli(["review", "sets", "validate", fixtureReviewSet])
+		);
+		expect(validation).toMatchObject({
+			id: "fixture-structure",
+			profiles: 1,
+			status: "valid",
+			views: 1
+		});
+
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-history-"));
+		try {
+			expect(parseRecord(runSuccessfulCli(["review", "history", projectRoot]))).toEqual({
+				runs: []
+			});
+		} finally {
+			await rm(projectRoot, { force: true, recursive: true });
 		}
 	});
 });

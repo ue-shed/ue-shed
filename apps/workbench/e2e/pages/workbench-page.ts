@@ -4,6 +4,7 @@ export type WorkbenchRoute =
 	| "Showcase"
 	| "Data Authoring"
 	| "Game Text"
+	| "Map Review"
 	| "Texture Audit"
 	| "Camera Lab";
 

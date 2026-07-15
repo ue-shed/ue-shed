@@ -739,14 +739,14 @@ fn decode_text_value(
 fn decode_vector_value(payload: &mut Reader<'_>, path: &str) -> Result<VectorValue, PropertyError> {
     match payload.remaining() {
         12 => Ok(VectorValue {
-            x: payload.read_f32(&format!("{path}.X"))?,
-            y: payload.read_f32(&format!("{path}.Y"))?,
-            z: payload.read_f32(&format!("{path}.Z"))?,
+            x: f64::from(payload.read_f32(&format!("{path}.X"))?),
+            y: f64::from(payload.read_f32(&format!("{path}.Y"))?),
+            z: f64::from(payload.read_f32(&format!("{path}.Z"))?),
         }),
         24 => Ok(VectorValue {
-            x: payload.read_f64(&format!("{path}.X"))? as f32,
-            y: payload.read_f64(&format!("{path}.Y"))? as f32,
-            z: payload.read_f64(&format!("{path}.Z"))? as f32,
+            x: payload.read_f64(&format!("{path}.X"))?,
+            y: payload.read_f64(&format!("{path}.Y"))?,
+            z: payload.read_f64(&format!("{path}.Z"))?,
         }),
         remaining => Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
@@ -1722,6 +1722,40 @@ mod tests {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0,
+            })
+        );
+    }
+
+    #[test]
+    fn preserves_fvector_double_precision() {
+        let names = vec!["StructProperty".into(), "Vector".into()];
+        let expected = [
+            16_777_217.25,
+            -9_007_199_254_740_991.0,
+            1.000_000_000_000_000_2,
+        ];
+        let mut payload = Vec::new();
+        for component in expected {
+            push_f64(&mut payload, component);
+        }
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+
+        assert_eq!(
+            value,
+            PropertyValue::Vector(VectorValue {
+                x: expected[0],
+                y: expected[1],
+                z: expected[2],
             })
         );
     }

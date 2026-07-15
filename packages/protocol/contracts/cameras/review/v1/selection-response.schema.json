@@ -1,0 +1,95 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/review/v1/selection-response.schema.json",
+	"title": "UE Shed Review Selection Response v1",
+	"oneOf": [
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["contract", "status", "actorPath", "displayName", "mapPath", "bounds"],
+			"properties": {
+				"contract": { "$ref": "#/$defs/contract" },
+				"status": { "const": "selected" },
+				"actorPath": { "type": "string", "minLength": 1 },
+				"displayName": { "type": "string", "minLength": 1 },
+				"mapPath": { "type": "string", "minLength": 1 },
+				"bounds": { "$ref": "#/$defs/bounds" },
+				"editorView": { "$ref": "#/$defs/pose" }
+			}
+		},
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["contract", "status", "code", "message", "recovery", "retrySafe"],
+			"properties": {
+				"contract": { "$ref": "#/$defs/contract" },
+				"status": { "const": "failed" },
+				"code": { "enum": ["no_selection", "multiple_selection", "editor_unavailable"] },
+				"message": { "type": "string", "minLength": 1 },
+				"recovery": { "type": "string", "minLength": 1 },
+				"retrySafe": { "type": "boolean" }
+			}
+		}
+	],
+	"$defs": {
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-selection" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "type": "integer", "minimum": 0 }
+					}
+				}
+			}
+		},
+		"vector": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["x", "y", "z"],
+			"properties": {
+				"x": { "type": "number" },
+				"y": { "type": "number" },
+				"z": { "type": "number" }
+			}
+		},
+		"rotation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["pitch", "roll", "yaw"],
+			"properties": {
+				"pitch": { "type": "number" },
+				"roll": { "type": "number" },
+				"yaw": { "type": "number" }
+			}
+		},
+		"bounds": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["center", "extent", "rotation"],
+			"properties": {
+				"center": { "$ref": "#/$defs/vector" },
+				"extent": { "$ref": "#/$defs/vector" },
+				"rotation": { "$ref": "#/$defs/rotation" }
+			}
+		},
+		"pose": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["aspectRatio", "fieldOfViewDegrees", "location", "projection", "rotation"],
+			"properties": {
+				"aspectRatio": { "const": "16:9" },
+				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
+				"location": { "$ref": "#/$defs/vector" },
+				"projection": { "const": "perspective" },
+				"rotation": { "$ref": "#/$defs/rotation" }
+			}
+		}
+	}
+}

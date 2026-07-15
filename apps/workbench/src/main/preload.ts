@@ -1,5 +1,12 @@
 import type { CameraFeedMetrics, CameraFrame } from "@ue-shed/cameras";
 import type { AuthoringSetCellsIntent } from "@ue-shed/authoring-sdk";
+import type {
+	MapReviewApprovalResult,
+	MapReviewApproveCandidateIntent,
+	MapReviewAuthoringResult,
+	MapReviewCandidatePreviewResult,
+	MapReviewResult
+} from "@ue-shed/extension-camera-review/client";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -73,7 +80,21 @@ contextBridge.exposeInMainWorld("ueShed", {
 		chooseTable: (): Promise<unknown> => ipcRenderer.invoke("authoring:choose-table")
 	},
 	fixture: {
-		launch: (): Promise<FixtureLaunchResult> => ipcRenderer.invoke("fixture:launch")
+		launch: (): Promise<FixtureLaunchResult> => ipcRenderer.invoke("fixture:launch"),
+		launchReview: (): Promise<FixtureLaunchResult> =>
+			ipcRenderer.invoke("fixture:launch-review")
+	},
+	mapReview: {
+		approveCandidate: (
+			intent: MapReviewApproveCandidateIntent
+		): Promise<MapReviewApprovalResult> =>
+			ipcRenderer.invoke("map-review:approve-candidate", intent),
+		authorFromSelection: (): Promise<MapReviewAuthoringResult> =>
+			ipcRenderer.invoke("map-review:author-from-selection"),
+		previewCandidate: (candidateId: string): Promise<MapReviewCandidatePreviewResult> =>
+			ipcRenderer.invoke("map-review:preview-candidate", candidateId),
+		capture: (): Promise<MapReviewResult> => ipcRenderer.invoke("map-review:capture"),
+		load: (): Promise<MapReviewResult> => ipcRenderer.invoke("map-review:load")
 	},
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),

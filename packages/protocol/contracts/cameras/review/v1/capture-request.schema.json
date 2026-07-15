@@ -1,0 +1,92 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/review/v1/capture-request.schema.json",
+	"title": "UE Shed Map Review capture request v1",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"contract",
+		"operationId",
+		"viewId",
+		"expectedMapPath",
+		"subject",
+		"approvedPose",
+		"resolution"
+	],
+	"properties": {
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-capture" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "type": "integer", "minimum": 0 }
+					}
+				}
+			}
+		},
+		"operationId": { "type": "string", "format": "uuid" },
+		"viewId": { "$ref": "#/$defs/safeId" },
+		"expectedMapPath": { "type": "string", "minLength": 1 },
+		"subject": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["kind", "actorPath"],
+			"properties": {
+				"kind": { "const": "actor_path" },
+				"actorPath": { "type": "string", "minLength": 1 },
+				"diagnosticLabel": { "type": "string", "minLength": 1 }
+			}
+		},
+		"approvedPose": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["aspectRatio", "fieldOfViewDegrees", "location", "projection", "rotation"],
+			"properties": {
+				"aspectRatio": { "const": "16:9" },
+				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
+				"projection": { "const": "perspective" },
+				"location": { "$ref": "#/$defs/vector" },
+				"rotation": { "$ref": "#/$defs/rotation" }
+			}
+		},
+		"resolution": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["width", "height"],
+			"properties": {
+				"width": { "type": "integer", "minimum": 160, "maximum": 3840 },
+				"height": { "type": "integer", "minimum": 90, "maximum": 2160 }
+			}
+		}
+	},
+	"$defs": {
+		"safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+		"vector": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["x", "y", "z"],
+			"properties": {
+				"x": { "type": "number" },
+				"y": { "type": "number" },
+				"z": { "type": "number" }
+			}
+		},
+		"rotation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["pitch", "yaw", "roll"],
+			"properties": {
+				"pitch": { "type": "number" },
+				"yaw": { "type": "number" },
+				"roll": { "type": "number" }
+			}
+		}
+	}
+}

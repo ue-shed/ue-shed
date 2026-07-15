@@ -15,8 +15,8 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toMatchObject({
-			discoveredPackages: 18,
-			inspectedPackages: 18,
+			discoveredPackages: 19,
+			inspectedPackages: 19,
 			failedPackages: 0,
 			textUnits: 8,
 			textOccurrences: 9,

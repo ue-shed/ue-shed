@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.0.0",
+	"fixtureVersion": "1.1.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
@@ -33,6 +33,12 @@
 			"height": 180,
 			"pixelFormat": "BGRA8"
 		}
+	},
+	"mapReview": {
+		"reviewSet": ".ue-shed/review/sets/fixture-structure.json",
+		"map": "/Game/Fixture/Cameras/L_CameraLoad",
+		"subject": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+		"views": ["structure-context"]
 	},
 	"textureAudit": {
 		"contentRoot": "/Game/Fixture/Audits/Textures",
@@ -176,6 +182,17 @@
 			"source": "FixtureSource/Authoring/DT_Opaque.json",
 			"rows": ["Opaque_Known"],
 			"fieldFamilies": ["opaque-structured-value"]
+		},
+		{
+			"kind": "data-table",
+			"assetPath": "/Game/Fixture/Authoring/DT_LargeScalars.DT_LargeScalars",
+			"rowStruct": "/Script/UEShedFixture.UEShedFixtureScalarsRow",
+			"generatedRows": {
+				"generator": "scalar-load-v1",
+				"count": 10000,
+				"namePrefix": "Load_"
+			},
+			"fieldFamilies": ["large-table", "editing-load"]
 		},
 		{
 			"kind": "composite-data-table",

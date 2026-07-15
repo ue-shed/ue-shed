@@ -1,0 +1,62 @@
+{
+	"captureProfiles": [
+		{
+			"id": "fixture-hd",
+			"imageFormat": "png",
+			"renderProfile": "full_fidelity",
+			"resolution": {
+				"height": 720,
+				"width": 1280
+			},
+			"variantPolicy": "pure_only"
+		}
+	],
+	"contract": {
+		"name": "ue-shed-review-set",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"description": "One durable manual view proving repeatable fixture capture without map tooling actors.",
+	"displayName": "Fixture Structure",
+	"id": "fixture-structure",
+	"project": {
+		"id": "ue-shed-fixture",
+		"mapPath": "/Game/Fixture/Cameras/L_CameraLoad"
+	},
+	"views": [
+		{
+			"approvedPose": {
+				"aspectRatio": "16:9",
+				"fieldOfViewDegrees": 60,
+				"location": {
+					"x": 1500,
+					"y": -1500,
+					"z": 900
+				},
+				"projection": "perspective",
+				"rotation": {
+					"pitch": -18.26,
+					"roll": 0,
+					"yaw": 135
+				}
+			},
+			"captureProfileId": "fixture-hd",
+			"displayName": "Structure Context",
+			"framingRecipe": {
+				"kind": "manual",
+				"note": "Approved tracer-bullet pose for the stable fixture structure.",
+				"version": 1
+			},
+			"id": "structure-context",
+			"purpose": "Track the fixture structure over time.",
+			"subject": {
+				"actorPath": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+				"diagnosticLabel": "Review Subject",
+				"kind": "actor_path"
+			},
+			"tags": ["fixture", "context"]
+		}
+	]
+}

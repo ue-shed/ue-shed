@@ -5,6 +5,16 @@ manually schedules scene captures only while a named-pipe consumer is connected,
 asynchronous GPU readback slots per camera, and sends self-describing BGRA8 frames through a bounded
 latest-frame-wins writer.
 
+The separately enabled `UEShedCamerasEditor` module provides the durable Map Review capture boundary.
+It accepts the versioned `ue-shed-review-capture` request over Remote Control, resolves one stable
+actor path, realizes an approved pose with a transient `ASceneCapture2D`, captures once, and stages a
+PNG only beneath `Saved/UEShed/ReviewStaging`. It reports package dirty state before and after the
+operation; durable hashing, manifests, and publication remain host responsibilities.
+
+The same editor-only boundary exposes `ue-shed-review-selection` v1. It reports exactly one selected
+actor's path, label, world bounds, orientation, map, and optional active perspective viewport. It
+does not generate framing policy or persist Review Sets; those remain headless host responsibilities.
+
 All cameras due in a scheduler tick are submitted through one UE 5.7 `ISceneRenderBuilder` workload.
 The builder orders each GPU readback after its camera renderer, while batch count, current/max size,
 and submission time remain visible through status telemetry.

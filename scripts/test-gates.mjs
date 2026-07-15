@@ -20,6 +20,14 @@ const gates = [
 			environment.UE_SHED_UNREAL_INTEGRATION === "1"
 				? undefined
 				: "set UE_SHED_UNREAL_INTEGRATION=1 or run pnpm test:unreal-authoring"
+	},
+	{
+		file: "packages/cameras/src/review-unreal.integration.test.ts",
+		name: "real Unreal durable review capture",
+		missing: (environment) =>
+			environment.UE_SHED_REMOTE_CONTROL_ENDPOINT
+				? undefined
+				: "set UE_SHED_REMOTE_CONTROL_ENDPOINT with the fixture map open"
 	}
 ];
 

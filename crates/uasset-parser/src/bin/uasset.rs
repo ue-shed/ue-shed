@@ -600,9 +600,9 @@ enum AuthoringValueOutput {
         value: String,
     },
     Vector {
-        x: f32,
-        y: f32,
-        z: f32,
+        x: f64,
+        y: f64,
+        z: f64,
     },
     ObjectRef {
         value: Option<String>,
@@ -1436,9 +1436,9 @@ enum PropertyValueOutput {
         key: Option<String>,
     },
     Vector {
-        x: f32,
-        y: f32,
-        z: f32,
+        x: f64,
+        y: f64,
+        z: f64,
     },
     IntPoint {
         x: i32,

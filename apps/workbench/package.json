@@ -17,6 +17,7 @@
 		"@ue-shed/authoring-sdk": "workspace:*",
 		"@ue-shed/cameras": "workspace:*",
 		"@ue-shed/extension-asset-audits": "workspace:*",
+		"@ue-shed/extension-camera-review": "workspace:*",
 		"@ue-shed/extension-data-authoring": "workspace:*",
 		"@ue-shed/extension-game-text": "workspace:*",
 		"@ue-shed/game-text": "workspace:*",

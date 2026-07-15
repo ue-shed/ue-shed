@@ -62,6 +62,9 @@ importers:
       '@ue-shed/authoring-catalog':
         specifier: workspace:*
         version: link:../../packages/authoring-catalog
+      '@ue-shed/cameras':
+        specifier: workspace:*
+        version: link:../../packages/cameras
       '@ue-shed/game-text':
         specifier: workspace:*
         version: link:../../packages/game-text
@@ -101,6 +104,9 @@ importers:
       '@ue-shed/extension-asset-audits':
         specifier: workspace:*
         version: link:../../extensions/asset-audits
+      '@ue-shed/extension-camera-review':
+        specifier: workspace:*
+        version: link:../../extensions/camera-review
       '@ue-shed/extension-data-authoring':
         specifier: workspace:*
         version: link:../../extensions/data-authoring
@@ -162,6 +168,18 @@ importers:
       '@ue-shed/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
+      solid-js:
+        specifier: ^1.9.14
+        version: 1.9.14
+
+  extensions/camera-review:
+    dependencies:
+      '@stylexjs/stylex':
+        specifier: ^0.19.0
+        version: 0.19.0
       '@ue-shed/ui-theme':
         specifier: workspace:*
         version: link:../../packages/ui-theme

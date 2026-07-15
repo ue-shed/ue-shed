@@ -12,6 +12,11 @@
 			"Name": "UEShedCameras",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "UEShedCamerasEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }

@@ -1,6 +1,13 @@
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import type { AuthoringSetCellsIntent } from "@ue-shed/authoring-sdk";
 import type {
+	MapReviewApprovalResult,
+	MapReviewApproveCandidateIntent,
+	MapReviewAuthoringResult,
+	MapReviewCandidatePreviewResult,
+	MapReviewResult
+} from "@ue-shed/extension-camera-review/client";
+import type {
 	RendererCameraFrame,
 	FixtureLaunchResult,
 	ShowcaseContext,
@@ -37,6 +44,18 @@ declare global {
 			};
 			readonly fixture: {
 				readonly launch: () => Promise<FixtureLaunchResult>;
+				readonly launchReview: () => Promise<FixtureLaunchResult>;
+			};
+			readonly mapReview: {
+				readonly approveCandidate: (
+					intent: MapReviewApproveCandidateIntent
+				) => Promise<MapReviewApprovalResult>;
+				readonly authorFromSelection: () => Promise<MapReviewAuthoringResult>;
+				readonly previewCandidate: (
+					candidateId: string
+				) => Promise<MapReviewCandidatePreviewResult>;
+				readonly capture: () => Promise<MapReviewResult>;
+				readonly load: () => Promise<MapReviewResult>;
 			};
 			readonly configure: (config: CameraScheduleConfig) => Promise<CameraStatus>;
 			readonly getMetrics: () => Promise<WorkbenchCameraMetrics>;

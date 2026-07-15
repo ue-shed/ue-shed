@@ -16,6 +16,18 @@ import {
 	workingTable
 } from "@ue-shed/authoring";
 import { discoverAuthoringProjectCatalog } from "@ue-shed/authoring-catalog";
+import {
+	FramingCandidateId,
+	ReviewViewId,
+	approveFramingCandidate,
+	captureReviewSet,
+	generateFramingCandidates,
+	inspectReviewSelection,
+	listCaptureRuns,
+	loadCaptureRun,
+	loadReviewSet,
+	saveReviewSet
+} from "@ue-shed/cameras";
 import { scanTextCorpus, searchTextCorpus } from "@ue-shed/game-text";
 import { CURRENT_PROTOCOL_VERSION, decodeAuthoringValue } from "@ue-shed/protocol";
 import { discoverSavedTables, readSavedTable } from "@ue-shed/unreal-assets";
@@ -48,6 +60,12 @@ Usage:
   ue-shed authoring save <session-file> <endpoint>
   ue-shed text scan <project-root> [--reader <path>]
   ue-shed text search <project-root> <query> [--reader <path>]
+  ue-shed review sets validate <review-set>
+  ue-shed review framing candidates <endpoint>
+  ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
+  ue-shed review capture <project-root> <review-set> <endpoint>
+  ue-shed review history <project-root>
+  ue-shed review show <run-json>
   ue-shed version
   ue-shed help
 
@@ -581,6 +599,105 @@ async function textCorpus(args: readonly string[]): Promise<void> {
 	});
 }
 
+async function review(args: readonly string[]): Promise<void> {
+	const [area, action, ...rest] = args;
+	if (area === "sets" && action === "validate") {
+		const [reviewSetPath, ...unexpected] = rest;
+		if (!reviewSetPath || unexpected.length > 0) {
+			throw new Error("review sets validate requires exactly one Review Set path");
+		}
+		const reviewSet = await Effect.runPromise(loadReviewSet(reviewSetPath));
+		printJson({
+			contract: reviewSet.contract,
+			id: reviewSet.id,
+			profiles: reviewSet.captureProfiles.length,
+			status: "valid",
+			views: reviewSet.views.length
+		});
+		return;
+	}
+	if (area === "framing" && action === "candidates") {
+		const [endpoint, ...unexpected] = rest;
+		if (!endpoint || unexpected.length > 0) {
+			throw new Error(
+				"review framing candidates requires exactly one Remote Control endpoint"
+			);
+		}
+		const selection = await Effect.runPromise(inspectReviewSelection(endpoint));
+		if (selection.status === "failed") {
+			throw new Error(`${selection.message} ${selection.recovery}`);
+		}
+		printJson({ candidates: generateFramingCandidates(selection), selection });
+		return;
+	}
+	if (area === "framing" && action === "approve") {
+		const [reviewSetPath, endpoint, viewId, candidateId, ...unexpected] = rest;
+		if (!reviewSetPath || !endpoint || !viewId || !candidateId || unexpected.length > 0) {
+			throw new Error(
+				"review framing approve requires Review Set, endpoint, Review View ID, and candidate ID"
+			);
+		}
+		const selection = await Effect.runPromise(inspectReviewSelection(endpoint));
+		if (selection.status === "failed") {
+			throw new Error(`${selection.message} ${selection.recovery}`);
+		}
+		const candidate = generateFramingCandidates(selection).find(
+			(candidate) => candidate.id === FramingCandidateId.make(candidateId)
+		);
+		if (!candidate) throw new Error(`Unknown framing candidate: ${candidateId}`);
+		const reviewSet = await Effect.runPromise(loadReviewSet(reviewSetPath));
+		const approved = approveFramingCandidate({
+			candidate,
+			reviewSet,
+			subject: {
+				actorPath: selection.actorPath,
+				diagnosticLabel: selection.displayName,
+				kind: "actor_path"
+			},
+			viewId: ReviewViewId.make(viewId)
+		});
+		if (approved.status === "view_not_found") {
+			throw new Error(`Review View ${approved.viewId} was not found`);
+		}
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet: approved.reviewSet })
+		);
+		printJson({ candidateId: candidate.id, status: "approved", viewId });
+		return;
+	}
+	if (area === "capture") {
+		const [projectRoot, reviewSetPath, endpoint, ...unexpected] = [action, ...rest];
+		if (!projectRoot || !reviewSetPath || !endpoint || unexpected.length > 0) {
+			throw new Error(
+				"review capture requires project root, Review Set path, and Remote Control endpoint"
+			);
+		}
+		const run = await Effect.runPromise(
+			captureReviewSet({ endpoint, projectRoot, reviewSetPath })
+		);
+		printJson(run);
+		if (run.status !== "completed") process.exitCode = 1;
+		return;
+	}
+	if (area === "history") {
+		const [projectRoot, ...unexpected] = [action, ...rest];
+		if (!projectRoot || unexpected.length > 0) {
+			throw new Error("review history requires exactly one project root");
+		}
+		printJson({ runs: await Effect.runPromise(listCaptureRuns(projectRoot)) });
+		return;
+	}
+	if (area === "show") {
+		const [runPath, ...unexpected] = [action, ...rest];
+		if (!runPath || unexpected.length > 0) {
+			throw new Error("review show requires exactly one run.json path");
+		}
+		printJson(await Effect.runPromise(loadCaptureRun(runPath)));
+		return;
+	}
+	throw new Error(`Unknown review command\n\n${help}`);
+}
+
 async function main(args: readonly string[]): Promise<void> {
 	const [command, ...rest] = args;
 	switch (command) {
@@ -592,6 +709,9 @@ async function main(args: readonly string[]): Promise<void> {
 			return;
 		case "text":
 			await textCorpus(rest);
+			return;
+		case "review":
+			await review(rest);
 			return;
 		case "version":
 		case "--version":

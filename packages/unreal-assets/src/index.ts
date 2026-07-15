@@ -141,6 +141,20 @@ const SavedPropertyValueUnion: Schema.Schema<SavedPropertyValue> = Schema.Union(
 	})
 );
 
+export const SavedAssetDecodeError = Schema.Struct({
+	object_path: Schema.String,
+	class_path: Schema.optional(Schema.String),
+	kind: Schema.Literal(
+		"malformed_data",
+		"resource_limit",
+		"unsupported_format",
+		"unsupported_version",
+		"unsupported_capability"
+	),
+	message: Schema.String
+});
+export type SavedAssetDecodeError = Schema.Schema.Type<typeof SavedAssetDecodeError>;
+
 export const SavedAssetInspection = Schema.Struct({
 	schema_version: Schema.Literal(7),
 	status: Schema.Literal("ok", "partial"),
@@ -190,15 +204,7 @@ export const SavedAssetInspection = Schema.Struct({
 			})
 		)
 	),
-	decode_errors: Schema.optionalWith(
-		Schema.Array(
-			Schema.Struct({
-				message: Schema.String,
-				path: Schema.optional(Schema.String)
-			})
-		),
-		{ default: () => [] }
-	)
+	decode_errors: Schema.optionalWith(Schema.Array(SavedAssetDecodeError), { default: () => [] })
 }).annotations({ identifier: "SavedAssetInspection" });
 export type SavedAssetInspection = Schema.Schema.Type<typeof SavedAssetInspection>;
 
@@ -213,15 +219,7 @@ export const SavedAssetCatalogInspection = Schema.Struct({
 			row_struct: Schema.optional(Schema.String)
 		})
 	),
-	decode_errors: Schema.optionalWith(
-		Schema.Array(
-			Schema.Struct({
-				message: Schema.String,
-				object_path: Schema.optional(Schema.String)
-			})
-		),
-		{ default: () => [] }
-	),
+	decode_errors: Schema.optionalWith(Schema.Array(SavedAssetDecodeError), { default: () => [] }),
 	package: Schema.Struct({ name: Schema.String }),
 	path: Schema.String,
 	schema_version: Schema.Literal(7),

@@ -12,13 +12,12 @@ from the same language-neutral contract as `UEShedAuthoring`, not require TypeSc
 independently designed table models. Generic parser diagnostics and package metadata can remain in a
 source-specific envelope.
 
-Against the generated UE 5.7 fixture, CLI schema version 6 returned `ok` for all eleven assets. The
+Against the generated UE 5.7 fixture, CLI schema version 7 returned `ok` for all eleven assets. The
 results preserved:
 
 - DataTable and Composite DataTable identity, row structure, row order, and composite parents;
 - scalar, enum, text, struct, array, set, map, soft-object, and row-handle values;
-- the deliberately unsupported `FIntPoint` value as an explicit raw value with its byte size and
-  reason, rather than silently dropping it.
+- native `FVector` and `FIntPoint` values without dropping their structure.
 
 This establishes a first-class project-files read authority. It sees saved packages and does not see
 unsaved editor memory. UE Shed must own project asset discovery and map package paths to files; the

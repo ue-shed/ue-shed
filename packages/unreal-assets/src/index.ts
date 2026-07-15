@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { decodeAuthoringTableSnapshot, type AuthoringTableSnapshot } from "@ue-shed/protocol";
-import { Effect, Schema, Tuple } from "effect";
+import { Config, Context, Duration, Effect, Layer, Option, Schema, Tuple } from "effect";
 
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
@@ -23,16 +23,37 @@ export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>(
 
 export interface AssetReaderOptions {
 	readonly assetPath: string;
-	readonly executable?: string;
-	readonly timeoutMs?: number;
 }
 
 export interface SavedTableCatalogOptions {
 	readonly projectRoot: string;
-	readonly executable?: string;
-	readonly timeoutMs?: number;
 	readonly concurrency?: number;
 }
+
+export interface AssetReaderConfiguration {
+	readonly executable: string;
+	readonly timeoutMs: number;
+}
+
+export interface AssetReaderShape {
+	readonly discoverAssets: (
+		projectRoot: string
+	) => Effect.Effect<readonly string[], AssetReaderError>;
+	readonly discoverTables: (
+		options: SavedTableCatalogOptions
+	) => Effect.Effect<SavedTableCatalog, AssetReaderError>;
+	readonly readAsset: (
+		assetPath: string
+	) => Effect.Effect<SavedAssetInspection, AssetReaderError>;
+	readonly readTable: (
+		assetPath: string
+	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
+	readonly source: () => Effect.Effect<"configured" | "path">;
+}
+
+export class AssetReader extends Context.Service<AssetReader, AssetReaderShape>()(
+	"@ue-shed/unreal-assets/AssetReader"
+) {}
 
 interface ProcessFailure {
 	readonly code?: number | string;
@@ -294,22 +315,20 @@ export function decodeSavedAssetInspection(input: unknown) {
 	return decodeInspection(input);
 }
 
-function executableFrom(options: AssetReaderOptions): string {
-	return options.executable ?? process.env.UE_SHED_UASSET_EXECUTABLE ?? "uasset";
-}
-
 function invokeReader(
-	options: AssetReaderOptions,
+	configuration: AssetReaderConfiguration,
+	assetPath: string,
 	operation: "authoring" | "inspect"
 ): Effect.Effect<string, AssetReaderError> {
-	const args = [operation, options.assetPath, "--format", "json"];
+	const args = [operation, assetPath, "--format", "json"];
 	return Effect.tryPromise({
-		try: async () => {
+		try: async (signal) => {
 			try {
-				const result = await execFileAsync(executableFrom(options), args, {
+				const result = await execFileAsync(configuration.executable, args, {
 					encoding: "utf8",
 					maxBuffer: MAX_OUTPUT_BYTES,
-					timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+					signal,
+					timeout: configuration.timeoutMs,
 					windowsHide: true
 				});
 				return result.stdout;
@@ -326,9 +345,9 @@ function invokeReader(
 				kind: timedOut ? "timeout" : "process",
 				operation,
 				message: timedOut
-					? `Asset reader timed out after ${options.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`
+					? `Asset reader timed out after ${configuration.timeoutMs}ms`
 					: failure.stderr?.trim() || failure.message || "Asset reader failed",
-				path: options.assetPath,
+				path: assetPath,
 				retrySafe: timedOut,
 				...(typeof failure.code === "number" ? { exitCode: failure.code } : {})
 			});
@@ -370,13 +389,14 @@ function decodeOutput<A>(options: {
 	);
 }
 
-export function readSavedTable(
-	options: AssetReaderOptions
+function readSavedTableWith(
+	configuration: AssetReaderConfiguration,
+	assetPath: string
 ): Effect.Effect<AuthoringTableSnapshot, AssetReaderError> {
-	return invokeReader(options, "authoring").pipe(
+	return invokeReader(configuration, assetPath, "authoring").pipe(
 		Effect.flatMap((stdout) =>
 			decodeOutput({
-				assetPath: options.assetPath,
+				assetPath,
 				operation: "authoring",
 				stdout,
 				decode: decodeAuthoringTableSnapshot
@@ -385,13 +405,14 @@ export function readSavedTable(
 	);
 }
 
-export function readSavedAsset(
-	options: AssetReaderOptions
+function readSavedAssetWith(
+	configuration: AssetReaderConfiguration,
+	assetPath: string
 ): Effect.Effect<SavedAssetInspection, AssetReaderError> {
-	return invokeReader(options, "inspect").pipe(
+	return invokeReader(configuration, assetPath, "inspect").pipe(
 		Effect.flatMap((stdout) =>
 			decodeOutput({
-				assetPath: options.assetPath,
+				assetPath,
 				operation: "inspect",
 				stdout,
 				decode: decodeSavedAssetInspection
@@ -401,12 +422,13 @@ export function readSavedAsset(
 }
 
 function inspectSavedAssetForCatalog(
-	options: AssetReaderOptions
+	configuration: AssetReaderConfiguration,
+	assetPath: string
 ): Effect.Effect<SavedAssetCatalogInspection, AssetReaderError> {
-	return invokeReader(options, "inspect").pipe(
+	return invokeReader(configuration, assetPath, "inspect").pipe(
 		Effect.flatMap((stdout) =>
 			decodeOutput({
-				assetPath: options.assetPath,
+				assetPath,
 				decode: decodeSavedAssetCatalogInspection,
 				operation: "inspect",
 				stdout
@@ -415,9 +437,7 @@ function inspectSavedAssetForCatalog(
 	);
 }
 
-export function discoverSavedAssets(
-	projectRoot: string
-): Effect.Effect<string[], AssetReaderError> {
+function discoverSavedAssetsWith(projectRoot: string): Effect.Effect<string[], AssetReaderError> {
 	const contentRoot = join(projectRoot, "Content");
 	return Effect.tryPromise({
 		try: async () => {
@@ -445,19 +465,16 @@ export function discoverSavedAssets(
 	});
 }
 
-export function discoverSavedTables(
+function discoverSavedTablesWith(
+	configuration: AssetReaderConfiguration,
 	options: SavedTableCatalogOptions
 ): Effect.Effect<SavedTableCatalog, AssetReaderError> {
 	return Effect.gen(function* () {
-		const assetPaths = yield* discoverSavedAssets(options.projectRoot);
+		const assetPaths = yield* discoverSavedAssetsWith(options.projectRoot);
 		const outcomes = yield* Effect.forEach(
 			assetPaths,
 			(assetPath) =>
-				inspectSavedAssetForCatalog({
-					assetPath,
-					...(options.executable === undefined ? {} : { executable: options.executable }),
-					...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
-				}).pipe(
+				inspectSavedAssetForCatalog(configuration, assetPath).pipe(
 					Effect.match({
 						onFailure: (error) => ({ error, status: "failed" as const }),
 						onSuccess: (inspection) => ({ inspection, status: "inspected" as const })
@@ -502,4 +519,87 @@ export function discoverSavedTables(
 			attributes: { "unreal.project_root": options.projectRoot }
 		})
 	);
+}
+
+function makeAssetReader(
+	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" }
+): AssetReaderShape {
+	const discoverAssets = Effect.fn("AssetReader.discoverAssets")(function* (projectRoot: string) {
+		return yield* discoverSavedAssetsWith(projectRoot);
+	});
+	const readAsset = Effect.fn("AssetReader.readAsset")(function* (assetPath: string) {
+		return yield* readSavedAssetWith(configuration, assetPath);
+	});
+	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
+		return yield* readSavedTableWith(configuration, assetPath);
+	});
+	const discoverTables = Effect.fn("AssetReader.discoverTables")(function* (
+		options: SavedTableCatalogOptions
+	) {
+		return yield* discoverSavedTablesWith(configuration, options);
+	});
+	const source = Effect.fn("AssetReader.source")(() => Effect.succeed(configuration.source));
+	return AssetReader.of({ discoverAssets, discoverTables, readAsset, readTable, source });
+}
+
+export function assetReaderLayer(
+	configuration: Partial<AssetReaderConfiguration> = {}
+): Layer.Layer<AssetReader> {
+	return Layer.succeed(
+		AssetReader,
+		makeAssetReader({
+			executable: configuration.executable ?? "uasset",
+			source: configuration.executable === undefined ? "path" : "configured",
+			timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
+		})
+	);
+}
+
+const readerExecutable = Config.option(Config.string("UE_SHED_UASSET_EXECUTABLE"));
+const readerTimeout = Config.duration("UE_SHED_UASSET_TIMEOUT").pipe(
+	Config.withDefault(Duration.millis(DEFAULT_TIMEOUT_MS))
+);
+
+export const AssetReaderLive = Layer.effect(
+	AssetReader,
+	Effect.gen(function* () {
+		const executable = yield* readerExecutable;
+		return makeAssetReader({
+			executable: Option.getOrElse(executable, () => "uasset"),
+			source: Option.isSome(executable) ? "configured" : "path",
+			timeoutMs: Duration.toMillis(yield* readerTimeout)
+		});
+	})
+);
+
+export function makeAssetReaderTestLayer(service: AssetReaderShape): Layer.Layer<AssetReader> {
+	return Layer.succeed(AssetReader, AssetReader.of(service));
+}
+
+export function readSavedTable(
+	options: AssetReaderOptions
+): Effect.Effect<AuthoringTableSnapshot, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.readTable(options.assetPath));
+}
+
+export function readSavedAsset(
+	options: AssetReaderOptions
+): Effect.Effect<SavedAssetInspection, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.readAsset(options.assetPath));
+}
+
+export function discoverSavedAssets(
+	projectRoot: string
+): Effect.Effect<readonly string[], AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.discoverAssets(projectRoot));
+}
+
+export function discoverSavedTables(
+	options: SavedTableCatalogOptions
+): Effect.Effect<SavedTableCatalog, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.discoverTables(options));
+}
+
+export function getAssetReaderSource(): Effect.Effect<"configured" | "path", never, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.source());
 }

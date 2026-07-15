@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Status**: DONE
 - **Priority**: P0
 - **Effort**: XL
 - **Risk**: HIGH — files, child processes, HTTP, sockets, and named-pipe cleanup are affected
@@ -131,12 +132,12 @@ policy, interruption, and deterministic close with no open handles.
 
 ## Done criteria
 
-- [ ] External authority is represented by service requirements and layers.
-- [ ] Application operations do not read `process.env` or create unmanaged resources.
-- [ ] One Remote Control transport implementation exists.
-- [ ] Camera feed acquisition and teardown are scoped; consumers receive a Stream.
-- [ ] Tests use deterministic Effect synchronization.
-- [ ] `pnpm check` exits 0.
+- [x] External authority is represented by service requirements and layers.
+- [x] Application operations do not read `process.env` or create unmanaged resources.
+- [x] One Remote Control transport implementation exists.
+- [x] Camera feed acquisition and teardown are scoped; consumers receive a Stream.
+- [x] Tests use deterministic Effect synchronization.
+- [x] `pnpm check` exits 0.
 
 ## STOP conditions
 

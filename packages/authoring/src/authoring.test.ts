@@ -12,6 +12,7 @@ import {
 	foldTable,
 	invertCommand,
 	loadDraftSession,
+	DraftSessionRepositoryLive,
 	redo,
 	saveDraftSession,
 	undo,
@@ -181,8 +182,14 @@ describe("draft command log", () => {
 			version: 2
 		};
 		try {
-			await Effect.runPromise(saveDraftSession(path, session));
-			expect(await Effect.runPromise(loadDraftSession(path))).toEqual(session);
+			await Effect.runPromise(
+				saveDraftSession(path, session).pipe(Effect.provide(DraftSessionRepositoryLive))
+			);
+			expect(
+				await Effect.runPromise(
+					loadDraftSession(path).pipe(Effect.provide(DraftSessionRepositoryLive))
+				)
+			).toEqual(session);
 		} finally {
 			await rm(directory, { force: true, recursive: true });
 		}

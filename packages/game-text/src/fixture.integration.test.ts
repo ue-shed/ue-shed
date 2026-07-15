@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { assetReaderLayer } from "@ue-shed/unreal-assets";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { scanTextCorpus } from "./corpus.js";
@@ -10,7 +11,9 @@ const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", im
 describe.skipIf(!executable)("game text fixture corpus", () => {
 	it("keeps Unreal identities, occurrences, and unsupported histories explicit", async () => {
 		const corpus = await Effect.runPromise(
-			scanTextCorpus({ projectRoot: fixtureRoot, readerExecutable: executable! })
+			scanTextCorpus({ projectRoot: fixtureRoot }).pipe(
+				Effect.provide(assetReaderLayer({ executable: executable! }))
+			)
 		);
 
 		expect(corpus.status).toBe("partial");

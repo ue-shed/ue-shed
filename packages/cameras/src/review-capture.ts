@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Effect, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
-import { captureRunsRoot, isPathWithin, loadReviewSet } from "./review-repository.js";
+import { ReviewRepository, captureRunsRoot, isPathWithin } from "./review-repository.js";
 import {
 	CaptureRunId,
 	ArtifactId,
@@ -44,17 +44,6 @@ interface CaptureReviewSetDependencies {
 	readonly port?: ReviewCapturePort;
 }
 
-async function durableJson(path: string, value: unknown): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const handle = await open(path, "wx");
-	try {
-		await handle.writeFile(`${JSON.stringify(value, null, "\t")}\n`, "utf8");
-		await handle.sync();
-	} finally {
-		await handle.close();
-	}
-}
-
 function sha256(bytes: Uint8Array): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
@@ -67,10 +56,12 @@ export function captureReviewSet(
 	}
 ): Effect.Effect<
 	CaptureRun,
-	ReviewCaptureRunError | import("./review-repository.js").ReviewStorageError
+	ReviewCaptureRunError | import("./review-repository.js").ReviewStorageError,
+	ReviewRepository
 > {
 	return Effect.gen(function* () {
-		const reviewSet = yield* loadReviewSet(options.reviewSetPath);
+		const repository = yield* ReviewRepository;
+		const reviewSet = yield* repository.loadSet(options.reviewSetPath);
 		const runId = CaptureRunId.make(dependencies.makeId());
 		const startedAt = dependencies.now();
 		const root = captureRunsRoot(options.projectRoot);
@@ -80,22 +71,13 @@ export function captureReviewSet(
 		const capturePort =
 			dependencies.port ??
 			({
-				capture: (request) => captureReviewView({ endpoint: options.endpoint, request })
+				capture: (request) =>
+					captureReviewView({ endpoint: options.endpoint, request }).pipe(
+						Effect.provide(RemoteControlClientLive)
+					)
 			} satisfies ReviewCapturePort);
 
-		yield* Effect.tryPromise({
-			try: async () => {
-				await mkdir(root, { recursive: true });
-				await mkdir(stagingRoot);
-			},
-			catch: (cause) =>
-				new ReviewCaptureRunError({
-					message: String(cause),
-					operation: "prepare",
-					recovery: "Check that the project review directory is writable.",
-					runId
-				})
-		});
+		yield* repository.prepareRun({ root, stagingRoot });
 
 		const results: ViewResult[] = [];
 		for (const view of reviewSet.views) {
@@ -182,32 +164,20 @@ export function captureReviewSet(
 
 			const relativePath = `views/${view.id}/pure.png`;
 			const artifactPath = join(stagingRoot, ...relativePath.split("/"));
-			const artifact = yield* Effect.tryPromise({
-				try: async () => {
-					await mkdir(dirname(artifactPath), { recursive: true });
-					await copyFile(response.stagingPath, artifactPath);
-					const bytes = await readFile(artifactPath);
-					const file = await stat(artifactPath);
-					await unlink(response.stagingPath).catch(() => undefined);
-					return {
-						byteLength: file.size,
-						contentHash: sha256(bytes),
-						height: response.height,
-						id: ArtifactId.make(`${runId}:${view.id}:pure`),
-						mediaType: "image/png" as const,
-						relativePath,
-						variant: "pure" as const,
-						width: response.width
-					};
-				},
-				catch: (cause) =>
-					new ReviewCaptureRunError({
-						message: String(cause),
-						operation: "capture",
-						recovery: "Check staging and evidence directory permissions, then retry.",
-						runId
-					})
+			const stored = yield* repository.storeArtifact({
+				destinationPath: artifactPath,
+				sourcePath: response.stagingPath
 			});
+			const artifact = {
+				byteLength: stored.size,
+				contentHash: sha256(stored.bytes),
+				height: response.height,
+				id: ArtifactId.make(`${runId}:${view.id}:pure`),
+				mediaType: "image/png" as const,
+				relativePath,
+				variant: "pure" as const,
+				width: response.width
+			};
 			const result = {
 				artifact,
 				captureDurationMs: response.captureDurationMs,
@@ -216,15 +186,9 @@ export function captureReviewSet(
 				viewId: view.id
 			};
 			results.push(result);
-			yield* Effect.tryPromise({
-				try: () => durableJson(join(stagingRoot, "views", view.id, "result.json"), result),
-				catch: (cause) =>
-					new ReviewCaptureRunError({
-						message: String(cause),
-						operation: "capture",
-						recovery: "Check the evidence directory and retry the run.",
-						runId
-					})
+			yield* repository.writeRunDocument({
+				path: join(stagingRoot, "views", view.id, "result.json"),
+				value: result
 			});
 		}
 
@@ -256,19 +220,7 @@ export function captureReviewSet(
 			)
 		);
 
-		yield* Effect.tryPromise({
-			try: async () => {
-				await durableJson(join(stagingRoot, "run.json"), run);
-				await rename(stagingRoot, finalRoot);
-			},
-			catch: (cause) =>
-				new ReviewCaptureRunError({
-					message: String(cause),
-					operation: "finalize",
-					recovery: `Inspect ${relative(root, stagingRoot)} and retry finalization safely.`,
-					runId
-				})
-		});
+		yield* repository.finalizeRun({ finalRoot, run, stagingRoot });
 		return run;
 	}).pipe(
 		Effect.withSpan("camera.review.run.capture", {

@@ -2,13 +2,12 @@ import {
 	decodeCompanionCapabilityManifest,
 	type CompanionCapabilityManifest
 } from "@ue-shed/protocol";
+import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Effect, Schema } from "effect";
 import { decodeTexturePreviewResult, type TexturePreviewResult } from "./schema.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const previewCapability = "asset-audits.texture-preview.v1";
-const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
-const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
 
 export class LiveTexturePreviewError extends Schema.TaggedErrorClass<LiveTexturePreviewError>()(
 	"LiveTexturePreviewError",
@@ -42,85 +41,38 @@ function unavailable(options: {
 	};
 }
 
+function liveError(
+	operation: "manifest" | "preview",
+	error: RemoteControlClientError
+): LiveTexturePreviewError {
+	return new LiveTexturePreviewError({
+		endpoint: error.endpoint,
+		message: error.message,
+		operation,
+		retrySafe: error.retrySafe,
+		...(error.status === undefined ? {} : { status: error.status })
+	});
+}
+
 function remoteCall(options: {
 	readonly endpoint: string;
 	readonly objectPath: string;
 	readonly functionName: string;
 	readonly operation: "manifest" | "preview";
 	readonly parameters: Readonly<Record<string, unknown>>;
-}): Effect.Effect<unknown, LiveTexturePreviewError> {
+}): Effect.Effect<unknown, LiveTexturePreviewError, RemoteControlClient> {
 	const endpoint = options.endpoint.replace(/\/+$/, "");
-	return Effect.tryPromise({
-		try: async (signal) => {
-			const response = await fetch(`${endpoint}/remote/object/call`, {
-				body: JSON.stringify({
-					generateTransaction: false,
-					functionName: options.functionName,
-					objectPath: options.objectPath,
-					parameters: options.parameters
-				}),
-				headers: { "content-type": "application/json" },
-				method: "PUT",
-				signal
-			});
-			if (!response.ok) {
-				throw new LiveTexturePreviewError({
-					endpoint,
-					operation: options.operation,
-					message: `Remote Control returned HTTP ${response.status}`,
-					retrySafe: response.status >= 500,
-					status: response.status
-				});
-			}
-			return (await response.json()) as unknown;
-		},
-		catch: (cause) =>
-			cause instanceof LiveTexturePreviewError
-				? cause
-				: new LiveTexturePreviewError({
-						endpoint,
-						operation: options.operation,
-						message: String(cause),
-						retrySafe: true
-					})
-	}).pipe(
-		Effect.flatMap((value) =>
-			decodeRemoteCallEnvelope(value).pipe(
-				Effect.mapError(
-					(cause) =>
-						new LiveTexturePreviewError({
-							endpoint,
-							operation: options.operation,
-							message: `Invalid Remote Control envelope: ${String(cause)}`,
-							retrySafe: false
-						})
-				)
-			)
-		),
-		Effect.flatMap((envelope) =>
-			Effect.try({
-				try: () => JSON.parse(envelope.ResultJson) as unknown,
-				catch: (cause) =>
-					new LiveTexturePreviewError({
-						endpoint,
-						operation: options.operation,
-						message: `Invalid Remote Control JSON: ${String(cause)}`,
-						retrySafe: false
-					})
+	return Effect.flatMap(RemoteControlClient, (client) =>
+		client
+			.request({
+				endpoint,
+				functionName: options.functionName,
+				objectPath: options.objectPath,
+				operation: `asset_audits.live_${options.operation}`,
+				parameters: options.parameters
 			})
-		),
-		Effect.timeoutOrElse({
-			duration: "10 seconds",
-			orElse: () =>
-				Effect.fail(
-					new LiveTexturePreviewError({
-						endpoint,
-						operation: options.operation,
-						message: "Remote Control timed out after 10 seconds",
-						retrySafe: true
-					})
-				)
-		}),
+			.pipe(Effect.mapError((error) => liveError(options.operation, error)))
+	).pipe(
 		Effect.withSpan(`asset_audits.live_${options.operation}`, {
 			attributes: { "unreal.endpoint": endpoint }
 		})
@@ -129,7 +81,7 @@ function remoteCall(options: {
 
 function readManifest(
 	endpoint: string
-): Effect.Effect<CompanionCapabilityManifest, LiveTexturePreviewError> {
+): Effect.Effect<CompanionCapabilityManifest, LiveTexturePreviewError, RemoteControlClient> {
 	return remoteCall({
 		endpoint,
 		objectPath: coreObjectPath,
@@ -155,7 +107,7 @@ function readManifest(
 
 export function readLiveTexturePreview(
 	options: LiveTexturePreviewOptions
-): Effect.Effect<TexturePreviewResult, LiveTexturePreviewError> {
+): Effect.Effect<TexturePreviewResult, LiveTexturePreviewError, RemoteControlClient> {
 	return readManifest(options.endpoint).pipe(
 		Effect.flatMap((manifest) => {
 			if (

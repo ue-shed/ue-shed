@@ -1,5 +1,6 @@
 import { AuthoringFieldDescriptor, type AuthoringTableSnapshot } from "@ue-shed/protocol";
 import {
+	type AssetReader,
 	discoverSavedTables,
 	type SavedTableCatalog,
 	type SavedTableDescriptor
@@ -169,15 +170,13 @@ export function discoverAuthoringProjectCatalog(options: {
 	readonly concurrency?: number;
 	readonly live?: UnrealAuthoringConnection;
 	readonly projectRoot?: string;
-	readonly readerExecutable?: string;
 	readonly savedCatalog?: SavedTableCatalog;
-}): Effect.Effect<AuthoringProjectCatalog, never> {
+}): Effect.Effect<AuthoringProjectCatalog, never, AssetReader> {
 	const saved = options.savedCatalog
 		? Effect.succeed(Result.succeed(options.savedCatalog))
 		: options.projectRoot
 			? discoverSavedTables({
 					...(options.concurrency ? { concurrency: options.concurrency } : {}),
-					...(options.readerExecutable ? { executable: options.readerExecutable } : {}),
 					projectRoot: options.projectRoot
 				}).pipe(Effect.result)
 			: Effect.succeed(undefined);

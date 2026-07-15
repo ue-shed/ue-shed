@@ -1,7 +1,16 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
-import { connectUnrealAuthoring, UnrealCapabilityError, UnrealConnectionError } from "./index.js";
+import {
+	connectUnrealAuthoring,
+	RemoteControlClientLive,
+	UnrealCapabilityError,
+	UnrealConnectionError
+} from "./index.js";
+
+const runRemoteControl = <A, E>(
+	effect: Effect.Effect<A, E, import("./index.js").RemoteControlClient>
+) => Effect.runPromise(effect.pipe(Effect.provide(RemoteControlClientLive)));
 
 let server: Server | undefined;
 
@@ -98,7 +107,7 @@ describe("Remote Control authoring adapter", () => {
 			});
 		});
 
-		const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 		expect(await Effect.runPromise(connection.listTableObjectPaths())).toEqual([
 			"/Game/Fixture/DT_Test.DT_Test"
 		]);
@@ -113,7 +122,7 @@ describe("Remote Control authoring adapter", () => {
 			response.statusCode = 503;
 			response.end("unavailable");
 		});
-		const error = await Effect.runPromise(Effect.flip(connectUnrealAuthoring(endpoint)));
+		const error = await runRemoteControl(Effect.flip(connectUnrealAuthoring(endpoint)));
 		expect(error).toBeInstanceOf(UnrealConnectionError);
 		if (error instanceof UnrealConnectionError) {
 			expect(error.retrySafe).toBe(true);
@@ -143,7 +152,7 @@ describe("Remote Control authoring adapter", () => {
 				})
 			);
 		});
-		const error = await Effect.runPromise(Effect.flip(connectUnrealAuthoring(endpoint)));
+		const error = await runRemoteControl(Effect.flip(connectUnrealAuthoring(endpoint)));
 		expect(error).toBeInstanceOf(UnrealCapabilityError);
 		if (error instanceof UnrealCapabilityError) {
 			expect(error.capability).toBe("authoring.endpoint.v1");

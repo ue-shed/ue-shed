@@ -1,12 +1,21 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RemoteControlClient, RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { inspectReviewSelection, previewReviewCandidate } from "./review-authoring-live.js";
 import { captureReviewSet } from "./review-capture.js";
 import { generateFramingCandidates } from "./review-framing.js";
-import { captureRunsRoot, loadReviewSet } from "./review-repository.js";
+import {
+	captureRunsRoot,
+	loadReviewSet,
+	ReviewRepositoryLive,
+	type ReviewRepository
+} from "./review-repository.js";
+
+const runReviewRepository = <A, E>(effect: Effect.Effect<A, E, ReviewRepository>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(ReviewRepositoryLive)));
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -14,23 +23,26 @@ const projectRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const reviewSetPath = join(projectRoot, ".ue-shed", "review", "sets", "fixture-structure.json");
 const subjectPath = "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject";
 
-async function editorActorCall(functionName: string, parameters: object): Promise<void> {
-	const response = await fetch(`${endpoint}/remote/object/call`, {
-		body: JSON.stringify({
-			functionName,
-			generateTransaction: false,
-			objectPath: "/Script/UnrealEd.Default__EditorActorSubsystem",
-			parameters
-		}),
-		headers: { "content-type": "application/json" },
-		method: "PUT"
-	});
-	expect(response.ok).toBe(true);
+async function editorActorCall(
+	functionName: string,
+	parameters: Readonly<Record<string, unknown>>
+): Promise<void> {
+	await Effect.runPromise(
+		Effect.flatMap(RemoteControlClient, (client) =>
+			client.request({
+				endpoint: endpoint!,
+				functionName,
+				objectPath: "/Script/UnrealEd.Default__EditorActorSubsystem",
+				operation: "camera.review.test.editor_actor_call",
+				parameters
+			})
+		).pipe(Effect.provide(RemoteControlClientLive))
+	);
 }
 
 describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 	it("captures one immutable Pure view without changing map dirty state", async () => {
-		const run = await Effect.runPromise(
+		const run = await runReviewRepository(
 			captureReviewSet({ endpoint: endpoint!, projectRoot, reviewSetPath })
 		);
 		try {
@@ -60,7 +72,9 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 			bShouldBeSelected: true
 		});
 		try {
-			const selection = await Effect.runPromise(inspectReviewSelection(endpoint!));
+			const selection = await Effect.runPromise(
+				inspectReviewSelection(endpoint!).pipe(Effect.provide(RemoteControlClientLive))
+			);
 			expect(selection.status).toBe("selected");
 			if (selection.status !== "selected") return;
 			expect(selection).toMatchObject({
@@ -70,7 +84,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 			});
 			const candidates = generateFramingCandidates(selection);
 			expect(candidates.length).toBeGreaterThanOrEqual(6);
-			const reviewSet = await Effect.runPromise(loadReviewSet(reviewSetPath));
+			const reviewSet = await runReviewRepository(loadReviewSet(reviewSetPath));
 			const preview = await Effect.runPromise(
 				previewReviewCandidate({
 					candidate: candidates[0]!,
@@ -84,7 +98,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 						actorPath: selection.actorPath,
 						displayName: selection.displayName
 					}
-				})
+				}).pipe(Effect.provide(RemoteControlClientLive))
 			);
 			expect({ height: preview.height, width: preview.width }).toEqual({
 				height: 360,

@@ -18,6 +18,7 @@
 	},
 	"dependencies": {
 		"@ue-shed/protocol": "workspace:*",
+		"@ue-shed/unreal-connection": "workspace:*",
 		"effect": "catalog:"
 	}
 }

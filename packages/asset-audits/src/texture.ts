@@ -3,6 +3,7 @@ import { relative } from "node:path";
 import {
 	discoverSavedAssets,
 	readSavedAsset,
+	type AssetReader,
 	type SavedAssetInspection,
 	type SavedProperty
 } from "@ue-shed/unreal-assets";
@@ -33,7 +34,6 @@ export class TextureAuditScanError extends Schema.TaggedErrorClass<TextureAuditS
 export interface ScanTextureAuditOptions {
 	readonly projectRoot: string;
 	readonly ruleFile: string;
-	readonly readerExecutable?: string;
 	readonly concurrency?: number;
 	readonly maximumAssets?: number;
 }
@@ -275,7 +275,7 @@ function readRuleSet(path: string): Effect.Effect<TextureAuditRuleSet, TextureAu
 
 export function scanTextureAudit(
 	options: ScanTextureAuditOptions
-): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
+): Effect.Effect<TextureAuditReport, TextureAuditScanError, AssetReader> {
 	return Effect.gen(function* () {
 		const rules = yield* readRuleSet(options.ruleFile);
 		const assets = yield* discoverSavedAssets(options.projectRoot).pipe(
@@ -302,12 +302,7 @@ export function scanTextureAudit(
 			assets,
 			(assetPath) =>
 				Effect.all({
-					inspection: readSavedAsset({
-						assetPath,
-						...(options.readerExecutable
-							? { executable: options.readerExecutable }
-							: {})
-					}),
+					inspection: readSavedAsset({ assetPath }),
 					file: Effect.tryPromise(() => stat(assetPath))
 				}).pipe(
 					Effect.map(({ inspection, file }) => ({

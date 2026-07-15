@@ -7,13 +7,15 @@ import {
 	buildSetCellCommand,
 	createDraftSession,
 	dispatchApply,
+	DraftSessionRepositoryLive,
 	fingerprintTable,
 	loadDraftSession,
 	makeAuthoringSessionService,
 	redo,
 	saveDraftSession,
 	undo,
-	workingTable
+	workingTable,
+	type DraftSessionRepository
 } from "@ue-shed/authoring";
 import { discoverAuthoringProjectCatalog } from "@ue-shed/authoring-catalog";
 import {
@@ -26,13 +28,36 @@ import {
 	listCaptureRuns,
 	loadCaptureRun,
 	loadReviewSet,
-	saveReviewSet
+	ReviewRepositoryLive,
+	saveReviewSet,
+	type ReviewRepository
 } from "@ue-shed/cameras";
 import { scanTextCorpus, searchTextCorpus } from "@ue-shed/game-text";
 import { CURRENT_PROTOCOL_VERSION, decodeAuthoringValue } from "@ue-shed/protocol";
-import { discoverSavedTables, readSavedTable } from "@ue-shed/unreal-assets";
-import { connectUnrealAuthoring } from "@ue-shed/unreal-connection";
+import {
+	AssetReaderLive,
+	assetReaderLayer,
+	discoverSavedTables,
+	readSavedTable,
+	type AssetReader
+} from "@ue-shed/unreal-assets";
+import {
+	connectUnrealAuthoring,
+	RemoteControlClientLive,
+	type RemoteControlClient
+} from "@ue-shed/unreal-connection";
 import { Effect } from "effect";
+
+const runRemoteControl = <A, E>(effect: Effect.Effect<A, E, RemoteControlClient>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(RemoteControlClientLive)));
+const runAssetReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>, executable?: string) =>
+	Effect.runPromise(
+		effect.pipe(Effect.provide(executable ? assetReaderLayer({ executable }) : AssetReaderLive))
+	);
+const runDraftPersistence = <A, E>(effect: Effect.Effect<A, E, DraftSessionRepository>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(DraftSessionRepositoryLive)));
+const runReviewRepository = <A, E>(effect: Effect.Effect<A, E, ReviewRepository>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(ReviewRepositoryLive)));
 
 const help = `UE Shed — External tools for Unreal Engine development.
 
@@ -117,12 +142,12 @@ async function audit(args: readonly string[]): Promise<void> {
 		}
 	}
 	if (!ruleFile) throw new Error("audit textures requires --rules <rule-file>");
-	const report = await Effect.runPromise(
+	const report = await runAssetReader(
 		scanTextureAudit({
 			projectRoot,
-			ruleFile,
-			...(reader ? { readerExecutable: reader } : {})
-		})
+			ruleFile
+		}),
+		reader
 	);
 	printJson(report);
 }
@@ -133,12 +158,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 	if (area === "tables") {
 		const projectRoot = action;
 		if (!projectRoot) throw new Error("authoring tables requires a project root");
-		const catalog = await Effect.runPromise(
-			discoverSavedTables({
-				projectRoot,
-				...(parsed.reader ? { executable: parsed.reader } : {})
-			})
-		);
+		const catalog = await runAssetReader(discoverSavedTables({ projectRoot }), parsed.reader);
 		printJson(catalog);
 		return;
 	}
@@ -158,15 +178,15 @@ async function authoring(args: readonly string[]): Promise<void> {
 			endpoint = value;
 		}
 		const live = endpoint
-			? await Effect.runPromise(connectUnrealAuthoring(endpoint))
+			? await runRemoteControl(connectUnrealAuthoring(endpoint))
 			: undefined;
 		printJson(
-			await Effect.runPromise(
+			await runAssetReader(
 				discoverAuthoringProjectCatalog({
 					...(live ? { live } : {}),
-					projectRoot,
-					...(parsed.reader ? { readerExecutable: parsed.reader } : {})
-				})
+					projectRoot
+				}),
+				parsed.reader
 			)
 		);
 		return;
@@ -177,13 +197,13 @@ async function authoring(args: readonly string[]): Promise<void> {
 		if (!projectRoot || !endpoint) {
 			throw new Error("authoring parity requires a project root and live endpoint");
 		}
-		const live = await Effect.runPromise(connectUnrealAuthoring(endpoint));
-		const catalog = await Effect.runPromise(
+		const live = await runRemoteControl(connectUnrealAuthoring(endpoint));
+		const catalog = await runAssetReader(
 			discoverAuthoringProjectCatalog({
 				live,
-				projectRoot,
-				...(parsed.reader ? { readerExecutable: parsed.reader } : {})
-			})
+				projectRoot
+			}),
+			parsed.reader
 		);
 		const missingAuthorities = catalog.tables
 			.filter(
@@ -205,22 +225,17 @@ async function authoring(args: readonly string[]): Promise<void> {
 				? [{ authorities: unavailable, objectPath: table.objectPath }]
 				: [];
 		});
-		const savedTables = await Effect.runPromise(
-			discoverSavedTables({
-				projectRoot,
-				...(parsed.reader ? { executable: parsed.reader } : {})
-			})
+		const savedTables = await runAssetReader(
+			discoverSavedTables({ projectRoot }),
+			parsed.reader
 		);
-		const savedSnapshots = await Effect.runPromise(
+		const savedSnapshots = await runAssetReader(
 			Effect.forEach(
 				savedTables.tables,
-				(table) =>
-					readSavedTable({
-						assetPath: table.assetPath,
-						...(parsed.reader ? { executable: parsed.reader } : {})
-					}),
+				(table) => readSavedTable({ assetPath: table.assetPath }),
 				{ concurrency: 4 }
-			)
+			),
+			parsed.reader
 		);
 		const liveSnapshots = await Effect.runPromise(
 			live
@@ -277,16 +292,14 @@ async function authoring(args: readonly string[]): Promise<void> {
 	if (area === "inspect") {
 		const [assetPath] = [action, ...rest];
 		if (!assetPath) throw new Error("authoring inspect requires an asset path");
-		const snapshot = await Effect.runPromise(
-			readSavedTable({ assetPath, ...(parsed.reader ? { executable: parsed.reader } : {}) })
-		);
+		const snapshot = await runAssetReader(readSavedTable({ assetPath }), parsed.reader);
 		printJson({ fingerprint: fingerprintTable(snapshot), snapshot });
 		return;
 	}
 	if (area === "live" && action === "inspect") {
 		const [endpoint, tablePath] = rest;
 		if (!endpoint || !tablePath) throw new Error("live inspect requires endpoint and table");
-		const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 		const snapshot = await Effect.runPromise(connection.getTableSnapshot(tablePath));
 		printJson({ fingerprint: fingerprintTable(snapshot), snapshot });
 		return;
@@ -294,15 +307,15 @@ async function authoring(args: readonly string[]): Promise<void> {
 	if (area === "live" && action === "tables") {
 		const [endpoint] = rest;
 		if (!endpoint) throw new Error("live tables requires an endpoint");
-		const live = await Effect.runPromise(connectUnrealAuthoring(endpoint));
-		printJson(await Effect.runPromise(discoverAuthoringProjectCatalog({ live })));
+		const live = await runRemoteControl(connectUnrealAuthoring(endpoint));
+		printJson(await runAssetReader(discoverAuthoringProjectCatalog({ live })));
 		return;
 	}
 	if (area === "sessions") {
 		const projectOption = takeOption(rest, "--project");
 		if (!projectOption.value) throw new Error(`sessions ${action} requires --project`);
 		const idOption = takeOption(projectOption.args, "--id");
-		const service = Effect.runSync(
+		const service = await Effect.runPromise(
 			makeAuthoringSessionService({ projectRoot: projectOption.value })
 		);
 		if (action === "list") {
@@ -315,12 +328,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 			if (!assetPath || unexpected.length > 0) {
 				throw new Error("sessions create requires exactly one saved DataTable asset");
 			}
-			const snapshot = await Effect.runPromise(
-				readSavedTable({
-					assetPath,
-					...(parsed.reader ? { executable: parsed.reader } : {})
-				})
-			);
+			const snapshot = await runAssetReader(readSavedTable({ assetPath }), parsed.reader);
 			printJson(
 				await Effect.runPromise(
 					service.create([snapshot], idOption.value ? { id: idOption.value } : undefined)
@@ -401,7 +409,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 			if (!sessionId || !endpoint || unexpected.length > 0) {
 				throw new Error("sessions apply requires session id and endpoint");
 			}
-			const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+			const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 			const limits = connection.manifest.authoringLimits;
 			if (!limits) throw new Error("Editor did not negotiate authoring mutation limits");
 			const prepared = await Effect.runPromise(service.prepareApply(sessionId, limits));
@@ -430,7 +438,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 			if (document.pendingOperation.kind !== "apply") {
 				throw new Error("Session has no unresolved Apply operation");
 			}
-			const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+			const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 			const result = await Effect.runPromise(
 				connection.lookupApplyResult(document.pendingOperation.request.operationId)
 			);
@@ -452,7 +460,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 					? existing
 					: await Effect.runPromise(service.prepareSave(sessionId));
 			if (prepared.pendingOperation.kind !== "save") throw new Error("Save was not prepared");
-			const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+			const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 			try {
 				const result = await Effect.runPromise(
 					connection.save(prepared.pendingOperation.request)
@@ -474,18 +482,16 @@ async function authoring(args: readonly string[]): Promise<void> {
 		if (!assetPath || !sessionPath) {
 			throw new Error("session create requires an asset and session file");
 		}
-		const snapshot = await Effect.runPromise(
-			readSavedTable({ assetPath, ...(parsed.reader ? { executable: parsed.reader } : {}) })
-		);
+		const snapshot = await runAssetReader(readSavedTable({ assetPath }), parsed.reader);
 		const session = createDraftSession(randomUUID(), [snapshot], fingerprintTable);
-		await Effect.runPromise(saveDraftSession(sessionPath, session));
+		await runDraftPersistence(saveDraftSession(sessionPath, session));
 		printJson(session);
 		return;
 	}
 	if (area === "session" && action === "show") {
 		const [sessionPath] = rest;
 		if (!sessionPath) throw new Error("session show requires a session file");
-		printJson(await Effect.runPromise(loadDraftSession(sessionPath)));
+		printJson(await runDraftPersistence(loadDraftSession(sessionPath)));
 		return;
 	}
 	if (area === "session" && action === "create-live") {
@@ -493,10 +499,10 @@ async function authoring(args: readonly string[]): Promise<void> {
 		if (!endpoint || !tablePath || !sessionPath) {
 			throw new Error("session create-live requires endpoint, table, and session file");
 		}
-		const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 		const snapshot = await Effect.runPromise(connection.getTableSnapshot(tablePath));
 		const session = createDraftSession(randomUUID(), [snapshot], fingerprintTable);
-		await Effect.runPromise(saveDraftSession(sessionPath, session));
+		await runDraftPersistence(saveDraftSession(sessionPath, session));
 		printJson(session);
 		return;
 	}
@@ -505,7 +511,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 		if (!sessionPath || !tablePath || !rowName || !fieldName || !valueJson) {
 			throw new Error("draft set-cell requires session, table, row, field, and value JSON");
 		}
-		const session = await Effect.runPromise(loadDraftSession(sessionPath));
+		const session = await runDraftPersistence(loadDraftSession(sessionPath));
 		const command = buildSetCellCommand({
 			authoredAt: new Date().toISOString(),
 			commandId: randomUUID(),
@@ -517,24 +523,24 @@ async function authoring(args: readonly string[]): Promise<void> {
 			value: await Effect.runPromise(decodeAuthoringValue(JSON.parse(valueJson)))
 		});
 		const next = appendCommandGroup(session, [command]);
-		await Effect.runPromise(saveDraftSession(sessionPath, next));
+		await runDraftPersistence(saveDraftSession(sessionPath, next));
 		printJson({ session: next, working: workingTable(next, tablePath) });
 		return;
 	}
 	if (area === "draft" && (action === "undo" || action === "redo")) {
 		const [sessionPath] = rest;
 		if (!sessionPath) throw new Error(`draft ${action} requires a session file`);
-		const session = await Effect.runPromise(loadDraftSession(sessionPath));
+		const session = await runDraftPersistence(loadDraftSession(sessionPath));
 		const next = action === "undo" ? undo(session) : redo(session);
-		await Effect.runPromise(saveDraftSession(sessionPath, next));
+		await runDraftPersistence(saveDraftSession(sessionPath, next));
 		printJson(next);
 		return;
 	}
 	if (area === "apply") {
 		const [sessionPath, endpoint] = [action, ...rest];
 		if (!sessionPath || !endpoint) throw new Error("apply requires session and endpoint");
-		const session = await Effect.runPromise(loadDraftSession(sessionPath));
-		const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+		const session = await runDraftPersistence(loadDraftSession(sessionPath));
+		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 		const outcome = await Effect.runPromise(
 			dispatchApply({
 				appliedAt: new Date().toISOString(),
@@ -543,7 +549,7 @@ async function authoring(args: readonly string[]): Promise<void> {
 				session
 			})
 		);
-		await Effect.runPromise(saveDraftSession(sessionPath, outcome.session));
+		await runDraftPersistence(saveDraftSession(sessionPath, outcome.session));
 		printJson(outcome);
 		return;
 	}
@@ -552,19 +558,19 @@ async function authoring(args: readonly string[]): Promise<void> {
 		if (!endpoint || !operationId) {
 			throw new Error("apply-status requires endpoint and operation ID");
 		}
-		const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 		printJson(await Effect.runPromise(connection.lookupApplyResult(operationId)));
 		return;
 	}
 	if (area === "save") {
 		const [sessionPath, endpoint] = [action, ...rest];
 		if (!sessionPath || !endpoint) throw new Error("save requires session and endpoint");
-		const session = await Effect.runPromise(loadDraftSession(sessionPath));
-		const connection = await Effect.runPromise(connectUnrealAuthoring(endpoint));
+		const session = await runDraftPersistence(loadDraftSession(sessionPath));
+		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
 		const request = buildSaveRequest(session, randomUUID());
 		const result = await Effect.runPromise(connection.save(request));
 		const next = acceptSaveResult(session, request, result, new Date().toISOString());
-		await Effect.runPromise(saveDraftSession(sessionPath, next));
+		await runDraftPersistence(saveDraftSession(sessionPath, next));
 		printJson({ result, session: next });
 		return;
 	}
@@ -577,12 +583,7 @@ async function textCorpus(args: readonly string[]): Promise<void> {
 	if ((action !== "scan" && action !== "search") || !projectRoot) {
 		throw new Error("text requires scan <project-root> or search <project-root> <query>");
 	}
-	const corpus = await Effect.runPromise(
-		scanTextCorpus({
-			projectRoot,
-			...(parsed.reader ? { readerExecutable: parsed.reader } : {})
-		})
-	);
+	const corpus = await runAssetReader(scanTextCorpus({ projectRoot }), parsed.reader);
 	if (action === "scan") {
 		printJson(corpus);
 		return;
@@ -606,7 +607,7 @@ async function review(args: readonly string[]): Promise<void> {
 		if (!reviewSetPath || unexpected.length > 0) {
 			throw new Error("review sets validate requires exactly one Review Set path");
 		}
-		const reviewSet = await Effect.runPromise(loadReviewSet(reviewSetPath));
+		const reviewSet = await runReviewRepository(loadReviewSet(reviewSetPath));
 		printJson({
 			contract: reviewSet.contract,
 			id: reviewSet.id,
@@ -623,7 +624,7 @@ async function review(args: readonly string[]): Promise<void> {
 				"review framing candidates requires exactly one Remote Control endpoint"
 			);
 		}
-		const selection = await Effect.runPromise(inspectReviewSelection(endpoint));
+		const selection = await runRemoteControl(inspectReviewSelection(endpoint));
 		if (selection.status === "failed") {
 			throw new Error(`${selection.message} ${selection.recovery}`);
 		}
@@ -637,7 +638,7 @@ async function review(args: readonly string[]): Promise<void> {
 				"review framing approve requires Review Set, endpoint, Review View ID, and candidate ID"
 			);
 		}
-		const selection = await Effect.runPromise(inspectReviewSelection(endpoint));
+		const selection = await runRemoteControl(inspectReviewSelection(endpoint));
 		if (selection.status === "failed") {
 			throw new Error(`${selection.message} ${selection.recovery}`);
 		}
@@ -645,7 +646,7 @@ async function review(args: readonly string[]): Promise<void> {
 			(candidate) => candidate.id === FramingCandidateId.make(candidateId)
 		);
 		if (!candidate) throw new Error(`Unknown framing candidate: ${candidateId}`);
-		const reviewSet = await Effect.runPromise(loadReviewSet(reviewSetPath));
+		const reviewSet = await runReviewRepository(loadReviewSet(reviewSetPath));
 		const approved = approveFramingCandidate({
 			candidate,
 			reviewSet,
@@ -659,7 +660,7 @@ async function review(args: readonly string[]): Promise<void> {
 		if (approved.status === "view_not_found") {
 			throw new Error(`Review View ${approved.viewId} was not found`);
 		}
-		await Effect.runPromise(
+		await runReviewRepository(
 			saveReviewSet({ path: reviewSetPath, reviewSet: approved.reviewSet })
 		);
 		printJson({ candidateId: candidate.id, status: "approved", viewId });
@@ -672,7 +673,7 @@ async function review(args: readonly string[]): Promise<void> {
 				"review capture requires project root, Review Set path, and Remote Control endpoint"
 			);
 		}
-		const run = await Effect.runPromise(
+		const run = await runReviewRepository(
 			captureReviewSet({ endpoint, projectRoot, reviewSetPath })
 		);
 		printJson(run);
@@ -684,7 +685,7 @@ async function review(args: readonly string[]): Promise<void> {
 		if (!projectRoot || unexpected.length > 0) {
 			throw new Error("review history requires exactly one project root");
 		}
-		printJson({ runs: await Effect.runPromise(listCaptureRuns(projectRoot)) });
+		printJson({ runs: await runReviewRepository(listCaptureRuns(projectRoot)) });
 		return;
 	}
 	if (area === "show") {
@@ -692,7 +693,7 @@ async function review(args: readonly string[]): Promise<void> {
 		if (!runPath || unexpected.length > 0) {
 			throw new Error("review show requires exactly one run.json path");
 		}
-		printJson(await Effect.runPromise(loadCaptureRun(runPath)));
+		printJson(await runReviewRepository(loadCaptureRun(runPath)));
 		return;
 	}
 	throw new Error(`Unknown review command\n\n${help}`);

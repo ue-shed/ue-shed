@@ -11,7 +11,9 @@ import {
 	listCaptureRuns,
 	loadCaptureRun,
 	loadReviewSet,
-	saveReviewSet
+	ReviewRepositoryLive,
+	saveReviewSet,
+	type ReviewRepository
 } from "./review-repository.js";
 import {
 	CaptureProfileId,
@@ -22,6 +24,8 @@ import {
 } from "./review-schema.js";
 
 const decodeReviewSet = (input: unknown) => Effect.runSync(decodeReviewSetEffect(input));
+const runReviewRepository = <A, E>(effect: Effect.Effect<A, E, ReviewRepository>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(ReviewRepositoryLive)));
 
 const temporaryDirectories: string[] = [];
 
@@ -101,8 +105,8 @@ describe("Map Review contracts", () => {
 		temporaryDirectories.push(root);
 		const path = join(root, "sets", "fixture.json");
 		const reviewSet = fixtureReviewSet();
-		await Effect.runPromise(saveReviewSet({ path, reviewSet }));
-		await expect(Effect.runPromise(loadReviewSet(path))).resolves.toEqual(reviewSet);
+		await runReviewRepository(saveReviewSet({ path, reviewSet }));
+		await expect(runReviewRepository(loadReviewSet(path))).resolves.toEqual(reviewSet);
 	});
 });
 
@@ -111,7 +115,7 @@ describe("durable capture loop", () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-run-"));
 		temporaryDirectories.push(projectRoot);
 		const reviewSetPath = join(projectRoot, ".ue-shed", "review", "sets", "fixture.json");
-		await Effect.runPromise(
+		await runReviewRepository(
 			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() })
 		);
 		const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
@@ -149,7 +153,7 @@ describe("durable capture loop", () => {
 				})
 		};
 
-		const run = await Effect.runPromise(
+		const run = await runReviewRepository(
 			captureReviewSet(
 				{
 					endpoint: "http://127.0.0.1:30001",
@@ -171,7 +175,7 @@ describe("durable capture loop", () => {
 		);
 
 		expect(run.status).toBe("completed");
-		const persisted = await Effect.runPromise(
+		const persisted = await runReviewRepository(
 			loadCaptureRun(captureRunPath(projectRoot, run.id))
 		);
 		expect(persisted).toEqual(run);
@@ -193,7 +197,7 @@ describe("durable capture loop", () => {
 			},
 			status: "captured"
 		});
-		await expect(Effect.runPromise(listCaptureRuns(projectRoot))).resolves.toMatchObject([
+		await expect(runReviewRepository(listCaptureRuns(projectRoot))).resolves.toMatchObject([
 			{ failedViews: 0, id: "run-001", status: "completed", successfulViews: 1 }
 		]);
 	});
@@ -202,7 +206,7 @@ describe("durable capture loop", () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-reject-"));
 		temporaryDirectories.push(projectRoot);
 		const reviewSetPath = join(projectRoot, "set.json");
-		await Effect.runPromise(
+		await runReviewRepository(
 			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() })
 		);
 		const outside = join(dirname(projectRoot), "outside.png");
@@ -223,7 +227,7 @@ describe("durable capture loop", () => {
 					width: 1280
 				})
 		};
-		const run = await Effect.runPromise(
+		const run = await runReviewRepository(
 			captureReviewSet(
 				{ endpoint: "unused", projectRoot, reviewSetPath },
 				{

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { buildSetCellCommand, makeAuthoringSessionService, workingTable } from "./index.js";
+import {
+	authoringIdGeneratorLayer,
+	buildSetCellCommand,
+	makeAuthoringSessionService,
+	workingTable
+} from "./index.js";
 
 function snapshot(value = "1"): AuthoringTableSnapshot {
 	return {
@@ -40,17 +45,16 @@ describe("AuthoringSessionService", () => {
 		const storageRoot = join(root, "sessions");
 		let tick = 0;
 		const makeService = () =>
-			Effect.runSync(
+			Effect.runPromise(
 				makeAuthoringSessionService(
 					{ projectId: "fixture", projectRoot: root, storageRoot },
-					{
-						makeId: () => "draft-1",
-						now: () => `2026-07-15T00:00:0${tick++}.000Z`
-					}
+					authoringIdGeneratorLayer(() =>
+						tick++ === 0 ? "draft-1" : `generated-${tick}`
+					)
 				)
 			);
 		try {
-			const first = makeService();
+			const first = await makeService();
 			const created = await Effect.runPromise(first.create([snapshot()]));
 			const command = buildSetCellCommand({
 				authoredAt: "2026-07-15T00:00:01.000Z",
@@ -64,7 +68,7 @@ describe("AuthoringSessionService", () => {
 			});
 			await Effect.runPromise(first.append("draft-1", [command]));
 
-			const restarted = makeService();
+			const restarted = await makeService();
 			const reopened = await Effect.runPromise(restarted.open("draft-1"));
 			expect(
 				workingTable(reopened.draft, "/Game/Fixture/DT_Test.DT_Test").table.rows[0]
@@ -98,7 +102,7 @@ describe("AuthoringSessionService", () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-corrupt-"));
 		const storageRoot = join(root, "sessions");
 		try {
-			const service = Effect.runSync(
+			const service = await Effect.runPromise(
 				makeAuthoringSessionService({
 					projectId: "fixture",
 					projectRoot: root,
@@ -121,10 +125,10 @@ describe("AuthoringSessionService", () => {
 	it("does not persist a partial cell gesture when one edit is invalid", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-atomic-"));
 		try {
-			const service = Effect.runSync(
+			const service = await Effect.runPromise(
 				makeAuthoringSessionService(
 					{ projectId: "fixture", projectRoot: root },
-					{ makeId: () => "generated", now: () => new Date().toISOString() }
+					authoringIdGeneratorLayer(() => "generated")
 				)
 			);
 			const created = await Effect.runPromise(service.create([snapshot()], { id: "atomic" }));
@@ -159,14 +163,14 @@ describe("AuthoringSessionService", () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-recovery-"));
 		const storageRoot = join(root, "sessions");
 		const makeService = () =>
-			Effect.runSync(
+			Effect.runPromise(
 				makeAuthoringSessionService(
 					{ projectId: "fixture", projectRoot: root, storageRoot },
-					{ makeId: () => "generated", now: () => "2026-07-15T00:00:00.000Z" }
+					authoringIdGeneratorLayer(() => "generated")
 				)
 			);
 		try {
-			const service = makeService();
+			const service = await makeService();
 			await Effect.runPromise(service.create([snapshot()], { id: "recovery" }));
 			await Effect.runPromise(
 				service.setCells({
@@ -189,7 +193,7 @@ describe("AuthoringSessionService", () => {
 				)
 			);
 
-			const restarted = makeService();
+			const restarted = await makeService();
 			const pending = await Effect.runPromise(restarted.open("recovery"));
 			expect(pending.pendingOperation).toMatchObject({
 				kind: "apply",
@@ -220,7 +224,7 @@ describe("AuthoringSessionService", () => {
 			expect(completed.draft.awaitingSave).toEqual(["/Game/Fixture/DT_Test.DT_Test"]);
 
 			await Effect.runPromise(restarted.prepareSave("recovery", "save-1"));
-			const saveRestarted = makeService();
+			const saveRestarted = await makeService();
 			const failedSave = await Effect.runPromise(
 				saveRestarted.completeSave("recovery", {
 					contract: { name: "unreal-authoring-save", version: { major: 1, minor: 0 } },

@@ -1,5 +1,7 @@
 import {
 	approveFramingCandidate,
+	CameraFeed,
+	cameraFeedLayer,
 	captureReviewSet,
 	configureCameras,
 	decodeApproveReviewCandidateIntent,
@@ -9,11 +11,12 @@ import {
 	listCaptureRuns,
 	loadCaptureRun,
 	loadReviewSet,
-	openCameraFeedServer,
 	previewReviewCandidate,
+	ReviewRepositoryLive,
 	saveReviewSet,
-	type CameraFeedServer,
-	type CameraFrame
+	type CameraFeedShape,
+	type CameraFrame,
+	type ReviewRepository
 } from "@ue-shed/cameras";
 import type {
 	MapReviewApprovalResult,
@@ -33,8 +36,7 @@ import { discoverAuthoringProjectCatalog } from "@ue-shed/authoring-catalog";
 import {
 	makeAuthoringSessionService,
 	workingTable,
-	type AuthoringSessionDocument,
-	type AuthoringSessionService
+	type AuthoringSessionDocument
 } from "@ue-shed/authoring";
 import {
 	decodeAuthoringSetCellsIntent,
@@ -43,9 +45,20 @@ import {
 } from "@ue-shed/authoring-sdk";
 import { scanTextCorpus, type TextCorpusRunResult } from "@ue-shed/game-text";
 import { decodeCompanionCapabilityManifest, type CameraScheduleConfig } from "@ue-shed/protocol";
-import { discoverSavedTables, readSavedTable } from "@ue-shed/unreal-assets";
-import { connectUnrealAuthoring, type UnrealAuthoringConnection } from "@ue-shed/unreal-connection";
-import { Effect } from "effect";
+import {
+	AssetReaderLive,
+	discoverSavedTables,
+	getAssetReaderSource,
+	readSavedTable,
+	type AssetReader
+} from "@ue-shed/unreal-assets";
+import {
+	connectUnrealAuthoring,
+	RemoteControlClientLive,
+	type RemoteControlClient,
+	type UnrealAuthoringConnection
+} from "@ue-shed/unreal-connection";
+import { Context, Effect, Exit, Layer, Scope, Stream } from "effect";
 import {
 	BrowserWindow,
 	app,
@@ -57,11 +70,18 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { FixtureLaunchResult, ShowcaseContext } from "./preload.js";
+import type { FixtureLaunchResult } from "./preload.js";
 
 const remoteControlEndpoint =
 	process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001";
-let feed: CameraFeedServer | undefined;
+const runRemoteControl = <A, E>(effect: Effect.Effect<A, E, RemoteControlClient>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(RemoteControlClientLive)));
+const runAssetReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(AssetReaderLive)));
+const runReviewRepository = <A, E>(effect: Effect.Effect<A, E, ReviewRepository>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(ReviewRepositoryLive)));
+let feed: CameraFeedShape | undefined;
+let cameraFeedScope: Scope.Closeable | undefined;
 let window: BrowserWindowInstance | undefined;
 const pendingPresentationFrames = new Map<number, CameraFrame>();
 let presentationTimer: NodeJS.Timeout | undefined;
@@ -102,11 +122,11 @@ async function loadMapReview(): Promise<MapReviewResult> {
 	const configuration = mapReviewConfiguration();
 	if (!configuration) return { status: "not_configured" };
 	try {
-		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
-		const summaries = await Effect.runPromise(listCaptureRuns(configuration.projectRoot));
+		const reviewSet = await runReviewRepository(loadReviewSet(configuration.reviewSetPath));
+		const summaries = await runReviewRepository(listCaptureRuns(configuration.projectRoot));
 		const runs = await Promise.all(
 			summaries.map(async (summary): Promise<MapReviewRunView> => {
-				const run = await Effect.runPromise(loadCaptureRun(summary.path));
+				const run = await runReviewRepository(loadCaptureRun(summary.path));
 				const captured = run.results.find((result) => result.status === "captured");
 				const view = captured
 					? reviewSet.views.find((candidate) => candidate.id === captured.viewId)
@@ -151,7 +171,7 @@ async function captureMapReview(): Promise<MapReviewResult> {
 	const configuration = mapReviewConfiguration();
 	if (!configuration) return { status: "not_configured" };
 	try {
-		await Effect.runPromise(
+		await runReviewRepository(
 			captureReviewSet({
 				endpoint: remoteControlEndpoint,
 				projectRoot: configuration.projectRoot,
@@ -185,8 +205,8 @@ async function authorMapReviewFromSelection(): Promise<MapReviewAuthoringResult>
 		return mapReviewAuthoringFailure(new Error("No review project is configured."));
 	}
 	try {
-		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
-		const selection = await Effect.runPromise(inspectReviewSelection(remoteControlEndpoint));
+		const reviewSet = await runReviewRepository(loadReviewSet(configuration.reviewSetPath));
+		const selection = await runRemoteControl(inspectReviewSelection(remoteControlEndpoint));
 		if (selection.status === "failed") {
 			return {
 				error: { message: selection.message, recovery: selection.recovery },
@@ -238,8 +258,8 @@ async function previewMapReviewCandidate(
 	}
 	try {
 		if (typeof candidateId !== "string") throw new Error("Candidate ID must be a string.");
-		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
-		const selection = await Effect.runPromise(inspectReviewSelection(remoteControlEndpoint));
+		const reviewSet = await runReviewRepository(loadReviewSet(configuration.reviewSetPath));
+		const selection = await runRemoteControl(inspectReviewSelection(remoteControlEndpoint));
 		if (selection.status === "failed") {
 			return {
 				error: { message: selection.message, recovery: selection.recovery },
@@ -255,7 +275,7 @@ async function previewMapReviewCandidate(
 			? reviewSet.captureProfiles.find((candidate) => candidate.id === view.captureProfileId)
 			: undefined;
 		if (!profile) throw new Error("The Review View has no capture profile for previews.");
-		const preview = await Effect.runPromise(
+		const preview = await runRemoteControl(
 			previewReviewCandidate({
 				candidate,
 				endpoint: remoteControlEndpoint,
@@ -280,8 +300,8 @@ async function approveMapReviewCandidate(intent: unknown): Promise<MapReviewAppr
 	}
 	try {
 		const approvedIntent = await Effect.runPromise(decodeApproveReviewCandidateIntent(intent));
-		const reviewSet = await Effect.runPromise(loadReviewSet(configuration.reviewSetPath));
-		const selection = await Effect.runPromise(inspectReviewSelection(remoteControlEndpoint));
+		const reviewSet = await runReviewRepository(loadReviewSet(configuration.reviewSetPath));
+		const selection = await runRemoteControl(inspectReviewSelection(remoteControlEndpoint));
 		if (selection.status === "failed") {
 			return {
 				error: { message: selection.message, recovery: selection.recovery },
@@ -320,7 +340,7 @@ async function approveMapReviewCandidate(intent: unknown): Promise<MapReviewAppr
 		if (approved.status === "view_not_found") {
 			throw new Error(`Review View ${approved.viewId} was not found.`);
 		}
-		await Effect.runPromise(
+		await runReviewRepository(
 			saveReviewSet({ path: configuration.reviewSetPath, reviewSet: approved.reviewSet })
 		);
 		return { candidateId: candidate.id, status: "approved" };
@@ -370,12 +390,14 @@ const authoringAssetPaths = new Map<string, string>();
 const authoringSnapshots = new Map<string, import("@ue-shed/protocol").AuthoringTableSnapshot>();
 const authoringLiveObjectPaths = new Set<string>();
 let authoringLiveConnection: UnrealAuthoringConnection | undefined;
-let authoringSessions: AuthoringSessionService | undefined;
+const acquireSessionService = (projectRoot: string) =>
+	Effect.runPromise(makeAuthoringSessionService({ projectRoot }));
+let authoringSessions: ReturnType<typeof acquireSessionService> | undefined;
 
-function sessionService(): AuthoringSessionService {
+function sessionService() {
 	const projectRoot = process.env.UE_SHED_PROJECT_ROOT;
 	if (!projectRoot) throw new Error("UE_SHED_PROJECT_ROOT is not configured");
-	return (authoringSessions ??= Effect.runSync(makeAuthoringSessionService({ projectRoot })));
+	return (authoringSessions ??= acquireSessionService(projectRoot));
 }
 
 function sessionView(document: AuthoringSessionDocument, objectPath: string): AuthoringSessionView {
@@ -426,7 +448,7 @@ function sessionFailure(cause: unknown): AuthoringSessionResult {
 
 async function beginAuthoringSession(objectPath: string): Promise<AuthoringSessionResult> {
 	try {
-		const service = sessionService();
+		const service = await sessionService();
 		const listed = await Effect.runPromise(service.list());
 		const existing = listed.sessions.find((candidate) =>
 			candidate.tableObjectPaths.includes(objectPath)
@@ -453,10 +475,7 @@ async function beginAuthoringSession(objectPath: string): Promise<AuthoringSessi
 
 async function loadAuthoringTable(assetPath: string): Promise<AuthoringIpcResult> {
 	try {
-		const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
-		const snapshot = await Effect.runPromise(
-			readSavedTable({ assetPath, ...(executable ? { executable } : {}) })
-		);
+		const snapshot = await runAssetReader(readSavedTable({ assetPath }));
 		authoringSnapshots.set(snapshot.table.objectPath, snapshot);
 		return { status: "ready", snapshot };
 	} catch (cause) {
@@ -498,23 +517,17 @@ async function loadLiveAuthoringTable(objectPath: string): Promise<AuthoringIpcR
 
 async function loadAuthoringCatalog(projectRoot: string): Promise<AuthoringCatalogIpcResult> {
 	try {
-		const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
-		const savedCatalog = await Effect.runPromise(
-			discoverSavedTables({
-				projectRoot,
-				...(executable ? { executable } : {})
-			})
-		);
+		const savedCatalog = await runAssetReader(discoverSavedTables({ projectRoot }));
 		authoringAssetPaths.clear();
 		for (const table of savedCatalog.tables) {
 			authoringAssetPaths.set(table.objectPath, table.assetPath);
 		}
-		const liveConnection = await Effect.runPromise(
+		const liveConnection = await runRemoteControl(
 			connectUnrealAuthoring(remoteControlEndpoint).pipe(Effect.result)
 		);
 		authoringLiveConnection =
 			liveConnection._tag === "Success" ? liveConnection.success : undefined;
-		const catalog = await Effect.runPromise(
+		const catalog = await runAssetReader(
 			discoverAuthoringProjectCatalog({
 				...(authoringLiveConnection ? { live: authoringLiveConnection } : {}),
 				savedCatalog
@@ -721,16 +734,16 @@ ipcMain.handle("fixture:launch-review", async (): Promise<FixtureLaunchResult> =
 	return fixtureReviewLaunch;
 });
 
-ipcMain.handle("showcase:context", (): ShowcaseContext => {
+ipcMain.handle("showcase:context", async () => {
 	const projectRoot = process.env.UE_SHED_PROJECT_ROOT;
 	const ruleFile = process.env.UE_SHED_TEXTURE_AUDIT_RULES;
-	const readerExecutable = process.env.UE_SHED_UASSET_EXECUTABLE;
+	const reader = await runAssetReader(getAssetReaderSource());
 	return {
 		fixtureConfigured: Boolean(
 			projectRoot && ruleFile && existsSync(projectRoot) && existsSync(ruleFile)
 		),
 		...(projectRoot ? { projectRoot } : {}),
-		reader: readerExecutable ? "configured" : "path",
+		reader,
 		...(ruleFile ? { ruleFile } : {})
 	};
 });
@@ -760,7 +773,11 @@ function flushPresentationFrame() {
 }
 
 async function createWindow() {
-	feed = await Effect.runPromise(openCameraFeedServer());
+	cameraFeedScope = await Effect.runPromise(Scope.make());
+	const cameraFeedContext = await Effect.runPromise(
+		Layer.buildWithScope(cameraFeedLayer(), cameraFeedScope)
+	);
+	feed = Context.get(cameraFeedContext, CameraFeed);
 	window = new BrowserWindow({
 		backgroundColor: "#0b0d0d",
 		height: 940,
@@ -775,11 +792,20 @@ async function createWindow() {
 		},
 		width: 1540
 	});
-	feed.subscribe((frame) => {
-		if (pendingPresentationFrames.has(frame.cameraIndex)) presentationReplacements += 1;
-		pendingPresentationFrames.set(frame.cameraIndex, frame);
-		schedulePresentationFrame();
-	});
+	await Effect.runPromise(
+		feed.frames.pipe(
+			Stream.runForEach((frame) =>
+				Effect.sync(() => {
+					if (pendingPresentationFrames.has(frame.cameraIndex)) {
+						presentationReplacements += 1;
+					}
+					pendingPresentationFrames.set(frame.cameraIndex, frame);
+					schedulePresentationFrame();
+				})
+			),
+			Effect.forkIn(cameraFeedScope)
+		)
+	);
 	window.once("ready-to-show", () => window?.show());
 	await window.loadFile(join(import.meta.dirname, "../renderer/index.html"));
 }
@@ -789,7 +815,7 @@ async function runTextureScan(
 	ruleFile: string
 ): Promise<TextureAuditRunResult> {
 	try {
-		const report = await Effect.runPromise(scanTextureAudit({ projectRoot, ruleFile }));
+		const report = await runAssetReader(scanTextureAudit({ projectRoot, ruleFile }));
 		return { status: "completed", report };
 	} catch (cause) {
 		const error = cause as Partial<TextureAuditScanError>;
@@ -807,13 +833,7 @@ async function runTextureScan(
 
 async function runGameTextScan(projectRoot: string): Promise<TextCorpusRunResult> {
 	try {
-		const readerExecutable = process.env.UE_SHED_UASSET_EXECUTABLE;
-		const corpus = await Effect.runPromise(
-			scanTextCorpus({
-				projectRoot,
-				...(readerExecutable ? { readerExecutable } : {})
-			})
-		);
+		const corpus = await runAssetReader(scanTextCorpus({ projectRoot }));
 		return { status: "completed", corpus };
 	} catch (cause) {
 		const error = cause as {
@@ -876,7 +896,7 @@ ipcMain.handle(
 			);
 		}
 		try {
-			return await Effect.runPromise(
+			return await runRemoteControl(
 				readLiveTexturePreview({ endpoint: remoteControlEndpoint, objectPath })
 			);
 		} catch (cause) {
@@ -984,8 +1004,9 @@ ipcMain.handle(
 	async (_event, input: unknown): Promise<AuthoringSessionResult> => {
 		try {
 			const intent = await Effect.runPromise(decodeAuthoringSetCellsIntent(input));
+			const service = await sessionService();
 			const document = await Effect.runPromise(
-				sessionService().setCells({
+				service.setCells({
 					edits: intent.edits,
 					sessionId: intent.sessionId,
 					tableObjectPath: intent.tableObjectPath
@@ -1004,7 +1025,7 @@ async function moveAuthoringHistory(
 ): Promise<AuthoringSessionResult> {
 	try {
 		if (typeof sessionId !== "string") throw new Error(`${direction} requires a session id`);
-		const service = sessionService();
+		const service = await sessionService();
 		const document = await Effect.runPromise(
 			direction === "undo" ? service.undo(sessionId) : service.redo(sessionId)
 		);
@@ -1024,7 +1045,7 @@ ipcMain.handle("authoring:session:redo", (_event, sessionId: unknown) =>
 );
 
 async function liveAuthoringConnection(): Promise<UnrealAuthoringConnection> {
-	return (authoringLiveConnection ??= await Effect.runPromise(
+	return (authoringLiveConnection ??= await runRemoteControl(
 		connectUnrealAuthoring(remoteControlEndpoint)
 	));
 }
@@ -1037,7 +1058,7 @@ function documentView(document: AuthoringSessionDocument): AuthoringSessionResul
 
 ipcMain.handle("authoring:session:apply", async (_event, sessionId: unknown) => {
 	if (typeof sessionId !== "string") return sessionFailure("Apply requires a session id");
-	const service = sessionService();
+	const service = await sessionService();
 	try {
 		const connection = await liveAuthoringConnection();
 		const limits = connection.manifest.authoringLimits;
@@ -1061,7 +1082,7 @@ ipcMain.handle("authoring:session:apply", async (_event, sessionId: unknown) => 
 ipcMain.handle("authoring:session:reconcile", async (_event, sessionId: unknown) => {
 	if (typeof sessionId !== "string") return sessionFailure("Reconcile requires a session id");
 	try {
-		const service = sessionService();
+		const service = await sessionService();
 		const document = await Effect.runPromise(service.open(sessionId));
 		if (document.pendingOperation.kind !== "apply") {
 			throw new Error("Session has no unresolved Apply operation");
@@ -1079,7 +1100,7 @@ ipcMain.handle("authoring:session:reconcile", async (_event, sessionId: unknown)
 
 ipcMain.handle("authoring:session:save", async (_event, sessionId: unknown) => {
 	if (typeof sessionId !== "string") return sessionFailure("Save requires a session id");
-	const service = sessionService();
+	const service = await sessionService();
 	try {
 		const existing = await Effect.runPromise(service.open(sessionId));
 		const prepared =
@@ -1102,8 +1123,8 @@ ipcMain.handle("authoring:session:save", async (_event, sessionId: unknown) => {
 	}
 });
 
-ipcMain.handle("camera:metrics", () => {
-	const metrics = feed?.getMetrics();
+ipcMain.handle("camera:metrics", async () => {
+	const metrics = feed ? await Effect.runPromise(feed.metrics) : undefined;
 	if (!metrics) return undefined;
 	const processMetrics = app.getAppMetrics();
 	const electronPrivateMemoryMb =
@@ -1132,9 +1153,9 @@ ipcMain.handle("camera:presentation-budget", (_event, value: unknown) => {
 	presentationBudgetMbPerSecond = Math.min(500, Math.max(25, value));
 	return presentationBudgetMbPerSecond;
 });
-ipcMain.handle("camera:status", () => getCameraStatus(remoteControlEndpoint));
+ipcMain.handle("camera:status", () => runRemoteControl(getCameraStatus(remoteControlEndpoint)));
 ipcMain.handle("camera:configure", (_event, config: CameraScheduleConfig) =>
-	configureCameras(remoteControlEndpoint, config)
+	runRemoteControl(configureCameras(remoteControlEndpoint, config))
 );
 ipcMain.handle("map-review:load", () => loadMapReview());
 ipcMain.handle("map-review:capture", () => captureMapReview());
@@ -1154,6 +1175,11 @@ app.whenReady()
 	});
 
 app.on("window-all-closed", () => app.quit());
-app.on("before-quit", () => {
-	void feed?.close();
+app.on("before-quit", (event) => {
+	if (!cameraFeedScope) return;
+	event.preventDefault();
+	const scope = cameraFeedScope;
+	cameraFeedScope = undefined;
+	feed = undefined;
+	void Effect.runPromise(Scope.close(scope, Exit.succeed(undefined))).finally(() => app.quit());
 });

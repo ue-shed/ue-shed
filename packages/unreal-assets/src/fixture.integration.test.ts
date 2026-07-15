@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	AssetReader,
+	assetReaderLayer,
 	discoverSavedAssets,
 	discoverSavedTables,
 	readSavedAsset,
@@ -10,12 +12,12 @@ import {
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", import.meta.url));
+const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
+	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
 
 describe.skipIf(!executable)("saved authoring fixture", () => {
 	it("discovers DataTables without requiring their paths in advance", async () => {
-		const catalog = await Effect.runPromise(
-			discoverSavedTables({ executable: executable!, projectRoot: fixtureRoot })
-		);
+		const catalog = await runReader(discoverSavedTables({ projectRoot: fixtureRoot }));
 		expect(catalog.tables).toHaveLength(12);
 		expect(catalog.tables[0]?.objectPath).toBe(
 			"/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"
@@ -26,12 +28,10 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 	});
 
 	it("reads every fixture DataTable through the shared contract", async () => {
-		const assets = await Effect.runPromise(discoverSavedAssets(fixtureRoot));
+		const assets = await runReader(discoverSavedAssets(fixtureRoot));
 		const tableAssets = assets.filter((assetPath) => assetPath.includes("Authoring"));
 		const snapshots = await Promise.all(
-			tableAssets.map((assetPath) =>
-				Effect.runPromise(readSavedTable({ assetPath, executable: executable! }))
-			)
+			tableAssets.map((assetPath) => runReader(readSavedTable({ assetPath })))
 		);
 		expect(snapshots).toHaveLength(12);
 		expect(snapshots.map((snapshot) => snapshot.table.kind)).toContain("composite_data_table");
@@ -154,13 +154,11 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 	});
 
 	it("inspects all fixture textures with serialized source dimensions", async () => {
-		const assets = (await Effect.runPromise(discoverSavedAssets(fixtureRoot))).filter(
+		const assets = (await runReader(discoverSavedAssets(fixtureRoot))).filter(
 			(path) => path.includes("Audits\\Textures") || path.includes("Audits/Textures")
 		);
 		const inspections = await Promise.all(
-			assets.map((assetPath) =>
-				Effect.runPromise(readSavedAsset({ assetPath, executable: executable! }))
-			)
+			assets.map((assetPath) => runReader(readSavedAsset({ assetPath })))
 		);
 		expect(inspections).toHaveLength(5);
 		for (const inspection of inspections) {

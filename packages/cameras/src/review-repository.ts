@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
+import {
+	copyFile,
+	mkdir,
+	open,
+	readFile,
+	readdir,
+	rename,
+	rm,
+	stat,
+	unlink
+} from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Effect, Schema } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import {
 	decodeCaptureRun,
 	decodeReviewSet,
@@ -15,7 +25,16 @@ export class ReviewStorageError extends Schema.TaggedErrorClass<ReviewStorageErr
 	"ReviewStorageError",
 	{
 		message: Schema.String,
-		operation: Schema.Literals(["list_runs", "load_run", "load_set", "save_set"]),
+		operation: Schema.Literals([
+			"finalize_run",
+			"list_runs",
+			"load_run",
+			"load_set",
+			"prepare_run",
+			"save_set",
+			"store_artifact",
+			"write_run"
+		]),
 		path: Schema.String,
 		recovery: Schema.String
 	}
@@ -39,7 +58,7 @@ async function writeJsonAtomically(path: string, value: unknown): Promise<void> 
 	}
 }
 
-export function loadReviewSet(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
+function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
 	return Effect.tryPromise({
 		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
 		catch: (cause) =>
@@ -67,7 +86,7 @@ export function loadReviewSet(path: string): Effect.Effect<ReviewSet, ReviewStor
 	);
 }
 
-export function saveReviewSet(args: {
+function saveReviewSetWithNode(args: {
 	readonly path: string;
 	readonly reviewSet: ReviewSet;
 }): Effect.Effect<void, ReviewStorageError> {
@@ -89,7 +108,7 @@ export function captureRunsRoot(projectRoot: string): string {
 	return resolve(projectRoot, DEFAULT_REVIEW_ROOT, "runs");
 }
 
-export function loadCaptureRun(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
+function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
 	return Effect.tryPromise({
 		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
 		catch: (cause) =>
@@ -128,7 +147,7 @@ export interface CaptureRunSummary {
 	readonly successfulViews: number;
 }
 
-export function listCaptureRuns(
+function listCaptureRunsWithNode(
 	projectRoot: string
 ): Effect.Effect<readonly CaptureRunSummary[], ReviewStorageError> {
 	const root = captureRunsRoot(projectRoot);
@@ -202,4 +221,157 @@ export function captureRunPath(projectRoot: string, runId: string): string {
 
 export function runIdFromPath(path: string): string {
 	return basename(dirname(path));
+}
+
+export interface ReviewRepositoryShape {
+	readonly finalizeRun: (args: {
+		readonly finalRoot: string;
+		readonly run: CaptureRun;
+		readonly stagingRoot: string;
+	}) => Effect.Effect<void, ReviewStorageError>;
+	readonly listRuns: (
+		projectRoot: string
+	) => Effect.Effect<readonly CaptureRunSummary[], ReviewStorageError>;
+	readonly loadRun: (path: string) => Effect.Effect<CaptureRun, ReviewStorageError>;
+	readonly loadSet: (path: string) => Effect.Effect<ReviewSet, ReviewStorageError>;
+	readonly prepareRun: (args: {
+		readonly root: string;
+		readonly stagingRoot: string;
+	}) => Effect.Effect<void, ReviewStorageError>;
+	readonly saveSet: (args: {
+		readonly path: string;
+		readonly reviewSet: ReviewSet;
+	}) => Effect.Effect<void, ReviewStorageError>;
+	readonly storeArtifact: (args: {
+		readonly destinationPath: string;
+		readonly sourcePath: string;
+	}) => Effect.Effect<{ readonly bytes: Uint8Array; readonly size: number }, ReviewStorageError>;
+	readonly writeRunDocument: (args: {
+		readonly path: string;
+		readonly value: unknown;
+	}) => Effect.Effect<void, ReviewStorageError>;
+}
+
+export class ReviewRepository extends Context.Service<ReviewRepository, ReviewRepositoryShape>()(
+	"@ue-shed/cameras/ReviewRepository"
+) {}
+
+const makeReviewRepository = (): ReviewRepositoryShape => {
+	const prepareRun = Effect.fn("ReviewRepository.prepareRun")(function* (args: {
+		readonly root: string;
+		readonly stagingRoot: string;
+	}) {
+		yield* Effect.tryPromise({
+			try: async () => {
+				await mkdir(args.root, { recursive: true });
+				await mkdir(args.stagingRoot);
+			},
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: String(cause),
+					operation: "prepare_run",
+					path: args.stagingRoot,
+					recovery: "Check that the project review directory is writable."
+				})
+		});
+	});
+	const storeArtifact = Effect.fn("ReviewRepository.storeArtifact")(function* (args: {
+		readonly destinationPath: string;
+		readonly sourcePath: string;
+	}) {
+		return yield* Effect.tryPromise({
+			try: async () => {
+				await mkdir(dirname(args.destinationPath), { recursive: true });
+				await copyFile(args.sourcePath, args.destinationPath);
+				const bytes = await readFile(args.destinationPath);
+				const file = await stat(args.destinationPath);
+				await unlink(args.sourcePath).catch(() => undefined);
+				return { bytes: new Uint8Array(bytes), size: file.size };
+			},
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: String(cause),
+					operation: "store_artifact",
+					path: args.destinationPath,
+					recovery: "Check staging and evidence directory permissions, then retry."
+				})
+		});
+	});
+	const writeRunDocument = Effect.fn("ReviewRepository.writeRunDocument")(function* (args: {
+		readonly path: string;
+		readonly value: unknown;
+	}) {
+		yield* Effect.tryPromise({
+			try: () => writeJsonAtomically(args.path, args.value),
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: String(cause),
+					operation: "write_run",
+					path: args.path,
+					recovery: "Check the evidence directory and retry the run."
+				})
+		});
+	});
+	const finalizeRun = Effect.fn("ReviewRepository.finalizeRun")(function* (args: {
+		readonly finalRoot: string;
+		readonly run: CaptureRun;
+		readonly stagingRoot: string;
+	}) {
+		yield* Effect.tryPromise({
+			try: async () => {
+				await writeJsonAtomically(join(args.stagingRoot, "run.json"), args.run);
+				await rename(args.stagingRoot, args.finalRoot);
+			},
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: String(cause),
+					operation: "finalize_run",
+					path: args.stagingRoot,
+					recovery: "Inspect the staged Capture Run and retry finalization safely."
+				})
+		});
+	});
+	return ReviewRepository.of({
+		finalizeRun,
+		listRuns: Effect.fn("ReviewRepository.listRuns")(listCaptureRunsWithNode),
+		loadRun: Effect.fn("ReviewRepository.loadRun")(loadCaptureRunWithNode),
+		loadSet: Effect.fn("ReviewRepository.loadSet")(loadReviewSetWithNode),
+		prepareRun,
+		saveSet: Effect.fn("ReviewRepository.saveSet")(saveReviewSetWithNode),
+		storeArtifact,
+		writeRunDocument
+	});
+};
+
+export const ReviewRepositoryLive = Layer.sync(ReviewRepository, makeReviewRepository);
+
+export function makeReviewRepositoryTestLayer(
+	service: ReviewRepositoryShape
+): Layer.Layer<ReviewRepository> {
+	return Layer.succeed(ReviewRepository, ReviewRepository.of(service));
+}
+
+export function loadReviewSet(
+	path: string
+): Effect.Effect<ReviewSet, ReviewStorageError, ReviewRepository> {
+	return Effect.flatMap(ReviewRepository, (repository) => repository.loadSet(path));
+}
+
+export function saveReviewSet(args: {
+	readonly path: string;
+	readonly reviewSet: ReviewSet;
+}): Effect.Effect<void, ReviewStorageError, ReviewRepository> {
+	return Effect.flatMap(ReviewRepository, (repository) => repository.saveSet(args));
+}
+
+export function loadCaptureRun(
+	path: string
+): Effect.Effect<CaptureRun, ReviewStorageError, ReviewRepository> {
+	return Effect.flatMap(ReviewRepository, (repository) => repository.loadRun(path));
+}
+
+export function listCaptureRuns(
+	projectRoot: string
+): Effect.Effect<readonly CaptureRunSummary[], ReviewStorageError, ReviewRepository> {
+	return Effect.flatMap(ReviewRepository, (repository) => repository.listRuns(projectRoot));
 }

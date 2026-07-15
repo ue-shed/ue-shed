@@ -2,6 +2,7 @@ import { relative } from "node:path";
 import {
 	discoverSavedAssets,
 	readSavedAsset,
+	type AssetReader,
 	type SavedAssetInspection,
 	type SavedProperty,
 	type SavedPropertyValue
@@ -33,7 +34,6 @@ export class TextCorpusScanError extends Schema.TaggedErrorClass<TextCorpusScanE
 
 export interface ScanTextCorpusOptions {
 	readonly projectRoot: string;
-	readonly readerExecutable?: string;
 	readonly concurrency?: number;
 	readonly maximumAssets?: number;
 }
@@ -345,7 +345,7 @@ export function buildTextCorpus(outcomes: readonly TextPackageOutcome[]): TextCo
 
 export function scanTextCorpus(
 	options: ScanTextCorpusOptions
-): Effect.Effect<TextCorpus, TextCorpusScanError> {
+): Effect.Effect<TextCorpus, TextCorpusScanError, AssetReader> {
 	return Effect.gen(function* () {
 		const assets = yield* discoverSavedAssets(options.projectRoot).pipe(
 			Effect.mapError(
@@ -370,10 +370,7 @@ export function scanTextCorpus(
 		const outcomes = yield* Effect.forEach(
 			assets,
 			(assetPath) =>
-				readSavedAsset({
-					assetPath,
-					...(options.readerExecutable ? { executable: options.readerExecutable } : {})
-				}).pipe(
+				readSavedAsset({ assetPath }).pipe(
 					Effect.map(
 						(inspection): TextPackageOutcome => ({
 							status: "inspected",

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
+import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Effect, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
 import {
@@ -12,8 +13,6 @@ import {
 } from "./review-schema.js";
 
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
-const RemoteResult = Schema.Struct({ ResultJson: Schema.String });
-const decodeRemoteResult = Schema.decodeUnknownEffect(RemoteResult);
 
 export class ReviewAuthoringConnectionError extends Schema.TaggedErrorClass<ReviewAuthoringConnectionError>()(
 	"ReviewAuthoringConnectionError",
@@ -26,45 +25,50 @@ export class ReviewAuthoringConnectionError extends Schema.TaggedErrorClass<Revi
 	}
 ) {}
 
-async function remoteReviewCall(args: {
+function reviewConnectionError(
+	endpoint: string,
+	operation: "inspect_selection" | "preview_candidate",
+	cause: RemoteControlClientError | unknown
+): ReviewAuthoringConnectionError {
+	return new ReviewAuthoringConnectionError({
+		endpoint,
+		message: cause instanceof RemoteControlClientError ? cause.message : String(cause),
+		operation,
+		recovery: "Verify the Map Review editor capability and retry the operation.",
+		retrySafe: cause instanceof RemoteControlClientError ? cause.retrySafe : false
+	});
+}
+
+function remoteReviewCall(args: {
 	readonly endpoint: string;
 	readonly functionName: string;
-	readonly parameters: object;
-}): Promise<unknown> {
-	const response = await fetch(`${args.endpoint.replace(/\/+$/, "")}/remote/object/call`, {
-		body: JSON.stringify({
-			functionName: args.functionName,
-			generateTransaction: false,
-			objectPath: reviewLibraryPath,
-			parameters: args.parameters
-		}),
-		headers: { "content-type": "application/json" },
-		method: "PUT",
-		signal: AbortSignal.timeout(5_000)
-	});
-	if (!response.ok) throw new Error(`Remote Control returned HTTP ${response.status}`);
-	const envelope = await Effect.runPromise(decodeRemoteResult(await response.json()));
-	return JSON.parse(envelope.ResultJson) as unknown;
+	readonly parameters: Readonly<Record<string, unknown>>;
+}): Effect.Effect<unknown, ReviewAuthoringConnectionError, RemoteControlClient> {
+	return Effect.flatMap(RemoteControlClient, (client) =>
+		client
+			.request({
+				endpoint: args.endpoint,
+				functionName: args.functionName,
+				objectPath: reviewLibraryPath,
+				operation: `camera.review.authoring.${args.functionName}`,
+				parameters: args.parameters,
+				timeout: "5 seconds"
+			})
+			.pipe(
+				Effect.mapError((error) =>
+					reviewConnectionError(args.endpoint, "inspect_selection", error)
+				)
+			)
+	);
 }
 
 export function inspectReviewSelection(
 	endpoint: string
-): Effect.Effect<ReviewSelectionResponse, ReviewAuthoringConnectionError> {
-	return Effect.tryPromise({
-		try: async () =>
-			remoteReviewCall({
-				endpoint,
-				functionName: "InspectReviewSelection",
-				parameters: {}
-			}),
-		catch: (cause) =>
-			new ReviewAuthoringConnectionError({
-				endpoint,
-				message: String(cause),
-				operation: "inspect_selection",
-				recovery: "Verify the Map Review editor capability and retry selection inspection.",
-				retrySafe: true
-			})
+): Effect.Effect<ReviewSelectionResponse, ReviewAuthoringConnectionError, RemoteControlClient> {
+	return remoteReviewCall({
+		endpoint,
+		functionName: "InspectReviewSelection",
+		parameters: {}
 	}).pipe(
 		Effect.flatMap((value) =>
 			decodeReviewSelectionResponse(value).pipe(
@@ -99,7 +103,7 @@ export function previewReviewCandidate(args: {
 		readonly actorPath: string;
 		readonly displayName: string;
 	};
-}): Effect.Effect<ReviewCandidatePreview, ReviewAuthoringConnectionError> {
+}): Effect.Effect<ReviewCandidatePreview, ReviewAuthoringConnectionError, RemoteControlClient> {
 	const operationId = randomUUID();
 	return captureReviewView({
 		endpoint: args.endpoint,

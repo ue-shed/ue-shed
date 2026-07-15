@@ -258,6 +258,9 @@ importers:
       '@ue-shed/unreal-assets':
         specifier: workspace:*
         version: link:../unreal-assets
+      '@ue-shed/unreal-connection':
+        specifier: workspace:*
+        version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
@@ -303,6 +306,9 @@ importers:
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@ue-shed/unreal-connection':
+        specifier: workspace:*
+        version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Effect } from "effect";
+import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { describe, expect, it } from "vitest";
 import { readLiveTexturePreview } from "./live.js";
 
@@ -63,7 +64,9 @@ describe("live texture preview", () => {
 			},
 			async (endpoint) => {
 				const result = await Effect.runPromise(
-					readLiveTexturePreview({ endpoint, objectPath })
+					readLiveTexturePreview({ endpoint, objectPath }).pipe(
+						Effect.provide(RemoteControlClientLive)
+					)
 				);
 				expect(result.status).toBe("available");
 				if (result.status === "available") expect(result.width).toBe(256);
@@ -85,7 +88,9 @@ describe("live texture preview", () => {
 			},
 			async (endpoint) => {
 				const result = await Effect.runPromise(
-					readLiveTexturePreview({ endpoint, objectPath })
+					readLiveTexturePreview({ endpoint, objectPath }).pipe(
+						Effect.provide(RemoteControlClientLive)
+					)
 				);
 				expect(result).toMatchObject({
 					status: "unavailable",

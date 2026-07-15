@@ -204,7 +204,7 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 					tableObjectPath: enumObjectPath
 				}
 			];
-			const service = Effect.runSync(
+			const service = await Effect.runPromise(
 				makeAuthoringSessionService({
 					projectId: "real-unreal",
 					projectRoot: repositoryRoot,
@@ -269,7 +269,7 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			expect(committed.status).toBe("committed");
 			expect(lookup).toEqual(committed);
 			await Effect.runPromise(service.markApplyIndeterminate("recovery", "transport lost"));
-			const restarted = Effect.runSync(
+			const restarted = await Effect.runPromise(
 				makeAuthoringSessionService({
 					projectId: "real-unreal",
 					projectRoot: repositoryRoot,

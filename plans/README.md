@@ -17,7 +17,7 @@ update the status row when done.
 | [006](006-live-apply-save-pipeline.md)         | Make Apply and Save safe, recoverable authority transitions  | P0       | L      | 005        | DONE                       |
 | [008](008-adopt-effect-v4-core.md)             | Make Effect v4 the repository's application core             | P0       | L      | —          | DONE                       |
 | [009](009-effect-schema-errors-contracts.md)   | Make schemas and typed errors the only application contracts | P0       | L      | 008        | DONE                       |
-| [010](010-effect-infrastructure-services.md)   | Put every external system behind scoped Effect services      | P0       | XL     | 009        | TODO                       |
+| [010](010-effect-infrastructure-services.md)   | Put every external system behind scoped Effect services      | P0       | XL     | 009        | DONE                       |
 | [011](011-effect-domain-services.md)           | Make domain workflows Effect services                        | P0       | XL     | 010        | TODO                       |
 | [012](012-effect-cli-runtime.md)               | Run the CLI as one Effect program                            | P1       | L      | 011        | TODO                       |
 | [013](013-effect-workbench-runtime-ipc.md)     | Make Workbench main and IPC one scoped Effect runtime        | P0       | XL     | 011        | TODO                       |

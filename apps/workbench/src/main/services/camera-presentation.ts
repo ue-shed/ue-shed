@@ -1,8 +1,17 @@
-import { CameraFeed, type CameraFrame } from "@ue-shed/cameras";
+import {
+	CameraFeed,
+	configureCameras,
+	getCameraStatus,
+	type CameraControlError,
+	type CameraFrame
+} from "@ue-shed/cameras";
+import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
+import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Clock, Context, Effect, HashMap, Layer, Option, Queue, Ref, Stream } from "effect";
 import { ElectronApp } from "../adapters/electron-app.js";
 import { WorkbenchWindow } from "../adapters/electron-window.js";
 import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../ipc-contracts.js";
+import { WorkbenchConfiguration } from "../workbench-config.js";
 
 const minimumPresentationBudgetMbPerSecond = 25;
 const maximumPresentationBudgetMbPerSecond = 500;
@@ -56,8 +65,12 @@ function takeOnePendingFrame(
 }
 
 export interface CameraPresentationShape {
+	readonly configure: (
+		config: CameraScheduleConfig
+	) => Effect.Effect<CameraStatus, CameraControlError>;
 	readonly metrics: () => Effect.Effect<WorkbenchCameraMetrics>;
 	readonly setPresentationBudget: (megabytesPerSecond: number) => Effect.Effect<number>;
+	readonly status: () => Effect.Effect<CameraStatus, CameraControlError>;
 }
 
 export class CameraPresentation extends Context.Service<
@@ -71,6 +84,8 @@ export const CameraPresentationLive = Layer.effect(
 		const feed = yield* CameraFeed;
 		const window = yield* WorkbenchWindow;
 		const electronApp = yield* ElectronApp;
+		const configuration = yield* WorkbenchConfiguration;
+		const remoteControl = yield* RemoteControlClient;
 
 		const pending = yield* Ref.make(HashMap.empty<number, CameraFrame>());
 		const wake = yield* Queue.sliding<void>(1);
@@ -165,7 +180,20 @@ export const CameraPresentationLive = Layer.effect(
 			return clamped;
 		});
 
-		return CameraPresentation.of({ metrics, setPresentationBudget });
+		const status = Effect.fn("Workbench.CameraPresentation.status")(() =>
+			getCameraStatus(configuration.remoteControlEndpoint).pipe(
+				Effect.provideService(RemoteControlClient, remoteControl)
+			)
+		);
+
+		const configure = Effect.fn("Workbench.CameraPresentation.configure")(
+			(config: CameraScheduleConfig) =>
+				configureCameras(configuration.remoteControlEndpoint, config).pipe(
+					Effect.provideService(RemoteControlClient, remoteControl)
+				)
+		);
+
+		return CameraPresentation.of({ configure, metrics, setPresentationBudget, status });
 	})
 );
 

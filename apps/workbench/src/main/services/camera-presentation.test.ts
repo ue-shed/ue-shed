@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
 import { makeCameraFeedTestLayer, type CameraFrame } from "@ue-shed/cameras";
+import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { Effect, Exit, Layer, Option, Queue, Ref, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
@@ -10,11 +11,24 @@ import {
 	WorkbenchWindowError
 } from "../adapters/electron-window.js";
 import type { RendererCameraFrame } from "../ipc-contracts.js";
+import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import {
 	CameraPresentation,
 	CameraPresentationLive,
 	type CameraPresentationShape
 } from "./camera-presentation.js";
+
+const configuration = makeWorkbenchConfigurationLayer({
+	authoringAsset: { status: "not_configured" },
+	expectedProject: { status: "not_configured" },
+	project: { status: "not_configured" },
+	remoteControlEndpoint: "http://127.0.0.1:30001",
+	review: { status: "not_configured" },
+	sourceCheckout: { status: "not_configured" },
+	textureAuditRules: { status: "not_configured" }
+});
+
+const remoteControl = makeRemoteControlClientTestLayer(() => Effect.die("not used"));
 
 function makeFrame(overrides: {
 	readonly cameraIndex: number;
@@ -105,7 +119,9 @@ function buildLayer(
 			Layer.mergeAll(
 				makeCameraFeedTestLayer({ frames: Stream.fromQueue(feedQueue) }),
 				windowLayer,
-				makeElectronAppTestLayer()
+				makeElectronAppTestLayer(),
+				configuration,
+				remoteControl
 			)
 		)
 	);

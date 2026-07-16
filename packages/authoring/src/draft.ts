@@ -3,7 +3,9 @@ import {
 	AuthoringTableSnapshot as AuthoringTableSnapshotSchema,
 	type AuthoringFieldValue,
 	type AuthoringCommand,
+	type AuthoringRow,
 	type AuthoringTableSnapshot,
+	type AuthoringTypeDescriptor,
 	type AuthoringValue
 } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
@@ -114,10 +116,18 @@ const decodePersistedDraftSession = Schema.decodeUnknownEffect(
 );
 
 export function decodeDraftSession(input: unknown) {
+	return decodeDraftSessionWithMigration(input).pipe(Effect.map(({ draft }) => draft));
+}
+
+export function decodeDraftSessionWithMigration(input: unknown) {
 	return decodePersistedDraftSession(input).pipe(
-		Effect.map(
-			(session): DraftSession =>
-				session.version === 1 ? { ...session, saveReceipts: [], version: 2 } : session
+		Effect.map((session) =>
+			session.version === 1
+				? {
+						draft: { ...session, saveReceipts: [], version: 2 } satisfies DraftSession,
+						migrated: true as const
+					}
+				: { draft: session, migrated: false as const }
 		)
 	);
 }
@@ -130,6 +140,25 @@ export class DraftFoldError extends Schema.TaggedErrorClass<DraftFoldError>()("D
 export class DraftBuildError extends Schema.TaggedErrorClass<DraftBuildError>()("DraftBuildError", {
 	message: Schema.String
 }) {}
+
+export class DraftIntentError extends Schema.TaggedErrorClass<DraftIntentError>()(
+	"DraftIntentError",
+	{
+		code: Schema.Literals([
+			"duplicate_row_name",
+			"incompatible_value",
+			"invalid_row_name",
+			"invalid_row_order",
+			"missing_field",
+			"row_not_found",
+			"stale_fingerprint",
+			"unsupported_edit",
+			"unsupported_add"
+		]),
+		message: Schema.String,
+		recovery: Schema.String
+	}
+) {}
 
 function fail(command: CommandEnvelope, message: string): never {
 	throw new DraftFoldError({ commandId: command.id, message });
@@ -303,12 +332,25 @@ export function buildSetCellCommand(args: {
 }): CommandEnvelope {
 	const table = workingTable(args.session, args.tableObjectPath);
 	const row = table.table.rows.find((candidate) => candidate.name === args.rowName);
-	if (!row) throw new DraftBuildError({ message: `Row ${args.rowName} does not exist` });
+	if (!row) {
+		return rowIntentError(
+			"row_not_found",
+			`Row ${args.rowName} does not exist`,
+			"Refresh the session and choose an existing row."
+		);
+	}
 	const field = row.fields.find((candidate) => candidate.name === args.fieldName);
-	if (!field) throw new DraftBuildError({ message: `Field ${args.fieldName} does not exist` });
+	if (!field) {
+		return rowIntentError(
+			"missing_field",
+			`Field ${args.fieldName} does not exist`,
+			"Refresh the session and choose a field declared by the table schema."
+		);
+	}
+	validateCellEdit(table, field, args.value);
 	return {
 		authoredAt: args.authoredAt,
-		baseFingerprint: args.session.fingerprints[args.tableObjectPath]!,
+		baseFingerprint: baseFingerprint(args.session, args.tableObjectPath),
 		body: {
 			fieldName: args.fieldName,
 			kind: "set_cell",
@@ -342,16 +384,31 @@ export function buildSetCellCommandGroup(args: {
 	let staged = args.session;
 	const commands: CommandEnvelope[] = [];
 	for (const [index, edit] of args.edits.entries()) {
+		const commandId = args.commandIds[index];
+		if (commandId === undefined) {
+			throw new DraftBuildError({ message: "Every cell edit requires one command identity" });
+		}
 		const table = workingTable(staged, args.tableObjectPath);
 		const row = table.table.rows.find((candidate) => candidate.id === edit.rowId);
-		if (!row) throw new DraftBuildError({ message: `Row ${edit.rowId} does not exist` });
+		if (!row) {
+			return rowIntentError(
+				"row_not_found",
+				`Row ${edit.rowId} does not exist`,
+				"Refresh the session and retry the complete gesture against existing rows."
+			);
+		}
 		const field = row.fields.find((candidate) => candidate.name === edit.fieldName);
 		if (!field) {
-			throw new DraftBuildError({ message: `Field ${edit.fieldName} does not exist` });
+			return rowIntentError(
+				"missing_field",
+				`Field ${edit.fieldName} does not exist`,
+				"Refresh the session and retry the complete gesture against declared fields."
+			);
 		}
+		validateCellEdit(table, field, edit.value);
 		const command: CommandEnvelope = {
 			authoredAt: args.authoredAt,
-			baseFingerprint: args.session.fingerprints[args.tableObjectPath]!,
+			baseFingerprint: baseFingerprint(args.session, args.tableObjectPath),
 			body: {
 				fieldName: edit.fieldName,
 				kind: "set_cell",
@@ -360,7 +417,7 @@ export function buildSetCellCommandGroup(args: {
 				rowId: edit.rowId
 			},
 			groupId: args.groupId,
-			id: args.commandIds[index]!,
+			id: commandId,
 			tableObjectPath: args.tableObjectPath,
 			...(args.author === undefined ? {} : { author: args.author })
 		};
@@ -368,6 +425,334 @@ export function buildSetCellCommandGroup(args: {
 		staged = appendCommandGroup(staged, [command]);
 	}
 	return commands;
+}
+
+interface RowCommandMetadata {
+	readonly session: DraftSession;
+	readonly tableObjectPath: string;
+	readonly commandId: string;
+	readonly groupId: string;
+	readonly authoredAt: string;
+	readonly author?: string;
+}
+
+function rowIntentError(code: DraftIntentError["code"], message: string, recovery: string): never {
+	throw new DraftIntentError({ code, message, recovery });
+}
+
+function baseFingerprint(session: DraftSession, tableObjectPath: string): string {
+	const fingerprint = session.fingerprints[tableObjectPath];
+	if (fingerprint === undefined) {
+		return rowIntentError(
+			"stale_fingerprint",
+			`Session has no base fingerprint for ${tableObjectPath}`,
+			"Refresh the table and create a new session from the current authority."
+		);
+	}
+	return fingerprint;
+}
+
+export function authoringValueCompatibility(
+	value: AuthoringValue,
+	type: AuthoringTypeDescriptor,
+	path: string
+): string | undefined {
+	switch (type.kind) {
+		case "scalar":
+			if (value.kind !== type.valueKind) return `${path} requires ${type.valueKind}`;
+			if (value.kind === "int" && !/^-?\d+$/.test(value.value)) {
+				return `${path} requires an exact signed integer`;
+			}
+			if (value.kind === "uint" && !/^\d+$/.test(value.value)) {
+				return `${path} requires an exact unsigned integer`;
+			}
+			if (
+				value.kind === "guid" &&
+				!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.value)
+			) {
+				return `${path} requires a canonical GUID`;
+			}
+			return undefined;
+		case "enum":
+			if (value.kind !== "enum") return `${path} requires an enum value`;
+			return type.options.some((option) => option.name === value.value)
+				? undefined
+				: `${path} is not one of the declared enum options`;
+		case "reference":
+			return value.kind === type.valueKind ? undefined : `${path} requires ${type.valueKind}`;
+		case "vector":
+			return value.kind === "vector" ? undefined : `${path} requires a vector`;
+		case "array":
+		case "set": {
+			if (value.kind !== type.kind) return `${path} requires ${type.kind}`;
+			for (const [index, item] of value.values.entries()) {
+				const mismatch = authoringValueCompatibility(
+					item,
+					type.element,
+					`${path}[${index}]`
+				);
+				if (mismatch !== undefined) return mismatch;
+			}
+			return undefined;
+		}
+		case "map": {
+			if (value.kind !== "map") return `${path} requires a map`;
+			for (const [index, entry] of value.entries.entries()) {
+				const keyMismatch = authoringValueCompatibility(
+					entry.key,
+					type.key,
+					`${path}.key[${index}]`
+				);
+				if (keyMismatch !== undefined) return keyMismatch;
+				const entryMismatch = authoringValueCompatibility(
+					entry.value,
+					type.value,
+					`${path}.value[${index}]`
+				);
+				if (entryMismatch !== undefined) return entryMismatch;
+			}
+			return undefined;
+		}
+		case "struct": {
+			if (value.kind !== "struct") return `${path} requires a struct`;
+			for (const descriptor of type.fields) {
+				const field = value.fields.find((candidate) => candidate.name === descriptor.name);
+				if (!field) {
+					if (descriptor.presence === "required") {
+						return `${path}.${descriptor.name} is required`;
+					}
+					continue;
+				}
+				const mismatch = authoringValueCompatibility(
+					field.value,
+					descriptor.type,
+					`${path}.${descriptor.name}`
+				);
+				if (mismatch !== undefined) return mismatch;
+			}
+			return undefined;
+		}
+		case "unsupported":
+			return `${path} uses unsupported type ${type.typeName}`;
+	}
+}
+
+function validateCellEdit(
+	table: AuthoringTableSnapshot,
+	field: AuthoringFieldValue,
+	value: AuthoringValue
+): void {
+	if (!("schema" in table.table) || table.table.schema.status !== "available") {
+		if (field.value.kind === "unsupported") {
+			return rowIntentError(
+				"unsupported_edit",
+				`Field ${field.name} is represented as an unsupported value`,
+				"Use a compatible live authoring producer or leave this field unchanged."
+			);
+		}
+		if (field.value.kind !== value.kind) {
+			return rowIntentError(
+				"incompatible_value",
+				`Field ${field.name} requires ${field.value.kind}, received ${value.kind}`,
+				"Submit a value with the same typed authoring kind as the current field."
+			);
+		}
+		return;
+	}
+	const descriptor = table.table.schema.fields.find((candidate) => candidate.name === field.name);
+	if (!descriptor) {
+		return rowIntentError(
+			"missing_field",
+			`Field ${field.name} is absent from the table schema`,
+			"Refresh the table schema before editing this field."
+		);
+	}
+	if (descriptor.editability.kind === "read_only" || descriptor.annotations.readOnly) {
+		return rowIntentError(
+			"unsupported_edit",
+			`Field ${field.name} is read-only: ${
+				descriptor.editability.kind === "read_only"
+					? descriptor.editability.reason
+					: "schema annotation"
+			}`,
+			"Leave the field unchanged or edit it through an authority that permits mutation."
+		);
+	}
+	const mismatch = authoringValueCompatibility(value, descriptor.type, field.name);
+	if (mismatch !== undefined) {
+		return rowIntentError(
+			"incompatible_value",
+			mismatch,
+			"Submit a value compatible with the reflected authoring field schema."
+		);
+	}
+}
+
+function validateNewRowName(table: AuthoringTableSnapshot, rowName: string, rowId?: string): void {
+	if (rowName.length === 0 || rowName.toLowerCase() === "none" || rowName.includes("\0")) {
+		rowIntentError(
+			"invalid_row_name",
+			`Row name ${JSON.stringify(rowName)} cannot be represented as an Unreal FName`,
+			"Choose a non-empty row name other than None."
+		);
+	}
+	const duplicate = table.table.rows.find(
+		(row) => row.id !== rowId && row.name.toLowerCase() === rowName.toLowerCase()
+	);
+	if (duplicate) {
+		rowIntentError(
+			"duplicate_row_name",
+			`Row ${rowName} conflicts with existing row ${duplicate.name}`,
+			"Choose a row name that is unique without regard to letter case."
+		);
+	}
+}
+
+function rowEnvelope(args: RowCommandMetadata, body: AuthoringCommand): CommandEnvelope {
+	return {
+		authoredAt: args.authoredAt,
+		baseFingerprint: baseFingerprint(args.session, args.tableObjectPath),
+		body,
+		groupId: args.groupId,
+		id: args.commandId,
+		tableObjectPath: args.tableObjectPath,
+		...(args.author === undefined ? {} : { author: args.author })
+	};
+}
+
+function defaultRow(table: AuthoringTableSnapshot, rowId: string, rowName: string): AuthoringRow {
+	if (!("schema" in table.table) || table.table.schema.status !== "available") {
+		return rowIntentError(
+			"unsupported_add",
+			`Table ${table.table.objectPath} does not expose schema-proven field defaults`,
+			"Open the table through an authoring v2 producer with an available schema, or duplicate an existing row."
+		);
+	}
+	const fields = table.table.schema.fields.map((field): AuthoringFieldValue => {
+		if (field.defaultValue.status !== "known") {
+			return rowIntentError(
+				"unsupported_add",
+				`Field ${field.name} has no schema-proven default value`,
+				"Duplicate an existing row, or use a producer that reports this field's default."
+			);
+		}
+		return { name: field.name, typeName: field.typeName, value: field.defaultValue.value };
+	});
+	return { fields, id: rowId, name: rowName };
+}
+
+export function buildAddRowCommand(
+	args: RowCommandMetadata & {
+		readonly rowId: string;
+		readonly rowName: string;
+		readonly atIndex?: number;
+	}
+): CommandEnvelope {
+	const table = workingTable(args.session, args.tableObjectPath);
+	validateNewRowName(table, args.rowName);
+	const atIndex = args.atIndex ?? table.table.rows.length;
+	if (!Number.isInteger(atIndex) || atIndex < 0 || atIndex > table.table.rows.length) {
+		return rowIntentError(
+			"invalid_row_order",
+			`Add index ${atIndex} is outside the table row range`,
+			`Choose an insertion index from 0 through ${table.table.rows.length}.`
+		);
+	}
+	return rowEnvelope(args, {
+		atIndex,
+		kind: "add_row",
+		row: defaultRow(table, args.rowId, args.rowName)
+	});
+}
+
+export function buildDuplicateRowCommand(
+	args: RowCommandMetadata & {
+		readonly sourceRowId: string;
+		readonly rowId: string;
+		readonly rowName: string;
+		readonly atIndex?: number;
+	}
+): CommandEnvelope {
+	const table = workingTable(args.session, args.tableObjectPath);
+	const sourceIndex = table.table.rows.findIndex((row) => row.id === args.sourceRowId);
+	if (sourceIndex === -1) {
+		return rowIntentError(
+			"row_not_found",
+			`Row ${args.sourceRowId} does not exist`,
+			"Refresh the session and choose an existing row to duplicate."
+		);
+	}
+	validateNewRowName(table, args.rowName);
+	const atIndex = args.atIndex ?? sourceIndex + 1;
+	if (!Number.isInteger(atIndex) || atIndex < 0 || atIndex > table.table.rows.length) {
+		return rowIntentError(
+			"invalid_row_order",
+			`Duplicate index ${atIndex} is outside the table row range`,
+			`Choose an insertion index from 0 through ${table.table.rows.length}.`
+		);
+	}
+	const source = table.table.rows[sourceIndex]!;
+	return rowEnvelope(args, {
+		atIndex,
+		kind: "add_row",
+		row: { fields: source.fields, id: args.rowId, name: args.rowName }
+	});
+}
+
+export function buildRemoveRowCommand(
+	args: RowCommandMetadata & { readonly rowId: string }
+): CommandEnvelope {
+	const table = workingTable(args.session, args.tableObjectPath);
+	const atIndex = table.table.rows.findIndex((row) => row.id === args.rowId);
+	if (atIndex === -1) {
+		return rowIntentError(
+			"row_not_found",
+			`Row ${args.rowId} does not exist`,
+			"Refresh the session and choose an existing row to remove."
+		);
+	}
+	return rowEnvelope(args, { atIndex, kind: "remove_row", row: table.table.rows[atIndex]! });
+}
+
+export function buildRenameRowCommand(
+	args: RowCommandMetadata & { readonly rowId: string; readonly rowName: string }
+): CommandEnvelope {
+	const table = workingTable(args.session, args.tableObjectPath);
+	const row = table.table.rows.find((candidate) => candidate.id === args.rowId);
+	if (!row) {
+		return rowIntentError(
+			"row_not_found",
+			`Row ${args.rowId} does not exist`,
+			"Refresh the session and choose an existing row to rename."
+		);
+	}
+	validateNewRowName(table, args.rowName, row.id);
+	return rowEnvelope(args, {
+		kind: "rename_row",
+		newName: args.rowName,
+		oldName: row.name,
+		rowId: row.id
+	});
+}
+
+export function buildReorderRowsCommand(
+	args: RowCommandMetadata & { readonly rowIds: readonly string[] }
+): CommandEnvelope {
+	const table = workingTable(args.session, args.tableObjectPath);
+	const oldOrder = table.table.rows.map((row) => row.id);
+	const requested = [...args.rowIds];
+	if (
+		requested.length !== oldOrder.length ||
+		new Set(requested).size !== requested.length ||
+		requested.some((rowId) => !oldOrder.includes(rowId))
+	) {
+		return rowIntentError(
+			"invalid_row_order",
+			"Reorder must name every current row identity exactly once",
+			"Refresh the session and submit a complete permutation of the current row identities."
+		);
+	}
+	return rowEnvelope(args, { kind: "reorder_rows", newOrder: requested, oldOrder });
 }
 
 export function invertCommand(command: AuthoringCommand): AuthoringCommand {

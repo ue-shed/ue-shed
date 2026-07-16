@@ -1,4 +1,4 @@
-import type { AuthoringSetCellsIntent } from "@ue-shed/authoring-sdk";
+import type { AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
@@ -43,8 +43,15 @@ contextBridge.exposeInMainWorld("ueShed", {
 	authoring: {
 		beginSession: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("authoring:session:begin", objectPath),
-		editSession: (intent: AuthoringSetCellsIntent): Promise<unknown> =>
+		listSessions: (): Promise<unknown> => ipcRenderer.invoke("authoring:session:list"),
+		openSession: (sessionId: string): Promise<unknown> =>
+			ipcRenderer.invoke("authoring:session:open", sessionId),
+		discardSession: (sessionId: string): Promise<unknown> =>
+			ipcRenderer.invoke("authoring:session:discard", sessionId),
+		editSession: (intent: AuthoringSessionIntent): Promise<unknown> =>
 			ipcRenderer.invoke("authoring:session:edit", intent),
+		reviewSession: (sessionId: string): Promise<unknown> =>
+			ipcRenderer.invoke("authoring:session:review", sessionId),
 		applySession: (sessionId: string): Promise<unknown> =>
 			ipcRenderer.invoke("authoring:session:apply", sessionId),
 		reconcileSession: (sessionId: string): Promise<unknown> =>

@@ -116,6 +116,9 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"authoring:open-catalog-table": ["/Game/Data/Example"],
 	"authoring:choose-table": [],
 	"authoring:session:begin": ["/Game/Data/Example"],
+	"authoring:session:list": [],
+	"authoring:session:open": ["session-1"],
+	"authoring:session:discard": ["session-1"],
 	"authoring:session:edit": [
 		{
 			edits: [{ fieldName: "Name", rowId: "Row1", value: { kind: "string", value: "x" } }],
@@ -124,6 +127,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 			tableObjectPath: "/Game/Data/Example"
 		}
 	],
+	"authoring:session:review": ["session-1"],
 	"authoring:session:undo": ["session-1"],
 	"authoring:session:redo": ["session-1"],
 	"authoring:session:apply": ["session-1"],
@@ -169,7 +173,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"authoring:open-catalog-table": { status: "cancelled" },
 	"authoring:choose-table": { status: "cancelled" },
 	"authoring:session:begin": sessionFailure,
+	"authoring:session:list": { diagnostics: [], sessions: [], status: "ready" },
+	"authoring:session:open": sessionFailure,
+	"authoring:session:discard": { diagnostics: [], sessions: [], status: "ready" },
 	"authoring:session:edit": sessionFailure,
+	"authoring:session:review": sessionFailure,
 	"authoring:session:undo": sessionFailure,
 	"authoring:session:redo": sessionFailure,
 	"authoring:session:apply": sessionFailure,
@@ -196,7 +204,10 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"authoring:open-catalog-table": [""],
 	"authoring:session:begin": [42],
+	"authoring:session:open": [""],
+	"authoring:session:discard": [null],
 	"authoring:session:edit": [{ kind: "set_cells" }],
+	"authoring:session:review": [""],
 	"authoring:session:undo": [""],
 	"authoring:session:redo": [null],
 	"authoring:session:apply": [{}],
@@ -208,9 +219,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:approve-candidate": [{ candidateId: "only" }]
 };
 
-it("registers exactly 28 invoke channels plus the camera:frame event", () => {
-	expect(invokeChannelNames).toHaveLength(28);
-	expect(new Set(invokeChannelNames).size).toBe(28);
+it("registers exactly 32 invoke channels plus the camera:frame event", () => {
+	expect(invokeChannelNames).toHaveLength(32);
+	expect(new Set(invokeChannelNames).size).toBe(32);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 });
 

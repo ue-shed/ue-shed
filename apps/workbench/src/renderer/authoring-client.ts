@@ -3,10 +3,14 @@ import {
 	AuthoringClientError,
 	decodeAuthoringCatalogResult,
 	decodeAuthoringLoadResult,
+	decodeAuthoringSessionListResult,
+	decodeAuthoringSessionReviewResult,
 	decodeAuthoringSessionResult,
 	type AuthoringCatalogResult,
 	type AuthoringClientShape,
 	type AuthoringLoadResult,
+	type AuthoringSessionListResult,
+	type AuthoringSessionReviewResult,
 	type AuthoringSessionResult
 } from "@ue-shed/authoring-sdk";
 import { Effect } from "effect";
@@ -61,10 +65,35 @@ const sessionRequest = (
 ): Effect.Effect<AuthoringSessionResult, AuthoringClientError> =>
 	request({ decode: decodeAuthoringSessionResult, invoke, operation });
 
+const reviewRequest = (
+	operation: string,
+	invoke: () => Promise<unknown>
+): Effect.Effect<AuthoringSessionReviewResult, AuthoringClientError> =>
+	request({ decode: decodeAuthoringSessionReviewResult, invoke, operation });
+
+const sessionListRequest = (
+	operation: string,
+	invoke: () => Promise<unknown>
+): Effect.Effect<AuthoringSessionListResult, AuthoringClientError> =>
+	request({ decode: decodeAuthoringSessionListResult, invoke, operation });
+
 export const authoringClient: AuthoringClientShape = AuthoringClient.of({
 	beginSession: Effect.fn("AuthoringClient.beginSession")((objectPath) =>
 		sessionRequest("authoring.beginSession", () =>
 			window.ueShed.authoring.beginSession(objectPath)
+		)
+	),
+	listSessions: Effect.fn("AuthoringClient.listSessions")(() =>
+		sessionListRequest("authoring.listSessions", () => window.ueShed.authoring.listSessions())
+	),
+	openSession: Effect.fn("AuthoringClient.openSession")((sessionId) =>
+		sessionRequest("authoring.openSession", () =>
+			window.ueShed.authoring.openSession(sessionId)
+		)
+	),
+	discardSession: Effect.fn("AuthoringClient.discardSession")((sessionId) =>
+		sessionListRequest("authoring.discardSession", () =>
+			window.ueShed.authoring.discardSession(sessionId)
 		)
 	),
 	applySession: Effect.fn("AuthoringClient.applySession")((sessionId) =>
@@ -95,6 +124,11 @@ export const authoringClient: AuthoringClientShape = AuthoringClient.of({
 	redoSession: Effect.fn("AuthoringClient.redoSession")((sessionId) =>
 		sessionRequest("authoring.redoSession", () =>
 			window.ueShed.authoring.redoSession(sessionId)
+		)
+	),
+	reviewSession: Effect.fn("AuthoringClient.reviewSession")((sessionId) =>
+		reviewRequest("authoring.reviewSession", () =>
+			window.ueShed.authoring.reviewSession(sessionId)
 		)
 	),
 	reconcileSession: Effect.fn("AuthoringClient.reconcileSession")((sessionId) =>

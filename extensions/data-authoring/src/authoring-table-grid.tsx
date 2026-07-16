@@ -6,8 +6,8 @@ import "peculiar-sheets/styles";
 import { createMemo } from "solid-js";
 import {
 	buildReadOnlyAuthoringGridModel,
-	decodeAuthoringGridMutation,
-	type AuthoringGridEdit
+	decodeAuthoringGridOperation,
+	type AuthoringGridGesture
 } from "./authoring-grid-model.js";
 import type { AuthoringColumn } from "./authoring-view.js";
 
@@ -20,7 +20,11 @@ export interface AuthoringTableGridProps {
 	readonly rows: readonly AuthoringRow[];
 	readonly columns: readonly AuthoringColumn[];
 	readonly disabled?: boolean;
-	readonly onEditGesture?: (edits: readonly AuthoringGridEdit[]) => void;
+	readonly dirtyCells?:
+		| readonly { readonly fieldName: string; readonly rowId: string }[]
+		| undefined;
+	readonly dirtyRowIds?: readonly string[] | undefined;
+	readonly onGesture?: (gesture: AuthoringGridGesture) => void;
 	readonly onEditFailure?: (message: string) => void;
 	readonly onSelectionChange?: (selection: AuthoringGridSelection | undefined) => void;
 }
@@ -29,6 +33,11 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 	const model = createMemo(() =>
 		buildReadOnlyAuthoringGridModel({ columns: props.columns, rows: props.rows })
 	);
+	const dirtyCells = createMemo(
+		() =>
+			new Set((props.dirtyCells ?? []).map((cell) => `${cell.rowId}\u0000${cell.fieldName}`))
+	);
+	const dirtyRows = createMemo(() => new Set(props.dirtyRowIds ?? []));
 
 	const handleSelection = (selection: Selection) => {
 		const row = props.rows[selection.focus.row];
@@ -39,24 +48,13 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 	};
 
 	const handleOperation = (operation: SheetOperation) => {
-		const mutations =
-			operation.type === "cell-edit"
-				? [operation.mutation]
-				: operation.type === "batch-edit"
-					? operation.mutations
-					: [];
-		if (mutations.length === 0) return;
-		const decoded = mutations.map((mutation) =>
-			decodeAuthoringGridMutation({ columns: props.columns, mutation, rows: props.rows })
-		);
-		const failure = decoded.find((result) => result.status === "failed");
-		if (failure?.status === "failed") {
-			props.onEditFailure?.(failure.message);
-			return;
-		}
-		props.onEditGesture?.(
-			decoded.flatMap((result) => (result.status === "ready" ? [result.edit] : []))
-		);
+		const result = decodeAuthoringGridOperation({
+			columns: props.columns,
+			operation,
+			rows: props.rows
+		});
+		if (result.status === "failed") props.onEditFailure?.(result.message);
+		else if (result.status === "ready") props.onGesture?.(result.gesture);
 	};
 
 	return (
@@ -64,8 +62,20 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 			<Sheet
 				columns={model().columns}
 				customization={{
-					getRowHeaderLabel: (index) => props.rows[index]?.name ?? String(index + 1),
-					getRowHeaderSublabel: () => "ROW"
+					getCellStyle: (rowIndex, columnIndex) => {
+						const row = props.rows[rowIndex];
+						const column = props.columns[columnIndex];
+						return row && column && dirtyCells().has(`${row.id}\u0000${column.name}`)
+							? { background: "#253020", boxShadow: "inset 0 0 0 1px #91bd65" }
+							: undefined;
+					},
+					getRowHeaderLabel: (index) => {
+						const row = props.rows[index];
+						if (!row) return String(index + 1);
+						return `${dirtyRows().has(row.id) ? "● " : ""}${row.name}`;
+					},
+					getRowHeaderSublabel: (index) =>
+						dirtyRows().has(props.rows[index]?.id ?? "") ? "DIRTY ROW" : "ROW"
 				}}
 				data={model().data}
 				onOperation={handleOperation}

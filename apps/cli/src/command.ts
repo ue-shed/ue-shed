@@ -32,32 +32,41 @@ export const CliCommand = Schema.TaggedUnion({
 	SessionsSetCell: {
 		...SessionProject,
 		fieldName: Schema.String,
-		rowName: Schema.String,
+		rowId: Schema.String,
 		tablePath: Schema.String,
 		value: AuthoringValue
+	},
+	SessionsAddRow: {
+		...SessionProject,
+		atIndex: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+		rowName: Schema.String,
+		tablePath: Schema.String
+	},
+	SessionsDuplicateRow: {
+		...SessionProject,
+		atIndex: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+		rowName: Schema.String,
+		sourceRowId: Schema.String,
+		tablePath: Schema.String
+	},
+	SessionsRemoveRow: { ...SessionProject, rowId: Schema.String, tablePath: Schema.String },
+	SessionsRenameRow: {
+		...SessionProject,
+		rowId: Schema.String,
+		rowName: Schema.String,
+		tablePath: Schema.String
+	},
+	SessionsReorderRows: {
+		...SessionProject,
+		rowIds: Schema.Array(Schema.String),
+		tablePath: Schema.String
 	},
 	SessionsApply: { ...SessionProject, endpoint: Schema.String },
 	SessionsReconcile: { ...SessionProject, endpoint: Schema.String },
 	SessionsSave: { ...SessionProject, endpoint: Schema.String },
-	SessionCreate: { assetPath: Schema.String, sessionPath: Schema.String, ...Reader },
-	SessionCreateLive: {
-		endpoint: Schema.String,
-		sessionPath: Schema.String,
-		tablePath: Schema.String
-	},
-	SessionShow: { sessionPath: Schema.String },
-	DraftSetCell: {
-		fieldName: Schema.String,
-		rowName: Schema.String,
-		sessionPath: Schema.String,
-		tablePath: Schema.String,
-		value: AuthoringValue
-	},
-	DraftUndo: { sessionPath: Schema.String },
-	DraftRedo: { sessionPath: Schema.String },
-	AuthoringApply: { endpoint: Schema.String, sessionPath: Schema.String },
-	AuthoringApplyStatus: { endpoint: Schema.String, operationId: Schema.String },
-	AuthoringSave: { endpoint: Schema.String, sessionPath: Schema.String },
+	SessionsReview: { ...SessionProject },
+	SessionsValidate: { ...SessionProject },
+	SessionsDiff: { ...SessionProject },
 	TextScan: { ...Project, ...Reader },
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
 	ReviewSetValidate: { reviewSetPath: Schema.String },
@@ -92,17 +101,14 @@ Usage:
   ue-shed authoring sessions list --project <project-root>
   ue-shed authoring sessions create <asset> --project <project-root> [--id <session-id>] [--reader <path>]
   ue-shed authoring sessions show|resume|close|discard|undo|redo <session-id> --project <project-root>
-  ue-shed authoring sessions set-cell <session-id> <table> <row> <field> <value-json> --project <project-root>
+  ue-shed authoring sessions set-cell <session-id> <table> <row-id> <field> <value-json> --project <project-root>
+  ue-shed authoring sessions add-row <session-id> <table> <row-name> --project <project-root> [--index <index>]
+  ue-shed authoring sessions duplicate-row <session-id> <table> <source-row-id> <row-name> --project <project-root> [--index <index>]
+  ue-shed authoring sessions remove-row <session-id> <table> <row-id> --project <project-root>
+  ue-shed authoring sessions rename-row <session-id> <table> <row-id> <row-name> --project <project-root>
+  ue-shed authoring sessions reorder-rows <session-id> <table> <row-ids-json> --project <project-root>
+  ue-shed authoring sessions review|validate|diff <session-id> --project <project-root>
   ue-shed authoring sessions apply|reconcile|save <session-id> <endpoint> --project <project-root>
-  ue-shed authoring session create <asset> <session-file> [--reader <path>]
-  ue-shed authoring session create-live <endpoint> <table> <session-file>
-  ue-shed authoring session show <session-file>
-  ue-shed authoring draft set-cell <session-file> <table> <row> <field> <value-json>
-  ue-shed authoring draft undo <session-file>
-  ue-shed authoring draft redo <session-file>
-  ue-shed authoring apply <session-file> <endpoint>
-  ue-shed authoring apply-status <endpoint> <operation-id>
-  ue-shed authoring save <session-file> <endpoint>
   ue-shed text scan <project-root> [--reader <path>]
   ue-shed text search <project-root> <query> [--reader <path>]
   ue-shed review sets validate <review-set>
@@ -181,10 +187,32 @@ function parseValue(valueJson: string): Effect.Effect<typeof AuthoringValue.Type
 	);
 }
 
+function parseIndex(value: string | undefined): Effect.Effect<number | undefined, CliUsageError> {
+	if (value === undefined) return Effect.succeed(undefined);
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed >= 0
+		? Effect.succeed(parsed)
+		: usage(`Invalid non-negative row index: ${value}`);
+}
+
+function parseRowIds(value: string): Effect.Effect<readonly string[], CliUsageError> {
+	return Effect.try({
+		try: () => JSON.parse(value) as unknown,
+		catch: (cause) => new CliUsageError({ message: `Invalid row IDs JSON: ${String(cause)}` })
+	}).pipe(
+		Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(Schema.String))),
+		Effect.mapError((cause) =>
+			cause instanceof CliUsageError
+				? cause
+				: new CliUsageError({ message: `Invalid row IDs: ${String(cause)}` })
+		)
+	);
+}
+
 function parseSessions(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
 	return Effect.gen(function* () {
 		const [action, ...rest] = args;
-		const parsed = yield* parseOptions(rest, ["--project", "--id", "--reader"]);
+		const parsed = yield* parseOptions(rest, ["--project", "--id", "--index", "--reader"]);
 		const projectRoot = parsed.values["--project"];
 		if (!action || !projectRoot) return yield* usage(`sessions ${action} requires --project`);
 		const p = parsed.positionals;
@@ -227,8 +255,21 @@ function parseSessions(args: readonly string[]): Effect.Effect<CliCommand, CliUs
 					return CliCommand.cases.SessionsRedo.make(fields);
 			}
 		}
+		if (["review", "validate", "diff"].includes(action)) {
+			const [sessionId] = yield* exact(
+				p,
+				1,
+				`sessions ${action} requires exactly one session id`
+			);
+			const fields = { projectRoot, sessionId: present(sessionId) };
+			return action === "review"
+				? CliCommand.cases.SessionsReview.make(fields)
+				: action === "validate"
+					? CliCommand.cases.SessionsValidate.make(fields)
+					: CliCommand.cases.SessionsDiff.make(fields);
+		}
 		if (action === "set-cell") {
-			const [sessionId, tablePath, rowName, fieldName, valueJson] = yield* exact(
+			const [sessionId, tablePath, rowId, fieldName, valueJson] = yield* exact(
 				p,
 				5,
 				"sessions set-cell requires session, table, row, field, and value JSON"
@@ -236,10 +277,81 @@ function parseSessions(args: readonly string[]): Effect.Effect<CliCommand, CliUs
 			return CliCommand.cases.SessionsSetCell.make({
 				fieldName: present(fieldName),
 				projectRoot,
-				rowName: present(rowName),
+				rowId: present(rowId),
 				sessionId: present(sessionId),
 				tablePath: present(tablePath),
 				value: yield* parseValue(present(valueJson))
+			});
+		}
+		if (action === "add-row") {
+			const [sessionId, tablePath, rowName] = yield* exact(
+				p,
+				3,
+				"sessions add-row requires session, table, and row name"
+			);
+			const atIndex = yield* parseIndex(parsed.values["--index"]);
+			return CliCommand.cases.SessionsAddRow.make({
+				projectRoot,
+				rowName: present(rowName),
+				sessionId: present(sessionId),
+				tablePath: present(tablePath),
+				...(atIndex === undefined ? {} : { atIndex })
+			});
+		}
+		if (action === "duplicate-row") {
+			const [sessionId, tablePath, sourceRowId, rowName] = yield* exact(
+				p,
+				4,
+				"sessions duplicate-row requires session, table, source row id, and row name"
+			);
+			const atIndex = yield* parseIndex(parsed.values["--index"]);
+			return CliCommand.cases.SessionsDuplicateRow.make({
+				projectRoot,
+				rowName: present(rowName),
+				sessionId: present(sessionId),
+				sourceRowId: present(sourceRowId),
+				tablePath: present(tablePath),
+				...(atIndex === undefined ? {} : { atIndex })
+			});
+		}
+		if (action === "remove-row") {
+			const [sessionId, tablePath, rowId] = yield* exact(
+				p,
+				3,
+				"sessions remove-row requires session, table, and row id"
+			);
+			return CliCommand.cases.SessionsRemoveRow.make({
+				projectRoot,
+				rowId: present(rowId),
+				sessionId: present(sessionId),
+				tablePath: present(tablePath)
+			});
+		}
+		if (action === "rename-row") {
+			const [sessionId, tablePath, rowId, rowName] = yield* exact(
+				p,
+				4,
+				"sessions rename-row requires session, table, row id, and row name"
+			);
+			return CliCommand.cases.SessionsRenameRow.make({
+				projectRoot,
+				rowId: present(rowId),
+				rowName: present(rowName),
+				sessionId: present(sessionId),
+				tablePath: present(tablePath)
+			});
+		}
+		if (action === "reorder-rows") {
+			const [sessionId, tablePath, rowIdsJson] = yield* exact(
+				p,
+				3,
+				"sessions reorder-rows requires session, table, and row IDs JSON"
+			);
+			return CliCommand.cases.SessionsReorderRows.make({
+				projectRoot,
+				rowIds: yield* parseRowIds(present(rowIdsJson)),
+				sessionId: present(sessionId),
+				tablePath: present(tablePath)
 			});
 		}
 		if (["apply", "reconcile", "save"].includes(action)) {
@@ -319,85 +431,6 @@ function parseAuthoring(args: readonly string[]): Effect.Effect<CliCommand, CliU
 			return CliCommand.cases.AuthoringLiveInspect.make({
 				endpoint: present(endpoint),
 				tablePath: present(tablePath)
-			});
-		}
-		if (area === "session" && action === "create") {
-			const [assetPath, sessionPath] = yield* exact(
-				nested,
-				2,
-				"session create requires an asset and session file"
-			);
-			return CliCommand.cases.SessionCreate.make({
-				assetPath: present(assetPath),
-				sessionPath: present(sessionPath),
-				...withReader
-			});
-		}
-		if (area === "session" && action === "create-live") {
-			const [endpoint, tablePath, sessionPath] = yield* exact(
-				nested,
-				3,
-				"session create-live requires endpoint, table, and session file"
-			);
-			return CliCommand.cases.SessionCreateLive.make({
-				endpoint: present(endpoint),
-				sessionPath: present(sessionPath),
-				tablePath: present(tablePath)
-			});
-		}
-		if (area === "session" && action === "show") {
-			const [sessionPath] = yield* exact(nested, 1, "session show requires a session file");
-			return CliCommand.cases.SessionShow.make({ sessionPath: present(sessionPath) });
-		}
-		if (area === "draft" && action === "set-cell") {
-			const [sessionPath, tablePath, rowName, fieldName, valueJson] = yield* exact(
-				nested,
-				5,
-				"draft set-cell requires session, table, row, field, and value JSON"
-			);
-			return CliCommand.cases.DraftSetCell.make({
-				fieldName: present(fieldName),
-				rowName: present(rowName),
-				sessionPath: present(sessionPath),
-				tablePath: present(tablePath),
-				value: yield* parseValue(present(valueJson))
-			});
-		}
-		if (area === "draft" && (action === "undo" || action === "redo")) {
-			const [sessionPath] = yield* exact(
-				nested,
-				1,
-				`draft ${action} requires a session file`
-			);
-			return action === "undo"
-				? CliCommand.cases.DraftUndo.make({ sessionPath: present(sessionPath) })
-				: CliCommand.cases.DraftRedo.make({ sessionPath: present(sessionPath) });
-		}
-		if (area === "apply" || area === "save") {
-			const [sessionPath, endpoint] = yield* exact(
-				p,
-				2,
-				`${area} requires session and endpoint`
-			);
-			return area === "apply"
-				? CliCommand.cases.AuthoringApply.make({
-						endpoint: present(endpoint),
-						sessionPath: present(sessionPath)
-					})
-				: CliCommand.cases.AuthoringSave.make({
-						endpoint: present(endpoint),
-						sessionPath: present(sessionPath)
-					});
-		}
-		if (area === "apply-status") {
-			const [endpoint, operationId] = yield* exact(
-				p,
-				2,
-				"apply-status requires endpoint and operation ID"
-			);
-			return CliCommand.cases.AuthoringApplyStatus.make({
-				endpoint: present(endpoint),
-				operationId: present(operationId)
 			});
 		}
 		return yield* usage(`Unknown authoring command\n\n${help}`);

@@ -1,8 +1,10 @@
 import {
 	AuthoringCatalogResult,
 	AuthoringLoadResult,
-	AuthoringSessionResult,
-	AuthoringSetCellsIntent
+	AuthoringSessionIntent,
+	AuthoringSessionListResult,
+	AuthoringSessionReviewResult,
+	AuthoringSessionResult
 } from "@ue-shed/authoring-sdk";
 import { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import {
@@ -192,10 +194,30 @@ export const invokeContracts = {
 		args: Schema.Tuple([GameObjectPath]),
 		result: AuthoringSessionResult
 	}),
+	"authoring:session:list": invoke({
+		channel: "authoring:session:list",
+		args: EmptyArgs,
+		result: AuthoringSessionListResult
+	}),
+	"authoring:session:open": invoke({
+		channel: "authoring:session:open",
+		args: Schema.Tuple([SessionId]),
+		result: AuthoringSessionResult
+	}),
+	"authoring:session:discard": invoke({
+		channel: "authoring:session:discard",
+		args: Schema.Tuple([SessionId]),
+		result: AuthoringSessionListResult
+	}),
 	"authoring:session:edit": invoke({
 		channel: "authoring:session:edit",
-		args: Schema.Tuple([AuthoringSetCellsIntent]),
+		args: Schema.Tuple([AuthoringSessionIntent]),
 		result: AuthoringSessionResult
+	}),
+	"authoring:session:review": invoke({
+		channel: "authoring:session:review",
+		args: Schema.Tuple([SessionId]),
+		result: AuthoringSessionReviewResult
 	}),
 	"authoring:session:undo": invoke({
 		channel: "authoring:session:undo",

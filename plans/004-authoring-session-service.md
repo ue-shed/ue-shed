@@ -7,14 +7,14 @@
 
 ## Status
 
-- **State**: IN PROGRESS — project-scoped durable service and initial CLI surface implemented
+- **State**: DONE
 - **Priority**: P0
 - **Effort**: L (multi-day)
 - **Risk**: HIGH — persistence and serialization determine whether drafts survive crashes correctly
 - **Depends on**: Plan 003
 - **Planned at**: commit `52df5c0`, 2026-07-15
 
-## Progress checkpoint — 2026-07-15
+## Completion — 2026-07-16
 
 - Added a project-scoped `AuthoringSessionService`; callers address sessions by validated id rather
   than coordinating raw session file paths.
@@ -25,8 +25,18 @@
 - Atomic replacement fsyncs the temporary document before rename. Malformed documents are moved to
   uniquely named quarantine files rather than overwritten.
 - Added restart and corruption tests plus the project-scoped `authoring sessions` CLI surface for
-  list/create/show/resume/close/discard/set-cell/undo/redo. The legacy raw-file commands remain only
-  until Apply/Save are moved onto the service.
+  list/create/show/resume/close/discard/edit/review/validate/diff/undo/redo/Apply/Save. Removed the
+  superseded raw-path draft and session commands.
+- Added typed, durable Add, Duplicate, Remove, Rename, and Reorder intents. Row names follow Unreal's
+  `FName`/`NAME_None` and case-insensitive uniqueness behavior; Add requires schema-proven defaults,
+  while Duplicate preserves the source row's complete typed values. The same operations are exposed
+  through process-tested `authoring sessions` CLI commands.
+- Added schema-owned review, validation, and semantic diff models for multi-table sessions, including
+  dirty rows/cells, command groups, diagnostics, undo/redo state, and pipeline state.
+- Added recursive value compatibility checks and typed recovery failures for the supported scalar,
+  reference, enum, struct, and container shapes. Apply preparation now rejects invalid reviews.
+- Added v1-to-v2 session migration with atomic persistence, plus host-neutral SDK, Workbench IPC, and
+  CLI parity for the complete trusted session contract.
 
 ## Outcome
 

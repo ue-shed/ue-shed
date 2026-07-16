@@ -133,6 +133,10 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder.record(`authoring.applySession:${sessionId}`).pipe(Effect.as(sessionFailure)),
 		beginSession: (objectPath) =>
 			recorder.record(`authoring.beginSession:${objectPath}`).pipe(Effect.as(sessionFailure)),
+		discardSession: (sessionId) =>
+			recorder
+				.record(`authoring.discardSession:${sessionId}`)
+				.pipe(Effect.as({ diagnostics: [], sessions: [], status: "ready" as const })),
 		chooseTable: () =>
 			recorder
 				.record("authoring.chooseTable")
@@ -149,16 +153,24 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record(`authoring.editSession:${intent.sessionId}`)
 				.pipe(Effect.as(sessionFailure)),
+		listSessions: () =>
+			recorder
+				.record("authoring.listSessions")
+				.pipe(Effect.as({ diagnostics: [], sessions: [], status: "ready" as const })),
 		openCatalogTable: (objectPath) =>
 			recorder
 				.record(`authoring.openCatalogTable:${objectPath}`)
 				.pipe(Effect.as({ status: "not_configured" as const })),
+		openSession: (sessionId) =>
+			recorder.record(`authoring.openSession:${sessionId}`).pipe(Effect.as(sessionFailure)),
 		reconcileSession: (sessionId) =>
 			recorder
 				.record(`authoring.reconcileSession:${sessionId}`)
 				.pipe(Effect.as(sessionFailure)),
 		redoSession: (sessionId) =>
 			recorder.record(`authoring.redoSession:${sessionId}`).pipe(Effect.as(sessionFailure)),
+		reviewSession: (sessionId) =>
+			recorder.record(`authoring.reviewSession:${sessionId}`).pipe(Effect.as(sessionFailure)),
 		saveSession: (sessionId) =>
 			recorder.record(`authoring.saveSession:${sessionId}`).pipe(Effect.as(sessionFailure)),
 		undoSession: (sessionId) =>
@@ -266,13 +278,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 28 contract channels", () =>
+it.effect("registers exactly the 32 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(28);
+		expect(result).toHaveLength(32);
 	})
 );
 
@@ -325,6 +337,8 @@ it.effect("dispatches authoring session channels with decoded session ids and in
 		const { recorder } = yield* runRegistered((ipc) =>
 			Effect.gen(function* () {
 				yield* ipc.invoke("authoring:session:begin", "/Game/Data/DT_Loot");
+				yield* ipc.invoke("authoring:session:list");
+				yield* ipc.invoke("authoring:session:open", "session-1");
 				yield* ipc.invoke("authoring:session:edit", {
 					edits: [
 						{
@@ -338,12 +352,18 @@ it.effect("dispatches authoring session channels with decoded session ids and in
 					tableObjectPath: "/Game/Data/DT_Loot"
 				});
 				yield* ipc.invoke("authoring:session:undo", "session-1");
+				yield* ipc.invoke("authoring:session:review", "session-1");
+				yield* ipc.invoke("authoring:session:discard", "session-1");
 			})
 		);
 		expect(yield* recorder.calls()).toEqual([
 			"authoring.beginSession:/Game/Data/DT_Loot",
+			"authoring.listSessions",
+			"authoring.openSession:session-1",
 			"authoring.editSession:session-1",
-			"authoring.undoSession:session-1"
+			"authoring.undoSession:session-1",
+			"authoring.reviewSession:session-1",
+			"authoring.discardSession:session-1"
 		]);
 	})
 );

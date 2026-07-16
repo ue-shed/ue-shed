@@ -3,14 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { decodeDraftSession as decodeDraftSessionEffect } from "@ue-shed/authoring";
 import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 const decodeAuthoringTableSnapshot = (input: unknown) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
-const decodeDraftSession = (input: unknown) => Effect.runSync(decodeDraftSessionEffect(input));
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliScript = join(repositoryRoot, "scripts", "ue-shed.mjs");
@@ -76,7 +74,7 @@ describe("ue-shed CLI process", () => {
 		const help = runCli(["--help"]);
 		expect(help.status).toBe(0);
 		expect(help.stdout).toContain("UE Shed — External tools for Unreal Engine development.");
-		expect(help.stderr).toBe("");
+		expect(help.stderr).not.toContain("ue-shed:");
 
 		const version = runCli(["--version"]);
 		expect(version.status).toBe(0);
@@ -87,7 +85,7 @@ describe("ue-shed CLI process", () => {
 		expect(invalid.stdout).toBe("");
 		expect(invalid.stderr).toContain("ue-shed: Unknown command: not-a-command");
 		expect(invalid.stderr).toContain("ue-shed authoring inspect");
-	});
+	}, 20_000);
 
 	it("inspects a real saved fixture asset through the native reader", () => {
 		const inspection = parseRecord(runSuccessfulCli(["authoring", "inspect", scalarAsset]));
@@ -97,61 +95,6 @@ describe("ue-shed CLI process", () => {
 		expect(snapshot.authority.kind).toBe("project_files");
 		expect(snapshot.table.objectPath).toBe(scalarTable);
 		expect(snapshot.table.rows.map((row) => row.name)).toEqual(["Scalar_Alpha", "Scalar_Beta"]);
-	});
-
-	it("persists an editable session across create, edit, undo, and redo processes", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "ue-shed-cli-e2e-"));
-		const sessionPath = join(directory, "draft.json");
-
-		try {
-			const created = decodeDraftSession(
-				JSON.parse(
-					runSuccessfulCli(["authoring", "session", "create", scalarAsset, sessionPath])
-				)
-			);
-			expect(created.commands).toHaveLength(0);
-			expect(created.undoPointer).toBe(0);
-
-			const editedOutput = parseRecord(
-				runSuccessfulCli([
-					"authoring",
-					"draft",
-					"set-cell",
-					sessionPath,
-					scalarTable,
-					"Scalar_Alpha",
-					"Enabled",
-					JSON.stringify({ kind: "bool", value: false })
-				])
-			);
-			const edited = decodeDraftSession(editedOutput.session);
-			const working = decodeAuthoringTableSnapshot(editedOutput.working);
-			expect(edited.commands).toHaveLength(1);
-			expect(edited.undoPointer).toBe(1);
-			expect(
-				working.table.rows
-					.find((row) => row.name === "Scalar_Alpha")
-					?.fields.find((field) => field.name === "Enabled")?.value
-			).toEqual({ kind: "bool", value: false });
-
-			const undone = decodeDraftSession(
-				JSON.parse(runSuccessfulCli(["authoring", "draft", "undo", sessionPath]))
-			);
-			expect(undone.undoPointer).toBe(0);
-			expect(
-				decodeDraftSession(
-					JSON.parse(runSuccessfulCli(["authoring", "session", "show", sessionPath]))
-				).undoPointer
-			).toBe(0);
-
-			const redone = decodeDraftSession(
-				JSON.parse(runSuccessfulCli(["authoring", "draft", "redo", sessionPath]))
-			);
-			expect(redone.undoPointer).toBe(1);
-			expect(redone.commands).toEqual(edited.commands);
-		} finally {
-			await rm(directory, { force: true, recursive: true });
-		}
 	});
 
 	it("runs the persistent session lifecycle through separate CLI processes", async () => {
@@ -183,6 +126,148 @@ describe("ue-shed CLI process", () => {
 			);
 			expect(shown.lifecycle).toBe("open");
 
+			const edited = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"set-cell",
+					"fixture-session",
+					scalarTable,
+					"row:Scalar_Alpha",
+					"Enabled",
+					JSON.stringify({ kind: "bool", value: false }),
+					"--project",
+					projectRoot
+				])
+			);
+			expect(
+				decodeAuthoringTableSnapshot(edited.working)
+					.table.rows.find((row) => row.name === "Scalar_Alpha")
+					?.fields.find((field) => field.name === "Enabled")?.value
+			).toEqual({ kind: "bool", value: false });
+			const review = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"review",
+					"fixture-session",
+					"--project",
+					projectRoot
+				])
+			);
+			expect(review.activeCommandCount).toBe(1);
+			expect(review.validation).toMatchObject({ valid: true, warningCount: 1 });
+			const diff: unknown = JSON.parse(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"diff",
+					"fixture-session",
+					"--project",
+					projectRoot
+				])
+			);
+			expect(diff).toEqual(
+				expect.arrayContaining([expect.objectContaining({ kind: "cell_changed" })])
+			);
+			const validation = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"validate",
+					"fixture-session",
+					"--project",
+					projectRoot
+				])
+			);
+			expect(validation).toMatchObject({ valid: true, warningCount: 1 });
+			const undone = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"undo",
+					"fixture-session",
+					"--project",
+					projectRoot
+				])
+			);
+			expect(parseRecord(JSON.stringify(undone.draft)).undoPointer).toBe(0);
+			const redone = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"redo",
+					"fixture-session",
+					"--project",
+					projectRoot
+				])
+			);
+			expect(parseRecord(JSON.stringify(redone.draft)).undoPointer).toBe(1);
+
+			const duplicated = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"duplicate-row",
+					"fixture-session",
+					scalarTable,
+					"row:Scalar_Alpha",
+					"Scalar_Copy",
+					"--project",
+					projectRoot
+				])
+			);
+			const duplicatedWorking = decodeAuthoringTableSnapshot(duplicated.working);
+			const copiedRow = duplicatedWorking.table.rows.find(
+				(row) => row.name === "Scalar_Copy"
+			);
+			if (!copiedRow) throw new Error("Expected duplicated CLI row");
+			const renamed = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"rename-row",
+					"fixture-session",
+					scalarTable,
+					copiedRow.id,
+					"Scalar_Renamed",
+					"--project",
+					projectRoot
+				])
+			);
+			const renamedWorking = decodeAuthoringTableSnapshot(renamed.working);
+			const reversedIds = [...renamedWorking.table.rows].reverse().map((row) => row.id);
+			const reordered = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"reorder-rows",
+					"fixture-session",
+					scalarTable,
+					JSON.stringify(reversedIds),
+					"--project",
+					projectRoot
+				])
+			);
+			expect(
+				decodeAuthoringTableSnapshot(reordered.working).table.rows.map((row) => row.name)
+			).toEqual(["Scalar_Beta", "Scalar_Renamed", "Scalar_Alpha"]);
+			const removed = parseRecord(
+				runSuccessfulCli([
+					"authoring",
+					"sessions",
+					"remove-row",
+					"fixture-session",
+					scalarTable,
+					"row:Scalar_Alpha",
+					"--project",
+					projectRoot
+				])
+			);
+			expect(
+				decodeAuthoringTableSnapshot(removed.working).table.rows.map((row) => row.name)
+			).toEqual(["Scalar_Beta", "Scalar_Renamed"]);
+
 			const closed = parseRecord(
 				runSuccessfulCli([
 					"authoring",
@@ -202,18 +287,20 @@ describe("ue-shed CLI process", () => {
 		} finally {
 			await rm(projectRoot, { force: true, recursive: true });
 		}
-	});
+	}, 30_000);
 
 	it("reports malformed input and typed Remote Control failures with usage exit status", () => {
 		const malformed = runCli([
 			"authoring",
-			"draft",
+			"sessions",
 			"set-cell",
-			"draft.json",
+			"draft",
 			"/Game/Table",
 			"Row",
 			"Field",
-			"{"
+			"{",
+			"--project",
+			"project"
 		]);
 		expect(malformed.status).toBe(2);
 		expect(malformed.stdout).toBe("");

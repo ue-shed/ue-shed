@@ -10,12 +10,13 @@ editor state and mutation. The domain package does not invoke parser or transpor
 
 The implemented headless kernel includes semantic table fingerprints, persistent versioned sessions,
 the five canonical command shapes, strict command folding, grouped append/undo/redo, pure inversion,
-and atomic session-file replacement. It builds bounded multi-table Apply plans through a narrow live
-port, rebases committed drafts from returned snapshots, preserves indeterminate outcomes without
-automatic replay, and records Apply and Save as separate durable receipts.
+schema-aware value validation, semantic multi-table diffs, Session Review projections, and atomic
+session-file replacement. It builds bounded multi-table Apply plans through a narrow live port,
+rebases committed drafts from returned snapshots, preserves indeterminate outcomes without automatic
+replay, and records Apply and Save as separate durable receipts.
 
 `makeAuthoringSessionService` is the maintained persistence boundary. It scopes storage to a project,
 addresses sessions by validated id, serializes transitions, fsyncs atomic replacements, quarantines
-malformed documents, and exposes create/open/resume/list/append/undo/redo/close/discard as typed
-Effects. Hosts and renderers should consume this service instead of owning a command log or passing
-arbitrary session file paths.
+malformed documents, migrates supported older drafts, and exposes lifecycle, typed cell/row intents,
+review, validation, diff, Apply, and Save as named Effects. Hosts and renderers should consume this
+service instead of owning a command log or passing arbitrary session file paths.

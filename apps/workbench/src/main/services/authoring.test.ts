@@ -435,6 +435,44 @@ it.effect("creates a session from a loaded snapshot, edits it, and undoes the ed
 				if (redone.status !== "ready")
 					throw new Error("expected a ready session after redo");
 				expect(redone.view.canUndo).toBe(true);
+				const duplicated = yield* service.editSession({
+					kind: "duplicate_row",
+					rowName: "Beta",
+					sessionId,
+					sourceRowId: "row:Alpha",
+					tableObjectPath: objectPath
+				});
+				if (duplicated.status !== "ready") {
+					throw new Error("expected a ready session after row duplication");
+				}
+				expect(duplicated.view.snapshot.table.rows.map((row) => row.name)).toEqual([
+					"Alpha",
+					"Beta"
+				]);
+				const review = yield* service.reviewSession(sessionId);
+				if (review.status !== "ready") throw new Error("expected a ready session review");
+				expect(review.review.tables[0]?.changes).toContainEqual(
+					expect.objectContaining({ fieldName: "Count", kind: "cell_changed" })
+				);
+				expect(review.review.tables[0]?.changes).toContainEqual(
+					expect.objectContaining({
+						kind: "row_added",
+						row: expect.objectContaining({ name: "Beta" })
+					})
+				);
+				const listed = yield* service.listSessions();
+				if (listed.status !== "ready") throw new Error("expected a ready session list");
+				expect(listed.sessions.map((candidate) => candidate.id)).toContain(sessionId);
+				const reopened = yield* service.openSession(sessionId);
+				if (reopened.status !== "ready") throw new Error("expected a reopened session");
+				expect(reopened.view.snapshot.table.rows.map((row) => row.name)).toEqual([
+					"Alpha",
+					"Beta"
+				]);
+				const discarded = yield* service.discardSession(sessionId);
+				if (discarded.status !== "ready")
+					throw new Error("expected a ready discard result");
+				expect(discarded.sessions).toEqual([]);
 			}),
 			layer
 		);

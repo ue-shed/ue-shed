@@ -7,6 +7,10 @@
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./review-contracts": {
+			"types": "./src/review.ts",
+			"default": "./src/review.ts"
 		}
 	},
 	"scripts": {

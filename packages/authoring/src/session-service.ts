@@ -6,8 +6,15 @@ import { recordAuthoringTransition } from "@ue-shed/observability";
 import {
 	DraftSessionSchema,
 	appendCommandGroup,
+	buildAddRowCommand,
+	buildDuplicateRowCommand,
+	buildRemoveRowCommand,
+	buildRenameRowCommand,
+	buildReorderRowsCommand,
 	buildSetCellCommandGroup,
 	createDraftSession,
+	decodeDraftSessionWithMigration,
+	DraftIntentError,
 	redo,
 	undo,
 	workingTable,
@@ -30,6 +37,12 @@ import {
 	type AuthoringLivePort,
 	type AuthoringMutationLimits
 } from "./live.js";
+import {
+	reviewAuthoringSession,
+	type AuthoringSessionReview,
+	type AuthoringSessionValidation,
+	type AuthoringTableChange
+} from "./review.js";
 
 const SessionIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -68,7 +81,22 @@ export const AuthoringSessionDocument = Schema.Struct({
 });
 export type AuthoringSessionDocument = Schema.Schema.Type<typeof AuthoringSessionDocument>;
 
-const decodeDocument = Schema.decodeUnknownEffect(AuthoringSessionDocument);
+const PersistedAuthoringSessionDocument = Schema.Struct({
+	...AuthoringSessionDocument.fields,
+	draft: Schema.Unknown
+});
+const decodePersistedDocument = Schema.decodeUnknownEffect(PersistedAuthoringSessionDocument);
+const decodeCurrentDocument = Schema.decodeUnknownEffect(AuthoringSessionDocument);
+
+function decodeDocument(input: unknown) {
+	return Effect.gen(function* () {
+		const persisted = yield* decodePersistedDocument(input);
+		const decodedDraft = yield* decodeDraftSessionWithMigration(persisted.draft);
+		const draft = decodedDraft.draft;
+		const document = yield* decodeCurrentDocument({ ...persisted, draft });
+		return { document, migrated: decodedDraft.migrated };
+	});
+}
 
 export class InvalidSessionIdError extends Schema.TaggedErrorClass<InvalidSessionIdError>()(
 	"InvalidSessionIdError",
@@ -110,7 +138,8 @@ export type AuthoringSessionServiceError =
 	| SessionNotFoundError
 	| SessionCorruptError
 	| AuthoringSessionStorageError
-	| AuthoringSessionTransitionError;
+	| AuthoringSessionTransitionError
+	| DraftIntentError;
 
 export class AuthoringSessionLiveError extends Schema.TaggedErrorClass<AuthoringSessionLiveError>()(
 	"AuthoringSessionLiveError",
@@ -196,6 +225,15 @@ export interface AuthoringSessionService {
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
 	readonly list: () => Effect.Effect<AuthoringSessionList, AuthoringSessionStorageError>;
+	readonly review: (
+		sessionId: string
+	) => Effect.Effect<AuthoringSessionReview, AuthoringSessionServiceError>;
+	readonly validate: (
+		sessionId: string
+	) => Effect.Effect<AuthoringSessionValidation, AuthoringSessionServiceError>;
+	readonly diff: (
+		sessionId: string
+	) => Effect.Effect<readonly AuthoringTableChange[], AuthoringSessionServiceError>;
 	readonly append: (
 		sessionId: string,
 		commands: readonly CommandEnvelope[]
@@ -210,6 +248,21 @@ export interface AuthoringSessionService {
 		}[];
 		readonly author?: string;
 	}) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
+	readonly addRow: (
+		args: RowAddIntent
+	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
+	readonly duplicateRow: (
+		args: RowDuplicateIntent
+	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
+	readonly removeRow: (
+		args: RowTargetIntent
+	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
+	readonly renameRow: (
+		args: RowRenameIntent
+	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
+	readonly reorderRows: (
+		args: RowReorderIntent
+	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
 	readonly undo: (
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
@@ -269,6 +322,33 @@ export interface AuthoringSessionService {
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
 	readonly discard: (sessionId: string) => Effect.Effect<void, AuthoringSessionServiceError>;
+}
+
+interface RowIntentBase {
+	readonly sessionId: string;
+	readonly tableObjectPath: string;
+	readonly author?: string;
+}
+
+export interface RowAddIntent extends RowIntentBase {
+	readonly rowName: string;
+	readonly atIndex?: number;
+}
+
+export interface RowDuplicateIntent extends RowAddIntent {
+	readonly sourceRowId: string;
+}
+
+export interface RowTargetIntent extends RowIntentBase {
+	readonly rowId: string;
+}
+
+export interface RowRenameIntent extends RowTargetIntent {
+	readonly rowName: string;
+}
+
+export interface RowReorderIntent extends RowIntentBase {
+	readonly rowIds: readonly string[];
 }
 
 export interface AuthoringSessionServiceConfig {
@@ -509,7 +589,7 @@ function validateSessionId(sessionId: string): Effect.Effect<string, InvalidSess
 
 function summary(document: AuthoringSessionDocument): AuthoringSessionSummary {
 	return {
-		commandCount: document.draft.commands.length,
+		commandCount: document.draft.undoPointer,
 		createdAt: document.createdAt,
 		id: document.draft.id,
 		lifecycle: document.lifecycle,
@@ -547,9 +627,11 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 								Effect.catch((cause) => repository.quarantine(validId, cause))
 							)
 						),
-						Effect.flatMap((document) =>
+						Effect.flatMap(({ document, migrated }) =>
 							document.project.id === repository.project.id
-								? Effect.succeed(document)
+								? migrated
+									? repository.persist(document).pipe(Effect.as(document))
+									: Effect.succeed(document)
 								: Effect.fail(
 										new AuthoringSessionStorageError({
 											message: `Session ${validId} belongs to project ${document.project.id}`,
@@ -582,12 +664,14 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 								Effect.try({
 									try: () => transition(document, timestamp),
 									catch: (cause) =>
-										new AuthoringSessionTransitionError({
-											message: String(cause),
-											recovery:
-												"Correct the rejected intent and retry the complete gesture.",
-											sessionId
-										})
+										cause instanceof DraftIntentError
+											? cause
+											: new AuthoringSessionTransitionError({
+													message: String(cause),
+													recovery:
+														"Correct the rejected intent and retry the complete gesture.",
+													sessionId
+												})
 								})
 							)
 						)
@@ -606,12 +690,37 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			}
 		};
 
+		const deriveReview = Effect.fn("AuthoringSessions.deriveReview")(
+			(document: AuthoringSessionDocument) =>
+				Effect.try({
+					try: () => reviewAuthoringSession(document),
+					catch: (cause) =>
+						new AuthoringSessionTransitionError({
+							message: `Session review failed: ${String(cause)}`,
+							recovery:
+								"Discard the malformed command group or restore the session from a valid backup.",
+							sessionId: document.draft.id
+						})
+				})
+		);
+
 		const prepareApply = Effect.fn("AuthoringSessions.prepareApply")(
 			(sessionId: string, limits: AuthoringMutationLimits, operationId?: string) =>
 				Effect.gen(function* () {
 					const requestId = operationId ?? (yield* ids.generate());
 					return yield* update(sessionId, (document, timestamp) => {
 						requireIdle(document);
+						const review = reviewAuthoringSession(document);
+						const firstError = review.validation.diagnostics.find(
+							(diagnostic) => diagnostic.severity === "error"
+						);
+						if (firstError !== undefined) {
+							throw new DraftIntentError({
+								code: "incompatible_value",
+								message: firstError.message,
+								recovery: firstError.recovery
+							});
+						}
 						const request = buildApplyRequest(
 							document.draft as DraftSession,
 							requestId,
@@ -812,6 +921,21 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					}))
 				)
 			),
+			review: Effect.fn("AuthoringSessions.review")((sessionId) =>
+				load(sessionId).pipe(Effect.flatMap(deriveReview))
+			),
+			validate: Effect.fn("AuthoringSessions.validate")((sessionId) =>
+				load(sessionId).pipe(
+					Effect.flatMap(deriveReview),
+					Effect.map((review) => review.validation)
+				)
+			),
+			diff: Effect.fn("AuthoringSessions.diff")((sessionId) =>
+				load(sessionId).pipe(
+					Effect.flatMap(deriveReview),
+					Effect.map((review) => review.tables.flatMap((table) => table.changes))
+				)
+			),
 			append: Effect.fn("AuthoringSessions.append")((sessionId, commands) =>
 				update(sessionId, (document, timestamp) => {
 					requireIdle(document);
@@ -840,6 +964,119 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							...(args.author === undefined ? {} : { author: args.author })
 						});
 						const draft = appendCommandGroup(document.draft as DraftSession, commands);
+						workingTable(draft, args.tableObjectPath);
+						return { ...document, draft, updatedAt: timestamp };
+					});
+				})
+			),
+			addRow: Effect.fn("AuthoringSessions.addRow")((args) =>
+				Effect.gen(function* () {
+					const rowId = `draft-row:${yield* ids.generate()}`;
+					const commandId = yield* ids.generate();
+					const groupId = yield* ids.generate();
+					return yield* update(args.sessionId, (document, timestamp) => {
+						requireIdle(document);
+						const command = buildAddRowCommand({
+							authoredAt: timestamp,
+							commandId,
+							groupId,
+							rowId,
+							rowName: args.rowName,
+							session: document.draft as DraftSession,
+							tableObjectPath: args.tableObjectPath,
+							...(args.atIndex === undefined ? {} : { atIndex: args.atIndex }),
+							...(args.author === undefined ? {} : { author: args.author })
+						});
+						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						workingTable(draft, args.tableObjectPath);
+						return { ...document, draft, updatedAt: timestamp };
+					});
+				})
+			),
+			duplicateRow: Effect.fn("AuthoringSessions.duplicateRow")((args) =>
+				Effect.gen(function* () {
+					const rowId = `draft-row:${yield* ids.generate()}`;
+					const commandId = yield* ids.generate();
+					const groupId = yield* ids.generate();
+					return yield* update(args.sessionId, (document, timestamp) => {
+						requireIdle(document);
+						const command = buildDuplicateRowCommand({
+							authoredAt: timestamp,
+							commandId,
+							groupId,
+							rowId,
+							rowName: args.rowName,
+							session: document.draft as DraftSession,
+							sourceRowId: args.sourceRowId,
+							tableObjectPath: args.tableObjectPath,
+							...(args.atIndex === undefined ? {} : { atIndex: args.atIndex }),
+							...(args.author === undefined ? {} : { author: args.author })
+						});
+						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						workingTable(draft, args.tableObjectPath);
+						return { ...document, draft, updatedAt: timestamp };
+					});
+				})
+			),
+			removeRow: Effect.fn("AuthoringSessions.removeRow")((args) =>
+				Effect.gen(function* () {
+					const commandId = yield* ids.generate();
+					const groupId = yield* ids.generate();
+					return yield* update(args.sessionId, (document, timestamp) => {
+						requireIdle(document);
+						const command = buildRemoveRowCommand({
+							authoredAt: timestamp,
+							commandId,
+							groupId,
+							rowId: args.rowId,
+							session: document.draft as DraftSession,
+							tableObjectPath: args.tableObjectPath,
+							...(args.author === undefined ? {} : { author: args.author })
+						});
+						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						workingTable(draft, args.tableObjectPath);
+						return { ...document, draft, updatedAt: timestamp };
+					});
+				})
+			),
+			renameRow: Effect.fn("AuthoringSessions.renameRow")((args) =>
+				Effect.gen(function* () {
+					const commandId = yield* ids.generate();
+					const groupId = yield* ids.generate();
+					return yield* update(args.sessionId, (document, timestamp) => {
+						requireIdle(document);
+						const command = buildRenameRowCommand({
+							authoredAt: timestamp,
+							commandId,
+							groupId,
+							rowId: args.rowId,
+							rowName: args.rowName,
+							session: document.draft as DraftSession,
+							tableObjectPath: args.tableObjectPath,
+							...(args.author === undefined ? {} : { author: args.author })
+						});
+						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						workingTable(draft, args.tableObjectPath);
+						return { ...document, draft, updatedAt: timestamp };
+					});
+				})
+			),
+			reorderRows: Effect.fn("AuthoringSessions.reorderRows")((args) =>
+				Effect.gen(function* () {
+					const commandId = yield* ids.generate();
+					const groupId = yield* ids.generate();
+					return yield* update(args.sessionId, (document, timestamp) => {
+						requireIdle(document);
+						const command = buildReorderRowsCommand({
+							authoredAt: timestamp,
+							commandId,
+							groupId,
+							rowIds: args.rowIds,
+							session: document.draft as DraftSession,
+							tableObjectPath: args.tableObjectPath,
+							...(args.author === undefined ? {} : { author: args.author })
+						});
+						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});

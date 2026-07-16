@@ -16,8 +16,7 @@ it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 					Effect.as(
 						CliRuntime.of({
 							print: (value) => Ref.update(output, (current) => current + value),
-							setExitCode: () => Effect.void,
-							uuid: () => Effect.succeed("test-id")
+							setExitCode: () => Effect.void
 						})
 					)
 				),

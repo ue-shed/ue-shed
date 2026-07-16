@@ -3,6 +3,7 @@ import {
 	authoringSessionServiceLayer,
 	AuthoringSessionLiveError,
 	AuthoringSessions,
+	reviewAuthoringSession,
 	workingTable,
 	type AuthoringSessionDocument
 } from "@ue-shed/authoring";
@@ -11,8 +12,11 @@ import {
 	type AuthoringCatalogResult,
 	type AuthoringLoadResult,
 	type AuthoringSessionResult,
+	type AuthoringSessionFailure,
+	type AuthoringSessionListResult,
+	type AuthoringSessionReviewResult,
 	type AuthoringSessionView,
-	type AuthoringSetCellsIntent
+	type AuthoringSessionIntent
 } from "@ue-shed/authoring-sdk";
 import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { AssetReader } from "@ue-shed/unreal-assets";
@@ -38,15 +42,17 @@ const emptyCatalogIndex: CatalogIndex = { assetPaths: new Map(), liveObjectPaths
 export interface WorkbenchAuthoringShape {
 	readonly applySession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly beginSession: (objectPath: string) => Effect.Effect<AuthoringSessionResult>;
+	readonly discardSession: (sessionId: string) => Effect.Effect<AuthoringSessionListResult>;
+	readonly listSessions: () => Effect.Effect<AuthoringSessionListResult>;
+	readonly openSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly chooseTable: () => Effect.Effect<AuthoringLoadResult, WorkbenchWindowError>;
 	readonly configuredCatalog: () => Effect.Effect<AuthoringCatalogResult>;
 	readonly configuredTable: () => Effect.Effect<AuthoringLoadResult>;
-	readonly editSession: (
-		intent: AuthoringSetCellsIntent
-	) => Effect.Effect<AuthoringSessionResult>;
+	readonly editSession: (intent: AuthoringSessionIntent) => Effect.Effect<AuthoringSessionResult>;
 	readonly openCatalogTable: (objectPath: string) => Effect.Effect<AuthoringLoadResult>;
 	readonly reconcileSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly redoSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
+	readonly reviewSession: (sessionId: string) => Effect.Effect<AuthoringSessionReviewResult>;
 	readonly saveSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly undoSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 }
@@ -70,28 +76,15 @@ export function sessionView(
 	document: AuthoringSessionDocument,
 	objectPath: string
 ): AuthoringSessionView {
-	const pending = document.pendingOperation;
-	const pipeline: AuthoringSessionView["pipeline"] =
-		pending.kind === "apply"
-			? pending.status === "indeterminate"
-				? { id: pending.request.operationId, kind: "indeterminate", operation: "apply" }
-				: { kind: "applying", operationId: pending.request.operationId }
-			: pending.kind === "save"
-				? pending.status === "indeterminate"
-					? { id: pending.request.requestId, kind: "indeterminate", operation: "save" }
-					: { kind: "saving", requestId: pending.request.requestId }
-				: document.draft.awaitingSave.length > 0
-					? { kind: "applied", objectPaths: document.draft.awaitingSave }
-					: document.draft.saveReceipts.length > 0
-						? { kind: "saved" }
-						: { canApply: document.draft.undoPointer > 0, kind: "draft" };
+	const review = reviewAuthoringSession(document);
 	return {
-		canRedo: document.draft.undoPointer < document.draft.commands.length,
-		canUndo: document.draft.undoPointer > 0,
-		commandCount: document.draft.commands.length,
-		dirty: document.draft.undoPointer > 0,
+		canRedo: review.canRedo,
+		canUndo: review.canUndo,
+		commandCount: review.activeCommandCount,
+		dirty: review.activeCommandCount > 0,
 		lifecycle: document.lifecycle,
-		pipeline,
+		pipeline: review.pipeline,
+		review,
 		sessionId: document.draft.id,
 		snapshot: workingTable(document.draft, objectPath),
 		updatedAt: document.updatedAt
@@ -110,7 +103,7 @@ function sessionFailure(cause: {
 	readonly _tag?: string;
 	readonly message: string;
 	readonly recovery?: string;
-}): AuthoringSessionResult {
+}): AuthoringSessionFailure {
 	return {
 		error: {
 			code: cause._tag ?? "authoring_session_failure",
@@ -381,25 +374,118 @@ export const WorkbenchAuthoringLive = Layer.effect(
 			}).pipe(Effect.catch((cause) => Effect.succeed(sessionFailure(cause))));
 		});
 
-		const editSession = Effect.fn("Workbench.WorkbenchAuthoring.editSession")(function* (
-			intent: AuthoringSetCellsIntent
+		const listSessions = Effect.fn("Workbench.WorkbenchAuthoring.listSessions")(function* () {
+			if (Option.isNone(sessions)) {
+				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+			}
+			return yield* sessions.value.list().pipe(
+				Effect.map((result) => ({
+					diagnostics: result.diagnostics.map(({ code, message }) => ({ code, message })),
+					sessions: result.sessions,
+					status: "ready" as const
+				})),
+				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+			);
+		});
+
+		const openSession = Effect.fn("Workbench.WorkbenchAuthoring.openSession")(function* (
+			sessionId: string
 		) {
 			if (Option.isNone(sessions)) {
 				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
 			}
-			return yield* sessions.value
-				.setCells({
-					edits: intent.edits,
-					sessionId: intent.sessionId,
-					tableObjectPath: intent.tableObjectPath
-				})
-				.pipe(
-					Effect.map((document) => ({
-						status: "ready" as const,
-						view: sessionView(document, intent.tableObjectPath)
-					})),
-					Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
-				);
+			const service = sessions.value;
+			return yield* service.open(sessionId).pipe(
+				Effect.flatMap((document) =>
+					document.lifecycle === "closed"
+						? service.resume(sessionId)
+						: Effect.succeed(document)
+				),
+				Effect.map(documentView),
+				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+			);
+		});
+
+		const discardSession = Effect.fn("Workbench.WorkbenchAuthoring.discardSession")(function* (
+			sessionId: string
+		) {
+			if (Option.isNone(sessions)) {
+				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+			}
+			return yield* sessions.value.discard(sessionId).pipe(
+				Effect.flatMap(() => listSessions()),
+				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+			);
+		});
+
+		const editSession = Effect.fn("Workbench.WorkbenchAuthoring.editSession")(function* (
+			intent: AuthoringSessionIntent
+		) {
+			if (Option.isNone(sessions)) {
+				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+			}
+			const service = sessions.value;
+			const transition =
+				intent.kind === "set_cells"
+					? service.setCells({
+							edits: intent.edits,
+							sessionId: intent.sessionId,
+							tableObjectPath: intent.tableObjectPath
+						})
+					: intent.kind === "add_row"
+						? service.addRow({
+								sessionId: intent.sessionId,
+								tableObjectPath: intent.tableObjectPath,
+								rowName: intent.rowName,
+								...(intent.atIndex === undefined ? {} : { atIndex: intent.atIndex })
+							})
+						: intent.kind === "duplicate_row"
+							? service.duplicateRow({
+									sessionId: intent.sessionId,
+									tableObjectPath: intent.tableObjectPath,
+									rowName: intent.rowName,
+									sourceRowId: intent.sourceRowId,
+									...(intent.atIndex === undefined
+										? {}
+										: { atIndex: intent.atIndex })
+								})
+							: intent.kind === "remove_row"
+								? service.removeRow({
+										sessionId: intent.sessionId,
+										tableObjectPath: intent.tableObjectPath,
+										rowId: intent.rowId
+									})
+								: intent.kind === "rename_row"
+									? service.renameRow({
+											sessionId: intent.sessionId,
+											tableObjectPath: intent.tableObjectPath,
+											rowId: intent.rowId,
+											rowName: intent.rowName
+										})
+									: service.reorderRows({
+											sessionId: intent.sessionId,
+											tableObjectPath: intent.tableObjectPath,
+											rowIds: intent.rowIds
+										});
+			return yield* transition.pipe(
+				Effect.map((document) => ({
+					status: "ready" as const,
+					view: sessionView(document, intent.tableObjectPath)
+				})),
+				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+			);
+		});
+
+		const reviewSession = Effect.fn("Workbench.WorkbenchAuthoring.reviewSession")(function* (
+			sessionId: string
+		) {
+			if (Option.isNone(sessions)) {
+				return { ...sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" }) };
+			}
+			return yield* sessions.value.review(sessionId).pipe(
+				Effect.map((review) => ({ review, status: "ready" as const })),
+				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+			);
 		});
 
 		const undoSession = Effect.fn("Workbench.WorkbenchAuthoring.undoSession")(function* (
@@ -511,10 +597,14 @@ export const WorkbenchAuthoringLive = Layer.effect(
 			chooseTable,
 			configuredCatalog,
 			configuredTable,
+			discardSession,
 			editSession,
+			listSessions,
 			openCatalogTable,
+			openSession,
 			reconcileSession,
 			redoSession,
+			reviewSession,
 			saveSession,
 			undoSession
 		});

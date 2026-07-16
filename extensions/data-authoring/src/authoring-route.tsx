@@ -4,10 +4,13 @@ import type {
 	AuthoringClientShape,
 	AuthoringLoadFailure,
 	AuthoringLoadResult,
+	AuthoringSessionListResult,
 	AuthoringSessionResult,
+	AuthoringRowIntent,
+	AuthoringSessionSummary,
 	AuthoringSessionView
 } from "@ue-shed/authoring-sdk";
-import type { AuthoringFieldValue, AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
+import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { Button, PageHeader, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, type Effect } from "effect";
@@ -20,6 +23,7 @@ import {
 	valueSummary
 } from "./authoring-view.js";
 import { AuthoringTableGrid } from "./authoring-table-grid.js";
+import type { AuthoringGridGesture } from "./authoring-grid-model.js";
 
 export type {
 	AuthoringCatalogResult,
@@ -36,10 +40,58 @@ type ViewState =
 	| { readonly status: "ready"; readonly snapshot: AuthoringTableSnapshot };
 
 type CatalogState = AuthoringCatalogResult | { readonly status: "loading" };
+type SessionListState = AuthoringSessionListResult | { readonly status: "loading" };
+type RowIntentWithoutScope = AuthoringRowIntent extends infer Intent
+	? Intent extends AuthoringRowIntent
+		? Omit<Intent, "sessionId" | "tableObjectPath">
+		: never
+	: never;
+
+type RowEditor =
+	| { readonly kind: "add_row"; readonly atIndex: number; readonly value: string }
+	| {
+			readonly kind: "duplicate_row";
+			readonly atIndex: number;
+			readonly sourceRowId: string;
+			readonly value: string;
+	  }
+	| { readonly kind: "rename_row"; readonly rowId: string; readonly value: string };
 
 interface CellSelection {
 	readonly rowId: string;
 	readonly fieldName: string;
+}
+
+type ReviewChange = AuthoringSessionView["review"]["tables"][number]["changes"][number];
+
+function reviewChangeTitle(change: ReviewChange): string {
+	switch (change.kind) {
+		case "cell_changed":
+			return `${change.rowName}.${change.fieldName}`;
+		case "row_added":
+			return `Added ${change.row.name}`;
+		case "row_removed":
+			return `Removed ${change.row.name}`;
+		case "row_renamed":
+			return `Renamed ${change.oldName}`;
+		case "rows_reordered":
+			return "Canonical row order";
+	}
+}
+
+function reviewChangeSummary(change: ReviewChange): string {
+	switch (change.kind) {
+		case "cell_changed":
+			return `${formatAuthoringValue(change.oldValue)} → ${formatAuthoringValue(change.newValue)}`;
+		case "row_added":
+			return `${change.row.fields.length} typed field(s)`;
+		case "row_removed":
+			return "Row and all typed values staged for removal";
+		case "row_renamed":
+			return `${change.oldName} → ${change.newName}`;
+		case "rows_reordered":
+			return change.newOrder.join(" · ");
+	}
 }
 
 function shortObjectName(objectPath: string): string {
@@ -50,37 +102,6 @@ function authorityLabel(snapshot: AuthoringTableSnapshot): string {
 	return snapshot.authority.kind === "project_files" ? "SAVED PACKAGE" : "LIVE EDITOR";
 }
 
-function isTrue(field: AuthoringFieldValue): boolean {
-	return field.value.kind === "bool" && field.value.value;
-}
-
-function CellValue(props: { readonly field: AuthoringFieldValue | undefined }) {
-	return (
-		<Show when={props.field} fallback={<span {...stylex.props(styles.missingValue)}>—</span>}>
-			{(field) => (
-				<>
-					<Show when={field().value.kind === "bool"}>
-						<span
-							{...stylex.props(
-								styles.booleanMark,
-								isTrue(field()) && styles.booleanMarkTrue
-							)}
-						/>
-					</Show>
-					<span
-						{...stylex.props(
-							styles.cellText,
-							field().value.kind === "unsupported" && styles.unsupportedText
-						)}
-					>
-						{formatAuthoringValue(field().value)}
-					</span>
-				</>
-			)}
-		</Show>
-	);
-}
-
 function CatalogPanel(props: {
 	readonly activeObjectPath?: string;
 	readonly disabled: boolean;
@@ -88,6 +109,9 @@ function CatalogPanel(props: {
 	readonly onQueryChange: (query: string) => void;
 	readonly onRefresh: () => void;
 	readonly query: string;
+	readonly onDiscardSession: (session: AuthoringSessionSummary) => void;
+	readonly onOpenSession: (sessionId: string) => void;
+	readonly sessions: SessionListState;
 	readonly state: CatalogState;
 }) {
 	const tables = createMemo(() => {
@@ -189,6 +213,72 @@ function CatalogPanel(props: {
 					</div>
 				</Match>
 			</Switch>
+			<div {...stylex.props(styles.draftShelf)}>
+				<div {...stylex.props(styles.draftShelfHeading)}>
+					<span>RECENT DRAFTS</span>
+					<Show when={props.sessions.status === "ready"}>
+						<small>
+							{props.sessions.status === "ready" ? props.sessions.sessions.length : 0}
+						</small>
+					</Show>
+				</div>
+				<Show
+					when={props.sessions.status === "ready"}
+					fallback={
+						<div {...stylex.props(styles.catalogStatus)}>
+							{props.sessions.status === "failed"
+								? "Draft list unavailable. The active table is unchanged."
+								: "Loading drafts…"}
+						</div>
+					}
+				>
+					<For
+						each={
+							props.sessions.status === "ready"
+								? props.sessions.sessions.slice(0, 6)
+								: []
+						}
+					>
+						{(draft) => (
+							<div {...stylex.props(styles.draftItem)}>
+								<button
+									type="button"
+									disabled={props.disabled}
+									onClick={() => props.onOpenSession(draft.id)}
+									{...stylex.props(styles.draftOpen)}
+								>
+									<strong>
+										{shortObjectName(draft.tableObjectPaths[0] ?? draft.id)}
+									</strong>
+									<small>
+										{draft.undoPointer} CHANGE
+										{draft.undoPointer === 1 ? "" : "S"}
+										{" · "}
+										{draft.lifecycle.toUpperCase()}
+									</small>
+								</button>
+								<button
+									type="button"
+									disabled={props.disabled}
+									aria-label={`Discard draft ${shortObjectName(draft.tableObjectPaths[0] ?? draft.id)}`}
+									onClick={() => props.onDiscardSession(draft)}
+									{...stylex.props(styles.draftDiscard)}
+								>
+									×
+								</button>
+							</div>
+						)}
+					</For>
+					<Show
+						when={
+							props.sessions.status === "ready" &&
+							props.sessions.sessions.length === 0
+						}
+					>
+						<div {...stylex.props(styles.catalogStatus)}>No persisted drafts yet.</div>
+					</Show>
+				</Show>
+			</div>
 		</nav>
 	);
 }
@@ -198,6 +288,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 	const catalogAction = createEffectAction();
 	const beginAction = createEffectAction();
 	const sessionAction = createEffectAction();
+	const sessionListAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [catalogState, setCatalogState] = createSignal<CatalogState>({ status: "loading" });
 	const [catalogQuery, setCatalogQuery] = createSignal("");
@@ -206,8 +297,18 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 	const [query, setQuery] = createSignal("");
 	const [selection, setSelection] = createSignal<CellSelection>();
 	const [session, setSession] = createSignal<AuthoringSessionView>();
+	const [sessions, setSessions] = createSignal<SessionListState>({ status: "loading" });
 	const [sessionNotice, setSessionNotice] = createSignal<string>();
 	const [isPersisting, setIsPersisting] = createSignal(false);
+	const [inspectorTab, setInspectorTab] = createSignal<"cell" | "review">("cell");
+	const [rowEditor, setRowEditor] = createSignal<RowEditor>();
+
+	const refreshSessions = () => {
+		sessionListAction.run(props.client.listSessions(), {
+			onFailure: (cause) => setSessionNotice(Cause.pretty(cause)),
+			onSuccess: setSessions
+		});
+	};
 
 	const acceptSessionResult = (result: AuthoringSessionResult) => {
 		if (result.status === "failed") {
@@ -217,6 +318,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 		setSession(result.view);
 		setState({ snapshot: result.view.snapshot, status: "ready" });
 		setSessionNotice(undefined);
+		refreshSessions();
 	};
 
 	const beginSession = (objectPath: string) => {
@@ -252,6 +354,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 	};
 
 	const load = (choose: boolean) => {
+		if (
+			session()?.dirty &&
+			!window.confirm(
+				"Replace the active dirty draft? Its persisted commands will remain available under Recent drafts."
+			)
+		)
+			return;
 		beginAction.cancel();
 		const preserveCurrent = state().status === "ready";
 		if (preserveCurrent) setIsReplacing(true);
@@ -299,6 +408,18 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 	};
 
 	const openCatalogTable = (objectPath: string) => {
+		const currentState = state();
+		const isDifferentTable =
+			currentState.status !== "ready" ||
+			currentState.snapshot.table.objectPath !== objectPath;
+		if (
+			session()?.dirty &&
+			isDifferentTable &&
+			!window.confirm(
+				"Switch tables? The active dirty draft will remain persisted under Recent drafts."
+			)
+		)
+			return;
 		beginAction.cancel();
 		setIsReplacing(true);
 		const preserveCurrent = state().status === "ready";
@@ -329,9 +450,155 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 		});
 	};
 
+	const openPersistedSession = (sessionId: string) => {
+		if (
+			session()?.dirty &&
+			session()?.sessionId !== sessionId &&
+			!window.confirm("Open another draft? The active dirty draft will remain persisted.")
+		)
+			return;
+		runSessionOperation(props.client.openSession(sessionId));
+	};
+
+	const discardPersistedSession = (draft: AuthoringSessionSummary) => {
+		if (
+			!window.confirm(
+				`Discard the persisted draft for ${shortObjectName(draft.tableObjectPaths[0] ?? draft.id)}? This cannot be undone.`
+			)
+		)
+			return;
+		if (isPersisting()) return;
+		setIsPersisting(true);
+		sessionAction.run(props.client.discardSession(draft.id), {
+			onFailure: (cause) => {
+				setSessionNotice(Cause.pretty(cause));
+				setIsPersisting(false);
+			},
+			onSuccess: (result) => {
+				setSessions(result);
+				setIsPersisting(false);
+				if (result.status === "failed") {
+					setSessionNotice(`${result.error.message} ${result.error.recovery}`);
+					return;
+				}
+				if (session()?.sessionId === draft.id) {
+					const currentState = state();
+					setSession(undefined);
+					if (currentState.status === "ready") {
+						beginSession(currentState.snapshot.table.objectPath);
+					}
+				}
+			}
+		});
+	};
+
+	const currentRows = (): readonly AuthoringRow[] => {
+		const current = state();
+		return current.status === "ready" ? current.snapshot.table.rows : [];
+	};
+
+	const suggestedRowName = (base: string): string => {
+		const names = new Set(currentRows().map((row) => row.name.toLocaleLowerCase()));
+		if (!names.has(base.toLocaleLowerCase())) return base;
+		let suffix = 2;
+		while (names.has(`${base}${suffix}`.toLocaleLowerCase())) suffix += 1;
+		return `${base}${suffix}`;
+	};
+
+	const runRowIntent = (intent: RowIntentWithoutScope) => {
+		const currentSession = session();
+		const currentState = state();
+		if (!currentSession || currentState.status !== "ready") return;
+		const completeIntent: AuthoringRowIntent = {
+			...intent,
+			sessionId: currentSession.sessionId,
+			tableObjectPath: currentState.snapshot.table.objectPath
+		};
+		runSessionOperation(props.client.editSession(completeIntent));
+	};
+
+	const removeRow = (rowId: string) => {
+		const row = currentRows().find((candidate) => candidate.id === rowId);
+		if (!row || !window.confirm(`Delete row ${row.name} and all of its values?`)) return;
+		runRowIntent({ kind: "remove_row", rowId });
+		setSelection(undefined);
+	};
+
+	const moveSelectedRow = (offset: -1 | 1) => {
+		if (query().trim().length > 0) {
+			setSessionNotice("Clear the row filter before changing canonical row order.");
+			return;
+		}
+		const selectedRowId = selection()?.rowId;
+		if (!selectedRowId) return;
+		const ids = currentRows().map((row) => row.id);
+		const index = ids.indexOf(selectedRowId);
+		const target = index + offset;
+		if (index < 0 || target < 0 || target >= ids.length) return;
+		const reordered = [...ids];
+		const selectedId = reordered[index];
+		const targetId = reordered[target];
+		if (selectedId === undefined || targetId === undefined) return;
+		reordered[index] = targetId;
+		reordered[target] = selectedId;
+		runRowIntent({ kind: "reorder_rows", rowIds: reordered });
+	};
+
+	const submitRowEditor = () => {
+		const editor = rowEditor();
+		if (!editor) return;
+		const rowName = editor.value.trim();
+		if (rowName.length === 0) {
+			setSessionNotice("Row names cannot be empty.");
+			return;
+		}
+		if (editor.kind === "add_row") {
+			runRowIntent({ atIndex: editor.atIndex, kind: "add_row", rowName });
+		} else if (editor.kind === "duplicate_row") {
+			runRowIntent({
+				atIndex: editor.atIndex,
+				kind: "duplicate_row",
+				rowName,
+				sourceRowId: editor.sourceRowId
+			});
+		} else {
+			runRowIntent({ kind: "rename_row", rowId: editor.rowId, rowName });
+		}
+		setRowEditor(undefined);
+	};
+
+	const handleGridGesture = (gesture: AuthoringGridGesture) => {
+		if (gesture.kind !== "set_cells" && query().trim().length > 0) {
+			setSessionNotice("Clear the row filter before using grid structural shortcuts.");
+			return;
+		}
+		if (gesture.kind === "set_cells") {
+			const currentSession = session();
+			const currentState = state();
+			if (!currentSession || currentState.status !== "ready") return;
+			runSessionOperation(
+				props.client.editSession({
+					edits: gesture.edits,
+					kind: "set_cells",
+					sessionId: currentSession.sessionId,
+					tableObjectPath: currentState.snapshot.table.objectPath
+				})
+			);
+		} else if (gesture.kind === "add_row") {
+			setRowEditor({
+				atIndex: gesture.atIndex,
+				kind: "add_row",
+				value: suggestedRowName("NewRow")
+			});
+		} else {
+			removeRow(gesture.rowId);
+		}
+	};
+
 	onMount(() => {
 		load(false);
 		loadCatalog();
+		refreshSessions();
 	});
 
 	return (
@@ -371,10 +638,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 					<div {...stylex.props(styles.coldStart)}>
 						<CatalogPanel
 							disabled={isReplacing()}
+							onDiscardSession={discardPersistedSession}
 							onOpen={openCatalogTable}
+							onOpenSession={openPersistedSession}
 							onQueryChange={setCatalogQuery}
 							onRefresh={loadCatalog}
 							query={catalogQuery()}
+							sessions={sessions()}
 							state={catalogState()}
 						/>
 						<div {...stylex.props(styles.emptyState)}>
@@ -437,7 +707,9 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 							const field = row ? fieldInRow(row, target.fieldName) : undefined;
 							return row && field ? { field, row } : undefined;
 						});
-						const gridTemplate = `minmax(180px, 0.8fr) repeat(${columns.length}, minmax(180px, 1fr))`;
+						const selectedRow = createMemo(() =>
+							snapshot.table.rows.find((row) => row.id === selection()?.rowId)
+						);
 						return (
 							<div {...stylex.props(styles.workspace)}>
 								<section
@@ -468,10 +740,16 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 										<span>SNAPSHOT</span>
 									</div>
 									<div {...stylex.props(styles.readOnlyFlag)}>
-										<span>○</span>
-										<div>
-											<strong>READ ONLY</strong>
-											<small>Draft editing is the next connected slice</small>
+										<span>{session()?.dirty ? "●" : "○"}</span>
+										<div {...stylex.props(styles.draftState)}>
+											<strong>
+												{session()?.dirty ? "STAGED DRAFT" : "DRAFT READY"}
+											</strong>
+											<small {...stylex.props(styles.draftStateDetail)}>
+												{session()
+													? `${session()?.commandCount ?? 0} active command(s) · ${session()?.review.validation.errorCount ?? 0} errors`
+													: "Opening persistent session…"}
+											</small>
 										</div>
 									</div>
 								</section>
@@ -504,15 +782,72 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 										<span>{sessionNotice()}</span>
 									</div>
 								</Show>
+								<Show when={rowEditor()}>
+									{(editor) => (
+										<div {...stylex.props(styles.rowEditorBackdrop)}>
+											<form
+												aria-label="Row name editor"
+												onSubmit={(event) => {
+													event.preventDefault();
+													submitRowEditor();
+												}}
+												{...stylex.props(styles.rowEditor)}
+											>
+												<span {...stylex.props(styles.inspectorKicker)}>
+													{editor().kind === "add_row"
+														? "ADD ROW"
+														: editor().kind === "duplicate_row"
+															? "DUPLICATE ROW"
+															: "RENAME ROW"}
+												</span>
+												<label {...stylex.props(styles.rowEditorLabel)}>
+													Unreal row name
+													<input
+														autofocus
+														value={editor().value}
+														onInput={(event) =>
+															setRowEditor({
+																...editor(),
+																value: event.currentTarget.value
+															})
+														}
+														{...stylex.props(styles.rowEditorInput)}
+													/>
+												</label>
+												<div {...stylex.props(styles.rowEditorActions)}>
+													<button
+														type="button"
+														onClick={() => setRowEditor(undefined)}
+														{...stylex.props(styles.dialogButton)}
+													>
+														Cancel
+													</button>
+													<button
+														type="submit"
+														{...stylex.props(
+															styles.dialogButton,
+															styles.dialogPrimary
+														)}
+													>
+														Stage row
+													</button>
+												</div>
+											</form>
+										</div>
+									)}
+								</Show>
 
 								<div {...stylex.props(styles.contentGrid)}>
 									<CatalogPanel
 										activeObjectPath={snapshot.table.objectPath}
 										disabled={isReplacing()}
+										onDiscardSession={discardPersistedSession}
 										onOpen={(objectPath) => void openCatalogTable(objectPath)}
+										onOpenSession={openPersistedSession}
 										onQueryChange={setCatalogQuery}
 										onRefresh={() => void loadCatalog()}
 										query={catalogQuery()}
+										sessions={sessions()}
 										state={catalogState()}
 									/>
 									<section {...stylex.props(styles.sheet)}>
@@ -538,7 +873,108 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 											</span>
 											<Show when={session()}>
 												{(currentSession) => (
-													<>
+													<div {...stylex.props(styles.rowActions)}>
+														<button
+															type="button"
+															disabled={isPersisting()}
+															onClick={() =>
+																setRowEditor({
+																	atIndex:
+																		snapshot.table.rows.length,
+																	kind: "add_row",
+																	value: suggestedRowName(
+																		"NewRow"
+																	)
+																})
+															}
+															{...stylex.props(styles.sheetAction)}
+														>
+															+ Row
+														</button>
+														<button
+															type="button"
+															disabled={
+																!selectedRow() || isPersisting()
+															}
+															onClick={() => {
+																const row = selectedRow();
+																if (!row) return;
+																setRowEditor({
+																	atIndex:
+																		snapshot.table.rows.indexOf(
+																			row
+																		) + 1,
+																	kind: "duplicate_row",
+																	sourceRowId: row.id,
+																	value: suggestedRowName(
+																		`${row.name}Copy`
+																	)
+																});
+															}}
+															{...stylex.props(styles.sheetAction)}
+														>
+															Duplicate
+														</button>
+														<button
+															type="button"
+															disabled={
+																!selectedRow() || isPersisting()
+															}
+															onClick={() => {
+																const row = selectedRow();
+																if (row)
+																	setRowEditor({
+																		kind: "rename_row",
+																		rowId: row.id,
+																		value: row.name
+																	});
+															}}
+															{...stylex.props(styles.sheetAction)}
+														>
+															Rename
+														</button>
+														<button
+															type="button"
+															disabled={
+																!selectedRow() || isPersisting()
+															}
+															onClick={() => {
+																const row = selectedRow();
+																if (row) removeRow(row.id);
+															}}
+															{...stylex.props(
+																styles.sheetAction,
+																styles.dangerAction
+															)}
+														>
+															Delete
+														</button>
+														<button
+															type="button"
+															disabled={
+																!selectedRow() ||
+																query().trim().length > 0 ||
+																isPersisting()
+															}
+															onClick={() => moveSelectedRow(-1)}
+															aria-label="Move selected row up"
+															{...stylex.props(styles.sheetAction)}
+														>
+															↑
+														</button>
+														<button
+															type="button"
+															disabled={
+																!selectedRow() ||
+																query().trim().length > 0 ||
+																isPersisting()
+															}
+															onClick={() => moveSelectedRow(1)}
+															aria-label="Move selected row down"
+															{...stylex.props(styles.sheetAction)}
+														>
+															↓
+														</button>
 														<button
 															type="button"
 															disabled={
@@ -655,184 +1091,212 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 																Save packages
 															</Button>
 														</Show>
-													</>
+													</div>
 												)}
 											</Show>
 										</div>
 										<AuthoringTableGrid
 											columns={columns}
 											disabled={!session() || isPersisting()}
+											dirtyCells={
+												session()?.review.tables.find(
+													(table) =>
+														table.objectPath ===
+														snapshot.table.objectPath
+												)?.dirtyCells
+											}
+											dirtyRowIds={
+												session()?.review.tables.find(
+													(table) =>
+														table.objectPath ===
+														snapshot.table.objectPath
+												)?.dirtyRowIds
+											}
 											onEditFailure={setSessionNotice}
-											onEditGesture={(edits) => {
-												const currentSession = session();
-												if (!currentSession) return;
-												runSessionOperation(
-													props.client.editSession({
-														edits,
-														kind: "set_cells",
-														sessionId: currentSession.sessionId,
-														tableObjectPath: snapshot.table.objectPath
-													})
-												);
-											}}
+											onGesture={handleGridGesture}
 											onSelectionChange={setSelection}
 											rows={visibleRows()}
 										/>
-										<Show when={false}>
-											<div {...stylex.props(styles.tableScroll)}>
-												<div
-													{...stylex.props(styles.tableHeader)}
-													style={{
-														"grid-template-columns": gridTemplate
-													}}
-												>
-													<span>ROW NAME</span>
-													<For each={columns}>
-														{(column) => (
-															<span
-																{...stylex.props(
-																	styles.columnHeading
-																)}
-															>
-																<strong>{column.name}</strong>
-																<small>{column.typeName}</small>
-															</span>
-														)}
-													</For>
-												</div>
-												<Show
-													when={visibleRows().length > 0}
-													fallback={
-														<div {...stylex.props(styles.noRows)}>
-															No rows match “{query()}”.
-														</div>
-													}
-												>
-													<For each={visibleRows()}>
-														{(row: AuthoringRow) => (
-															<div
-																{...stylex.props(styles.tableRow)}
-																style={{
-																	"grid-template-columns":
-																		gridTemplate
-																}}
-															>
-																<div
-																	{...stylex.props(
-																		styles.rowName
-																	)}
-																>
-																	<span>
-																		{row.name
-																			.slice(0, 1)
-																			.toUpperCase()}
-																	</span>
-																	<strong>{row.name}</strong>
-																</div>
-																<For each={columns}>
-																	{(column) => {
-																		const field = fieldInRow(
-																			row,
-																			column.name
-																		);
-																		const active = () =>
-																			selection()?.rowId ===
-																				row.id &&
-																			selection()
-																				?.fieldName ===
-																				column.name;
-																		return (
-																			<button
-																				type="button"
-																				disabled={!field}
-																				onClick={() =>
-																					setSelection({
-																						fieldName:
-																							column.name,
-																						rowId: row.id
-																					})
-																				}
-																				{...stylex.props(
-																					styles.tableCell,
-																					active() &&
-																						styles.tableCellActive
-																				)}
-																			>
-																				<CellValue
-																					field={field}
-																				/>
-																			</button>
-																		);
-																	}}
-																</For>
-															</div>
-														)}
-													</For>
-												</Show>
-											</div>
-										</Show>
 									</section>
 
 									<aside {...stylex.props(styles.inspector)}>
-										<Show
-											when={selected()}
-											fallback={
-												<div {...stylex.props(styles.inspectorEmpty)}>
-													Select a typed cell to inspect its value.
-												</div>
-											}
-										>
-											{(target) => (
-												<>
-													<span {...stylex.props(styles.inspectorKicker)}>
-														CELL EVIDENCE
-													</span>
-													<h2 {...stylex.props(styles.inspectorTitle)}>
-														{target().field.name}
-													</h2>
-													<p {...stylex.props(styles.inspectorPath)}>
-														{target().row.name} / {target().field.name}
-													</p>
-													<div {...stylex.props(styles.valueHero)}>
-														<small>
-															{valueSummary(
-																target().field.value
-															).toUpperCase()}
-														</small>
-														<strong>
-															{formatAuthoringValue(
-																target().field.value
+										<div {...stylex.props(styles.inspectorTabs)}>
+											<button
+												type="button"
+												onClick={() => setInspectorTab("cell")}
+												{...stylex.props(
+													styles.inspectorTab,
+													inspectorTab() === "cell" &&
+														styles.inspectorTabActive
+												)}
+											>
+												Cell
+											</button>
+											<button
+												type="button"
+												onClick={() => setInspectorTab("review")}
+												{...stylex.props(
+													styles.inspectorTab,
+													inspectorTab() === "review" &&
+														styles.inspectorTabActive
+												)}
+											>
+												Review {session()?.review.activeCommandCount ?? 0}
+											</button>
+										</div>
+										<Show when={inspectorTab() === "cell"}>
+											<Show
+												when={selected()}
+												fallback={
+													<div {...stylex.props(styles.inspectorEmpty)}>
+														Select a typed cell to inspect its value.
+													</div>
+												}
+											>
+												{(target) => (
+													<>
+														<span
+															{...stylex.props(
+																styles.inspectorKicker
 															)}
-														</strong>
-													</div>
-													<div {...stylex.props(styles.detailList)}>
-														<div>
-															<span>UNREAL TYPE</span>
-															<strong>
-																{target().field.typeName}
-															</strong>
-														</div>
-														<div>
-															<span>VALUE KIND</span>
-															<strong>
-																{target().field.value.kind}
-															</strong>
-														</div>
-														<div>
-															<span>ROW IDENTITY</span>
-															<strong>{target().row.id}</strong>
-														</div>
-													</div>
-													<div {...stylex.props(styles.nextSlice)}>
-														<span>NEXT CAPABILITY</span>
-														<strong>Persistent draft session</strong>
-														<p>
-															Editing will stage typed commands here
-															before any live Apply or Save.
+														>
+															CELL EVIDENCE
+														</span>
+														<h2
+															{...stylex.props(styles.inspectorTitle)}
+														>
+															{target().field.name}
+														</h2>
+														<p {...stylex.props(styles.inspectorPath)}>
+															{target().row.name} /{" "}
+															{target().field.name}
 														</p>
+														<div {...stylex.props(styles.valueHero)}>
+															<small>
+																{valueSummary(
+																	target().field.value
+																).toUpperCase()}
+															</small>
+															<strong>
+																{formatAuthoringValue(
+																	target().field.value
+																)}
+															</strong>
+														</div>
+														<div {...stylex.props(styles.detailList)}>
+															<div
+																{...stylex.props(styles.detailItem)}
+															>
+																<span
+																	{...stylex.props(
+																		styles.detailLabel
+																	)}
+																>
+																	UNREAL TYPE
+																</span>
+																<strong>
+																	{target().field.typeName}
+																</strong>
+															</div>
+															<div
+																{...stylex.props(styles.detailItem)}
+															>
+																<span
+																	{...stylex.props(
+																		styles.detailLabel
+																	)}
+																>
+																	VALUE KIND
+																</span>
+																<strong>
+																	{target().field.value.kind}
+																</strong>
+															</div>
+															<div
+																{...stylex.props(styles.detailItem)}
+															>
+																<span
+																	{...stylex.props(
+																		styles.detailLabel
+																	)}
+																>
+																	ROW IDENTITY
+																</span>
+																<strong>{target().row.id}</strong>
+															</div>
+														</div>
+													</>
+												)}
+											</Show>
+										</Show>
+										<Show when={inspectorTab() === "review"}>
+											<div {...stylex.props(styles.reviewSummary)}>
+												<span {...stylex.props(styles.inspectorKicker)}>
+													SESSION REVIEW
+												</span>
+												<strong>
+													{(session()?.review.activeCommandCount ?? 0) ===
+													0
+														? "No staged changes"
+														: session()?.review.validation.valid
+															? "Ready to apply"
+															: "Needs attention"}
+												</strong>
+												<small>
+													{session()?.review.validation.errorCount ?? 0}{" "}
+													errors ·{" "}
+													{session()?.review.validation.warningCount ?? 0}{" "}
+													warnings ·{" "}
+													{session()?.review.commandGroups.filter(
+														(group) => group.active
+													).length ?? 0}{" "}
+													gestures
+												</small>
+											</div>
+											<div {...stylex.props(styles.reviewList)}>
+												<For
+													each={
+														session()?.review.tables.flatMap(
+															(table) => table.changes
+														) ?? []
+													}
+												>
+													{(change) => (
+														<div {...stylex.props(styles.reviewChange)}>
+															<strong>
+																{reviewChangeTitle(change)}
+															</strong>
+															<small>
+																{reviewChangeSummary(change)}
+															</small>
+														</div>
+													)}
+												</For>
+												<Show
+													when={
+														(session()?.review.activeCommandCount ??
+															0) === 0
+													}
+												>
+													<div {...stylex.props(styles.inspectorEmpty)}>
+														No staged changes.
 													</div>
-												</>
-											)}
+												</Show>
+											</div>
+											<For
+												each={
+													session()?.review.validation.diagnostics ?? []
+												}
+											>
+												{(diagnostic) => (
+													<div {...stylex.props(styles.reviewDiagnostic)}>
+														<strong>
+															{diagnostic.severity.toUpperCase()}
+														</strong>
+														<span>{diagnostic.message}</span>
+													</div>
+												)}
+											</For>
 										</Show>
 									</aside>
 								</div>
@@ -928,6 +1392,8 @@ const styles = stylex.create({
 		borderLeft: "1px solid #303632",
 		color: "#d6a363"
 	},
+	draftState: { minWidth: 0, display: "flex", flexDirection: "column", gap: 4 },
+	draftStateDetail: { color: "#9b8060", fontSize: 8, lineHeight: 1.35 },
 	diagnostics: {
 		display: "flex",
 		gap: 16,
@@ -1041,13 +1507,50 @@ const styles = stylex.create({
 		padding: "8px 10px",
 		textTransform: "uppercase"
 	},
-	sheet: { minWidth: 0, border: "1px solid #39403b", backgroundColor: "#101311" },
-	sheetTools: {
-		height: 48,
+	draftShelf: { borderTop: "1px solid #303632" },
+	draftShelfHeading: {
 		display: "flex",
 		alignItems: "center",
-		gap: 16,
-		padding: "0 12px",
+		justifyContent: "space-between",
+		padding: "10px 11px 7px",
+		color: "#718073",
+		fontSize: 7,
+		letterSpacing: ".14em"
+	},
+	draftItem: {
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) 28px",
+		borderTop: "1px solid #252b27"
+	},
+	draftOpen: {
+		minWidth: 0,
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: 4,
+		border: 0,
+		backgroundColor: { default: "transparent", ":hover": "#171d18" },
+		color: "#b8c0b8",
+		padding: "9px 10px",
+		textAlign: "left",
+		cursor: "pointer"
+	},
+	draftDiscard: {
+		border: 0,
+		borderLeft: "1px solid #252b27",
+		backgroundColor: { default: "transparent", ":hover": "#351c19" },
+		color: "#9e6d63",
+		cursor: "pointer",
+		fontSize: 15
+	},
+	sheet: { minWidth: 0, border: "1px solid #39403b", backgroundColor: "#101311" },
+	sheetTools: {
+		minHeight: 48,
+		display: "flex",
+		alignItems: "center",
+		flexWrap: "wrap",
+		gap: 6,
+		padding: "8px 10px",
 		borderBottom: "1px solid #303632"
 	},
 	searchWrap: { display: "flex", alignItems: "center", gap: 9, color: "#707a72", fontSize: 8 },
@@ -1069,65 +1572,24 @@ const styles = stylex.create({
 		color: "#58615a",
 		fontSize: 8
 	},
+	rowActions: {
+		width: "100%",
+		display: "flex",
+		alignItems: "center",
+		gap: 6,
+		paddingTop: 7,
+		borderTop: "1px solid #252b27"
+	},
 	sheetAction: {
 		border: "1px solid #39413b",
-		backgroundColor: { default: "#111512", ":hover": "#202720" },
-		color: "#aeb9af",
-		cursor: "pointer",
+		backgroundColor: { default: "#111512", ":hover": "#202720", ":disabled": "#101210" },
+		color: { default: "#aeb9af", ":disabled": "#4d554f" },
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		fontSize: 8,
 		padding: "6px 9px",
 		textTransform: "uppercase"
 	},
-	tableScroll: { maxHeight: "calc(100vh - 285px)", minHeight: 430, overflow: "auto" },
-	tableHeader: {
-		minWidth: "max-content",
-		display: "grid",
-		position: "sticky",
-		top: 0,
-		zIndex: 3,
-		backgroundColor: "#171b18",
-		borderBottom: "1px solid #465047",
-		color: "#839087",
-		fontSize: 8,
-		letterSpacing: ".08em"
-	},
-	columnHeading: { display: "flex", flexDirection: "column", gap: 3 },
-	tableRow: {
-		minWidth: "max-content",
-		display: "grid",
-		borderBottom: "1px solid #262c28"
-	},
-	rowName: {
-		minWidth: 0,
-		display: "flex",
-		alignItems: "center",
-		gap: 9,
-		padding: "10px 12px",
-		borderRight: "1px solid #303632",
-		backgroundColor: "#141815",
-		fontSize: 10
-	},
-	tableCell: {
-		minWidth: 0,
-		display: "flex",
-		alignItems: "center",
-		gap: 7,
-		border: 0,
-		borderRight: "1px solid #282e2a",
-		backgroundColor: { default: "transparent", ":hover": "#202720" },
-		color: "#c3cac2",
-		padding: "10px 12px",
-		textAlign: "left",
-		cursor: "pointer",
-		overflow: "hidden"
-	},
-	tableCellActive: { backgroundColor: "#253020", boxShadow: "inset 0 0 0 1px #91bd65" },
-	cellText: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10 },
-	missingValue: { color: "#444b46" },
-	unsupportedText: { color: "#d6a363" },
-	booleanMark: { width: 7, height: 7, borderRadius: "50%", backgroundColor: "#59615b" },
-	booleanMarkTrue: { backgroundColor: "#91c976", boxShadow: "0 0 7px #91c97666" },
-	noRows: { padding: 40, textAlign: "center", color: "#6e766f", fontSize: 10 },
+	dangerAction: { color: "#d18b7e" },
 	inspector: {
 		minHeight: 480,
 		borderColor: tokens.colorBorderStrong,
@@ -1137,6 +1599,24 @@ const styles = stylex.create({
 		padding: 20,
 		overflow: "hidden"
 	},
+	inspectorTabs: {
+		display: "grid",
+		gridTemplateColumns: "1fr 1fr",
+		margin: "-20px -20px 20px",
+		borderBottom: "1px solid #333a35"
+	},
+	inspectorTab: {
+		border: 0,
+		borderBottom: "2px solid transparent",
+		backgroundColor: { default: "#0e110f", ":hover": "#171d18" },
+		color: "#78827a",
+		cursor: "pointer",
+		padding: "12px 8px",
+		fontSize: 8,
+		letterSpacing: ".1em",
+		textTransform: "uppercase"
+	},
+	inspectorTabActive: { borderBottomColor: "#b7e26d", color: "#dce3d8" },
 	inspectorEmpty: { color: "#727a74", fontSize: 10, lineHeight: 1.6 },
 	inspectorKicker: { color: "#8fa080", fontSize: 8, letterSpacing: ".15em" },
 	inspectorTitle: {
@@ -1159,12 +1639,86 @@ const styles = stylex.create({
 		wordBreak: "break-word"
 	},
 	detailList: { display: "flex", flexDirection: "column", gap: 0, marginTop: 18 },
-	nextSlice: {
-		marginTop: 24,
-		paddingTop: 16,
-		borderTop: "1px solid #333a35",
-		color: "#7d877f",
+	detailItem: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 4,
+		padding: "9px 0",
+		borderBottom: "1px solid #292f2b",
 		fontSize: 9,
-		lineHeight: 1.6
-	}
+		wordBreak: "break-word"
+	},
+	detailLabel: { color: "#6f7871", fontSize: 7, letterSpacing: ".1em" },
+	reviewSummary: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		paddingBottom: 16,
+		borderBottom: "1px solid #333a35"
+	},
+	reviewList: { maxHeight: "calc(100vh - 410px)", overflowY: "auto" },
+	reviewChange: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 5,
+		padding: "11px 0",
+		borderBottom: "1px solid #292f2b",
+		fontSize: 9
+	},
+	reviewDiagnostic: {
+		display: "grid",
+		gridTemplateColumns: "54px 1fr",
+		gap: 8,
+		padding: "9px 0",
+		borderTop: "1px solid #665337",
+		color: "#d6a363",
+		fontSize: 8,
+		lineHeight: 1.45
+	},
+	rowEditorBackdrop: {
+		position: "fixed",
+		inset: 0,
+		zIndex: 20,
+		display: "grid",
+		placeItems: "center",
+		backgroundColor: "#050706cc"
+	},
+	rowEditor: {
+		width: "min(420px, calc(100vw - 40px))",
+		display: "flex",
+		flexDirection: "column",
+		gap: 18,
+		border: "1px solid #566159",
+		backgroundColor: "#111512",
+		boxShadow: "0 24px 80px #00000088",
+		padding: 22
+	},
+	rowEditorLabel: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 8,
+		color: "#879088",
+		fontSize: 9,
+		letterSpacing: ".08em",
+		textTransform: "uppercase"
+	},
+	rowEditorInput: {
+		border: "1px solid #465047",
+		backgroundColor: "#090b0a",
+		color: "#e0e5dd",
+		padding: "10px 11px",
+		outlineColor: "#b7e26d",
+		fontSize: 12
+	},
+	rowEditorActions: { display: "flex", justifyContent: "flex-end", gap: 8 },
+	dialogButton: {
+		border: "1px solid #465047",
+		backgroundColor: { default: "#151a16", ":hover": "#202720" },
+		color: "#b8c0b8",
+		cursor: "pointer",
+		padding: "8px 11px",
+		fontSize: 9,
+		textTransform: "uppercase"
+	},
+	dialogPrimary: { borderColor: "#8cad57", color: "#c8ef87" }
 });

@@ -1,20 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { TextureAudit, TextureAuditLive } from "@ue-shed/asset-audits";
 import {
-	appendCommandGroup,
-	acceptSaveResult,
 	authoringSessionLivePortLayer,
 	authoringSessionServiceLayer,
 	AuthoringSessions,
-	buildSaveRequest,
-	buildSetCellCommand,
-	createDraftSession,
-	dispatchApply,
-	DraftSessionRepository,
-	DraftSessionRepositoryLive,
 	fingerprintTable,
-	redo,
-	undo,
 	workingTable
 } from "@ue-shed/authoring";
 import {
@@ -46,7 +35,7 @@ import {
 } from "@ue-shed/observability";
 import { assetReaderLayer, AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
 import { connectUnrealAuthoring, RemoteControlClientLive } from "@ue-shed/unreal-connection";
-import { Clock, Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import { type CliCommand, help } from "./command.js";
 
 export class CliCommandError extends Schema.TaggedErrorClass<CliCommandError>()("CliCommandError", {
@@ -56,7 +45,6 @@ export class CliCommandError extends Schema.TaggedErrorClass<CliCommandError>()(
 export interface CliRuntimeShape {
 	readonly print: (value: string) => Effect.Effect<void>;
 	readonly setExitCode: (code: number) => Effect.Effect<void>;
-	readonly uuid: () => Effect.Effect<string>;
 }
 
 export class CliRuntime extends Context.Service<CliRuntime, CliRuntimeShape>()(
@@ -73,8 +61,7 @@ export const CliRuntimeLive = Layer.succeed(
 			Effect.sync(() => {
 				process.exitCode = code;
 			})
-		),
-		uuid: Effect.fn("CliRuntime.uuid")(() => Effect.sync(randomUUID))
+		)
 	})
 );
 
@@ -87,10 +74,6 @@ function messageOf(cause: unknown): string {
 
 function json(value: unknown): string {
 	return `${JSON.stringify(value, null, "\t")}\n`;
-}
-
-function isoNow(millis: number): string {
-	return new Date(millis).toISOString();
 }
 
 function readerLayer(reader?: string) {
@@ -158,18 +141,68 @@ function sessionsProgram(command: CliCommand) {
 				return yield* sessions.undo(command.sessionId).pipe(Effect.flatMap(printJson));
 			case "SessionsRedo":
 				return yield* sessions.redo(command.sessionId).pipe(Effect.flatMap(printJson));
+			case "SessionsReview":
+				return yield* sessions.review(command.sessionId).pipe(Effect.flatMap(printJson));
+			case "SessionsValidate":
+				return yield* sessions.validate(command.sessionId).pipe(Effect.flatMap(printJson));
+			case "SessionsDiff":
+				return yield* sessions.diff(command.sessionId).pipe(Effect.flatMap(printJson));
 			case "SessionsSetCell": {
 				const next = yield* sessions.setCells({
 					edits: [
 						{
 							fieldName: command.fieldName,
-							rowId: command.rowName,
+							rowId: command.rowId,
 							value: command.value
 						}
 					],
 					sessionId: command.sessionId,
 					tableObjectPath: command.tablePath
 				});
+				return yield* printJson({
+					session: next,
+					working: workingTable(next.draft, command.tablePath)
+				});
+			}
+			case "SessionsAddRow":
+			case "SessionsDuplicateRow":
+			case "SessionsRemoveRow":
+			case "SessionsRenameRow":
+			case "SessionsReorderRows": {
+				const common = {
+					sessionId: command.sessionId,
+					tableObjectPath: command.tablePath
+				};
+				const next =
+					command._tag === "SessionsAddRow"
+						? yield* sessions.addRow({
+								...common,
+								rowName: command.rowName,
+								...(command.atIndex === undefined
+									? {}
+									: { atIndex: command.atIndex })
+							})
+						: command._tag === "SessionsDuplicateRow"
+							? yield* sessions.duplicateRow({
+									...common,
+									rowName: command.rowName,
+									sourceRowId: command.sourceRowId,
+									...(command.atIndex === undefined
+										? {}
+										: { atIndex: command.atIndex })
+								})
+							: command._tag === "SessionsRemoveRow"
+								? yield* sessions.removeRow({ ...common, rowId: command.rowId })
+								: command._tag === "SessionsRenameRow"
+									? yield* sessions.renameRow({
+											...common,
+											rowId: command.rowId,
+											rowName: command.rowName
+										})
+									: yield* sessions.reorderRows({
+											...common,
+											rowIds: command.rowIds
+										});
 				return yield* printJson({
 					session: next,
 					working: workingTable(next.draft, command.tablePath)
@@ -362,103 +395,18 @@ export function executeCommand(
 			case "SessionsUndo":
 			case "SessionsRedo":
 			case "SessionsSetCell":
+			case "SessionsAddRow":
+			case "SessionsDuplicateRow":
+			case "SessionsRemoveRow":
+			case "SessionsRenameRow":
+			case "SessionsReorderRows":
+			case "SessionsReview":
+			case "SessionsValidate":
+			case "SessionsDiff":
 			case "SessionsApply":
 			case "SessionsReconcile":
 			case "SessionsSave":
 				return yield* sessionsProgram(command);
-			case "SessionCreate": {
-				const reader = yield* AssetReader;
-				const repository = yield* DraftSessionRepository;
-				const snapshot = yield* reader.readTable(command.assetPath);
-				const session = createDraftSession(
-					yield* runtime.uuid(),
-					[snapshot],
-					fingerprintTable
-				);
-				yield* repository.save(command.sessionPath, session);
-				return yield* printJson(session);
-			}
-			case "SessionCreateLive": {
-				const repository = yield* DraftSessionRepository;
-				const connection = yield* connectUnrealAuthoring(command.endpoint);
-				const snapshot = yield* connection.getTableSnapshot(command.tablePath);
-				const session = createDraftSession(
-					yield* runtime.uuid(),
-					[snapshot],
-					fingerprintTable
-				);
-				yield* repository.save(command.sessionPath, session);
-				return yield* printJson(session);
-			}
-			case "SessionShow": {
-				const repository = yield* DraftSessionRepository;
-				return yield* repository.load(command.sessionPath).pipe(Effect.flatMap(printJson));
-			}
-			case "DraftSetCell": {
-				const repository = yield* DraftSessionRepository;
-				const session = yield* repository.load(command.sessionPath);
-				const id = yield* runtime.uuid();
-				const authoredAt = isoNow(yield* Clock.currentTimeMillis);
-				const next = appendCommandGroup(session, [
-					buildSetCellCommand({
-						authoredAt,
-						commandId: id,
-						fieldName: command.fieldName,
-						groupId: yield* runtime.uuid(),
-						rowName: command.rowName,
-						session,
-						tableObjectPath: command.tablePath,
-						value: command.value
-					})
-				]);
-				yield* repository.save(command.sessionPath, next);
-				return yield* printJson({
-					session: next,
-					working: workingTable(next, command.tablePath)
-				});
-			}
-			case "DraftUndo":
-			case "DraftRedo": {
-				const repository = yield* DraftSessionRepository;
-				const session = yield* repository.load(command.sessionPath);
-				const next = command._tag === "DraftUndo" ? undo(session) : redo(session);
-				yield* repository.save(command.sessionPath, next);
-				return yield* printJson(next);
-			}
-			case "AuthoringApply": {
-				const repository = yield* DraftSessionRepository;
-				const session = yield* repository.load(command.sessionPath);
-				const connection = yield* connectUnrealAuthoring(command.endpoint);
-				const outcome = yield* dispatchApply({
-					appliedAt: isoNow(yield* Clock.currentTimeMillis),
-					operationId: yield* runtime.uuid(),
-					port: connection,
-					session
-				});
-				yield* repository.save(command.sessionPath, outcome.session);
-				return yield* printJson(outcome);
-			}
-			case "AuthoringApplyStatus": {
-				const connection = yield* connectUnrealAuthoring(command.endpoint);
-				return yield* connection
-					.lookupApplyResult(command.operationId)
-					.pipe(Effect.flatMap(printJson));
-			}
-			case "AuthoringSave": {
-				const repository = yield* DraftSessionRepository;
-				const session = yield* repository.load(command.sessionPath);
-				const connection = yield* connectUnrealAuthoring(command.endpoint);
-				const request = buildSaveRequest(session, yield* runtime.uuid());
-				const result = yield* connection.save(request);
-				const next = acceptSaveResult(
-					session,
-					request,
-					result,
-					isoNow(yield* Clock.currentTimeMillis)
-				);
-				yield* repository.save(command.sessionPath, next);
-				return yield* printJson({ result, session: next });
-			}
 			case "TextScan":
 			case "TextSearch": {
 				const corpus = yield* Effect.gen(function* () {
@@ -574,7 +522,6 @@ export function executeCommand(
 	return observeOperation(`Cli.${command._tag}`, program).pipe(
 		Effect.provide(readerLayer(reader)),
 		Effect.provide(RemoteControlClientLive),
-		Effect.provide(DraftSessionRepositoryLive),
 		Effect.provide(ReviewRepositoryLive),
 		Effect.provide(reviewAuthoring),
 		Effect.provide(capture),

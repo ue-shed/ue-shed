@@ -1,3 +1,7 @@
+import {
+	AuthoringSessionPipeline,
+	AuthoringSessionReview
+} from "@ue-shed/authoring/review-contracts";
 import { AuthoringTableSnapshot, AuthoringValue } from "@ue-shed/protocol";
 import { Context, type Effect, Schema } from "effect";
 
@@ -7,21 +11,8 @@ export const AuthoringSessionView = Schema.Struct({
 	commandCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	dirty: Schema.Boolean,
 	lifecycle: Schema.Literals(["open", "closed"]),
-	pipeline: Schema.Union([
-		Schema.Struct({ canApply: Schema.Boolean, kind: Schema.Literal("draft") }),
-		Schema.Struct({ kind: Schema.Literal("applying"), operationId: Schema.String }),
-		Schema.Struct({
-			kind: Schema.Literal("indeterminate"),
-			operation: Schema.Literals(["apply", "save"]),
-			id: Schema.String
-		}),
-		Schema.Struct({
-			kind: Schema.Literal("applied"),
-			objectPaths: Schema.Array(Schema.String)
-		}),
-		Schema.Struct({ kind: Schema.Literal("saving"), requestId: Schema.String }),
-		Schema.Struct({ kind: Schema.Literal("saved") })
-	]),
+	pipeline: AuthoringSessionPipeline,
+	review: AuthoringSessionReview,
 	sessionId: Schema.String,
 	snapshot: AuthoringTableSnapshot,
 	updatedAt: Schema.String
@@ -42,19 +33,93 @@ export const AuthoringSetCellsIntent = Schema.Struct({
 }).annotate({ identifier: "AuthoringSetCellsIntent" });
 export type AuthoringSetCellsIntent = Schema.Schema.Type<typeof AuthoringSetCellsIntent>;
 
+export const AuthoringRowIntent = Schema.Union([
+	Schema.Struct({
+		atIndex: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+		kind: Schema.Literal("add_row"),
+		rowName: Schema.String,
+		sessionId: Schema.String,
+		tableObjectPath: Schema.String
+	}),
+	Schema.Struct({
+		atIndex: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+		kind: Schema.Literal("duplicate_row"),
+		rowName: Schema.String,
+		sessionId: Schema.String,
+		sourceRowId: Schema.String,
+		tableObjectPath: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("remove_row"),
+		rowId: Schema.String,
+		sessionId: Schema.String,
+		tableObjectPath: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("rename_row"),
+		rowId: Schema.String,
+		rowName: Schema.String,
+		sessionId: Schema.String,
+		tableObjectPath: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("reorder_rows"),
+		rowIds: Schema.Array(Schema.String),
+		sessionId: Schema.String,
+		tableObjectPath: Schema.String
+	})
+]).annotate({ identifier: "AuthoringRowIntent" });
+export type AuthoringRowIntent = Schema.Schema.Type<typeof AuthoringRowIntent>;
+
+export const AuthoringSessionIntent = Schema.Union([
+	AuthoringSetCellsIntent,
+	AuthoringRowIntent
+]).annotate({ identifier: "AuthoringSessionIntent" });
+export type AuthoringSessionIntent = Schema.Schema.Type<typeof AuthoringSessionIntent>;
+
+export const AuthoringSessionFailure = Schema.Struct({
+	error: Schema.Struct({
+		code: Schema.String,
+		message: Schema.String,
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean
+	}),
+	status: Schema.Literal("failed")
+}).annotate({ identifier: "AuthoringSessionFailure" });
+export type AuthoringSessionFailure = Schema.Schema.Type<typeof AuthoringSessionFailure>;
+
 export const AuthoringSessionResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready"), view: AuthoringSessionView }),
-	Schema.Struct({
-		error: Schema.Struct({
-			code: Schema.String,
-			message: Schema.String,
-			recovery: Schema.String,
-			retrySafe: Schema.Boolean
-		}),
-		status: Schema.Literal("failed")
-	})
+	AuthoringSessionFailure
 ]).annotate({ identifier: "AuthoringSessionResult" });
 export type AuthoringSessionResult = Schema.Schema.Type<typeof AuthoringSessionResult>;
+
+export const AuthoringSessionReviewResult = Schema.Union([
+	Schema.Struct({ review: AuthoringSessionReview, status: Schema.Literal("ready") }),
+	AuthoringSessionFailure
+]).annotate({ identifier: "AuthoringSessionReviewResult" });
+export type AuthoringSessionReviewResult = Schema.Schema.Type<typeof AuthoringSessionReviewResult>;
+
+export const AuthoringSessionSummary = Schema.Struct({
+	commandCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	createdAt: Schema.String,
+	id: Schema.String,
+	lifecycle: Schema.Literals(["open", "closed"]),
+	tableObjectPaths: Schema.Array(Schema.String),
+	undoPointer: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	updatedAt: Schema.String
+}).annotate({ identifier: "AuthoringSessionSummary" });
+export type AuthoringSessionSummary = Schema.Schema.Type<typeof AuthoringSessionSummary>;
+
+export const AuthoringSessionListResult = Schema.Union([
+	Schema.Struct({
+		diagnostics: Schema.Array(Schema.Struct({ code: Schema.String, message: Schema.String })),
+		sessions: Schema.Array(AuthoringSessionSummary),
+		status: Schema.Literal("ready")
+	}),
+	AuthoringSessionFailure
+]).annotate({ identifier: "AuthoringSessionListResult" });
+export type AuthoringSessionListResult = Schema.Schema.Type<typeof AuthoringSessionListResult>;
 
 export const AuthoringLoadFailure = Schema.Struct({
 	code: Schema.Literals(["reader_failure", "contract_failure"]),
@@ -101,7 +166,13 @@ export const AuthoringCatalogResult = Schema.Union([
 export type AuthoringCatalogResult = Schema.Schema.Type<typeof AuthoringCatalogResult>;
 
 export const decodeAuthoringSessionResult = Schema.decodeUnknownEffect(AuthoringSessionResult);
-export const decodeAuthoringSetCellsIntent = Schema.decodeUnknownEffect(AuthoringSetCellsIntent);
+export const decodeAuthoringSessionReviewResult = Schema.decodeUnknownEffect(
+	AuthoringSessionReviewResult
+);
+export const decodeAuthoringSessionListResult = Schema.decodeUnknownEffect(
+	AuthoringSessionListResult
+);
+export const decodeAuthoringSessionIntent = Schema.decodeUnknownEffect(AuthoringSessionIntent);
 export const decodeAuthoringLoadResult = Schema.decodeUnknownEffect(AuthoringLoadResult);
 export const decodeAuthoringCatalogResult = Schema.decodeUnknownEffect(AuthoringCatalogResult);
 
@@ -127,9 +198,19 @@ export interface AuthoringClientShape {
 	readonly beginSession: (
 		objectPath: string
 	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;
-	readonly editSession: (
-		intent: AuthoringSetCellsIntent
+	readonly listSessions: () => Effect.Effect<AuthoringSessionListResult, AuthoringClientError>;
+	readonly openSession: (
+		sessionId: string
 	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;
+	readonly discardSession: (
+		sessionId: string
+	) => Effect.Effect<AuthoringSessionListResult, AuthoringClientError>;
+	readonly editSession: (
+		intent: AuthoringSessionIntent
+	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;
+	readonly reviewSession: (
+		sessionId: string
+	) => Effect.Effect<AuthoringSessionReviewResult, AuthoringClientError>;
 	readonly undoSession: (
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;

@@ -1,4 +1,4 @@
-import type { AuthoringSetCellsIntent } from "@ue-shed/authoring-sdk";
+import type { AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import type { GameObjectPath, SessionId } from "../ipc-contracts.js";
@@ -26,9 +26,22 @@ export const register = Effect.gen(function* () {
 		const [objectPath] = args as [GameObjectPath];
 		return authoring.beginSession(objectPath);
 	});
+	yield* ipc.register(invokeContracts["authoring:session:list"], () => authoring.listSessions());
+	yield* ipc.register(invokeContracts["authoring:session:open"], (...args) => {
+		const [sessionId] = args as [SessionId];
+		return authoring.openSession(sessionId);
+	});
+	yield* ipc.register(invokeContracts["authoring:session:discard"], (...args) => {
+		const [sessionId] = args as [SessionId];
+		return authoring.discardSession(sessionId);
+	});
 	yield* ipc.register(invokeContracts["authoring:session:edit"], (...args) => {
-		const [intent] = args as [AuthoringSetCellsIntent];
+		const [intent] = args as [AuthoringSessionIntent];
 		return authoring.editSession(intent);
+	});
+	yield* ipc.register(invokeContracts["authoring:session:review"], (...args) => {
+		const [sessionId] = args as [SessionId];
+		return authoring.reviewSession(sessionId);
 	});
 	yield* ipc.register(invokeContracts["authoring:session:undo"], (...args) => {
 		const [sessionId] = args as [SessionId];

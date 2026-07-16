@@ -1,5 +1,5 @@
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
-import type { AuthoringSetCellsIntent } from "@ue-shed/authoring-sdk";
+import type { AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
@@ -31,7 +31,11 @@ declare global {
 			};
 			readonly authoring: {
 				readonly beginSession: (objectPath: string) => Promise<unknown>;
-				readonly editSession: (intent: AuthoringSetCellsIntent) => Promise<unknown>;
+				readonly listSessions: () => Promise<unknown>;
+				readonly openSession: (sessionId: string) => Promise<unknown>;
+				readonly discardSession: (sessionId: string) => Promise<unknown>;
+				readonly editSession: (intent: AuthoringSessionIntent) => Promise<unknown>;
+				readonly reviewSession: (sessionId: string) => Promise<unknown>;
 				readonly applySession: (sessionId: string) => Promise<unknown>;
 				readonly reconcileSession: (sessionId: string) => Promise<unknown>;
 				readonly saveSession: (sessionId: string) => Promise<unknown>;

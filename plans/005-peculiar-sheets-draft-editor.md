@@ -7,14 +7,14 @@
 
 ## Status
 
-- **State**: IN PROGRESS — Peculiar Sheets is wired to durable scalar cell gestures
+- **State**: DONE
 - **Priority**: P1
 - **Effort**: L (multi-day)
 - **Risk**: MED — interaction churn is contained by the adapter, but codecs protect persisted data
 - **Depends on**: Plan 004
 - **Planned at**: commit `52df5c0`, 2026-07-15
 
-## Progress checkpoint — 2026-07-15
+## Completion — 2026-07-16
 
 - Replaced the rendered CSS ledger with the pinned `peculiar-sheets@0.9.1` `Sheet` adapter. The
   production Workbench bundle includes its public component and stylesheet.
@@ -24,9 +24,19 @@
   remain strings; unsupported or schema-unproven fields remain read-only; batch failures persist
   none of the gesture.
 - The route resumes or creates a project session, refreshes from persisted working state after every
-  gesture, and exposes service-backed Undo/Redo. Apply and Save remain unavailable.
-- Remaining Plan 005 work includes row operations, draft navigation/review, richer validation UI,
-  removal of the dormant legacy ledger markup, and full visual/manual fixture coverage.
+  gesture, and exposes service-backed Undo/Redo. Plan 006 is now complete, so its separately guarded
+  Apply, reconcile, and Save actions remain available without moving authority into the renderer.
+- Added explicit Add, Duplicate, Rename, Delete, and Move row actions. Destructive changes require
+  confirmation, filtered/sorted views never emit canonical reorder, and grid structural shortcuts
+  remain subject to the same semantic intent boundary.
+- Added recent/open draft navigation, discard, dirty row/cell decoration, command and validation
+  counts, replacement confirmation, and a Session Review inspector with semantic before/after values
+  and diagnostics.
+- Removed the dormant CSS-ledger markup. Peculiar Sheets is now the only grid boundary and remains
+  pinned to the rights-holder-approved `0.9.1` release.
+- Added adapter, SDK, service, IPC, Solid component, production-build, large-table, and Electron E2E
+  coverage. Visual verification covers the supported Workbench dark theme; Workbench has no light
+  theme contract, so this plan does not introduce an authoring-only theme mode.
 
 ## Outcome
 

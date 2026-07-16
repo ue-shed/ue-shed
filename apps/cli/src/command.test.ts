@@ -52,6 +52,75 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 		"SessionsSetCell"
 	],
 	[
+		[
+			"authoring",
+			"sessions",
+			"add-row",
+			"draft",
+			"/Game/Table",
+			"Beta",
+			"--project",
+			"project",
+			"--index",
+			"1"
+		],
+		"SessionsAddRow"
+	],
+	[
+		[
+			"authoring",
+			"sessions",
+			"duplicate-row",
+			"draft",
+			"/Game/Table",
+			"row:Alpha",
+			"Beta",
+			"--project",
+			"project"
+		],
+		"SessionsDuplicateRow"
+	],
+	[
+		[
+			"authoring",
+			"sessions",
+			"remove-row",
+			"draft",
+			"/Game/Table",
+			"row:Alpha",
+			"--project",
+			"project"
+		],
+		"SessionsRemoveRow"
+	],
+	[
+		[
+			"authoring",
+			"sessions",
+			"rename-row",
+			"draft",
+			"/Game/Table",
+			"row:Alpha",
+			"Beta",
+			"--project",
+			"project"
+		],
+		"SessionsRenameRow"
+	],
+	[
+		[
+			"authoring",
+			"sessions",
+			"reorder-rows",
+			"draft",
+			"/Game/Table",
+			'["row:Beta","row:Alpha"]',
+			"--project",
+			"project"
+		],
+		"SessionsReorderRows"
+	],
+	[
 		["authoring", "sessions", "apply", "draft", "http://editor", "--project", "project"],
 		"SessionsApply"
 	],
@@ -63,24 +132,9 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 		["authoring", "sessions", "save", "draft", "http://editor", "--project", "project"],
 		"SessionsSave"
 	],
-	[
-		["authoring", "session", "create", "table.uasset", "draft.json", "--reader", "uasset"],
-		"SessionCreate"
-	],
-	[
-		["authoring", "session", "create-live", "http://editor", "/Game/Table", "draft.json"],
-		"SessionCreateLive"
-	],
-	[["authoring", "session", "show", "draft.json"], "SessionShow"],
-	[
-		["authoring", "draft", "set-cell", "draft.json", "/Game/Table", "Row", "Field", value],
-		"DraftSetCell"
-	],
-	[["authoring", "draft", "undo", "draft.json"], "DraftUndo"],
-	[["authoring", "draft", "redo", "draft.json"], "DraftRedo"],
-	[["authoring", "apply", "draft.json", "http://editor"], "AuthoringApply"],
-	[["authoring", "apply-status", "http://editor", "operation"], "AuthoringApplyStatus"],
-	[["authoring", "save", "draft.json", "http://editor"], "AuthoringSave"],
+	[["authoring", "sessions", "review", "draft", "--project", "project"], "SessionsReview"],
+	[["authoring", "sessions", "validate", "draft", "--project", "project"], "SessionsValidate"],
+	[["authoring", "sessions", "diff", "draft", "--project", "project"], "SessionsDiff"],
 	[["text", "scan", "project"], "TextScan"],
 	[["text", "search", "project", "hello", "world"], "TextSearch"],
 	[["review", "sets", "validate", "set.json"], "ReviewSetValidate"],
@@ -108,6 +162,7 @@ it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
 			["audit", "textures", "project", "--rules"],
 			["audit", "textures", "project", "--rules", "one", "--rules", "two"],
 			["text", "scan", "project", "--wat", "value"],
+			["authoring", "session", "show", "legacy.json"],
 			[
 				"authoring",
 				"sessions",
@@ -117,6 +172,28 @@ it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
 				"Row",
 				"Field",
 				"{",
+				"--project",
+				"project"
+			],
+			[
+				"authoring",
+				"sessions",
+				"add-row",
+				"draft",
+				"/Game/Table",
+				"Beta",
+				"--project",
+				"project",
+				"--index",
+				"-1"
+			],
+			[
+				"authoring",
+				"sessions",
+				"reorder-rows",
+				"draft",
+				"/Game/Table",
+				"{}",
 				"--project",
 				"project"
 			]

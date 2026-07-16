@@ -12,8 +12,8 @@ update the status row when done.
 | [001](001-texture-asset-audit-demo.md)         | Deliver the first Texture Asset Audit demo end to end        | P1       | L      | —          | DONE — landed in `c6156f8` |
 | [002](002-authoring-boundary-and-grid-gate.md) | Freeze the product boundary and approve the grid dependency  | P0       | S      | —          | DONE                       |
 | [003](003-authoring-contract-and-catalog.md)   | Establish the authoritative schema and DataTable catalog     | P0       | L      | 002        | DONE                       |
-| [004](004-authoring-session-service.md)        | Build the persistent, headless authoring session service     | P0       | L      | 003        | IN PROGRESS                |
-| [005](005-peculiar-sheets-draft-editor.md)     | Ship the Peculiar Sheets draft editor and Session Review     | P1       | L      | 004        | IN PROGRESS                |
+| [004](004-authoring-session-service.md)        | Build the persistent, headless authoring session service     | P0       | L      | 003        | DONE                       |
+| [005](005-peculiar-sheets-draft-editor.md)     | Ship the Peculiar Sheets draft editor and Session Review     | P1       | L      | 004        | DONE                       |
 | [006](006-live-apply-save-pipeline.md)         | Make Apply and Save safe, recoverable authority transitions  | P0       | L      | 005        | DONE                       |
 | [008](008-adopt-effect-v4-core.md)             | Make Effect v4 the repository's application core             | P0       | L      | —          | DONE                       |
 | [009](009-effect-schema-errors-contracts.md)   | Make schemas and typed errors the only application contracts | P0       | L      | 008        | DONE                       |

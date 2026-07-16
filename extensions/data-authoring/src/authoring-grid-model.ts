@@ -1,5 +1,5 @@
 import type { AuthoringRow, AuthoringValue } from "@ue-shed/protocol";
-import type { CellMutation, CellValue, ColumnDef } from "peculiar-sheets";
+import type { CellMutation, CellValue, ColumnDef, SheetOperation } from "peculiar-sheets";
 import type { AuthoringColumn } from "./authoring-view.js";
 import { fieldInRow, formatAuthoringValue } from "./authoring-view.js";
 
@@ -17,6 +17,16 @@ export interface AuthoringGridEdit {
 
 export type AuthoringGridDecodeResult =
 	| { readonly status: "ready"; readonly edit: AuthoringGridEdit }
+	| { readonly status: "failed"; readonly message: string };
+
+export type AuthoringGridGesture =
+	| { readonly kind: "set_cells"; readonly edits: readonly AuthoringGridEdit[] }
+	| { readonly kind: "add_row"; readonly atIndex: number }
+	| { readonly kind: "remove_row"; readonly rowId: string };
+
+export type AuthoringGridOperationResult =
+	| { readonly status: "ready"; readonly gesture: AuthoringGridGesture }
+	| { readonly status: "ignored" }
 	| { readonly status: "failed"; readonly message: string };
 
 function isEditable(column: AuthoringColumn): boolean {
@@ -108,6 +118,53 @@ export function decodeAuthoringGridMutation(args: {
 		}
 	}
 	return { edit: { fieldName: column.name, rowId: row.id, value }, status: "ready" };
+}
+
+export function decodeAuthoringGridOperation(args: {
+	readonly operation: SheetOperation;
+	readonly rows: readonly AuthoringRow[];
+	readonly columns: readonly AuthoringColumn[];
+}): AuthoringGridOperationResult {
+	const { operation } = args;
+	if (operation.type === "cell-edit" || operation.type === "batch-edit") {
+		const mutations =
+			operation.type === "cell-edit" ? [operation.mutation] : operation.mutations;
+		if (mutations.length === 0) return { status: "ignored" };
+		const decoded = mutations.map((mutation) =>
+			decodeAuthoringGridMutation({ columns: args.columns, mutation, rows: args.rows })
+		);
+		const failure = decoded.find((result) => result.status === "failed");
+		if (failure?.status === "failed") return failure;
+		return {
+			gesture: {
+				edits: decoded.flatMap((result) =>
+					result.status === "ready" ? [result.edit] : []
+				),
+				kind: "set_cells"
+			},
+			status: "ready"
+		};
+	}
+	if (operation.type === "row-insert") {
+		return operation.count === 1
+			? { gesture: { atIndex: operation.atIndex, kind: "add_row" }, status: "ready" }
+			: {
+					message: "Insert one row at a time so its Unreal row name can be validated.",
+					status: "failed"
+				};
+	}
+	if (operation.type === "row-delete") {
+		const row = operation.count === 1 ? args.rows[operation.atIndex] : undefined;
+		return row
+			? { gesture: { kind: "remove_row", rowId: row.id }, status: "ready" }
+			: {
+					message: "Delete one selected row at a time after confirming data removal.",
+					status: "failed"
+				};
+	}
+	// Peculiar emits row-reorder for view sorting and its local history. Canonical DataTable order
+	// changes only through the explicit service-backed Move actions.
+	return { status: "ignored" };
 }
 
 export function toReadOnlyGridValue(value: AuthoringValue): CellValue {

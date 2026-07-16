@@ -1,7 +1,4 @@
 import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,10 +8,7 @@ import {
 	fingerprintTable,
 	foldTable,
 	invertCommand,
-	loadDraftSession,
-	DraftSessionRepositoryLive,
 	redo,
-	saveDraftSession,
 	undo,
 	type CommandEnvelope,
 	type DraftSession
@@ -164,35 +158,6 @@ describe("draft command log", () => {
 		expect(
 			invertCommand({ kind: "reorder_rows", newOrder: ["b", "a"], oldOrder: ["a", "b"] })
 		).toMatchObject({ newOrder: ["a", "b"], oldOrder: ["b", "a"] });
-	});
-
-	it("persists and reloads a versioned session atomically", async () => {
-		const directory = await mkdtemp(join(tmpdir(), "ue-shed-authoring-"));
-		const path = join(directory, "session.json");
-		const base = snapshot({ kind: "project_files", packageName: "/Game/Fixture/DT_Test" });
-		const session: DraftSession = {
-			applyReceipts: [],
-			awaitingSave: [],
-			base: { [base.table.objectPath]: base },
-			commands: [],
-			fingerprints: { [base.table.objectPath]: fingerprintTable(base) },
-			id: "persisted",
-			saveReceipts: [],
-			undoPointer: 0,
-			version: 2
-		};
-		try {
-			await Effect.runPromise(
-				saveDraftSession(path, session).pipe(Effect.provide(DraftSessionRepositoryLive))
-			);
-			expect(
-				await Effect.runPromise(
-					loadDraftSession(path).pipe(Effect.provide(DraftSessionRepositoryLive))
-				)
-			).toEqual(session);
-		} finally {
-			await rm(directory, { force: true, recursive: true });
-		}
 	});
 
 	it("migrates version 1 sessions with an empty Save receipt history", () => {

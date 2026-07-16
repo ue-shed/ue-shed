@@ -28,6 +28,8 @@ const legacyBaselines = {
 	},
 	"Promise<": {
 		"apps/cli/src/index.ts": 5,
+		"apps/workbench/src/main/adapters/electron-app.ts": 1,
+		"apps/workbench/src/main/adapters/electron-ipc.ts": 4,
 		"apps/workbench/src/main/main.ts": 32,
 		"apps/workbench/src/main/preload.ts": 28,
 		"apps/workbench/src/renderer/global.d.ts": 28,
@@ -45,6 +47,7 @@ const legacyBaselines = {
 		"packages/unreal-assets/src/index.ts": 1
 	},
 	"process.env": {
+		"apps/workbench/src/main/adapters/fixture-process.ts": 1,
 		"apps/workbench/src/main/main.ts": 16,
 		"packages/unreal-assets/src/index.ts": 1
 	},

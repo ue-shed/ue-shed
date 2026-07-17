@@ -117,3 +117,31 @@ The central adoption hypothesis passed across three independent agent/model stac
 an actual project yet. First fix the recurring kit/product defects above, rerun the fast Cursor lane
 as a regression, then use one representative real project to evaluate coexistence with an existing
 toolchain. Real Unreal data transport remains a separate third-stage experiment.
+
+## Remediation and Cursor regression
+
+Completed 2026-07-17 against source commit
+`e77233dee60cac5980bc38ac6d16219a7ef0526e`.
+
+The kit now provides:
+
+- unambiguous materialization from template contents and identical relative manifest paths;
+- a production-only 29-entry closure without source-side tests;
+- a versioned provenance schema, template, manifest snapshot, and generated record;
+- root build/verify scripts plus a portable target verifier;
+- a report template that requires exact commands, results, ambiguities, workarounds, and undeclared
+  inputs;
+- one applied `colorAccent` ownership edit, with route accents consuming the semantic token;
+- product-level theme/host wording and a narrow-host responsive layout;
+- credential-hostile agent environment defaults, secret detection/redaction, timestamped transcript
+  preservation, and separate agent/verifier timing.
+
+Cursor `2026.07.09-a3815c0` with `cursor-grok-4.5-high` passed the fresh regression in 63.7 seconds;
+independent verification took 4.0 seconds, for 67.8 seconds total. It used the materializer, changed
+exactly one line in `themes.stylex.ts`, installed offline, and ran the exact portable verifier. It
+reported no ambiguity, workaround, or undeclared input. Outside the generated lockfile, report,
+provenance, and required theme edit, the target was byte-for-byte identical to a freshly materialized
+baseline. The kit and repository remained unchanged, and no secret-shaped output was detected.
+
+The kit-polish gate is therefore complete. The next experiment may use one representative real
+project to evaluate coexistence with its existing package, build, styling, and host conventions.

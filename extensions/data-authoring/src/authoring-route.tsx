@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type {
 	AuthoringCatalogResult,
+	AuthoringCatalogProgress,
 	AuthoringClientShape,
 	AuthoringLoadFailure,
 	AuthoringLoadResult,
@@ -11,9 +12,9 @@ import type {
 	AuthoringSessionView
 } from "@ue-shed/authoring-sdk";
 import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
-import { Button, PageHeader, createEffectAction } from "@ue-shed/ui";
+import { Button, PageHeader, createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause, type Effect } from "effect";
+import { Cause, Schedule, Stream, type Effect } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
 import {
 	fieldInRow,
@@ -111,6 +112,7 @@ function CatalogPanel(props: {
 	readonly query: string;
 	readonly onDiscardSession: (session: AuthoringSessionSummary) => void;
 	readonly onOpenSession: (sessionId: string) => void;
+	readonly progress: AuthoringCatalogProgress;
 	readonly sessions: SessionListState;
 	readonly state: CatalogState;
 }) {
@@ -152,7 +154,32 @@ function CatalogPanel(props: {
 			/>
 			<Switch>
 				<Match when={props.state.status === "loading"}>
-					<div {...stylex.props(styles.catalogStatus)}>Scanning packages…</div>
+					<div {...stylex.props(styles.catalogProgressBlock)}>
+						<div {...stylex.props(styles.catalogProgressLabel)}>
+							<span>
+								{props.progress.phase === "enumerating"
+									? "Finding packages…"
+									: props.progress.phase === "writing_cache"
+										? "Saving project index…"
+										: "Indexing package headers…"}
+							</span>
+							<strong>
+								{props.progress.totalAssets > 0
+									? `${props.progress.processedAssets.toLocaleString()} / ${props.progress.totalAssets.toLocaleString()}`
+									: "—"}
+							</strong>
+						</div>
+						<progress
+							aria-label="Project DataTable indexing progress"
+							max={Math.max(1, props.progress.totalAssets)}
+							value={props.progress.processedAssets}
+							{...stylex.props(styles.catalogProgress)}
+						/>
+						<small>
+							{props.progress.cacheHits.toLocaleString()} cached ·{" "}
+							{props.progress.tablesFound.toLocaleString()} tables found
+						</small>
+					</div>
 				</Match>
 				<Match when={props.state.status === "not_configured"}>
 					<div {...stylex.props(styles.catalogStatus)}>
@@ -286,11 +313,19 @@ function CatalogPanel(props: {
 export function AuthoringRoute(props: { readonly client: AuthoringClientShape }) {
 	const loadAction = createEffectAction();
 	const catalogAction = createEffectAction();
+	const catalogProgressSubscription = createEffectSubscription();
 	const beginAction = createEffectAction();
 	const sessionAction = createEffectAction();
 	const sessionListAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [catalogState, setCatalogState] = createSignal<CatalogState>({ status: "loading" });
+	const [catalogProgress, setCatalogProgress] = createSignal<AuthoringCatalogProgress>({
+		cacheHits: 0,
+		phase: "idle",
+		processedAssets: 0,
+		tablesFound: 0,
+		totalAssets: 0
+	});
 	const [catalogQuery, setCatalogQuery] = createSignal("");
 	const [isReplacing, setIsReplacing] = createSignal(false);
 	const [replacementNotice, setReplacementNotice] = createSignal<string>();
@@ -391,8 +426,23 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 
 	const loadCatalog = () => {
 		setCatalogState({ status: "loading" });
+		setCatalogProgress({
+			cacheHits: 0,
+			phase: "enumerating",
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		});
+		catalogProgressSubscription.subscribe(
+			Stream.fromEffectSchedule(
+				props.client.getCatalogProgress(),
+				Schedule.spaced("250 millis")
+			),
+			{ onValue: setCatalogProgress }
+		);
 		catalogAction.run(props.client.loadConfiguredCatalog(), {
-			onFailure: (cause) =>
+			onFailure: (cause) => {
+				catalogProgressSubscription.cancel();
 				setCatalogState({
 					error: {
 						code: "contract_failure",
@@ -402,8 +452,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 						retrySafe: true
 					},
 					status: "failed"
-				}),
-			onSuccess: setCatalogState
+				});
+			},
+			onSuccess: (result) => {
+				catalogProgressSubscription.cancel();
+				setCatalogState(result);
+			}
 		});
 	};
 
@@ -644,6 +698,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 							onQueryChange={setCatalogQuery}
 							onRefresh={loadCatalog}
 							query={catalogQuery()}
+							progress={catalogProgress()}
 							sessions={sessions()}
 							state={catalogState()}
 						/>
@@ -847,6 +902,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 										onQueryChange={setCatalogQuery}
 										onRefresh={() => void loadCatalog()}
 										query={catalogQuery()}
+										progress={catalogProgress()}
 										sessions={sessions()}
 										state={catalogState()}
 									/>
@@ -1468,6 +1524,26 @@ const styles = stylex.create({
 		fontSize: 9
 	},
 	catalogStatus: { padding: 14, color: "#737d75", fontSize: 9, lineHeight: 1.6 },
+	catalogProgressBlock: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 8,
+		padding: 14,
+		color: "#737d75",
+		fontSize: 9,
+		lineHeight: 1.4
+	},
+	catalogProgressLabel: {
+		display: "flex",
+		justifyContent: "space-between",
+		gap: 8,
+		color: "#9dab9e"
+	},
+	catalogProgress: {
+		width: "100%",
+		height: 5,
+		accentColor: tokens.colorAccent
+	},
 	catalogList: {
 		maxHeight: "calc(100vh - 350px)",
 		overflowY: "auto",

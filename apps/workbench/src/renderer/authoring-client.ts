@@ -78,6 +78,15 @@ const sessionListRequest = (
 	request({ decode: decodeAuthoringSessionListResult, invoke, operation });
 
 export const authoringClient: AuthoringClientShape = AuthoringClient.of({
+	getCatalogProgress: Effect.fn("AuthoringClient.getCatalogProgress")(() =>
+		Effect.succeed({
+			cacheHits: 0,
+			phase: "idle" as const,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})
+	),
 	beginSession: Effect.fn("AuthoringClient.beginSession")((objectPath) =>
 		sessionRequest("authoring.beginSession", () =>
 			window.ueShed.authoring.beginSession(objectPath)

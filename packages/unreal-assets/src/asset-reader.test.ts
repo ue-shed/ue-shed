@@ -9,6 +9,7 @@ it.effect("routes saved-asset discovery through the AssetReader service", () =>
 	Effect.gen(function* () {
 		const requestedRoots = yield* Ref.make<readonly string[]>([]);
 		const layer = makeAssetReaderTestLayer({
+			catalogProgress: () => unexpected("catalogProgress"),
 			discoverAssets: Effect.fn("AssetReader.Test.discoverAssets")(function* (
 				projectRoot: string
 			) {
@@ -37,6 +38,7 @@ it.effect("preserves typed discovery failures from a test layer", () =>
 			retrySafe: true
 		});
 		const layer = makeAssetReaderTestLayer({
+			catalogProgress: () => unexpected("catalogProgress"),
 			discoverAssets: () => Effect.fail(failure),
 			discoverTables: () => unexpected("discoverTables"),
 			readAsset: () => unexpected("readAsset"),

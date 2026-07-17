@@ -9,12 +9,16 @@ Record the exact materialize command here.
 
 ```powershell
 pnpm install --offline --ignore-scripts --frozen-lockfile=false
+pnpm build:reader
 pnpm verify -- --expected-accent=#ff6b6b
+pnpm verify:host -- --project=<unreal-project-root> `
+  --reader=<target>/target/release/uasset.exe
 ```
 
 ## Results
 
-Replace this line with the install and verification results.
+Replace this line with the install, build, UI verification, discovered DataTable count, opened real
+object path, and functional host verification results.
 
 ## Ambiguities and workarounds
 

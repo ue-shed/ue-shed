@@ -5,7 +5,12 @@ export type ConfiguredAsset =
 	| { readonly status: "not_configured" };
 
 export type ConfiguredProject =
-	| { readonly status: "configured"; readonly projectRoot: string }
+	| {
+			readonly catalogCachePath?: string;
+			readonly status: "configured";
+			readonly projectRoot: string;
+			readonly sessionStorageRoot?: string;
+	  }
 	| { readonly status: "not_configured" };
 
 export interface ShedHostConfigurationShape {

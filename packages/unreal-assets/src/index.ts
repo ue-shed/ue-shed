@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -6,14 +6,15 @@ import { decodeAuthoringTableSnapshot, type AuthoringTableSnapshot } from "@ue-s
 import { Config, Context, Duration, Effect, Layer, Option, Schema, Tuple } from "effect";
 
 const execFileAsync = promisify(execFile);
-const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
 
 export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>()(
 	"AssetReaderError",
 	{
 		kind: Schema.Literals(["timeout", "process", "contract", "discovery"]),
-		operation: Schema.Literals(["authoring", "inspect", "discovery"]),
+		operation: Schema.Literals(["authoring", "catalog", "inspect", "discovery"]),
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
 		path: Schema.optional(Schema.String),
@@ -26,16 +27,19 @@ export interface AssetReaderOptions {
 }
 
 export interface SavedTableCatalogOptions {
+	readonly cachePath?: string;
 	readonly projectRoot: string;
 	readonly concurrency?: number;
 }
 
 export interface AssetReaderConfiguration {
+	readonly catalogTimeoutMs: number;
 	readonly executable: string;
 	readonly timeoutMs: number;
 }
 
 export interface AssetReaderShape {
+	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
 	readonly discoverAssets: (
 		projectRoot: string
 	) => Effect.Effect<readonly string[], AssetReaderError>;
@@ -284,6 +288,27 @@ export const SavedTableCatalog = Schema.Struct({
 });
 export type SavedTableCatalog = Schema.Schema.Type<typeof SavedTableCatalog>;
 
+export const SavedTableCatalogProgress = Schema.Struct({
+	cacheHits: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	phase: Schema.Literals(["idle", "enumerating", "scanning", "writing_cache", "ready", "failed"]),
+	processedAssets: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	tablesFound: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	totalAssets: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type SavedTableCatalogProgress = Schema.Schema.Type<typeof SavedTableCatalogProgress>;
+
+interface CatalogProgressStore {
+	current: SavedTableCatalogProgress;
+}
+
+const idleCatalogProgress = (): SavedTableCatalogProgress => ({
+	cacheHits: 0,
+	phase: "idle",
+	processedAssets: 0,
+	tablesFound: 0,
+	totalAssets: 0
+});
+
 export const decodeSavedAssetCatalogInspection = Schema.decodeUnknownEffect(
 	SavedAssetCatalogInspection
 );
@@ -355,9 +380,109 @@ function invokeReader(
 	});
 }
 
+function invokeCatalogReader(
+	configuration: AssetReaderConfiguration,
+	options: SavedTableCatalogOptions,
+	progress: CatalogProgressStore
+): Effect.Effect<string, AssetReaderError> {
+	const concurrency = Math.max(1, options.concurrency ?? 8);
+	const args = [
+		"catalog",
+		options.projectRoot,
+		"--format",
+		"json",
+		"--concurrency",
+		String(concurrency)
+	];
+	if (options.cachePath !== undefined) args.push("--cache", options.cachePath);
+	return Effect.tryPromise({
+		try: (signal) =>
+			new Promise<string>((resolvePromise, rejectPromise) => {
+				progress.current = { ...idleCatalogProgress(), phase: "enumerating" };
+				const child = spawn(configuration.executable, args, {
+					signal,
+					timeout: configuration.catalogTimeoutMs,
+					windowsHide: true
+				});
+				let stdout = "";
+				let stderr = "";
+				let stderrLine = "";
+				let settled = false;
+				const rejectOnce = (failure: ProcessFailure) => {
+					if (settled) return;
+					settled = true;
+					progress.current = { ...progress.current, phase: "failed" };
+					rejectPromise(failure);
+				};
+				const consumeProgressLine = (line: string) => {
+					if (line.trim().length === 0) return;
+					try {
+						const input = JSON.parse(line) as unknown;
+						const decoded =
+							Schema.decodeUnknownOption(SavedTableCatalogProgress)(input);
+						if (Option.isSome(decoded)) {
+							progress.current = decoded.value;
+							return;
+						}
+					} catch {
+						// Preserve non-progress stderr below as the process diagnostic.
+					}
+					stderr += `${line}\n`;
+				};
+				child.stdout.setEncoding("utf8");
+				child.stderr.setEncoding("utf8");
+				child.stdout.on("data", (chunk: string) => {
+					stdout += chunk;
+					if (Buffer.byteLength(stdout, "utf8") > MAX_OUTPUT_BYTES) {
+						child.kill();
+						rejectOnce({ message: "Asset catalog output exceeded 64 MiB" });
+					}
+				});
+				child.stderr.on("data", (chunk: string) => {
+					stderrLine += chunk;
+					const lines = stderrLine.split(/\r?\n/);
+					stderrLine = lines.pop() ?? "";
+					for (const line of lines) consumeProgressLine(line);
+				});
+				child.once("error", (cause) => rejectOnce({ message: cause.message }));
+				child.once("close", (code, childSignal) => {
+					if (stderrLine.length > 0) consumeProgressLine(stderrLine);
+					if (settled) return;
+					settled = true;
+					if (code === 0) {
+						progress.current = { ...progress.current, phase: "ready" };
+						resolvePromise(stdout);
+					} else {
+						progress.current = { ...progress.current, phase: "failed" };
+						rejectPromise({
+							...(typeof code === "number" ? { code } : {}),
+							killed: childSignal !== null,
+							message: `Asset catalog exited ${code ?? childSignal ?? "without a status"}`,
+							stderr
+						});
+					}
+				});
+			}),
+		catch: (cause) => {
+			const failure = cause as ProcessFailure;
+			const timedOut = failure.killed === true || failure.code === "ETIMEDOUT";
+			return new AssetReaderError({
+				kind: timedOut ? "timeout" : "process",
+				operation: "catalog",
+				message: timedOut
+					? `Asset catalog timed out after ${configuration.catalogTimeoutMs}ms`
+					: failure.stderr?.trim() || failure.message || "Asset catalog failed",
+				path: options.projectRoot,
+				retrySafe: timedOut,
+				...(typeof failure.code === "number" ? { exitCode: failure.code } : {})
+			});
+		}
+	});
+}
+
 function decodeOutput<A>(options: {
 	readonly assetPath: string;
-	readonly operation: "authoring" | "inspect";
+	readonly operation: "authoring" | "catalog" | "inspect";
 	readonly stdout: string;
 	readonly decode: (input: unknown) => Effect.Effect<A, unknown>;
 }): Effect.Effect<A, AssetReaderError> {
@@ -421,22 +546,6 @@ function readSavedAssetWith(
 	);
 }
 
-function inspectSavedAssetForCatalog(
-	configuration: AssetReaderConfiguration,
-	assetPath: string
-): Effect.Effect<SavedAssetCatalogInspection, AssetReaderError> {
-	return invokeReader(configuration, assetPath, "inspect").pipe(
-		Effect.flatMap((stdout) =>
-			decodeOutput({
-				assetPath,
-				decode: decodeSavedAssetCatalogInspection,
-				operation: "inspect",
-				stdout
-			})
-		)
-	);
-}
-
 function discoverSavedAssetsWith(projectRoot: string): Effect.Effect<string[], AssetReaderError> {
 	const contentRoot = join(projectRoot, "Content");
 	return Effect.tryPromise({
@@ -467,54 +576,18 @@ function discoverSavedAssetsWith(projectRoot: string): Effect.Effect<string[], A
 
 function discoverSavedTablesWith(
 	configuration: AssetReaderConfiguration,
-	options: SavedTableCatalogOptions
+	options: SavedTableCatalogOptions,
+	progress: CatalogProgressStore
 ): Effect.Effect<SavedTableCatalog, AssetReaderError> {
-	return Effect.gen(function* () {
-		const assetPaths = yield* discoverSavedAssetsWith(options.projectRoot);
-		const outcomes = yield* Effect.forEach(
-			assetPaths,
-			(assetPath) =>
-				inspectSavedAssetForCatalog(configuration, assetPath).pipe(
-					Effect.match({
-						onFailure: (error) => ({ error, status: "failed" as const }),
-						onSuccess: (inspection) => ({ inspection, status: "inspected" as const })
-					})
-				),
-			{ concurrency: Math.max(1, options.concurrency ?? 4) }
-		);
-
-		const tables: SavedTableDescriptor[] = [];
-		const diagnostics: SavedTableCatalog["diagnostics"][number][] = [];
-		for (const outcome of outcomes) {
-			if (outcome.status === "failed") {
-				diagnostics.push({
-					code: `asset_${outcome.error.kind}`,
-					message: outcome.error.message,
-					path: outcome.error.path ?? options.projectRoot,
-					retrySafe: outcome.error.retrySafe
-				});
-				continue;
-			}
-			const inspection = outcome.inspection;
-			for (const error of inspection.decode_errors) {
-				diagnostics.push({
-					code: "asset_decode_partial",
-					message: error.message,
-					path: error.object_path ?? inspection.path,
-					retrySafe: false
-				});
-			}
-			tables.push(...savedTableDescriptorsFromInspection(inspection));
-		}
-
-		tables.sort((left, right) => left.objectPath.localeCompare(right.objectPath));
-		return {
-			diagnostics,
-			projectRoot: options.projectRoot,
-			scannedAssets: assetPaths.length,
-			tables
-		};
-	}).pipe(
+	return invokeCatalogReader(configuration, options, progress).pipe(
+		Effect.flatMap((stdout) =>
+			decodeOutput({
+				assetPath: options.projectRoot,
+				operation: "catalog",
+				stdout,
+				decode: Schema.decodeUnknownEffect(SavedTableCatalog)
+			})
+		),
 		Effect.withSpan("unreal_assets.discover_saved_tables", {
 			attributes: { "unreal.project_root": options.projectRoot }
 		})
@@ -522,8 +595,12 @@ function discoverSavedTablesWith(
 }
 
 function makeAssetReader(
-	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" }
+	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" },
+	progress: CatalogProgressStore
 ): AssetReaderShape {
+	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
+		Effect.sync(() => progress.current)
+	);
 	const discoverAssets = Effect.fn("AssetReader.discoverAssets")(function* (projectRoot: string) {
 		return yield* discoverSavedAssetsWith(projectRoot);
 	});
@@ -536,22 +613,32 @@ function makeAssetReader(
 	const discoverTables = Effect.fn("AssetReader.discoverTables")(function* (
 		options: SavedTableCatalogOptions
 	) {
-		return yield* discoverSavedTablesWith(configuration, options);
+		return yield* discoverSavedTablesWith(configuration, options, progress);
 	});
 	const source = Effect.fn("AssetReader.source")(() => Effect.succeed(configuration.source));
-	return AssetReader.of({ discoverAssets, discoverTables, readAsset, readTable, source });
+	return AssetReader.of({
+		catalogProgress,
+		discoverAssets,
+		discoverTables,
+		readAsset,
+		readTable,
+		source
+	});
 }
 
 export function assetReaderLayer(
 	configuration: Partial<AssetReaderConfiguration> = {}
 ): Layer.Layer<AssetReader> {
-	return Layer.succeed(
-		AssetReader,
-		makeAssetReader({
-			executable: configuration.executable ?? "uasset",
-			source: configuration.executable === undefined ? "path" : "configured",
-			timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
-		})
+	return Layer.sync(AssetReader, () =>
+		makeAssetReader(
+			{
+				catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
+				executable: configuration.executable ?? "uasset",
+				source: configuration.executable === undefined ? "path" : "configured",
+				timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
+			},
+			{ current: idleCatalogProgress() }
+		)
 	);
 }
 
@@ -559,21 +646,35 @@ const readerExecutable = Config.option(Config.string("UE_SHED_UASSET_EXECUTABLE"
 const readerTimeout = Config.duration("UE_SHED_UASSET_TIMEOUT").pipe(
 	Config.withDefault(Duration.millis(DEFAULT_TIMEOUT_MS))
 );
+const readerCatalogTimeout = Config.duration("UE_SHED_UASSET_CATALOG_TIMEOUT").pipe(
+	Config.withDefault(Duration.millis(DEFAULT_CATALOG_TIMEOUT_MS))
+);
 
 export const AssetReaderLive = Layer.effect(
 	AssetReader,
 	Effect.gen(function* () {
 		const executable = yield* readerExecutable;
-		return makeAssetReader({
-			executable: Option.getOrElse(executable, () => "uasset"),
-			source: Option.isSome(executable) ? "configured" : "path",
-			timeoutMs: Duration.toMillis(yield* readerTimeout)
-		});
+		return makeAssetReader(
+			{
+				catalogTimeoutMs: Duration.toMillis(yield* readerCatalogTimeout),
+				executable: Option.getOrElse(executable, () => "uasset"),
+				source: Option.isSome(executable) ? "configured" : "path",
+				timeoutMs: Duration.toMillis(yield* readerTimeout)
+			},
+			{ current: idleCatalogProgress() }
+		);
 	})
 );
 
 export function makeAssetReaderTestLayer(service: AssetReaderShape): Layer.Layer<AssetReader> {
-	return Layer.succeed(AssetReader, AssetReader.of(service));
+	return Layer.succeed(
+		AssetReader,
+		AssetReader.of({
+			catalogProgress:
+				service.catalogProgress ?? (() => Effect.succeed(idleCatalogProgress())),
+			...service
+		})
+	);
 }
 
 export function readSavedTable(

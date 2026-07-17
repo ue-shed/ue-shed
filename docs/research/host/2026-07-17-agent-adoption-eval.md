@@ -1,16 +1,18 @@
 # 2026-07-17: clean-room Data Authoring agent adoption evaluation
 
-Status: complete. Source commit under evaluation:
+Status: complete as a UI-transplantation evaluation; superseded as evidence of functional host
+adoption. Source commit under evaluation:
 `245d7e62baf8af33d1b6f8bc29cd41183fa74f06`.
 
 ## Question
 
-Can a fresh coding agent adopt the Data Authoring slice into an empty project using only the
-restricted adoption kit, without inspecting or copying Workbench?
+Can a fresh coding agent transplant and build the Data Authoring browser slice in an empty project
+using only the restricted adoption kit, without inspecting or copying Workbench?
 
-This evaluation complements the deterministic conformance gate. The gate proves the declared copy
-closure builds; this study measures whether independent agents understand and execute the adoption
-instructions.
+This evaluation complements the deterministic conformance gate. Both prove the declared browser copy
+closure builds; neither runs `ShedHostLive`, discovers a project catalog, opens a real saved table, or
+connects to Unreal. The original report used “adoption” too broadly. These results measure UI source
+and toolchain portability only.
 
 ## Method
 
@@ -113,10 +115,11 @@ also printed a configured provider API key; that credential must also be rotated
 
 ## Decision
 
-The central adoption hypothesis passed across three independent agent/model stacks. Do not move to
-an actual project yet. First fix the recurring kit/product defects above, rerun the fast Cursor lane
-as a regression, then use one representative real project to evaluate coexistence with an existing
-toolchain. Real Unreal data transport remains a separate third-stage experiment.
+The narrower UI-transplantation hypothesis passed across three independent agent/model stacks. The
+central functional-adoption hypothesis remains untested because every generated host uses the
+template's in-memory `AuthoringClientShape`. Before claiming host onboarding, the kit and harness must
+run the real host authority and prove catalog discovery plus table opening in a foreign target. Live
+Unreal mutation remains a further capability on top of that saved-project baseline.
 
 ## Remediation and Cursor regression
 

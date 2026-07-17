@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +49,125 @@ function runPnpm(args) {
 	if (result.status !== 0) fail(`pnpm ${args.join(" ")} exited ${result.status ?? 1}`);
 }
 
+function pnpmCommand() {
+	const pnpmScript = process.env.npm_execpath;
+	const scriptIsJavaScript = pnpmScript ? /\.(?:c|m)?js$/i.test(pnpmScript) : false;
+	return {
+		args: scriptIsJavaScript && pnpmScript ? [pnpmScript] : [],
+		command: scriptIsJavaScript
+			? process.execPath
+			: (pnpmScript ?? (process.platform === "win32" ? "pnpm.cmd" : "pnpm"))
+	};
+}
+
+async function availablePort() {
+	const server = createServer();
+	await new Promise((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", resolve);
+	});
+	const address = server.address();
+	if (!address || typeof address === "string") fail("could not allocate a host conformance port");
+	await new Promise((resolve, reject) =>
+		server.close((error) => (error ? reject(error) : resolve()))
+	);
+	return address.port;
+}
+
+function terminateProcessTree(pid) {
+	if (process.platform === "win32") {
+		spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+			stdio: "ignore",
+			windowsHide: true
+		});
+		return;
+	}
+	try {
+		process.kill(-pid, "SIGTERM");
+	} catch {
+		process.kill(pid, "SIGTERM");
+	}
+}
+
+async function verifyFunctionalHost() {
+	const port = await availablePort();
+	const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
+	const reader = join(
+		targetRoot,
+		"target",
+		"release",
+		process.platform === "win32" ? "uasset.exe" : "uasset"
+	);
+	const pnpm = pnpmCommand();
+	const child = spawn(pnpm.command, [...pnpm.args, "start"], {
+		cwd: targetRoot,
+		detached: process.platform !== "win32",
+		env: {
+			...process.env,
+			CI: "1",
+			NODE_AUTH_TOKEN: "",
+			NPM_TOKEN: "",
+			UE_SHED_HOST_PORT: String(port),
+			UE_SHED_PROJECT_ROOT: fixtureRoot,
+			UE_SHED_UASSET_EXECUTABLE: reader
+		},
+		shell: false,
+		stdio: ["ignore", "pipe", "pipe"],
+		windowsHide: true
+	});
+	let stdout = "";
+	let stderr = "";
+	child.stdout.setEncoding("utf8");
+	child.stderr.setEncoding("utf8");
+	child.stdout.on("data", (chunk) => (stdout += chunk));
+	child.stderr.on("data", (chunk) => (stderr += chunk));
+
+	const endpoint = `http://127.0.0.1:${port}/api/authoring`;
+	const post = async (payload) => {
+		const response = await fetch(endpoint, {
+			body: JSON.stringify(payload),
+			headers: { "content-type": "application/json" },
+			method: "POST"
+		});
+		if (!response.ok) fail(`functional host returned HTTP ${response.status}`);
+		return await response.json();
+	};
+
+	try {
+		let catalog;
+		for (let attempt = 0; attempt < 100; attempt += 1) {
+			try {
+				catalog = await post({ operation: "load_configured_catalog" });
+				break;
+			} catch {
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+		}
+		if (!catalog) fail(`functional host did not become ready\n${stdout}\n${stderr}`);
+		if (catalog.status !== "success" || catalog.value?.status !== "ready") {
+			fail(`functional host catalog failed: ${JSON.stringify(catalog)}`);
+		}
+		if (catalog.value.tables.length !== 12) {
+			fail(
+				`functional host discovered ${catalog.value.tables.length} fixture tables, expected 12`
+			);
+		}
+		const objectPath = catalog.value.tables[0]?.objectPath;
+		if (!objectPath) fail("functional host catalog contained no openable table");
+		const opened = await post({ objectPath, operation: "open_catalog_table" });
+		if (
+			opened.status !== "success" ||
+			opened.value?.status !== "ready" ||
+			opened.value.snapshot?.table?.objectPath !== objectPath
+		) {
+			fail(`functional host could not open ${objectPath}: ${JSON.stringify(opened)}`);
+		}
+		return { objectPath, tableCount: catalog.value.tables.length };
+	} finally {
+		terminateProcessTree(child.pid);
+	}
+}
+
 async function filesUnder(root) {
 	const entries = await readdir(root, { withFileTypes: true });
 	const files = [];
@@ -94,6 +214,7 @@ for (const path of await filesUnder(targetRoot)) {
 
 runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile=false"]);
 runPnpm(["build"]);
+runPnpm(["build:reader"]);
 const cssPath = join(targetRoot, "app", "dist", "stylex.css");
 const initialCss = await readFile(cssPath, "utf8");
 if (initialCss.length === 0) fail("initial production stylex.css is empty");
@@ -109,7 +230,22 @@ const divergentCss = await readFile(cssPath, "utf8");
 if (digest(divergentCss) === digest(initialCss))
 	fail("theme divergence did not change production CSS");
 
+const functionalHost = await verifyFunctionalHost();
+runPnpm([
+	"verify:host",
+	"--",
+	`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
+	`--reader=${join(
+		targetRoot,
+		"target",
+		"release",
+		process.platform === "win32" ? "uasset.exe" : "uasset"
+	)}`,
+	"--expected-table-count=12"
+]);
+
 console.log(
 	`Data Authoring adoption conformance passed: ${declaredEntries.length} declared entries, ` +
-		`${initialCss.length} initial CSS bytes, portable verifier and token divergence verified.`
+		`${initialCss.length} initial CSS bytes, ${functionalHost.tableCount} real fixture tables, ` +
+		`${functionalHost.objectPath} opened through the copied host.`
 );

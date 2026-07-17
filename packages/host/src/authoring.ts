@@ -13,6 +13,7 @@ import {
 	AuthoringClientError,
 	type AuthoringClientShape,
 	type AuthoringCatalogResult,
+	type AuthoringCatalogProgress,
 	type AuthoringLoadResult,
 	type AuthoringSessionResult,
 	type AuthoringSessionFailure,
@@ -42,6 +43,7 @@ interface CatalogIndex {
 const emptyCatalogIndex: CatalogIndex = { assetPaths: new Map(), liveObjectPaths: new Set() };
 
 export interface ShedAuthoringShape {
+	readonly catalogProgress?: () => Effect.Effect<AuthoringCatalogProgress>;
 	readonly applySession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly beginSession: (objectPath: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly discardSession: (sessionId: string) => Effect.Effect<AuthoringSessionListResult>;
@@ -68,7 +70,12 @@ export const ShedAuthoringSessionsLive = Layer.unwrap(
 	Effect.flatMap(ShedHostConfiguration, (configuration) =>
 		Effect.map(configuration.project(), (project) =>
 			project.status === "configured"
-				? authoringSessionServiceLayer({ projectRoot: project.projectRoot })
+				? authoringSessionServiceLayer({
+						projectRoot: project.projectRoot,
+						...(project.sessionStorageRoot === undefined
+							? {}
+							: { storageRoot: project.sessionStorageRoot })
+					})
 				: Layer.empty
 		)
 	)
@@ -228,10 +235,15 @@ export const ShedAuthoringLive = Layer.effect(
 		});
 
 		const refreshCatalog = Effect.fn("ShedAuthoring.refreshCatalog")(function* (
-			projectRoot: string
+			project: Extract<typeof configuration.project, { readonly status: "configured" }>
 		) {
 			const savedCatalogResult = yield* assetReader
-				.discoverTables({ projectRoot })
+				.discoverTables({
+					...(project.catalogCachePath === undefined
+						? {}
+						: { cachePath: project.catalogCachePath }),
+					projectRoot: project.projectRoot
+				})
 				.pipe(Effect.result);
 			if (Result.isFailure(savedCatalogResult)) {
 				return catalogReaderFailure(
@@ -245,10 +257,10 @@ export const ShedAuthoringLive = Layer.effect(
 				: Option.none<UnrealAuthoringConnection>();
 
 			const discovered = yield* Option.match(liveConnection, {
-				onNone: () => catalog.discover({ projectRoot, savedCatalog }),
+				onNone: () => catalog.discover({ projectRoot: project.projectRoot, savedCatalog }),
 				onSome: (connection) =>
 					catalog
-						.discover({ projectRoot, savedCatalog })
+						.discover({ projectRoot: project.projectRoot, savedCatalog })
 						.pipe(Effect.provideService(AuthoringLiveConnection, connection))
 			});
 			if (discovered.diagnostics.some((diagnostic) => diagnostic.authority === "live")) {
@@ -312,8 +324,20 @@ export const ShedAuthoringLive = Layer.effect(
 			if (configuration.project.status !== "configured") {
 				return { status: "not_configured" as const };
 			}
-			return yield* refreshCatalog(configuration.project.projectRoot);
+			return yield* refreshCatalog(configuration.project);
 		});
+
+		const catalogProgress = Effect.fn("ShedAuthoring.catalogProgress")(() =>
+			assetReader.catalogProgress === undefined
+				? Effect.succeed({
+						cacheHits: 0,
+						phase: "idle" as const,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					})
+				: assetReader.catalogProgress()
+		);
 
 		const chooseTable = Effect.fn("ShedAuthoring.chooseTable")(function* () {
 			const choice = yield* filePicker
@@ -345,7 +369,7 @@ export const ShedAuthoringLive = Layer.effect(
 				!index.liveObjectPaths.has(objectPath) &&
 				configuration.project.status === "configured"
 			) {
-				yield* refreshCatalog(configuration.project.projectRoot);
+				yield* refreshCatalog(configuration.project);
 				index = yield* Ref.get(catalogIndex);
 				assetPath = index.assetPaths.get(objectPath);
 			}
@@ -595,6 +619,7 @@ export const ShedAuthoringLive = Layer.effect(
 		return ShedAuthoring.of({
 			applySession,
 			beginSession,
+			catalogProgress,
 			chooseTable,
 			configuredCatalog,
 			configuredTable,
@@ -613,9 +638,25 @@ export const ShedAuthoringLive = Layer.effect(
 );
 
 export function makeShedAuthoringTestLayer(
-	service: ShedAuthoringShape
+	service: Omit<ShedAuthoringShape, "catalogProgress"> &
+		Partial<Pick<ShedAuthoringShape, "catalogProgress">>
 ): Layer.Layer<ShedAuthoring> {
-	return Layer.succeed(ShedAuthoring, ShedAuthoring.of(service));
+	return Layer.succeed(
+		ShedAuthoring,
+		ShedAuthoring.of({
+			catalogProgress:
+				service.catalogProgress ??
+				(() =>
+					Effect.succeed({
+						cacheHits: 0,
+						phase: "idle",
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					})),
+			...service
+		})
+	);
 }
 
 export const AuthoringClientLive = Layer.effect(
@@ -629,6 +670,16 @@ export const AuthoringClientLive = Layer.effect(
 				chooseTable: authoring.chooseTable,
 				discardSession: authoring.discardSession,
 				editSession: authoring.editSession,
+				getCatalogProgress:
+					authoring.catalogProgress ??
+					(() =>
+						Effect.succeed({
+							cacheHits: 0,
+							phase: "idle" as const,
+							processedAssets: 0,
+							tablesFound: 0,
+							totalAssets: 0
+						})),
 				listSessions: authoring.listSessions,
 				loadConfiguredCatalog: authoring.configuredCatalog,
 				loadConfiguredTable: authoring.configuredTable,

@@ -123,6 +123,14 @@ describe("AuthoringRoute", () => {
 	it("keeps the expandable route responsive when table selection is cancelled", async () => {
 		let selections = 0;
 		const client: AuthoringClientShape = {
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "idle" as const,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				}),
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.die("unused"),
 			chooseTable: () =>
@@ -157,9 +165,55 @@ describe("AuthoringRoute", () => {
 		expect(selections).toBe(1);
 	});
 
+	it("shows truthful project indexing progress while catalog discovery is pending", async () => {
+		const client: AuthoringClientShape = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () => Effect.die("unused"),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 1500,
+					phase: "scanning" as const,
+					processedAssets: 2000,
+					tablesFound: 12,
+					totalAssets: 10000
+				}),
+			listSessions: () =>
+				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
+			loadConfiguredCatalog: () => Effect.never,
+			loadConfiguredTable: () => Effect.succeed({ status: "not_configured" as const }),
+			openCatalogTable: () => Effect.die("unused"),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		expect(await screen.findByRole("progressbar")).toBeDefined();
+		expect(await screen.findByText("2,000 / 10,000")).toBeDefined();
+		expect(screen.getByText("1,500 cached · 12 tables found")).toBeDefined();
+	});
+
 	it("stages row intents and presents semantic Session Review", async () => {
 		const intents: AuthoringSessionIntent[] = [];
 		const client: AuthoringClientShape = {
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 19,
+					tablesFound: 12,
+					totalAssets: 19
+				}),
 			applySession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
 			beginSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
 			chooseTable: () => Effect.succeed({ snapshot, status: "ready" as const }),

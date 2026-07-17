@@ -9,11 +9,13 @@ TypeScript process boundary. Priorities are ordered by impact divided by impleme
 | 2        | Preserve structured parser diagnostics in TypeScript              | Medium | Small        | Complete |
 | 3        | Add value-level real-fixture conformance tests                    | High   | Medium       | Complete |
 | 4        | Define a language-neutral inspection schema                       | High   | Medium       | Planned  |
-| 5        | Add a minimal batched catalog operation                           | High   | Medium       | Planned  |
+| 5        | Add a minimal batched catalog operation                           | High   | Medium       | Complete |
 | 6        | Bound file and stdin input before allocation                      | Medium | Small/medium | Planned  |
 | 7        | Expand property and native-struct codecs from a capability matrix | High   | Large        | Planned  |
 | 8        | Add fuzz targets and a malformed-package regression corpus        | High   | Medium/large | Planned  |
 | 9        | Keep capability and compatibility documentation current           | Low    | Small        | Complete |
+| 10       | Add bounded header-only package metadata parsing                  | High   | Medium       | Complete |
+| 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete |
 
 ## Dependency order
 
@@ -30,3 +32,8 @@ and general bulk-data decoding remain out of scope until a product use case chan
 
 Supporting property tags older than UE5 complete type names is also deferred until UE Shed chooses
 an explicit engine compatibility window.
+
+Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
+class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,
+classification, and diagnostics; changed signatures are the only entries reparsed. Full payload
+decoding remains the selected-table operation.

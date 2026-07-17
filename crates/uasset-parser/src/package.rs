@@ -324,12 +324,26 @@ impl Package {
     /// Returns an error if any table is malformed, unsupported, or points
     /// outside the package.
     pub fn parse(source: &[u8]) -> Result<Self, PackageError> {
-        let summary = PackageSummary::parse(source)?;
+        Self::parse_header(source, source.len())
+    }
+
+    /// Parses package metadata from a header prefix while validating export payload spans against
+    /// the complete file length.
+    ///
+    /// `source` must contain the complete serialized package header through
+    /// `summary.total_header_size`; export payload bytes are not required.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the header is incomplete or malformed, or if metadata points outside
+    /// `file_len`.
+    pub fn parse_header(source: &[u8], file_len: usize) -> Result<Self, PackageError> {
+        let summary = PackageSummary::parse_with_file_len(source, file_len)?;
         let mut reader = Reader::new(source);
         let names = read_name_map(&mut reader, &summary)?;
         let soft_object_paths = read_soft_object_path_list(source, &summary, &names)?;
         let mut imports = read_import_map(&mut reader, &summary, &names)?;
-        let mut exports = read_export_map(&mut reader, &summary, &names)?;
+        let mut exports = read_export_map(&mut reader, &summary, &names, file_len)?;
 
         for index in 0..imports.len() {
             let object_path = resolve_index_path(
@@ -419,6 +433,17 @@ impl PackageSummary {
     /// endianness, cooked packages, unversioned properties, or invalid table
     /// ranges.
     pub fn parse(source: &[u8]) -> Result<Self, PackageError> {
+        Self::parse_with_file_len(source, source.len())
+    }
+
+    /// Parses a summary from a file prefix while validating its offsets against the complete file
+    /// length.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the summary prefix is incomplete or malformed, or when its declared
+    /// tables point outside `file_len`.
+    pub fn parse_with_file_len(source: &[u8], file_len: usize) -> Result<Self, PackageError> {
         let mut reader = Reader::new(source);
         let start = reader.tell();
 
@@ -696,7 +721,7 @@ impl PackageSummary {
             payload_toc_offset,
             data_resource_offset,
         };
-        summary.validate(source.len())?;
+        summary.validate(file_len)?;
         Ok(summary)
     }
 
@@ -1092,6 +1117,7 @@ fn read_export_map(
     reader: &mut Reader<'_>,
     summary: &PackageSummary,
     names: &[String],
+    file_len: usize,
 ) -> Result<Vec<Export>, PackageError> {
     reader.seek(summary.exports.offset.get(), "Exports")?;
     let count = usize::try_from(summary.exports.count).map_err(|_| {
@@ -1177,7 +1203,12 @@ fn read_export_map(
             (None, None)
         };
 
-        validate_export_span(serial_offset, serial_size, reader.span().len(), &path)?;
+        validate_export_span(
+            serial_offset,
+            serial_size,
+            u64::try_from(file_len).expect("usize always fits in u64"),
+            &path,
+        )?;
 
         exports.push(Export {
             class_index,
@@ -1839,6 +1870,14 @@ mod tests {
         assert!(summary.import_type_hierarchies.is_some());
         assert_eq!(summary.payload_toc_offset, None);
         assert_eq!(summary.data_resource_offset, None);
+    }
+
+    #[test]
+    fn parses_package_metadata_against_a_larger_complete_file_length() {
+        let header = current_summary_fixture(0);
+        let package = Package::parse_header(&header, header.len() + 1024).unwrap();
+        assert_eq!(package.summary.total_header_size as usize, header.len());
+        assert!(package.exports.is_empty());
     }
 
     #[test]

@@ -21,6 +21,11 @@
 	},
 	"copy": {
 		"kernel": [
+			"Cargo.toml",
+			"Cargo.lock",
+			"crates/uasset-parser/Cargo.toml",
+			"crates/uasset-parser/LICENSE",
+			"crates/uasset-parser/src",
 			"packages/protocol/package.json",
 			"packages/protocol/tsconfig.json",
 			"packages/protocol/src/authoring-review.ts",
@@ -31,7 +36,36 @@
 			"packages/authoring-sdk/package.json",
 			"packages/authoring-sdk/tsconfig.json",
 			"packages/authoring-sdk/tsconfig.browser.json",
-			"packages/authoring-sdk/src/index.ts"
+			"packages/authoring-sdk/src/index.ts",
+			"packages/observability/package.json",
+			"packages/observability/tsconfig.json",
+			"packages/observability/src/health.ts",
+			"packages/observability/src/index.ts",
+			"packages/unreal-assets/package.json",
+			"packages/unreal-assets/tsconfig.json",
+			"packages/unreal-assets/src/index.ts",
+			"packages/unreal-connection/package.json",
+			"packages/unreal-connection/tsconfig.json",
+			"packages/unreal-connection/src/index.ts",
+			"packages/unreal-connection/src/remote-control-client.ts",
+			"packages/authoring-catalog/package.json",
+			"packages/authoring-catalog/tsconfig.json",
+			"packages/authoring-catalog/src/index.ts",
+			"packages/authoring/package.json",
+			"packages/authoring/tsconfig.json",
+			"packages/authoring/src/draft.ts",
+			"packages/authoring/src/fingerprint.ts",
+			"packages/authoring/src/index.ts",
+			"packages/authoring/src/live.ts",
+			"packages/authoring/src/review.ts",
+			"packages/authoring/src/session-service.ts",
+			"packages/host/package.json",
+			"packages/host/tsconfig.json",
+			"packages/host/src/authoring.ts",
+			"packages/host/src/configuration.ts",
+			"packages/host/src/file-picker.ts",
+			"packages/host/src/index.ts",
+			"packages/host/src/live.ts"
 		],
 		"owned": [
 			"packages/ui/package.json",
@@ -56,6 +90,11 @@
 	},
 	"consumerTemplate": "extensions/data-authoring/adoption/consumer",
 	"toolchain": {
+		"nativeReader": "cargo build --locked --release -p uasset-parser",
+		"runtime": {
+			"browser": "schema-validated HTTP AuthoringClient",
+			"host": "ShedHostLive Node server"
+		},
 		"solid": "vite-plugin-solid",
 		"stylex": {
 			"build": "extract stylex.css",
@@ -64,7 +103,14 @@
 	},
 	"conformance": {
 		"sourceCommand": "pnpm test:adoption:data-authoring",
-		"targetCommand": "pnpm verify -- --expected-accent=#ff6b6b",
+		"targetCommands": [
+			"pnpm build:reader",
+			"pnpm verify -- --expected-accent=#ff6b6b",
+			"pnpm verify:host -- --project=<unreal-project-root> --reader=<target>/target/release/uasset.exe"
+		],
+		"requiresFunctionalHost": true,
+		"requiresNonEmptyProjectCatalog": true,
+		"requiresOpenSavedTable": true,
 		"requiresNoWorkbenchImports": true,
 		"requiresNonEmptyStylexCss": true,
 		"requiresTokenDivergence": true

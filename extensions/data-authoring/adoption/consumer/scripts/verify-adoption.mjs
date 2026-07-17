@@ -64,7 +64,15 @@ if (
 	fail("ue-shed-provenance.json does not match the manifest contract");
 }
 
-const scanRoots = [...declaredEntries, "app/package.json", "app/src", "app/vite.config.ts"];
+const scanRoots = [
+	...declaredEntries,
+	"app/package.json",
+	"app/src",
+	"app/vite.config.ts",
+	"scripts",
+	"server/package.json",
+	"server/src"
+];
 for (const scanRoot of scanRoots) {
 	for (const path of await filesUnder(join(targetRoot, scanRoot))) {
 		if (!/\.(?:css|html|js|json|mjs|ts|tsx|yaml)$/i.test(path)) continue;
@@ -99,7 +107,7 @@ const command = scriptIsJavaScript
 	? process.execPath
 	: (pnpmScript ?? (process.platform === "win32" ? "pnpm.cmd" : "pnpm"));
 const prefix = scriptIsJavaScript && pnpmScript ? [pnpmScript] : [];
-const build = spawnSync(command, [...prefix, "--filter", "foreign-authoring-host", "build"], {
+const build = spawnSync(command, [...prefix, "build"], {
 	cwd: targetRoot,
 	env: {
 		...process.env,

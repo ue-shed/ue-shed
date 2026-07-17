@@ -25,6 +25,7 @@ const catalogOwned = new Set([
 
 const approvedRuntimeExits = new Set([
 	"apps/cli/src/index.ts",
+	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	// Node's socket callback is a foreign runtime boundary. The fork is attached to the layer's
 	// scope with Effect.forkIn; camera decoding itself remains the measured synchronous hot path.
 	"packages/cameras/src/index.ts"
@@ -39,8 +40,10 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/global.d.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
+	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	"packages/cameras/src/index.ts",
 	"packages/cameras/src/review-repository.ts",
+	"packages/authoring-sdk/src/index.ts",
 	"packages/unreal-assets/src/index.ts"
 ]);
 const approvedEnvironmentAdapters = new Set([
@@ -48,6 +51,7 @@ const approvedEnvironmentAdapters = new Set([
 	"apps/workbench/src/main/main.ts"
 ]);
 const approvedRawFetchAdapters = new Set([
+	"packages/authoring-sdk/src/index.ts",
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
@@ -59,7 +63,10 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/src/renderer/index.tsx",
 	// The copied adoption host owns its browser runtime lifecycle at the foreign framework boundary.
 	"extensions/data-authoring/adoption/consumer/app/src/index.tsx",
-	"packages/cameras/src/index.ts"
+	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
+	"packages/cameras/src/index.ts",
+	// The saved-asset adapter owns and cancels the bounded native catalog child process.
+	"packages/unreal-assets/src/index.ts"
 ]);
 const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
 const externalServiceEvidence = new Map([

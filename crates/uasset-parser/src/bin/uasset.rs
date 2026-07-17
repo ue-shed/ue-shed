@@ -1,18 +1,21 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::fs;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::UNIX_EPOCH;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
 };
 use uasset_parser::asset::{
-    DATA_ASSET_CLASS, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
-    USERDEFINEDSTRUCT_CLASS,
+    COMPOSITE_DATATABLE_CLASS, DATA_ASSET_CLASS, DATATABLE_CLASS, PRIMARY_DATA_ASSET_CLASS,
+    SKELETON_CLASS, USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{PackageError, PackageErrorKind, PackageIndex, TableLocation};
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
@@ -28,6 +31,11 @@ const EXIT_INTERNAL: u8 = 5;
 const EXIT_PARTIAL: u8 = 6;
 const EXIT_RESOURCE_LIMIT: u8 = 7;
 const EXIT_USAGE: u8 = 64;
+const CATALOG_CACHE_VERSION: u32 = 1;
+const HEADER_PROBE_BYTES: usize = 4 * 1024;
+const MAX_SUMMARY_BYTES: usize = 64 * 1024;
+const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
+const PROGRESS_INTERVAL: usize = 1_000;
 
 fn main() -> ExitCode {
     ExitCode::from(run(env::args_os().skip(1).collect()))
@@ -41,6 +49,7 @@ fn run(arguments: Vec<OsString>) -> u8 {
         }
         Ok(Command::Inspect(options)) => inspect(&options),
         Ok(Command::Authoring(options)) => authoring(&options),
+        Ok(Command::Catalog(options)) => catalog(&options),
         Err(error) => {
             eprintln!("uasset: {error}\n\n{USAGE}");
             EXIT_USAGE
@@ -58,6 +67,14 @@ enum OutputFormat {
 struct InspectOptions {
     input: Input,
     format: OutputFormat,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct CatalogOptions {
+    cache: Option<PathBuf>,
+    project_root: PathBuf,
+    format: OutputFormat,
+    concurrency: usize,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -79,6 +96,7 @@ impl Input {
 enum Command {
     Inspect(InspectOptions),
     Authoring(InspectOptions),
+    Catalog(CatalogOptions),
     Help,
     Version,
 }
@@ -95,6 +113,7 @@ impl Command {
                 Self::Inspect(options) => Ok(Self::Authoring(options)),
                 _ => unreachable!("parse_inspect only returns Inspect"),
             },
+            Some("catalog") => Self::parse_catalog(arguments.collect()),
             Some("-h" | "--help" | "help") => {
                 reject_trailing_arguments(arguments)?;
                 Ok(Self::Help)
@@ -144,6 +163,79 @@ impl Command {
             format,
         }))
     }
+
+    fn parse_catalog(arguments: Vec<OsString>) -> Result<Self, String> {
+        let mut cache = None;
+        let mut format = OutputFormat::Json;
+        let mut concurrency = std::thread::available_parallelism().map_or(4, usize::from);
+        let mut project_root = None;
+        let mut index = 0;
+        while index < arguments.len() {
+            let argument = &arguments[index];
+            match argument.to_str() {
+                Some("--format") => {
+                    index += 1;
+                    let value = arguments
+                        .get(index)
+                        .ok_or_else(|| "--format requires json".to_owned())?;
+                    format = parse_format(value)?;
+                }
+                Some(value) if value.starts_with("--format=") => {
+                    format = parse_format(OsString::from(&value["--format=".len()..]).as_os_str())?;
+                }
+                Some("--concurrency") => {
+                    index += 1;
+                    let value = arguments
+                        .get(index)
+                        .ok_or_else(|| "--concurrency requires a positive integer".to_owned())?;
+                    concurrency = parse_concurrency(value)?;
+                }
+                Some("--cache") => {
+                    index += 1;
+                    let value = arguments
+                        .get(index)
+                        .ok_or_else(|| "--cache requires a file path".to_owned())?;
+                    cache = Some(PathBuf::from(value));
+                }
+                Some(value) if value.starts_with("--cache=") => {
+                    cache = Some(PathBuf::from(&value["--cache=".len()..]));
+                }
+                Some(value) if value.starts_with("--concurrency=") => {
+                    concurrency = parse_concurrency(
+                        OsString::from(&value["--concurrency=".len()..]).as_os_str(),
+                    )?;
+                }
+                Some(value) if value.starts_with('-') => {
+                    return Err(format!("unknown catalog option {value:?}"));
+                }
+                _ if project_root.is_some() => {
+                    return Err("catalog accepts exactly one project root".to_owned());
+                }
+                _ => project_root = Some(PathBuf::from(argument)),
+            }
+            index += 1;
+        }
+        if format != OutputFormat::Json {
+            return Err("catalog requires --format json".to_owned());
+        }
+        Ok(Self::Catalog(CatalogOptions {
+            cache,
+            project_root: project_root
+                .ok_or_else(|| "catalog requires a project root".to_owned())?,
+            format,
+            concurrency,
+        }))
+    }
+}
+
+fn parse_concurrency(value: &std::ffi::OsStr) -> Result<usize, String> {
+    value
+        .to_str()
+        .ok_or_else(|| "concurrency is not valid UTF-8".to_owned())?
+        .parse::<usize>()
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "--concurrency requires a positive integer".to_owned())
 }
 
 fn reject_trailing_arguments(mut arguments: impl Iterator<Item = OsString>) -> Result<(), String> {
@@ -255,6 +347,358 @@ fn authoring(options: &InspectOptions) -> u8 {
         EXIT_PARTIAL
     } else {
         exit
+    }
+}
+
+fn catalog(options: &CatalogOptions) -> u8 {
+    let content_root = options.project_root.join("Content");
+    let mut asset_paths = Vec::new();
+    emit_catalog_progress(CatalogProgressOutput {
+        event: "catalog_progress",
+        cache_hits: 0,
+        phase: "enumerating",
+        processed_assets: 0,
+        tables_found: 0,
+        total_assets: 0,
+    });
+    if let Err(error) = discover_uassets(&content_root, &mut asset_paths) {
+        write_error(
+            options.format,
+            ErrorOutput::io(
+                content_root.to_string_lossy().into_owned(),
+                error.to_string(),
+            ),
+        );
+        return EXIT_IO;
+    }
+    asset_paths.sort();
+    let total_assets = asset_paths.len();
+    let mut cached_by_path = load_catalog_cache(options.cache.as_deref())
+        .map(|cache| {
+            cache
+                .entries
+                .into_iter()
+                .map(|entry| (entry.path.clone(), entry))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let mut completed_entries = Vec::new();
+    let mut pending = Vec::new();
+    for asset_path in asset_paths {
+        match asset_signature(asset_path) {
+            Ok(signature) => {
+                let path = signature.path.to_string_lossy().into_owned();
+                match cached_by_path.remove(&path) {
+                    Some(entry) if cache_entry_matches(&entry, &signature) => {
+                        completed_entries.push(entry);
+                    }
+                    _ => pending.push(signature),
+                }
+            }
+            Err(entry) => completed_entries.push(entry),
+        }
+    }
+    let cache_hits = completed_entries
+        .iter()
+        .filter(|entry| entry.failure_code.as_deref() != Some("asset_io"))
+        .count();
+    let cached_tables = completed_entries
+        .iter()
+        .map(|entry| entry.tables.len())
+        .sum();
+    emit_catalog_progress(CatalogProgressOutput {
+        event: "catalog_progress",
+        cache_hits,
+        phase: "scanning",
+        processed_assets: completed_entries.len(),
+        tables_found: cached_tables,
+        total_assets,
+    });
+
+    let processed = AtomicUsize::new(completed_entries.len());
+    let table_count = AtomicUsize::new(cached_tables);
+    let worker_count = options.concurrency.min(pending.len().max(1));
+    let chunk_size = pending.len().div_ceil(worker_count);
+    let results = std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in pending.chunks(chunk_size.max(1)) {
+            let processed = &processed;
+            let table_count = &table_count;
+            handles.push(scope.spawn(move || {
+                let mut entries = Vec::with_capacity(chunk.len());
+                for signature in chunk {
+                    let entry = inspect_asset_for_catalog(signature);
+                    let tables_found = table_count.fetch_add(entry.tables.len(), Ordering::Relaxed)
+                        + entry.tables.len();
+                    let processed_assets = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                    if processed_assets % PROGRESS_INTERVAL == 0 || processed_assets == total_assets
+                    {
+                        emit_catalog_progress(CatalogProgressOutput {
+                            event: "catalog_progress",
+                            cache_hits,
+                            phase: "scanning",
+                            processed_assets,
+                            tables_found,
+                            total_assets,
+                        });
+                    }
+                    entries.push(entry);
+                }
+                entries
+            }));
+        }
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("catalog worker must not panic"))
+            .collect::<Vec<_>>()
+    });
+
+    for result in results {
+        completed_entries.extend(result);
+    }
+    completed_entries.sort_by(|left, right| left.path.cmp(&right.path));
+    emit_catalog_progress(CatalogProgressOutput {
+        event: "catalog_progress",
+        cache_hits,
+        phase: "writing_cache",
+        processed_assets: total_assets,
+        tables_found: table_count.load(Ordering::Relaxed),
+        total_assets,
+    });
+
+    let mut failure_counts = BTreeMap::<String, usize>::new();
+    let mut tables = Vec::new();
+    for entry in &completed_entries {
+        tables.extend(entry.tables.clone());
+        if let Some(code) = &entry.failure_code {
+            *failure_counts.entry(code.clone()).or_insert(0) += 1;
+        }
+    }
+    if save_catalog_cache(options.cache.as_deref(), &completed_entries).is_err() {
+        *failure_counts
+            .entry("catalog_cache_write".to_owned())
+            .or_insert(0) += 1;
+    }
+    tables.sort_by(|left, right| left.object_path.cmp(&right.object_path));
+    let diagnostics = failure_counts
+        .into_iter()
+        .map(|(code, count)| CatalogDiagnosticOutput {
+            message: format!("{count} saved asset(s) could not be cataloged ({code})"),
+            path: options.project_root.to_string_lossy().into_owned(),
+            retry_safe: matches!(code.as_str(), "asset_io" | "catalog_cache_write"),
+            code,
+        })
+        .collect();
+    let output = CatalogOutput {
+        schema_version: SCHEMA_VERSION,
+        cache_hits,
+        changed_assets: pending.len(),
+        project_root: options.project_root.to_string_lossy().into_owned(),
+        scanned_assets: total_assets,
+        tables,
+        diagnostics,
+    };
+    let mut rendered = match serde_json::to_vec(&output) {
+        Ok(rendered) => rendered,
+        Err(error) => {
+            eprintln!("uasset: failed to serialize catalog output: {error}");
+            return EXIT_INTERNAL;
+        }
+    };
+    rendered.push(b'\n');
+    let exit = write_stdout(&rendered);
+    if exit == EXIT_SUCCESS {
+        emit_catalog_progress(CatalogProgressOutput {
+            event: "catalog_progress",
+            cache_hits,
+            phase: "ready",
+            processed_assets: total_assets,
+            tables_found: output.tables.len(),
+            total_assets,
+        });
+    }
+    exit
+}
+
+fn discover_uassets(directory: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
+    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            discover_uassets(&entry.path(), found)?;
+        } else if file_type.is_file()
+            && entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "uasset")
+        {
+            found.push(entry.path());
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+struct AssetSignature {
+    modified_nanos: u64,
+    path: PathBuf,
+    size: u64,
+}
+
+fn asset_signature(path: PathBuf) -> Result<AssetSignature, CatalogCacheEntry> {
+    let metadata =
+        fs::metadata(&path).map_err(|_| CatalogCacheEntry::failure(&path, "asset_io"))?;
+    let modified_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+        });
+    Ok(AssetSignature {
+        modified_nanos,
+        path,
+        size: metadata.len(),
+    })
+}
+
+fn cache_entry_matches(entry: &CatalogCacheEntry, signature: &AssetSignature) -> bool {
+    entry.path == signature.path.to_string_lossy()
+        && entry.size == signature.size
+        && entry.modified_nanos == signature.modified_nanos
+}
+
+fn inspect_asset_for_catalog(signature: &AssetSignature) -> CatalogCacheEntry {
+    let package = match read_package_header(signature) {
+        Ok(package) => package,
+        Err(code) => {
+            return CatalogCacheEntry {
+                failure_code: Some(code.to_owned()),
+                modified_nanos: signature.modified_nanos,
+                path: signature.path.to_string_lossy().into_owned(),
+                size: signature.size,
+                tables: Vec::new(),
+            };
+        }
+    };
+    let mut tables = Vec::new();
+    for export in &package.exports {
+        let Some(class_path) = export.class_path.as_ref().map(ToString::to_string) else {
+            continue;
+        };
+        if !matches!(
+            class_path.as_str(),
+            DATATABLE_CLASS | COMPOSITE_DATATABLE_CLASS
+        ) {
+            continue;
+        }
+        tables.push(CatalogTableOutput {
+            asset_path: signature.path.to_string_lossy().into_owned(),
+            authority: CatalogAuthorityOutput {
+                kind: "project_files".to_owned(),
+                package_name: package.summary.package_name.clone(),
+            },
+            completeness: "partial".to_owned(),
+            kind: if class_path == DATATABLE_CLASS {
+                "data_table".to_owned()
+            } else {
+                "composite_data_table".to_owned()
+            },
+            object_path: export.object_path.to_string(),
+            parent_tables: Vec::new(),
+            row_struct: String::new(),
+            schema: CatalogSchemaOutput {
+                reason:
+                    "Catalog metadata is header-only; open the table to decode its saved schema."
+                        .to_owned(),
+                status: "unavailable".to_owned(),
+            },
+        });
+    }
+    CatalogCacheEntry {
+        failure_code: None,
+        modified_nanos: signature.modified_nanos,
+        path: signature.path.to_string_lossy().into_owned(),
+        size: signature.size,
+        tables,
+    }
+}
+
+fn read_package_header(signature: &AssetSignature) -> Result<Package, &'static str> {
+    let file_len = usize::try_from(signature.size).map_err(|_| "asset_resource_limit")?;
+    if file_len == 0 {
+        return Err("asset_malformed_data");
+    }
+    let mut file = File::open(&signature.path).map_err(|_| "asset_io")?;
+    let mut prefix_len = HEADER_PROBE_BYTES.min(file_len);
+    let mut bytes = vec![0; prefix_len];
+    file.read_exact(&mut bytes).map_err(|_| "asset_io")?;
+    let summary = loop {
+        match PackageSummary::parse_with_file_len(&bytes, file_len) {
+            Ok(summary) => break summary,
+            Err(error)
+                if error.kind() == PackageErrorKind::MalformedData
+                    && prefix_len < MAX_SUMMARY_BYTES.min(file_len) =>
+            {
+                let next_len = (prefix_len * 2).min(MAX_SUMMARY_BYTES).min(file_len);
+                bytes.resize(next_len, 0);
+                file.read_exact(&mut bytes[prefix_len..])
+                    .map_err(|_| "asset_io")?;
+                prefix_len = next_len;
+            }
+            Err(error) => return Err(package_error_code(&error)),
+        }
+    };
+    let header_len =
+        usize::try_from(summary.total_header_size).map_err(|_| "asset_resource_limit")?;
+    if header_len > MAX_HEADER_BYTES {
+        return Err("asset_resource_limit");
+    }
+    if header_len > bytes.len() {
+        let previous_len = bytes.len();
+        bytes.resize(header_len, 0);
+        file.read_exact(&mut bytes[previous_len..])
+            .map_err(|_| "asset_io")?;
+    } else {
+        bytes.truncate(header_len);
+    }
+    Package::parse_header(&bytes, file_len).map_err(|error| package_error_code(&error))
+}
+
+fn package_error_code(error: &PackageError) -> &'static str {
+    match error.kind() {
+        PackageErrorKind::MalformedData => "asset_malformed_data",
+        PackageErrorKind::ResourceLimit => "asset_resource_limit",
+        PackageErrorKind::UnsupportedFormat => "asset_unsupported_format",
+        PackageErrorKind::UnsupportedVersion => "asset_unsupported_version",
+        PackageErrorKind::UnsupportedCapability => "asset_unsupported_capability",
+    }
+}
+
+fn load_catalog_cache(path: Option<&Path>) -> Option<CatalogCache> {
+    let path = path?;
+    let cache: CatalogCache = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    (cache.version == CATALOG_CACHE_VERSION).then_some(cache)
+}
+
+fn save_catalog_cache(path: Option<&Path>, entries: &[CatalogCacheEntry]) -> io::Result<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let rendered = serde_json::to_vec(&CatalogCache {
+        entries: entries.to_vec(),
+        version: CATALOG_CACHE_VERSION,
+    })?;
+    fs::write(path, rendered)
+}
+
+fn emit_catalog_progress(progress: CatalogProgressOutput) {
+    if let Ok(rendered) = serde_json::to_string(&progress) {
+        eprintln!("{rendered}");
     }
 }
 
@@ -468,6 +912,100 @@ fn exit_code_for_package_error(error: &PackageError) -> u8 {
         | PackageErrorKind::UnsupportedVersion
         | PackageErrorKind::UnsupportedCapability => EXIT_UNSUPPORTED,
     }
+}
+
+#[derive(Serialize)]
+struct CatalogOutput {
+    schema_version: u32,
+    #[serde(rename = "cacheHits")]
+    cache_hits: usize,
+    #[serde(rename = "changedAssets")]
+    changed_assets: usize,
+    #[serde(rename = "projectRoot")]
+    project_root: String,
+    #[serde(rename = "scannedAssets")]
+    scanned_assets: usize,
+    tables: Vec<CatalogTableOutput>,
+    diagnostics: Vec<CatalogDiagnosticOutput>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct CatalogTableOutput {
+    #[serde(rename = "assetPath")]
+    asset_path: String,
+    authority: CatalogAuthorityOutput,
+    completeness: String,
+    kind: String,
+    #[serde(rename = "objectPath")]
+    object_path: String,
+    #[serde(rename = "parentTables")]
+    parent_tables: Vec<String>,
+    #[serde(rename = "rowStruct")]
+    row_struct: String,
+    schema: CatalogSchemaOutput,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct CatalogAuthorityOutput {
+    kind: String,
+    #[serde(rename = "packageName")]
+    package_name: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct CatalogSchemaOutput {
+    reason: String,
+    status: String,
+}
+
+#[derive(Serialize)]
+struct CatalogDiagnosticOutput {
+    code: String,
+    message: String,
+    path: String,
+    #[serde(rename = "retrySafe")]
+    retry_safe: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+struct CatalogCache {
+    entries: Vec<CatalogCacheEntry>,
+    version: u32,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct CatalogCacheEntry {
+    failure_code: Option<String>,
+    modified_nanos: u64,
+    path: String,
+    size: u64,
+    tables: Vec<CatalogTableOutput>,
+}
+
+impl CatalogCacheEntry {
+    fn failure(path: &Path, code: &str) -> Self {
+        Self {
+            failure_code: Some(code.to_owned()),
+            modified_nanos: 0,
+            path: path.to_string_lossy().into_owned(),
+            size: 0,
+            tables: Vec::new(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct CatalogProgressOutput {
+    event: &'static str,
+    #[serde(rename = "cacheHits")]
+    cache_hits: usize,
+    phase: &'static str,
+    #[serde(rename = "processedAssets")]
+    processed_assets: usize,
+    #[serde(rename = "tablesFound")]
+    tables_found: usize,
+    #[serde(rename = "totalAssets")]
+    total_assets: usize,
 }
 
 #[derive(Serialize)]
@@ -1699,7 +2237,7 @@ impl ErrorOutput {
     }
 }
 
-const USAGE: &str = "Usage: uasset <inspect|authoring> <path|-> [--format text|json]";
+const USAGE: &str = "Usage: uasset <inspect|authoring|catalog> <path> [--format text|json]";
 
 const HELP: &str = "\
 uasset - inspect classic Unreal Engine asset packages
@@ -1707,12 +2245,14 @@ uasset - inspect classic Unreal Engine asset packages
 Usage:
   uasset inspect <path|-> [--format text|json]
   uasset authoring <path|-> --format json
+  uasset catalog <project-root> [--format json] [--concurrency <count>]
   uasset help
   uasset version
 
 Commands:
   inspect    Parse one package and emit decoded assets.
   authoring  Emit the versioned Unreal authoring snapshot for one DataTable package.
+  catalog    Discover saved DataTables beneath one Unreal project in a single process.
 
 Output contract:
   stdout     Successful result only.
@@ -1762,6 +2302,52 @@ mod command_tests {
             ])
             .expect("authoring command"),
             Command::Authoring(_)
+        ));
+    }
+
+    #[test]
+    fn parses_catalog_contract() {
+        assert_eq!(
+            Command::parse(vec![
+                "catalog".into(),
+                "project".into(),
+                "--concurrency=3".into(),
+            ])
+            .expect("catalog command"),
+            Command::Catalog(CatalogOptions {
+                cache: None,
+                project_root: PathBuf::from("project"),
+                format: OutputFormat::Json,
+                concurrency: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn catalog_cache_requires_matching_path_size_and_timestamp() {
+        let signature = AssetSignature {
+            modified_nanos: 20,
+            path: PathBuf::from("Content/DT_Test.uasset"),
+            size: 10,
+        };
+        let entry = CatalogCacheEntry {
+            failure_code: None,
+            modified_nanos: 20,
+            path: "Content/DT_Test.uasset".to_owned(),
+            size: 10,
+            tables: Vec::new(),
+        };
+        assert!(cache_entry_matches(&entry, &signature));
+        assert!(!cache_entry_matches(
+            &CatalogCacheEntry {
+                modified_nanos: 21,
+                ..entry.clone()
+            },
+            &signature
+        ));
+        assert!(!cache_entry_matches(
+            &CatalogCacheEntry { size: 11, ..entry },
+            &signature
         ));
     }
 

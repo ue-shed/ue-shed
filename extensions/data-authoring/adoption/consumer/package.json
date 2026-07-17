@@ -3,8 +3,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "pnpm --filter foreign-authoring-host build",
-		"verify": "node scripts/verify-adoption.mjs"
+		"build": "pnpm --filter foreign-authoring-host build && pnpm --filter foreign-authoring-server typecheck",
+		"build:reader": "cargo build --locked --release -p uasset-parser",
+		"start": "pnpm --filter foreign-authoring-server start",
+		"verify": "node scripts/verify-adoption.mjs",
+		"verify:host": "node scripts/verify-host.mjs"
 	},
 	"packageManager": "pnpm@10.32.1"
 }

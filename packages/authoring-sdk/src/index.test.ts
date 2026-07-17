@@ -1,9 +1,12 @@
+import { createServer } from "node:http";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeAuthoringSessionIntent,
 	decodeAuthoringSessionListResult,
-	decodeAuthoringSessionReviewResult
+	decodeAuthoringSessionReviewResult,
+	decodeAuthoringTransportRequest,
+	makeAuthoringHttpClient
 } from "./index.js";
 
 describe("authoring SDK contracts", () => {
@@ -74,5 +77,69 @@ describe("authoring SDK contracts", () => {
 			status: "ready"
 		};
 		expect(await Effect.runPromise(decodeAuthoringSessionListResult(result))).toEqual(result);
+	});
+
+	it("rejects malformed transport requests", async () => {
+		expect(
+			Exit.isFailure(
+				await Effect.runPromiseExit(
+					decodeAuthoringTransportRequest({ operation: "open_catalog_table" })
+				)
+			)
+		).toBe(true);
+	});
+
+	it("uses the HTTP transport and decodes the operation result", async () => {
+		const operations: string[] = [];
+		const server = createServer((request, response) => {
+			let body = "";
+			request.setEncoding("utf8");
+			request.on("data", (chunk) => {
+				body += chunk;
+			});
+			request.on("end", () => {
+				const payload = JSON.parse(body) as { operation: string };
+				operations.push(payload.operation);
+				response.writeHead(200, { "content-type": "application/json" });
+				response.end(
+					JSON.stringify({
+						status: "success",
+						value:
+							payload.operation === "get_catalog_progress"
+								? {
+										cacheHits: 170000,
+										phase: "scanning",
+										processedAssets: 171000,
+										tablesFound: 550,
+										totalAssets: 174026
+									}
+								: { diagnostics: [], status: "ready", tables: [] }
+					})
+				);
+			});
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("Expected TCP address");
+			const client = makeAuthoringHttpClient({
+				endpoint: `http://127.0.0.1:${address.port}/api/authoring`
+			});
+			expect(await Effect.runPromise(client.loadConfiguredCatalog())).toEqual({
+				diagnostics: [],
+				status: "ready",
+				tables: []
+			});
+			expect(await Effect.runPromise(client.getCatalogProgress())).toMatchObject({
+				cacheHits: 170000,
+				phase: "scanning",
+				processedAssets: 171000
+			});
+			expect(operations).toEqual(["load_configured_catalog", "get_catalog_progress"]);
+		} finally {
+			await new Promise<void>((resolve, reject) =>
+				server.close((error) => (error ? reject(error) : resolve()))
+			);
+		}
 	});
 });

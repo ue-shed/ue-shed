@@ -1,5 +1,5 @@
 import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const adoptionDirectory = dirname(fileURLToPath(import.meta.url));
@@ -19,17 +19,18 @@ function option(name) {
 
 const targetArgument = option("target");
 const sourceCommit = option("source-commit");
+const accent = option("accent");
 if (!targetArgument) fail("pass --target <empty-directory>");
 if (!sourceCommit || !/^[0-9a-f]{40}$/i.test(sourceCommit)) {
 	fail("pass --source-commit <40-character-git-commit>");
 }
+if (accent !== undefined && !/^#[0-9a-f]{6}$/i.test(accent)) {
+	fail("--accent must be a six-digit hex color such as #ff6b6b");
+}
 
 const targetRoot = resolve(targetArgument);
 const relativeTarget = relative(targetRoot, sourceRoot);
-if (
-	relativeTarget === "" ||
-	(!relativeTarget.startsWith("..") && !resolve(relativeTarget).startsWith(".."))
-) {
+if (relativeTarget === "" || (!relativeTarget.startsWith("..") && !isAbsolute(relativeTarget))) {
 	fail("the target must not contain the source kit");
 }
 
@@ -44,7 +45,10 @@ if (manifest.schemaVersion !== 2 || manifest.slice !== "data-authoring") {
 
 async function copyRelative(entry, destinationRoot = targetRoot) {
 	const source = resolve(sourceRoot, entry);
-	if (relative(sourceRoot, source).startsWith("..")) fail(`entry escapes source kit: ${entry}`);
+	const relativeSource = relative(sourceRoot, source);
+	if (relativeSource.startsWith("..") || isAbsolute(relativeSource)) {
+		fail(`entry escapes source kit: ${entry}`);
+	}
 	const destination = join(destinationRoot, entry);
 	await mkdir(dirname(destination), { recursive: true });
 	await cp(source, destination, { recursive: (await stat(source)).isDirectory() });
@@ -55,6 +59,14 @@ for (const entry of await readdir(templateRoot)) {
 	await cp(join(templateRoot, entry), join(targetRoot, entry), { recursive: true });
 }
 for (const entry of [...manifest.copy.kernel, ...manifest.copy.owned]) await copyRelative(entry);
+
+if (accent !== undefined) {
+	const themePath = join(targetRoot, "packages", "ui-theme", "src", "themes.stylex.ts");
+	const theme = await readFile(themePath, "utf8");
+	const divergentTheme = theme.replace('colorAccent: "#b7e26d"', `colorAccent: "${accent}"`);
+	if (divergentTheme === theme) fail("could not find the applied theme accent to replace");
+	await writeFile(themePath, divergentTheme);
+}
 
 const metadataRoot = join(targetRoot, ".ue-shed", "data-authoring");
 await mkdir(metadataRoot, { recursive: true });

@@ -63,6 +63,14 @@ it.effect("loads a saved table and begins a session through the direct client", 
 				remoteControlEndpoint: "http://127.0.0.1:30001"
 			});
 			const reader = makeAssetReaderTestLayer({
+				catalogProgress: () =>
+					Effect.succeed({
+						cacheHits: 0,
+						phase: "idle" as const,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					}),
 				discoverAssets: () => Effect.succeed([]),
 				discoverTables: () =>
 					Effect.succeed({ diagnostics: [], projectRoot, scannedAssets: 0, tables: [] }),

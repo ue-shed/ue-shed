@@ -1,0 +1,38 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/schemas/data-authoring-provenance-v1.json",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schemaVersion", "slice", "source", "manifest", "ownership"],
+	"properties": {
+		"schemaVersion": { "const": 1 },
+		"slice": { "const": "data-authoring" },
+		"source": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["repository", "commit"],
+			"properties": {
+				"repository": { "const": "ue-shed" },
+				"commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+			}
+		},
+		"manifest": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["schemaVersion", "snapshot"],
+			"properties": {
+				"schemaVersion": { "const": 2 },
+				"snapshot": { "const": ".ue-shed/data-authoring/adoption.manifest.json" }
+			}
+		},
+		"ownership": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["kernel", "owned"],
+			"properties": {
+				"kernel": { "type": "array", "items": { "type": "string" } },
+				"owned": { "type": "array", "items": { "type": "string" } }
+			}
+		}
+	}
+}

@@ -22,7 +22,7 @@ export const tokens = stylex.defineVars({
 	colorWarning: "#d6a363",
 	colorWarningStrong: "#d7894a",
 	colorDanger: "#d16b5e",
-	fontBody: '"Workbench Mono", "Cascadia Mono", Consolas, monospace',
+	fontBody: '"Cascadia Mono", Consolas, monospace',
 	fontDisplay: "Georgia, serif",
 	radiusControl: "2px",
 	radiusPanel: "2px",

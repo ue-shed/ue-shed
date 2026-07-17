@@ -1,31 +1,51 @@
 {
-	"schemaVersion": 1,
+	"schemaVersion": 2,
 	"slice": "data-authoring",
 	"description": "Maintained Solid and StyleX DataTable authoring workflow",
 	"provenance": {
 		"repository": "ue-shed",
-		"recordSourceCommitAtAdoption": true
+		"recordSourceCommitAtAdoption": true,
+		"schema": "extensions/data-authoring/adoption/provenance.schema.json",
+		"template": "extensions/data-authoring/adoption/provenance.template.json",
+		"target": "ue-shed-provenance.json"
+	},
+	"materialize": {
+		"script": "extensions/data-authoring/adoption/materialize.mjs",
+		"copySemantics": "template-contents-to-target-root; manifest-entries-to-identical-relative-paths"
 	},
 	"copy": {
 		"kernel": [
 			"packages/protocol/package.json",
 			"packages/protocol/tsconfig.json",
-			"packages/protocol/src",
+			"packages/protocol/src/authoring-review.ts",
+			"packages/protocol/src/authoring.ts",
+			"packages/protocol/src/cameras.ts",
+			"packages/protocol/src/companion.ts",
+			"packages/protocol/src/index.ts",
 			"packages/authoring-sdk/package.json",
 			"packages/authoring-sdk/tsconfig.json",
 			"packages/authoring-sdk/tsconfig.browser.json",
-			"packages/authoring-sdk/src"
+			"packages/authoring-sdk/src/index.ts"
 		],
 		"owned": [
 			"packages/ui/package.json",
 			"packages/ui/tsconfig.json",
-			"packages/ui/src",
+			"packages/ui/src/button.tsx",
+			"packages/ui/src/effect-solid.tsx",
+			"packages/ui/src/index.ts",
+			"packages/ui/src/page-header.tsx",
 			"packages/ui-theme/package.json",
 			"packages/ui-theme/tsconfig.json",
-			"packages/ui-theme/src",
+			"packages/ui-theme/src/index.ts",
+			"packages/ui-theme/src/themes.stylex.ts",
+			"packages/ui-theme/src/tokens.stylex.ts",
 			"extensions/data-authoring/package.json",
 			"extensions/data-authoring/tsconfig.json",
-			"extensions/data-authoring/src"
+			"extensions/data-authoring/src/authoring-grid-model.ts",
+			"extensions/data-authoring/src/authoring-route.tsx",
+			"extensions/data-authoring/src/authoring-table-grid.tsx",
+			"extensions/data-authoring/src/authoring-view.ts",
+			"extensions/data-authoring/src/index.ts"
 		]
 	},
 	"consumerTemplate": "extensions/data-authoring/adoption/consumer",
@@ -37,7 +57,8 @@
 		}
 	},
 	"conformance": {
-		"command": "pnpm test:adoption:data-authoring",
+		"sourceCommand": "pnpm test:adoption:data-authoring",
+		"targetCommand": "pnpm verify -- --expected-accent=#ff6b6b",
 		"requiresNoWorkbenchImports": true,
 		"requiresNonEmptyStylexCss": true,
 		"requiresTokenDivergence": true

@@ -1,52 +1,61 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const manifestPath = join(repositoryRoot, "extensions", "data-authoring", "adoption.manifest.json");
+const materializer = join(
+	repositoryRoot,
+	"extensions",
+	"data-authoring",
+	"adoption",
+	"materialize.mjs"
+);
 const targetRoot = join(repositoryRoot, "test-results", "data-authoring-adoption");
 
 function fail(message) {
 	throw new Error(`Data Authoring adoption conformance failed: ${message}`);
 }
 
+function run(command, args, cwd = repositoryRoot) {
+	const result = spawnSync(command, args, {
+		cwd,
+		env: { ...process.env, CI: "1", NODE_AUTH_TOKEN: "", NPM_TOKEN: "" },
+		shell: false,
+		stdio: "inherit",
+		windowsHide: true
+	});
+	if (result.error) throw result.error;
+	if (result.status !== 0) fail(`${command} ${args.join(" ")} exited ${result.status ?? 1}`);
+}
+
 function runPnpm(args) {
 	const pnpmScript = process.env.npm_execpath;
-	const pnpmScriptIsJavaScript = pnpmScript ? /\.(?:c|m)?js$/i.test(pnpmScript) : false;
-	const command = pnpmScriptIsJavaScript
+	const scriptIsJavaScript = pnpmScript ? /\.(?:c|m)?js$/i.test(pnpmScript) : false;
+	const command = scriptIsJavaScript
 		? process.execPath
 		: (pnpmScript ?? (process.platform === "win32" ? "pnpm.cmd" : "pnpm"));
-	const commandPrefix = pnpmScriptIsJavaScript && pnpmScript ? [pnpmScript] : [];
-	const result = spawnSync(command, [...commandPrefix, ...args], {
+	const prefix = scriptIsJavaScript && pnpmScript ? [pnpmScript] : [];
+	const result = spawnSync(command, [...prefix, ...args], {
 		cwd: targetRoot,
-		env: { ...process.env, CI: "1" },
+		env: { ...process.env, CI: "1", NODE_AUTH_TOKEN: "", NPM_TOKEN: "" },
 		shell: process.platform === "win32" && (!pnpmScript || /\.(?:cmd|bat)$/i.test(pnpmScript)),
 		stdio: "inherit",
 		windowsHide: true
 	});
 	if (result.error) throw result.error;
-	if (result.status !== 0) fail(`pnpm ${args.join(" ")} exited with ${result.status ?? 1}`);
+	if (result.status !== 0) fail(`pnpm ${args.join(" ")} exited ${result.status ?? 1}`);
 }
 
-async function copyEntry(entry) {
-	const source = resolve(repositoryRoot, entry);
-	const relativeSource = relative(repositoryRoot, source);
-	if (relativeSource.startsWith("..")) fail(`copy entry escapes the repository: ${entry}`);
-	const destination = join(targetRoot, entry);
-	await mkdir(dirname(destination), { recursive: true });
-	await cp(source, destination, { recursive: (await stat(source)).isDirectory() });
-}
-
-async function sourceFiles(root) {
+async function filesUnder(root) {
 	const entries = await readdir(root, { withFileTypes: true });
 	const files = [];
 	for (const entry of entries) {
-		if (["node_modules", "dist"].includes(entry.name)) continue;
+		if (["dist", "node_modules"].includes(entry.name)) continue;
 		const path = join(root, entry.name);
-		if (entry.isDirectory()) files.push(...(await sourceFiles(path)));
-		else if (/\.(?:json|ts|tsx|js|mjs|css|html|yaml)$/i.test(entry.name)) files.push(path);
+		if (entry.isDirectory()) files.push(...(await filesUnder(path)));
+		else files.push(path);
 	}
 	return files;
 }
@@ -55,26 +64,28 @@ function digest(value) {
 	return createHash("sha256").update(value).digest("hex");
 }
 
-const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-if (manifest.schemaVersion !== 1 || manifest.slice !== "data-authoring") {
-	fail("manifest identity or schema version is invalid");
-}
-if (!Array.isArray(manifest.copy?.kernel) || !Array.isArray(manifest.copy?.owned)) {
-	fail("manifest copy closure is missing");
-}
+const commit = spawnSync("git.exe", ["rev-parse", "HEAD"], {
+	cwd: repositoryRoot,
+	encoding: "utf8",
+	windowsHide: true
+});
+if (commit.status !== 0) fail("could not resolve the source commit");
+const sourceCommit = commit.stdout.trim();
 
 await rm(targetRoot, { force: true, recursive: true });
-await mkdir(targetRoot, { recursive: true });
-await cp(resolve(repositoryRoot, manifest.consumerTemplate), targetRoot, { recursive: true });
-for (const entry of [...manifest.copy.kernel, ...manifest.copy.owned]) await copyEntry(entry);
+await mkdir(dirname(targetRoot), { recursive: true });
+run(process.execPath, [materializer, "--target", targetRoot, "--source-commit", sourceCommit]);
 
-await writeFile(
-	join(targetRoot, "ue-shed-provenance.json"),
-	`${JSON.stringify({ manifest: "data-authoring@1", source: "ue-shed" }, null, 2)}\n`
+const manifest = JSON.parse(
+	await readFile(join(targetRoot, ".ue-shed", "data-authoring", "adoption.manifest.json"), "utf8")
 );
+const declaredEntries = [...manifest.copy.kernel, ...manifest.copy.owned];
+if (declaredEntries.some((entry) => entry.includes(".test."))) {
+	fail("materialized production closure includes source-side tests");
+}
 
-const copiedSources = await sourceFiles(targetRoot);
-for (const path of copiedSources) {
+for (const path of await filesUnder(targetRoot)) {
+	if (!/\.(?:css|html|js|json|mjs|ts|tsx|yaml)$/i.test(path)) continue;
 	const content = await readFile(path, "utf8");
 	if (/apps[\\/]workbench|window\.ueShed|from ["']electron/.test(content)) {
 		fail(`Workbench or Electron authority leaked into ${relative(targetRoot, path)}`);
@@ -82,25 +93,23 @@ for (const path of copiedSources) {
 }
 
 runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile=false"]);
-runPnpm(["--filter", "foreign-authoring-host", "build"]);
-
+runPnpm(["build"]);
 const cssPath = join(targetRoot, "app", "dist", "stylex.css");
 const initialCss = await readFile(cssPath, "utf8");
-if (initialCss.length === 0) fail("production stylex.css is empty");
+if (initialCss.length === 0) fail("initial production stylex.css is empty");
 
 const themePath = join(targetRoot, "packages", "ui-theme", "src", "themes.stylex.ts");
 const initialTheme = await readFile(themePath, "utf8");
-const divergentTheme = initialTheme.replace('colorAccent: "#b7e26d"', 'colorAccent: "#ff9f43"');
-if (divergentTheme === initialTheme) fail("could not find the copied accent token to diverge");
+const divergentTheme = initialTheme.replace('colorAccent: "#b7e26d"', 'colorAccent: "#ff6b6b"');
+if (divergentTheme === initialTheme) fail("could not find the single applied accent to diverge");
 await writeFile(themePath, divergentTheme);
 
-runPnpm(["--filter", "foreign-authoring-host", "build"]);
+runPnpm(["verify", "--", "--expected-accent=#ff6b6b"]);
 const divergentCss = await readFile(cssPath, "utf8");
-if (!divergentCss.includes("#ff9f43")) fail("divergent accent is absent from production CSS");
 if (digest(divergentCss) === digest(initialCss))
-	fail("token divergence did not change production CSS");
+	fail("theme divergence did not change production CSS");
 
 console.log(
-	`Data Authoring adoption conformance passed: ${copiedSources.length} source files, ` +
-		`${initialCss.length} bytes of StyleX CSS, token divergence verified.`
+	`Data Authoring adoption conformance passed: ${declaredEntries.length} declared entries, ` +
+		`${initialCss.length} initial CSS bytes, portable verifier and token divergence verified.`
 );

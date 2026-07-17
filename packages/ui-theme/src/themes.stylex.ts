@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "./tokens.stylex.js";
 
-export const workbenchDarkTheme = stylex.createTheme(tokens, {
+export const ueShedDarkTheme = stylex.createTheme(tokens, {
 	colorCanvas: "#0b0d0d",
 	colorCanvasTranslucent: "#0b0d0df2",
 	colorSurface: "#111412",
@@ -23,7 +23,7 @@ export const workbenchDarkTheme = stylex.createTheme(tokens, {
 	colorWarning: "#d6a363",
 	colorWarningStrong: "#d7894a",
 	colorDanger: "#d16b5e",
-	fontBody: '"Workbench Mono", "Cascadia Mono", Consolas, monospace',
+	fontBody: '"Cascadia Mono", Consolas, monospace',
 	fontDisplay: "Georgia, serif",
 	radiusControl: "2px",
 	radiusPanel: "2px",
@@ -36,3 +36,6 @@ export const workbenchDarkTheme = stylex.createTheme(tokens, {
 	motionFast: "120ms",
 	motionStandard: "180ms"
 });
+
+// Compatibility alias for existing Workbench consumers. New hosts should use the product-level name.
+export const workbenchDarkTheme = ueShedDarkTheme;

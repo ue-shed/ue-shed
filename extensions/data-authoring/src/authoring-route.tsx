@@ -373,7 +373,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 							code: "contract_failure",
 							message: Cause.pretty(cause),
 							recovery:
-								"Restart Workbench. If the problem persists, verify package versions.",
+								"Restart the host. If the problem persists, verify package versions.",
 							retrySafe: true
 						},
 						status: "failed"
@@ -398,7 +398,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 						code: "contract_failure",
 						message: Cause.pretty(cause),
 						recovery:
-							"Restart Workbench. If the problem persists, verify package versions.",
+							"Restart the host. If the problem persists, verify package versions.",
 						retrySafe: true
 					},
 					status: "failed"
@@ -1312,7 +1312,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
-		padding: "32px 36px 42px",
+		padding: { default: "32px 36px 42px", "@media (max-width: 700px)": "18px 14px 28px" },
 		color: tokens.colorText,
 		backgroundColor: tokens.colorCanvas,
 		backgroundImage:
@@ -1321,7 +1321,10 @@ const styles = stylex.create({
 	},
 	coldStart: {
 		display: "grid",
-		gridTemplateColumns: "230px minmax(0, 1fr)",
+		gridTemplateColumns: {
+			default: "230px minmax(0, 1fr)",
+			"@media (max-width: 700px)": "minmax(0, 1fr)"
+		},
 		gap: 10
 	},
 	emptyState: {
@@ -1351,8 +1354,8 @@ const styles = stylex.create({
 	inlineButton: {
 		marginTop: 8,
 		border: "1px solid #58614e",
-		backgroundColor: { default: "transparent", ":hover": "#b7e26d14" },
-		color: "#b7e26d",
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorAccent,
 		padding: "8px 12px",
 		cursor: "pointer",
 		fontSize: 9,
@@ -1363,8 +1366,7 @@ const styles = stylex.create({
 		width: 8,
 		height: 8,
 		borderRadius: "50%",
-		backgroundColor: "#b7e26d",
-		boxShadow: "0 0 14px #b7e26d88"
+		backgroundColor: tokens.colorAccent
 	},
 	workspace: { display: "flex", flexDirection: "column", gap: 10 },
 	manifest: {
@@ -1375,7 +1377,7 @@ const styles = stylex.create({
 		backgroundColor: "#111412"
 	},
 	assetIdentity: { display: "flex", flexDirection: "column", gap: 5, padding: "14px 16px" },
-	assetBadge: { color: "#b7e26d", fontSize: 8, letterSpacing: ".14em" },
+	assetBadge: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".14em" },
 	metric: {
 		display: "flex",
 		flexDirection: "column",
@@ -1424,7 +1426,10 @@ const styles = stylex.create({
 	},
 	contentGrid: {
 		display: "grid",
-		gridTemplateColumns: "230px minmax(0, 1fr) 300px",
+		gridTemplateColumns: {
+			default: "230px minmax(0, 1fr) 300px",
+			"@media (max-width: 1050px)": "minmax(0, 1fr)"
+		},
 		gap: 10
 	},
 	catalog: {
@@ -1459,7 +1464,7 @@ const styles = stylex.create({
 		backgroundColor: "#090b0a",
 		color: "#e0e5dd",
 		padding: "8px 9px",
-		outlineColor: "#b7e26d",
+		outlineColor: tokens.colorAccent,
 		fontSize: 9
 	},
 	catalogStatus: { padding: 14, color: "#737d75", fontSize: 9, lineHeight: 1.6 },
@@ -1484,7 +1489,10 @@ const styles = stylex.create({
 		cursor: "pointer",
 		fontSize: 10
 	},
-	catalogItemActive: { borderLeftColor: "#b7e26d", backgroundColor: "#1b241a" },
+	catalogItemActive: {
+		borderLeftColor: tokens.colorAccent,
+		backgroundColor: tokens.colorSurfaceHover
+	},
 	catalogItemName: {
 		width: "100%",
 		overflow: "hidden",
@@ -1555,12 +1563,12 @@ const styles = stylex.create({
 	},
 	searchWrap: { display: "flex", alignItems: "center", gap: 9, color: "#707a72", fontSize: 8 },
 	search: {
-		width: 250,
+		width: { default: 250, "@media (max-width: 700px)": "100%" },
 		border: "1px solid #39413b",
 		backgroundColor: "#090b0a",
 		color: "#e0e5dd",
 		padding: "8px 10px",
-		outlineColor: "#b7e26d"
+		outlineColor: tokens.colorAccent
 	},
 	visibleCount: { color: "#89938c", fontSize: 8, letterSpacing: ".08em" },
 	rowStruct: {
@@ -1616,7 +1624,7 @@ const styles = stylex.create({
 		letterSpacing: ".1em",
 		textTransform: "uppercase"
 	},
-	inspectorTabActive: { borderBottomColor: "#b7e26d", color: "#dce3d8" },
+	inspectorTabActive: { borderBottomColor: tokens.colorAccent, color: "#dce3d8" },
 	inspectorEmpty: { color: "#727a74", fontSize: 10, lineHeight: 1.6 },
 	inspectorKicker: { color: "#8fa080", fontSize: 8, letterSpacing: ".15em" },
 	inspectorTitle: {
@@ -1633,7 +1641,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		justifyContent: "space-between",
 		padding: 16,
-		borderLeft: "3px solid #b7e26d",
+		borderLeftColor: tokens.colorAccent,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
 		backgroundColor: "#0b0e0c",
 		color: "#dfe4dc",
 		wordBreak: "break-word"
@@ -1707,7 +1717,7 @@ const styles = stylex.create({
 		backgroundColor: "#090b0a",
 		color: "#e0e5dd",
 		padding: "10px 11px",
-		outlineColor: "#b7e26d",
+		outlineColor: tokens.colorAccent,
 		fontSize: 12
 	},
 	rowEditorActions: { display: "flex", justifyContent: "flex-end", gap: 8 },

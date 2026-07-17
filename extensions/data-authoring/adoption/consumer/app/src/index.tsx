@@ -1,7 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { AuthoringRoute } from "@ue-shed/extension-data-authoring";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
+import { ueShedDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { Layer, ManagedRuntime } from "effect";
 import { render } from "solid-js/web";
 import { authoringClient } from "./in-memory-authoring-client.js";
@@ -16,7 +16,7 @@ if (!root) throw new Error("Expected the adopted host root element.");
 
 render(
 	() => (
-		<div {...stylex.props(workbenchDarkTheme, styles.host)}>
+		<div {...stylex.props(ueShedDarkTheme, styles.host)}>
 			<EffectRuntimeProvider runtime={runtime}>
 				<AuthoringRoute client={authoringClient} />
 			</EffectRuntimeProvider>

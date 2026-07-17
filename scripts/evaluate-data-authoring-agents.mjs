@@ -129,6 +129,16 @@ function redactSecrets(value) {
 		.replace(/\bnpm_[A-Za-z0-9]+\b/g, "[REDACTED_NPM_TOKEN]");
 }
 
+function secretFindings(value) {
+	const findings = [];
+	if (/(_authToken\s*=\s*)[^\\\r\n"]+/i.test(value)) findings.push("npm auth token assignment");
+	if (/\bnpm_[A-Za-z0-9]{20,}\b/.test(value)) findings.push("npm token-shaped value");
+	if (/\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/i.test(value)) {
+		findings.push("GitHub token-shaped value");
+	}
+	return findings;
+}
+
 async function redactEvaluationLogs() {
 	let entries;
 	try {
@@ -184,6 +194,9 @@ async function prepareSourceKit(manifest, sourceCommit) {
 	await mkdir(sourceKitRoot, { recursive: true });
 	await copyEntry("extensions/data-authoring/ADOPTING.md");
 	await copyEntry("extensions/data-authoring/adoption.manifest.json");
+	await copyEntry(manifest.materialize.script);
+	await copyEntry(manifest.provenance.schema);
+	await copyEntry(manifest.provenance.template);
 	await copyEntry(manifest.consumerTemplate);
 	for (const entry of [...manifest.copy.kernel, ...manifest.copy.owned]) await copyEntry(entry);
 	await writeFile(join(sourceKitRoot, "SOURCE_COMMIT"), `${sourceCommit}\n`);
@@ -208,13 +221,14 @@ Treat the manifest as the source of truth. Do not inspect or modify the original
 any Workbench code, another agent's target, or a pre-generated adoption result.
 
 Complete the adoption in the empty target:
-1. Create the standalone pnpm Solid/Vite consumer described by the guide and manifest.
+1. Use the declared materializer to create the standalone consumer. Do not hand-copy unless it
+   reports a concrete blocker.
 2. Preserve the kernel-versus-owned boundary.
-3. Record source commit ${sourceCommit} in ue-shed-provenance.json.
+3. Pass source commit ${sourceCommit} to the materializer and preserve its generated provenance.
 4. Render AuthoringRoute through EffectRuntimeProvider with the deterministic in-memory client.
 5. Configure StyleX runtime injection for development and production stylex.css extraction.
-6. Demonstrate adopter ownership by changing the copied accent token to #ff6b6b.
-7. Install dependencies offline when possible, typecheck, and create a production build.
+6. Demonstrate adopter ownership by changing only the applied theme's colorAccent to #ff6b6b.
+7. Install dependencies offline and run the target's exact portable verification command.
 8. Write ADOPTION-REPORT.md with commands run, verification results, ambiguities, workarounds, and
    every file you needed that was not declared by the manifest.
 
@@ -228,9 +242,11 @@ async function verifyTarget(name, target, sourceCommit) {
 	const failures = [];
 	const required = [
 		"ADOPTION-REPORT.md",
+		".ue-shed/data-authoring/adoption.manifest.json",
 		"app/package.json",
 		"app/src/index.tsx",
 		"app/vite.config.ts",
+		"scripts/verify-adoption.mjs",
 		"ue-shed-provenance.json"
 	];
 	for (const entry of required) {
@@ -257,6 +273,17 @@ async function verifyTarget(name, target, sourceCommit) {
 		}
 	} catch {}
 
+	const reportPath = join(target, "ADOPTION-REPORT.md");
+	try {
+		const report = await readFile(reportPath, "utf8");
+		if (!report.includes("pnpm verify -- --expected-accent=#ff6b6b")) {
+			failures.push("adoption report omits the exact portable verification command");
+		}
+		if (/Replace this line|Record the exact materialize command/.test(report)) {
+			failures.push("adoption report still contains template instructions");
+		}
+	} catch {}
+
 	const themePath = join(target, "packages", "ui-theme", "src", "themes.stylex.ts");
 	try {
 		if (!(await readFile(themePath, "utf8")).includes("#ff6b6b")) {
@@ -276,12 +303,12 @@ async function verifyTarget(name, target, sourceCommit) {
 	);
 	if (install.status !== 0) failures.push(`independent offline install exited ${install.status}`);
 
-	const build = runPnpm(["--filter", "foreign-authoring-host", "build"], {
+	const build = runPnpm(["verify", "--", "--expected-accent=#ff6b6b"], {
 		cwd: target,
 		timeout: 5 * 60 * 1000
 	});
 	await writeFile(join(evaluationRoot, `${name}-verify-build.log`), build.stdout + build.stderr);
-	if (build.status !== 0) failures.push(`independent build exited ${build.status}`);
+	if (build.status !== 0) failures.push(`portable verifier exited ${build.status}`);
 
 	const cssPath = join(target, "app", "dist", "stylex.css");
 	try {
@@ -314,6 +341,7 @@ const results = [];
 for (const name of selectedAgents) {
 	const target = join(evaluationRoot, "targets", name);
 	const startedAt = Date.now();
+	let agentDurationSeconds = 0;
 	let execution = { error: undefined, status: undefined, stderr: "", stdout: "" };
 	if (!verifyOnly) {
 		await rm(target, { force: true, recursive: true });
@@ -326,9 +354,18 @@ for (const name of selectedAgents) {
 				NPM_CONFIG_USERCONFIG: join(evaluationRoot, "empty-npmrc"),
 				NODE_AUTH_TOKEN: "",
 				NPM_TOKEN: "",
+				GH_TOKEN: "",
+				GITHUB_TOKEN: "",
+				AWS_ACCESS_KEY_ID: "",
+				AWS_SECRET_ACCESS_KEY: "",
+				AWS_SESSION_TOKEN: "",
+				CLOUDFLARE_API_TOKEN: "",
 				...agents[name].env
 			}
 		});
+		agentDurationSeconds = Math.round((Date.now() - startedAt) / 100) / 10;
+		const attempt = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+		const findings = [...secretFindings(execution.stdout), ...secretFindings(execution.stderr)];
 		await writeFile(
 			join(evaluationRoot, `${name}-stdout.log`),
 			redactSecrets(execution.stdout)
@@ -337,17 +374,34 @@ for (const name of selectedAgents) {
 			join(evaluationRoot, `${name}-stderr.log`),
 			redactSecrets(execution.stderr)
 		);
+		await writeFile(
+			join(evaluationRoot, `${name}-${attempt}-stdout.log`),
+			redactSecrets(execution.stdout)
+		);
+		await writeFile(
+			join(evaluationRoot, `${name}-${attempt}-stderr.log`),
+			redactSecrets(execution.stderr)
+		);
+		execution.secretFindings = [...new Set(findings)];
 	}
+	const verificationStartedAt = Date.now();
 	const verification = await verifyTarget(name, target, sourceCommit);
+	if (execution.secretFindings?.length) {
+		verification.failures.push(
+			`agent output contained secrets: ${execution.secretFindings.join(", ")}`
+		);
+	}
 	const kitUnchanged = (await treeDigest(sourceKitRoot)) === pristineKitDigest;
 	if (!kitUnchanged) verification.failures.push("agent modified the restricted source kit");
 	verification.passed = verification.failures.length === 0;
 	results.push({
 		agent: name,
+		agentDurationSeconds,
 		durationSeconds: Math.round((Date.now() - startedAt) / 100) / 10,
 		executionError: execution.error,
 		executionStatus: execution.status,
 		kitUnchanged,
+		verificationDurationSeconds: Math.round((Date.now() - verificationStartedAt) / 100) / 10,
 		...verification
 	});
 	await writeFile(

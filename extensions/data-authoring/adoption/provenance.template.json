@@ -1,0 +1,16 @@
+{
+	"schemaVersion": 1,
+	"slice": "data-authoring",
+	"source": {
+		"repository": "ue-shed",
+		"commit": "__SOURCE_COMMIT__"
+	},
+	"manifest": {
+		"schemaVersion": 2,
+		"snapshot": ".ue-shed/data-authoring/adoption.manifest.json"
+	},
+	"ownership": {
+		"kernel": [],
+		"owned": []
+	}
+}

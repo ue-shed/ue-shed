@@ -1142,6 +1142,12 @@ enum AuthoringValueOutput {
         y: f64,
         z: f64,
     },
+    RowReference {
+        #[serde(rename = "tableObjectPath")]
+        table_object_path: Option<String>,
+        #[serde(rename = "rowName")]
+        row_name: String,
+    },
     ObjectRef {
         value: Option<String>,
     },
@@ -1226,7 +1232,7 @@ impl AuthoringSnapshotOutput {
         Self {
             contract: AuthoringContractOutput {
                 name: "unreal-authoring",
-                version: AuthoringVersionOutput { major: 2, minor: 0 },
+                version: AuthoringVersionOutput { major: 2, minor: 1 },
             },
             authority: AuthoringAuthorityOutput {
                 kind: "project_files",
@@ -1330,6 +1336,13 @@ impl AuthoringValueOutput {
                         },
                     },
                 ],
+            },
+            PropertyValueOutput::DataTableRowHandle {
+                table_object_path,
+                row_name,
+            } => Self::RowReference {
+                table_object_path: table_object_path.clone(),
+                row_name: row_name.clone(),
             },
             PropertyValueOutput::ObjectRef { value } => Self::ObjectRef {
                 value: value.clone(),
@@ -1882,6 +1895,10 @@ impl PropertyOutput {
                 x: point.x,
                 y: point.y,
             },
+            PropertyValue::DataTableRowHandle(handle) => PropertyValueOutput::DataTableRowHandle {
+                table_object_path: resolve_object_ref(package, handle.table),
+                row_name: resolve_name_or_placeholder(package, handle.row_name),
+            },
             PropertyValue::ObjectRef(index) => PropertyValueOutput::ObjectRef {
                 value: resolve_object_ref(package, *index),
             },
@@ -1982,6 +1999,10 @@ enum PropertyValueOutput {
         x: i32,
         y: i32,
     },
+    DataTableRowHandle {
+        table_object_path: Option<String>,
+        row_name: String,
+    },
     ObjectRef {
         value: Option<String>,
     },
@@ -2034,6 +2055,10 @@ fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput
         PropertyValue::IntPoint(point) => PropertyValueOutput::IntPoint {
             x: point.x,
             y: point.y,
+        },
+        PropertyValue::DataTableRowHandle(handle) => PropertyValueOutput::DataTableRowHandle {
+            table_object_path: resolve_object_ref(package, handle.table),
+            row_name: resolve_name_or_placeholder(package, handle.row_name),
         },
         PropertyValue::ObjectRef(index) => PropertyValueOutput::ObjectRef {
             value: resolve_object_ref(package, *index),
@@ -2112,6 +2137,13 @@ impl PropertyValueOutput {
             Self::Text { value, .. } => format!("{value:?}"),
             Self::Vector { x, y, z } => format!("({x}, {y}, {z})"),
             Self::IntPoint { x, y } => format!("({x}, {y})"),
+            Self::DataTableRowHandle {
+                table_object_path,
+                row_name,
+            } => format!(
+                "{} -> {row_name}",
+                table_object_path.as_deref().unwrap_or("<none>")
+            ),
             Self::ObjectRef { value } => value.clone().unwrap_or_else(|| "null".to_owned()),
             Self::Guid { value } => value.clone(),
             Self::SoftObjectPath { value } => {

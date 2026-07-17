@@ -8,6 +8,10 @@ remain conformant with them.
 schema, producer, package, and fingerprint evidence without changing the mutation envelope. Apply
 results allow either versioned snapshot during migration.
 
+Snapshot 2.1 and mutation 1.1 add the normalized `row_reference` value for
+`FDataTableRowHandle`. It carries the table object path and row name explicitly; generic structs
+remain structurally encoded.
+
 `v1/table-list.schema.json` is the deliberately narrow live discovery boundary. It lists canonical
 object paths; callers retrieve v2 snapshots for descriptor evidence and isolate per-table failures.
 

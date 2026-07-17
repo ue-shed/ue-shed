@@ -11,11 +11,20 @@ import type {
 	AuthoringSessionSummary,
 	AuthoringSessionView
 } from "@ue-shed/authoring-sdk";
-import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
+import type { AuthoringRow, AuthoringTableSnapshot, AuthoringValue } from "@ue-shed/protocol";
 import { Button, PageHeader, createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Schedule, Stream, type Effect } from "effect";
-import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	createEffect,
+	createMemo,
+	createSignal,
+	onMount
+} from "solid-js";
 import {
 	fieldInRow,
 	filterRows,
@@ -23,6 +32,7 @@ import {
 	tableColumns,
 	valueSummary
 } from "./authoring-view.js";
+import { AuthoringCombinedView } from "./authoring-combined-view.js";
 import { AuthoringTableGrid } from "./authoring-table-grid.js";
 import type { AuthoringGridGesture } from "./authoring-grid-model.js";
 
@@ -63,6 +73,22 @@ interface CellSelection {
 	readonly fieldName: string;
 }
 
+type RowReferenceValue = Extract<AuthoringValue, { readonly kind: "row_reference" }>;
+
+type RowReferenceLookup =
+	| { readonly status: "idle" }
+	| { readonly status: "loading"; readonly tableObjectPath: string }
+	| {
+			readonly status: "ready";
+			readonly snapshot: AuthoringTableSnapshot;
+			readonly tableObjectPath: string;
+	  }
+	| { readonly status: "failed"; readonly message: string; readonly tableObjectPath: string };
+
+function asRowReference(value: AuthoringValue): RowReferenceValue | undefined {
+	return value.kind === "row_reference" ? value : undefined;
+}
+
 type ReviewChange = AuthoringSessionView["review"]["tables"][number]["changes"][number];
 
 function reviewChangeTitle(change: ReviewChange): string {
@@ -101,6 +127,180 @@ function shortObjectName(objectPath: string): string {
 
 function authorityLabel(snapshot: AuthoringTableSnapshot): string {
 	return snapshot.authority.kind === "project_files" ? "SAVED PACKAGE" : "LIVE EDITOR";
+}
+
+function RowReferencePicker(props: {
+	readonly client: AuthoringClientShape;
+	readonly disabled: boolean;
+	readonly onStage: (value: RowReferenceValue) => void;
+	readonly sourceKey: string;
+	readonly tableObjectPaths: readonly string[];
+	readonly value: RowReferenceValue;
+}) {
+	const lookupAction = createEffectAction();
+	const [lookup, setLookup] = createSignal<RowReferenceLookup>({ status: "idle" });
+	const [rowName, setRowName] = createSignal(props.value.rowName);
+	const [tableObjectPath, setTableObjectPath] = createSignal(props.value.tableObjectPath ?? "");
+	let activeSourceKey = "";
+
+	const tableChoices = createMemo(() => {
+		const choices = new Set(props.tableObjectPaths);
+		if (props.value.tableObjectPath) choices.add(props.value.tableObjectPath);
+		return [...choices].toSorted((left, right) => left.localeCompare(right));
+	});
+	const targetRows = createMemo(() => {
+		const current = lookup();
+		return current.status === "ready" ? current.snapshot.table.rows : [];
+	});
+	const selectedTargetExists = createMemo(() =>
+		targetRows().some((row) => row.name === rowName())
+	);
+
+	const loadTarget = (path: string, sourceKey = props.sourceKey) => {
+		lookupAction.cancel();
+		if (path.length === 0) {
+			setLookup({ status: "idle" });
+			return;
+		}
+		setLookup({ status: "loading", tableObjectPath: path });
+		lookupAction.run(props.client.openCatalogTable(path), {
+			onFailure: (cause) => {
+				if (props.sourceKey !== sourceKey) return;
+				setLookup({
+					message: Cause.pretty(cause),
+					status: "failed",
+					tableObjectPath: path
+				});
+			},
+			onSuccess: (result) => {
+				if (props.sourceKey !== sourceKey) return;
+				if (result.status === "ready" && result.snapshot.table.objectPath === path) {
+					setLookup({
+						snapshot: result.snapshot,
+						status: "ready",
+						tableObjectPath: path
+					});
+					return;
+				}
+				const message =
+					result.status === "failed"
+						? `${result.error.message} ${result.error.recovery}`
+						: result.status === "cancelled"
+							? "Target lookup was cancelled."
+							: "The target table is not available from this host.";
+				setLookup({ message, status: "failed", tableObjectPath: path });
+			}
+		});
+	};
+
+	createEffect(() => {
+		const sourceKey = props.sourceKey;
+		if (activeSourceKey === sourceKey) return;
+		activeSourceKey = sourceKey;
+		const initialTable = props.value.tableObjectPath ?? "";
+		setTableObjectPath(initialTable);
+		setRowName(props.value.rowName);
+		loadTarget(initialTable, sourceKey);
+	});
+
+	return (
+		<section aria-label="Row reference picker" {...stylex.props(styles.referencePicker)}>
+			<div {...stylex.props(styles.referenceHeading)}>
+				<span {...stylex.props(styles.detailLabel)}>RELATIONSHIP TARGET</span>
+				<span {...stylex.props(styles.referenceStatus)}>
+					{lookup().status === "loading"
+						? "RESOLVING"
+						: lookup().status === "ready"
+							? `${targetRows().length} ROWS`
+							: "UNRESOLVED"}
+				</span>
+			</div>
+			<label {...stylex.props(styles.referenceField)}>
+				<span>Target table</span>
+				<select
+					aria-label="Reference target table"
+					disabled={props.disabled}
+					value={tableObjectPath()}
+					onChange={(event) => {
+						const path = event.currentTarget.value;
+						setTableObjectPath(path);
+						setRowName("None");
+						loadTarget(path);
+					}}
+					{...stylex.props(styles.referenceSelect)}
+				>
+					<option value="">No table assigned</option>
+					<For each={tableChoices()}>
+						{(path) => <option value={path}>{shortObjectName(path)}</option>}
+					</For>
+				</select>
+				<small>{tableObjectPath() || "Choose a table from the project catalog."}</small>
+			</label>
+			<Switch>
+				<Match when={lookup().status === "loading"}>
+					<div {...stylex.props(styles.referenceMessage)}>Reading target rows…</div>
+				</Match>
+				<Match when={lookup().status === "failed"}>
+					<div {...stylex.props(styles.referenceMessage, styles.referenceError)}>
+						{(() => {
+							const current = lookup();
+							return current.status === "failed"
+								? current.message
+								: "Target lookup failed.";
+						})()}
+						<button
+							type="button"
+							disabled={props.disabled}
+							onClick={() => loadTarget(tableObjectPath())}
+							{...stylex.props(styles.referenceRetry)}
+						>
+							Retry
+						</button>
+					</div>
+				</Match>
+				<Match when={lookup().status === "ready"}>
+					<label {...stylex.props(styles.referenceField)}>
+						<span>Target row</span>
+						<select
+							aria-label="Reference target row"
+							disabled={props.disabled || targetRows().length === 0}
+							value={rowName()}
+							onChange={(event) => setRowName(event.currentTarget.value)}
+							{...stylex.props(styles.referenceSelect)}
+						>
+							<Show when={!selectedTargetExists() && rowName() !== "None"}>
+								<option value={rowName()}>{rowName()} — missing</option>
+							</Show>
+							<option value="None">No row assigned</option>
+							<For each={targetRows()}>
+								{(row) => <option value={row.name}>{row.name}</option>}
+							</For>
+						</select>
+					</label>
+				</Match>
+			</Switch>
+			<button
+				type="button"
+				disabled={
+					props.disabled ||
+					lookup().status !== "ready" ||
+					!selectedTargetExists() ||
+					(tableObjectPath() === props.value.tableObjectPath &&
+						rowName() === props.value.rowName)
+				}
+				onClick={() =>
+					props.onStage({
+						kind: "row_reference",
+						rowName: rowName(),
+						tableObjectPath: tableObjectPath()
+					})
+				}
+				{...stylex.props(styles.referenceStage)}
+			>
+				Stage reference
+			</button>
+		</section>
+	);
 }
 
 function CatalogPanel(props: {
@@ -336,6 +536,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 	const [sessionNotice, setSessionNotice] = createSignal<string>();
 	const [isPersisting, setIsPersisting] = createSignal(false);
 	const [inspectorTab, setInspectorTab] = createSignal<"cell" | "review">("cell");
+	const [workspaceMode, setWorkspaceMode] = createSignal<"table" | "relationships">("table");
 	const [rowEditor, setRowEditor] = createSignal<RowEditor>();
 
 	const refreshSessions = () => {
@@ -649,6 +850,24 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 		}
 	};
 
+	const stageRowReference = (args: {
+		readonly fieldName: string;
+		readonly rowId: string;
+		readonly value: RowReferenceValue;
+	}) => {
+		const currentSession = session();
+		const currentState = state();
+		if (!currentSession || currentState.status !== "ready") return;
+		runSessionOperation(
+			props.client.editSession({
+				edits: [args],
+				kind: "set_cells",
+				sessionId: currentSession.sessionId,
+				tableObjectPath: currentState.snapshot.table.objectPath
+			})
+		);
+	};
+
 	onMount(() => {
 		load(false);
 		loadCatalog();
@@ -764,6 +983,14 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 						});
 						const selectedRow = createMemo(() =>
 							snapshot.table.rows.find((row) => row.id === selection()?.rowId)
+						);
+						const catalogTablePaths = createMemo(() =>
+							(() => {
+								const catalog = catalogState();
+								return catalog.status === "ready"
+									? catalog.tables.map((table) => table.objectPath)
+									: [];
+							})()
 						);
 						return (
 							<div {...stylex.props(styles.workspace)}>
@@ -892,470 +1119,601 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 									)}
 								</Show>
 
-								<div {...stylex.props(styles.contentGrid)}>
-									<CatalogPanel
-										activeObjectPath={snapshot.table.objectPath}
-										disabled={isReplacing()}
-										onDiscardSession={discardPersistedSession}
-										onOpen={(objectPath) => void openCatalogTable(objectPath)}
-										onOpenSession={openPersistedSession}
-										onQueryChange={setCatalogQuery}
-										onRefresh={() => void loadCatalog()}
-										query={catalogQuery()}
-										progress={catalogProgress()}
-										sessions={sessions()}
-										state={catalogState()}
-									/>
-									<section {...stylex.props(styles.sheet)}>
-										<div {...stylex.props(styles.sheetTools)}>
-											<label {...stylex.props(styles.searchWrap)}>
-												<span>FILTER</span>
-												<input
-													aria-label="Filter table rows"
-													value={query()}
-													onInput={(event) =>
-														setQuery(event.currentTarget.value)
-													}
-													placeholder="Row names and values…"
-													{...stylex.props(styles.search)}
-												/>
-											</label>
-											<span {...stylex.props(styles.visibleCount)}>
-												{visibleRows().length} /{" "}
-												{snapshot.table.rows.length} VISIBLE
-											</span>
-											<span {...stylex.props(styles.rowStruct)}>
-												ROW STRUCT · {snapshot.table.rowStruct}
-											</span>
-											<Show when={session()}>
-												{(currentSession) => (
-													<div {...stylex.props(styles.rowActions)}>
-														<button
-															type="button"
-															disabled={isPersisting()}
-															onClick={() =>
-																setRowEditor({
-																	atIndex:
-																		snapshot.table.rows.length,
-																	kind: "add_row",
-																	value: suggestedRowName(
-																		"NewRow"
-																	)
-																})
-															}
-															{...stylex.props(styles.sheetAction)}
-														>
-															+ Row
-														</button>
-														<button
-															type="button"
-															disabled={
-																!selectedRow() || isPersisting()
-															}
-															onClick={() => {
-																const row = selectedRow();
-																if (!row) return;
-																setRowEditor({
-																	atIndex:
-																		snapshot.table.rows.indexOf(
-																			row
-																		) + 1,
-																	kind: "duplicate_row",
-																	sourceRowId: row.id,
-																	value: suggestedRowName(
-																		`${row.name}Copy`
-																	)
-																});
-															}}
-															{...stylex.props(styles.sheetAction)}
-														>
-															Duplicate
-														</button>
-														<button
-															type="button"
-															disabled={
-																!selectedRow() || isPersisting()
-															}
-															onClick={() => {
-																const row = selectedRow();
-																if (row)
-																	setRowEditor({
-																		kind: "rename_row",
-																		rowId: row.id,
-																		value: row.name
-																	});
-															}}
-															{...stylex.props(styles.sheetAction)}
-														>
-															Rename
-														</button>
-														<button
-															type="button"
-															disabled={
-																!selectedRow() || isPersisting()
-															}
-															onClick={() => {
-																const row = selectedRow();
-																if (row) removeRow(row.id);
-															}}
-															{...stylex.props(
-																styles.sheetAction,
-																styles.dangerAction
-															)}
-														>
-															Delete
-														</button>
-														<button
-															type="button"
-															disabled={
-																!selectedRow() ||
-																query().trim().length > 0 ||
-																isPersisting()
-															}
-															onClick={() => moveSelectedRow(-1)}
-															aria-label="Move selected row up"
-															{...stylex.props(styles.sheetAction)}
-														>
-															↑
-														</button>
-														<button
-															type="button"
-															disabled={
-																!selectedRow() ||
-																query().trim().length > 0 ||
-																isPersisting()
-															}
-															onClick={() => moveSelectedRow(1)}
-															aria-label="Move selected row down"
-															{...stylex.props(styles.sheetAction)}
-														>
-															↓
-														</button>
-														<button
-															type="button"
-															disabled={
-																!currentSession().canUndo ||
-																isPersisting()
-															}
-															onClick={() =>
-																runSessionOperation(
-																	props.client.undoSession(
-																		currentSession().sessionId
-																	)
-																)
-															}
-															{...stylex.props(styles.sheetAction)}
-														>
-															Undo
-														</button>
-														<button
-															type="button"
-															disabled={
-																!currentSession().canRedo ||
-																isPersisting()
-															}
-															onClick={() =>
-																runSessionOperation(
-																	props.client.redoSession(
-																		currentSession().sessionId
-																	)
-																)
-															}
-															{...stylex.props(styles.sheetAction)}
-														>
-															Redo
-														</button>
-														<Show
-															when={(() => {
-																const pipeline =
-																	currentSession().pipeline;
-																return (
-																	pipeline.kind === "draft" &&
-																	pipeline.canApply
-																);
-															})()}
-														>
-															<Button
-																disabled={isPersisting()}
-																onClick={() => {
-																	if (
-																		!window.confirm(
-																			`Apply ${currentSession().commandCount} staged command(s) to the live editor? This does not save packages.`
-																		)
-																	)
-																		return;
-																	runSessionOperation(
-																		props.client.applySession(
-																			currentSession()
-																				.sessionId
-																		)
-																	);
-																}}
-															>
-																Apply
-															</Button>
-														</Show>
-														<Show
-															when={(() => {
-																const pipeline =
-																	currentSession().pipeline;
-																return (
-																	pipeline.kind ===
-																		"indeterminate" &&
-																	pipeline.operation === "apply"
-																);
-															})()}
-														>
-															<Button
-																disabled={isPersisting()}
-																onClick={() =>
-																	runSessionOperation(
-																		props.client.reconcileSession(
-																			currentSession()
-																				.sessionId
-																		)
-																	)
-																}
-															>
-																Reconcile Apply
-															</Button>
-														</Show>
-														<Show
-															when={(() => {
-																const pipeline =
-																	currentSession().pipeline;
-																return (
-																	pipeline.kind === "applied" ||
-																	(pipeline.kind ===
-																		"indeterminate" &&
-																		pipeline.operation ===
-																			"save")
-																);
-															})()}
-														>
-															<Button
-																disabled={isPersisting()}
-																onClick={() =>
-																	runSessionOperation(
-																		props.client.saveSession(
-																			currentSession()
-																				.sessionId
-																		)
-																	)
-																}
-															>
-																Save packages
-															</Button>
-														</Show>
-													</div>
-												)}
-											</Show>
-										</div>
-										<AuthoringTableGrid
-											columns={columns}
-											disabled={!session() || isPersisting()}
-											dirtyCells={
-												session()?.review.tables.find(
-													(table) =>
-														table.objectPath ===
-														snapshot.table.objectPath
-												)?.dirtyCells
-											}
-											dirtyRowIds={
-												session()?.review.tables.find(
-													(table) =>
-														table.objectPath ===
-														snapshot.table.objectPath
-												)?.dirtyRowIds
-											}
-											onEditFailure={setSessionNotice}
-											onGesture={handleGridGesture}
-											onSelectionChange={setSelection}
-											rows={visibleRows()}
-										/>
-									</section>
+								<div
+									role="tablist"
+									aria-label="Authoring workspace view"
+									{...stylex.props(styles.viewTabs)}
+								>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={workspaceMode() === "table"}
+										onClick={() => setWorkspaceMode("table")}
+										{...stylex.props(
+											styles.viewTab,
+											workspaceMode() === "table" && styles.viewTabActive
+										)}
+									>
+										Canonical table
+									</button>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={workspaceMode() === "relationships"}
+										onClick={() => setWorkspaceMode("relationships")}
+										{...stylex.props(
+											styles.viewTab,
+											workspaceMode() === "relationships" &&
+												styles.viewTabActive
+										)}
+									>
+										Relationship view
+									</button>
+								</div>
 
-									<aside {...stylex.props(styles.inspector)}>
-										<div {...stylex.props(styles.inspectorTabs)}>
-											<button
-												type="button"
-												onClick={() => setInspectorTab("cell")}
-												{...stylex.props(
-													styles.inspectorTab,
-													inspectorTab() === "cell" &&
-														styles.inspectorTabActive
-												)}
-											>
-												Cell
-											</button>
-											<button
-												type="button"
-												onClick={() => setInspectorTab("review")}
-												{...stylex.props(
-													styles.inspectorTab,
-													inspectorTab() === "review" &&
-														styles.inspectorTabActive
-												)}
-											>
-												Review {session()?.review.activeCommandCount ?? 0}
-											</button>
-										</div>
-										<Show when={inspectorTab() === "cell"}>
-											<Show
-												when={selected()}
-												fallback={
-													<div {...stylex.props(styles.inspectorEmpty)}>
-														Select a typed cell to inspect its value.
-													</div>
-												}
-											>
-												{(target) => (
-													<>
-														<span
-															{...stylex.props(
-																styles.inspectorKicker
-															)}
-														>
-															CELL EVIDENCE
-														</span>
-														<h2
-															{...stylex.props(styles.inspectorTitle)}
-														>
-															{target().field.name}
-														</h2>
-														<p {...stylex.props(styles.inspectorPath)}>
-															{target().row.name} /{" "}
-															{target().field.name}
-														</p>
-														<div {...stylex.props(styles.valueHero)}>
-															<small>
-																{valueSummary(
-																	target().field.value
-																).toUpperCase()}
-															</small>
-															<strong>
-																{formatAuthoringValue(
-																	target().field.value
-																)}
-															</strong>
-														</div>
-														<div {...stylex.props(styles.detailList)}>
-															<div
-																{...stylex.props(styles.detailItem)}
-															>
-																<span
-																	{...stylex.props(
-																		styles.detailLabel
-																	)}
-																>
-																	UNREAL TYPE
-																</span>
-																<strong>
-																	{target().field.typeName}
-																</strong>
-															</div>
-															<div
-																{...stylex.props(styles.detailItem)}
-															>
-																<span
-																	{...stylex.props(
-																		styles.detailLabel
-																	)}
-																>
-																	VALUE KIND
-																</span>
-																<strong>
-																	{target().field.value.kind}
-																</strong>
-															</div>
-															<div
-																{...stylex.props(styles.detailItem)}
-															>
-																<span
-																	{...stylex.props(
-																		styles.detailLabel
-																	)}
-																>
-																	ROW IDENTITY
-																</span>
-																<strong>{target().row.id}</strong>
-															</div>
-														</div>
-													</>
-												)}
-											</Show>
-										</Show>
-										<Show when={inspectorTab() === "review"}>
-											<div {...stylex.props(styles.reviewSummary)}>
-												<span {...stylex.props(styles.inspectorKicker)}>
-													SESSION REVIEW
+								<Show
+									when={workspaceMode() === "table"}
+									fallback={
+										<AuthoringCombinedView
+											catalogTablePaths={catalogTablePaths()}
+											client={props.client}
+											initialSnapshot={snapshot}
+											onOpenForEditing={(objectPath) => {
+												setWorkspaceMode("table");
+												openCatalogTable(objectPath);
+											}}
+										/>
+									}
+								>
+									<div {...stylex.props(styles.contentGrid)}>
+										<CatalogPanel
+											activeObjectPath={snapshot.table.objectPath}
+											disabled={isReplacing()}
+											onDiscardSession={discardPersistedSession}
+											onOpen={(objectPath) =>
+												void openCatalogTable(objectPath)
+											}
+											onOpenSession={openPersistedSession}
+											onQueryChange={setCatalogQuery}
+											onRefresh={() => void loadCatalog()}
+											query={catalogQuery()}
+											progress={catalogProgress()}
+											sessions={sessions()}
+											state={catalogState()}
+										/>
+										<section {...stylex.props(styles.sheet)}>
+											<div {...stylex.props(styles.sheetTools)}>
+												<label {...stylex.props(styles.searchWrap)}>
+													<span>FILTER</span>
+													<input
+														aria-label="Filter table rows"
+														value={query()}
+														onInput={(event) =>
+															setQuery(event.currentTarget.value)
+														}
+														placeholder="Row names and values…"
+														{...stylex.props(styles.search)}
+													/>
+												</label>
+												<span {...stylex.props(styles.visibleCount)}>
+													{visibleRows().length} /{" "}
+													{snapshot.table.rows.length} VISIBLE
 												</span>
-												<strong>
-													{(session()?.review.activeCommandCount ?? 0) ===
-													0
-														? "No staged changes"
-														: session()?.review.validation.valid
-															? "Ready to apply"
-															: "Needs attention"}
-												</strong>
-												<small>
-													{session()?.review.validation.errorCount ?? 0}{" "}
-													errors ·{" "}
-													{session()?.review.validation.warningCount ?? 0}{" "}
-													warnings ·{" "}
-													{session()?.review.commandGroups.filter(
-														(group) => group.active
-													).length ?? 0}{" "}
-													gestures
-												</small>
+												<span {...stylex.props(styles.rowStruct)}>
+													ROW STRUCT · {snapshot.table.rowStruct}
+												</span>
+												<Show when={session()}>
+													{(currentSession) => (
+														<div {...stylex.props(styles.rowActions)}>
+															<button
+																type="button"
+																disabled={isPersisting()}
+																onClick={() =>
+																	setRowEditor({
+																		atIndex:
+																			snapshot.table.rows
+																				.length,
+																		kind: "add_row",
+																		value: suggestedRowName(
+																			"NewRow"
+																		)
+																	})
+																}
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																+ Row
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!selectedRow() || isPersisting()
+																}
+																onClick={() => {
+																	const row = selectedRow();
+																	if (!row) return;
+																	setRowEditor({
+																		atIndex:
+																			snapshot.table.rows.indexOf(
+																				row
+																			) + 1,
+																		kind: "duplicate_row",
+																		sourceRowId: row.id,
+																		value: suggestedRowName(
+																			`${row.name}Copy`
+																		)
+																	});
+																}}
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																Duplicate
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!selectedRow() || isPersisting()
+																}
+																onClick={() => {
+																	const row = selectedRow();
+																	if (row)
+																		setRowEditor({
+																			kind: "rename_row",
+																			rowId: row.id,
+																			value: row.name
+																		});
+																}}
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																Rename
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!selectedRow() || isPersisting()
+																}
+																onClick={() => {
+																	const row = selectedRow();
+																	if (row) removeRow(row.id);
+																}}
+																{...stylex.props(
+																	styles.sheetAction,
+																	styles.dangerAction
+																)}
+															>
+																Delete
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!selectedRow() ||
+																	query().trim().length > 0 ||
+																	isPersisting()
+																}
+																onClick={() => moveSelectedRow(-1)}
+																aria-label="Move selected row up"
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																↑
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!selectedRow() ||
+																	query().trim().length > 0 ||
+																	isPersisting()
+																}
+																onClick={() => moveSelectedRow(1)}
+																aria-label="Move selected row down"
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																↓
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!currentSession().canUndo ||
+																	isPersisting()
+																}
+																onClick={() =>
+																	runSessionOperation(
+																		props.client.undoSession(
+																			currentSession()
+																				.sessionId
+																		)
+																	)
+																}
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																Undo
+															</button>
+															<button
+																type="button"
+																disabled={
+																	!currentSession().canRedo ||
+																	isPersisting()
+																}
+																onClick={() =>
+																	runSessionOperation(
+																		props.client.redoSession(
+																			currentSession()
+																				.sessionId
+																		)
+																	)
+																}
+																{...stylex.props(
+																	styles.sheetAction
+																)}
+															>
+																Redo
+															</button>
+															<Show
+																when={(() => {
+																	const pipeline =
+																		currentSession().pipeline;
+																	return (
+																		pipeline.kind === "draft" &&
+																		pipeline.canApply
+																	);
+																})()}
+															>
+																<Button
+																	disabled={isPersisting()}
+																	onClick={() => {
+																		if (
+																			!window.confirm(
+																				`Apply ${currentSession().commandCount} staged command(s) to the live editor? This does not save packages.`
+																			)
+																		)
+																			return;
+																		runSessionOperation(
+																			props.client.applySession(
+																				currentSession()
+																					.sessionId
+																			)
+																		);
+																	}}
+																>
+																	Apply
+																</Button>
+															</Show>
+															<Show
+																when={(() => {
+																	const pipeline =
+																		currentSession().pipeline;
+																	return (
+																		pipeline.kind ===
+																			"indeterminate" &&
+																		pipeline.operation ===
+																			"apply"
+																	);
+																})()}
+															>
+																<Button
+																	disabled={isPersisting()}
+																	onClick={() =>
+																		runSessionOperation(
+																			props.client.reconcileSession(
+																				currentSession()
+																					.sessionId
+																			)
+																		)
+																	}
+																>
+																	Reconcile Apply
+																</Button>
+															</Show>
+															<Show
+																when={(() => {
+																	const pipeline =
+																		currentSession().pipeline;
+																	return (
+																		pipeline.kind ===
+																			"applied" ||
+																		(pipeline.kind ===
+																			"indeterminate" &&
+																			pipeline.operation ===
+																				"save")
+																	);
+																})()}
+															>
+																<Button
+																	disabled={isPersisting()}
+																	onClick={() =>
+																		runSessionOperation(
+																			props.client.saveSession(
+																				currentSession()
+																					.sessionId
+																			)
+																		)
+																	}
+																>
+																	Save packages
+																</Button>
+															</Show>
+														</div>
+													)}
+												</Show>
 											</div>
-											<div {...stylex.props(styles.reviewList)}>
-												<For
-													each={
-														session()?.review.tables.flatMap(
-															(table) => table.changes
-														) ?? []
+											<AuthoringTableGrid
+												columns={columns}
+												disabled={!session() || isPersisting()}
+												dirtyCells={
+													session()?.review.tables.find(
+														(table) =>
+															table.objectPath ===
+															snapshot.table.objectPath
+													)?.dirtyCells
+												}
+												dirtyRowIds={
+													session()?.review.tables.find(
+														(table) =>
+															table.objectPath ===
+															snapshot.table.objectPath
+													)?.dirtyRowIds
+												}
+												onEditFailure={setSessionNotice}
+												onGesture={handleGridGesture}
+												onSelectionChange={setSelection}
+												rows={visibleRows()}
+											/>
+										</section>
+
+										<aside {...stylex.props(styles.inspector)}>
+											<div {...stylex.props(styles.inspectorTabs)}>
+												<button
+													type="button"
+													onClick={() => setInspectorTab("cell")}
+													{...stylex.props(
+														styles.inspectorTab,
+														inspectorTab() === "cell" &&
+															styles.inspectorTabActive
+													)}
+												>
+													Cell
+												</button>
+												<button
+													type="button"
+													onClick={() => setInspectorTab("review")}
+													{...stylex.props(
+														styles.inspectorTab,
+														inspectorTab() === "review" &&
+															styles.inspectorTabActive
+													)}
+												>
+													Review{" "}
+													{session()?.review.activeCommandCount ?? 0}
+												</button>
+											</div>
+											<Show when={inspectorTab() === "cell"}>
+												<Show
+													when={selected()}
+													fallback={
+														<div
+															{...stylex.props(styles.inspectorEmpty)}
+														>
+															Select a typed cell to inspect its
+															value.
+														</div>
 													}
 												>
-													{(change) => (
-														<div {...stylex.props(styles.reviewChange)}>
+													{(target) => (
+														<>
+															<span
+																{...stylex.props(
+																	styles.inspectorKicker
+																)}
+															>
+																CELL EVIDENCE
+															</span>
+															<h2
+																{...stylex.props(
+																	styles.inspectorTitle
+																)}
+															>
+																{target().field.name}
+															</h2>
+															<p
+																{...stylex.props(
+																	styles.inspectorPath
+																)}
+															>
+																{target().row.name} /{" "}
+																{target().field.name}
+															</p>
+															<div
+																{...stylex.props(styles.valueHero)}
+															>
+																<small>
+																	{valueSummary(
+																		target().field.value
+																	).toUpperCase()}
+																</small>
+																<strong>
+																	{formatAuthoringValue(
+																		target().field.value
+																	)}
+																</strong>
+															</div>
+															<div
+																{...stylex.props(styles.detailList)}
+															>
+																<div
+																	{...stylex.props(
+																		styles.detailItem
+																	)}
+																>
+																	<span
+																		{...stylex.props(
+																			styles.detailLabel
+																		)}
+																	>
+																		UNREAL TYPE
+																	</span>
+																	<strong>
+																		{target().field.typeName}
+																	</strong>
+																</div>
+																<div
+																	{...stylex.props(
+																		styles.detailItem
+																	)}
+																>
+																	<span
+																		{...stylex.props(
+																			styles.detailLabel
+																		)}
+																	>
+																		VALUE KIND
+																	</span>
+																	<strong>
+																		{target().field.value.kind}
+																	</strong>
+																</div>
+																<div
+																	{...stylex.props(
+																		styles.detailItem
+																	)}
+																>
+																	<span
+																		{...stylex.props(
+																			styles.detailLabel
+																		)}
+																	>
+																		ROW IDENTITY
+																	</span>
+																	<strong>
+																		{target().row.id}
+																	</strong>
+																</div>
+															</div>
+															<Show
+																when={asRowReference(
+																	target().field.value
+																)}
+															>
+																{(value) => (
+																	<RowReferencePicker
+																		client={props.client}
+																		disabled={
+																			isPersisting() ||
+																			!session()
+																		}
+																		onStage={(nextValue) =>
+																			stageRowReference({
+																				fieldName:
+																					target().field
+																						.name,
+																				rowId: target().row
+																					.id,
+																				value: nextValue
+																			})
+																		}
+																		sourceKey={`${snapshot.table.objectPath}:${target().row.id}:${target().field.name}`}
+																		tableObjectPaths={catalogTablePaths()}
+																		value={value()}
+																	/>
+																)}
+															</Show>
+														</>
+													)}
+												</Show>
+											</Show>
+											<Show when={inspectorTab() === "review"}>
+												<div {...stylex.props(styles.reviewSummary)}>
+													<span {...stylex.props(styles.inspectorKicker)}>
+														SESSION REVIEW
+													</span>
+													<strong>
+														{(session()?.review.activeCommandCount ??
+															0) === 0
+															? "No staged changes"
+															: session()?.review.validation.valid
+																? "Ready to apply"
+																: "Needs attention"}
+													</strong>
+													<small>
+														{session()?.review.validation.errorCount ??
+															0}{" "}
+														errors ·{" "}
+														{session()?.review.validation
+															.warningCount ?? 0}{" "}
+														warnings ·{" "}
+														{session()?.review.commandGroups.filter(
+															(group) => group.active
+														).length ?? 0}{" "}
+														gestures
+													</small>
+												</div>
+												<div {...stylex.props(styles.reviewList)}>
+													<For
+														each={
+															session()?.review.tables.flatMap(
+																(table) => table.changes
+															) ?? []
+														}
+													>
+														{(change) => (
+															<div
+																{...stylex.props(
+																	styles.reviewChange
+																)}
+															>
+																<strong>
+																	{reviewChangeTitle(change)}
+																</strong>
+																<small>
+																	{reviewChangeSummary(change)}
+																</small>
+															</div>
+														)}
+													</For>
+													<Show
+														when={
+															(session()?.review.activeCommandCount ??
+																0) === 0
+														}
+													>
+														<div
+															{...stylex.props(styles.inspectorEmpty)}
+														>
+															No staged changes.
+														</div>
+													</Show>
+												</div>
+												<For
+													each={
+														session()?.review.validation.diagnostics ??
+														[]
+													}
+												>
+													{(diagnostic) => (
+														<div
+															{...stylex.props(
+																styles.reviewDiagnostic
+															)}
+														>
 															<strong>
-																{reviewChangeTitle(change)}
+																{diagnostic.severity.toUpperCase()}
 															</strong>
-															<small>
-																{reviewChangeSummary(change)}
-															</small>
+															<span>{diagnostic.message}</span>
 														</div>
 													)}
 												</For>
-												<Show
-													when={
-														(session()?.review.activeCommandCount ??
-															0) === 0
-													}
-												>
-													<div {...stylex.props(styles.inspectorEmpty)}>
-														No staged changes.
-													</div>
-												</Show>
-											</div>
-											<For
-												each={
-													session()?.review.validation.diagnostics ?? []
-												}
-											>
-												{(diagnostic) => (
-													<div {...stylex.props(styles.reviewDiagnostic)}>
-														<strong>
-															{diagnostic.severity.toUpperCase()}
-														</strong>
-														<span>{diagnostic.message}</span>
-													</div>
-												)}
-											</For>
-										</Show>
-									</aside>
-								</div>
+											</Show>
+										</aside>
+									</div>
+								</Show>
 							</div>
 						);
 					})()}
@@ -1425,14 +1783,47 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorAccent
 	},
 	workspace: { display: "flex", flexDirection: "column", gap: 10 },
+	viewTabs: {
+		display: "flex",
+		alignItems: "center",
+		border: "1px solid #39403b",
+		backgroundColor: "#0e110f",
+		padding: 4
+	},
+	viewTab: {
+		border: 0,
+		borderBottom: "2px solid transparent",
+		backgroundColor: { default: "transparent", ":hover": "#171d18" },
+		color: "#78827a",
+		cursor: "pointer",
+		padding: "9px 13px",
+		fontSize: 8,
+		letterSpacing: ".1em",
+		textTransform: "uppercase"
+	},
+	viewTabActive: {
+		borderBottomColor: tokens.colorAccent,
+		backgroundColor: "#171d18",
+		color: "#dce3d8"
+	},
 	manifest: {
 		display: "grid",
-		gridTemplateColumns:
-			"minmax(300px, 1.7fr) repeat(3, minmax(105px, .42fr)) minmax(220px, .8fr)",
+		gridTemplateColumns: {
+			default: "minmax(300px, 1.7fr) repeat(3, minmax(105px, .42fr)) minmax(220px, .8fr)",
+			"@media (max-width: 1000px)":
+				"minmax(220px, 1.4fr) repeat(3, minmax(65px, .35fr)) minmax(160px, .8fr)",
+			"@media (max-width: 700px)": "repeat(3, minmax(0, 1fr))"
+		},
 		border: "1px solid #39403b",
 		backgroundColor: "#111412"
 	},
-	assetIdentity: { display: "flex", flexDirection: "column", gap: 5, padding: "14px 16px" },
+	assetIdentity: {
+		display: "flex",
+		flexDirection: "column",
+		gridColumn: { default: "auto", "@media (max-width: 700px)": "1 / -1" },
+		gap: 5,
+		padding: "14px 16px"
+	},
 	assetBadge: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".14em" },
 	metric: {
 		display: "flex",
@@ -1445,6 +1836,7 @@ const styles = stylex.create({
 	readOnlyFlag: {
 		display: "flex",
 		alignItems: "center",
+		gridColumn: { default: "auto", "@media (max-width: 700px)": "1 / -1" },
 		gap: 10,
 		padding: "10px 15px",
 		borderLeft: "1px solid #303632",
@@ -1735,6 +2127,78 @@ const styles = stylex.create({
 		wordBreak: "break-word"
 	},
 	detailLabel: { color: "#6f7871", fontSize: 7, letterSpacing: ".1em" },
+	referencePicker: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 12,
+		marginTop: 20,
+		padding: "14px 0 0",
+		borderTop: "1px solid #39413b"
+	},
+	referenceHeading: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 8
+	},
+	referenceStatus: {
+		padding: "3px 6px",
+		border: "1px solid #39463d",
+		backgroundColor: "#0b100c",
+		color: tokens.colorAccent,
+		fontSize: 7,
+		letterSpacing: ".08em"
+	},
+	referenceField: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		color: "#aab4ab",
+		fontSize: 8,
+		letterSpacing: ".06em",
+		textTransform: "uppercase"
+	},
+	referenceSelect: {
+		width: "100%",
+		border: "1px solid #3a443c",
+		borderRadius: 0,
+		backgroundColor: "#0a0e0b",
+		color: "#d9e0d9",
+		fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+		fontSize: 10,
+		padding: "9px 10px"
+	},
+	referenceMessage: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 8,
+		padding: "9px 10px",
+		borderLeft: "2px solid #667368",
+		backgroundColor: "#0b0f0c",
+		color: "#89938b",
+		fontSize: 8,
+		lineHeight: 1.45
+	},
+	referenceError: { borderLeftColor: "#a86f61", color: "#d39b8d" },
+	referenceRetry: {
+		border: 0,
+		backgroundColor: "transparent",
+		color: tokens.colorAccent,
+		cursor: "pointer",
+		fontSize: 8,
+		textTransform: "uppercase"
+	},
+	referenceStage: {
+		border: "1px solid #536456",
+		backgroundColor: { default: "#172019", ":hover": "#223026", ":disabled": "#101310" },
+		color: { default: "#dce5dc", ":disabled": "#505851" },
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		fontSize: 8,
+		letterSpacing: ".09em",
+		padding: "9px 12px",
+		textTransform: "uppercase"
+	},
 	reviewSummary: {
 		display: "flex",
 		flexDirection: "column",

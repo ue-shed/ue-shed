@@ -11,6 +11,17 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 	[["--version"], "Version"],
 	[["audit", "textures", "project", "--rules", "rules.json"], "AuditTextures"],
 	[["authoring", "tables", "project"], "AuthoringTables"],
+	[["authoring", "relationships", "project"], "AuthoringRelationships"],
+	[
+		[
+			"authoring",
+			"join",
+			"project",
+			"/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences",
+			"Target"
+		],
+		"AuthoringJoin"
+	],
 	[["authoring", "catalog", "project", "--endpoint", "http://editor"], "AuthoringCatalog"],
 	[["authoring", "parity", "project", "http://editor"], "AuthoringParity"],
 	[["authoring", "inspect", "table.uasset"], "AuthoringInspect"],

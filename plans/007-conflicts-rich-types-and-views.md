@@ -13,6 +13,25 @@
 - **Risk**: HIGH — merge semantics and rich serialization can lose authored meaning if guessed
 - **Depends on**: Plans 006 and 015
 - **Planned at**: commit `52df5c0`, 2026-07-15
+- **Status**: IN PROGRESS — demo-critical row references and joined read-only views are complete;
+  remaining work is deliberately deferred until after the demo
+
+## 2026-07-17 demo cutoff
+
+The demo-depth vertical is complete on the post-Plan-016 host seam:
+
+- native `FDataTableRowHandle` values decode, draft, Apply, Save, and independently reload through
+  the generic authoring contract;
+- the headless relationship resolver and CLI retain source/target provenance and diagnose broken or
+  ambiguous references;
+- the maintained extension provides the row-reference picker and a read-only relationship matrix
+  with project-table selection plus table show, hide, and isolation controls;
+- the joined projection remains presentation state and never creates a second draft authority; and
+- the copied foreign host builds and exercises the same relationship UI through the adoption kit.
+
+This does not complete Plan 007. Ordered slice 1, most of slice 2, slice 3, editable joined routing,
+named reusable views, and release conformance remain post-demo work. Do not expand those areas before
+the demo unless a defect blocks the agreed showcase.
 
 ## Outcome
 

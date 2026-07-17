@@ -85,6 +85,12 @@ pub struct IntPointValue {
     pub y: i32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DataTableRowHandleValue {
+    pub table: PackageIndex,
+    pub row_name: NameRef,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapEntry {
     pub key: PropertyValue,
@@ -104,6 +110,7 @@ pub enum PropertyValue {
     Text(TextValue),
     Vector(VectorValue),
     IntPoint(IntPointValue),
+    DataTableRowHandle(DataTableRowHandleValue),
     ObjectRef(PackageIndex),
     Guid(Guid),
     SoftObjectPath(String),

@@ -24,7 +24,7 @@ update the status row when done.
 | [014](014-effect-renderer-solid.md)            | Make renderer and extension clients Effect-native            | P1       | XL     | 009, 013         | DONE                       |
 | [015](015-effect-observability-enforcement.md) | Close the Effect migration with telemetry and enforcement    | P1       | L      | 012–014          | DONE                       |
 | [016](016-data-authoring-adoption-seam.md)     | Prove the Data Authoring adoption seam                       | P0       | XL     | 004–006, 014–015 | DONE                       |
-| [007](007-conflicts-rich-types-and-views.md)   | Complete conflicts, rich Unreal types, composites, and views | P1       | XL     | 006, 015         | TODO — rebase after 015    |
+| [007](007-conflicts-rich-types-and-views.md)   | Complete conflicts, rich Unreal types, composites, and views | P1       | XL     | 006, 015         | IN PROGRESS — demo cutoff  |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale.
@@ -46,6 +46,9 @@ one-line rationale.
   conflicts/rich values are built on the Effect-native domain services rather than migrated twice.
 - Plan 016 now precedes Plan 007 so the flagship workflow grows on the public adoption seam rather
   than adding more Workbench-owned orchestration that would immediately move.
+- Plan 007 reached its demo cutoff on 2026-07-17 with engine-proven row references, headless
+  relationship reports, and joined read-only product views. Conflict resolution, broad rich-type
+  editing, Composite DataTables, editable joins, and final release conformance remain post-demo.
 - Effect v4 is `4.0.0-beta.98` at planning time while npm `latest` remains 3.22.0. Plan 008 selects
   the newest coherent v4 release at execution and centralizes shared dependency versions in the pnpm
   workspace catalog; packages retain truthful dependency declarations through `catalog:`.

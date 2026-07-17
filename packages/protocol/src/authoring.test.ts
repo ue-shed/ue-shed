@@ -10,6 +10,7 @@ import {
 	AuthoringTableList,
 	AuthoringTableSnapshotV1,
 	AuthoringTableSnapshotV2,
+	AuthoringValue,
 	classifyAuthoringSnapshot,
 	decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect,
 	makeAuthoringJsonSchema
@@ -113,6 +114,19 @@ describe("authoring wire contract", () => {
 				status: "available"
 			});
 		}
+	});
+
+	it("preserves an explicit DataTable row handle", () => {
+		const value = Schema.decodeUnknownSync(AuthoringValue)({
+			kind: "row_reference",
+			rowName: "Right_Alpha",
+			tableObjectPath: "/Game/Fixture/DT_Right.DT_Right"
+		});
+		expect(value).toEqual({
+			kind: "row_reference",
+			rowName: "Right_Alpha",
+			tableObjectPath: "/Game/Fixture/DT_Right.DT_Right"
+		});
 	});
 
 	it("keeps the runtime schemas conformant with the language-neutral contracts", async () => {

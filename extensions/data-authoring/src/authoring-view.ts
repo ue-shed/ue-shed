@@ -62,6 +62,8 @@ export function formatAuthoringValue(value: AuthoringValue): string {
 			return String(value.value);
 		case "object_ref":
 			return value.value ?? "None";
+		case "row_reference":
+			return `${value.tableObjectPath ?? "None"} → ${value.rowName}`;
 		case "vector":
 			return `X ${value.x} · Y ${value.y} · Z ${value.z}`;
 		case "array":
@@ -93,6 +95,8 @@ export function valueSummary(value: AuthoringValue): string {
 			return `${value.entries.length} entries`;
 		case "struct":
 			return `${value.fields.length} fields`;
+		case "row_reference":
+			return "row reference";
 		case "unsupported":
 			return `${value.byteSize} opaque bytes`;
 		default:

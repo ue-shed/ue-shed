@@ -299,6 +299,9 @@ importers:
       '@stylexjs/stylex':
         specifier: 'catalog:'
         version: 0.19.0
+      '@ue-shed/authoring':
+        specifier: workspace:*
+        version: link:../../packages/authoring
       '@ue-shed/authoring-sdk':
         specifier: workspace:*
         version: link:../../packages/authoring-sdk

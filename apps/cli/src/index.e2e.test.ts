@@ -97,6 +97,81 @@ describe("ue-shed CLI process", () => {
 		expect(snapshot.table.rows.map((row) => row.name)).toEqual(["Scalar_Alpha", "Scalar_Beta"]);
 	});
 
+	it("resolves fixture row references through the public headless command", () => {
+		const report = parseRecord(
+			runSuccessfulCli(["authoring", "relationships", fixtureProject])
+		);
+		expect(report.contract).toEqual({
+			name: "unreal-authoring-row-references",
+			version: { major: 1, minor: 0 }
+		});
+		expect(report.summary).toEqual({
+			issueCount: 0,
+			referenceCount: 2,
+			resolvedCount: 2,
+			snapshotCount: 12
+		});
+		expect(report.edges).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					status: "resolved",
+					target: {
+						rowName: "Right_Alpha",
+						tableObjectPath:
+							"/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+					}
+				})
+			])
+		);
+	});
+
+	it("projects a read-only joined view through the public headless command", () => {
+		const view = parseRecord(
+			runSuccessfulCli([
+				"authoring",
+				"join",
+				fixtureProject,
+				"/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences",
+				"Target"
+			])
+		);
+		expect(view.contract).toEqual({
+			name: "unreal-authoring-joined-view",
+			version: { major: 1, minor: 0 }
+		});
+		expect(view.editability).toEqual(expect.objectContaining({ kind: "read_only" }));
+		expect(view.summary).toEqual({
+			resolvedCount: 2,
+			rowCount: 2,
+			unresolvedCount: 0
+		});
+		expect(view.rows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					source: expect.objectContaining({
+						rowName: "Left_Alpha",
+						tableObjectPath:
+							"/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences"
+					}),
+					status: "resolved",
+					target: expect.objectContaining({
+						rowName: "Right_Alpha",
+						tableObjectPath:
+							"/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+					}),
+					targetRow: expect.objectContaining({
+						fields: expect.arrayContaining([
+							expect.objectContaining({
+								name: "Description",
+								value: { kind: "string", value: "First reference target" }
+							})
+						])
+					})
+				})
+			])
+		);
+	});
+
 	it("runs the persistent session lifecycle through separate CLI processes", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-cli-sessions-"));
 		try {

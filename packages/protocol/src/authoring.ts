@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
-export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 0 } as const;
-export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 0 } as const;
+export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 1 } as const;
+export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 1 } as const;
 export const AUTHORING_TABLE_LIST_CONTRACT_VERSION = { major: 1, minor: 0 } as const;
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
@@ -20,6 +20,11 @@ export type AuthoringValue =
 			readonly value: string;
 	  }
 	| { readonly kind: "object_ref"; readonly value: string | null }
+	| {
+			readonly kind: "row_reference";
+			readonly tableObjectPath: string | null;
+			readonly rowName: string;
+	  }
 	| { readonly kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
 	| { readonly kind: "array" | "set"; readonly values: readonly AuthoringValue[] }
 	| {
@@ -64,6 +69,11 @@ const AuthoringValueUnion: Schema.Codec<AuthoringValue> = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("double"), value: FloatValue }),
 	...textValueSchemas,
 	Schema.Struct({ kind: Schema.Literal("object_ref"), value: Schema.NullOr(Schema.String) }),
+	Schema.Struct({
+		kind: Schema.Literal("row_reference"),
+		rowName: Schema.String,
+		tableObjectPath: Schema.NullOr(Schema.String)
+	}),
 	Schema.Struct({
 		kind: Schema.Literal("vector"),
 		x: Schema.Finite,
@@ -172,6 +182,7 @@ export type AuthoringTypeDescriptor =
 				| { readonly status: "known"; readonly classPath: string }
 				| { readonly status: "unknown" };
 	  }
+	| { readonly kind: "row_reference" }
 	| { readonly kind: "vector" }
 	| { readonly kind: "array" | "set"; readonly element: AuthoringTypeDescriptor }
 	| {
@@ -280,6 +291,7 @@ const AuthoringTypeDescriptorUnion: Schema.Codec<AuthoringTypeDescriptor> = Sche
 		]),
 		valueKind: Schema.Literals(["object_ref", "soft_object_path"])
 	}),
+	Schema.Struct({ kind: Schema.Literal("row_reference") }),
 	Schema.Struct({ kind: Schema.Literal("vector") }),
 	Schema.Struct({
 		element: AuthoringTypeDescriptor,

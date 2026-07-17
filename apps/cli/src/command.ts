@@ -11,6 +11,13 @@ export const CliCommand = Schema.TaggedUnion({
 	Doctor: {},
 	AuditTextures: { ...Project, ruleFile: Schema.String, ...Reader },
 	AuthoringTables: { ...Project, ...Reader },
+	AuthoringRelationships: { ...Project, ...Reader },
+	AuthoringJoin: {
+		...Project,
+		referenceFieldName: Schema.String,
+		sourceTableObjectPath: Schema.String,
+		...Reader
+	},
 	AuthoringCatalog: { ...Project, endpoint: Schema.optionalKey(Schema.String), ...Reader },
 	AuthoringParity: { ...Project, endpoint: Schema.String, ...Reader },
 	AuthoringInspect: { assetPath: Schema.String, ...Reader },
@@ -93,6 +100,8 @@ export const help = `UE Shed — External tools for Unreal Engine development.
 Usage:
   ue-shed audit textures <project-root> --rules <rule-file> [--reader <path>]
   ue-shed authoring tables <project-root> [--reader <path>]
+  ue-shed authoring relationships <project-root> [--reader <path>]
+  ue-shed authoring join <project-root> <source-table> <reference-field> [--reader <path>]
   ue-shed authoring catalog <project-root> [--endpoint <url>] [--reader <path>]
   ue-shed authoring parity <project-root> <endpoint> [--reader <path>]
   ue-shed authoring inspect <asset> [--reader <path>]
@@ -388,6 +397,30 @@ function parseAuthoring(args: readonly string[]): Effect.Effect<CliCommand, CliU
 			const [projectRoot] = yield* exact(p, 1, "authoring tables requires a project root");
 			return CliCommand.cases.AuthoringTables.make({
 				projectRoot: present(projectRoot),
+				...withReader
+			});
+		}
+		if (area === "relationships") {
+			const [projectRoot] = yield* exact(
+				p,
+				1,
+				"authoring relationships requires a project root"
+			);
+			return CliCommand.cases.AuthoringRelationships.make({
+				projectRoot: present(projectRoot),
+				...withReader
+			});
+		}
+		if (area === "join") {
+			const [projectRoot, sourceTableObjectPath, referenceFieldName] = yield* exact(
+				p,
+				3,
+				"authoring join requires a project root, source table, and reference field"
+			);
+			return CliCommand.cases.AuthoringJoin.make({
+				projectRoot: present(projectRoot),
+				referenceFieldName: present(referenceFieldName),
+				sourceTableObjectPath: present(sourceTableObjectPath),
 				...withReader
 			});
 		}

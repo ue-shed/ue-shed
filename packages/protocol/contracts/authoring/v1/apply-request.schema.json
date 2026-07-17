@@ -217,7 +217,6 @@
 			"anyOf": [
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -227,11 +226,11 @@
 							"type": "boolean"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -241,11 +240,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -255,11 +254,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -277,11 +276,11 @@
 							]
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -299,11 +298,11 @@
 							]
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -313,11 +312,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -327,11 +326,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -341,11 +340,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -355,11 +354,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -369,11 +368,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -383,11 +382,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -404,11 +403,35 @@
 							]
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "x", "y", "z"],
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["row_reference"]
+						},
+						"rowName": {
+							"type": "string"
+						},
+						"tableObjectPath": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["kind", "rowName", "tableObjectPath"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -424,11 +447,11 @@
 							"type": "number"
 						}
 					},
+					"required": ["kind", "x", "y", "z"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "values"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -441,11 +464,11 @@
 							}
 						}
 					},
+					"required": ["kind", "values"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "values"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -458,11 +481,11 @@
 							}
 						}
 					},
+					"required": ["kind", "values"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "entries"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -472,7 +495,6 @@
 							"type": "array",
 							"items": {
 								"type": "object",
-								"required": ["key", "value"],
 								"properties": {
 									"key": {
 										"$ref": "#/$defs/AuthoringValue"
@@ -481,15 +503,16 @@
 										"$ref": "#/$defs/AuthoringValue"
 									}
 								},
+								"required": ["key", "value"],
 								"additionalProperties": false
 							}
 						}
 					},
+					"required": ["kind", "entries"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "fields"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -502,11 +525,11 @@
 							}
 						}
 					},
+					"required": ["kind", "fields"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["byteSize", "kind", "reason"],
 					"properties": {
 						"byteSize": {
 							"$ref": "#/$defs/NonNegativeInt"
@@ -519,6 +542,7 @@
 							"type": "string"
 						}
 					},
+					"required": ["byteSize", "kind", "reason"],
 					"additionalProperties": false
 				}
 			]

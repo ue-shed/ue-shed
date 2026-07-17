@@ -136,6 +136,23 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 			]
 		});
 		expect(
+			byObjectPath.get("/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences")?.table
+				.rows[0]
+		).toMatchObject({
+			name: "Left_Alpha",
+			fields: [
+				{
+					name: "Target",
+					value: {
+						kind: "row_reference",
+						rowName: "Right_Alpha",
+						tableObjectPath:
+							"/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+					}
+				}
+			]
+		});
+		expect(
 			byObjectPath.get("/Game/Fixture/Authoring/DT_Opaque.DT_Opaque")?.table.rows[0]
 		).toMatchObject({
 			fields: [

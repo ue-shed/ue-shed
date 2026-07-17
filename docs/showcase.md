@@ -51,6 +51,19 @@ pnpm ue-shed authoring inspect fixtures\unreal-project\Content\Fixture\Authoring
 Run `pnpm ue-shed help` to continue through persistent sessions, typed cell drafts, undo and redo.
 Live apply and save use the same session model after the fixture editor is running.
 
+For the cross-table story, open `DT_LeftReferences` from the project index and switch to
+**Relationship view**. The two fixture references resolve into `DT_RightReferences` with their
+canonical source and target columns kept visibly separate. Use **Isolate** on either table, then
+**Show all**, to demonstrate that the view changes presentation without creating another draft.
+Return to **Canonical table** and select a `Target` cell to show the typed row-reference picker.
+
+The same relationship model is available headlessly:
+
+```powershell
+pnpm ue-shed authoring relationships fixtures\unreal-project
+pnpm ue-shed authoring join fixtures\unreal-project /Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences Target
+```
+
 ## Demo 2: Texture Asset Audit
 
 Choose **Open audit**. The route immediately scans the committed texture corpus using

@@ -88,6 +88,11 @@ export type SavedPropertyValue =
 			readonly key: string;
 	  }
 	| { readonly value_kind: "object_ref"; readonly value: string | null }
+	| {
+			readonly value_kind: "data_table_row_handle";
+			readonly table_object_path: string | null;
+			readonly row_name: string;
+	  }
 	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
 	| { readonly value_kind: "int_point"; readonly x: number; readonly y: number }
 	| { readonly value_kind: "array" | "set"; readonly values: readonly SavedPropertyValue[] }
@@ -138,6 +143,11 @@ const SavedPropertyValueUnion = Schema.Union([
 	Schema.Struct({
 		value_kind: Schema.Literal("object_ref"),
 		value: Schema.NullOr(Schema.String)
+	}),
+	Schema.Struct({
+		row_name: Schema.String,
+		table_object_path: Schema.NullOr(Schema.String),
+		value_kind: Schema.Literal("data_table_row_handle")
 	}),
 	Schema.Struct({
 		value_kind: Schema.Literal("vector"),

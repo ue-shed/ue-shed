@@ -8,6 +8,10 @@
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
 		},
+		"./joined-views": {
+			"types": "./src/joined-views.ts",
+			"default": "./src/joined-views.ts"
+		},
 		"./review-contracts": {
 			"types": "./src/review.ts",
 			"default": "./src/review.ts"

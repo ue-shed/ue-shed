@@ -28,9 +28,14 @@ const enabled = process.env.UE_SHED_UNREAL_INTEGRATION === "1" && executable;
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const objectPath = "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars";
 const enumObjectPath = "/Game/Fixture/Authoring/DT_Enums.DT_Enums";
+const rowReferenceObjectPath = "/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences";
 const assetPath = join(
 	repositoryRoot,
 	"fixtures/unreal-project/Content/Fixture/Authoring/DT_Scalars.uasset"
+);
+const rowReferenceAssetPath = join(
+	repositoryRoot,
+	"fixtures/unreal-project/Content/Fixture/Authoring/DT_LeftReferences.uasset"
 );
 
 function runFixture(...args: string[]): void {
@@ -42,9 +47,9 @@ function runFixture(...args: string[]): void {
 	});
 }
 
-function readDiskSnapshot(): unknown {
+function readDiskSnapshot(path = assetPath): unknown {
 	return JSON.parse(
-		execFileSync(executable!, ["authoring", assetPath, "--format", "json"], {
+		execFileSync(executable!, ["authoring", path, "--format", "json"], {
 			encoding: "utf8",
 			windowsHide: true
 		})
@@ -68,11 +73,16 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			const enumBase = decodeAuthoringTableSnapshot(
 				await json(join(snapshots, "DT_Enums.json"))
 			);
+			const rowReferenceBase = decodeAuthoringTableSnapshot(
+				await json(join(snapshots, "DT_LeftReferences.json"))
+			);
 			const alpha = base.table.rows[0]!;
 			const beta = base.table.rows[1]!;
 			const enabledField = alpha.fields.find((field) => field.name === "Enabled")!;
 			const enumRow = enumBase.table.rows[0]!;
 			const enumField = enumRow.fields[0]!;
+			const rowReferenceRow = rowReferenceBase.table.rows[0]!;
+			const rowReferenceField = rowReferenceRow.fields[0]!;
 			const changedValue = { kind: "bool", value: false } as const;
 			const applyContract = {
 				name: "unreal-authoring-apply",
@@ -202,8 +212,30 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 					},
 					id: "command-enum",
 					tableObjectPath: enumObjectPath
+				},
+				{
+					body: {
+						fieldName: rowReferenceField.name,
+						kind: "set_cell" as const,
+						newValue: {
+							kind: "row_reference" as const,
+							rowName: "Right_Beta",
+							tableObjectPath:
+								"/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+						},
+						oldValue: rowReferenceField.value,
+						rowId: rowReferenceRow.id
+					},
+					id: "command-row-reference",
+					tableObjectPath: rowReferenceObjectPath
 				}
 			];
+			const bases = new Map(
+				[base, enumBase, rowReferenceBase].map((snapshot) => [
+					snapshot.table.objectPath,
+					snapshot
+				])
+			);
 			const service = await Effect.runPromise(
 				makeAuthoringSessionService({
 					projectId: "real-unreal",
@@ -211,17 +243,16 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 					storageRoot: join(directory, "sessions")
 				})
 			);
-			await Effect.runPromise(service.create([base, enumBase], { id: "recovery" }));
+			await Effect.runPromise(
+				service.create([base, enumBase, rowReferenceBase], { id: "recovery" })
+			);
 			await Effect.runPromise(
 				service.append(
 					"recovery",
 					wireCommands.map((command) => ({
 						...command,
 						authoredAt: "2026-07-15T00:00:00.000Z",
-						baseFingerprint:
-							command.tableObjectPath === objectPath
-								? fingerprintTable(base)
-								: fingerprintTable(enumBase),
+						baseFingerprint: fingerprintTable(bases.get(command.tableObjectPath)!),
 						groupId: "real-unreal-gesture"
 					}))
 				)
@@ -243,6 +274,7 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 				objectPaths: [
 					objectPath,
 					enumObjectPath,
+					rowReferenceObjectPath,
 					"/Game/Fixture/Authoring/DT_Missing.DT_Missing"
 				],
 				requestId: "save-after-commit"
@@ -283,6 +315,7 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			expect(saved.packages).toMatchObject([
 				{ objectPath, retrySafe: true, status: "saved" },
 				{ objectPath: enumObjectPath, retrySafe: true, status: "saved" },
+				{ objectPath: rowReferenceObjectPath, retrySafe: true, status: "saved" },
 				{
 					objectPath: "/Game/Fixture/Authoring/DT_Missing.DT_Missing",
 					retrySafe: true,
@@ -296,6 +329,18 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			]);
 			const disk = decodeAuthoringTableSnapshot(readDiskSnapshot());
 			expect(fingerprintTable(disk)).toBe(fingerprintTable(live));
+			const rowReferenceLive = committed.snapshots.find(
+				(snapshot) => snapshot.table.objectPath === rowReferenceObjectPath
+			)!;
+			const rowReferenceDisk = decodeAuthoringTableSnapshot(
+				readDiskSnapshot(rowReferenceAssetPath)
+			);
+			expect(rowReferenceLive.table.rows[0]?.fields[0]?.value).toEqual({
+				kind: "row_reference",
+				rowName: "Right_Beta",
+				tableObjectPath: "/Game/Fixture/Authoring/DT_RightReferences.DT_RightReferences"
+			});
+			expect(fingerprintTable(rowReferenceDisk)).toBe(fingerprintTable(rowReferenceLive));
 
 			const failedSaveInput = join(directory, "failed-save-request.json");
 			const failedSaveOutput = join(directory, "failed-save-result.json");

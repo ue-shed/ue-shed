@@ -3,9 +3,9 @@
 use crate::archive::Reader;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
-    IntPointValue, MapEntry, PropertyError, PropertyRecord, PropertyStream, PropertyTagFlags,
-    PropertyTypeName, PropertyValue, RawReason, TextHistory, TextValue, VectorValue,
-    read_tagged_property_stream,
+    DataTableRowHandleValue, IntPointValue, MapEntry, PropertyError, PropertyRecord,
+    PropertyStream, PropertyTagFlags, PropertyTypeName, PropertyValue, RawReason, TextHistory,
+    TextValue, VectorValue, read_tagged_property_stream,
 };
 
 /// UE `INDEX_NONE` marks a full container replace in map property payloads.
@@ -220,7 +220,9 @@ fn decode_typed_value(
         "MapProperty" => {
             decode_map_value(source, type_spec.tree, payload, context, path, depth).map(Some)
         }
-        "StructProperty" => decode_struct_value(source, payload, context, path, depth).map(Some),
+        "StructProperty" => {
+            decode_struct_value(source, type_spec.tree, payload, context, path, depth).map(Some)
+        }
         _ => Ok(None),
     }
 }
@@ -688,6 +690,7 @@ fn resolve_map_value_type<'a>(
 
 fn decode_struct_value(
     source: &[u8],
+    type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
     context: &DecodeContext<'_>,
     path: &str,
@@ -704,7 +707,67 @@ fn decode_struct_value(
     let mut stream =
         read_tagged_property_stream(payload, context.versions, &context.package.names, path)?;
     decode_property_stream_values_at_depth(source, &mut stream, context, depth + 1)?;
+    if resolve_struct_type_name(context.package, type_tree).as_deref() == Some("DataTableRowHandle")
+    {
+        return decode_data_table_row_handle(&stream, context, path);
+    }
     Ok(PropertyValue::Struct(stream))
+}
+
+fn decode_data_table_row_handle(
+    stream: &PropertyStream,
+    context: &DecodeContext<'_>,
+    path: &str,
+) -> Result<PropertyValue, PropertyError> {
+    let mut table = None;
+    let mut row_name = None;
+    for record in &stream.records {
+        match context.package.resolve_name(record.name).as_deref() {
+            Some("DataTable") => match record.value {
+                PropertyValue::ObjectRef(value) => table = Some(value),
+                _ => {
+                    return Err(PropertyError::new(
+                        crate::property::PropertyErrorKind::MalformedData,
+                        Some(record.payload.offset()),
+                        path,
+                        "FDataTableRowHandle.DataTable is not an object reference",
+                    ));
+                }
+            },
+            Some("RowName") => match record.value {
+                PropertyValue::Name(value) => row_name = Some(value),
+                _ => {
+                    return Err(PropertyError::new(
+                        crate::property::PropertyErrorKind::MalformedData,
+                        Some(record.payload.offset()),
+                        path,
+                        "FDataTableRowHandle.RowName is not a name",
+                    ));
+                }
+            },
+            _ => {}
+        }
+    }
+    let table = table.ok_or_else(|| {
+        PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            None,
+            path,
+            "FDataTableRowHandle is missing DataTable",
+        )
+    })?;
+    let row_name = row_name.ok_or_else(|| {
+        PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            None,
+            path,
+            "FDataTableRowHandle is missing RowName",
+        )
+    })?;
+    Ok(PropertyValue::DataTableRowHandle(DataTableRowHandleValue {
+        table,
+        row_name,
+    }))
 }
 
 fn decode_text_value(

@@ -272,7 +272,6 @@
 			"anyOf": [
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -282,11 +281,11 @@
 							"type": "boolean"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -296,11 +295,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -310,11 +309,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -332,11 +331,11 @@
 							]
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -354,11 +353,11 @@
 							]
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -368,11 +367,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -382,11 +381,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -396,11 +395,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -410,11 +409,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -424,11 +423,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -438,11 +437,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "value"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -459,11 +458,35 @@
 							]
 						}
 					},
+					"required": ["kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "x", "y", "z"],
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["row_reference"]
+						},
+						"rowName": {
+							"type": "string"
+						},
+						"tableObjectPath": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					},
+					"required": ["kind", "rowName", "tableObjectPath"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -479,11 +502,11 @@
 							"type": "number"
 						}
 					},
+					"required": ["kind", "x", "y", "z"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "values"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -496,11 +519,11 @@
 							}
 						}
 					},
+					"required": ["kind", "values"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "values"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -513,11 +536,11 @@
 							}
 						}
 					},
+					"required": ["kind", "values"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "entries"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -527,7 +550,6 @@
 							"type": "array",
 							"items": {
 								"type": "object",
-								"required": ["key", "value"],
 								"properties": {
 									"key": {
 										"$ref": "#/$defs/AuthoringValue"
@@ -536,15 +558,16 @@
 										"$ref": "#/$defs/AuthoringValue"
 									}
 								},
+								"required": ["key", "value"],
 								"additionalProperties": false
 							}
 						}
 					},
+					"required": ["kind", "entries"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "fields"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -557,11 +580,11 @@
 							}
 						}
 					},
+					"required": ["kind", "fields"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["byteSize", "kind", "reason"],
 					"properties": {
 						"byteSize": {
 							"$ref": "#/$defs/NonNegativeInt"
@@ -574,6 +597,7 @@
 							"type": "string"
 						}
 					},
+					"required": ["byteSize", "kind", "reason"],
 					"additionalProperties": false
 				}
 			]
@@ -732,7 +756,6 @@
 			"anyOf": [
 				{
 					"type": "object",
-					"required": ["kind", "valueKind"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -753,11 +776,11 @@
 							]
 						}
 					},
+					"required": ["kind", "valueKind"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "options"],
 					"properties": {
 						"enumPath": {
 							"type": "string"
@@ -770,7 +793,6 @@
 							"type": "array",
 							"items": {
 								"type": "object",
-								"required": ["name"],
 								"properties": {
 									"displayName": {
 										"type": "string"
@@ -779,15 +801,16 @@
 										"type": "string"
 									}
 								},
+								"required": ["name"],
 								"additionalProperties": false
 							}
 						}
 					},
+					"required": ["kind", "options"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "target", "valueKind"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -797,7 +820,6 @@
 							"anyOf": [
 								{
 									"type": "object",
-									"required": ["classPath", "status"],
 									"properties": {
 										"classPath": {
 											"type": "string"
@@ -807,17 +829,18 @@
 											"enum": ["known"]
 										}
 									},
+									"required": ["classPath", "status"],
 									"additionalProperties": false
 								},
 								{
 									"type": "object",
-									"required": ["status"],
 									"properties": {
 										"status": {
 											"type": "string",
 											"enum": ["unknown"]
 										}
 									},
+									"required": ["status"],
 									"additionalProperties": false
 								}
 							]
@@ -827,22 +850,33 @@
 							"enum": ["object_ref", "soft_object_path"]
 						}
 					},
+					"required": ["kind", "target", "valueKind"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["row_reference"]
+						}
+					},
 					"required": ["kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
 					"properties": {
 						"kind": {
 							"type": "string",
 							"enum": ["vector"]
 						}
 					},
+					"required": ["kind"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["element", "kind"],
 					"properties": {
 						"element": {
 							"$ref": "#/$defs/AuthoringTypeDescriptor"
@@ -852,11 +886,11 @@
 							"enum": ["array", "set"]
 						}
 					},
+					"required": ["element", "kind"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["key", "kind", "value"],
 					"properties": {
 						"key": {
 							"$ref": "#/$defs/AuthoringTypeDescriptor"
@@ -869,11 +903,11 @@
 							"$ref": "#/$defs/AuthoringTypeDescriptor"
 						}
 					},
+					"required": ["key", "kind", "value"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["fields", "kind"],
 					"properties": {
 						"fields": {
 							"type": "array",
@@ -889,11 +923,11 @@
 							"type": "string"
 						}
 					},
+					"required": ["fields", "kind"],
 					"additionalProperties": false
 				},
 				{
 					"type": "object",
-					"required": ["kind", "reason", "typeName"],
 					"properties": {
 						"kind": {
 							"type": "string",
@@ -906,6 +940,7 @@
 							"type": "string"
 						}
 					},
+					"required": ["kind", "reason", "typeName"],
 					"additionalProperties": false
 				}
 			]

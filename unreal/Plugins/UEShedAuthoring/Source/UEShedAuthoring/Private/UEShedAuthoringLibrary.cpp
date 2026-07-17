@@ -263,6 +263,10 @@ TSharedRef<FJsonObject> DescribePropertyType(const FProperty* Property)
 	}
 	if (const FStructProperty* Struct = CastField<FStructProperty>(Property))
 	{
+		if (Struct->Struct == FDataTableRowHandle::StaticStruct())
+		{
+			return ValueObject(TEXT("row_reference"));
+		}
 		if (Struct->Struct == TBaseStructure<FVector>::Get())
 		{
 			return ValueObject(TEXT("vector"));
@@ -409,6 +413,21 @@ TSharedPtr<FJsonValue> SerializePropertyValue(
 	}
 	if (const FStructProperty* Struct = CastField<FStructProperty>(Property))
 	{
+		if (Struct->Struct == FDataTableRowHandle::StaticStruct())
+		{
+			const FDataTableRowHandle& Handle = *static_cast<const FDataTableRowHandle*>(Value);
+			const TSharedRef<FJsonObject> Result = ValueObject(TEXT("row_reference"));
+			if (Handle.DataTable)
+			{
+				Result->SetStringField(TEXT("tableObjectPath"), Handle.DataTable->GetPathName());
+			}
+			else
+			{
+				Result->SetField(TEXT("tableObjectPath"), MakeShared<FJsonValueNull>());
+			}
+			Result->SetStringField(TEXT("rowName"), Handle.RowName.ToString());
+			return MakeShared<FJsonValueObject>(Result);
+		}
 		if (Struct->Struct == TBaseStructure<FVector>::Get())
 		{
 			const FVector& Vector = *static_cast<const FVector*>(Value);
@@ -734,6 +753,31 @@ bool AssignPropertyValue(
 	}
 	if (const FStructProperty* Struct = CastField<FStructProperty>(Property))
 	{
+		if (Struct->Struct == FDataTableRowHandle::StaticStruct()
+			&& Kind == TEXT("row_reference"))
+		{
+			FDataTableRowHandle& Handle = *static_cast<FDataTableRowHandle*>(Value);
+			const TSharedPtr<FJsonValue> TableValue = Input->TryGetField(TEXT("tableObjectPath"));
+			Handle.DataTable = nullptr;
+			if (TableValue.IsValid() && TableValue->Type != EJson::Null)
+			{
+				Handle.DataTable = LoadObject<UDataTable>(nullptr, *TableValue->AsString());
+				if (!Handle.DataTable)
+				{
+					Error = FString::Printf(
+						TEXT("data table not found: %s"), *TableValue->AsString());
+					return false;
+				}
+			}
+			FString RowName;
+			if (!Input->TryGetStringField(TEXT("rowName"), RowName))
+			{
+				Error = TEXT("row reference is missing rowName");
+				return false;
+			}
+			Handle.RowName = FName(RowName);
+			return true;
+		}
 		if (Struct->Struct == TBaseStructure<FVector>::Get() && Kind == TEXT("vector"))
 		{
 			FVector& Vector = *static_cast<FVector*>(Value);
@@ -874,7 +918,7 @@ TSharedRef<FJsonObject> BuildTableSnapshot(const UDataTable* Table)
 	Contract->SetStringField(TEXT("name"), TEXT("unreal-authoring"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 2);
-	Version->SetNumberField(TEXT("minor"), 0);
+	Version->SetNumberField(TEXT("minor"), 1);
 	Contract->SetObjectField(TEXT("version"), Version);
 	const TSharedRef<FJsonObject> Authority = MakeShared<FJsonObject>();
 	Authority->SetStringField(TEXT("kind"), TEXT("live_editor"));
@@ -958,7 +1002,7 @@ TSharedRef<FJsonObject> OperationContract(const TCHAR* Name)
 	Contract->SetStringField(TEXT("name"), Name);
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 0);
+	Version->SetNumberField(TEXT("minor"), 1);
 	Contract->SetObjectField(TEXT("version"), Version);
 	return Contract;
 }

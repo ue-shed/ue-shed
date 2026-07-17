@@ -3,7 +3,9 @@ import {
 	authoringSessionLivePortLayer,
 	authoringSessionServiceLayer,
 	AuthoringSessions,
+	buildJoinedView,
 	fingerprintTable,
+	makeRowReferenceReport,
 	workingTable
 } from "@ue-shed/authoring";
 import {
@@ -286,6 +288,34 @@ export function executeCommand(
 				return yield* reader
 					.discoverTables({ projectRoot: command.projectRoot })
 					.pipe(Effect.flatMap(printJson));
+			}
+			case "AuthoringRelationships": {
+				const reader = yield* AssetReader;
+				const catalog = yield* reader.discoverTables({ projectRoot: command.projectRoot });
+				const snapshots = yield* Effect.forEach(
+					catalog.tables,
+					(table) => reader.readTable(table.assetPath),
+					{ concurrency: 4 }
+				);
+				return yield* printJson(makeRowReferenceReport(snapshots));
+			}
+			case "AuthoringJoin": {
+				const reader = yield* AssetReader;
+				const catalog = yield* reader.discoverTables({ projectRoot: command.projectRoot });
+				const snapshots = yield* Effect.forEach(
+					catalog.tables,
+					(table) => reader.readTable(table.assetPath),
+					{ concurrency: 4 }
+				);
+				return yield* printJson(
+					buildJoinedView({
+						query: {
+							referenceFieldName: command.referenceFieldName,
+							sourceTableObjectPath: command.sourceTableObjectPath
+						},
+						snapshots
+					})
+				);
 			}
 			case "AuthoringCatalog":
 				return yield* (

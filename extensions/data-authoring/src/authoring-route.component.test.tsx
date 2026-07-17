@@ -119,6 +119,71 @@ const sessionView: AuthoringSessionView = {
 	updatedAt: "2026-07-16T00:00:01.000Z"
 };
 
+const referenceTargetPath = "/Game/Fixture/DT_Right.DT_Right";
+const rowReferenceSnapshot: AuthoringTableSnapshot = {
+	...snapshot,
+	table: {
+		...snapshot.table,
+		objectPath: "/Game/Fixture/DT_Left.DT_Left",
+		packageName: "/Game/Fixture/DT_Left",
+		rows: [
+			{
+				fields: [
+					{
+						name: "Target",
+						typeName: "StructProperty",
+						value: {
+							kind: "row_reference",
+							rowName: "Right_Alpha",
+							tableObjectPath: referenceTargetPath
+						}
+					}
+				],
+				id: "row:Left_Alpha",
+				name: "Left_Alpha"
+			}
+		],
+		schema: {
+			fields: [
+				{
+					annotations: { deprecated: false, readOnly: false },
+					defaultValue: {
+						status: "known",
+						value: { kind: "row_reference", rowName: "None", tableObjectPath: null }
+					},
+					editability: { kind: "editable" },
+					id: "field:Target",
+					name: "Target",
+					presence: "required",
+					type: { kind: "row_reference" },
+					typeName: "StructProperty"
+				}
+			],
+			source: "live_reflection",
+			status: "available"
+		}
+	}
+};
+
+const referenceTargetSnapshot: AuthoringTableSnapshot = {
+	...snapshot,
+	table: {
+		...snapshot.table,
+		objectPath: referenceTargetPath,
+		packageName: "/Game/Fixture/DT_Right",
+		rows: [
+			{ fields: [], id: "row:Right_Alpha", name: "Right_Alpha" },
+			{ fields: [], id: "row:Right_Beta", name: "Right_Beta" }
+		]
+	}
+};
+
+const rowReferenceSession: AuthoringSessionView = {
+	...sessionView,
+	dirty: false,
+	snapshot: rowReferenceSnapshot
+};
+
 describe("AuthoringRoute", () => {
 	it("keeps the expandable route responsive when table selection is cancelled", async () => {
 		let selections = 0;
@@ -330,5 +395,91 @@ describe("AuthoringRoute", () => {
 		expect(confirm).toHaveBeenCalled();
 		expect(screen.getByText(snapshot.table.objectPath)).toBeDefined();
 		confirm.mockRestore();
+	});
+
+	it("loads a referenced table without replacing the source draft and stages a typed row handle", async () => {
+		const intents: AuthoringSessionIntent[] = [];
+		const opened: string[] = [];
+		const client: AuthoringClientShape = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () =>
+				Effect.succeed({ status: "ready" as const, view: rowReferenceSession }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: (intent) =>
+				Effect.sync(() => {
+					intents.push(intent);
+					return { status: "ready" as const, view: rowReferenceSession };
+				}),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 2,
+					phase: "ready" as const,
+					processedAssets: 2,
+					tablesFound: 2,
+					totalAssets: 2
+				}),
+			listSessions: () =>
+				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({
+					diagnostics: [],
+					status: "ready" as const,
+					tables: [rowReferenceSnapshot, referenceTargetSnapshot].map((entry) => ({
+						authorities: ["saved" as const],
+						completeness: "complete" as const,
+						divergence: [],
+						kind: "data_table" as const,
+						objectPath: entry.table.objectPath,
+						parentTables: [],
+						rowStruct: entry.table.rowStruct
+					}))
+				}),
+			loadConfiguredTable: () =>
+				Effect.succeed({ snapshot: rowReferenceSnapshot, status: "ready" as const }),
+			openCatalogTable: (objectPath) =>
+				Effect.sync(() => {
+					opened.push(objectPath);
+					return objectPath === referenceTargetPath
+						? { snapshot: referenceTargetSnapshot, status: "ready" as const }
+						: { status: "not_configured" as const };
+				}),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		const user = userEvent.setup();
+		const rowPicker = await screen.findByRole("combobox", { name: "Reference target row" });
+		expect(screen.getByText(rowReferenceSnapshot.table.objectPath)).toBeDefined();
+		expect(opened).toEqual([referenceTargetPath]);
+		await user.selectOptions(rowPicker, "Right_Beta");
+		await user.click(screen.getByRole("button", { name: "Stage reference" }));
+
+		expect(intents).toContainEqual({
+			edits: [
+				{
+					fieldName: "Target",
+					rowId: "row:Left_Alpha",
+					value: {
+						kind: "row_reference",
+						rowName: "Right_Beta",
+						tableObjectPath: referenceTargetPath
+					}
+				}
+			],
+			kind: "set_cells",
+			sessionId: "session-1",
+			tableObjectPath: rowReferenceSnapshot.table.objectPath
+		});
+		expect(screen.getByText(rowReferenceSnapshot.table.objectPath)).toBeDefined();
 	});
 });

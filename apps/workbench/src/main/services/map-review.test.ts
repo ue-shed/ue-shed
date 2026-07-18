@@ -8,6 +8,7 @@ import {
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { Observatory } from "@ue-shed/observatory";
+import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
 import { Effect, Layer } from "effect";
 import { join } from "node:path";
 import { expect } from "vitest";
@@ -80,11 +81,28 @@ const dyingAuthoring: ReviewAuthoringShape = {
 };
 const WorkbenchMapReviewTestLive = WorkbenchMapReviewLive.pipe(
 	Layer.provide(
-		Layer.succeed(
-			Observatory,
-			Observatory.of({
-				focus: () => Effect.die("not used"),
-				snapshot: () => Effect.die("not used")
+		Layer.mergeAll(
+			Layer.succeed(
+				Observatory,
+				Observatory.of({
+					focus: () => Effect.die("not used"),
+					snapshot: () => Effect.die("not used")
+				})
+			),
+			makeEditorPlaySessionTestLayer({
+				execute: () => Effect.die("not used"),
+				pause: () => Effect.die("not used"),
+				resume: () => Effect.die("not used"),
+				start: () => Effect.die("not used"),
+				status: () =>
+					Effect.succeed({
+						contract: {
+							name: "unreal-editor-play-session",
+							version: { major: 1, minor: 0 }
+						},
+						state: { status: "stopped" }
+					}),
+				stop: () => Effect.die("not used")
 			})
 		)
 	)

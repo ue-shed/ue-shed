@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { ReviewCaptureBlock } from "./review-session-policy.js";
 
 const IpcFailure = Schema.Struct({ message: Schema.String, recovery: Schema.String });
 const IpcPose = Schema.Struct({
@@ -28,6 +29,7 @@ export type MapReviewRunView = Schema.Schema.Type<typeof MapReviewRunView>;
 
 export const MapReviewResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({ status: Schema.Literal("blocked"), policy: ReviewCaptureBlock }),
 	Schema.Struct({ status: Schema.Literal("failed"), error: IpcFailure }),
 	Schema.Struct({
 		status: Schema.Literal("ready"),

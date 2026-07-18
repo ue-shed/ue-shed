@@ -156,6 +156,21 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 						);
 					})()}
 				</Match>
+				<Match when={state().status === "blocked"}>
+					{(() => {
+						const current = state();
+						if (current.status !== "blocked") return null;
+						return (
+							<div {...stylex.props(styles.errorState)}>
+								<strong>{current.policy.message}</strong>
+								<span>{current.policy.recovery}</span>
+								<button type="button" onClick={() => void load()}>
+									Return to review
+								</button>
+							</div>
+						);
+					})()}
+				</Match>
 				<Match when={ready()}>
 					{(current) => (
 						<div {...stylex.props(styles.workspace)}>

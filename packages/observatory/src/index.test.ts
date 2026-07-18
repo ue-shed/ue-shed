@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ActorId, type ObservedActor, projectActors } from "./index.js";
+import { ActorId, type ObservedActor, WorldScoutRefreshRate, projectActors } from "./index.js";
 
 function actor(id: string, x: number, y: number): ObservedActor {
 	return {
@@ -32,5 +32,14 @@ describe("actor spatial projection", () => {
 		expect(projection.points[0]?.yPercent).toBeCloseTo(50);
 		expect(projection.width).toBeGreaterThan(0);
 		expect(projection.height).toBeGreaterThan(0);
+	});
+});
+
+describe("world scout refresh rate", () => {
+	it("accepts the supported 1-30 Hz range", () => {
+		expect(WorldScoutRefreshRate.make(1)).toBe(1);
+		expect(WorldScoutRefreshRate.make(30)).toBe(30);
+		expect(() => WorldScoutRefreshRate.make(0)).toThrow();
+		expect(() => WorldScoutRefreshRate.make(31)).toThrow();
 	});
 });

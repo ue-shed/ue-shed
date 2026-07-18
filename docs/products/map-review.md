@@ -36,11 +36,18 @@ the same selection, generation, and approval path.
 The Live World Scout composition is also implemented as the primary Workbench entry into that flow.
 The separately enabled Observatory capability returns bounded editor-world actor snapshots with
 identity, class, label, transform, bounds, map, world kind, sequence, and observation time. Workbench
-projects those actors onto an aspect-preserving XY canvas at 2 Hz, with class counts, search,
-hide/show filters, selection, and an inspector. Selecting a point only inspects the actor. **Go to
+projects those actors onto an aspect-preserving XY canvas at a user-selected 1–30 Hz cadence, with
+class counts, search, hide/show filters, selection, and an inspector. The last valid snapshot remains
+visible and is marked reconnecting when a poll fails, then returns to live state on the next valid
+snapshot. Selecting a point only inspects the actor. **Go to
 Actor** brings Unreal forward, selects and focuses the actor, and starts transient Review View
 framing. **Follow Actor** keeps re-framing it from the live observation stream until stopped. Map
 Review remains the authority only after the author keeps a view or captures durable evidence.
+
+PIE observations are valid navigation targets. When a PIE actor has an editor-world counterpart,
+Go to Actor selects that counterpart for the authoring workflow while focusing the observed runtime
+position. Runtime-only PIE actors can still focus the level viewport, but they do not invent a
+durable editor selection or stable authoring subject.
 
 This is the beginning of Slice 2 rather than its completion. Post-realization projected-bounds
 diagnostics, richer orientation inputs, viewport manipulation, and restart-level authoring-session

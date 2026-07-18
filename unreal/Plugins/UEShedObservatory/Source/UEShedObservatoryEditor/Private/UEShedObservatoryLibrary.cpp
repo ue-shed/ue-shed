@@ -123,7 +123,7 @@ void UUEShedObservatoryLibrary::FocusActor(
 	Root->SetStringField(TEXT("actorId"), ActorId);
 	bool bIsPie = false;
 	UWorld* World = ObservedWorld(bIsPie);
-	if (World == nullptr || bIsPie)
+	if (World == nullptr)
 	{
 		Root->SetStringField(TEXT("status"), TEXT("not_supported"));
 		SerializeJson(Root, ResultJson);
@@ -146,24 +146,29 @@ void UUEShedObservatoryLibrary::FocusActor(
 		return;
 	}
 
-	if (UEditorActorSubsystem* Actors = GEditor->GetEditorSubsystem<UEditorActorSubsystem>())
+	AActor* EditorActor = bIsPie
+		? EditorUtilities::GetEditorWorldCounterpartActor(Match)
+		: Match;
+	if (UEditorActorSubsystem* Actors =
+		GEditor->GetEditorSubsystem<UEditorActorSubsystem>())
 	{
 		Actors->SelectNothing();
-		Actors->SetActorSelectionState(Match, true);
-		GEditor->MoveViewportCamerasToActor(*Match, false);
-		if (BringToFront && FSlateApplication::IsInitialized())
+		if (EditorActor != nullptr)
 		{
-			if (const TSharedPtr<SWindow> Window =
-				FSlateApplication::Get().GetActiveTopLevelWindow())
-			{
-				Window->BringToFront(true);
-			}
+			Actors->SetActorSelectionState(EditorActor, true);
 		}
-		Root->SetStringField(TEXT("status"), TEXT("focused"));
 	}
-	else
+	GEditor->MoveViewportCamerasToActor(*Match, false);
+	if (BringToFront && FSlateApplication::IsInitialized())
 	{
-		Root->SetStringField(TEXT("status"), TEXT("not_supported"));
+		if (const TSharedPtr<SWindow> Window =
+			FSlateApplication::Get().GetActiveTopLevelWindow())
+		{
+			Window->BringToFront(true);
+		}
 	}
+	Root->SetStringField(TEXT("authoringSubject"),
+		EditorActor != nullptr ? TEXT("selected") : TEXT("runtime_only"));
+	Root->SetStringField(TEXT("status"), TEXT("focused"));
 	SerializeJson(Root, ResultJson);
 }

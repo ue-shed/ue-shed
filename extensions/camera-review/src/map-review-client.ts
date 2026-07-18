@@ -5,7 +5,12 @@ import type {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/cameras/review-contracts";
-import type { ActorId, WorldScoutFocusResult, WorldScoutResult } from "@ue-shed/observatory";
+import type {
+	ActorId,
+	WorldScoutFocusResult,
+	WorldScoutRefreshRate,
+	WorldScoutResult
+} from "@ue-shed/observatory";
 import { Context, type Effect, Schema, type Stream } from "effect";
 
 export type {
@@ -34,7 +39,9 @@ export interface MapReviewClientShape {
 		actorId: ActorId,
 		bringToFront: boolean
 	) => Effect.Effect<WorldScoutFocusResult, MapReviewClientError>;
-	readonly worldSnapshots: Stream.Stream<WorldScoutResult>;
+	readonly worldSnapshots: (
+		refreshRate: WorldScoutRefreshRate
+	) => Stream.Stream<WorldScoutResult>;
 	readonly approveCandidate: (
 		intent: MapReviewApproveCandidateIntent
 	) => Effect.Effect<MapReviewApprovalResult, MapReviewClientError>;

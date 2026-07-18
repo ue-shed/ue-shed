@@ -3,6 +3,7 @@ import {
 	ActorId,
 	projectActors,
 	type ObservedActor,
+	WorldScoutRefreshRate,
 	type WorldScoutResult
 } from "@ue-shed/observatory";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
@@ -30,14 +31,24 @@ export function WorldScout(props: {
 	const focusAction = createEffectAction();
 	const followAction = createEffectAction();
 	const [result, setResult] = createSignal<WorldScoutResult>();
+	const [lastSnapshot, setLastSnapshot] =
+		createSignal<Extract<WorldScoutResult, { readonly status: "ready" }>["snapshot"]>();
+	const [refreshRate, setRefreshRate] = createSignal(WorldScoutRefreshRate.make(5));
 	const [query, setQuery] = createSignal("");
 	const [hiddenClasses, setHiddenClasses] = createSignal<ReadonlySet<string>>(new Set());
 	const [selectedId, setSelectedId] = createSignal<ActorId>();
 	const [following, setFollowing] = createSignal(false);
 	const [navigationStatus, setNavigationStatus] = createSignal("SELECTED FOR REVIEW");
-	const snapshot = createMemo(() => {
+	const snapshot = createMemo(() => lastSnapshot());
+	const connectionLabel = createMemo(() => {
 		const current = result();
-		return current?.status === "ready" ? current.snapshot : undefined;
+		if (current?.status === "ready") return current.snapshot.worldKind;
+		return snapshot() === undefined ? "OFFLINE" : "RECONNECTING";
+	});
+	const sampleAge = createMemo(() => {
+		const capturedAt = snapshot()?.capturedAt;
+		if (capturedAt === undefined) return undefined;
+		return Math.max(0, Date.now() - Date.parse(capturedAt));
 	});
 	const classes = createMemo(() => {
 		const counts = new Map<string, number>();
@@ -60,11 +71,15 @@ export function WorldScout(props: {
 	const selected = createMemo(() =>
 		snapshot()?.actors.find((actor) => actor.id === selectedId())
 	);
+	const acceptResult = (current: WorldScoutResult) => {
+		setResult(current);
+		if (current.status === "ready") setLastSnapshot(current.snapshot);
+	};
 
-	onMount(() => {
-		subscription.subscribe(props.client.worldSnapshots, {
+	const subscribe = (rate: WorldScoutRefreshRate) => {
+		subscription.subscribe(props.client.worldSnapshots(rate), {
 			onValue: (current) => {
-				setResult(current);
+				acceptResult(current);
 				if (!following() || current.status !== "ready") return;
 				const actor = current.snapshot.actors.find(
 					(candidate) => candidate.id === selectedId()
@@ -84,9 +99,19 @@ export function WorldScout(props: {
 				});
 			}
 		});
-	});
+	};
 
-	const connect = () => connectAction.run(props.client.connectWorld(), { onSuccess: setResult });
+	onMount(() => subscribe(refreshRate()));
+
+	const connect = () =>
+		connectAction.run(props.client.connectWorld(), { onSuccess: acceptResult });
+	const updateRefreshRate = (value: string) => {
+		const parsed = Number(value);
+		if (!Number.isInteger(parsed) || parsed < 1 || parsed > 30) return;
+		const next = WorldScoutRefreshRate.make(parsed);
+		setRefreshRate(next);
+		subscribe(next);
+	};
 	const toggleClass = (className: string) =>
 		setHiddenClasses((current) => {
 			const next = new Set(current);
@@ -104,8 +129,14 @@ export function WorldScout(props: {
 			onSuccess: (focus) => {
 				if (focus.status === "focused") {
 					setFollowing(follow);
-					setNavigationStatus(follow ? "FOLLOWING IN UNREAL" : "FOCUSED IN UNREAL");
-					props.onActorFocused(actor);
+					setNavigationStatus(
+						follow
+							? "FOLLOWING IN UNREAL"
+							: focus.authoringSubject === "selected"
+								? "FOCUSED IN UNREAL"
+								: "FOCUSED RUNTIME ACTOR"
+					);
+					if (focus.authoringSubject === "selected") props.onActorFocused(actor);
 				} else {
 					setFollowing(false);
 					setNavigationStatus("FOCUS UNAVAILABLE");
@@ -123,10 +154,19 @@ export function WorldScout(props: {
 				</div>
 				<div {...stylex.props(styles.worldStatus)}>
 					<span {...stylex.props(styles.liveDot)} />
-					<strong>{snapshot()?.worldKind ?? "OFFLINE"}</strong>
+					<strong>{connectionLabel()}</strong>
 					<code {...stylex.props(styles.worldStatusCode)}>
 						{snapshot()?.mapPath ?? "No observed world"}
 					</code>
+					<Show when={sampleAge()}>
+						{(age) => (
+							<small {...stylex.props(styles.sampleAge)}>
+								{age() < 1_000
+									? "LIVE SAMPLE"
+									: `${(age() / 1_000).toFixed(1)}s OLD`}
+							</small>
+						)}
+					</Show>
 				</div>
 			</header>
 
@@ -193,6 +233,20 @@ export function WorldScout(props: {
 						<strong>{visibleActors().length}</strong>
 						<span>VISIBLE / {snapshot()?.actors.length ?? 0} OBSERVED</span>
 					</div>
+					<label {...stylex.props(styles.rateControl)}>
+						<span>REFRESH RATE</span>
+						<input
+							type="range"
+							aria-label="World refresh rate"
+							min="1"
+							max="30"
+							step="1"
+							value={refreshRate()}
+							onInput={(event) => updateRefreshRate(event.currentTarget.value)}
+							{...stylex.props(styles.rateSlider)}
+						/>
+						<strong>{refreshRate()} HZ</strong>
+					</label>
 				</div>
 
 				<div {...stylex.props(styles.workspace)}>
@@ -356,6 +410,7 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
+	sampleAge: { gridColumn: "2", color: "#657068", fontSize: 7, letterSpacing: ".1em" },
 	offline: {
 		minHeight: 410,
 		display: "flex",
@@ -388,8 +443,8 @@ const styles = stylex.create({
 		backgroundColor: "#111512",
 		minWidth: 0,
 		gridTemplateColumns: {
-			default: "230px minmax(0,1fr) 150px",
-			"@media (max-width: 1050px)": "minmax(180px, .7fr) minmax(0, 1.3fr) 120px"
+			default: "220px minmax(0,1fr) 130px 150px",
+			"@media (max-width: 1050px)": "minmax(170px, .7fr) minmax(0, 1.3fr) 100px 130px"
 		}
 	},
 	search: { display: "grid", gap: 5, color: "#879188", fontSize: 8, letterSpacing: ".1em" },
@@ -415,6 +470,21 @@ const styles = stylex.create({
 	classHidden: { opacity: 0.35 },
 	classSwatch: { width: 6, height: 6, borderRadius: "50%" },
 	sampleMeta: { display: "grid", textAlign: "right", color: "#7f8882", fontSize: 8 },
+	rateControl: {
+		display: "grid",
+		gridTemplateColumns: "1fr auto",
+		gap: "5px 10px",
+		alignItems: "center",
+		color: "#879188",
+		fontSize: 8,
+		letterSpacing: ".1em"
+	},
+	rateSlider: {
+		gridColumn: "1 / -1",
+		width: "100%",
+		accentColor: "#b9f227",
+		cursor: "ew-resize"
+	},
 	workspace: {
 		display: "grid",
 		gridTemplateColumns: {

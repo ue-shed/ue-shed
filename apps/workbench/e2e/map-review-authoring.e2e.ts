@@ -26,6 +26,10 @@ test("authors real candidate previews from the selected fixture subject", async 
 	try {
 		await workbench.expectShowcaseReady();
 		await workbench.openRoute("Map Review");
+		const refreshRate = workbench.page.getByRole("slider", { name: "World refresh rate" });
+		await expect(refreshRate).toHaveValue("5");
+		await refreshRate.fill("30");
+		await expect(refreshRate).toHaveValue("30");
 		await workbench.page
 			.getByRole("button", { name: "Select Review Subject" })
 			.click({ timeout: 60_000 });

@@ -30,11 +30,12 @@ const offlineScout = {
 			status: "unavailable" as const
 		}),
 	focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
-	worldSnapshots: Stream.make({
-		message: "Offline",
-		recovery: "Open Unreal",
-		status: "unavailable" as const
-	})
+	worldSnapshots: () =>
+		Stream.make({
+			message: "Offline",
+			recovery: "Open Unreal",
+			status: "unavailable" as const
+		})
 } satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldSnapshots">;
 
 function renderRoute(client: MapReviewClientShape) {

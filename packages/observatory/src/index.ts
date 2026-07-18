@@ -4,6 +4,12 @@ import { Context, Effect, Layer, Schema } from "effect";
 export const ActorId = Schema.NonEmptyString.pipe(Schema.brand("ActorId"));
 export type ActorId = Schema.Schema.Type<typeof ActorId>;
 
+export const WorldScoutRefreshRate = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(1),
+	Schema.isLessThanOrEqualTo(30)
+).pipe(Schema.brand("WorldScoutRefreshRate"));
+export type WorldScoutRefreshRate = Schema.Schema.Type<typeof WorldScoutRefreshRate>;
+
 export const WorldVector = Schema.Struct({
 	x: Schema.Finite,
 	y: Schema.Finite,
@@ -48,7 +54,11 @@ const SnapshotResponse = Schema.Union([
 ]);
 
 const FocusResponse = Schema.Union([
-	Schema.Struct({ status: Schema.Literal("focused"), actorId: ActorId }),
+	Schema.Struct({
+		status: Schema.Literal("focused"),
+		actorId: ActorId,
+		authoringSubject: Schema.Literals(["selected", "runtime_only"])
+	}),
 	Schema.Struct({ status: Schema.Literal("not_found"), actorId: ActorId }),
 	Schema.Struct({ status: Schema.Literal("not_supported"), actorId: ActorId }),
 	Schema.Struct({

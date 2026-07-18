@@ -17,6 +17,7 @@ import {
 	decodeWorldScoutFocusResult,
 	decodeWorldScoutResult,
 	type ActorId,
+	type WorldScoutRefreshRate,
 	type WorldScoutResult
 } from "@ue-shed/observatory";
 import { Effect, Schedule, Schema, Stream } from "effect";
@@ -78,16 +79,17 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 			operation: "mapReview.focusActor"
 		})
 	),
-	worldSnapshots: Stream.fromEffectSchedule(
-		Effect.catch(loadWorldSnapshot(), (cause) =>
-			Effect.succeed({
-				message: cause.message,
-				recovery: cause.recovery,
-				status: "unavailable" as const
-			})
+	worldSnapshots: (refreshRate: WorldScoutRefreshRate) =>
+		Stream.fromEffectSchedule(
+			Effect.catch(loadWorldSnapshot(), (cause) =>
+				Effect.succeed({
+					message: cause.message,
+					recovery: cause.recovery,
+					status: "unavailable" as const
+				})
+			),
+			Schedule.spaced(`${1_000 / refreshRate} millis`)
 		),
-		Schedule.spaced("500 millis")
-	),
 	approveCandidate: Effect.fn("MapReviewClient.approveCandidate")(
 		(intent): Effect.Effect<MapReviewApprovalResult, MapReviewClientError> =>
 			request({

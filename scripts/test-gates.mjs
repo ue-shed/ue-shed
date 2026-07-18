@@ -1,5 +1,14 @@
 const gates = [
 	{
+		file: "packages/engine-discovery/src/real-unreal.integration.test.ts",
+		name: "real Unreal editor play-session lifecycle",
+		missing: (environment) =>
+			environment.UE_SHED_UNREAL_PLAY_SESSION_INTEGRATION === "1" &&
+			environment.UE_SHED_REMOTE_CONTROL_ENDPOINT
+				? undefined
+				: "set UE_SHED_UNREAL_PLAY_SESSION_INTEGRATION=1 and UE_SHED_REMOTE_CONTROL_ENDPOINT"
+	},
+	{
 		file: "packages/unreal-connection/src/real-unreal.integration.test.ts",
 		name: "real Unreal Remote Control authoring",
 		missing: (environment) =>

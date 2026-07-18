@@ -28,6 +28,7 @@ import {
 	ReviewViewId
 } from "@ue-shed/cameras";
 import { searchTextCorpus, TextCorpusService, TextCorpusServiceLive } from "@ue-shed/game-text";
+import { EditorPlaySession, EditorPlaySessionLive } from "@ue-shed/engine-discovery";
 import { CURRENT_PROTOCOL_VERSION } from "@ue-shed/protocol";
 import {
 	aggregateHealth,
@@ -270,6 +271,25 @@ export function executeCommand(
 				return yield* runtime.print(
 					`ue-shed 0.0.0 (protocol ${CURRENT_PROTOCOL_VERSION.major}.${CURRENT_PROTOCOL_VERSION.minor})\n`
 				);
+			case "EditorPlaySession": {
+				const session = yield* EditorPlaySession;
+				if (command.action === "status") {
+					return yield* session.status(command.endpoint).pipe(Effect.flatMap(printJson));
+				}
+				const response =
+					command.action === "start"
+						? yield* session.start(command.endpoint, "play")
+						: command.action === "simulate"
+							? yield* session.start(command.endpoint, "simulate")
+							: command.action === "pause"
+								? yield* session.pause(command.endpoint)
+								: command.action === "resume"
+									? yield* session.resume(command.endpoint)
+									: yield* session.stop(command.endpoint);
+				yield* printJson(response);
+				if (response.outcome === "rejected") yield* runtime.setExitCode(1);
+				return;
+			}
 			case "AuditTextures": {
 				const report = yield* Effect.gen(function* () {
 					const audit = yield* TextureAudit;
@@ -549,12 +569,14 @@ export function executeCommand(
 		reviewCaptureRemotePortLayer(captureEndpoint).pipe(Layer.provide(RemoteControlClientLive))
 	);
 	const capture = ReviewCaptureLive.pipe(Layer.provide(captureDependencies));
+	const editorPlaySession = EditorPlaySessionLive.pipe(Layer.provide(RemoteControlClientLive));
 	return observeOperation(`Cli.${command._tag}`, program).pipe(
 		Effect.provide(readerLayer(reader)),
 		Effect.provide(RemoteControlClientLive),
 		Effect.provide(ReviewRepositoryLive),
 		Effect.provide(reviewAuthoring),
 		Effect.provide(capture),
+		Effect.provide(editorPlaySession),
 		Effect.mapError((cause) =>
 			cause instanceof CliCommandError
 				? cause

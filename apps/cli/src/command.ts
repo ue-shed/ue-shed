@@ -9,6 +9,10 @@ export const CliCommand = Schema.TaggedUnion({
 	Help: {},
 	Version: {},
 	Doctor: {},
+	EditorPlaySession: {
+		action: Schema.Literals(["status", "start", "simulate", "pause", "resume", "stop"]),
+		endpoint: Schema.String
+	},
 	AuditTextures: { ...Project, ruleFile: Schema.String, ...Reader },
 	AuthoringTables: { ...Project, ...Reader },
 	AuthoringRelationships: { ...Project, ...Reader },
@@ -126,6 +130,7 @@ Usage:
   ue-shed review capture <project-root> <review-set> <endpoint>
   ue-shed review history <project-root>
   ue-shed review show <run-json>
+  ue-shed editor play status|start|simulate|pause|resume|stop <endpoint>
   ue-shed version
   ue-shed doctor
   ue-shed help
@@ -478,6 +483,30 @@ export function parseCliCommand(args: readonly string[]): Effect.Effect<CliComma
 		if (["version", "--version", "-v"].includes(command))
 			return CliCommand.cases.Version.make({});
 		if (command === "doctor") return CliCommand.cases.Doctor.make({});
+		if (command === "editor") {
+			const [area, action, endpoint, ...extra] = rest;
+			if (
+				area !== "play" ||
+				!action ||
+				!["status", "start", "simulate", "pause", "resume", "stop"].includes(action) ||
+				!endpoint ||
+				extra.length > 0
+			) {
+				return yield* usage(
+					"editor play requires status, start, simulate, pause, resume, or stop and one endpoint"
+				);
+			}
+			return CliCommand.cases.EditorPlaySession.make({
+				action: yield* Schema.decodeUnknownEffect(
+					CliCommand.cases.EditorPlaySession.fields.action
+				)(action).pipe(
+					Effect.mapError(
+						() => new CliUsageError({ message: `Unknown play action: ${action}` })
+					)
+				),
+				endpoint
+			});
+		}
 		if (command === "authoring") return yield* parseAuthoring(rest);
 		if (command === "audit") {
 			const [kind, projectRoot, ...flags] = rest;

@@ -1,45 +1,19 @@
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema } from "effect";
+import {
+	ActorId,
+	WorldActorSnapshot,
+	type ActorId as ActorIdType,
+	type ObservedActor as ObservedActorType
+} from "./actor-models.js";
 
-export const ActorId = Schema.NonEmptyString.pipe(Schema.brand("ActorId"));
-export type ActorId = Schema.Schema.Type<typeof ActorId>;
+export * from "./actor-models.js";
 
 export const WorldScoutRefreshRate = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(1),
 	Schema.isLessThanOrEqualTo(30)
 ).pipe(Schema.brand("WorldScoutRefreshRate"));
 export type WorldScoutRefreshRate = Schema.Schema.Type<typeof WorldScoutRefreshRate>;
-
-export const WorldVector = Schema.Struct({
-	x: Schema.Finite,
-	y: Schema.Finite,
-	z: Schema.Finite
-});
-export interface WorldVector extends Schema.Schema.Type<typeof WorldVector> {}
-
-export const ObservedActor = Schema.Struct({
-	bounds: Schema.Struct({
-		center: WorldVector,
-		extent: WorldVector
-	}),
-	className: Schema.NonEmptyString,
-	displayName: Schema.NonEmptyString,
-	id: ActorId,
-	location: WorldVector,
-	path: Schema.NonEmptyString,
-	rotation: WorldVector
-});
-export interface ObservedActor extends Schema.Schema.Type<typeof ObservedActor> {}
-
-export const WorldActorSnapshot = Schema.Struct({
-	actors: Schema.Array(ObservedActor),
-	capturedAt: Schema.String,
-	mapPath: Schema.NonEmptyString,
-	sequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	worldKind: Schema.Literals(["editor", "pie"]),
-	worldSeconds: Schema.Finite
-});
-export interface WorldActorSnapshot extends Schema.Schema.Type<typeof WorldActorSnapshot> {}
 
 const SnapshotResponse = Schema.Union([
 	Schema.Struct({
@@ -95,7 +69,7 @@ export class ObservatoryConnectionError extends Schema.TaggedErrorClass<Observat
 export interface ObservatoryShape {
 	readonly focus: (
 		endpoint: string,
-		actorId: ActorId,
+		actorId: ActorIdType,
 		bringToFront: boolean
 	) => Effect.Effect<WorldScoutFocusResult, ObservatoryConnectionError>;
 	readonly snapshot: (
@@ -155,7 +129,7 @@ export const ObservatoryLive = Layer.effect(
 
 		const focus = Effect.fn("Observatory.focus")(function* (
 			endpoint: string,
-			actorId: ActorId,
+			actorId: ActorIdType,
 			bringToFront: boolean
 		) {
 			const value = yield* remote
@@ -180,7 +154,7 @@ export const decodeWorldScoutResult = Schema.decodeUnknownEffect(WorldScoutResul
 export const decodeWorldScoutFocusResult = Schema.decodeUnknownEffect(WorldScoutFocusResult);
 
 export interface SpatialPoint {
-	readonly actor: ObservedActor;
+	readonly actor: ObservedActorType;
 	readonly xPercent: number;
 	readonly yPercent: number;
 }
@@ -193,7 +167,7 @@ export interface SpatialProjection {
 }
 
 export function projectActors(
-	actors: ReadonlyArray<ObservedActor>,
+	actors: ReadonlyArray<ObservedActorType>,
 	paddingRatio = 0.08
 ): SpatialProjection {
 	if (actors.length === 0) {
@@ -226,7 +200,7 @@ export function projectActors(
 }
 
 /** Stable key across editor ↔ PIE path prefixes for the same placed instance. */
-export function actorInstanceKey(actor: Pick<ObservedActor, "className" | "path">): string {
+export function actorInstanceKey(actor: Pick<ObservedActorType, "className" | "path">): string {
 	const leaf = actor.path.split(".").at(-1) ?? actor.path;
 	const persistent = leaf.includes("PersistentLevel.")
 		? leaf.slice(leaf.indexOf("PersistentLevel.") + "PersistentLevel.".length)
@@ -236,10 +210,10 @@ export function actorInstanceKey(actor: Pick<ObservedActor, "className" | "path"
 
 /** Keep a scout selection when snapshot actor ids change (PLAY start/stop). */
 export function remapObservedActorId(
-	previousId: ActorId | undefined,
-	previousActors: ReadonlyArray<ObservedActor>,
-	nextActors: ReadonlyArray<ObservedActor>
-): ActorId | undefined {
+	previousId: ActorIdType | undefined,
+	previousActors: ReadonlyArray<ObservedActorType>,
+	nextActors: ReadonlyArray<ObservedActorType>
+): ActorIdType | undefined {
 	if (previousId === undefined) return undefined;
 	if (nextActors.some((actor) => actor.id === previousId)) return previousId;
 	const prior = previousActors.find((actor) => actor.id === previousId);
@@ -247,3 +221,30 @@ export function remapObservedActorId(
 	const key = actorInstanceKey(prior);
 	return nextActors.find((actor) => actorInstanceKey(actor) === key)?.id;
 }
+
+export {
+	applyTransformBatch,
+	applyWorldObservationEvent,
+	CatalogRevision,
+	catalogEntryAt,
+	catalogFromSnapshot,
+	connectingState,
+	materializeObservedActor,
+	ObservationSessionId,
+	PacketSequence,
+	StreamActorIndex,
+	WorldActorCatalog,
+	WorldActorCatalogEntry,
+	WorldIndexedTransform,
+	WorldObservationHealth,
+	WorldTransform,
+	WorldTransformBatch
+} from "./world-observation.js";
+export type {
+	WorldObservationApplyResult,
+	WorldObservationEvent,
+	WorldObservationRejectReason,
+	WorldObservationSample,
+	WorldObservationState,
+	WorldTransformStore
+} from "./world-observation.js";

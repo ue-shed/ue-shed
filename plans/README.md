@@ -13,7 +13,7 @@ the status row when done.
 | [007](007-conflicts-rich-types-and-views.md)      | Complete conflicts, rich Unreal types, composites, and views         | P1       | XL     | 006, 015   | IN PROGRESS — demo cutoff |
 | [017](017-map-review-realization-and-recovery.md) | Verify realized framing and recover in-progress Map Review authoring | P0       | L      | —          | TODO                      |
 | [018](018-pie-live-review-previews.md)            | PIE live cameras for Map Review authoring previews                   | P0       | L      | —          | IN PROGRESS               |
-| [019](019-stream-world-scout-transforms.md)       | Stream actor transforms and render World Scout on Canvas             | P1       | XL     | 018        | TODO                      |
+| [019](019-stream-world-scout-transforms.md)       | Stream actor transforms and render World Scout on Canvas             | P1       | XL     | 018        | IN PROGRESS               |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

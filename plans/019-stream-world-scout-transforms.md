@@ -297,15 +297,9 @@ packets/s, bytes/s, p50/p95 decode+apply time, p50/p95 paint time, sequence gaps
 
 1. Add tests around the current `WorldActorSnapshot`, projection, selection, stale retention, and
    reconnect behavior before changing transport.
-2. Introduce the public types in `world-observation.ts`:
-    - `WorldActorCatalogEntry`: current static actor fields plus `streamIndex`.
-    - `WorldActorCatalog`: session ID, catalog revision, map/world identity, captured time, entries.
-    - `WorldTransform`: location and rotation only.
-    - `WorldTransformBatch`: session, revision, sequence, sample time, changed indexed transforms,
-      producer counters.
-    - `WorldObservationState`: discriminated `connecting | live | stale | polling_fallback |
-unavailable`, retaining the last valid catalog/transforms where applicable.
-    - `WorldObservationEvent`: catalog, transforms, reset, unavailable.
+2. Introduce the public types in `world-observation.ts`: - `WorldActorCatalogEntry`: current static actor fields plus `streamIndex`. - `WorldActorCatalog`: session ID, catalog revision, map/world identity, captured time, entries. - `WorldTransform`: location and rotation only. - `WorldTransformBatch`: session, revision, sequence, sample time, changed indexed transforms,
+   producer counters. - `WorldObservationState`: discriminated `connecting | live | stale | polling_fallback |
+unavailable`, retaining the last valid catalog/transforms where applicable. - `WorldObservationEvent`: catalog, transforms, reset, unavailable.
 
 3. Implement and test pure state transitions. Reject wrong-session, wrong-revision, out-of-range,
    duplicate, and regressing-sequence batches. A gap marks health degraded but applies the newest

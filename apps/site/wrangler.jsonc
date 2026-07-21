@@ -3,6 +3,7 @@
 	"name": "ue-shed-site",
 	// Set to the date this worker was created
 	"compatibility_date": "2026-07-21",
+	"routes": [{ "pattern": "ue-shed.peculiarnewbie.com", "custom_domain": true }],
 	// Static-assets-only worker: the Cloudflare Vite plugin builds the client
 	// environment and fills in assets.directory in the output configuration.
 	"assets": {

@@ -1,59 +1,19 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { createSignal, For, Show, type Component } from "solid-js";
-import { AuditMock } from "./AuditMock.js";
-import { AuthoringMock } from "./AuthoringMock.js";
-import { ObservatoryMock } from "./ObservatoryMock.js";
-import { ReviewMock } from "./ReviewMock.js";
-
-type ShowcaseTab = {
-	readonly id: string;
-	readonly label: string;
-	readonly component: Component;
-	readonly note: string;
-	readonly chips: readonly string[];
-};
-
-const tabs: readonly ShowcaseTab[] = [
-	{
-		id: "authoring",
-		label: "Data Authoring",
-		component: AuthoringMock,
-		note: "The maintained DataTable grid, mocked with the fixture's real rows. Click a cell.",
-		chips: ["saved package · no editor", "typed drafts + undo/redo", "same API as the CLI"]
-	},
-	{
-		id: "audit",
-		label: "Texture Audit",
-		component: AuditMock,
-		note: "A whole content corpus rule-checked from saved packages. Findings below are real.",
-		chips: ["whole corpus from disk", "rules as data", "serialized evidence"]
-	},
-	{
-		id: "review",
-		label: "Map Review",
-		component: ReviewMock,
-		note: "Approve a set, capture immutable runs, drag to compare before and after.",
-		chips: ["immutable capture runs", "before/after history", "live editor capture"]
-	},
-	{
-		id: "observatory",
-		label: "Actor Observatory",
-		component: ObservatoryMock,
-		note: "Stationary cubes, flying spheres, intermittent cylinders — the fixture's families, simulated live.",
-		chips: ["bounded subscriptions", "stable actor identity", "focus in Unreal"]
-	}
-];
+import { createSignal, For, Show } from "solid-js";
+import { showcaseTabs } from "../content.js";
+import { siteMedia } from "./media.js";
+import { WindowFrame } from "./WindowFrame.js";
 
 export function Showcase() {
-	const [active, setActive] = createSignal("authoring");
+	const [active, setActive] = createSignal(showcaseTabs[0]?.id ?? "");
 
-	const activeTab = () => tabs.find((tab) => tab.id === active()) ?? tabs[0];
+	const activeTab = () => showcaseTabs.find((tab) => tab.id === active()) ?? showcaseTabs[0];
 
 	return (
 		<div>
-			<div {...stylex.props(styles.tabBar)} role="tablist" aria-label="Tool showcase">
-				<For each={tabs}>
+			<div {...stylex.props(styles.tabBar)} role="tablist" aria-label="Workbench captures">
+				<For each={showcaseTabs}>
 					{(tab) => (
 						<button
 							type="button"
@@ -67,14 +27,23 @@ export function Showcase() {
 					)}
 				</For>
 			</div>
-			<For each={tabs}>
-				{(tab) => (
-					<Show when={active() === tab.id}>
-						<div role="tabpanel">
-							<tab.component />
-						</div>
-					</Show>
-				)}
+			<For each={showcaseTabs}>
+				{(tab) => {
+					const capture = siteMedia.captures[tab.capture];
+					return (
+						<Show when={active() === tab.id}>
+							<div role="tabpanel">
+								<WindowFrame title={capture.title}>
+									<img
+										src={`/media/${capture.file}`}
+										alt={tab.alt}
+										{...stylex.props(styles.capture)}
+									/>
+								</WindowFrame>
+							</div>
+						</Show>
+					);
+				}}
 			</For>
 			<Show when={activeTab()}>
 				{(tab) => (
@@ -122,6 +91,11 @@ const styles = stylex.create({
 	tabActive: {
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextStrong
+	},
+	capture: {
+		display: "block",
+		height: "auto",
+		width: "100%"
 	},
 	caption: {
 		alignItems: "center",

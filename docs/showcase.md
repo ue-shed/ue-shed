@@ -173,3 +173,22 @@ fixture before recording, then captures the approved Review Set live, verifies t
 and its 1280x720 image, and demonstrates before-and-after history navigation. Fixture startup stays
 out of the review video; a failed live capture fails the recording rather than presenting stale
 evidence as a successful showcase.
+
+## Publish captures to the site
+
+The public site only shows real Workbench media — no mockups. After a journey records a passing
+bundle, export its curated chapter frames into `apps/site/public/media` and regenerate the site's
+typed media manifest:
+
+```powershell
+pnpm site:media
+```
+
+The exporter picks the latest passing bundle per journey; pin a specific one with
+`pnpm site:media --bundle map-review=<recording-id>`. The site renders only what the manifest
+exports, and the showcase tabs fail typecheck if their capture leaves the manifest, so published
+media cannot drift from a real recording.
+
+Review exported frames before deploying. Captures show the real Workbench, including whatever
+diagnostics it surfaces; withhold a capture in `scripts/site-media.mjs` rather than publish an
+embarrassing frame.

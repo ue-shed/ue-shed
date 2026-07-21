@@ -75,10 +75,7 @@ export function AuthoringMock() {
 	};
 
 	return (
-		<WindowFrame
-			title="Data Authoring — DT_Scalars"
-			badge="real fixture rows · edits stay local"
-		>
+		<WindowFrame title="Data Authoring — DT_Scalars" badge="draft editor">
 			<div {...stylex.props(styles.toolbar)}>
 				<span {...stylex.props(styles.chip)}>authority: project_files</span>
 				<span {...stylex.props(styles.chip)}>complete</span>
@@ -201,10 +198,7 @@ export function AuthoringMock() {
 					</For>
 				</div>
 			</div>
-			<div {...stylex.props(styles.footer)}>
-				Click a cell to draft an edit. The real session applies through UEShedAuthoring —
-				this one stays in your browser.
-			</div>
+			<div {...stylex.props(styles.footer)}>Click a cell to draft an edit.</div>
 		</WindowFrame>
 	);
 }

@@ -1,3 +1,5 @@
+import { siteMedia } from "./showcase/media.js";
+
 export const repositoryUrl = "https://github.com/peculiarnewbie/ue-shed";
 
 export type TerminalLine = {
@@ -39,6 +41,44 @@ export const inspectTerminal: TerminalSpec = {
 		output("}")
 	]
 };
+
+export type ShowcaseTab = {
+	readonly id: string;
+	readonly label: string;
+	readonly capture: keyof typeof siteMedia.captures;
+	readonly alt: string;
+	readonly note: string;
+	readonly chips: readonly string[];
+};
+
+// Capture keys come from the generated media manifest, keeping screenshots in sync
+// with the available site media.
+export const showcaseTabs: readonly ShowcaseTab[] = [
+	{
+		id: "authoring",
+		label: "Data Authoring",
+		capture: "authoring",
+		alt: "The Workbench's Data Authoring route with DT_Scalars read from its saved package",
+		note: "A saved DataTable opened straight from its .uasset package: typed fields, cell evidence, completeness diagnostics.",
+		chips: ["saved package · no editor", "typed fields + evidence", "same api as the cli"]
+	},
+	{
+		id: "game-text",
+		label: "Game Text",
+		capture: "gameText",
+		alt: "The Workbench's Game Text route searching the fixture's saved string table corpus",
+		note: "Player-facing text searched across the saved corpus — storage, identity, and authority stay attached to every result.",
+		chips: ["saved corpus", "identity-aware search", "coverage gaps"]
+	},
+	{
+		id: "map-review",
+		label: "Map Review",
+		capture: "mapReview",
+		alt: "The Workbench's Map Review route comparing immutable capture runs of a fixture camera pose",
+		note: "An approved camera pose recaptured into an immutable run, before and after kept independently addressable.",
+		chips: ["immutable capture runs", "before/after history", "live editor capture"]
+	}
+];
 
 export type Tool = {
 	readonly name: string;

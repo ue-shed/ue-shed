@@ -662,14 +662,14 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 		});
 	};
 
-	const openCatalogTable = (objectPath: string) => {
+	const openCatalogTable = (objectPath: string, replaceCurrentAuthority = false) => {
 		const currentState = state();
 		const isDifferentTable =
 			currentState.status !== "ready" ||
 			currentState.snapshot.table.objectPath !== objectPath;
 		if (
 			session()?.dirty &&
-			isDifferentTable &&
+			(isDifferentTable || replaceCurrentAuthority) &&
 			!window.confirm(
 				"Switch tables? The active dirty draft will remain persisted under Recent drafts."
 			)
@@ -688,6 +688,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 				setIsReplacing(false);
 			}
 		});
+	};
+
+	const openLiveTable = () => {
+		const current = state();
+		if (current.status !== "ready") return;
+		openCatalogTable(current.snapshot.table.objectPath, true);
 	};
 
 	const runSessionOperation = (effect: Effect.Effect<AuthoringSessionResult, unknown>): void => {
@@ -883,13 +889,44 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientShape })
 					<span>Tables</span>
 				</nav>
 				<div {...stylex.props(styles.routeActions)}>
+					<Show when={state().status === "ready"}>
+						{(() => {
+							const current = state();
+							if (current.status !== "ready") return null;
+							const isLive = current.snapshot.authority.kind === "live_editor";
+							return (
+								<div
+									aria-label="Table authority"
+									role="group"
+									{...stylex.props(styles.authoritySwitch)}
+								>
+									<Button
+										type="button"
+										disabled={isReplacing() || !isLive}
+										onClick={() => void load(false)}
+										tone={isLive ? "secondary" : "primary"}
+									>
+										Saved package
+									</Button>
+									<Button
+										type="button"
+										disabled={isReplacing() || isLive}
+										onClick={openLiveTable}
+										tone={isLive ? "primary" : "secondary"}
+									>
+										Live editor
+									</Button>
+								</div>
+							);
+						})()}
+					</Show>
 					<Button
 						type="button"
 						tone="primary"
 						disabled={isReplacing()}
 						onClick={() => void load(true)}
 					>
-						{isReplacing() ? "Opening…" : "Open saved table"}
+						{isReplacing() ? "Opening…" : "Open .uasset"}
 					</Button>
 					<Button type="button" disabled={isReplacing()} onClick={() => void load(false)}>
 						Reload preset
@@ -1739,6 +1776,7 @@ const styles = stylex.create({
 		backgroundSize: "32px 32px"
 	},
 	routeActions: { display: "flex", gap: tokens.space2 },
+	authoritySwitch: { display: "flex", gap: 2 },
 	routeHeader: {
 		alignItems: "center",
 		display: "flex",

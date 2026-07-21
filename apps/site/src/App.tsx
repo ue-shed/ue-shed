@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For } from "solid-js";
+import { AuthoringMock } from "./showcase/AuthoringMock.js";
 import { Showcase } from "./showcase/Showcase.js";
 import { Terminal } from "./Terminal.js";
 import { approach, diagram, facts, inspectTerminal, repositoryUrl, tools } from "./content.js";
@@ -19,7 +20,7 @@ export function App() {
 							Tools
 						</a>
 						<a href="#approach" {...stylex.props(styles.navLink)}>
-							Approach
+							Headless-first
 						</a>
 						<a href={repositoryUrl} {...stylex.props(styles.navLink)}>
 							GitHub ↗
@@ -31,11 +32,12 @@ export function App() {
 					<section {...stylex.props(styles.hero)}>
 						<p {...stylex.props(styles.eyebrow)}>Open source · headless-first</p>
 						<h1 {...stylex.props(styles.h1)}>
-							External tools for Unreal Engine development.
+							Unreal tooling that runs without Unreal.
 						</h1>
 						<p {...stylex.props(styles.heroSub)}>
-							Open source libraries, a CLI, editor plugins, and a showcase app for
-							working with Unreal content — mostly without launching Unreal.
+							Headless-first libraries and a CLI for inspecting, auditing, and
+							authoring Unreal content from outside the editor. Live plugins and a
+							desktop showcase app included — separately enabled, never required.
 						</p>
 						<div {...stylex.props(styles.ctaRow)}>
 							<a href={repositoryUrl} {...stylex.props(styles.buttonPrimary)}>
@@ -45,18 +47,12 @@ export function App() {
 								How it's put together
 							</a>
 						</div>
-						<Terminal spec={inspectTerminal} />
-						<p {...stylex.props(styles.caption)}>
-							A saved DataTable read straight from its .uasset package. No editor
-							running.
-						</p>
+						<div {...stylex.props(styles.heroTrial)}>
+							<AuthoringMock />
+						</div>
 					</section>
 
 					<section id="showcase" {...stylex.props(styles.showcaseSection)}>
-						<header {...stylex.props(styles.sectionHead)}>
-							<p {...stylex.props(styles.eyebrow)}>Showcase</p>
-							<h2 {...stylex.props(styles.h2)}>Try it right here</h2>
-						</header>
 						<Showcase />
 					</section>
 
@@ -94,13 +90,18 @@ export function App() {
 
 					<section id="approach" {...stylex.props(styles.section)}>
 						<header {...stylex.props(styles.sectionHead)}>
-							<p {...stylex.props(styles.eyebrow)}>Approach</p>
+							<p {...stylex.props(styles.eyebrow)}>Headless-first</p>
 							<h2 {...stylex.props(styles.h2)}>Decoupled from Unreal</h2>
 							<p {...stylex.props(styles.sectionSub)}>
-								The suite extends outward from the editor instead of living inside
-								it.
+								The libraries lead; the CLI and the Workbench follow. Everything
+								below works from a shell — the app is optional.
 							</p>
 						</header>
+						<Terminal spec={inspectTerminal} />
+						<p {...stylex.props(styles.caption)}>
+							A saved DataTable read straight from its .uasset package. No editor
+							running.
+						</p>
 						<div {...stylex.props(styles.approachList)}>
 							<For each={approach}>
 								{(point, index) => (
@@ -264,6 +265,9 @@ const styles = stylex.create({
 		fontSize: 11,
 		margin: "14px 0 0"
 	},
+	heroTrial: {
+		marginTop: 44
+	},
 	facts: {
 		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
@@ -349,7 +353,8 @@ const styles = stylex.create({
 	},
 	approachList: {
 		display: "grid",
-		gap: 26
+		gap: 26,
+		marginTop: 40
 	},
 	approachItem: {
 		display: "grid",

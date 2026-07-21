@@ -1,0 +1,25 @@
+{
+	"name": "@ue-shed/site",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "vite build",
+		"deploy": "vite build && wrangler deploy",
+		"dev": "vite dev",
+		"preview": "vite preview",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@stylexjs/stylex": "catalog:",
+		"@ue-shed/ui-theme": "workspace:*",
+		"solid-js": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "^1.45.1",
+		"@stylexjs/rollup-plugin": "catalog:",
+		"vite": "^8.1.4",
+		"vite-plugin-solid": "catalog:",
+		"wrangler": "^4.112.0"
+	}
+}

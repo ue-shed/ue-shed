@@ -1,0 +1,11 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "ue-shed-site",
+	// Set to the date this worker was created
+	"compatibility_date": "2026-07-21",
+	// Static-assets-only worker: the Cloudflare Vite plugin builds the client
+	// environment and fills in assets.directory in the output configuration.
+	"assets": {
+		"not_found_handling": "single-page-application"
+	}
+}

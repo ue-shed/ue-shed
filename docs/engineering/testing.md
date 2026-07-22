@@ -112,4 +112,6 @@ pnpm check:unreal
 ```
 
 This command requires the configured local Unreal Engine installation. Run it before landing changes
-to Unreal plugins, fixture generation, or live authoring mutation behavior.
+to Unreal plugins, fixture generation, or live authoring mutation behavior. The Map Review wire
+evidence step (`pnpm test:unreal-review`) additionally needs a fixture editor with Remote Control;
+start it with `pnpm fixture:launch-authoring` and set `UE_SHED_REMOTE_CONTROL_ENDPOINT`.

@@ -19,7 +19,8 @@ The durable loop supports approved perspective poses, actor-path subjects, Pure 
 per-view failures, and atomic run publication. Review Sets normally live in
 `.ue-shed/review/sets`; generated runs live in `.ue-shed/review/runs` and remain local by default.
 The language-neutral editor wire contract is under
-`packages/protocol/contracts/cameras/review/v1`.
+`packages/protocol/contracts/cameras/review/v1`. Keep it green with
+`pnpm --filter @ue-shed/cameras contract:check`.
 
 The decoder uses a bounded chunk queue instead of repeatedly concatenating partial frames. Payloads
 cross the package boundary as zero-copy `Uint8Array` views while malformed framing still

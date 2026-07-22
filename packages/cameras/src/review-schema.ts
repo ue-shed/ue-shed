@@ -469,6 +469,7 @@ export const CaptureRun = Schema.Struct({
 export type CaptureRun = Schema.Schema.Type<typeof CaptureRun>;
 
 export const decodeReviewSet = Schema.decodeUnknownEffect(ReviewSet);
+export const decodeReviewCaptureRequest = Schema.decodeUnknownEffect(ReviewCaptureRequest);
 export const decodeReviewCaptureResponse = Schema.decodeUnknownEffect(ReviewCaptureResponse);
 export const decodeReviewSelectionResponse = Schema.decodeUnknownEffect(ReviewSelectionResponse);
 export const decodeReviewSubjectInspectionResponse = Schema.decodeUnknownEffect(

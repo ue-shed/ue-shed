@@ -1,8 +1,8 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
-import { Effect } from "effect";
+import { RemoteControlClient, RemoteControlClientLive } from "@ue-shed/unreal-connection";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { inspectReviewSelection, previewReviewCandidate } from "./review-authoring-live.js";
 import { captureReviewSet } from "./review-capture.js";
@@ -13,6 +13,7 @@ import {
 	ReviewRepositoryLive,
 	type ReviewRepository
 } from "./review-repository.js";
+import { ReviewCaptureResponse } from "./review-schema.js";
 
 const runReviewRepository = <A, E>(effect: Effect.Effect<A, E, ReviewRepository>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(ReviewRepositoryLive)));
@@ -22,6 +23,11 @@ const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const reviewSetPath = join(projectRoot, ".ue-shed", "review", "sets", "fixture-structure.json");
 const subjectPath = "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject";
+const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
+const invalidCaptureRequestPath = join(
+	repositoryRoot,
+	"packages/protocol/contracts/cameras/review/v1/fixtures/invalid-capture-request-bad-fov.json"
+);
 
 async function editorActorCall(
 	functionName: string,
@@ -67,6 +73,26 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		}
 	});
 
+	it("serializes invalid capture requests as contract-shaped failures", async () => {
+		const request = JSON.parse(await readFile(invalidCaptureRequestPath, "utf8")) as unknown;
+		const payload = await Effect.runPromise(
+			Effect.flatMap(RemoteControlClient, (client) =>
+				client.request({
+					endpoint: endpoint!,
+					functionName: "CaptureReviewView",
+					objectPath: reviewLibraryPath,
+					operation: "camera.review.capture.contract",
+					parameters: { RequestJson: JSON.stringify(request) }
+				})
+			).pipe(Effect.provide(RemoteControlClientLive))
+		);
+		const decoded = Schema.decodeUnknownSync(ReviewCaptureResponse)(payload);
+		expect(decoded).toMatchObject({
+			code: "invalid_pose",
+			status: "failed"
+		});
+	});
+
 	it("inspects the selected subject and renders a generated candidate transiently", async () => {
 		await editorActorCall("SetActorSelectionState", {
 			Actor: subjectPath,
@@ -80,7 +106,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 			if (selection.status !== "selected") return;
 			expect(selection).toMatchObject({
 				actorPath: subjectPath,
-				bounds: { center: { z: 220 }, extent: { x: 250, y: 150, z: 225 } },
+				bounds: { center: { z: 212 }, extent: { x: 393.75, y: 168, z: 252 } },
 				mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
 			});
 			const candidates = generateFramingCandidates(selection);

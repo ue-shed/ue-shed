@@ -152,6 +152,13 @@ TypeScript-owned persisted models use Effect Schema as their authority. Shared T
 messages use a language-neutral contract with conformant Effect Schema decoders. IDs are branded and
 not interchangeable.
 
+Shared editor wire for capture request/response and selection / subject-inspection is authoritative
+under `packages/protocol/contracts/cameras/review`. Change that surface JSON Schema first, keep
+fixtures green via `pnpm --filter @ue-shed/cameras contract:check` (included in `pnpm check`), then
+update UEShedCameras and run `pnpm check:unreal` with Remote Control connected. Portable Review Set
+and Capture Run documents remain TypeScript-owned until their language-neutral freeze is explicitly
+planned.
+
 Initial IDs include `ReviewSetId`, `ReviewViewId`, `SubjectId`, `CaptureProfileId`, `CaptureRunId`,
 `ViewResultId`, `ArtifactId`, `ReviewRecordId`, `ProducerId`, `SessionId`, and `WorldId`.
 
@@ -804,9 +811,12 @@ Required high-risk cases include:
 - slow consumers and large history collections;
 - full teardown with no dirty map or leaked transient actor.
 
-Portable changes run `pnpm check`; process journeys run the appropriate CLI and Workbench end-to-end
-lanes. Unreal plugin, fixture, or live-capability changes additionally run `pnpm check:unreal` on the
-configured UE 5.7 reference environment.
+Portable changes run `pnpm check` (including `pnpm contract:check` for authoring JSON↔Effect and Map
+Review fixture parity). Process journeys run the appropriate CLI and Workbench end-to-end lanes.
+Unreal plugin, fixture, or live-capability changes additionally run `pnpm check:unreal` on the
+configured UE 5.7 reference environment; that lane includes Map Review C++ wire evidence when
+`UE_SHED_REMOTE_CONTROL_ENDPOINT` points at a fixture editor started with
+`pnpm fixture:launch-authoring`.
 
 ## Release milestones
 

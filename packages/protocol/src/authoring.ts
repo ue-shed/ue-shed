@@ -4,6 +4,13 @@ export const AUTHORING_SNAPSHOT_CONTRACT_VERSION = { major: 2, minor: 1 } as con
 export const AUTHORING_MUTATION_CONTRACT_VERSION = { major: 1, minor: 1 } as const;
 export const AUTHORING_TABLE_LIST_CONTRACT_VERSION = { major: 1, minor: 0 } as const;
 
+/**
+ * Recursive authoring values/descriptors need a manual type parameter for Schema.suspend.
+ * Keep the declaration bidirectional with the inferred suspend body via AssertExact below.
+ */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type AssertExact<A, B> = Exact<A, B> extends true ? true : never;
+
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
 	identifier: "NonNegativeInt"
 });
@@ -15,10 +22,12 @@ export type AuthoringValue =
 	| { readonly kind: "uint"; readonly value: string }
 	| { readonly kind: "float"; readonly value: number | "nan" | "infinity" | "-infinity" }
 	| { readonly kind: "double"; readonly value: number | "nan" | "infinity" | "-infinity" }
-	| {
-			readonly kind: "name" | "enum" | "string" | "text" | "guid" | "soft_object_path";
-			readonly value: string;
-	  }
+	| { readonly kind: "name"; readonly value: string }
+	| { readonly kind: "enum"; readonly value: string }
+	| { readonly kind: "string"; readonly value: string }
+	| { readonly kind: "text"; readonly value: string }
+	| { readonly kind: "guid"; readonly value: string }
+	| { readonly kind: "soft_object_path"; readonly value: string }
 	| { readonly kind: "object_ref"; readonly value: string | null }
 	| {
 			readonly kind: "row_reference";
@@ -26,7 +35,8 @@ export type AuthoringValue =
 			readonly rowName: string;
 	  }
 	| { readonly kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
-	| { readonly kind: "array" | "set"; readonly values: readonly AuthoringValue[] }
+	| { readonly kind: "array"; readonly values: readonly AuthoringValue[] }
+	| { readonly kind: "set"; readonly values: readonly AuthoringValue[] }
 	| {
 			readonly kind: "map";
 			readonly entries: readonly {
@@ -61,7 +71,7 @@ const textValueSchemas = [
 	Schema.Struct({ kind: Schema.Literal("guid"), value: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("soft_object_path"), value: Schema.String })
 ] as const;
-const AuthoringValueUnion: Schema.Codec<AuthoringValue> = Schema.Union([
+const AuthoringValueUnion = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("bool"), value: Schema.Boolean }),
 	Schema.Struct({ kind: Schema.Literal("int"), value: Schema.String }),
 	Schema.Struct({ kind: Schema.Literal("uint"), value: Schema.String }),
@@ -93,7 +103,18 @@ const AuthoringValueUnion: Schema.Codec<AuthoringValue> = Schema.Union([
 		reason: Schema.String
 	})
 ]);
-
+type _AuthoringValueConforms = AssertExact<
+	AuthoringValue,
+	Schema.Schema.Type<typeof AuthoringValueUnion>
+>;
+type _AuthoringFieldValueConforms = AssertExact<
+	AuthoringFieldValue,
+	Schema.Schema.Type<typeof AuthoringFieldValue>
+>;
+const _authoringValueConforms: _AuthoringValueConforms = true;
+const _authoringFieldValueConforms: _AuthoringFieldValueConforms = true;
+void _authoringValueConforms;
+void _authoringFieldValueConforms;
 export const AuthoringRow = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
@@ -151,10 +172,10 @@ export const AuthoringTableSnapshotV1 = Schema.Struct({
 }).annotate({ identifier: "AuthoringTableSnapshotV1" });
 export type AuthoringTableSnapshotV1 = Schema.Schema.Type<typeof AuthoringTableSnapshotV1>;
 
-export interface AuthoringEnumOption {
+export type AuthoringEnumOption = {
 	readonly name: string;
-	readonly displayName?: string | undefined;
-}
+	readonly displayName?: string;
+};
 
 export type AuthoringTypeDescriptor =
 	| {
@@ -172,7 +193,7 @@ export type AuthoringTypeDescriptor =
 	  }
 	| {
 			readonly kind: "enum";
-			readonly enumPath?: string | undefined;
+			readonly enumPath?: string;
 			readonly options: readonly AuthoringEnumOption[];
 	  }
 	| {
@@ -192,7 +213,7 @@ export type AuthoringTypeDescriptor =
 	  }
 	| {
 			readonly kind: "struct";
-			readonly structPath?: string | undefined;
+			readonly structPath?: string;
 			readonly fields: readonly AuthoringFieldDescriptor[];
 	  }
 	| { readonly kind: "unsupported"; readonly reason: string; readonly typeName: string };
@@ -207,18 +228,17 @@ export interface AuthoringFieldDescriptor {
 		| { readonly kind: "read_only"; readonly reason: string };
 	readonly presence: "required" | "optional" | "unknown";
 	readonly annotations: {
-		readonly displayName?: string | undefined;
-		readonly description?: string | undefined;
+		readonly displayName?: string;
+		readonly description?: string;
 		readonly deprecated: boolean;
 		readonly readOnly: boolean;
-		readonly clampMin?: string | undefined;
-		readonly clampMax?: string | undefined;
-		readonly step?: string | undefined;
-		readonly unit?: string | undefined;
+		readonly clampMin?: string;
+		readonly clampMax?: string;
+		readonly step?: string;
+		readonly unit?: string;
 		readonly rowReference?:
 			| { readonly status: "known"; readonly tableObjectPath: string }
-			| { readonly status: "unknown" }
-			| undefined;
+			| { readonly status: "unknown" };
 	};
 	readonly defaultValue:
 		| { readonly status: "known"; readonly value: AuthoringValue }
@@ -261,7 +281,7 @@ export const AuthoringFieldDescriptor: Schema.Codec<AuthoringFieldDescriptor> = 
 	typeName: Schema.String
 }).annotate({ identifier: "AuthoringFieldDescriptor" });
 
-const AuthoringTypeDescriptorUnion: Schema.Codec<AuthoringTypeDescriptor> = Schema.Union([
+const AuthoringTypeDescriptorUnion = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("scalar"),
 		valueKind: Schema.Literals([
@@ -313,7 +333,18 @@ const AuthoringTypeDescriptorUnion: Schema.Codec<AuthoringTypeDescriptor> = Sche
 		typeName: Schema.String
 	})
 ]);
-
+type _AuthoringTypeDescriptorConforms = AssertExact<
+	AuthoringTypeDescriptor,
+	Schema.Schema.Type<typeof AuthoringTypeDescriptorUnion>
+>;
+type _AuthoringFieldDescriptorConforms = AssertExact<
+	AuthoringFieldDescriptor,
+	Schema.Schema.Type<typeof AuthoringFieldDescriptor>
+>;
+const _authoringTypeDescriptorConforms: _AuthoringTypeDescriptorConforms = true;
+const _authoringFieldDescriptorConforms: _AuthoringFieldDescriptorConforms = true;
+void _authoringTypeDescriptorConforms;
+void _authoringFieldDescriptorConforms;
 export const AuthoringTableSnapshotV2 = Schema.Struct({
 	contract: Schema.Struct({
 		name: Schema.Literal("unreal-authoring"),

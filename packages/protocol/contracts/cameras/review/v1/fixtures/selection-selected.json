@@ -1,0 +1,15 @@
+{
+	"contract": {
+		"name": "ue-shed-review-selection",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"status": "selected",
+	"actorPath": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+	"displayName": "ReviewSubject",
+	"mapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"bounds": {
+		"center": { "x": 0, "y": 0, "z": 100 },
+		"extent": { "x": 50, "y": 50, "z": 100 },
+		"rotation": { "pitch": 0, "yaw": 0, "roll": 0 }
+	}
+}

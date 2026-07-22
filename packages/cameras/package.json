@@ -14,6 +14,7 @@
 		}
 	},
 	"scripts": {
+		"contract:check": "tsx scripts/check-review-contract.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

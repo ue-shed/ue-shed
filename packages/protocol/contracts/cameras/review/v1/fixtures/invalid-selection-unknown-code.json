@@ -1,0 +1,11 @@
+{
+	"contract": {
+		"name": "ue-shed-review-selection",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"status": "failed",
+	"code": "not_a_real_failure",
+	"message": "Invented failure code.",
+	"recovery": "Do not accept unknown codes.",
+	"retrySafe": false
+}

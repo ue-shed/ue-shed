@@ -1,0 +1,27 @@
+{
+	"contract": {
+		"name": "ue-shed-review-capture",
+		"version": { "major": 1, "minor": 1 }
+	},
+	"status": "captured",
+	"operationId": "capture-bad-projection",
+	"viewId": "structure-context",
+	"actorPath": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+	"mapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"stagingPath": "C:/fixture/Saved/UEShed/ReviewStaging/capture-bad/pure.png",
+	"width": 1280,
+	"height": 720,
+	"captureDurationMs": 12.5,
+	"mapPackageDirtyBefore": false,
+	"mapPackageDirtyAfter": false,
+	"subjectProjection": {
+		"status": "projected",
+		"viewportStatus": "fully_within_viewport",
+		"normalizedBounds": {
+			"minX": 0.2,
+			"minY": 0.2,
+			"maxX": 0.8,
+			"maxY": 0.8
+		}
+	}
+}

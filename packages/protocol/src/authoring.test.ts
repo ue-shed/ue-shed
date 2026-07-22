@@ -129,6 +129,31 @@ describe("authoring wire contract", () => {
 		});
 	});
 
+	it("round-trips recursive authoring values through encode", () => {
+		const nested = {
+			kind: "struct" as const,
+			fields: [
+				{
+					name: "Items",
+					typeName: "ArrayProperty",
+					value: {
+						kind: "array" as const,
+						values: [
+							{ kind: "name" as const, value: "Alpha" },
+							{
+								kind: "unsupported" as const,
+								reason: "opaque bytes",
+								byteSize: 4
+							}
+						]
+					}
+				}
+			]
+		};
+		const decoded = Schema.decodeUnknownSync(AuthoringValue)(nested);
+		expect(Schema.encodeUnknownSync(AuthoringValue)(decoded)).toEqual(nested);
+	});
+
 	it("keeps the runtime schemas conformant with the language-neutral contracts", async () => {
 		const check = async (version: "v1" | "v2", name: string, contract: Schema.Top) => {
 			const path = fileURLToPath(

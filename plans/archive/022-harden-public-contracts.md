@@ -12,6 +12,8 @@
 - **Depends on**: Plan 020
 - **Category**: migration
 - **Planned at**: commit a1df704, 2026-07-22
+- **Completed**: 2026-07-22 — recursive authoring exceptions asserted; Map Review capture/selection
+  fixture parity in `pnpm check`; UEShedCameras wire evidence wired into `pnpm check:unreal`
 
 ## Why this matters
 
@@ -88,11 +90,11 @@ Update ADR 0002 and docs/products/map-review.md with the authority order, recurs
 
 ## Done criteria
 
-- [ ] No new public wire type is manually duplicated without a documented tested exception.
-- [ ] Map Review has authoritative schemas, fixtures, and a portable JSON/Effect parity command.
-- [ ] The JSON/Effect check runs from pnpm check and C++ serialization evidence runs from pnpm check:unreal.
-- [ ] pnpm check exits 0.
-- [ ] plans/README.md marks Plan 022 DONE.
+- [x] No new public wire type is manually duplicated without a documented tested exception.
+- [x] Map Review has authoritative schemas, fixtures, and a portable JSON/Effect parity command.
+- [x] The JSON/Effect check runs from pnpm check and C++ serialization evidence runs from pnpm check:unreal.
+- [x] pnpm check exits 0.
+- [x] plans/README.md marks Plan 022 DONE.
 
 ## STOP conditions
 

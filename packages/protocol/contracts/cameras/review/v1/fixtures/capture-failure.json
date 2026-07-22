@@ -1,0 +1,13 @@
+{
+	"contract": {
+		"name": "ue-shed-review-capture",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"status": "failed",
+	"operationId": "33333333-3333-4333-8333-333333333333",
+	"viewId": "structure-context",
+	"code": "invalid_request",
+	"message": "Review capture request is not valid JSON.",
+	"recovery": "Validate the request against contract version 1.",
+	"retrySafe": false
+}

@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	connectUnrealAuthoring,
+	makeRemoteControlClient,
 	RemoteControlClientLive,
 	UnrealCapabilityError,
 	UnrealConnectionError
@@ -35,12 +36,23 @@ function resultJson(value: unknown): string {
 
 describe("Remote Control authoring adapter", () => {
 	it("negotiates the companion and validates a live snapshot over HTTP", async () => {
+		const calls: Array<{
+			readonly body: {
+				readonly functionName: string;
+				readonly generateTransaction: boolean;
+				readonly objectPath: string;
+				readonly parameters: Readonly<Record<string, unknown>>;
+			};
+			readonly method: string | undefined;
+			readonly url: string | undefined;
+		}> = [];
 		const endpoint = await listen((request, response) => {
 			let body = "";
 			request.setEncoding("utf8");
 			request.on("data", (chunk: string) => (body += chunk));
 			request.on("end", () => {
-				const call = JSON.parse(body) as { functionName: string };
+				const call = JSON.parse(body) as (typeof calls)[number]["body"];
+				calls.push({ body: call, method: request.method, url: request.url });
 				response.setHeader("content-type", "application/json");
 				const result =
 					call.functionName === "GetCapabilityManifest"
@@ -115,6 +127,67 @@ describe("Remote Control authoring adapter", () => {
 			connection.getTableSnapshot("/Game/Fixture/DT_Test.DT_Test")
 		);
 		expect(snapshot.authority.kind).toBe("live_editor");
+		expect(calls).toHaveLength(3);
+		for (const call of calls) {
+			expect(call.method).toBe("PUT");
+			expect(call.url).toBe("/remote/object/call");
+			expect(call.body.generateTransaction).toBe(false);
+		}
+	});
+
+	it("rejects a single UFUNCTION output that is not the companion ResultJson envelope", async () => {
+		const endpoint = await listen((_request, response) => {
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ UnexpectedJson: "{}" }));
+		});
+		const client = makeRemoteControlClient({ defaultTimeout: "1 second" });
+		const error = await Effect.runPromise(
+			Effect.flip(
+				client.request({
+					endpoint,
+					functionName: "GetCapabilityManifest",
+					objectPath: "/Script/UEShedCore.Default__UEShedCoreLibrary",
+					parameters: {}
+				})
+			)
+		);
+
+		expect(error.message).toContain("Invalid Remote Control envelope");
+		expect(error.retrySafe).toBe(false);
+	});
+
+	it("does not retry Apply or Save after a transport failure", async () => {
+		const calls: string[] = [];
+		const endpoint = await listen((request, response) => {
+			let body = "";
+			request.setEncoding("utf8");
+			request.on("data", (chunk: string) => (body += chunk));
+			request.on("end", () => {
+				calls.push((JSON.parse(body) as { functionName: string }).functionName);
+				response.statusCode = 503;
+				response.setHeader("content-type", "application/json");
+				response.end(JSON.stringify({ message: "unavailable" }));
+			});
+		});
+		const client = makeRemoteControlClient({ defaultTimeout: "1 second" });
+
+		for (const functionName of ["Apply", "Save"] as const) {
+			const error = await Effect.runPromise(
+				Effect.flip(
+					client.request({
+						endpoint,
+						functionName,
+						objectPath: "/Script/UEShedAuthoring.Default__UEShedAuthoringLibrary",
+						operation: `authoring.${functionName.toLowerCase()}`,
+						parameters: { RequestJson: "{}" }
+					})
+				)
+			);
+			expect(error.retrySafe).toBe(true);
+			expect(error.status).toBe(503);
+		}
+
+		expect(calls).toEqual(["Apply", "Save"]);
 	});
 
 	it("returns a typed retryable error for an unavailable Remote Control server", async () => {

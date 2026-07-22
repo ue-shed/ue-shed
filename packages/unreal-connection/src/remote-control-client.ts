@@ -1,4 +1,5 @@
 import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
+import { TransportRequestError, UnrealRC } from "unreal-rc";
 
 const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
 const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
@@ -57,61 +58,70 @@ function clientError(
 	});
 }
 
+function transportError(request: RemoteControlRequest, cause: unknown): RemoteControlClientError {
+	if (!(cause instanceof TransportRequestError)) {
+		return clientError(request, {
+			message: `Remote Control transport failed: ${String(cause)}`,
+			retrySafe: false
+		});
+	}
+
+	const status = cause.statusCode;
+	const retrySafe =
+		cause.kind === "connect" ||
+		cause.kind === "disconnect" ||
+		cause.kind === "timeout" ||
+		(status !== undefined && status >= 500);
+	return clientError(request, {
+		message:
+			status === undefined
+				? cause.message
+				: `Remote Control returned HTTP ${status}: ${cause.message}`,
+		retrySafe,
+		...(status === undefined ? {} : { status })
+	});
+}
+
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
-	readonly fetch?: typeof globalThis.fetch;
 }): RemoteControlClientShape {
-	const fetchImplementation = options.fetch ?? globalThis.fetch;
 	const request = Effect.fn("RemoteControlClient.request")(
 		function* (request: RemoteControlRequest) {
 			const endpoint = normalizedEndpoint(request.endpoint);
-			const response = yield* Effect.tryPromise({
-				try: (signal) =>
-					fetchImplementation(`${endpoint}/remote/object/call`, {
-						body: JSON.stringify({
-							generateTransaction: false,
-							functionName: request.functionName,
-							objectPath: request.objectPath,
-							parameters: request.parameters
-						}),
-						headers: { "content-type": "application/json" },
-						method: "PUT",
-						signal
+			const timeout = request.timeout ?? options.defaultTimeout;
+			const response = yield* Effect.scoped(
+				Effect.acquireRelease(
+					Effect.try({
+						try: () =>
+							new UnrealRC({
+								transport: "http",
+								http: {
+									baseUrl: endpoint,
+									requestTimeoutMs: Duration.toMillis(timeout)
+								},
+								retry: false
+							}),
+						catch: (cause) => transportError(request, cause)
 					}),
-				catch: (cause) =>
-					cause instanceof RemoteControlClientError
-						? cause
-						: clientError(request, {
-								message: String(cause),
-								retrySafe: true
-							})
-			});
-
-			if (!response.ok) {
-				const detail = yield* Effect.tryPromise({
-					try: () => response.text(),
-					catch: (cause) => cause
-				}).pipe(Effect.orElseSucceed(() => ""));
-				return yield* Effect.fail(
-					clientError(request, {
-						message: `Remote Control returned HTTP ${response.status}${
-							detail.trim() ? `: ${detail.slice(0, 4_096).trim()}` : ""
-						}`,
-						retrySafe: response.status >= 500,
-						status: response.status
-					})
-				);
-			}
-
-			const body = yield* Effect.tryPromise({
-				try: async () => (await response.json()) as unknown,
-				catch: (cause) =>
-					clientError(request, {
-						message: `Invalid Remote Control response body: ${String(cause)}`,
-						retrySafe: false
-					})
-			});
-			const envelope = yield* decodeRemoteCallEnvelope(body).pipe(
+					(client) => Effect.promise(() => client.dispose().catch(() => undefined))
+				).pipe(
+					Effect.flatMap((client) =>
+						Effect.tryPromise({
+							try: () =>
+								client.call({
+									functionName: request.functionName,
+									objectPath: request.objectPath,
+									parameters: request.parameters,
+									retry: false,
+									timeoutMs: Duration.toMillis(timeout),
+									transaction: false
+								}),
+							catch: (cause) => transportError(request, cause)
+						})
+					)
+				)
+			);
+			const envelope = yield* decodeRemoteCallEnvelope(response).pipe(
 				Effect.mapError((cause) =>
 					clientError(request, {
 						message: `Invalid Remote Control envelope: ${String(cause)}`,
@@ -130,20 +140,6 @@ export function makeRemoteControlClient(options: {
 		},
 		(effect, request) =>
 			effect.pipe(
-				Effect.timeoutOrElse({
-					duration: request.timeout ?? options.defaultTimeout,
-					orElse: () =>
-						Effect.fail(
-							clientError(request, {
-								message: `Remote Control call timed out after ${Duration.format(
-									Duration.fromInputUnsafe(
-										request.timeout ?? options.defaultTimeout
-									)
-								)}`,
-								retrySafe: true
-							})
-						)
-				}),
 				Effect.withSpan(request.operation ?? `remote_control.${request.functionName}`, {
 					attributes: {
 						"unreal.endpoint": normalizedEndpoint(request.endpoint),

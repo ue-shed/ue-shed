@@ -51,6 +51,8 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 		expect(largeTable?.rows).toHaveLength(10000);
 		expect(largeTable?.rows[0]?.name).toBe("Load_00000");
 		expect(largeTable?.rows.at(-1)?.name).toBe("Load_09999");
+		// Count 7 is authored in FixtureSource/Authoring/DT_Scalars.json and must match the
+		// engine-regenerated uasset (pnpm fixture:generate / fixture:evidence), not a live edit.
 		expect(
 			byObjectPath.get("/Game/Fixture/Authoring/DT_Scalars.DT_Scalars")?.table.rows[0]
 		).toMatchObject({

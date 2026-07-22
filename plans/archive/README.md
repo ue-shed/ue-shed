@@ -21,3 +21,4 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [014](014-effect-renderer-solid.md)            | Make renderer and extension clients Effect-native            | DONE                       |
 | [015](015-effect-observability-enforcement.md) | Close the Effect migration with telemetry and enforcement    | DONE                       |
 | [016](016-data-authoring-adoption-seam.md)     | Prove the Data Authoring adoption seam                       | DONE                       |
+| [020](020-restore-green-release-baseline.md)   | Restore a trustworthy portable release baseline              | DONE                       |

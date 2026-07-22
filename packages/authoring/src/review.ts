@@ -214,11 +214,14 @@ export function sessionPipeline(document: AuthoringSessionDocument): AuthoringSe
 			? { id: pending.request.requestId, kind: "indeterminate", operation: "save" }
 			: { kind: "saving", requestId: pending.request.requestId };
 	}
+	if (document.draft.undoPointer > 0) {
+		return { canApply: true, kind: "draft" };
+	}
 	if (document.draft.awaitingSave.length > 0) {
 		return { kind: "applied", objectPaths: document.draft.awaitingSave };
 	}
 	if (document.draft.saveReceipts.length > 0) return { kind: "saved" };
-	return { canApply: document.draft.undoPointer > 0, kind: "draft" };
+	return { canApply: false, kind: "draft" };
 }
 
 export function reviewAuthoringSession(document: AuthoringSessionDocument): AuthoringSessionReview {

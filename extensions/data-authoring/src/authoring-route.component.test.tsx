@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import type {
 	AuthoringClientShape,
@@ -184,7 +184,298 @@ const rowReferenceSession: AuthoringSessionView = {
 	snapshot: rowReferenceSnapshot
 };
 
+function cleanSession(opened: AuthoringTableSnapshot): AuthoringSessionView {
+	return {
+		...sessionView,
+		canUndo: false,
+		commandCount: 0,
+		dirty: false,
+		pipeline: { canApply: false, kind: "draft" },
+		review: {
+			...sessionView.review,
+			activeCommandCount: 0,
+			canUndo: false,
+			commandGroups: [],
+			pipeline: { canApply: false, kind: "draft" },
+			tables: [
+				{
+					...sessionView.review.tables[0]!,
+					base: opened,
+					changes: [],
+					dirtyCells: [],
+					dirtyRowIds: [],
+					objectPath: opened.table.objectPath,
+					working: opened
+				}
+			]
+		},
+		snapshot: opened
+	};
+}
+
 describe("AuthoringRoute", () => {
+	it("prefers verified live authority and preserves catalog scroll while changing tables", async () => {
+		const secondPath = "/Game/Fixture/DT_Second.DT_Second";
+		const saved = cleanSession(snapshot);
+		const liveSnapshot: AuthoringTableSnapshot = {
+			...snapshot,
+			authority: { kind: "live_editor", producerId: "producer", sessionId: "live" }
+		};
+		const secondLive: AuthoringTableSnapshot = {
+			...liveSnapshot,
+			table: {
+				...liveSnapshot.table,
+				objectPath: secondPath,
+				packageName: "/Game/Fixture/DT_Second"
+			}
+		};
+		let opened = snapshot;
+		const requests: Array<{ authority: "saved" | "live"; objectPath: string }> = [];
+		const client: AuthoringClientShape = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () =>
+				Effect.succeed({ status: "ready" as const, view: cleanSession(opened) }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 2,
+					tablesFound: 2,
+					totalAssets: 2
+				}),
+			listSessions: () =>
+				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({
+					diagnostics: [],
+					status: "ready" as const,
+					tables: [snapshot.table.objectPath, secondPath].map((objectPath) => ({
+						authorities: ["saved" as const, "live" as const],
+						completeness: "complete" as const,
+						divergence: [],
+						kind: "data_table" as const,
+						objectPath,
+						parentTables: [],
+						rowStruct: snapshot.table.rowStruct
+					}))
+				}),
+			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			openCatalogTable: (objectPath, authority) =>
+				Effect.sync(() => {
+					requests.push({ authority, objectPath });
+					opened = objectPath === secondPath ? secondLive : liveSnapshot;
+					return { snapshot: opened, status: "ready" as const };
+				}),
+			openSession: () => Effect.succeed({ status: "ready" as const, view: saved }),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		const user = userEvent.setup();
+		await waitFor(() =>
+			expect(requests).toEqual([{ authority: "live", objectPath: snapshot.table.objectPath }])
+		);
+		const catalogList = screen.getByRole("region", { name: "Project DataTable list" });
+		catalogList.scrollTop = 96;
+		await user.click(screen.getByRole("button", { name: /^DT_Second.*DATA TABLE/ }));
+		await waitFor(() => expect(screen.getByText(secondPath)).toBeDefined());
+		expect(screen.getByRole("region", { name: "Project DataTable list" })).toBe(catalogList);
+		expect(catalogList.scrollTop).toBe(96);
+		expect(requests).toEqual([
+			{ authority: "live", objectPath: snapshot.table.objectPath },
+			{ authority: "live", objectPath: secondPath }
+		]);
+	});
+
+	it("keeps zero-change sessions out of Draft Sessions while retaining unsaved live work", async () => {
+		const pendingSavePath = "/Game/Fixture/DT_PendingSave.DT_PendingSave";
+		const client: AuthoringClientShape = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () =>
+				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 1,
+					tablesFound: 1,
+					totalAssets: 1
+				}),
+			listSessions: () =>
+				Effect.succeed({
+					diagnostics: [],
+					sessions: [
+						{
+							commandCount: 0,
+							createdAt: sessionView.updatedAt,
+							id: "inert",
+							lifecycle: "open" as const,
+							needsSave: false,
+							tableObjectPaths: ["/Game/Fixture/DT_Inert.DT_Inert"],
+							undoPointer: 0,
+							updatedAt: sessionView.updatedAt
+						},
+						{
+							commandCount: 1,
+							createdAt: sessionView.updatedAt,
+							id: "draft",
+							lifecycle: "open" as const,
+							needsSave: false,
+							tableObjectPaths: [snapshot.table.objectPath],
+							undoPointer: 1,
+							updatedAt: sessionView.updatedAt
+						},
+						{
+							commandCount: 0,
+							createdAt: sessionView.updatedAt,
+							id: "pending-save",
+							lifecycle: "open" as const,
+							needsSave: true,
+							tableObjectPaths: [pendingSavePath],
+							undoPointer: 0,
+							updatedAt: sessionView.updatedAt
+						}
+					],
+					status: "ready" as const
+				}),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({ diagnostics: [], status: "ready" as const, tables: [] }),
+			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			openCatalogTable: () => Effect.die("unused"),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		await userEvent.setup().click(await screen.findByRole("button", { name: "Sessions" }));
+		expect(await screen.findByText("DRAFT SESSIONS")).toBeDefined();
+		expect(screen.getByText("1 STAGED CHANGE · OPEN")).toBeDefined();
+		expect(screen.getByText("UNSAVED LIVE CHANGES")).toBeDefined();
+		expect(screen.getByText("SAVED TO EDITOR · DISK SAVE PENDING")).toBeDefined();
+		expect(screen.queryByText("DT_Inert")).toBeNull();
+	});
+
+	it("surfaces rejected Apply errors and keeps the draft staged", async () => {
+		const rejectedView: AuthoringSessionView = {
+			...sessionView,
+			lastApply: {
+				errors: [
+					{
+						code: "read_only_table",
+						message:
+							"CompositeDataTable rows are derived and cannot be mutated directly",
+						retrySafe: false
+					}
+				],
+				operationId: "apply-1",
+				status: "rejected"
+			}
+		};
+		const client: AuthoringClientShape = {
+			applySession: () => Effect.succeed({ status: "ready" as const, view: rejectedView }),
+			beginSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 1,
+					tablesFound: 1,
+					totalAssets: 1
+				}),
+			listSessions: () =>
+				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({ diagnostics: [], status: "ready", tables: [] }),
+			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			openCatalogTable: () => Effect.die("unused"),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		await userEvent.setup().click(await screen.findByRole("button", { name: "Apply" }));
+		expect(
+			await screen.findByText(
+				/Apply rejected: CompositeDataTable rows are derived and cannot be mutated directly/
+			)
+		).toBeDefined();
+		expect(screen.getByText("STAGED DRAFT")).toBeDefined();
+		confirm.mockRestore();
+	});
+
+	it("keeps CompositeDataTable rows read only", async () => {
+		const composite: AuthoringTableSnapshot = {
+			...snapshot,
+			table: { ...snapshot.table, kind: "composite_data_table" }
+		};
+		const view = cleanSession(composite);
+		const client: AuthoringClientShape = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () => Effect.succeed({ status: "ready" as const, view }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready",
+					processedAssets: 1,
+					tablesFound: 1,
+					totalAssets: 1
+				}),
+			listSessions: () => Effect.succeed({ diagnostics: [], sessions: [], status: "ready" }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({ diagnostics: [], status: "ready", tables: [] }),
+			loadConfiguredTable: () => Effect.succeed({ snapshot: composite, status: "ready" }),
+			openCatalogTable: () => Effect.die("unused"),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		expect(await screen.findByText("DERIVED TABLE · READ ONLY")).toBeDefined();
+		expect(screen.getByRole("button", { name: "+ Row" }).hasAttribute("disabled")).toBe(true);
+	});
 	it("keeps the expandable route responsive when table selection is cancelled", async () => {
 		let selections = 0;
 		const client: AuthoringClientShape = {

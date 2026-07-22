@@ -3,6 +3,7 @@ import {
 	authoringSessionServiceLayer,
 	AuthoringSessionLiveError,
 	AuthoringSessions,
+	fingerprintTable,
 	reviewAuthoringSession,
 	workingTable,
 	type AuthoringSessionDocument
@@ -12,6 +13,7 @@ import {
 	AuthoringClient,
 	AuthoringClientError,
 	type AuthoringClientShape,
+	type AuthoringAuthority,
 	type AuthoringCatalogResult,
 	type AuthoringCatalogProgress,
 	type AuthoringLoadResult,
@@ -53,7 +55,10 @@ export interface ShedAuthoringShape {
 	readonly configuredCatalog: () => Effect.Effect<AuthoringCatalogResult>;
 	readonly configuredTable: () => Effect.Effect<AuthoringLoadResult>;
 	readonly editSession: (intent: AuthoringSessionIntent) => Effect.Effect<AuthoringSessionResult>;
-	readonly openCatalogTable: (objectPath: string) => Effect.Effect<AuthoringLoadResult>;
+	readonly openCatalogTable: (
+		objectPath: string,
+		authority: AuthoringAuthority
+	) => Effect.Effect<AuthoringLoadResult>;
 	readonly reconcileSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly redoSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly reviewSession: (sessionId: string) => Effect.Effect<AuthoringSessionReviewResult>;
@@ -87,12 +92,22 @@ export function sessionView(
 	objectPath: string
 ): AuthoringSessionView {
 	const review = reviewAuthoringSession(document);
+	const lastApply = document.draft.applyReceipts.at(-1);
 	return {
 		canRedo: review.canRedo,
 		canUndo: review.canUndo,
 		commandCount: review.activeCommandCount,
 		dirty: review.activeCommandCount > 0,
 		lifecycle: document.lifecycle,
+		...(lastApply === undefined
+			? {}
+			: {
+					lastApply: {
+						errors: lastApply.errors ?? [],
+						operationId: lastApply.operationId,
+						status: lastApply.status
+					}
+				}),
 		pipeline: review.pipeline,
 		review,
 		sessionId: document.draft.id,
@@ -360,7 +375,8 @@ export const ShedAuthoringLive = Layer.effect(
 		});
 
 		const openCatalogTable = Effect.fn("ShedAuthoring.openCatalogTable")(function* (
-			objectPath: string
+			objectPath: string,
+			authority: AuthoringAuthority
 		) {
 			let index = yield* Ref.get(catalogIndex);
 			let assetPath = index.assetPaths.get(objectPath);
@@ -373,10 +389,17 @@ export const ShedAuthoringLive = Layer.effect(
 				index = yield* Ref.get(catalogIndex);
 				assetPath = index.assetPaths.get(objectPath);
 			}
-			if (index.liveObjectPaths.has(objectPath)) return yield* loadLiveTable(objectPath);
+			if (authority === "live") {
+				return index.liveObjectPaths.has(objectPath)
+					? yield* loadLiveTable(objectPath)
+					: readerFailure(
+							`The live editor does not expose ${objectPath}.`,
+							"Refresh the catalog, reconnect Unreal, or select Saved package."
+						);
+			}
 			if (assetPath) return yield* loadSavedTable(assetPath);
 			return readerFailure(
-				`The configured project no longer contains ${objectPath}.`,
+				`The saved project no longer contains ${objectPath}.`,
 				"Refresh the catalog or choose another saved DataTable."
 			);
 		});
@@ -389,22 +412,38 @@ export const ShedAuthoringLive = Layer.effect(
 			}
 			const service = sessions.value;
 			return yield* Effect.gen(function* () {
-				const listed = yield* service.list();
-				const existing = listed.sessions.find((candidate) =>
-					candidate.tableObjectPaths.includes(objectPath)
-				);
-				if (existing) {
-					const document = yield* existing.lifecycle === "closed"
-						? service.resume(existing.id)
-						: service.open(existing.id);
-					return { status: "ready" as const, view: sessionView(document, objectPath) };
-				}
 				const loaded = yield* Ref.get(snapshots);
 				const snapshot = loaded.get(objectPath);
 				if (!snapshot) {
 					return sessionFailure({
 						message: `No loaded snapshot exists for ${objectPath}`
 					});
+				}
+				const listed = yield* service.list();
+				const existingSessions = listed.sessions.filter((candidate) =>
+					candidate.tableObjectPaths.includes(objectPath)
+				);
+				for (const existing of existingSessions) {
+					const existingDocument = yield* service.open(existing.id);
+					const isInert =
+						existingDocument.draft.undoPointer === 0 &&
+						existingDocument.draft.awaitingSave.length === 0 &&
+						existingDocument.pendingOperation.kind === "none";
+					if (isInert) {
+						yield* service.discard(existing.id);
+						continue;
+					}
+					const existingSnapshot = existingDocument.draft.base[objectPath];
+					if (
+						existingSnapshot?.authority.kind !== snapshot.authority.kind ||
+						fingerprintTable(existingSnapshot) !== fingerprintTable(snapshot)
+					)
+						continue;
+					const document =
+						existing.lifecycle === "closed"
+							? yield* service.resume(existing.id)
+							: existingDocument;
+					return { status: "ready" as const, view: sessionView(document, objectPath) };
 				}
 				const document = yield* service.create([snapshot]);
 				return { status: "ready" as const, view: sessionView(document, objectPath) };
@@ -418,7 +457,9 @@ export const ShedAuthoringLive = Layer.effect(
 			return yield* sessions.value.list().pipe(
 				Effect.map((result) => ({
 					diagnostics: result.diagnostics.map(({ code, message }) => ({ code, message })),
-					sessions: result.sessions,
+					sessions: result.sessions.filter(
+						(session) => session.commandCount > 0 || session.needsSave
+					),
 					status: "ready" as const
 				})),
 				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))

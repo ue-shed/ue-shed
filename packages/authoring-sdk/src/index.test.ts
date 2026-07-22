@@ -89,6 +89,18 @@ describe("authoring SDK contracts", () => {
 		).toBe(true);
 	});
 
+	it("requires an explicit authority when opening a catalog table", async () => {
+		expect(
+			await Effect.runPromise(
+				decodeAuthoringTransportRequest({
+					authority: "live",
+					objectPath: "/Game/Data/DT_Test.DT_Test",
+					operation: "open_catalog_table"
+				})
+			)
+		).toMatchObject({ authority: "live", operation: "open_catalog_table" });
+	});
+
 	it("uses the HTTP transport and decodes the operation result", async () => {
 		const operations: string[] = [];
 		const server = createServer((request, response) => {

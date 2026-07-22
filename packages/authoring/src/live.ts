@@ -156,6 +156,7 @@ export function acceptApplyResult(
 	const tableObjectPaths = result.snapshots.map((snapshot) => snapshot.table.objectPath);
 	const receipt = {
 		appliedAt,
+		errors: result.errors,
 		operationId: result.operationId,
 		status: result.status,
 		tableObjectPaths

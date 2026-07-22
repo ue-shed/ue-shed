@@ -129,7 +129,11 @@ try {
 	}
 	const objectPath = catalog.value.tables[0]?.objectPath;
 	if (!objectPath) fail("catalog contained no openable DataTable");
-	const opened = await post({ objectPath, operation: "open_catalog_table" });
+	const opened = await post({
+		authority: "saved",
+		objectPath,
+		operation: "open_catalog_table"
+	});
 	if (
 		opened.status !== "success" ||
 		opened.value?.status !== "ready" ||

@@ -1,7 +1,9 @@
 import {
 	AuthoringCommand as AuthoringCommandSchema,
+	AuthoringOperationError as AuthoringOperationErrorSchema,
 	AuthoringTableSnapshot as AuthoringTableSnapshotSchema,
 	type AuthoringFieldValue,
+	type AuthoringOperationError,
 	type AuthoringCommand,
 	type AuthoringRow,
 	type AuthoringTableSnapshot,
@@ -39,6 +41,7 @@ export interface ApplyReceipt {
 	readonly appliedAt: string;
 	readonly tableObjectPaths: readonly string[];
 	readonly status: "committed" | "rolled_back" | "rejected" | "indeterminate";
+	readonly errors?: readonly AuthoringOperationError[];
 }
 
 export interface SaveReceipt {
@@ -67,6 +70,7 @@ const CommandEnvelopeSchema = Schema.Struct({
 const ApplyReceiptsSchema = Schema.Array(
 	Schema.Struct({
 		appliedAt: Schema.String,
+		errors: Schema.optionalKey(Schema.Array(AuthoringOperationErrorSchema)),
 		operationId: Schema.String,
 		status: Schema.Literals(["committed", "rolled_back", "rejected", "indeterminate"]),
 		tableObjectPaths: Schema.Array(Schema.String)

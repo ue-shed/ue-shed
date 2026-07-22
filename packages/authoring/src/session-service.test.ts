@@ -919,6 +919,10 @@ describe("AuthoringSessionService", () => {
 					tableObjectPath: "/Game/Fixture/DT_Test.DT_Test"
 				})
 			);
+			expect((await Effect.runPromise(service.review("flow"))).pipeline).toEqual({
+				canApply: true,
+				kind: "draft"
+			});
 			await Effect.runPromise(
 				service.prepareApply(
 					"flow",

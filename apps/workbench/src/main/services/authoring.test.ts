@@ -1,4 +1,4 @@
-import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
+import type { AuthoringTableSnapshot, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
 import {
 	makeAuthoringCatalogTestLayer,
 	type AuthoringCatalogShape
@@ -27,7 +27,7 @@ import {
 	WorkbenchAuthoringSessionsLive
 } from "./authoring.js";
 
-function fixtureSnapshot(): AuthoringTableSnapshot {
+function fixtureSnapshot(): AuthoringTableSnapshotV1 {
 	return {
 		authority: { kind: "project_files", packageName: "/Game/Fixture/DT_Test" },
 		completeness: "complete",
@@ -473,6 +473,160 @@ it.effect("creates a session from a loaded snapshot, edits it, and undoes the ed
 				if (discarded.status !== "ready")
 					throw new Error("expected a ready discard result");
 				expect(discarded.sessions).toEqual([]);
+			}),
+			layer
+		);
+	}).pipe(Effect.scoped)
+);
+
+it.effect("opens the requested authority and restores only matching non-inert drafts", () =>
+	Effect.gen(function* () {
+		const root = yield* withTempProjectRoot("ue-shed-workbench-authoring-authority-");
+		const objectPath = "/Game/Fixture/DT_Test.DT_Test";
+		const saved = fixtureSnapshot();
+		const savedAfterLiveSave: AuthoringTableSnapshot = {
+			...saved,
+			table: {
+				...saved.table,
+				rows: saved.table.rows.map((row) => ({
+					...row,
+					fields: row.fields.map((field) =>
+						field.name === "Count"
+							? { ...field, value: { kind: "int" as const, value: "2" } }
+							: field
+					)
+				}))
+			}
+		};
+		let savedOnDisk = saved;
+		const live: AuthoringTableSnapshot = {
+			...saved,
+			authority: { kind: "live_editor", producerId: "producer", sessionId: "editor" }
+		};
+		const configuration = makeWorkbenchConfigurationLayer({
+			...unconfigured,
+			authoringAsset: { path: "C:/Fixture/DT_Test.uasset", status: "configured" },
+			project: { projectRoot: root, status: "configured" }
+		});
+		const remoteControl = makeRemoteControlClientTestLayer(({ functionName }) => {
+			if (functionName === "GetCapabilityManifest") {
+				return Effect.succeed({
+					authoringLimits: {
+						maxCommands: 1024,
+						maxPayloadBytes: 1_048_576,
+						maxTables: 16
+					},
+					authoringObjectPath: "/Script/UEShedAuthoring.Default__UEShedAuthoringLibrary",
+					capabilities: [
+						"authoring.snapshot.v2",
+						"authoring.table-list.v1",
+						"authoring.apply.v1",
+						"authoring.apply-result.v1",
+						"authoring.save.v1"
+					],
+					producerKind: "unreal_editor",
+					schemaVersion: 1
+				});
+			}
+			if (functionName === "GetTableSnapshot") return Effect.succeed(live);
+			return Effect.die(`unexpected Remote Control call ${functionName}`);
+		});
+		const catalog: AuthoringCatalogShape = {
+			discover: () =>
+				Effect.succeed({
+					diagnostics: [],
+					scannedSavedAssets: 1,
+					tables: [
+						{
+							authorities: [
+								{
+									authority: "saved",
+									completeness: "complete",
+									schema: { reason: "fixture", status: "unavailable" }
+								},
+								{
+									authority: "live",
+									completeness: "complete",
+									schema: { reason: "fixture", status: "unavailable" }
+								}
+							],
+							divergence: { status: "none" },
+							kind: "data_table",
+							objectPath,
+							packageName: "/Game/Fixture/DT_Test",
+							parentTables: [],
+							rowStruct: "/Script/Fixture.Row"
+						}
+					]
+				})
+		};
+		const layer = WorkbenchAuthoringLive.pipe(
+			Layer.provide(WorkbenchAuthoringSessionsLive.pipe(Layer.provide(configuration))),
+			Layer.provide(
+				Layer.mergeAll(
+					configuration,
+					makeAssetReaderTestLayer({
+						...dyingReader,
+						discoverTables: () =>
+							Effect.succeed({
+								diagnostics: [],
+								projectRoot: root,
+								scannedAssets: 1,
+								tables: [
+									{
+										assetPath: "C:/Fixture/DT_Test.uasset",
+										authority: {
+											kind: "project_files",
+											packageName: "/Game/Fixture/DT_Test"
+										},
+										completeness: "complete",
+										kind: "data_table",
+										objectPath,
+										parentTables: [],
+										rowStruct: "/Script/Fixture.Row",
+										schema: { reason: "fixture", status: "unavailable" }
+									}
+								]
+							}),
+						readTable: () => Effect.sync(() => savedOnDisk)
+					}),
+					makeAuthoringCatalogTestLayer(catalog),
+					dialogLayer({}),
+					remoteControl
+				)
+			)
+		);
+
+		yield* Effect.provide(
+			Effect.gen(function* () {
+				const service = yield* WorkbenchAuthoring;
+				yield* service.configuredCatalog();
+				const openedSaved = yield* service.openCatalogTable(objectPath, "saved");
+				expect(openedSaved.status).toBe("ready");
+				const savedSession = yield* service.beginSession(objectPath);
+				if (savedSession.status !== "ready") throw new Error("expected saved session");
+				expect(savedSession.view.snapshot.authority.kind).toBe("project_files");
+
+				const openedLive = yield* service.openCatalogTable(objectPath, "live");
+				expect(openedLive.status).toBe("ready");
+				const liveSession = yield* service.beginSession(objectPath);
+				if (liveSession.status !== "ready") throw new Error("expected live session");
+				expect(liveSession.view.snapshot.authority.kind).toBe("live_editor");
+				expect(liveSession.view.sessionId).not.toBe(savedSession.view.sessionId);
+
+				savedOnDisk = savedAfterLiveSave;
+				yield* service.openCatalogTable(objectPath, "saved");
+				const reopenedSaved = yield* service.beginSession(objectPath);
+				if (reopenedSaved.status !== "ready")
+					throw new Error("expected reopened saved session");
+				expect(reopenedSaved.view.sessionId).not.toBe(savedSession.view.sessionId);
+				expect(reopenedSaved.view.snapshot.table.rows[0]?.fields[0]?.value).toEqual({
+					kind: "int",
+					value: "2"
+				});
+				const listed = yield* service.listSessions();
+				if (listed.status !== "ready") throw new Error("expected a session list");
+				expect(listed.sessions).toEqual([]);
 			}),
 			layer
 		);

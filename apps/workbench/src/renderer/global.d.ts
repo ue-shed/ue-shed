@@ -10,7 +10,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory";
-import type { AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
+import type { AuthoringAuthority, AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
@@ -66,7 +66,10 @@ declare global {
 				readonly redoSession: (sessionId: string) => Promise<unknown>;
 				readonly loadConfiguredCatalog: () => Promise<unknown>;
 				readonly loadConfiguredTable: () => Promise<unknown>;
-				readonly openCatalogTable: (objectPath: string) => Promise<unknown>;
+				readonly openCatalogTable: (
+					objectPath: string,
+					authority: AuthoringAuthority
+				) => Promise<unknown>;
 				readonly chooseTable: () => Promise<unknown>;
 			};
 			readonly fixture: {

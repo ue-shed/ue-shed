@@ -200,6 +200,7 @@ export interface AuthoringSessionSummary {
 	readonly updatedAt: string;
 	readonly tableObjectPaths: readonly string[];
 	readonly commandCount: number;
+	readonly needsSave: boolean;
 	readonly undoPointer: number;
 }
 
@@ -593,6 +594,8 @@ function summary(document: AuthoringSessionDocument): AuthoringSessionSummary {
 		createdAt: document.createdAt,
 		id: document.draft.id,
 		lifecycle: document.lifecycle,
+		needsSave:
+			document.draft.awaitingSave.length > 0 || document.pendingOperation.kind === "save",
 		tableObjectPaths: Object.keys(document.draft.base).toSorted(),
 		undoPointer: document.draft.undoPointer,
 		updatedAt: document.updatedAt

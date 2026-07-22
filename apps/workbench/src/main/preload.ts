@@ -1,4 +1,4 @@
-import type { AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
+import type { AuthoringAuthority, AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
@@ -90,8 +90,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("authoring:configured-catalog"),
 		loadConfiguredTable: (): Promise<unknown> =>
 			ipcRenderer.invoke("authoring:configured-table"),
-		openCatalogTable: (objectPath: string): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:open-catalog-table", objectPath),
+		openCatalogTable: (objectPath: string, authority: AuthoringAuthority): Promise<unknown> =>
+			ipcRenderer.invoke("authoring:open-catalog-table", objectPath, authority),
 		chooseTable: (): Promise<unknown> => ipcRenderer.invoke("authoring:choose-table")
 	},
 	fixture: {

@@ -154,7 +154,11 @@ async function verifyFunctionalHost() {
 		}
 		const objectPath = catalog.value.tables[0]?.objectPath;
 		if (!objectPath) fail("functional host catalog contained no openable table");
-		const opened = await post({ objectPath, operation: "open_catalog_table" });
+		const opened = await post({
+			authority: "saved",
+			objectPath,
+			operation: "open_catalog_table"
+		});
 		if (
 			opened.status !== "success" ||
 			opened.value?.status !== "ready" ||

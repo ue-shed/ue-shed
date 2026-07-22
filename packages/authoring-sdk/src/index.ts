@@ -1,10 +1,14 @@
 import {
 	AuthoringSessionPipeline,
 	AuthoringSessionReview,
+	AuthoringOperationError,
 	AuthoringTableSnapshot,
 	AuthoringValue
 } from "@ue-shed/protocol";
 import { Context, Effect, Schema } from "effect";
+
+export const AuthoringAuthority = Schema.Literals(["saved", "live"]);
+export type AuthoringAuthority = Schema.Schema.Type<typeof AuthoringAuthority>;
 
 export const AuthoringSessionView = Schema.Struct({
 	canRedo: Schema.Boolean,
@@ -12,6 +16,13 @@ export const AuthoringSessionView = Schema.Struct({
 	commandCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	dirty: Schema.Boolean,
 	lifecycle: Schema.Literals(["open", "closed"]),
+	lastApply: Schema.optionalKey(
+		Schema.Struct({
+			errors: Schema.Array(AuthoringOperationError),
+			operationId: Schema.String,
+			status: Schema.Literals(["committed", "rolled_back", "rejected", "indeterminate"])
+		})
+	),
 	pipeline: AuthoringSessionPipeline,
 	review: AuthoringSessionReview,
 	sessionId: Schema.String,
@@ -106,6 +117,7 @@ export const AuthoringSessionSummary = Schema.Struct({
 	createdAt: Schema.String,
 	id: Schema.String,
 	lifecycle: Schema.Literals(["open", "closed"]),
+	needsSave: Schema.optionalKey(Schema.Boolean),
 	tableObjectPaths: Schema.Array(Schema.String),
 	undoPointer: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	updatedAt: Schema.String
@@ -207,7 +219,8 @@ export interface AuthoringClientShape {
 	>;
 	readonly loadConfiguredTable: () => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
 	readonly openCatalogTable: (
-		objectPath: string
+		objectPath: string,
+		authority: AuthoringAuthority
 	) => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
 	readonly chooseTable: () => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
 	readonly beginSession: (
@@ -251,7 +264,11 @@ export const AuthoringTransportRequest = Schema.Union([
 	Schema.Struct({ operation: Schema.Literal("get_catalog_progress") }),
 	Schema.Struct({ operation: Schema.Literal("load_configured_catalog") }),
 	Schema.Struct({ operation: Schema.Literal("load_configured_table") }),
-	Schema.Struct({ objectPath: Schema.String, operation: Schema.Literal("open_catalog_table") }),
+	Schema.Struct({
+		authority: AuthoringAuthority,
+		objectPath: Schema.String,
+		operation: Schema.Literal("open_catalog_table")
+	}),
 	Schema.Struct({ operation: Schema.Literal("choose_table") }),
 	Schema.Struct({ objectPath: Schema.String, operation: Schema.Literal("begin_session") }),
 	Schema.Struct({ operation: Schema.Literal("list_sessions") }),
@@ -295,7 +312,7 @@ export function dispatchAuthoringTransportRequest(
 			case "load_configured_table":
 				return client.loadConfiguredTable();
 			case "open_catalog_table":
-				return client.openCatalogTable(request.objectPath);
+				return client.openCatalogTable(request.objectPath, request.authority);
 			case "choose_table":
 				return client.chooseTable();
 			case "begin_session":
@@ -467,11 +484,11 @@ export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): Au
 				operation: "authoring.http.load_configured_table",
 				payload: { operation: "load_configured_table" }
 			}),
-		openCatalogTable: (objectPath) =>
+		openCatalogTable: (objectPath, authority) =>
 			request({
 				decode: decodeAuthoringLoadResult,
 				operation: "authoring.http.open_catalog_table",
-				payload: { objectPath, operation: "open_catalog_table" }
+				payload: { authority, objectPath, operation: "open_catalog_table" }
 			}),
 		openSession: (sessionId) =>
 			request({

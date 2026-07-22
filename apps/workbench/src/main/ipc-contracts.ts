@@ -1,4 +1,5 @@
 import {
+	AuthoringAuthority,
 	AuthoringCatalogResult,
 	AuthoringLoadResult,
 	AuthoringSessionIntent,
@@ -278,7 +279,7 @@ export const invokeContracts = {
 	}),
 	"authoring:open-catalog-table": invoke({
 		channel: "authoring:open-catalog-table",
-		args: Schema.Tuple([GameObjectPath]),
+		args: Schema.Tuple([GameObjectPath, AuthoringAuthority]),
 		result: AuthoringLoadResult
 	}),
 	"authoring:choose-table": invoke({

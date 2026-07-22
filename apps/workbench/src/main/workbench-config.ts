@@ -5,7 +5,11 @@ export type ConfiguredPath =
 	| { readonly status: "not_configured" };
 
 export type ProjectConfiguration =
-	| { readonly status: "configured"; readonly projectRoot: string }
+	| {
+			readonly status: "configured";
+			readonly projectRoot: string;
+			readonly sessionStorageRoot?: string;
+	  }
 	| { readonly status: "not_configured" };
 
 export type ReviewConfiguration =
@@ -57,6 +61,9 @@ const remoteControlEndpointConfig = Config.schema(
 const projectRootConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_PROJECT_ROOT")
 );
+const authoringSessionRootConfig = Config.option(
+	Config.schema(NonEmptyConfigString, "UE_SHED_AUTHORING_SESSION_ROOT")
+);
 const reviewSetConfig = Config.option(Config.schema(NonEmptyConfigString, "UE_SHED_REVIEW_SET"));
 const projectNameConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_PROJECT_NAME")
@@ -80,6 +87,7 @@ function configuredPath(path: Option.Option<string>): ConfiguredPath {
 
 export function makeWorkbenchConfiguration(input: {
 	readonly authoringAsset: Option.Option<string>;
+	readonly authoringSessionRoot: Option.Option<string>;
 	readonly expectedProjectName: Option.Option<string>;
 	readonly projectRoot: Option.Option<string>;
 	readonly remoteControlEndpoint: string;
@@ -89,7 +97,13 @@ export function makeWorkbenchConfiguration(input: {
 }): WorkbenchConfigurationShape {
 	const project: ProjectConfiguration = Option.match(input.projectRoot, {
 		onNone: () => ({ status: "not_configured" as const }),
-		onSome: (projectRoot) => ({ status: "configured" as const, projectRoot })
+		onSome: (projectRoot) => ({
+			projectRoot,
+			...(Option.isSome(input.authoringSessionRoot)
+				? { sessionStorageRoot: input.authoringSessionRoot.value }
+				: {}),
+			status: "configured" as const
+		})
 	});
 
 	const review: ReviewConfiguration =
@@ -129,6 +143,7 @@ export const WorkbenchConfigurationLive = Layer.effect(
 		return WorkbenchConfiguration.of(
 			makeWorkbenchConfiguration({
 				authoringAsset: yield* authoringAssetConfig,
+				authoringSessionRoot: yield* authoringSessionRootConfig,
 				expectedProjectName: yield* projectNameConfig,
 				projectRoot: yield* projectRootConfig,
 				remoteControlEndpoint: yield* remoteControlEndpointConfig,

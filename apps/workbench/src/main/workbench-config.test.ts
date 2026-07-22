@@ -64,7 +64,11 @@ it.effect("loads a complete configured Workbench session", () =>
 		expect(configuration).toEqual({
 			authoringAsset: { status: "configured", path: "C:/table.uasset" },
 			expectedProject: { status: "configured", projectName: "Fixture" },
-			project: { status: "configured", projectRoot: "C:/FixtureProject" },
+			project: {
+				status: "configured",
+				projectRoot: "C:/FixtureProject",
+				sessionStorageRoot: "C:/Temp/authoring-sessions"
+			},
 			remoteControlEndpoint: "http://127.0.0.1:30010",
 			review: {
 				status: "configured",
@@ -78,6 +82,7 @@ it.effect("loads a complete configured Workbench session", () =>
 		Effect.provide(
 			workbenchConfigurationFromUnknown({
 				UE_SHED_AUTHORING_ASSET: "C:/table.uasset",
+				UE_SHED_AUTHORING_SESSION_ROOT: "C:/Temp/authoring-sessions",
 				UE_SHED_PROJECT_NAME: "Fixture",
 				UE_SHED_PROJECT_ROOT: "C:/FixtureProject",
 				UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30010",

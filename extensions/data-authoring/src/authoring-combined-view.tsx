@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { buildJoinedView, type JoinedViewRow } from "@ue-shed/authoring/joined-views";
-import type { AuthoringClientShape } from "@ue-shed/authoring-sdk";
+import type { AuthoringAuthority, AuthoringClientShape } from "@ue-shed/authoring-sdk";
 import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -30,6 +30,10 @@ interface TableGroup {
 
 function shortObjectName(objectPath: string): string {
 	return objectPath.slice(objectPath.lastIndexOf("/") + 1).split(".")[0] ?? objectPath;
+}
+
+function authorityForSnapshot(snapshot: AuthoringTableSnapshot): AuthoringAuthority {
+	return snapshot.authority.kind === "project_files" ? "saved" : "live";
 }
 
 function referenceFieldNames(snapshot: AuthoringTableSnapshot): readonly string[] {
@@ -138,23 +142,27 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 		sourceAction.cancel();
 		targetAction.cancel();
 		setLoadState({ status: "loading" });
-		sourceAction.run(props.client.openCatalogTable(objectPath), {
-			onFailure: (cause) => setLoadState({ message: Cause.pretty(cause), status: "failed" }),
-			onSuccess: (result) => {
-				if (result.status !== "ready") {
-					const message =
-						result.status === "failed"
-							? `${result.error.message} ${result.error.recovery}`
-							: "The selected source table is unavailable.";
-					setLoadState({ message, status: "failed" });
-					return;
+		sourceAction.run(
+			props.client.openCatalogTable(objectPath, authorityForSnapshot(sourceSnapshot())),
+			{
+				onFailure: (cause) =>
+					setLoadState({ message: Cause.pretty(cause), status: "failed" }),
+				onSuccess: (result) => {
+					if (result.status !== "ready") {
+						const message =
+							result.status === "failed"
+								? `${result.error.message} ${result.error.recovery}`
+								: "The selected source table is unavailable.";
+						setLoadState({ message, status: "failed" });
+						return;
+					}
+					setSourceSnapshot(result.snapshot);
+					setTargetSnapshots([]);
+					setReferenceFieldName(referenceFieldNames(result.snapshot)[0] ?? "");
+					setLoadState({ status: "ready" });
 				}
-				setSourceSnapshot(result.snapshot);
-				setTargetSnapshots([]);
-				setReferenceFieldName(referenceFieldNames(result.snapshot)[0] ?? "");
-				setLoadState({ status: "ready" });
 			}
-		});
+		);
 	};
 
 	createEffect(() => {
@@ -175,7 +183,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 		targetAction.run(
 			Effect.forEach(
 				paths.filter((path) => path !== source.table.objectPath),
-				(path) => props.client.openCatalogTable(path),
+				(path) => props.client.openCatalogTable(path, authorityForSnapshot(source)),
 				{ concurrency: 4 }
 			),
 			{

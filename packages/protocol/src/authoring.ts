@@ -438,13 +438,14 @@ export const AuthoringApplyRequest = Schema.Struct({
 }).annotate({ identifier: "AuthoringApplyRequest" });
 export type AuthoringApplyRequest = Schema.Schema.Type<typeof AuthoringApplyRequest>;
 
-const AuthoringOperationError = Schema.Struct({
+export const AuthoringOperationError = Schema.Struct({
 	code: Schema.String,
 	commandId: Schema.optionalKey(Schema.String),
 	message: Schema.String,
 	objectPath: Schema.optionalKey(Schema.String),
 	retrySafe: Schema.Boolean
 });
+export type AuthoringOperationError = Schema.Schema.Type<typeof AuthoringOperationError>;
 
 export const AuthoringApplyResult = Schema.Struct({
 	contract: ApplyContract,

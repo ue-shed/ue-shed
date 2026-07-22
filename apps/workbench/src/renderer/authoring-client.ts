@@ -125,9 +125,9 @@ export const authoringClient: AuthoringClientShape = AuthoringClient.of({
 			window.ueShed.authoring.loadConfiguredTable()
 		)
 	),
-	openCatalogTable: Effect.fn("AuthoringClient.openCatalogTable")((objectPath) =>
+	openCatalogTable: Effect.fn("AuthoringClient.openCatalogTable")((objectPath, authority) =>
 		loadRequest("authoring.openCatalogTable", () =>
-			window.ueShed.authoring.openCatalogTable(objectPath)
+			window.ueShed.authoring.openCatalogTable(objectPath, authority)
 		)
 	),
 	redoSession: Effect.fn("AuthoringClient.redoSession")((sessionId) =>

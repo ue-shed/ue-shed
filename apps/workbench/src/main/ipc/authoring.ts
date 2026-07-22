@@ -1,5 +1,6 @@
 import {
 	AuthoringClient,
+	type AuthoringAuthority,
 	type AuthoringClientError,
 	type AuthoringSessionIntent
 } from "@ue-shed/authoring-sdk";
@@ -22,8 +23,8 @@ export const register = Effect.gen(function* () {
 		hostRequest(authoring.loadConfiguredCatalog())
 	);
 	yield* ipc.register(invokeContracts["authoring:open-catalog-table"], (...args) => {
-		const [objectPath] = args as [GameObjectPath];
-		return hostRequest(authoring.openCatalogTable(objectPath));
+		const [objectPath, authority] = args as [GameObjectPath, AuthoringAuthority];
+		return hostRequest(authoring.openCatalogTable(objectPath, authority));
 	});
 	yield* ipc.register(invokeContracts["authoring:choose-table"], () =>
 		hostRequest(authoring.chooseTable())

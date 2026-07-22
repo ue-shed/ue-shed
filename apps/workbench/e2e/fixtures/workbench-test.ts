@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test as base, type ElectronApplication } from "@playwright/test";
 import { _electron as electron } from "playwright";
@@ -52,10 +54,11 @@ function launchEnvironment(overrides: Readonly<Record<string, string>> = {}): {
 
 export const test = base.extend<WorkbenchFixtures>({
 	workbench: async ({ browserName: _browserName }, use, testInfo) => {
+		const sessionRoot = await mkdtemp(join(tmpdir(), "ue-shed-workbench-e2e-authoring-"));
 		const application = await electron.launch({
 			args: [workbenchRoot],
 			cwd: workbenchRoot,
-			env: launchEnvironment(),
+			env: launchEnvironment({ UE_SHED_AUTHORING_SESSION_ROOT: sessionRoot }),
 			executablePath: electronExecutable
 		});
 		const page = await application.firstWindow();
@@ -80,12 +83,14 @@ export const test = base.extend<WorkbenchFixtures>({
 				await application.context().tracing.stop();
 			}
 			await closeApplication(application);
+			await rm(sessionRoot, { force: true, recursive: true });
 		}
 	}
 });
 
 export const demandLaunchTest = base.extend<DemandLaunchFixtures>({
 	demandLaunch: async ({ browserName: _browserName }, use, testInfo) => {
+		const sessionRoot = await mkdtemp(join(tmpdir(), "ue-shed-workbench-e2e-authoring-"));
 		const harness = await createFakeFixtureLaunchHarness({
 			launchDelayMs: 2_000,
 			projectName: process.env.UE_SHED_PROJECT_NAME ?? "UEShedFixture"
@@ -93,7 +98,10 @@ export const demandLaunchTest = base.extend<DemandLaunchFixtures>({
 		const application = await electron.launch({
 			args: [workbenchRoot],
 			cwd: workbenchRoot,
-			env: launchEnvironment(harness.environment),
+			env: launchEnvironment({
+				...harness.environment,
+				UE_SHED_AUTHORING_SESSION_ROOT: sessionRoot
+			}),
 			executablePath: electronExecutable
 		});
 		const page = await application.firstWindow();
@@ -127,6 +135,7 @@ export const demandLaunchTest = base.extend<DemandLaunchFixtures>({
 			} finally {
 				await closeApplication(application);
 				await harness.close();
+				await rm(sessionRoot, { force: true, recursive: true });
 			}
 		}
 	}

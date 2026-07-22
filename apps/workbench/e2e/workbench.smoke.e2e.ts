@@ -16,7 +16,9 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 		workbench.page.getByText("/Game/Fixture/Authoring/DT_Scalars.DT_Scalars", { exact: true })
 	).toBeVisible();
 	await expect(workbench.page.getByText("Scalar_Alpha / Enabled", { exact: true })).toBeVisible();
-	await expect(workbench.page.getByText("RECENT DRAFTS", { exact: true })).toBeVisible();
+	await workbench.page.getByRole("button", { name: "Sessions" }).click();
+	await expect(workbench.page.getByText("No staged drafts.", { exact: true })).toBeVisible();
+	await workbench.page.getByRole("button", { name: "Cell" }).click();
 	await workbench.page.getByRole("button", { name: "+ Row" }).click();
 	await expect(workbench.page.getByRole("form", { name: "Row name editor" })).toBeVisible();
 	await workbench.page.getByRole("button", { name: "Cancel" }).click();

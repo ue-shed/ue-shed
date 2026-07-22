@@ -86,10 +86,37 @@ describe("live authoring workflow", () => {
 		};
 		const rebased = acceptApplyResult(session, request, result, "2026-07-14T00:01:00Z");
 		expect(rebased.commands).toEqual([]);
+		expect(rebased.applyReceipts.at(-1)?.errors).toEqual([]);
 		expect(rebased.awaitingSave).toEqual(["/Game/Fixture/DT_Test.DT_Test"]);
 		expect(rebased.fingerprints[result.snapshots[0]!.table.objectPath]).toBe(
 			fingerprintTable(result.snapshots[0]!)
 		);
+	});
+
+	it("retains structured engine errors when Apply is rejected", () => {
+		const session = editedSession();
+		const request = buildApplyRequest(session, "operation");
+		const rejected = acceptApplyResult(
+			session,
+			request,
+			{
+				contract: { name: "unreal-authoring-apply", version: { major: 1, minor: 0 } },
+				errors: [
+					{
+						code: "read_only_table",
+						message: "CompositeDataTable rows are derived",
+						objectPath: snapshot().table.objectPath,
+						retrySafe: false
+					}
+				],
+				operationId: "operation",
+				snapshots: [],
+				status: "rejected"
+			},
+			"now"
+		);
+		expect(rejected.commands).toEqual(session.commands);
+		expect(rejected.applyReceipts.at(-1)?.errors?.[0]?.code).toBe("read_only_table");
 	});
 
 	it("records an indeterminate receipt instead of replaying an uncertain mutation", async () => {

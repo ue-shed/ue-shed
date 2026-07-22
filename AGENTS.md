@@ -4,6 +4,11 @@ UE Shed is a headless-first toolkit for extending Unreal Engine development out 
 tools. The desktop Workbench is a showcase and dogfood client, never a privileged architecture
 layer.
 
+## Hackathon judging freeze
+
+`main` is frozen until 13 August 2026 for hackathon judging. Do not merge, push, or target pull
+requests to `main` during this period. Use temporary or feature branches instead.
+
 ## Before changing code
 
 - Start at [`docs/README.md`](docs/README.md) for the doc map and read order.

@@ -116,7 +116,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"game-text:choose-and-scan": [],
 	"authoring:configured-table": [],
 	"authoring:configured-catalog": [],
-	"authoring:open-catalog-table": ["/Game/Data/Example"],
+	"authoring:open-catalog-table": ["/Game/Data/Example", "live"],
 	"authoring:choose-table": [],
 	"authoring:session:begin": ["/Game/Data/Example"],
 	"authoring:session:list": [],
@@ -275,7 +275,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 
 const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
-	"authoring:open-catalog-table": [""],
+	"authoring:open-catalog-table": ["", "automatic"],
 	"authoring:session:begin": [42],
 	"authoring:session:open": [""],
 	"authoring:session:discard": [null],

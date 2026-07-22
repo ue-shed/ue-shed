@@ -604,6 +604,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
+      unreal-rc:
+        specifier: file:vendor/unreal-rc-0.5.2-rc.0.tgz
+        version: file:packages/unreal-connection/vendor/unreal-rc-0.5.2-rc.0.tgz(effect@4.0.0-beta.98)
 
 packages:
 
@@ -2930,6 +2933,13 @@ packages:
   unenv@2.0.0-rc.24:
     resolution: {integrity: sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw==}
 
+  unreal-rc@file:packages/unreal-connection/vendor/unreal-rc-0.5.2-rc.0.tgz:
+    resolution: {integrity: sha512-2JfKbMsmiUSFhsa2w8Pkw4uYApi51iqiGPUPyPHOJg6y+Cu8XzEN8Ir+UXRPvVIPT0s11JMoyNwRFtsUyiMY9w==, tarball: file:packages/unreal-connection/vendor/unreal-rc-0.5.2-rc.0.tgz}
+    version: 0.5.2-rc.0
+    engines: {node: '>=18'}
+    peerDependencies:
+      effect: '>=4.0.0-beta.50 <5'
+
   update-browserslist-db@1.2.3:
     resolution: {integrity: sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==}
     hasBin: true
@@ -5047,6 +5057,10 @@ snapshots:
   unenv@2.0.0-rc.24:
     dependencies:
       pathe: 2.0.3
+
+  unreal-rc@file:packages/unreal-connection/vendor/unreal-rc-0.5.2-rc.0.tgz(effect@4.0.0-beta.98):
+    dependencies:
+      effect: 4.0.0-beta.98
 
   update-browserslist-db@1.2.3(browserslist@4.28.6):
     dependencies:

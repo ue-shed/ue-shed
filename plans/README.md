@@ -14,7 +14,6 @@ the status row when done.
 | [017](017-map-review-realization-and-recovery.md)   | Verify realized framing and recover in-progress Map Review authoring | P0       | L      | —                       | TODO                      |
 | [018](018-pie-live-review-previews.md)              | PIE live cameras for Map Review authoring previews                   | P0       | L      | —                       | IN PROGRESS               |
 | [019](019-stream-world-scout-transforms.md)         | Stream actor transforms and render World Scout on Canvas             | P1       | XL     | 018                     | IN PROGRESS               |
-| [021](021-consume-published-unreal-rc.md)           | Consume the published unreal-rc 0.5.3 dependency                     | P0       | S      | 020                     | TODO                      |
 | [022](022-harden-public-contracts.md)               | Make public TypeScript and Map Review contracts schema-governed      | P0       | M      | 020                     | TODO                      |
 | [023](023-separate-formulas-and-license-mit.md)     | Separate HyperFormula and establish an MIT distribution boundary     | P0       | L      | 020                     | TODO                      |
 | [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance      | P1       | L      | 020, 021                | TODO                      |
@@ -46,9 +45,6 @@ table and the archive index.
 - Plan 007 still depends on archived plans 006 and 015 for prior gates; read those only as history.
 - Plans 020–026 establish a public versioned surface. They do not authorize merging, pushing, or
   targeting main while the judging freeze remains in force.
-- Plan 021 replaces the vendored Remote Control bridge only after the owner publishes unreal-rc
-  0.5.3. Missing Remote Control behavior belongs upstream in unreal-rc, never in a raw-fetch
-  workaround.
 - Plan 022 makes the Effect Schema convention enforceable at public boundaries. Recursive schemas
   may retain narrowly documented manual declarations only with bidirectional type/fixture tests.
 - Plan 023 is a licensing gate. HyperFormula cannot be relicensed through ownership of Peculiar

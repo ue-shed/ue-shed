@@ -77,11 +77,11 @@ Run focused adapter tests and inspect their request assertions: transaction fals
 
 ## Done criteria
 
-- [ ] Registry dependency is exact unreal-rc 0.5.3, not a range or file path.
-- [ ] Tarball and adoption-manifest copy are absent.
-- [ ] Focused transport tests pass.
-- [ ] pnpm check exits 0.
-- [ ] plans/README.md marks Plan 021 DONE.
+- [x] Registry dependency is exact unreal-rc 0.5.3, not a range or file path.
+- [x] Tarball and adoption-manifest copy are absent.
+- [x] Focused transport tests pass.
+- [x] pnpm check exits 0.
+- [x] Plan 021 is archived as DONE.
 
 ## STOP conditions
 

@@ -15,6 +15,6 @@
 	"dependencies": {
 		"@ue-shed/protocol": "workspace:*",
 		"effect": "catalog:",
-		"unreal-rc": "file:vendor/unreal-rc-0.5.2-rc.0.tgz"
+		"unreal-rc": "0.5.3"
 	}
 }

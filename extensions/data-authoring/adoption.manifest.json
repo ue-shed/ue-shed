@@ -47,7 +47,6 @@
 			"packages/unreal-assets/src/index.ts",
 			"packages/unreal-connection/package.json",
 			"packages/unreal-connection/tsconfig.json",
-			"packages/unreal-connection/vendor/unreal-rc-0.5.2-rc.0.tgz",
 			"packages/unreal-connection/src/index.ts",
 			"packages/unreal-connection/src/remote-control-client.ts",
 			"packages/authoring-catalog/package.json",

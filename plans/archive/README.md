@@ -22,3 +22,4 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [015](015-effect-observability-enforcement.md) | Close the Effect migration with telemetry and enforcement    | DONE                       |
 | [016](016-data-authoring-adoption-seam.md)     | Prove the Data Authoring adoption seam                       | DONE                       |
 | [020](020-restore-green-release-baseline.md)   | Restore a trustworthy portable release baseline              | DONE                       |
+| [021](021-consume-published-unreal-rc.md)      | Consume the published unreal-rc 0.5.3 dependency             | DONE                       |

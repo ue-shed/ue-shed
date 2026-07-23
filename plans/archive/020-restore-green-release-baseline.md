@@ -46,8 +46,8 @@ The root check currently fails because the inspected saved asset reports Count 8
 
 ## Git workflow
 
-- Branch feature/020-green-release-baseline from the temporary branch.
-- Use a conventional test or fixture commit. Do not merge, push, or target main during the judging freeze.
+- Branch feature/020-green-release-baseline from the canonical integration branch.
+- Use a conventional test or fixture commit.
 
 ## Steps
 

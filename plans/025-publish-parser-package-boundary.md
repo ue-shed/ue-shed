@@ -1,6 +1,6 @@
 # Plan 025: Publish the minimal parser and protocol package boundary
 
-> **Executor instructions**: Do not turn every workspace package public. Build and test only the headless surface below from packed artifacts in a clean consumer directory. Use exact versions and retain the temporary-branch restriction.
+> **Executor instructions**: Do not turn every workspace package public. Build and test only the headless surface below from packed artifacts in a clean consumer directory. Use exact versions.
 >
 > **Drift check (run first)**: git diff --stat a1df704..HEAD -- apps/cli crates/uasset-parser packages/protocol packages/unreal-assets package.json pnpm-workspace.yaml pnpm-lock.yaml scripts docs README.md
 

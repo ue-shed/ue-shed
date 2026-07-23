@@ -1,13 +1,13 @@
 # Plan 024: Establish CI, Unreal evidence, and candidate-release provenance
 
-> **Executor instructions**: Read docs/README.md and AGENTS.md first. Create automation only on a temporary or feature branch; main is frozen for judging. Never configure the self-hosted Windows runner to execute fork pull requests.
+> **Executor instructions**: Read docs/README.md and AGENTS.md first. Never configure the self-hosted Windows runner to execute fork pull requests.
 >
 > **Drift check (run first)**: git diff --stat a1df704..HEAD -- .github package.json pnpm-lock.yaml scripts docs README.md
 
 ## Status
 
 - **Status**: IN PROGRESS on 2026-07-23 — workflows, candidate tooling, and runbook implemented;
-  default-branch activation and first hosted/trusted runs wait for the judging freeze to end
+  first hosted and trusted protected runs remain
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -25,7 +25,6 @@ ElectroSwag cannot safely consume frequent UE Shed prereleases if a release is o
 - package.json provides pnpm check for portable verification and pnpm check:unreal for engine-backed conformance and authoring checks.
 - The local engine reference is C:\Program Files\Epic Games\UE_5.7, but code and fixtures must not depend on that path.
 - Blacksmith is available for normal checks and Macroscope is an advisory code-review tool in the owner's workflow.
-- Main is frozen until 2026-08-13. No workflow may auto-merge, push to, or target main during the freeze.
 
 ## Commands you will need
 
@@ -49,7 +48,6 @@ ElectroSwag cannot safely consume frequent UE Shed prereleases if a release is o
 
 - A hosted Unreal machine, automatic downstream merge/release, or replacement of local tests.
 - Secrets, SSH keys, or engine access for untrusted PR code.
-- Any merge/push/PR target to main during the freeze.
 
 ## Steps
 
@@ -57,7 +55,7 @@ ElectroSwag cannot safely consume frequent UE Shed prereleases if a release is o
 
 Create a Blacksmith workflow for trusted branches and pull requests: locked pnpm install, pnpm check, rebuildable cache only, and artifact output for failures. Configure Macroscope separately as advisory initially.
 
-**Verify**: a formatting break fails; a clean temporary branch passes pnpm check.
+**Verify**: a formatting break fails; a clean protected branch passes pnpm check.
 
 ### Step 2: Add the trusted Unreal lane
 

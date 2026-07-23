@@ -1,20 +1,19 @@
 # Release evidence and downstream handoff
 
 UE Shed separates portable checks, trusted Unreal evidence, candidate construction, and publication.
-No workflow merges code or updates a downstream repository. During the judging freeze, all work and
-candidate runs stay on temporary or feature refs; `main` is not a target.
+No workflow merges code or updates a downstream repository. Candidate publication always requires
+an exact protected tag and explicit human approval.
 
 GitHub accepts manual dispatches and schedules only after a workflow exists on the default branch.
-Until the judging freeze ends, validate candidate construction locally and let temporary-branch push
-events exercise the portable workflow. Do not copy or merge the dispatch workflows to `main` merely
-to activate them early; Plan 024 remains in progress until their first protected runs complete.
+Plan 024 remains in progress until the workflows complete their first protected hosted and trusted
+runs from the canonical repository.
 
 ## Trust lanes
 
 The `Portable` workflow runs `pnpm check` on an ephemeral Blacksmith Ubuntu runner. It receives only
 read access to repository contents, persists no checkout credential, and caches only rebuildable
-dependencies. Configure the repository's required checks so `pnpm check` is required on the temporary
-integration branch. Macroscope remains advisory: install its GitHub App for this repository and
+dependencies. Configure the repository's required checks so `pnpm check` is required on protected
+integration branches. Macroscope remains advisory: install its GitHub App for this repository and
 trigger an on-demand review with `@macroscope-app review`; do not make its neutral check result a
 release substitute.
 
@@ -34,7 +33,7 @@ the default branch's checked-in workflow and the same protected environment.
 
 Use an exact prerelease version and, when available, the exact successful Trusted Unreal run ID:
 
-1. Dispatch `Candidate Release` on the reviewed temporary or feature ref.
+1. Dispatch `Candidate Release` on the reviewed protected ref.
 2. Enter a version such as `0.1.0-rc.1` and leave `publish` disabled.
 3. Enter the numeric Unreal run ID to bind its evidence into the candidate. Omitting it is allowed
    only for a portable dry run and is represented as `null` in the manifest.
@@ -53,15 +52,16 @@ For a local artifact-only dry run:
 
 ```powershell
 $commit = git rev-parse HEAD
+$branch = git branch --show-current
 node scripts/create-release-candidate.mjs --version 0.1.0-rc.1 --commit $commit `
-  --ref refs/heads/temp/hackathon-judging-2026-08-13 --output out/candidate
+  --ref "refs/heads/$branch" --output out/candidate
 ```
 
 Use a clean checkout of the exact requested commit and a new empty output directory for every run.
 The script rejects commit/worktree drift and will not overwrite an existing candidate.
 
 The initial `0.1.0-rc.1` publication bootstraps the packages before npm trusted publishers can be
-configured. From a clean reviewed temporary-branch checkout on Windows, run `pnpm check`, then
+configured. From a clean reviewed checkout on Windows, run `pnpm check`, then
 `pnpm release:pack`. Authenticate with the public npm registry and publish the immutable tarballs in
 this order, always retaining the `next` dist-tag:
 

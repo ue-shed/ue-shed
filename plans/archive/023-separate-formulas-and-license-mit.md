@@ -100,7 +100,7 @@ Pin the exact core version, remove the transitively GPL path, add the root licen
 - The root MIT license and amended ADR 0005 describe the actual distribution boundary.
 - Data Authoring adoption conformance passes from a fresh materialized host against all 12 fixture
   tables.
-- `pnpm check` passes on the temporary hackathon integration branch.
+- `pnpm check` passes on the canonical integration branch.
 
 ## STOP conditions
 

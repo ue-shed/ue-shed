@@ -41,8 +41,7 @@ table and the archive index.
   editing, Composite DataTables, editable joins, and final release conformance remain. Continue it on
   the Effect-native services and adoption seam established by archived plans 008–016.
 - Plan 007 still depends on archived plans 006 and 015 for prior gates; read those only as history.
-- Plans 020–026 establish a public versioned surface. They do not authorize merging, pushing, or
-  targeting main while the judging freeze remains in force.
+- Plans 020–026 establish a public versioned surface in the canonical organization repository.
 - Plan 022 makes the Effect Schema convention enforceable at public boundaries. Recursive schemas
   may retain narrowly documented manual declarations only with bidirectional type/fixture tests.
   Completed and archived under [`archive/022-harden-public-contracts.md`](archive/022-harden-public-contracts.md).

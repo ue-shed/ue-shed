@@ -21,6 +21,7 @@
 	},
 	"copy": {
 		"kernel": [
+			"LICENSE",
 			"Cargo.toml",
 			"Cargo.lock",
 			"crates/uasset-parser/Cargo.toml",

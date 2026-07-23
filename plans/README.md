@@ -14,7 +14,6 @@ the status row when done.
 | [017](017-map-review-realization-and-recovery.md)   | Verify realized framing and recover in-progress Map Review authoring | P0       | L      | —                       | TODO                      |
 | [018](018-pie-live-review-previews.md)              | PIE live cameras for Map Review authoring previews                   | P0       | L      | —                       | IN PROGRESS               |
 | [019](019-stream-world-scout-transforms.md)         | Stream actor transforms and render World Scout on Canvas             | P1       | XL     | 018                     | IN PROGRESS               |
-| [023](023-separate-formulas-and-license-mit.md)     | Separate HyperFormula and establish an MIT distribution boundary     | P0       | L      | 020                     | TODO                      |
 | [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance      | P1       | L      | 020, 021                | TODO                      |
 | [025](025-publish-parser-package-boundary.md)       | Publish the minimal parser and protocol package boundary             | P1       | L      | 022, 023, 024           | TODO                      |
 | [026](026-ship-plugin-bundles-and-installer.md)     | Ship versioned plugin bundles through the CLI installer              | P1       | L      | 023, 024, 025           | TODO                      |
@@ -47,8 +46,9 @@ table and the archive index.
 - Plan 022 makes the Effect Schema convention enforceable at public boundaries. Recursive schemas
   may retain narrowly documented manual declarations only with bidirectional type/fixture tests.
   Completed and archived under [`archive/022-harden-public-contracts.md`](archive/022-harden-public-contracts.md).
-- Plan 023 is a licensing gate. HyperFormula cannot be relicensed through ownership of Peculiar
-  Sheets; UE Shed must use an independently MIT core with no formula-engine dependency.
+- Plan 023 completed the licensing gate with the formula-free `peculiar-sheets@0.11.0` MIT core and
+  is archived under
+  [`archive/023-separate-formulas-and-license-mit.md`](archive/023-separate-formulas-and-license-mit.md).
 - Plan 024 uses hosted CI for portable checks and the owner's trusted Windows UE 5.7 machine only
   for manually dispatched or scheduled Unreal evidence. It must never run untrusted fork PR code.
 - Plan 025 intentionally publishes only protocol, parser library, launcher, and initial Windows

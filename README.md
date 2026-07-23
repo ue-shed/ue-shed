@@ -119,3 +119,10 @@ For architecture, product boundaries, and the current status of individual workf
 [documentation index](docs/README.md). The [public project site source](apps/site) is kept alongside
 the application and is a good visual overview; the documentation holds the detailed setup and
 contract material.
+
+## License
+
+UE Shed is available under the [MIT License](LICENSE). Third-party dependencies and Unreal Engine
+retain their own licenses. The Data Authoring grid uses the formula-free MIT
+`peculiar-sheets@0.11.0` core; UE Shed does not distribute HyperFormula or an optional formula-engine
+adapter.

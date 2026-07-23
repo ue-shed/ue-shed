@@ -2,10 +2,7 @@
 
 ## Status
 
-Accepted on 2026-07-15.
-
-The Peculiar Sheets rights holder explicitly approved adding and distributing the dependency in UE
-Shed. UE Shed's own publication license and release review remain separate decisions.
+Accepted on 2026-07-15. Amended on 2026-07-23 after the formula-free MIT core release.
 
 ## Context
 
@@ -14,16 +11,22 @@ keyboard navigation, and batch editing. Electroswag demonstrates that Peculiar S
 that interaction layer, but its renderer and session store are internal behavioral references rather
 than code or architecture to copy.
 
-Registry metadata checked on 2026-07-15 reports:
+The first reviewed release, `peculiar-sheets@0.9.1`, was GPL-3.0-only and depended transitively on
+HyperFormula. The repository owner approved that exact dependency for development and distribution,
+but its production graph remained incompatible with the intended MIT UE Shed boundary.
+
+Registry metadata checked on 2026-07-23 now reports:
 
 - package: `peculiar-sheets`
-- candidate version: `0.9.1`
+- pinned version: `0.11.0`
 - source: `https://github.com/peculiarnewbie/spreadsheets`
-- license: `GPL-3.0-only`
-- relevant transitive dependency: `hyperformula@^3.0.0`
+- license: `MIT`
+- production dependencies: `@tanstack/solid-virtual` and `better-result`
+- formula dependencies: none
 
-UE Shed is private and deliberately has no selected publication license. Dependency and rights-holder
-review are publication gates, so technical suitability alone cannot authorize distribution.
+Peculiar Sheets also publishes a separately installed IronCalc adapter. Data Authoring does not need
+formula evaluation, so that adapter and its WASM dependency are deliberately absent from UE Shed.
+HyperFormula remains GPLv3/commercial and is not relicensed by either project.
 
 The authoring roadmap also described arbitrary studio-authored and generated interfaces. That would
 require grants, isolation, publishing, compatibility, and a security model that the maintained editor
@@ -31,43 +34,46 @@ does not need.
 
 ## Decision
 
-- Do not add Peculiar Sheets to a production manifest until its GPL terms are explicitly approved for
-  the intended UE Shed distribution.
-- If approved, pin the exact reviewed version. Do not rely on a caret range while the library is on a
-  pre-1.0 API.
+- Pin the exact reviewed `peculiar-sheets@0.11.0` MIT core. Do not rely on a caret range while the
+  library is on a pre-1.0 API.
+- Enforce the production boundary in `pnpm license:check`: UE Shed must not acquire HyperFormula,
+  `peculiar-sheets-ironcalc`, or `@ironcalc/wasm` through a production dependency path.
 - Put all Peculiar runtime imports, branded row/column conversions, operation decoding, and vendor CSS
   behind one adapter in `extensions/data-authoring`.
 - Expose UE Shed table/view models to the adapter and emit semantic authoring intents from it. The
   grid never owns drafts, validation, Apply, Save, or persistence.
 - Use documented component props, operation types, and controller methods only. Do not query private
   `.se-*` DOM nodes or override private selectors.
-- Do not instantiate HyperFormula or expose formulas unless a later product requirement and separate
-  dependency review justify them.
+- Do not add formulas unless a later product requirement and separate dependency review justify them.
 - Defer arbitrary custom authoring UI hosting indefinitely. Continue to support the maintained
   first-party extension, CLI automation, and trusted hosts embedding the maintained interface.
-- Narrow `@ue-shed/authoring-sdk` to the browser-safe client contract used by that maintained
-  interface. It is not an untrusted-extension SDK or capability sandbox.
+- Keep `@ue-shed/authoring-sdk` as the browser-safe client contract used by that maintained interface.
+  It is not an untrusted-extension SDK or capability sandbox.
 
 ## Consequences
 
 The authoring domain remains usable without Workbench and replaceable without Peculiar Sheets. A
-license rejection changes the grid implementation choice, not the session, protocol, CLI, or product
-contracts. Deferring custom UI removes speculative security and platform work without removing named
-views, row-detail surfaces, or purpose-built maintained extensions.
+dependency rejection changes the grid implementation choice, not the session, protocol, CLI, or
+product contracts. Deferring custom UI removes speculative security and platform work without
+removing named views, row-detail surfaces, or purpose-built maintained extensions.
 
 No source from Electroswag is copied. Its observable behavior may inform conformance cases.
 
+UE Shed can use the MIT repository license without shipping HyperFormula. IronCalc remains available
+to other Peculiar Sheets consumers without becoming an unused UE Shed dependency.
+
 ## Approval record
 
-The repository owner stated that they own Peculiar Sheets and approved the dependency after being
-shown the exact `0.9.1` version, its `GPL-3.0-only` metadata, the HyperFormula dependency, and the
-potential GPL distribution obligations. The approved scope is UE Shed development and distribution;
-the package must remain exactly pinned until a later dependency review.
+The repository owner stated that they own Peculiar Sheets and authorized the formula-free core under
+MIT. The published `0.11.0` registry metadata and installed manifest are checked by the release gate.
+This decision does not alter the licenses of HyperFormula, IronCalc, Unreal Engine, or any other
+third-party dependency.
 
 ## Implementation evidence
 
-`peculiar-sheets@0.9.1` is pinned exactly in the Data Authoring extension. The initial browser adapter
-uses only `Sheet`, `rowId`, `ColumnDef`, `Selection`, and the published stylesheet. It is read-only,
-does not instantiate HyperFormula, does not use private selectors, and converts UE Shed values in a
-separate pure model. The extension typecheck, adapter model tests, and Workbench production build
-prove the candidate API and CSS boundary.
+`peculiar-sheets@0.11.0` is pinned exactly in the Data Authoring extension. The browser adapter uses
+only `Sheet`, `rowId`, published types, and the published stylesheet. It does not instantiate a
+formula engine, use private selectors, or transfer authoring authority into the grid.
+
+The root MIT license, dependency-boundary gate, Data Authoring model/component tests, adoption test,
+and full repository check prove the reviewed boundary.

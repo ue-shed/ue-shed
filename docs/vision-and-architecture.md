@@ -366,8 +366,8 @@ This keeps the public project honest while avoiding two diverging copies of ever
 - Keep engine-source investigation separate from copying engine implementation.
 - Review contributor ownership, dependency licenses, trademark language, security posture, and the
   final repository history before publication.
-- Keep packages `private` and omit an open-source license until the rights holder deliberately chooses
-  one. “No license yet” is a publication gate, not a license strategy.
+- Keep packages `private` until their package-specific publication boundaries are ready. Repository
+  source is MIT licensed; third-party dependencies and Unreal Engine retain their own licenses.
 
 The Workbench must not become the accidental source of truth for protocols or domain behavior. Public
 libraries and executable conformance tests are the reusable product.
@@ -380,7 +380,7 @@ These choices matter but should be made with evidence from shipped workflows rat
 - JSON Schema, Protobuf, or another language-neutral schema authority;
 - named-pipe framing and whether a second cross-platform data transport is required;
 - process topology for the local host and multi-editor arbitration;
-- package-by-package release cadence and final licenses;
+- package-by-package release cadence and publication metadata;
 - whether third-party runtime extensions are ever worth the security and support cost.
 
 The architecture leaves seams for all of them without making every workflow pay their full

@@ -6,6 +6,7 @@
 
 ## Status
 
+- **Status**: DONE on 2026-07-23
 - **Priority**: P0
 - **Effort**: L
 - **Risk**: HIGH
@@ -84,12 +85,22 @@ Pin the exact core version, remove the transitively GPL path, add the root licen
 
 ## Done criteria
 
-- [ ] Core is MIT by authorized decision and has no HyperFormula dependency.
-- [ ] Formula integration, if retained, is optional and absent from UE Shed.
-- [ ] UE Shed root license/release docs accurately say MIT.
-- [ ] pnpm why hyperformula finds no distributable UE Shed path.
-- [ ] pnpm check exits 0.
-- [ ] plans/README.md marks Plan 023 DONE.
+- [x] Core is MIT by authorized decision and has no HyperFormula dependency.
+- [x] Formula integration, if retained, is optional and absent from UE Shed.
+- [x] UE Shed root license/release docs accurately say MIT.
+- [x] pnpm why hyperformula finds no distributable UE Shed path.
+- [x] pnpm check exits 0.
+- [x] plans/README.md marks Plan 023 DONE.
+
+## Completion evidence
+
+- Registry metadata reports `peculiar-sheets@0.11.0` as MIT with no formula-engine dependency.
+- UE Shed pins that exact core release and `pnpm license:check` rejects HyperFormula, the IronCalc
+  adapter, or IronCalc WASM on any production path.
+- The root MIT license and amended ADR 0005 describe the actual distribution boundary.
+- Data Authoring adoption conformance passes from a fresh materialized host against all 12 fixture
+  tables.
+- `pnpm check` passes on the temporary hackathon integration branch.
 
 ## STOP conditions
 

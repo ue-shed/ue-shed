@@ -20,7 +20,7 @@
 		"@ue-shed/ui": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",
-		"peculiar-sheets": "0.9.1",
+		"peculiar-sheets": "0.11.0",
 		"solid-js": "catalog:"
 	}
 }

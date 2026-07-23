@@ -122,5 +122,6 @@ path; their results; any ambiguity or workaround; and every undeclared input use
 environment variables, package-manager configuration, credentials, agent configuration, or the
 parent Git worktree while troubleshooting.
 
-Licensing remains a deliberate external-distribution gate. This manifest proves local/private
-adoption mechanics; it does not publish packages or grant rights.
+UE Shed's copied source is MIT licensed; the materialized target includes the root `LICENSE` in its
+provenance-marked kernel. Adopters remain responsible for the licenses of external dependencies and
+for their own application distribution.

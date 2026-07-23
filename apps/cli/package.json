@@ -14,6 +14,7 @@
 		"@ue-shed/engine-discovery": "workspace:*",
 		"@ue-shed/game-text": "workspace:*",
 		"@ue-shed/observability": "workspace:*",
+		"@ue-shed/plugin-bundles": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/unreal-assets": "workspace:*",
 		"@ue-shed/unreal-connection": "workspace:*",

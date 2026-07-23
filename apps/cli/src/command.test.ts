@@ -189,7 +189,26 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 	],
 	[["review", "capture", "project", "set.json", "http://editor"], "ReviewCapture"],
 	[["review", "history", "project"], "ReviewHistory"],
-	[["review", "show", "run.json"], "ReviewShow"]
+	[["review", "show", "run.json"], "ReviewShow"],
+	[["plugins", "list", "plugins.manifest.json"], "PluginsList"],
+	[["plugins", "list", "--manifest", "plugins.manifest.json"], "PluginsList"],
+	[
+		["plugins", "verify", "plugins.manifest.json", "--artifact", "plugins.tar.gz"],
+		"PluginsVerify"
+	],
+	[
+		[
+			"plugins",
+			"install",
+			"--project",
+			"Project/Fixture.uproject",
+			"--manifest",
+			"plugins.manifest.json",
+			"--artifact",
+			"plugins.tar.gz"
+		],
+		"PluginsInstall"
+	]
 ];
 
 it.effect("decodes every CLI command variant", () =>
@@ -206,6 +225,10 @@ it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
 			["audit", "textures", "project", "--rules"],
 			["audit", "textures", "project", "--rules", "one", "--rules", "two"],
 			["text", "scan", "project", "--wat", "value"],
+			["plugins", "list"],
+			["plugins", "verify", "plugins.manifest.json", "--project", "project"],
+			["plugins", "install", "--project", "project"],
+			["plugins", "install", "project", "--manifest", "one", "other"],
 			["authoring", "session", "show", "legacy.json"],
 			[
 				"authoring",

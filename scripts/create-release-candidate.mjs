@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { packPublicPackages, PUBLIC_VERSION } from "./pack-public-packages.mjs";
+import { buildPluginBundle } from "./plugin-bundle.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const candidateVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-rc\.(0|[1-9]\d*)$/;
@@ -121,20 +122,9 @@ export async function createReleaseCandidate({
 	await ensureEmptyOutput(outputDirectory);
 
 	const sourcePath = join(outputDirectory, `ue-shed-${version}-source.tar.gz`);
-	const pluginsPath = join(outputDirectory, `ue-shed-${version}-plugin-sources.tar.gz`);
 	gitArchive({ commit, output: sourcePath, prefix: `ue-shed-${version}` });
-	gitArchive({
-		commit,
-		output: pluginsPath,
-		prefix: `ue-shed-plugins-${version}`,
-		paths: ["unreal/Plugins"]
-	});
-
-	const artifacts = [
-		await artifact(sourcePath, outputDirectory, "source"),
-		await artifact(pluginsPath, outputDirectory, "unreal-plugin-source")
-	];
 	const packageOutput = join(outputDirectory, "npm");
+	const artifacts = [await artifact(sourcePath, outputDirectory, "source")];
 	for (const packed of await packPublicPackages({ output: packageOutput })) {
 		artifacts.push({
 			...(await artifact(packed.path, outputDirectory, "npm-package")),
@@ -149,6 +139,19 @@ export async function createReleaseCandidate({
 			"npm-manifest"
 		),
 		await artifact(join(packageOutput, "SHA256SUMS"), outputDirectory, "npm-checksums")
+	);
+	const pluginOutput = join(outputDirectory, "plugins");
+	const pluginBundle = await buildPluginBundle({
+		candidateManifest: join(packageOutput, "packages-manifest.json"),
+		output: pluginOutput,
+		releaseVersion: version,
+		sourceCommit: commit,
+		sourceRef: ref,
+		unreal: { maximum: "5.7", minimum: "5.7" }
+	});
+	artifacts.push(
+		await artifact(pluginBundle.archivePath, outputDirectory, "unreal-plugin-source"),
+		await artifact(pluginBundle.manifestPath, outputDirectory, "unreal-plugin-manifest")
 	);
 	if (unrealEvidenceDirectory !== undefined) {
 		const evidencePath = join(outputDirectory, `ue-shed-${version}-unreal-evidence.tar.gz`);

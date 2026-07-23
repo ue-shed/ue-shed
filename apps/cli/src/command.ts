@@ -102,7 +102,14 @@ export const CliCommand = Schema.TaggedUnion({
 	ReviewAuthoringApprove: { ...SessionProject, endpoint: Schema.String },
 	ReviewCapture: { endpoint: Schema.String, ...Project, reviewSetPath: Schema.String },
 	ReviewHistory: { ...Project },
-	ReviewShow: { runPath: Schema.String }
+	ReviewShow: { runPath: Schema.String },
+	PluginsList: { manifestPath: Schema.String },
+	PluginsVerify: { artifactPath: Schema.optionalKey(Schema.String), manifestPath: Schema.String },
+	PluginsInstall: {
+		artifactPath: Schema.optionalKey(Schema.String),
+		manifestPath: Schema.String,
+		...Project
+	}
 });
 
 export type CliCommand = typeof CliCommand.Type;
@@ -146,6 +153,9 @@ Usage:
 	ue-shed review capture <project-root> <review-set> <endpoint>
   ue-shed review history <project-root>
   ue-shed review show <run-json>
+	  ue-shed plugins list <manifest> (or --manifest <manifest>)
+	  ue-shed plugins verify <manifest> [--artifact <archive>]
+  ue-shed plugins install --project <project-root-or-uproject> --manifest <manifest> [--artifact <archive>]
   ue-shed editor play status|start|simulate|pause|resume|stop <endpoint>
   ue-shed version
   ue-shed doctor
@@ -491,6 +501,63 @@ function parseAuthoring(args: readonly string[]): Effect.Effect<CliCommand, CliU
 	});
 }
 
+function parsePlugins(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
+	return Effect.gen(function* () {
+		const [action, ...rest] = args;
+		const parsed = yield* parseOptions(rest, ["--artifact", "--manifest", "--project"]);
+		const [positional] = parsed.positionals;
+		const manifestPath = parsed.values["--manifest"] ?? positional;
+		if (parsed.values["--manifest"] !== undefined && positional !== undefined)
+			return yield* usage(
+				"plugins accepts the manifest either positionally or with --manifest, not both"
+			);
+		if (action === "list") {
+			if (parsed.values["--artifact"] || parsed.values["--project"])
+				return yield* usage("plugins list only accepts a manifest path");
+			if (!manifestPath) return yield* usage("plugins list requires a manifest path");
+			if (parsed.positionals.length > 1)
+				return yield* usage("plugins list has unexpected arguments");
+			return CliCommand.cases.PluginsList.make({ manifestPath });
+		}
+		if (action === "verify") {
+			if (parsed.values["--project"])
+				return yield* usage("plugins verify does not accept --project");
+			if (!manifestPath) return yield* usage("plugins verify requires a manifest path");
+			if (parsed.positionals.length > 1)
+				return yield* usage("plugins verify has unexpected arguments");
+			return CliCommand.cases.PluginsVerify.make({
+				...(parsed.values["--artifact"]
+					? { artifactPath: parsed.values["--artifact"] }
+					: {}),
+				manifestPath
+			});
+		}
+		if (action === "install") {
+			const projectRoot = parsed.values["--project"] ?? positional;
+			if (parsed.values["--project"] !== undefined && positional !== undefined)
+				return yield* usage(
+					"plugins install accepts the project either positionally or with --project, not both"
+				);
+			if (!projectRoot)
+				return yield* usage(
+					"plugins install requires --project <project-root-or-uproject>"
+				);
+			if (!parsed.values["--manifest"])
+				return yield* usage("plugins install requires --manifest <manifest>");
+			if (parsed.positionals.length > 1)
+				return yield* usage("plugins install has unexpected arguments");
+			return CliCommand.cases.PluginsInstall.make({
+				...(parsed.values["--artifact"]
+					? { artifactPath: parsed.values["--artifact"] }
+					: {}),
+				manifestPath: parsed.values["--manifest"],
+				projectRoot
+			});
+		}
+		return yield* usage(`Unknown plugins command: ${action ?? ""}\n\n${help}`);
+	});
+}
+
 export function parseCliCommand(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
 	return Effect.gen(function* () {
 		const [command, ...rest] = args;
@@ -524,6 +591,7 @@ export function parseCliCommand(args: readonly string[]): Effect.Effect<CliComma
 			});
 		}
 		if (command === "authoring") return yield* parseAuthoring(rest);
+		if (command === "plugins") return yield* parsePlugins(rest);
 		if (command === "audit") {
 			const [kind, projectRoot, ...flags] = rest;
 			if (kind !== "textures" || !projectRoot)

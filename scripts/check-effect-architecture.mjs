@@ -25,6 +25,8 @@ const catalogOwned = new Set([
 
 const approvedRuntimeExits = new Set([
 	"apps/cli/src/index.ts",
+	// The plugin installer adapts the synchronous manifest validator at the CLI/filesystem boundary.
+	"apps/cli/src/plugin-installer.ts",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	// Canvas paint is a browser callback boundary; the metric update is synchronous and bounded.
 	"extensions/camera-review/src/world-scout.tsx",
@@ -37,6 +39,8 @@ const approvedRuntimeExits = new Set([
 	"packages/observatory/src/actor-feed.ts"
 ]);
 const approvedPromiseAdapters = new Set([
+	// The CLI plugin installer owns filesystem/archive promises behind an Effect boundary.
+	"apps/cli/src/plugin-installer.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",
 	"apps/workbench/src/main/adapters/electron-ipc.ts",
 	"apps/workbench/src/main/preload.ts",

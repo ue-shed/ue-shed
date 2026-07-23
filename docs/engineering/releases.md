@@ -39,10 +39,11 @@ Use an exact prerelease version and, when available, the exact successful Truste
    only for a portable dry run and is represented as `null` in the manifest.
 4. Download `ue-shed-<version>` and verify `SHA256SUMS`.
 5. Inspect `candidate-manifest.json`: the source commit, ref, pnpm version, lockfile digest, evidence
-   run, and every artifact digest must be exact.
+   run, and every artifact digest must be exact. The candidate's `plugins/plugins.manifest.json`
+   must bind the plugin graph and source archive to the exact `npm/packages-manifest.json` digest.
 6. Verify GitHub's provenance attestation with `gh attestation verify` before promoting an artifact.
 
-The candidate always contains immutable source and plugin-source archives. Its npm allowlist is
+The candidate always contains immutable source and checksummed plugin-source artifacts. Its npm allowlist is
 exactly `@ue-shed/protocol`, `@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and
 `@ue-shed/uasset`; candidate construction fails if another workspace becomes public accidentally.
 The Windows candidate job builds the native parser once, validates the packed manifests and
@@ -59,6 +60,20 @@ node scripts/create-release-candidate.mjs --version 0.1.0-rc.1 --commit $commit 
 
 Use a clean checkout of the exact requested commit and a new empty output directory for every run.
 The script rejects commit/worktree drift and will not overwrite an existing candidate.
+
+To build only the portable plugin bundle locally, use an empty output directory and then verify the
+generated manifest before extraction:
+
+```powershell
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.1 --output out/plugins
+pnpm ue-shed plugins verify out/plugins/plugins.manifest.json
+pnpm ue-shed plugins list out/plugins/plugins.manifest.json
+pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.uproject `
+  --manifest out/plugins/plugins.manifest.json
+```
+
+Installation is project-scoped under `Plugins/UEShed`. It refuses checksum failures, unsupported
+graphs, modified installer-owned files, and unrelated existing content at that destination.
 
 The initial `0.1.0-rc.1` publication bootstraps the packages before npm trusted publishers can be
 configured. From a clean reviewed checkout on Windows, run `pnpm check`, then

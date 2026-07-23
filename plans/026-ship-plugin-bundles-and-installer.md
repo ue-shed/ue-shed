@@ -6,6 +6,8 @@
 
 ## Status
 
+- **State**: IN PROGRESS — portable manifest, bundle, and project installer implemented; trusted UE evidence pending
+
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -20,18 +22,19 @@ npm is appropriate for Node packages, not raw Unreal source/binaries. A checksum
 ## Current state
 
 - Unreal plugins live under unreal/Plugins: UEShedCore, UEShedAuthoring, UEShedCameras, UEShedObservatory, UEShedAssetAudits, and UEShedScenarios.
-- apps/cli has an internal ue-shed command but no public installer contract.
-- There is no plugin manifest, checksum, project installation, upgrade, or artifact release model.
+- apps/cli now exposes the public `plugins list`, `plugins verify`, and `plugins install` commands.
+- The versioned manifest, deterministic source archive, project installation, ownership record, and
+  candidate-release artifact model are implemented; trusted Unreal evidence remains outstanding.
 - Map Review needs declared Core and Cameras plugins; authoring needs its own explicit graph.
 
 ## Commands you will need
 
-| Purpose             | Command                                                                   | Expected on success                         |
-| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------- |
-| Build source bundle | <release script> plugins bundle                                           | Archive and manifest created                |
-| Install fixture     | ueshed plugins install --project <fixture-uproject> --manifest <manifest> | Plugins appear under Project/Plugins/UEShed |
-| Portable gate       | pnpm check                                                                | Exit 0                                      |
-| Engine evidence     | pnpm check:unreal                                                         | Exit 0 on trusted UE 5.7 runner             |
+| Purpose             | Command                                                                           | Expected on success                         |
+| ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------- |
+| Build source bundle | `pnpm release:plugins` or `node scripts/plugin-bundle.mjs bundle ...`             | Archive and manifest created                |
+| Install fixture     | `pnpm ue-shed plugins install --project <fixture-uproject> --manifest <manifest>` | Plugins appear under Project/Plugins/UEShed |
+| Portable gate       | pnpm check                                                                        | Exit 0                                      |
+| Engine evidence     | pnpm check:unreal                                                                 | Exit 0 on trusted UE 5.7 runner             |
 
 ## Scope
 
@@ -53,19 +56,19 @@ npm is appropriate for Node packages, not raw Unreal source/binaries. A checksum
 
 Specify a versioned manifest with graph, descriptor versions, UE compatibility, checksums, and provenance tied to the package candidate manifest. Validate it at the CLI boundary.
 
-**Verify**: invalid checksum, missing dependency, cyclic graph, and unsupported UE fixtures are rejected with recovery guidance.
+**Verify**: invalid checksum, missing dependency, cyclic graph, and unsupported UE fixtures are rejected with recovery guidance. **Done locally.**
 
 ### Step 2: Build a portable source bundle
 
 Produce deterministic archives containing tracked source, descriptors, necessary resources/license/provenance only. Exclude Intermediate, Binaries, local project settings, and source-engine paths. Upload bundle/manifest with the candidate release.
 
-**Verify**: archive contains every declared plugin and no Intermediate/Binaries directory.
+**Verify**: archive contains every declared plugin and no Intermediate/Binaries directory. **Done locally.**
 
 ### Step 3: Implement deliberate installation
 
 Validate project path, manifest, checksum, and graph before extraction. Install atomically below Project/Plugins/UEShed; write ownership/version record; update uproject plugin list without disturbing unrelated entries. Refuse modified installer-owned files and explain recovery.
 
-**Verify**: clean install works, exact re-install is idempotent, modified plugin safely refuses.
+**Verify**: clean install works, exact re-install is idempotent, modified plugin safely refuses. **Done locally.**
 
 ### Step 4: Prove engine and upgrade evidence
 
@@ -81,11 +84,11 @@ Open/build the fixture project with the installed source bundle on the trusted U
 
 ## Done criteria
 
-- [ ] One manifest ties plugin graph/artifact to matching package versions.
-- [ ] CLI install is atomic, project-scoped, and recoverable.
+- [x] One manifest ties plugin graph/artifact to matching package versions.
+- [x] CLI install is atomic, project-scoped, and recoverable.
 - [ ] Fresh install/upgrade have trusted Unreal evidence.
-- [ ] Source bundle works with custom/source engines and no Git.
-- [ ] pnpm check and trusted pnpm check:unreal exit 0.
+- [x] Source bundle works with custom/source engines and no Git.
+- [x] `pnpm check` exits 0; trusted `pnpm check:unreal` remains pending.
 - [ ] plans/README.md marks Plan 026 DONE.
 
 ## STOP conditions

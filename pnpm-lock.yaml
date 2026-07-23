@@ -128,6 +128,9 @@ importers:
       '@ue-shed/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@ue-shed/plugin-bundles':
+        specifier: workspace:*
+        version: link:../../packages/plugin-bundles
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -555,6 +558,16 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
+
+  packages/plugin-bundles:
+    dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
 
   packages/protocol:
     dependencies:

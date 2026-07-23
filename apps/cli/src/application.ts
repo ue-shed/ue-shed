@@ -42,6 +42,11 @@ import { assetReaderLayer, AssetReader, AssetReaderLive } from "@ue-shed/unreal-
 import { connectUnrealAuthoring, RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema } from "effect";
 import { type CliCommand, help } from "./command.js";
+import {
+	installPluginBundle,
+	listPluginManifest,
+	verifyPluginManifest
+} from "./plugin-installer.js";
 
 export class CliCommandError extends Schema.TaggedErrorClass<CliCommandError>()("CliCommandError", {
 	message: Schema.String
@@ -273,6 +278,20 @@ export function executeCommand(
 				return yield* runtime.print(
 					`ue-shed 0.0.0 (protocol ${CURRENT_PROTOCOL_VERSION.major}.${CURRENT_PROTOCOL_VERSION.minor})\n`
 				);
+			case "PluginsList":
+				return yield* listPluginManifest(command.manifestPath).pipe(
+					Effect.flatMap(printJson)
+				);
+			case "PluginsVerify":
+				return yield* verifyPluginManifest(command).pipe(Effect.flatMap(printJson));
+			case "PluginsInstall":
+				return yield* installPluginBundle({
+					...(command.artifactPath === undefined
+						? {}
+						: { artifactPath: command.artifactPath }),
+					manifestPath: command.manifestPath,
+					projectPath: command.projectRoot
+				}).pipe(Effect.flatMap(printJson));
 			case "EditorPlaySession": {
 				const session = yield* EditorPlaySession;
 				if (command.action === "status") {

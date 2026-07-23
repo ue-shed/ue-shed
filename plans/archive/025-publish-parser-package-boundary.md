@@ -6,7 +6,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS — artifacts ready; first npm publication and registry verification remain
+- **State**: DONE — `0.1.0-rc.1` published and verified from the public npm registry
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -91,7 +91,7 @@ Teach Plan 024 candidate release to upload these archives and their exact manife
 - [x] Platform resolution never falls back to local paths.
 - [x] Candidate manifest has exact versions and checksums.
 - [x] pnpm uasset:check and pnpm check exit 0.
-- [ ] plans/README.md marks Plan 025 DONE.
+- [x] plans/README.md marks Plan 025 DONE.
 
 ## STOP conditions
 

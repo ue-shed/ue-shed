@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { packPublicPackages, PUBLIC_VERSION } from "./pack-public-packages.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const candidateVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-rc\.(0|[1-9]\d*)$/;
@@ -72,49 +73,6 @@ async function artifact(path, output, kind) {
 	};
 }
 
-async function publicWorkspacePackages() {
-	const roots = ["apps", "examples", "extensions", "packages"];
-	const packages = [];
-	for (const root of roots) {
-		const directory = join(repositoryRoot, root);
-		for (const entry of await readdir(directory, { withFileTypes: true })) {
-			if (!entry.isDirectory()) continue;
-			const packageDirectory = join(directory, entry.name);
-			const manifestPath = join(packageDirectory, "package.json");
-			if (!existsSync(manifestPath)) continue;
-			const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-			if (manifest.private !== true) packages.push({ directory: packageDirectory, manifest });
-		}
-	}
-	return packages;
-}
-
-async function packPublicPackages({ output, version }) {
-	const packageOutput = join(output, "npm");
-	const packages = await publicWorkspacePackages();
-	if (packages.length === 0) return [];
-	await mkdir(packageOutput, { recursive: true });
-	const packed = [];
-	for (const workspacePackage of packages) {
-		if (workspacePackage.manifest.version !== version) {
-			throw new Error(
-				`${workspacePackage.manifest.name} must use exact candidate version ${version} before packing.`
-			);
-		}
-		const before = new Set(await readdir(packageOutput));
-		const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-		run(pnpm, ["pack", "--pack-destination", packageOutput], {
-			cwd: workspacePackage.directory
-		});
-		const filename = (await readdir(packageOutput)).find((entry) => !before.has(entry));
-		if (!filename?.endsWith(".tgz")) {
-			throw new Error(`${workspacePackage.manifest.name} did not produce an npm tarball.`);
-		}
-		packed.push({ path: join(packageOutput, filename), name: workspacePackage.manifest.name });
-	}
-	return packed;
-}
-
 function gitArchive({ commit, output, prefix, paths = [] }) {
 	run("git", [
 		"archive",
@@ -130,6 +88,17 @@ function tarDirectory({ directory, output }) {
 	run("tar", ["-czf", output, "-C", directory, "."]);
 }
 
+function assertCandidateSource(commit) {
+	const head = run("git", ["rev-parse", "HEAD"]);
+	if (head !== commit) {
+		throw new Error(`Candidate commit ${commit} does not match checked-out HEAD ${head}.`);
+	}
+	const changes = run("git", ["status", "--porcelain", "--untracked-files=all"]);
+	if (changes !== "") {
+		throw new Error("Candidate construction requires a clean worktree.");
+	}
+}
+
 export async function createReleaseCandidate({
 	version,
 	commit,
@@ -139,11 +108,15 @@ export async function createReleaseCandidate({
 	unrealRunId
 }) {
 	validateCandidateVersion(version);
+	if (version !== PUBLIC_VERSION) {
+		throw new Error(`Public packages are frozen at ${PUBLIC_VERSION}, received ${version}.`);
+	}
 	validateCommit(commit);
 	if (unrealRunId !== undefined) validateRunId(unrealRunId);
 	if ((unrealEvidenceDirectory === undefined) !== (unrealRunId === undefined)) {
 		throw new Error("Unreal evidence directory and run ID must be supplied together.");
 	}
+	assertCandidateSource(commit);
 	const outputDirectory = resolve(output);
 	await ensureEmptyOutput(outputDirectory);
 
@@ -161,12 +134,22 @@ export async function createReleaseCandidate({
 		await artifact(sourcePath, outputDirectory, "source"),
 		await artifact(pluginsPath, outputDirectory, "unreal-plugin-source")
 	];
-	for (const packed of await packPublicPackages({ output: outputDirectory, version })) {
+	const packageOutput = join(outputDirectory, "npm");
+	for (const packed of await packPublicPackages({ output: packageOutput })) {
 		artifacts.push({
 			...(await artifact(packed.path, outputDirectory, "npm-package")),
-			package: packed.name
+			package: packed.name,
+			version: packed.manifest.version
 		});
 	}
+	artifacts.push(
+		await artifact(
+			join(packageOutput, "packages-manifest.json"),
+			outputDirectory,
+			"npm-manifest"
+		),
+		await artifact(join(packageOutput, "SHA256SUMS"), outputDirectory, "npm-checksums")
+	);
 	if (unrealEvidenceDirectory !== undefined) {
 		const evidencePath = join(outputDirectory, `ue-shed-${version}-unreal-evidence.tar.gz`);
 		tarDirectory({ directory: resolve(unrealEvidenceDirectory), output: evidencePath });

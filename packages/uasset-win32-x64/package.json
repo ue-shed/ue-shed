@@ -1,0 +1,37 @@
+{
+	"name": "@ue-shed/uasset-win32-x64",
+	"version": "0.1.0-rc.1",
+	"description": "Windows x64 native artifact for the UE Shed saved-asset parser",
+	"homepage": "https://github.com/peculiarnewbie/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/peculiarnewbie/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/peculiarnewbie/ue-shed.git",
+		"directory": "packages/uasset-win32-x64"
+	},
+	"files": [
+		"bin/uasset.exe",
+		"LICENSE",
+		"README.md"
+	],
+	"os": [
+		"win32"
+	],
+	"cpu": [
+		"x64"
+	],
+	"exports": {
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"assemble": "node ./scripts/assemble.mjs",
+		"prepack": "pnpm run assemble",
+		"test": "node --test"
+	}
+}

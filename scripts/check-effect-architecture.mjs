@@ -148,7 +148,8 @@ async function filesUnder(root, directory) {
 	}
 	const files = [];
 	for (const entry of entries) {
-		if (entry.name === "node_modules" || entry.name === "e2e") continue;
+		if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "e2e")
+			continue;
 		const path = join(absolute, entry.name);
 		if (entry.isDirectory()) files.push(...(await filesUnder(root, relative(root, path))));
 		else files.push(path);

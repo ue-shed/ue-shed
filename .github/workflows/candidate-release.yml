@@ -28,7 +28,7 @@ concurrency:
 jobs:
     candidate:
         name: Build candidate
-        runs-on: blacksmith-2vcpu-ubuntu-2404
+        runs-on: windows-latest
         timeout-minutes: 45
         steps:
             - name: Checkout exact source
@@ -90,6 +90,21 @@ jobs:
                   path: release/**
                   if-no-files-found: error
                   retention-days: 90
+
+            - name: Validate npm publication without registry writes
+              shell: bash
+              env:
+                  CANDIDATE_VERSION: ${{ inputs.version }}
+              run: |
+                  packages=(
+                    "release/npm/ue-shed-protocol-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
+                  )
+                  for package in "${packages[@]}"; do
+                    npm publish "$package" --dry-run --access public --tag next
+                  done
 
     provenance:
         name: Attest candidate provenance
@@ -156,13 +171,15 @@ jobs:
 
             - name: Publish candidate tarballs through OIDC
               shell: bash
+              env:
+                  CANDIDATE_VERSION: ${{ inputs.version }}
               run: |
-                  shopt -s nullglob
-                  packages=(candidate/npm/*.tgz)
-                  if (( ${#packages[@]} == 0 )); then
-                    echo "No publishable npm tarballs exist; Plan 025 must define them first." >&2
-                    exit 1
-                  fi
+                  packages=(
+                    "candidate/npm/ue-shed-protocol-$CANDIDATE_VERSION.tgz"
+                    "candidate/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
+                    "candidate/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
+                    "candidate/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
+                  )
                   for package in "${packages[@]}"; do
-                    npm publish "$package" --access public
+                    npm publish "$package" --access public --tag next
                   done

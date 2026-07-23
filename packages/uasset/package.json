@@ -1,0 +1,45 @@
+{
+	"name": "@ue-shed/uasset",
+	"version": "0.1.0-rc.1",
+	"description": "Platform-selecting launcher for the UE Shed saved-asset parser",
+	"homepage": "https://github.com/peculiarnewbie/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/peculiarnewbie/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/peculiarnewbie/ue-shed.git",
+		"directory": "packages/uasset"
+	},
+	"bin": {
+		"uasset": "./bin/uasset.js"
+	},
+	"files": [
+		"bin",
+		"src/index.d.ts",
+		"src/index.js",
+		"LICENSE",
+		"README.md"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.d.ts",
+			"default": "./src/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"test": "node --test",
+		"typecheck": "tsc --noEmit"
+	},
+	"optionalDependencies": {
+		"@ue-shed/uasset-win32-x64": "workspace:0.1.0-rc.1"
+	},
+	"engines": {
+		"node": ">=22.14.0"
+	}
+}

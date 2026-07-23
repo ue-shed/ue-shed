@@ -15,7 +15,7 @@ the status row when done.
 | [018](018-pie-live-review-previews.md)              | PIE live cameras for Map Review authoring previews                   | P0       | L      | —                       | IN PROGRESS                   |
 | [019](019-stream-world-scout-transforms.md)         | Stream actor transforms and render World Scout on Canvas             | P1       | XL     | 018                     | IN PROGRESS                   |
 | [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance      | P1       | L      | 020, 021                | IN PROGRESS — activation gate |
-| [025](025-publish-parser-package-boundary.md)       | Publish the minimal parser and protocol package boundary             | P1       | L      | 022, 023, 024           | TODO                          |
+| [025](025-publish-parser-package-boundary.md)       | Publish the minimal parser and protocol package boundary             | P1       | L      | 022, 023, 024           | IN PROGRESS — publish gate    |
 | [026](026-ship-plugin-bundles-and-installer.md)     | Ship versioned plugin bundles through the CLI installer              | P1       | L      | 023, 024, 025           | TODO                          |
 | [027](027-adopt-parser-in-downstream-host.md)       | Adopt the released parser in the first downstream host               | P1       | M      | 021, 025, 026           | TODO                          |
 | [028](028-compose-map-review-downstream.md)         | Compose finished Map Review capabilities downstream                  | P2       | XL     | 017, 018, 019, 022, 026 | TODO                          |

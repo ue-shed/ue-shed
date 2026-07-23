@@ -43,10 +43,11 @@ Use an exact prerelease version and, when available, the exact successful Truste
    run, and every artifact digest must be exact.
 6. Verify GitHub's provenance attestation with `gh attestation verify` before promoting an artifact.
 
-The candidate always contains immutable source and plugin-source archives. It also packs every
-workspace whose manifest is public (`private` is not `true`), but refuses to pack one unless its
-package version exactly matches the candidate version. Until Plan 025 defines a public package
-boundary, a dry run intentionally contains no npm tarballs and the publish job refuses to proceed.
+The candidate always contains immutable source and plugin-source archives. Its npm allowlist is
+exactly `@ue-shed/protocol`, `@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and
+`@ue-shed/uasset`; candidate construction fails if another workspace becomes public accidentally.
+The Windows candidate job builds the native parser once, validates the packed manifests and
+checksums, installs the tarballs into a clean offline consumer, and dry-runs all four publications.
 
 For a local artifact-only dry run:
 
@@ -56,7 +57,26 @@ node scripts/create-release-candidate.mjs --version 0.1.0-rc.1 --commit $commit 
   --ref refs/heads/temp/hackathon-judging-2026-08-13 --output out/candidate
 ```
 
-Use a new empty output directory for every run. The script will not overwrite an existing candidate.
+Use a clean checkout of the exact requested commit and a new empty output directory for every run.
+The script rejects commit/worktree drift and will not overwrite an existing candidate.
+
+The initial `0.1.0-rc.1` publication bootstraps the packages before npm trusted publishers can be
+configured. From a clean reviewed temporary-branch checkout on Windows, run `pnpm check`, then
+`pnpm release:pack`. Authenticate with the public npm registry and publish the immutable tarballs in
+this order, always retaining the `next` dist-tag:
+
+```powershell
+npm whoami --registry https://registry.npmjs.org
+npm publish out/releases/0.1.0-rc.1/ue-shed-protocol-0.1.0-rc.1.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.1/ue-shed-uasset-win32-x64-0.1.0-rc.1.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.1/ue-shed-unreal-assets-0.1.0-rc.1.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.1/ue-shed-uasset-0.1.0-rc.1.tgz --access public --tag next
+```
+
+If a publication fails after an earlier package succeeds, do not unpublish or rebuild that version;
+fix the account or network issue and publish only the remaining byte-identical tarballs. After all
+four exist, verify their exact versions and `next` tags, then repeat the consumer test against the
+registry before completing Plan 025.
 
 ## Protected npm publication
 

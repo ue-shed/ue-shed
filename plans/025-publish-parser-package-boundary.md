@@ -6,6 +6,7 @@
 
 ## Status
 
+- **State**: IN PROGRESS — artifacts ready; first npm publication and registry verification remain
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -85,11 +86,11 @@ Teach Plan 024 candidate release to upload these archives and their exact manife
 
 ## Done criteria
 
-- [ ] The four package roles have documented public names and versioned archives.
-- [ ] A clean consumer works from packed artifacts only.
-- [ ] Platform resolution never falls back to local paths.
-- [ ] Candidate manifest has exact versions and checksums.
-- [ ] pnpm uasset:check and pnpm check exit 0.
+- [x] The four package roles have documented public names and versioned archives.
+- [x] A clean consumer works from packed artifacts only.
+- [x] Platform resolution never falls back to local paths.
+- [x] Candidate manifest has exact versions and checksums.
+- [x] pnpm uasset:check and pnpm check exit 0.
 - [ ] plans/README.md marks Plan 025 DONE.
 
 ## STOP conditions

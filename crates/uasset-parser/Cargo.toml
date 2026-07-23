@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.85"
 description = "Read-only parser and CLI for classic Unreal Engine asset packages"
 license = "MIT"
+repository = "https://github.com/ue-shed/ue-shed"
 
 [lib]
 name = "uasset_parser"

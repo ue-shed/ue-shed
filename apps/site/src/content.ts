@@ -1,6 +1,6 @@
 import { siteMedia } from "./showcase/media.js";
 
-export const repositoryUrl = "https://github.com/peculiarnewbie/ue-shed";
+export const repositoryUrl = "https://github.com/ue-shed/ue-shed";
 
 export type TerminalLine = {
 	readonly kind: "command" | "output";

@@ -15,6 +15,7 @@ export const PUBLIC_PACKAGES = [
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const localProtocolPattern = /(?:workspace|catalog|file|link|portal):/;
+const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
 
 function packedPath(path) {
 	return `package/${path.replace(/^\.\//u, "")}`;
@@ -99,6 +100,9 @@ export function validatePackedManifest({ manifest, manifestRaw, expectedName, fi
 	}
 	if (manifest.private === true) failures.push("package must not be private");
 	if (manifest.license !== "MIT") failures.push("package license must be MIT");
+	if (manifest.repository?.url !== canonicalRepository) {
+		failures.push(`repository must be ${canonicalRepository}`);
+	}
 	if (localProtocolPattern.test(manifestRaw)) {
 		failures.push("packed manifest contains a local workspace/catalog/file/link protocol");
 	}

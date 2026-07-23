@@ -2,10 +2,14 @@
 	"name": "@ue-shed/protocol",
 	"version": "0.1.0-rc.1",
 	"description": "Runtime schemas and versioned wire contracts for UE Shed integrations.",
+	"homepage": "https://github.com/ue-shed/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/ue-shed/ue-shed/issues"
+	},
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/peculiarnewbie/ue-shed.git",
+		"url": "git+https://github.com/ue-shed/ue-shed.git",
 		"directory": "packages/protocol"
 	},
 	"files": [

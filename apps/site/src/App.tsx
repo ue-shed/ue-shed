@@ -134,7 +134,7 @@ export function App() {
 								behind don't come along.
 							</p>
 							<a href={repositoryUrl} {...stylex.props(styles.buttonPrimary)}>
-								peculiarnewbie/ue-shed on GitHub ↗
+								ue-shed/ue-shed on GitHub ↗
 							</a>
 							<p {...stylex.props(styles.ossNote)}>
 								Early stage: some tools are finished workflows, others are proving

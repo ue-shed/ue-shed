@@ -165,7 +165,7 @@ export async function createReleaseCandidate({
 		candidateVersion: version,
 		createdAt,
 		source: {
-			repository: "https://github.com/peculiarnewbie/ue-shed",
+			repository: "https://github.com/ue-shed/ue-shed",
 			commit,
 			ref
 		},

@@ -3,12 +3,10 @@ name: Portable
 on:
     push:
         branches:
-            - "temp/**"
-            - "feature/**"
+            - main
     pull_request:
         branches:
-            - "temp/**"
-            - "feature/**"
+            - main
 
 permissions:
     contents: read

@@ -7,7 +7,7 @@
 ## Status
 
 - **Status**: IN PROGRESS on 2026-07-23 — workflows, candidate tooling, and runbook implemented;
-  first hosted and trusted protected runs remain
+  first hosted and trusted protected runs remain after the move to the `ue-shed` organization
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -21,10 +21,14 @@ ElectroSwag cannot safely consume frequent UE Shed prereleases if a release is o
 
 ## Current state
 
-- There is no .github workflow directory.
-- package.json provides pnpm check for portable verification and pnpm check:unreal for engine-backed conformance and authoring checks.
-- The local engine reference is C:\Program Files\Epic Games\UE_5.7, but code and fixtures must not depend on that path.
-- Blacksmith is available for normal checks and Macroscope is an advisory code-review tool in the owner's workflow.
+- The repository now lives at `ue-shed/ue-shed`; normal development targets `main` through pull
+  requests.
+- `.github/workflows` contains portable, trusted Unreal, and candidate-release lanes.
+- `package.json` provides `pnpm check` for portable verification and `pnpm check:unreal` for
+  engine-backed conformance and authoring checks.
+- The local engine reference is `C:\Program Files\Epic Games\UE_5.7`, but code and fixtures must not
+  depend on that path.
+- Blacksmith is available for normal checks and Macroscope is advisory.
 
 ## Commands you will need
 
@@ -92,8 +96,8 @@ Document: publish exact candidate; open downstream bump PR; run downstream porta
 
 ## Implementation evidence
 
-- `.github/workflows/portable.yml` runs the portable gate on Blacksmith for temporary/feature refs
-  and uploads the complete check log plus failure diagnostics.
+- `.github/workflows/portable.yml` runs the portable gate on Blacksmith for pushes and pull requests
+  targeting `main`, and uploads the complete check log plus failure diagnostics.
 - `.github/workflows/trusted-unreal.yml` has only `workflow_dispatch` and `schedule` triggers, targets
   the protected `trusted-unreal` runner group/environment, persists no checkout credential, and uses
   no repository secrets.
@@ -104,16 +108,15 @@ Document: publish exact candidate; open downstream bump PR; run downstream porta
   IDs, nonempty output directories, and public package versions that differ from the candidate.
 - Local verification on 2026-07-23: actionlint 1.7.12 passed; a candidate dry run produced and
   rehashed both archives; `pnpm -r --if-present build` and `pnpm check` exited 0.
-- GitHub dispatch and schedule events require the workflow file on the default branch. The freeze
-  forbids landing these files on `main` before 2026-08-13, so the first hosted candidate and trusted
-  Unreal runs remain an honest activation gate rather than being simulated locally.
+- GitHub dispatch and schedule events require the workflow file on the default branch. After the
+  repository move, these workflows may land on `main` and gather their first hosted candidate and
+  trusted Unreal evidence normally.
 
 ## STOP conditions
 
 - Runner configuration would execute public fork code.
 - Runner needs persistent credentials.
 - Plan 020 remains incomplete or pnpm check fails.
-- Workflow would target main before the freeze ends.
 
 ## Maintenance notes
 

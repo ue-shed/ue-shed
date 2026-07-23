@@ -2,9 +2,8 @@
 
 > **Executor instructions**: Read docs/README.md, AGENTS.md, docs/engineering/releases.md, Plan
 > 024, Plan 028, and archived Plans 019/022/025/026 first. Do not tag, push, publish, dispatch
-> workflows, target `main`, or mark Plans 024/028 DONE. Preserve protected OIDC publication and the
-> 2026-08-13 freeze language. If a required generic contract is missing, leave this plan
-> IN PROGRESS with a precise blocker instead of inventing API.
+> workflows, or mark Plans 024/028 DONE. Preserve protected OIDC publication. If a required generic
+> contract is missing, leave this plan IN PROGRESS with a precise blocker instead of inventing API.
 >
 > **Drift check (run first)**: git diff --stat f675d53..HEAD -- packages/cameras
 > packages/unreal-connection packages/protocol packages/observatory packages/observability
@@ -46,7 +45,7 @@ install the Map Review vertical flow at the current candidate version.
 - Plugin bundling can request a subset via `--plugins`, but `UEShedCameras.uplugin` does not declare
   `UEShedCore`, so a Core+Cameras product graph is not enforced by descriptor dependencies.
 - Candidate publish dry-run/OIDC allowlists and release docs still describe the Plan 025 set only.
-- The 2026-08-13 freeze still blocks landing workflows on `main`; Plan 024 remains activation-gated.
+- Plan 024 still needs its first hosted and trusted protected runs after the organization move.
 
 ## Decision: defer Observatory / observability publication
 
@@ -85,7 +84,7 @@ Record the decision in this plan, `docs/engineering/releases.md`, and `docs/prod
   evidence to exercise real Map Review schema/service exports.
 - Enforce selectable Core+Cameras plugin graph without requiring Observatory, Authoring, Asset Audits,
   Workbench, or extension UI.
-- Document the Observatory/observability publicity decision and keep freeze/OIDC language intact.
+- Document the Observatory/observability publicity decision and keep protected OIDC intact.
 
 **Out of scope**
 
@@ -156,7 +155,7 @@ Run focused pack/release tests and `pnpm check`. Update this plan and `plans/REA
 - [x] Observatory/observability publicity decision is documented with evidence.
 - [x] Pack/create/publish allowlists and offline consumer evidence cover Map Review exports.
 - [x] Core+Cameras plugin selection works without silently requiring Workbench UI.
-- [x] Protected OIDC and freeze language remain intact; no publication occurred.
+- [x] Protected OIDC remains intact; no publication occurred.
 - [x] Focused pack/release tests and `pnpm check` exit 0.
 - [x] Plans 024 and 028 are not marked DONE by this work.
 
@@ -166,8 +165,8 @@ Run focused pack/release tests and `pnpm check`. Update this plan and `plans/REA
 - Cameras cannot pack without pulling Workbench, extension UI, or an unpublished workspace package.
 - Observatory/observability must be public for the Plan 028 first vertical, but cannot be made
   constructible within this bounded slice.
-- Workflow/docs changes would weaken OIDC, attestation, or freeze wording.
-- Implementation would require tagging, pushing, publishing, or targeting `main`.
+- Workflow/docs changes would weaken OIDC or attestation.
+- Implementation would require tagging, pushing, or publishing.
 
 ## Maintenance notes
 

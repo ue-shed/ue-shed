@@ -113,8 +113,7 @@ If a publication fails after an earlier package succeeds, do not unpublish or re
 fix the account or network issue and publish only the remaining byte-identical tarballs. After all
 six exist, verify their exact versions and `next` tags, then repeat the consumer test against the
 registry. Do not treat local packing as publication: protected OIDC publication still requires the
-exact candidate tag, the protected `npm-release` environment, and human approval. The 2026-08-13
-freeze still forbids landing activation-only workflow evidence on `main` ahead of schedule.
+exact candidate tag, the protected `npm-release` environment, and human approval.
 
 ## Protected npm publication
 

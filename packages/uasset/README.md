@@ -1,11 +1,11 @@
 # `@ue-shed/uasset`
 
 The platform-selecting `uasset` command for UE Shed's read-only saved-asset parser. Version
-`0.1.0-rc.1` supports Windows x64 and installs the matching native artifact through an exact optional
+`0.1.0-rc.2` supports Windows x64 and installs the matching native artifact through an exact optional
 dependency.
 
 ```powershell
-pnpm add --save-exact @ue-shed/uasset@0.1.0-rc.1
+pnpm add --save-exact @ue-shed/uasset@0.1.0-rc.2
 pnpm exec uasset --version
 pnpm exec uasset inspect ./Content/Example.uasset --format json
 ```

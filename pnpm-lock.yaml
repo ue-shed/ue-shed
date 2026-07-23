@@ -578,7 +578,7 @@ importers:
   packages/uasset:
     optionalDependencies:
       '@ue-shed/uasset-win32-x64':
-        specifier: workspace:0.1.0-rc.1
+        specifier: workspace:0.1.0-rc.2
         version: link:../uasset-win32-x64
 
   packages/uasset-win32-x64: {}
@@ -607,7 +607,7 @@ importers:
   packages/unreal-assets:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0-rc.1
+        specifier: workspace:0.1.0-rc.2
         version: link:../protocol
       effect:
         specifier: 'catalog:'

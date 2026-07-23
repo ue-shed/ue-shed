@@ -30,8 +30,8 @@ export function assemble(options = {}) {
 			encoding: "utf8",
 			windowsHide: true
 		}).trim();
-		if (version !== "uasset 0.1.0-rc.1") {
-			throw new Error(`Expected uasset 0.1.0-rc.1, received ${JSON.stringify(version)}`);
+		if (version !== "uasset 0.1.0-rc.2") {
+			throw new Error(`Expected uasset 0.1.0-rc.2, received ${JSON.stringify(version)}`);
 		}
 	}
 	mkdirSync(dirname(destination), { recursive: true });

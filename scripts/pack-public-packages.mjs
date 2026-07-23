@@ -5,7 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const PUBLIC_VERSION = "0.1.0-rc.1";
+export const PUBLIC_VERSION = "0.1.0-rc.2";
 export const PUBLIC_PACKAGES = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },

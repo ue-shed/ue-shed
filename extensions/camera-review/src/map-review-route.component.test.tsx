@@ -409,4 +409,139 @@ describe("MapReviewRoute", () => {
 		await user.click(screen.getByRole("button", { name: "REFRAME SELECTED ACTOR" }));
 		await waitFor(() => expect(reframeCount).toBe(1));
 	});
+
+	it("keeps cached tile previews when selecting another candidate", async () => {
+		const poseA = {
+			aspectRatio: "16:9" as const,
+			fieldOfViewDegrees: 60,
+			location: { x: 1000, y: -1000, z: 725 },
+			projection: "perspective" as const,
+			rotation: { pitch: -15, roll: 0, yaw: 135 }
+		};
+		const poseB = {
+			...poseA,
+			location: { x: 0, y: -1200, z: 400 },
+			rotation: { pitch: -10, roll: 0, yaw: 90 }
+		};
+		const subject = {
+			actorPath: "/Game/Fixture.Subject",
+			displayName: "Review Subject",
+			mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+		};
+		const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+		const ready: MapReviewAuthoringResult = {
+			candidates: [
+				{
+					diagnostics: [],
+					displayName: "Context three-quarter",
+					id: "context-three-quarter",
+					pose: poseA,
+					preset: "context_three_quarter",
+					preview: {
+						bytes: pngBytes,
+						height: 180,
+						status: "ready",
+						width: 320
+					}
+				},
+				{
+					diagnostics: [],
+					displayName: "Facade front",
+					id: "facade-front",
+					pose: poseB,
+					preset: "facade_front",
+					preview: {
+						bytes: pngBytes,
+						height: 180,
+						status: "ready",
+						width: 320
+					}
+				}
+			],
+			selection: subject,
+			session: {
+				candidates: [],
+				contract: {
+					name: "ue-shed-review-authoring-session",
+					version: { major: 1, minor: 0 }
+				},
+				createdAt: "2026-07-20T00:00:00.000Z",
+				diagnostics: [],
+				discardedCandidateIds: [],
+				draftPose: poseA,
+				id: "session-select",
+				lifecycle: "active",
+				manualReason: "",
+				realizations: [],
+				reviewSet: {
+					id: "fixture-review-set",
+					mapPath: subject.mapPath,
+					path: "C:/Fixture/.ue-shed/review/sets/fixture.json"
+				},
+				selectedCandidateId: "context-three-quarter",
+				subject: {
+					actorPath: subject.actorPath,
+					bounds: {
+						center: { x: 0, y: 0, z: 0 },
+						extent: { x: 1, y: 1, z: 1 },
+						rotation: { pitch: 0, roll: 0, yaw: 0 }
+					},
+					displayName: subject.displayName,
+					mapPath: subject.mapPath
+				},
+				updatedAt: "2026-07-20T00:00:01.000Z",
+				viewId: "structure-context"
+			} as never,
+			sessionId: "session-select",
+			status: "ready",
+			viewId: "structure-context"
+		};
+		const previewCalls: Array<{
+			readonly candidateId: string;
+			readonly sessionId: string;
+		}> = [];
+		let patchCount = 0;
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			authoringResume: () => Effect.succeed(ready),
+			authoringPatch: (intent) =>
+				Effect.sync(() => {
+					patchCount += 1;
+					const session = ready.session;
+					if (!session) throw new Error("expected durable authoring session");
+					return {
+						...ready,
+						session: {
+							...session,
+							selectedCandidateId: intent.patch.selectedCandidateId
+						}
+					} satisfies MapReviewAuthoringResult;
+				}),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(empty),
+			previewAuthoringCandidate: (intent) =>
+				Effect.sync(() => {
+					previewCalls.push(intent);
+					return {
+						bytes: pngBytes,
+						height: 180,
+						pixelFormat: "png" as const,
+						status: "ready" as const,
+						width: 320
+					};
+				}),
+			previewCandidate: () => Effect.die("not used")
+		};
+		const user = userEvent.setup();
+		renderRoute(client);
+		await screen.findByText("Review Subject");
+		await waitFor(() => expect(previewCalls.length).toBe(2));
+		const afterHydrate = previewCalls.length;
+		await user.click(screen.getByRole("button", { name: "Select Facade front" }));
+		await waitFor(() => expect(patchCount).toBe(1));
+		expect(previewCalls.length).toBe(afterHydrate);
+	});
 });

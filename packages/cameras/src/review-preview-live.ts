@@ -8,7 +8,7 @@ export class ReviewLivePreviewError extends Schema.TaggedErrorClass<ReviewLivePr
 	"ReviewLivePreviewError",
 	{
 		message: Schema.String,
-		operation: Schema.Literals(["ensure_sources", "await_frame", "configure"]),
+		operation: Schema.Literals(["ensure_sources", "clear_sources", "await_frame", "configure"]),
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
 	}
@@ -155,7 +155,7 @@ export function clearReviewPreviewSources(
 			.pipe(
 				Effect.mapError((cause) =>
 					livePreviewError(
-						"ensure_sources",
+						"clear_sources",
 						cause,
 						"Stop PIE or clear review preview sources from the editor."
 					)

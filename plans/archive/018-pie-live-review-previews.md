@@ -11,6 +11,8 @@
 
 ## Status
 
+- **State**: DONE — PIE posed live BGRA previews, Clear without dirt, Camera Lab overview/actor_pov,
+  capture-blocked-during-PIE, and no-rehydrate-on-select verified on UE 5.7 fixture
 - **Priority**: P0
 - **Effort**: L
 - **Risk**: MED — touches the live camera subsystem used by Camera Lab; bad registration can leak
@@ -131,11 +133,11 @@ In `packages/cameras` (+ protocol schema for `posed`):
 
 ## Done criteria
 
-- [ ] Transient posed sources can be registered and cleared during PIE without map dirt.
-- [ ] Authoring previews use live BGRA while PLAY is active and PNG while editor is stopped.
-- [ ] Tile click no longer re-captures the whole contact sheet.
-- [ ] Camera Lab overview/actor_pov path still healthy.
-- [ ] Docs + `plans/README.md` updated; this plan status → DONE and archived when gates pass.
+- [x] Transient posed sources can be registered and cleared during PIE without map dirt.
+- [x] Authoring previews use live BGRA while PLAY is active and PNG while editor is stopped.
+- [x] Tile click no longer re-captures the whole contact sheet.
+- [x] Camera Lab overview/actor_pov path still healthy.
+- [x] Docs + `plans/README.md` updated; this plan status → DONE and archived when gates pass.
 
 ## STOP conditions
 

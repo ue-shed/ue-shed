@@ -92,6 +92,12 @@ const dyingAuthoring: ReviewAuthoringShape = {
 	inspectSubject: () => Effect.die("not used"),
 	previewCandidate: () => Effect.die("not used")
 };
+const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
+	if (request.functionName === "ClearReviewPreviewSources") {
+		return Effect.succeed({ cameras: [], schemaVersion: 1 });
+	}
+	return Effect.die(`unexpected remote call ${request.functionName}`);
+});
 const dyingAuthoringSessions: ReviewAuthoringSessionsShape = {
 	approve: () => Effect.die("not used"),
 	create: (args) =>
@@ -150,7 +156,7 @@ const WorkbenchMapReviewTestLive = WorkbenchMapReviewLive.pipe(
 		Layer.mergeAll(
 			makeCameraFeedTestLayer(),
 			makeWorkbenchWindowTestLayer(),
-			makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+			clearOnlyRemoteControl,
 			makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
 			Layer.succeed(
 				Observatory,
@@ -490,7 +496,7 @@ it.effect(
 						Layer.mergeAll(
 							makeCameraFeedTestLayer(),
 							makeWorkbenchWindowTestLayer(),
-							makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+							clearOnlyRemoteControl,
 							makeReviewAuthoringSessionsTestLayer({
 								...dyingAuthoringSessions,
 								load: () =>
@@ -838,7 +844,7 @@ it.effect("resumes the latest persisted authoring session after a fresh service 
 					Layer.mergeAll(
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
-						makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+						clearOnlyRemoteControl,
 						makeWorkbenchConfigurationLayer(configuredReview),
 						makeLocalFilesTestLayer(),
 						makeReviewRepositoryTestLayer({
@@ -924,7 +930,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 					Layer.mergeAll(
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
-						makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+						clearOnlyRemoteControl,
 						makeWorkbenchConfigurationLayer(configuredReview),
 						makeLocalFilesTestLayer(),
 						makeReviewRepositoryTestLayer({
@@ -1044,7 +1050,7 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 			Layer.provide(
 				Layer.mergeAll(
 					makeCameraFeedTestLayer(),
-					makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+					clearOnlyRemoteControl,
 					makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
 					Layer.succeed(
 						Observatory,
@@ -1224,7 +1230,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 			Layer.provide(
 				Layer.mergeAll(
 					makeCameraFeedTestLayer(),
-					makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+					clearOnlyRemoteControl,
 					makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
 					Layer.succeed(
 						Observatory,
@@ -1336,4 +1342,260 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 			yield* mapReview.unsubscribeWorldObservations();
 		}).pipe(Effect.provide(serviceLayer));
 	})
+);
+
+const livePreviewSession = {
+	candidates: [
+		{
+			approvedPose: {
+				aspectRatio: "16:9" as const,
+				fieldOfViewDegrees: 60,
+				location: { x: 10, y: 20, z: 30 },
+				projection: "perspective" as const,
+				rotation: { pitch: -12, roll: 0, yaw: 45 }
+			},
+			diagnostics: [],
+			displayName: "Facade front",
+			id: "facade_front",
+			recipe: {
+				kind: "preset" as const,
+				margin: 0.12,
+				preset: "facade_front" as const,
+				subjectBounds: {
+					center: { x: 0, y: 0, z: 0 },
+					extent: { x: 10, y: 10, z: 10 },
+					rotation: { pitch: 0, roll: 0, yaw: 0 }
+				},
+				version: 1 as const
+			}
+		}
+	],
+	contract: {
+		name: "ue-shed-review-authoring-session" as const,
+		version: { major: 1 as const, minor: 0 as const }
+	},
+	createdAt: "2026-07-20T00:00:00.000Z",
+	diagnostics: [],
+	discardedCandidateIds: [],
+	id: "session-live",
+	lifecycle: "active" as const,
+	pendingReviewSet: {
+		...fixtureReviewSet,
+		views: []
+	},
+	realizations: [],
+	reviewSet: {
+		id: fixtureReviewSet.id,
+		mapPath: fixtureReviewSet.project.mapPath,
+		path: reviewSetPath
+	},
+	subject: {
+		actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
+		bounds: {
+			center: { x: 0, y: 0, z: 0 },
+			extent: { x: 10, y: 10, z: 10 },
+			rotation: { pitch: 0, roll: 0, yaw: 0 }
+		},
+		displayName: "Fixture Subject",
+		mapPath: "/Game/Maps/Fixture"
+	},
+	updatedAt: "2026-07-20T00:00:00.000Z",
+	viewId: "initial-view"
+};
+
+it.effect("streams live BGRA authoring previews while PIE is running", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const result = yield* service.previewAuthoringCandidate({
+			candidateId: "facade_front",
+			sessionId: "session-live"
+		});
+		expect(result).toEqual({
+			bytes: new Uint8Array([10, 20, 30, 255]),
+			cameraIndex: 0,
+			diagnostics: [],
+			height: 180,
+			pixelFormat: "bgra8",
+			status: "ready",
+			width: 320
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeCameraFeedTestLayer({
+							latestFrames: Effect.succeed(
+								new Map([
+									[
+										0,
+										{
+											cameraId: "cam-0",
+											cameraIndex: 0,
+											captureMonotonicMs: 1,
+											height: 180,
+											pixels: new Uint8Array([10, 20, 30, 255]),
+											producerId: "producer",
+											readbackDrops: 0,
+											readbackLatencyMs: 1,
+											receivedMonotonicMs: 2,
+											sequence: 1n,
+											sessionId: "session",
+											transportReplacements: 0,
+											width: 320,
+											worldSeconds: 0.1
+										}
+									]
+								])
+							)
+						}),
+						makeWorkbenchWindowTestLayer(),
+						makeRemoteControlClientTestLayer((request) => {
+							if (request.functionName === "EnsureReviewPreviewSources") {
+								return Effect.succeed({
+									cameras: [
+										{
+											cameraId: "cam-0",
+											candidateId: "facade_front",
+											displayName: "facade_front",
+											height: 180,
+											index: 0,
+											width: 320
+										}
+									],
+									schemaVersion: 1
+								});
+							}
+							if (request.functionName === "ClearReviewPreviewSources") {
+								return Effect.succeed({ cameras: [], schemaVersion: 1 });
+							}
+							return Effect.die(`unexpected remote call ${request.functionName}`);
+						}),
+						makeReviewAuthoringSessionsTestLayer({
+							...dyingAuthoringSessions,
+							load: () => Effect.succeed(livePreviewSession as never)
+						}),
+						Layer.succeed(
+							Observatory,
+							Observatory.of({
+								focus: () => Effect.die("not used"),
+								observe: () => Stream.die("not used"),
+								setObservationCadence: () => Effect.die("not used"),
+								snapshot: () => Effect.die("not used")
+							})
+						),
+						makeEditorPlaySessionTestLayer({
+							execute: () => Effect.die("not used"),
+							pause: () => Effect.die("not used"),
+							resume: () => Effect.die("not used"),
+							start: () => Effect.die("not used"),
+							status: () =>
+								Effect.succeed({
+									contract: {
+										name: "unreal-editor-play-session",
+										version: { major: 1, minor: 0 }
+									},
+									state: {
+										mode: "play",
+										sessionId: "pie-1" as never,
+										status: "running"
+									}
+								}),
+							stop: () => Effect.die("not used")
+						}),
+						makeWorkbenchConfigurationLayer(projectConfigured),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.die("not used"),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.die("not used"),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: () => Effect.die("not used"),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer({
+							...dyingAuthoring,
+							previewCandidate: () =>
+								Effect.die("PNG preview must not run while PIE is active")
+						})
+					)
+				)
+			)
+		)
+	)
+);
+
+it.effect("blocks Capture Set while PIE is running", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const result = yield* service.capture({ viewIds: ["view-1"] });
+		expect(result).toMatchObject({
+			policy: { code: "play_session_active" },
+			status: "blocked"
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeCameraFeedTestLayer(),
+						makeWorkbenchWindowTestLayer(),
+						clearOnlyRemoteControl,
+						makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
+						Layer.succeed(
+							Observatory,
+							Observatory.of({
+								focus: () => Effect.die("not used"),
+								observe: () => Stream.die("not used"),
+								setObservationCadence: () => Effect.die("not used"),
+								snapshot: () => Effect.die("not used")
+							})
+						),
+						makeEditorPlaySessionTestLayer({
+							execute: () => Effect.die("not used"),
+							pause: () => Effect.die("not used"),
+							resume: () => Effect.die("not used"),
+							start: () => Effect.die("not used"),
+							status: () =>
+								Effect.succeed({
+									contract: {
+										name: "unreal-editor-play-session",
+										version: { major: 1, minor: 0 }
+									},
+									state: {
+										mode: "play",
+										sessionId: "pie-1" as never,
+										status: "running"
+									}
+								}),
+							stop: () => Effect.die("not used")
+						}),
+						makeWorkbenchConfigurationLayer(configuredReview),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.die("not used"),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.succeed(fixtureReviewSet),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: () => Effect.die("not used"),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer({
+							captureSet: () => Effect.die("capture must stay blocked during PIE")
+						}),
+						makeReviewAuthoringTestLayer(dyingAuthoring)
+					)
+				)
+			)
+		)
+	)
 );

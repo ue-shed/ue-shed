@@ -2,6 +2,7 @@ import {
 	approveFramingCandidate,
 	awaitReviewPreviewFrame,
 	CameraFeed,
+	clearReviewPreviewSources,
 	configureCameras,
 	ensureReviewPreviewSources,
 	generateFramingCandidates,
@@ -710,6 +711,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.invalidateLivePreviewBank"
 		)(function* () {
 			yield* Ref.set(livePreviewBindings, Option.none());
+			yield* clearReviewPreviewSources(configuration.remoteControlEndpoint).pipe(
+				Effect.provideService(RemoteControlClient, remoteControl),
+				Effect.ignore
+			);
 		});
 
 		const applyLivePreviewSchedule = Effect.fn(
@@ -1251,7 +1256,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					};
 				}
 
-				yield* Ref.set(livePreviewBindings, Option.none());
+				yield* invalidateLivePreviewBank();
 				return yield* runExclusive(
 					Effect.gen(function* () {
 						const reviewSet =

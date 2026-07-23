@@ -26,3 +26,4 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [022](022-harden-public-contracts.md)           | Make public TypeScript and Map Review contracts schema-governed  | DONE                         |
 | [023](023-separate-formulas-and-license-mit.md) | Separate HyperFormula and establish an MIT distribution boundary | DONE                         |
 | [025](025-publish-parser-package-boundary.md)   | Publish the minimal parser and protocol package boundary         | DONE — `0.1.0-rc.1` verified |
+| [026](026-ship-plugin-bundles-and-installer.md) | Ship versioned plugin bundles through the CLI installer          | DONE — UE 5.7.4 verified     |

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -18,10 +18,15 @@ async function makeFixture(): Promise<{
 }> {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-installer-"));
 	roots.push(root);
-	const source = join(root, "source", "UEShed", "Plugins", "UEShedCore");
-	await mkdir(source, { recursive: true });
-	await writeFile(join(source, "UEShedCore.uplugin"), '{"FileVersion":3}\n', "utf8");
-	await writeFile(join(source, "Source.txt"), "portable plugin source\n", "utf8");
+	const pluginSourceRoot = join(root, "source", "UEShed", "Plugins");
+	const coreSource = join(pluginSourceRoot, "UEShedCore");
+	const retiredSource = join(pluginSourceRoot, "UEShedRetired");
+	await mkdir(coreSource, { recursive: true });
+	await mkdir(retiredSource, { recursive: true });
+	await writeFile(join(coreSource, "UEShedCore.uplugin"), '{"FileVersion":3}\n', "utf8");
+	await writeFile(join(coreSource, "Source.txt"), "portable plugin source\n", "utf8");
+	await writeFile(join(retiredSource, "UEShedRetired.uplugin"), '{"FileVersion":3}\n', "utf8");
+	await writeFile(join(retiredSource, "Source.txt"), "retired plugin source\n", "utf8");
 	const archivePath = join(root, "plugins.tar.gz");
 	const tar = spawnSync("tar", ["-czf", "plugins.tar.gz", "-C", "source", "UEShed"], {
 		cwd: root,
@@ -48,6 +53,13 @@ async function makeFixture(): Promise<{
 					descriptorPath: "UEShedCore/UEShedCore.uplugin",
 					directory: "UEShedCore",
 					id: "UEShedCore",
+					version: "0.1.0"
+				},
+				{
+					dependencies: [],
+					descriptorPath: "UEShedRetired/UEShedRetired.uplugin",
+					directory: "UEShedRetired",
+					id: "UEShedRetired",
 					version: "0.1.0"
 				}
 			],
@@ -93,13 +105,13 @@ afterEach(async () => {
 });
 
 describe("plugin installer", () => {
-	it("verifies and installs a bundle idempotently while preserving unrelated project plugins", async () => {
+	it("installs idempotently and removes only previously owned plugins during upgrade", async () => {
 		const fixture = await makeFixture();
 		const verified = await Effect.runPromise(
 			verifyPluginManifest({ manifestPath: fixture.manifestPath })
 		);
 		expect(verified.artifact.status).toBe("verified");
-		expect(verified.manifest.plugins).toEqual(["UEShedCore"]);
+		expect(verified.manifest.plugins).toEqual(["UEShedCore", "UEShedRetired"]);
 
 		const first = await Effect.runPromise(
 			installPluginBundle({
@@ -119,7 +131,8 @@ describe("plugin installer", () => {
 		};
 		expect(project.Plugins).toEqual([
 			{ Enabled: false, Name: "UnrelatedPlugin" },
-			{ Enabled: true, Name: "UEShedCore" }
+			{ Enabled: true, Name: "UEShedCore" },
+			{ Enabled: true, Name: "UEShedRetired" }
 		]);
 
 		const second = await Effect.runPromise(
@@ -129,6 +142,51 @@ describe("plugin installer", () => {
 			})
 		);
 		expect(second.status).toBe("unchanged");
+		const generatedOutput = join(
+			fixture.root,
+			"Plugins",
+			"UEShed",
+			"UEShedRetired",
+			"Binaries",
+			"Win64"
+		);
+		await mkdir(generatedOutput, { recursive: true });
+		await writeFile(join(generatedOutput, "generated.dll"), "generated\n", "utf8");
+
+		const upgradeManifestPath = join(fixture.root, "plugins.upgrade.manifest.json");
+		const upgradeManifest = JSON.parse(await readFile(fixture.manifestPath, "utf8")) as {
+			plugins: Array<{ id: string }>;
+			provenance: {
+				candidateManifest: { version: string };
+				source: { ref: string };
+			};
+			releaseVersion: string;
+		};
+		upgradeManifest.releaseVersion = "0.1.0-rc.2";
+		upgradeManifest.plugins = upgradeManifest.plugins.filter(
+			(plugin: { id: string }) => plugin.id === "UEShedCore"
+		);
+		upgradeManifest.provenance.candidateManifest.version = "0.1.0-rc.2";
+		upgradeManifest.provenance.source.ref = "refs/tags/v0.1.0-rc.2";
+		await writeFile(upgradeManifestPath, `${JSON.stringify(upgradeManifest)}\n`, "utf8");
+
+		const upgraded = await Effect.runPromise(
+			installPluginBundle({
+				manifestPath: upgradeManifestPath,
+				projectPath: fixture.projectPath
+			})
+		);
+		expect(upgraded.status).toBe("updated");
+		await expect(
+			stat(join(fixture.root, "Plugins", "UEShed", "UEShedRetired"))
+		).rejects.toThrow();
+		const upgradedProject = JSON.parse(await readFile(fixture.projectPath, "utf8")) as {
+			Plugins: Array<{ Enabled: boolean; Name: string }>;
+		};
+		expect(upgradedProject.Plugins).toEqual([
+			{ Enabled: false, Name: "UnrelatedPlugin" },
+			{ Enabled: true, Name: "UEShedCore" }
+		]);
 	});
 
 	it("refuses a modified installer-owned file before replacing the project", async () => {
@@ -150,6 +208,33 @@ describe("plugin installer", () => {
 		expect(Exit.isFailure(exit)).toBe(true);
 		if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("modified");
 		expect(await readFile(ownedFile, "utf8")).toBe("edited by project owner\n");
+	});
+
+	it("refuses an unowned source file while allowing generated Unreal output", async () => {
+		const fixture = await makeFixture();
+		await Effect.runPromise(
+			installPluginBundle({
+				manifestPath: fixture.manifestPath,
+				projectPath: fixture.projectPath
+			})
+		);
+		const unownedFile = join(
+			fixture.root,
+			"Plugins",
+			"UEShed",
+			"UEShedCore",
+			"ProjectNotes.txt"
+		);
+		await writeFile(unownedFile, "keep me\n", "utf8");
+		const exit = await Effect.runPromiseExit(
+			installPluginBundle({
+				manifestPath: fixture.manifestPath,
+				projectPath: fixture.projectPath
+			})
+		);
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) expect(String(exit.cause)).toContain("not recorded");
+		expect(await readFile(unownedFile, "utf8")).toBe("keep me\n");
 	});
 
 	it("rejects an artifact whose checksum does not match the manifest", async () => {

@@ -6,7 +6,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS — portable manifest, bundle, and project installer implemented; trusted UE evidence pending
+- **State**: DONE — exact-commit bundles and install/upgrade verified with Unreal Engine 5.7.4
 
 - **Priority**: P1
 - **Effort**: L
@@ -24,7 +24,7 @@ npm is appropriate for Node packages, not raw Unreal source/binaries. A checksum
 - Unreal plugins live under unreal/Plugins: UEShedCore, UEShedAuthoring, UEShedCameras, UEShedObservatory, UEShedAssetAudits, and UEShedScenarios.
 - apps/cli now exposes the public `plugins list`, `plugins verify`, and `plugins install` commands.
 - The versioned manifest, deterministic source archive, project installation, ownership record, and
-  candidate-release artifact model are implemented; trusted Unreal evidence remains outstanding.
+  candidate-release artifact model are implemented and verified against Unreal Engine 5.7.4.
 - Map Review needs declared Core and Cameras plugins; authoring needs its own explicit graph.
 
 ## Commands you will need
@@ -74,7 +74,9 @@ Validate project path, manifest, checksum, and graph before extraction. Install 
 
 Open/build the fixture project with the installed source bundle on the trusted UE 5.7 runner. Test manifest-to-manifest upgrade and removal only when ownership records prove installer ownership.
 
-**Verify**: pnpm check:unreal passes after fresh install and supported upgrade.
+**Verify**: `pnpm check:unreal` passed on Unreal Engine 5.7.4. A clean fixture copy with no repository
+plugin path compiled from the exact `0.1.0-rc.1` candidate after CLI installation, then compiled
+again after a `0.1.0-rc.2` manifest upgrade removed Asset Audits and its owned `.uproject` entry.
 
 ## Test plan
 
@@ -86,10 +88,10 @@ Open/build the fixture project with the installed source bundle on the trusted U
 
 - [x] One manifest ties plugin graph/artifact to matching package versions.
 - [x] CLI install is atomic, project-scoped, and recoverable.
-- [ ] Fresh install/upgrade have trusted Unreal evidence.
+- [x] Fresh install/upgrade have trusted Unreal evidence.
 - [x] Source bundle works with custom/source engines and no Git.
-- [x] `pnpm check` exits 0; trusted `pnpm check:unreal` remains pending.
-- [ ] plans/README.md marks Plan 026 DONE.
+- [x] `pnpm check` and trusted `pnpm check:unreal` exit 0.
+- [x] plans/README.md marks Plan 026 DONE.
 
 ## STOP conditions
 

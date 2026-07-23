@@ -81,6 +81,7 @@ interface OwnershipRecord {
 
 const ownershipFile = ".ue-shed-plugin-install.json";
 const sha256Pattern = /^[a-f0-9]{64}$/u;
+const generatedPluginDirectories = new Set(["binaries", "intermediate"]);
 
 function fail(message: string): never {
 	throw new Error(message);
@@ -88,6 +89,19 @@ function fail(message: string): never {
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isGeneratedPluginPath(
+	relativePath: string,
+	ownedPluginDirectories: ReadonlySet<string>
+): boolean {
+	const [pluginDirectory, pluginChild] = relativePath.split("/");
+	return (
+		pluginDirectory !== undefined &&
+		ownedPluginDirectories.has(pluginDirectory) &&
+		pluginChild !== undefined &&
+		generatedPluginDirectories.has(pluginChild.toLowerCase())
+	);
 }
 
 function parseManifest(value: unknown): PluginReleaseManifest {
@@ -254,6 +268,22 @@ async function assertOwnedFilesUnmodified(
 				`Installer-owned file was modified: ${relativePath}. Restore it or remove the project plugin installation.`
 			);
 	}
+	const actualFiles = await fileDigests(destination);
+	delete actualFiles[ownershipFile];
+	const ownedPluginDirectories = new Set(
+		Object.keys(ownership.files)
+			.map((relativePath) => relativePath.split("/")[0])
+			.filter((directory): directory is string => directory !== undefined)
+	);
+	const unownedFiles = Object.keys(actualFiles).filter(
+		(relativePath) =>
+			ownership.files[relativePath] === undefined &&
+			!isGeneratedPluginPath(relativePath, ownedPluginDirectories)
+	);
+	if (unownedFiles.length > 0)
+		fail(
+			`Plugin installation contains files not recorded by the installer: ${unownedFiles.join(", ")}. Move them outside Plugins/UEShed before upgrading.`
+		);
 }
 
 async function projectFileFor(
@@ -283,7 +313,8 @@ async function projectFileFor(
 
 async function updateProjectFile(
 	projectFile: string,
-	pluginNames: readonly string[]
+	pluginNames: readonly string[],
+	previouslyOwnedPluginNames: readonly string[]
 ): Promise<{ readonly original: string; readonly updated: string }> {
 	const original = await readFile(projectFile, "utf8");
 	let parsed: unknown;
@@ -296,13 +327,22 @@ async function updateProjectFile(
 	const existing = parsed.Plugins;
 	if (existing !== undefined && !Array.isArray(existing))
 		fail(`Project Plugins field must be an array: ${projectFile}`);
-	const plugins = Array.isArray(existing)
-		? existing.map((item, index) => {
-				if (!isRecord(item))
-					fail(`Project Plugins entry ${index} must be an object: ${projectFile}`);
-				return { ...item };
-			})
-		: [];
+	const requestedPlugins = new Set(pluginNames);
+	const previouslyOwnedPlugins = new Set(previouslyOwnedPluginNames);
+	const plugins = (
+		Array.isArray(existing)
+			? existing.map((item, index) => {
+					if (!isRecord(item))
+						fail(`Project Plugins entry ${index} must be an object: ${projectFile}`);
+					return { ...item };
+				})
+			: []
+	).filter(
+		(item) =>
+			typeof item.Name !== "string" ||
+			!previouslyOwnedPlugins.has(item.Name) ||
+			requestedPlugins.has(item.Name)
+	);
 	for (const name of pluginNames) {
 		const entry = plugins.find((item) => item.Name === name);
 		if (entry) entry.Enabled = true;
@@ -439,6 +479,19 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 			await rm(destinationPlugin, { force: true, recursive: true });
 			await cp(source, destinationPlugin, { recursive: true, force: true });
 		}
+		if (existingOwnership) {
+			const nextDirectories = new Set(manifest.plugins.map((plugin) => plugin.directory));
+			const removedDirectories = new Set(
+				Object.keys(existingOwnership.files)
+					.map((relativePath) => relativePath.split("/")[0])
+					.filter(
+						(directory): directory is string =>
+							directory !== undefined && !nextDirectories.has(directory)
+					)
+			);
+			for (const directory of removedDirectories)
+				await rm(join(stageDestination, directory), { force: true, recursive: true });
+		}
 		const files = await fileDigests(stageDestination);
 		delete files[ownershipFile];
 		for (const relativePath of Object.keys(files)) {
@@ -472,7 +525,11 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 			`${JSON.stringify(ownership, null, "\t")}\n`,
 			"utf8"
 		);
-		const projectUpdate = await updateProjectFile(project.projectFile, ownership.plugins);
+		const projectUpdate = await updateProjectFile(
+			project.projectFile,
+			ownership.plugins,
+			existingOwnership?.plugins ?? []
+		);
 		projectOriginal = projectUpdate.original;
 		const priorStatus = existingOwnership
 			? existingOwnership.artifactSha256 === verification.artifact.sha256 &&

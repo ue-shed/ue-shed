@@ -445,10 +445,10 @@ importers:
   packages/cameras:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:*
+        specifier: workspace:0.1.0-rc.2
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:*
+        specifier: workspace:0.1.0-rc.2
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -620,7 +620,7 @@ importers:
   packages/unreal-connection:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:*
+        specifier: workspace:0.1.0-rc.2
         version: link:../protocol
       effect:
         specifier: 'catalog:'

@@ -6,8 +6,15 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const PUBLIC_VERSION = "0.1.0-rc.2";
+/**
+ * Exact public npm allowlist for candidate construction and protected publication.
+ * Plan 025 shipped the parser slice; Plan 030 adds the Map Review headless closure.
+ * Observatory and observability remain deferred (see plans/030 and docs/engineering/releases.md).
+ */
 export const PUBLIC_PACKAGES = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
+	{ name: "@ue-shed/unreal-connection", directory: "packages/unreal-connection" },
+	{ name: "@ue-shed/cameras", directory: "packages/cameras" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },
 	{ name: "@ue-shed/unreal-assets", directory: "packages/unreal-assets" },
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" }
@@ -16,6 +23,8 @@ export const PUBLIC_PACKAGES = [
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const localProtocolPattern = /(?:workspace|catalog|file|link|portal):/;
 const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
+const exactEffectVersion = "4.0.0-beta.98";
+const exactUnrealRcVersion = "0.5.3";
 
 function packedPath(path) {
 	return `package/${path.replace(/^\.\//u, "")}`;
@@ -69,7 +78,7 @@ async function assertPublicPackageSet() {
 	const missing = [...expected].filter((name) => !actual.includes(name));
 	if (unexpected.length > 0 || missing.length > 0) {
 		throw new Error(
-			`Public package set differs from the Plan 025 allowlist.` +
+			`Public package set differs from the Plan 030 allowlist.` +
 				`\nUnexpected: ${unexpected.join(", ") || "none"}` +
 				`\nMissing: ${missing.join(", ") || "none"}`
 		);
@@ -92,6 +101,30 @@ function listPackedFiles(tarball) {
 		.filter(Boolean);
 }
 
+function collectExportTargets(exportsValue, failures, prefix = "exports") {
+	if (typeof exportsValue === "string") return [exportsValue];
+	if (exportsValue === null || typeof exportsValue !== "object") {
+		failures.push(`${prefix} must be a string or object`);
+		return [];
+	}
+	const targets = [];
+	for (const [key, value] of Object.entries(exportsValue)) {
+		if (typeof value === "string") targets.push(value);
+		else if (value && typeof value === "object") {
+			for (const [condition, target] of Object.entries(value)) {
+				if (typeof target === "string") targets.push(target);
+				else
+					failures.push(
+						`${prefix}.${key}.${condition} must resolve to a packed file path`
+					);
+			}
+		} else {
+			failures.push(`${prefix}.${key} must resolve to a packed file path`);
+		}
+	}
+	return targets;
+}
+
 export function validatePackedManifest({ manifest, manifestRaw, expectedName, files }) {
 	const failures = [];
 	if (manifest.name !== expectedName) failures.push(`expected package name ${expectedName}`);
@@ -109,6 +142,11 @@ export function validatePackedManifest({ manifest, manifestRaw, expectedName, fi
 	for (const field of ["main", "types"]) {
 		if (typeof manifest[field] === "string" && !files.includes(packedPath(manifest[field]))) {
 			failures.push(`${field} points to missing packed file ${manifest[field]}`);
+		}
+	}
+	for (const exportPath of collectExportTargets(manifest.exports, failures)) {
+		if (!files.includes(packedPath(exportPath))) {
+			failures.push(`exports points to missing packed file ${exportPath}`);
 		}
 	}
 	const bins =
@@ -132,22 +170,41 @@ export function validatePackedManifest({ manifest, manifestRaw, expectedName, fi
 	return failures;
 }
 
+function requireExactDependency(manifest, name, expected, failures) {
+	const actual = manifest?.dependencies?.[name];
+	if (actual !== expected) {
+		failures.push(`${manifest?.name ?? "package"} must pin ${name} ${expected}`);
+	}
+}
+
 function validateExactPackageGraph(manifests) {
 	const byName = new Map(manifests.map((entry) => [entry.manifest.name, entry.manifest]));
 	const failures = [];
 	const protocol = byName.get("@ue-shed/protocol");
+	const unrealConnection = byName.get("@ue-shed/unreal-connection");
+	const cameras = byName.get("@ue-shed/cameras");
 	const unrealAssets = byName.get("@ue-shed/unreal-assets");
 	const launcher = byName.get("@ue-shed/uasset");
 	const platform = byName.get("@ue-shed/uasset-win32-x64");
-	if (protocol?.dependencies?.effect !== "4.0.0-beta.98") {
-		failures.push("@ue-shed/protocol must pin effect 4.0.0-beta.98 exactly");
+	requireExactDependency(protocol, "effect", exactEffectVersion, failures);
+	requireExactDependency(unrealConnection, "@ue-shed/protocol", PUBLIC_VERSION, failures);
+	requireExactDependency(unrealConnection, "effect", exactEffectVersion, failures);
+	requireExactDependency(unrealConnection, "unreal-rc", exactUnrealRcVersion, failures);
+	requireExactDependency(cameras, "@ue-shed/protocol", PUBLIC_VERSION, failures);
+	requireExactDependency(cameras, "@ue-shed/unreal-connection", PUBLIC_VERSION, failures);
+	requireExactDependency(cameras, "effect", exactEffectVersion, failures);
+	for (const forbidden of ["@ue-shed/observatory", "@ue-shed/observability"]) {
+		if (cameras?.dependencies?.[forbidden] !== undefined) {
+			failures.push(`@ue-shed/cameras must not depend on ${forbidden} in this release slice`);
+		}
+		if (unrealConnection?.dependencies?.[forbidden] !== undefined) {
+			failures.push(
+				`@ue-shed/unreal-connection must not depend on ${forbidden} in this release slice`
+			);
+		}
 	}
-	if (unrealAssets?.dependencies?.["@ue-shed/protocol"] !== PUBLIC_VERSION) {
-		failures.push(`@ue-shed/unreal-assets must pin @ue-shed/protocol ${PUBLIC_VERSION}`);
-	}
-	if (unrealAssets?.dependencies?.effect !== "4.0.0-beta.98") {
-		failures.push("@ue-shed/unreal-assets must pin effect 4.0.0-beta.98 exactly");
-	}
+	requireExactDependency(unrealAssets, "@ue-shed/protocol", PUBLIC_VERSION, failures);
+	requireExactDependency(unrealAssets, "effect", exactEffectVersion, failures);
 	const platformVersion =
 		launcher?.optionalDependencies?.["@ue-shed/uasset-win32-x64"] ??
 		launcher?.dependencies?.["@ue-shed/uasset-win32-x64"];
@@ -160,6 +217,9 @@ function validateExactPackageGraph(manifests) {
 	if (JSON.stringify(platform?.cpu) !== JSON.stringify(["x64"])) {
 		failures.push("@ue-shed/uasset-win32-x64 must declare cpu [x64]");
 	}
+	if (cameras?.exports?.["./review-contracts"] === undefined) {
+		failures.push("@ue-shed/cameras must export ./review-contracts");
+	}
 	if (failures.length > 0)
 		throw new Error(`Invalid public package graph:\n- ${failures.join("\n- ")}`);
 }
@@ -171,6 +231,8 @@ export async function packPublicPackages({ output, build = true }) {
 	if (build) {
 		run("cargo", ["build", "--locked", "--release", "-p", "uasset-parser"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/protocol", "build"]);
+		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);
+		run(executable("pnpm"), ["--filter", "@ue-shed/cameras", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
 	}

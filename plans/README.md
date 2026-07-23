@@ -47,17 +47,23 @@ table and the archive index.
   [`archive/023-separate-formulas-and-license-mit.md`](archive/023-separate-formulas-and-license-mit.md).
 - Plan 024 uses hosted CI for portable checks and the owner's trusted Windows UE 5.7 machine only
   for manually dispatched or scheduled Unreal evidence. It must never run untrusted fork PR code.
-- Plan 025 intentionally publishes only protocol, parser library, launcher, and initial Windows
-  platform binary. A package boundary does not authorize publishing Workbench or every workspace.
+- Plan 025 intentionally published only protocol, parser library, launcher, and initial Windows
+  platform binary. Plan 030 extends the allowlist with `@ue-shed/unreal-connection` and
+  `@ue-shed/cameras` only; a package boundary still does not authorize publishing Workbench or every
+  workspace.
 - Plan 026 completed checksummed GitHub release artifacts and the project-scoped CLI installer, and
   is archived under
   [`archive/026-ship-plugin-bundles-and-installer.md`](archive/026-ship-plugin-bundles-and-installer.md).
   Git/submodules and Fab are not the product dependency baseline.
 - Plans 027–029 are downstream coordination plans. The downstream host consumes released UE Shed
   packages/artifacts; UE Shed never imports its Electron UX, studio policy, or custom-UI contracts.
-- Plan 028 waits for active Map Review Plans 017–019 to be done and released. Plan 029 is a
-  readiness gate, not permission to migrate an unfinished authoring rewrite; Plan 007 remains the
-  generic authoring completion gate.
+- Plan 028 waits for released Map Review headless packages and Core/Cameras install evidence. Plan
+  030 prepared that public boundary at `0.1.0-rc.2` without publishing or claiming Plan 028 DONE,
+  and is archived under
+  [`archive/030-map-review-public-boundary.md`](archive/030-map-review-public-boundary.md).
+  Observatory/observability remain deferred because USOT v1 already ships in protocol and the first
+  vertical does not require those packages. Plan 029 is a readiness gate, not permission to migrate
+  an unfinished authoring rewrite; Plan 007 remains the generic authoring completion gate.
 
 ## Findings considered and rejected
 

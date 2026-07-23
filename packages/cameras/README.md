@@ -1,9 +1,25 @@
 # `@ue-shed/cameras`
 
-Headless camera observation and durable map-review APIs. The package owns the versioned BGRA8 frame
+Headless camera observation and durable Map Review APIs. The package owns the versioned BGRA8 frame
 decoder, bounded named-pipe server, latest-frame snapshots, subscriptions, host metrics, Remote
 Control adapters, portable Review Set schemas, filesystem repository, and Capture Run orchestrator.
-Electron is only one consumer.
+Electron is only one consumer; Workbench UI is never required.
+
+```sh
+npm install @ue-shed/cameras@0.1.0-rc.2 @ue-shed/unreal-connection@0.1.0-rc.2 @ue-shed/protocol@0.1.0-rc.2
+```
+
+Node.js 22.14 or newer is required. Stable entry points:
+
+```ts
+import {
+	ReviewCapture,
+	ReviewRepository,
+	decodeReviewSet,
+	generateFramingCandidates
+} from "@ue-shed/cameras";
+import { MapReviewResult } from "@ue-shed/cameras/review-contracts";
+```
 
 The live transport is deliberately disposable: it validates and resynchronizes the byte stream,
 caps individual payloads, and retains at most one frame per camera. Scheduling and producer health
@@ -22,6 +38,11 @@ The language-neutral editor wire contract is under
 `packages/protocol/contracts/cameras/review/v1`. Keep it green with
 `pnpm --filter @ue-shed/cameras contract:check`.
 
-The decoder uses a bounded chunk queue instead of repeatedly concatenating partial frames. Payloads
-cross the package boundary as zero-copy `Uint8Array` views while malformed framing still
-resynchronizes at the protocol magic.
+This package does not depend on `@ue-shed/observatory` or `@ue-shed/observability`. World Scout's
+USOT transform wire contract ships in `@ue-shed/protocol`; the Observatory host package remains a
+separate later public surface.
+
+## License
+
+MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or
+endorsed by Epic Games.

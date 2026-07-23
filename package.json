@@ -37,6 +37,7 @@
 		"test:release:packages": "node scripts/test-public-packages.mjs",
 		"release:pack": "node scripts/pack-public-packages.mjs --output out/releases/0.1.0-rc.2",
 		"release:plugins": "node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.2 --output out/releases/0.1.0-rc.2/plugins",
+		"release:plugins:map-review": "node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.2 --output out/releases/0.1.0-rc.2/plugins-map-review --plugins UEShedCore,UEShedCameras",
 		"test:adoption:data-authoring": "node scripts/test-data-authoring-adoption.mjs",
 		"test:components": "node scripts/test.mjs --project component",
 		"test:coverage": "node scripts/test.mjs --coverage",

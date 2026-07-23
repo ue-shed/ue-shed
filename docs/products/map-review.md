@@ -398,6 +398,16 @@ Grow from live transport support into the headless camera domain without making 
 the durable capture authority. Own Review Set schemas, pure framing and validation, editor adapters,
 authoring-session behavior, capture orchestration, repository ports, and typed domain errors.
 
+The public npm surface for Plan 028's first vertical is `@ue-shed/cameras` plus its required
+dependency closure `@ue-shed/unreal-connection` and `@ue-shed/protocol`, all at the exact candidate
+version. Install matching Unreal plugins with the Core+Cameras graph only
+(`UEShedCore,UEShedCameras`); Workbench and `extensions/camera-review` are optional clients, not
+release dependencies.
+
+`@ue-shed/observatory` and `@ue-shed/observability` remain deferred from that public allowlist. Plan
+019's USOT v1 transform contract already ships under `packages/protocol/contracts/observatory/v1`,
+and the first Map Review vertical does not require the Observatory host package.
+
 If live observation and durable review make the package incoherent during implementation, split
 internal modules first. Do not create another public package until import direction and shared model
 ownership are demonstrated by the tracer bullet.

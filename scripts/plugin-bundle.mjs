@@ -22,6 +22,9 @@ const archivePrefix = "UEShed/Plugins";
 const releaseVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
 const commitPattern = /^[0-9a-f]{40}$/u;
 
+/** Exact Unreal plugin graph for Plan 028's first Map Review vertical. */
+export const MAP_REVIEW_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedCameras"]);
+
 const ignoredDirectoryNames = new Set([
 	".git",
 	".ue-shed",

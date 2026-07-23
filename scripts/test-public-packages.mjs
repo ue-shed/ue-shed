@@ -49,7 +49,10 @@ try {
 				name: "ue-shed-packed-consumer",
 				private: true,
 				type: "module",
-				dependencies: dependencyEntries,
+				dependencies: {
+					...dependencyEntries,
+					effect: "4.0.0-beta.98"
+				},
 				pnpm: { overrides: dependencyEntries }
 			},
 			null,
@@ -60,19 +63,60 @@ try {
 	run(executable("pnpm"), ["install", "--offline", "--ignore-scripts"], consumerDirectory);
 	const consumerEnvironment = { ...process.env };
 	delete consumerEnvironment.UE_SHED_UASSET_EXECUTABLE;
-	run(
-		process.execPath,
-		[
-			"--input-type=module",
-			"--eval",
-			"const protocol = await import('@ue-shed/protocol'); " +
-				"const assets = await import('@ue-shed/unreal-assets'); " +
-				"if (protocol.CURRENT_PROTOCOL_VERSION.major !== 0) throw new Error('bad protocol'); " +
-				"if (typeof assets.decodeSavedAssetInspection !== 'function') throw new Error('bad assets export');"
-		],
-		consumerDirectory,
-		{ env: consumerEnvironment }
+	const consumerScript = join(consumerDirectory, "verify-map-review.mjs");
+	await writeFile(
+		consumerScript,
+		`${[
+			"import { Effect, Schema } from 'effect';",
+			"import * as protocol from '@ue-shed/protocol';",
+			"import * as assets from '@ue-shed/unreal-assets';",
+			"import * as connection from '@ue-shed/unreal-connection';",
+			"import * as cameras from '@ue-shed/cameras';",
+			"import * as reviewContracts from '@ue-shed/cameras/review-contracts';",
+			"if (protocol.CURRENT_PROTOCOL_VERSION.major !== 0) throw new Error('bad protocol');",
+			"if (typeof assets.decodeSavedAssetInspection !== 'function') {",
+			"  throw new Error('bad assets export');",
+			"}",
+			"if (typeof connection.RemoteControlClient !== 'function') {",
+			"  throw new Error('bad unreal-connection export');",
+			"}",
+			"if (typeof cameras.decodeReviewSet !== 'function') {",
+			"  throw new Error('bad cameras decodeReviewSet');",
+			"}",
+			"if (typeof cameras.ReviewCapture !== 'function') {",
+			"  throw new Error('bad cameras ReviewCapture');",
+			"}",
+			"if (reviewContracts.MapReviewResult === undefined) {",
+			"  throw new Error('bad review-contracts MapReviewResult');",
+			"}",
+			"const reviewSet = await Effect.runPromise(cameras.decodeReviewSet({",
+			"  captureProfiles: [{",
+			"    id: 'fixture-hd',",
+			"    imageFormat: 'png',",
+			"    renderProfile: 'full_fidelity',",
+			"    resolution: { height: 720, width: 1280 },",
+			"    variantPolicy: 'pure_only'",
+			"  }],",
+			"  contract: { name: 'ue-shed-review-set', version: { major: 1, minor: 0 } },",
+			"  displayName: 'Offline Consumer',",
+			"  id: 'set-offline-consumer',",
+			"  project: { id: 'offline-consumer', mapPath: '/Game/Maps/Demo.Demo' },",
+			"  views: []",
+			"}));",
+			"if (reviewSet.id !== 'set-offline-consumer') throw new Error('review set decode failed');",
+			"await Effect.runPromise(",
+			"  Schema.decodeUnknownEffect(reviewContracts.MapReviewResult)({ status: 'not_configured' })",
+			");",
+			"console.log('map-review-offline-ok');"
+		].join("\n")}\n`,
+		"utf8"
 	);
+	const mapReviewStatus = run(process.execPath, [consumerScript], consumerDirectory, {
+		env: consumerEnvironment
+	});
+	if (mapReviewStatus !== "map-review-offline-ok") {
+		throw new Error(`Map Review offline consumer returned ${JSON.stringify(mapReviewStatus)}.`);
+	}
 	const version = run(executable("pnpm"), ["exec", "uasset", "--version"], consumerDirectory, {
 		env: consumerEnvironment
 	});
@@ -113,6 +157,9 @@ try {
 		if (!lockfile.includes(entry.filename)) {
 			throw new Error(`Consumer lockfile does not resolve ${entry.name} from its tarball.`);
 		}
+	}
+	if (lockfile.includes("@ue-shed/observatory") || lockfile.includes("@ue-shed/observability")) {
+		throw new Error("Offline consumer lockfile must not resolve observatory or observability.");
 	}
 	console.log(
 		`Public package conformance passed: ${packed.length} tarballs, clean offline consumer, ${version}.`

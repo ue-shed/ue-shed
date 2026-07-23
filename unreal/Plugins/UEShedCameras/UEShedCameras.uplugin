@@ -7,6 +7,9 @@
 	"Category": "UE Shed",
 	"EnabledByDefault": false,
 	"CanContainContent": false,
+	"Plugins": [
+		{ "Name": "UEShedCore", "Enabled": true }
+	],
 	"Modules": [
 		{
 			"Name": "UEShedCameras",

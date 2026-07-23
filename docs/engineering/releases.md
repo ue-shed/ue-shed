@@ -44,10 +44,14 @@ Use an exact prerelease version and, when available, the exact successful Truste
 6. Verify GitHub's provenance attestation with `gh attestation verify` before promoting an artifact.
 
 The candidate always contains immutable source and checksummed plugin-source artifacts. Its npm allowlist is
-exactly `@ue-shed/protocol`, `@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and
-`@ue-shed/uasset`; candidate construction fails if another workspace becomes public accidentally.
-The Windows candidate job builds the native parser once, validates the packed manifests and
-checksums, installs the tarballs into a clean offline consumer, and dry-runs all four publications.
+exactly `@ue-shed/protocol`, `@ue-shed/unreal-connection`, `@ue-shed/cameras`,
+`@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and `@ue-shed/uasset`; candidate construction
+fails if another workspace becomes public accidentally. `@ue-shed/observatory` and
+`@ue-shed/observability` stay private for this slice: Plan 019's USOT v1 wire contract already ships
+in `@ue-shed/protocol`, `@ue-shed/cameras` does not depend on those packages, and Plan 028's first
+vertical installs only Core/Cameras. The Windows candidate job builds the native parser once,
+validates the packed manifests and checksums, installs the tarballs into a clean offline consumer,
+and dry-runs all six publications.
 
 For a local artifact-only dry run:
 
@@ -65,33 +69,52 @@ To build only the portable plugin bundle locally, use an empty output directory 
 generated manifest before extraction:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.1 --output out/plugins
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.2 --output out/plugins
 pnpm ue-shed plugins verify out/plugins/plugins.manifest.json
 pnpm ue-shed plugins list out/plugins/plugins.manifest.json
 pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.uproject `
   --manifest out/plugins/plugins.manifest.json
 ```
 
+For Plan 028's first Map Review vertical, select the exact Core+Cameras graph instead of the full
+candidate plugin set. That selection does not require Workbench, extension UI, Observatory, or
+Authoring:
+
+```powershell
+pnpm release:plugins:map-review
+# or:
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.2 `
+  --output out/plugins-map-review --plugins UEShedCore,UEShedCameras
+pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
+pnpm ue-shed plugins install --project <project.uproject> `
+  --manifest out/plugins-map-review/plugins.manifest.json
+```
+
 Installation is project-scoped under `Plugins/UEShed`. It refuses checksum failures, unsupported
 graphs, modified installer-owned files, and unrelated existing content at that destination.
 
-The initial `0.1.0-rc.1` publication bootstraps the packages before npm trusted publishers can be
-configured. From a clean reviewed checkout on Windows, run `pnpm check`, then
-`pnpm release:pack`. Authenticate with the public npm registry and publish the immutable tarballs in
-this order, always retaining the `next` dist-tag:
+The initial `0.1.0-rc.1` publication bootstrapped the parser packages before npm trusted publishers
+could be configured. Later Map Review candidates add `@ue-shed/unreal-connection` and
+`@ue-shed/cameras` to the same exact-version, protected OIDC path. From a clean reviewed checkout on
+Windows, run `pnpm check`, then `pnpm release:pack`. Authenticate with the public npm registry and
+publish the immutable tarballs in this order, always retaining the `next` dist-tag:
 
 ```powershell
 npm whoami --registry https://registry.npmjs.org
-npm publish out/releases/0.1.0-rc.1/ue-shed-protocol-0.1.0-rc.1.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.1/ue-shed-uasset-win32-x64-0.1.0-rc.1.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.1/ue-shed-unreal-assets-0.1.0-rc.1.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.1/ue-shed-uasset-0.1.0-rc.1.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.2/ue-shed-protocol-0.1.0-rc.2.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.2/ue-shed-unreal-connection-0.1.0-rc.2.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.2/ue-shed-cameras-0.1.0-rc.2.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.2/ue-shed-uasset-win32-x64-0.1.0-rc.2.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.2/ue-shed-unreal-assets-0.1.0-rc.2.tgz --access public --tag next
+npm publish out/releases/0.1.0-rc.2/ue-shed-uasset-0.1.0-rc.2.tgz --access public --tag next
 ```
 
 If a publication fails after an earlier package succeeds, do not unpublish or rebuild that version;
 fix the account or network issue and publish only the remaining byte-identical tarballs. After all
-four exist, verify their exact versions and `next` tags, then repeat the consumer test against the
-registry before completing Plan 025.
+six exist, verify their exact versions and `next` tags, then repeat the consumer test against the
+registry. Do not treat local packing as publication: protected OIDC publication still requires the
+exact candidate tag, the protected `npm-release` environment, and human approval. The 2026-08-13
+freeze still forbids landing activation-only workflow evidence on `main` ahead of schedule.
 
 ## Protected npm publication
 

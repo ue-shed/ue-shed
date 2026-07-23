@@ -50,6 +50,7 @@
 			"packages/unreal-assets/src/index.ts",
 			"packages/unreal-connection/package.json",
 			"packages/unreal-connection/tsconfig.json",
+			"packages/unreal-connection/tsconfig.build.json",
 			"packages/unreal-connection/src/index.ts",
 			"packages/unreal-connection/src/remote-control-client.ts",
 			"packages/authoring-catalog/package.json",

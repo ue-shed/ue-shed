@@ -1,0 +1,128 @@
+name: Trusted Unreal
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: "17 3 * * 1"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: trusted-unreal
+    cancel-in-progress: false
+
+jobs:
+    evidence:
+        name: Unreal 5.7 evidence
+        if: >-
+            github.event_name == 'schedule' ||
+            github.ref_protected ||
+            github.ref == 'refs/heads/temp/hackathon-judging-2026-08-13' ||
+            startsWith(github.ref, 'refs/tags/v')
+        environment: trusted-unreal
+        runs-on:
+            group: trusted-unreal
+            labels: ue57
+        timeout-minutes: 90
+        env:
+            UE_SHED_REMOTE_CONTROL_ENDPOINT: http://127.0.0.1:30001
+        steps:
+            - name: Checkout without persisted credentials
+              uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@v6
+
+            - name: Install Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "24"
+                  cache: pnpm
+
+            - name: Install locked dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Record runner and engine identity
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force evidence | Out-Null
+                  Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsBuildNumber |
+                    ConvertTo-Json | Set-Content evidence/runner.json
+                  $configuredRoot = $env:UE_SHED_UNREAL_ENGINE_ROOT
+                  if ($configuredRoot) {
+                    $engineRoot = $configuredRoot
+                  } else {
+                    $engineRoot = Get-ChildItem "$env:ProgramFiles/Epic Games" -Directory -Filter "UE_*" |
+                      Where-Object {
+                        $version = Get-Content (Join-Path $_.FullName "Engine/Build/Build.version") -Raw |
+                          ConvertFrom-Json
+                        $version.MajorVersion -eq 5 -and $version.MinorVersion -eq 7
+                      } |
+                      Sort-Object FullName |
+                      Select-Object -Last 1 -ExpandProperty FullName
+                  }
+                  if (-not $engineRoot) { throw "Could not discover Unreal Engine 5.7." }
+                  Copy-Item (Join-Path $engineRoot "Engine/Build/Build.version") evidence/unreal-build.json
+
+            - name: Start the generic fixture editor
+              shell: pwsh
+              run: |
+                  Get-Process UnrealEditor -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty Id |
+                    Set-Content evidence/editor-pids-before.txt
+                  pnpm fixture:launch-authoring
+                  for ($attempt = 0; $attempt -lt 120; $attempt++) {
+                    try {
+                      Invoke-WebRequest "$env:UE_SHED_REMOTE_CONTROL_ENDPOINT/remote/info" |
+                        Out-Null
+                      exit 0
+                    } catch {
+                      Start-Sleep -Seconds 2
+                    }
+                  }
+                  throw "Fixture Remote Control did not become ready within four minutes."
+
+            - name: Run trusted Unreal gate
+              shell: pwsh
+              run: |
+                  pnpm check:unreal 2>&1 | Tee-Object evidence/unreal-check.log
+                  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            - name: Collect Unreal diagnostics
+              if: always()
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force evidence/logs | Out-Null
+                  Get-ChildItem fixtures/unreal-project/Saved/Logs -File -ErrorAction SilentlyContinue |
+                    Copy-Item -Destination evidence/logs
+                  Get-ChildItem unreal/Plugins -Directory |
+                    ForEach-Object {
+                      $binary = Join-Path $_.FullName "Binaries"
+                      if (Test-Path $binary) {
+                        Copy-Item $binary -Destination (Join-Path "evidence" "$($_.Name)-Binaries") -Recurse
+                      }
+                    }
+
+            - name: Upload trusted evidence
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: trusted-unreal-evidence
+                  path: evidence/**
+                  if-no-files-found: error
+                  retention-days: 30
+
+            - name: Stop only the fixture editor started by this run
+              if: always()
+              shell: pwsh
+              run: |
+                  $before = @(
+                    Get-Content evidence/editor-pids-before.txt -ErrorAction SilentlyContinue |
+                      ForEach-Object { [int]$_ }
+                  )
+                  Get-Process UnrealEditor -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Id -notin $before } |
+                    Stop-Process -Force

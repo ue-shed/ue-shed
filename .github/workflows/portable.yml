@@ -1,0 +1,71 @@
+name: Portable
+
+on:
+    push:
+        branches:
+            - "temp/**"
+            - "feature/**"
+    pull_request:
+        branches:
+            - "temp/**"
+            - "feature/**"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: portable-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    check:
+        name: pnpm check
+        runs-on: blacksmith-2vcpu-ubuntu-2404
+        timeout-minutes: 30
+        steps:
+            - name: Checkout without persisted credentials
+              uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@v6
+
+            - name: Install Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "24"
+                  cache: pnpm
+
+            - name: Install Rust
+              run: rustup toolchain install stable --profile minimal --no-self-update
+
+            - name: Install locked dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Run portable gate
+              shell: bash
+              run: |
+                  set -o pipefail
+                  mkdir -p evidence
+                  pnpm check 2>&1 | tee evidence/portable-check.log
+
+            - name: Upload portable evidence
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: portable-evidence-${{ github.run_id }}
+                  path: evidence/portable-check.log
+                  if-no-files-found: error
+                  retention-days: 30
+
+            - name: Upload failure diagnostics
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: portable-failure-${{ github.run_id }}
+                  path: |
+                      test-results/**
+                      coverage/**
+                  if-no-files-found: ignore
+                  retention-days: 14

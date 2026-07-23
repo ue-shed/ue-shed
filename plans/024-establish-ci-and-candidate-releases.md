@@ -6,6 +6,8 @@
 
 ## Status
 
+- **Status**: IN PROGRESS on 2026-07-23 — workflows, candidate tooling, and runbook implemented;
+  default-branch activation and first hosted/trusted runs wait for the judging freeze to end
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: HIGH
@@ -87,8 +89,26 @@ Document: publish exact candidate; open downstream bump PR; run downstream porta
 - [ ] Unreal evidence is trusted, dispatch/schedule-only, and secret-free.
 - [ ] Candidate manifest/artifacts/checksums are retained.
 - [ ] Publish uses an explicit protected OIDC path.
-- [ ] Exact-pin downstream handshake is documented.
+- [x] Exact-pin downstream handshake is documented.
 - [ ] plans/README.md marks Plan 024 DONE.
+
+## Implementation evidence
+
+- `.github/workflows/portable.yml` runs the portable gate on Blacksmith for temporary/feature refs
+  and uploads the complete check log plus failure diagnostics.
+- `.github/workflows/trusted-unreal.yml` has only `workflow_dispatch` and `schedule` triggers, targets
+  the protected `trusted-unreal` runner group/environment, persists no checkout credential, and uses
+  no repository secrets.
+- `.github/workflows/candidate-release.yml` builds a checksummed candidate, can bind an exact trusted
+  Unreal run ID, creates GitHub provenance, and exposes npm publication only through the protected
+  `npm-release` environment on an exact candidate tag with OIDC.
+- `scripts/create-release-candidate.mjs` rejects version ranges, shortened commits, ambiguous run
+  IDs, nonempty output directories, and public package versions that differ from the candidate.
+- Local verification on 2026-07-23: actionlint 1.7.12 passed; a candidate dry run produced and
+  rehashed both archives; `pnpm -r --if-present build` and `pnpm check` exited 0.
+- GitHub dispatch and schedule events require the workflow file on the default branch. The freeze
+  forbids landing these files on `main` before 2026-08-13, so the first hosted candidate and trusted
+  Unreal runs remain an honest activation gate rather than being simulated locally.
 
 ## STOP conditions
 

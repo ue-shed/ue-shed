@@ -582,6 +582,7 @@ export function WorldScout(props: {
 						<input
 							value={query()}
 							onInput={(event) => setQuery(event.currentTarget.value)}
+							aria-label="Find actor"
 							placeholder="label or class"
 							{...stylex.props(styles.searchInput)}
 						/>
@@ -607,7 +608,10 @@ export function WorldScout(props: {
 							)}
 						</For>
 					</div>
-					<div {...stylex.props(styles.sampleMeta)}>
+					<div
+						aria-label={`${visibleCount()} visible of ${observedCount()} observed actors`}
+						{...stylex.props(styles.sampleMeta)}
+					>
 						<strong>{visibleCount()}</strong>
 						<span>VISIBLE / {observedCount()} OBSERVED</span>
 					</div>

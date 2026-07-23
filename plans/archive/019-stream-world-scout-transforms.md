@@ -23,6 +23,9 @@
 - **Depends on**: `plans/018-pie-live-review-previews.md`
 - **Category**: perf
 - **Planned at**: commit `aae1cd2`, 2026-07-21
+- **Status**: DONE — reconciled against pre-existing Observatory/Canvas implementation on
+  `91f023c`; missing real-Unreal gate, ADR 0006, docs, and E2E canvas selection closed with evidence
+  on 2026-07-23
 
 ## Why this matters
 
@@ -544,24 +547,24 @@ git status --short
 
 ## Done criteria
 
-- [ ] `GetActorSnapshot` is no longer invoked once per high-rate map update on a stream-capable
+- [x] `GetActorSnapshot` is no longer invoked once per high-rate map update on a stream-capable
       plugin; it is used for initial discovery, fallback, and recovery only.
-- [ ] Transform packets contain only indexed changed transforms and the fixed v1 header/records.
-- [ ] Unreal calculates actor bounds during catalog creation/invalidation, not ordinary transform
+- [x] Transform packets contain only indexed changed transforms and the fixed v1 header/records.
+- [x] Unreal calculates actor bounds during catalog creation/invalidation, not ordinary transform
       sampling; a real-Unreal test proves the counter remains stable.
-- [ ] Producer, host, IPC, and renderer queues are bounded and expose replacement/gap metrics.
-- [ ] Map Review defaults to a requested 30 Hz and supports 1–60 Hz on the stream path.
-- [ ] World Scout uses exactly one Canvas for actor points and does not create one SVG/DOM node per
+- [x] Producer, host, IPC, and renderer queues are bounded and expose replacement/gap metrics.
+- [x] Map Review defaults to a requested 30 Hz and supports 1–60 Hz on the stream path.
+- [x] World Scout uses exactly one Canvas for actor points and does not create one SVG/DOM node per
       actor.
-- [ ] Incoming bursts schedule at most one animation-frame paint and selection survives updates.
-- [ ] Pointer and keyboard users can select actors and invoke Go to Actor / Follow Actor.
-- [ ] Reset, reconnect, old plugin, unsupported platform, and capture-coordination behavior remain
+- [x] Incoming bursts schedule at most one animation-frame paint and selection survives updates.
+- [x] Pointer and keyboard users can select actors and invoke Go to Actor / Follow Actor.
+- [x] Reset, reconnect, old plugin, unsupported platform, and capture-coordination behavior remain
       explicit and tested.
-- [ ] `pnpm benchmark:observatory` meets and records the Step 7 reference budgets.
-- [ ] `pnpm check`, `pnpm fixture:build`, and `pnpm test:e2e:workbench` exit 0.
-- [ ] `git diff --check` exits 0 and no out-of-scope file is modified.
-- [ ] ADR 0006 and product/README documentation match shipped behavior without overclaiming.
-- [ ] Plan 019's row in `plans/README.md` is updated when execution completes.
+- [x] `pnpm benchmark:observatory` meets and records the Step 7 reference budgets.
+- [x] `pnpm check`, `pnpm fixture:build`, and `pnpm test:e2e:workbench` exit 0.
+- [x] `git diff --check` exits 0 and no out-of-scope file is modified.
+- [x] ADR 0006 and product/README documentation match shipped behavior without overclaiming.
+- [x] Plan 019's row in `plans/README.md` is updated when execution completes.
 
 ## STOP conditions
 

@@ -11,7 +11,6 @@ the status row when done.
 | Plan                                                | Title                                                           | Priority | Effort | Depends on              | Status                        |
 | --------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | ----------------------- | ----------------------------- |
 | [007](007-conflicts-rich-types-and-views.md)        | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff     |
-| [019](019-stream-world-scout-transforms.md)         | Stream actor transforms and render World Scout on Canvas        | P1       | XL     | 018                     | IN PROGRESS                   |
 | [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance | P1       | L      | 020, 021                | IN PROGRESS — activation gate |
 | [027](027-adopt-parser-in-downstream-host.md)       | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026           | TODO                          |
 | [028](028-compose-map-review-downstream.md)         | Compose finished Map Review capabilities downstream             | P2       | XL     | 017, 018, 019, 022, 026 | TODO                          |
@@ -23,13 +22,14 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 019 completed and archived under
+  [`archive/019-stream-world-scout-transforms.md`](archive/019-stream-world-scout-transforms.md)
+  after the bounded Observatory USOT transform stream, Canvas World Scout, reference budgets,
+  real-Unreal lifecycle/bounds/fallback evidence, and Workbench E2E passed on the UE 5.7 fixture.
 - Plan 018 completed and archived under
   [`archive/018-pie-live-review-previews.md`](archive/018-pie-live-review-previews.md) after PIE
   posed live BGRA previews, Clear without dirt, Camera Lab overview/actor_pov regression,
   capture-blocked-during-PIE, and no-rehydrate-on-select evidence passed on the UE 5.7 fixture.
-- Plan 019 replaces high-rate full-world JSON polling with a bounded Observatory transform stream
-  and retained Canvas renderer. It waits for 018 because both touch the Workbench Map Review service
-  and IPC surface; 019 must begin from 018's committed result rather than overwrite active work.
 - Plan 017 completed and archived under
   [`archive/017-map-review-realization-and-recovery.md`](archive/017-map-review-realization-and-recovery.md)
   after real-Unreal projection evidence and Workbench restart/stale recovery gates passed.

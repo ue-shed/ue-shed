@@ -129,6 +129,60 @@ test("authors real candidate previews from the selected fixture subject", async 
 		await expect(refreshRate).toHaveValue("30");
 		await refreshRate.fill("60");
 		await expect(refreshRate).toHaveValue("60");
+		const actorMap = workbench.page.getByRole("application", { name: "Top-down actor map" });
+		await expect(actorMap).toBeVisible({ timeout: 60_000 });
+		// Deterministic L_CameraLoad Flying movers (409). Filter via Find actor, wait on the
+		// accessible count seam (visible/observed digits live in separate DOM nodes), then select
+		// with the Canvas keyboard path — no coordinate clicks.
+		await expect(
+			workbench.page.getByRole("button", { name: /UEShedFixtureFlying/ })
+		).toBeVisible({ timeout: 60_000 });
+		await workbench.page
+			.getByRole("textbox", { name: "Find actor" })
+			.fill("UEShedFixtureFlying");
+		await expect(workbench.page.getByLabel(/^409 visible of \d+ observed actors$/)).toBeVisible(
+			{
+				timeout: 60_000
+			}
+		);
+		await actorMap.focus();
+		await actorMap.press("ArrowRight");
+		await expect(workbench.page.getByText("OBSERVED ACTOR", { exact: true })).toBeVisible();
+		await expect(
+			workbench.page.locator("code", { hasText: "UEShedFixtureFlying" })
+		).toBeVisible();
+		const goToActor = workbench.page.getByRole("button", { name: /GO TO ACTOR/ });
+		const followActor = workbench.page.getByRole("button", {
+			name: "FOLLOW ACTOR",
+			exact: true
+		});
+		await expect(goToActor).toBeVisible();
+		await expect(followActor).toBeVisible();
+		// Enter invokes Go To; Follow button invokes follow. Capability-driven hosts may return
+		// focused success or an explicit unavailable status — never invent success.
+		await actorMap.press("Enter");
+		await expect(
+			workbench.page.getByText(
+				/^(FOCUSED IN UNREAL|FOCUSED RUNTIME ACTOR|FOCUS UNAVAILABLE)$/
+			)
+		).toBeVisible({ timeout: 30_000 });
+		await followActor.click();
+		const stopFollowing = workbench.page.getByRole("button", {
+			name: "STOP FOLLOWING",
+			exact: true
+		});
+		await expect(
+			workbench.page.getByText(/^(FOLLOWING IN UNREAL|FOCUS UNAVAILABLE|FOLLOW UNAVAILABLE)$/)
+		).toBeVisible({ timeout: 30_000 });
+		await expect(stopFollowing.or(followActor)).toBeVisible();
+		if (await stopFollowing.isVisible()) {
+			await expect(stopFollowing).toHaveAttribute("aria-pressed", "true");
+		} else {
+			await expect(followActor).toBeVisible();
+			await expect(
+				workbench.page.getByText(/^(FOCUS UNAVAILABLE|FOLLOW UNAVAILABLE)$/)
+			).toBeVisible();
+		}
 		await startAuthoringFromSelection(workbench);
 		const candidates = workbench.page.getByRole("region", { name: "Framing candidates" });
 		await expect(candidates.getByRole("button", { name: /^Select / })).toHaveCount(7);

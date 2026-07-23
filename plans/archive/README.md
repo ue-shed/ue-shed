@@ -23,6 +23,7 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [016](016-data-authoring-adoption-seam.md)        | Prove the Data Authoring adoption seam                               | DONE                           |
 | [017](017-map-review-realization-and-recovery.md) | Verify realized framing and recover in-progress Map Review authoring | DONE — UE 5.7 fixture verified |
 | [018](018-pie-live-review-previews.md)            | PIE live cameras for Map Review authoring previews                   | DONE — UE 5.7 PIE verified     |
+| [019](019-stream-world-scout-transforms.md)       | Stream actor transforms and render World Scout on Canvas             | DONE — UE 5.7 stream verified  |
 | [020](020-restore-green-release-baseline.md)      | Restore a trustworthy portable release baseline                      | DONE                           |
 | [021](021-consume-published-unreal-rc.md)         | Consume the published unreal-rc 0.5.3 dependency                     | DONE                           |
 | [022](022-harden-public-contracts.md)             | Make public TypeScript and Map Review contracts schema-governed      | DONE                           |

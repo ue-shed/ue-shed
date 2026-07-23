@@ -259,12 +259,62 @@ describe("WorldScout", () => {
 		));
 		paint.flush();
 		const canvas = await screen.findByRole("application", { name: "Top-down actor map" });
+		expect(screen.getByLabelText(/^\d+ visible of \d+ observed actors$/)).toBeDefined();
 		canvas.focus();
 		fireEvent.keyDown(canvas, { key: "ArrowRight" });
 		paint.flush();
 		expect(await screen.findByRole("heading", { name: /Orbit 0[78]/ })).toBeDefined();
 		fireEvent.keyDown(canvas, { key: "Enter" });
 		expect(await screen.findByText("FOCUSED RUNTIME ACTOR")).toBeDefined();
+	});
+
+	it("reports explicit focus unavailable when Go To and Follow cannot focus", async () => {
+		const focusCalls: Array<{ actorId: string; bringToFront: boolean }> = [];
+		const snapshot = {
+			actors: [observed],
+			capturedAt: new Date().toISOString(),
+			mapPath: "/Game/Fixture/Observatory",
+			sequence: 7,
+			worldKind: "editor" as const,
+			worldSeconds: 15
+		};
+		const paint = syncPaintScheduler();
+		const client = {
+			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			focusActor: (actorId, bringToFront) =>
+				Effect.sync(() => {
+					focusCalls.push({ actorId, bringToFront });
+					return { actorId, status: "not_supported" as const };
+				}),
+			worldObservations: () => Stream.make(fallbackObservation(snapshot))
+		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<WorldScout
+					client={client}
+					paintScheduler={paint}
+					onActorFocused={() => undefined}
+				/>
+			</EffectRuntimeProvider>
+		));
+		paint.flush();
+		const canvas = await screen.findByRole("application", { name: "Top-down actor map" });
+		canvas.focus();
+		fireEvent.keyDown(canvas, { key: "ArrowRight" });
+		paint.flush();
+		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();
+		fireEvent.keyDown(canvas, { key: "Enter" });
+		expect(await screen.findByText("FOCUS UNAVAILABLE")).toBeDefined();
+		expect(focusCalls).toEqual([{ actorId: observed.id, bringToFront: true }]);
+		const user = userEvent.setup();
+		await user.click(screen.getByRole("button", { name: "FOLLOW ACTOR" }));
+		expect(await screen.findByText("FOCUS UNAVAILABLE")).toBeDefined();
+		expect(screen.getByRole("button", { name: "FOLLOW ACTOR" })).toBeDefined();
+		expect(focusCalls).toEqual([
+			{ actorId: observed.id, bringToFront: true },
+			{ actorId: observed.id, bringToFront: true }
+		]);
 	});
 
 	it("keeps selection across transform-only updates and coalesces paints", async () => {

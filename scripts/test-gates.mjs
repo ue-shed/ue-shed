@@ -45,6 +45,14 @@ const gates = [
 			environment.UE_SHED_REMOTE_CONTROL_ENDPOINT
 				? undefined
 				: "set UE_SHED_REMOTE_CONTROL_ENDPOINT with the fixture map open"
+	},
+	{
+		file: "packages/observatory/src/real-unreal.integration.test.ts",
+		name: "real Unreal Observatory actor observation stream",
+		missing: (environment) =>
+			environment.UE_SHED_REMOTE_CONTROL_ENDPOINT
+				? undefined
+				: "set UE_SHED_REMOTE_CONTROL_ENDPOINT with the fixture map open"
 	}
 ];
 

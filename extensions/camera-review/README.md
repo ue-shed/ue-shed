@@ -8,11 +8,13 @@ The spatial-authoring desk inspects one live editor selection, presents real tra
 previews as a contact sheet, supports discard and manual pose/FOV refinement, and persists the kept
 Approved Pose with preset lineage and adjustment provenance outside the map.
 
-Live World Scout is the primary entry surface: it polls bounded Observatory snapshots, renders an
-aspect-preserving XY actor map, filters by label and class, and turns point selection into Unreal
-focus plus transient framing. Authors can select a bounded 1–30 Hz refresh rate; transient connection
-failures retain the last valid spatial sample with an explicit reconnecting state. The larger
-geographic atlas and spatial-comment product remain out of scope.
+Live World Scout is the primary entry surface: it consumes the Observatory demand-driven transform
+stream (USOT v1 named pipe) with bounded snapshot polling as an explicit ≤10 Hz fallback, paints one
+aspect-preserving Canvas actor map, filters by label and class, and turns point or keyboard selection
+into Unreal focus plus transient framing. Authors request 1–60 Hz producer cadence (30 Hz default;
+fallback caps visibly at 10 Hz). Resets and reconnects retain the last valid spatial sample with an
+explicit stale/reconnecting state. The larger geographic atlas and spatial-comment product remain out
+of scope.
 
 Workbench supplies the thin Electron IPC adapter. The route and client contract remain in this
 extension so the product UI does not become an architecture layer.

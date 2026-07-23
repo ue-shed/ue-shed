@@ -204,13 +204,13 @@ must not be accidentally interchangeable.
 One plugin containing every feature would recreate the coupling this repository is meant to avoid.
 The suite is therefore separately enabled:
 
-| Plugin              | Responsibility                                                                   |
-| ------------------- | -------------------------------------------------------------------------------- |
-| `UEShedCore`        | Capability discovery, identity, health, shared transport, editor selection/focus |
-| `UEShedAuthoring`   | Generic authoring operations that stock APIs cannot supply                       |
-| `UEShedObservatory` | Actor registration, stable actor identity, subscriptions, bounded snapshots      |
-| `UEShedCameras`     | Camera definition metadata, capture, and review artifacts                        |
-| `UEShedScenarios`   | Scenario discovery, parameterization, execution, and results                     |
+| Plugin              | Responsibility                                                                    |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `UEShedCore`        | Capability discovery, identity, health, shared transport, editor selection/focus  |
+| `UEShedAuthoring`   | Generic authoring operations that stock APIs cannot supply                        |
+| `UEShedObservatory` | Actor catalog, stable identity, bounded snapshots, demand-driven transform stream |
+| `UEShedCameras`     | Camera definition metadata, capture, and review artifacts                         |
+| `UEShedScenarios`   | Scenario discovery, parameterization, execution, and results                      |
 
 Saved-package authoring, `UEShedCore`, `UEShedAuthoring`, `UEShedObservatory`, and `UEShedCameras`
 are already exercised by shipped workflows. `UEShedScenarios` remains a roadmap boundary until a
@@ -251,7 +251,7 @@ Live and review workflows have also earned their place on the same architecture:
 - Game Text searches player-facing language across saved packages without flattening identity.
 - Camera Load Lab measures a bounded live camera data plane.
 - Map Review authors Review Views, captures immutable runs, and uses Live World Scout
-  (`UEShedObservatory` snapshots) as the entry into spatial authoring.
+  (`UEShedObservatory` catalog + bounded transform stream) as the entry into spatial authoring.
 
 What remains sequenced, not assumed:
 
@@ -259,18 +259,19 @@ What remains sequenced, not assumed:
    readiness work.
 2. Grow Data Authoring through remaining Plan 007 work (conflicts, rich types, composites, views)
    on the Effect-native services and adoption seam.
-3. Prove a dedicated named-pipe hello/health path before the full actor-observatory time-indexed
-   projection accumulates special cases. Remote Control plus bounded polling is enough for the
-   current Live World Scout; the richer observatory MVP below still needs the shared data plane.
+3. Keep Live World Scout on its proven demand-driven named-pipe transform stream; do not grow it into
+   a time-indexed Observatory MVP without a separate product decision. Remote Control remains the
+   control plane; bounded snapshot polling stays the explicit unsupported/fallback path.
 4. Keep sparse camera observation and interactive scenarios as separately enabled domains rather
    than folding them into Map Review or Observatory.
 
 ## Actor observatory direction
 
 The durable observatory product remains a **queryable, time-indexed projection of the running
-world**. Live World Scout is a deliberately smaller foothold: bounded editor-world actor snapshots,
-an aspect-preserving XY canvas, search/filter/selection, and Focus / Follow actions that hand off to
-Map Review framing. It is not yet the full observatory MVP.
+world**. Live World Scout is a deliberately smaller foothold: Remote Control catalog negotiation, a
+Windows named-pipe USOT v1 transform stream with polling fallback, one aspect-preserving Canvas,
+search/filter/selection, and Focus / Follow actions that hand off to Map Review framing. It is not
+yet the full observatory MVP.
 
 The fuller direction still needs:
 
@@ -287,14 +288,14 @@ The fuller direction still needs:
 ### Engine capabilities
 
 - `UEShedCore` advertises versions, project/world identity, health, and editor selection/focus.
-- `UEShedObservatory` advertises actor discovery and subscription capabilities beyond snapshot
-  polling.
-- Actor records carry stable identity, class/type, display label, world, transform, selected
-  properties, lifecycle, and observation timestamp.
-- Updates are subscriptions with requested cadence, bounded queues, coalescing, staleness, and
-  explicit actor-added/updated/removed events. They are not an unbounded firehose.
-- Reconnect behavior produces a new snapshot or a documented resume result; silent gaps are not
-  accepted.
+- `UEShedObservatory` advertises actor discovery plus a demand-driven transform stream beyond
+  snapshot polling, with explicit `polling_fallback` when the stream is unavailable.
+- Actor catalogs carry stable identity, class/type, display label, world, bounds, and observation
+  timestamp; transform packets carry only session-local indices and poses.
+- Updates are scoped subscriptions with requested cadence, bounded latest-state-wins queues,
+  coalescing, staleness, catalog reset on membership/world change, and observable sequence gaps.
+  They are not an unbounded firehose.
+- Reconnect behavior reacquires a catalog and new session/revision; silent gaps are not accepted.
 
 ### Headless and showcase behavior
 

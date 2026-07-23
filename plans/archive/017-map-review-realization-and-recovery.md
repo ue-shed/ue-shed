@@ -11,6 +11,7 @@
 
 ## Status
 
+- **State**: DONE — post-realization projection and authoring-session recovery verified on UE 5.7 fixture
 - **Priority**: P0
 - **Effort**: L
 - **Risk**: MED — this extends a TypeScript/C++ Remote Control contract and persists a new local
@@ -311,20 +312,20 @@ Plan 017 index update are changed.
 
 ## Done criteria
 
-- [ ] A successful `CaptureReviewView` response carries finite, actual post-realization subject
+- [x] A successful `CaptureReviewView` response carries finite, actual post-realization subject
       projection evidence, or a typed non-successful-projection diagnostic; no fake/clamped success.
-- [ ] Projection evidence is available to the headless camera authoring service and shown in the
+- [x] Projection evidence is available to the headless camera authoring service and shown in the
       maintained Map Review extension without a Workbench-only decoder.
-- [ ] An unapproved Map Review authoring session survives a Workbench/service restart with pose,
+- [x] An unapproved Map Review authoring session survives a Workbench/service restart with pose,
       selected candidate, discards, manual reason, and diagnostics intact; preview media is regenerated
       and does not persist.
-- [ ] Changed subject/map/bounds returns a stale state with recovery guidance and cannot alter an
+- [x] Changed subject/map/bounds returns a stale state with recovery guidance and cannot alter an
       Approved Pose until the author explicitly Reframes.
-- [ ] The public CLI exposes the same basic session recovery/discard/reframe lifecycle.
-- [ ] Real-Unreal fixture test, Workbench E2E, `pnpm typecheck`, `pnpm effect:architecture`,
+- [x] The public CLI exposes the same basic session recovery/discard/reframe lifecycle.
+- [x] Real-Unreal fixture test, Workbench E2E, `pnpm typecheck`, `pnpm effect:architecture`,
       `pnpm test:architecture`, and `pnpm check` all exit 0.
-- [ ] `docs/products/map-review.md` status claims match the completed evidence.
-- [ ] No files outside the declared scope are modified; `plans/README.md` marks Plan 017 DONE.
+- [x] `docs/products/map-review.md` status claims match the completed evidence.
+- [x] No files outside the declared scope are modified; `plans/README.md` marks Plan 017 DONE.
 
 ## STOP conditions
 

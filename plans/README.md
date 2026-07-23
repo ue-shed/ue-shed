@@ -8,16 +8,15 @@ the status row when done.
 
 ## Active
 
-| Plan                                                | Title                                                                | Priority | Effort | Depends on              | Status                        |
-| --------------------------------------------------- | -------------------------------------------------------------------- | -------- | ------ | ----------------------- | ----------------------------- |
-| [007](007-conflicts-rich-types-and-views.md)        | Complete conflicts, rich Unreal types, composites, and views         | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff     |
-| [017](017-map-review-realization-and-recovery.md)   | Verify realized framing and recover in-progress Map Review authoring | P0       | L      | —                       | TODO                          |
-| [018](018-pie-live-review-previews.md)              | PIE live cameras for Map Review authoring previews                   | P0       | L      | —                       | IN PROGRESS                   |
-| [019](019-stream-world-scout-transforms.md)         | Stream actor transforms and render World Scout on Canvas             | P1       | XL     | 018                     | IN PROGRESS                   |
-| [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance      | P1       | L      | 020, 021                | IN PROGRESS — activation gate |
-| [027](027-adopt-parser-in-downstream-host.md)       | Adopt the released parser in the first downstream host               | P1       | M      | 021, 025, 026           | TODO                          |
-| [028](028-compose-map-review-downstream.md)         | Compose finished Map Review capabilities downstream                  | P2       | XL     | 017, 018, 019, 022, 026 | TODO                          |
-| [029](029-authoring-downstream-integration-gate.md) | Gate authoring integration behind finished generic slices            | P2       | L      | 007, 022, 026           | TODO                          |
+| Plan                                                | Title                                                           | Priority | Effort | Depends on              | Status                        |
+| --------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | ----------------------- | ----------------------------- |
+| [007](007-conflicts-rich-types-and-views.md)        | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff     |
+| [018](018-pie-live-review-previews.md)              | PIE live cameras for Map Review authoring previews              | P0       | L      | —                       | IN PROGRESS                   |
+| [019](019-stream-world-scout-transforms.md)         | Stream actor transforms and render World Scout on Canvas        | P1       | XL     | 018                     | IN PROGRESS                   |
+| [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance | P1       | L      | 020, 021                | IN PROGRESS — activation gate |
+| [027](027-adopt-parser-in-downstream-host.md)       | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026           | TODO                          |
+| [028](028-compose-map-review-downstream.md)         | Compose finished Map Review capabilities downstream             | P2       | XL     | 017, 018, 019, 022, 026 | TODO                          |
+| [029](029-authoring-downstream-integration-gate.md) | Gate authoring integration behind finished generic slices       | P2       | L      | 007, 022, 026           | TODO                          |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -31,9 +30,9 @@ table and the archive index.
 - Plan 019 replaces high-rate full-world JSON polling with a bounded Observatory transform stream
   and retained Canvas renderer. It waits for 018 because both touch the Workbench Map Review service
   and IPC surface; 019 must begin from 018's committed result rather than overwrite active work.
-- Plan 017 completes the remaining Map Review Slice 2 trust and recovery work before Slice 3 adds
-  capture-profile, readiness, cancellation, and restoration policy. Leave its status as TODO until
-  the manual review gate passes.
+- Plan 017 completed and archived under
+  [`archive/017-map-review-realization-and-recovery.md`](archive/017-map-review-realization-and-recovery.md)
+  after real-Unreal projection evidence and Workbench restart/stale recovery gates passed.
 - Plan 007 reached its demo cutoff on 2026-07-17 with engine-proven row references, headless
   relationship reports, and joined read-only product views. Conflict resolution, broad rich-type
   editing, Composite DataTables, editable joins, and final release conformance remain. Continue it on

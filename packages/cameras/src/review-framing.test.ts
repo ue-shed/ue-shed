@@ -3,12 +3,14 @@ import { Effect } from "effect";
 import {
 	approveFramingCandidate,
 	framingDriftDiagnostics,
-	generateFramingCandidates
+	generateFramingCandidates,
+	realizationFramingDiagnostics
 } from "./review-framing.js";
 import {
 	ReviewSetId,
 	ReviewViewId,
-	decodeReviewSet as decodeReviewSetEffect
+	decodeReviewSet as decodeReviewSetEffect,
+	type ReviewSubjectProjection
 } from "./review-schema.js";
 
 const decodeReviewSet = (input: unknown) => Effect.runSync(decodeReviewSetEffect(input));
@@ -119,5 +121,52 @@ describe("spatial framing", () => {
 				}
 			})
 		).toMatchObject([{ code: "subject_bounds_changed", severity: "warning" }]);
+	});
+
+	it("maps post-realization projection evidence to framing diagnostics", () => {
+		const within: ReviewSubjectProjection = {
+			margins: { bottom: 0.2, left: 0.2, right: 0.2, top: 0.2 },
+			normalizedBounds: { maxX: 0.8, maxY: 0.8, minX: 0.2, minY: 0.2 },
+			status: "projected",
+			viewportStatus: "fully_within_viewport"
+		};
+		expect(
+			realizationFramingDiagnostics({ projection: within, requestedMargin: 0.12 })
+		).toMatchObject([{ code: "subject_framing_within_margin", severity: "info" }]);
+		expect(
+			realizationFramingDiagnostics({ projection: within, requestedMargin: 0.25 })
+		).toMatchObject([{ code: "subject_margin_below_requested", severity: "warning" }]);
+		expect(
+			realizationFramingDiagnostics({
+				projection: { ...within, viewportStatus: "partially_outside_viewport" },
+				requestedMargin: 0.12
+			})
+		).toMatchObject([{ code: "subject_partially_outside_viewport", severity: "warning" }]);
+		expect(
+			realizationFramingDiagnostics({
+				projection: { ...within, viewportStatus: "fully_outside_viewport" },
+				requestedMargin: 0.12
+			})
+		).toMatchObject([{ code: "subject_fully_outside_viewport", severity: "warning" }]);
+		expect(
+			realizationFramingDiagnostics({
+				projection: {
+					code: "behind_camera",
+					message: "Behind the transient capture camera.",
+					status: "unprojectable"
+				},
+				requestedMargin: 0.12
+			})
+		).toMatchObject([{ code: "subject_behind_camera", severity: "warning" }]);
+		expect(
+			realizationFramingDiagnostics({
+				projection: {
+					code: "near_plane_crossing",
+					message: "Crosses the transient capture near plane.",
+					status: "unprojectable"
+				},
+				requestedMargin: 0.12
+			})
+		).toMatchObject([{ code: "subject_near_plane_crossing", severity: "warning" }]);
 	});
 });

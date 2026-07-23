@@ -750,6 +750,256 @@ it.effect(
 		)
 );
 
+const durableAuthoringSession = {
+	candidates: [
+		{
+			approvedPose: {
+				aspectRatio: "16:9" as const,
+				fieldOfViewDegrees: 60,
+				location: { x: 1, y: 2, z: 3 },
+				projection: "perspective" as const,
+				rotation: { pitch: -10, roll: 0, yaw: 90 }
+			},
+			diagnostics: [],
+			displayName: "Facade front",
+			id: "facade_front",
+			recipe: {
+				kind: "preset" as const,
+				margin: 0.12,
+				preset: "facade_front" as const,
+				subjectBounds: {
+					center: { x: 0, y: 0, z: 0 },
+					extent: { x: 10, y: 10, z: 10 },
+					rotation: { pitch: 0, roll: 0, yaw: 0 }
+				},
+				version: 1 as const
+			}
+		}
+	],
+	contract: {
+		name: "ue-shed-review-authoring-session" as const,
+		version: { major: 1 as const, minor: 0 as const }
+	},
+	createdAt: "2026-07-20T00:00:00.000Z",
+	diagnostics: [],
+	discardedCandidateIds: ["context_three_quarter"],
+	draftPose: {
+		aspectRatio: "16:9" as const,
+		fieldOfViewDegrees: 58,
+		location: { x: 1, y: 2, z: 28 },
+		projection: "perspective" as const,
+		rotation: { pitch: -10, roll: 0, yaw: 90 }
+	},
+	id: "session-recover",
+	lifecycle: "active" as const,
+	manualReason: "Lift above foreground",
+	realizations: [],
+	reviewSet: {
+		id: fixtureReviewSet.id,
+		mapPath: fixtureReviewSet.project.mapPath,
+		path: reviewSetPath
+	},
+	selectedCandidateId: "facade_front",
+	subject: {
+		actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
+		bounds: {
+			center: { x: 0, y: 0, z: 0 },
+			extent: { x: 10, y: 10, z: 10 },
+			rotation: { pitch: 0, roll: 0, yaw: 0 }
+		},
+		displayName: "Fixture Subject",
+		mapPath: "/Game/Maps/Fixture"
+	},
+	updatedAt: "2026-07-20T00:00:01.000Z",
+	viewId: "view-1"
+};
+
+it.effect("resumes the latest persisted authoring session after a fresh service start", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const result = yield* service.authoringResume(undefined);
+		expect(result).toMatchObject({
+			sessionId: "session-recover",
+			status: "ready",
+			viewId: "view-1"
+		});
+		if (result.status !== "ready") return;
+		expect(result.session).toMatchObject({
+			discardedCandidateIds: ["context_three_quarter"],
+			lifecycle: "active",
+			manualReason: "Lift above foreground",
+			selectedCandidateId: "facade_front"
+		});
+		expect(result.session?.draftPose).toMatchObject({ location: { z: 28 } });
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeCameraFeedTestLayer(),
+						makeWorkbenchWindowTestLayer(),
+						makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+						makeWorkbenchConfigurationLayer(configuredReview),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.die("not used"),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.succeed(fixtureReviewSet),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: () => Effect.die("not used"),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer(dyingAuthoring),
+						makeReviewAuthoringSessionsTestLayer({
+							...dyingAuthoringSessions,
+							latest: () => Effect.succeed(durableAuthoringSession as never),
+							resume: () =>
+								Effect.succeed({
+									session: durableAuthoringSession as never,
+									status: "resumable" as const
+								})
+						}),
+						Layer.succeed(
+							Observatory,
+							Observatory.of({
+								focus: () => Effect.die("not used"),
+								observe: () => Stream.die("not used"),
+								setObservationCadence: () => Effect.die("not used"),
+								snapshot: () => Effect.die("not used")
+							})
+						),
+						makeEditorPlaySessionTestLayer({
+							execute: () => Effect.die("not used"),
+							pause: () => Effect.die("not used"),
+							resume: () => Effect.die("not used"),
+							start: () => Effect.die("not used"),
+							status: () =>
+								Effect.succeed({
+									contract: {
+										name: "unreal-editor-play-session",
+										version: { major: 1, minor: 0 }
+									},
+									state: { status: "stopped" }
+								}),
+							stop: () => Effect.die("not used")
+						})
+					)
+				)
+			)
+		)
+	)
+);
+
+const staleRecoveryGuidance =
+	"The stored draft is retained. Reframe the subject explicitly or discard the stale session.";
+
+it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const resumed = yield* service.authoringResume({ sessionId: "session-recover" });
+		expect(resumed).toMatchObject({
+			recovery: staleRecoveryGuidance,
+			sessionId: "session-recover",
+			status: "ready"
+		});
+		if (resumed.status !== "ready") return;
+		expect(resumed.session?.lifecycle).toBe("stale");
+		const approval = yield* service.approveAuthoring({ sessionId: "session-recover" });
+		expect(approval).toMatchObject({
+			error: {
+				message: "The authoring session became stale before approval.",
+				recovery: staleRecoveryGuidance
+			},
+			status: "failed"
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeCameraFeedTestLayer(),
+						makeWorkbenchWindowTestLayer(),
+						makeRemoteControlClientTestLayer(() => Effect.die("not used")),
+						makeWorkbenchConfigurationLayer(configuredReview),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.die("not used"),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.succeed(fixtureReviewSet),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: () => Effect.die("not used"),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer(dyingAuthoring),
+						makeReviewAuthoringSessionsTestLayer({
+							...dyingAuthoringSessions,
+							approve: () =>
+								Effect.succeed({
+									reasons: ["bounds_changed" as const],
+									recovery: staleRecoveryGuidance,
+									session: {
+										...durableAuthoringSession,
+										lifecycle: "stale" as const
+									} as never,
+									status: "stale" as const
+								}),
+							load: () =>
+								Effect.succeed({
+									...durableAuthoringSession,
+									lifecycle: "stale" as const
+								} as never),
+							resume: () =>
+								Effect.succeed({
+									reasons: ["bounds_changed" as const],
+									recovery: staleRecoveryGuidance,
+									session: {
+										...durableAuthoringSession,
+										lifecycle: "stale" as const
+									} as never,
+									status: "stale" as const
+								})
+						}),
+						Layer.succeed(
+							Observatory,
+							Observatory.of({
+								focus: () => Effect.die("not used"),
+								observe: () => Stream.die("not used"),
+								setObservationCadence: () => Effect.die("not used"),
+								snapshot: () => Effect.die("not used")
+							})
+						),
+						makeEditorPlaySessionTestLayer({
+							execute: () => Effect.die("not used"),
+							pause: () => Effect.die("not used"),
+							resume: () => Effect.die("not used"),
+							start: () => Effect.die("not used"),
+							status: () =>
+								Effect.succeed({
+									contract: {
+										name: "unreal-editor-play-session",
+										version: { major: 1, minor: 0 }
+									},
+									state: { status: "stopped" }
+								}),
+							stop: () => Effect.die("not used")
+						})
+					)
+				)
+			)
+		)
+	)
+);
+
 function observationActor(
 	id: string,
 	x: number,

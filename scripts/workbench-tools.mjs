@@ -55,6 +55,9 @@ export async function resolveRemoteControlEndpoint(environment = process.env, op
 }
 
 export async function createWorkbenchEnvironment(environment = process.env, options = {}) {
+	const reviewSet =
+		environment.UE_SHED_REVIEW_SET ??
+		join(fixtureRoot, ".ue-shed", "review", "sets", "fixture-structure.json");
 	return {
 		...environment,
 		UE_SHED_PROJECT_NAME: environment.UE_SHED_PROJECT_NAME ?? "UEShedFixture",
@@ -62,6 +65,7 @@ export async function createWorkbenchEnvironment(environment = process.env, opti
 		UE_SHED_AUTHORING_ASSET: environment.UE_SHED_AUTHORING_ASSET ?? authoringAsset,
 		UE_SHED_REMOTE_CONTROL_ENDPOINT: await resolveRemoteControlEndpoint(environment, options),
 		UE_SHED_REPOSITORY_ROOT: repositoryRoot,
+		UE_SHED_REVIEW_SET: reviewSet,
 		UE_SHED_TEXTURE_AUDIT_RULES: environment.UE_SHED_TEXTURE_AUDIT_RULES ?? textureRules,
 		UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable(environment)
 	};

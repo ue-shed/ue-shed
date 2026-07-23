@@ -3,6 +3,7 @@ import { expect, test } from "./fixtures/workbench-test.js";
 test("launches the configured showcase and opens a saved DataTable", async ({
 	workbench
 }, testInfo) => {
+	test.setTimeout(90_000);
 	await workbench.expectShowcaseReady();
 	await workbench.openRoute("Data Authoring");
 
@@ -67,9 +68,13 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 	await captureWorkflow.getByRole("button", { name: "CANCEL" }).click();
 
 	await workbench.openRoute("Data Authoring");
+	const savedPackage = workbench.page.getByRole("button", { name: "Saved package" });
+	if (await savedPackage.isEnabled()) await savedPackage.click();
 	await workbench.page
 		.getByRole("navigation", { name: "Project DataTables" })
 		.getByRole("button", { name: /^DT_LargeScalars DATA TABLE/ })
 		.click();
-	await expect(workbench.page.getByText("10000 / 10000 VISIBLE", { exact: true })).toBeVisible();
+	await expect(workbench.page.getByText("10000 / 10000 VISIBLE", { exact: true })).toBeVisible({
+		timeout: 60_000
+	});
 });

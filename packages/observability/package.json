@@ -1,13 +1,42 @@
 {
 	"name": "@ue-shed/observability",
-	"version": "0.0.0",
-	"private": true,
+	"version": "0.1.0-rc.3",
+	"description": "Headless OpenTelemetry composition, bounded metrics, and runtime health for UE Shed hosts.",
+	"homepage": "https://github.com/ue-shed/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/ue-shed/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ue-shed/ue-shed.git",
+		"directory": "packages/observability"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"type": "module",
+	"sideEffects": false,
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts",
-		"./health": "./src/health.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./health": {
+			"types": "./dist/health.d.ts",
+			"import": "./dist/health.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
 	},
 	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
@@ -25,5 +54,8 @@
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:"
+	},
+	"engines": {
+		"node": ">=22.14.0"
 	}
 }

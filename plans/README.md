@@ -58,12 +58,16 @@ table and the archive index.
 - Plans 027–029 are downstream coordination plans. The downstream host consumes released UE Shed
   packages/artifacts; UE Shed never imports its Electron UX, studio policy, or custom-UI contracts.
 - Plan 028 waits for released Map Review headless packages and Core/Cameras install evidence. Plan
-  030 prepared that public boundary at `0.1.0-rc.2` without publishing or claiming Plan 028 DONE,
-  and is archived under
+  030 prepared that public boundary at `0.1.0-rc.2` without publishing or claiming Plan 028 DONE;
+  Plan 031 advances the complete public candidate tuple to `0.1.0-rc.3`. Plan 030 is archived under
   [`archive/030-map-review-public-boundary.md`](archive/030-map-review-public-boundary.md).
-  Observatory/observability remain deferred because USOT v1 already ships in protocol and the first
-  vertical does not require those packages. Plan 029 is a readiness gate, not permission to migrate
+  Observatory/observability are separately publishable for headless live-world tooling; the first
+  Map Review vertical still does not require those packages. Plan 029 is a readiness gate, not permission to migrate
   an unfinished authoring rewrite; Plan 007 remains the generic authoring completion gate.
+- Plan 031 completed and archived under
+  [`archive/031-publish-observatory-boundary.md`](archive/031-publish-observatory-boundary.md)
+  after the `0.1.0-rc.3` eight-package candidate passed the clean offline consumer and portable
+  repository gate.
 
 ## Findings considered and rejected
 

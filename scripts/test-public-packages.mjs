@@ -70,9 +70,12 @@ try {
 			"import { Effect, Schema } from 'effect';",
 			"import * as protocol from '@ue-shed/protocol';",
 			"import * as assets from '@ue-shed/unreal-assets';",
+			"import * as observability from '@ue-shed/observability';",
 			"import * as connection from '@ue-shed/unreal-connection';",
 			"import * as cameras from '@ue-shed/cameras';",
 			"import * as reviewContracts from '@ue-shed/cameras/review-contracts';",
+			"import * as observatory from '@ue-shed/observatory';",
+			"import * as presentation from '@ue-shed/observatory/presentation';",
 			"if (protocol.CURRENT_PROTOCOL_VERSION.major !== 0) throw new Error('bad protocol');",
 			"if (typeof assets.decodeSavedAssetInspection !== 'function') {",
 			"  throw new Error('bad assets export');",
@@ -88,6 +91,12 @@ try {
 			"}",
 			"if (reviewContracts.MapReviewResult === undefined) {",
 			"  throw new Error('bad review-contracts MapReviewResult');",
+			"}",
+			"if (typeof observability.aggregateHealth !== 'function') {",
+			"  throw new Error('bad observability aggregateHealth');",
+			"}",
+			"if (typeof observatory.ActorStreamDecoder !== 'function' || typeof presentation.applyTransformBatch !== 'function') {",
+			"  throw new Error('bad observatory exports');",
 			"}",
 			"const reviewSet = await Effect.runPromise(cameras.decodeReviewSet({",
 			"  captureProfiles: [{",
@@ -107,6 +116,16 @@ try {
 			"await Effect.runPromise(",
 			"  Schema.decodeUnknownEffect(reviewContracts.MapReviewResult)({ status: 'not_configured' })",
 			");",
+			"const health = observability.aggregateHealth(observability.defaultHealthInput);",
+			"if (health.status !== 'healthy') throw new Error('health aggregation failed');",
+			"const bytes = observatory.encodeActorStreamPacket({",
+			"  catalogRevision: 1n,",
+			"  records: [{ flags: 0, location: { x: 1, y: 2, z: 3 }, rotation: { pitch: 0, roll: 0, yaw: 0 }, streamIndex: 0 }],",
+			"  sequence: 1n,",
+			"  sessionId: '00112233445566778899aabbccddeeff'",
+			"});",
+			"const packets = new observatory.ActorStreamDecoder().push(bytes).packets;",
+			"if (packets.length !== 1 || packets[0].records.length !== 1) throw new Error('observatory decode failed');",
 			"console.log('map-review-offline-ok');"
 		].join("\n")}\n`,
 		"utf8"
@@ -157,9 +176,6 @@ try {
 		if (!lockfile.includes(entry.filename)) {
 			throw new Error(`Consumer lockfile does not resolve ${entry.name} from its tarball.`);
 		}
-	}
-	if (lockfile.includes("@ue-shed/observatory") || lockfile.includes("@ue-shed/observability")) {
-		throw new Error("Offline consumer lockfile must not resolve observatory or observability.");
 	}
 	console.log(
 		`Public package conformance passed: ${packed.length} tarballs, clean offline consumer, ${version}.`

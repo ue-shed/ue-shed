@@ -5,7 +5,7 @@ discovers a compatible `uasset` executable, validates its versioned CLI JSON out
 normalized package evidence with explicit partial and unsupported results.
 
 ```sh
-npm install @ue-shed/unreal-assets@0.1.0-rc.2 @ue-shed/uasset@0.1.0-rc.2
+npm install @ue-shed/unreal-assets@0.1.0-rc.3 @ue-shed/uasset@0.1.0-rc.3
 ```
 
 Node.js 22.14 or newer is required. The package exposes one stable entry point:

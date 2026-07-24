@@ -44,14 +44,13 @@ Use an exact prerelease version and, when available, the exact successful Truste
 6. Verify GitHub's provenance attestation with `gh attestation verify` before promoting an artifact.
 
 The candidate always contains immutable source and checksummed plugin-source artifacts. Its npm allowlist is
-exactly `@ue-shed/protocol`, `@ue-shed/unreal-connection`, `@ue-shed/cameras`,
-`@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and `@ue-shed/uasset`; candidate construction
-fails if another workspace becomes public accidentally. `@ue-shed/observatory` and
-`@ue-shed/observability` stay private for this slice: Plan 019's USOT v1 wire contract already ships
-in `@ue-shed/protocol`, `@ue-shed/cameras` does not depend on those packages, and Plan 028's first
-vertical installs only Core/Cameras. The Windows candidate job builds the native parser once,
-validates the packed manifests and checksums, installs the tarballs into a clean offline consumer,
-and dry-runs all six publications.
+exactly `@ue-shed/protocol`, `@ue-shed/observability`, `@ue-shed/unreal-connection`,
+`@ue-shed/cameras`, `@ue-shed/observatory`, `@ue-shed/uasset-win32-x64`,
+`@ue-shed/unreal-assets`, and `@ue-shed/uasset`; candidate construction fails if another workspace
+becomes public accidentally. Observatory is a headless Node host surface: it pins Observability and
+Unreal Connection, and its USOT v1 wire contract remains in Protocol. The Windows candidate job
+builds the native parser once, validates the packed manifests and checksums, installs the tarballs
+into a clean offline consumer, and dry-runs all eight publications.
 
 For a local artifact-only dry run:
 
@@ -69,7 +68,7 @@ To build only the portable plugin bundle locally, use an empty output directory 
 generated manifest before extraction:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.2 --output out/plugins
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.3 --output out/plugins
 pnpm ue-shed plugins verify out/plugins/plugins.manifest.json
 pnpm ue-shed plugins list out/plugins/plugins.manifest.json
 pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.uproject `
@@ -83,7 +82,7 @@ Authoring:
 ```powershell
 pnpm release:plugins:map-review
 # or:
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.2 `
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.3 `
   --output out/plugins-map-review --plugins UEShedCore,UEShedCameras
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 pnpm ue-shed plugins install --project <project.uproject> `
@@ -93,27 +92,32 @@ pnpm ue-shed plugins install --project <project.uproject> `
 Installation is project-scoped under `Plugins/UEShed`. It refuses checksum failures, unsupported
 graphs, modified installer-owned files, and unrelated existing content at that destination.
 
-The initial `0.1.0-rc.1` publication bootstrapped the parser packages before npm trusted publishers
-could be configured. Later Map Review candidates add `@ue-shed/unreal-connection` and
-`@ue-shed/cameras` to the same exact-version, protected OIDC path. From a clean reviewed checkout on
-Windows, run `pnpm check`, then `pnpm release:pack`. Authenticate with the public npm registry and
-publish the immutable tarballs in this order, always retaining the `next` dist-tag:
+For a headless Observatory host such as Electroswag, select only `UEShedObservatory` from the exact
+same release manifest:
 
 ```powershell
-npm whoami --registry https://registry.npmjs.org
-npm publish out/releases/0.1.0-rc.2/ue-shed-protocol-0.1.0-rc.2.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.2/ue-shed-unreal-connection-0.1.0-rc.2.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.2/ue-shed-cameras-0.1.0-rc.2.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.2/ue-shed-uasset-win32-x64-0.1.0-rc.2.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.2/ue-shed-unreal-assets-0.1.0-rc.2.tgz --access public --tag next
-npm publish out/releases/0.1.0-rc.2/ue-shed-uasset-0.1.0-rc.2.tgz --access public --tag next
+pnpm release:plugins:observatory
+pnpm ue-shed plugins verify out/releases/0.1.0-rc.3/plugins-observatory/plugins.manifest.json
+pnpm ue-shed plugins install --project <project.uproject> `
+  --manifest out/releases/0.1.0-rc.3/plugins-observatory/plugins.manifest.json
 ```
 
-If a publication fails after an earlier package succeeds, do not unpublish or rebuild that version;
-fix the account or network issue and publish only the remaining byte-identical tarballs. After all
-six exist, verify their exact versions and `next` tags, then repeat the consumer test against the
-registry. Do not treat local packing as publication: protected OIDC publication still requires the
-exact candidate tag, the protected `npm-release` environment, and human approval.
+The initial `0.1.0-rc.1` publication bootstrapped the parser packages before npm trusted publishers
+could be configured. Later Map Review candidates add `@ue-shed/unreal-connection` and
+`@ue-shed/cameras`, `@ue-shed/observability`, and `@ue-shed/observatory` to the same exact-version,
+protected OIDC path. From a clean reviewed checkout on Windows, run `pnpm check`, then
+`pnpm release:pack` to inspect the local artifacts. Do not publish those tarballs with a personal
+token: protected OIDC publication is the only supported path. Confirm the local manifest and checksums:
+
+```powershell
+Get-Content out/releases/0.1.0-rc.3/npm/packages-manifest.json
+Get-Content out/releases/0.1.0-rc.3/npm/SHA256SUMS
+```
+
+Do not treat local packing as publication: protected OIDC publication requires the exact candidate
+tag, the protected `npm-release` environment, and human approval. If publication fails after an
+earlier package succeeds, do not unpublish or rebuild that version; rerun the protected publish job
+only after resolving the account or registry issue.
 
 ## Protected npm publication
 

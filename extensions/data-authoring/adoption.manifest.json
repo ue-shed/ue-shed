@@ -42,6 +42,7 @@
 			"packages/authoring-sdk/src/index.ts",
 			"packages/observability/package.json",
 			"packages/observability/tsconfig.json",
+			"packages/observability/tsconfig.build.json",
 			"packages/observability/src/health.ts",
 			"packages/observability/src/index.ts",
 			"packages/unreal-assets/package.json",

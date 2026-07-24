@@ -404,9 +404,14 @@ version. Install matching Unreal plugins with the Core+Cameras graph only
 (`UEShedCore,UEShedCameras`); Workbench and `extensions/camera-review` are optional clients, not
 release dependencies.
 
-`@ue-shed/observatory` and `@ue-shed/observability` remain deferred from that public allowlist. Plan
-019's USOT v1 transform contract already ships under `packages/protocol/contracts/observatory/v1`,
-and the first Map Review vertical does not require the Observatory host package.
+`@ue-shed/observatory` and `@ue-shed/observability` remain outside the first Map Review vertical.
+Plan 019's USOT v1 transform contract ships under `packages/protocol/contracts/observatory/v1`, and
+the first Map Review vertical does not require the Observatory host package.
+
+The headless Observatory host surface is separately publishable for downstream live-world tools. It
+uses the exact `@ue-shed/observatory`, `@ue-shed/observability`,
+`@ue-shed/unreal-connection`, and `@ue-shed/protocol` candidate tuple with the matching
+`UEShedObservatory` plugin; it does not import Map Review UI.
 
 If live observation and durable review make the package incoherent during implementation, split
 internal modules first. Do not create another public package until import direction and shared model

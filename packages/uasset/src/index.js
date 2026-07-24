@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
-const VERSION = "0.1.0-rc.2";
+const VERSION = "0.1.0-rc.3";
 const WINDOWS_X64_PACKAGE = "@ue-shed/uasset-win32-x64";
 
 /**

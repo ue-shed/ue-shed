@@ -6,7 +6,7 @@ Control adapters, portable Review Set schemas, filesystem repository, and Captur
 Electron is only one consumer; Workbench UI is never required.
 
 ```sh
-npm install @ue-shed/cameras@0.1.0-rc.2 @ue-shed/unreal-connection@0.1.0-rc.2 @ue-shed/protocol@0.1.0-rc.2
+npm install @ue-shed/cameras@0.1.0-rc.3 @ue-shed/unreal-connection@0.1.0-rc.3 @ue-shed/protocol@0.1.0-rc.3
 ```
 
 Node.js 22.14 or newer is required. Stable entry points:

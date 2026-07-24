@@ -4,6 +4,13 @@ Actor discovery, stable identity, bounded snapshots and deltas, retained spatial
 focus operations. The first implemented slice powers Map Review's Live World Scout through validated
 Remote Control calls and a local binary transform stream.
 
+```sh
+npm install @ue-shed/observatory@0.1.0-rc.3 @ue-shed/unreal-connection@0.1.0-rc.3
+```
+
+Install the matching `UEShedObservatory` plugin from the same release manifest. The package is
+headless: a host owns its own IPC/UI adaptation and no Workbench or extension UI is required.
+
 ## Live actor observation
 
 `Observatory.observe(endpoint, options)` owns the full demand-driven observation lifecycle and

@@ -98,8 +98,10 @@ jobs:
               run: |
                   packages=(
                     "release/npm/ue-shed-protocol-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-observability-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-unreal-connection-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-cameras-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-observatory-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
@@ -178,8 +180,10 @@ jobs:
               run: |
                   packages=(
                     "candidate/npm/ue-shed-protocol-$CANDIDATE_VERSION.tgz"
+                    "candidate/npm/ue-shed-observability-$CANDIDATE_VERSION.tgz"
                     "candidate/npm/ue-shed-unreal-connection-$CANDIDATE_VERSION.tgz"
                     "candidate/npm/ue-shed-cameras-$CANDIDATE_VERSION.tgz"
+                    "candidate/npm/ue-shed-observatory-$CANDIDATE_VERSION.tgz"
                     "candidate/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
                     "candidate/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
                     "candidate/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"

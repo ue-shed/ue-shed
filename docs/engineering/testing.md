@@ -65,8 +65,10 @@ Workbench specs live under `apps/workbench/e2e`. Add route-level actions and acc
 the shared `WorkbenchPage`, and use the shared fixture for app launch, teardown, screenshots, and
 traces. Failure artifacts are written under `test-results/workbench`.
 
-Installing dependencies also installs the repository-managed pre-commit hook. The hook runs the
-same `pnpm check` gate before Git creates a commit.
+Installing dependencies also installs the repository-managed pre-commit hook. It runs
+`pnpm check:precommit` (formatting, linting, type checks, architecture, and contract checks) before
+Git creates a commit. The longer `pnpm check` release gate remains required before handoff and in
+portable CI.
 
 ### Unreal gate reporting
 

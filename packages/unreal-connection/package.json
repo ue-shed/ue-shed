@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/unreal-connection",
-	"version": "0.1.0-rc.2",
+	"version": "0.1.0-rc.3",
 	"description": "Typed Remote Control and companion transport adapters for UE Shed hosts.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -36,7 +36,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/protocol": "workspace:0.1.0-rc.2",
+		"@ue-shed/protocol": "workspace:0.1.0-rc.3",
 		"effect": "catalog:",
 		"unreal-rc": "0.5.3"
 	},

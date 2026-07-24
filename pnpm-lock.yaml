@@ -445,10 +445,10 @@ importers:
   packages/cameras:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0-rc.2
+        specifier: workspace:0.1.0-rc.3
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.1.0-rc.2
+        specifier: workspace:0.1.0-rc.3
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -550,10 +550,10 @@ importers:
   packages/observatory:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:*
+        specifier: workspace:0.1.0-rc.3
         version: link:../observability
       '@ue-shed/unreal-connection':
-        specifier: workspace:*
+        specifier: workspace:0.1.0-rc.3
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -578,7 +578,7 @@ importers:
   packages/uasset:
     optionalDependencies:
       '@ue-shed/uasset-win32-x64':
-        specifier: workspace:0.1.0-rc.2
+        specifier: workspace:0.1.0-rc.3
         version: link:../uasset-win32-x64
 
   packages/uasset-win32-x64: {}
@@ -607,7 +607,7 @@ importers:
   packages/unreal-assets:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0-rc.2
+        specifier: workspace:0.1.0-rc.3
         version: link:../protocol
       effect:
         specifier: 'catalog:'
@@ -620,7 +620,7 @@ importers:
   packages/unreal-connection:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0-rc.2
+        specifier: workspace:0.1.0-rc.3
         version: link:../protocol
       effect:
         specifier: 'catalog:'

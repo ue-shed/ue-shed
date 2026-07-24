@@ -3,4 +3,4 @@ min_version: 2.1.10
 pre-commit:
     commands:
         check:
-            run: pnpm check
+            run: pnpm run check:precommit

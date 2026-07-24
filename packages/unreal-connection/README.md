@@ -5,7 +5,7 @@ bounded data-plane helpers for headless UE Shed hosts. It depends on protocol co
 UIs or Workbench.
 
 ```sh
-npm install @ue-shed/unreal-connection@0.1.0-rc.2 @ue-shed/protocol@0.1.0-rc.2 effect@4.0.0-beta.98
+npm install @ue-shed/unreal-connection@0.1.0-rc.3 @ue-shed/protocol@0.1.0-rc.3 effect@4.0.0-beta.98
 ```
 
 Node.js 22.14 or newer is required. The package exposes one stable entry point:

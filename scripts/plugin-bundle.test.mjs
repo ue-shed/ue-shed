@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { buildPluginBundle, MAP_REVIEW_PLUGIN_IDS } from "./plugin-bundle.mjs";
+import {
+	buildPluginBundle,
+	MAP_REVIEW_PLUGIN_IDS,
+	OBSERVATORY_PLUGIN_IDS
+} from "./plugin-bundle.mjs";
 
 async function writeFixtureFile(root, relativePath, contents) {
 	const path = join(root, relativePath);
@@ -159,6 +163,27 @@ test("rejects Cameras without Core in a Map Review selection", async () => {
 			}),
 			/missing plugin dependencies: UEShedCore/
 		);
+	} finally {
+		await rm(output, { recursive: true, force: true });
+	}
+});
+
+test("selects the headless Observatory plugin without UI packages", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-observatory-plugin-"));
+	try {
+		const result = await buildPluginBundle({
+			output,
+			releaseVersion: "0.1.0-rc.2",
+			requestedPlugins: [...OBSERVATORY_PLUGIN_IDS],
+			unreal: { minimum: "5.7", maximum: "5.7" }
+		});
+		assert.deepEqual(
+			result.manifest.plugins.map(({ id }) => id),
+			["UEShedObservatory"]
+		);
+		const entries = archiveEntries(result.archivePath);
+		assert.ok(entries.some((entry) => entry.includes("UEShedObservatory/")));
+		assert.ok(!entries.some((entry) => /workbench|camera-review/iu.test(entry)));
 	} finally {
 		await rm(output, { recursive: true, force: true });
 	}

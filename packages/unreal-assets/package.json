@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/unreal-assets",
-	"version": "0.1.0-rc.2",
+	"version": "0.1.0-rc.3",
 	"description": "Validated, read-only inspection of saved Unreal Engine asset packages.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -36,7 +36,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/protocol": "workspace:0.1.0-rc.2",
+		"@ue-shed/protocol": "workspace:0.1.0-rc.3",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/uasset",
-	"version": "0.1.0-rc.2",
+	"version": "0.1.0-rc.3",
 	"description": "Platform-selecting launcher for the UE Shed saved-asset parser",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -37,7 +37,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"optionalDependencies": {
-		"@ue-shed/uasset-win32-x64": "workspace:0.1.0-rc.2"
+		"@ue-shed/uasset-win32-x64": "workspace:0.1.0-rc.3"
 	},
 	"engines": {
 		"node": ">=22.14.0"

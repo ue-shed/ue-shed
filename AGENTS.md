@@ -19,11 +19,10 @@ commit, while it fails. Run it after substantive edits and again immediately bef
 work. Fix failures and rerun until it passes, or clearly report the remaining blocker instead of
 handing back an unverified change.
 
-Commits are blocked by Lefthook `pre-commit`, which runs `pnpm run check:precommit`
-(`format:check`, `lint`, `typecheck`, `test:architecture`, `contract:check`). If that subset
-fails, the commit will be rejected—do not leave formatting, lint, or type errors for the user
-to discover at commit time. Fix with `pnpm exec oxfmt .` when `format:check` fails; then rerun
-the failing command and `pnpm check`.
+`pnpm run check:precommit` runs the fast pre-commit subset (`format:check`, `lint`,
+`typecheck`, `test:architecture`, `contract:check`). Do not leave formatting, lint, or type
+errors for the user to discover. Fix with `pnpm exec oxfmt .` when `format:check` fails; then
+rerun the failing command and `pnpm check`.
 
 Full `pnpm check` also covers `uasset:check`, license/architecture/release gates, and `test`.
 Individual commands include `typecheck`, `lint`, `format:check`, and `test`.

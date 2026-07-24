@@ -25,4 +25,3 @@ catalog:
 onlyBuiltDependencies:
     - electron
     - esbuild
-    - lefthook

@@ -95,6 +95,19 @@ export type SavedPropertyValue =
 	  }
 	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
 	| { readonly value_kind: "int_point"; readonly x: number; readonly y: number }
+	| {
+			readonly value_kind: "rotator";
+			readonly pitch: number;
+			readonly yaw: number;
+			readonly roll: number;
+	  }
+	| {
+			readonly value_kind: "color" | "linear_color";
+			readonly r: number;
+			readonly g: number;
+			readonly b: number;
+			readonly a: number;
+	  }
 	| { readonly value_kind: "array" | "set"; readonly values: readonly SavedPropertyValue[] }
 	| {
 			readonly value_kind: "map";
@@ -159,6 +172,19 @@ const SavedPropertyValueUnion = Schema.Union([
 		value_kind: Schema.Literal("int_point"),
 		x: Schema.Number,
 		y: Schema.Number
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literal("rotator"),
+		pitch: Schema.Number,
+		yaw: Schema.Number,
+		roll: Schema.Number
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literals(["color", "linear_color"]),
+		r: Schema.Number,
+		g: Schema.Number,
+		b: Schema.Number,
+		a: Schema.Number
 	}),
 	Schema.Struct({
 		value_kind: Schema.Literals(["array", "set"]),

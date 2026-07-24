@@ -3,9 +3,9 @@
 use crate::archive::Reader;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
-    DataTableRowHandleValue, IntPointValue, MapEntry, PropertyError, PropertyRecord,
-    PropertyStream, PropertyTagFlags, PropertyTypeName, PropertyValue, RawReason, TextHistory,
-    TextValue, VectorValue, read_tagged_property_stream,
+    ColorValue, DataTableRowHandleValue, IntPointValue, LinearColorValue, MapEntry, PropertyError,
+    PropertyRecord, PropertyStream, PropertyTagFlags, PropertyTypeName, PropertyValue, RawReason,
+    RotatorValue, TextHistory, TextValue, VectorValue, read_tagged_property_stream,
 };
 
 /// UE `INDEX_NONE` marks a full container replace in map property payloads.
@@ -305,6 +305,22 @@ fn decode_binary_or_native_value(
             }
             Some("IntPoint") => {
                 return Ok(Some(PropertyValue::IntPoint(decode_int_point_value(
+                    payload, path,
+                )?)));
+            }
+            Some("Rotator") => {
+                return Ok(Some(PropertyValue::Rotator(decode_rotator_value(
+                    payload, path,
+                )?)));
+            }
+            Some("Guid") => {
+                return Ok(Some(PropertyValue::Guid(decode_guid_value(payload, path)?)));
+            }
+            Some("Color") => {
+                return Ok(Some(PropertyValue::Color(decode_color_value(payload, path)?)));
+            }
+            Some("LinearColor") => {
+                return Ok(Some(PropertyValue::LinearColor(decode_linear_color_value(
                     payload, path,
                 )?)));
             }
@@ -820,6 +836,83 @@ fn decode_vector_value(payload: &mut Reader<'_>, path: &str) -> Result<VectorVal
     }
 }
 
+fn decode_rotator_value(
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<RotatorValue, PropertyError> {
+    match payload.remaining() {
+        12 => Ok(RotatorValue {
+            pitch: f64::from(payload.read_f32(&format!("{path}.Pitch"))?),
+            yaw: f64::from(payload.read_f32(&format!("{path}.Yaw"))?),
+            roll: f64::from(payload.read_f32(&format!("{path}.Roll"))?),
+        }),
+        24 => Ok(RotatorValue {
+            pitch: payload.read_f64(&format!("{path}.Pitch"))?,
+            yaw: payload.read_f64(&format!("{path}.Yaw"))?,
+            roll: payload.read_f64(&format!("{path}.Roll"))?,
+        }),
+        remaining => Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!("unsupported FRotator payload size {remaining}"),
+        )),
+    }
+}
+
+fn decode_guid_value(
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<crate::archive::Guid, PropertyError> {
+    if payload.remaining() != 16 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!("unsupported FGuid payload size {}", payload.remaining()),
+        ));
+    }
+    payload.read_guid(path).map_err(PropertyError::from)
+}
+
+/// `FColor` serializes its channels in `B, G, R, A` byte order.
+fn decode_color_value(payload: &mut Reader<'_>, path: &str) -> Result<ColorValue, PropertyError> {
+    if payload.remaining() != 4 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!("unsupported FColor payload size {}", payload.remaining()),
+        ));
+    }
+    let b = payload.read_u8(&format!("{path}.B"))?;
+    let g = payload.read_u8(&format!("{path}.G"))?;
+    let r = payload.read_u8(&format!("{path}.R"))?;
+    let a = payload.read_u8(&format!("{path}.A"))?;
+    Ok(ColorValue { r, g, b, a })
+}
+
+/// `FLinearColor` serializes four `f32` channels in `R, G, B, A` order.
+fn decode_linear_color_value(
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<LinearColorValue, PropertyError> {
+    if payload.remaining() != 16 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!("unsupported FLinearColor payload size {}", payload.remaining()),
+        ));
+    }
+    Ok(LinearColorValue {
+        r: payload.read_f32(&format!("{path}.R"))?,
+        g: payload.read_f32(&format!("{path}.G"))?,
+        b: payload.read_f32(&format!("{path}.B"))?,
+        a: payload.read_f32(&format!("{path}.A"))?,
+    })
+}
+
 fn resolve_struct_type_name(package: &Package, type_tree: &PropertyTypeName) -> Option<String> {
     package.resolve_name(type_tree.parameters.first()?.name)
 }
@@ -841,12 +934,12 @@ fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, Proper
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive::{Reader, Span};
+    use crate::archive::{Guid, Reader, Span};
     use crate::package::test_package;
     use crate::property::{
-        PropertyError, PropertyErrorKind, PropertyRecord, PropertyStream, PropertyTagFlags,
-        PropertyTypeName, PropertyValue, RawReason, TextHistory, TextValue, VectorValue,
-        read_tagged_property_stream,
+        ColorValue, LinearColorValue, PropertyError, PropertyErrorKind, PropertyRecord,
+        PropertyStream, PropertyTagFlags, PropertyTypeName, PropertyValue, RawReason, RotatorValue,
+        TextHistory, TextValue, VectorValue, read_tagged_property_stream,
     };
     use crate::schema::{ClassSchema, SchemaProvider, StructSchema};
     use crate::test_support::{
@@ -1844,5 +1937,136 @@ mod tests {
             value,
             PropertyValue::IntPoint(IntPointValue { x: -12, y: 34 })
         );
+    }
+
+    #[test]
+    fn decodes_frotator_from_double_layout() {
+        let names = vec!["StructProperty".into(), "Rotator".into()];
+        let mut payload = Vec::new();
+        push_f64(&mut payload, 10.0);
+        push_f64(&mut payload, 20.0);
+        push_f64(&mut payload, 30.0);
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+        assert_eq!(
+            value,
+            PropertyValue::Rotator(RotatorValue {
+                pitch: 10.0,
+                yaw: 20.0,
+                roll: 30.0,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_fguid_from_native_layout() {
+        let names = vec!["StructProperty".into(), "Guid".into()];
+        let mut payload = Vec::new();
+        for component in [1_u32, 2, 3, 4] {
+            payload.extend_from_slice(&component.to_le_bytes());
+        }
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+        assert_eq!(
+            value,
+            PropertyValue::Guid(Guid {
+                a: 1,
+                b: 2,
+                c: 3,
+                d: 4,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_fcolor_from_bgra_byte_order() {
+        let names = vec!["StructProperty".into(), "Color".into()];
+        // Wire order is B, G, R, A.
+        let payload = [10_u8, 20, 30, 255];
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+        assert_eq!(
+            value,
+            PropertyValue::Color(ColorValue {
+                r: 30,
+                g: 20,
+                b: 10,
+                a: 255,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_flinearcolor_from_rgba_floats() {
+        let names = vec!["StructProperty".into(), "LinearColor".into()];
+        let mut payload = Vec::new();
+        push_f32(&mut payload, 0.25);
+        push_f32(&mut payload, 0.5);
+        push_f32(&mut payload, 0.75);
+        push_f32(&mut payload, 1.0);
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+        assert_eq!(
+            value,
+            PropertyValue::LinearColor(LinearColorValue {
+                r: 0.25,
+                g: 0.5,
+                b: 0.75,
+                a: 1.0,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_frotator_with_unexpected_payload_size() {
+        let names = vec!["StructProperty".into(), "Rotator".into()];
+        let error = decode_record_result(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &[0x00, 0x01, 0x02],
+        )
+        .expect_err("odd rotator size");
+        assert_eq!(error.kind(), PropertyErrorKind::MalformedData);
     }
 }

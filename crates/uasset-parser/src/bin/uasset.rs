@@ -1337,6 +1337,55 @@ impl AuthoringValueOutput {
                     },
                 ],
             },
+            PropertyValueOutput::Rotator { pitch, yaw, roll } => Self::Struct {
+                fields: vec![
+                    AuthoringFieldOutput {
+                        name: "Pitch".to_owned(),
+                        type_name: "DoubleProperty".to_owned(),
+                        value: Self::Double {
+                            value: AuthoringFloatOutput::from_f64(*pitch),
+                        },
+                    },
+                    AuthoringFieldOutput {
+                        name: "Yaw".to_owned(),
+                        type_name: "DoubleProperty".to_owned(),
+                        value: Self::Double {
+                            value: AuthoringFloatOutput::from_f64(*yaw),
+                        },
+                    },
+                    AuthoringFieldOutput {
+                        name: "Roll".to_owned(),
+                        type_name: "DoubleProperty".to_owned(),
+                        value: Self::Double {
+                            value: AuthoringFloatOutput::from_f64(*roll),
+                        },
+                    },
+                ],
+            },
+            PropertyValueOutput::Color { r, g, b, a } => Self::Struct {
+                fields: [("R", *r), ("G", *g), ("B", *b), ("A", *a)]
+                    .into_iter()
+                    .map(|(name, channel)| AuthoringFieldOutput {
+                        name: name.to_owned(),
+                        type_name: "IntProperty".to_owned(),
+                        value: Self::Int {
+                            value: i64::from(channel).to_string(),
+                        },
+                    })
+                    .collect(),
+            },
+            PropertyValueOutput::LinearColor { r, g, b, a } => Self::Struct {
+                fields: [("R", *r), ("G", *g), ("B", *b), ("A", *a)]
+                    .into_iter()
+                    .map(|(name, channel)| AuthoringFieldOutput {
+                        name: name.to_owned(),
+                        type_name: "FloatProperty".to_owned(),
+                        value: Self::Float {
+                            value: AuthoringFloatOutput::from_f64(f64::from(channel)),
+                        },
+                    })
+                    .collect(),
+            },
             PropertyValueOutput::DataTableRowHandle {
                 table_object_path,
                 row_name,
@@ -1869,77 +1918,14 @@ struct PropertyOutput {
 
 impl PropertyOutput {
     fn from_record(record: &PropertyRecord, package: &Package) -> Self {
-        let value = match &record.value {
-            PropertyValue::Bool(value) => PropertyValueOutput::Bool { value: *value },
-            PropertyValue::Int(value) => PropertyValueOutput::Int { value: *value },
-            PropertyValue::UInt(value) => PropertyValueOutput::Uint { value: *value },
-            PropertyValue::Float(value) => PropertyValueOutput::Float { value: *value },
-            PropertyValue::Double(value) => PropertyValueOutput::Double { value: *value },
-            PropertyValue::Name(name) => PropertyValueOutput::Name {
-                value: resolve_name_or_placeholder(package, *name),
-            },
-            PropertyValue::Enum(name) => PropertyValueOutput::Enum {
-                value: resolve_name_or_placeholder(package, *name),
-            },
-            PropertyValue::String(value) => PropertyValueOutput::String {
-                value: value.clone(),
-            },
-            PropertyValue::Text(text) => text_value_output(text),
-            PropertyValue::Vector(vector) => PropertyValueOutput::Vector {
-                x: vector.x,
-                y: vector.y,
-                z: vector.z,
-            },
-            PropertyValue::IntPoint(point) => PropertyValueOutput::IntPoint {
-                x: point.x,
-                y: point.y,
-            },
-            PropertyValue::DataTableRowHandle(handle) => PropertyValueOutput::DataTableRowHandle {
-                table_object_path: resolve_object_ref(package, handle.table),
-                row_name: resolve_name_or_placeholder(package, handle.row_name),
-            },
-            PropertyValue::ObjectRef(index) => PropertyValueOutput::ObjectRef {
-                value: resolve_object_ref(package, *index),
-            },
-            PropertyValue::Guid(guid) => PropertyValueOutput::Guid {
-                value: guid.to_string(),
-            },
-            PropertyValue::SoftObjectPath(path) => PropertyValueOutput::SoftObjectPath {
-                value: path.clone(),
-            },
-            PropertyValue::Array(values) => PropertyValueOutput::Array {
-                values: values
-                    .iter()
-                    .map(|value| value_output(package, value))
-                    .collect(),
-            },
-            PropertyValue::Set(values) => PropertyValueOutput::Set {
-                values: values
-                    .iter()
-                    .map(|value| value_output(package, value))
-                    .collect(),
-            },
-            PropertyValue::Map(entries) => PropertyValueOutput::Map {
-                entries: entries
-                    .iter()
-                    .map(|entry| MapEntryOutput {
-                        key: value_output(package, &entry.key),
-                        value: value_output(package, &entry.value),
-                    })
-                    .collect(),
-            },
-            PropertyValue::Struct(stream) => PropertyValueOutput::Struct {
-                properties: stream
-                    .records
-                    .iter()
-                    .map(|record| PropertyOutput::from_record(record, package))
-                    .collect(),
-            },
-            PropertyValue::Raw { reason } => PropertyValueOutput::Raw {
-                reason: render_raw_reason(reason),
-                size: record.payload.len(),
-            },
-        };
+        // `value_output` is the single `PropertyValue -> PropertyValueOutput`
+        // seam, so a new value kind is added in exactly one place. Only the
+        // top-level `Raw` size is record-specific: nested raw values inside
+        // arrays/maps/structs have no owning payload span and report 0.
+        let mut value = value_output(package, &record.value);
+        if let PropertyValueOutput::Raw { size, .. } = &mut value {
+            *size = record.payload.len();
+        }
         Self {
             name: resolve_name_or_placeholder(package, record.name),
             type_name: resolve_name_or_placeholder(package, record.type_name.name),
@@ -1998,6 +1984,23 @@ enum PropertyValueOutput {
         x: i32,
         y: i32,
     },
+    Rotator {
+        pitch: f64,
+        yaw: f64,
+        roll: f64,
+    },
+    Color {
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+    },
+    LinearColor {
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    },
     DataTableRowHandle {
         table_object_path: Option<String>,
         row_name: String,
@@ -2054,6 +2057,23 @@ fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput
         PropertyValue::IntPoint(point) => PropertyValueOutput::IntPoint {
             x: point.x,
             y: point.y,
+        },
+        PropertyValue::Rotator(rotator) => PropertyValueOutput::Rotator {
+            pitch: rotator.pitch,
+            yaw: rotator.yaw,
+            roll: rotator.roll,
+        },
+        PropertyValue::Color(color) => PropertyValueOutput::Color {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+            a: color.a,
+        },
+        PropertyValue::LinearColor(color) => PropertyValueOutput::LinearColor {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+            a: color.a,
         },
         PropertyValue::DataTableRowHandle(handle) => PropertyValueOutput::DataTableRowHandle {
             table_object_path: resolve_object_ref(package, handle.table),
@@ -2136,6 +2156,11 @@ impl PropertyValueOutput {
             Self::Text { value, .. } => format!("{value:?}"),
             Self::Vector { x, y, z } => format!("({x}, {y}, {z})"),
             Self::IntPoint { x, y } => format!("({x}, {y})"),
+            Self::Rotator { pitch, yaw, roll } => {
+                format!("(P={pitch}, Y={yaw}, R={roll})")
+            }
+            Self::Color { r, g, b, a } => format!("(R={r}, G={g}, B={b}, A={a})"),
+            Self::LinearColor { r, g, b, a } => format!("(R={r}, G={g}, B={b}, A={a})"),
             Self::DataTableRowHandle {
                 table_object_path,
                 row_name,

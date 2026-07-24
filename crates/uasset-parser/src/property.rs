@@ -85,6 +85,31 @@ pub struct IntPointValue {
     pub y: i32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RotatorValue {
+    pub pitch: f64,
+    pub yaw: f64,
+    pub roll: f64,
+}
+
+/// `FColor`: 8-bit sRGB channels. Serialized `B, G, R, A`; stored here by name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ColorValue {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+/// `FLinearColor`: linear-space float channels serialized `R, G, B, A`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LinearColorValue {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataTableRowHandleValue {
     pub table: PackageIndex,
@@ -110,6 +135,9 @@ pub enum PropertyValue {
     Text(TextValue),
     Vector(VectorValue),
     IntPoint(IntPointValue),
+    Rotator(RotatorValue),
+    Color(ColorValue),
+    LinearColor(LinearColorValue),
     DataTableRowHandle(DataTableRowHandleValue),
     ObjectRef(PackageIndex),
     Guid(Guid),

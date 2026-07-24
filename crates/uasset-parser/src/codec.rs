@@ -1,5 +1,7 @@
 //! Semantic property decoding seam.
 
+use std::fmt;
+
 use crate::archive::Reader;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
@@ -24,6 +26,26 @@ pub struct DecodeContext<'a> {
 struct TypeSpec<'a> {
     name: &'a str,
     tree: &'a PropertyTypeName,
+}
+
+/// Lazily renders the `Property.<name>` breadcrumb used in decode error
+/// messages. The property name is resolved from the package name map only when
+/// the value is actually formatted — i.e. on the error path — so the happy path
+/// pays no allocation for a breadcrumb it never prints.
+#[derive(Clone, Copy)]
+struct PropertyPath<'a> {
+    package: &'a Package,
+    name: crate::archive::NameRef,
+}
+
+impl fmt::Display for PropertyPath<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Property.")?;
+        match self.package.resolve_name_cow(self.name) {
+            Some(name) => formatter.write_str(&name),
+            None => formatter.write_str("Property"),
+        }
+    }
 }
 
 /// Decodes supported property payloads in place.
@@ -68,7 +90,7 @@ fn decode_property_record(
         return Ok(());
     }
 
-    let Some(type_name) = context.package.resolve_name(record.type_name.name) else {
+    let Some(type_name) = context.package.resolve_name_cow(record.type_name.name) else {
         record.value = PropertyValue::Raw {
             reason: RawReason::DecoderRejected("unresolved property type name".to_owned()),
         };
@@ -77,15 +99,17 @@ fn decode_property_record(
 
     let reader = Reader::new(source);
     let mut payload = reader.bounded(record.payload, "Property.Payload")?;
-    let property_name = context
-        .package
-        .resolve_name(record.name)
-        .unwrap_or_else(|| "Property".to_owned());
-    let path = format!("Property.{property_name}");
+    // The name map outlives the whole decode, so resolve names by borrow and
+    // render the error breadcrumb lazily — nothing here allocates unless a
+    // reader actually fails.
+    let path = PropertyPath {
+        package: context.package,
+        name: record.name,
+    };
 
     let decoded = if record.flags.is_binary_or_native() {
         match decode_binary_or_native_value(
-            &type_name,
+            type_name.as_ref(),
             &record.type_name,
             &mut payload,
             context,
@@ -104,7 +128,7 @@ fn decode_property_record(
         match decode_typed_value(
             source,
             TypeSpec {
-                name: &type_name,
+                name: type_name.as_ref(),
                 tree: &record.type_name,
             },
             record.flags,
@@ -144,84 +168,96 @@ fn decode_typed_value(
     flags: PropertyTagFlags,
     payload: &mut Reader<'_>,
     context: &DecodeContext<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    // Scalar leaves pass their error breadcrumb as `format_args!`: the reader
+    // only stringifies `path` when it actually fails, so the happy path is
+    // allocation-free. The container/struct arms below still need an owned
+    // `&str` for their deeper recursion, so they materialize `path` once.
     match type_spec.name {
         "BoolProperty" => Ok(Some(PropertyValue::Bool(flags.bool_value()))),
         "Int8Property" => Ok(Some(PropertyValue::Int(i64::from(
-            payload.read_i8(&format!("{path}.Int8"))?,
+            payload.read_i8(&format_args!("{path}.Int8"))?,
         )))),
         "Int16Property" => Ok(Some(PropertyValue::Int(i64::from(
-            payload.read_i16(&format!("{path}.Int16"))?,
+            payload.read_i16(&format_args!("{path}.Int16"))?,
         )))),
         "IntProperty" | "Int32Property" => Ok(Some(PropertyValue::Int(i64::from(
-            payload.read_i32(&format!("{path}.Int32"))?,
+            payload.read_i32(&format_args!("{path}.Int32"))?,
         )))),
         "Int64Property" => Ok(Some(PropertyValue::Int(
-            payload.read_i64(&format!("{path}.Int64"))?,
+            payload.read_i64(&format_args!("{path}.Int64"))?,
         ))),
         "UInt8Property" => Ok(Some(PropertyValue::UInt(u64::from(
-            payload.read_u8(&format!("{path}.UInt8"))?,
+            payload.read_u8(&format_args!("{path}.UInt8"))?,
         )))),
         // A `ByteProperty` backed by a `UEnum` serializes its value as the enum
         // entry `FName` (8 bytes); a plain byte serializes as a single `u8`
         // (`UByteProperty::SerializeItem`). The payload size disambiguates.
         "ByteProperty" if payload.remaining() != 1 => Ok(Some(PropertyValue::Enum(
-            payload.read_name_ref(&format!("{path}.Enum"))?,
+            payload.read_name_ref(&format_args!("{path}.Enum"))?,
         ))),
         "ByteProperty" => Ok(Some(PropertyValue::UInt(u64::from(
-            payload.read_u8(&format!("{path}.UInt8"))?,
+            payload.read_u8(&format_args!("{path}.UInt8"))?,
         )))),
         "UInt16Property" => Ok(Some(PropertyValue::UInt(u64::from(
-            payload.read_u16(&format!("{path}.UInt16"))?,
+            payload.read_u16(&format_args!("{path}.UInt16"))?,
         )))),
         "UInt32Property" => Ok(Some(PropertyValue::UInt(u64::from(
-            payload.read_u32(&format!("{path}.UInt32"))?,
+            payload.read_u32(&format_args!("{path}.UInt32"))?,
         )))),
         "UInt64Property" => Ok(Some(PropertyValue::UInt(
-            payload.read_u64(&format!("{path}.UInt64"))?,
+            payload.read_u64(&format_args!("{path}.UInt64"))?,
         ))),
         "FloatProperty" => Ok(Some(PropertyValue::Float(
-            payload.read_f32(&format!("{path}.Float"))?,
+            payload.read_f32(&format_args!("{path}.Float"))?,
         ))),
         "DoubleProperty" => Ok(Some(PropertyValue::Double(
-            payload.read_f64(&format!("{path}.Double"))?,
+            payload.read_f64(&format_args!("{path}.Double"))?,
         ))),
         "NameProperty" => Ok(Some(PropertyValue::Name(
-            payload.read_name_ref(&format!("{path}.Name"))?,
+            payload.read_name_ref(&format_args!("{path}.Name"))?,
         ))),
         "EnumProperty" => Ok(Some(PropertyValue::Enum(
-            payload.read_name_ref(&format!("{path}.Enum"))?,
+            payload.read_name_ref(&format_args!("{path}.Enum"))?,
         ))),
         "StrProperty" => Ok(Some(PropertyValue::String(
-            payload.read_fstring(&format!("{path}.String"))?,
+            payload.read_fstring(&format_args!("{path}.String"))?,
         ))),
         "TextProperty" => {
-            decode_text_value(payload, path).map(|text| text.map(PropertyValue::Text))
+            let path = path.to_string();
+            decode_text_value(payload, &path).map(|text| text.map(PropertyValue::Text))
         }
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
-                payload.read_i32(&format!("{path}.ObjectRef"))?,
+                payload.read_i32(&format_args!("{path}.ObjectRef"))?,
             ))))
         }
         "LazyObjectProperty" => Ok(Some(PropertyValue::Guid(
-            payload.read_guid(&format!("{path}.Guid"))?,
+            payload.read_guid(&format_args!("{path}.Guid"))?,
         ))),
-        "SoftObjectProperty" => Ok(Some(PropertyValue::SoftObjectPath(
-            decode_soft_object_path(payload, path, context)?,
-        ))),
+        "SoftObjectProperty" => {
+            let path = path.to_string();
+            Ok(Some(PropertyValue::SoftObjectPath(decode_soft_object_path(
+                payload, &path, context,
+            )?)))
+        }
         "ArrayProperty" => {
-            decode_array_value(source, type_spec.tree, payload, context, path, depth).map(Some)
+            let path = path.to_string();
+            decode_array_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
         }
         "SetProperty" => {
-            decode_set_value(source, type_spec.tree, payload, context, path, depth).map(Some)
+            let path = path.to_string();
+            decode_set_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
         }
         "MapProperty" => {
-            decode_map_value(source, type_spec.tree, payload, context, path, depth).map(Some)
+            let path = path.to_string();
+            decode_map_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
         }
         "StructProperty" => {
-            decode_struct_value(source, type_spec.tree, payload, context, path, depth).map(Some)
+            let path = path.to_string();
+            decode_struct_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
         }
         _ => Ok(None),
     }
@@ -294,34 +330,38 @@ fn decode_binary_or_native_value(
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
     context: &DecodeContext<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_name == "StructProperty" {
+        // Native structs are the only branch that reads, and each read helper
+        // wants an owned `&str`; materialize the breadcrumb once here rather
+        // than per read.
+        let path = path.to_string();
         match resolve_struct_type_name(context.package, type_tree).as_deref() {
             Some("Vector") => {
                 return Ok(Some(PropertyValue::Vector(decode_vector_value(
-                    payload, path,
+                    payload, &path,
                 )?)));
             }
             Some("IntPoint") => {
                 return Ok(Some(PropertyValue::IntPoint(decode_int_point_value(
-                    payload, path,
+                    payload, &path,
                 )?)));
             }
             Some("Rotator") => {
                 return Ok(Some(PropertyValue::Rotator(decode_rotator_value(
-                    payload, path,
+                    payload, &path,
                 )?)));
             }
             Some("Guid") => {
-                return Ok(Some(PropertyValue::Guid(decode_guid_value(payload, path)?)));
+                return Ok(Some(PropertyValue::Guid(decode_guid_value(payload, &path)?)));
             }
             Some("Color") => {
-                return Ok(Some(PropertyValue::Color(decode_color_value(payload, path)?)));
+                return Ok(Some(PropertyValue::Color(decode_color_value(payload, &path)?)));
             }
             Some("LinearColor") => {
                 return Ok(Some(PropertyValue::LinearColor(decode_linear_color_value(
-                    payload, path,
+                    payload, &path,
                 )?)));
             }
             _ => {}

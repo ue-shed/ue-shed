@@ -397,6 +397,46 @@ impl Package {
         resolve_name_ref(&self.names, name).ok()
     }
 
+    /// Resolves a name reference to a borrowed slice of the package name map.
+    ///
+    /// The name map owns its strings for the whole decode, so unnumbered
+    /// references (the common case) borrow with zero allocation. Returns
+    /// `None` for numbered references — whose display form needs the numeric
+    /// suffix — and for indices outside the name map. Callers that must render
+    /// numbered names should use [`Package::resolve_name_cow`].
+    #[must_use]
+    pub fn resolve_name_str(&self, name: crate::archive::NameRef) -> Option<&str> {
+        if name.number() != 0 {
+            return None;
+        }
+        self.names
+            .get(usize::try_from(name.index().get()).ok()?)
+            .map(String::as_str)
+    }
+
+    /// Resolves a name reference, borrowing from the name map when possible.
+    ///
+    /// Unnumbered references (the common case) borrow directly with no
+    /// allocation; numbered references allocate their suffixed display form.
+    /// Returns `None` only when the index is outside the name map.
+    #[must_use]
+    pub fn resolve_name_cow(
+        &self,
+        name: crate::archive::NameRef,
+    ) -> Option<std::borrow::Cow<'_, str>> {
+        let base = self
+            .names
+            .get(usize::try_from(name.index().get()).ok()?)?;
+        if name.number() == 0 {
+            Some(std::borrow::Cow::Borrowed(base.as_str()))
+        } else {
+            Some(std::borrow::Cow::Owned(format!(
+                "{base}_{}",
+                name.number() - 1
+            )))
+        }
+    }
+
     #[must_use]
     pub fn resolve_index(&self, index: PackageIndex) -> Option<ObjectPath> {
         resolve_index_path(

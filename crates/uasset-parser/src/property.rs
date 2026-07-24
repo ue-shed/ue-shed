@@ -340,8 +340,14 @@ pub fn read_tagged_property_stream(
     loop {
         let tag_start = reader.tell();
         let name = reader.read_name_ref(&format_args!("{path}.Tag.Name"))?;
-        validate_name_ref(names, name, &format!("{path}.Tag.Name"))?;
-        if resolve_name_ref(names, name)? == "None" {
+        validate_name_ref(names, name, &format_args!("{path}.Tag.Name"))?;
+        // The name map owns the base strings for the whole decode, so the
+        // terminator check borrows instead of allocating: a name resolves to
+        // exactly "None" only when its base is "None" and it is unnumbered.
+        // `validate_name_ref` above already bounded the index.
+        if name.number() == 0
+            && names[usize::try_from(name.index().get()).expect("u32 fits in usize")] == "None"
+        {
             return Ok(PropertyStream {
                 class_extensions: None,
                 records,
@@ -349,7 +355,7 @@ pub fn read_tagged_property_stream(
             });
         }
 
-        let type_name = read_property_type_name(reader, names, &format!("{path}.Tag.Type"))?;
+        let type_name = read_property_type_name(reader, names, &format_args!("{path}.Tag.Type"))?;
         let size_offset = reader.tell();
         let size = reader.read_i32(&format_args!("{path}.Tag.Size"))?;
         if size < 0 {
@@ -425,7 +431,7 @@ fn read_class_serialization_control_extensions(
 fn read_property_type_name(
     reader: &mut Reader<'_>,
     names: &[String],
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyTypeName, PropertyError> {
     read_property_type_name_at_depth(reader, names, path, 0)
 }
@@ -433,21 +439,21 @@ fn read_property_type_name(
 fn read_property_type_name_at_depth(
     reader: &mut Reader<'_>,
     names: &[String],
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
     depth: usize,
 ) -> Result<PropertyTypeName, PropertyError> {
     if depth >= MAX_PROPERTY_TYPE_DEPTH {
         return Err(PropertyError::new(
             PropertyErrorKind::MalformedData,
             Some(reader.tell()),
-            path,
+            path.to_string(),
             format!("property type-name nesting exceeds depth limit {MAX_PROPERTY_TYPE_DEPTH}"),
         ));
     }
-    let name = reader.read_name_ref(&format!("{path}.Name"))?;
-    validate_name_ref(names, name, &format!("{path}.Name"))?;
+    let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
+    validate_name_ref(names, name, &format_args!("{path}.Name"))?;
     let inner_count_offset = reader.tell();
-    let inner_count = reader.read_i32(&format!("{path}.InnerCount"))?;
+    let inner_count = reader.read_i32(&format_args!("{path}.InnerCount"))?;
     if inner_count < 0 {
         return Err(PropertyError::new(
             PropertyErrorKind::MalformedData,
@@ -460,14 +466,14 @@ fn read_property_type_name_at_depth(
     let capacity = reader.checked_vec_capacity::<PropertyTypeName>(
         inner_count,
         12,
-        &format!("{path}.InnerCount"),
+        &format_args!("{path}.InnerCount"),
     )?;
     let mut parameters = Vec::with_capacity(capacity);
     for index in 0..inner_count {
         parameters.push(read_property_type_name_at_depth(
             reader,
             names,
-            &format!("{path}.Parameters[{index}]"),
+            &format_args!("{path}.Parameters[{index}]"),
             depth + 1,
         )?);
     }
@@ -530,7 +536,11 @@ fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, Proper
     }
 }
 
-fn validate_name_ref(names: &[String], name: NameRef, path: &str) -> Result<(), PropertyError> {
+fn validate_name_ref(
+    names: &[String],
+    name: NameRef,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<(), PropertyError> {
     if usize::try_from(name.index().get())
         .ok()
         .is_some_and(|index| index < names.len())
@@ -540,19 +550,9 @@ fn validate_name_ref(names: &[String], name: NameRef, path: &str) -> Result<(), 
         Err(PropertyError::new(
             PropertyErrorKind::MalformedData,
             None,
-            path,
+            path.to_string(),
             format!("name index {} is outside name map", name.index().get()),
         ))
-    }
-}
-
-fn resolve_name_ref(names: &[String], name: NameRef) -> Result<String, PropertyError> {
-    validate_name_ref(names, name, "NameRef")?;
-    let base = &names[usize::try_from(name.index().get()).expect("u32 fits in usize")];
-    if name.number() == 0 {
-        Ok(base.clone())
-    } else {
-        Ok(format!("{}_{}", base, name.number() - 1))
     }
 }
 

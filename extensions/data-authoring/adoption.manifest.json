@@ -45,6 +45,7 @@
 			"packages/observability/tsconfig.build.json",
 			"packages/observability/src/health.ts",
 			"packages/observability/src/index.ts",
+			"packages/observability/src/telemetry-sdk.ts",
 			"packages/unreal-assets/package.json",
 			"packages/unreal-assets/tsconfig.json",
 			"packages/unreal-assets/tsconfig.build.json",

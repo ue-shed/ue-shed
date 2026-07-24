@@ -1,11 +1,4 @@
-import { NodeSdk } from "@effect/opentelemetry";
-import { ConsoleLogRecordExporter, SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs";
-import { ConsoleMetricExporter, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import {
-	ConsoleSpanExporter,
-	SimpleSpanProcessor,
-	type SpanProcessor
-} from "@opentelemetry/sdk-trace-base";
+import type { SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { Config, Effect, Exit, Layer, Metric, Schema } from "effect";
 import { defaultHealthInput, runtimeHealthLayer } from "./health.js";
 
@@ -239,42 +232,21 @@ export interface RuntimeObservabilityOptions {
 	readonly spanProcessor?: SpanProcessor;
 }
 
-function sdkLayer(options: RuntimeObservabilityOptions, mode: TelemetryMode) {
-	if (mode === "disabled" && options.spanProcessor === undefined) return NodeSdk.layerEmpty;
-	const spanProcessor =
-		options.spanProcessor ?? new SimpleSpanProcessor(new ConsoleSpanExporter());
-	return NodeSdk.layer(() => ({
-		logRecordProcessor:
-			mode === "console"
-				? new SimpleLogRecordProcessor(new ConsoleLogRecordExporter())
-				: undefined,
-		metricReader:
-			mode === "console"
-				? new PeriodicExportingMetricReader({
-						exporter: new ConsoleMetricExporter(),
-						exportIntervalMillis: 30_000
-					})
-				: undefined,
-		resource: {
-			serviceName: options.serviceName,
-			...(options.serviceVersion === undefined
-				? {}
-				: { serviceVersion: options.serviceVersion })
-		},
-		spanProcessor
-	}));
-}
-
 export function runtimeObservabilityLayer(options: RuntimeObservabilityOptions) {
 	return Layer.unwrap(
-		Effect.map(telemetryModeConfig, (mode) =>
-			Layer.merge(
-				sdkLayer(options, mode),
-				runtimeHealthLayer({
-					...defaultHealthInput,
-					telemetry: mode === "disabled" ? "disabled" : "ready"
-				})
-			)
-		)
+		Effect.gen(function* () {
+			const mode = yield* telemetryModeConfig;
+			const health = runtimeHealthLayer({
+				...defaultHealthInput,
+				telemetry: mode === "disabled" ? "disabled" : "ready"
+			});
+			if (mode === "disabled" && options.spanProcessor === undefined) {
+				// Telemetry is fully disabled: no OpenTelemetry services are installed and the SDK
+				// modules are never loaded. Effect spans and metrics keep their in-memory behavior.
+				return Layer.merge(Layer.empty, health);
+			}
+			const { telemetrySdkLayer } = yield* Effect.promise(() => import("./telemetry-sdk.js"));
+			return Layer.merge(telemetrySdkLayer(options, mode), health);
+		})
 	);
 }

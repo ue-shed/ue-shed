@@ -18,12 +18,12 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toMatchObject({
-			discoveredPackages: 19,
-			inspectedPackages: 19,
+			discoveredPackages: 22,
+			inspectedPackages: 22,
 			failedPackages: 0,
-			textUnits: 8,
-			textOccurrences: 9,
-			resolvedOccurrences: 9,
+			textUnits: 11,
+			textOccurrences: 12,
+			resolvedOccurrences: 12,
 			unsupportedTextProperties: 1
 		});
 		const holdMatches = searchTextCorpus(corpus, "Hold to skip");

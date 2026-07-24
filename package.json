@@ -49,12 +49,15 @@
 		"test:e2e:workbench:ui": "node scripts/test-workbench-e2e.mjs --ui",
 		"benchmark:observatory": "tsx packages/observatory/scripts/benchmark.ts",
 		"benchmark:observatory:live": "tsx packages/observatory/scripts/benchmark-live.ts",
+		"benchmark:uasset": "node scripts/benchmark-uasset.mjs",
+		"benchmark:uasset:unreal": "node scripts/benchmark-uasset.mjs --unreal",
 		"test:fast": "node scripts/test.mjs --exclude packages/authoring/src/unreal-mutation.integration.test.ts",
 		"test:unreal-authoring": "node scripts/test-unreal-authoring.mjs",
 		"test:unreal-review": "node scripts/test-unreal-review.mjs",
 		"test:uasset-conformance": "node scripts/test-uasset-conformance.mjs",
 		"uasset:build": "cargo build --locked -p uasset-parser",
-		"uasset:check": "cargo fmt --all -- --check && cargo clippy -p uasset-parser --all-targets -- -D warnings && cargo test -p uasset-parser --all-targets",
+		"uasset:check": "cargo fmt --all -- --check && cargo clippy -p uasset-parser --all-targets -- -D warnings && cargo test -p uasset-parser --all-targets && pnpm run uasset:check:wasm",
+		"uasset:check:wasm": "cargo check --locked -p uasset-parser --lib --target wasm32-unknown-unknown",
 		"ue-shed": "node scripts/ue-shed.mjs"
 	},
 	"devDependencies": {

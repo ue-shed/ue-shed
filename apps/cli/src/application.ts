@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { TextureAudit, TextureAuditLive } from "@ue-shed/asset-audits";
 import {
 	authoringSessionLivePortLayer,
@@ -29,6 +30,7 @@ import {
 	ReviewRepositoryLive,
 	ReviewViewId
 } from "@ue-shed/cameras";
+import { EnhancedInputService, EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { searchTextCorpus, TextCorpusService, TextCorpusServiceLive } from "@ue-shed/game-text";
 import { EditorPlaySession, EditorPlaySessionLive } from "@ue-shed/engine-discovery";
 import { CURRENT_PROTOCOL_VERSION } from "@ue-shed/protocol";
@@ -499,6 +501,38 @@ export function executeCommand(
 								diagnostics: corpus.diagnostics
 							}
 				);
+			}
+			case "InputInspect": {
+				const report = yield* Effect.gen(function* () {
+					const service = yield* EnhancedInputService;
+					const info = yield* Effect.tryPromise({
+						try: () => stat(command.path),
+						catch: (cause) =>
+							new CliCommandError({
+								message: `Could not read path ${command.path}: ${String(cause)}`
+							})
+					});
+					if (info.isDirectory()) {
+						return yield* service.scan({ projectRoot: command.path });
+					}
+					return yield* service.inspectPath(command.path);
+				}).pipe(
+					Effect.provide(EnhancedInputServiceLive),
+					Effect.provide(readerLayer(command.reader)),
+					Effect.mapError((error) =>
+						error instanceof CliCommandError
+							? error
+							: new CliCommandError({
+									message:
+										typeof error === "object" &&
+										error !== null &&
+										"message" in error
+											? String(error.message)
+											: String(error)
+								})
+					)
+				);
+				return yield* printJson(report);
 			}
 			case "ReviewSetValidate": {
 				const repository = yield* ReviewRepository;

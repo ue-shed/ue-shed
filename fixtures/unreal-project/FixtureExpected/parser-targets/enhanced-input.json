@@ -1,0 +1,53 @@
+{
+	"contract": {
+		"name": "ue-shed-unreal-asset-evidence",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"assetType": "enhanced_input",
+	"actions": [
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Fixture jump action",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Move.IA_Move",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Fixture move action",
+			"valueType": "EInputActionValueType::Axis2D",
+			"consumeInput": true
+		}
+	],
+	"mappingContexts": [
+		{
+			"objectPath": "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture",
+			"classPath": "/Script/EnhancedInput.InputMappingContext",
+			"contextDescription": "Fixture mapping context",
+			"mappingsProperty": "DefaultKeyMappings",
+			"mappings": [
+				{
+					"action": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+					"keyName": "SpaceBar",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "A",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture:InputModifierNegate_0",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				}
+			]
+		}
+	]
+}

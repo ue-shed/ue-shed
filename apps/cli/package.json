@@ -12,6 +12,7 @@
 		"@ue-shed/authoring-catalog": "workspace:*",
 		"@ue-shed/cameras": "workspace:*",
 		"@ue-shed/engine-discovery": "workspace:*",
+		"@ue-shed/enhanced-input": "workspace:*",
 		"@ue-shed/game-text": "workspace:*",
 		"@ue-shed/observability": "workspace:*",
 		"@ue-shed/plugin-bundles": "workspace:*",

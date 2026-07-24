@@ -11,8 +11,12 @@ Keeping that reader in an unpublished, independently checked-out project made a 
 to run two of the three showcase slices and prevented fixture, schema, and parser changes from being
 verified atomically.
 
-The source project had also grown a UTrace parser, capture analysis, dashboards, and WASM concerns.
-Those capabilities are much larger than the UAsset boundary and have a different product lifecycle.
+The source project had also grown a UTrace parser, capture analysis, and dashboards. Those
+capabilities are much larger than the UAsset boundary and have a different product lifecycle.
+
+Saved-package parsing has a separate portability advantage: the same bounded bytes-to-evidence
+library can run in native tools and WebAssembly without launching Unreal. Browser and embedded-host
+use must not require filesystem access, subprocesses, or a native Rust installation at runtime.
 
 ## Decision
 
@@ -23,7 +27,13 @@ Those capabilities are much larger than the UAsset boundary and have a different
   `UE_SHED_UASSET_EXECUTABLE` override is supplied.
 - `pnpm check` verifies formatting, Clippy, and tests for the Rust crate, and the TypeScript fixture
   tests run against the resulting native binary.
-- UTrace parsing, its analysis model, dashboards, and WASM targets are not extracted into UE Shed.
+- The parser library must compile for `wasm32-unknown-unknown`. Its reusable boundary accepts package
+  bytes and returns structured evidence; filesystem discovery, subprocess management, native
+  concurrency, and caching remain adapters outside that boundary.
+- Native and WASM producers must converge on the same versioned inspection semantics and fixture
+  evidence. A browser-facing binding and distribution package may be delivered incrementally, but
+  native-only parser changes are not acceptable.
+- UTrace parsing, its analysis model, and dashboards are not extracted into UE Shed.
 - Prebuilt binary distribution is deferred until release provenance and platform packaging are
   ready; the source checkout requires a Rust toolchain in the meantime.
 
@@ -34,3 +44,7 @@ Published `@ue-shed/unreal-assets` consumers remain free to select a compatible 
 option, environment configuration, or `PATH`, so the TypeScript package is not coupled to this
 monorepo layout. UTrace can become its own repository or package without forcing its size and release
 cadence onto the foundational parser.
+
+The CLI remains the native process boundary while the library remains portable. Native optimizations
+such as memory mapping, threads, or platform-specific I/O must live behind adapters or target
+features and retain a fixture-proven WASM path.

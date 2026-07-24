@@ -40,7 +40,7 @@ observation setting, not a UE Shed runtime requirement.
 `fixture:evidence` loads the saved fixtures in a fresh commandlet and writes two independent evidence
 sets: shared authoring snapshots under `authoring/`, and parser implementation targets under
 `parser-targets/`. The checked-in target shapes in `FixtureExpected/parser-targets` cover StringTable,
-localized-text DataAsset, and Texture2D semantics. Regenerate and compare all evidence through
+localized-text DataAsset, Texture2D, and Enhanced Input semantics. Regenerate and compare all evidence through
 `test:uasset-conformance`; do not hand-edit the expected shapes.
 
 `test:uasset-conformance` is the complete saved-package lane. It regenerates the assets, verifies them

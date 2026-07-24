@@ -224,7 +224,9 @@ export const SavedAssetInspection = Schema.Struct({
 				kind: Schema.Literal("UObject"),
 				object_path: Schema.String,
 				class_path: Schema.String,
-				properties: Schema.Array(SavedProperty),
+				properties: Schema.Array(SavedProperty).pipe(
+					Schema.withDecodingDefaultKey(Effect.succeed([]))
+				),
 				tail_bytes: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 			}),
 			Schema.Struct({

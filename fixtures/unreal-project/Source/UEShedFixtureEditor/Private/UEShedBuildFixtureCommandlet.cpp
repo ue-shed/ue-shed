@@ -19,6 +19,11 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "HAL/FileManager.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputCoreTypes.h"
+#include "InputMappingContext.h"
+#include "InputModifiers.h"
 #include "Internationalization/StringTable.h"
 #include "Internationalization/StringTableCore.h"
 #include "Internationalization/Text.h"
@@ -808,6 +813,176 @@ bool WriteTextureEvidence(const FString& OutputDirectory)
 		FPaths::Combine(OutputDirectory, TEXT("parser-targets/texture2d.json")), Root);
 }
 
+FString InputActionValueTypeName(const EInputActionValueType ValueType)
+{
+	switch (ValueType)
+	{
+	case EInputActionValueType::Boolean: return TEXT("EInputActionValueType::Boolean");
+	case EInputActionValueType::Axis1D: return TEXT("EInputActionValueType::Axis1D");
+	case EInputActionValueType::Axis2D: return TEXT("EInputActionValueType::Axis2D");
+	case EInputActionValueType::Axis3D: return TEXT("EInputActionValueType::Axis3D");
+	default: return FString::Printf(TEXT("unsupported:%d"), static_cast<int32>(ValueType));
+	}
+}
+
+UInputAction* FindOrCreateInputAction(const TCHAR* PackageName, const TCHAR* AssetName)
+{
+	UPackage* Package = FindOrCreatePackage(PackageName);
+	if (Package == nullptr) return nullptr;
+	UInputAction* Action = FindObject<UInputAction>(Package, AssetName);
+	if (Action == nullptr)
+	{
+		Action = NewObject<UInputAction>(Package, AssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+		FAssetRegistryModule::AssetCreated(Action);
+	}
+	return Action;
+}
+
+bool GenerateEnhancedInputFixtures()
+{
+	UInputAction* Jump = FindOrCreateInputAction(
+		TEXT("/Game/Fixture/Input/IA_Jump"), TEXT("IA_Jump"));
+	UInputAction* Move = FindOrCreateInputAction(
+		TEXT("/Game/Fixture/Input/IA_Move"), TEXT("IA_Move"));
+	if (Jump == nullptr || Move == nullptr) return false;
+
+	Jump->ActionDescription = FText::FromString(TEXT("Fixture jump action"));
+	Jump->bConsumeInput = false;
+	Jump->ValueType = EInputActionValueType::Boolean;
+	Jump->MarkPackageDirty();
+	if (!SaveAsset(Jump->GetOutermost(), Jump)) return false;
+
+	Move->ActionDescription = FText::FromString(TEXT("Fixture move action"));
+	Move->ValueType = EInputActionValueType::Axis2D;
+	Move->MarkPackageDirty();
+	if (!SaveAsset(Move->GetOutermost(), Move)) return false;
+
+	static const TCHAR* MappingPackageName = TEXT("/Game/Fixture/Input/IMC_Fixture");
+	static const TCHAR* MappingAssetName = TEXT("IMC_Fixture");
+	UPackage* MappingPackage = FindOrCreatePackage(MappingPackageName);
+	if (MappingPackage == nullptr) return false;
+	UInputMappingContext* MappingContext =
+		FindObject<UInputMappingContext>(MappingPackage, MappingAssetName);
+	const bool bCreated = MappingContext == nullptr;
+	if (bCreated)
+	{
+		MappingContext = NewObject<UInputMappingContext>(MappingPackage, MappingAssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+	}
+	MappingContext->ContextDescription = FText::FromString(TEXT("Fixture mapping context"));
+	MappingContext->UnmapAll();
+	MappingContext->MapKey(Jump, EKeys::SpaceBar);
+	FEnhancedActionKeyMapping& MoveMapping = MappingContext->MapKey(Move, EKeys::A);
+	UInputModifierNegate* Negate = NewObject<UInputModifierNegate>(MappingContext,
+		TEXT("InputModifierNegate_0"));
+	Negate->bX = false;
+	MoveMapping.Modifiers.Add(Negate);
+	if (bCreated) FAssetRegistryModule::AssetCreated(MappingContext);
+	MappingPackage->MarkPackageDirty();
+	return SaveAsset(MappingPackage, MappingContext);
+}
+
+bool VerifyEnhancedInputFixtures()
+{
+	const UInputAction* Jump = LoadObject<UInputAction>(
+		nullptr, TEXT("/Game/Fixture/Input/IA_Jump.IA_Jump"));
+	const UInputAction* Move = LoadObject<UInputAction>(
+		nullptr, TEXT("/Game/Fixture/Input/IA_Move.IA_Move"));
+	const UInputMappingContext* MappingContext = LoadObject<UInputMappingContext>(
+		nullptr, TEXT("/Game/Fixture/Input/IMC_Fixture.IMC_Fixture"));
+	if (Jump == nullptr || Move == nullptr || MappingContext == nullptr) return false;
+	if (Jump->ValueType != EInputActionValueType::Boolean || Jump->bConsumeInput) return false;
+	if (Jump->ActionDescription.ToString() != TEXT("Fixture jump action")) return false;
+	if (Move->ValueType != EInputActionValueType::Axis2D) return false;
+	if (Move->ActionDescription.ToString() != TEXT("Fixture move action")) return false;
+	if (MappingContext->ContextDescription.ToString() != TEXT("Fixture mapping context"))
+	{
+		return false;
+	}
+	const TArray<FEnhancedActionKeyMapping>& Mappings = MappingContext->GetMappings();
+	if (Mappings.Num() != 2) return false;
+	if (Mappings[0].Action != Jump || Mappings[0].Key != EKeys::SpaceBar) return false;
+	if (Mappings[1].Action != Move || Mappings[1].Key != EKeys::A) return false;
+	if (Mappings[1].Modifiers.Num() != 1) return false;
+	const UInputModifierNegate* Negate = Cast<UInputModifierNegate>(Mappings[1].Modifiers[0]);
+	return Negate != nullptr && !Negate->bX && Negate->bY && Negate->bZ;
+}
+
+bool WriteEnhancedInputEvidence(const FString& OutputDirectory)
+{
+	const UInputAction* Jump = LoadObject<UInputAction>(
+		nullptr, TEXT("/Game/Fixture/Input/IA_Jump.IA_Jump"));
+	const UInputAction* Move = LoadObject<UInputAction>(
+		nullptr, TEXT("/Game/Fixture/Input/IA_Move.IA_Move"));
+	const UInputMappingContext* MappingContext = LoadObject<UInputMappingContext>(
+		nullptr, TEXT("/Game/Fixture/Input/IMC_Fixture.IMC_Fixture"));
+	if (Jump == nullptr || Move == nullptr || MappingContext == nullptr) return false;
+
+	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetObjectField(TEXT("contract"), EvidenceContract());
+	Root->SetStringField(TEXT("assetType"), TEXT("enhanced_input"));
+
+	auto ActionEvidence = [](const UInputAction* Action) -> TSharedRef<FJsonObject>
+	{
+		const TSharedRef<FJsonObject> Asset = MakeShared<FJsonObject>();
+		Asset->SetStringField(TEXT("objectPath"), Action->GetPathName());
+		Asset->SetStringField(TEXT("classPath"), Action->GetClass()->GetPathName());
+		Asset->SetStringField(TEXT("actionDescription"), Action->ActionDescription.ToString());
+		Asset->SetStringField(TEXT("valueType"), InputActionValueTypeName(Action->ValueType));
+		Asset->SetBoolField(TEXT("consumeInput"), Action->bConsumeInput);
+		return Asset;
+	};
+
+	TArray<TSharedPtr<FJsonValue>> Actions;
+	Actions.Add(MakeShared<FJsonValueObject>(ActionEvidence(Jump)));
+	Actions.Add(MakeShared<FJsonValueObject>(ActionEvidence(Move)));
+	Root->SetArrayField(TEXT("actions"), Actions);
+
+	const TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+	Context->SetStringField(TEXT("objectPath"), MappingContext->GetPathName());
+	Context->SetStringField(TEXT("classPath"), MappingContext->GetClass()->GetPathName());
+	Context->SetStringField(TEXT("contextDescription"),
+		MappingContext->ContextDescription.ToString());
+	Context->SetStringField(TEXT("mappingsProperty"), TEXT("DefaultKeyMappings"));
+	TArray<TSharedPtr<FJsonValue>> Mappings;
+	for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+	{
+		const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+		Entry->SetStringField(TEXT("action"),
+			Mapping.Action != nullptr ? Mapping.Action->GetPathName() : FString());
+		Entry->SetStringField(TEXT("keyName"), Mapping.Key.GetFName().ToString());
+		TArray<TSharedPtr<FJsonValue>> Triggers;
+		for (const TObjectPtr<UInputTrigger>& Trigger : Mapping.Triggers)
+		{
+			if (Trigger == nullptr) continue;
+			const TSharedRef<FJsonObject> TriggerObject = MakeShared<FJsonObject>();
+			TriggerObject->SetStringField(TEXT("objectPath"), Trigger->GetPathName());
+			TriggerObject->SetStringField(TEXT("classPath"), Trigger->GetClass()->GetPathName());
+			Triggers.Add(MakeShared<FJsonValueObject>(TriggerObject));
+		}
+		Entry->SetArrayField(TEXT("triggers"), Triggers);
+		TArray<TSharedPtr<FJsonValue>> Modifiers;
+		for (const TObjectPtr<UInputModifier>& Modifier : Mapping.Modifiers)
+		{
+			if (Modifier == nullptr) continue;
+			const TSharedRef<FJsonObject> ModifierObject = MakeShared<FJsonObject>();
+			ModifierObject->SetStringField(TEXT("objectPath"), Modifier->GetPathName());
+			ModifierObject->SetStringField(TEXT("classPath"), Modifier->GetClass()->GetPathName());
+			Modifiers.Add(MakeShared<FJsonValueObject>(ModifierObject));
+		}
+		Entry->SetArrayField(TEXT("modifiers"), Modifiers);
+		Mappings.Add(MakeShared<FJsonValueObject>(Entry));
+	}
+	Context->SetArrayField(TEXT("mappings"), Mappings);
+	TArray<TSharedPtr<FJsonValue>> Contexts;
+	Contexts.Add(MakeShared<FJsonValueObject>(Context));
+	Root->SetArrayField(TEXT("mappingContexts"), Contexts);
+
+	return WriteJsonEvidence(
+		FPaths::Combine(OutputDirectory, TEXT("parser-targets/enhanced-input.json")), Root);
+}
+
 bool WriteAuthoringEvidence(const FString& OutputDirectory)
 {
 	bool bSucceeded = true;
@@ -836,7 +1011,8 @@ bool WriteConformanceEvidence(const FString& OutputDirectory)
 	return WriteAuthoringEvidence(OutputDirectory)
 		&& WriteStringTableEvidence(OutputDirectory)
 		&& WriteTextAssetEvidence(OutputDirectory)
-		&& WriteTextureEvidence(OutputDirectory);
+		&& WriteTextureEvidence(OutputDirectory)
+		&& WriteEnhancedInputEvidence(OutputDirectory);
 }
 
 void ApplySolidColor(UStaticMeshComponent* Mesh, const FLinearColor& Color)
@@ -1309,6 +1485,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateGameTextCorpus() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
+		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
 	}
 	else
 	{
@@ -1320,6 +1497,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyGameTextCorpus() && Succeeded;
 		Succeeded = VerifyCameraMap() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
+		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;
 	}
 
 	UE_LOG(LogTemp, Display, TEXT("UE Shed fixture %s %s"),

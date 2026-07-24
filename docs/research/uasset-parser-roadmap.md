@@ -16,6 +16,8 @@ TypeScript process boundary. Priorities are ordered by impact divided by impleme
 | 9        | Keep capability and compatibility documentation current           | Low    | Small        | Complete |
 | 10       | Add bounded header-only package metadata parsing                  | High   | Medium       | Complete |
 | 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete |
+| 12       | Require a portable `wasm32-unknown-unknown` library build         | High   | Small        | Complete |
+| 13       | Add a reproducible native/CLI/Unreal benchmark harness            | High   | Medium       | Complete |
 
 ## Dependency order
 
@@ -37,3 +39,8 @@ Catalog discovery now reads only the package header needed for names, imports, e
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,
 classification, and diagnostics; changed signatures are the only entries reparsed. Full payload
 decoding remains the selected-table operation.
+
+The parser library must remain a bounded bytes-to-evidence implementation that compiles for
+`wasm32-unknown-unknown`. Filesystem discovery, subprocesses, native concurrency, and caches are
+adapter concerns. The benchmark harness records native parser, TypeScript projection, and optional
+fresh Unreal commandlet measurements separately so startup and semantic work are not conflated.

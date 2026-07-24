@@ -80,6 +80,7 @@ export const CliCommand = Schema.TaggedUnion({
 	SessionsDiff: { ...SessionProject },
 	TextScan: { ...Project, ...Reader },
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
+	InputInspect: { path: Schema.String, ...Reader },
 	ReviewSetValidate: { reviewSetPath: Schema.String },
 	ReviewFramingCandidates: { endpoint: Schema.String },
 	ReviewFramingApprove: {
@@ -143,6 +144,7 @@ Usage:
   ue-shed authoring sessions apply|reconcile|save <session-id> <endpoint> --project <project-root>
   ue-shed text scan <project-root> [--reader <path>]
   ue-shed text search <project-root> <query> [--reader <path>]
+  ue-shed input inspect <asset-or-project> [--reader <path>]
   ue-shed review sets validate <review-set>
 	ue-shed review framing candidates <endpoint>
 	ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
@@ -624,6 +626,18 @@ export function parseCliCommand(args: readonly string[]): Effect.Effect<CliComma
 			const value = query.join(" ").trim();
 			if (!value) return yield* usage("text search requires a non-empty query");
 			return CliCommand.cases.TextSearch.make({ projectRoot, query: value, ...withReader });
+		}
+		if (command === "input") {
+			const parsed = yield* parseOptions(rest, ["--reader"]);
+			const [action, path] = parsed.positionals;
+			if (action !== "inspect" || !path)
+				return yield* usage("input requires inspect <asset-or-project>");
+			if (parsed.positionals.length > 2)
+				return yield* usage("input inspect has unexpected arguments");
+			return CliCommand.cases.InputInspect.make({
+				path,
+				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
+			});
 		}
 		if (command === "review") {
 			const [area, action, ...values] = rest;

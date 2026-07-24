@@ -58,6 +58,26 @@ type FixtureContract = {
 			readonly stringTableReference: string;
 		};
 	};
+	readonly enhancedInput: {
+		readonly contentRoot: string;
+		readonly actions: readonly {
+			readonly assetPath: string;
+			readonly valueType: string;
+			readonly consumeInput: boolean;
+			readonly actionDescription: string;
+		}[];
+		readonly mappingContext: {
+			readonly assetPath: string;
+			readonly contextDescription: string;
+			readonly mappingsProperty: string;
+			readonly mappings: readonly {
+				readonly action: string;
+				readonly keyName: string;
+				readonly modifierCount: number;
+				readonly modifierClass?: string;
+			}[];
+		};
+	};
 	readonly cameraLoad: {
 		readonly map: string;
 		readonly movingActors: number;
@@ -119,6 +139,7 @@ type TextureContract = {
 
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 const parserTargetFiles = [
+	"FixtureExpected/parser-targets/enhanced-input.json",
 	"FixtureExpected/parser-targets/string-table.json",
 	"FixtureExpected/parser-targets/text-data-asset.json",
 	"FixtureExpected/parser-targets/texture2d.json"
@@ -141,11 +162,14 @@ function readContract(): FixtureContract {
 		!isRecord(value.engine) ||
 		!isRecord(value.cameraLoad) ||
 		!isRecord(value.gameText) ||
+		!isRecord(value.enhancedInput) ||
 		!isRecord(value.textureAudit) ||
 		typeof value.engine.major !== "number" ||
 		typeof value.engine.minor !== "number" ||
 		typeof value.contentRoot !== "string" ||
 		!Array.isArray(value.tables) ||
+		!Array.isArray(value.enhancedInput.actions) ||
+		!isRecord(value.enhancedInput.mappingContext) ||
 		!Array.isArray(value.textureAudit.textures)
 	) {
 		throw new Error("fixture-contract.json does not match the fixture contract envelope");
@@ -258,6 +282,50 @@ describe("generic Unreal fixture contract", () => {
 			contract.gameText.occurrenceAsset.assetPath
 		]) {
 			expect(assetPath.startsWith(`${contract.gameText.contentRoot}/`)).toBe(true);
+			expect(existsSync(generatedAssetPath(assetPath)), assetPath).toBe(true);
+		}
+	});
+
+	it("declares Enhanced Input action and mapping-context fixtures", () => {
+		const input = contract.enhancedInput;
+		expect(input.contentRoot).toBe("/Game/Fixture/Input");
+		expect(input.actions).toEqual([
+			{
+				assetPath: "/Game/Fixture/Input/IA_Jump.IA_Jump",
+				valueType: "EInputActionValueType::Boolean",
+				consumeInput: false,
+				actionDescription: "Fixture jump action"
+			},
+			{
+				assetPath: "/Game/Fixture/Input/IA_Move.IA_Move",
+				valueType: "EInputActionValueType::Axis2D",
+				consumeInput: true,
+				actionDescription: "Fixture move action"
+			}
+		]);
+		expect(input.mappingContext).toEqual({
+			assetPath: "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture",
+			contextDescription: "Fixture mapping context",
+			mappingsProperty: "DefaultKeyMappings",
+			mappings: [
+				{
+					action: "/Game/Fixture/Input/IA_Jump.IA_Jump",
+					keyName: "SpaceBar",
+					modifierCount: 0
+				},
+				{
+					action: "/Game/Fixture/Input/IA_Move.IA_Move",
+					keyName: "A",
+					modifierCount: 1,
+					modifierClass: "/Script/EnhancedInput.InputModifierNegate"
+				}
+			]
+		});
+		for (const assetPath of [
+			...input.actions.map((action) => action.assetPath),
+			input.mappingContext.assetPath
+		]) {
+			expect(assetPath.startsWith(`${input.contentRoot}/`)).toBe(true);
 			expect(existsSync(generatedAssetPath(assetPath)), assetPath).toBe(true);
 		}
 	});
@@ -388,6 +456,7 @@ describe("generic Unreal fixture contract", () => {
 	it("publishes real-Unreal target shapes for the next parser asset types", () => {
 		const targets = parserTargetFiles.map((path) => readJson(resolve(fixtureRoot, path)));
 		expect(targets.map((target) => (isRecord(target) ? target.assetType : undefined))).toEqual([
+			"enhanced_input",
 			"string_table",
 			"text_data_asset",
 			"texture2d"
@@ -402,9 +471,11 @@ describe("generic Unreal fixture contract", () => {
 				})
 			);
 		}
-		const stringTable = targets[0];
-		const textAsset = targets[1];
-		const textures = targets[2];
+		const enhancedInput = targets[0];
+		const stringTable = targets[1];
+		const textAsset = targets[2];
+		const textures = targets[3];
+		expect(isRecord(enhancedInput) && Array.isArray(enhancedInput.actions)).toBe(true);
 		expect(isRecord(stringTable) && stringTable.objectPath).toBe(
 			contract.gameText.stringTable.assetPath
 		);
@@ -427,6 +498,7 @@ describe("fixture project", () => {
 			isRecord(plugin) && typeof plugin.Name === "string" ? [plugin.Name] : []
 		);
 		expect(pluginNames).toEqual([
+			"EnhancedInput",
 			"RemoteControl",
 			"UEShedCore",
 			"UEShedAuthoring",

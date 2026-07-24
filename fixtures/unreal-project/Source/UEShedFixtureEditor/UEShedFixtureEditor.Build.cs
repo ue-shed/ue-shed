@@ -13,6 +13,8 @@ public class UEShedFixtureEditor : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"EnhancedInput",
+				"InputCore",
 				"Json",
 				"UEShedAuthoring",
 				"UEShedCameras",

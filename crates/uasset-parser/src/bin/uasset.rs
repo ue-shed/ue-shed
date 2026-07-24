@@ -1791,7 +1791,6 @@ struct AssetOutput {
     struct_flags: Option<u32>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     struct_fields: Vec<StructFieldOutput>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     properties: Vec<PropertyOutput>,
     /// Count of unparsed class-specific bytes retained after the property stream
     /// (e.g. a `StaticMesh`/`Texture2D` binary tail). Omitted when zero.

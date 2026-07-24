@@ -154,6 +154,7 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 	[["authoring", "sessions", "diff", "draft", "--project", "project"], "SessionsDiff"],
 	[["text", "scan", "project"], "TextScan"],
 	[["text", "search", "project", "hello", "world"], "TextSearch"],
+	[["input", "inspect", "project"], "InputInspect"],
 	[["review", "sets", "validate", "set.json"], "ReviewSetValidate"],
 	[["review", "framing", "candidates", "http://editor"], "ReviewFramingCandidates"],
 	[

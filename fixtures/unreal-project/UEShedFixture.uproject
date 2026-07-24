@@ -20,6 +20,10 @@
 	],
 	"Plugins": [
 		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		},
+		{
 			"Name": "RemoteControl",
 			"Enabled": true
 		},

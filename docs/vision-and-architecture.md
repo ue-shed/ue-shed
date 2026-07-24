@@ -58,7 +58,8 @@ Saved-package operations remain available while live capabilities are absent.
 - **StyleX** is the styling system for shared themes and primitives plus locally owned extension
   styles. It provides deterministic composition and typed style contracts across package boundaries.
 - **Electron** packages the showcase Workbench; it is not a domain or protocol dependency.
-- **Rust** implements native, read-only saved-package parsing behind a versioned CLI JSON boundary.
+- **Rust** implements portable, read-only saved-package parsing. Native clients use a versioned CLI
+  JSON boundary; the same bytes-to-evidence library must remain buildable for WebAssembly.
 - **C++ Unreal plugins** expose the smallest engine-side capabilities that supported stock APIs cannot
   provide safely.
 
@@ -92,7 +93,7 @@ apps/
   site/                        # Public showcase website (Cloudflare Workers static assets)
   workbench/                   # Showcase and dogfood desktop app
 crates/
-  uasset-parser/               # Native read-only UAsset library and `uasset` CLI
+  uasset-parser/               # Native/WASM-ready read-only UAsset library and native `uasset` CLI
 packages/
   protocol/                    # Wire primitives, runtime schemas, compatibility
   observability/               # Shared telemetry policy, metrics, and public health
@@ -136,6 +137,9 @@ without pretending every API is frozen.
 - Saved-package parsing is isolated behind `@ue-shed/unreal-assets`; domain packages consume
   normalized results rather than parser implementation details. The native parser lives in this
   repository so its fixture and wire-contract changes can be tested atomically.
+- The parser core accepts bounded package bytes and has no required filesystem or subprocess
+  authority. Native discovery, process management, and caching are adapters; WASM consumers use the
+  same inspection semantics and fixture evidence.
 - Extensions depend on public domain packages and host extension contracts.
 - The CLI and Workbench compose extensions; they do not own domain behavior.
 - Unreal feature plugins depend on `UEShedCore` where shared identity or transport is required, not

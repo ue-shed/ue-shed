@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.3.0",
+	"fixtureVersion": "1.4.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
@@ -22,6 +22,41 @@
 			},
 			"equalSourceDistinctKeys": ["ConfirmAction", "ConfirmDeletion"],
 			"stringTableReference": "PromptContinue"
+		}
+	},
+	"enhancedInput": {
+		"contentRoot": "/Game/Fixture/Input",
+		"actions": [
+			{
+				"assetPath": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+				"valueType": "EInputActionValueType::Boolean",
+				"consumeInput": false,
+				"actionDescription": "Fixture jump action"
+			},
+			{
+				"assetPath": "/Game/Fixture/Input/IA_Move.IA_Move",
+				"valueType": "EInputActionValueType::Axis2D",
+				"consumeInput": true,
+				"actionDescription": "Fixture move action"
+			}
+		],
+		"mappingContext": {
+			"assetPath": "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture",
+			"contextDescription": "Fixture mapping context",
+			"mappingsProperty": "DefaultKeyMappings",
+			"mappings": [
+				{
+					"action": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+					"keyName": "SpaceBar",
+					"modifierCount": 0
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "A",
+					"modifierCount": 1,
+					"modifierClass": "/Script/EnhancedInput.InputModifierNegate"
+				}
+			]
 		}
 	},
 	"cameraLoad": {

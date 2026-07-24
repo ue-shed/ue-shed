@@ -28,6 +28,7 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [StyleX](stylex.md)                       | Styles, themes, and UI packages            |
 | [Observability](observability.md)         | Telemetry, health, and diagnostics         |
 | [Testing](testing.md)                     | Test scope and test types                  |
+| [UAsset benchmarks](uasset-benchmarks.md) | Parser, CLI, WASM, and Unreal measurements |
 | [Releases](releases.md)                   | CI trust lanes, candidates, and publishing |
 | [Agent adoption](agent-adoption.md)       | Agent-operated workflows and copied slices |
 

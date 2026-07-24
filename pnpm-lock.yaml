@@ -122,6 +122,9 @@ importers:
       '@ue-shed/engine-discovery':
         specifier: workspace:*
         version: link:../../packages/engine-discovery
+      '@ue-shed/enhanced-input':
+        specifier: workspace:*
+        version: link:../../packages/enhanced-input
       '@ue-shed/game-text':
         specifier: workspace:*
         version: link:../../packages/game-text
@@ -469,6 +472,15 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
+
+  packages/enhanced-input:
+    dependencies:
+      '@ue-shed/unreal-assets':
+        specifier: workspace:*
+        version: link:../unreal-assets
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
 
   packages/game-text:
     dependencies:

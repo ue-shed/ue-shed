@@ -14,10 +14,19 @@ layer.
 
 ## Commands
 
-Run `pnpm check` after edits and immediately before returning work to the user. A task is not
-complete while this check is failing: fix the failures and rerun the check, or clearly report the
-remaining blocker instead of handing back an unverified change. Individual commands are
-`typecheck`, `lint`, `format:check`, and `test`.
+`pnpm check` must stay green. A task is not done, and must not be handed back as ready to
+commit, while it fails. Run it after substantive edits and again immediately before returning
+work. Fix failures and rerun until it passes, or clearly report the remaining blocker instead of
+handing back an unverified change.
+
+Commits are blocked by Lefthook `pre-commit`, which runs `pnpm run check:precommit`
+(`format:check`, `lint`, `typecheck`, `test:architecture`, `contract:check`). If that subset
+fails, the commit will be rejected—do not leave formatting, lint, or type errors for the user
+to discover at commit time. Fix with `pnpm exec oxfmt .` when `format:check` fails; then rerun
+the failing command and `pnpm check`.
+
+Full `pnpm check` also covers `uasset:check`, license/architecture/release gates, and `test`.
+Individual commands include `typecheck`, `lint`, `format:check`, and `test`.
 
 ## Unreal Engine reference
 

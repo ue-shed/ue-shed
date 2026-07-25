@@ -15,6 +15,7 @@ the status row when done.
 | [027](027-adopt-parser-in-downstream-host.md)       | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026           | TODO                            |
 | [028](028-compose-map-review-downstream.md)         | Compose finished Map Review capabilities downstream             | P2       | XL     | 017, 018, 019, 022, 026 | TODO                            |
 | [029](029-authoring-downstream-integration-gate.md) | Gate authoring integration behind finished generic slices       | P2       | L      | 007, 022, 026           | TODO                            |
+| [030](030-resolve-authoring-row-identity.md)        | Resolve `AuthoringRow` identity provenance                      | P1       | M      | none                    | TODO                            |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -38,6 +39,9 @@ table and the archive index.
   editing, Composite DataTables, editable joins, and final release conformance remain. Continue it on
   the Effect-native services and adoption seam established by archived plans 008–016.
 - Plan 007 still depends on archived plans 006 and 015 for prior gates; read those only as history.
+- Plan 030 has no prerequisites and should be decided before Plan 007 adds further `rowId` consumers
+  (editable joins, additional relationship contracts). It is a decision plan — no implementation
+  until its record is accepted.
 - Plans 020–026 establish a public versioned surface in the canonical organization repository.
 - Plan 022 makes the Effect Schema convention enforceable at public boundaries. Recursive schemas
   may retain narrowly documented manual declarations only with bidirectional type/fixture tests.

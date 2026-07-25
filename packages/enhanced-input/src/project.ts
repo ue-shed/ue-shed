@@ -1,6 +1,7 @@
 import { relative } from "node:path";
 import {
 	AssetReader,
+	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
 	type SavedProperty,
@@ -19,8 +20,9 @@ import {
 	type InputMappingsProperty
 } from "./schema.js";
 
-export const INPUT_ACTION_CLASS = "/Script/EnhancedInput.InputAction";
-export const INPUT_MAPPING_CONTEXT_CLASS = "/Script/EnhancedInput.InputMappingContext";
+export const ENHANCED_INPUT_CLASS_PREFIX = "/Script/EnhancedInput.";
+export const INPUT_ACTION_CLASS = `${ENHANCED_INPUT_CLASS_PREFIX}InputAction`;
+export const INPUT_MAPPING_CONTEXT_CLASS = `${ENHANCED_INPUT_CLASS_PREFIX}InputMappingContext`;
 
 export class EnhancedInputScanError extends Schema.TaggedErrorClass<EnhancedInputScanError>()(
 	"EnhancedInputScanError",
@@ -35,6 +37,24 @@ export const EnhancedInputScanOptions = Schema.Struct({
 export type EnhancedInputScanOptions = Schema.Schema.Type<typeof EnhancedInputScanOptions>;
 
 const decodeScanOptions = Schema.decodeUnknownEffect(EnhancedInputScanOptions);
+
+/** Maps a reader failure onto the scan's typed failure, preserving recovery guidance. */
+function enhancedInputScanFailure(error: AssetReaderError): EnhancedInputScanError {
+	if (error.kind === "resource_limit") {
+		return new EnhancedInputScanError({
+			code: "scan_limit_exceeded",
+			message: error.message,
+			recovery: "Narrow the project or raise the explicit maximum asset limit.",
+			retrySafe: false
+		});
+	}
+	return new EnhancedInputScanError({
+		code: "invalid_project",
+		message: error.message,
+		recovery: "Choose an Unreal project directory containing a Content folder.",
+		retrySafe: error.retrySafe
+	});
+}
 
 const unavailable = (
 	reason: "not_serialized" | "wrong_value_kind" | "not_an_input_action" | "not_a_mapping_context"
@@ -226,8 +246,18 @@ export type EnhancedInputPackageOutcome =
 	  }
 	| { readonly status: "failed"; readonly packageFile: string; readonly message: string };
 
+/**
+ * Package counts from a batched scan. A filtered scan never reports packages the reader ruled out
+ * from their headers, so discovered and inspected cannot be derived from `outcomes` alone.
+ */
+export interface EnhancedInputPackageCounts {
+	readonly discoveredPackages: number;
+	readonly inspectedPackages: number;
+}
+
 export function buildEnhancedInputReport(
-	outcomes: readonly EnhancedInputPackageOutcome[]
+	outcomes: readonly EnhancedInputPackageOutcome[],
+	counts?: EnhancedInputPackageCounts
 ): EnhancedInputReport {
 	const actions: InputActionRecord[] = [];
 	const mappingContexts: InputMappingContextRecord[] = [];
@@ -282,8 +312,8 @@ export function buildEnhancedInputReport(
 				? "partial"
 				: "complete",
 		coverage: {
-			discoveredPackages: outcomes.length,
-			inspectedPackages: inspected.length,
+			discoveredPackages: counts?.discoveredPackages ?? outcomes.length,
+			inspectedPackages: counts?.inspectedPackages ?? inspected.length,
 			partialPackages,
 			failedPackages,
 			inputActions: actions.length,
@@ -300,48 +330,36 @@ function scanEnhancedInputWith(
 	options: EnhancedInputScanOptions
 ): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
 	return Effect.gen(function* () {
-		const assets = yield* reader.discoverAssets(options.projectRoot).pipe(
-			Effect.mapError(
-				(error) =>
-					new EnhancedInputScanError({
-						code: "invalid_project",
-						message: error.message,
-						recovery: "Choose an Unreal project directory containing a Content folder.",
-						retrySafe: true
-					})
+		// One reader process classifies the whole project from package headers, decoding only
+		// packages that export an Enhanced Input class.
+		const scan = yield* reader
+			.scanProject({
+				classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
+				concurrency: Math.max(1, options.concurrency ?? 4),
+				maximumAssets: options.maximumAssets ?? 10_000,
+				projectRoot: options.projectRoot
+			})
+			.pipe(Effect.mapError(enhancedInputScanFailure));
+		const outcomes: EnhancedInputPackageOutcome[] = [
+			...scan.assets.map(
+				(entry): EnhancedInputPackageOutcome => ({
+					status: "inspected",
+					packageFile: relative(options.projectRoot, entry.inspection.path),
+					inspection: entry.inspection
+				})
+			),
+			...scan.failures.map(
+				(failure): EnhancedInputPackageOutcome => ({
+					status: "failed",
+					packageFile: relative(options.projectRoot, failure.path),
+					message: failure.message
+				})
 			)
-		);
-		const maximumAssets = options.maximumAssets ?? 10_000;
-		if (assets.length > maximumAssets) {
-			return yield* new EnhancedInputScanError({
-				code: "scan_limit_exceeded",
-				message: `Scan found ${assets.length} packages, above the limit of ${maximumAssets}.`,
-				recovery: "Narrow the project or raise the explicit maximum asset limit.",
-				retrySafe: false
-			});
-		}
-		const outcomes = yield* Effect.forEach(
-			assets,
-			(assetPath) =>
-				reader.readAsset(assetPath).pipe(
-					Effect.map(
-						(inspection): EnhancedInputPackageOutcome => ({
-							status: "inspected",
-							packageFile: relative(options.projectRoot, assetPath),
-							inspection
-						})
-					),
-					Effect.catch((error) =>
-						Effect.succeed<EnhancedInputPackageOutcome>({
-							status: "failed",
-							packageFile: relative(options.projectRoot, assetPath),
-							message: error.message
-						})
-					)
-				),
-			{ concurrency: Math.max(1, options.concurrency ?? 4) }
-		);
-		return buildEnhancedInputReport(outcomes);
+		];
+		return buildEnhancedInputReport(outcomes, {
+			discoveredPackages: scan.summary.scannedAssets,
+			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets
+		});
 	}).pipe(Effect.withSpan("enhanced-input.scan"));
 }
 

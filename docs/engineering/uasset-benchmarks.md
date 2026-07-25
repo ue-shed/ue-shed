@@ -72,6 +72,17 @@ reader per package, parsing irrelevant exports, or rebuilding unchanged catalogs
 batch inspection, header filtering, streaming progress, and incremental caches before specializing
 the core parser for one asset domain.
 
+Batch inspection and header filtering have landed as `uasset scan`, which the project-wide product
+scans now use. Measured on this fixture, the reader-level cost per package fell from 11.0 ms when
+spawning one `uasset inspect` per package to 2.1 ms for one unfiltered `uasset scan`, and to 0.53 ms
+once a class filter lets the reader rule packages out from their headers. That marginal per-package
+cost is what scales with project size; the remaining `typescript.input.project` time is dominated by
+Node startup, which one fixture-sized scan cannot amortize.
+
+Incremental caching is the next boundary. `uasset catalog` already keys entries by path, size, and
+modification time, but `uasset scan` has no `--cache` yet, and the CLI's own `catalog` invocations
+pass no cache path.
+
 WASM is a required runtime, but this harness does not fabricate a WASM timing from a native library
 build. Add a browser or WASI scenario when the versioned WASM inspection binding ships, and require
 it to use the same bytes and semantic fixture assertions as the native producer.

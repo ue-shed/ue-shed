@@ -16,9 +16,38 @@ import {
 	AssetReaderLive,
 	discoverSavedAssets,
 	readSavedAsset,
-	readSavedTable
+	readSavedTable,
+	scanSavedProject
 } from "@ue-shed/unreal-assets";
 ```
+
+## Scanning a whole project
+
+`scanSavedProject` invokes `uasset scan <project-root>` once and streams newline-delimited results
+back, so a project-wide scan costs one process instead of one per package. Prefer it over
+`discoverSavedAssets` plus `readSavedAsset` per path.
+
+`classes`, `classPrefixes`, and `names` are selection rules the reader evaluates against each
+package **header**, so packages that cannot hold what you are looking for are never fully read or
+decoded. A package is selected when it matches any rule; with no rules every package is selected.
+`names` matches the package name table, which selects by serialized property type — a package
+holding any `FText` names `TextProperty` in its header.
+
+```ts
+// Every Texture2D in the project.
+scanSavedProject({ classes: ["Texture2D"], projectRoot });
+
+// Everything under one folder, plus one specific package.
+scanSavedProject({
+	paths: ["Content/Characters", "Content/UI/T_Icon.uasset"],
+	projectRoot
+});
+```
+
+`paths` narrows enumeration to directories or individual `.uasset` files, relative to the project
+root or absolute, and must resolve inside it. It defaults to `Content`. `maximumAssets` refuses a
+scan during enumeration, before any package is decoded, and surfaces as an `AssetReaderError` of
+kind `resource_limit`.
 
 Its authoring payload is derived from the same language-neutral schema and snapshot contract emitted
 by `UEShedAuthoring`; it is not a second package-reader-specific authoring model.

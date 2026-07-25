@@ -52,15 +52,30 @@ try {
 				dependencies: {
 					...dependencyEntries,
 					effect: "4.0.0-beta.98"
-				},
-				pnpm: { overrides: dependencyEntries }
+				}
 			},
 			null,
 			2
 		)}\n`,
 		"utf8"
 	);
-	run(executable("pnpm"), ["install", "--offline", "--ignore-scripts"], consumerDirectory);
+	const overrideLines = Object.entries(dependencyEntries).map(
+		([name, locator]) => `  "${name}": "${locator}"`
+	);
+	await writeFile(
+		join(consumerDirectory, "pnpm-workspace.yaml"),
+		`overrides:\n${overrideLines.join("\n")}\n`,
+		"utf8"
+	);
+	// Seed the store with the consumer's resolved graph (catalog ranges can float past the
+	// monorepo lockfile), then prove that graph reinstalls offline from store alone.
+	run(executable("pnpm"), ["install", "--ignore-scripts"], consumerDirectory);
+	await rm(join(consumerDirectory, "node_modules"), { recursive: true, force: true });
+	run(
+		executable("pnpm"),
+		["install", "--offline", "--ignore-scripts", "--frozen-lockfile"],
+		consumerDirectory
+	);
 	const consumerEnvironment = { ...process.env };
 	delete consumerEnvironment.UE_SHED_UASSET_EXECUTABLE;
 	const consumerScript = join(consumerDirectory, "verify-map-review.mjs");

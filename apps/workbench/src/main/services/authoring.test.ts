@@ -3,7 +3,7 @@ import {
 	makeAuthoringCatalogTestLayer,
 	type AuthoringCatalogShape
 } from "@ue-shed/authoring-catalog";
-import { makeAssetReaderTestLayer, type AssetReaderShape } from "@ue-shed/unreal-assets";
+import { makeAssetReaderTestLayer, type AssetReaderTestShape } from "@ue-shed/unreal-assets";
 import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClient,
@@ -81,7 +81,7 @@ const emptyCatalog: AuthoringCatalogShape = {
 	discover: () => Effect.succeed({ diagnostics: [], scannedSavedAssets: 0, tables: [] })
 };
 
-const dyingReader: AssetReaderShape = {
+const dyingReader: AssetReaderTestShape = {
 	discoverAssets: () => Effect.die("not used"),
 	discoverTables: () => Effect.die("not used"),
 	readAsset: () => Effect.die("not used"),

@@ -216,7 +216,9 @@ for (const path of await filesUnder(targetRoot)) {
 	}
 }
 
-runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile=false"]);
+runPnpm(["install", "--ignore-scripts", "--frozen-lockfile=false"]);
+await rm(join(targetRoot, "node_modules"), { recursive: true, force: true });
+runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile"]);
 runPnpm(["build"]);
 runPnpm(["build:reader"]);
 const cssPath = join(targetRoot, "app", "dist", "stylex.css");

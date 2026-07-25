@@ -13,8 +13,8 @@ const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
 export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>()(
 	"AssetReaderError",
 	{
-		kind: Schema.Literals(["timeout", "process", "contract", "discovery"]),
-		operation: Schema.Literals(["authoring", "catalog", "inspect", "discovery"]),
+		kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
+		operation: Schema.Literals(["authoring", "catalog", "inspect", "discovery", "scan"]),
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
 		path: Schema.optional(Schema.String),
@@ -30,6 +30,26 @@ export interface SavedTableCatalogOptions {
 	readonly cachePath?: string;
 	readonly projectRoot: string;
 	readonly concurrency?: number;
+}
+
+/**
+ * One batched project scan. `classes`, `classPrefixes`, and `names` are header-only selection
+ * rules evaluated inside the reader, so unselected packages are never fully read or decoded. A
+ * package is selected when it matches any rule; with no rules every package is selected.
+ */
+export interface SavedAssetScanOptions {
+	/** Select packages exporting a class under this path prefix, e.g. `/Script/EnhancedInput.`. */
+	readonly classPrefixes?: readonly string[];
+	/** Select packages exporting this class, as a full path or a bare class name. */
+	readonly classes?: readonly string[];
+	readonly concurrency?: number;
+	/** Refuse the scan when enumeration finds more packages than this, before any decode. */
+	readonly maximumAssets?: number;
+	/** Select packages whose name table contains this entry, e.g. the `TextProperty` type name. */
+	readonly names?: readonly string[];
+	/** Roots to enumerate, relative to the project root or absolute. Defaults to `Content`. */
+	readonly paths?: readonly string[];
+	readonly projectRoot: string;
 }
 
 export interface AssetReaderConfiguration {
@@ -52,8 +72,22 @@ export interface AssetReaderShape {
 	readonly readTable: (
 		assetPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
+	/**
+	 * Inspects every selected package under one project in a single reader process. Prefer this
+	 * over `discoverAssets` plus `readAsset` per path for any project-wide scan.
+	 */
+	readonly scanProject: (
+		options: SavedAssetScanOptions
+	) => Effect.Effect<SavedAssetScan, AssetReaderError>;
+	readonly scanProgress: () => Effect.Effect<SavedAssetScanProgress>;
 	readonly source: () => Effect.Effect<"configured" | "path">;
 }
+
+/** Optional members a test layer may omit; `makeAssetReaderTestLayer` supplies the defaults. */
+type AssetReaderTestDefaults = "catalogProgress" | "scanProgress" | "scanProject";
+
+export type AssetReaderTestShape = Omit<AssetReaderShape, AssetReaderTestDefaults> &
+	Partial<Pick<AssetReaderShape, AssetReaderTestDefaults>>;
 
 export class AssetReader extends Context.Service<AssetReader, AssetReaderShape>()(
 	"@ue-shed/unreal-assets/AssetReader"
@@ -339,6 +373,100 @@ interface CatalogProgressStore {
 	current: SavedTableCatalogProgress;
 }
 
+const nonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+const savedAssetScanEntryFields = {
+	fileBytes: nonNegativeInt,
+	inspection: SavedAssetInspection
+};
+
+/** One selected package from a batched scan, with the package file size the reader already stat-ed. */
+export const SavedAssetScanEntry = Schema.Struct(savedAssetScanEntryFields);
+export type SavedAssetScanEntry = Schema.Schema.Type<typeof SavedAssetScanEntry>;
+
+const savedAssetScanFailureFields = {
+	code: Schema.String,
+	message: Schema.String,
+	path: Schema.String,
+	retrySafe: Schema.Boolean
+};
+
+/** One package the reader could not inspect. The scan continues past it. */
+export const SavedAssetScanFailure = Schema.Struct(savedAssetScanFailureFields);
+export type SavedAssetScanFailure = Schema.Schema.Type<typeof SavedAssetScanFailure>;
+
+const savedAssetScanSummaryFields = {
+	diagnostics: Schema.Array(
+		Schema.Struct({
+			code: Schema.String,
+			message: Schema.String,
+			path: Schema.String,
+			retrySafe: Schema.Boolean
+		})
+	),
+	emittedAssets: nonNegativeInt,
+	failedAssets: nonNegativeInt,
+	partialAssets: nonNegativeInt,
+	projectRoot: Schema.String,
+	roots: Schema.Array(Schema.String),
+	scannedAssets: nonNegativeInt,
+	schema_version: Schema.Literal(7),
+	skippedAssets: nonNegativeInt
+};
+
+export const SavedAssetScanSummary = Schema.Struct(savedAssetScanSummaryFields);
+export type SavedAssetScanSummary = Schema.Schema.Type<typeof SavedAssetScanSummary>;
+
+export const SavedAssetScanProgress = Schema.Struct({
+	emittedAssets: nonNegativeInt,
+	phase: Schema.Literals(["idle", "enumerating", "scanning", "ready", "failed"]),
+	processedAssets: nonNegativeInt,
+	totalAssets: nonNegativeInt
+});
+export type SavedAssetScanProgress = Schema.Schema.Type<typeof SavedAssetScanProgress>;
+
+export interface SavedAssetScan {
+	readonly assets: readonly SavedAssetScanEntry[];
+	readonly failures: readonly SavedAssetScanFailure[];
+	readonly summary: SavedAssetScanSummary;
+}
+
+const ScanAssetLine = Schema.Struct({
+	event: Schema.Literal("asset"),
+	...savedAssetScanEntryFields
+});
+
+const ScanFailureLine = Schema.Struct({
+	event: Schema.Literal("error"),
+	...savedAssetScanFailureFields
+});
+
+const ScanSummaryLine = Schema.Struct({
+	event: Schema.Literal("summary"),
+	...savedAssetScanSummaryFields
+});
+
+const decodeScanAssetLine = Schema.decodeUnknownResult(ScanAssetLine);
+const decodeScanFailureLine = Schema.decodeUnknownResult(ScanFailureLine);
+const decodeScanSummaryLine = Schema.decodeUnknownResult(ScanSummaryLine);
+const decodeScanProgressLine = Schema.decodeUnknownOption(
+	Schema.Struct({
+		event: Schema.Literal("scan_progress"),
+		...SavedAssetScanProgress.fields
+	})
+);
+
+interface ScanProgressStore {
+	current: SavedAssetScanProgress;
+}
+
+const idleScanProgress = (): SavedAssetScanProgress => ({
+	emittedAssets: 0,
+	phase: "idle",
+	processedAssets: 0,
+	totalAssets: 0
+});
+
 const idleCatalogProgress = (): SavedTableCatalogProgress => ({
 	cacheHits: 0,
 	phase: "idle",
@@ -518,6 +646,250 @@ function invokeCatalogReader(
 	});
 }
 
+function scanArguments(options: SavedAssetScanOptions): string[] {
+	const args = [
+		"scan",
+		options.projectRoot,
+		"--format",
+		"json",
+		"--concurrency",
+		String(Math.max(1, options.concurrency ?? 8))
+	];
+	if (options.maximumAssets !== undefined) {
+		args.push("--maximum-assets", String(options.maximumAssets));
+	}
+	for (const path of options.paths ?? []) args.push("--path", path);
+	for (const value of options.classes ?? []) args.push("--class", value);
+	for (const value of options.classPrefixes ?? []) args.push("--class-prefix", value);
+	for (const value of options.names ?? []) args.push("--name", value);
+	return args;
+}
+
+interface ScanFailure extends ProcessFailure {
+	readonly contract?: string;
+	readonly discovery?: boolean;
+	readonly resourceLimit?: boolean;
+}
+
+/** Pulls a structured reader error of one kind out of accumulated stderr. */
+function structuredErrorMessage(stderr: string, kind: string): string | undefined {
+	for (const line of stderr.split(/\r?\n/)) {
+		if (line.trim().length === 0) continue;
+		try {
+			const parsed = JSON.parse(line) as { kind?: string; message?: string; status?: string };
+			if (parsed.status === "error" && parsed.kind === kind) return parsed.message;
+		} catch {
+			// Non-JSON stderr is reported verbatim by the caller instead.
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Runs one batched scan in a single reader process, decoding newline-delimited JSON as it
+ * arrives. Replaces one process per package with one process per scan.
+ */
+function invokeScanReader(
+	configuration: AssetReaderConfiguration,
+	options: SavedAssetScanOptions,
+	progress: ScanProgressStore
+): Effect.Effect<SavedAssetScan, AssetReaderError> {
+	return Effect.tryPromise({
+		try: (signal) =>
+			new Promise<SavedAssetScan>((resolvePromise, rejectPromise) => {
+				progress.current = { ...idleScanProgress(), phase: "enumerating" };
+				const child = spawn(configuration.executable, scanArguments(options), {
+					signal,
+					timeout: configuration.catalogTimeoutMs,
+					windowsHide: true
+				});
+				const assets: SavedAssetScanEntry[] = [];
+				const failures: SavedAssetScanFailure[] = [];
+				let summary: SavedAssetScanSummary | undefined;
+				let stdoutLine = "";
+				let stderrLine = "";
+				let stderr = "";
+				let settled = false;
+				const rejectOnce = (failure: ScanFailure) => {
+					if (settled) return;
+					settled = true;
+					progress.current = { ...progress.current, phase: "failed" };
+					child.kill();
+					rejectPromise(failure);
+				};
+				const consumeAssetLine = (line: string) => {
+					if (settled || line.trim().length === 0) return;
+					let parsed: unknown;
+					try {
+						parsed = JSON.parse(line) as unknown;
+					} catch (cause) {
+						rejectOnce({ contract: `Invalid scan output line: ${String(cause)}` });
+						return;
+					}
+					const event = (parsed as { event?: unknown }).event;
+					if (event === "asset") {
+						const decoded = decodeScanAssetLine(parsed);
+						if (decoded._tag === "Failure") {
+							rejectOnce({ contract: `Invalid scan asset: ${decoded.failure}` });
+							return;
+						}
+						assets.push({
+							fileBytes: decoded.success.fileBytes,
+							inspection: decoded.success.inspection
+						});
+						return;
+					}
+					if (event === "error") {
+						const decoded = decodeScanFailureLine(parsed);
+						if (decoded._tag === "Failure") {
+							rejectOnce({ contract: `Invalid scan error: ${decoded.failure}` });
+							return;
+						}
+						const { event: _event, ...failure } = decoded.success;
+						failures.push(failure);
+						return;
+					}
+					if (event === "summary") {
+						const decoded = decodeScanSummaryLine(parsed);
+						if (decoded._tag === "Failure") {
+							rejectOnce({ contract: `Invalid scan summary: ${decoded.failure}` });
+							return;
+						}
+						const { event: _event, ...decodedSummary } = decoded.success;
+						summary = decodedSummary;
+						return;
+					}
+					rejectOnce({ contract: `Unknown scan event ${JSON.stringify(event)}` });
+				};
+				const consumeStderrLine = (line: string) => {
+					if (line.trim().length === 0) return;
+					try {
+						const decoded = decodeScanProgressLine(JSON.parse(line) as unknown);
+						if (Option.isSome(decoded)) {
+							const { event: _event, ...current } = decoded.value;
+							progress.current = current;
+							return;
+						}
+					} catch {
+						// Preserve non-progress stderr below as the process diagnostic.
+					}
+					stderr += `${line}\n`;
+				};
+				child.stdout.setEncoding("utf8");
+				child.stderr.setEncoding("utf8");
+				child.stdout.on("data", (chunk: string) => {
+					stdoutLine += chunk;
+					if (Buffer.byteLength(stdoutLine, "utf8") > MAX_OUTPUT_BYTES) {
+						rejectOnce({ message: "A single scan output line exceeded 64 MiB" });
+						return;
+					}
+					const lines = stdoutLine.split(/\r?\n/);
+					stdoutLine = lines.pop() ?? "";
+					for (const line of lines) consumeAssetLine(line);
+				});
+				child.stderr.on("data", (chunk: string) => {
+					stderrLine += chunk;
+					const lines = stderrLine.split(/\r?\n/);
+					stderrLine = lines.pop() ?? "";
+					for (const line of lines) consumeStderrLine(line);
+				});
+				child.once("error", (cause) => rejectOnce({ message: cause.message }));
+				child.once("close", (code, childSignal) => {
+					if (stdoutLine.length > 0) consumeAssetLine(stdoutLine);
+					if (stderrLine.length > 0) consumeStderrLine(stderrLine);
+					if (settled) return;
+					settled = true;
+					if (code === 7) {
+						progress.current = { ...progress.current, phase: "failed" };
+						rejectPromise({
+							code,
+							message:
+								structuredErrorMessage(stderr, "resource_limit") ??
+								"Scan exceeded the maximum asset limit",
+							resourceLimit: true
+						});
+						return;
+					}
+					// The reader exits 4 when a scan root cannot be enumerated, which is a
+					// misconfigured project rather than a reader fault.
+					if (code === 4) {
+						progress.current = { ...progress.current, phase: "failed" };
+						rejectPromise({
+							code,
+							discovery: true,
+							message:
+								structuredErrorMessage(stderr, "io") ??
+								"Scan could not enumerate the project"
+						});
+						return;
+					}
+					// The reader exits 6 when some package was partial or unreadable. The scan
+					// still produced every package it could read, so that is a partial success.
+					if (code !== 0 && code !== 6) {
+						progress.current = { ...progress.current, phase: "failed" };
+						rejectPromise({
+							...(typeof code === "number" ? { code } : {}),
+							killed: childSignal !== null,
+							message: `Asset scan exited ${code ?? childSignal ?? "without a status"}`,
+							stderr
+						});
+						return;
+					}
+					if (summary === undefined) {
+						progress.current = { ...progress.current, phase: "failed" };
+						rejectPromise({ contract: "Scan output ended without a summary line" });
+						return;
+					}
+					progress.current = { ...progress.current, phase: "ready" };
+					resolvePromise({ assets, failures, summary });
+				});
+			}),
+		catch: (cause) => {
+			const failure = cause as ScanFailure;
+			if (failure.contract !== undefined) {
+				return new AssetReaderError({
+					kind: "contract",
+					operation: "scan",
+					message: failure.contract,
+					path: options.projectRoot,
+					retrySafe: false
+				});
+			}
+			if (failure.resourceLimit === true) {
+				return new AssetReaderError({
+					kind: "resource_limit",
+					operation: "scan",
+					message: failure.message ?? "Scan exceeded the maximum asset limit",
+					path: options.projectRoot,
+					retrySafe: false,
+					exitCode: 7
+				});
+			}
+			if (failure.discovery === true) {
+				return new AssetReaderError({
+					kind: "discovery",
+					operation: "scan",
+					message: failure.message ?? "Scan could not enumerate the project",
+					path: options.projectRoot,
+					retrySafe: true,
+					exitCode: 4
+				});
+			}
+			const timedOut = failure.killed === true || failure.code === "ETIMEDOUT";
+			return new AssetReaderError({
+				kind: timedOut ? "timeout" : "process",
+				operation: "scan",
+				message: timedOut
+					? `Asset scan timed out after ${configuration.catalogTimeoutMs}ms`
+					: failure.stderr?.trim() || failure.message || "Asset scan failed",
+				path: options.projectRoot,
+				retrySafe: timedOut,
+				...(typeof failure.code === "number" ? { exitCode: failure.code } : {})
+			});
+		}
+	});
+}
+
 function decodeOutput<A>(options: {
 	readonly assetPath: string;
 	readonly operation: "authoring" | "catalog" | "inspect";
@@ -634,11 +1006,24 @@ function discoverSavedTablesWith(
 
 function makeAssetReader(
 	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" },
-	progress: CatalogProgressStore
+	progress: CatalogProgressStore,
+	scanStore: ScanProgressStore
 ): AssetReaderShape {
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
 	);
+	const scanProgress = Effect.fn("AssetReader.scanProgress")(() =>
+		Effect.sync(() => scanStore.current)
+	);
+	const scanProject = Effect.fn("AssetReader.scanProject")(function* (
+		options: SavedAssetScanOptions
+	) {
+		return yield* invokeScanReader(configuration, options, scanStore).pipe(
+			Effect.withSpan("unreal_assets.scan_project", {
+				attributes: { "unreal.project_root": options.projectRoot }
+			})
+		);
+	});
 	const discoverAssets = Effect.fn("AssetReader.discoverAssets")(function* (projectRoot: string) {
 		return yield* discoverSavedAssetsWith(projectRoot);
 	});
@@ -660,6 +1045,8 @@ function makeAssetReader(
 		discoverTables,
 		readAsset,
 		readTable,
+		scanProgress,
+		scanProject,
 		source
 	});
 }
@@ -675,7 +1062,8 @@ export function assetReaderLayer(
 				source: configuration.executable === undefined ? "path" : "configured",
 				timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
 			},
-			{ current: idleCatalogProgress() }
+			{ current: idleCatalogProgress() },
+			{ current: idleScanProgress() }
 		)
 	);
 }
@@ -699,17 +1087,29 @@ export const AssetReaderLive = Layer.effect(
 				source: Option.isSome(executable) ? "configured" : "path",
 				timeoutMs: Duration.toMillis(yield* readerTimeout)
 			},
-			{ current: idleCatalogProgress() }
+			{ current: idleCatalogProgress() },
+			{ current: idleScanProgress() }
 		);
 	})
 );
 
-export function makeAssetReaderTestLayer(service: AssetReaderShape): Layer.Layer<AssetReader> {
+export function makeAssetReaderTestLayer(service: AssetReaderTestShape): Layer.Layer<AssetReader> {
 	return Layer.succeed(
 		AssetReader,
 		AssetReader.of({
 			catalogProgress:
 				service.catalogProgress ?? (() => Effect.succeed(idleCatalogProgress())),
+			scanProgress: service.scanProgress ?? (() => Effect.succeed(idleScanProgress())),
+			scanProject:
+				service.scanProject ??
+				((options) =>
+					new AssetReaderError({
+						kind: "process",
+						operation: "scan",
+						message: "This test asset reader does not stub scanProject.",
+						path: options.projectRoot,
+						retrySafe: false
+					})),
 			...service
 		})
 	);
@@ -737,6 +1137,12 @@ export function discoverSavedTables(
 	options: SavedTableCatalogOptions
 ): Effect.Effect<SavedTableCatalog, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.discoverTables(options));
+}
+
+export function scanSavedProject(
+	options: SavedAssetScanOptions
+): Effect.Effect<SavedAssetScan, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.scanProject(options));
 }
 
 export function getAssetReaderSource(): Effect.Effect<"configured" | "path", never, AssetReader> {

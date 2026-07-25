@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { makeAssetReaderTestLayer, type AssetReaderShape } from "@ue-shed/unreal-assets";
+import { makeAssetReaderTestLayer, type AssetReaderTestShape } from "@ue-shed/unreal-assets";
 import { aggregateHealth, defaultHealthInput, runtimeHealthLayer } from "@ue-shed/observability";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
@@ -7,7 +7,7 @@ import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { Showcase, ShowcaseLive } from "./showcase.js";
 
-const stubReader = (source: "configured" | "path"): AssetReaderShape => ({
+const stubReader = (source: "configured" | "path"): AssetReaderTestShape => ({
 	discoverAssets: () => Effect.succeed([]),
 	discoverTables: () =>
 		Effect.succeed({ diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] }),

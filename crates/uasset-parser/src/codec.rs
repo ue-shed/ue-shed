@@ -239,9 +239,9 @@ fn decode_typed_value(
         ))),
         "SoftObjectProperty" => {
             let path = path.to_string();
-            Ok(Some(PropertyValue::SoftObjectPath(decode_soft_object_path(
-                payload, &path, context,
-            )?)))
+            Ok(Some(PropertyValue::SoftObjectPath(
+                decode_soft_object_path(payload, &path, context)?,
+            )))
         }
         "ArrayProperty" => {
             let path = path.to_string();
@@ -354,10 +354,14 @@ fn decode_binary_or_native_value(
                 )?)));
             }
             Some("Guid") => {
-                return Ok(Some(PropertyValue::Guid(decode_guid_value(payload, &path)?)));
+                return Ok(Some(PropertyValue::Guid(decode_guid_value(
+                    payload, &path,
+                )?)));
             }
             Some("Color") => {
-                return Ok(Some(PropertyValue::Color(decode_color_value(payload, &path)?)));
+                return Ok(Some(PropertyValue::Color(decode_color_value(
+                    payload, &path,
+                )?)));
             }
             Some("LinearColor") => {
                 return Ok(Some(PropertyValue::LinearColor(decode_linear_color_value(
@@ -942,7 +946,10 @@ fn decode_linear_color_value(
             crate::property::PropertyErrorKind::MalformedData,
             Some(payload.tell()),
             path,
-            format!("unsupported FLinearColor payload size {}", payload.remaining()),
+            format!(
+                "unsupported FLinearColor payload size {}",
+                payload.remaining()
+            ),
         ));
     }
     Ok(LinearColorValue {

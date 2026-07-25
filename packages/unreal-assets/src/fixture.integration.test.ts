@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -7,13 +8,99 @@ import {
 	discoverSavedAssets,
 	discoverSavedTables,
 	readSavedAsset,
-	readSavedTable
+	readSavedTable,
+	scanSavedProject
 } from "./index.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", import.meta.url));
 const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
+
+describe.skipIf(!executable)("batched project scan", () => {
+	it("inspects every fixture package in one reader process", async () => {
+		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
+		expect(scan.summary.scannedAssets).toBe(22);
+		expect(scan.summary.emittedAssets).toBe(22);
+		expect(scan.summary.skippedAssets).toBe(0);
+		expect(scan.failures).toEqual([]);
+		expect(scan.assets).toHaveLength(22);
+		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
+	});
+
+	it("emits the same payload as a single-package inspect", async () => {
+		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");
+		const [scan, direct] = await Promise.all([
+			runReader(scanSavedProject({ paths: [assetPath], projectRoot: fixtureRoot })),
+			runReader(readSavedAsset({ assetPath }))
+		]);
+		expect(scan.assets).toHaveLength(1);
+		expect(scan.assets[0]?.inspection).toEqual(direct);
+	});
+
+	it("decodes only packages a header filter selects", async () => {
+		const scan = await runReader(
+			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
+		);
+		expect(scan.summary.scannedAssets).toBe(22);
+		expect(scan.summary.emittedAssets).toBe(5);
+		expect(scan.summary.skippedAssets).toBe(17);
+		expect(
+			scan.assets.every((entry) =>
+				entry.inspection.assets.some(
+					(asset) =>
+						asset.kind === "UObject" && asset.class_path === "/Script/Engine.Texture2D"
+				)
+			)
+		).toBe(true);
+	});
+
+	it("selects text-bearing packages by class or name-table entry", async () => {
+		const scan = await runReader(
+			scanSavedProject({
+				classes: ["/Script/Engine.StringTable"],
+				names: ["TextProperty"],
+				projectRoot: fixtureRoot
+			})
+		);
+		expect(scan.summary.emittedAssets).toBe(6);
+		expect(
+			scan.assets.some((entry) =>
+				entry.inspection.assets.some((asset) => asset.kind === "StringTable")
+			)
+		).toBe(true);
+	});
+
+	it("narrows enumeration to a requested subdirectory", async () => {
+		const scan = await runReader(
+			scanSavedProject({ paths: ["Content/Fixture/Input"], projectRoot: fixtureRoot })
+		);
+		expect(scan.summary.scannedAssets).toBe(3);
+		expect(scan.assets.every((entry) => entry.inspection.path.includes("Input"))).toBe(true);
+	});
+
+	it("refuses a scan above the requested asset limit before decoding", async () => {
+		const error = await Effect.runPromise(
+			scanSavedProject({ maximumAssets: 2, projectRoot: fixtureRoot }).pipe(
+				Effect.flip,
+				Effect.provide(assetReaderLayer({ executable: executable! }))
+			)
+		);
+		expect(error.kind).toBe("resource_limit");
+		expect(error.message).toContain("above the limit of 2");
+	});
+
+	it("reports a missing project root as a discovery failure", async () => {
+		const error = await Effect.runPromise(
+			scanSavedProject({ projectRoot: join(fixtureRoot, "Missing") }).pipe(
+				Effect.flip,
+				Effect.provide(assetReaderLayer({ executable: executable! }))
+			)
+		);
+		expect(error.kind).toBe("discovery");
+		expect(error.retrySafe).toBe(true);
+	});
+});
 
 describe.skipIf(!executable)("saved authoring fixture", () => {
 	it("discovers DataTables without requiring their paths in advance", async () => {

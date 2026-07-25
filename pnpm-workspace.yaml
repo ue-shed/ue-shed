@@ -22,6 +22,9 @@ catalog:
     "solid-js": "^1.9.14"
     "vite-plugin-solid": "^2.11.12"
 
-onlyBuiltDependencies:
-    - electron
-    - esbuild
+allowBuilds:
+    electron: true
+    esbuild: true
+    msgpackr-extract: true
+    sharp: true
+    workerd: true

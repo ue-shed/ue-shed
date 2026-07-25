@@ -22,3 +22,6 @@ catalog:
     "effect": "4.0.0-beta.98"
     "solid-js": "^1.9.14"
     "vite-plugin-solid": "^2.11.12"
+
+overrides:
+    "@tanstack/solid-virtual": "3.13.33"

@@ -1,7 +1,8 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import {
 	AssetReader,
+	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
 	type SavedProperty
@@ -39,6 +40,32 @@ export const TextureAuditScanOptions = Schema.Struct({
 export type TextureAuditScanOptions = Schema.Schema.Type<typeof TextureAuditScanOptions>;
 
 const decodeScanOptions = Schema.decodeUnknownEffect(TextureAuditScanOptions);
+
+/** Maps a reader failure onto the audit's typed failure, preserving recovery guidance. */
+function textureScanFailure(error: AssetReaderError): TextureAuditScanError {
+	if (error.kind === "resource_limit") {
+		return new TextureAuditScanError({
+			code: "scan_failed",
+			message: error.message,
+			recovery: "Narrow the project or raise the explicit maximum asset limit.",
+			retrySafe: false
+		});
+	}
+	if (error.kind === "discovery") {
+		return new TextureAuditScanError({
+			code: "invalid_project",
+			message: error.message,
+			recovery: "Choose an Unreal project directory containing a Content folder.",
+			retrySafe: true
+		});
+	}
+	return new TextureAuditScanError({
+		code: "scan_failed",
+		message: error.message,
+		recovery: "Retry the scan, then verify the saved-asset reader is installed.",
+		retrySafe: error.retrySafe
+	});
+}
 
 const unavailable = (reason: "not_serialized" | "wrong_value_kind" | "missing_source") => ({
 	status: "unavailable" as const,
@@ -86,12 +113,14 @@ function sourceInteger(properties: readonly SavedProperty[], name: string) {
 	return { status: "available" as const, source: "serialized" as const, value: property.value };
 }
 
+export const TEXTURE_CLASS = "/Script/Engine.Texture2D";
+
 export function findTextureExports(inspection: SavedAssetInspection) {
 	type SavedAsset = SavedAssetInspection["assets"][number];
 	type UObjectAsset = Extract<SavedAsset, { readonly kind: "UObject" }>;
 	return inspection.assets.filter(
 		(asset): asset is UObjectAsset =>
-			asset.kind === "UObject" && asset.class_path === "/Script/Engine.Texture2D"
+			asset.kind === "UObject" && asset.class_path === TEXTURE_CLASS
 	);
 }
 
@@ -281,89 +310,48 @@ function scanTextureAuditWith(
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
 		const rules = yield* readRuleSet(options.ruleFile);
-		const assets = yield* reader.discoverAssets(options.projectRoot).pipe(
-			Effect.mapError(
-				(error) =>
-					new TextureAuditScanError({
-						code: "invalid_project",
-						message: error.message,
-						recovery: "Choose an Unreal project directory containing a Content folder.",
-						retrySafe: true
-					})
-			)
-		);
-		const maximumAssets = options.maximumAssets ?? 10_000;
-		if (assets.length > maximumAssets) {
-			return yield* new TextureAuditScanError({
-				code: "scan_failed",
-				message: `Scan found ${assets.length} packages, above the limit of ${maximumAssets}.`,
-				recovery: "Narrow the project or raise the explicit maximum asset limit.",
-				retrySafe: false
-			});
-		}
-		const outcomes = yield* Effect.forEach(
-			assets,
-			(assetPath) =>
-				Effect.all({
-					inspection: reader.readAsset(assetPath),
-					file: Effect.tryPromise(() => stat(assetPath))
-				}).pipe(
-					Effect.map(({ inspection, file }) => ({
-						status: "inspected" as const,
-						inspection,
-						filePath: relative(options.projectRoot, assetPath),
-						fileBytes: file.size
-					})),
-					Effect.catch((error) =>
-						Effect.succeed({
-							status: "failed" as const,
-							filePath: relative(options.projectRoot, assetPath),
-							message: String(error)
-						})
-					)
-				),
-			{ concurrency: Math.max(1, options.concurrency ?? 4) }
-		);
-		const records = outcomes
-			.flatMap((outcome) =>
-				outcome.status === "inspected"
-					? textureRecordsFromInspection({
-							inspection: outcome.inspection,
-							filePath: outcome.filePath,
-							packageFileBytes: outcome.fileBytes
-						})
-					: []
+		// One reader process classifies the whole project from package headers and only decodes
+		// packages that actually export a Texture2D.
+		const scan = yield* reader
+			.scanProject({
+				classes: [TEXTURE_CLASS],
+				concurrency: Math.max(1, options.concurrency ?? 4),
+				maximumAssets: options.maximumAssets ?? 10_000,
+				projectRoot: options.projectRoot
+			})
+			.pipe(Effect.mapError(textureScanFailure));
+		const records = scan.assets
+			.flatMap((entry) =>
+				textureRecordsFromInspection({
+					inspection: entry.inspection,
+					filePath: relative(options.projectRoot, entry.inspection.path),
+					packageFileBytes: entry.fileBytes
+				})
 			)
 			.sort((left, right) => left.objectPath.localeCompare(right.objectPath));
-		const diagnostics = outcomes
-			.filter((outcome) => outcome.status === "failed")
-			.slice(0, 100)
-			.map((outcome) => ({
-				code: "package_inspection_failed",
-				message: outcome.message,
-				filePath: outcome.filePath
-			}));
+		const diagnostics = scan.failures.slice(0, 100).map((failure) => ({
+			code: "package_inspection_failed",
+			message: failure.message,
+			filePath: relative(options.projectRoot, failure.path)
+		}));
 		const findings = records
 			.flatMap((record) => rules.rules.map((rule) => evaluateTextureRule(record, rule)))
 			.filter((finding): finding is TextureAuditFinding => finding !== undefined)
 			.sort(findingOrder);
-		const partialPackages = outcomes.filter(
-			(outcome) => outcome.status === "inspected" && outcome.inspection.status === "partial"
-		).length;
-		const failedPackages = outcomes.filter((outcome) => outcome.status === "failed").length;
+		const { failedAssets, partialAssets } = scan.summary;
 		return {
 			schemaVersion: 1 as const,
 			status:
-				partialPackages > 0 || failedPackages > 0
+				partialAssets > 0 || failedAssets > 0
 					? ("partial" as const)
 					: ("complete" as const),
 			ruleSetName: rules.name,
 			coverage: {
-				discoveredPackages: assets.length,
-				inspectedPackages: outcomes.length - failedPackages,
+				discoveredPackages: scan.summary.scannedAssets,
+				inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets,
 				textureAssets: records.length,
-				partialPackages,
-				failedPackages
+				partialPackages: partialAssets,
+				failedPackages: failedAssets
 			},
 			records,
 			findings,

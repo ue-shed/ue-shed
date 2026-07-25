@@ -424,9 +424,7 @@ impl Package {
         &self,
         name: crate::archive::NameRef,
     ) -> Option<std::borrow::Cow<'_, str>> {
-        let base = self
-            .names
-            .get(usize::try_from(name.index().get()).ok()?)?;
+        let base = self.names.get(usize::try_from(name.index().get()).ok()?)?;
         if name.number() == 0 {
             Some(std::borrow::Cow::Borrowed(base.as_str()))
         } else {

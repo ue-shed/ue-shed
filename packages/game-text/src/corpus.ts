@@ -1,6 +1,7 @@
 import { relative } from "node:path";
 import {
 	AssetReader,
+	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
 	type SavedProperty,
@@ -39,6 +40,32 @@ export const TextCorpusScanOptions = Schema.Struct({
 export type TextCorpusScanOptions = Schema.Schema.Type<typeof TextCorpusScanOptions>;
 
 const decodeScanOptions = Schema.decodeUnknownEffect(TextCorpusScanOptions);
+
+export const STRING_TABLE_CLASS = "/Script/Engine.StringTable";
+
+/**
+ * Tagged property serialization writes each property's type as a name-table entry, so a package
+ * holding any `FText` names `TextProperty` in its header.
+ */
+export const TEXT_PROPERTY_NAME = "TextProperty";
+
+/** Maps a reader failure onto the corpus scan's typed failure, preserving recovery guidance. */
+function textCorpusScanFailure(error: AssetReaderError): TextCorpusScanError {
+	if (error.kind === "resource_limit") {
+		return new TextCorpusScanError({
+			code: "scan_limit_exceeded",
+			message: error.message,
+			recovery: "Narrow the project or raise the explicit maximum asset limit.",
+			retrySafe: false
+		});
+	}
+	return new TextCorpusScanError({
+		code: "invalid_project",
+		message: error.message,
+		recovery: "Choose an Unreal project directory containing a Content folder.",
+		retrySafe: error.retrySafe
+	});
+}
 
 /** @deprecated Prefer TextCorpusScanOptions */
 export type ScanTextCorpusOptions = TextCorpusScanOptions;
@@ -247,7 +274,19 @@ function unitKey(occurrence: TextOccurrence): string {
 		: occurrence.id;
 }
 
-export function buildTextCorpus(outcomes: readonly TextPackageOutcome[]): TextCorpus {
+/**
+ * Package counts from a batched scan. A filtered scan never reports packages the reader ruled out
+ * from their headers, so discovered and inspected cannot be derived from `outcomes` alone.
+ */
+export interface TextPackageCounts {
+	readonly discoveredPackages: number;
+	readonly inspectedPackages: number;
+}
+
+export function buildTextCorpus(
+	outcomes: readonly TextPackageOutcome[],
+	counts?: TextPackageCounts
+): TextCorpus {
 	const occurrences = outcomes.flatMap((outcome) =>
 		outcome.status === "inspected"
 			? textOccurrencesFromInspection({
@@ -333,8 +372,8 @@ export function buildTextCorpus(outcomes: readonly TextPackageOutcome[]): TextCo
 				? "partial"
 				: "complete",
 		coverage: {
-			discoveredPackages: outcomes.length,
-			inspectedPackages: inspected.length,
+			discoveredPackages: counts?.discoveredPackages ?? outcomes.length,
+			inspectedPackages: counts?.inspectedPackages ?? inspected.length,
 			partialPackages,
 			failedPackages,
 			textUnits: units.length,
@@ -353,48 +392,38 @@ function scanTextCorpusWith(
 	options: TextCorpusScanOptions
 ): Effect.Effect<TextCorpus, TextCorpusScanError> {
 	return Effect.gen(function* () {
-		const assets = yield* reader.discoverAssets(options.projectRoot).pipe(
-			Effect.mapError(
-				(error) =>
-					new TextCorpusScanError({
-						code: "invalid_project",
-						message: error.message,
-						recovery: "Choose an Unreal project directory containing a Content folder.",
-						retrySafe: true
-					})
+		// One reader process classifies the whole project from package headers. A package can only
+		// hold text through a serialized FText property or a StringTable export, and both are
+		// visible in the header, so everything else is ruled out without a full decode.
+		const scan = yield* reader
+			.scanProject({
+				classes: [STRING_TABLE_CLASS],
+				concurrency: Math.max(1, options.concurrency ?? 4),
+				maximumAssets: options.maximumAssets ?? 10_000,
+				names: [TEXT_PROPERTY_NAME],
+				projectRoot: options.projectRoot
+			})
+			.pipe(Effect.mapError(textCorpusScanFailure));
+		const outcomes: TextPackageOutcome[] = [
+			...scan.assets.map(
+				(entry): TextPackageOutcome => ({
+					status: "inspected",
+					packageFile: relative(options.projectRoot, entry.inspection.path),
+					inspection: entry.inspection
+				})
+			),
+			...scan.failures.map(
+				(failure): TextPackageOutcome => ({
+					status: "failed",
+					packageFile: relative(options.projectRoot, failure.path),
+					message: failure.message
+				})
 			)
-		);
-		const maximumAssets = options.maximumAssets ?? 10_000;
-		if (assets.length > maximumAssets) {
-			return yield* new TextCorpusScanError({
-				code: "scan_limit_exceeded",
-				message: `Scan found ${assets.length} packages, above the limit of ${maximumAssets}.`,
-				recovery: "Narrow the project or raise the explicit maximum asset limit.",
-				retrySafe: false
-			});
-		}
-		const outcomes = yield* Effect.forEach(
-			assets,
-			(assetPath) =>
-				reader.readAsset(assetPath).pipe(
-					Effect.map(
-						(inspection): TextPackageOutcome => ({
-							status: "inspected",
-							packageFile: relative(options.projectRoot, assetPath),
-							inspection
-						})
-					),
-					Effect.catch((error) =>
-						Effect.succeed<TextPackageOutcome>({
-							status: "failed",
-							packageFile: relative(options.projectRoot, assetPath),
-							message: error.message
-						})
-					)
-				),
-			{ concurrency: Math.max(1, options.concurrency ?? 4) }
-		);
-		return buildTextCorpus(outcomes);
+		];
+		return buildTextCorpus(outcomes, {
+			discoveredPackages: scan.summary.scannedAssets,
+			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets
+		});
 	}).pipe(Effect.withSpan("game-text.scan-corpus"));
 }
 

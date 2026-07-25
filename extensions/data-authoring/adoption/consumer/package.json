@@ -9,10 +9,5 @@
 		"verify": "node scripts/verify-adoption.mjs",
 		"verify:host": "node scripts/verify-host.mjs"
 	},
-	"packageManager": "pnpm@10.32.1",
-	"pnpm": {
-		"overrides": {
-			"@tanstack/solid-virtual": "3.13.33"
-		}
-	}
+	"packageManager": "pnpm@11.17.0"
 }

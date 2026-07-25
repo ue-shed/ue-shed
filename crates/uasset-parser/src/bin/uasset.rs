@@ -6,7 +6,8 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,7 @@ fn run(arguments: Vec<OsString>) -> u8 {
         Ok(Command::Inspect(options)) => inspect(&options),
         Ok(Command::Authoring(options)) => authoring(&options),
         Ok(Command::Catalog(options)) => catalog(&options),
+        Ok(Command::Scan(options)) => scan(&options),
         Err(error) => {
             eprintln!("uasset: {error}\n\n{USAGE}");
             EXIT_USAGE
@@ -78,6 +80,33 @@ struct CatalogOptions {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+struct ScanOptions {
+    project_root: PathBuf,
+    /// Roots to enumerate, relative to the project root or absolute. Empty means `Content`.
+    paths: Vec<PathBuf>,
+    format: OutputFormat,
+    concurrency: usize,
+    /// Refuses the scan when enumeration finds more packages than this, before any decode.
+    maximum_assets: Option<usize>,
+    filters: ScanFilters,
+}
+
+/// Header-only selection rules. A package is selected when it matches any rule, so an empty
+/// filter set selects everything.
+#[derive(Debug, Default, Eq, PartialEq)]
+struct ScanFilters {
+    classes: Vec<String>,
+    class_prefixes: Vec<String>,
+    names: Vec<String>,
+}
+
+impl ScanFilters {
+    fn is_empty(&self) -> bool {
+        self.classes.is_empty() && self.class_prefixes.is_empty() && self.names.is_empty()
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 enum Input {
     File(PathBuf),
     Stdin,
@@ -97,6 +126,7 @@ enum Command {
     Inspect(InspectOptions),
     Authoring(InspectOptions),
     Catalog(CatalogOptions),
+    Scan(ScanOptions),
     Help,
     Version,
 }
@@ -114,6 +144,7 @@ impl Command {
                 _ => unreachable!("parse_inspect only returns Inspect"),
             },
             Some("catalog") => Self::parse_catalog(arguments.collect()),
+            Some("scan") => Self::parse_scan(arguments.collect()),
             Some("-h" | "--help" | "help") => {
                 reject_trailing_arguments(arguments)?;
                 Ok(Self::Help)
@@ -226,6 +257,98 @@ impl Command {
             concurrency,
         }))
     }
+
+    fn parse_scan(arguments: Vec<OsString>) -> Result<Self, String> {
+        let mut format = OutputFormat::Json;
+        let mut concurrency = std::thread::available_parallelism().map_or(4, usize::from);
+        let mut project_root = None;
+        let mut paths = Vec::new();
+        let mut maximum_assets = None;
+        let mut filters = ScanFilters::default();
+        let mut index = 0;
+        while index < arguments.len() {
+            let argument = arguments[index].clone();
+            let Some(text) = argument.to_str() else {
+                if project_root.is_some() {
+                    return Err("scan accepts exactly one project root".to_owned());
+                }
+                project_root = Some(PathBuf::from(&argument));
+                index += 1;
+                continue;
+            };
+            if let Some(value) = option_value(&arguments, &mut index, text, "--format") {
+                format = parse_format(value?.as_os_str())?;
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--concurrency")
+            {
+                concurrency = parse_concurrency(value?.as_os_str())?;
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--path") {
+                paths.push(PathBuf::from(value?));
+            } else if let Some(value) =
+                option_value(&arguments, &mut index, text, "--maximum-assets")
+            {
+                maximum_assets = Some(
+                    parse_concurrency(value?.as_os_str())
+                        .map_err(|_| "--maximum-assets requires a positive integer".to_owned())?,
+                );
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--class") {
+                filters.classes.push(utf8_option_value(&value?, "--class")?);
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--class-prefix")
+            {
+                filters
+                    .class_prefixes
+                    .push(utf8_option_value(&value?, "--class-prefix")?);
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--name") {
+                filters.names.push(utf8_option_value(&value?, "--name")?);
+            } else if text.starts_with('-') {
+                return Err(format!("unknown scan option {text:?}"));
+            } else if project_root.is_some() {
+                return Err("scan accepts exactly one project root".to_owned());
+            } else {
+                project_root = Some(PathBuf::from(&argument));
+            }
+            index += 1;
+        }
+        if format != OutputFormat::Json {
+            return Err("scan requires --format json".to_owned());
+        }
+        Ok(Self::Scan(ScanOptions {
+            project_root: project_root.ok_or_else(|| "scan requires a project root".to_owned())?,
+            paths,
+            format,
+            concurrency,
+            maximum_assets,
+            filters,
+        }))
+    }
+}
+
+/// Reads `--flag value` and `--flag=value` for one repeatable option. Returns `None` when the
+/// argument is not this flag so callers can fall through to the next candidate.
+fn option_value(
+    arguments: &[OsString],
+    index: &mut usize,
+    argument: &str,
+    flag: &str,
+) -> Option<Result<OsString, String>> {
+    if argument == flag {
+        *index += 1;
+        return Some(
+            arguments
+                .get(*index)
+                .cloned()
+                .ok_or_else(|| format!("{flag} requires a value")),
+        );
+    }
+    argument
+        .strip_prefix(&format!("{flag}="))
+        .map(|value| Ok(OsString::from(value)))
+}
+
+fn utf8_option_value(value: &OsString, flag: &str) -> Result<String, String> {
+    value
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| format!("{flag} value is not valid UTF-8"))
 }
 
 fn parse_concurrency(value: &std::ffi::OsStr) -> Result<usize, String> {
@@ -547,8 +670,11 @@ struct AssetSignature {
 }
 
 fn asset_signature(path: PathBuf) -> Result<AssetSignature, CatalogCacheEntry> {
-    let metadata =
-        fs::metadata(&path).map_err(|_| CatalogCacheEntry::failure(&path, "asset_io"))?;
+    read_asset_signature(&path).ok_or_else(|| CatalogCacheEntry::failure(&path, "asset_io"))
+}
+
+fn read_asset_signature(path: &Path) -> Option<AssetSignature> {
+    let metadata = fs::metadata(path).ok()?;
     let modified_nanos = metadata
         .modified()
         .ok()
@@ -556,9 +682,9 @@ fn asset_signature(path: PathBuf) -> Result<AssetSignature, CatalogCacheEntry> {
         .map_or(0, |duration| {
             u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
         });
-    Ok(AssetSignature {
+    Some(AssetSignature {
         modified_nanos,
-        path,
+        path: path.to_path_buf(),
         size: metadata.len(),
     })
 }
@@ -697,6 +823,366 @@ fn save_catalog_cache(path: Option<&Path>, entries: &[CatalogCacheEntry]) -> io:
 }
 
 fn emit_catalog_progress(progress: CatalogProgressOutput) {
+    if let Ok(rendered) = serde_json::to_string(&progress) {
+        eprintln!("{rendered}");
+    }
+}
+
+/// Inspects every selected package beneath one project in a single process, streaming one
+/// newline-delimited JSON object per package to stdout and progress to stderr.
+///
+/// Line order is unspecified while more than one worker runs. Pass `--concurrency 1` when a test
+/// needs deterministic output. The `summary` line is always last.
+fn scan(options: &ScanOptions) -> u8 {
+    let roots = match resolve_scan_roots(&options.project_root, &options.paths) {
+        Ok(roots) => roots,
+        Err(error) => {
+            eprintln!("uasset: {error}\n\n{USAGE}");
+            return EXIT_USAGE;
+        }
+    };
+    emit_scan_progress(ScanProgressOutput {
+        event: "scan_progress",
+        emitted_assets: 0,
+        phase: "enumerating",
+        processed_assets: 0,
+        total_assets: 0,
+    });
+    let mut asset_paths = Vec::new();
+    for root in &roots {
+        if root.is_file() {
+            asset_paths.push(root.clone());
+            continue;
+        }
+        if let Err(error) = discover_uassets(root, &mut asset_paths) {
+            write_error(
+                options.format,
+                ErrorOutput::io(root.to_string_lossy().into_owned(), error.to_string()),
+            );
+            return EXIT_IO;
+        }
+    }
+    asset_paths.sort();
+    asset_paths.dedup();
+    let total_assets = asset_paths.len();
+    if let Some(maximum) = options.maximum_assets
+        && total_assets > maximum
+    {
+        write_error(
+            options.format,
+            ErrorOutput::resource_limit(
+                options.project_root.to_string_lossy().into_owned(),
+                format!("Scan found {total_assets} packages, above the limit of {maximum}."),
+            ),
+        );
+        return EXIT_RESOURCE_LIMIT;
+    }
+
+    let mut signatures = Vec::with_capacity(total_assets);
+    let mut failures = BTreeMap::<String, usize>::new();
+    let mut missing = Vec::new();
+    for asset_path in asset_paths {
+        match read_asset_signature(&asset_path) {
+            Some(signature) => signatures.push(signature),
+            None => {
+                *failures.entry("asset_io".to_owned()).or_insert(0) += 1;
+                missing.push(asset_path);
+            }
+        }
+    }
+
+    let totals = ScanTotals::default();
+    totals
+        .processed
+        .store(missing.len(), std::sync::atomic::Ordering::Relaxed);
+    totals
+        .failed
+        .store(missing.len(), std::sync::atomic::Ordering::Relaxed);
+    let writer = Mutex::new(io::BufWriter::new(io::stdout()));
+    for path in &missing {
+        write_scan_line(&writer, &totals, &scan_error_line(path, "asset_io"));
+    }
+    emit_scan_progress(ScanProgressOutput {
+        event: "scan_progress",
+        emitted_assets: 0,
+        phase: "scanning",
+        processed_assets: missing.len(),
+        total_assets,
+    });
+
+    let failures = Mutex::new(failures);
+    let worker_count = options.concurrency.min(signatures.len().max(1));
+    let chunk_size = signatures.len().div_ceil(worker_count).max(1);
+    std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in signatures.chunks(chunk_size) {
+            let failures = &failures;
+            let filters = &options.filters;
+            let totals = &totals;
+            let writer = &writer;
+            handles.push(scope.spawn(move || {
+                for signature in chunk {
+                    let rendered = match scan_asset(signature, filters) {
+                        ScanAssetOutcome::Emitted { line, partial } => {
+                            totals.emitted.fetch_add(1, Ordering::Relaxed);
+                            if partial {
+                                totals.partial.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Some(line)
+                        }
+                        ScanAssetOutcome::Skipped => {
+                            totals.skipped.fetch_add(1, Ordering::Relaxed);
+                            None
+                        }
+                        ScanAssetOutcome::Failed { code } => {
+                            totals.failed.fetch_add(1, Ordering::Relaxed);
+                            *failures
+                                .lock()
+                                .expect("scan failure tally must not be poisoned")
+                                .entry(code.to_owned())
+                                .or_insert(0) += 1;
+                            Some(scan_error_line(&signature.path, code))
+                        }
+                    };
+                    if let Some(rendered) = rendered {
+                        write_scan_line(writer, totals, &rendered);
+                    }
+                    let processed = totals.processed.fetch_add(1, Ordering::Relaxed) + 1;
+                    if processed % PROGRESS_INTERVAL == 0 || processed == total_assets {
+                        emit_scan_progress(ScanProgressOutput {
+                            event: "scan_progress",
+                            emitted_assets: totals.emitted.load(Ordering::Relaxed),
+                            phase: "scanning",
+                            processed_assets: processed,
+                            total_assets,
+                        });
+                    }
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("scan worker must not panic");
+        }
+    });
+
+    let emitted_assets = totals.emitted.load(Ordering::Relaxed);
+    let failed_assets = totals.failed.load(Ordering::Relaxed);
+    let partial_assets = totals.partial.load(Ordering::Relaxed);
+    let project_root = options.project_root.to_string_lossy().into_owned();
+    let summary = ScanSummaryLine {
+        diagnostics: failures
+            .into_inner()
+            .expect("scan failure tally must not be poisoned")
+            .into_iter()
+            .map(|(code, count)| CatalogDiagnosticOutput {
+                message: format!("{count} saved asset(s) could not be inspected ({code})"),
+                path: project_root.clone(),
+                retry_safe: code == "asset_io",
+                code,
+            })
+            .collect(),
+        emitted_assets,
+        event: "summary",
+        failed_assets,
+        partial_assets,
+        project_root,
+        roots: roots
+            .iter()
+            .map(|root| root.to_string_lossy().into_owned())
+            .collect(),
+        scanned_assets: total_assets,
+        schema_version: SCHEMA_VERSION,
+        skipped_assets: totals.skipped.load(Ordering::Relaxed),
+    };
+    match serde_json::to_vec(&summary) {
+        Ok(mut rendered) => {
+            rendered.push(b'\n');
+            write_scan_line(&writer, &totals, &rendered);
+        }
+        Err(error) => {
+            eprintln!("uasset: failed to serialize scan summary: {error}");
+            return EXIT_INTERNAL;
+        }
+    }
+    let mut writer = writer
+        .into_inner()
+        .expect("scan stdout writer must not be poisoned");
+    if let Err(error) = writer.flush() {
+        eprintln!("uasset: failed to write scan output: {error}");
+        return EXIT_INTERNAL;
+    }
+    if totals.write_failed.load(Ordering::Relaxed) {
+        return EXIT_INTERNAL;
+    }
+    emit_scan_progress(ScanProgressOutput {
+        event: "scan_progress",
+        emitted_assets,
+        phase: "ready",
+        processed_assets: total_assets,
+        total_assets,
+    });
+    if failed_assets > 0 || partial_assets > 0 {
+        EXIT_PARTIAL
+    } else {
+        EXIT_SUCCESS
+    }
+}
+
+/// Resolves requested scan roots against the project root, defaulting to `Content`.
+///
+/// Roots must resolve inside the project root so emitted paths stay relative-able against it.
+fn resolve_scan_roots(project_root: &Path, requested: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    if requested.is_empty() {
+        return Ok(vec![project_root.join("Content")]);
+    }
+    let canonical_project_root = fs::canonicalize(project_root).map_err(|error| {
+        format!(
+            "scan requires a readable project root {}: {error}",
+            project_root.display()
+        )
+    })?;
+    let mut roots = Vec::with_capacity(requested.len());
+    for path in requested {
+        let joined = if path.is_absolute() {
+            path.clone()
+        } else {
+            project_root.join(path)
+        };
+        let canonical = fs::canonicalize(&joined)
+            .map_err(|error| format!("--path {} is not readable: {error}", joined.display()))?;
+        if !canonical.starts_with(&canonical_project_root) {
+            return Err(format!(
+                "--path {} is outside the project root",
+                joined.display()
+            ));
+        }
+        if canonical.is_file()
+            && canonical
+                .extension()
+                .is_none_or(|extension| extension != "uasset")
+        {
+            return Err(format!("--path {} is not a .uasset file", joined.display()));
+        }
+        roots.push(joined);
+    }
+    Ok(roots)
+}
+
+/// Decides selection from the package header alone, so unselected packages never pay for a full
+/// read or property decode.
+fn package_matches(package: &Package, filters: &ScanFilters) -> bool {
+    if filters.is_empty() {
+        return true;
+    }
+    let class_matched = package.exports.iter().any(|export| {
+        export.class_path.as_ref().is_some_and(|class_path| {
+            let class_path = class_path.to_string();
+            filters
+                .classes
+                .iter()
+                .any(|filter| class_filter_matches(filter, &class_path))
+                || filters
+                    .class_prefixes
+                    .iter()
+                    .any(|prefix| class_path.starts_with(prefix))
+        })
+    });
+    if class_matched {
+        return true;
+    }
+    filters
+        .names
+        .iter()
+        .any(|name| package.names.iter().any(|entry| entry == name))
+}
+
+/// Matches a full class path (`/Script/Engine.Texture2D`) exactly, or a bare class name
+/// (`Texture2D`) against the trailing object name.
+fn class_filter_matches(filter: &str, class_path: &str) -> bool {
+    if filter.contains('/') {
+        return filter == class_path;
+    }
+    class_path
+        .rsplit_once('.')
+        .is_some_and(|(_, name)| name == filter)
+}
+
+enum ScanAssetOutcome {
+    Emitted { line: Vec<u8>, partial: bool },
+    Skipped,
+    Failed { code: &'static str },
+}
+
+fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOutcome {
+    if !filters.is_empty() {
+        match read_package_header(signature) {
+            Ok(package) => {
+                if !package_matches(&package, filters) {
+                    return ScanAssetOutcome::Skipped;
+                }
+            }
+            Err(code) => return ScanAssetOutcome::Failed { code },
+        }
+    }
+    let Ok(bytes) = fs::read(&signature.path) else {
+        return ScanAssetOutcome::Failed { code: "asset_io" };
+    };
+    let package = match Package::parse(&bytes) {
+        Ok(package) => package,
+        Err(error) => {
+            return ScanAssetOutcome::Failed {
+                code: package_error_code(&error),
+            };
+        }
+    };
+    let inspection = InspectOutput::from_package(
+        signature.path.to_string_lossy().into_owned(),
+        &bytes,
+        &package,
+    );
+    let partial = inspection.status == "partial";
+    let line = ScanAssetLine {
+        event: "asset",
+        file_bytes: signature.size,
+        inspection,
+    };
+    match serde_json::to_vec(&line) {
+        Ok(mut rendered) => {
+            rendered.push(b'\n');
+            ScanAssetOutcome::Emitted {
+                line: rendered,
+                partial,
+            }
+        }
+        Err(_) => ScanAssetOutcome::Failed {
+            code: "asset_serialize",
+        },
+    }
+}
+
+fn scan_error_line(path: &Path, code: &str) -> Vec<u8> {
+    let line = ScanErrorLine {
+        code,
+        event: "error",
+        message: format!("Saved asset could not be inspected ({code})"),
+        path: path.to_string_lossy().into_owned(),
+        retry_safe: code == "asset_io",
+    };
+    let mut rendered = serde_json::to_vec(&line).unwrap_or_else(|_| b"{}".to_vec());
+    rendered.push(b'\n');
+    rendered
+}
+
+fn write_scan_line(writer: &Mutex<io::BufWriter<io::Stdout>>, totals: &ScanTotals, line: &[u8]) {
+    let mut writer = writer
+        .lock()
+        .expect("scan stdout writer must not be poisoned");
+    if writer.write_all(line).is_err() {
+        totals.write_failed.store(true, Ordering::Relaxed);
+    }
+}
+
+fn emit_scan_progress(progress: ScanProgressOutput) {
     if let Ok(rendered) = serde_json::to_string(&progress) {
         eprintln!("{rendered}");
     }
@@ -1004,6 +1490,66 @@ struct CatalogProgressOutput {
     processed_assets: usize,
     #[serde(rename = "tablesFound")]
     tables_found: usize,
+    #[serde(rename = "totalAssets")]
+    total_assets: usize,
+}
+
+#[derive(Default)]
+struct ScanTotals {
+    emitted: AtomicUsize,
+    failed: AtomicUsize,
+    partial: AtomicUsize,
+    processed: AtomicUsize,
+    skipped: AtomicUsize,
+    write_failed: AtomicBool,
+}
+
+#[derive(Serialize)]
+struct ScanAssetLine {
+    event: &'static str,
+    #[serde(rename = "fileBytes")]
+    file_bytes: u64,
+    inspection: InspectOutput,
+}
+
+#[derive(Serialize)]
+struct ScanErrorLine<'a> {
+    event: &'static str,
+    code: &'a str,
+    message: String,
+    path: String,
+    #[serde(rename = "retrySafe")]
+    retry_safe: bool,
+}
+
+#[derive(Serialize)]
+struct ScanSummaryLine {
+    event: &'static str,
+    schema_version: u32,
+    #[serde(rename = "projectRoot")]
+    project_root: String,
+    roots: Vec<String>,
+    #[serde(rename = "scannedAssets")]
+    scanned_assets: usize,
+    #[serde(rename = "emittedAssets")]
+    emitted_assets: usize,
+    #[serde(rename = "skippedAssets")]
+    skipped_assets: usize,
+    #[serde(rename = "partialAssets")]
+    partial_assets: usize,
+    #[serde(rename = "failedAssets")]
+    failed_assets: usize,
+    diagnostics: Vec<CatalogDiagnosticOutput>,
+}
+
+#[derive(Serialize)]
+struct ScanProgressOutput {
+    event: &'static str,
+    phase: &'static str,
+    #[serde(rename = "emittedAssets")]
+    emitted_assets: usize,
+    #[serde(rename = "processedAssets")]
+    processed_assets: usize,
     #[serde(rename = "totalAssets")]
     total_assets: usize,
 }
@@ -2273,6 +2819,18 @@ impl ErrorOutput {
         }
     }
 
+    fn resource_limit(path: String, message: String) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            status: "error",
+            path,
+            kind: "resource_limit",
+            message,
+            field: None,
+            offset: None,
+        }
+    }
+
     fn package(path: String, error: &PackageError) -> Self {
         let kind = match error.kind() {
             PackageErrorKind::MalformedData => "malformed_data",
@@ -2293,7 +2851,7 @@ impl ErrorOutput {
     }
 }
 
-const USAGE: &str = "Usage: uasset <inspect|authoring|catalog> <path> [--format text|json]";
+const USAGE: &str = "Usage: uasset <inspect|authoring|catalog|scan> <path> [--format text|json]";
 
 const HELP: &str = "\
 uasset - inspect classic Unreal Engine asset packages
@@ -2302,6 +2860,9 @@ Usage:
   uasset inspect <path|-> [--format text|json]
   uasset authoring <path|-> --format json
   uasset catalog <project-root> [--format json] [--concurrency <count>]
+  uasset scan <project-root> [--format json] [--concurrency <count>]
+              [--maximum-assets <count>] [--path <dir|file>]...
+              [--class <class>]... [--class-prefix <prefix>]... [--name <name>]...
   uasset help
   uasset version
 
@@ -2309,6 +2870,29 @@ Commands:
   inspect    Parse one package and emit decoded assets.
   authoring  Emit the versioned Unreal authoring snapshot for one DataTable package.
   catalog    Discover saved DataTables beneath one Unreal project in a single process.
+  scan       Inspect every selected package beneath one project in a single process.
+
+Scan options:
+  --path            Directory or .uasset to enumerate, relative to the project root or
+                    absolute, and inside it. Repeatable. Defaults to Content.
+  --maximum-assets  Refuse the scan when enumeration finds more packages than this,
+                    before any package is decoded. Exits 7.
+  --class           Select packages exporting this class, as a full path
+                    (/Script/Engine.Texture2D) or a bare name (Texture2D). Repeatable.
+  --class-prefix    Select packages exporting a class under this path prefix
+                    (/Script/EnhancedInput.). Repeatable.
+  --name            Select packages whose name table contains this entry, which selects
+                    by serialized property type (TextProperty). Repeatable.
+
+  Filters are matched against the package header only, so unselected packages are never
+  fully read or decoded. A package is selected when it matches any filter; with no filters
+  every package is selected.
+
+Scan output:
+  stdout     Newline-delimited JSON, one object per line, discriminated by \"event\":
+             asset (fileBytes plus the inspect payload), error, and a final summary.
+             Line order is unspecified above --concurrency 1; summary is always last.
+  stderr     scan_progress objects plus structured errors.
 
 Output contract:
   stdout     Successful result only.
@@ -2376,6 +2960,107 @@ mod command_tests {
                 format: OutputFormat::Json,
                 concurrency: 3,
             })
+        );
+    }
+
+    #[test]
+    fn parses_scan_contract() {
+        assert_eq!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--path".into(),
+                "Content/Fixture".into(),
+                "--path=Content/Other".into(),
+                "--class".into(),
+                "Texture2D".into(),
+                "--class-prefix=/Script/EnhancedInput.".into(),
+                "--name".into(),
+                "TextProperty".into(),
+                "--concurrency=3".into(),
+            ])
+            .expect("scan command"),
+            Command::Scan(ScanOptions {
+                project_root: PathBuf::from("project"),
+                paths: vec![
+                    PathBuf::from("Content/Fixture"),
+                    PathBuf::from("Content/Other")
+                ],
+                format: OutputFormat::Json,
+                concurrency: 3,
+                maximum_assets: None,
+                filters: ScanFilters {
+                    classes: vec!["Texture2D".to_owned()],
+                    class_prefixes: vec!["/Script/EnhancedInput.".to_owned()],
+                    names: vec!["TextProperty".to_owned()],
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn scan_rejects_missing_root_text_format_and_valueless_options() {
+        assert!(Command::parse(vec!["scan".into()]).is_err());
+        assert!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--format=text".into()
+            ])
+            .is_err()
+        );
+        assert!(
+            Command::parse(vec!["scan".into(), "project".into(), "--class".into()]).is_err(),
+            "--class without a value is a usage error"
+        );
+        assert!(Command::parse(vec!["scan".into(), "project".into(), "--unknown".into()]).is_err());
+        assert!(
+            Command::parse(vec!["scan".into(), "one".into(), "two".into()]).is_err(),
+            "scan accepts exactly one project root"
+        );
+    }
+
+    #[test]
+    fn scan_class_filters_match_full_paths_and_bare_names() {
+        assert!(class_filter_matches(
+            "/Script/Engine.Texture2D",
+            "/Script/Engine.Texture2D"
+        ));
+        assert!(class_filter_matches(
+            "Texture2D",
+            "/Script/Engine.Texture2D"
+        ));
+        assert!(!class_filter_matches(
+            "/Script/Engine.Texture",
+            "/Script/Engine.Texture2D"
+        ));
+        assert!(
+            !class_filter_matches("Engine.Texture2D", "/Script/Engine.Texture2D"),
+            "a bare filter matches the trailing name only"
+        );
+    }
+
+    #[test]
+    fn scan_filters_default_to_selecting_every_package() {
+        assert!(ScanFilters::default().is_empty());
+        assert!(
+            !ScanFilters {
+                classes: vec!["Texture2D".to_owned()],
+                ..ScanFilters::default()
+            }
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn scan_roots_default_to_content_and_stay_inside_the_project() {
+        assert_eq!(
+            resolve_scan_roots(Path::new("project"), &[]).expect("default root"),
+            vec![PathBuf::from("project").join("Content")]
+        );
+        assert!(
+            resolve_scan_roots(Path::new("project"), &[PathBuf::from("..")]).is_err(),
+            "a root outside the project is a usage error"
         );
     }
 

@@ -568,18 +568,29 @@ async function verifyTarget(label, target, sourceCommit, baseline) {
 		failures.push("missing copied StyleX theme");
 	}
 
-	const install = runPnpm(
-		["install", "--offline", "--ignore-scripts", "--frozen-lockfile=false"],
-		{
+	const seedInstall = runPnpm(["install", "--ignore-scripts", "--frozen-lockfile=false"], {
+		cwd: target,
+		timeout: 5 * 60 * 1000
+	});
+	await writeFile(
+		join(evidenceRoot, `${label}-verify-install-seed.log`),
+		seedInstall.stdout + seedInstall.stderr
+	);
+	if (seedInstall.status !== 0) {
+		failures.push(`independent install seed exited ${seedInstall.status}`);
+	} else {
+		await rm(join(target, "node_modules"), { recursive: true, force: true });
+		const install = runPnpm(["install", "--offline", "--ignore-scripts", "--frozen-lockfile"], {
 			cwd: target,
 			timeout: 5 * 60 * 1000
-		}
-	);
-	await writeFile(
-		join(evidenceRoot, `${label}-verify-install.log`),
-		install.stdout + install.stderr
-	);
-	if (install.status !== 0) failures.push(`independent offline install exited ${install.status}`);
+		});
+		await writeFile(
+			join(evidenceRoot, `${label}-verify-install.log`),
+			install.stdout + install.stderr
+		);
+		if (install.status !== 0)
+			failures.push(`independent offline install exited ${install.status}`);
+	}
 
 	const verifier = runPnpm(["verify", "--", "--expected-accent=#ff6b6b"], {
 		cwd: target,

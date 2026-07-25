@@ -14,12 +14,12 @@ the packed tarballs into a clean offline consumer, so no new packaging work is r
 
 The two surfaces differ in capability, not only in speed.
 
-| | Native artifact | WASM binding (not built) |
-| --- | --- | --- |
-| Discovery, scan, catalog cache | Yes | No. The core takes bounded bytes and has no filesystem authority, so the host must enumerate and supply them. |
-| Decode a package it is handed | Yes | Yes |
-| Platform coverage | Windows x64 only today; the launcher raises `UnsupportedPlatformError` elsewhere | Platform neutral |
-| Per-call process startup | About 8 ms | None |
+|                                | Native artifact                                                                  | WASM binding (not built)                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Discovery, scan, catalog cache | Yes                                                                              | No. The core takes bounded bytes and has no filesystem authority, so the host must enumerate and supply them. |
+| Decode a package it is handed  | Yes                                                                              | Yes                                                                                                           |
+| Platform coverage              | Windows x64 only today; the launcher raises `UnsupportedPlatformError` elsewhere | Platform neutral                                                                                              |
+| Per-call process startup       | About 8 ms                                                                       | None                                                                                                          |
 
 So the native artifact is the complete surface and the WASM binding would be a partial one, useful
 where bytes are already in hand and startup is worth avoiding. Adding a second platform artifact is a
@@ -33,10 +33,10 @@ the following on `DT_LargeScalars` (2,402,007 bytes; 10,000 rows; about 9 proper
 
 Decode only, in process, parse-once and decode-many, 60 iterations, result black-boxed:
 
-| Build                  | p50      | min      |
-| ---------------------- | -------- | -------- |
-| Before (`9e9e293`)     | 45.84 ms | 44.76 ms |
-| After (`673289e`)      | 12.03 ms | 11.30 ms |
+| Build              | p50      | min      |
+| ------------------ | -------- | -------- |
+| Before (`9e9e293`) | 45.84 ms | 44.76 ms |
+| After (`673289e`)  | 12.03 ms | 11.30 ms |
 
 That is about 3.8x on the decode slice. The same asset through release `uasset inspect --format
 json` went from 113.8 ms to 59.9 ms p50, because the CLI number also carries roughly 8.4 ms of

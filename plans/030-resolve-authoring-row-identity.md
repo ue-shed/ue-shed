@@ -15,7 +15,7 @@
 - **Priority**: P1
 - **Effort**: M
 - **Risk**: MEDIUM
-- **Depends on**: none — decide *before* Plan 007 adds further `rowId` consumers
+- **Depends on**: none — decide _before_ Plan 007 adds further `rowId` consumers
 - **Category**: direction
 - **Planned at**: commit 673289e, 2026-07-25
 
@@ -23,7 +23,7 @@
 
 `AuthoringRow.id` advertises a stable row identity. Unreal DataTables cannot supply one: rows are
 `TMap<FName, uint8*> RowMap` (`Engine/Source/Runtime/Engine/Classes/Engine/DataTable.h:98`), so the
-row name *is* the engine's identity and a rename is a re-key. `foldTable` and `diffAuthoringTable`
+row name _is_ the engine's identity and a rename is a re-key. `foldTable` and `diffAuthoringTable`
 are written as if the id were sound.
 
 Two id spaces exist today and do not reconcile: session-created rows get
@@ -52,12 +52,12 @@ diff, and harder to detect. Every module added before this decision is more to u
 
 ## Commands you will need
 
-| Purpose                        | Command                                                              | Expected on success                      |
-| ------------------------------ | -------------------------------------------------------------------- | ---------------------------------------- |
-| Find every `rowId` consumer    | `grep -rn "rowId\|row\.id" packages/ --include=*.ts \| grep -v test` | complete blast-radius list               |
-| Confirm no read-path minting   | `grep -rn "id: " packages/ --include=*.ts \| grep -v test`           | only `draft-row:` sites appear           |
-| Check for level authoring intent | `grep -rniE "actor.?guid\|instance.?guid" packages/ crates/`        | decides the fork in Step 1               |
-| Run authoring package tests    | `pnpm --filter @ue-shed/authoring test`                              | green before and after any change        |
+| Purpose                          | Command                                                              | Expected on success               |
+| -------------------------------- | -------------------------------------------------------------------- | --------------------------------- |
+| Find every `rowId` consumer      | `grep -rn "rowId\|row\.id" packages/ --include=*.ts \| grep -v test` | complete blast-radius list        |
+| Confirm no read-path minting     | `grep -rn "id: " packages/ --include=*.ts \| grep -v test`           | only `draft-row:` sites appear    |
+| Check for level authoring intent | `grep -rniE "actor.?guid\|instance.?guid" packages/ crates/`         | decides the fork in Step 1        |
+| Run authoring package tests      | `pnpm --filter @ue-shed/authoring test`                              | green before and after any change |
 
 ## Scope
 
@@ -74,7 +74,7 @@ diff, and harder to detect. Every module added before this decision is more to u
   assessed as sound and are identity-independent. Do not touch them.
 - Removing `draft-row:<uuid>`. `buildDuplicateRowCommand` legitimately needs to distinguish "same
   name, different row" transiently; a session-local temp handle is the right tool. The flaw is
-  generalizing it into a claimed stable identity on *every* row.
+  generalizing it into a claimed stable identity on _every_ row.
 - Any change to the downstream Electron host. Its plan is settled and deliberately independent
   (see Stipulations in that repo's `docs/authoring-diff-hardening-plan.md`).
 
@@ -84,7 +84,7 @@ diff, and harder to detect. Every module added before this decision is more to u
 
 Determine whether this authoring interface must cover asset types that have real identity. Level
 actors carry stable actor GUIDs; DataTable rows do not. Check `packages/authoring/`, `plans/`,
-`docs/`, and the parser crates for level *authoring* intent, not merely level parsing.
+`docs/`, and the parser crates for level _authoring_ intent, not merely level parsing.
 
 - **If DataTable-shaped** → option **(A) collapse**: set `id = name`, stop claiming an identity the
   source cannot supply.

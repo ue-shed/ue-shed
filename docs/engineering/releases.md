@@ -68,7 +68,7 @@ To build only the portable plugin bundle locally, use an empty output directory 
 generated manifest before extraction:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.3 --output out/plugins
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.4 --output out/plugins
 pnpm ue-shed plugins verify out/plugins/plugins.manifest.json
 pnpm ue-shed plugins list out/plugins/plugins.manifest.json
 pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.uproject `
@@ -82,7 +82,7 @@ Authoring:
 ```powershell
 pnpm release:plugins:map-review
 # or:
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.3 `
+node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.4 `
   --output out/plugins-map-review --plugins UEShedCore,UEShedCameras
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 pnpm ue-shed plugins install --project <project.uproject> `
@@ -97,9 +97,9 @@ same release manifest:
 
 ```powershell
 pnpm release:plugins:observatory
-pnpm ue-shed plugins verify out/releases/0.1.0-rc.3/plugins-observatory/plugins.manifest.json
+pnpm ue-shed plugins verify out/releases/0.1.0-rc.4/plugins-observatory/plugins.manifest.json
 pnpm ue-shed plugins install --project <project.uproject> `
-  --manifest out/releases/0.1.0-rc.3/plugins-observatory/plugins.manifest.json
+  --manifest out/releases/0.1.0-rc.4/plugins-observatory/plugins.manifest.json
 ```
 
 The initial `0.1.0-rc.1` publication bootstrapped the parser packages before npm trusted publishers
@@ -110,8 +110,8 @@ protected OIDC path. From a clean reviewed checkout on Windows, run `pnpm check`
 token: protected OIDC publication is the only supported path. Confirm the local manifest and checksums:
 
 ```powershell
-Get-Content out/releases/0.1.0-rc.3/npm/packages-manifest.json
-Get-Content out/releases/0.1.0-rc.3/npm/SHA256SUMS
+Get-Content out/releases/0.1.0-rc.4/npm/packages-manifest.json
+Get-Content out/releases/0.1.0-rc.4/npm/SHA256SUMS
 ```
 
 Do not treat local packing as publication: protected OIDC publication requires the exact candidate

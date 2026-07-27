@@ -83,6 +83,20 @@ Incremental caching is the next boundary. `uasset catalog` already keys entries 
 modification time, but `uasset scan` has no `--cache` yet, and the CLI's own `catalog` invocations
 pass no cache path.
 
+This harness cannot see decode-only regressions or wins. Its fixture is about 3 KB, so
+`native.inspect.single` is dominated by process startup. Removing per-property allocation from the
+decoder took `DT_LargeScalars` (10,000 rows) from 45.8 ms to 12.0 ms p50 for decode alone, measured
+in process with a parse-once decode-many loop, while `native.inspect.single` did not move at all. Use
+a large table and an in-process loop when the question is codec throughput, and keep the two kinds of
+measurement labeled separately. See [WASM decode boundary](../research/wasm-decode-boundary.md) for
+that measurement and its methodology.
+
 WASM is a required runtime, but this harness does not fabricate a WASM timing from a native library
 build. Add a browser or WASI scenario when the versioned WASM inspection binding ships, and require
 it to use the same bytes and semantic fixture assertions as the native producer.
+
+The library already compiles for `wasm32-unknown-unknown`, so a decode-only WASM loop is cheap to
+add once a binding exists. Until one is measured, treat claims about WASM decode cost as unverified.
+[WASM decode boundary](../research/wasm-decode-boundary.md) records the reasoning for expecting
+allocation pressure to matter more there, and marks it explicitly as reasoned from a native
+measurement rather than observed under WASM.

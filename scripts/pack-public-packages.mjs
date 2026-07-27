@@ -5,7 +5,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const PUBLIC_VERSION = "0.1.0-rc.3";
+export const PUBLIC_VERSION = "0.1.0-rc.4";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Plan 025 shipped the parser slice; Plans 030 and 031 add the headless Map Review and Observatory

@@ -5,7 +5,7 @@ Shed hosts. Applications provide `runtimeObservabilityLayer` once at their root.
 require an exporter; set `UE_SHED_TELEMETRY_MODE=console` to emit local traces, metrics, and logs.
 
 ```sh
-npm install @ue-shed/observability@0.1.0-rc.3
+npm install @ue-shed/observability@0.1.0-rc.4
 ```
 
 `RuntimeHealthService` is the diagnostic authority for CLI and UI clients. Consumers report typed

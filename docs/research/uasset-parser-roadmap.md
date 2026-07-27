@@ -18,6 +18,8 @@ TypeScript process boundary. Priorities are ordered by impact divided by impleme
 | 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete |
 | 12       | Require a portable `wasm32-unknown-unknown` library build         | High   | Small        | Complete |
 | 13       | Add a reproducible native/CLI/Unreal benchmark harness            | High   | Medium       | Complete |
+| 14       | Resolve decode-path names by borrow instead of per-property alloc | High   | Small        | Complete |
+| 15       | Decide the WASM table-read boundary and value representation      | High   | Medium/large | Planned  |
 
 ## Dependency order
 
@@ -44,3 +46,12 @@ The parser library must remain a bounded bytes-to-evidence implementation that c
 `wasm32-unknown-unknown`. Filesystem discovery, subprocesses, native concurrency, and caches are
 adapter concerns. The benchmark harness records native parser, TypeScript projection, and optional
 fresh Unreal commandlet measurements separately so startup and semantic work are not conflated.
+
+Item 14 removed the per-property `String` allocations the decoder was paying to resolve names, to
+compare against the stream terminator, and to build error breadcrumbs that the happy path never
+prints. Names now resolve by borrow from the package name map, and breadcrumbs render lazily through
+`Display`, so the reader only stringifies a path when a read actually fails. Item 15 is not a parser
+change but a boundary decision: whether a WASM table read should hand TypeScript columnar values
+from a trusted in-process producer rather than JSON that Effect Schema re-validates once per value.
+Both are written up in [WASM decode boundary](wasm-decode-boundary.md), which also lists what still
+has to be measured before item 15 can become an accepted decision.

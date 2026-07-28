@@ -12,10 +12,10 @@ import { captureReviewSet } from "./review-capture.js";
 import { generateFramingCandidates, realizationFramingDiagnostics } from "./review-framing.js";
 import { captureReviewView } from "./review-live.js";
 import {
-	awaitReviewPreviewFrame,
-	clearReviewPreviewSources,
-	ensureReviewPreviewSources
-} from "./review-preview-live.js";
+	awaitProvisionedCameraFrame,
+	clearProvisionedCameras,
+	ensureProvisionedCameras
+} from "./provisioned-cameras-live.js";
 import {
 	captureRunsRoot,
 	loadReviewSet,
@@ -222,7 +222,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 	});
 });
 
-describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
+describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 	const playSessionPath = "/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary";
 	const scopes: Scope.Closeable[] = [];
 
@@ -261,7 +261,7 @@ describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
 		throw new Error(`Play session did not reach ${status}`);
 	}
 
-	it("registers posed preview sources, delivers BGRA frames, clears without dirt, and keeps overview healthy", async () => {
+	it("registers provisioned cameras, delivers BGRA frames, clears without dirt, and keeps overview healthy", async () => {
 		const initial = (await playCall("GetPlaySessionState")) as {
 			readonly state?: { readonly status?: string };
 		};
@@ -309,7 +309,7 @@ describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
 			] as const;
 
 			const bindings = await Effect.runPromise(
-				ensureReviewPreviewSources(endpoint!, sources, { previewFps: 5 }).pipe(
+				ensureProvisionedCameras(endpoint!, sources, { previewFps: 5 }).pipe(
 					Effect.provide(RemoteControlClientLive)
 				)
 			);
@@ -327,12 +327,12 @@ describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
 
 			const liveFrames = await Effect.runPromise(
 				Effect.gen(function* () {
-					const first = yield* awaitReviewPreviewFrame({
+					const first = yield* awaitProvisionedCameraFrame({
 						cameraIndex: bindings[0]!.index,
 						latestFrames: feed.latestFrames,
 						timeout: "12 seconds"
 					});
-					const second = yield* awaitReviewPreviewFrame({
+					const second = yield* awaitProvisionedCameraFrame({
 						cameraIndex: bindings[1]!.index,
 						latestFrames: feed.latestFrames,
 						timeout: "12 seconds"
@@ -347,7 +347,7 @@ describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
 			}
 
 			await Effect.runPromise(
-				clearReviewPreviewSources(endpoint!).pipe(Effect.provide(RemoteControlClientLive))
+				clearProvisionedCameras(endpoint!).pipe(Effect.provide(RemoteControlClientLive))
 			);
 
 			const clearedDeadline = Date.now() + 10_000;
@@ -384,7 +384,7 @@ describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
 			expect(overview.config.viewMode).toBe("overview");
 
 			const overviewFrame = await Effect.runPromise(
-				awaitReviewPreviewFrame({
+				awaitProvisionedCameraFrame({
 					cameraIndex: overview.cameras[0]!.index,
 					latestFrames: feed.latestFrames,
 					timeout: "12 seconds"
@@ -408,7 +408,7 @@ describe.skipIf(!endpoint)("real Unreal PIE live review previews", () => {
 			);
 			expect(actorPov.config.viewMode).toBe("actor_pov");
 			const actorPovFrame = await Effect.runPromise(
-				awaitReviewPreviewFrame({
+				awaitProvisionedCameraFrame({
 					cameraIndex: actorPov.cameras[0]!.index,
 					latestFrames: feed.latestFrames,
 					timeout: "12 seconds"

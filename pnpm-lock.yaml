@@ -327,6 +327,9 @@ importers:
       '@ue-shed/observatory':
         specifier: workspace:*
         version: link:../../packages/observatory
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@ue-shed/ui':
         specifier: workspace:*
         version: link:../../packages/ui

@@ -33,10 +33,15 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
+#include "Serialization/ArchiveSerializedPropertyChain.h"
 #include "Serialization/JsonReader.h"
+#include "Serialization/MemoryWriter.h"
+#include "Serialization/StructuredArchiveAdapters.h"
 #include "Serialization/JsonSerializer.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
+#include "UObject/UObjectHash.h"
+#include "UObject/UnrealType.h"
 #include "UEShedAuthoringLibrary.h"
 #include "UEShedFixtureTypes.h"
 #include "UEShedFixtureMover.h"
@@ -53,6 +58,7 @@ constexpr int32 StationaryMoverCount = 3278;
 constexpr int32 FlyingMoverCount = 409;
 constexpr int32 IntermittentMoverCount = 409;
 constexpr int32 LargeTableRowCount = 10000;
+constexpr int32 OfflineWorldActorCount = 6;
 
 struct FFixtureTableDefinition
 {
@@ -1006,13 +1012,232 @@ bool WriteAuthoringEvidence(const FString& OutputDirectory)
 		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) && bSucceeded;
 }
 
+const TCHAR* LevelEvidenceObjectPath = TEXT("/Game/Fixture/Cameras/L_CameraLoad");
+
+/// Records which top-level property tags Unreal actually writes for one object.
+///
+/// Inferring this from property flags plus an archetype comparison is not reliable: it still claimed
+/// `UMaterialInstanceDynamic::BasePropertyOverrides` was written when the name is not even in the
+/// saved package's name table. So this asks the engine instead. Running the real tagged-property
+/// serializer and recording the property behind each write is exact by construction, and it stays
+/// exact for classes whose behaviour we have not studied.
+/// Only the property identity of each write matters, so reference types are recorded and dropped
+/// rather than resolved. That also keeps the archive off `FArchiveUObject`, whose object-pointer
+/// support this recorder does not need.
+class FSerializedTagRecorder : public FMemoryWriter
+{
+public:
+	FSerializedTagRecorder(TArray<uint8>& InBytes, TSet<FName>& OutNames)
+		: FMemoryWriter(InBytes, /*bIsPersistent*/ true)
+		, Names(OutNames)
+	{
+	}
+
+	virtual void Serialize(void* Data, int64 Length) override
+	{
+		Record();
+		FMemoryWriter::Serialize(Data, Length);
+	}
+
+	virtual FArchive& operator<<(FName& Value) override { Record(); return *this; }
+	virtual FArchive& operator<<(UObject*& Value) override { Record(); return *this; }
+	virtual FArchive& operator<<(FObjectPtr& Value) override { Record(); return *this; }
+	virtual FArchive& operator<<(FLazyObjectPtr& Value) override { Record(); return *this; }
+	virtual FArchive& operator<<(FSoftObjectPtr& Value) override { Record(); return *this; }
+	virtual FArchive& operator<<(FSoftObjectPath& Value) override { Record(); return *this; }
+	virtual FArchive& operator<<(FWeakObjectPtr& Value) override { Record(); return *this; }
+
+private:
+	void Record()
+	{
+		const FArchiveSerializedPropertyChain* Chain = GetSerializedPropertyChain();
+		if (Chain != nullptr && Chain->GetNumProperties() > 0)
+		{
+			// Index 0 is the outermost property, which is the tag written into the stream.
+			if (const FProperty* Root = Chain->GetPropertyFromRoot(0))
+			{
+				Names.Add(Root->GetFName());
+			}
+			return;
+		}
+		if (const FProperty* Property = GetSerializedProperty())
+		{
+			Names.Add(Property->GetFName());
+		}
+	}
+
+	TSet<FName>& Names;
+};
+
+/// Returns the property tags Unreal writes for `Object`, by running its tagged-property serializer.
+TSet<FName> SerializedPropertyTags(const UObject* Object)
+{
+	TSet<FName> Names;
+	UClass* Class = Object->GetClass();
+	TArray<uint8> Bytes;
+	FSerializedTagRecorder Recorder(Bytes, Names);
+	FStructuredArchiveFromArchive Adapter(Recorder);
+	// Const-cast is safe here: the archive only writes, and the fixture level is loaded read-only.
+	Class->SerializeTaggedProperties(Adapter.GetSlot(), reinterpret_cast<uint8*>(
+		const_cast<UObject*>(Object)), Class,
+		reinterpret_cast<uint8*>(const_cast<UObject*>(Object->GetArchetype())));
+	return Names;
+}
+
+/// Renders one property value the way the editor exports it to text.
+FString LevelPropertyValueText(const FProperty* Property, const void* ValuePtr)
+{
+	FString Text;
+	Property->ExportTextItem_Direct(Text, ValuePtr, nullptr, nullptr, PPF_None);
+	return Text;
+}
+
+/// Writes the editor-side view of every object saved in the fixture level.
+///
+/// The parser reads only the tagged property stream, so this evidence deliberately records more
+/// than the parser can decode, in two parts. `classes` is the full property view of every class the
+/// level instantiates, which is what bounds the parser's possible coverage; it lives per class
+/// rather than per export because it is class-level data, and repeating it for all 16k exports cost
+/// 194 MB for no extra signal. `exports[].properties` then carries only the properties that differ
+/// from the class default object, which is the subset Unreal actually writes into the package and
+/// therefore the only subset the parser can be held to. Everything a class declares but an export
+/// does not serialize is the documented gap the parser leaves in `tail_bytes`.
+bool WriteLevelEvidence(const FString& OutputDirectory)
+{
+	UPackage* Package = LoadPackage(nullptr, LevelEvidenceObjectPath, LOAD_None);
+	if (Package == nullptr) return false;
+	Package->FullyLoad();
+
+	TArray<UObject*> Objects;
+	GetObjectsWithPackage(Package, Objects, true);
+	Objects.Sort([](const UObject& Left, const UObject& Right)
+	{
+		return Left.GetPathName() < Right.GetPathName();
+	});
+
+	// A persistent saving archive, so FProperty::ShouldSerializeValue answers the same question
+	// Unreal's package save asks. Hand-rolling that flag matrix gets CPF_SkipSerialization wrong
+	// (UModel::Polys) and then blames the parser for a property Unreal never wrote.
+	TArray<uint8> ProbeBytes;
+	FMemoryWriter SerializeProbe(ProbeBytes, /*bIsPersistent*/ true);
+
+	const TSharedRef<FJsonObject> Classes = MakeShared<FJsonObject>();
+	TArray<TSharedPtr<FJsonValue>> Exports;
+	for (const UObject* Object : Objects)
+	{
+		if (Object == nullptr) continue;
+		UClass* Class = Object->GetClass();
+		const FString ClassPath = Class->GetPathName();
+		const bool bClassSeen = Classes->HasField(ClassPath);
+		TArray<TSharedPtr<FJsonValue>> Declared;
+
+		const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+		Entry->SetStringField(TEXT("objectPath"), Object->GetPathName());
+		Entry->SetStringField(TEXT("classPath"), ClassPath);
+
+		const TSet<FName> WrittenTags = SerializedPropertyTags(Object);
+		TArray<TSharedPtr<FJsonValue>> Serialized;
+		for (TFieldIterator<FProperty> It(Class); It; ++It)
+		{
+			const FProperty* Property = *It;
+			if (Property == nullptr || Property->ArrayDim != 1) continue;
+			if (!bClassSeen)
+			{
+				const TSharedRef<FJsonObject> Field = MakeShared<FJsonObject>();
+				Field->SetStringField(TEXT("name"), Property->GetName());
+				Field->SetStringField(TEXT("type"), Property->GetClass()->GetName());
+				Field->SetBoolField(TEXT("serializable"),
+					Property->ShouldSerializeValue(SerializeProbe));
+				Declared.Add(MakeShared<FJsonValueObject>(Field));
+			}
+			// Only what the engine's own serializer emitted for this object.
+			if (!WrittenTags.Contains(Property->GetFName())) continue;
+			const TSharedRef<FJsonObject> Rendered = MakeShared<FJsonObject>();
+			Rendered->SetStringField(TEXT("name"), Property->GetName());
+			Rendered->SetStringField(TEXT("type"), Property->GetClass()->GetName());
+			Rendered->SetStringField(TEXT("value"),
+				LevelPropertyValueText(Property, Property->ContainerPtrToValuePtr<void>(Object)));
+			Serialized.Add(MakeShared<FJsonValueObject>(Rendered));
+		}
+		if (!bClassSeen)
+		{
+			const TSharedRef<FJsonObject> ClassEntry = MakeShared<FJsonObject>();
+			ClassEntry->SetArrayField(TEXT("declaredProperties"), Declared);
+			Classes->SetObjectField(ClassPath, ClassEntry);
+		}
+		Entry->SetArrayField(TEXT("properties"), Serialized);
+		Exports.Add(MakeShared<FJsonValueObject>(Entry));
+	}
+
+	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+	Root->SetObjectField(TEXT("contract"), EvidenceContract());
+	Root->SetStringField(TEXT("assetType"), TEXT("level"));
+	Root->SetStringField(TEXT("packagePath"), LevelEvidenceObjectPath);
+	Root->SetObjectField(TEXT("classes"), Classes);
+	Root->SetArrayField(TEXT("exports"), Exports);
+	return WriteJsonEvidence(
+		FPaths::Combine(OutputDirectory, TEXT("levels/L_CameraLoad.json")), Root);
+}
+
+/// Loads the fixture level and walks every serialized property, timing only that work.
+///
+/// This is the closest editor-side equivalent of one `uasset inspect` over the same package. The
+/// commandlet's wall-clock is dominated by editor startup, so the marker line separates the two:
+/// `loadSeconds` plus `walkSeconds` is the comparable parse cost, and everything else in the
+/// process lifetime is the startup the editor-free parser avoids.
+bool BenchmarkLevelParse()
+{
+	const double LoadStarted = FPlatformTime::Seconds();
+	UPackage* Package = LoadPackage(nullptr, LevelEvidenceObjectPath, LOAD_None);
+	if (Package == nullptr) return false;
+	Package->FullyLoad();
+	const double LoadFinished = FPlatformTime::Seconds();
+
+	TArray<uint8> ProbeBytes;
+	FMemoryWriter SerializeProbe(ProbeBytes, /*bIsPersistent*/ true);
+	TArray<UObject*> Objects;
+	GetObjectsWithPackage(Package, Objects, true);
+	int32 ObjectCount = 0;
+	int64 PropertyCount = 0;
+	for (const UObject* Object : Objects)
+	{
+		if (Object == nullptr) continue;
+		++ObjectCount;
+		const UObject* Defaults = Object->GetArchetype();
+		for (TFieldIterator<FProperty> It(Object->GetClass()); It; ++It)
+		{
+			const FProperty* Property = *It;
+			if (Property == nullptr || Property->ArrayDim != 1) continue;
+			// Same save condition the evidence writer uses, so the two lanes walk the same work.
+			if (!Property->ShouldSerializeValue(SerializeProbe)) continue;
+			if (Defaults != nullptr
+				&& Property->Identical_InContainer(Object, Defaults, 0,
+					SerializeProbe.GetPortFlags()))
+			{
+				continue;
+			}
+			FString Text;
+			Property->ExportTextItem_Direct(Text, Property->ContainerPtrToValuePtr<void>(Object),
+				nullptr, nullptr, PPF_None);
+			++PropertyCount;
+		}
+	}
+	const double WalkFinished = FPlatformTime::Seconds();
+
+	UE_LOG(LogTemp, Display,
+		TEXT("UEShedLevelParse objects=%d properties=%lld loadSeconds=%.6f walkSeconds=%.6f"),
+		ObjectCount, PropertyCount, LoadFinished - LoadStarted, WalkFinished - LoadFinished);
+	return true;
+}
+
 bool WriteConformanceEvidence(const FString& OutputDirectory)
 {
 	return WriteAuthoringEvidence(OutputDirectory)
 		&& WriteStringTableEvidence(OutputDirectory)
 		&& WriteTextAssetEvidence(OutputDirectory)
 		&& WriteTextureEvidence(OutputDirectory)
-		&& WriteEnhancedInputEvidence(OutputDirectory);
+		&& WriteEnhancedInputEvidence(OutputDirectory)
+		&& WriteLevelEvidence(OutputDirectory);
 }
 
 void ApplySolidColor(UStaticMeshComponent* Mesh, const FLinearColor& Color)
@@ -1070,6 +1295,120 @@ float MotionBaseHeight(const EUEShedFixtureMotion Motion)
 	default:
 		return 40.0f;
 	}
+}
+
+bool GenerateOfflineWorldMap()
+{
+	static const TCHAR* PackageName = TEXT("/Game/Fixture/Offline/L_OfflineWorld");
+	static const TCHAR* AssetName = TEXT("L_OfflineWorld");
+	static const TCHAR* LegacyPackageName = TEXT("/Game/Fixture/Offline/L_OfflineMap");
+	const FString LegacyFilename = FPackageName::LongPackageNameToFilename(
+		LegacyPackageName, FPackageName::GetMapPackageExtension());
+	if (IFileManager::Get().FileExists(*LegacyFilename)) IFileManager::Get().Delete(*LegacyFilename);
+	const FString Filename = FPackageName::LongPackageNameToFilename(
+		PackageName, FPackageName::GetMapPackageExtension());
+	const FString ExternalActorRoot = FPaths::Combine(FPaths::ProjectContentDir(),
+		TEXT("__ExternalActors__/Fixture/Offline/L_OfflineWorld"));
+	TArray<FString> ExistingExternalPackages;
+	IFileManager::Get().FindFilesRecursive(
+		ExistingExternalPackages, *ExternalActorRoot, TEXT("*.uasset"), true, false);
+	if (IFileManager::Get().FileExists(*Filename)
+		&& ExistingExternalPackages.Num() < OfflineWorldActorCount)
+	{
+		IFileManager::Get().Delete(*Filename);
+	}
+	UPackage* Package = FindOrCreatePackage(PackageName);
+	if (Package == nullptr) return false;
+	UWorld* World = UWorld::FindWorldInPackage(Package);
+	const bool bCreatedWorld = World == nullptr;
+	if (World == nullptr)
+	{
+		UWorldFactory* Factory = NewObject<UWorldFactory>();
+		Factory->WorldType = EWorldType::Editor;
+		Factory->bCreateWorldPartition = true;
+		Factory->bEnableWorldPartitionStreaming = false;
+		World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package, AssetName,
+			RF_Public | RF_Standalone, nullptr, GWarn));
+	}
+	if (World == nullptr || !World->IsPartitionedWorld()) return false;
+	if (!bCreatedWorld)
+	{
+		UE_LOG(LogTemp, Display, TEXT("Offline World Partition fixture map already exists"));
+		return true;
+	}
+
+	auto AddActor = [&](const TCHAR* Label, const FVector& Location,
+		const FVector& Scale, const FLinearColor& Color) -> AStaticMeshActor*
+	{
+		FActorSpawnParameters Spawn;
+		Spawn.bCreateActorPackage = true;
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
+			Location, FRotator::ZeroRotator, Spawn);
+		if (Actor == nullptr) return nullptr;
+		Actor->Tags.Add(TEXT("UEShedOfflineWorld"));
+		Actor->SetActorLabel(Label);
+		Actor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Engine/BasicShapes/Cube.Cube")));
+		Actor->SetActorScale3D(Scale);
+		ApplySolidColor(Actor->GetStaticMeshComponent(), Color);
+		return Actor;
+	};
+
+	AStaticMeshActor* Hub = AddActor(TEXT("Offline Hub"),
+		FVector(-1200, -450, 120), FVector(4.0, 4.0, 2.0),
+		FLinearColor(0.32f, 0.68f, 0.82f, 1.0f));
+	AStaticMeshActor* East = AddActor(TEXT("East Marker"),
+		FVector(900, -320, 200), FVector(1.3, 1.3, 3.5),
+		FLinearColor(0.94f, 0.58f, 0.24f, 1.0f));
+	AStaticMeshActor* North = AddActor(TEXT("North Marker"),
+		FVector(-220, 1300, 160), FVector(2.6, 1.0, 1.0),
+		FLinearColor(0.72f, 0.42f, 0.78f, 1.0f));
+	AStaticMeshActor* South = AddActor(TEXT("South Marker"),
+		FVector(-500, -1500, 80), FVector(1.0, 3.0, 1.0),
+		FLinearColor(0.42f, 0.76f, 0.44f, 1.0f));
+	AStaticMeshActor* West = AddActor(TEXT("West Marker"),
+		FVector(-2050, 660, 260), FVector(1.8, 1.8, 1.8),
+		FLinearColor(0.86f, 0.34f, 0.38f, 1.0f));
+	AStaticMeshActor* Attached = AddActor(TEXT("Hub Attachment"),
+		FVector::ZeroVector, FVector(0.6, 0.6, 3.0), FLinearColor(0.96f, 0.88f, 0.30f, 1.0f));
+	if (Hub == nullptr || East == nullptr || North == nullptr || South == nullptr || West == nullptr
+		|| Attached == nullptr) return false;
+	Attached->AttachToComponent(Hub->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	Attached->SetActorRelativeLocation(FVector(760, 260, 480));
+
+	Package->MarkPackageDirty();
+	bool bSaved = SaveAsset(Package, World);
+	for (AStaticMeshActor* Actor : { Hub, East, North, South, West, Attached })
+	{
+		UPackage* ExternalPackage = Actor->GetExternalPackage();
+		if (ExternalPackage == nullptr)
+		{
+			bSaved = false;
+			continue;
+		}
+		ExternalPackage->MarkPackageDirty();
+		bSaved = SaveAsset(ExternalPackage, Actor) && bSaved;
+	}
+	World->CleanupWorld();
+	if (!bSaved) return false;
+	UE_LOG(LogTemp, Display, TEXT("Generated %s with %d external actors"), PackageName,
+		OfflineWorldActorCount);
+	return true;
+}
+
+bool VerifyOfflineWorldMap()
+{
+	static const TCHAR* PackageName = TEXT("/Game/Fixture/Offline/L_OfflineWorld");
+	UPackage* Package = LoadPackage(nullptr, PackageName, LOAD_None);
+	UWorld* World = Package == nullptr ? nullptr : UWorld::FindWorldInPackage(Package);
+	if (World == nullptr || !World->IsPartitionedWorld()) return false;
+	const FString ExternalActorRoot = FPaths::Combine(FPaths::ProjectContentDir(),
+		TEXT("__ExternalActors__/Fixture/Offline/L_OfflineWorld"));
+	TArray<FString> Packages;
+	IFileManager::Get().FindFilesRecursive(Packages, *ExternalActorRoot, TEXT("*.uasset"), true, false);
+	UE_LOG(LogTemp, Display, TEXT("Offline World Partition fixture verification found %d external actor packages"),
+		Packages.Num());
+	return Packages.Num() >= OfflineWorldActorCount;
 }
 
 bool GenerateCameraMap()
@@ -1452,6 +1791,11 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		return bSucceeded ? 0 : 1;
 	}
 
+	if (FParse::Param(*Params, TEXT("BenchmarkLevelParse")))
+	{
+		return BenchmarkLevelParse() ? 0 : 1;
+	}
+
 	FString ConformanceDirectory;
 	if (FParse::Value(*Params, TEXT("ConformanceDirectory="), ConformanceDirectory))
 	{
@@ -1483,6 +1827,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		}
 		Succeeded = GenerateComposite() && Succeeded;
 		Succeeded = GenerateGameTextCorpus() && Succeeded;
+		Succeeded = GenerateOfflineWorldMap() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
@@ -1495,6 +1840,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		}
 		Succeeded = VerifyComposite() && Succeeded;
 		Succeeded = VerifyGameTextCorpus() && Succeeded;
+		Succeeded = VerifyOfflineWorldMap() && Succeeded;
 		Succeeded = VerifyCameraMap() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
 		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;

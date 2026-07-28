@@ -16,10 +16,35 @@ import {
 	AssetReaderLive,
 	discoverSavedAssets,
 	readSavedAsset,
+	readSavedWorld,
 	readSavedTable,
 	scanSavedProject
 } from "@ue-shed/unreal-assets";
 ```
+
+## Reading one saved map
+
+`readSavedWorld` invokes the map-targeted `uasset saved-world` operation. Unlike a project scan, it
+reads a conventional level's single `.umap` or, for World Partition, only the selected map's
+`__ExternalActors__` subtree. The returned catalog carries saved-package authority, actor
+package/object identity, class and label evidence, plus a position-resolution status. It can be
+partial when unrelated exports fail to decode while actor positions remain usable.
+
+```ts
+const world =
+	yield *
+	readSavedWorld({
+		mapPath: "Content/Maps/L_Example.umap",
+		projectRoot
+	});
+
+const positionedActors = world.actors.filter((actor) => actor.position.status === "resolved");
+```
+
+This is saved disk state, not a live Observatory snapshot: bounds, Focus in Unreal, Follow, and
+camera framing still require a connected editor authority. `maximumAssets` is a pre-decode safety
+limit (100,000 by default in the native reader); exceeding it returns `AssetReaderError` with
+`kind: "resource_limit"`.
 
 ## Scanning a whole project
 

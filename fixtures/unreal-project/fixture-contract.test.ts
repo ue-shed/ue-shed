@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -116,6 +116,18 @@ type FixtureContract = {
 			readonly pixelFormat: string;
 		};
 	};
+	readonly mapReview: {
+		readonly map: string;
+		readonly reviewSet: string;
+		readonly subject: string;
+		readonly views: readonly string[];
+	};
+	readonly offlineWorld: {
+		readonly map: string;
+		readonly relativeMapPath: string;
+		readonly externalActors: number;
+		readonly labels: readonly string[];
+	};
 	readonly textureAudit: {
 		readonly contentRoot: string;
 		readonly source: string;
@@ -161,6 +173,8 @@ function readContract(): FixtureContract {
 		typeof value.fixtureVersion !== "string" ||
 		!isRecord(value.engine) ||
 		!isRecord(value.cameraLoad) ||
+		!isRecord(value.mapReview) ||
+		!isRecord(value.offlineWorld) ||
 		!isRecord(value.gameText) ||
 		!isRecord(value.enhancedInput) ||
 		!isRecord(value.textureAudit) ||
@@ -169,6 +183,7 @@ function readContract(): FixtureContract {
 		typeof value.contentRoot !== "string" ||
 		!Array.isArray(value.tables) ||
 		!Array.isArray(value.enhancedInput.actions) ||
+		!Array.isArray(value.offlineWorld.labels) ||
 		!isRecord(value.enhancedInput.mappingContext) ||
 		!Array.isArray(value.textureAudit.textures)
 	) {
@@ -193,6 +208,12 @@ function sourceRowNames(sourcePath: string): readonly string[] {
 function generatedAssetPath(assetPath: string): string {
 	const packagePath = assetPath.slice("/Game/".length).split(".")[0];
 	return join(fixtureRoot, "Content", `${packagePath}.uasset`);
+}
+
+function externalActorPackageCount(root: string): number {
+	return readdirSync(root, { recursive: true }).filter(
+		(entry) => typeof entry === "string" && entry.endsWith(".uasset")
+	).length;
 }
 
 describe("generic Unreal fixture contract", () => {
@@ -266,6 +287,28 @@ describe("generic Unreal fixture contract", () => {
 			views: ["structure-context"]
 		});
 		expect(existsSync(join(fixtureRoot, contract.mapReview.reviewSet))).toBe(true);
+	});
+
+	it("declares a saved World Partition map for offline Map Review", () => {
+		expect(contract.offlineWorld).toEqual({
+			map: "/Game/Fixture/Offline/L_OfflineWorld.L_OfflineWorld",
+			relativeMapPath: "Content/Fixture/Offline/L_OfflineWorld.umap",
+			externalActors: 6,
+			labels: [
+				"Offline Hub",
+				"Hub Attachment",
+				"East Marker",
+				"North Marker",
+				"South Marker",
+				"West Marker"
+			]
+		});
+		expect(existsSync(join(fixtureRoot, contract.offlineWorld.relativeMapPath))).toBe(true);
+		expect(
+			externalActorPackageCount(
+				join(fixtureRoot, "Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld")
+			)
+		).toBe(contract.offlineWorld.externalActors);
 	});
 
 	it("declares identity-focused game text evidence", () => {
@@ -440,6 +483,7 @@ describe("generic Unreal fixture contract", () => {
 			"fixture-contract.json",
 			"UEShedFixture.uproject",
 			...parserTargetFiles,
+			"FixtureExpected/level-decode-gaps.json",
 			contract.textureAudit.source,
 			contract.textureAudit.rules,
 			...contract.tables.flatMap((table) =>

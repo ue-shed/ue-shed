@@ -8,6 +8,7 @@ import {
 	type WorldObservationSample,
 	type WorldTransform
 } from "@ue-shed/observatory/presentation";
+import type { SavedWorld } from "@ue-shed/protocol";
 
 const classColors = ["#b9f227", "#61d5df", "#f4a261", "#e76f8a", "#9a8cff", "#e9c46a"];
 
@@ -97,8 +98,9 @@ export interface WorldScoutActorRecord {
 	readonly bounds: WorldActorCatalogEntry["bounds"];
 	readonly className: string;
 	readonly displayName: string;
-	readonly id: ActorId;
+	readonly id?: ActorId;
 	readonly instanceKey: string;
+	readonly packageName?: string;
 	readonly path: string;
 	readonly streamIndex: number;
 }
@@ -129,6 +131,7 @@ export class WorldScoutRetainedStore {
 	displayNames: Array<string | undefined> = [];
 	ids: Array<ActorId | undefined> = [];
 	instanceKeys: Array<string | undefined> = [];
+	packageNames: Array<string | undefined> = [];
 	paths: Array<string | undefined> = [];
 	boundCenterX: Float64Array = new Float64Array(0);
 	boundCenterY: Float64Array = new Float64Array(0);
@@ -144,7 +147,7 @@ export class WorldScoutRetainedStore {
 	count = 0;
 	capturedAt: string | undefined;
 	mapPath: string | undefined;
-	worldKind: "editor" | "pie" | undefined;
+	worldKind: "editor" | "pie" | "saved" | undefined;
 	worldSeconds = 0;
 	viewport: WorldScoutViewport | undefined;
 	/** Scratch: CSS-pixel X for visible actors during the current paint/hit pass. */
@@ -171,6 +174,7 @@ export class WorldScoutRetainedStore {
 		this.displayNames = growArray(this.displayNames, grow);
 		this.ids = growArray(this.ids, grow);
 		this.instanceKeys = growArray(this.instanceKeys, grow);
+		this.packageNames = growArray(this.packageNames, grow);
 		this.paths = growArray(this.paths, grow);
 		this.boundCenterX = growFloat64(this.boundCenterX, grow);
 		this.boundCenterY = growFloat64(this.boundCenterY, grow);
@@ -228,6 +232,44 @@ export class WorldScoutRetainedStore {
 		this.viewport = undefined;
 	}
 
+	/**
+	 * Installs the resolved saved-package projection. Saved actors intentionally have no live
+	 * `ActorId`, bounds, or time sample; callers must not turn this data into an editor action.
+	 */
+	installSavedWorld(world: SavedWorld): void {
+		const resolved = world.actors.flatMap((actor) =>
+			actor.position.status === "resolved"
+				? [{ actor, location: actor.position.location }]
+				: []
+		);
+		this.ensureCapacity(resolved.length);
+		this.count = resolved.length;
+		this.capturedAt = undefined;
+		this.mapPath = world.authority.mapPackage;
+		this.worldKind = "saved";
+		this.worldSeconds = 0;
+		for (let index = 0; index < resolved.length; index += 1) {
+			const entry = resolved[index];
+			if (entry === undefined) continue;
+			this.writeMeta(index, {
+				bounds: {
+					center: { x: entry.location.x, y: entry.location.y, z: entry.location.z },
+					extent: { x: 0, y: 0, z: 0 }
+				},
+				className: terminalPathSegment(entry.actor.classPath),
+				displayName: entry.actor.label ?? terminalPathSegment(entry.actor.actorPath),
+				instanceKey: entry.actor.actorGuid ?? entry.actor.packageName,
+				packageName: entry.actor.packageName,
+				path: entry.actor.actorPath
+			});
+			this.writeTransform(index, {
+				location: entry.location,
+				rotation: { x: 0, y: 0, z: 0 }
+			});
+		}
+		this.viewport = undefined;
+	}
+
 	applyTransforms(
 		transforms: ReadonlyArray<{
 			readonly streamIndex: number;
@@ -241,13 +283,11 @@ export class WorldScoutRetainedStore {
 
 	actorAt(streamIndex: number): WorldScoutActorRecord | undefined {
 		if (streamIndex < 0 || streamIndex >= this.count) return undefined;
-		const id = this.ids[streamIndex];
 		const path = this.paths[streamIndex];
 		const displayName = this.displayNames[streamIndex];
 		const className = this.classNames[streamIndex];
 		const instanceKey = this.instanceKeys[streamIndex];
 		if (
-			id === undefined ||
 			path === undefined ||
 			displayName === undefined ||
 			className === undefined ||
@@ -270,8 +310,11 @@ export class WorldScoutRetainedStore {
 			},
 			className,
 			displayName,
-			id,
+			...(this.ids[streamIndex] === undefined ? {} : { id: this.ids[streamIndex] }),
 			instanceKey,
+			...(this.packageNames[streamIndex] === undefined
+				? {}
+				: { packageName: this.packageNames[streamIndex] }),
 			path,
 			streamIndex
 		};
@@ -279,7 +322,7 @@ export class WorldScoutRetainedStore {
 
 	materialize(streamIndex: number): ObservedActor | undefined {
 		const meta = this.actorAt(streamIndex);
-		if (meta === undefined) return undefined;
+		if (meta === undefined || meta.id === undefined) return undefined;
 		return materializeObservedActor(
 			{
 				bounds: meta.bounds,
@@ -327,15 +370,22 @@ export class WorldScoutRetainedStore {
 			readonly bounds: WorldActorCatalogEntry["bounds"];
 			readonly className: string;
 			readonly displayName: string;
-			readonly id: ActorId;
+			readonly id?: ActorId;
+			readonly instanceKey?: string;
+			readonly packageName?: string;
 			readonly path: string;
 		}
 	): void {
 		this.ids[streamIndex] = entry.id;
+		this.packageNames[streamIndex] = entry.packageName;
 		this.paths[streamIndex] = entry.path;
 		this.displayNames[streamIndex] = entry.displayName;
 		this.classNames[streamIndex] = entry.className;
-		this.instanceKeys[streamIndex] = actorInstanceKey(entry);
+		this.instanceKeys[streamIndex] =
+			entry.instanceKey ??
+			(entry.id === undefined
+				? entry.path
+				: actorInstanceKey({ className: entry.className, path: entry.path }));
 		this.boundCenterX[streamIndex] = entry.bounds.center.x;
 		this.boundCenterY[streamIndex] = entry.bounds.center.y;
 		this.boundExtentX[streamIndex] = entry.bounds.extent.x;
@@ -356,6 +406,11 @@ export class WorldScoutRetainedStore {
 		this.rotationY[streamIndex] = transform.rotation.y;
 		this.rotationZ[streamIndex] = transform.rotation.z;
 	}
+}
+
+function terminalPathSegment(path: string): string {
+	const separator = Math.max(path.lastIndexOf("."), path.lastIndexOf("/"));
+	return separator < 0 ? path : path.slice(separator + 1);
 }
 
 export function actorMatchesFilter(

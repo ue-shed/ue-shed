@@ -1,6 +1,6 @@
 # Plan 028: Compose finished Map Review capabilities downstream
 
-> **Executor instructions**: Do not start until Plans 017, 018, and 019 are DONE and their public contracts are released. Implement composition in the downstream repository; keep UE Shed headless and do not reuse Workbench/camera-review extension UI.
+> **Executor instructions**: Do not start until Plans 017, 018, 019, and 032 are DONE and their public contracts are released. Implement composition in the downstream repository; keep UE Shed headless and do not reuse Workbench/camera-review extension UI.
 >
 > **Drift check (run first)**: compare released Map Review exports, plugin manifest, contract fixtures, and downstream host's existing Map Actors feature before adding an adapter.
 
@@ -9,7 +9,7 @@
 - **Priority**: P2
 - **Effort**: XL
 - **Risk**: HIGH
-- **Depends on**: Plans 017, 018, 019, 022, and 026
+- **Depends on**: Plans 017, 018, 019, 022, 026, and 032
 - **Category**: direction
 - **Planned at**: commit a1df704, 2026-07-22
 

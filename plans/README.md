@@ -8,14 +8,15 @@ the status row when done.
 
 ## Active
 
-| Plan                                                | Title                                                           | Priority | Effort | Depends on              | Status                          |
-| --------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | ----------------------- | ------------------------------- |
-| [007](007-conflicts-rich-types-and-views.md)        | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff       |
-| [024](024-establish-ci-and-candidate-releases.md)   | Establish CI, Unreal evidence, and candidate-release provenance | P1       | L      | 020, 021                | IN PROGRESS — first hosted runs |
-| [027](027-adopt-parser-in-downstream-host.md)       | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026           | TODO                            |
-| [028](028-compose-map-review-downstream.md)         | Compose finished Map Review capabilities downstream             | P2       | XL     | 017, 018, 019, 022, 026 | TODO                            |
-| [029](029-authoring-downstream-integration-gate.md) | Gate authoring integration behind finished generic slices       | P2       | L      | 007, 022, 026           | TODO                            |
-| [030](030-resolve-authoring-row-identity.md)        | Resolve `AuthoringRow` identity provenance                      | P1       | M      | none                    | TODO                            |
+| Plan                                                    | Title                                                            | Priority | Effort | Depends on             | Status                          |
+| ------------------------------------------------------- | ---------------------------------------------------------------- | -------- | ------ | ---------------------- | ------------------------------- |
+| [007](007-conflicts-rich-types-and-views.md)            | Complete conflicts, rich Unreal types, composites, and views     | P1       | XL     | 006, 015               | IN PROGRESS — demo cutoff       |
+| [024](024-establish-ci-and-candidate-releases.md)       | Establish CI, Unreal evidence, and candidate-release provenance  | P1       | L      | 020, 021               | IN PROGRESS — first hosted runs |
+| [027](027-adopt-parser-in-downstream-host.md)           | Adopt the released parser in the first downstream host           | P1       | M      | 021, 025, 026          | TODO                            |
+| [028](028-compose-map-review-downstream.md)             | Compose finished Map Review capabilities downstream              | P2       | XL     | 017–019, 022, 026, 032 | TODO                            |
+| [029](029-authoring-downstream-integration-gate.md)     | Gate authoring integration behind finished generic slices        | P2       | L      | 007, 022, 026          | TODO                            |
+| [030](030-resolve-authoring-row-identity.md)            | Resolve `AuthoringRow` identity provenance                       | P1       | M      | none                   | TODO                            |
+| [032](032-decouple-review-visibility-and-invocation.md) | Decouple Review Views, visibility policy, and capture invocation | P1       | XL     | 017, 018, 022          | TODO                            |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -61,6 +62,12 @@ table and the archive index.
   Git/submodules and Fab are not the product dependency baseline.
 - Plans 027–029 are downstream coordination plans. The downstream host consumes released UE Shed
   packages/artifacts; UE Shed never imports its Electron UX, studio policy, or custom-UI contracts.
+- Plan 032 is the canonical Map Review prerequisite for finished downstream composition. It keeps
+  Review View, immutable Visibility Policy presets, and Capture Invocation separate; records manual,
+  automation, and supplied runtime provenance without building a scheduler or a `Watch` entity; and
+  requires paired Pure/Clear evidence to remain labeled, explainable, and restored by one guarded
+  Unreal operation. Automatic detected-occluder intervention remains a non-blocking feasibility
+  decision.
 - Plan 028 waits for released Map Review headless packages and Core/Cameras install evidence. Plan
   030 prepared that public boundary at `0.1.0-rc.2` without publishing or claiming Plan 028 DONE;
   Plan 031 advances the complete public candidate tuple to `0.1.0-rc.3`. Plan 030 is archived under

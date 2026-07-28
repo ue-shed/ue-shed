@@ -18,8 +18,9 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toMatchObject({
-			discoveredPackages: 22,
-			inspectedPackages: 22,
+			// The maps and World Partition external actors carry no text, so only package counts move.
+			discoveredPackages: 30,
+			inspectedPackages: 30,
 			failedPackages: 0,
 			textUnits: 11,
 			textOccurrences: 12,

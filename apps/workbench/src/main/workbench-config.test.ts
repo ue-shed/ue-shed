@@ -13,6 +13,8 @@ it.effect("defaults the remote control endpoint when unset", () =>
 		expect(configuration.remoteControlEndpoint).toBe("http://127.0.0.1:30001");
 		expect(configuration.project).toEqual({ status: "not_configured" });
 		expect(configuration.review).toEqual({ status: "not_configured" });
+		expect(configuration.savedWorldMap).toEqual({ status: "not_configured" });
+		expect(configuration.savedWorldMaps).toEqual({ status: "not_configured" });
 		expect(configuration.textureAuditRules).toEqual({ status: "not_configured" });
 		expect(configuration.authoringAsset).toEqual({ status: "not_configured" });
 		expect(configuration.sourceCheckout).toEqual({ status: "not_configured" });
@@ -35,6 +37,26 @@ it.effect("makes Map Review ready for first-run authoring when a project root ex
 		Effect.provide(
 			workbenchConfigurationFromUnknown({
 				UE_SHED_PROJECT_ROOT: "C:/FixtureProject"
+			})
+		)
+	)
+);
+
+it.effect("derives picker labels from a configured saved-map list", () =>
+	Effect.gen(function* () {
+		const configuration = yield* WorkbenchConfiguration;
+		expect(configuration.savedWorldMaps).toEqual({
+			status: "configured",
+			maps: [
+				{ label: "Offline World", mapPath: "Content/Maps/L_OfflineWorld.umap" },
+				{ label: "Camera Load", mapPath: "Content/Maps/L_CameraLoad.umap" }
+			]
+		});
+	}).pipe(
+		Effect.provide(
+			workbenchConfigurationFromUnknown({
+				UE_SHED_SAVED_WORLD_MAPS:
+					"Content/Maps/L_OfflineWorld.umap;Content/Maps/L_CameraLoad.umap"
 			})
 		)
 	)
@@ -75,6 +97,11 @@ it.effect("loads a complete configured Workbench session", () =>
 				projectRoot: "C:/FixtureProject",
 				reviewSetPath: "C:/custom/review-set.json"
 			},
+			savedWorldMap: { status: "configured", path: "Content/Maps/Fixture.umap" },
+			savedWorldMaps: {
+				status: "configured",
+				maps: [{ label: "Fixture", mapPath: "Content/Maps/Fixture.umap" }]
+			},
 			sourceCheckout: { status: "configured", path: "C:/repo" },
 			textureAuditRules: { status: "configured", path: "C:/rules.json" }
 		});
@@ -88,6 +115,7 @@ it.effect("loads a complete configured Workbench session", () =>
 				UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30010",
 				UE_SHED_REPOSITORY_ROOT: "C:/repo",
 				UE_SHED_REVIEW_SET: "C:/custom/review-set.json",
+				UE_SHED_SAVED_WORLD_MAP: "Content/Maps/Fixture.umap",
 				UE_SHED_TEXTURE_AUDIT_RULES: "C:/rules.json"
 			})
 		)

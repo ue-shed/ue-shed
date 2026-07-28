@@ -46,7 +46,7 @@ struct FUEShedCameraScheduleConfig
 };
 
 USTRUCT()
-struct FUEShedReviewPreviewSourceSpec
+struct FUEShedProvisionedCameraSpec
 {
 	GENERATED_BODY()
 
@@ -74,14 +74,14 @@ public:
 	bool ApplyConfigJson(const FString& ConfigJson, FString& Error);
 	FString StatusJson() const;
 
-	bool EnsureReviewPreviewSources(
-		const TArray<FUEShedReviewPreviewSourceSpec>& Specs,
+	bool EnsureProvisionedCameras(
+		const TArray<FUEShedProvisionedCameraSpec>& Specs,
 		FString& Error);
-	void ClearReviewPreviewSources();
-	bool IsReviewPreviewSessionActive() const;
+	void ClearProvisionedCameras();
+	bool IsProvisionedCameraSessionActive() const;
 
 private:
-	void DiscoverPlacedSources();
+	void DiscoverAuthoredCameras();
 	void RegisterSource(AUEShedCameraSource* Source);
 	void ResetCameraStates();
 

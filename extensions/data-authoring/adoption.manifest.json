@@ -36,6 +36,7 @@
 			"packages/protocol/src/companion.ts",
 			"packages/protocol/src/editor-play-session.ts",
 			"packages/protocol/src/index.ts",
+			"packages/protocol/src/saved-world.ts",
 			"packages/authoring-sdk/package.json",
 			"packages/authoring-sdk/tsconfig.json",
 			"packages/authoring-sdk/tsconfig.browser.json",

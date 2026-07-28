@@ -23,6 +23,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory";
+import type { SavedWorld } from "@ue-shed/protocol";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
 	FixtureLaunchResult,
@@ -102,6 +103,11 @@ contextBridge.exposeInMainWorld("ueShed", {
 	mapReview: {
 		worldSnapshot: (): Promise<WorldScoutResult> =>
 			ipcRenderer.invoke("map-review:world-snapshot"),
+		savedWorld: (mapPath: string): Promise<SavedWorld> =>
+			ipcRenderer.invoke("map-review:saved-world", mapPath),
+		savedWorldMaps: (): Promise<
+			readonly { readonly label: string; readonly mapPath: string }[]
+		> => ipcRenderer.invoke("map-review:saved-world-maps"),
 		focusActor: (actorId: string, bringToFront: boolean): Promise<WorldScoutFocusResult> =>
 			ipcRenderer.invoke("map-review:focus-actor", actorId, bringToFront),
 		approveCandidate: (

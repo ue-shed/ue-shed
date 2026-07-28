@@ -13,6 +13,7 @@ import {
 import { it } from "@effect/vitest";
 import { Observatory, ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { Effect, Layer, Queue, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -93,7 +94,7 @@ const dyingAuthoring: ReviewAuthoringShape = {
 	previewCandidate: () => Effect.die("not used")
 };
 const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
-	if (request.functionName === "ClearReviewPreviewSources") {
+	if (request.functionName === "ClearProvisionedCameras") {
 		return Effect.succeed({ cameras: [], schemaVersion: 1 });
 	}
 	return Effect.die(`unexpected remote call ${request.functionName}`);
@@ -151,9 +152,18 @@ const dyingAuthoringSessions: ReviewAuthoringSessionsShape = {
 	reframe: () => Effect.die("not used"),
 	resume: () => Effect.die("not used")
 };
+const assetReaderTestLayer = makeAssetReaderTestLayer({
+	discoverAssets: () => Effect.die("not used"),
+	discoverTables: () => Effect.die("not used"),
+	readAsset: () => Effect.die("not used"),
+	readTable: () => Effect.die("not used"),
+	source: () => Effect.succeed("configured" as const)
+});
+
 const WorkbenchMapReviewTestLive = WorkbenchMapReviewLive.pipe(
 	Layer.provide(
 		Layer.mergeAll(
+			assetReaderTestLayer,
 			makeCameraFeedTestLayer(),
 			makeWorkbenchWindowTestLayer(),
 			clearOnlyRemoteControl,
@@ -494,6 +504,7 @@ it.effect(
 				WorkbenchMapReviewLive.pipe(
 					Layer.provide(
 						Layer.mergeAll(
+							assetReaderTestLayer,
 							makeCameraFeedTestLayer(),
 							makeWorkbenchWindowTestLayer(),
 							clearOnlyRemoteControl,
@@ -842,6 +853,7 @@ it.effect("resumes the latest persisted authoring session after a fresh service 
 			WorkbenchMapReviewLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
 						clearOnlyRemoteControl,
@@ -928,6 +940,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 			WorkbenchMapReviewLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
 						clearOnlyRemoteControl,
@@ -1049,6 +1062,7 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 		const serviceLayer = WorkbenchMapReviewLive.pipe(
 			Layer.provide(
 				Layer.mergeAll(
+					assetReaderTestLayer,
 					makeCameraFeedTestLayer(),
 					clearOnlyRemoteControl,
 					makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
@@ -1229,6 +1243,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 		const serviceLayer = WorkbenchMapReviewLive.pipe(
 			Layer.provide(
 				Layer.mergeAll(
+					assetReaderTestLayer,
 					makeCameraFeedTestLayer(),
 					clearOnlyRemoteControl,
 					makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
@@ -1424,6 +1439,7 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 			WorkbenchMapReviewLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						assetReaderTestLayer,
 						makeCameraFeedTestLayer({
 							latestFrames: Effect.succeed(
 								new Map([
@@ -1451,7 +1467,7 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 						}),
 						makeWorkbenchWindowTestLayer(),
 						makeRemoteControlClientTestLayer((request) => {
-							if (request.functionName === "EnsureReviewPreviewSources") {
+							if (request.functionName === "EnsureProvisionedCameras") {
 								return Effect.succeed({
 									cameras: [
 										{
@@ -1466,7 +1482,7 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 									schemaVersion: 1
 								});
 							}
-							if (request.functionName === "ClearReviewPreviewSources") {
+							if (request.functionName === "ClearProvisionedCameras") {
 								return Effect.succeed({ cameras: [], schemaVersion: 1 });
 							}
 							return Effect.die(`unexpected remote call ${request.functionName}`);
@@ -1543,6 +1559,7 @@ it.effect("blocks Capture Set while PIE is running", () =>
 			WorkbenchMapReviewLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
+						assetReaderTestLayer,
 						makeCameraFeedTestLayer(),
 						makeWorkbenchWindowTestLayer(),
 						clearOnlyRemoteControl,

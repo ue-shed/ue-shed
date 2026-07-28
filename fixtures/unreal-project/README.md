@@ -37,16 +37,36 @@ The fixture explicitly disables Unreal's **Use Less CPU when in Background** set
 required for a foreground Workbench to receive moving PIE actors; it is a fixture-only live
 observation setting, not a UE Shed runtime requirement.
 
-`fixture:evidence` loads the saved fixtures in a fresh commandlet and writes two independent evidence
-sets: shared authoring snapshots under `authoring/`, and parser implementation targets under
-`parser-targets/`. The checked-in target shapes in `FixtureExpected/parser-targets` cover StringTable,
+`fixture:evidence` loads the saved fixtures in a fresh commandlet and writes three independent evidence
+sets: shared authoring snapshots under `authoring/`, parser implementation targets under
+`parser-targets/`, and the level property view under `levels/`. The checked-in target shapes in
+`FixtureExpected/parser-targets` cover StringTable,
 localized-text DataAsset, Texture2D, and Enhanced Input semantics. Regenerate and compare all evidence through
 `test:uasset-conformance`; do not hand-edit the expected shapes.
+
+`levels/L_CameraLoad.json` is the editor-side view of the fixture level: the declared property set of
+every class the level instantiates, plus the property tags each of the 16,525 exports actually wrote.
+
+That second part is recorded, not inferred. The commandlet runs Unreal's own
+`SerializeTaggedProperties` for each object through an archive that records the property behind every
+write, so the evidence is exact by construction. Inferring it from property flags and an archetype
+comparison was tried first and was wrong three separate ways: the class default object is the wrong
+delta baseline (Unreal compares against the archetype), a hand-rolled transient check misses
+`CPF_SkipSerialization` (`UModel::Polys`), and even a correct flag matrix still over-reports
+properties the editor mutates during load. Do not replace the recorder with a flags-based
+approximation.
+
+The parser is then held to that evidence exactly: it must decode every recorded tag and must never
+report one that was not recorded. `FixtureExpected/level-decode-gaps.json` pins the result, and
+`undecodedByClass` is empty — the parser decodes every tagged property on disk in this level. Its
+`postLoadMutatedByClass` entry is the one editor-side artifact, explained inline in that file.
 
 `test:uasset-conformance` is the complete saved-package lane. It regenerates the assets, verifies them
 in a fresh Unreal process, emits evidence in another process, and structurally compares every
 DataTable and CompositeDataTable against the Rust parser. It also rejects drift between real Unreal
-and the three checked-in parser target shapes.
+and the four checked-in parser target shapes, and rejects drift in level decode coverage: the parser
+must decode every property tag Unreal wrote, must never report one it did not, and must match the
+pinned counts exactly.
 
 `fixture:apply` and `fixture:save` are low-level conformance runners for checked-in protocol requests.
 Normal users should use the public libraries or the `ue-shed authoring` CLI flows.
@@ -72,3 +92,15 @@ can validate and reproduce them.
     - **UEShedFixtureFlying** — 409 cyan spheres on airborne orbits
     - **UEShedFixtureIntermittent** — 409 amber cylinders that cycle visibility
 - 32 camera sources bound to the first 32 movers (unchanged camera-load schedule max)
+
+## Offline Map Review map
+
+`/Game/Fixture/Offline/L_OfflineWorld` is a tiny World Partition map committed with six external
+actor packages. It is deliberately separate from the live camera map: the showcase reads its map
+package and exact `Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld` subtree from disk,
+including an attached actor whose resolved location depends on its parent transform. It needs no
+editor, Remote Control endpoint, or fixture plugin capability.
+
+`pnpm showcase` exposes this map and the ordinary `L_CameraLoad` level in Map Review through
+`UE_SHED_SAVED_WORLD_MAPS`. This keeps the World Partition sample visible while also proving that
+offline review accepts a conventional level package.

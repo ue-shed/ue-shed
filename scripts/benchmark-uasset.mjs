@@ -15,6 +15,7 @@ const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const fixtureProject = join(fixtureRoot, "UEShedFixture.uproject");
 const fixtureContractPath = join(fixtureRoot, "fixture-contract.json");
 const benchmarkAsset = join(fixtureRoot, "Content", "Fixture", "Input", "IMC_Fixture.uasset");
+const benchmarkLevel = join(fixtureRoot, "Content", "Fixture", "Cameras", "L_CameraLoad.umap");
 const releaseExecutable = join(
 	repositoryRoot,
 	"target",
@@ -132,7 +133,7 @@ function invoke(command, arguments_, options) {
 		throw commandFailure(command, arguments_, result);
 	}
 	if (options.validate !== undefined) options.validate(result.stdout);
-	return elapsedMs;
+	return { elapsedMs, stdout: result.stdout };
 }
 
 function percentile(sorted, ratio) {
@@ -164,9 +165,13 @@ function measureScenario(options) {
 		invoke(options.command, options.arguments, options);
 	}
 	const samples = [];
+	let lastStdout = "";
 	for (let index = 0; index < options.runs; index += 1) {
-		samples.push(invoke(options.command, options.arguments, options));
+		const { elapsedMs, stdout } = invoke(options.command, options.arguments, options);
+		samples.push(elapsedMs);
+		lastStdout = stdout;
 	}
+	const observed = options.observe?.(lastStdout);
 	return {
 		command: [options.command, ...options.arguments],
 		distribution: distribution(samples),
@@ -174,7 +179,34 @@ function measureScenario(options) {
 		notes: options.notes,
 		runs: options.runs,
 		warmups: options.warmups,
-		workload: options.workload
+		workload: options.workload,
+		...(observed === undefined ? {} : { observed })
+	};
+}
+
+/**
+ * Reads the commandlet's self-reported level parse timings.
+ *
+ * The commandlet's wall-clock is mostly editor startup, so it prints the load and property-walk
+ * seconds it actually spent. Without this the lane can only say "an editor is slow to boot", which
+ * is true but says nothing about codec speed.
+ */
+function observeCommandletLevelParse(output) {
+	const marker =
+		/UEShedLevelParse objects=(\d+) properties=(\d+) loadSeconds=([\d.]+)\s+walkSeconds=([\d.]+)/.exec(
+			output.replaceAll(/\r?\n/g, " ")
+		);
+	if (marker === null) {
+		throw new Error("Commandlet level parse did not report its UEShedLevelParse marker.");
+	}
+	const loadMs = Number(marker[3]) * 1_000;
+	const walkMs = Number(marker[4]) * 1_000;
+	return {
+		exports: Number(marker[1]),
+		properties: Number(marker[2]),
+		loadMs: roundMilliseconds(loadMs),
+		walkMs: roundMilliseconds(walkMs),
+		parseMs: roundMilliseconds(loadMs + walkMs)
 	};
 }
 
@@ -230,7 +262,10 @@ function fixtureStatistics(directory) {
 			const path = join(current, entry.name);
 			if (entry.isDirectory()) {
 				visit(path);
-			} else if (entry.isFile() && entry.name.endsWith(".uasset")) {
+			} else if (
+				entry.isFile() &&
+				(entry.name.endsWith(".uasset") || entry.name.endsWith(".umap"))
+			) {
 				packages += 1;
 				bytes += statSync(path).size;
 			}
@@ -332,6 +367,26 @@ function printHuman(result) {
 				`min=${measured.minMs.toFixed(3)} ms max=${measured.maxMs.toFixed(3)} ms ` +
 				`n=${measured.count}\n`
 		);
+		if (scenario.observed !== undefined) {
+			process.stdout.write(
+				`${" ".repeat(30)}  in-process parse=${scenario.observed.parseMs.toFixed(3)} ms ` +
+					`(load=${scenario.observed.loadMs.toFixed(3)} walk=${scenario.observed.walkMs.toFixed(3)}) ` +
+					`exports=${scenario.observed.exports} properties=${scenario.observed.properties}\n`
+			);
+		}
+	}
+	const level = result.scenarios.find((scenario) => scenario.id === "unreal.commandlet.level");
+	const native = result.scenarios.find((scenario) => scenario.id === "native.inspect.level");
+	if (level !== undefined && native !== undefined) {
+		const endToEnd = level.distribution.p50Ms / native.distribution.p50Ms;
+		const parseOnly = level.observed.parseMs / native.distribution.p50Ms;
+		process.stdout.write(
+			`\nLevel comparison on the same package: the parser is ${endToEnd.toFixed(1)}x faster ` +
+				`end to end (what a caller pays), and ${parseOnly.toFixed(2)}x the commandlet's ` +
+				"in-process parse cost. The end-to-end gap is editor startup avoided; the parse-only " +
+				"figure is the closer codec comparison, and it flatters the commandlet, whose walk " +
+				"excludes process start and JSON serialization.\n"
+		);
 	}
 	if (result.scenarios.some((scenario) => scenario.id === "unreal.commandlet.verify")) {
 		process.stdout.write(
@@ -380,6 +435,21 @@ function main() {
 			validate: validateNativeInspection,
 			warmups: options.warmups,
 			workload: relative(repositoryRoot, benchmarkAsset)
+		})
+	);
+
+	scenarios.push(
+		measureScenario({
+			arguments: ["inspect", benchmarkLevel, "--format", "json"],
+			command: releaseExecutable,
+			id: "native.inspect.level",
+			notes:
+				"Release native process over the fixture level, the largest package in the fixture " +
+				"(16,525 exports). Directly comparable to unreal.commandlet.level.",
+			runs: options.nativeRuns,
+			validate: validateNativeInspection,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, benchmarkLevel)
 		})
 	);
 
@@ -460,6 +530,30 @@ function main() {
 				runs: options.unrealRuns,
 				warmups: options.warmups,
 				workload: relative(repositoryRoot, fixtureProject)
+			})
+		);
+		scenarios.push(
+			measureScenario({
+				arguments: [
+					fixtureProject,
+					"-run=UEShedBuildFixture",
+					"-BenchmarkLevelParse",
+					"-unattended",
+					"-nop4",
+					"-nosplash",
+					"-NullRHI"
+				],
+				command: editorCommandlet,
+				id: "unreal.commandlet.level",
+				notes:
+					"Fresh commandlet that loads the fixture level and walks every serialized property. " +
+					"The distribution is wall-clock, so it is dominated by editor startup; `observed` " +
+					"carries the load and walk milliseconds the commandlet spent on the package " +
+					"itself, which is the part comparable to native.inspect.level.",
+				observe: observeCommandletLevelParse,
+				runs: options.unrealRuns,
+				warmups: options.warmups,
+				workload: relative(repositoryRoot, benchmarkLevel)
 			})
 		);
 		unreal = {

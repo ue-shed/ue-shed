@@ -28,3 +28,6 @@ allowBuilds:
     msgpackr-extract: true
     sharp: true
     workerd: true
+
+minimumReleaseAgeExclude:
+    - p4client-ts@0.7.1

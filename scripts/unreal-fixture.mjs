@@ -55,7 +55,7 @@ function discoverEngineRoot() {
 }
 
 function run(command, args) {
-	const isBatchFile = command.endsWith(".bat");
+	const isBatchFile = command.endsWith(".bat") || command.endsWith(".cmd");
 	const executable = isBatchFile
 		? [command, ...args].map((arg) => `"${arg.replaceAll('"', '""')}"`).join(" ")
 		: command;
@@ -97,6 +97,19 @@ function runCommandlet(tools, extraArgs = []) {
 		"-nop4",
 		"-nosplash",
 		"-NullRHI"
+	]);
+}
+
+function formatMapHistoryFixture() {
+	const formatter = join(
+		repositoryRoot,
+		"node_modules",
+		".bin",
+		process.platform === "win32" ? "oxfmt.cmd" : "oxfmt"
+	);
+	run(formatter, [
+		join(repositoryRoot, "fixtures", "perforce-map-history", "scenario.json"),
+		join(repositoryRoot, "fixtures", "perforce-map-history", "conventional-scenario.json")
 	]);
 }
 
@@ -172,13 +185,14 @@ if (
 		"generate",
 		"launch",
 		"launch-authoring",
+		"map-history",
 		"save",
 		"verify",
 		"snapshot"
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.mjs <apply|build|conformance|evidence|generate|launch|launch-authoring|save|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.mjs <apply|build|conformance|evidence|generate|launch|launch-authoring|map-history|save|verify|snapshot> [input] [output]"
 	);
 }
 
@@ -192,6 +206,13 @@ if (action === "launch-authoring") {
 }
 if (action === "generate" || action === "verify" || action === "conformance") {
 	runCommandlet(tools);
+}
+if (action === "map-history") {
+	runCommandlet(tools, [
+		`-MapHistoryFixtureDirectory=${join(repositoryRoot, "fixtures", "perforce-map-history")}`,
+		"-OverwriteMapHistoryFixture"
+	]);
+	formatMapHistoryFixture();
 }
 if (action === "verify" || action === "conformance") {
 	runCommandlet(tools, ["-VerifyOnly"]);

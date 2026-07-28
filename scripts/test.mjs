@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.mjs";
-import { reportUnrealTestGates } from "./test-gates.mjs";
+import { reportPerforceMapHistoryTestGate, reportUnrealTestGates } from "./test-gates.mjs";
 
 const executable = ensureUassetExecutable();
 const vitest = join(repositoryRoot, "node_modules", "vitest", "vitest.mjs");
@@ -10,6 +10,7 @@ const environment = {
 	UE_SHED_UASSET_EXECUTABLE: executable
 };
 reportUnrealTestGates(environment, process.argv.slice(2));
+reportPerforceMapHistoryTestGate(environment, process.argv.slice(2));
 const result = spawnSync(process.execPath, [vitest, "run", ...process.argv.slice(2)], {
 	cwd: repositoryRoot,
 	env: environment,

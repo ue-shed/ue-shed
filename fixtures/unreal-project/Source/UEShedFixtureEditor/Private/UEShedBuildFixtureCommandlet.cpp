@@ -1,6 +1,7 @@
 #include "UEShedBuildFixtureCommandlet.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Algo/AnyOf.h"
 #include "Engine/CompositeDataTable.h"
 #include "Engine/DataTable.h"
 #include "Components/DirectionalLightComponent.h"
@@ -59,6 +60,7 @@ constexpr int32 FlyingMoverCount = 409;
 constexpr int32 IntermittentMoverCount = 409;
 constexpr int32 LargeTableRowCount = 10000;
 constexpr int32 OfflineWorldActorCount = 6;
+constexpr int32 MapHistoryActorCount = 6;
 
 struct FFixtureTableDefinition
 {
@@ -235,6 +237,92 @@ bool SaveAsset(UPackage* Package, UObject* Asset)
 	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 	SaveArgs.SaveFlags = SAVE_NoError;
 	return UPackage::SavePackage(Package, Asset, *Filename, SaveArgs);
+}
+
+FString PackageFilename(const FString& PackageName, const bool bMap)
+{
+	if (PackageName.StartsWith(TEXT("/Game/")))
+	{
+		const FString ProjectDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+		return FPaths::Combine(ProjectDirectory, TEXT("Content"), PackageName.RightChop(6))
+			+ (bMap ? FPackageName::GetMapPackageExtension()
+				: FPackageName::GetAssetPackageExtension());
+	}
+	return FPackageName::LongPackageNameToFilename(
+		PackageName, bMap ? FPackageName::GetMapPackageExtension()
+			: FPackageName::GetAssetPackageExtension());
+}
+
+TArray<FString> PackageFiles(const FString& PackageName, const bool bMap)
+{
+	const FString Primary = FPaths::ConvertRelativePathToFull(PackageFilename(PackageName, bMap));
+	const FString Base = FPaths::Combine(
+		FPaths::GetPath(Primary), FPaths::GetBaseFilename(Primary));
+	const TCHAR* PrimaryExtension = bMap ? TEXT(".umap") : TEXT(".uasset");
+	TArray<FString> Files;
+	for (const TCHAR* Extension : { PrimaryExtension, TEXT(".uexp"), TEXT(".ubulk"),
+		TEXT(".m.ubulk"), TEXT(".uptnl") })
+	{
+		const FString Filename = Base + Extension;
+		if (IFileManager::Get().FileExists(*Filename)) Files.Add(Filename);
+	}
+	return Files;
+}
+
+bool DeletePackageFiles(const FString& PackageName, const bool bMap)
+{
+	bool bSucceeded = true;
+	for (const FString& Filename : PackageFiles(PackageName, bMap))
+	{
+		bSucceeded = IFileManager::Get().Delete(*Filename, false, true, true) && bSucceeded;
+	}
+	return bSucceeded;
+}
+
+FString ProjectRelativePath(const FString& Filename)
+{
+	FString Relative = FPaths::ConvertRelativePathToFull(Filename);
+	const FString ProjectDirectory = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+	if (!FPaths::MakePathRelativeTo(Relative, *ProjectDirectory))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Could not resolve fixture package %s beneath %s"),
+			*Filename, *ProjectDirectory);
+		return FString();
+	}
+	return Relative.Replace(TEXT("\\"), TEXT("/"));
+}
+
+bool CopyFixtureFile(const FString& Source, const FString& RevisionDirectory)
+{
+	const FString Relative = ProjectRelativePath(Source);
+	if (Relative.IsEmpty()) return false;
+	const FString Destination = FPaths::Combine(RevisionDirectory, Relative);
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Destination), true);
+	const uint32 CopyResult = IFileManager::Get().Copy(*Destination, *Source, true, true);
+	if (CopyResult != COPY_OK)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Could not copy fixture package %s to %s (result %u)"),
+			*Source, *Destination, CopyResult);
+		return false;
+	}
+	return true;
+}
+
+bool CopyPackageFiles(const FString& PackageName, const bool bMap, const FString& RevisionDirectory)
+{
+	const TArray<FString> Files = PackageFiles(PackageName, bMap);
+	if (Files.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Could not find fixture package files for %s at %s"),
+			*PackageName, *PackageFilename(PackageName, bMap));
+		return false;
+	}
+	bool bSucceeded = true;
+	for (const FString& Filename : Files)
+	{
+		bSucceeded = CopyFixtureFile(Filename, RevisionDirectory) && bSucceeded;
+	}
+	return bSucceeded;
 }
 
 UPackage* FindOrCreatePackage(const TCHAR* PackageName)
@@ -1396,6 +1484,302 @@ bool GenerateOfflineWorldMap()
 	return true;
 }
 
+constexpr TCHAR MapHistoryPackageName[] = TEXT("/Game/Fixture/History/L_MapHistoryWorld");
+constexpr TCHAR MapHistoryAssetName[] = TEXT("L_MapHistoryWorld");
+constexpr TCHAR MapHistoryRelativePath[] = TEXT("Content/Fixture/History/L_MapHistoryWorld.umap");
+constexpr TCHAR ConventionalMapHistoryPackageName[] =
+	TEXT("/Game/Fixture/History/L_ConventionalMapHistory");
+constexpr TCHAR ConventionalMapHistoryAssetName[] = TEXT("L_ConventionalMapHistory");
+constexpr TCHAR ConventionalMapHistoryRelativePath[] =
+	TEXT("Content/Fixture/History/L_ConventionalMapHistory.umap");
+
+FString MapHistoryExternalActorHistoryRoot()
+{
+	return FPaths::Combine(FPaths::ProjectContentDir(),
+		TEXT("__ExternalActors__/Fixture/History"));
+}
+
+void DeleteMapHistoryWorkingFiles()
+{
+	DeletePackageFiles(MapHistoryPackageName, true);
+	// This path is reserved for the short-lived source map used only while emitting revision bundles.
+	IFileManager::Get().DeleteDirectory(*FPaths::Combine(FPaths::ProjectContentDir(),
+		TEXT("Fixture/History")), false, true);
+	IFileManager::Get().DeleteDirectory(*MapHistoryExternalActorHistoryRoot(), false, true);
+}
+
+bool SaveExternalActor(AStaticMeshActor* Actor)
+{
+	if (Actor == nullptr || Actor->GetExternalPackage() == nullptr) return false;
+	UPackage* Package = Actor->GetExternalPackage();
+	Package->MarkPackageDirty();
+	return SaveAsset(Package, Actor);
+}
+
+FString ExternalActorProjectPath(AStaticMeshActor* Actor)
+{
+	if (Actor == nullptr || Actor->GetExternalPackage() == nullptr) return FString();
+	return ProjectRelativePath(PackageFilename(Actor->GetExternalPackage()->GetName(), false));
+}
+
+bool SnapshotMapHistoryRevision(const FString& OutputDirectory, const FString& Revision,
+	const FString& MapPackageName, const bool bIncludeMap, const TArray<AStaticMeshActor*>& Actors)
+{
+	const FString RevisionDirectory = FPaths::Combine(OutputDirectory, TEXT("revisions"), Revision);
+	if (IFileManager::Get().DirectoryExists(*RevisionDirectory))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Map History fixture revision already exists: %s"),
+			*RevisionDirectory);
+		return false;
+	}
+	IFileManager::Get().MakeDirectory(*RevisionDirectory, true);
+	bool bSucceeded = !bIncludeMap || CopyPackageFiles(MapPackageName, true, RevisionDirectory);
+	for (AStaticMeshActor* Actor : Actors)
+	{
+		if (Actor == nullptr || Actor->GetExternalPackage() == nullptr)
+		{
+			bSucceeded = false;
+			continue;
+		}
+		bSucceeded = CopyPackageFiles(Actor->GetExternalPackage()->GetName(), false, RevisionDirectory)
+			&& bSucceeded;
+	}
+	return bSucceeded;
+}
+
+FString ManifestFileList(const TCHAR* Action, const TArray<FString>& Files)
+{
+	TArray<FString> Entries;
+	Entries.Reserve(Files.Num());
+	for (const FString& File : Files)
+	{
+		Entries.Add(FString::Printf(TEXT("{\"action\":\"%s\",\"path\":\"%s\"}"),
+			Action, *File));
+	}
+	return FString::Join(Entries, TEXT(","));
+}
+
+bool WriteMapHistoryScenarioManifest(const FString& OutputDirectory,
+	const TArray<FString>& BaselineFiles, const FString& EastFile, const FString& NorthFile,
+	const FString& ArrivalFile, const FString& SouthFile, const FString& WestFile)
+{
+	const FString Baseline = ManifestFileList(TEXT("add"), BaselineFiles);
+	const FString East = ManifestFileList(TEXT("edit"), { EastFile });
+	const FString North = ManifestFileList(TEXT("edit"), { NorthFile });
+	const FString Arrival = ManifestFileList(TEXT("add"), { ArrivalFile });
+	const FString South = ManifestFileList(TEXT("delete"), { SouthFile });
+	const FString Unclassified = ManifestFileList(TEXT("edit"), { EastFile, WestFile });
+	const FString Manifest = FString::Printf(TEXT(R"JSON({
+	"schemaVersion": 1,
+	"scenario": "world-partition-actor-history",
+	"mapPath": "%s",
+	"sourceKind": "world_partition",
+	"revisions": [
+		{"id":"baseline","files":[%s],"expectedChanges":["actor_added"]},
+		{"id":"move-east","files":[%s],"expectedChanges":["actor_moved"]},
+		{"id":"label-north","files":[%s],"expectedChanges":["actor_label_changed"]},
+		{"id":"add-arrival","files":[%s],"expectedChanges":["actor_added"]},
+		{"id":"delete-south","files":[%s],"expectedChanges":["actor_removed"]},
+		{"id":"two-unclassified-package-edits","files":[%s],"expectedChanges":["unclassified_package_change"]}
+	]
+})JSON"), MapHistoryRelativePath, *Baseline, *East, *North, *Arrival, *South, *Unclassified);
+	return FFileHelper::SaveStringToFile(Manifest,
+		*FPaths::Combine(OutputDirectory, TEXT("scenario.json")));
+}
+
+bool GenerateConventionalMapHistoryFixture(const FString& OutputDirectory)
+{
+	UPackage* Package = CreatePackage(ConventionalMapHistoryPackageName);
+	if (Package == nullptr) return false;
+	UWorldFactory* Factory = NewObject<UWorldFactory>();
+	Factory->WorldType = EWorldType::Editor;
+	Factory->bCreateWorldPartition = false;
+	UWorld* World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package,
+		ConventionalMapHistoryAssetName, RF_Public | RF_Standalone, nullptr, GWarn));
+	if (World == nullptr || World->IsPartitionedWorld()) return false;
+
+	FActorSpawnParameters Spawn;
+	Spawn.bCreateActorPackage = false;
+	AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
+		FVector(-320, 640, 180), FRotator::ZeroRotator, Spawn);
+	if (Actor == nullptr)
+	{
+		World->CleanupWorld();
+		return false;
+	}
+	Actor->Tags.Add(TEXT("UEShedMapHistoryFixture"));
+	Actor->SetActorLabel(TEXT("Conventional Marker"));
+	Actor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Cube.Cube")));
+	Actor->SetActorScale3D(FVector(1.5, 1.5, 2.0));
+	ApplySolidColor(Actor->GetStaticMeshComponent(), FLinearColor(0.40f, 0.72f, 0.94f, 1.0f));
+
+	Package->MarkPackageDirty();
+	bool bSucceeded = SaveAsset(Package, World);
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("conventional-baseline"),
+		ConventionalMapHistoryPackageName, true, {}) && bSucceeded;
+
+	Actor->SetActorLocation(FVector(960, 220, 340));
+	Package->MarkPackageDirty();
+	bSucceeded = SaveAsset(Package, World) && bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("conventional-move-actor"),
+		ConventionalMapHistoryPackageName, true, {}) && bSucceeded;
+
+	const FString Baseline = ManifestFileList(TEXT("add"), { ConventionalMapHistoryRelativePath });
+	const FString Move = ManifestFileList(TEXT("edit"), { ConventionalMapHistoryRelativePath });
+	const FString Manifest = FString::Printf(TEXT(R"JSON({
+	"schemaVersion": 1,
+	"scenario": "conventional-map-actor-history",
+	"mapPath": "%s",
+	"sourceKind": "level",
+	"revisions": [
+		{"id":"conventional-baseline","files":[%s],"expectedChanges":["actor_added"]},
+		{"id":"conventional-move-actor","files":[%s],"expectedChanges":["actor_moved"]}
+	]
+})JSON"), ConventionalMapHistoryRelativePath, *Baseline, *Move);
+	bSucceeded = FFileHelper::SaveStringToFile(Manifest,
+		*FPaths::Combine(OutputDirectory, TEXT("conventional-scenario.json"))) && bSucceeded;
+	World->CleanupWorld();
+	return bSucceeded;
+}
+
+bool GenerateMapHistoryFixture(const FString& RequestedOutputDirectory, const bool bOverwrite)
+{
+	const FString OutputDirectory = FPaths::ConvertRelativePathToFull(RequestedOutputDirectory);
+	const FString AllowedOutputDirectory = FPaths::ConvertRelativePathToFull(
+		FPaths::Combine(FPaths::ProjectDir(), TEXT(".."), TEXT("perforce-map-history")));
+	if (!OutputDirectory.Equals(AllowedOutputDirectory, ESearchCase::IgnoreCase))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Map History fixture output must be %s"),
+			*AllowedOutputDirectory);
+		return false;
+	}
+	const FString RevisionsDirectory = FPaths::Combine(OutputDirectory, TEXT("revisions"));
+	if (IFileManager::Get().DirectoryExists(*RevisionsDirectory))
+	{
+		TArray<FString> ExistingFiles;
+		IFileManager::Get().FindFilesRecursive(ExistingFiles, *RevisionsDirectory, TEXT("*"), true, false);
+		if (!ExistingFiles.IsEmpty() && !bOverwrite)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Map History fixture revisions already exist: %s"),
+				*RevisionsDirectory);
+			return false;
+		}
+		IFileManager::Get().DeleteDirectory(*RevisionsDirectory, false, true);
+	}
+
+	DeleteMapHistoryWorkingFiles();
+	UPackage* Package = CreatePackage(MapHistoryPackageName);
+	if (Package == nullptr) return false;
+	UWorldFactory* Factory = NewObject<UWorldFactory>();
+	Factory->WorldType = EWorldType::Editor;
+	Factory->bCreateWorldPartition = true;
+	Factory->bEnableWorldPartitionStreaming = false;
+	UWorld* World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package,
+		MapHistoryAssetName, RF_Public | RF_Standalone, nullptr, GWarn));
+	if (World == nullptr || !World->IsPartitionedWorld()) return false;
+
+	auto AddActor = [&](const TCHAR* Label, const FVector& Location, const FVector& Scale,
+		const FLinearColor& Color) -> AStaticMeshActor*
+	{
+		FActorSpawnParameters Spawn;
+		Spawn.bCreateActorPackage = true;
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
+			Location, FRotator::ZeroRotator, Spawn);
+		if (Actor == nullptr) return nullptr;
+		Actor->Tags.Add(TEXT("UEShedMapHistoryFixture"));
+		Actor->SetActorLabel(Label);
+		Actor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Engine/BasicShapes/Cube.Cube")));
+		Actor->SetActorScale3D(Scale);
+		ApplySolidColor(Actor->GetStaticMeshComponent(), Color);
+		return Actor;
+	};
+
+	AStaticMeshActor* Hub = AddActor(TEXT("History Hub"), FVector(-1200, -450, 120),
+		FVector(4.0, 4.0, 2.0), FLinearColor(0.32f, 0.68f, 0.82f, 1.0f));
+	AStaticMeshActor* East = AddActor(TEXT("East Marker"), FVector(900, -320, 200),
+		FVector(1.3, 1.3, 3.5), FLinearColor(0.94f, 0.58f, 0.24f, 1.0f));
+	AStaticMeshActor* North = AddActor(TEXT("North Marker"), FVector(-220, 1300, 160),
+		FVector(2.6, 1.0, 1.0), FLinearColor(0.72f, 0.42f, 0.78f, 1.0f));
+	AStaticMeshActor* South = AddActor(TEXT("South Marker"), FVector(-500, -1500, 80),
+		FVector(1.0, 3.0, 1.0), FLinearColor(0.42f, 0.76f, 0.44f, 1.0f));
+	AStaticMeshActor* West = AddActor(TEXT("West Marker"), FVector(-2050, 660, 260),
+		FVector(1.8, 1.8, 1.8), FLinearColor(0.86f, 0.34f, 0.38f, 1.0f));
+	AStaticMeshActor* Attached = AddActor(TEXT("Hub Attachment"), FVector::ZeroVector,
+		FVector(0.6, 0.6, 3.0), FLinearColor(0.96f, 0.88f, 0.30f, 1.0f));
+	if (Hub == nullptr || East == nullptr || North == nullptr || South == nullptr || West == nullptr
+		|| Attached == nullptr)
+	{
+		World->CleanupWorld();
+		DeleteMapHistoryWorkingFiles();
+		return false;
+	}
+	Attached->AttachToComponent(Hub->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	Attached->SetActorRelativeLocation(FVector(760, 260, 480));
+
+	Package->MarkPackageDirty();
+	bool bSucceeded = SaveAsset(Package, World);
+	for (AStaticMeshActor* Actor : { Hub, East, North, South, West, Attached })
+	{
+		bSucceeded = SaveExternalActor(Actor) && bSucceeded;
+	}
+	TArray<FString> BaselineFiles = { MapHistoryRelativePath, ExternalActorProjectPath(Hub),
+		ExternalActorProjectPath(East), ExternalActorProjectPath(North), ExternalActorProjectPath(South),
+		ExternalActorProjectPath(West), ExternalActorProjectPath(Attached) };
+	bSucceeded = !Algo::AnyOf(BaselineFiles, [](const FString& File) { return File.IsEmpty(); })
+		&& bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("baseline"), MapHistoryPackageName, true,
+		{ Hub, East, North, South, West, Attached }) && bSucceeded;
+
+	East->SetActorLocation(FVector(1450, -320, 260));
+	bSucceeded = SaveExternalActor(East) && bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("move-east"), MapHistoryPackageName, false, { East })
+		&& bSucceeded;
+
+	North->SetActorLabel(TEXT("North Beacon"));
+	bSucceeded = SaveExternalActor(North) && bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("label-north"), MapHistoryPackageName, false, { North })
+		&& bSucceeded;
+
+	AStaticMeshActor* Arrival = AddActor(TEXT("Arrival Marker"), FVector(480, 760, 140),
+		FVector(1.1, 1.1, 1.1), FLinearColor(0.30f, 0.88f, 0.64f, 1.0f));
+	const FString ArrivalFile = ExternalActorProjectPath(Arrival);
+	bSucceeded = SaveExternalActor(Arrival) && bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("add-arrival"), MapHistoryPackageName, false,
+		{ Arrival })
+		&& bSucceeded;
+
+	const FString SouthFile = ExternalActorProjectPath(South);
+	const FString SouthPackage = South->GetExternalPackage() == nullptr ? FString()
+		: South->GetExternalPackage()->GetName();
+	World->EditorDestroyActor(South, true);
+	bSucceeded = !SouthPackage.IsEmpty() && DeletePackageFiles(SouthPackage, false) && bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory, TEXT("delete-south"), MapHistoryPackageName, false, {})
+		&& bSucceeded;
+
+	East->SetActorScale3D(FVector(2.1, 1.3, 3.5));
+	West->SetActorScale3D(FVector(1.8, 2.4, 1.8));
+	bSucceeded = SaveExternalActor(East) && SaveExternalActor(West) && bSucceeded;
+	bSucceeded = SnapshotMapHistoryRevision(OutputDirectory,
+		TEXT("two-unclassified-package-edits"), MapHistoryPackageName, false, { East, West })
+		&& bSucceeded;
+	bSucceeded = !ArrivalFile.IsEmpty() && !SouthFile.IsEmpty() && WriteMapHistoryScenarioManifest(
+		OutputDirectory, BaselineFiles, ExternalActorProjectPath(East), ExternalActorProjectPath(North),
+		ArrivalFile, SouthFile, ExternalActorProjectPath(West)) && bSucceeded;
+
+	World->CleanupWorld();
+	bSucceeded = GenerateConventionalMapHistoryFixture(OutputDirectory) && bSucceeded;
+	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+	DeleteMapHistoryWorkingFiles();
+	if (bSucceeded)
+	{
+		UE_LOG(LogTemp, Display, TEXT("Generated Map History fixture at %s with %d baseline actors"),
+			*OutputDirectory, MapHistoryActorCount);
+	}
+	return bSucceeded;
+}
+
 bool VerifyOfflineWorldMap()
 {
 	static const TCHAR* PackageName = TEXT("/Game/Fixture/Offline/L_OfflineWorld");
@@ -1703,6 +2087,12 @@ UUEShedBuildFixtureCommandlet::UUEShedBuildFixtureCommandlet()
 int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 {
 	const TArray<FFixtureTableDefinition> Definitions = GetTableDefinitions();
+	FString MapHistoryFixtureDirectory;
+	if (FParse::Value(*Params, TEXT("MapHistoryFixtureDirectory="), MapHistoryFixtureDirectory))
+	{
+		return GenerateMapHistoryFixture(MapHistoryFixtureDirectory,
+			FParse::Param(*Params, TEXT("OverwriteMapHistoryFixture"))) ? 0 : 1;
+	}
 	FString ApplyRequestPath;
 	FString ApplyOutputPath;
 	if (FParse::Value(*Params, TEXT("ApplyRequest="), ApplyRequestPath)

@@ -24,6 +24,7 @@ import type {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/extension-camera-review/client";
+import type { ContentObservatoryHistoryRequest } from "@ue-shed/extension-content-observatory/client";
 import type {
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -52,6 +53,11 @@ declare global {
 			readonly gameText: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
+			};
+			readonly contentObservatory: {
+				readonly status: () => Promise<unknown>;
+				readonly start: (request: ContentObservatoryHistoryRequest) => Promise<unknown>;
+				readonly cancel: () => Promise<unknown>;
 			};
 			readonly authoring: {
 				readonly beginSession: (objectPath: string) => Promise<unknown>;

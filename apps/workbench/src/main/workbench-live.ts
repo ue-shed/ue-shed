@@ -30,9 +30,11 @@ import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./servic
 import { CameraPresentationLive } from "./services/camera-presentation.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
+import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
 import { ShowcaseLive } from "./services/showcase.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
+import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 
 export interface WorkbenchHosts {
 	readonly app: ElectronAppHost;
@@ -105,6 +107,9 @@ function featureLayer(hosts: WorkbenchHosts) {
 	const authoring = WorkbenchAuthoringLive.pipe(Layer.provide(WorkbenchAuthoringSessionsLive));
 	const authoringClient = AuthoringClientLive.pipe(Layer.provide(authoring));
 	const mapReview = WorkbenchMapReviewLive.pipe(Layer.provide(ObservatoryLive));
+	const contentObservatory = WorkbenchContentObservatoryLive.pipe(
+		Layer.provide(mapHistoryLiveLayer)
+	);
 	return Layer.mergeAll(
 		ShowcaseLive,
 		WorkbenchAssetAuditsLive,
@@ -112,6 +117,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		authoring,
 		authoringClient,
 		mapReview,
+		contentObservatory,
 		CameraPresentationLive
 	).pipe(Layer.provideMerge(reviewAndFixtureLayer(hosts)));
 }

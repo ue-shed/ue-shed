@@ -140,6 +140,21 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"camera:presentation-budget": [80],
 	"camera:status": [],
 	"camera:configure": [cameraStatus.config],
+	"content-observatory:status": [],
+	"content-observatory:start": [
+		{
+			limits: {
+				maxChangelists: 250,
+				maxConcurrency: 4,
+				maxDurationMs: 120000,
+				maxMaterializedFiles: 4000,
+				maxPackages: 4000
+			},
+			mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap",
+			range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" }
+		}
+	],
+	"content-observatory:cancel": [],
 	"map-review:load": [],
 	"map-review:world-snapshot": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
@@ -225,6 +240,9 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"camera:presentation-budget": 80,
 	"camera:status": cameraStatus,
 	"camera:configure": cameraStatus,
+	"content-observatory:status": { status: "not_configured" },
+	"content-observatory:start": { status: "not_configured" },
+	"content-observatory:cancel": { status: "not_configured" },
 	"map-review:load": { status: "not_configured" },
 	"map-review:world-snapshot": {
 		message: "offline",
@@ -304,6 +322,7 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"authoring:session:save": [undefined],
 	"camera:presentation-budget": [Number.NaN],
 	"camera:configure": [{ paused: true }],
+	"content-observatory:start": [{ mapPath: "" }],
 	"map-review:preview-candidate": [""],
 	"map-review:authoring-patch": [{ patch: {}, sessionId: "" }],
 	"map-review:authoring-reframe": [{ sessionId: "" }],
@@ -317,9 +336,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 48 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(48);
-	expect(new Set(invokeChannelNames).size).toBe(48);
+it("registers exactly 51 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(51);
+	expect(new Set(invokeChannelNames).size).toBe(51);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

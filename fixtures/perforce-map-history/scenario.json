@@ -1,0 +1,93 @@
+{
+	"schemaVersion": 1,
+	"scenario": "world-partition-actor-history",
+	"mapPath": "Content/Fixture/History/L_MapHistoryWorld.umap",
+	"sourceKind": "world_partition",
+	"revisions": [
+		{
+			"id": "baseline",
+			"files": [
+				{ "action": "add", "path": "Content/Fixture/History/L_MapHistoryWorld.umap" },
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/0/J3/YO6YFXTK0CF7AGM34U7PQA.uasset"
+				},
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.uasset"
+				},
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/E/7E/MYCWJK19X4HM01TG834HMB.uasset"
+				},
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/75/FQFCSRE35IMERPMI8K3KT5.uasset"
+				},
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/O5/S7MIGESMWT6M0S6ZL89YG3.uasset"
+				},
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/0/6T/BA5Z8RENRA6081VFA9SSIZ.uasset"
+				}
+			],
+			"expectedChanges": ["actor_added"]
+		},
+		{
+			"id": "move-east",
+			"files": [
+				{
+					"action": "edit",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.uasset"
+				}
+			],
+			"expectedChanges": ["actor_moved"]
+		},
+		{
+			"id": "label-north",
+			"files": [
+				{
+					"action": "edit",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/E/7E/MYCWJK19X4HM01TG834HMB.uasset"
+				}
+			],
+			"expectedChanges": ["actor_label_changed"]
+		},
+		{
+			"id": "add-arrival",
+			"files": [
+				{
+					"action": "add",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/7/OS/YFXMLLP69ZY7T5KHTXMUWS.uasset"
+				}
+			],
+			"expectedChanges": ["actor_added"]
+		},
+		{
+			"id": "delete-south",
+			"files": [
+				{
+					"action": "delete",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/75/FQFCSRE35IMERPMI8K3KT5.uasset"
+				}
+			],
+			"expectedChanges": ["actor_removed"]
+		},
+		{
+			"id": "two-unclassified-package-edits",
+			"files": [
+				{
+					"action": "edit",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.uasset"
+				},
+				{
+					"action": "edit",
+					"path": "Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/O5/S7MIGESMWT6M0S6ZL89YG3.uasset"
+				}
+			],
+			"expectedChanges": ["unclassified_package_change"]
+		}
+	]
+}

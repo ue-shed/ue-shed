@@ -155,6 +155,21 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 	[["text", "scan", "project"], "TextScan"],
 	[["text", "search", "project", "hello", "world"], "TextSearch"],
 	[["input", "inspect", "project"], "InputInspect"],
+	[
+		[
+			"map",
+			"history",
+			"project",
+			"Content/Maps/L_Example.umap",
+			"--since",
+			"7 days",
+			"--until",
+			"2026-07-28T00:00:00.000Z",
+			"--max-changelists",
+			"25"
+		],
+		"MapHistory"
+	],
 	[["review", "sets", "validate", "set.json"], "ReviewSetValidate"],
 	[["review", "framing", "candidates", "http://editor"], "ReviewFramingCandidates"],
 	[
@@ -220,6 +235,37 @@ it.effect("decodes every CLI command variant", () =>
 	).pipe(Effect.asVoid)
 );
 
+it.effect("parses Map History bounds as positive numbers", () =>
+	parseCliCommand([
+		"map",
+		"history",
+		"project",
+		"Content/Maps/L_Example.umap",
+		"--since",
+		"2026-07-21T00:00:00.000Z",
+		"--max-packages",
+		"50",
+		"--max-materialized-files",
+		"75",
+		"--concurrency",
+		"2",
+		"--max-duration-ms",
+		"60000"
+	]).pipe(
+		Effect.tap((command) =>
+			Effect.sync(() => {
+				expect(command).toMatchObject({
+					_tag: "MapHistory",
+					concurrency: 2,
+					maxDurationMs: 60_000,
+					maxMaterializedFiles: 75,
+					maxPackages: 50
+				});
+			})
+		)
+	)
+);
+
 it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
 	Effect.forEach(
 		[
@@ -230,6 +276,16 @@ it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
 			["plugins", "verify", "plugins.manifest.json", "--project", "project"],
 			["plugins", "install", "--project", "project"],
 			["plugins", "install", "project", "--manifest", "one", "other"],
+			[
+				"map",
+				"history",
+				"project",
+				"Content/Maps/L_Example.umap",
+				"--since",
+				"7 days",
+				"--max-changelists",
+				"0"
+			],
 			["authoring", "session", "show", "legacy.json"],
 			[
 				"authoring",

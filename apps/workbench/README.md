@@ -7,10 +7,17 @@ The renderer uses SolidJS and composes shared StyleX themes/primitives with inde
 product-extension styles. Workbench may select a theme but must not repair extensions through global
 CSS overrides.
 
-Workbench opens on a showcase catalog for the three implemented proving slices: DataTable authoring,
-Texture Asset Audit, and Camera Load Lab. The catalog exposes each slice's runtime mode and readiness
-instead of assuming Unreal is running. Camera Load Lab can drive and observe up to 32 camera sources
-while presenting eight tiles at once behind an independent display-byte budget.
+Workbench opens on a showcase catalog for the implemented proving slices: DataTable authoring,
+Texture Asset Audit, Game Text, Map Review, Camera Load Lab, and the Perforce-first **World Log**.
+The catalog exposes each slice's runtime mode and readiness instead of assuming Unreal is running.
+Camera Load Lab can drive and observe up to 32 camera sources while presenting eight tiles at once
+behind an independent display-byte budget.
+
+World Log is a map-scoped historical view. It requires `UE_SHED_PROJECT_ROOT` and normal Perforce
+configuration only when the user starts a bounded history query. Opening Workbench, opening the
+route, and checking its configured state do not run a Perforce command or alter workspace have-state.
+Its renderer receives only validated status/start/cancel operations; Perforce and temporary-file
+authority stay in the main process.
 
 From the repository root, launch the fixture-configured showcase with:
 

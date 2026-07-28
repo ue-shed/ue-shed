@@ -14,12 +14,16 @@ the packed tarballs into a clean offline consumer, so no new packaging work is r
 
 The two surfaces differ in capability, not only in speed.
 
-|                                | Native artifact                                                                  | WASM binding (not built)                                                                                      |
+|                                | Native artifact                                                                  | WASM binding                                                                                                  |
 | ------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Discovery, scan, catalog cache | Yes                                                                              | No. The core takes bounded bytes and has no filesystem authority, so the host must enumerate and supply them. |
 | Decode a package it is handed  | Yes                                                                              | Yes                                                                                                           |
 | Platform coverage              | Windows x64 only today; the launcher raises `UnsupportedPlatformError` elsewhere | Platform neutral                                                                                              |
 | Per-call process startup       | About 8 ms                                                                       | None                                                                                                          |
+
+The source checkout now builds the binding with `pnpm uasset:build:wasm` and proves native schema-v7
+parity with `pnpm test:uasset-wasm`. The adapter accepts bytes and a provenance display path, while
+discovery and file I/O remain host responsibilities.
 
 So the native artifact is the complete surface and the WASM binding would be a partial one, useful
 where bytes are already in hand and startup is worth avoiding. Adding a second platform artifact is a
@@ -132,12 +136,12 @@ the data handed to it rather than hoping to accelerate it.
 1. **Split the second pass.** The roughly 107 ms TypeScript figure quoted in discussion is reported,
    not measured here. Instrument it and separate `JSON.parse` from union dispatch from struct
    decode. The fix priority flips depending on the split.
-2. **Measure WASM before betting on it.** The library already compiles for
-   `wasm32-unknown-unknown`, so a parse-once decode-many harness is cheap. What does not exist yet
-   is the versioned inspection binding and host scenario that
-   `docs/engineering/uasset-benchmarks.md` requires. Until then, the WASM reasoning above is
-   theory. Running the same before/after by checking out the three files from `9e9e293` would also
-   give a real counterfactual for how bad the unoptimized path would have been under WASM.
+2. **Separate the remaining WASM costs.** The versioned binding and Node host scenario now exist.
+   On the first local run over `DT_LargeScalars`, schema-v7 inspection measured 18.2 ms p50 in a
+   long-lived WASM instance versus 41.0 ms p50 through a fresh native process. Both include decode
+   and JSON serialization; only native includes process startup and file I/O, so this is a product
+   boundary result, not a codec ratio. A parse-once decode-many export and the historical
+   `9e9e293` counterfactual would isolate allocator/decode behavior.
 3. **Check whether the snapshot schema transforms or only validates.** The property union is plain
    `Schema.Struct` with literals, which is structurally identity and therefore removable. If
    `AuthoringTableSnapshot` performs real transformation, that shaping has to move into Rust instead

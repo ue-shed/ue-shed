@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/uasset-parser"]
+exclude = ["crates/uasset-parser-wasm"]
 resolver = "3"
 
 [profile.release]

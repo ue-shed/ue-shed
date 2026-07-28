@@ -19,6 +19,19 @@ Include the configured UE 5.7 commandlet:
 pnpm benchmark:uasset:unreal
 ```
 
+Measure the long-lived Node WASM binding against a fresh native process:
+
+```powershell
+pnpm benchmark:uasset:wasm
+```
+
+The WASM workload is the 2.4 MB `DT_LargeScalars` fixture. Both producers parse, decode, and serialize
+the same schema-v7 inspection output. The WASM lane receives already-read bytes and reuses one module
+instance; the native lane starts a process and reads the file for every sample. The benchmark labels
+that authority difference rather than presenting it as a codec-only comparison. Its JSON result
+records every sample, environment and revision identity, input/output size, and optimized module
+size.
+
 The harness builds the release parser before measuring. The Unreal lane also builds the fixture
 target before measuring; neither build is included in samples. Use `--no-build` only after building
 the exact artifacts under test.
@@ -91,12 +104,11 @@ a large table and an in-process loop when the question is codec throughput, and 
 measurement labeled separately. See [WASM decode boundary](../research/wasm-decode-boundary.md) for
 that measurement and its methodology.
 
-WASM is a required runtime, but this harness does not fabricate a WASM timing from a native library
-build. Add a browser or WASI scenario when the versioned WASM inspection binding ships, and require
-it to use the same bytes and semantic fixture assertions as the native producer.
+WASM has a separate source-checkout harness because its long-lived in-process authority differs from
+the native CLI scenarios above. `pnpm test:uasset-wasm` first proves byte-for-byte inspection parity
+over real fixtures and malformed input. `pnpm benchmark:uasset:wasm` then measures the large-table
+boundary without pretending its fresh-process native comparison is decode-only. A future browser
+scenario or parse-once decode-many Rust export should be added as a separately labeled lane.
 
-The library already compiles for `wasm32-unknown-unknown`, so a decode-only WASM loop is cheap to
-add once a binding exists. Until one is measured, treat claims about WASM decode cost as unverified.
-[WASM decode boundary](../research/wasm-decode-boundary.md) records the reasoning for expecting
-allocation pressure to matter more there, and marks it explicitly as reasoned from a native
-measurement rather than observed under WASM.
+[WASM decode boundary](../research/wasm-decode-boundary.md) records the earlier native-derived
+reasoning and the first measured WASM result.

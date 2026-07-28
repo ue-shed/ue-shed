@@ -26,3 +26,15 @@ Verify the portable library target with:
 rustup target add wasm32-unknown-unknown
 cargo check --locked -p uasset-parser --lib --target wasm32-unknown-unknown
 ```
+
+Build and exercise the Node WASM binding from the repository root:
+
+```text
+pnpm run uasset:build:wasm
+pnpm run test:uasset-wasm
+pnpm run benchmark:uasset:wasm
+```
+
+The binding lives in `crates/uasset-parser-wasm`. It accepts package bytes supplied by its host and
+returns the same schema-versioned inspection evidence as native `uasset inspect`; it does not own
+filesystem discovery, scanning, caching, or subprocess authority.

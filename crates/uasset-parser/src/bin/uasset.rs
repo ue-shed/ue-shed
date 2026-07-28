@@ -416,6 +416,42 @@ fn inspect(options: &InspectOptions) -> u8 {
     }
 }
 
+/// Shares the native inspection projection with the separately packaged WASM adapter.
+///
+/// The host supplies bounded package bytes and a display path. Filesystem discovery, scanning,
+/// subprocess management, and caching intentionally remain native host responsibilities.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn inspect_bytes_json(path: &str, bytes: &[u8]) -> String {
+    match Package::parse(bytes) {
+        Ok(package) => serde_json::to_string(&InspectOutput::from_package(
+            path.to_owned(),
+            bytes,
+            &package,
+        ))
+        .unwrap_or_else(|error| {
+            serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "status": "error",
+                "path": path,
+                "kind": "internal",
+                "message": error.to_string()
+            })
+            .to_string()
+        }),
+        Err(error) => serde_json::to_string(&ErrorOutput::package(path.to_owned(), &error))
+            .unwrap_or_else(|serialization_error| {
+                serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "status": "error",
+                    "path": path,
+                    "kind": "internal",
+                    "message": serialization_error.to_string()
+                })
+                .to_string()
+            }),
+    }
+}
+
 fn authoring(options: &InspectOptions) -> u8 {
     if options.format != OutputFormat::Json {
         eprintln!("uasset: authoring requires --format json");

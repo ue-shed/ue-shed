@@ -6,6 +6,7 @@ out/
 coverage/
 test-results/
 /target/
+**/target/
 *.tsbuildinfo
 .env
 .env.*

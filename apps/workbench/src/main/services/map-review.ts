@@ -1,10 +1,10 @@
 import {
 	approveFramingCandidate,
-	awaitReviewPreviewFrame,
+	awaitProvisionedCameraFrame,
 	CameraFeed,
-	clearReviewPreviewSources,
+	clearProvisionedCameras,
 	configureCameras,
-	ensureReviewPreviewSources,
+	ensureProvisionedCameras,
 	generateFramingCandidates,
 	ReviewAuthoring,
 	ReviewAuthoringSessions,
@@ -329,7 +329,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const coordinator = yield* makeUnrealOperationCoordinator;
 		const lastWorldSnapshot = yield* Ref.make<Option.Option<WorldScoutResult>>(Option.none());
 		const activeReviewSetPath = yield* Ref.make<Option.Option<string>>(Option.none());
-		const livePreviewBindings = yield* Ref.make<
+		const provisionedCameraBindings = yield* Ref.make<
 			Option.Option<{
 				readonly bindings: ReadonlyArray<{
 					readonly candidateId: string;
@@ -725,18 +725,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.worldObservationPresentationReplacements"
 		)(() => Ref.get(observationPresentationReplacements));
 
-		const invalidateLivePreviewBank = Effect.fn(
-			"Workbench.WorkbenchMapReview.invalidateLivePreviewBank"
+		const invalidateProvisionedCameras = Effect.fn(
+			"Workbench.WorkbenchMapReview.invalidateProvisionedCameras"
 		)(function* () {
-			yield* Ref.set(livePreviewBindings, Option.none());
-			yield* clearReviewPreviewSources(configuration.remoteControlEndpoint).pipe(
+			yield* Ref.set(provisionedCameraBindings, Option.none());
+			yield* clearProvisionedCameras(configuration.remoteControlEndpoint).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
 				Effect.ignore
 			);
 		});
 
-		const applyLivePreviewSchedule = Effect.fn(
-			"Workbench.WorkbenchMapReview.applyLivePreviewSchedule"
+		const applyProvisionedCameraSchedule = Effect.fn(
+			"Workbench.WorkbenchMapReview.applyProvisionedCameraSchedule"
 		)(function* (cameraCount: number, fps: number) {
 			const clamped = clampLivePreviewFps(fps);
 			yield* Ref.set(livePreviewFps, clamped);
@@ -758,9 +758,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const setLivePreviewFps = Effect.fn("Workbench.WorkbenchMapReview.setLivePreviewFps")(
 			function* (fps: number) {
-				const bindings = yield* Ref.get(livePreviewBindings);
+				const bindings = yield* Ref.get(provisionedCameraBindings);
 				const cameraCount = Option.isSome(bindings) ? bindings.value.bindings.length : 0;
-				return yield* applyLivePreviewSchedule(cameraCount, fps).pipe(
+				return yield* applyProvisionedCameraSchedule(cameraCount, fps).pipe(
 					Effect.catch((cause) =>
 						Effect.gen(function* () {
 							const clamped = clampLivePreviewFps(fps);
@@ -1037,7 +1037,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				const { projectRoot } = reviewProject;
 				return yield* runExclusive(
 					Effect.gen(function* () {
-						yield* invalidateLivePreviewBank();
+						yield* invalidateProvisionedCameras();
 						const selection = yield* authoring.inspectSelection(
 							configuration.remoteControlEndpoint
 						);
@@ -1146,7 +1146,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				}
 				const projectRoot = reviewProject.projectRoot;
 				return yield* Effect.gen(function* () {
-					yield* invalidateLivePreviewBank();
+					yield* invalidateProvisionedCameras();
 					const session = yield* authoringSessions.discard({
 						projectRoot,
 						sessionId: intent.sessionId
@@ -1166,7 +1166,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				const { projectRoot } = reviewProject;
 				return yield* runExclusive(
 					Effect.gen(function* () {
-						yield* invalidateLivePreviewBank();
+						yield* invalidateProvisionedCameras();
 						const selection = yield* authoring.inspectSelection(
 							configuration.remoteControlEndpoint
 						);
@@ -1260,7 +1260,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				if (playActive) {
 					const bindings = yield* liveEnsureGate.withPermits(1)(
 						Effect.gen(function* () {
-							const cached = yield* Ref.get(livePreviewBindings);
+							const cached = yield* Ref.get(provisionedCameraBindings);
 							if (
 								Option.isSome(cached) &&
 								cached.value.sessionId === intent.sessionId &&
@@ -1271,7 +1271,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							return yield* runExclusive(
 								Effect.gen(function* () {
 									const fps = yield* Ref.get(livePreviewFps);
-									const next = yield* ensureReviewPreviewSources(
+									const next = yield* ensureProvisionedCameras(
 										configuration.remoteControlEndpoint,
 										session.candidates.map((item) => ({
 											candidateId: item.id,
@@ -1287,7 +1287,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 										Effect.provideService(RemoteControlClient, remoteControl)
 									);
 									yield* Ref.set(
-										livePreviewBindings,
+										provisionedCameraBindings,
 										Option.some({
 											bindings: next.map((item) => ({
 												candidateId: item.candidateId,
@@ -1308,11 +1308,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					const binding = bindings.find((item) => item.candidateId === candidate.id);
 					if (!binding) {
 						return mapReviewAuthoringFailure({
-							message: `Live preview camera for ${candidate.id} was not registered.`,
+							message: `Provisioned camera for ${candidate.id} was not registered.`,
 							recovery: "Stop and restart PIE, then reframe the subject."
 						});
 					}
-					const frame = yield* awaitReviewPreviewFrame({
+					const frame = yield* awaitProvisionedCameraFrame({
 						cameraIndex: binding.index,
 						latestFrames: cameraFeed.latestFrames,
 						timeout: "3 seconds"
@@ -1328,7 +1328,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					};
 				}
 
-				yield* invalidateLivePreviewBank();
+				yield* invalidateProvisionedCameras();
 				return yield* runExclusive(
 					Effect.gen(function* () {
 						const reviewSet =

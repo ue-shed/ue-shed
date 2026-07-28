@@ -14,7 +14,7 @@ export * from "./review-authoring-session.js";
 export * from "./review-bootstrap.js";
 export * from "./review-framing.js";
 export * from "./review-live.js";
-export * from "./review-preview-live.js";
+export * from "./provisioned-cameras-live.js";
 export * from "./review-repository.js";
 export * from "./review-schema.js";
 export * from "./review-session-policy.js";

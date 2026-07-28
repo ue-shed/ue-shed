@@ -1,9 +1,13 @@
 # UEShedCameras
 
-Optional runtime camera observation capability. It discovers explicit `AUEShedCameraSource` actors,
-manually schedules scene captures only while a named-pipe consumer is connected, uses two
-asynchronous GPU readback slots per camera, and sends self-describing BGRA8 frames through a bounded
-latest-frame-wins writer.
+Optional runtime camera observation capability. It discovers authored `AUEShedCameraSource` actors
+saved in the map and can provision transient instances of the same type from external JSON camera
+definitions. It manually schedules scene captures only while a named-pipe consumer is connected,
+uses two asynchronous GPU readback slots per camera, and sends self-describing BGRA8 frames through
+a bounded latest-frame-wins writer.
+
+The runtime calls the former **authored cameras** and the latter **provisioned cameras**. Provisioned
+cameras are destroyed when their session is cleared; authored cameras remain owned by the world.
 
 The separately enabled `UEShedCamerasEditor` module provides the durable Map Review capture boundary.
 It accepts the versioned `ue-shed-review-capture` request over Remote Control, resolves one stable

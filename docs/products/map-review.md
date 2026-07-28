@@ -29,11 +29,12 @@ The Slice 2 tracer bullet is now implemented on that spine. The editor capabilit
 one selected actor, normalized bounds, orientation, and the active perspective viewport. The
 headless camera domain deterministically generates Context three-quarter, Facade/front, four
 Cardinal orbit candidates, and an optional current-editor-view candidate. Workbench renders real
-transient previews as a contact sheet and supports discard, numeric pose/FOV adjustment, adjustment
-provenance, explicit Reframe, and Keep View persistence without creating a map actor. The CLI exposes
-the same selection, generation, durable-session, and approval path. A project with no configured
-Review Set now starts in an honest first-run state: selection creates a pending map-scoped set in the
-authoring session, and only Keep View writes that portable set under `.ue-shed/review/sets`.
+transient previews from provisioned cameras as a contact sheet and supports discard, numeric
+pose/FOV adjustment, adjustment provenance, explicit Reframe, and Keep View persistence without
+creating an authored camera in the map. The CLI exposes the same selection, generation,
+durable-session, and approval path. A project with no configured Review Set now starts in an honest
+first-run state: selection creates a pending map-scoped set in the authoring session, and only Keep
+View writes that portable set under `.ue-shed/review/sets`.
 
 The Live World Scout composition is also implemented as the primary Workbench entry into that flow.
 The separately enabled Observatory capability negotiates a catalog over Remote Control, then streams
@@ -55,12 +56,12 @@ position. Runtime-only PIE actors can still focus the level viewport, but they d
 durable editor selection or stable authoring subject.
 
 The proven Slice 2 scope now includes post-realization projected-bounds diagnostics and restart-level
-authoring-session recovery. Authoring contact-sheet previews stream live BGRA while PLAY/SIM is active (transient posed camera
-bank at **320×180**, painted continuously to canvas at a user-selected **1–10 FPS**) and fall back to
-the same thumbnail size via PNG `CaptureReviewView` when the editor is stopped; Keep / Capture Set
-remain editor-world PNG evidence at the Review Set profile resolution. Richer orientation inputs and
-viewport manipulation, alongside layered identity, Clear captures, comparison, and review decisions,
-remain later milestones in this plan.
+authoring-session recovery. Authoring contact-sheet previews stream live BGRA while PLAY/SIM is
+active (a provisioned camera set at **320×180**, painted continuously to canvas at a user-selected
+**1–10 FPS**) and fall back to the same thumbnail size via PNG `CaptureReviewView` when the editor is
+stopped; Keep / Capture Set remain editor-world PNG evidence at the Review Set profile resolution.
+Richer orientation inputs and viewport manipulation, alongside layered identity, Clear captures,
+comparison, and review decisions, remain later milestones in this plan.
 
 ## User outcomes
 
@@ -144,6 +145,15 @@ Use these names consistently in schemas, APIs, CLI output, diagnostics, and UI c
 | Evidence Bundle | Manifests, images, thumbnails, diagnostics, and provenance produced by a run                 |
 | Review Record   | Append-only local review decisions and annotations referencing immutable evidence            |
 | Baseline        | An explicitly promoted Capture Run used as a comparison target, never an implicit latest run |
+
+Camera origin uses two terms consistently:
+
+- **Provisioned camera:** an `AUEShedCameraSource` created from an external camera definition for the
+  current runtime session. Map Review provisions these cameras from generated JSON definitions.
+- **Authored camera:** an `AUEShedCameraSource` saved in a map and discovered when that world runs.
+
+Both use the same runtime type and bounded frame transport. Provisioning origin and lifetime are the
+distinction; neither term implies a separate rendering implementation.
 
 Do not use “camera” as the primary noun in the maintained UI when “view” or “review view” describes
 the user's intent. Camera remains correct for Unreal realization, live transport, and low-level
@@ -442,8 +452,8 @@ route, and presentation concerns. It receives no private Unreal endpoint.
 
 Keep the current runtime `UEShedCameras` module responsible for runtime-safe transient capture,
 readback, scheduling, and sparse observation. Add a separate editor module for editor selection,
-spatial authoring, editor-world subject resolution, preview realization, and capture-session control.
-Runtime code must not depend on editor modules.
+spatial authoring, editor-world subject resolution, provisioned-camera realization, and
+capture-session control. Runtime code must not depend on editor modules.
 
 The editor capability realizes definitions as transient actors/components and destroys them on
 completion, failure, disconnect, map change, and editor shutdown. It must prove that preview and

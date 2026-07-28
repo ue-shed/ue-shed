@@ -4,17 +4,17 @@ import type { ApprovedPose } from "./review-schema.js";
 
 const cameraLibraryPath = "/Script/UEShedCameras.Default__UEShedCameraLibrary";
 
-export class ReviewLivePreviewError extends Schema.TaggedErrorClass<ReviewLivePreviewError>()(
-	"ReviewLivePreviewError",
+export class ProvisionedCameraError extends Schema.TaggedErrorClass<ProvisionedCameraError>()(
+	"ProvisionedCameraError",
 	{
 		message: Schema.String,
-		operation: Schema.Literals(["ensure_sources", "clear_sources", "await_frame", "configure"]),
+		operation: Schema.Literals(["ensure_cameras", "clear_cameras", "await_frame", "configure"]),
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
 	}
 ) {}
 
-export interface ReviewPreviewSourceSpec {
+export interface ProvisionedCameraSpec {
 	readonly candidateId: string;
 	readonly fieldOfViewDegrees: number;
 	readonly height: number;
@@ -23,7 +23,7 @@ export interface ReviewPreviewSourceSpec {
 	readonly width: number;
 }
 
-export interface ReviewPreviewCameraBinding {
+export interface ProvisionedCameraBinding {
 	readonly cameraId: string;
 	readonly candidateId: string;
 	readonly height: number;
@@ -31,14 +31,14 @@ export interface ReviewPreviewCameraBinding {
 	readonly width: number;
 }
 
-export interface ReviewPreviewFrame {
+export interface ProvisionedCameraFrame {
 	readonly cameraIndex: number;
 	readonly height: number;
 	readonly pixels: Uint8Array;
 	readonly width: number;
 }
 
-const ReviewPreviewStatus = Schema.Struct({
+const ProvisionedCameraStatus = Schema.Struct({
 	cameras: Schema.Array(
 		Schema.Struct({
 			cameraId: Schema.String,
@@ -54,12 +54,12 @@ const ReviewPreviewStatus = Schema.Struct({
 	status: Schema.optional(Schema.String)
 });
 
-function livePreviewError(
-	operation: ReviewLivePreviewError["operation"],
+function provisionedCameraError(
+	operation: ProvisionedCameraError["operation"],
 	cause: RemoteControlClientError | unknown,
 	recovery: string
-): ReviewLivePreviewError {
-	return new ReviewLivePreviewError({
+): ProvisionedCameraError {
+	return new ProvisionedCameraError({
 		message: cause instanceof RemoteControlClientError ? cause.message : String(cause),
 		operation,
 		recovery,
@@ -67,13 +67,13 @@ function livePreviewError(
 	});
 }
 
-export function ensureReviewPreviewSources(
+export function ensureProvisionedCameras(
 	endpoint: string,
-	sources: ReadonlyArray<ReviewPreviewSourceSpec>,
+	cameras: ReadonlyArray<ProvisionedCameraSpec>,
 	options: { readonly previewFps?: number } = {}
 ): Effect.Effect<
-	ReadonlyArray<ReviewPreviewCameraBinding>,
-	ReviewLivePreviewError,
+	ReadonlyArray<ProvisionedCameraBinding>,
+	ProvisionedCameraError,
 	RemoteControlClient
 > {
 	return Effect.gen(function* () {
@@ -82,19 +82,19 @@ export function ensureReviewPreviewSources(
 		const value = yield* client
 			.request({
 				endpoint,
-				functionName: "EnsureReviewPreviewSources",
+				functionName: "EnsureProvisionedCameras",
 				objectPath: cameraLibraryPath,
-				operation: "camera.review.preview.ensure_sources",
+				operation: "camera.provisioned.ensure",
 				parameters: {
 					RequestJson: JSON.stringify({
 						previewFps,
-						sources: sources.map((source) => ({
-							candidateId: source.candidateId,
-							fieldOfViewDegrees: source.fieldOfViewDegrees,
-							height: source.height,
-							location: source.location,
-							rotation: source.rotation,
-							width: source.width
+						cameras: cameras.map((camera) => ({
+							candidateId: camera.candidateId,
+							fieldOfViewDegrees: camera.fieldOfViewDegrees,
+							height: camera.height,
+							location: camera.location,
+							rotation: camera.rotation,
+							width: camera.width
 						}))
 					})
 				},
@@ -102,27 +102,27 @@ export function ensureReviewPreviewSources(
 			})
 			.pipe(
 				Effect.mapError((cause) =>
-					livePreviewError(
-						"ensure_sources",
+					provisionedCameraError(
+						"ensure_cameras",
 						cause,
 						"Start PIE in the fixture map, then retry live previews."
 					)
 				)
 			);
-		const status = yield* Schema.decodeUnknownEffect(ReviewPreviewStatus)(value).pipe(
+		const status = yield* Schema.decodeUnknownEffect(ProvisionedCameraStatus)(value).pipe(
 			Effect.mapError((cause) =>
-				livePreviewError(
-					"ensure_sources",
+				provisionedCameraError(
+					"ensure_cameras",
 					cause,
-					"Update UEShedCameras and retry live review previews."
+					"Update UEShedCameras and retry provisioning the cameras."
 				)
 			)
 		);
 		if (status.error !== undefined || status.cameras.length === 0) {
 			return yield* Effect.fail(
-				new ReviewLivePreviewError({
-					message: status.error ?? "No review preview cameras were registered.",
-					operation: "ensure_sources",
+				new ProvisionedCameraError({
+					message: status.error ?? "No provisioned cameras were registered.",
+					operation: "ensure_cameras",
 					recovery: "Start PIE with UEShedCameras enabled, then retry.",
 					retrySafe: true
 				})
@@ -135,40 +135,40 @@ export function ensureReviewPreviewSources(
 			index: camera.index,
 			width: camera.width
 		}));
-	}).pipe(Effect.withSpan("camera.review.preview.ensure_sources"));
+	}).pipe(Effect.withSpan("camera.provisioned.ensure"));
 }
 
-export function clearReviewPreviewSources(
+export function clearProvisionedCameras(
 	endpoint: string
-): Effect.Effect<void, ReviewLivePreviewError, RemoteControlClient> {
+): Effect.Effect<void, ProvisionedCameraError, RemoteControlClient> {
 	return Effect.gen(function* () {
 		const client = yield* RemoteControlClient;
 		yield* client
 			.request({
 				endpoint,
-				functionName: "ClearReviewPreviewSources",
+				functionName: "ClearProvisionedCameras",
 				objectPath: cameraLibraryPath,
-				operation: "camera.review.preview.clear_sources",
+				operation: "camera.provisioned.clear",
 				parameters: {},
 				timeout: "5 seconds"
 			})
 			.pipe(
 				Effect.mapError((cause) =>
-					livePreviewError(
-						"clear_sources",
+					provisionedCameraError(
+						"clear_cameras",
 						cause,
-						"Stop PIE or clear review preview sources from the editor."
+						"Stop PIE or clear the provisioned cameras from the editor."
 					)
 				)
 			);
-	}).pipe(Effect.withSpan("camera.review.preview.clear_sources"));
+	}).pipe(Effect.withSpan("camera.provisioned.clear"));
 }
 
-export function awaitReviewPreviewFrame(args: {
+export function awaitProvisionedCameraFrame(args: {
 	readonly cameraIndex: number;
-	readonly latestFrames: Effect.Effect<ReadonlyMap<number, ReviewPreviewFrame>>;
+	readonly latestFrames: Effect.Effect<ReadonlyMap<number, ProvisionedCameraFrame>>;
 	readonly timeout?: Duration.Input;
-}): Effect.Effect<ReviewPreviewFrame, ReviewLivePreviewError> {
+}): Effect.Effect<ProvisionedCameraFrame, ProvisionedCameraError> {
 	const timeout = args.timeout ?? "8 seconds";
 	return Effect.gen(function* () {
 		const deadline =
@@ -180,13 +180,13 @@ export function awaitReviewPreviewFrame(args: {
 			yield* Effect.sleep("50 millis");
 		}
 		return yield* Effect.fail(
-			new ReviewLivePreviewError({
-				message: `Timed out waiting for live preview frame ${args.cameraIndex}.`,
+			new ProvisionedCameraError({
+				message: `Timed out waiting for provisioned camera frame ${args.cameraIndex}.`,
 				operation: "await_frame",
 				recovery:
 					"Confirm Workbench is listening on the camera pipe and PIE is still running.",
 				retrySafe: true
 			})
 		);
-	}).pipe(Effect.withSpan("camera.review.preview.await_frame"));
+	}).pipe(Effect.withSpan("camera.provisioned.await_frame"));
 }

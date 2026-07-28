@@ -94,7 +94,7 @@ const dyingAuthoring: ReviewAuthoringShape = {
 	previewCandidate: () => Effect.die("not used")
 };
 const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
-	if (request.functionName === "ClearReviewPreviewSources") {
+	if (request.functionName === "ClearProvisionedCameras") {
 		return Effect.succeed({ cameras: [], schemaVersion: 1 });
 	}
 	return Effect.die(`unexpected remote call ${request.functionName}`);
@@ -1467,7 +1467,7 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 						}),
 						makeWorkbenchWindowTestLayer(),
 						makeRemoteControlClientTestLayer((request) => {
-							if (request.functionName === "EnsureReviewPreviewSources") {
+							if (request.functionName === "EnsureProvisionedCameras") {
 								return Effect.succeed({
 									cameras: [
 										{
@@ -1482,7 +1482,7 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 									schemaVersion: 1
 								});
 							}
-							if (request.functionName === "ClearReviewPreviewSources") {
+							if (request.functionName === "ClearProvisionedCameras") {
 								return Effect.succeed({ cameras: [], schemaVersion: 1 });
 							}
 							return Effect.die(`unexpected remote call ${request.functionName}`);

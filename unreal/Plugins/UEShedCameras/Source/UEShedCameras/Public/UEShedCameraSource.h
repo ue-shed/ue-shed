@@ -31,13 +31,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UE Shed Camera")
 	FVector ActorPovOffset = FVector(160.0, 0.0, 90.0);
 
-	/** Runtime Map Review preview bank; destroyed by ClearReviewPreviewSources. */
+	/** Camera provisioned from external data; destroyed by ClearProvisionedCameras. */
 	UPROPERTY(Transient)
-	bool bTransientReviewPreview = false;
+	bool bTransientProvisionedCamera = false;
 
-	/** Optional host-side binding key (framing candidate id). */
+	/** Optional host-side binding key, currently a Map Review framing candidate id. */
 	UPROPERTY(Transient)
-	FString ReviewCandidateId;
+	FString ProvisioningKey;
 
 	void EnsureCaptureTarget();
 };

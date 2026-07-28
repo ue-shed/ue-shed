@@ -37,7 +37,9 @@ import {
 	CameraStatus,
 	EditorPlaySessionCommand,
 	EditorPlaySessionCommandResponse,
-	EditorPlaySessionStateResponse
+	EditorPlaySessionStateResponse,
+	SavedWorld,
+	SavedWorldMap
 } from "@ue-shed/protocol";
 import { Schema, SchemaGetter } from "effect";
 
@@ -371,6 +373,16 @@ export const invokeContracts = {
 		channel: "map-review:world-snapshot",
 		args: EmptyArgs,
 		result: WorldScoutResult
+	}),
+	"map-review:saved-world": invoke({
+		channel: "map-review:saved-world",
+		args: Schema.Tuple([Schema.NonEmptyString]),
+		result: SavedWorld
+	}),
+	"map-review:saved-world-maps": invoke({
+		channel: "map-review:saved-world-maps",
+		args: EmptyArgs,
+		result: Schema.Array(SavedWorldMap)
 	}),
 	"map-review:focus-actor": invoke({
 		channel: "map-review:focus-actor",

@@ -60,14 +60,32 @@ The harness reports:
 - `typescript.input.single`: the source TypeScript CLI application and release reader for the same
   asset. This includes Effect/schema projection and process orchestration, but excludes the
   source-checkout Cargo launcher.
-- `typescript.input.project`: the same application scanning every `.uasset` in the fixture project.
+- `native.inspect.level`: release `uasset inspect` over `L_CameraLoad.umap`, the largest package in
+  the fixture at 16,525 exports. Paired with `unreal.commandlet.level` below.
+- `typescript.input.project`: the same application scanning every package in the fixture project.
   The result records fixture package count and bytes.
 - `unreal.commandlet.verify`: an optional fresh `UnrealEditor-Cmd` process running the fixture's
   `-VerifyOnly` path.
+- `unreal.commandlet.level`: an optional fresh `UnrealEditor-Cmd` process running
+  `-BenchmarkLevelParse`, which loads the same level and walks every serialized property. Its
+  `distribution` is wall-clock and therefore mostly editor startup; its `observed` field carries the
+  load and property-walk milliseconds the commandlet spent on the package itself.
 
-The Unreal lane is deliberately labeled as startup plus fixture verification, not equivalent parser
-throughput. It currently performs more semantic work than the parser scenarios. Use it to quantify
-the cost avoided by an editor-free first result, not to claim a codec speed ratio.
+`unreal.commandlet.verify` is deliberately labeled as startup plus fixture verification, not
+equivalent parser throughput. It performs more semantic work than the parser scenarios. Use it to
+quantify the cost avoided by an editor-free first result, not to claim a codec speed ratio.
+
+`unreal.commandlet.level` is the lane that _is_ comparable, and it answers two different questions.
+Measured on UE 5.7 over the same 16,525-export level, `native.inspect.level` ran 178.0 ms p50 while
+the commandlet took 5282.1 ms p50 wall-clock but only 299.9 ms in process (233.3 ms load plus
+66.6 ms walk). So the parser is ~30x faster end to end, which is the number a caller actually pays
+and is almost entirely editor startup avoided, and ~1.7x faster on parse work alone. Prefer the
+end-to-end figure for product claims and the parse-only figure for codec claims, noting that the
+parse-only comparison flatters the commandlet: its walk excludes process startup and JSON
+serialization, both of which the parser's 178.0 ms includes. The two lanes walk the same set of
+property tags — the parser decodes every tag on disk, per
+`fixtures/unreal-project/FixtureExpected/level-decode-gaps.json` — but the commandlet's walk is over
+already-loaded objects, so it never pays for byte-level decode.
 
 Each distribution includes every sample plus minimum, mean, p50, p95, and maximum. Results also
 record the Git revision and dirty state, operating system, CPU, memory, Node and Rust versions,

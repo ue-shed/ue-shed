@@ -23,6 +23,13 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["map-review:world-snapshot"], () =>
 		mapReview.worldSnapshot()
 	);
+	yield* ipc.register(invokeContracts["map-review:saved-world"], (...args) => {
+		const [mapPath] = args as [string];
+		return mapReview.savedWorld(mapPath).pipe(Effect.orDie);
+	});
+	yield* ipc.register(invokeContracts["map-review:saved-world-maps"], () =>
+		mapReview.savedWorldMaps().pipe(Effect.orDie)
+	);
 	yield* ipc.register(invokeContracts["map-review:focus-actor"], (...args) => {
 		const [actorId, bringToFront] = args as [ActorId, boolean];
 		return mapReview.focusActor(actorId, bringToFront);

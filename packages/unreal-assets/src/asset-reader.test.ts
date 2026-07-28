@@ -1,7 +1,13 @@
 import { it } from "@effect/vitest";
 import { Effect, Ref } from "effect";
 import { expect } from "vitest";
-import { AssetReaderError, discoverSavedAssets, makeAssetReaderTestLayer } from "./index.js";
+import {
+	AssetReaderError,
+	discoverSavedAssets,
+	makeAssetReaderTestLayer,
+	readSavedWorld,
+	type SavedWorld
+} from "./index.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
@@ -51,5 +57,46 @@ it.effect("preserves typed discovery failures from a test layer", () =>
 			Effect.provide(layer)
 		);
 		expect(error).toBe(failure);
+	})
+);
+
+it.effect("routes a map-targeted saved-world read through the AssetReader service", () =>
+	Effect.gen(function* () {
+		const requestedMaps = yield* Ref.make<readonly string[]>([]);
+		const savedWorld: SavedWorld = {
+			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
+			completeness: "complete",
+			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			diagnostics: [],
+			externalActorRoot: "C:/Fixture/Content/__ExternalActors__/Maps/L_Example",
+			mapPath: "C:/Fixture/Content/Maps/L_Example.umap",
+			sourceKind: "world_partition",
+			actors: [],
+			summary: {
+				failedPackages: 0,
+				partialPackages: 0,
+				resolvedActors: 0,
+				scannedPackages: 0
+			}
+		};
+		const layer = makeAssetReaderTestLayer({
+			catalogProgress: () => unexpected("catalogProgress"),
+			discoverAssets: () => unexpected("discoverAssets"),
+			discoverTables: () => unexpected("discoverTables"),
+			readAsset: () => unexpected("readAsset"),
+			readSavedWorld: Effect.fn("AssetReader.Test.readSavedWorld")(function* (options) {
+				yield* Ref.update(requestedMaps, (maps) => [...maps, options.mapPath]);
+				return savedWorld;
+			}),
+			readTable: () => unexpected("readTable"),
+			source: () => Effect.succeed("configured")
+		});
+
+		const world = yield* readSavedWorld({
+			mapPath: "Content/Maps/L_Example.umap",
+			projectRoot: "C:/Fixture"
+		}).pipe(Effect.provide(layer));
+		expect(world).toBe(savedWorld);
+		expect(yield* Ref.get(requestedMaps)).toEqual(["Content/Maps/L_Example.umap"]);
 	})
 );

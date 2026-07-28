@@ -10,6 +10,10 @@ export const workbenchRoot = join(repositoryRoot, "apps", "workbench");
 const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const textureRules = join(fixtureRoot, "FixtureSource", "Audits", "texture-rules.json");
 const authoringAsset = join(fixtureRoot, "Content", "Fixture", "Authoring", "DT_Scalars.uasset");
+const savedWorldMaps = [
+	"Content/Fixture/Offline/L_OfflineWorld.umap",
+	"Content/Fixture/Cameras/L_CameraLoad.umap"
+].join(";");
 
 async function portAvailable(port) {
 	return new Promise((resolveAvailable) => {
@@ -55,6 +59,7 @@ export async function resolveRemoteControlEndpoint(environment = process.env, op
 }
 
 export async function createWorkbenchEnvironment(environment = process.env, options = {}) {
+	const usingFixtureProject = environment.UE_SHED_PROJECT_ROOT === undefined;
 	const reviewSet =
 		environment.UE_SHED_REVIEW_SET ??
 		join(fixtureRoot, ".ue-shed", "review", "sets", "fixture-structure.json");
@@ -62,6 +67,13 @@ export async function createWorkbenchEnvironment(environment = process.env, opti
 		...environment,
 		UE_SHED_PROJECT_NAME: environment.UE_SHED_PROJECT_NAME ?? "UEShedFixture",
 		UE_SHED_PROJECT_ROOT: environment.UE_SHED_PROJECT_ROOT ?? fixtureRoot,
+		...(environment.UE_SHED_SAVED_WORLD_MAPS
+			? { UE_SHED_SAVED_WORLD_MAPS: environment.UE_SHED_SAVED_WORLD_MAPS }
+			: environment.UE_SHED_SAVED_WORLD_MAP
+				? { UE_SHED_SAVED_WORLD_MAP: environment.UE_SHED_SAVED_WORLD_MAP }
+				: usingFixtureProject
+					? { UE_SHED_SAVED_WORLD_MAPS: savedWorldMaps }
+					: {}),
 		UE_SHED_AUTHORING_ASSET: environment.UE_SHED_AUTHORING_ASSET ?? authoringAsset,
 		UE_SHED_REMOTE_CONTROL_ENDPOINT: await resolveRemoteControlEndpoint(environment, options),
 		UE_SHED_REPOSITORY_ROOT: repositoryRoot,

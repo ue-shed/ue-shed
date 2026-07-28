@@ -355,7 +355,7 @@ impl Package {
                 "Imports",
             )?;
             let class_path = resolve_import_class_path(&imports[index], &names)?;
-            imports[index].object_path = object_path;
+            imports[index].object_path = normalize_object_path(object_path);
             imports[index].class_path = class_path;
         }
 
@@ -379,7 +379,7 @@ impl Package {
                     "Exports.ClassIndex",
                 )?)),
             };
-            exports[index].object_path = object_path;
+            exports[index].object_path = normalize_object_path(object_path);
             exports[index].class_path = class_path;
         }
 
@@ -1908,6 +1908,20 @@ mod tests {
         assert!(summary.import_type_hierarchies.is_some());
         assert_eq!(summary.payload_toc_offset, None);
         assert_eq!(summary.data_resource_offset, None);
+    }
+
+    #[test]
+    fn normalizes_none_outer_object_paths_for_exports_and_references() {
+        assert_eq!(
+            normalize_object_path(ObjectPath::new(
+                "/None./Game/Maps/L_Example.Actor.Component"
+            )),
+            ObjectPath::new("/Game/Maps/L_Example.Actor.Component")
+        );
+        assert_eq!(
+            normalize_object_path(ObjectPath::new("None./Game/Maps/L_Example.Actor")),
+            ObjectPath::new("/Game/Maps/L_Example.Actor")
+        );
     }
 
     #[test]

@@ -15,11 +15,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras")
 	static void Configure(const FString& ConfigJson, FString& ResultJson);
 
-	/** Spawn or replace the transient Map Review preview camera bank in the running PIE/Game world. */
+	/** Provision or replace cameras from JSON in the running PIE/Game world. */
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras")
-	static void EnsureReviewPreviewSources(const FString& RequestJson, FString& ResultJson);
+	static void EnsureProvisionedCameras(const FString& RequestJson, FString& ResultJson);
 
-	/** Destroy transient review preview sources and rediscover placed cameras on the next tick. */
+	/** Destroy provisioned cameras and rediscover authored cameras on the next tick. */
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras")
-	static void ClearReviewPreviewSources(FString& ResultJson);
+	static void ClearProvisionedCameras(FString& ResultJson);
 };

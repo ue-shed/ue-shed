@@ -5,8 +5,9 @@ uses the committed generic fixture as its default project and keeps live Unreal 
 capability.
 
 Workbench currently surfaces Data Authoring, Texture Asset Audit, Game Text, Map Review, and
-Camera Load Lab. Saved-package demos open without Unreal; live texture preview, Map Review, and
-Camera Load Lab request a separately enabled editor only when needed.
+Camera Load Lab. Saved-package demos open without Unreal; Map Review starts with a saved World
+Partition map when one is configured, while live texture preview, Live World, and Camera Load Lab
+request a separately enabled editor only when needed.
 
 ## Open the Workbench
 
@@ -20,9 +21,9 @@ pnpm showcase
 ```
 
 `showcase` incrementally builds the in-repo `uasset` reader and Workbench, configures the fixture
-project and texture-audit rules, and opens the catalog. It does not build or launch Unreal up front.
-Texture Audit, Map Review, and Camera Load Lab each expose a launch or connect action when their
-optional live capability is needed. If an editor is already serving Remote Control on the usual
+project, offline map, and texture-audit rules, and opens the catalog. It does not build or launch
+Unreal up front. Texture Audit, Live World in Map Review, and Camera Load Lab each expose a launch
+or connect action when their optional live capability is needed. If an editor is already serving Remote Control on the usual
 local ports, `showcase` attaches to it. Otherwise it reserves the next free HTTP/WebSocket pair so a
 later in-app fixture launch can claim that endpoint.
 
@@ -107,10 +108,28 @@ $env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
 pnpm showcase
 ```
 
-Open **Map Review**. With no `UE_SHED_REVIEW_SET`, the route enters first-run authoring. Select an
-actor, review a candidate, and keep it; only then does UE Shed write a deterministic map-scoped
-Review Set under `.ue-shed/review/sets`. Set `UE_SHED_REVIEW_SET` when you want to work with an
-explicit existing set. The headless equivalent is:
+Open **Map Review**. The fixture preset opens **Saved Map** first. Its map picker includes the small
+World Partition sample and the ordinary Camera Load level. The former reads only its matching
+external-actor subtree; the latter reads its single `.umap`. Positions, labels, classes, packages,
+and attachment-resolved transforms are available with Unreal closed. Saved Map deliberately has no
+focus, follow, or authoring actions; switch to **Live World** when a running editor is the source
+of truth.
+
+For another project, set both the project root and the map path relative to it:
+
+```powershell
+$env:UE_SHED_PROJECT_ROOT = "C:\path\to\Project"
+$env:UE_SHED_SAVED_WORLD_MAP = "Content\Maps\Example.umap"
+pnpm showcase
+```
+
+Set `UE_SHED_SAVED_WORLD_MAPS` to a semicolon-separated list of `.umap` paths when the offline
+picker should offer more than one map. It takes precedence over the single-map variable.
+
+With no `UE_SHED_REVIEW_SET`, live Map Review enters first-run authoring. Select an actor, review a
+candidate, and keep it; only then does UE Shed write a deterministic map-scoped Review Set under
+`.ue-shed/review/sets`. Set `UE_SHED_REVIEW_SET` when you want to work with an explicit existing
+set. The headless equivalent is:
 
 ```powershell
 pnpm ue-shed review authoring bootstrap "C:\path\to\Project" "http://127.0.0.1:30001"

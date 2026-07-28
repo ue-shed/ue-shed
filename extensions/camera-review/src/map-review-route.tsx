@@ -20,6 +20,7 @@ import type {
 } from "./map-review-client.js";
 import { MapReviewAuthoring } from "./map-review-authoring.js";
 import { CaptureWorkflow } from "./capture-workflow.js";
+import { SavedWorldScout } from "./saved-world-scout.js";
 import { WorldScout } from "./world-scout.js";
 import type { ObservedActor } from "@ue-shed/observatory";
 
@@ -68,6 +69,11 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 		readonly nonce: number;
 	}>();
 	const [captureOpen, setCaptureOpen] = createSignal(false);
+	const [worldSource, setWorldSource] = createSignal<"saved" | "live">(
+		props.client.readSavedWorld === undefined || props.client.savedWorldMaps === undefined
+			? "live"
+			: "saved"
+	);
 	const ready = createMemo(() => {
 		const current = state();
 		if (current.status === "ready") return current;
@@ -108,27 +114,70 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 				)}
 			</Show>
 			<header {...stylex.props(styles.header)}>
-				<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-					Map review / Live world
-				</nav>
+				<div>
+					<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
+						Map review / {worldSource() === "saved" ? "Saved world" : "Live world"}
+					</nav>
+					<div
+						role="tablist"
+						aria-label="Map data source"
+						{...stylex.props(styles.sourceTabs)}
+					>
+						<button
+							type="button"
+							role="tab"
+							aria-selected={worldSource() === "saved"}
+							disabled={
+								props.client.readSavedWorld === undefined ||
+								props.client.savedWorldMaps === undefined
+							}
+							onClick={() => setWorldSource("saved")}
+							{...stylex.props(
+								styles.sourceButton,
+								worldSource() === "saved" && styles.sourceButtonActive
+							)}
+						>
+							SAVED MAP
+						</button>
+						<button
+							type="button"
+							role="tab"
+							aria-selected={worldSource() === "live"}
+							onClick={() => setWorldSource("live")}
+							{...stylex.props(
+								styles.sourceButton,
+								worldSource() === "live" && styles.sourceButtonActive
+							)}
+						>
+							LIVE WORLD
+						</button>
+					</div>
+				</div>
 				<button
 					type="button"
-					disabled={ready() === undefined}
+					disabled={ready() === undefined || worldSource() !== "live"}
 					onClick={() => setCaptureOpen(true)}
 					{...stylex.props(styles.captureButton)}
 				>
 					CAPTURE SET
 				</button>
 			</header>
-			<WorldScout
-				client={props.client}
-				onActorFocused={(actor) => {
-					setFocusRequest((current) => ({
-						actor,
-						nonce: (current?.nonce ?? 0) + 1
-					}));
-				}}
-			/>
+			<Show
+				when={worldSource() === "saved"}
+				fallback={
+					<WorldScout
+						client={props.client}
+						onActorFocused={(actor) => {
+							setFocusRequest((current) => ({
+								actor,
+								nonce: (current?.nonce ?? 0) + 1
+							}));
+						}}
+					/>
+				}
+			>
+				<SavedWorldScout client={props.client} />
+			</Show>
 
 			<Switch>
 				<Match when={state().status === "loading"}>
@@ -145,11 +194,21 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 				</Match>
 				<Match when={state().status === "setup_required"}>
 					<div {...stylex.props(styles.setupWorkspace)}>
-						<MapReviewAuthoring
-							client={props.client}
-							focusRequest={focusRequest()}
-							onApproved={load}
-						/>
+						<Show
+							when={worldSource() === "live"}
+							fallback={
+								<div {...stylex.props(styles.offlineReviewNote)}>
+									Saved-map review is ready. Switch to Live World when you want to
+									author or capture Review Views.
+								</div>
+							}
+						>
+							<MapReviewAuthoring
+								client={props.client}
+								focusRequest={focusRequest()}
+								onApproved={load}
+							/>
+						</Show>
 					</div>
 				</Match>
 				<Match when={state().status === "failed"}>
@@ -203,11 +262,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 								</div>
 								<code>{current().reviewSet.mapPath}</code>
 							</section>
-							<MapReviewAuthoring
-								client={props.client}
-								focusRequest={focusRequest()}
-								onApproved={load}
-							/>
+							<Show when={worldSource() === "live"}>
+								<MapReviewAuthoring
+									client={props.client}
+									focusRequest={focusRequest()}
+									onApproved={load}
+								/>
+							</Show>
 
 							<Show
 								when={selected()}
@@ -326,6 +387,18 @@ const styles = stylex.create({
 		borderBottom: "1px solid #343936"
 	},
 	eyebrow: { margin: 0, color: "#b9f227", fontSize: 9, letterSpacing: ".19em" },
+	sourceTabs: { display: "flex", gap: 6, marginTop: 9 },
+	sourceButton: {
+		border: "1px solid #3a433c",
+		backgroundColor: { default: "transparent", ":hover": "#1b211d", ":disabled": "#141714" },
+		color: { default: "#879089", ":disabled": "#59615b" },
+		padding: "5px 7px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em",
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	},
+	sourceButtonActive: { borderColor: "#61d5df", backgroundColor: "#173033", color: "#b9f2f5" },
 	captureButton: {
 		border: "1px solid #b9f227",
 		backgroundColor: { default: "#b9f227", ":hover": "#d0ff4f", ":disabled": "#5d6d35" },
@@ -358,6 +431,13 @@ const styles = stylex.create({
 	},
 	workspace: { paddingTop: 14 },
 	setupWorkspace: { paddingTop: 8 },
+	offlineReviewNote: {
+		border: "1px solid #304042",
+		backgroundColor: "#111a1b",
+		color: "#9ab6b8",
+		padding: "14px 16px",
+		fontSize: 13
+	},
 	statusStrip: {
 		display: "grid",
 		gridTemplateColumns: "1.3fr .45fr .45fr 1.4fr",

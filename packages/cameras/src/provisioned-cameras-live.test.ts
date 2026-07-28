@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
-import { awaitReviewPreviewFrame, ReviewLivePreviewError } from "./review-preview-live.js";
+import { awaitProvisionedCameraFrame, ProvisionedCameraError } from "./provisioned-cameras-live.js";
 
-describe("review live preview helpers", () => {
+describe("provisioned camera helpers", () => {
 	it.effect("awaits the latest BGRA frame for a posed camera index", () =>
 		Effect.gen(function* () {
-			const frame = yield* awaitReviewPreviewFrame({
+			const frame = yield* awaitProvisionedCameraFrame({
 				cameraIndex: 2,
 				latestFrames: Effect.succeed(
 					new Map([
@@ -35,7 +35,7 @@ describe("review live preview helpers", () => {
 	it.effect("fails with typed recovery when the feed host never delivers", () =>
 		Effect.gen(function* () {
 			const fiber = yield* Effect.forkChild(
-				awaitReviewPreviewFrame({
+				awaitProvisionedCameraFrame({
 					cameraIndex: 0,
 					latestFrames: Effect.succeed(new Map()),
 					timeout: "100 millis"
@@ -43,7 +43,7 @@ describe("review live preview helpers", () => {
 			);
 			yield* TestClock.adjust("150 millis");
 			const error = yield* Fiber.join(fiber);
-			expect(error).toBeInstanceOf(ReviewLivePreviewError);
+			expect(error).toBeInstanceOf(ProvisionedCameraError);
 			expect(error.operation).toBe("await_frame");
 			expect(error.recovery).toMatch(/camera pipe/i);
 		})

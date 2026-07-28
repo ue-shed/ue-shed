@@ -20,6 +20,10 @@ use uasset_parser::asset::{
 };
 use uasset_parser::package::{PackageError, PackageErrorKind, PackageIndex, TableLocation};
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
+use uasset_parser::saved_world::{
+    SavedWorldActorPosition, SavedWorldPackageFragment, SavedWorldPosition,
+    project_saved_world_package, resolve_saved_world_positions,
+};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageSummary};
 
@@ -37,6 +41,7 @@ const HEADER_PROBE_BYTES: usize = 4 * 1024;
 const MAX_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 const PROGRESS_INTERVAL: usize = 1_000;
+const DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS: usize = 100_000;
 
 fn main() -> ExitCode {
     ExitCode::from(run(env::args_os().skip(1).collect()))
@@ -52,6 +57,7 @@ fn run(arguments: Vec<OsString>) -> u8 {
         Ok(Command::Authoring(options)) => authoring(&options),
         Ok(Command::Catalog(options)) => catalog(&options),
         Ok(Command::Scan(options)) => scan(&options),
+        Ok(Command::SavedWorld(options)) => saved_world(&options),
         Err(error) => {
             eprintln!("uasset: {error}\n\n{USAGE}");
             EXIT_USAGE
@@ -91,6 +97,15 @@ struct ScanOptions {
     filters: ScanFilters,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct SavedWorldOptions {
+    project_root: PathBuf,
+    map_path: PathBuf,
+    format: OutputFormat,
+    concurrency: usize,
+    maximum_assets: usize,
+}
+
 /// Header-only selection rules. A package is selected when it matches any rule, so an empty
 /// filter set selects everything.
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -127,6 +142,7 @@ enum Command {
     Authoring(InspectOptions),
     Catalog(CatalogOptions),
     Scan(ScanOptions),
+    SavedWorld(SavedWorldOptions),
     Help,
     Version,
 }
@@ -145,6 +161,7 @@ impl Command {
             },
             Some("catalog") => Self::parse_catalog(arguments.collect()),
             Some("scan") => Self::parse_scan(arguments.collect()),
+            Some("saved-world") => Self::parse_saved_world(arguments.collect()),
             Some("-h" | "--help" | "help") => {
                 reject_trailing_arguments(arguments)?;
                 Ok(Self::Help)
@@ -318,6 +335,61 @@ impl Command {
             concurrency,
             maximum_assets,
             filters,
+        }))
+    }
+
+    fn parse_saved_world(arguments: Vec<OsString>) -> Result<Self, String> {
+        let mut format = OutputFormat::Json;
+        let mut concurrency = std::thread::available_parallelism().map_or(4, usize::from);
+        let mut maximum_assets = DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS;
+        let mut positional = Vec::new();
+        let mut index = 0;
+        while index < arguments.len() {
+            let argument = &arguments[index];
+            match argument.to_str() {
+                Some("--format") => {
+                    index += 1;
+                    let value = arguments
+                        .get(index)
+                        .ok_or_else(|| "--format requires json".to_owned())?;
+                    format = parse_format(value)?;
+                }
+                Some(value) if value.starts_with("--format=") => {
+                    format = parse_format(OsString::from(&value["--format=".len()..]).as_os_str())?;
+                }
+                Some("--concurrency") => {
+                    index += 1;
+                    let value = arguments
+                        .get(index)
+                        .ok_or_else(|| "--concurrency requires a positive integer".to_owned())?;
+                    concurrency = parse_concurrency(value)?;
+                }
+                Some("--maximum-assets") => {
+                    index += 1;
+                    let value = arguments
+                        .get(index)
+                        .ok_or_else(|| "--maximum-assets requires a positive integer".to_owned())?;
+                    maximum_assets = parse_concurrency(value)?;
+                }
+                Some(value) if value.starts_with('-') => {
+                    return Err(format!("unknown saved-world option {value:?}"));
+                }
+                _ => positional.push(PathBuf::from(argument)),
+            }
+            index += 1;
+        }
+        if format != OutputFormat::Json {
+            return Err("saved-world requires --format json".to_owned());
+        }
+        let [project_root, map_path] = positional.as_slice() else {
+            return Err("saved-world requires a project root and map path".to_owned());
+        };
+        Ok(Self::SavedWorld(SavedWorldOptions {
+            project_root: project_root.clone(),
+            map_path: map_path.clone(),
+            format,
+            concurrency,
+            maximum_assets,
         }))
     }
 }
@@ -679,6 +751,379 @@ fn catalog(options: &CatalogOptions) -> u8 {
     exit
 }
 
+/// Reads one map's saved actors. This intentionally does not use the generic `scan` command: the
+/// product needs compact actor positions, not one full inspection document per package. Classic
+/// maps keep their actors in the `.umap`; World Partition maps keep them in the matching external
+/// actor subtree.
+fn saved_world(options: &SavedWorldOptions) -> u8 {
+    let roots = match resolve_saved_world_roots(&options.project_root, &options.map_path) {
+        Ok(roots) => roots,
+        Err(error) => {
+            write_error(
+                options.format,
+                ErrorOutput::io(options.map_path.to_string_lossy().into_owned(), error),
+            );
+            return EXIT_IO;
+        }
+    };
+    emit_saved_world_progress(SavedWorldProgressOutput {
+        event: "saved_world_progress",
+        actors_found: 0,
+        phase: "enumerating",
+        processed_packages: 0,
+        total_packages: 0,
+    });
+
+    let mut package_paths = Vec::new();
+    match &roots.source {
+        SavedWorldSource::Level => package_paths.push(roots.map_path.clone()),
+        SavedWorldSource::WorldPartition {
+            external_actor_root,
+        } => {
+            if let Err(error) = discover_uassets(external_actor_root, &mut package_paths) {
+                write_error(
+                    options.format,
+                    ErrorOutput::io(
+                        external_actor_root.to_string_lossy().into_owned(),
+                        error.to_string(),
+                    ),
+                );
+                return EXIT_IO;
+            }
+        }
+    }
+    package_paths.sort();
+    if package_paths.len() > options.maximum_assets {
+        write_error(
+            options.format,
+            ErrorOutput::resource_limit(
+                roots.map_path.to_string_lossy().into_owned(),
+                format!(
+                    "saved map found {} packages, above the requested limit {}",
+                    package_paths.len(),
+                    options.maximum_assets
+                ),
+            ),
+        );
+        return EXIT_RESOURCE_LIMIT;
+    }
+
+    let total_packages = package_paths.len();
+    emit_saved_world_progress(SavedWorldProgressOutput {
+        event: "saved_world_progress",
+        actors_found: 0,
+        phase: "scanning",
+        processed_packages: 0,
+        total_packages,
+    });
+    let processed = AtomicUsize::new(0);
+    let actors_found = AtomicUsize::new(0);
+    let worker_count = options.concurrency.min(total_packages.max(1));
+    let chunk_size = total_packages.div_ceil(worker_count);
+    let results = std::thread::scope(|scope| {
+        let mut handles = Vec::new();
+        for chunk in package_paths.chunks(chunk_size.max(1)) {
+            let processed = &processed;
+            let actors_found = &actors_found;
+            handles.push(scope.spawn(move || {
+                let mut results = Vec::with_capacity(chunk.len());
+                for package_path in chunk {
+                    let result = read_saved_world_package(package_path);
+                    let actor_count = result
+                        .fragment
+                        .as_ref()
+                        .map_or(0, |fragment| fragment.actors.len());
+                    let total_actor_count =
+                        actors_found.fetch_add(actor_count, Ordering::Relaxed) + actor_count;
+                    let processed_packages = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                    if processed_packages % PROGRESS_INTERVAL == 0
+                        || processed_packages == total_packages
+                    {
+                        emit_saved_world_progress(SavedWorldProgressOutput {
+                            event: "saved_world_progress",
+                            actors_found: total_actor_count,
+                            phase: "scanning",
+                            processed_packages,
+                            total_packages,
+                        });
+                    }
+                    results.push(result);
+                }
+                results
+            }));
+        }
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("saved-world worker must not panic"))
+            .collect::<Vec<_>>()
+    });
+
+    let mut fragments = Vec::new();
+    let mut diagnostics = BTreeMap::<String, usize>::new();
+    let mut partial_packages = 0;
+    let mut failed_packages = 0;
+    for result in results {
+        if let Some(fragment) = result.fragment {
+            if result.partial {
+                partial_packages += 1;
+            }
+            fragments.push(fragment);
+        } else {
+            failed_packages += 1;
+        }
+        if let Some(code) = result.failure_code {
+            *diagnostics.entry(code).or_default() += 1;
+        }
+    }
+
+    emit_saved_world_progress(SavedWorldProgressOutput {
+        event: "saved_world_progress",
+        actors_found: actors_found.load(Ordering::Relaxed),
+        phase: "resolving",
+        processed_packages: total_packages,
+        total_packages,
+    });
+    let positions = resolve_saved_world_positions(&fragments);
+    let resolved_actors = positions
+        .iter()
+        .filter(|position| matches!(position.position, SavedWorldPosition::Resolved { .. }))
+        .count();
+    let output = SavedWorldOutput {
+        authority: SavedWorldAuthorityOutput {
+            kind: "project_files",
+            map_package: roots.map_package.clone(),
+        },
+        completeness: if partial_packages == 0 && failed_packages == 0 {
+            "complete"
+        } else {
+            "partial"
+        },
+        contract: SavedWorldContractOutput {
+            name: "unreal-saved-world",
+            version: SavedWorldVersionOutput { major: 1, minor: 1 },
+        },
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|(code, count)| SavedWorldDiagnosticOutput {
+                code,
+                message: format!("{count} saved map package(s) could not be fully read"),
+                retry_safe: true,
+            })
+            .collect(),
+        external_actor_root: roots
+            .external_actor_root()
+            .map(|path| path.to_string_lossy().into_owned()),
+        map_path: roots.map_path.to_string_lossy().into_owned(),
+        source_kind: roots.source.kind(),
+        actors: positions
+            .iter()
+            .map(SavedWorldActorOutput::from_position)
+            .collect(),
+        summary: SavedWorldSummaryOutput {
+            failed_packages,
+            partial_packages,
+            resolved_actors,
+            scanned_packages: total_packages,
+        },
+    };
+    let mut rendered = match serde_json::to_vec(&output) {
+        Ok(rendered) => rendered,
+        Err(error) => {
+            eprintln!("uasset: failed to serialize saved-world output: {error}");
+            return EXIT_INTERNAL;
+        }
+    };
+    rendered.push(b'\n');
+    let exit = write_stdout(&rendered);
+    if exit == EXIT_SUCCESS {
+        emit_saved_world_progress(SavedWorldProgressOutput {
+            event: "saved_world_progress",
+            actors_found: output.actors.len(),
+            phase: "ready",
+            processed_packages: total_packages,
+            total_packages,
+        });
+    }
+    if exit == EXIT_SUCCESS && output.completeness == "partial" {
+        EXIT_PARTIAL
+    } else {
+        exit
+    }
+}
+
+struct SavedWorldRoots {
+    map_package: String,
+    map_path: PathBuf,
+    source: SavedWorldSource,
+}
+
+enum SavedWorldSource {
+    Level,
+    WorldPartition { external_actor_root: PathBuf },
+}
+
+impl SavedWorldSource {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Level => "level",
+            Self::WorldPartition { .. } => "world_partition",
+        }
+    }
+}
+
+impl SavedWorldRoots {
+    fn external_actor_root(&self) -> Option<&Path> {
+        match &self.source {
+            SavedWorldSource::Level => None,
+            SavedWorldSource::WorldPartition {
+                external_actor_root,
+            } => Some(external_actor_root),
+        }
+    }
+}
+
+fn resolve_saved_world_roots(
+    project_root: &Path,
+    requested_map_path: &Path,
+) -> Result<SavedWorldRoots, String> {
+    let project_root = fs::canonicalize(project_root).map_err(|error| {
+        format!(
+            "saved-world requires a readable project root {}: {error}",
+            project_root.display()
+        )
+    })?;
+    let content_root = project_root.join("Content");
+    let map_candidate = if requested_map_path.is_absolute() {
+        requested_map_path.to_path_buf()
+    } else {
+        project_root.join(requested_map_path)
+    };
+    let map_path = fs::canonicalize(&map_candidate).map_err(|error| {
+        format!(
+            "saved-world requires a readable .umap inside the project: {}: {error}",
+            map_candidate.display()
+        )
+    })?;
+    if !map_path.starts_with(&content_root) {
+        return Err(format!(
+            "saved-world map {} is outside the project's Content directory",
+            map_candidate.display()
+        ));
+    }
+    let relative_map_path = map_path
+        .strip_prefix(&content_root)
+        .map_err(|_| "saved-world could not make the map path relative to Content".to_owned())?;
+    let external_actor_relative = external_actor_relative_path(relative_map_path)?;
+    let external_actor_root = content_root
+        .join("__ExternalActors__")
+        .join(external_actor_relative);
+    Ok(SavedWorldRoots {
+        map_package: format!(
+            "/Game/{}",
+            relative_map_path
+                .with_extension("")
+                .to_string_lossy()
+                .replace('\\', "/")
+        ),
+        map_path,
+        source: if external_actor_root.is_dir() {
+            SavedWorldSource::WorldPartition {
+                external_actor_root,
+            }
+        } else {
+            SavedWorldSource::Level
+        },
+    })
+}
+
+fn external_actor_relative_path(relative_map_path: &Path) -> Result<PathBuf, String> {
+    if relative_map_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        != Some("umap")
+    {
+        return Err(format!(
+            "saved-world map {} must have a .umap extension",
+            relative_map_path.display()
+        ));
+    }
+    let path = relative_map_path.with_extension("");
+    if path.as_os_str().is_empty() || path.is_absolute() || path.starts_with("..") {
+        return Err("saved-world map must be a relative path beneath Content".to_owned());
+    }
+    Ok(path)
+}
+
+struct SavedWorldPackageRead {
+    failure_code: Option<String>,
+    fragment: Option<SavedWorldPackageFragment>,
+    partial: bool,
+}
+
+fn read_saved_world_package(path: &Path) -> SavedWorldPackageRead {
+    let source = match fs::read(path) {
+        Ok(source) => source,
+        Err(_) => {
+            return SavedWorldPackageRead {
+                failure_code: Some("asset_io".to_owned()),
+                fragment: None,
+                partial: false,
+            };
+        }
+    };
+    let package = match Package::parse(&source) {
+        Ok(package) => package,
+        Err(error) => {
+            return SavedWorldPackageRead {
+                failure_code: Some(package_error_code(&error).to_owned()),
+                fragment: None,
+                partial: false,
+            };
+        }
+    };
+    let schemas = EmptySchemas;
+    let context = AssetDecodeContext {
+        source: &source,
+        package: &package,
+        schemas: &schemas,
+    };
+    let mut decoded = Vec::new();
+    let mut partial = false;
+    for export in &package.exports {
+        match decode_export(export, &context) {
+            Ok(Some(asset)) => decoded.push(asset),
+            Ok(None) => {}
+            Err(_) => partial = true,
+        }
+    }
+    SavedWorldPackageRead {
+        failure_code: partial.then_some("export_decode".to_owned()),
+        fragment: Some(project_saved_world_package(&package, &decoded)),
+        partial,
+    }
+}
+
+fn emit_saved_world_progress(progress: SavedWorldProgressOutput) {
+    if let Ok(rendered) = serde_json::to_string(&progress) {
+        eprintln!("{rendered}");
+    }
+}
+
+/// Saved-package file extensions the parser enumerates.
+///
+/// Levels use `.umap` but are the same classic package container as `.uasset`, so enumeration
+/// treats both alike; the header filters decide what is actually decoded.
+const PACKAGE_EXTENSIONS: &[&str] = &["uasset", "umap"];
+
+/// Returns whether `path` names a saved package by extension.
+fn is_package_path(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        PACKAGE_EXTENSIONS
+            .iter()
+            .any(|candidate| extension == *candidate)
+    })
+}
+
 fn discover_uassets(directory: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
     let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
@@ -686,12 +1131,7 @@ fn discover_uassets(directory: &Path, found: &mut Vec<PathBuf>) -> io::Result<()
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
             discover_uassets(&entry.path(), found)?;
-        } else if file_type.is_file()
-            && entry
-                .path()
-                .extension()
-                .is_some_and(|extension| extension == "uasset")
-        {
+        } else if file_type.is_file() && is_package_path(&entry.path()) {
             found.push(entry.path());
         }
     }
@@ -1092,12 +1532,11 @@ fn resolve_scan_roots(project_root: &Path, requested: &[PathBuf]) -> Result<Vec<
                 joined.display()
             ));
         }
-        if canonical.is_file()
-            && canonical
-                .extension()
-                .is_none_or(|extension| extension != "uasset")
-        {
-            return Err(format!("--path {} is not a .uasset file", joined.display()));
+        if canonical.is_file() && !is_package_path(&canonical) {
+            return Err(format!(
+                "--path {} is not a .uasset or .umap file",
+                joined.display()
+            ));
         }
         roots.push(joined);
     }
@@ -1588,6 +2027,166 @@ struct ScanProgressOutput {
     processed_assets: usize,
     #[serde(rename = "totalAssets")]
     total_assets: usize,
+}
+
+#[derive(Serialize)]
+struct SavedWorldOutput {
+    authority: SavedWorldAuthorityOutput,
+    completeness: &'static str,
+    contract: SavedWorldContractOutput,
+    diagnostics: Vec<SavedWorldDiagnosticOutput>,
+    #[serde(rename = "externalActorRoot", skip_serializing_if = "Option::is_none")]
+    external_actor_root: Option<String>,
+    #[serde(rename = "mapPath")]
+    map_path: String,
+    #[serde(rename = "sourceKind")]
+    source_kind: &'static str,
+    actors: Vec<SavedWorldActorOutput>,
+    summary: SavedWorldSummaryOutput,
+}
+
+#[derive(Serialize)]
+struct SavedWorldAuthorityOutput {
+    kind: &'static str,
+    #[serde(rename = "mapPackage")]
+    map_package: String,
+}
+
+#[derive(Serialize)]
+struct SavedWorldContractOutput {
+    name: &'static str,
+    version: SavedWorldVersionOutput,
+}
+
+#[derive(Serialize)]
+struct SavedWorldVersionOutput {
+    major: u32,
+    minor: u32,
+}
+
+#[derive(Serialize)]
+struct SavedWorldDiagnosticOutput {
+    code: String,
+    message: String,
+    #[serde(rename = "retrySafe")]
+    retry_safe: bool,
+}
+
+#[derive(Serialize)]
+struct SavedWorldSummaryOutput {
+    #[serde(rename = "failedPackages")]
+    failed_packages: usize,
+    #[serde(rename = "partialPackages")]
+    partial_packages: usize,
+    #[serde(rename = "resolvedActors")]
+    resolved_actors: usize,
+    #[serde(rename = "scannedPackages")]
+    scanned_packages: usize,
+}
+
+#[derive(Serialize)]
+struct SavedWorldActorOutput {
+    #[serde(rename = "actorGuid", skip_serializing_if = "Option::is_none")]
+    actor_guid: Option<String>,
+    #[serde(rename = "actorPath")]
+    actor_path: String,
+    #[serde(rename = "classPath")]
+    class_path: String,
+    #[serde(rename = "packageName")]
+    package_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    position: SavedWorldPositionOutput,
+}
+
+impl SavedWorldActorOutput {
+    fn from_position(position: &SavedWorldActorPosition) -> Self {
+        Self {
+            actor_guid: position.actor_guid.map(|guid| guid.to_string()),
+            actor_path: position.actor_path.to_string(),
+            class_path: position.class_path.to_string(),
+            package_name: position.package_name.clone(),
+            label: position.label.clone(),
+            position: SavedWorldPositionOutput::from_position(&position.position),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum SavedWorldPositionOutput {
+    Resolved {
+        location: SavedWorldVectorOutput,
+    },
+    MissingRootComponent,
+    MissingAttachmentParent {
+        #[serde(rename = "parentPath")]
+        parent_path: String,
+    },
+    AttachmentCycle {
+        #[serde(rename = "componentPath")]
+        component_path: String,
+    },
+    AmbiguousComponentPath {
+        #[serde(rename = "componentPath")]
+        component_path: String,
+    },
+    UnsupportedAbsoluteTransform {
+        #[serde(rename = "componentPath")]
+        component_path: String,
+    },
+}
+
+impl SavedWorldPositionOutput {
+    fn from_position(position: &SavedWorldPosition) -> Self {
+        match position {
+            SavedWorldPosition::Resolved { location } => Self::Resolved {
+                location: SavedWorldVectorOutput {
+                    x: location.x,
+                    y: location.y,
+                    z: location.z,
+                },
+            },
+            SavedWorldPosition::MissingRootComponent => Self::MissingRootComponent,
+            SavedWorldPosition::MissingAttachmentParent { parent_path } => {
+                Self::MissingAttachmentParent {
+                    parent_path: parent_path.to_string(),
+                }
+            }
+            SavedWorldPosition::AttachmentCycle { component_path } => Self::AttachmentCycle {
+                component_path: component_path.to_string(),
+            },
+            SavedWorldPosition::AmbiguousComponentPath { component_path } => {
+                Self::AmbiguousComponentPath {
+                    component_path: component_path.to_string(),
+                }
+            }
+            SavedWorldPosition::UnsupportedAbsoluteTransform { component_path } => {
+                Self::UnsupportedAbsoluteTransform {
+                    component_path: component_path.to_string(),
+                }
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct SavedWorldVectorOutput {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+#[derive(Serialize)]
+struct SavedWorldProgressOutput {
+    event: &'static str,
+    #[serde(rename = "actorsFound")]
+    actors_found: usize,
+    phase: &'static str,
+    #[serde(rename = "processedPackages")]
+    processed_packages: usize,
+    #[serde(rename = "totalPackages")]
+    total_packages: usize,
 }
 
 #[derive(Serialize)]
@@ -2887,7 +3486,8 @@ impl ErrorOutput {
     }
 }
 
-const USAGE: &str = "Usage: uasset <inspect|authoring|catalog|scan> <path> [--format text|json]";
+const USAGE: &str =
+    "Usage: uasset <inspect|authoring|catalog|scan|saved-world> <path> [--format text|json]";
 
 const HELP: &str = "\
 uasset - inspect classic Unreal Engine asset packages
@@ -2899,6 +3499,8 @@ Usage:
   uasset scan <project-root> [--format json] [--concurrency <count>]
               [--maximum-assets <count>] [--path <dir|file>]...
               [--class <class>]... [--class-prefix <prefix>]... [--name <name>]...
+  uasset saved-world <project-root> <map-path> [--format json] [--concurrency <count>]
+                      [--maximum-assets <count>]
   uasset help
   uasset version
 
@@ -2907,10 +3509,11 @@ Commands:
   authoring  Emit the versioned Unreal authoring snapshot for one DataTable package.
   catalog    Discover saved DataTables beneath one Unreal project in a single process.
   scan       Inspect every selected package beneath one project in a single process.
+  saved-world  Read one saved conventional or World Partition map and resolve actor positions.
 
 Scan options:
-  --path            Directory or .uasset to enumerate, relative to the project root or
-                    absolute, and inside it. Repeatable. Defaults to Content.
+  --path            Directory, .uasset, or .umap to enumerate, relative to the project root
+                    or absolute, and inside it. Repeatable. Defaults to Content.
   --maximum-assets  Refuse the scan when enumeration finds more packages than this,
                     before any package is decoded. Exits 7.
   --class           Select packages exporting this class, as a full path
@@ -2924,11 +3527,18 @@ Scan options:
   fully read or decoded. A package is selected when it matches any filter; with no filters
   every package is selected.
 
+Saved-world options:
+  <map-path>       A .umap path inside the project's Content directory, relative to the project
+                   root or absolute. A conventional map reads its .umap; World Partition reads
+                   only its matching __ExternalActors__ subtree. Unrelated packages are not scanned.
+  --maximum-assets Refuse the map when it has more selected packages than this. Defaults to 100000.
+                   Exits 7.
+
 Scan output:
   stdout     Newline-delimited JSON, one object per line, discriminated by \"event\":
              asset (fileBytes plus the inspect payload), error, and a final summary.
              Line order is unspecified above --concurrency 1; summary is always last.
-  stderr     scan_progress objects plus structured errors.
+  stderr     scan_progress or saved_world_progress objects plus structured errors.
 
 Output contract:
   stdout     Successful result only.
@@ -3035,6 +3645,51 @@ mod command_tests {
     }
 
     #[test]
+    fn parses_saved_world_contract() {
+        assert_eq!(
+            Command::parse(vec![
+                "saved-world".into(),
+                "project".into(),
+                "Content/Maps/L_Example.umap".into(),
+                "--format=json".into(),
+                "--concurrency".into(),
+                "12".into(),
+                "--maximum-assets".into(),
+                "4321".into(),
+            ])
+            .expect("saved-world command"),
+            Command::SavedWorld(SavedWorldOptions {
+                project_root: PathBuf::from("project"),
+                map_path: PathBuf::from("Content/Maps/L_Example.umap"),
+                format: OutputFormat::Json,
+                concurrency: 12,
+                maximum_assets: 4321,
+            })
+        );
+    }
+
+    #[test]
+    fn saved_world_requires_two_paths_json_and_a_umap_relative_path() {
+        assert!(Command::parse(vec!["saved-world".into(), "project".into()]).is_err());
+        assert!(
+            Command::parse(vec![
+                "saved-world".into(),
+                "project".into(),
+                "Content/Maps/L_Example.umap".into(),
+                "--format=text".into(),
+            ])
+            .is_err()
+        );
+        assert_eq!(
+            external_actor_relative_path(Path::new("Maps/L_Example.umap"))
+                .expect("external actor path"),
+            PathBuf::from("Maps/L_Example")
+        );
+        assert!(external_actor_relative_path(Path::new("Maps/L_Example.uasset")).is_err());
+        assert!(external_actor_relative_path(Path::new("../L_Example.umap")).is_err());
+    }
+
+    #[test]
     fn scan_rejects_missing_root_text_format_and_valueless_options() {
         assert!(Command::parse(vec!["scan".into()]).is_err());
         assert!(
@@ -3098,6 +3753,17 @@ mod command_tests {
             resolve_scan_roots(Path::new("project"), &[PathBuf::from("..")]).is_err(),
             "a root outside the project is a usage error"
         );
+    }
+
+    #[test]
+    fn enumerates_levels_alongside_uassets_and_rejects_other_extensions() {
+        assert!(is_package_path(Path::new("Content/DT_Test.uasset")));
+        assert!(
+            is_package_path(Path::new("Content/Fixture/Cameras/L_CameraLoad.umap")),
+            "levels are the same classic package container and must enumerate"
+        );
+        assert!(!is_package_path(Path::new("Content/DT_Test.uexp")));
+        assert!(!is_package_path(Path::new("Content/DT_Test")));
     }
 
     #[test]

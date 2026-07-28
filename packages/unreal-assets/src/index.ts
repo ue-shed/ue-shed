@@ -2,7 +2,13 @@ import { execFile, spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { decodeAuthoringTableSnapshot, type AuthoringTableSnapshot } from "@ue-shed/protocol";
+import {
+	decodeAuthoringTableSnapshot,
+	decodeSavedWorld,
+	SavedWorld,
+	SavedWorldProgress,
+	type AuthoringTableSnapshot
+} from "@ue-shed/protocol";
 import { Config, Context, Duration, Effect, Layer, Option, Schema, Tuple } from "effect";
 
 const execFileAsync = promisify(execFile);
@@ -10,11 +16,20 @@ const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
 
+export { decodeSavedWorld, SavedWorld, SavedWorldProgress } from "@ue-shed/protocol";
+
 export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>()(
 	"AssetReaderError",
 	{
 		kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
-		operation: Schema.Literals(["authoring", "catalog", "inspect", "discovery", "scan"]),
+		operation: Schema.Literals([
+			"authoring",
+			"catalog",
+			"inspect",
+			"discovery",
+			"scan",
+			"saved_world"
+		]),
 		message: Schema.String,
 		retrySafe: Schema.Boolean,
 		path: Schema.optional(Schema.String),
@@ -52,6 +67,16 @@ export interface SavedAssetScanOptions {
 	readonly projectRoot: string;
 }
 
+/** Reads saved actors belonging to exactly one conventional or World Partition map. */
+export interface SavedWorldReadOptions {
+	readonly concurrency?: number;
+	/** Refuse the map before decode when it has more selected packages than this. */
+	readonly maximumAssets?: number;
+	/** A `.umap` path inside `projectRoot`, relative to it or absolute. */
+	readonly mapPath: string;
+	readonly projectRoot: string;
+}
+
 export interface AssetReaderConfiguration {
 	readonly catalogTimeoutMs: number;
 	readonly executable: string;
@@ -72,6 +97,10 @@ export interface AssetReaderShape {
 	readonly readTable: (
 		assetPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
+	/** Reads one saved map's actors without requiring a live Unreal connection. */
+	readonly readSavedWorld: (
+		options: SavedWorldReadOptions
+	) => Effect.Effect<SavedWorld, AssetReaderError>;
 	/**
 	 * Inspects every selected package under one project in a single reader process. Prefer this
 	 * over `discoverAssets` plus `readAsset` per path for any project-wide scan.
@@ -80,11 +109,17 @@ export interface AssetReaderShape {
 		options: SavedAssetScanOptions
 	) => Effect.Effect<SavedAssetScan, AssetReaderError>;
 	readonly scanProgress: () => Effect.Effect<SavedAssetScanProgress>;
+	readonly savedWorldProgress: () => Effect.Effect<SavedWorldProgress>;
 	readonly source: () => Effect.Effect<"configured" | "path">;
 }
 
 /** Optional members a test layer may omit; `makeAssetReaderTestLayer` supplies the defaults. */
-type AssetReaderTestDefaults = "catalogProgress" | "scanProgress" | "scanProject";
+type AssetReaderTestDefaults =
+	| "catalogProgress"
+	| "readSavedWorld"
+	| "savedWorldProgress"
+	| "scanProgress"
+	| "scanProject";
 
 export type AssetReaderTestShape = Omit<AssetReaderShape, AssetReaderTestDefaults> &
 	Partial<Pick<AssetReaderShape, AssetReaderTestDefaults>>;
@@ -431,6 +466,10 @@ export interface SavedAssetScan {
 	readonly summary: SavedAssetScanSummary;
 }
 
+const decodeSavedWorldProgressLine = Schema.decodeUnknownOption(
+	Schema.Struct({ event: Schema.Literal("saved_world_progress"), ...SavedWorldProgress.fields })
+);
+
 const ScanAssetLine = Schema.Struct({
 	event: Schema.Literal("asset"),
 	...savedAssetScanEntryFields
@@ -460,6 +499,10 @@ interface ScanProgressStore {
 	current: SavedAssetScanProgress;
 }
 
+interface SavedWorldProgressStore {
+	current: SavedWorldProgress;
+}
+
 const idleScanProgress = (): SavedAssetScanProgress => ({
 	emittedAssets: 0,
 	phase: "idle",
@@ -473,6 +516,13 @@ const idleCatalogProgress = (): SavedTableCatalogProgress => ({
 	processedAssets: 0,
 	tablesFound: 0,
 	totalAssets: 0
+});
+
+const idleSavedWorldProgress = (): SavedWorldProgress => ({
+	actorsFound: 0,
+	phase: "idle",
+	processedPackages: 0,
+	totalPackages: 0
 });
 
 export const decodeSavedAssetCatalogInspection = Schema.decodeUnknownEffect(
@@ -663,6 +713,164 @@ function scanArguments(options: SavedAssetScanOptions): string[] {
 	for (const value of options.classPrefixes ?? []) args.push("--class-prefix", value);
 	for (const value of options.names ?? []) args.push("--name", value);
 	return args;
+}
+
+function savedWorldArguments(options: SavedWorldReadOptions): string[] {
+	const args = [
+		"saved-world",
+		options.projectRoot,
+		options.mapPath,
+		"--format",
+		"json",
+		"--concurrency",
+		String(Math.max(1, options.concurrency ?? 8))
+	];
+	if (options.maximumAssets !== undefined) {
+		args.push("--maximum-assets", String(options.maximumAssets));
+	}
+	return args;
+}
+
+interface SavedWorldFailure extends ProcessFailure {
+	readonly contract?: string;
+	readonly discovery?: boolean;
+	readonly resourceLimit?: boolean;
+}
+
+function invokeSavedWorldReader(
+	configuration: AssetReaderConfiguration,
+	options: SavedWorldReadOptions,
+	progress: SavedWorldProgressStore
+): Effect.Effect<SavedWorld, AssetReaderError> {
+	return Effect.tryPromise({
+		try: (signal) =>
+			new Promise<string>((resolvePromise, rejectPromise) => {
+				progress.current = { ...idleSavedWorldProgress(), phase: "enumerating" };
+				const child = spawn(configuration.executable, savedWorldArguments(options), {
+					signal,
+					timeout: configuration.catalogTimeoutMs,
+					windowsHide: true
+				});
+				let stdout = "";
+				let stderr = "";
+				let stderrLine = "";
+				let settled = false;
+				const rejectOnce = (failure: SavedWorldFailure) => {
+					if (settled) return;
+					settled = true;
+					progress.current = { ...progress.current, phase: "failed" };
+					child.kill();
+					rejectPromise(failure);
+				};
+				const consumeStderrLine = (line: string) => {
+					if (line.trim().length === 0) return;
+					try {
+						const decoded = decodeSavedWorldProgressLine(JSON.parse(line) as unknown);
+						if (Option.isSome(decoded)) {
+							const { event: _event, ...current } = decoded.value;
+							progress.current = current;
+							return;
+						}
+					} catch {
+						// Preserve non-progress stderr below as the process diagnostic.
+					}
+					stderr += `${line}\n`;
+				};
+				child.stdout.setEncoding("utf8");
+				child.stderr.setEncoding("utf8");
+				child.stdout.on("data", (chunk: string) => {
+					stdout += chunk;
+					if (Buffer.byteLength(stdout, "utf8") > MAX_OUTPUT_BYTES) {
+						rejectOnce({ message: "Saved world output exceeded 64 MiB" });
+					}
+				});
+				child.stderr.on("data", (chunk: string) => {
+					stderrLine += chunk;
+					const lines = stderrLine.split(/\r?\n/);
+					stderrLine = lines.pop() ?? "";
+					for (const line of lines) consumeStderrLine(line);
+				});
+				child.once("error", (cause) => rejectOnce({ message: cause.message }));
+				child.once("close", (code, childSignal) => {
+					if (stderrLine.length > 0) consumeStderrLine(stderrLine);
+					if (settled) return;
+					settled = true;
+					if (code === 0 || code === 6) {
+						progress.current = { ...progress.current, phase: "ready" };
+						resolvePromise(stdout);
+						return;
+					}
+					progress.current = { ...progress.current, phase: "failed" };
+					rejectPromise({
+						...(typeof code === "number" ? { code } : {}),
+						discovery: code === 4,
+						killed: childSignal !== null,
+						message: `Saved world reader exited ${code ?? childSignal ?? "without a status"}`,
+						resourceLimit: code === 7,
+						stderr
+					});
+				});
+			}),
+		catch: (cause) => {
+			const failure = cause as SavedWorldFailure;
+			if (failure.contract !== undefined) {
+				return new AssetReaderError({
+					kind: "contract",
+					operation: "saved_world",
+					message: failure.contract,
+					path: options.mapPath,
+					retrySafe: false
+				});
+			}
+			if (failure.resourceLimit === true) {
+				return new AssetReaderError({
+					kind: "resource_limit",
+					operation: "saved_world",
+					message:
+						failure.message ?? "Saved world exceeded the maximum external actor limit",
+					path: options.mapPath,
+					retrySafe: false,
+					exitCode: 7
+				});
+			}
+			if (failure.discovery === true) {
+				return new AssetReaderError({
+					kind: "discovery",
+					operation: "saved_world",
+					message:
+						failure.stderr?.trim() ||
+						failure.message ||
+						"Saved world could not be read",
+					path: options.mapPath,
+					retrySafe: true,
+					exitCode: 4
+				});
+			}
+			const timedOut = failure.killed === true || failure.code === "ETIMEDOUT";
+			return new AssetReaderError({
+				kind: timedOut ? "timeout" : "process",
+				operation: "saved_world",
+				message: timedOut
+					? `Saved world reader timed out after ${configuration.catalogTimeoutMs}ms`
+					: failure.stderr?.trim() || failure.message || "Saved world reader failed",
+				path: options.mapPath,
+				retrySafe: timedOut,
+				...(typeof failure.code === "number" ? { exitCode: failure.code } : {})
+			});
+		}
+	}).pipe(
+		Effect.flatMap((stdout) =>
+			decodeOutput({
+				assetPath: options.mapPath,
+				operation: "saved_world",
+				stdout,
+				decode: decodeSavedWorld
+			})
+		),
+		Effect.withSpan("unreal_assets.read_saved_world", {
+			attributes: { "unreal.project_root": options.projectRoot }
+		})
+	);
 }
 
 interface ScanFailure extends ProcessFailure {
@@ -892,7 +1100,7 @@ function invokeScanReader(
 
 function decodeOutput<A>(options: {
 	readonly assetPath: string;
-	readonly operation: "authoring" | "catalog" | "inspect";
+	readonly operation: "authoring" | "catalog" | "inspect" | "saved_world";
 	readonly stdout: string;
 	readonly decode: (input: unknown) => Effect.Effect<A, unknown>;
 }): Effect.Effect<A, AssetReaderError> {
@@ -1007,13 +1215,17 @@ function discoverSavedTablesWith(
 function makeAssetReader(
 	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" },
 	progress: CatalogProgressStore,
-	scanStore: ScanProgressStore
+	scanStore: ScanProgressStore,
+	savedWorldStore: SavedWorldProgressStore
 ): AssetReaderShape {
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
 	);
 	const scanProgress = Effect.fn("AssetReader.scanProgress")(() =>
 		Effect.sync(() => scanStore.current)
+	);
+	const savedWorldProgress = Effect.fn("AssetReader.savedWorldProgress")(() =>
+		Effect.sync(() => savedWorldStore.current)
 	);
 	const scanProject = Effect.fn("AssetReader.scanProject")(function* (
 		options: SavedAssetScanOptions
@@ -1033,6 +1245,11 @@ function makeAssetReader(
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
 		return yield* readSavedTableWith(configuration, assetPath);
 	});
+	const readSavedWorld = Effect.fn("AssetReader.readSavedWorld")(function* (
+		options: SavedWorldReadOptions
+	) {
+		return yield* invokeSavedWorldReader(configuration, options, savedWorldStore);
+	});
 	const discoverTables = Effect.fn("AssetReader.discoverTables")(function* (
 		options: SavedTableCatalogOptions
 	) {
@@ -1044,9 +1261,11 @@ function makeAssetReader(
 		discoverAssets,
 		discoverTables,
 		readAsset,
+		readSavedWorld,
 		readTable,
 		scanProgress,
 		scanProject,
+		savedWorldProgress,
 		source
 	});
 }
@@ -1063,7 +1282,8 @@ export function assetReaderLayer(
 				timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
 			},
 			{ current: idleCatalogProgress() },
-			{ current: idleScanProgress() }
+			{ current: idleScanProgress() },
+			{ current: idleSavedWorldProgress() }
 		)
 	);
 }
@@ -1088,7 +1308,8 @@ export const AssetReaderLive = Layer.effect(
 				timeoutMs: Duration.toMillis(yield* readerTimeout)
 			},
 			{ current: idleCatalogProgress() },
-			{ current: idleScanProgress() }
+			{ current: idleScanProgress() },
+			{ current: idleSavedWorldProgress() }
 		);
 	})
 );
@@ -1099,7 +1320,19 @@ export function makeAssetReaderTestLayer(service: AssetReaderTestShape): Layer.L
 		AssetReader.of({
 			catalogProgress:
 				service.catalogProgress ?? (() => Effect.succeed(idleCatalogProgress())),
+			savedWorldProgress:
+				service.savedWorldProgress ?? (() => Effect.succeed(idleSavedWorldProgress())),
 			scanProgress: service.scanProgress ?? (() => Effect.succeed(idleScanProgress())),
+			readSavedWorld:
+				service.readSavedWorld ??
+				((options) =>
+					new AssetReaderError({
+						kind: "process",
+						operation: "saved_world",
+						message: "This test asset reader does not stub readSavedWorld.",
+						path: options.mapPath,
+						retrySafe: false
+					})),
 			scanProject:
 				service.scanProject ??
 				((options) =>
@@ -1143,6 +1376,12 @@ export function scanSavedProject(
 	options: SavedAssetScanOptions
 ): Effect.Effect<SavedAssetScan, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.scanProject(options));
+}
+
+export function readSavedWorld(
+	options: SavedWorldReadOptions
+): Effect.Effect<SavedWorld, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.readSavedWorld(options));
 }
 
 export function getAssetReaderSource(): Effect.Effect<"configured" | "path", never, AssetReader> {

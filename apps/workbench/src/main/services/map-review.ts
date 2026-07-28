@@ -1,10 +1,10 @@
 import {
 	approveFramingCandidate,
-	awaitReviewPreviewFrame,
+	awaitProvisionedCameraFrame,
 	CameraFeed,
-	clearReviewPreviewSources,
+	clearProvisionedCameras,
 	configureCameras,
-	ensureReviewPreviewSources,
+	ensureProvisionedCameras,
 	generateFramingCandidates,
 	ReviewAuthoring,
 	ReviewAuthoringSessions,
@@ -42,6 +42,8 @@ import {
 	type WorldScoutResult,
 	type WorldTransform
 } from "@ue-shed/observatory";
+import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
+import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
 	Context,
@@ -53,6 +55,7 @@ import {
 	Ref,
 	Clock,
 	Semaphore,
+	Schema,
 	Stream
 } from "effect";
 import { dirname } from "node:path";
@@ -185,7 +188,21 @@ interface ReviewFailure {
 	readonly status: "failed";
 }
 
+export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUnavailable>()(
+	"SavedWorldUnavailable",
+	{
+		message: Schema.String,
+		recovery: Schema.String
+	}
+) {}
+
 export interface WorkbenchMapReviewShape {
+	/** Lists configured saved maps; this deliberately never connects to Unreal. */
+	readonly savedWorldMaps: () => Effect.Effect<readonly SavedWorldMap[], SavedWorldUnavailable>;
+	/** Reads one configured saved map; this deliberately never connects to Unreal. */
+	readonly savedWorld: (
+		mapPath: string
+	) => Effect.Effect<SavedWorld, AssetReaderError | SavedWorldUnavailable>;
 	readonly worldSnapshot: () => Effect.Effect<WorldScoutResult>;
 	readonly subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate) => Effect.Effect<void>;
 	readonly setWorldObservationRate: (
@@ -297,6 +314,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 	WorkbenchMapReview,
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
+		const assetReader = yield* AssetReader;
 		const localFiles = yield* LocalFiles;
 		const repository = yield* ReviewRepository;
 		const capture = yield* ReviewCapture;
@@ -311,7 +329,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const coordinator = yield* makeUnrealOperationCoordinator;
 		const lastWorldSnapshot = yield* Ref.make<Option.Option<WorldScoutResult>>(Option.none());
 		const activeReviewSetPath = yield* Ref.make<Option.Option<string>>(Option.none());
-		const livePreviewBindings = yield* Ref.make<
+		const provisionedCameraBindings = yield* Ref.make<
 			Option.Option<{
 				readonly bindings: ReadonlyArray<{
 					readonly candidateId: string;
@@ -707,18 +725,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.worldObservationPresentationReplacements"
 		)(() => Ref.get(observationPresentationReplacements));
 
-		const invalidateLivePreviewBank = Effect.fn(
-			"Workbench.WorkbenchMapReview.invalidateLivePreviewBank"
+		const invalidateProvisionedCameras = Effect.fn(
+			"Workbench.WorkbenchMapReview.invalidateProvisionedCameras"
 		)(function* () {
-			yield* Ref.set(livePreviewBindings, Option.none());
-			yield* clearReviewPreviewSources(configuration.remoteControlEndpoint).pipe(
+			yield* Ref.set(provisionedCameraBindings, Option.none());
+			yield* clearProvisionedCameras(configuration.remoteControlEndpoint).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
 				Effect.ignore
 			);
 		});
 
-		const applyLivePreviewSchedule = Effect.fn(
-			"Workbench.WorkbenchMapReview.applyLivePreviewSchedule"
+		const applyProvisionedCameraSchedule = Effect.fn(
+			"Workbench.WorkbenchMapReview.applyProvisionedCameraSchedule"
 		)(function* (cameraCount: number, fps: number) {
 			const clamped = clampLivePreviewFps(fps);
 			yield* Ref.set(livePreviewFps, clamped);
@@ -740,9 +758,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const setLivePreviewFps = Effect.fn("Workbench.WorkbenchMapReview.setLivePreviewFps")(
 			function* (fps: number) {
-				const bindings = yield* Ref.get(livePreviewBindings);
+				const bindings = yield* Ref.get(provisionedCameraBindings);
 				const cameraCount = Option.isSome(bindings) ? bindings.value.bindings.length : 0;
-				return yield* applyLivePreviewSchedule(cameraCount, fps).pipe(
+				return yield* applyProvisionedCameraSchedule(cameraCount, fps).pipe(
 					Effect.catch((cause) =>
 						Effect.gen(function* () {
 							const clamped = clampLivePreviewFps(fps);
@@ -793,6 +811,60 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				recovery: "Live world scouting will resume automatically.",
 				status: "unavailable" as const
 			}));
+		});
+
+		const savedWorldMaps = Effect.fn("Workbench.WorkbenchMapReview.savedWorldMaps")(
+			function* () {
+				if (configuration.project.status !== "configured") {
+					return yield* Effect.fail(
+						new SavedWorldUnavailable({
+							message: "No project directory is configured for saved-map review.",
+							recovery:
+								"Set UE_SHED_PROJECT_ROOT and UE_SHED_SAVED_WORLD_MAP, then retry."
+						})
+					);
+				}
+				const savedWorldMaps = configuration.savedWorldMaps;
+				if (savedWorldMaps?.status !== "configured") {
+					return yield* Effect.fail(
+						new SavedWorldUnavailable({
+							message: "No saved map is configured for offline review.",
+							recovery:
+								"Set UE_SHED_SAVED_WORLD_MAP or UE_SHED_SAVED_WORLD_MAPS to .umap paths inside the project."
+						})
+					);
+				}
+				return savedWorldMaps.maps;
+			}
+		);
+
+		const savedWorld = Effect.fn("Workbench.WorkbenchMapReview.savedWorld")(function* (
+			mapPath: string
+		) {
+			const project = configuration.project;
+			if (project.status !== "configured") {
+				return yield* Effect.fail(
+					new SavedWorldUnavailable({
+						message: "No project directory is configured for saved-map review.",
+						recovery:
+							"Set UE_SHED_PROJECT_ROOT and UE_SHED_SAVED_WORLD_MAP, then retry."
+					})
+				);
+			}
+			const maps = yield* savedWorldMaps();
+			if (!maps.some((map) => map.mapPath === mapPath)) {
+				return yield* Effect.fail(
+					new SavedWorldUnavailable({
+						message: `Saved map ${mapPath} is not configured for offline review.`,
+						recovery: "Choose one of the configured maps, then retry."
+					})
+				);
+			}
+			return yield* assetReader.readSavedWorld({
+				concurrency: 8,
+				mapPath,
+				projectRoot: project.projectRoot
+			});
 		});
 
 		const focusActor = Effect.fn("Workbench.WorkbenchMapReview.focusActor")(function* (
@@ -965,7 +1037,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				const { projectRoot } = reviewProject;
 				return yield* runExclusive(
 					Effect.gen(function* () {
-						yield* invalidateLivePreviewBank();
+						yield* invalidateProvisionedCameras();
 						const selection = yield* authoring.inspectSelection(
 							configuration.remoteControlEndpoint
 						);
@@ -1074,7 +1146,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				}
 				const projectRoot = reviewProject.projectRoot;
 				return yield* Effect.gen(function* () {
-					yield* invalidateLivePreviewBank();
+					yield* invalidateProvisionedCameras();
 					const session = yield* authoringSessions.discard({
 						projectRoot,
 						sessionId: intent.sessionId
@@ -1094,7 +1166,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				const { projectRoot } = reviewProject;
 				return yield* runExclusive(
 					Effect.gen(function* () {
-						yield* invalidateLivePreviewBank();
+						yield* invalidateProvisionedCameras();
 						const selection = yield* authoring.inspectSelection(
 							configuration.remoteControlEndpoint
 						);
@@ -1188,7 +1260,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				if (playActive) {
 					const bindings = yield* liveEnsureGate.withPermits(1)(
 						Effect.gen(function* () {
-							const cached = yield* Ref.get(livePreviewBindings);
+							const cached = yield* Ref.get(provisionedCameraBindings);
 							if (
 								Option.isSome(cached) &&
 								cached.value.sessionId === intent.sessionId &&
@@ -1199,7 +1271,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							return yield* runExclusive(
 								Effect.gen(function* () {
 									const fps = yield* Ref.get(livePreviewFps);
-									const next = yield* ensureReviewPreviewSources(
+									const next = yield* ensureProvisionedCameras(
 										configuration.remoteControlEndpoint,
 										session.candidates.map((item) => ({
 											candidateId: item.id,
@@ -1215,7 +1287,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 										Effect.provideService(RemoteControlClient, remoteControl)
 									);
 									yield* Ref.set(
-										livePreviewBindings,
+										provisionedCameraBindings,
 										Option.some({
 											bindings: next.map((item) => ({
 												candidateId: item.candidateId,
@@ -1236,11 +1308,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					const binding = bindings.find((item) => item.candidateId === candidate.id);
 					if (!binding) {
 						return mapReviewAuthoringFailure({
-							message: `Live preview camera for ${candidate.id} was not registered.`,
+							message: `Provisioned camera for ${candidate.id} was not registered.`,
 							recovery: "Stop and restart PIE, then reframe the subject."
 						});
 					}
-					const frame = yield* awaitReviewPreviewFrame({
+					const frame = yield* awaitProvisionedCameraFrame({
 						cameraIndex: binding.index,
 						latestFrames: cameraFeed.latestFrames,
 						timeout: "3 seconds"
@@ -1256,7 +1328,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					};
 				}
 
-				yield* invalidateLivePreviewBank();
+				yield* invalidateProvisionedCameras();
 				return yield* runExclusive(
 					Effect.gen(function* () {
 						const reviewSet =
@@ -1514,6 +1586,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			load,
 			previewAuthoringCandidate,
 			previewCandidate,
+			savedWorldMaps,
+			savedWorld,
 			setLivePreviewFps,
 			setWorldObservationRate,
 			subscribeWorldObservations,
@@ -1525,7 +1599,16 @@ export const WorkbenchMapReviewLive = Layer.effect(
 );
 
 export function makeWorkbenchMapReviewTestLayer(
-	service: WorkbenchMapReviewShape
+	service: Omit<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps"> &
+		Partial<Pick<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps">>
 ): Layer.Layer<WorkbenchMapReview> {
-	return Layer.succeed(WorkbenchMapReview, WorkbenchMapReview.of(service));
+	return Layer.succeed(
+		WorkbenchMapReview,
+		WorkbenchMapReview.of({
+			savedWorld: service.savedWorld ?? (() => Effect.die("saved world reader not stubbed")),
+			savedWorldMaps:
+				service.savedWorldMaps ?? (() => Effect.die("saved world maps reader not stubbed")),
+			...service
+		})
+	);
 }

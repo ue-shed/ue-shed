@@ -10,6 +10,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory";
+import type { SavedWorld } from "@ue-shed/protocol";
 import type { AuthoringAuthority, AuthoringSessionIntent } from "@ue-shed/authoring-sdk";
 import type {
 	MapReviewApprovalResult,
@@ -78,6 +79,10 @@ declare global {
 			};
 			readonly mapReview: {
 				readonly worldSnapshot: () => Promise<WorldScoutResult>;
+				readonly savedWorld: (mapPath: string) => Promise<SavedWorld>;
+				readonly savedWorldMaps: () => Promise<
+					readonly { readonly label: string; readonly mapPath: string }[]
+				>;
 				readonly focusActor: (
 					actorId: string,
 					bringToFront: boolean

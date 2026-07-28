@@ -56,7 +56,7 @@ void UUEShedCameraLibrary::Configure(const FString& ConfigJson, FString& ResultJ
 	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-running-game-world\"}");
 }
 
-void UUEShedCameraLibrary::EnsureReviewPreviewSources(
+void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	const FString& RequestJson,
 	FString& ResultJson)
 {
@@ -73,23 +73,28 @@ void UUEShedCameraLibrary::EnsureReviewPreviewSources(
 		ResultJson = ErrorJson(TEXT("invalid-json"));
 		return;
 	}
-	const TArray<TSharedPtr<FJsonValue>>* SourcesJson = nullptr;
-	if (!Root->TryGetArrayField(TEXT("sources"), SourcesJson) || SourcesJson == nullptr)
+	const TArray<TSharedPtr<FJsonValue>>* CamerasJson = nullptr;
+	if (!Root->TryGetArrayField(TEXT("cameras"), CamerasJson))
 	{
-		ResultJson = ErrorJson(TEXT("missing-sources"));
+		// Accept the pre-rename field while clients and installed plugins roll forward together.
+		Root->TryGetArrayField(TEXT("sources"), CamerasJson);
+	}
+	if (CamerasJson == nullptr)
+	{
+		ResultJson = ErrorJson(TEXT("missing-cameras"));
 		return;
 	}
-	TArray<FUEShedReviewPreviewSourceSpec> Specs;
-	Specs.Reserve(SourcesJson->Num());
-	for (const TSharedPtr<FJsonValue>& Entry : *SourcesJson)
+	TArray<FUEShedProvisionedCameraSpec> Specs;
+	Specs.Reserve(CamerasJson->Num());
+	for (const TSharedPtr<FJsonValue>& Entry : *CamerasJson)
 	{
 		const TSharedPtr<FJsonObject> Object = Entry->AsObject();
 		if (!Object.IsValid())
 		{
-			ResultJson = ErrorJson(TEXT("invalid-source"));
+			ResultJson = ErrorJson(TEXT("invalid-camera"));
 			return;
 		}
-		FUEShedReviewPreviewSourceSpec Spec;
+		FUEShedProvisionedCameraSpec Spec;
 		if (!Object->TryGetStringField(TEXT("candidateId"), Spec.CandidateId)
 			|| Spec.CandidateId.IsEmpty())
 		{
@@ -130,7 +135,7 @@ void UUEShedCameraLibrary::EnsureReviewPreviewSources(
 		Specs.Add(Spec);
 	}
 	FString Error;
-	if (!Subsystem->EnsureReviewPreviewSources(Specs, Error))
+	if (!Subsystem->EnsureProvisionedCameras(Specs, Error))
 	{
 		ResultJson = ErrorJson(*Error);
 		return;
@@ -152,14 +157,14 @@ void UUEShedCameraLibrary::EnsureReviewPreviewSources(
 		Specs[0].Height);
 	if (!Subsystem->ApplyConfigJson(ConfigJson, ConfigureError))
 	{
-		Subsystem->ClearReviewPreviewSources();
+		Subsystem->ClearProvisionedCameras();
 		ResultJson = ErrorJson(*ConfigureError);
 		return;
 	}
 	ResultJson = Subsystem->StatusJson();
 }
 
-void UUEShedCameraLibrary::ClearReviewPreviewSources(FString& ResultJson)
+void UUEShedCameraLibrary::ClearProvisionedCameras(FString& ResultJson)
 {
 	UUEShedCameraSubsystem* Subsystem = FindCameraSubsystem();
 	if (Subsystem == nullptr)
@@ -167,6 +172,6 @@ void UUEShedCameraLibrary::ClearReviewPreviewSources(FString& ResultJson)
 		ResultJson = ErrorJson(TEXT("no-running-game-world"));
 		return;
 	}
-	Subsystem->ClearReviewPreviewSources();
+	Subsystem->ClearProvisionedCameras();
 	ResultJson = Subsystem->StatusJson();
 }

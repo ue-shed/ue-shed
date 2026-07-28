@@ -185,7 +185,7 @@ struct FUEShedCameraRuntime
 	TUniquePtr<FCameraPipeWriter> Writer;
 	FGuid ProducerId = FGuid::NewGuid();
 	FGuid SessionId = FGuid::NewGuid();
-	bool bReviewPreviewSession = false;
+	bool bProvisionedCameraSession = false;
 	uint64 CaptureBatchesSubmitted = 0;
 	uint64 CadenceIntervalsSkipped = 0;
 	uint64 CamerasDue = 0;
@@ -238,7 +238,7 @@ void UUEShedCameraSubsystem::Deinitialize()
 {
 	if (Runtime)
 	{
-		ClearReviewPreviewSources();
+		ClearProvisionedCameras();
 		if (Runtime->TraceRegionId != 0)
 		{
 			TRACE_END_REGION_WITH_ID(Runtime->TraceRegionId);
@@ -271,13 +271,13 @@ void UUEShedCameraSubsystem::RegisterSource(AUEShedCameraSource* Source)
 	}
 }
 
-void UUEShedCameraSubsystem::DiscoverPlacedSources()
+void UUEShedCameraSubsystem::DiscoverAuthoredCameras()
 {
 	if (!Runtime) return;
 	TArray<AUEShedCameraSource*> Sources;
 	for (TActorIterator<AUEShedCameraSource> It(GetWorld()); It; ++It)
 	{
-		if (It->bTransientReviewPreview) continue;
+		if (It->bTransientProvisionedCamera) continue;
 		Sources.Add(*It);
 	}
 	Sources.Sort([](const AUEShedCameraSource& Left, const AUEShedCameraSource& Right)
@@ -290,22 +290,22 @@ void UUEShedCameraSubsystem::DiscoverPlacedSources()
 	}
 }
 
-bool UUEShedCameraSubsystem::IsReviewPreviewSessionActive() const
+bool UUEShedCameraSubsystem::IsProvisionedCameraSessionActive() const
 {
-	return Runtime != nullptr && Runtime->bReviewPreviewSession;
+	return Runtime != nullptr && Runtime->bProvisionedCameraSession;
 }
 
-void UUEShedCameraSubsystem::ClearReviewPreviewSources()
+void UUEShedCameraSubsystem::ClearProvisionedCameras()
 {
 	if (!Runtime) return;
 	UWorld* World = GetWorld();
 	TArray<AUEShedCameraSource*> ToDestroy;
 	for (TActorIterator<AUEShedCameraSource> It(World); It; ++It)
 	{
-		if (It->bTransientReviewPreview) ToDestroy.Add(*It);
+		if (It->bTransientProvisionedCamera) ToDestroy.Add(*It);
 	}
 	ResetCameraStates();
-	Runtime->bReviewPreviewSession = false;
+	Runtime->bProvisionedCameraSession = false;
 	Runtime->Config.ViewMode = EUEShedCameraViewMode::Overview;
 	for (AUEShedCameraSource* Source : ToDestroy)
 	{
@@ -316,8 +316,8 @@ void UUEShedCameraSubsystem::ClearReviewPreviewSources()
 	}
 }
 
-bool UUEShedCameraSubsystem::EnsureReviewPreviewSources(
-	const TArray<FUEShedReviewPreviewSourceSpec>& Specs,
+bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
+	const TArray<FUEShedProvisionedCameraSpec>& Specs,
 	FString& Error)
 {
 	if (!Runtime)
@@ -336,17 +336,17 @@ bool UUEShedCameraSubsystem::EnsureReviewPreviewSources(
 		Error = TEXT("invalid-source-count");
 		return false;
 	}
-	ClearReviewPreviewSources();
+	ClearProvisionedCameras();
 	ResetCameraStates();
 	for (int32 Index = 0; Index < Specs.Num(); ++Index)
 	{
-		const FUEShedReviewPreviewSourceSpec& Spec = Specs[Index];
+		const FUEShedProvisionedCameraSpec& Spec = Specs[Index];
 		FActorSpawnParameters SpawnParams;
 		SpawnParams.SpawnCollisionHandlingOverride =
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		// Destroy() marks old preview actors for teardown, but their names remain reserved until the
-		// end of the frame. Let Unreal allocate a unique transient name so replacing a preview bank
-		// during PIE cannot collide with a just-destroyed source and crash the editor.
+		// end of the frame. Let Unreal allocate a unique transient name so replacing provisioned
+		// cameras during PIE cannot collide with a just-destroyed source and crash the editor.
 		AUEShedCameraSource* Source = World->SpawnActor<AUEShedCameraSource>(
 			AUEShedCameraSource::StaticClass(),
 			Spec.Location,
@@ -354,12 +354,12 @@ bool UUEShedCameraSubsystem::EnsureReviewPreviewSources(
 			SpawnParams);
 		if (Source == nullptr)
 		{
-			ClearReviewPreviewSources();
+			ClearProvisionedCameras();
 			Error = TEXT("spawn-failed");
 			return false;
 		}
-		Source->bTransientReviewPreview = true;
-		Source->ReviewCandidateId = Spec.CandidateId;
+		Source->bTransientProvisionedCamera = true;
+		Source->ProvisioningKey = Spec.CandidateId;
 		Source->CameraIndex = Index;
 		Source->CameraId = FGuid::NewGuid();
 		Source->CaptureWidth = FMath::Clamp(Spec.Width, 64, 2560);
@@ -371,7 +371,7 @@ bool UUEShedCameraSubsystem::EnsureReviewPreviewSources(
 		}
 		RegisterSource(Source);
 	}
-	Runtime->bReviewPreviewSession = true;
+	Runtime->bProvisionedCameraSession = true;
 	Runtime->Config.ViewMode = EUEShedCameraViewMode::Posed;
 	Runtime->Config.ActiveCameraCount = Specs.Num();
 	Runtime->Config.FocusedCameraIndex = -1;
@@ -388,9 +388,9 @@ bool UUEShedCameraSubsystem::EnsureReviewPreviewSources(
 void UUEShedCameraSubsystem::Tick(float DeltaTime)
 {
 	if (!Runtime) return;
-	if (Runtime->Cameras.IsEmpty() && !Runtime->bReviewPreviewSession)
+	if (Runtime->Cameras.IsEmpty() && !Runtime->bProvisionedCameraSession)
 	{
-		DiscoverPlacedSources();
+		DiscoverAuthoredCameras();
 	}
 	for (FCameraState& Camera : Runtime->Cameras)
 	{
@@ -872,15 +872,15 @@ FString UUEShedCameraSubsystem::StatusJson() const
 		const TSharedRef<FJsonObject> Camera = MakeShared<FJsonObject>();
 		Camera->SetStringField(TEXT("cameraId"), GuidString(Source->CameraId));
 		Camera->SetStringField(TEXT("displayName"),
-			Source->ReviewCandidateId.IsEmpty()
+			Source->ProvisioningKey.IsEmpty()
 				? Source->GetActorNameOrLabel()
-				: Source->ReviewCandidateId);
+				: Source->ProvisioningKey);
 		Camera->SetNumberField(TEXT("index"), Source->CameraIndex);
 		Camera->SetNumberField(TEXT("width"), Source->CaptureWidth);
 		Camera->SetNumberField(TEXT("height"), Source->CaptureHeight);
-		if (!Source->ReviewCandidateId.IsEmpty())
+		if (!Source->ProvisioningKey.IsEmpty())
 		{
-			Camera->SetStringField(TEXT("candidateId"), Source->ReviewCandidateId);
+			Camera->SetStringField(TEXT("candidateId"), Source->ProvisioningKey);
 		}
 		Cameras.Add(MakeShared<FJsonValueObject>(Camera));
 	}

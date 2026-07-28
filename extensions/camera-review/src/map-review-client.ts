@@ -18,6 +18,7 @@ import type {
 	WorldScoutRefreshRate,
 	WorldScoutResult
 } from "@ue-shed/observatory";
+import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { Context, type Effect, Schema, type Stream } from "effect";
 
 /** Renderer presentation state plus the sparse IPC batch that produced its latest transform tick. */
@@ -54,6 +55,9 @@ export class MapReviewClientError extends Schema.TaggedErrorClass<MapReviewClien
 ) {}
 
 export interface MapReviewClientShape {
+	/** Optional while older hosts adopt saved-map support. This source is never an editor session. */
+	readonly readSavedWorld?: (mapPath: string) => Effect.Effect<SavedWorld, MapReviewClientError>;
+	readonly savedWorldMaps?: () => Effect.Effect<readonly SavedWorldMap[], MapReviewClientError>;
 	readonly connectWorld: () => Effect.Effect<WorldScoutResult, MapReviewClientError>;
 	readonly focusActor: (
 		actorId: ActorId,

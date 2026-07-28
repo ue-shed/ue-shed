@@ -1,4 +1,14 @@
 //! Asset-level decoders.
+//!
+//! The class constants below are dispatch targets, not a list of supported asset types. Any class
+//! this module does not specifically claim reaches [`is_generic_uobject_class`], which is a
+//! permissive default, and decodes through the generic UObject tagged-property path. Levels rely
+//! entirely on that fallback: a `.umap` needs no level-specific decoder, and its actors, components,
+//! `Level`, `World`, and `WorldSettings` exports all decode as generic UObjects.
+//!
+//! The boundary that does exist is native serialization. Classes with a custom `UObject::Serialize`
+//! write binary after their tagged properties; that payload is preserved as `tail_bytes` rather than
+//! decoded, so a non-zero `tail_bytes` means "undecoded native payload", not "failed parse".
 
 use std::fmt;
 
@@ -48,6 +58,9 @@ pub fn is_data_asset_class(class_path: &str) -> bool {
 }
 
 /// Returns whether `class_path` should use the generic UObject property decoder.
+///
+/// This is a permissive default rather than an allowlist: it returns `true` for every class without
+/// a specific decoder, which is why level actors and components decode with no level-specific code.
 pub fn is_generic_uobject_class(class_path: &str) -> bool {
     !DataTableDecoder::supports_class(class_path)
         && class_path != CURVETABLE_CLASS

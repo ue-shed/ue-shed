@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.4.0",
+	"fixtureVersion": "1.5.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
@@ -102,6 +102,19 @@
 		"map": "/Game/Fixture/Cameras/L_CameraLoad",
 		"subject": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
 		"views": ["structure-context"]
+	},
+	"offlineWorld": {
+		"map": "/Game/Fixture/Offline/L_OfflineWorld.L_OfflineWorld",
+		"relativeMapPath": "Content/Fixture/Offline/L_OfflineWorld.umap",
+		"externalActors": 6,
+		"labels": [
+			"Offline Hub",
+			"Hub Attachment",
+			"East Marker",
+			"North Marker",
+			"South Marker",
+			"West Marker"
+		]
 	},
 	"textureAudit": {
 		"contentRoot": "/Game/Fixture/Audits/Textures",

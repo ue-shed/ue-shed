@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveRemoteControlEndpoint } from "./workbench-tools.mjs";
+import { createWorkbenchEnvironment, resolveRemoteControlEndpoint } from "./workbench-tools.mjs";
 
 test("honors an explicit Remote Control endpoint", async () => {
 	const endpoint = await resolveRemoteControlEndpoint({
@@ -32,4 +32,26 @@ test("falls back to a free port pair when nothing answers", async () => {
 		}
 	);
 	assert.match(endpoint, /^http:\/\/127\.0\.0\.1:300\d\d$/);
+});
+
+test("offers both offline fixture maps only for the fixture preset", async () => {
+	const options = { fetch: async () => ({ ok: false }) };
+	const fixtureEnvironment = await createWorkbenchEnvironment(
+		{ ...process.env, UE_SHED_UASSET_EXECUTABLE: "uasset-test" },
+		options
+	);
+	assert.equal(
+		fixtureEnvironment.UE_SHED_SAVED_WORLD_MAPS,
+		"Content/Fixture/Offline/L_OfflineWorld.umap;Content/Fixture/Cameras/L_CameraLoad.umap"
+	);
+
+	const projectEnvironment = await createWorkbenchEnvironment(
+		{
+			...process.env,
+			UE_SHED_PROJECT_ROOT: "C:/Project",
+			UE_SHED_UASSET_EXECUTABLE: "uasset-test"
+		},
+		options
+	);
+	assert.equal(projectEnvironment.UE_SHED_SAVED_WORLD_MAPS, undefined);
 });

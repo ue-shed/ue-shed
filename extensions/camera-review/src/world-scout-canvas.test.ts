@@ -6,6 +6,7 @@ import {
 	StreamActorIndex,
 	type WorldActorSnapshot
 } from "@ue-shed/observatory";
+import type { SavedWorld } from "@ue-shed/protocol";
 import { describe, expect, it } from "vitest";
 import {
 	WorldScoutRetainedStore,
@@ -63,6 +64,60 @@ describe("world scout canvas store", () => {
 		projectVisibleActors(store, store.viewport, 200, 200, store.visibleIndices);
 		expect(store.xs[0]).toBeTypeOf("number");
 		expect(store.ys[1]).toBeTypeOf("number");
+	});
+
+	it("projects resolved saved actors without inventing a live actor identity", () => {
+		const world: SavedWorld = {
+			authority: {
+				kind: "project_files",
+				mapPackage: "/Game/Fixture/Offline/L_OfflineWorld"
+			},
+			completeness: "partial",
+			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			diagnostics: [],
+			externalActorRoot: "Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld",
+			mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap",
+			sourceKind: "world_partition",
+			actors: [
+				{
+					actorGuid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					actorPath:
+						"/Game/Fixture/Offline/L_OfflineWorld.L_OfflineWorld:PersistentLevel.Hub",
+					classPath: "/Script/Engine.StaticMeshActor",
+					label: "Offline Hub",
+					packageName: "/Game/__ExternalActors__/Fixture/Offline/L_OfflineWorld/Hub",
+					position: { location: { x: 120, y: -80, z: 40 }, status: "resolved" }
+				},
+				{
+					actorPath:
+						"/Game/Fixture/Offline/L_OfflineWorld.L_OfflineWorld:PersistentLevel.Missing",
+					classPath: "/Script/Engine.StaticMeshActor",
+					packageName: "/Game/__ExternalActors__/Fixture/Offline/L_OfflineWorld/Missing",
+					position: { status: "missing_root_component" }
+				}
+			],
+			summary: {
+				failedPackages: 0,
+				partialPackages: 0,
+				resolvedActors: 1,
+				scannedPackages: 2
+			}
+		};
+		const store = new WorldScoutRetainedStore();
+		store.installSavedWorld(world);
+
+		expect(store.count).toBe(1);
+		expect(store.mapPath).toBe("/Game/Fixture/Offline/L_OfflineWorld");
+		expect(store.worldKind).toBe("saved");
+		expect(store.actorAt(0)).toMatchObject({
+			className: "StaticMeshActor",
+			displayName: "Offline Hub",
+			packageName: "/Game/__ExternalActors__/Fixture/Offline/L_OfflineWorld/Hub"
+		});
+		expect(store.actorAt(0)?.id).toBeUndefined();
+		expect(store.materialize(0)).toBeUndefined();
+		expect(store.locationX[0]).toBe(120);
+		expect(store.locationY[0]).toBe(-80);
 	});
 
 	it("keeps viewport size stable under small motion (hysteresis)", () => {

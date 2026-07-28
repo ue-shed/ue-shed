@@ -37,6 +37,23 @@ and general bulk-data decoding remain out of scope until a product use case chan
 Supporting property tags older than UE5 complete type names is also deferred until UE Shed chooses
 an explicit engine compatibility window.
 
+Levels are inside that boundary and always have been. A `.umap` is the same classic package
+container as a `.uasset`, and `asset.rs` routes any class it does not specifically claim through the
+generic UObject tagged-property decoder, so actors, components, `Level`, `World`, and `WorldSettings`
+all decode without a level-specific decoder. Do not read the named class constants in `asset.rs`
+(`DATATABLE_CLASS`, `STRINGTABLE_CLASS`, and the rest) as the list of supported asset types:
+`is_generic_uobject_class` is a permissive default, not an allowlist. `uasset inspect` on the fixture
+level decodes all 16,525 exports across 29 classes, and `test:uasset-conformance` holds that decode
+to the property tags Unreal's own serializer emits. See
+[UAsset benchmarks](../engineering/uasset-benchmarks.md) for the level lanes and
+`fixtures/unreal-project/FixtureExpected/level-decode-gaps.json` for the pinned coverage.
+
+What levels do _not_ get is class-specific native serialization. Classes with a custom
+`UObject::Serialize` write binary after their tagged properties, and the parser retains that as
+`tail_bytes` rather than decoding it: `UModel` is the clearest case in the fixture level, where BSP
+`Bounds`, `Vectors`, `Points`, and `Nodes` are native. That is a genuine boundary, distinct from the
+tagged-property coverage above, and it is why `tail_bytes` is non-zero on almost every level export.
+
 Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,
 classification, and diagnostics; changed signatures are the only entries reparsed. Full payload

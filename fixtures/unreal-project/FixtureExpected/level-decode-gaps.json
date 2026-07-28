@@ -1,0 +1,14 @@
+{
+	"schemaVersion": 2,
+	"packagePath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"note": "Level decode coverage measured against the UEShedBuildFixture commandlet, which records the property tags Unreal's own tagged-property serializer emits for each loaded object. The parser decodes every tag that is actually on disk, so undecodedByClass is empty. Regenerate with: pnpm test:uasset-conformance.",
+	"exports": 16525,
+	"classes": 29,
+	"engineWrittenTags": 72187,
+	"decodedProperties": 68085,
+	"undecodedByClass": {},
+	"postLoadMutatedByClass": {
+		"/Script/Engine.MaterialInstanceDynamic": ["BasePropertyOverrides"]
+	},
+	"postLoadMutatedNote": "Not a parser gap: these tags are absent from the saved package but present when the editor re-serializes the loaded object. UMaterialInstance::InitStaticPermutation calls UpdateOverridableBaseProperties, which copies the parent material's values into BasePropertyOverrides for every bOverride_* that is false, so the in-memory struct diverges from its archetype after load even though nothing was written. Proof that it is not on disk: `uasset scan --name BasePropertyOverrides` does not select this level, and a tagged property's name must appear in the package name table. Nothing in the parser can recover a property the package does not contain."
+}

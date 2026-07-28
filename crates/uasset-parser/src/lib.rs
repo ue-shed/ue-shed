@@ -8,6 +8,7 @@ pub mod asset;
 pub mod codec;
 pub mod package;
 pub mod property;
+pub mod saved_world;
 pub mod schema;
 pub mod version;
 

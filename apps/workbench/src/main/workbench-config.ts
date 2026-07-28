@@ -1,4 +1,5 @@
 import { Config, ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect";
+import type { SavedWorldMap } from "@ue-shed/protocol";
 
 export type ConfiguredPath =
 	| { readonly status: "configured"; readonly path: string }
@@ -25,12 +26,20 @@ export type ExpectedProjectConfiguration =
 	| { readonly status: "configured"; readonly projectName: string }
 	| { readonly status: "not_configured" };
 
+export type SavedWorldMapsConfiguration =
+	| { readonly status: "configured"; readonly maps: readonly SavedWorldMap[] }
+	| { readonly status: "not_configured" };
+
 export interface WorkbenchConfigurationShape {
 	readonly authoringAsset: ConfiguredPath;
 	readonly expectedProject: ExpectedProjectConfiguration;
 	readonly project: ProjectConfiguration;
 	readonly remoteControlEndpoint: string;
 	readonly review: ReviewConfiguration;
+	/** Optional saved map to inspect without connecting to an Unreal Editor. */
+	readonly savedWorldMap?: ConfiguredPath;
+	/** Optional set of saved maps available to the offline map viewer. */
+	readonly savedWorldMaps?: SavedWorldMapsConfiguration;
 	readonly sourceCheckout: ConfiguredPath;
 	readonly textureAuditRules: ConfiguredPath;
 }
@@ -65,6 +74,12 @@ const authoringSessionRootConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_AUTHORING_SESSION_ROOT")
 );
 const reviewSetConfig = Config.option(Config.schema(NonEmptyConfigString, "UE_SHED_REVIEW_SET"));
+const savedWorldMapConfig = Config.option(
+	Config.schema(NonEmptyConfigString, "UE_SHED_SAVED_WORLD_MAP")
+);
+const savedWorldMapsConfig = Config.option(
+	Config.schema(NonEmptyConfigString, "UE_SHED_SAVED_WORLD_MAPS")
+);
 const projectNameConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_PROJECT_NAME")
 );
@@ -85,6 +100,29 @@ function configuredPath(path: Option.Option<string>): ConfiguredPath {
 	});
 }
 
+function configuredSavedWorldMaps(
+	paths: Option.Option<string>,
+	fallback: Option.Option<string>
+): SavedWorldMapsConfiguration {
+	const configured = Option.isSome(paths) ? paths.value : Option.getOrUndefined(fallback);
+	if (configured === undefined) return { status: "not_configured" };
+	const maps = configured
+		.split(";")
+		.map((path) => path.trim())
+		.filter((path) => path.length > 0)
+		.map((mapPath) => ({ label: savedMapLabel(mapPath), mapPath }));
+	return maps.length === 0 ? { status: "not_configured" } : { status: "configured", maps };
+}
+
+function savedMapLabel(mapPath: string): string {
+	const filename = mapPath.replaceAll("\\", "/").split("/").at(-1) ?? mapPath;
+	return filename
+		.replace(/\.umap$/i, "")
+		.replace(/^L_/, "")
+		.replace(/([a-z])([A-Z])/g, "$1 $2")
+		.replaceAll("_", " ");
+}
+
 export function makeWorkbenchConfiguration(input: {
 	readonly authoringAsset: Option.Option<string>;
 	readonly authoringSessionRoot: Option.Option<string>;
@@ -93,6 +131,8 @@ export function makeWorkbenchConfiguration(input: {
 	readonly remoteControlEndpoint: string;
 	readonly repositoryRoot: Option.Option<string>;
 	readonly reviewSet: Option.Option<string>;
+	readonly savedWorldMap?: Option.Option<string>;
+	readonly savedWorldMaps?: Option.Option<string>;
 	readonly textureAuditRules: Option.Option<string>;
 }): WorkbenchConfigurationShape {
 	const project: ProjectConfiguration = Option.match(input.projectRoot, {
@@ -132,6 +172,11 @@ export function makeWorkbenchConfiguration(input: {
 		project,
 		remoteControlEndpoint: input.remoteControlEndpoint,
 		review,
+		savedWorldMap: configuredPath(input.savedWorldMap ?? Option.none()),
+		savedWorldMaps: configuredSavedWorldMaps(
+			input.savedWorldMaps ?? Option.none(),
+			input.savedWorldMap ?? Option.none()
+		),
 		sourceCheckout: configuredPath(input.repositoryRoot),
 		textureAuditRules: configuredPath(input.textureAuditRules)
 	};
@@ -149,6 +194,8 @@ export const WorkbenchConfigurationLive = Layer.effect(
 				remoteControlEndpoint: yield* remoteControlEndpointConfig,
 				repositoryRoot: yield* repositoryRootConfig,
 				reviewSet: yield* reviewSetConfig,
+				savedWorldMap: yield* savedWorldMapConfig,
+				savedWorldMaps: yield* savedWorldMapsConfig,
 				textureAuditRules: yield* textureAuditRulesConfig
 			})
 		);

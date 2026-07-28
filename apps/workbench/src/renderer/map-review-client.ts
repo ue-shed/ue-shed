@@ -38,7 +38,8 @@ import {
 	type WorldObservationState,
 	type WorldScoutResult
 } from "@ue-shed/observatory";
-import { Effect, Queue, Stream } from "effect";
+import { decodeSavedWorld, SavedWorldMap } from "@ue-shed/protocol";
+import { Effect, Queue, Schema, Stream } from "effect";
 import type { RendererWorldObservationEvent } from "../main/ipc-contracts.js";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
@@ -48,6 +49,20 @@ const loadWorldSnapshot = (): Effect.Effect<WorldScoutResult, MapReviewClientErr
 		decode: decodeWorldScoutResult,
 		invoke: () => window.ueShed.mapReview.worldSnapshot(),
 		operation: "mapReview.worldSnapshot"
+	});
+
+const loadSavedWorld = (mapPath: string) =>
+	request({
+		decode: decodeSavedWorld,
+		invoke: () => window.ueShed.mapReview.savedWorld(mapPath),
+		operation: "mapReview.savedWorld"
+	});
+
+const loadSavedWorldMaps = () =>
+	request({
+		decode: Schema.decodeUnknownEffect(Schema.Array(SavedWorldMap)),
+		invoke: () => window.ueShed.mapReview.savedWorldMaps(),
+		operation: "mapReview.savedWorldMaps"
 	});
 
 function request<A>(args: {
@@ -207,6 +222,10 @@ export function reconcileSparseTransformChanges(
 }
 
 export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
+	readSavedWorld: Effect.fn("MapReviewClient.readSavedWorld")((mapPath) =>
+		loadSavedWorld(mapPath)
+	),
+	savedWorldMaps: Effect.fn("MapReviewClient.savedWorldMaps")(() => loadSavedWorldMaps()),
 	connectWorld: Effect.fn("MapReviewClient.connectWorld")(() => loadWorldSnapshot()),
 	focusActor: Effect.fn("MapReviewClient.focusActor")((actorId: ActorId, bringToFront: boolean) =>
 		request({

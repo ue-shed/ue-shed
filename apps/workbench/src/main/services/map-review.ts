@@ -42,6 +42,8 @@ import {
 	type WorldScoutResult,
 	type WorldTransform
 } from "@ue-shed/observatory";
+import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
+import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
 	Context,
@@ -53,6 +55,7 @@ import {
 	Ref,
 	Clock,
 	Semaphore,
+	Schema,
 	Stream
 } from "effect";
 import { dirname } from "node:path";
@@ -185,7 +188,21 @@ interface ReviewFailure {
 	readonly status: "failed";
 }
 
+export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUnavailable>()(
+	"SavedWorldUnavailable",
+	{
+		message: Schema.String,
+		recovery: Schema.String
+	}
+) {}
+
 export interface WorkbenchMapReviewShape {
+	/** Lists configured saved maps; this deliberately never connects to Unreal. */
+	readonly savedWorldMaps: () => Effect.Effect<readonly SavedWorldMap[], SavedWorldUnavailable>;
+	/** Reads one configured saved map; this deliberately never connects to Unreal. */
+	readonly savedWorld: (
+		mapPath: string
+	) => Effect.Effect<SavedWorld, AssetReaderError | SavedWorldUnavailable>;
 	readonly worldSnapshot: () => Effect.Effect<WorldScoutResult>;
 	readonly subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate) => Effect.Effect<void>;
 	readonly setWorldObservationRate: (
@@ -297,6 +314,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 	WorkbenchMapReview,
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
+		const assetReader = yield* AssetReader;
 		const localFiles = yield* LocalFiles;
 		const repository = yield* ReviewRepository;
 		const capture = yield* ReviewCapture;
@@ -793,6 +811,60 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				recovery: "Live world scouting will resume automatically.",
 				status: "unavailable" as const
 			}));
+		});
+
+		const savedWorldMaps = Effect.fn("Workbench.WorkbenchMapReview.savedWorldMaps")(
+			function* () {
+				if (configuration.project.status !== "configured") {
+					return yield* Effect.fail(
+						new SavedWorldUnavailable({
+							message: "No project directory is configured for saved-map review.",
+							recovery:
+								"Set UE_SHED_PROJECT_ROOT and UE_SHED_SAVED_WORLD_MAP, then retry."
+						})
+					);
+				}
+				const savedWorldMaps = configuration.savedWorldMaps;
+				if (savedWorldMaps?.status !== "configured") {
+					return yield* Effect.fail(
+						new SavedWorldUnavailable({
+							message: "No saved map is configured for offline review.",
+							recovery:
+								"Set UE_SHED_SAVED_WORLD_MAP or UE_SHED_SAVED_WORLD_MAPS to .umap paths inside the project."
+						})
+					);
+				}
+				return savedWorldMaps.maps;
+			}
+		);
+
+		const savedWorld = Effect.fn("Workbench.WorkbenchMapReview.savedWorld")(function* (
+			mapPath: string
+		) {
+			const project = configuration.project;
+			if (project.status !== "configured") {
+				return yield* Effect.fail(
+					new SavedWorldUnavailable({
+						message: "No project directory is configured for saved-map review.",
+						recovery:
+							"Set UE_SHED_PROJECT_ROOT and UE_SHED_SAVED_WORLD_MAP, then retry."
+					})
+				);
+			}
+			const maps = yield* savedWorldMaps();
+			if (!maps.some((map) => map.mapPath === mapPath)) {
+				return yield* Effect.fail(
+					new SavedWorldUnavailable({
+						message: `Saved map ${mapPath} is not configured for offline review.`,
+						recovery: "Choose one of the configured maps, then retry."
+					})
+				);
+			}
+			return yield* assetReader.readSavedWorld({
+				concurrency: 8,
+				mapPath,
+				projectRoot: project.projectRoot
+			});
 		});
 
 		const focusActor = Effect.fn("Workbench.WorkbenchMapReview.focusActor")(function* (
@@ -1514,6 +1586,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			load,
 			previewAuthoringCandidate,
 			previewCandidate,
+			savedWorldMaps,
+			savedWorld,
 			setLivePreviewFps,
 			setWorldObservationRate,
 			subscribeWorldObservations,
@@ -1525,7 +1599,16 @@ export const WorkbenchMapReviewLive = Layer.effect(
 );
 
 export function makeWorkbenchMapReviewTestLayer(
-	service: WorkbenchMapReviewShape
+	service: Omit<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps"> &
+		Partial<Pick<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps">>
 ): Layer.Layer<WorkbenchMapReview> {
-	return Layer.succeed(WorkbenchMapReview, WorkbenchMapReview.of(service));
+	return Layer.succeed(
+		WorkbenchMapReview,
+		WorkbenchMapReview.of({
+			savedWorld: service.savedWorld ?? (() => Effect.die("saved world reader not stubbed")),
+			savedWorldMaps:
+				service.savedWorldMaps ?? (() => Effect.die("saved world maps reader not stubbed")),
+			...service
+		})
+	);
 }

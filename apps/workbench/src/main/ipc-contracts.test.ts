@@ -142,6 +142,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"camera:configure": [cameraStatus.config],
 	"map-review:load": [],
 	"map-review:world-snapshot": [],
+	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
+	"map-review:saved-world-maps": [],
 	"map-review:focus-actor": ["/Game/Fixture.Map:PersistentLevel.Actor", true],
 	"map-review:capture": [{ viewIds: ["view-1"] }],
 	"map-review:author-from-selection": [],
@@ -229,6 +231,20 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		recovery: "open Unreal",
 		status: "unavailable"
 	},
+	"map-review:saved-world": {
+		authority: { kind: "project_files", mapPackage: "/Game/Fixture/Offline/L_OfflineWorld" },
+		completeness: "complete",
+		contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+		diagnostics: [],
+		externalActorRoot: "Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld",
+		mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap",
+		sourceKind: "world_partition",
+		actors: [],
+		summary: { failedPackages: 0, partialPackages: 0, resolvedActors: 0, scannedPackages: 0 }
+	},
+	"map-review:saved-world-maps": [
+		{ label: "Offline World", mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap" }
+	],
 	"map-review:focus-actor": {
 		actorId: "/Game/Fixture.Map:PersistentLevel.Actor",
 		status: "not_supported"
@@ -301,9 +317,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 46 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(46);
-	expect(new Set(invokeChannelNames).size).toBe(46);
+it("registers exactly 48 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(48);
+	expect(new Set(invokeChannelNames).size).toBe(48);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

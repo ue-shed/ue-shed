@@ -4,7 +4,7 @@ import { searchTextCorpus } from "./search.js";
 import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
 
 const inspection: SavedAssetInspection = {
-	schema_version: 7,
+	schema_version: 8,
 	status: "ok",
 	path: "Content/Text.uasset",
 	package: {

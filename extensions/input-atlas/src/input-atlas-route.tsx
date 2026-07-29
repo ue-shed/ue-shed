@@ -22,7 +22,9 @@ import {
 	keyboardRows,
 	mouseCaps,
 	STICK_RADIUS,
+	isKeyboardCap,
 	unplacedKeys,
+	type KeyboardCell,
 	type KeyboardCap
 } from "./input-device-layout.js";
 
@@ -31,11 +33,25 @@ type ViewState =
 	| { readonly status: "not_configured" }
 	| { readonly status: "cancelled" }
 	| { readonly status: "failed"; readonly error: EnhancedInputPublicError }
-	| { readonly status: "ready"; readonly report: EnhancedInputReport };
+	| {
+			readonly status: "ready";
+			readonly report: EnhancedInputReport;
+			readonly projectRoot: string;
+	  };
+
+// The scan carries an absolute root; the diagram only needs the leaf folder to say "this project".
+function projectName(projectRoot: string): string {
+	const trimmed = projectRoot.replace(/[/\\]+$/, "");
+	const leaf = trimmed.split(/[/\\]/).pop();
+	return leaf && leaf.length > 0 ? leaf : projectRoot;
+}
 
 export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape }) {
 	const scanAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
+	// The last project we successfully scanned, kept across a Rescan so the banner still names it
+	// while the bar animates.
+	const [activeProject, setActiveProject] = createSignal<string | undefined>(undefined);
 	const [disabled, setDisabled] = createSignal<readonly string[]>([]);
 	const [selectedKey, setSelectedKey] = createSignal<string | null>(null);
 
@@ -67,11 +83,15 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 		);
 	});
 
-	const selected = createMemo(() => findAtlasKey(atlas()!, selectedKey()) ?? undefined);
+	const selected = createMemo(() => {
+		const current = atlas();
+		return current === undefined ? undefined : findAtlasKey(current, selectedKey());
+	});
 
 	const applyResult = (result: EnhancedInputRunResult) => {
 		if (result.status === "completed") {
-			setState({ status: "ready", report: result.report });
+			setState({ status: "ready", report: result.report, projectRoot: result.projectRoot });
+			setActiveProject(result.projectRoot);
 			const first = buildInputAtlas(result.report).contestedKeys[0];
 			setSelectedKey(first ?? buildInputAtlas(result.report).keys[0]?.key ?? null);
 		} else if (result.status === "failed") {
@@ -98,8 +118,12 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 
 	onMount(() => run(() => props.client.loadConfiguredProject()));
 
-	const isBound = (key: string): boolean => (findAtlasKey(atlas()!, key)?.claims.length ?? 0) > 0;
-	const isContested = (key: string): boolean => findAtlasKey(atlas()!, key)?.contested === true;
+	const atlasKey = (key: string) => {
+		const current = atlas();
+		return current === undefined ? undefined : findAtlasKey(current, key);
+	};
+	const isBound = (key: string): boolean => (atlasKey(key)?.claims.length ?? 0) > 0;
+	const isContested = (key: string): boolean => atlasKey(key)?.contested === true;
 	const isSelected = (key: string): boolean => selectedKey() === key;
 
 	function Cap(props: { readonly cap: KeyboardCap }) {
@@ -118,6 +142,18 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 			>
 				{capLabel(props.cap.key)}
 			</button>
+		);
+	}
+
+	function KeyboardCell(props: { readonly cell: KeyboardCell }) {
+		return isKeyboardCap(props.cell) ? (
+			<Cap cap={props.cell} />
+		) : (
+			<span
+				aria-hidden="true"
+				{...stylex.props(styles.keyGap)}
+				style={{ width: `${props.cell.gap * 26 + 6}px` }}
+			/>
 		);
 	}
 
@@ -145,9 +181,29 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 				}
 			/>
 
+			<Show when={activeProject()}>
+				{(project) => (
+					<div {...stylex.props(styles.projectBanner)}>
+						<span {...stylex.props(styles.projectDot)} />
+						<span {...stylex.props(styles.projectName)}>{projectName(project())}</span>
+						<span {...stylex.props(styles.projectPath)}>{project()}</span>
+					</div>
+				)}
+			</Show>
+
+			<Show when={state().status === "loading"}>
+				<div {...stylex.props(styles.progressTrack)} role="progressbar" aria-busy="true">
+					<span {...stylex.props(styles.progressBar)} />
+				</div>
+			</Show>
+
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<p {...stylex.props(styles.notice)}>Scanning saved packages…</p>
+					<p {...stylex.props(styles.notice)}>
+						{activeProject() === undefined
+							? "Scanning saved packages…"
+							: `Rescanning ${projectName(activeProject()!)}…`}
+					</p>
 				</Match>
 				<Match when={state().status === "not_configured"}>
 					<p {...stylex.props(styles.notice)}>
@@ -305,11 +361,13 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 									</svg>
 								</div>
 
-								<div {...stylex.props(styles.device)}>
+								<div {...stylex.props(styles.device, styles.keyboardDevice)}>
 									<For each={keyboardRows}>
 										{(row) => (
-											<div {...stylex.props(styles.keyRow)}>
-												<For each={row}>{(cap) => <Cap cap={cap} />}</For>
+											<div {...stylex.props(styles.keyboardRow)}>
+												<For each={row}>
+													{(cell) => <KeyboardCell cell={cell} />}
+												</For>
 											</div>
 										)}
 									</For>
@@ -437,6 +495,45 @@ function KeyDetail(props: {
 const styles = stylex.create({
 	page: { display: "flex", flexDirection: "column", padding: 20 },
 	notice: { color: tokens.colorTextMuted, fontSize: 12 },
+	projectBanner: {
+		alignItems: "center",
+		display: "flex",
+		gap: 8,
+		flexWrap: "wrap",
+		marginTop: 6,
+		marginBottom: 2
+	},
+	projectDot: {
+		backgroundColor: tokens.colorAccent,
+		borderRadius: "50%",
+		flexShrink: 0,
+		height: 7,
+		width: 7
+	},
+	projectName: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 700 },
+	projectPath: { color: tokens.colorTextFaint, fontSize: 10, overflowWrap: "anywhere" },
+	progressTrack: {
+		backgroundColor: tokens.colorSurfaceInset,
+		borderRadius: tokens.radiusControl,
+		height: 3,
+		marginTop: 8,
+		overflow: "hidden",
+		width: "100%"
+	},
+	progressBar: {
+		animationDuration: "1.1s",
+		animationIterationCount: "infinite",
+		animationName: stylex.keyframes({
+			from: { transform: "translateX(-100%)" },
+			to: { transform: "translateX(300%)" }
+		}),
+		animationTimingFunction: "ease-in-out",
+		backgroundColor: tokens.colorAccent,
+		borderRadius: tokens.radiusControl,
+		display: "block",
+		height: "100%",
+		width: "33%"
+	},
 	error: {
 		borderColor: tokens.colorDanger,
 		borderRadius: tokens.radiusPanel,
@@ -494,6 +591,7 @@ const styles = stylex.create({
 		justifyContent: "center",
 		minWidth: 250
 	},
+	keyboardDevice: { minWidth: 0, overflowX: "auto" },
 	pad: { display: "block", height: "auto", maxWidth: 380, width: "100%" },
 	padBody: { fill: tokens.colorSurface, stroke: tokens.colorBorder, strokeWidth: 1.5 },
 	hit: { cursor: "pointer" },
@@ -515,6 +613,8 @@ const styles = stylex.create({
 	},
 	controlLabelBound: { fill: tokens.colorAccentText },
 	keyRow: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 },
+	keyboardRow: { display: "flex", flexWrap: "nowrap", gap: 4, marginBottom: 4, minWidth: 840 },
+	keyGap: { display: "block", flex: "0 0 auto" },
 	cap: {
 		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
 		borderColor: tokens.colorBorderStrong,

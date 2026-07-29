@@ -33,7 +33,7 @@ describe("saved DataTable catalog", () => {
 			],
 			package: { name: "/Game/Data/DT_Items" },
 			path: "C:/Project/Content/Data/DT_Items.uasset",
-			schema_version: 7,
+			schema_version: 8,
 			status: "ok"
 		});
 
@@ -60,7 +60,7 @@ describe("saved DataTable catalog", () => {
 			],
 			package: { name: "/Game/Data/DT_Partial" },
 			path: "C:/Project/Content/Data/DT_Partial.uasset",
-			schema_version: 7,
+			schema_version: 8,
 			status: "partial"
 		});
 
@@ -89,7 +89,7 @@ describe("saved DataTable catalog", () => {
 				version: { legacy_file: -9, legacy_ue3: 864, licensee: 0, ue4: 522, ue5: 1018 }
 			},
 			path: "C:/Project/Content/Textures/T_Broken.uasset",
-			schema_version: 7,
+			schema_version: 8,
 			status: "partial"
 		});
 

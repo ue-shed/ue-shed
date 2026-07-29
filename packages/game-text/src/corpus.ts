@@ -1,6 +1,7 @@
 import { relative } from "node:path";
 import {
 	AssetReader,
+	isFullScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
@@ -398,14 +399,16 @@ function scanTextCorpusWith(
 		const scan = yield* reader
 			.scanProject({
 				classes: [STRING_TABLE_CLASS],
-				concurrency: Math.max(1, options.concurrency ?? 4),
-				maximumAssets: options.maximumAssets ?? 10_000,
+				concurrency: Math.max(1, options.concurrency ?? 8),
+				...(options.maximumAssets === undefined
+					? {}
+					: { maximumAssets: options.maximumAssets }),
 				names: [TEXT_PROPERTY_NAME],
 				projectRoot: options.projectRoot
 			})
 			.pipe(Effect.mapError(textCorpusScanFailure));
 		const outcomes: TextPackageOutcome[] = [
-			...scan.assets.map(
+			...scan.assets.filter(isFullScanEntry).map(
 				(entry): TextPackageOutcome => ({
 					status: "inspected",
 					packageFile: relative(options.projectRoot, entry.inspection.path),

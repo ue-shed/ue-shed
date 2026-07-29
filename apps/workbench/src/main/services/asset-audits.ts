@@ -9,6 +9,7 @@ import { Context, Effect, Layer } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import type { WorkbenchWindowError } from "../adapters/electron-window.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
+import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchAssetAuditsShape {
 	readonly chooseAndScan: () => Effect.Effect<TextureAuditRunResult, WorkbenchWindowError>;
@@ -32,11 +33,19 @@ function unavailablePreview(objectPath: string, message: string): TexturePreview
 	};
 }
 
+function unavailableProject(message: string, recovery: string): TextureAuditRunResult {
+	return {
+		error: { code: "invalid_project", message, recovery, retrySafe: true },
+		status: "failed"
+	};
+}
+
 export const WorkbenchAssetAuditsLive = Layer.effect(
 	WorkbenchAssetAudits,
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
 		const dialog = yield* ElectronDialog;
+		const project = yield* WorkbenchProject;
 		const textureAudit = yield* TextureAudit;
 		const remoteControl = yield* RemoteControlClient;
 
@@ -58,25 +67,43 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 
 		const configuredScan = Effect.fn("Workbench.WorkbenchAssetAudits.configuredScan")(
 			function* () {
-				if (
-					configuration.project.status !== "configured" ||
-					configuration.textureAuditRules.status !== "configured"
-				) {
+				if (configuration.textureAuditRules.status !== "configured") {
 					return { status: "not_configured" as const };
 				}
-				return yield* runScan(
-					configuration.project.projectRoot,
-					configuration.textureAuditRules.path
+				const current = yield* project.current();
+				if (current.status === "not_configured" || current.status === "cancelled") {
+					return { status: "not_configured" as const };
+				}
+				if (current.status === "failed") {
+					return unavailableProject(current.error.message, current.error.recovery);
+				}
+				// Keep this route attached to the selected workspace inventory. The audit has its
+				// own Texture2D property decode, which is deliberately separate from Input Atlas.
+				const selected = yield* project.savedProject().pipe(
+					Effect.catch(() =>
+						Effect.succeed({
+							projectRoot: current.project.projectRoot,
+							maps: [] as const
+						})
+					)
 				);
+				return yield* runScan(selected.projectRoot, configuration.textureAuditRules.path);
 			}
 		);
 
 		const chooseAndScan = Effect.fn("Workbench.WorkbenchAssetAudits.chooseAndScan")(
 			function* () {
-				const projectChoice = yield* dialog.chooseDirectory({
-					title: "Choose an Unreal project"
-				});
+				const projectChoice = yield* project.choose();
 				if (projectChoice.status === "cancelled") return { status: "cancelled" as const };
+				if (projectChoice.status === "not_configured") {
+					return { status: "not_configured" as const };
+				}
+				if (projectChoice.status === "failed") {
+					return unavailableProject(
+						projectChoice.error.message,
+						projectChoice.error.recovery
+					);
+				}
 				let ruleFile =
 					configuration.textureAuditRules.status === "configured"
 						? configuration.textureAuditRules.path
@@ -89,7 +116,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					if (ruleChoice.status === "cancelled") return { status: "cancelled" as const };
 					ruleFile = ruleChoice.path;
 				}
-				return yield* runScan(projectChoice.path, ruleFile);
+				return yield* runScan(projectChoice.project.projectRoot, ruleFile);
 			}
 		);
 

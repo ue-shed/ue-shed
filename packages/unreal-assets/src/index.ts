@@ -48,19 +48,41 @@ export interface SavedTableCatalogOptions {
 }
 
 /**
- * One batched project scan. `classes`, `classPrefixes`, and `names` are header-only selection
- * rules evaluated inside the reader, so unselected packages are never fully read or decoded. A
- * package is selected when it matches any rule; with no rules every package is selected.
+ * One batched project scan. The class and name filters are header-only selection rules evaluated
+ * inside the reader, so unselected packages are never fully read or decoded. A package is selected
+ * when it matches any rule; with no rules every package is selected.
  */
 export interface SavedAssetScanOptions {
 	/** Select packages exporting a class under this path prefix, e.g. `/Script/EnhancedInput.`. */
 	readonly classPrefixes?: readonly string[];
+	/**
+	 * Select packages whose serialized class object's name ends with this suffix. This finds
+	 * conventionally named native subclasses, not a resolved Unreal inheritance hierarchy.
+	 */
+	readonly classNameSuffixes?: readonly string[];
 	/** Select packages exporting this class, as a full path or a bare class name. */
 	readonly classes?: readonly string[];
 	readonly concurrency?: number;
+	/**
+	 * Reuse header results for packages whose size and mtime are unchanged. Requires
+	 * `depth: "header"`. The cache is scoped to the class filters it was written with, so a caller
+	 * with different filters must name a different path.
+	 */
+	readonly cachePath?: string;
+	/**
+	 * `"header"` stops at the package summary and export table, answering "what classes are in this
+	 * project" from the one header read the filters already need. `"full"` decodes every property
+	 * stream and re-reads the whole file. Defaults to `"full"`.
+	 */
+	readonly depth?: "header" | "full";
+	/** Stream a complete package-and-sidecar signature inventory alongside selected assets. */
+	readonly inventory?: boolean;
 	/** Refuse the scan when enumeration finds more packages than this, before any decode. */
 	readonly maximumAssets?: number;
-	/** Select packages whose name table contains this entry, e.g. the `TextProperty` type name. */
+	/**
+	 * Select packages whose name table contains this entry, e.g. the `TextProperty` type name.
+	 * Requires `depth: "full"`, because a cached header carries no name table.
+	 */
 	readonly names?: readonly string[];
 	/** Roots to enumerate, relative to the project root or absolute. Defaults to `Content`. */
 	readonly paths?: readonly string[];
@@ -82,6 +104,20 @@ export interface AssetReaderConfiguration {
 	readonly executable: string;
 	readonly timeoutMs: number;
 }
+
+const nonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
+/**
+ * A cheap, deterministic fingerprint input for a saved package. It deliberately avoids opening
+ * package headers: callers can invalidate a persisted inspection without re-reading every asset.
+ */
+export const SavedAssetManifestEntry = Schema.Struct({
+	kind: Schema.Literals(["package", "sidecar"]),
+	modifiedMs: Schema.Number,
+	path: Schema.String,
+	size: nonNegativeInt
+});
+export type SavedAssetManifestEntry = Schema.Schema.Type<typeof SavedAssetManifestEntry>;
 
 export interface AssetReaderShape {
 	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
@@ -289,7 +325,7 @@ export const SavedAssetDecodeError = Schema.Struct({
 export type SavedAssetDecodeError = Schema.Schema.Type<typeof SavedAssetDecodeError>;
 
 export const SavedAssetInspection = Schema.Struct({
-	schema_version: Schema.Literal(7),
+	schema_version: Schema.Literal(8),
 	status: Schema.Literals(["ok", "partial"]),
 	path: Schema.String,
 	package: Schema.Struct({
@@ -363,7 +399,7 @@ export const SavedAssetCatalogInspection = Schema.Struct({
 	),
 	package: Schema.Struct({ name: Schema.String }),
 	path: Schema.String,
-	schema_version: Schema.Literal(7),
+	schema_version: Schema.Literal(8),
 	status: Schema.Literals(["ok", "partial"])
 });
 export type SavedAssetCatalogInspection = Schema.Schema.Type<typeof SavedAssetCatalogInspection>;
@@ -408,16 +444,68 @@ interface CatalogProgressStore {
 	current: SavedTableCatalogProgress;
 }
 
-const nonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+/** One export as the package header knows it. No property stream was decoded to produce this. */
+export const SavedAssetHeaderExport = Schema.Struct({
+	/**
+	 * Trailing segment of `class_path`, e.g. `DataTable` for `/Script/Engine.DataTable`. This is
+	 * class identity read from the header, not the decoded-asset taxonomy of `kind` at full depth.
+	 */
+	class_name: Schema.optional(Schema.String),
+	class_path: Schema.optional(Schema.String),
+	object_path: Schema.String
+});
+export type SavedAssetHeaderExport = Schema.Schema.Type<typeof SavedAssetHeaderExport>;
 
-const savedAssetScanEntryFields = {
+/**
+ * One package projected through the scan's class filters at header depth. `exports` holds the
+ * exports that matched, or every export when the scan supplied no filters.
+ */
+export const SavedAssetHeader = Schema.Struct({
+	exports: Schema.Array(SavedAssetHeaderExport).pipe(
+		Schema.withDecodingDefaultKey(Effect.succeed([]))
+	),
+	package: Schema.Struct({ name: Schema.String }),
+	path: Schema.String,
+	schema_version: Schema.Literal(8)
+});
+export type SavedAssetHeader = Schema.Schema.Type<typeof SavedAssetHeader>;
+
+const savedAssetFullScanEntryFields = {
+	depth: Schema.Literal("full"),
 	fileBytes: nonNegativeInt,
 	inspection: SavedAssetInspection
 };
 
-/** One selected package from a batched scan, with the package file size the reader already stat-ed. */
-export const SavedAssetScanEntry = Schema.Struct(savedAssetScanEntryFields);
+const savedAssetHeaderScanEntryFields = {
+	depth: Schema.Literal("header"),
+	fileBytes: nonNegativeInt,
+	header: SavedAssetHeader
+};
+
+/**
+ * One selected package from a batched scan, with the package file size the reader already stat-ed.
+ *
+ * Discriminated on `depth`: a `full` entry carries a decoded `inspection`, a `header` entry carries
+ * only the `header` projection. Narrow on `depth` before reaching for either.
+ */
+export const SavedAssetScanEntry = Schema.Union([
+	Schema.Struct(savedAssetFullScanEntryFields),
+	Schema.Struct(savedAssetHeaderScanEntryFields)
+]);
 export type SavedAssetScanEntry = Schema.Schema.Type<typeof SavedAssetScanEntry>;
+
+export type SavedAssetFullScanEntry = Extract<SavedAssetScanEntry, { readonly depth: "full" }>;
+export type SavedAssetHeaderScanEntry = Extract<SavedAssetScanEntry, { readonly depth: "header" }>;
+
+/** Narrows to entries carrying a decoded `inspection`, i.e. the result of a `depth: "full"` scan. */
+export function isFullScanEntry(entry: SavedAssetScanEntry): entry is SavedAssetFullScanEntry {
+	return entry.depth === "full";
+}
+
+/** Narrows to entries carrying only a `header` projection, i.e. a `depth: "header"` scan. */
+export function isHeaderScanEntry(entry: SavedAssetScanEntry): entry is SavedAssetHeaderScanEntry {
+	return entry.depth === "header";
+}
 
 const savedAssetScanFailureFields = {
 	code: Schema.String,
@@ -431,6 +519,9 @@ export const SavedAssetScanFailure = Schema.Struct(savedAssetScanFailureFields);
 export type SavedAssetScanFailure = Schema.Schema.Type<typeof SavedAssetScanFailure>;
 
 const savedAssetScanSummaryFields = {
+	/** Packages answered from the header cache rather than re-read. Always 0 without `cachePath`. */
+	cacheHits: nonNegativeInt,
+	depth: Schema.Literals(["header", "full"]),
 	diagnostics: Schema.Array(
 		Schema.Struct({
 			code: Schema.String,
@@ -441,11 +532,13 @@ const savedAssetScanSummaryFields = {
 	),
 	emittedAssets: nonNegativeInt,
 	failedAssets: nonNegativeInt,
+	inventoryComplete: Schema.optionalKey(Schema.Boolean),
+	inventoryFiles: Schema.optionalKey(nonNegativeInt),
 	partialAssets: nonNegativeInt,
 	projectRoot: Schema.String,
 	roots: Schema.Array(Schema.String),
 	scannedAssets: nonNegativeInt,
-	schema_version: Schema.Literal(7),
+	schema_version: Schema.Literal(8),
 	skippedAssets: nonNegativeInt
 };
 
@@ -453,6 +546,7 @@ export const SavedAssetScanSummary = Schema.Struct(savedAssetScanSummaryFields);
 export type SavedAssetScanSummary = Schema.Schema.Type<typeof SavedAssetScanSummary>;
 
 export const SavedAssetScanProgress = Schema.Struct({
+	cacheHits: nonNegativeInt,
 	emittedAssets: nonNegativeInt,
 	phase: Schema.Literals(["idle", "enumerating", "scanning", "ready", "failed"]),
 	processedAssets: nonNegativeInt,
@@ -463,6 +557,8 @@ export type SavedAssetScanProgress = Schema.Schema.Type<typeof SavedAssetScanPro
 export interface SavedAssetScan {
 	readonly assets: readonly SavedAssetScanEntry[];
 	readonly failures: readonly SavedAssetScanFailure[];
+	/** Present only when the scan requested `inventory: true`. Sort by path before fingerprinting. */
+	readonly inventory?: readonly SavedAssetManifestEntry[];
 	readonly summary: SavedAssetScanSummary;
 }
 
@@ -470,14 +566,19 @@ const decodeSavedWorldProgressLine = Schema.decodeUnknownOption(
 	Schema.Struct({ event: Schema.Literal("saved_world_progress"), ...SavedWorldProgress.fields })
 );
 
-const ScanAssetLine = Schema.Struct({
-	event: Schema.Literal("asset"),
-	...savedAssetScanEntryFields
-});
+const ScanAssetLine = Schema.Union([
+	Schema.Struct({ event: Schema.Literal("asset"), ...savedAssetFullScanEntryFields }),
+	Schema.Struct({ event: Schema.Literal("asset"), ...savedAssetHeaderScanEntryFields })
+]);
 
 const ScanFailureLine = Schema.Struct({
 	event: Schema.Literal("error"),
 	...savedAssetScanFailureFields
+});
+
+const ScanInventoryLine = Schema.Struct({
+	event: Schema.Literal("inventory"),
+	...SavedAssetManifestEntry.fields
 });
 
 const ScanSummaryLine = Schema.Struct({
@@ -487,6 +588,7 @@ const ScanSummaryLine = Schema.Struct({
 
 const decodeScanAssetLine = Schema.decodeUnknownResult(ScanAssetLine);
 const decodeScanFailureLine = Schema.decodeUnknownResult(ScanFailureLine);
+const decodeScanInventoryLine = Schema.decodeUnknownResult(ScanInventoryLine);
 const decodeScanSummaryLine = Schema.decodeUnknownResult(ScanSummaryLine);
 const decodeScanProgressLine = Schema.decodeUnknownOption(
 	Schema.Struct({
@@ -504,6 +606,7 @@ interface SavedWorldProgressStore {
 }
 
 const idleScanProgress = (): SavedAssetScanProgress => ({
+	cacheHits: 0,
 	emittedAssets: 0,
 	phase: "idle",
 	processedAssets: 0,
@@ -596,106 +699,6 @@ function invokeReader(
 	});
 }
 
-function invokeCatalogReader(
-	configuration: AssetReaderConfiguration,
-	options: SavedTableCatalogOptions,
-	progress: CatalogProgressStore
-): Effect.Effect<string, AssetReaderError> {
-	const concurrency = Math.max(1, options.concurrency ?? 8);
-	const args = [
-		"catalog",
-		options.projectRoot,
-		"--format",
-		"json",
-		"--concurrency",
-		String(concurrency)
-	];
-	if (options.cachePath !== undefined) args.push("--cache", options.cachePath);
-	return Effect.tryPromise({
-		try: (signal) =>
-			new Promise<string>((resolvePromise, rejectPromise) => {
-				progress.current = { ...idleCatalogProgress(), phase: "enumerating" };
-				const child = spawn(configuration.executable, args, {
-					signal,
-					timeout: configuration.catalogTimeoutMs,
-					windowsHide: true
-				});
-				let stdout = "";
-				let stderr = "";
-				let stderrLine = "";
-				let settled = false;
-				const rejectOnce = (failure: ProcessFailure) => {
-					if (settled) return;
-					settled = true;
-					progress.current = { ...progress.current, phase: "failed" };
-					rejectPromise(failure);
-				};
-				const consumeProgressLine = (line: string) => {
-					if (line.trim().length === 0) return;
-					try {
-						const input = JSON.parse(line) as unknown;
-						const decoded =
-							Schema.decodeUnknownOption(SavedTableCatalogProgress)(input);
-						if (Option.isSome(decoded)) {
-							progress.current = decoded.value;
-							return;
-						}
-					} catch {
-						// Preserve non-progress stderr below as the process diagnostic.
-					}
-					stderr += `${line}\n`;
-				};
-				child.stdout.setEncoding("utf8");
-				child.stderr.setEncoding("utf8");
-				child.stdout.on("data", (chunk: string) => {
-					stdout += chunk;
-					if (Buffer.byteLength(stdout, "utf8") > MAX_OUTPUT_BYTES) {
-						child.kill();
-						rejectOnce({ message: "Asset catalog output exceeded 64 MiB" });
-					}
-				});
-				child.stderr.on("data", (chunk: string) => {
-					stderrLine += chunk;
-					const lines = stderrLine.split(/\r?\n/);
-					stderrLine = lines.pop() ?? "";
-					for (const line of lines) consumeProgressLine(line);
-				});
-				child.once("error", (cause) => rejectOnce({ message: cause.message }));
-				child.once("close", (code, childSignal) => {
-					if (stderrLine.length > 0) consumeProgressLine(stderrLine);
-					if (settled) return;
-					settled = true;
-					if (code === 0) {
-						progress.current = { ...progress.current, phase: "ready" };
-						resolvePromise(stdout);
-					} else {
-						progress.current = { ...progress.current, phase: "failed" };
-						rejectPromise({
-							...(typeof code === "number" ? { code } : {}),
-							killed: childSignal !== null,
-							message: `Asset catalog exited ${code ?? childSignal ?? "without a status"}`,
-							stderr
-						});
-					}
-				});
-			}),
-		catch: (cause) => {
-			const failure = cause as ProcessFailure;
-			const timedOut = failure.killed === true || failure.code === "ETIMEDOUT";
-			return new AssetReaderError({
-				kind: timedOut ? "timeout" : "process",
-				operation: "catalog",
-				message: timedOut
-					? `Asset catalog timed out after ${configuration.catalogTimeoutMs}ms`
-					: failure.stderr?.trim() || failure.message || "Asset catalog failed",
-				path: options.projectRoot,
-				retrySafe: timedOut,
-				...(typeof failure.code === "number" ? { exitCode: failure.code } : {})
-			});
-		}
-	});
-}
-
 function scanArguments(options: SavedAssetScanOptions): string[] {
 	const args = [
 		"scan",
@@ -705,12 +708,18 @@ function scanArguments(options: SavedAssetScanOptions): string[] {
 		"--concurrency",
 		String(Math.max(1, options.concurrency ?? 8))
 	];
+	if (options.depth !== undefined) args.push("--depth", options.depth);
+	if (options.cachePath !== undefined) args.push("--cache", options.cachePath);
+	if (options.inventory === true) args.push("--inventory");
 	if (options.maximumAssets !== undefined) {
 		args.push("--maximum-assets", String(options.maximumAssets));
 	}
 	for (const path of options.paths ?? []) args.push("--path", path);
 	for (const value of options.classes ?? []) args.push("--class", value);
 	for (const value of options.classPrefixes ?? []) args.push("--class-prefix", value);
+	for (const value of options.classNameSuffixes ?? []) {
+		args.push("--class-name-suffix", value);
+	}
 	for (const value of options.names ?? []) args.push("--name", value);
 	return args;
 }
@@ -913,6 +922,7 @@ function invokeScanReader(
 				});
 				const assets: SavedAssetScanEntry[] = [];
 				const failures: SavedAssetScanFailure[] = [];
+				const inventory: SavedAssetManifestEntry[] = [];
 				let summary: SavedAssetScanSummary | undefined;
 				let stdoutLine = "";
 				let stderrLine = "";
@@ -941,10 +951,8 @@ function invokeScanReader(
 							rejectOnce({ contract: `Invalid scan asset: ${decoded.failure}` });
 							return;
 						}
-						assets.push({
-							fileBytes: decoded.success.fileBytes,
-							inspection: decoded.success.inspection
-						});
+						const { event: _assetEvent, ...entry } = decoded.success;
+						assets.push(entry);
 						return;
 					}
 					if (event === "error") {
@@ -955,6 +963,16 @@ function invokeScanReader(
 						}
 						const { event: _event, ...failure } = decoded.success;
 						failures.push(failure);
+						return;
+					}
+					if (event === "inventory") {
+						const decoded = decodeScanInventoryLine(parsed);
+						if (decoded._tag === "Failure") {
+							rejectOnce({ contract: `Invalid scan inventory: ${decoded.failure}` });
+							return;
+						}
+						const { event: _event, ...entry } = decoded.success;
+						inventory.push(entry);
 						return;
 					}
 					if (event === "summary") {
@@ -1049,7 +1067,7 @@ function invokeScanReader(
 						return;
 					}
 					progress.current = { ...progress.current, phase: "ready" };
-					resolvePromise({ assets, failures, summary });
+					resolvePromise({ assets, failures, inventory, summary });
 				});
 			}),
 		catch: (cause) => {
@@ -1175,7 +1193,11 @@ function discoverSavedAssetsWith(projectRoot: string): Effect.Effect<string[], A
 				for (const entry of entries) {
 					const path = join(directory, entry.name);
 					if (entry.isDirectory()) await visit(path);
-					else if (entry.isFile() && entry.name.endsWith(".uasset")) found.push(path);
+					else if (
+						entry.isFile() &&
+						[".uasset", ".umap"].includes(extname(entry.name).toLowerCase())
+					)
+						found.push(path);
 				}
 			};
 			await visit(contentRoot);
@@ -1192,20 +1214,116 @@ function discoverSavedAssetsWith(projectRoot: string): Effect.Effect<string[], A
 	});
 }
 
+const DATA_TABLE_CLASS = "/Script/Engine.DataTable";
+const COMPOSITE_DATA_TABLE_CLASS = "/Script/Engine.CompositeDataTable";
+
+const HEADER_SCHEMA_UNAVAILABLE = {
+	reason: "Catalog metadata is header-only; open the table to decode its saved schema.",
+	status: "unavailable"
+} as const;
+
+/**
+ * Republishes scan progress as catalog progress, so a caller polling `catalogProgress` keeps
+ * working now that the catalog is a projection of the generic scan.
+ *
+ * `tablesFound` counts emitted *packages*, not tables. A package exporting two DataTables advances
+ * it by one. It drives a progress indicator, not a result count.
+ */
+function catalogProgressBridge(catalog: CatalogProgressStore): ScanProgressStore {
+	let latest = idleScanProgress();
+	return {
+		get current(): SavedAssetScanProgress {
+			return latest;
+		},
+		set current(next: SavedAssetScanProgress) {
+			latest = next;
+			catalog.current = {
+				cacheHits: next.cacheHits,
+				phase: next.phase,
+				processedAssets: next.processedAssets,
+				tablesFound: next.emittedAssets,
+				totalAssets: next.totalAssets
+			};
+		}
+	};
+}
+
+export const SAVED_TABLE_SCAN_CLASSES = [DATA_TABLE_CLASS, COMPOSITE_DATA_TABLE_CLASS] as const;
+
+function tableDescriptorsFrom(entry: SavedAssetScanEntry): SavedTableDescriptor[] {
+	if (!isHeaderScanEntry(entry)) return [];
+	return entry.header.exports.flatMap((exported) => {
+		const kind =
+			exported.class_path === COMPOSITE_DATA_TABLE_CLASS
+				? ("composite_data_table" as const)
+				: exported.class_path === DATA_TABLE_CLASS
+					? ("data_table" as const)
+					: undefined;
+		if (kind === undefined) return [];
+		return [
+			{
+				assetPath: entry.header.path,
+				authority: {
+					kind: "project_files" as const,
+					packageName: entry.header.package.name
+				},
+				// Header depth reads no property stream, so the row struct and parent tables stay
+				// unknown until a table is opened. The dedicated catalog reader was no different.
+				completeness: "partial" as const,
+				kind,
+				objectPath: exported.object_path,
+				parentTables: [],
+				rowStruct: "",
+				schema: HEADER_SCHEMA_UNAVAILABLE
+			}
+		];
+	});
+}
+
+/** A pure DataTable projection of a header scan. No filesystem or process operation occurs here. */
+export function savedTableCatalogFromScan(scan: SavedAssetScan): SavedTableCatalog {
+	return {
+		diagnostics: [
+			...scan.summary.diagnostics,
+			...scan.failures.map(({ code, message, path, retrySafe }) => ({
+				code,
+				message,
+				path,
+				retrySafe
+			}))
+		],
+		projectRoot: scan.summary.projectRoot,
+		scannedAssets: scan.summary.scannedAssets,
+		tables: scan.assets
+			.flatMap(tableDescriptorsFrom)
+			.sort((left, right) => left.objectPath.localeCompare(right.objectPath))
+	};
+}
+
+/**
+ * Discovers saved DataTables as a projection of the generic header-depth scan.
+ *
+ * This used to be a dedicated `catalog` subcommand that enumerated the project a second time with
+ * its own cache. Selecting the DataTable classes at header depth answers the same question from the
+ * shared scan, measurably faster, and leaves one project enumeration instead of two.
+ */
 function discoverSavedTablesWith(
 	configuration: AssetReaderConfiguration,
 	options: SavedTableCatalogOptions,
 	progress: CatalogProgressStore
 ): Effect.Effect<SavedTableCatalog, AssetReaderError> {
-	return invokeCatalogReader(configuration, options, progress).pipe(
-		Effect.flatMap((stdout) =>
-			decodeOutput({
-				assetPath: options.projectRoot,
-				operation: "catalog",
-				stdout,
-				decode: Schema.decodeUnknownEffect(SavedTableCatalog)
-			})
-		),
+	return invokeScanReader(
+		configuration,
+		{
+			...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
+			classes: SAVED_TABLE_SCAN_CLASSES,
+			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			depth: "header",
+			projectRoot: options.projectRoot
+		},
+		catalogProgressBridge(progress)
+	).pipe(
+		Effect.map(savedTableCatalogFromScan),
 		Effect.withSpan("unreal_assets.discover_saved_tables", {
 			attributes: { "unreal.project_root": options.projectRoot }
 		})

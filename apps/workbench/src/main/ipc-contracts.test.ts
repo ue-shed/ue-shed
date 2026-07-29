@@ -109,6 +109,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
+	"project:current": [],
+	"project:choose": [],
 	"asset-audits:textures:configured-scan": [],
 	"asset-audits:textures:choose-and-scan": [],
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
@@ -146,6 +148,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:world-snapshot": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
 	"map-review:saved-world-maps": [],
+	"map-review:choose-project-and-maps": [],
 	"map-review:focus-actor": ["/Game/Fixture.Map:PersistentLevel.Actor", true],
 	"map-review:capture": [{ viewIds: ["view-1"] }],
 	"map-review:author-from-selection": [],
@@ -196,6 +199,8 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		health: aggregateHealth(defaultHealthInput),
 		reader: "path"
 	},
+	"project:current": { status: "not_configured" },
+	"project:choose": { status: "cancelled" },
 	"asset-audits:textures:configured-scan": { status: "not_configured" },
 	"asset-audits:textures:choose-and-scan": { status: "cancelled" },
 	"asset-audits:textures:preview": {
@@ -249,6 +254,12 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:saved-world-maps": [
 		{ label: "Offline World", mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap" }
 	],
+	"map-review:choose-project-and-maps": {
+		status: "configured",
+		projectRoot: "D:/Projects/DemoGame",
+		projectName: "DemoGame",
+		maps: [{ label: "Offline World", mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap" }]
+	},
 	"map-review:focus-actor": {
 		actorId: "/Game/Fixture.Map:PersistentLevel.Actor",
 		status: "not_supported"
@@ -321,9 +332,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 50 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(50);
-	expect(new Set(invokeChannelNames).size).toBe(50);
+it("registers exactly 53 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(53);
+	expect(new Set(invokeChannelNames).size).toBe(53);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

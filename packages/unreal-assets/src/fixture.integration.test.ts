@@ -1,3 +1,5 @@
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
@@ -7,6 +9,10 @@ import {
 	assetReaderLayer,
 	discoverSavedAssets,
 	discoverSavedTables,
+	isFullScanEntry,
+	isHeaderScanEntry,
+	type AssetReaderError,
+	type SavedAssetScan,
 	readSavedAsset,
 	readSavedTable,
 	scanSavedProject
@@ -38,7 +44,8 @@ describe.skipIf(!executable)("batched project scan", () => {
 			runReader(readSavedAsset({ assetPath }))
 		]);
 		expect(scan.assets).toHaveLength(1);
-		expect(scan.assets[0]?.inspection).toEqual(direct);
+		const entry = scan.assets[0];
+		expect(entry && isFullScanEntry(entry) ? entry.inspection : undefined).toEqual(direct);
 	});
 
 	it("decodes only packages a header filter selects", async () => {
@@ -51,12 +58,15 @@ describe.skipIf(!executable)("batched project scan", () => {
 		// no Texture2D export, so they are ruled out before any decode.
 		expect(scan.summary.skippedAssets).toBe(47);
 		expect(
-			scan.assets.every((entry) =>
-				entry.inspection.assets.some(
-					(asset) =>
-						asset.kind === "UObject" && asset.class_path === "/Script/Engine.Texture2D"
+			scan.assets
+				.filter(isFullScanEntry)
+				.every((entry) =>
+					entry.inspection.assets.some(
+						(asset) =>
+							asset.kind === "UObject" &&
+							asset.class_path === "/Script/Engine.Texture2D"
+					)
 				)
-			)
 		).toBe(true);
 	});
 
@@ -71,9 +81,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		// Every InputAction and InputMappingContext names TextProperty for its description.
 		expect(scan.summary.emittedAssets).toBe(28);
 		expect(
-			scan.assets.some((entry) =>
-				entry.inspection.assets.some((asset) => asset.kind === "StringTable")
-			)
+			scan.assets
+				.filter(isFullScanEntry)
+				.some((entry) =>
+					entry.inspection.assets.some((asset) => asset.kind === "StringTable")
+				)
 		).toBe(true);
 	});
 
@@ -82,7 +94,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 			scanSavedProject({ paths: ["Content/Fixture/Input"], projectRoot: fixtureRoot })
 		);
 		expect(scan.summary.scannedAssets).toBe(25);
-		expect(scan.assets.every((entry) => entry.inspection.path.includes("Input"))).toBe(true);
+		expect(
+			scan.assets
+				.filter(isFullScanEntry)
+				.every((entry) => entry.inspection.path.includes("Input"))
+		).toBe(true);
 	});
 
 	it("refuses a scan above the requested asset limit before decoding", async () => {
@@ -105,6 +121,150 @@ describe.skipIf(!executable)("batched project scan", () => {
 		);
 		expect(error.kind).toBe("discovery");
 		expect(error.retrySafe).toBe(true);
+	});
+
+	it("reports export class identity at header depth without decoding rows", async () => {
+		const scan = await runReader(
+			scanSavedProject({
+				classes: ["/Script/Engine.DataTable", "/Script/Engine.CompositeDataTable"],
+				depth: "header",
+				projectRoot: fixtureRoot
+			})
+		);
+		expect(scan.summary.depth).toBe("header");
+		expect(scan.summary.scannedAssets).toBe(52);
+		// The twelve authoring packages, each exporting exactly one table.
+		expect(scan.summary.emittedAssets).toBe(12);
+		const headers = scan.assets.filter(isHeaderScanEntry);
+		expect(headers).toHaveLength(12);
+		// Only the exports the filter selected are emitted, so the AssetImportData export that
+		// accompanies every imported table is absent.
+		expect(headers.flatMap((entry) => entry.header.exports)).toHaveLength(12);
+		expect(
+			headers.every((entry) =>
+				entry.header.exports.every(
+					(exported) =>
+						exported.class_name === "DataTable" ||
+						exported.class_name === "CompositeDataTable"
+				)
+			)
+		).toBe(true);
+	});
+
+	it("emits a complete package-and-sidecar inventory from the same header scan", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-inventory-"));
+		try {
+			const content = join(projectRoot, "Content");
+			await mkdir(content);
+			await copyFile(
+				join(fixtureRoot, "Content/Fixture/Authoring/DT_Scalars.uasset"),
+				join(content, "DT_Scalars.uasset")
+			);
+			await writeFile(join(content, "DT_Scalars.UEXP"), "sidecar evidence");
+
+			const scan = await runReader(
+				scanSavedProject({ depth: "header", inventory: true, projectRoot })
+			);
+			expect(scan.summary.inventoryComplete).toBe(true);
+			expect(scan.summary.inventoryFiles).toBe(2);
+			expect(scan.inventory).toHaveLength(2);
+			expect(scan.inventory?.find((entry) => entry.kind === "sidecar")).toMatchObject({
+				kind: "sidecar",
+				path: join(content, "DT_Scalars.UEXP"),
+				size: 16
+			});
+			expect(scan.inventory?.find((entry) => entry.kind === "package")).toMatchObject({
+				kind: "package",
+				path: join(content, "DT_Scalars.uasset"),
+				size: scan.assets[0]?.fileBytes
+			});
+		} finally {
+			await rm(projectRoot, { force: true, recursive: true });
+		}
+	});
+
+	it("answers an unchanged project from the header cache", async () => {
+		const cacheDirectory = await mkdtemp(join(tmpdir(), "ue-shed-scan-cache-"));
+		try {
+			const cachePath = join(cacheDirectory, "index.json");
+			const options = {
+				classes: ["/Script/Engine.DataTable"],
+				cachePath,
+				depth: "header" as const,
+				projectRoot: fixtureRoot
+			};
+
+			// Workers emit concurrently, so line order is unspecified; compare by path.
+			const byPath = (scan: SavedAssetScan) =>
+				scan.assets
+					.filter(isHeaderScanEntry)
+					.map((entry) => entry.header)
+					.sort((left, right) => left.path.localeCompare(right.path));
+
+			const cold = await runReader(scanSavedProject(options));
+			expect(cold.summary.cacheHits).toBe(0);
+
+			const warm = await runReader(scanSavedProject(options));
+			expect(warm.summary.cacheHits).toBe(warm.summary.scannedAssets);
+			expect(warm.summary.emittedAssets).toBe(cold.summary.emittedAssets);
+			expect(byPath(warm)).toEqual(byPath(cold));
+		} finally {
+			await rm(cacheDirectory, { force: true, recursive: true });
+		}
+	});
+
+	it("ignores a cache written for a different filter set", async () => {
+		const cacheDirectory = await mkdtemp(join(tmpdir(), "ue-shed-scan-cache-"));
+		try {
+			const cachePath = join(cacheDirectory, "index.json");
+			await runReader(
+				scanSavedProject({
+					classes: ["/Script/Engine.DataTable"],
+					cachePath,
+					depth: "header",
+					projectRoot: fixtureRoot
+				})
+			);
+			// A cache holds only the exports its filters selected, so reusing it for wider filters
+			// would silently under-report. The fingerprint must force a fresh read.
+			const wider = await runReader(
+				scanSavedProject({
+					classes: ["/Script/Engine.DataTable", "/Script/Engine.CompositeDataTable"],
+					cachePath,
+					depth: "header",
+					projectRoot: fixtureRoot
+				})
+			);
+			expect(wider.summary.cacheHits).toBe(0);
+			expect(wider.summary.emittedAssets).toBe(12);
+		} finally {
+			await rm(cacheDirectory, { force: true, recursive: true });
+		}
+	});
+
+	it("refuses a cache at full depth and a name filter at header depth", async () => {
+		const usage = <A>(effect: Effect.Effect<A, AssetReaderError, AssetReader>) =>
+			Effect.runPromise(
+				effect.pipe(
+					Effect.flip,
+					Effect.provide(assetReaderLayer({ executable: executable! }))
+				)
+			);
+		expect(
+			(await usage(scanSavedProject({ cachePath: "index.json", projectRoot: fixtureRoot })))
+				.kind
+		).toBe("process");
+		expect(
+			(
+				await usage(
+					scanSavedProject({
+						depth: "header",
+						names: ["TextProperty"],
+						projectRoot: fixtureRoot
+					})
+				)
+			).kind
+		).toBe("process");
 	});
 });
 
@@ -274,7 +434,7 @@ describe.skipIf(!executable)("saved authoring fixture", () => {
 		);
 		expect(inspections).toHaveLength(5);
 		for (const inspection of inspections) {
-			expect(inspection.schema_version).toBe(7);
+			expect(inspection.schema_version).toBe(8);
 			const texture = inspection.assets.find(
 				(asset) =>
 					asset.kind === "UObject" && asset.class_path === "/Script/Engine.Texture2D"

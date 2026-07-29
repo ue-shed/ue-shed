@@ -2,10 +2,9 @@ import { it } from "@effect/vitest";
 import { makeTextCorpusServiceTestLayer, TextCorpusScanError } from "@ue-shed/game-text";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
-import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
-import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchGameText, WorkbenchGameTextLive } from "./game-text.js";
+import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const emptyCorpus = {
 	coverage: {
@@ -35,8 +34,27 @@ const configuration = makeWorkbenchConfigurationLayer({
 	textureAuditRules: { status: "not_configured" }
 });
 
-const dialogLayer = (openDialog: Parameters<typeof makeWorkbenchWindowTestLayer>[0]) =>
-	makeElectronDialogTestLayer.pipe(Layer.provide(makeWorkbenchWindowTestLayer(openDialog)));
+const projectSummary = {
+	inputAtlas: "ready" as const,
+	mapCount: 0,
+	packageCount: 0,
+	projectName: "FixtureProject",
+	projectRoot: "C:/FixtureProject"
+};
+const selectedProject = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
+	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
+	inputAtlas: () => Effect.die("not used"),
+	savedTables: () => Effect.die("savedTables is not used"),
+	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
+});
+const unselectedProject = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.succeed({ status: "cancelled" as const }),
+	current: () => Effect.succeed({ status: "not_configured" as const }),
+	inputAtlas: () => Effect.die("not used"),
+	savedTables: () => Effect.die("savedTables is not used"),
+	savedProject: () => Effect.die("not used")
+});
 
 it.effect("returns not_configured without a project root", () =>
 	Effect.gen(function* () {
@@ -58,7 +76,7 @@ it.effect("returns not_configured without a project root", () =>
 							textureAuditRules: { status: "not_configured" }
 						}),
 						makeTextCorpusServiceTestLayer({ scan: () => Effect.die("not used") }),
-						dialogLayer({})
+						unselectedProject
 					)
 				)
 			)
@@ -78,7 +96,7 @@ it.effect("scans the configured project", () =>
 					Layer.mergeAll(
 						configuration,
 						makeTextCorpusServiceTestLayer({ scan: () => Effect.succeed(emptyCorpus) }),
-						dialogLayer({})
+						selectedProject
 					)
 				)
 			)
@@ -116,7 +134,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 									})
 								)
 						}),
-						dialogLayer({})
+						selectedProject
 					)
 				)
 			)
@@ -124,7 +142,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 	)
 );
 
-it.effect("chooses a project directory then scans it", () =>
+it.effect("uses the globally selected project when scanning", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchGameText;
 		const result = yield* service.chooseAndScan();
@@ -136,14 +154,7 @@ it.effect("chooses a project directory then scans it", () =>
 					Layer.mergeAll(
 						configuration,
 						makeTextCorpusServiceTestLayer({ scan: () => Effect.succeed(emptyCorpus) }),
-						dialogLayer({
-							openDialog: Effect.fn("test.openDialog")(() =>
-								Effect.succeed({
-									path: "C:/ChosenProject",
-									status: "selected" as const
-								})
-							)
-						})
+						selectedProject
 					)
 				)
 			)
@@ -151,7 +162,7 @@ it.effect("chooses a project directory then scans it", () =>
 	)
 );
 
-it.effect("cancels choose-and-scan when the dialog is cancelled", () =>
+it.effect("cancels choose-and-scan when global project selection is cancelled", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchGameText;
 		const result = yield* service.chooseAndScan();
@@ -163,11 +174,7 @@ it.effect("cancels choose-and-scan when the dialog is cancelled", () =>
 					Layer.mergeAll(
 						configuration,
 						makeTextCorpusServiceTestLayer({ scan: () => Effect.die("not used") }),
-						dialogLayer({
-							openDialog: Effect.fn("test.openDialog")(() =>
-								Effect.succeed({ status: "cancelled" as const })
-							)
-						})
+						unselectedProject
 					)
 				)
 			)

@@ -51,14 +51,150 @@ export interface KeyboardCap {
 	readonly span?: number;
 }
 
-export const keyboardRows: readonly (readonly KeyboardCap[])[] = [
-	[{ key: "Escape", span: 2 }, { key: "One" }, { key: "Two" }, { key: "Three" }, { key: "Four" }],
-	[{ key: "Tab", span: 2 }, { key: "Q" }, { key: "W" }, { key: "E" }, { key: "R" }],
-	[{ key: "A" }, { key: "S" }, { key: "D" }, { key: "F" }, { key: "G" }],
+export interface KeyboardGap {
+	readonly gap: number;
+}
+
+export type KeyboardCell = KeyboardCap | KeyboardGap;
+
+export function isKeyboardCap(cell: KeyboardCell): cell is KeyboardCap {
+	return "key" in cell;
+}
+
+const gap = (units = 1): KeyboardGap => ({ gap: units });
+
+/**
+ * A complete ANSI-style desktop keyboard. A few tall numpad keys are represented as ordinary
+ * caps because the diagram is a compact interactive control surface, not a physical keycap render.
+ */
+export const keyboardRows: readonly (readonly KeyboardCell[])[] = [
 	[
-		{ key: "LeftShift", span: 2 },
+		{ key: "Escape" },
+		gap(),
+		{ key: "F1" },
+		{ key: "F2" },
+		{ key: "F3" },
+		{ key: "F4" },
+		gap(),
+		{ key: "F5" },
+		{ key: "F6" },
+		{ key: "F7" },
+		{ key: "F8" },
+		gap(),
+		{ key: "F9" },
+		{ key: "F10" },
+		{ key: "F11" },
+		{ key: "F12" },
+		gap(),
+		{ key: "PrintScreen" },
+		{ key: "ScrollLock" },
+		{ key: "Pause" }
+	],
+	[
+		{ key: "Tilde" },
+		{ key: "One" },
+		{ key: "Two" },
+		{ key: "Three" },
+		{ key: "Four" },
+		{ key: "Five" },
+		{ key: "Six" },
+		{ key: "Seven" },
+		{ key: "Eight" },
+		{ key: "Nine" },
+		{ key: "Zero" },
+		{ key: "Hyphen" },
+		{ key: "Equals" },
+		{ key: "BackSpace", span: 2 },
+		gap(),
+		{ key: "Insert" },
+		{ key: "Home" },
+		{ key: "PageUp" },
+		gap(),
+		{ key: "NumLock" },
+		{ key: "Divide" },
+		{ key: "Multiply" },
+		{ key: "Subtract" }
+	],
+	[
+		{ key: "Tab", span: 2 },
+		{ key: "Q" },
+		{ key: "W" },
+		{ key: "E" },
+		{ key: "R" },
+		{ key: "T" },
+		{ key: "Y" },
+		{ key: "U" },
+		{ key: "I" },
+		{ key: "O" },
+		{ key: "P" },
+		{ key: "LeftBracket" },
+		{ key: "RightBracket" },
+		{ key: "Backslash", span: 2 },
+		gap(),
+		{ key: "Delete" },
+		{ key: "End" },
+		{ key: "PageDown" },
+		gap(),
+		{ key: "NumPadSeven" },
+		{ key: "NumPadEight" },
+		{ key: "NumPadNine" },
+		{ key: "Add" }
+	],
+	[
+		{ key: "CapsLock", span: 2 },
+		{ key: "A" },
+		{ key: "S" },
+		{ key: "D" },
+		{ key: "F" },
+		{ key: "G" },
+		{ key: "H" },
+		{ key: "J" },
+		{ key: "K" },
+		{ key: "L" },
+		{ key: "Semicolon" },
+		{ key: "Apostrophe" },
+		{ key: "Enter", span: 2 },
+		gap(5),
+		{ key: "NumPadFour" },
+		{ key: "NumPadFive" },
+		{ key: "NumPadSix" }
+	],
+	[
+		{ key: "LeftShift", span: 3 },
+		{ key: "Z" },
+		{ key: "X" },
+		{ key: "C" },
+		{ key: "V" },
+		{ key: "B" },
+		{ key: "N" },
+		{ key: "M" },
+		{ key: "Comma" },
+		{ key: "Period" },
+		{ key: "Slash" },
+		{ key: "RightShift", span: 3 },
+		gap(2),
+		{ key: "Up" },
+		gap(2),
+		{ key: "NumPadOne" },
+		{ key: "NumPadTwo" },
+		{ key: "NumPadThree" },
+		{ key: "NumPadEnter" }
+	],
+	[
 		{ key: "LeftControl", span: 2 },
-		{ key: "SpaceBar", span: 4 }
+		{ key: "LeftCommand" },
+		{ key: "LeftAlt", span: 2 },
+		{ key: "SpaceBar", span: 6 },
+		{ key: "RightAlt", span: 2 },
+		{ key: "RightCommand" },
+		{ key: "RightControl", span: 2 },
+		gap(),
+		{ key: "Left" },
+		{ key: "Down" },
+		{ key: "Right" },
+		gap(),
+		{ key: "NumPadZero", span: 2 },
+		{ key: "Decimal" }
 	]
 ];
 
@@ -71,9 +207,42 @@ export const mouseCaps: readonly KeyboardCap[] = [
 /** Short caps for the diagram. The atlas keeps the serialized `FKey` name as identity. */
 export const keyLabels: Readonly<Record<string, string>> = {
 	Escape: "Esc",
+	Backslash: "\\",
+	BackSpace: "Backspace",
+	CapsLock: "Caps",
+	Decimal: ".",
+	Divide: "/",
+	Equals: "=",
+	Hyphen: "-",
+	LeftAlt: "Alt",
+	LeftBracket: "[",
+	LeftCommand: "Win",
 	LeftControl: "Ctrl",
 	LeftShift: "Shift",
+	NumLock: "Num",
+	NumPadEnter: "Enter",
+	NumPadZero: "0",
+	NumPadOne: "1",
+	NumPadTwo: "2",
+	NumPadThree: "3",
+	NumPadFour: "4",
+	NumPadFive: "5",
+	NumPadSix: "6",
+	NumPadSeven: "7",
+	NumPadEight: "8",
+	NumPadNine: "9",
+	PageDown: "PgDn",
+	PageUp: "PgUp",
+	PrintScreen: "PrtSc",
+	RightAlt: "Alt",
+	RightBracket: "]",
+	RightCommand: "Win",
+	RightControl: "Ctrl",
+	RightShift: "Shift",
+	ScrollLock: "ScrLk",
+	Semicolon: ";",
 	SpaceBar: "Space",
+	Tilde: "`",
 	One: "1",
 	Two: "2",
 	Three: "3",
@@ -105,7 +274,9 @@ export function capLabel(key: string): string {
 
 const placed: ReadonlySet<string> = new Set([
 	...gamepadControls.map((control) => control.key),
-	...keyboardRows.flat().map((cap) => cap.key),
+	...keyboardRows.flatMap((row) =>
+		row.flatMap((cell) => (isKeyboardCap(cell) ? [cell.key] : []))
+	),
 	...mouseCaps.map((cap) => cap.key)
 ]);
 

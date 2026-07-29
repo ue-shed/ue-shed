@@ -15,8 +15,8 @@ use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
 };
 use uasset_parser::asset::{
-    COMPOSITE_DATATABLE_CLASS, DATA_ASSET_CLASS, DATATABLE_CLASS, PRIMARY_DATA_ASSET_CLASS,
-    SKELETON_CLASS, USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
+    DATA_ASSET_CLASS, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{PackageError, PackageErrorKind, PackageIndex, TableLocation};
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
@@ -27,7 +27,7 @@ use uasset_parser::saved_world::{
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageSummary};
 
-const SCHEMA_VERSION: u32 = 7;
+const SCHEMA_VERSION: u32 = 8;
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_MALFORMED: u8 = 2;
 const EXIT_UNSUPPORTED: u8 = 3;
@@ -36,7 +36,7 @@ const EXIT_INTERNAL: u8 = 5;
 const EXIT_PARTIAL: u8 = 6;
 const EXIT_RESOURCE_LIMIT: u8 = 7;
 const EXIT_USAGE: u8 = 64;
-const CATALOG_CACHE_VERSION: u32 = 1;
+const SCAN_CACHE_VERSION: u32 = 1;
 const HEADER_PROBE_BYTES: usize = 4 * 1024;
 const MAX_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
@@ -55,7 +55,6 @@ fn run(arguments: Vec<OsString>) -> u8 {
         }
         Ok(Command::Inspect(options)) => inspect(&options),
         Ok(Command::Authoring(options)) => authoring(&options),
-        Ok(Command::Catalog(options)) => catalog(&options),
         Ok(Command::Scan(options)) => scan(&options),
         Ok(Command::SavedWorld(options)) => saved_world(&options),
         Err(error) => {
@@ -78,14 +77,6 @@ struct InspectOptions {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct CatalogOptions {
-    cache: Option<PathBuf>,
-    project_root: PathBuf,
-    format: OutputFormat,
-    concurrency: usize,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 struct ScanOptions {
     project_root: PathBuf,
     /// Roots to enumerate, relative to the project root or absolute. Empty means `Content`.
@@ -95,6 +86,24 @@ struct ScanOptions {
     /// Refuses the scan when enumeration finds more packages than this, before any decode.
     maximum_assets: Option<usize>,
     filters: ScanFilters,
+    depth: ScanDepth,
+    /// Reuses header results for packages whose size and mtime are unchanged. Header depth only.
+    cache: Option<PathBuf>,
+    /// Streams one inventory signature for every package and sidecar found beneath the scan roots.
+    inventory: bool,
+}
+
+/// How much of each selected package the scan decodes.
+///
+/// `Header` stops at the package summary and export table, so it answers "what is in this
+/// project" -- class, object path, and package name per export -- from the one header read the
+/// filters already need. `Full` decodes every export's property stream, which is orders of
+/// magnitude more work and re-reads the whole file.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum ScanDepth {
+    Header,
+    #[default]
+    Full,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -112,12 +121,16 @@ struct SavedWorldOptions {
 struct ScanFilters {
     classes: Vec<String>,
     class_prefixes: Vec<String>,
+    class_name_suffixes: Vec<String>,
     names: Vec<String>,
 }
 
 impl ScanFilters {
     fn is_empty(&self) -> bool {
-        self.classes.is_empty() && self.class_prefixes.is_empty() && self.names.is_empty()
+        self.classes.is_empty()
+            && self.class_prefixes.is_empty()
+            && self.class_name_suffixes.is_empty()
+            && self.names.is_empty()
     }
 }
 
@@ -140,7 +153,6 @@ impl Input {
 enum Command {
     Inspect(InspectOptions),
     Authoring(InspectOptions),
-    Catalog(CatalogOptions),
     Scan(ScanOptions),
     SavedWorld(SavedWorldOptions),
     Help,
@@ -159,7 +171,6 @@ impl Command {
                 Self::Inspect(options) => Ok(Self::Authoring(options)),
                 _ => unreachable!("parse_inspect only returns Inspect"),
             },
-            Some("catalog") => Self::parse_catalog(arguments.collect()),
             Some("scan") => Self::parse_scan(arguments.collect()),
             Some("saved-world") => Self::parse_saved_world(arguments.collect()),
             Some("-h" | "--help" | "help") => {
@@ -212,69 +223,6 @@ impl Command {
         }))
     }
 
-    fn parse_catalog(arguments: Vec<OsString>) -> Result<Self, String> {
-        let mut cache = None;
-        let mut format = OutputFormat::Json;
-        let mut concurrency = std::thread::available_parallelism().map_or(4, usize::from);
-        let mut project_root = None;
-        let mut index = 0;
-        while index < arguments.len() {
-            let argument = &arguments[index];
-            match argument.to_str() {
-                Some("--format") => {
-                    index += 1;
-                    let value = arguments
-                        .get(index)
-                        .ok_or_else(|| "--format requires json".to_owned())?;
-                    format = parse_format(value)?;
-                }
-                Some(value) if value.starts_with("--format=") => {
-                    format = parse_format(OsString::from(&value["--format=".len()..]).as_os_str())?;
-                }
-                Some("--concurrency") => {
-                    index += 1;
-                    let value = arguments
-                        .get(index)
-                        .ok_or_else(|| "--concurrency requires a positive integer".to_owned())?;
-                    concurrency = parse_concurrency(value)?;
-                }
-                Some("--cache") => {
-                    index += 1;
-                    let value = arguments
-                        .get(index)
-                        .ok_or_else(|| "--cache requires a file path".to_owned())?;
-                    cache = Some(PathBuf::from(value));
-                }
-                Some(value) if value.starts_with("--cache=") => {
-                    cache = Some(PathBuf::from(&value["--cache=".len()..]));
-                }
-                Some(value) if value.starts_with("--concurrency=") => {
-                    concurrency = parse_concurrency(
-                        OsString::from(&value["--concurrency=".len()..]).as_os_str(),
-                    )?;
-                }
-                Some(value) if value.starts_with('-') => {
-                    return Err(format!("unknown catalog option {value:?}"));
-                }
-                _ if project_root.is_some() => {
-                    return Err("catalog accepts exactly one project root".to_owned());
-                }
-                _ => project_root = Some(PathBuf::from(argument)),
-            }
-            index += 1;
-        }
-        if format != OutputFormat::Json {
-            return Err("catalog requires --format json".to_owned());
-        }
-        Ok(Self::Catalog(CatalogOptions {
-            cache,
-            project_root: project_root
-                .ok_or_else(|| "catalog requires a project root".to_owned())?,
-            format,
-            concurrency,
-        }))
-    }
-
     fn parse_scan(arguments: Vec<OsString>) -> Result<Self, String> {
         let mut format = OutputFormat::Json;
         let mut concurrency = std::thread::available_parallelism().map_or(4, usize::from);
@@ -282,6 +230,9 @@ impl Command {
         let mut paths = Vec::new();
         let mut maximum_assets = None;
         let mut filters = ScanFilters::default();
+        let mut depth = ScanDepth::default();
+        let mut cache = None;
+        let mut inventory = false;
         let mut index = 0;
         while index < arguments.len() {
             let argument = arguments[index].clone();
@@ -314,8 +265,20 @@ impl Command {
                 filters
                     .class_prefixes
                     .push(utf8_option_value(&value?, "--class-prefix")?);
+            } else if let Some(value) =
+                option_value(&arguments, &mut index, text, "--class-name-suffix")
+            {
+                filters
+                    .class_name_suffixes
+                    .push(utf8_option_value(&value?, "--class-name-suffix")?);
             } else if let Some(value) = option_value(&arguments, &mut index, text, "--name") {
                 filters.names.push(utf8_option_value(&value?, "--name")?);
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--depth") {
+                depth = parse_scan_depth(&utf8_option_value(&value?, "--depth")?)?;
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--cache") {
+                cache = Some(PathBuf::from(value?));
+            } else if text == "--inventory" {
+                inventory = true;
             } else if text.starts_with('-') {
                 return Err(format!("unknown scan option {text:?}"));
             } else if project_root.is_some() {
@@ -328,6 +291,17 @@ impl Command {
         if format != OutputFormat::Json {
             return Err("scan requires --format json".to_owned());
         }
+        // A full-depth cache would hold every decoded row of every package, which is far larger
+        // than the packages it describes. Refusing is clearer than silently ignoring the flag.
+        if cache.is_some() && depth != ScanDepth::Header {
+            return Err("scan --cache requires --depth header".to_owned());
+        }
+        // Name-table membership is a cheap pre-filter for a full decode, and it cannot be replayed
+        // from a cached header without storing every package's name table. Header depth reports
+        // export class identity, so class filters are the selector that belongs to it.
+        if depth == ScanDepth::Header && !filters.names.is_empty() {
+            return Err("scan --name requires --depth full".to_owned());
+        }
         Ok(Self::Scan(ScanOptions {
             project_root: project_root.ok_or_else(|| "scan requires a project root".to_owned())?,
             paths,
@@ -335,6 +309,9 @@ impl Command {
             concurrency,
             maximum_assets,
             filters,
+            depth,
+            cache,
+            inventory,
         }))
     }
 
@@ -438,6 +415,16 @@ fn reject_trailing_arguments(mut arguments: impl Iterator<Item = OsString>) -> R
         Err("unexpected trailing arguments".to_owned())
     } else {
         Ok(())
+    }
+}
+
+fn parse_scan_depth(value: &str) -> Result<ScanDepth, String> {
+    match value {
+        "header" => Ok(ScanDepth::Header),
+        "full" => Ok(ScanDepth::Full),
+        other => Err(format!(
+            "unsupported scan depth {other:?}; expected \"header\" or \"full\""
+        )),
     }
 }
 
@@ -579,176 +566,6 @@ fn authoring(options: &InspectOptions) -> u8 {
     } else {
         exit
     }
-}
-
-fn catalog(options: &CatalogOptions) -> u8 {
-    let content_root = options.project_root.join("Content");
-    let mut asset_paths = Vec::new();
-    emit_catalog_progress(CatalogProgressOutput {
-        event: "catalog_progress",
-        cache_hits: 0,
-        phase: "enumerating",
-        processed_assets: 0,
-        tables_found: 0,
-        total_assets: 0,
-    });
-    if let Err(error) = discover_uassets(&content_root, &mut asset_paths) {
-        write_error(
-            options.format,
-            ErrorOutput::io(
-                content_root.to_string_lossy().into_owned(),
-                error.to_string(),
-            ),
-        );
-        return EXIT_IO;
-    }
-    asset_paths.sort();
-    let total_assets = asset_paths.len();
-    let mut cached_by_path = load_catalog_cache(options.cache.as_deref())
-        .map(|cache| {
-            cache
-                .entries
-                .into_iter()
-                .map(|entry| (entry.path.clone(), entry))
-                .collect::<BTreeMap<_, _>>()
-        })
-        .unwrap_or_default();
-    let mut completed_entries = Vec::new();
-    let mut pending = Vec::new();
-    for asset_path in asset_paths {
-        match asset_signature(asset_path) {
-            Ok(signature) => {
-                let path = signature.path.to_string_lossy().into_owned();
-                match cached_by_path.remove(&path) {
-                    Some(entry) if cache_entry_matches(&entry, &signature) => {
-                        completed_entries.push(entry);
-                    }
-                    _ => pending.push(signature),
-                }
-            }
-            Err(entry) => completed_entries.push(entry),
-        }
-    }
-    let cache_hits = completed_entries
-        .iter()
-        .filter(|entry| entry.failure_code.as_deref() != Some("asset_io"))
-        .count();
-    let cached_tables = completed_entries
-        .iter()
-        .map(|entry| entry.tables.len())
-        .sum();
-    emit_catalog_progress(CatalogProgressOutput {
-        event: "catalog_progress",
-        cache_hits,
-        phase: "scanning",
-        processed_assets: completed_entries.len(),
-        tables_found: cached_tables,
-        total_assets,
-    });
-
-    let processed = AtomicUsize::new(completed_entries.len());
-    let table_count = AtomicUsize::new(cached_tables);
-    let worker_count = options.concurrency.min(pending.len().max(1));
-    let chunk_size = pending.len().div_ceil(worker_count);
-    let results = std::thread::scope(|scope| {
-        let mut handles = Vec::new();
-        for chunk in pending.chunks(chunk_size.max(1)) {
-            let processed = &processed;
-            let table_count = &table_count;
-            handles.push(scope.spawn(move || {
-                let mut entries = Vec::with_capacity(chunk.len());
-                for signature in chunk {
-                    let entry = inspect_asset_for_catalog(signature);
-                    let tables_found = table_count.fetch_add(entry.tables.len(), Ordering::Relaxed)
-                        + entry.tables.len();
-                    let processed_assets = processed.fetch_add(1, Ordering::Relaxed) + 1;
-                    if processed_assets % PROGRESS_INTERVAL == 0 || processed_assets == total_assets
-                    {
-                        emit_catalog_progress(CatalogProgressOutput {
-                            event: "catalog_progress",
-                            cache_hits,
-                            phase: "scanning",
-                            processed_assets,
-                            tables_found,
-                            total_assets,
-                        });
-                    }
-                    entries.push(entry);
-                }
-                entries
-            }));
-        }
-        handles
-            .into_iter()
-            .map(|handle| handle.join().expect("catalog worker must not panic"))
-            .collect::<Vec<_>>()
-    });
-
-    for result in results {
-        completed_entries.extend(result);
-    }
-    completed_entries.sort_by(|left, right| left.path.cmp(&right.path));
-    emit_catalog_progress(CatalogProgressOutput {
-        event: "catalog_progress",
-        cache_hits,
-        phase: "writing_cache",
-        processed_assets: total_assets,
-        tables_found: table_count.load(Ordering::Relaxed),
-        total_assets,
-    });
-
-    let mut failure_counts = BTreeMap::<String, usize>::new();
-    let mut tables = Vec::new();
-    for entry in &completed_entries {
-        tables.extend(entry.tables.clone());
-        if let Some(code) = &entry.failure_code {
-            *failure_counts.entry(code.clone()).or_insert(0) += 1;
-        }
-    }
-    if save_catalog_cache(options.cache.as_deref(), &completed_entries).is_err() {
-        *failure_counts
-            .entry("catalog_cache_write".to_owned())
-            .or_insert(0) += 1;
-    }
-    tables.sort_by(|left, right| left.object_path.cmp(&right.object_path));
-    let diagnostics = failure_counts
-        .into_iter()
-        .map(|(code, count)| CatalogDiagnosticOutput {
-            message: format!("{count} saved asset(s) could not be cataloged ({code})"),
-            path: options.project_root.to_string_lossy().into_owned(),
-            retry_safe: matches!(code.as_str(), "asset_io" | "catalog_cache_write"),
-            code,
-        })
-        .collect();
-    let output = CatalogOutput {
-        schema_version: SCHEMA_VERSION,
-        cache_hits,
-        changed_assets: pending.len(),
-        project_root: options.project_root.to_string_lossy().into_owned(),
-        scanned_assets: total_assets,
-        tables,
-        diagnostics,
-    };
-    let mut rendered = match serde_json::to_vec(&output) {
-        Ok(rendered) => rendered,
-        Err(error) => {
-            eprintln!("uasset: failed to serialize catalog output: {error}");
-            return EXIT_INTERNAL;
-        }
-    };
-    rendered.push(b'\n');
-    let exit = write_stdout(&rendered);
-    if exit == EXIT_SUCCESS {
-        emit_catalog_progress(CatalogProgressOutput {
-            event: "catalog_progress",
-            cache_hits,
-            phase: "ready",
-            processed_assets: total_assets,
-            tables_found: output.tables.len(),
-            total_assets,
-        });
-    }
-    exit
 }
 
 /// Reads one map's saved actors. This intentionally does not use the generic `scan` command: the
@@ -1114,28 +931,50 @@ fn emit_saved_world_progress(progress: SavedWorldProgressOutput) {
 /// Levels use `.umap` but are the same classic package container as `.uasset`, so enumeration
 /// treats both alike; the header filters decide what is actually decoded.
 const PACKAGE_EXTENSIONS: &[&str] = &["uasset", "umap"];
+const SIDECAR_EXTENSIONS: &[&str] = &["uexp", "ubulk", "uptnl"];
 
 /// Returns whether `path` names a saved package by extension.
 fn is_package_path(path: &Path) -> bool {
-    path.extension().is_some_and(|extension| {
-        PACKAGE_EXTENSIONS
-            .iter()
-            .any(|candidate| extension == *candidate)
-    })
+    has_extension(path, PACKAGE_EXTENSIONS)
 }
 
-fn discover_uassets(directory: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
+fn is_sidecar_path(path: &Path) -> bool {
+    has_extension(path, SIDECAR_EXTENSIONS)
+}
+
+fn has_extension(path: &Path, extensions: &[&str]) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            extensions
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+        })
+}
+
+fn discover_scan_files(
+    directory: &Path,
+    packages: &mut Vec<PathBuf>,
+    sidecars: &mut Vec<PathBuf>,
+    include_sidecars: bool,
+) -> io::Result<()> {
     let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            discover_uassets(&entry.path(), found)?;
+            discover_scan_files(&entry.path(), packages, sidecars, include_sidecars)?;
         } else if file_type.is_file() && is_package_path(&entry.path()) {
-            found.push(entry.path());
+            packages.push(entry.path());
+        } else if include_sidecars && file_type.is_file() && is_sidecar_path(&entry.path()) {
+            sidecars.push(entry.path());
         }
     }
     Ok(())
+}
+
+fn discover_uassets(directory: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
+    discover_scan_files(directory, found, &mut Vec::new(), false)
 }
 
 #[derive(Clone)]
@@ -1143,10 +982,6 @@ struct AssetSignature {
     modified_nanos: u64,
     path: PathBuf,
     size: u64,
-}
-
-fn asset_signature(path: PathBuf) -> Result<AssetSignature, CatalogCacheEntry> {
-    read_asset_signature(&path).ok_or_else(|| CatalogCacheEntry::failure(&path, "asset_io"))
 }
 
 fn read_asset_signature(path: &Path) -> Option<AssetSignature> {
@@ -1163,68 +998,6 @@ fn read_asset_signature(path: &Path) -> Option<AssetSignature> {
         path: path.to_path_buf(),
         size: metadata.len(),
     })
-}
-
-fn cache_entry_matches(entry: &CatalogCacheEntry, signature: &AssetSignature) -> bool {
-    entry.path == signature.path.to_string_lossy()
-        && entry.size == signature.size
-        && entry.modified_nanos == signature.modified_nanos
-}
-
-fn inspect_asset_for_catalog(signature: &AssetSignature) -> CatalogCacheEntry {
-    let package = match read_package_header(signature) {
-        Ok(package) => package,
-        Err(code) => {
-            return CatalogCacheEntry {
-                failure_code: Some(code.to_owned()),
-                modified_nanos: signature.modified_nanos,
-                path: signature.path.to_string_lossy().into_owned(),
-                size: signature.size,
-                tables: Vec::new(),
-            };
-        }
-    };
-    let mut tables = Vec::new();
-    for export in &package.exports {
-        let Some(class_path) = export.class_path.as_ref().map(ToString::to_string) else {
-            continue;
-        };
-        if !matches!(
-            class_path.as_str(),
-            DATATABLE_CLASS | COMPOSITE_DATATABLE_CLASS
-        ) {
-            continue;
-        }
-        tables.push(CatalogTableOutput {
-            asset_path: signature.path.to_string_lossy().into_owned(),
-            authority: CatalogAuthorityOutput {
-                kind: "project_files".to_owned(),
-                package_name: package.summary.package_name.clone(),
-            },
-            completeness: "partial".to_owned(),
-            kind: if class_path == DATATABLE_CLASS {
-                "data_table".to_owned()
-            } else {
-                "composite_data_table".to_owned()
-            },
-            object_path: export.object_path.to_string(),
-            parent_tables: Vec::new(),
-            row_struct: String::new(),
-            schema: CatalogSchemaOutput {
-                reason:
-                    "Catalog metadata is header-only; open the table to decode its saved schema."
-                        .to_owned(),
-                status: "unavailable".to_owned(),
-            },
-        });
-    }
-    CatalogCacheEntry {
-        failure_code: None,
-        modified_nanos: signature.modified_nanos,
-        path: signature.path.to_string_lossy().into_owned(),
-        size: signature.size,
-        tables,
-    }
 }
 
 fn read_package_header(signature: &AssetSignature) -> Result<Package, &'static str> {
@@ -1278,32 +1051,6 @@ fn package_error_code(error: &PackageError) -> &'static str {
     }
 }
 
-fn load_catalog_cache(path: Option<&Path>) -> Option<CatalogCache> {
-    let path = path?;
-    let cache: CatalogCache = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-    (cache.version == CATALOG_CACHE_VERSION).then_some(cache)
-}
-
-fn save_catalog_cache(path: Option<&Path>, entries: &[CatalogCacheEntry]) -> io::Result<()> {
-    let Some(path) = path else {
-        return Ok(());
-    };
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let rendered = serde_json::to_vec(&CatalogCache {
-        entries: entries.to_vec(),
-        version: CATALOG_CACHE_VERSION,
-    })?;
-    fs::write(path, rendered)
-}
-
-fn emit_catalog_progress(progress: CatalogProgressOutput) {
-    if let Ok(rendered) = serde_json::to_string(&progress) {
-        eprintln!("{rendered}");
-    }
-}
-
 /// Inspects every selected package beneath one project in a single process, streaming one
 /// newline-delimited JSON object per package to stdout and progress to stderr.
 ///
@@ -1317,20 +1064,31 @@ fn scan(options: &ScanOptions) -> u8 {
             return EXIT_USAGE;
         }
     };
+    let depth_label = match options.depth {
+        ScanDepth::Header => "header",
+        ScanDepth::Full => "full",
+    };
     emit_scan_progress(ScanProgressOutput {
         event: "scan_progress",
+        cache_hits: 0,
         emitted_assets: 0,
         phase: "enumerating",
         processed_assets: 0,
         total_assets: 0,
     });
     let mut asset_paths = Vec::new();
+    let mut sidecar_paths = Vec::new();
     for root in &roots {
         if root.is_file() {
             asset_paths.push(root.clone());
             continue;
         }
-        if let Err(error) = discover_uassets(root, &mut asset_paths) {
+        if let Err(error) = discover_scan_files(
+            root,
+            &mut asset_paths,
+            &mut sidecar_paths,
+            options.inventory,
+        ) {
             write_error(
                 options.format,
                 ErrorOutput::io(root.to_string_lossy().into_owned(), error.to_string()),
@@ -1340,6 +1098,8 @@ fn scan(options: &ScanOptions) -> u8 {
     }
     asset_paths.sort();
     asset_paths.dedup();
+    sidecar_paths.sort();
+    sidecar_paths.dedup();
     let total_assets = asset_paths.len();
     if let Some(maximum) = options.maximum_assets
         && total_assets > maximum
@@ -1354,70 +1114,137 @@ fn scan(options: &ScanOptions) -> u8 {
         return EXIT_RESOURCE_LIMIT;
     }
 
-    let mut signatures = Vec::with_capacity(total_assets);
-    let mut failures = BTreeMap::<String, usize>::new();
-    let mut missing = Vec::new();
-    for asset_path in asset_paths {
-        match read_asset_signature(&asset_path) {
-            Some(signature) => signatures.push(signature),
-            None => {
-                *failures.entry("asset_io".to_owned()).or_insert(0) += 1;
-                missing.push(asset_path);
-            }
-        }
-    }
-
     let totals = ScanTotals::default();
-    totals
-        .processed
-        .store(missing.len(), std::sync::atomic::Ordering::Relaxed);
-    totals
-        .failed
-        .store(missing.len(), std::sync::atomic::Ordering::Relaxed);
     let writer = Mutex::new(io::BufWriter::new(io::stdout()));
-    for path in &missing {
-        write_scan_line(&writer, &totals, &scan_error_line(path, "asset_io"));
-    }
+    let inventory_complete = AtomicBool::new(true);
     emit_scan_progress(ScanProgressOutput {
         event: "scan_progress",
+        cache_hits: 0,
         emitted_assets: 0,
         phase: "scanning",
-        processed_assets: missing.len(),
+        processed_assets: 0,
         total_assets,
     });
 
-    let failures = Mutex::new(failures);
-    let worker_count = options.concurrency.min(signatures.len().max(1));
-    let chunk_size = signatures.len().div_ceil(worker_count).max(1);
+    // Header depth reuses unchanged package headers, keyed on path, size, and mtime.
+    let cached_by_path = load_scan_header_cache(options.cache.as_deref(), &options.filters)
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|entry| (entry.path.clone(), entry))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let cached_count = cached_by_path.len();
+    let cache_hits = AtomicUsize::new(0);
+    let header_entries = Mutex::new(Vec::<ScanHeaderCacheEntry>::new());
+    let collect_headers = options.cache.is_some();
+
+    let failures = Mutex::new(BTreeMap::<String, usize>::new());
+    if options.inventory {
+        for sidecar_path in &sidecar_paths {
+            match read_asset_signature(sidecar_path) {
+                Some(signature) => {
+                    let rendered = scan_inventory_line(&signature, "sidecar");
+                    write_scan_line(&writer, &totals, &rendered);
+                }
+                None => {
+                    inventory_complete.store(false, Ordering::Relaxed);
+                    *failures
+                        .lock()
+                        .expect("scan failure tally must not be poisoned")
+                        .entry("inventory_io".to_owned())
+                        .or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    let next_asset = AtomicUsize::new(0);
+    let worker_count = options.concurrency.min(asset_paths.len().max(1));
     std::thread::scope(|scope| {
         let mut handles = Vec::new();
-        for chunk in signatures.chunks(chunk_size) {
+        for _ in 0..worker_count {
+            let asset_paths = &asset_paths;
+            let cache_hits = &cache_hits;
+            let cached_by_path = &cached_by_path;
+            let depth = options.depth;
             let failures = &failures;
             let filters = &options.filters;
+            let header_entries = &header_entries;
+            let inventory_complete = &inventory_complete;
+            let include_inventory = options.inventory;
+            let next_asset = &next_asset;
             let totals = &totals;
             let writer = &writer;
             handles.push(scope.spawn(move || {
-                for signature in chunk {
-                    let rendered = match scan_asset(signature, filters) {
-                        ScanAssetOutcome::Emitted { line, partial } => {
-                            totals.emitted.fetch_add(1, Ordering::Relaxed);
-                            if partial {
-                                totals.partial.fetch_add(1, Ordering::Relaxed);
+                loop {
+                    let index = next_asset.fetch_add(1, Ordering::Relaxed);
+                    let Some(asset_path) = asset_paths.get(index) else {
+                        break;
+                    };
+                    let rendered = match read_asset_signature(asset_path) {
+                        Some(signature) => {
+                            if include_inventory {
+                                let rendered = scan_inventory_line(&signature, "package");
+                                write_scan_line(writer, totals, &rendered);
                             }
-                            Some(line)
+                            let outcome = match depth {
+                                ScanDepth::Header => {
+                                    let cached = cached_by_path
+                                        .get(signature.path.to_string_lossy().as_ref())
+                                        .filter(|entry| {
+                                            scan_header_entry_matches(entry, &signature)
+                                        });
+                                    let entry = match cached {
+                                        Some(entry) => {
+                                            cache_hits.fetch_add(1, Ordering::Relaxed);
+                                            entry.clone()
+                                        }
+                                        None => read_scan_header(&signature, filters),
+                                    };
+                                    let outcome = scan_header_asset(&entry);
+                                    if collect_headers {
+                                        header_entries
+                                            .lock()
+                                            .expect("scan header cache must not be poisoned")
+                                            .push(entry);
+                                    }
+                                    outcome
+                                }
+                                ScanDepth::Full => scan_asset(&signature, filters),
+                            };
+                            match outcome {
+                                ScanAssetOutcome::Emitted { line, partial } => {
+                                    totals.emitted.fetch_add(1, Ordering::Relaxed);
+                                    if partial {
+                                        totals.partial.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    Some(line)
+                                }
+                                ScanAssetOutcome::Skipped => {
+                                    totals.skipped.fetch_add(1, Ordering::Relaxed);
+                                    None
+                                }
+                                ScanAssetOutcome::Failed { code } => {
+                                    totals.failed.fetch_add(1, Ordering::Relaxed);
+                                    *failures
+                                        .lock()
+                                        .expect("scan failure tally must not be poisoned")
+                                        .entry(code.clone())
+                                        .or_insert(0) += 1;
+                                    Some(scan_error_line(&signature.path, &code))
+                                }
+                            }
                         }
-                        ScanAssetOutcome::Skipped => {
-                            totals.skipped.fetch_add(1, Ordering::Relaxed);
-                            None
-                        }
-                        ScanAssetOutcome::Failed { code } => {
+                        None => {
+                            inventory_complete.store(false, Ordering::Relaxed);
                             totals.failed.fetch_add(1, Ordering::Relaxed);
                             *failures
                                 .lock()
                                 .expect("scan failure tally must not be poisoned")
-                                .entry(code.to_owned())
+                                .entry("asset_io".to_owned())
                                 .or_insert(0) += 1;
-                            Some(scan_error_line(&signature.path, code))
+                            Some(scan_error_line(asset_path, "asset_io"))
                         }
                     };
                     if let Some(rendered) = rendered {
@@ -1427,6 +1254,7 @@ fn scan(options: &ScanOptions) -> u8 {
                     if processed % PROGRESS_INTERVAL == 0 || processed == total_assets {
                         emit_scan_progress(ScanProgressOutput {
                             event: "scan_progress",
+                            cache_hits: cache_hits.load(Ordering::Relaxed),
                             emitted_assets: totals.emitted.load(Ordering::Relaxed),
                             phase: "scanning",
                             processed_assets: processed,
@@ -1445,15 +1273,32 @@ fn scan(options: &ScanOptions) -> u8 {
     let failed_assets = totals.failed.load(Ordering::Relaxed);
     let partial_assets = totals.partial.load(Ordering::Relaxed);
     let project_root = options.project_root.to_string_lossy().into_owned();
-    let summary = ScanSummaryLine {
-        diagnostics: failures
+    let mut failure_counts = failures
+        .into_inner()
+        .expect("scan failure tally must not be poisoned");
+    // Rewriting a byte-identical cache is pure cost on the common warm refresh, so the write is
+    // skipped when every enumerated package was a hit and the cache held nothing else.
+    let observed_hits = cache_hits.load(Ordering::Relaxed);
+    if collect_headers && !(observed_hits == total_assets && cached_count == total_assets) {
+        let mut entries = header_entries
             .into_inner()
-            .expect("scan failure tally must not be poisoned")
+            .expect("scan header cache must not be poisoned");
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        if save_scan_header_cache(options.cache.as_deref(), &options.filters, entries).is_err() {
+            *failure_counts
+                .entry("scan_cache_write".to_owned())
+                .or_insert(0) += 1;
+        }
+    }
+    let summary = ScanSummaryLine {
+        cache_hits: observed_hits,
+        depth: depth_label,
+        diagnostics: failure_counts
             .into_iter()
-            .map(|(code, count)| CatalogDiagnosticOutput {
+            .map(|(code, count)| ScanDiagnosticOutput {
                 message: format!("{count} saved asset(s) could not be inspected ({code})"),
                 path: project_root.clone(),
-                retry_safe: code == "asset_io",
+                retry_safe: matches!(code.as_str(), "asset_io" | "scan_cache_write"),
                 code,
             })
             .collect(),
@@ -1461,6 +1306,12 @@ fn scan(options: &ScanOptions) -> u8 {
         event: "summary",
         failed_assets,
         partial_assets,
+        inventory_complete: inventory_complete.load(Ordering::Relaxed),
+        inventory_files: if options.inventory {
+            total_assets + sidecar_paths.len()
+        } else {
+            0
+        },
         project_root,
         roots: roots
             .iter()
@@ -1492,12 +1343,13 @@ fn scan(options: &ScanOptions) -> u8 {
     }
     emit_scan_progress(ScanProgressOutput {
         event: "scan_progress",
+        cache_hits: cache_hits.load(Ordering::Relaxed),
         emitted_assets,
         phase: "ready",
         processed_assets: total_assets,
         total_assets,
     });
-    if failed_assets > 0 || partial_assets > 0 {
+    if failed_assets > 0 || partial_assets > 0 || !inventory_complete.load(Ordering::Relaxed) {
         EXIT_PARTIAL
     } else {
         EXIT_SUCCESS
@@ -1560,6 +1412,10 @@ fn package_matches(package: &Package, filters: &ScanFilters) -> bool {
                     .class_prefixes
                     .iter()
                     .any(|prefix| class_path.starts_with(prefix))
+                || filters
+                    .class_name_suffixes
+                    .iter()
+                    .any(|suffix| class_name_suffix_matches(suffix, &class_path))
         })
     });
     if class_matched {
@@ -1582,10 +1438,25 @@ fn class_filter_matches(filter: &str, class_path: &str) -> bool {
         .is_some_and(|(_, name)| name == filter)
 }
 
+/// Matches the serialized class object's name, after its final `.`. This is a candidate filter,
+/// not inheritance resolution: package headers do not carry the native class hierarchy.
+fn class_name_suffix_matches(suffix: &str, class_path: &str) -> bool {
+    !suffix.is_empty()
+        && class_path
+            .rsplit_once('.')
+            .is_some_and(|(_, name)| name.ends_with(suffix))
+}
+
 enum ScanAssetOutcome {
-    Emitted { line: Vec<u8>, partial: bool },
+    Emitted {
+        line: Vec<u8>,
+        partial: bool,
+    },
     Skipped,
-    Failed { code: &'static str },
+    /// Owned rather than `&'static str` because a cached header entry replays a stored code.
+    Failed {
+        code: String,
+    },
 }
 
 fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOutcome {
@@ -1596,17 +1467,23 @@ fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOut
                     return ScanAssetOutcome::Skipped;
                 }
             }
-            Err(code) => return ScanAssetOutcome::Failed { code },
+            Err(code) => {
+                return ScanAssetOutcome::Failed {
+                    code: code.to_owned(),
+                };
+            }
         }
     }
     let Ok(bytes) = fs::read(&signature.path) else {
-        return ScanAssetOutcome::Failed { code: "asset_io" };
+        return ScanAssetOutcome::Failed {
+            code: "asset_io".to_owned(),
+        };
     };
     let package = match Package::parse(&bytes) {
         Ok(package) => package,
         Err(error) => {
             return ScanAssetOutcome::Failed {
-                code: package_error_code(&error),
+                code: package_error_code(&error).to_owned(),
             };
         }
     };
@@ -1618,6 +1495,7 @@ fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOut
     let partial = inspection.status == "partial";
     let line = ScanAssetLine {
         event: "asset",
+        depth: "full",
         file_bytes: signature.size,
         inspection,
     };
@@ -1630,9 +1508,168 @@ fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOut
             }
         }
         Err(_) => ScanAssetOutcome::Failed {
-            code: "asset_serialize",
+            code: "asset_serialize".to_owned(),
         },
     }
+}
+
+/// Renders an already-projected (possibly cached) header as a stream line. Nothing here touches
+/// the filesystem, so a cache hit costs one serialization.
+fn scan_header_asset(entry: &ScanHeaderCacheEntry) -> ScanAssetOutcome {
+    if let Some(code) = &entry.failure_code {
+        return ScanAssetOutcome::Failed { code: code.clone() };
+    }
+    if !entry.matched {
+        return ScanAssetOutcome::Skipped;
+    }
+    let line = ScanHeaderLine {
+        event: "asset",
+        depth: "header",
+        file_bytes: entry.size,
+        header: ScanHeaderOutput {
+            schema_version: SCHEMA_VERSION,
+            path: &entry.path,
+            package: ScanHeaderPackageOutput {
+                name: &entry.package_name,
+            },
+            exports: &entry.exports,
+        },
+    };
+    match serde_json::to_vec(&line) {
+        Ok(mut rendered) => {
+            rendered.push(b'\n');
+            ScanAssetOutcome::Emitted {
+                line: rendered,
+                partial: false,
+            }
+        }
+        Err(_) => ScanAssetOutcome::Failed {
+            code: "asset_serialize".to_owned(),
+        },
+    }
+}
+
+/// Reads one package's header and keeps the exports the filters select.
+fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHeaderCacheEntry {
+    let path = signature.path.to_string_lossy().into_owned();
+    let package = match read_package_header(signature) {
+        Ok(package) => package,
+        Err(code) => {
+            return ScanHeaderCacheEntry {
+                failure_code: Some(code.to_owned()),
+                exports: Vec::new(),
+                matched: false,
+                modified_nanos: signature.modified_nanos,
+                package_name: String::new(),
+                path,
+                size: signature.size,
+            };
+        }
+    };
+    let exports = package
+        .exports
+        .iter()
+        .filter(|export| {
+            filters.is_empty()
+                || export
+                    .class_path
+                    .as_ref()
+                    .is_some_and(|class_path| class_matches(&class_path.to_string(), filters))
+        })
+        .map(|export| {
+            let class_path = export.class_path.as_ref().map(ToString::to_string);
+            ScanHeaderExportOutput {
+                class_name: class_path
+                    .as_deref()
+                    .and_then(|value| value.rsplit_once('.'))
+                    .map(|(_, name)| name.to_owned()),
+                class_path,
+                object_path: export.object_path.to_string(),
+            }
+        })
+        .collect::<Vec<_>>();
+    ScanHeaderCacheEntry {
+        failure_code: None,
+        matched: filters.is_empty() || !exports.is_empty(),
+        exports,
+        modified_nanos: signature.modified_nanos,
+        package_name: package.summary.package_name.clone(),
+        path,
+        size: signature.size,
+    }
+}
+
+/// The class rules of `package_matches` applied to one class path. Header depth refuses the
+/// name-table rule at parse time, so class identity is the whole of the selection here.
+fn class_matches(class_path: &str, filters: &ScanFilters) -> bool {
+    filters
+        .classes
+        .iter()
+        .any(|filter| class_filter_matches(filter, class_path))
+        || filters
+            .class_prefixes
+            .iter()
+            .any(|prefix| class_path.starts_with(prefix))
+        || filters
+            .class_name_suffixes
+            .iter()
+            .any(|suffix| class_name_suffix_matches(suffix, class_path))
+}
+
+fn scan_header_entry_matches(entry: &ScanHeaderCacheEntry, signature: &AssetSignature) -> bool {
+    entry.path == signature.path.to_string_lossy()
+        && entry.size == signature.size
+        && entry.modified_nanos == signature.modified_nanos
+}
+
+/// A stable identity for a filter set, so a cache written for one set is never read for another.
+/// Sorted because the fingerprint must not depend on command-line argument order.
+fn filters_fingerprint(filters: &ScanFilters) -> String {
+    let group = |values: &[String]| {
+        let mut sorted = values.to_vec();
+        sorted.sort();
+        sorted.join(",")
+    };
+    format!(
+        "classes={}|prefixes={}|suffixes={}|names={}",
+        group(&filters.classes),
+        group(&filters.class_prefixes),
+        group(&filters.class_name_suffixes),
+        group(&filters.names)
+    )
+}
+
+fn load_scan_header_cache(
+    path: Option<&Path>,
+    filters: &ScanFilters,
+) -> Option<Vec<ScanHeaderCacheEntry>> {
+    let path = path?;
+    let cache: ScanHeaderCache = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    (cache.version == SCAN_CACHE_VERSION
+        && cache.schema_version == SCHEMA_VERSION
+        && cache.filters == filters_fingerprint(filters))
+    .then_some(cache.entries)
+}
+
+fn save_scan_header_cache(
+    path: Option<&Path>,
+    filters: &ScanFilters,
+    entries: Vec<ScanHeaderCacheEntry>,
+) -> io::Result<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let rendered = serde_json::to_vec(&ScanHeaderCache {
+        entries,
+        filters: filters_fingerprint(filters),
+        schema_version: SCHEMA_VERSION,
+        version: SCAN_CACHE_VERSION,
+    })
+    .map_err(io::Error::other)?;
+    fs::write(path, rendered)
 }
 
 fn scan_error_line(path: &Path, code: &str) -> Vec<u8> {
@@ -1642,6 +1679,19 @@ fn scan_error_line(path: &Path, code: &str) -> Vec<u8> {
         message: format!("Saved asset could not be inspected ({code})"),
         path: path.to_string_lossy().into_owned(),
         retry_safe: code == "asset_io",
+    };
+    let mut rendered = serde_json::to_vec(&line).unwrap_or_else(|_| b"{}".to_vec());
+    rendered.push(b'\n');
+    rendered
+}
+
+fn scan_inventory_line(signature: &AssetSignature, kind: &'static str) -> Vec<u8> {
+    let line = ScanInventoryLine {
+        event: "inventory",
+        kind,
+        modified_ms: signature.modified_nanos as f64 / 1_000_000.0,
+        path: signature.path.to_string_lossy().into_owned(),
+        size: signature.size,
     };
     let mut rendered = serde_json::to_vec(&line).unwrap_or_else(|_| b"{}".to_vec());
     rendered.push(b'\n');
@@ -1876,97 +1926,12 @@ fn exit_code_for_package_error(error: &PackageError) -> u8 {
 }
 
 #[derive(Serialize)]
-struct CatalogOutput {
-    schema_version: u32,
-    #[serde(rename = "cacheHits")]
-    cache_hits: usize,
-    #[serde(rename = "changedAssets")]
-    changed_assets: usize,
-    #[serde(rename = "projectRoot")]
-    project_root: String,
-    #[serde(rename = "scannedAssets")]
-    scanned_assets: usize,
-    tables: Vec<CatalogTableOutput>,
-    diagnostics: Vec<CatalogDiagnosticOutput>,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct CatalogTableOutput {
-    #[serde(rename = "assetPath")]
-    asset_path: String,
-    authority: CatalogAuthorityOutput,
-    completeness: String,
-    kind: String,
-    #[serde(rename = "objectPath")]
-    object_path: String,
-    #[serde(rename = "parentTables")]
-    parent_tables: Vec<String>,
-    #[serde(rename = "rowStruct")]
-    row_struct: String,
-    schema: CatalogSchemaOutput,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct CatalogAuthorityOutput {
-    kind: String,
-    #[serde(rename = "packageName")]
-    package_name: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct CatalogSchemaOutput {
-    reason: String,
-    status: String,
-}
-
-#[derive(Serialize)]
-struct CatalogDiagnosticOutput {
+struct ScanDiagnosticOutput {
     code: String,
     message: String,
     path: String,
     #[serde(rename = "retrySafe")]
     retry_safe: bool,
-}
-
-#[derive(Deserialize, Serialize)]
-struct CatalogCache {
-    entries: Vec<CatalogCacheEntry>,
-    version: u32,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-struct CatalogCacheEntry {
-    failure_code: Option<String>,
-    modified_nanos: u64,
-    path: String,
-    size: u64,
-    tables: Vec<CatalogTableOutput>,
-}
-
-impl CatalogCacheEntry {
-    fn failure(path: &Path, code: &str) -> Self {
-        Self {
-            failure_code: Some(code.to_owned()),
-            modified_nanos: 0,
-            path: path.to_string_lossy().into_owned(),
-            size: 0,
-            tables: Vec::new(),
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct CatalogProgressOutput {
-    event: &'static str,
-    #[serde(rename = "cacheHits")]
-    cache_hits: usize,
-    phase: &'static str,
-    #[serde(rename = "processedAssets")]
-    processed_assets: usize,
-    #[serde(rename = "tablesFound")]
-    tables_found: usize,
-    #[serde(rename = "totalAssets")]
-    total_assets: usize,
 }
 
 #[derive(Default)]
@@ -1982,9 +1947,98 @@ struct ScanTotals {
 #[derive(Serialize)]
 struct ScanAssetLine {
     event: &'static str,
+    depth: &'static str,
     #[serde(rename = "fileBytes")]
     file_bytes: u64,
     inspection: InspectOutput,
+}
+
+/// One selected package at header depth. Carries the same envelope as `ScanAssetLine` so a
+/// consumer discriminates on `depth` and reads either `inspection` or `header`.
+#[derive(Serialize)]
+struct ScanHeaderLine<'a> {
+    event: &'static str,
+    depth: &'static str,
+    #[serde(rename = "fileBytes")]
+    file_bytes: u64,
+    header: ScanHeaderOutput<'a>,
+}
+
+/// One saved-package or sidecar signature encountered during an opt-in project inventory scan.
+/// It is emitted independently of header filters, so callers can validate a persisted projection
+/// without repeating Node-side filesystem discovery.
+#[derive(Serialize)]
+struct ScanInventoryLine {
+    event: &'static str,
+    kind: &'static str,
+    #[serde(rename = "modifiedMs")]
+    modified_ms: f64,
+    path: String,
+    size: u64,
+}
+
+/// A package's exports as the header knows them, with no property stream decoded.
+///
+/// Field names follow the snake_case of the `inspect` documents rather than the camelCase of the
+/// scan envelope, because this is an asset document rather than a stream event.
+#[derive(Serialize)]
+struct ScanHeaderOutput<'a> {
+    schema_version: u32,
+    path: &'a str,
+    package: ScanHeaderPackageOutput<'a>,
+    exports: &'a [ScanHeaderExportOutput],
+}
+
+#[derive(Serialize)]
+struct ScanHeaderPackageOutput<'a> {
+    name: &'a str,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct ScanHeaderExportOutput {
+    /// Trailing segment of `class_path`, e.g. `DataTable` for `/Script/Engine.DataTable`. This is
+    /// class identity read from the header, not the decoded-asset taxonomy of full depth's `kind`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_path: Option<String>,
+    object_path: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ScanHeaderCache {
+    entries: Vec<ScanHeaderCacheEntry>,
+    /// The filter set the entries were projected through. A different set ignores the file.
+    filters: String,
+    /// Reader schema the entries were produced by; a bump invalidates the whole file.
+    schema_version: u32,
+    version: u32,
+}
+
+/// One package's header projected through this scan's class filters.
+///
+/// Storing the projection rather than every export is deliberate. An unfiltered cache would serve
+/// any filter combination from one file, but a `.umap` carries one export per actor, which measured
+/// at ~250x the size of the projected form on a 2,760-package project. The cache path is chosen by
+/// the caller, so a consumer with different filters simply names a different file.
+#[derive(Clone, Deserialize, Serialize)]
+struct ScanHeaderCacheEntry {
+    /// Set when the header could not be read; `exports` is then empty and `matched` is false.
+    /// `default` is required alongside `skip_serializing_if`, or reading back an omitted field
+    /// fails the whole cache and every run silently misses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    failure_code: Option<String>,
+    /// Exports that matched the filters, or every export when no filters were given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    exports: Vec<ScanHeaderExportOutput>,
+    /// Recorded explicitly so a package that matched with zero exports stays distinct from a
+    /// package that did not match at all.
+    matched: bool,
+    modified_nanos: u64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    package_name: String,
+    path: String,
+    size: u64,
 }
 
 #[derive(Serialize)]
@@ -2000,10 +2054,13 @@ struct ScanErrorLine<'a> {
 #[derive(Serialize)]
 struct ScanSummaryLine {
     event: &'static str,
+    depth: &'static str,
     schema_version: u32,
     #[serde(rename = "projectRoot")]
     project_root: String,
     roots: Vec<String>,
+    #[serde(rename = "cacheHits")]
+    cache_hits: usize,
     #[serde(rename = "scannedAssets")]
     scanned_assets: usize,
     #[serde(rename = "emittedAssets")]
@@ -2014,13 +2071,19 @@ struct ScanSummaryLine {
     partial_assets: usize,
     #[serde(rename = "failedAssets")]
     failed_assets: usize,
-    diagnostics: Vec<CatalogDiagnosticOutput>,
+    #[serde(rename = "inventoryComplete")]
+    inventory_complete: bool,
+    #[serde(rename = "inventoryFiles")]
+    inventory_files: usize,
+    diagnostics: Vec<ScanDiagnosticOutput>,
 }
 
 #[derive(Serialize)]
 struct ScanProgressOutput {
     event: &'static str,
     phase: &'static str,
+    #[serde(rename = "cacheHits")]
+    cache_hits: usize,
     #[serde(rename = "emittedAssets")]
     emitted_assets: usize,
     #[serde(rename = "processedAssets")]
@@ -3487,7 +3550,7 @@ impl ErrorOutput {
 }
 
 const USAGE: &str =
-    "Usage: uasset <inspect|authoring|catalog|scan|saved-world> <path> [--format text|json]";
+    "Usage: uasset <inspect|authoring|scan|saved-world> <path> [--format text|json]";
 
 const HELP: &str = "\
 uasset - inspect classic Unreal Engine asset packages
@@ -3495,10 +3558,11 @@ uasset - inspect classic Unreal Engine asset packages
 Usage:
   uasset inspect <path|-> [--format text|json]
   uasset authoring <path|-> --format json
-  uasset catalog <project-root> [--format json] [--concurrency <count>]
   uasset scan <project-root> [--format json] [--concurrency <count>]
+              [--depth header|full] [--cache <path>]
               [--maximum-assets <count>] [--path <dir|file>]...
-              [--class <class>]... [--class-prefix <prefix>]... [--name <name>]...
+              [--class <class>]... [--class-prefix <prefix>]...
+              [--class-name-suffix <suffix>]... [--name <name>]...
   uasset saved-world <project-root> <map-path> [--format json] [--concurrency <count>]
                       [--maximum-assets <count>]
   uasset help
@@ -3507,11 +3571,20 @@ Usage:
 Commands:
   inspect    Parse one package and emit decoded assets.
   authoring  Emit the versioned Unreal authoring snapshot for one DataTable package.
-  catalog    Discover saved DataTables beneath one Unreal project in a single process.
   scan       Inspect every selected package beneath one project in a single process.
+             Use --depth header to discover which classes a project holds, e.g. its
+             DataTables, without decoding any property stream.
   saved-world  Read one saved conventional or World Partition map and resolve actor positions.
 
 Scan options:
+  --depth           header emits each selected package's export classes from the one header
+                    read the filters already need. full decodes every property stream and
+                    re-reads the whole file. Defaults to full.
+  --cache           Reuse header results for packages whose size and mtime are unchanged.
+                    Requires --depth header. Stores this scan's header projection, so a
+                    different filter set deliberately refreshes the cache.
+  --inventory       Stream path, size, and modified time for every package and sidecar beneath
+                    the scan roots. This is independent of filter matches.
   --path            Directory, .uasset, or .umap to enumerate, relative to the project root
                     or absolute, and inside it. Repeatable. Defaults to Content.
   --maximum-assets  Refuse the scan when enumeration finds more packages than this,
@@ -3520,8 +3593,12 @@ Scan options:
                     (/Script/Engine.Texture2D) or a bare name (Texture2D). Repeatable.
   --class-prefix    Select packages exporting a class under this path prefix
                     (/Script/EnhancedInput.). Repeatable.
+  --class-name-suffix
+                    Select packages whose serialized class object's name ends with this suffix.
+                    This is a candidate filter, not native inheritance resolution. Repeatable.
   --name            Select packages whose name table contains this entry, which selects
-                    by serialized property type (TextProperty). Repeatable.
+                    by serialized property type (TextProperty). Repeatable. Requires
+                    --depth full, because a cached header carries no name table.
 
   Filters are matched against the package header only, so unselected packages are never
   fully read or decoded. A package is selected when it matches any filter; with no filters
@@ -3592,24 +3669,6 @@ mod command_tests {
     }
 
     #[test]
-    fn parses_catalog_contract() {
-        assert_eq!(
-            Command::parse(vec![
-                "catalog".into(),
-                "project".into(),
-                "--concurrency=3".into(),
-            ])
-            .expect("catalog command"),
-            Command::Catalog(CatalogOptions {
-                cache: None,
-                project_root: PathBuf::from("project"),
-                format: OutputFormat::Json,
-                concurrency: 3,
-            })
-        );
-    }
-
-    #[test]
     fn parses_scan_contract() {
         assert_eq!(
             Command::parse(vec![
@@ -3621,9 +3680,12 @@ mod command_tests {
                 "--class".into(),
                 "Texture2D".into(),
                 "--class-prefix=/Script/EnhancedInput.".into(),
+                "--class-name-suffix".into(),
+                "InputMappingContext".into(),
                 "--name".into(),
                 "TextProperty".into(),
                 "--concurrency=3".into(),
+                "--inventory".into(),
             ])
             .expect("scan command"),
             Command::Scan(ScanOptions {
@@ -3638,10 +3700,249 @@ mod command_tests {
                 filters: ScanFilters {
                     classes: vec!["Texture2D".to_owned()],
                     class_prefixes: vec!["/Script/EnhancedInput.".to_owned()],
+                    class_name_suffixes: vec!["InputMappingContext".to_owned()],
                     names: vec!["TextProperty".to_owned()],
                 },
+                depth: ScanDepth::Full,
+                cache: None,
+                inventory: true,
             })
         );
+    }
+
+    #[test]
+    fn parses_scan_header_depth_with_a_cache() {
+        assert_eq!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--depth".into(),
+                "header".into(),
+                "--cache=index.json".into(),
+                "--class".into(),
+                "DataTable".into(),
+            ])
+            .expect("scan command"),
+            Command::Scan(ScanOptions {
+                project_root: PathBuf::from("project"),
+                paths: Vec::new(),
+                format: OutputFormat::Json,
+                concurrency: std::thread::available_parallelism().map_or(4, usize::from),
+                maximum_assets: None,
+                filters: ScanFilters {
+                    classes: vec!["DataTable".to_owned()],
+                    class_prefixes: Vec::new(),
+                    class_name_suffixes: Vec::new(),
+                    names: Vec::new(),
+                },
+                depth: ScanDepth::Header,
+                cache: Some(PathBuf::from("index.json")),
+                inventory: false,
+            })
+        );
+    }
+
+    #[test]
+    fn scan_defaults_to_full_depth_without_a_cache() {
+        let Ok(Command::Scan(options)) = Command::parse(vec!["scan".into(), "project".into()])
+        else {
+            panic!("scan command");
+        };
+        assert_eq!(options.depth, ScanDepth::Full);
+        assert_eq!(options.cache, None);
+    }
+
+    #[test]
+    fn scan_rejects_a_cache_without_header_depth() {
+        // A full-depth cache would hold every decoded row, so the combination is refused rather
+        // than silently ignored.
+        assert!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--cache".into(),
+                "index.json".into(),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn scan_rejects_name_filters_at_header_depth() {
+        // A cached header carries no name table, so replaying this filter from cache is impossible.
+        assert!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--depth=header".into(),
+                "--name".into(),
+                "TextProperty".into(),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn scan_rejects_an_unknown_depth() {
+        assert!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--depth".into(),
+                "shallow".into(),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn header_class_rules_match_bare_names_full_paths_and_prefixes() {
+        let matching = |filters: ScanFilters| class_matches("/Script/Engine.DataTable", &filters);
+
+        assert!(matching(ScanFilters {
+            classes: vec!["DataTable".to_owned()],
+            ..ScanFilters::default()
+        }));
+        assert!(matching(ScanFilters {
+            classes: vec!["/Script/Engine.DataTable".to_owned()],
+            ..ScanFilters::default()
+        }));
+        assert!(matching(ScanFilters {
+            class_prefixes: vec!["/Script/Engine.".to_owned()],
+            ..ScanFilters::default()
+        }));
+        assert!(!matching(ScanFilters {
+            classes: vec!["Texture2D".to_owned()],
+            ..ScanFilters::default()
+        }));
+    }
+
+    #[test]
+    fn header_depth_replays_a_stored_failure_code() {
+        let entry = ScanHeaderCacheEntry {
+            failure_code: Some("asset_malformed_data".to_owned()),
+            exports: Vec::new(),
+            matched: false,
+            modified_nanos: 7,
+            package_name: String::new(),
+            path: "C:/Project/Content/Broken.uasset".to_owned(),
+            size: 12,
+        };
+        assert!(matches!(
+            scan_header_asset(&entry),
+            ScanAssetOutcome::Failed { ref code } if code == "asset_malformed_data"
+        ));
+    }
+
+    #[test]
+    fn header_depth_skips_a_package_that_did_not_match() {
+        let entry = ScanHeaderCacheEntry {
+            failure_code: None,
+            exports: Vec::new(),
+            matched: false,
+            modified_nanos: 7,
+            package_name: "/Game/Texture".to_owned(),
+            path: "C:/Project/Content/T_Test.uasset".to_owned(),
+            size: 64,
+        };
+        assert!(matches!(
+            scan_header_asset(&entry),
+            ScanAssetOutcome::Skipped
+        ));
+    }
+
+    #[test]
+    fn a_filter_fingerprint_ignores_argument_order() {
+        let one = ScanFilters {
+            classes: vec!["DataTable".to_owned(), "CompositeDataTable".to_owned()],
+            ..ScanFilters::default()
+        };
+        let other = ScanFilters {
+            classes: vec!["CompositeDataTable".to_owned(), "DataTable".to_owned()],
+            ..ScanFilters::default()
+        };
+        assert_eq!(filters_fingerprint(&one), filters_fingerprint(&other));
+        assert_ne!(
+            filters_fingerprint(&one),
+            filters_fingerprint(&ScanFilters::default())
+        );
+    }
+
+    #[test]
+    fn a_cache_survives_a_serialize_deserialize_round_trip() {
+        // Omitted-but-required fields deserialize as an error, which would make every run miss the
+        // cache while still writing one. Round-tripping both a matched and a failed entry covers
+        // every field that is skipped when empty.
+        let cache = ScanHeaderCache {
+            entries: vec![
+                ScanHeaderCacheEntry {
+                    failure_code: None,
+                    exports: vec![ScanHeaderExportOutput {
+                        class_name: Some("DataTable".to_owned()),
+                        class_path: Some("/Script/Engine.DataTable".to_owned()),
+                        object_path: "/Game/DT_Test.DT_Test".to_owned(),
+                    }],
+                    matched: true,
+                    modified_nanos: 42,
+                    package_name: "/Game/DT_Test".to_owned(),
+                    path: "C:/Project/Content/DT_Test.uasset".to_owned(),
+                    size: 2048,
+                },
+                ScanHeaderCacheEntry {
+                    failure_code: Some("asset_io".to_owned()),
+                    exports: Vec::new(),
+                    matched: false,
+                    modified_nanos: 0,
+                    package_name: String::new(),
+                    path: "C:/Project/Content/Broken.uasset".to_owned(),
+                    size: 0,
+                },
+            ],
+            filters: filters_fingerprint(&ScanFilters {
+                classes: vec!["DataTable".to_owned()],
+                ..ScanFilters::default()
+            }),
+            schema_version: SCHEMA_VERSION,
+            version: SCAN_CACHE_VERSION,
+        };
+
+        let rendered = serde_json::to_vec(&cache).expect("cache serializes");
+        let restored: ScanHeaderCache =
+            serde_json::from_slice(&rendered).expect("cache deserializes");
+
+        assert_eq!(restored.entries.len(), 2);
+        assert_eq!(restored.filters, cache.filters);
+        assert!(restored.entries[0].matched);
+        assert_eq!(
+            restored.entries[0].exports[0].class_path.as_deref(),
+            Some("/Script/Engine.DataTable")
+        );
+        assert_eq!(
+            restored.entries[1].failure_code.as_deref(),
+            Some("asset_io")
+        );
+        assert!(restored.entries[1].exports.is_empty());
+    }
+
+    #[test]
+    fn a_cache_entry_matches_only_an_unchanged_signature() {
+        let entry = ScanHeaderCacheEntry {
+            failure_code: None,
+            exports: Vec::new(),
+            matched: false,
+            modified_nanos: 100,
+            package_name: String::new(),
+            path: "C:/Project/Content/DT_Test.uasset".to_owned(),
+            size: 2048,
+        };
+        let signature = |size: u64, modified_nanos: u64| AssetSignature {
+            modified_nanos,
+            path: PathBuf::from("C:/Project/Content/DT_Test.uasset"),
+            size,
+        };
+        assert!(scan_header_entry_matches(&entry, &signature(2048, 100)));
+        assert!(!scan_header_entry_matches(&entry, &signature(2049, 100)));
+        assert!(!scan_header_entry_matches(&entry, &signature(2048, 101)));
     }
 
     #[test]
@@ -3732,6 +4033,26 @@ mod command_tests {
     }
 
     #[test]
+    fn scan_class_name_suffix_filters_match_custom_serialized_class_names() {
+        assert!(class_name_suffix_matches(
+            "InputMappingContext",
+            "/Script/ExampleInput.Example_InputMappingContext"
+        ));
+        assert!(class_name_suffix_matches(
+            "InputMappingContext",
+            "/Script/EnhancedInput.InputMappingContext"
+        ));
+        assert!(!class_name_suffix_matches(
+            "InputMappingContext",
+            "/Script/ExampleInput.InputMappingContextFactory"
+        ));
+        assert!(!class_name_suffix_matches(
+            "",
+            "/Script/ExampleInput.Example_InputMappingContext"
+        ));
+    }
+
+    #[test]
     fn scan_filters_default_to_selecting_every_package() {
         assert!(ScanFilters::default().is_empty());
         assert!(
@@ -3758,40 +4079,16 @@ mod command_tests {
     #[test]
     fn enumerates_levels_alongside_uassets_and_rejects_other_extensions() {
         assert!(is_package_path(Path::new("Content/DT_Test.uasset")));
+        assert!(is_package_path(Path::new("Content/DT_Test.UMAP")));
         assert!(
             is_package_path(Path::new("Content/Fixture/Cameras/L_CameraLoad.umap")),
             "levels are the same classic package container and must enumerate"
         );
         assert!(!is_package_path(Path::new("Content/DT_Test.uexp")));
         assert!(!is_package_path(Path::new("Content/DT_Test")));
-    }
-
-    #[test]
-    fn catalog_cache_requires_matching_path_size_and_timestamp() {
-        let signature = AssetSignature {
-            modified_nanos: 20,
-            path: PathBuf::from("Content/DT_Test.uasset"),
-            size: 10,
-        };
-        let entry = CatalogCacheEntry {
-            failure_code: None,
-            modified_nanos: 20,
-            path: "Content/DT_Test.uasset".to_owned(),
-            size: 10,
-            tables: Vec::new(),
-        };
-        assert!(cache_entry_matches(&entry, &signature));
-        assert!(!cache_entry_matches(
-            &CatalogCacheEntry {
-                modified_nanos: 21,
-                ..entry.clone()
-            },
-            &signature
-        ));
-        assert!(!cache_entry_matches(
-            &CatalogCacheEntry { size: 11, ..entry },
-            &signature
-        ));
+        assert!(is_sidecar_path(Path::new("Content/DT_Test.uexp")));
+        assert!(is_sidecar_path(Path::new("Content/DT_Test.UBULK")));
+        assert!(!is_sidecar_path(Path::new("Content/DT_Test.uasset")));
     }
 
     #[test]

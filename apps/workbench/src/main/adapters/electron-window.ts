@@ -23,7 +23,9 @@ export interface WorkbenchWindowOptions {
 }
 
 export type OpenDialogChoice =
-	| { readonly status: "selected"; readonly path: string }
+	// `paths` carries every selection when the dialog allows multiple; `path` stays the first one so
+	// existing single-select callers keep working unchanged.
+	| { readonly status: "selected"; readonly path: string; readonly paths?: readonly string[] }
 	| { readonly status: "cancelled" };
 
 export interface OpenDialogOptions {
@@ -31,6 +33,7 @@ export interface OpenDialogOptions {
 		readonly extensions: ReadonlyArray<string>;
 		readonly name: string;
 	}>;
+	readonly multiSelections?: boolean;
 	readonly properties: ReadonlyArray<"openFile" | "openDirectory">;
 	readonly title: string;
 }
@@ -201,7 +204,12 @@ export const workbenchWindowLayer = (
 												}))
 											}
 										: {}),
-									properties: [...dialogOptions.properties],
+									properties: [
+										...dialogOptions.properties,
+										...(dialogOptions.multiSelections
+											? ["multiSelections" as const]
+											: [])
+									],
 									title: dialogOptions.title
 								}),
 							catch: (cause) =>
@@ -214,7 +222,7 @@ export const workbenchWindowLayer = (
 						const path = choice.filePaths[0];
 						return choice.canceled || !path
 							? ({ status: "cancelled" } as const)
-							: ({ status: "selected", path } as const);
+							: ({ status: "selected", path, paths: choice.filePaths } as const);
 					}
 				),
 				isDestroyed: Effect.fn("Workbench.WorkbenchWindow.isDestroyed")(() =>

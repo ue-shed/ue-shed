@@ -25,6 +25,7 @@ import { electronIpcLayer, type ElectronIpcHost } from "./adapters/electron-ipc.
 import { workbenchWindowLayer, type WorkbenchWindowOptions } from "./adapters/electron-window.js";
 import { fixtureProcessLayer } from "./adapters/fixture-process.js";
 import { LocalFilesLive } from "./adapters/local-files.js";
+import { ProjectInventoryCacheLive } from "./adapters/project-inventory-cache.js";
 import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
 import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
@@ -33,6 +34,7 @@ import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launc
 import { WorkbenchGameTextLive } from "./services/game-text.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
+import { WorkbenchProjectLive } from "./services/project-workspace.js";
 import { ShowcaseLive } from "./services/showcase.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
 
@@ -79,12 +81,18 @@ function baseLayer(hosts: WorkbenchHosts) {
 
 /** Domain catalog and audit services that only need the base infrastructure. */
 function domainCatalogLayer(hosts: WorkbenchHosts) {
+	const project = WorkbenchProjectLive.pipe(
+		Layer.provide(
+			Layer.mergeAll(ElectronDialogLive, EnhancedInputServiceLive, ProjectInventoryCacheLive)
+		)
+	);
 	return Layer.mergeAll(
 		ElectronDialogLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
 		EnhancedInputServiceLive,
-		AuthoringCatalogLive
+		AuthoringCatalogLive,
+		project
 	).pipe(Layer.provideMerge(baseLayer(hosts)));
 }
 

@@ -17,6 +17,7 @@ import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
+import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { register } from "./register.js";
@@ -136,6 +137,18 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record("inputAtlas.configuredScan")
 				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult))
+	});
+
+	const project = makeWorkbenchProjectTestLayer({
+		choose: () =>
+			recorder.record("project.choose").pipe(Effect.as({ status: "cancelled" as const })),
+		current: () =>
+			recorder
+				.record("project.current")
+				.pipe(Effect.as({ status: "not_configured" as const })),
+		inputAtlas: () => Effect.die("not used"),
+		savedTables: () => Effect.die("savedTables is not used"),
+		savedProject: () => Effect.die("not used")
 	});
 
 	const sessionFailure = {
@@ -362,6 +375,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		assetAudits,
 		gameText,
 		inputAtlas,
+		project,
 		authoring,
 		mapReview,
 		fixtureLauncher,
@@ -394,13 +408,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 50 contract channels", () =>
+it.effect("registers exactly the 53 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(50);
+		expect(result).toHaveLength(53);
 	})
 );
 

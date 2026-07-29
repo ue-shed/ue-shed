@@ -35,6 +35,24 @@ export const SavedWorldMap = Schema.Struct({
 });
 export type SavedWorldMap = Schema.Schema.Type<typeof SavedWorldMap>;
 
+/** The outcome of choosing an in-app project and reading its discovered saved maps. */
+export const SavedWorldChoice = Schema.Union([
+	Schema.Struct({
+		status: Schema.Literal("configured"),
+		projectRoot: Schema.String,
+		projectName: Schema.String,
+		maps: Schema.Array(SavedWorldMap)
+	}),
+	Schema.Struct({ status: Schema.Literal("cancelled") }),
+	Schema.Struct({
+		status: Schema.Literal("failed"),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type SavedWorldChoice = Schema.Schema.Type<typeof SavedWorldChoice>;
+export const decodeSavedWorldChoice = Schema.decodeUnknownEffect(SavedWorldChoice);
+
 /** A map projection from saved project files, independent of a running Unreal Editor. */
 export const SavedWorld = Schema.Struct({
 	authority: Schema.Struct({ kind: Schema.Literal("project_files"), mapPackage: Schema.String }),

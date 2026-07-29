@@ -94,6 +94,12 @@ function renderRoute() {
 }
 
 describe("GameTextRoute interactions", () => {
+	it("uses the Workbench project selection rather than exposing a second chooser", async () => {
+		renderRoute();
+		await screen.findByRole("region", { name: "Text units" });
+		expect(screen.queryByRole("button", { name: "Choose project" })).toBeNull();
+	});
+
 	it("searches results and moves focus through user-visible controls", async () => {
 		const user = userEvent.setup();
 		renderRoute();

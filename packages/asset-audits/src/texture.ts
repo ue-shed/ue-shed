@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import {
 	AssetReader,
+	isFullScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
@@ -315,12 +316,15 @@ function scanTextureAuditWith(
 		const scan = yield* reader
 			.scanProject({
 				classes: [TEXTURE_CLASS],
-				concurrency: Math.max(1, options.concurrency ?? 4),
-				maximumAssets: options.maximumAssets ?? 10_000,
+				concurrency: Math.max(1, options.concurrency ?? 8),
+				...(options.maximumAssets === undefined
+					? {}
+					: { maximumAssets: options.maximumAssets }),
 				projectRoot: options.projectRoot
 			})
 			.pipe(Effect.mapError(textureScanFailure));
 		const records = scan.assets
+			.filter(isFullScanEntry)
 			.flatMap((entry) =>
 				textureRecordsFromInspection({
 					inspection: entry.inspection,

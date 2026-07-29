@@ -31,6 +31,7 @@ import type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
+import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
 
 declare global {
 	interface Window {
@@ -43,6 +44,10 @@ declare global {
 			};
 			readonly showcase: {
 				readonly context: () => Promise<ShowcaseContext>;
+			};
+			readonly project: {
+				readonly choose: () => Promise<WorkbenchProjectState>;
+				readonly current: () => Promise<WorkbenchProjectState>;
 			};
 			readonly assetAudits: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
@@ -87,6 +92,7 @@ declare global {
 				readonly savedWorldMaps: () => Promise<
 					readonly { readonly label: string; readonly mapPath: string }[]
 				>;
+				readonly chooseProjectAndMaps: () => Promise<unknown>;
 				readonly focusActor: (
 					actorId: string,
 					bringToFront: boolean

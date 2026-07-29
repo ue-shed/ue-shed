@@ -68,7 +68,7 @@ for (const fixture of fixtures) {
 }
 
 const malformed = JSON.parse(wasm.inspect("Broken.uasset", Uint8Array.from([0, 1, 2, 3])));
-assert.equal(malformed.schema_version, 7);
+assert.equal(malformed.schema_version, 8);
 assert.equal(malformed.status, "error");
 assert.equal(malformed.path, "Broken.uasset");
 assert.equal(malformed.kind, "unsupported_format");

@@ -13,16 +13,17 @@ afterEach(cleanup);
 afterAll(() => runtime.dispose());
 
 describe("TextureAuditRoute", () => {
-	it("runs project selection through the Effect client", async () => {
-		let selections = 0;
+	it("uses the globally selected project and exposes no second chooser", async () => {
+		let rescans = 0;
 		const client: TextureAuditClientShape = {
 			chooseProjectAndScan: () =>
-				Effect.sync(() => {
-					selections += 1;
-					return { status: "cancelled" as const };
-				}),
+				Effect.die("the route must use the Workbench header for project choice"),
 			launchUnreal: () => Effect.die("unused"),
-			loadConfiguredProject: () => Effect.succeed({ status: "not_configured" as const }),
+			loadConfiguredProject: () =>
+				Effect.sync(() => {
+					rescans += 1;
+					return { status: "not_configured" as const };
+				}),
 			loadPreview: () => Effect.die("unused")
 		};
 		render(() => (
@@ -31,8 +32,8 @@ describe("TextureAuditRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		expect(await screen.findByText("No project configured.")).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Choose project" }));
-		expect(await screen.findByText("Selection cancelled. No scan was started.")).toBeDefined();
-		expect(selections).toBe(1);
+		expect(screen.queryByRole("button", { name: "Choose project" })).toBeNull();
+		await userEvent.setup().click(screen.getByRole("button", { name: "Rescan" }));
+		expect(rescans).toBe(2);
 	});
 });

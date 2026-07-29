@@ -27,10 +27,14 @@ import {
  * with World Scout, but never materializes an actor as a live identity or offers editor actions.
  */
 export function SavedWorldScout(props: {
-	readonly client: Pick<MapReviewClientShape, "readSavedWorld" | "savedWorldMaps">;
+	readonly client: Pick<
+		MapReviewClientShape,
+		"readSavedWorld" | "savedWorldMaps" | "chooseProjectAndMaps"
+	>;
 }) {
 	const mapsAction = createEffectAction();
 	const worldAction = createEffectAction();
+	const chooseAction = createEffectAction();
 	const store = new WorldScoutRetainedStore();
 	let canvasRef: HTMLCanvasElement | undefined;
 	let cssWidth = 0;
@@ -44,9 +48,11 @@ export function SavedWorldScout(props: {
 
 	const [world, setWorld] = createSignal<SavedWorld>();
 	const [maps, setMaps] = createSignal<readonly SavedWorldMap[]>([]);
+	const [projectLabel, setProjectLabel] = createSignal<string>();
 	const [selectedMapPath, setSelectedMapPath] = createSignal<string>();
 	const [error, setError] = createSignal<string>();
 	const [query, setQuery] = createSignal("");
+	const [classQuery, setClassQuery] = createSignal("");
 	const [hiddenClasses, setHiddenClasses] = createSignal<ReadonlySet<string>>(new Set());
 	const [selectedStreamIndex, setSelectedStreamIndex] = createSignal<number>();
 	const [catalogRevision, setCatalogRevision] = createSignal(0);
@@ -57,6 +63,12 @@ export function SavedWorldScout(props: {
 	const classes = createMemo(() => {
 		catalogRevision();
 		return store.classCounts();
+	});
+	const filteredClasses = createMemo(() => {
+		const needle = classQuery().trim().toLocaleLowerCase();
+		return needle.length === 0
+			? classes()
+			: classes().filter(([className]) => className.toLocaleLowerCase().includes(needle));
 	});
 	const visibleCount = createMemo(() => {
 		presentationRevision();
@@ -164,6 +176,33 @@ export function SavedWorldScout(props: {
 	const selectMap = (mapPath: string) => {
 		setSelectedMapPath(mapPath);
 		load(mapPath);
+	};
+	const chooseProject = () => {
+		const choose = props.client.chooseProjectAndMaps;
+		if (choose === undefined) {
+			setError("This Workbench host cannot choose a project from the UI yet.");
+			return;
+		}
+		setError(undefined);
+		chooseAction.run(choose(), {
+			onFailure: (cause) => setError(Cause.pretty(cause)),
+			onSuccess: (choice) => {
+				if (choice.status === "cancelled") return;
+				if (choice.status === "failed") {
+					setError(`${choice.message} ${choice.recovery}`);
+					return;
+				}
+				const initialMap = choice.maps[0];
+				if (initialMap === undefined) {
+					setError("No maps were chosen for offline review.");
+					return;
+				}
+				setProjectLabel(choice.projectName);
+				setMaps(choice.maps);
+				setSelectedMapPath(initialMap.mapPath);
+				load(initialMap.mapPath);
+			}
+		});
 	};
 
 	const toggleClass = (className: string) =>
@@ -319,11 +358,26 @@ export function SavedWorldScout(props: {
 				<div>
 					<p {...stylex.props(styles.eyebrow)}>SAVED MAP</p>
 					<h2 {...stylex.props(styles.title)}>Actors from project files</h2>
+					<Show when={projectLabel()}>
+						{(label) => (
+							<p {...stylex.props(styles.projectLabel)}>PROJECT · {label()}</p>
+						)}
+					</Show>
 				</div>
-				<div {...stylex.props(styles.source)}>
-					<span {...stylex.props(styles.sourceDot)} />
-					<strong>PROJECT FILES</strong>
-					<code>{world()?.authority.mapPackage ?? "NOT LOADED"}</code>
+				<div {...stylex.props(styles.headerActions)}>
+					<button
+						type="button"
+						onClick={chooseProject}
+						disabled={props.client.chooseProjectAndMaps === undefined}
+						{...stylex.props(styles.chooseButton)}
+					>
+						CHOOSE PROJECT…
+					</button>
+					<div {...stylex.props(styles.source)}>
+						<span {...stylex.props(styles.sourceDot)} />
+						<strong>PROJECT FILES</strong>
+						<code>{world()?.authority.mapPackage ?? "NOT LOADED"}</code>
+					</div>
 				</div>
 			</header>
 
@@ -339,15 +393,26 @@ export function SavedWorldScout(props: {
 							{error() ??
 								"The selected level or its World Partition external-actor packages are being read from disk."}
 						</p>
-						<Show when={error()}>
-							<button
-								type="button"
-								onClick={loadMaps}
-								{...stylex.props(styles.retry)}
-							>
-								RETRY SAVED MAP
-							</button>
-						</Show>
+						<div {...stylex.props(styles.fallbackActions)}>
+							<Show when={error()}>
+								<button
+									type="button"
+									onClick={loadMaps}
+									{...stylex.props(styles.retry)}
+								>
+									RETRY SAVED MAP
+								</button>
+							</Show>
+							<Show when={props.client.chooseProjectAndMaps !== undefined}>
+								<button
+									type="button"
+									onClick={chooseProject}
+									{...stylex.props(styles.retry)}
+								>
+									CHOOSE PROJECT…
+								</button>
+							</Show>
+						</div>
 					</div>
 				}
 			>
@@ -365,7 +430,12 @@ export function SavedWorldScout(props: {
 									>
 										<For each={maps()}>
 											{(map) => (
-												<option value={map.mapPath}>{map.label}</option>
+												<option
+													value={map.mapPath}
+													selected={map.mapPath === selectedMapPath()}
+												>
+													{map.label}
+												</option>
 											)}
 										</For>
 									</select>
@@ -385,27 +455,43 @@ export function SavedWorldScout(props: {
 								aria-label="Saved actor class filters"
 								{...stylex.props(styles.classFilters)}
 							>
-								<For each={classes()}>
-									{([className, count]) => (
-										<button
-											type="button"
-											aria-pressed={!hiddenClasses().has(className)}
-											onClick={() => toggleClass(className)}
-											{...stylex.props(
-												styles.classFilter,
-												hiddenClasses().has(className) && styles.classHidden
-											)}
-										>
-											<i
-												{...stylex.props(styles.classSwatch)}
-												style={{
-													"background-color": colorForClass(className)
-												}}
-											/>
-											{className.replace(/^(BP_|A)/, "")} <b>{count}</b>
-										</button>
-									)}
-								</For>
+								<label {...stylex.props(styles.classFilterSearch)}>
+									<span>ACTOR CLASSES · {classes().length}</span>
+									<input
+										value={classQuery()}
+										onInput={(event) =>
+											setClassQuery(event.currentTarget.value)
+										}
+										aria-label="Filter saved actor classes"
+										placeholder="filter class name"
+										{...stylex.props(styles.classFilterInput)}
+									/>
+								</label>
+								<div role="list" {...stylex.props(styles.classList)}>
+									<For each={filteredClasses()}>
+										{([className, count]) => (
+											<button
+												type="button"
+												role="listitem"
+												aria-pressed={!hiddenClasses().has(className)}
+												onClick={() => toggleClass(className)}
+												{...stylex.props(
+													styles.classFilter,
+													hiddenClasses().has(className) &&
+														styles.classHidden
+												)}
+											>
+												<i
+													{...stylex.props(styles.classSwatch)}
+													style={{
+														"background-color": colorForClass(className)
+													}}
+												/>
+												{className.replace(/^(BP_|A)/, "")} <b>{count}</b>
+											</button>
+										)}
+									</For>
+								</div>
 							</div>
 							<div {...stylex.props(styles.summary)}>
 								<strong>{visibleCount()}</strong>
@@ -542,6 +628,31 @@ const styles = stylex.create({
 		borderBottom: "1px solid #2c3637"
 	},
 	eyebrow: { margin: 0, color: "#61d5df", fontSize: 8, fontWeight: 800, letterSpacing: ".16em" },
+	projectLabel: {
+		margin: "6px 0 0",
+		color: "#75e0e8",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".12em"
+	},
+	headerActions: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-end",
+		gap: 8
+	},
+	chooseButton: {
+		border: "1px solid #61d5df",
+		backgroundColor: { default: "transparent", ":hover": "#1b3032" },
+		color: { default: "#b9eef2", ":disabled": "#4a5658" },
+		borderColor: { default: "#61d5df", ":disabled": "#33403f" },
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		padding: "7px 10px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em"
+	},
+	fallbackActions: { display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" },
 	title: {
 		margin: "5px 0 0",
 		color: "#eef7f8",
@@ -616,14 +727,50 @@ const styles = stylex.create({
 		fontSize: 12,
 		outline: { ":focus": "1px solid #61d5df" }
 	},
-	classFilters: { display: "flex", flexWrap: "wrap", gap: 5, flex: 1 },
+	classFilters: {
+		display: "grid",
+		gap: 7,
+		flexBasis: "100%",
+		minWidth: 0,
+		paddingTop: 2
+	},
+	classFilterSearch: {
+		display: "flex",
+		alignItems: "center",
+		gap: 10,
+		color: "#879294",
+		fontSize: 7,
+		letterSpacing: ".12em"
+	},
+	classFilterInput: {
+		minWidth: 220,
+		border: "1px solid #3b484a",
+		backgroundColor: "#0c1011",
+		color: "#e7eeee",
+		padding: "6px 8px",
+		fontSize: 11,
+		outline: { ":focus": "1px solid #61d5df" }
+	},
+	classList: {
+		display: "grid",
+		gridTemplateColumns: "repeat(auto-fill, minmax(176px, 1fr))",
+		gap: 4,
+		maxHeight: 132,
+		overflowY: "auto",
+		paddingRight: 4
+	},
 	classFilter: {
 		border: "1px solid #344042",
 		backgroundColor: { default: "#151b1c", ":hover": "#20292a" },
 		color: "#aab5b6",
 		padding: "6px 7px",
 		fontSize: 8,
-		cursor: "pointer"
+		cursor: "pointer",
+		minWidth: 0,
+		overflow: "hidden",
+		textAlign: "left",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
 	},
 	classHidden: { opacity: 0.42 },
 	classSwatch: {

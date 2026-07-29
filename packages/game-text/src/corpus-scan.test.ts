@@ -36,7 +36,7 @@ const stringTableInspection: SavedAssetInspection = {
 		version: { legacy_file: -9, legacy_ue3: 0, licensee: 0, ue4: 522, ue5: 1018 }
 	},
 	path: "C:/Fixture/Content/Text/ST_Game.uasset",
-	schema_version: 7,
+	schema_version: 8,
 	status: "ok"
 };
 
@@ -59,7 +59,13 @@ it.effect("selects text-bearing packages by StringTable class and TextProperty n
 			Effect.fn("AssetReader.Test.scanProject")(function* (options) {
 				yield* Ref.update(seen, (current) => [...current, options]);
 				return {
-					assets: [{ fileBytes: 1510, inspection: stringTableInspection }],
+					assets: [
+						{
+							depth: "full" as const,
+							fileBytes: 1510,
+							inspection: stringTableInspection
+						}
+					],
 					failures: [
 						{
 							code: "asset_malformed_data",
@@ -69,6 +75,8 @@ it.effect("selects text-bearing packages by StringTable class and TextProperty n
 						}
 					],
 					summary: {
+						cacheHits: 0,
+						depth: "full" as const,
 						diagnostics: [],
 						emittedAssets: 1,
 						failedAssets: 1,
@@ -76,7 +84,7 @@ it.effect("selects text-bearing packages by StringTable class and TextProperty n
 						projectRoot: "C:/Fixture",
 						roots: ["C:/Fixture/Content"],
 						scannedAssets: 30,
-						schema_version: 7 as const,
+						schema_version: 8 as const,
 						skippedAssets: 28
 					}
 				};

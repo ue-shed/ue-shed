@@ -114,7 +114,7 @@ function configuredSavedWorldMaps(
 	return maps.length === 0 ? { status: "not_configured" } : { status: "configured", maps };
 }
 
-function savedMapLabel(mapPath: string): string {
+export function savedMapLabel(mapPath: string): string {
 	const filename = mapPath.replaceAll("\\", "/").split("/").at(-1) ?? mapPath;
 	return filename
 		.replace(/\.umap$/i, "")

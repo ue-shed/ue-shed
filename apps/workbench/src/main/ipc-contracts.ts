@@ -40,9 +40,11 @@ import {
 	EditorPlaySessionCommandResponse,
 	EditorPlaySessionStateResponse,
 	SavedWorld,
+	SavedWorldChoice,
 	SavedWorldMap
 } from "@ue-shed/protocol";
 import { Schema, SchemaGetter } from "effect";
+import { WorkbenchProjectState } from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
 
@@ -245,6 +247,16 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: ShowcaseContext
 	}),
+	"project:current": invoke({
+		channel: "project:current",
+		args: EmptyArgs,
+		result: WorkbenchProjectState
+	}),
+	"project:choose": invoke({
+		channel: "project:choose",
+		args: EmptyArgs,
+		result: WorkbenchProjectState
+	}),
 	"asset-audits:textures:configured-scan": invoke({
 		channel: "asset-audits:textures:configured-scan",
 		args: EmptyArgs,
@@ -394,6 +406,11 @@ export const invokeContracts = {
 		channel: "map-review:saved-world-maps",
 		args: EmptyArgs,
 		result: Schema.Array(SavedWorldMap)
+	}),
+	"map-review:choose-project-and-maps": invoke({
+		channel: "map-review:choose-project-and-maps",
+		args: EmptyArgs,
+		result: SavedWorldChoice
 	}),
 	"map-review:focus-actor": invoke({
 		channel: "map-review:focus-actor",

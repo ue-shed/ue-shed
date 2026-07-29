@@ -75,7 +75,8 @@
 			"packages/host/src/configuration.ts",
 			"packages/host/src/file-picker.ts",
 			"packages/host/src/index.ts",
-			"packages/host/src/live.ts"
+			"packages/host/src/live.ts",
+			"packages/host/src/saved-table-index.ts"
 		],
 		"owned": [
 			"packages/ui/package.json",

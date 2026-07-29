@@ -17,6 +17,7 @@ import { mapReviewClient } from "./map-review-client.js";
 import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
+import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
 
 const routes = [
 	{ href: "#/", label: "Showcase", route: "#/" },
@@ -75,6 +76,7 @@ export function AppShell() {
 		return routes.some((route) => route.route === value) ? (value as Route) : "#/";
 	};
 	const [route, setRoute] = createSignal<Route>(routeFromLocation());
+	const [projectRevision, setProjectRevision] = createSignal(1);
 	onMount(() => {
 		document.title = "UE Shed Workbench";
 		if (!window.location.hash) window.location.hash = "/";
@@ -105,30 +107,103 @@ export function AppShell() {
 						)}
 					</For>
 				</div>
+				<ProjectChooser onChosen={() => setProjectRevision((revision) => revision + 1)} />
 				<EditorSessionTransport client={workbenchRendererClient} />
 				<span {...stylex.props(styles.version)}>0.0.0</span>
 			</nav>
-			<Switch fallback={<ShowcaseHome />}>
-				<Match when={route() === "#/authoring"}>
-					<AuthoringRoute client={authoringClient} />
-				</Match>
-				<Match when={route() === "#/asset-audits/textures"}>
-					<TextureAuditRoute client={assetAuditsClient} />
-				</Match>
-				<Match when={route() === "#/game-text"}>
-					<GameTextRoute client={gameTextClient} />
-				</Match>
-				<Match when={route() === "#/input-atlas"}>
-					<InputAtlasRoute client={inputAtlasClient} />
-				</Match>
-				<Match when={route() === "#/map-review"}>
-					<MapReviewRoute client={mapReviewClient} />
-				</Match>
-				<Match when={route() === "#/camera-lab"}>
-					<CameraLab />
-				</Match>
-			</Switch>
+			<Show when={projectRevision()} keyed>
+				<Switch fallback={<ShowcaseHome />}>
+					<Match when={route() === "#/authoring"}>
+						<AuthoringRoute client={authoringClient} />
+					</Match>
+					<Match when={route() === "#/asset-audits/textures"}>
+						<TextureAuditRoute client={assetAuditsClient} />
+					</Match>
+					<Match when={route() === "#/game-text"}>
+						<GameTextRoute client={gameTextClient} />
+					</Match>
+					<Match when={route() === "#/input-atlas"}>
+						<InputAtlasRoute client={inputAtlasClient} />
+					</Match>
+					<Match when={route() === "#/map-review"}>
+						<MapReviewRoute client={mapReviewClient} />
+					</Match>
+					<Match when={route() === "#/camera-lab"}>
+						<CameraLab />
+					</Match>
+				</Switch>
+			</Show>
 		</div>
+	);
+}
+
+function ProjectChooser(props: { readonly onChosen: () => void }) {
+	// The directory picker returns focus to this window. Keep its action separate from the
+	// focus-triggered refresh: each action intentionally cancels only its own prior request.
+	const refreshAction = createEffectAction();
+	const chooseAction = createEffectAction();
+	const [pending, setPending] = createSignal(false);
+	const [project, setProject] = createSignal<WorkbenchProjectState>();
+	const applyProject = (next: WorkbenchProjectState, notifyRoutes: boolean) => {
+		const previous = project();
+		setProject(next);
+		if (
+			notifyRoutes &&
+			next.status === "ready" &&
+			(previous?.status !== "ready" ||
+				previous.project.projectRoot !== next.project.projectRoot)
+		) {
+			props.onChosen();
+		}
+	};
+	const refresh = (notifyRoutes: boolean) =>
+		refreshAction.run(workbenchRendererClient.project(), {
+			onFailure: () => setProject(undefined),
+			onSuccess: (next) => applyProject(next, notifyRoutes)
+		});
+
+	onMount(() => {
+		refresh(false);
+		const onFocus = () => refresh(true);
+		window.addEventListener("focus", onFocus);
+		onCleanup(() => window.removeEventListener("focus", onFocus));
+	});
+
+	const choose = () => {
+		setPending(true);
+		chooseAction.run(workbenchRendererClient.chooseProject(), {
+			onFailure: () => {
+				setPending(false);
+				setProject(undefined);
+			},
+			onSuccess: (next) => {
+				setPending(false);
+				applyProject(next, true);
+			}
+		});
+	};
+
+	const label = () => {
+		const current = project();
+		if (pending()) return "INDEXING PROJECT…";
+		if (current?.status === "ready") return current.project.projectName;
+		return "CHOOSE PROJECT…";
+	};
+	const title = () => {
+		const current = project();
+		return current?.status === "ready" ? current.project.projectRoot : undefined;
+	};
+
+	return (
+		<button
+			type="button"
+			title={title()}
+			disabled={pending()}
+			onClick={choose}
+			{...stylex.props(styles.projectChooser)}
+		>
+			{label()}
+		</button>
 	);
 }
 
@@ -301,6 +376,20 @@ const styles = stylex.create({
 		borderBottomStyle: "solid",
 		borderBottomWidth: 2,
 		color: tokens.colorText
+	},
+	projectChooser: {
+		border: "1px solid #a7da45",
+		backgroundColor: { default: "#19220d", ":hover": "#273713", ":disabled": "#13180f" },
+		color: { default: "#d5f59c", ":disabled": "#67704f" },
+		cursor: { default: "pointer", ":disabled": "wait" },
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em",
+		maxWidth: 180,
+		overflow: "hidden",
+		padding: "7px 9px",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
 	},
 	version: {
 		padding: "0 12px",

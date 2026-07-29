@@ -43,7 +43,7 @@ import {
 	type WorldTransform
 } from "@ue-shed/observatory";
 import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
-import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
+import type { SavedWorld, SavedWorldChoice, SavedWorldMap } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
 	Context,
@@ -60,9 +60,10 @@ import {
 } from "effect";
 import { dirname } from "node:path";
 import { LocalFiles } from "../adapters/local-files.js";
-import { WorkbenchWindow } from "../adapters/electron-window.js";
+import { WorkbenchWindow, type WorkbenchWindowError } from "../adapters/electron-window.js";
 import type { RendererWorldObservationEvent } from "../ipc-contracts.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
+import { WorkbenchProject } from "./project-workspace.js";
 import { makeUnrealOperationCoordinator } from "./unreal-operation-coordinator.js";
 
 const artifactReadConcurrency = 4;
@@ -197,6 +198,8 @@ export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUna
 ) {}
 
 export interface WorkbenchMapReviewShape {
+	/** Chooses the global Workbench project, then returns its cached saved-map inventory. */
+	readonly chooseProjectAndMaps: () => Effect.Effect<SavedWorldChoice, WorkbenchWindowError>;
 	/** Lists configured saved maps; this deliberately never connects to Unreal. */
 	readonly savedWorldMaps: () => Effect.Effect<readonly SavedWorldMap[], SavedWorldUnavailable>;
 	/** Reads one configured saved map; this deliberately never connects to Unreal. */
@@ -314,6 +317,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 	WorkbenchMapReview,
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
+		const project = yield* WorkbenchProject;
 		const assetReader = yield* AssetReader;
 		const localFiles = yield* LocalFiles;
 		const repository = yield* ReviewRepository;
@@ -775,14 +779,25 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			}
 		);
 
-		const reviewProject =
-			configuration.review.status === "not_configured"
-				? undefined
-				: { projectRoot: configuration.review.projectRoot };
+		const resolveReviewProject = Effect.fn("Workbench.WorkbenchMapReview.resolveReviewProject")(
+			function* () {
+				const selected = yield* project.current();
+				if (selected.status === "ready") {
+					return { projectRoot: selected.project.projectRoot };
+				}
+				return configuration.review.status === "not_configured"
+					? undefined
+					: { projectRoot: configuration.review.projectRoot };
+			}
+		);
 		const selectedReviewSetPath = Effect.fn(
 			"Workbench.WorkbenchMapReview.selectedReviewSetPath"
 		)(function* () {
-			if (configuration.review.status === "configured")
+			const reviewProject = yield* resolveReviewProject();
+			if (
+				configuration.review.status === "configured" &&
+				reviewProject?.projectRoot === configuration.review.projectRoot
+			)
 				return configuration.review.reviewSetPath;
 			return yield* Ref.get(activeReviewSetPath).pipe(Effect.map(Option.getOrUndefined));
 		});
@@ -813,46 +828,32 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			}));
 		});
 
+		const resolveSavedProject = Effect.fn("Workbench.WorkbenchMapReview.resolveSavedProject")(
+			function* () {
+				return yield* project.savedProject().pipe(
+					Effect.mapError(
+						(error) =>
+							new SavedWorldUnavailable({
+								message: error.message,
+								recovery: error.recovery
+							})
+					)
+				);
+			}
+		);
+
 		const savedWorldMaps = Effect.fn("Workbench.WorkbenchMapReview.savedWorldMaps")(
 			function* () {
-				if (configuration.project.status !== "configured") {
-					return yield* Effect.fail(
-						new SavedWorldUnavailable({
-							message: "No project directory is configured for saved-map review.",
-							recovery:
-								"Set UE_SHED_PROJECT_ROOT and UE_SHED_SAVED_WORLD_MAP, then retry."
-						})
-					);
-				}
-				const savedWorldMaps = configuration.savedWorldMaps;
-				if (savedWorldMaps?.status !== "configured") {
-					return yield* Effect.fail(
-						new SavedWorldUnavailable({
-							message: "No saved map is configured for offline review.",
-							recovery:
-								"Set UE_SHED_SAVED_WORLD_MAP or UE_SHED_SAVED_WORLD_MAPS to .umap paths inside the project."
-						})
-					);
-				}
-				return savedWorldMaps.maps;
+				const resolved = yield* resolveSavedProject();
+				return resolved.maps;
 			}
 		);
 
 		const savedWorld = Effect.fn("Workbench.WorkbenchMapReview.savedWorld")(function* (
 			mapPath: string
 		) {
-			const project = configuration.project;
-			if (project.status !== "configured") {
-				return yield* Effect.fail(
-					new SavedWorldUnavailable({
-						message: "No project directory is configured for saved-map review.",
-						recovery:
-							"Set UE_SHED_PROJECT_ROOT and UE_SHED_SAVED_WORLD_MAP, then retry."
-					})
-				);
-			}
-			const maps = yield* savedWorldMaps();
-			if (!maps.some((map) => map.mapPath === mapPath)) {
+			const resolved = yield* resolveSavedProject();
+			if (!resolved.maps.some((map) => map.mapPath === mapPath)) {
 				return yield* Effect.fail(
 					new SavedWorldUnavailable({
 						message: `Saved map ${mapPath} is not configured for offline review.`,
@@ -863,9 +864,49 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			return yield* assetReader.readSavedWorld({
 				concurrency: 8,
 				mapPath,
-				projectRoot: project.projectRoot
+				projectRoot: resolved.projectRoot
 			});
 		});
+
+		const chooseProjectAndMaps = Effect.fn("Workbench.WorkbenchMapReview.chooseProjectAndMaps")(
+			function* () {
+				const choice = yield* project.choose();
+				if (choice.status === "cancelled") return choice;
+				if (choice.status === "not_configured") {
+					return {
+						status: "failed" as const,
+						message: "No Workbench project is selected.",
+						recovery: "Choose a project from the Workbench header, then retry."
+					};
+				}
+				if (choice.status === "failed") {
+					return {
+						status: "failed" as const,
+						message: choice.error.message,
+						recovery: choice.error.recovery
+					};
+				}
+				const selected = yield* project.savedProject().pipe(
+					Effect.match({
+						onFailure: (error) => ({ error, status: "failed" as const }),
+						onSuccess: (value) => ({ status: "ready" as const, value })
+					})
+				);
+				if (selected.status === "failed") {
+					return {
+						status: "failed" as const,
+						message: selected.error.message,
+						recovery: selected.error.recovery
+					};
+				}
+				return {
+					maps: selected.value.maps,
+					projectName: choice.project.projectName,
+					projectRoot: selected.value.projectRoot,
+					status: "configured" as const
+				};
+			}
+		);
 
 		const focusActor = Effect.fn("Workbench.WorkbenchMapReview.focusActor")(function* (
 			actorId: ActorId,
@@ -917,6 +958,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		});
 
 		const load = Effect.fn("Workbench.WorkbenchMapReview.load")(function* () {
+			const reviewProject = yield* resolveReviewProject();
 			if (reviewProject === undefined) return { status: "not_configured" as const };
 			const { projectRoot } = reviewProject;
 			const reviewSetPath = yield* selectedReviewSetPath();
@@ -961,6 +1003,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const captureAndReload = Effect.fn("Workbench.WorkbenchMapReview.capture")(function* (
 			intent: MapReviewCaptureIntent
 		) {
+			const reviewProject = yield* resolveReviewProject();
 			if (reviewProject === undefined) return { status: "not_configured" as const };
 			const reviewSetPath = yield* selectedReviewSetPath();
 			if (reviewSetPath === undefined) return { status: "not_configured" as const };
@@ -1031,6 +1074,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const authorFromSelection = Effect.fn("Workbench.WorkbenchMapReview.authorFromSelection")(
 			function* () {
+				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
 						message: "No review project is configured."
@@ -1068,6 +1112,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const authoringResume = Effect.fn("Workbench.WorkbenchMapReview.authoringResume")(
 			function* (intent: MapReviewAuthoringSessionIntent | undefined) {
+				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
 						message: "No review project is configured."
@@ -1123,6 +1168,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const authoringPatch = Effect.fn("Workbench.WorkbenchMapReview.authoringPatch")(function* (
 			intent: MapReviewAuthoringPatchIntent
 		) {
+			const reviewProject = yield* resolveReviewProject();
 			if (reviewProject === undefined) {
 				return mapReviewAuthoringFailure({ message: "No review project is configured." });
 			}
@@ -1141,6 +1187,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const discardAuthoring = Effect.fn("Workbench.WorkbenchMapReview.discardAuthoring")(
 			function* (intent: MapReviewAuthoringSessionIntent) {
+				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
 						message: "No review project is configured."
@@ -1160,6 +1207,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const authoringReframe = Effect.fn("Workbench.WorkbenchMapReview.authoringReframe")(
 			function* (intent: MapReviewAuthoringSessionIntent) {
+				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
 						message: "No review project is configured."
@@ -1196,6 +1244,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.previewAuthoringCandidate"
 		)(function* (intent: MapReviewAuthoringPreviewIntent) {
 			return yield* Effect.gen(function* () {
+				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
 						message: "No review project is configured."
@@ -1404,6 +1453,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const approveAuthoring = Effect.fn("Workbench.WorkbenchMapReview.approveAuthoring")(
 			function* (intent: MapReviewAuthoringSessionIntent) {
+				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
 						message: "No review project is configured."
@@ -1592,6 +1642,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			authoringResume,
 			authorFromSelection,
 			capture: captureAndReload,
+			chooseProjectAndMaps,
 			discardAuthoring,
 			focusActor,
 			load,
@@ -1610,8 +1661,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 );
 
 export function makeWorkbenchMapReviewTestLayer(
-	service: Omit<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps"> &
-		Partial<Pick<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps">>
+	service: Omit<
+		WorkbenchMapReviewShape,
+		"savedWorld" | "savedWorldMaps" | "chooseProjectAndMaps"
+	> &
+		Partial<
+			Pick<WorkbenchMapReviewShape, "savedWorld" | "savedWorldMaps" | "chooseProjectAndMaps">
+		>
 ): Layer.Layer<WorkbenchMapReview> {
 	return Layer.succeed(
 		WorkbenchMapReview,
@@ -1619,6 +1675,8 @@ export function makeWorkbenchMapReviewTestLayer(
 			savedWorld: service.savedWorld ?? (() => Effect.die("saved world reader not stubbed")),
 			savedWorldMaps:
 				service.savedWorldMaps ?? (() => Effect.die("saved world maps reader not stubbed")),
+			chooseProjectAndMaps:
+				service.chooseProjectAndMaps ?? (() => Effect.die("project chooser not stubbed")),
 			...service
 		})
 	);

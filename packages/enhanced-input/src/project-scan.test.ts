@@ -13,7 +13,8 @@ import {
 	EnhancedInputScanError,
 	EnhancedInputService,
 	EnhancedInputServiceLive,
-	INPUT_ACTION_CLASS
+	INPUT_ACTION_CLASS,
+	scanEnhancedInputFromProjectIndex
 } from "./project.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
@@ -43,7 +44,7 @@ const actionInspection: SavedAssetInspection = {
 		version: { legacy_file: -9, legacy_ue3: 0, licensee: 0, ue4: 522, ue5: 1018 }
 	},
 	path: "C:/Fixture/Content/Input/IA_Move.uasset",
-	schema_version: 7,
+	schema_version: 8,
 	status: "ok"
 };
 
@@ -66,9 +67,13 @@ it.effect("selects Enhanced Input packages by class prefix in one batched pass",
 			Effect.fn("AssetReader.Test.scanProject")(function* (options) {
 				yield* Ref.update(seen, (current) => [...current, options]);
 				return {
-					assets: [{ fileBytes: 1441, inspection: actionInspection }],
+					assets: [
+						{ depth: "full" as const, fileBytes: 1441, inspection: actionInspection }
+					],
 					failures: [],
 					summary: {
+						cacheHits: 0,
+						depth: "full" as const,
 						diagnostics: [],
 						emittedAssets: 1,
 						failedAssets: 0,
@@ -76,7 +81,7 @@ it.effect("selects Enhanced Input packages by class prefix in one batched pass",
 						projectRoot: "C:/Fixture",
 						roots: ["C:/Fixture/Content"],
 						scannedAssets: 22,
-						schema_version: 7 as const,
+						schema_version: 8 as const,
 						skippedAssets: 21
 					}
 				};
@@ -109,6 +114,8 @@ it.effect("forwards scoped roots to the reader, and omits them when unscoped", (
 					assets: [],
 					failures: [],
 					summary: {
+						cacheHits: 0,
+						depth: "full" as const,
 						diagnostics: [],
 						emittedAssets: 0,
 						failedAssets: 0,
@@ -116,7 +123,7 @@ it.effect("forwards scoped roots to the reader, and omits them when unscoped", (
 						projectRoot: options.projectRoot,
 						roots: [...(options.paths ?? ["C:/Fixture/Content"])],
 						scannedAssets: 0,
-						schema_version: 7 as const,
+						schema_version: 8 as const,
 						skippedAssets: 0
 					}
 				};
@@ -137,6 +144,97 @@ it.effect("forwards scoped roots to the reader, and omits them when unscoped", (
 		expect(scoped?.classPrefixes).toEqual([ENHANCED_INPUT_CLASS_PREFIX]);
 		// Absent rather than empty, so the reader keeps its own `Content` default.
 		expect(unscoped && "paths" in unscoped).toBe(false);
+		// A normal project-wide scan has no arbitrary product cap; callers opt into a limit.
+		expect(unscoped && "maximumAssets" in unscoped).toBe(false);
+	})
+);
+
+it.effect("decodes only Enhanced Input candidates from the shared header index", () =>
+	Effect.gen(function* () {
+		const seen = yield* Ref.make<SavedAssetScanOptions[]>([]);
+		const reader = readerOffering(
+			Effect.fn("AssetReader.Test.scanProject")(function* (options) {
+				yield* Ref.update(seen, (current) => [...current, options]);
+				return {
+					assets: [
+						{ depth: "full" as const, fileBytes: 1441, inspection: actionInspection }
+					],
+					failures: [],
+					summary: {
+						cacheHits: 0,
+						depth: "full" as const,
+						diagnostics: [],
+						emittedAssets: 1,
+						failedAssets: 0,
+						partialAssets: 0,
+						projectRoot: options.projectRoot,
+						roots: [...(options.paths ?? [])],
+						scannedAssets: options.paths?.length ?? 0,
+						schema_version: 8 as const,
+						skippedAssets: 0
+					}
+				};
+			})
+		);
+		const index: SavedAssetScan = {
+			assets: [
+				{
+					depth: "header",
+					fileBytes: 1,
+					header: {
+						exports: [
+							{
+								class_path: INPUT_ACTION_CLASS,
+								object_path: "/Game/Input/IA_Move.IA_Move"
+							}
+						],
+						package: { name: "/Game/Input/IA_Move" },
+						path: "C:/Fixture/Content/Input/IA_Move.uasset",
+						schema_version: 8
+					}
+				},
+				{
+					depth: "header",
+					fileBytes: 1,
+					header: {
+						exports: [
+							{
+								class_path: "/Script/Engine.Texture2D",
+								object_path: "/Game/Textures/T_One.T_One"
+							}
+						],
+						package: { name: "/Game/Textures/T_One" },
+						path: "C:/Fixture/Content/Textures/T_One.uasset",
+						schema_version: 8
+					}
+				}
+			],
+			failures: [],
+			summary: {
+				cacheHits: 0,
+				depth: "header",
+				diagnostics: [],
+				emittedAssets: 2,
+				failedAssets: 0,
+				partialAssets: 0,
+				projectRoot: "C:/Fixture",
+				roots: ["C:/Fixture/Content"],
+				scannedAssets: 22,
+				schema_version: 8,
+				skippedAssets: 20
+			}
+		};
+
+		const report = yield* scanEnhancedInputFromProjectIndex(index, {
+			projectRoot: "C:/Fixture"
+		}).pipe(Effect.provide(reader));
+
+		const [options] = yield* Ref.get(seen);
+		expect(options?.paths).toEqual(["C:/Fixture/Content/Input/IA_Move.uasset"]);
+		expect(options && "classPrefixes" in options).toBe(false);
+		expect(report.coverage.discoveredPackages).toBe(22);
+		expect(report.coverage.inspectedPackages).toBe(1);
+		expect(report.coverage.inputActions).toBe(1);
 	})
 );
 

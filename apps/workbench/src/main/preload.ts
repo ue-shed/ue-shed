@@ -32,6 +32,7 @@ import type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
+import type { WorkbenchProjectState } from "./project-workspace-contract.js";
 
 export type {
 	FixtureLaunchResult,
@@ -40,6 +41,7 @@ export type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
+export type { WorkbenchProjectState } from "./project-workspace-contract.js";
 
 contextBridge.exposeInMainWorld("ueShed", {
 	editorSession: {
@@ -50,6 +52,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 	},
 	showcase: {
 		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context")
+	},
+	project: {
+		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
+		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current")
 	},
 	assetAudits: {
 		loadConfiguredProject: (): Promise<unknown> =>
@@ -114,6 +120,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 		savedWorldMaps: (): Promise<
 			readonly { readonly label: string; readonly mapPath: string }[]
 		> => ipcRenderer.invoke("map-review:saved-world-maps"),
+		chooseProjectAndMaps: (): Promise<unknown> =>
+			ipcRenderer.invoke("map-review:choose-project-and-maps"),
 		focusActor: (actorId: string, bringToFront: boolean): Promise<WorldScoutFocusResult> =>
 			ipcRenderer.invoke("map-review:focus-actor", actorId, bringToFront),
 		approveCandidate: (

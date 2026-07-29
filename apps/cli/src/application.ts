@@ -11,6 +11,7 @@ import {
 	assetReaderLayer,
 	AssetReader,
 	AssetReaderLive,
+	isFullScanEntry,
 	resolveScanTarget,
 	scanSavedProject,
 	type SavedAssetScan
@@ -80,7 +81,7 @@ function summarizeScan(scan: SavedAssetScan) {
 			partialAssets: scan.summary.partialAssets,
 			failedAssets: scan.summary.failedAssets
 		},
-		assets: scan.assets.map((entry) => ({
+		assets: scan.assets.filter(isFullScanEntry).map((entry) => ({
 			path: entry.inspection.path,
 			packageName: entry.inspection.package.name,
 			status: entry.inspection.status,

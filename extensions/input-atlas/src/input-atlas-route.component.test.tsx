@@ -58,7 +58,11 @@ const report = {
 	diagnostics: []
 } as unknown as EnhancedInputReport;
 
-const completed = { report, status: "completed" } satisfies EnhancedInputRunResult;
+const completed = {
+	report,
+	status: "completed",
+	projectRoot: "D:/Projects/DemoGame"
+} satisfies EnhancedInputRunResult;
 
 afterEach(cleanup);
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -88,6 +92,27 @@ describe("InputAtlasRoute interactions", () => {
 		expect(screen.getByText("IA_Handbrake")).toBeDefined();
 	});
 
+	it("names the scanned project so a switch is visible", async () => {
+		renderRoute();
+		await screen.findByText("SpaceBar");
+		expect(screen.getByText("DemoGame")).toBeDefined();
+		expect(screen.getByText("D:/Projects/DemoGame")).toBeDefined();
+	});
+
+	it("keeps the route responsive while a newly chosen project is scanning", async () => {
+		const user = userEvent.setup();
+		renderRoute({ chooseProjectAndScan: () => Effect.never });
+		await screen.findByText("SpaceBar");
+
+		await user.click(screen.getByRole("button", { name: "Choose project…" }));
+
+		expect(screen.getByRole("progressbar")).toBeDefined();
+		expect(screen.getByText("Rescanning DemoGame…")).toBeDefined();
+		expect(
+			screen.getByRole("button", { name: "Choose project…" }).hasAttribute("disabled")
+		).toBe(true);
+	});
+
 	it("resolves the contest when a context is switched off", async () => {
 		const user = userEvent.setup();
 		renderRoute();
@@ -108,6 +133,15 @@ describe("InputAtlasRoute interactions", () => {
 		await user.click(screen.getByRole("button", { name: "F" }));
 		expect(screen.getByText("Unbound in every enabled context.")).toBeDefined();
 		expect(screen.queryByText("IA_Jump")).toBeNull();
+	});
+
+	it("renders the full keyboard, including function, navigation, and numpad keys", async () => {
+		renderRoute();
+		await screen.findByText("SpaceBar");
+		expect(screen.getByRole("button", { name: "F12" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Backspace" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "PgDn" })).toBeDefined();
+		expect(screen.getByTitle("NumPadSeven")).toBeDefined();
 	});
 
 	it("says a mapping carried no serialized trigger rather than assuming one", async () => {

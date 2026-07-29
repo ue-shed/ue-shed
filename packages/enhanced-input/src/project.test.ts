@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
 	buildEnhancedInputReport,
 	inputActionFromInspection,
-	mappingContextFromInspection
+	mappingContextFromInspection,
+	scanEnhancedInputWith
 } from "./project.js";
-import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
+import type {
+	AssetReaderShape,
+	SavedAssetInspection,
+	SavedAssetScanOptions
+} from "@ue-shed/unreal-assets";
+import { Effect } from "effect";
 
 const actionInspection: SavedAssetInspection = {
-	schema_version: 7,
+	schema_version: 8,
 	status: "ok",
 	path: "Content/Input/IA_Move.uasset",
 	package: {
@@ -43,7 +49,7 @@ const actionInspection: SavedAssetInspection = {
 };
 
 const mappingInspection: SavedAssetInspection = {
-	schema_version: 7,
+	schema_version: 8,
 	status: "ok",
 	path: "Content/Input/IMC_Fixture.uasset",
 	package: {
@@ -245,6 +251,65 @@ describe("enhanced input projection", () => {
 			source: "serialized",
 			value: "SpaceBar"
 		});
+	});
+
+	it("projects a conventionally named native InputMappingContext subclass", () => {
+		const subclassClassPath = "/Script/ExampleInput.Example_InputMappingContext";
+		const originalContext = mappingInspection.assets[0];
+		if (originalContext?.kind !== "UObject") {
+			throw new Error("The mapping fixture must start with a UObject context.");
+		}
+		const context = mappingContextFromInspection({
+			inspection: {
+				...mappingInspection,
+				assets: [
+					{
+						...originalContext,
+						class_path: subclassClassPath
+					}
+				]
+			},
+			packageFile: "Content/Input/IMC_Subclass.uasset"
+		});
+		expect(context?.classPath).toBe(subclassClassPath);
+		expect(context?.mappings).toHaveLength(1);
+	});
+
+	it("requests header candidates for conventionally named Input subclasses", async () => {
+		let requested: SavedAssetScanOptions | undefined;
+		const reader: Pick<AssetReaderShape, "scanProject"> = {
+			scanProject: (options) => {
+				requested = options;
+				return Effect.succeed({
+					assets: [
+						{ depth: "full" as const, fileBytes: 1, inspection: mappingInspection }
+					],
+					failures: [],
+					summary: {
+						cacheHits: 0,
+						depth: "full" as const,
+						diagnostics: [],
+						emittedAssets: 1,
+						failedAssets: 0,
+						partialAssets: 0,
+						projectRoot: "C:/Projects/Example",
+						roots: ["C:/Projects/Example/Content"],
+						scannedAssets: 1,
+						schema_version: 8,
+						skippedAssets: 0
+					}
+				});
+			}
+		};
+		const report = await Effect.runPromise(
+			scanEnhancedInputWith(reader, { projectRoot: "C:/Projects/Example" })
+		);
+		expect(requested).toMatchObject({
+			classPrefixes: ["/Script/EnhancedInput."],
+			classNameSuffixes: ["InputAction", "InputMappingContext"],
+			concurrency: 8
+		});
+		expect(report.coverage.mappingContexts).toBe(1);
 	});
 
 	it("builds a report from mixed package outcomes", () => {

@@ -20,6 +20,7 @@ import {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/cameras/review-contracts";
+import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import { TextCorpusRunResult } from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
 import {
@@ -268,6 +269,16 @@ export const invokeContracts = {
 		channel: "game-text:choose-and-scan",
 		args: EmptyArgs,
 		result: TextCorpusRunResult
+	}),
+	"input-atlas:configured-scan": invoke({
+		channel: "input-atlas:configured-scan",
+		args: EmptyArgs,
+		result: EnhancedInputRunResult
+	}),
+	"input-atlas:choose-and-scan": invoke({
+		channel: "input-atlas:choose-and-scan",
+		args: EmptyArgs,
+		result: EnhancedInputRunResult
 	}),
 	"authoring:configured-table": invoke({
 		channel: "authoring:configured-table",

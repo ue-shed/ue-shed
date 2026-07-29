@@ -114,6 +114,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
 	"game-text:configured-scan": [],
 	"game-text:choose-and-scan": [],
+	"input-atlas:configured-scan": [],
+	"input-atlas:choose-and-scan": [],
 	"authoring:configured-table": [],
 	"authoring:configured-catalog": [],
 	"authoring:open-catalog-table": ["/Game/Data/Example", "live"],
@@ -206,6 +208,8 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"game-text:configured-scan": { status: "not_configured" },
 	"game-text:choose-and-scan": { status: "cancelled" },
+	"input-atlas:configured-scan": { status: "not_configured" },
+	"input-atlas:choose-and-scan": { status: "cancelled" },
 	"authoring:configured-table": { status: "not_configured" },
 	"authoring:configured-catalog": { status: "not_configured" },
 	"authoring:open-catalog-table": { status: "cancelled" },
@@ -317,9 +321,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 48 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(48);
-	expect(new Set(invokeChannelNames).size).toBe(48);
+it("registers exactly 50 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(50);
+	expect(new Set(invokeChannelNames).size).toBe(50);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

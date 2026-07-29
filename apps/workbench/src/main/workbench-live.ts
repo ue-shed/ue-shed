@@ -9,6 +9,7 @@ import {
 	reviewCaptureRemotePortLayer
 } from "@ue-shed/cameras";
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
+import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import { EditorPlaySessionLive } from "@ue-shed/engine-discovery";
 import { AuthoringClientLive } from "@ue-shed/host";
@@ -30,6 +31,7 @@ import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./servic
 import { CameraPresentationLive } from "./services/camera-presentation.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
+import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
 import { ShowcaseLive } from "./services/showcase.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
@@ -81,6 +83,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 		ElectronDialogLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
+		EnhancedInputServiceLive,
 		AuthoringCatalogLive
 	).pipe(Layer.provideMerge(baseLayer(hosts)));
 }
@@ -109,6 +112,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		ShowcaseLive,
 		WorkbenchAssetAuditsLive,
 		WorkbenchGameTextLive,
+		WorkbenchInputAtlasLive,
 		authoring,
 		authoringClient,
 		mapReview,

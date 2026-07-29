@@ -5,6 +5,7 @@ import { register as registerCameras } from "./cameras.js";
 import { register as registerEditorSession } from "./editor-session.js";
 import { register as registerFixture } from "./fixture.js";
 import { register as registerGameText } from "./game-text.js";
+import { register as registerInputAtlas } from "./input-atlas.js";
 import { register as registerMapReview } from "./map-review.js";
 import { register as registerShowcase } from "./showcase.js";
 
@@ -18,6 +19,7 @@ export const register = Effect.all(
 		registerShowcase,
 		registerAssetAudits,
 		registerGameText,
+		registerInputAtlas,
 		registerAuthoring,
 		registerCameras,
 		registerEditorSession,

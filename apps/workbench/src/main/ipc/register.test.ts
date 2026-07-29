@@ -2,6 +2,7 @@ import { it } from "@effect/vitest";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
+import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import type { TextCorpusRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
@@ -14,6 +15,7 @@ import { makeWorkbenchAuthoringTestLayer } from "../services/authoring.js";
 import { makeCameraPresentationTestLayer } from "../services/camera-presentation.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
+import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
@@ -123,6 +125,17 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record("gameText.configuredScan")
 				.pipe(Effect.as({ status: "not_configured" } as TextCorpusRunResult))
+	});
+
+	const inputAtlas = makeWorkbenchInputAtlasTestLayer({
+		chooseAndScan: () =>
+			recorder
+				.record("inputAtlas.chooseAndScan")
+				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult)),
+		configuredScan: () =>
+			recorder
+				.record("inputAtlas.configuredScan")
+				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult))
 	});
 
 	const sessionFailure = {
@@ -348,6 +361,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		showcase,
 		assetAudits,
 		gameText,
+		inputAtlas,
 		authoring,
 		mapReview,
 		fixtureLauncher,
@@ -380,13 +394,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 48 contract channels", () =>
+it.effect("registers exactly the 50 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(48);
+		expect(result).toHaveLength(50);
 	})
 );
 
@@ -431,6 +445,21 @@ it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("game-text:configured-scan"));
 		expect(yield* recorder.calls()).toEqual(["gameText.configuredScan"]);
+	})
+);
+
+it.effect("dispatches input-atlas channels to WorkbenchInputAtlas", () =>
+	Effect.gen(function* () {
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("input-atlas:configured-scan");
+				yield* ipc.invoke("input-atlas:choose-and-scan");
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			"inputAtlas.configuredScan",
+			"inputAtlas.chooseAndScan"
+		]);
 	})
 );
 

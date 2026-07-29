@@ -106,3 +106,14 @@ export const EnhancedInputPublicError = Schema.Struct({
 	retrySafe: Schema.Boolean
 });
 export type EnhancedInputPublicError = Schema.Schema.Type<typeof EnhancedInputPublicError>;
+
+/** One host-initiated scan, including the outcomes a host must render rather than throw. */
+export const EnhancedInputRunResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("completed"), report: EnhancedInputReport }),
+	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({ status: Schema.Literal("cancelled") }),
+	Schema.Struct({ status: Schema.Literal("failed"), error: EnhancedInputPublicError })
+]);
+export type EnhancedInputRunResult = Schema.Schema.Type<typeof EnhancedInputRunResult>;
+
+export const decodeEnhancedInputRunResult = Schema.decodeUnknownEffect(EnhancedInputRunResult);

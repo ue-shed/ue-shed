@@ -65,6 +65,12 @@ contextBridge.exposeInMainWorld("ueShed", {
 		chooseProjectAndScan: (): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:choose-and-scan")
 	},
+	inputAtlas: {
+		loadConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("input-atlas:configured-scan"),
+		chooseProjectAndScan: (): Promise<unknown> =>
+			ipcRenderer.invoke("input-atlas:choose-and-scan")
+	},
 	authoring: {
 		beginSession: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("authoring:session:begin", objectPath),

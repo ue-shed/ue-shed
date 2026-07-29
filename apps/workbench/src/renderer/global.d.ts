@@ -53,6 +53,10 @@ declare global {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
 			};
+			readonly inputAtlas: {
+				readonly loadConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndScan: () => Promise<unknown>;
+			};
 			readonly authoring: {
 				readonly beginSession: (objectPath: string) => Promise<unknown>;
 				readonly listSessions: () => Promise<unknown>;

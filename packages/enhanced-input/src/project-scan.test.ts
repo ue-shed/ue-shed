@@ -99,6 +99,47 @@ it.effect("selects Enhanced Input packages by class prefix in one batched pass",
 	})
 );
 
+it.effect("forwards scoped roots to the reader, and omits them when unscoped", () =>
+	Effect.gen(function* () {
+		const seen = yield* Ref.make<SavedAssetScanOptions[]>([]);
+		const reader = readerOffering(
+			Effect.fn("AssetReader.Test.scanProject")(function* (options) {
+				yield* Ref.update(seen, (current) => [...current, options]);
+				return {
+					assets: [],
+					failures: [],
+					summary: {
+						diagnostics: [],
+						emittedAssets: 0,
+						failedAssets: 0,
+						partialAssets: 0,
+						projectRoot: options.projectRoot,
+						roots: [...(options.paths ?? ["C:/Fixture/Content"])],
+						scannedAssets: 0,
+						schema_version: 7 as const,
+						skippedAssets: 0
+					}
+				};
+			})
+		);
+
+		yield* Effect.gen(function* () {
+			const service = yield* EnhancedInputService;
+			yield* service.scan({
+				paths: ["C:/Fixture/Content/Input"],
+				projectRoot: "C:/Fixture"
+			});
+			yield* service.scan({ projectRoot: "C:/Fixture" });
+		}).pipe(Effect.provide(EnhancedInputServiceLive), Effect.provide(reader));
+
+		const [scoped, unscoped] = yield* Ref.get(seen);
+		expect(scoped?.paths).toEqual(["C:/Fixture/Content/Input"]);
+		expect(scoped?.classPrefixes).toEqual([ENHANCED_INPUT_CLASS_PREFIX]);
+		// Absent rather than empty, so the reader keeps its own `Content` default.
+		expect(unscoped && "paths" in unscoped).toBe(false);
+	})
+);
+
 it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 	Effect.gen(function* () {
 		const reader = readerOffering((options) =>

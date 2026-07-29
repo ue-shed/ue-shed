@@ -32,6 +32,8 @@ export class EnhancedInputScanError extends Schema.TaggedErrorClass<EnhancedInpu
 export const EnhancedInputScanOptions = Schema.Struct({
 	concurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	maximumAssets: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+	/** Roots to enumerate beneath the project, relative or absolute. Defaults to all of `Content`. */
+	paths: Schema.optional(Schema.Array(Schema.String)),
 	projectRoot: Schema.String
 });
 export type EnhancedInputScanOptions = Schema.Schema.Type<typeof EnhancedInputScanOptions>;
@@ -337,6 +339,7 @@ function scanEnhancedInputWith(
 				classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
 				concurrency: Math.max(1, options.concurrency ?? 4),
 				maximumAssets: options.maximumAssets ?? 10_000,
+				...(options.paths === undefined ? {} : { paths: options.paths }),
 				projectRoot: options.projectRoot
 			})
 			.pipe(Effect.mapError(enhancedInputScanFailure));

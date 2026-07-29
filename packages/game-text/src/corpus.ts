@@ -1,10 +1,12 @@
 import { relative } from "node:path";
 import {
 	AssetReader,
+	isHeaderScanEntry,
 	isFullScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
+	type SavedAssetScan,
 	type SavedProperty,
 	type SavedPropertyValue
 } from "@ue-shed/unreal-assets";
@@ -194,13 +196,39 @@ function unsupportedTextProperties(
 		}
 	};
 	for (const asset of inspection.assets) {
-		if (asset.kind === "UObject") visit(asset.object_path, asset.properties, "");
+		if (isPropertyBearingAsset(asset)) visit(asset.object_path, asset.properties, "");
 		if (asset.kind === "DataTable" || asset.kind === "CompositeDataTable") {
 			for (const row of asset.rows)
 				visit(asset.object_path, row.properties, `row:${row.name}`);
 		}
 	}
 	return gaps;
+}
+
+type PropertyBearingAsset = Extract<
+	SavedAssetInspection["assets"][number],
+	{
+		readonly kind:
+			| "UObject"
+			| "DataAsset"
+			| "PrimaryDataAsset"
+			| "CurveTable"
+			| "Skeleton"
+			| "Struct";
+	}
+>;
+
+function isPropertyBearingAsset(
+	asset: SavedAssetInspection["assets"][number]
+): asset is PropertyBearingAsset {
+	return (
+		asset.kind === "UObject" ||
+		asset.kind === "DataAsset" ||
+		asset.kind === "PrimaryDataAsset" ||
+		asset.kind === "CurveTable" ||
+		asset.kind === "Skeleton" ||
+		asset.kind === "Struct"
+	);
 }
 
 export function textOccurrencesFromInspection(options: {
@@ -250,7 +278,7 @@ export function textOccurrencesFromInspection(options: {
 			}
 			continue;
 		}
-		if (asset.kind === "UObject") {
+		if (isPropertyBearingAsset(asset)) {
 			visitProperties({
 				output,
 				packageFile: options.packageFile,
@@ -267,6 +295,24 @@ export function textOccurrencesFromInspection(options: {
 		}
 	}
 	return output.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/** Paths whose existing header-index projection proves they may contribute game text. */
+export function textPackagePathsFromProjectIndex(index: SavedAssetScan): readonly string[] {
+	return [
+		...new Set(
+			index.assets
+				.filter(isHeaderScanEntry)
+				.filter(
+					(entry) =>
+						entry.header.matched_names?.includes(TEXT_PROPERTY_NAME) === true ||
+						entry.header.exports.some(
+							(exported) => exported.class_path === STRING_TABLE_CLASS
+						)
+				)
+				.map((entry) => entry.header.path)
+		)
+	].sort((left, right) => left.localeCompare(right));
 }
 
 function unitKey(occurrence: TextOccurrence): string {
@@ -430,8 +476,64 @@ function scanTextCorpusWith(
 	}).pipe(Effect.withSpan("game-text.scan-corpus"));
 }
 
+function scanTextCorpusFromProjectIndexWith(
+	reader: AssetReaderShape,
+	index: SavedAssetScan,
+	options: TextCorpusScanOptions
+): Effect.Effect<TextCorpus, TextCorpusScanError> {
+	return Effect.gen(function* () {
+		const paths = textPackagePathsFromProjectIndex(index);
+		if (paths.length === 0) {
+			return buildTextCorpus(
+				index.failures.map(
+					(failure): TextPackageOutcome => ({
+						status: "failed",
+						packageFile: relative(options.projectRoot, failure.path),
+						message: failure.message
+					})
+				),
+				{ discoveredPackages: index.summary.scannedAssets, inspectedPackages: 0 }
+			);
+		}
+		const scan = yield* reader
+			.scanProject({
+				concurrency: Math.max(1, options.concurrency ?? 8),
+				...(options.maximumAssets === undefined
+					? {}
+					: { maximumAssets: options.maximumAssets }),
+				paths,
+				projectRoot: options.projectRoot
+			})
+			.pipe(Effect.mapError(textCorpusScanFailure));
+		const outcomes: TextPackageOutcome[] = [
+			...scan.assets.filter(isFullScanEntry).map(
+				(entry): TextPackageOutcome => ({
+					status: "inspected",
+					packageFile: relative(options.projectRoot, entry.inspection.path),
+					inspection: entry.inspection
+				})
+			),
+			...[...index.failures, ...scan.failures].map(
+				(failure): TextPackageOutcome => ({
+					status: "failed",
+					packageFile: relative(options.projectRoot, failure.path),
+					message: failure.message
+				})
+			)
+		];
+		return buildTextCorpus(outcomes, {
+			discoveredPackages: index.summary.scannedAssets,
+			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets
+		});
+	}).pipe(Effect.withSpan("game-text.scan-corpus-from-project-index"));
+}
+
 export interface TextCorpusServiceShape {
 	readonly scan: (
+		options: TextCorpusScanOptions
+	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
+	readonly scanFromProjectIndex: (
+		index: SavedAssetScan,
 		options: TextCorpusScanOptions
 	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
 }
@@ -459,14 +561,41 @@ export const TextCorpusServiceLive = Layer.effect(
 			);
 			return yield* scanTextCorpusWith(reader, validated);
 		});
-		return TextCorpusService.of({ scan });
+		const scanFromProjectIndex = Effect.fn("TextCorpus.scanFromProjectIndex")(function* (
+			index: SavedAssetScan,
+			options: TextCorpusScanOptions
+		) {
+			const validated = yield* decodeScanOptions(options).pipe(
+				Effect.mapError(
+					(cause) =>
+						new TextCorpusScanError({
+							code: "scan_limit_exceeded",
+							message: `Invalid text corpus scan options: ${String(cause)}`,
+							recovery: "Provide a project root and positive scan limits.",
+							retrySafe: false
+						})
+				)
+			);
+			return yield* scanTextCorpusFromProjectIndexWith(reader, index, validated);
+		});
+		return TextCorpusService.of({ scan, scanFromProjectIndex });
 	})
 );
 
+export type TextCorpusServiceTestShape = Omit<TextCorpusServiceShape, "scanFromProjectIndex"> &
+	Partial<Pick<TextCorpusServiceShape, "scanFromProjectIndex">>;
+
 export function makeTextCorpusServiceTestLayer(
-	service: TextCorpusServiceShape
+	service: TextCorpusServiceTestShape
 ): Layer.Layer<TextCorpusService> {
-	return Layer.succeed(TextCorpusService, TextCorpusService.of(service));
+	return Layer.succeed(
+		TextCorpusService,
+		TextCorpusService.of({
+			...service,
+			scanFromProjectIndex:
+				service.scanFromProjectIndex ?? ((_index, options) => service.scan(options))
+		})
+	);
 }
 
 /** Compatibility accessor until Plans 012–014 compose TextCorpusService layers directly. */

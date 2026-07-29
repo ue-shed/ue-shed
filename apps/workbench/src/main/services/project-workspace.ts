@@ -5,6 +5,8 @@ import {
 	scanEnhancedInputFromProjectIndex,
 	type EnhancedInputRunResult as EnhancedInputRunResultValue
 } from "@ue-shed/enhanced-input";
+import { TEXTURE_CLASS } from "@ue-shed/asset-audits";
+import { STRING_TABLE_CLASS, TEXT_PROPERTY_NAME } from "@ue-shed/game-text";
 import { SavedWorldMap, type SavedWorldMap as SavedWorldMapValue } from "@ue-shed/protocol";
 import {
 	AssetReader,
@@ -29,6 +31,8 @@ import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { savedMapLabel, WorkbenchConfiguration } from "../workbench-config.js";
 
 interface ProjectInventory {
+	/** The current header projection, retained so dependent tools can decode candidates only. */
+	readonly index: SavedAssetScan;
 	readonly inputAtlas: EnhancedInputRunResultValue;
 	readonly manifestHash: string;
 	readonly manifest: readonly SavedAssetManifestEntry[];
@@ -72,6 +76,8 @@ export interface WorkbenchProjectShape {
 	readonly choose: () => Effect.Effect<WorkbenchProjectState>;
 	readonly current: () => Effect.Effect<WorkbenchProjectState>;
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
+	/** The current global header index. Consumers must not re-enumerate the project. */
+	readonly index: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
 	readonly savedProject: () => Effect.Effect<
 		{ readonly maps: readonly SavedWorldMapValue[]; readonly projectRoot: string },
 		WorkbenchProjectUnavailable
@@ -119,8 +125,16 @@ function mapsFromManifest(
 		.map((mapPath) => ({ label: savedMapLabel(mapPath), mapPath }));
 }
 
-function fromPersistentInventory(entry: PersistentProjectInventory): ProjectInventory {
+function headerProjection(index: SavedAssetScan): SavedAssetScan {
+	return { assets: index.assets, failures: index.failures, summary: index.summary };
+}
+
+function fromPersistentInventory(
+	entry: PersistentProjectInventory,
+	index: SavedAssetScan
+): ProjectInventory {
 	return {
+		index: headerProjection(index),
 		inputAtlas: entry.inputAtlas,
 		manifest: entry.manifest,
 		manifestHash: entry.manifestHash,
@@ -254,6 +268,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			const tables = savedTableCatalogFromScan(index);
 			const maps = mapsFromManifest(projectRoot, manifest);
 			return {
+				index: headerProjection(index),
 				inputAtlas,
 				manifest,
 				manifestHash,
@@ -272,7 +287,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		const loadRootUncached = Effect.fn("Workbench.WorkbenchProject.loadRootUncached")(
 			function* (projectRoot: string) {
 				const index = yield* assetReader.scanProject({
-					classes: SAVED_TABLE_SCAN_CLASSES,
+					classes: [...SAVED_TABLE_SCAN_CLASSES, STRING_TABLE_CLASS, TEXTURE_CLASS],
 					classNameSuffixes: ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
 					classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
 					...(projectIndexCachePath === undefined
@@ -280,6 +295,7 @@ export const WorkbenchProjectLive = Layer.effect(
 						: { cachePath: projectIndexCachePath(projectRoot) }),
 					depth: "header",
 					inventory: true,
+					names: [TEXT_PROPERTY_NAME],
 					projectRoot
 				});
 				if (
@@ -310,7 +326,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					persisted?.manifestHash === manifestHash &&
 					persisted.project.projectRoot === projectRoot
 				) {
-					const inventory = fromPersistentInventory(persisted);
+					const inventory = fromPersistentInventory(persisted, index);
 					yield* Ref.set(selectedInventory, Option.some(inventory));
 					return inventory;
 				}
@@ -404,6 +420,10 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 		});
 
+		const projectIndex = Effect.fn("Workbench.WorkbenchProject.index")(function* () {
+			return (yield* selected()).index;
+		});
+
 		const savedProject = Effect.fn("Workbench.WorkbenchProject.savedProject")(function* () {
 			const inventory = yield* selected();
 			return { maps: inventory.maps, projectRoot: inventory.project.projectRoot };
@@ -413,12 +433,28 @@ export const WorkbenchProjectLive = Layer.effect(
 			return (yield* selected()).tables;
 		});
 
-		return WorkbenchProject.of({ choose, current, inputAtlas, savedProject, savedTables });
+		return WorkbenchProject.of({
+			choose,
+			current,
+			inputAtlas,
+			index: projectIndex,
+			savedProject,
+			savedTables
+		});
 	})
 );
 
+export type WorkbenchProjectTestShape = Omit<WorkbenchProjectShape, "index"> &
+	Partial<Pick<WorkbenchProjectShape, "index">>;
+
 export function makeWorkbenchProjectTestLayer(
-	service: WorkbenchProjectShape
+	service: WorkbenchProjectTestShape
 ): Layer.Layer<WorkbenchProject> {
-	return Layer.succeed(WorkbenchProject, WorkbenchProject.of(service));
+	return Layer.succeed(
+		WorkbenchProject,
+		WorkbenchProject.of({
+			...service,
+			index: service.index ?? (() => Effect.die("project index is not used by this test"))
+		})
+	);
 }

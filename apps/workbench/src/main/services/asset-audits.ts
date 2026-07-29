@@ -5,6 +5,7 @@ import {
 	type TexturePreviewResult
 } from "@ue-shed/asset-audits";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
+import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Context, Effect, Layer } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import type { WorkbenchWindowError } from "../adapters/electron-window.js";
@@ -49,8 +50,8 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const textureAudit = yield* TextureAudit;
 		const remoteControl = yield* RemoteControlClient;
 
-		const runScan = (projectRoot: string, ruleFile: string) =>
-			textureAudit.scan({ projectRoot, ruleFile }).pipe(
+		const runScan = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
+			textureAudit.scanFromProjectIndex(index, { projectRoot, ruleFile }).pipe(
 				Effect.map((report) => ({ report, status: "completed" as const })),
 				Effect.catch((error) =>
 					Effect.succeed({
@@ -70,6 +71,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				if (configuration.textureAuditRules.status !== "configured") {
 					return { status: "not_configured" as const };
 				}
+				const ruleFile = configuration.textureAuditRules.path;
 				const current = yield* project.current();
 				if (current.status === "not_configured" || current.status === "cancelled") {
 					return { status: "not_configured" as const };
@@ -77,17 +79,14 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				if (current.status === "failed") {
 					return unavailableProject(current.error.message, current.error.recovery);
 				}
-				// Keep this route attached to the selected workspace inventory. The audit has its
-				// own Texture2D property decode, which is deliberately separate from Input Atlas.
-				const selected = yield* project.savedProject().pipe(
-					Effect.catch(() =>
-						Effect.succeed({
-							projectRoot: current.project.projectRoot,
-							maps: [] as const
-						})
+				return yield* project.index().pipe(
+					Effect.flatMap((index) =>
+						runScan(current.project.projectRoot, ruleFile, index)
+					),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableProject(error.message, error.recovery))
 					)
 				);
-				return yield* runScan(selected.projectRoot, configuration.textureAuditRules.path);
 			}
 		);
 
@@ -116,7 +115,14 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					if (ruleChoice.status === "cancelled") return { status: "cancelled" as const };
 					ruleFile = ruleChoice.path;
 				}
-				return yield* runScan(projectChoice.project.projectRoot, ruleFile);
+				return yield* project.index().pipe(
+					Effect.flatMap((index) =>
+						runScan(projectChoice.project.projectRoot, ruleFile, index)
+					),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableProject(error.message, error.recovery))
+					)
+				);
 			}
 		);
 

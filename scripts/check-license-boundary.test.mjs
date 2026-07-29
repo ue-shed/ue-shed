@@ -6,7 +6,7 @@ const validInput = {
 	rootManifest: { license: "MIT" },
 	rootLicense: "MIT License\n\nPermission is hereby granted",
 	peculiarManifest: {
-		version: "0.11.0",
+		version: "0.11.1",
 		license: "MIT",
 		dependencies: { "better-result": "^2.8.2" }
 	},
@@ -46,7 +46,7 @@ test("rejects license, version, and packed-core dependency drift", () => {
 	assert.deepEqual(failures, [
 		"package.json: license must be MIT",
 		"LICENSE: expected the MIT license text",
-		"peculiar-sheets: expected exact version 0.11.0, received 0.12.0",
+		"peculiar-sheets: expected exact version 0.11.1, received 0.12.0",
 		"peculiar-sheets: expected MIT metadata, received GPL-3.0-only",
 		"peculiar-sheets: production dependency hyperformula violates the formula-free core boundary"
 	]);

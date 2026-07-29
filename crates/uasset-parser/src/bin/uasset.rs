@@ -36,7 +36,7 @@ const EXIT_INTERNAL: u8 = 5;
 const EXIT_PARTIAL: u8 = 6;
 const EXIT_RESOURCE_LIMIT: u8 = 7;
 const EXIT_USAGE: u8 = 64;
-const SCAN_CACHE_VERSION: u32 = 1;
+const SCAN_CACHE_VERSION: u32 = 2;
 const HEADER_PROBE_BYTES: usize = 4 * 1024;
 const MAX_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
@@ -251,6 +251,8 @@ impl Command {
                 concurrency = parse_concurrency(value?.as_os_str())?;
             } else if let Some(value) = option_value(&arguments, &mut index, text, "--path") {
                 paths.push(PathBuf::from(value?));
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--path-list") {
+                paths.extend(read_scan_path_list(&value?)?);
             } else if let Some(value) =
                 option_value(&arguments, &mut index, text, "--maximum-assets")
             {
@@ -295,12 +297,6 @@ impl Command {
         // than the packages it describes. Refusing is clearer than silently ignoring the flag.
         if cache.is_some() && depth != ScanDepth::Header {
             return Err("scan --cache requires --depth header".to_owned());
-        }
-        // Name-table membership is a cheap pre-filter for a full decode, and it cannot be replayed
-        // from a cached header without storing every package's name table. Header depth reports
-        // export class identity, so class filters are the selector that belongs to it.
-        if depth == ScanDepth::Header && !filters.names.is_empty() {
-            return Err("scan --name requires --depth full".to_owned());
         }
         Ok(Self::Scan(ScanOptions {
             project_root: project_root.ok_or_else(|| "scan requires a project root".to_owned())?,
@@ -398,6 +394,22 @@ fn utf8_option_value(value: &OsString, flag: &str) -> Result<String, String> {
         .to_str()
         .map(str::to_owned)
         .ok_or_else(|| format!("{flag} value is not valid UTF-8"))
+}
+
+/// Reads a JSON array of UTF-8 paths. The list itself may live outside the project root (the
+/// TypeScript reader creates it in the system temporary directory), but every resulting path is
+/// still checked by `resolve_scan_roots` before it can be enumerated.
+fn read_scan_path_list(value: &OsString) -> Result<Vec<PathBuf>, String> {
+    let path = PathBuf::from(value);
+    let file = File::open(&path)
+        .map_err(|error| format!("--path-list {} is not readable: {error}", path.display()))?;
+    let paths = serde_json::from_reader::<_, Vec<String>>(file).map_err(|error| {
+        format!(
+            "--path-list {} must be a JSON array of UTF-8 paths: {error}",
+            path.display()
+        )
+    })?;
+    Ok(paths.into_iter().map(PathBuf::from).collect())
 }
 
 fn parse_concurrency(value: &std::ffi::OsStr) -> Result<usize, String> {
@@ -1421,10 +1433,19 @@ fn package_matches(package: &Package, filters: &ScanFilters) -> bool {
     if class_matched {
         return true;
     }
+    matching_names(package, filters).next().is_some()
+}
+
+/// Name-table filters are a header capability. Header scans retain only the matching requested
+/// names, which is enough to replay their selection from cache without persisting every name.
+fn matching_names<'a>(
+    package: &'a Package,
+    filters: &'a ScanFilters,
+) -> impl Iterator<Item = &'a String> {
     filters
         .names
         .iter()
-        .any(|name| package.names.iter().any(|entry| entry == name))
+        .filter(|name| package.names.iter().any(|entry| entry == *name))
 }
 
 /// Matches a full class path (`/Script/Engine.Texture2D`) exactly, or a bare class name
@@ -1533,6 +1554,7 @@ fn scan_header_asset(entry: &ScanHeaderCacheEntry) -> ScanAssetOutcome {
                 name: &entry.package_name,
             },
             exports: &entry.exports,
+            matched_names: &entry.matched_names,
         },
     };
     match serde_json::to_vec(&line) {
@@ -1558,6 +1580,7 @@ fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHe
             return ScanHeaderCacheEntry {
                 failure_code: Some(code.to_owned()),
                 exports: Vec::new(),
+                matched_names: Vec::new(),
                 matched: false,
                 modified_nanos: signature.modified_nanos,
                 package_name: String::new(),
@@ -1588,10 +1611,14 @@ fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHe
             }
         })
         .collect::<Vec<_>>();
+    let matched_names = matching_names(&package, filters)
+        .cloned()
+        .collect::<Vec<_>>();
     ScanHeaderCacheEntry {
         failure_code: None,
-        matched: filters.is_empty() || !exports.is_empty(),
+        matched: filters.is_empty() || !exports.is_empty() || !matched_names.is_empty(),
         exports,
+        matched_names,
         modified_nanos: signature.modified_nanos,
         package_name: package.summary.package_name.clone(),
         path,
@@ -1599,8 +1626,7 @@ fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHe
     }
 }
 
-/// The class rules of `package_matches` applied to one class path. Header depth refuses the
-/// name-table rule at parse time, so class identity is the whole of the selection here.
+/// The class rules of `package_matches` applied to one class path.
 fn class_matches(class_path: &str, filters: &ScanFilters) -> bool {
     filters
         .classes
@@ -1987,6 +2013,9 @@ struct ScanHeaderOutput<'a> {
     path: &'a str,
     package: ScanHeaderPackageOutput<'a>,
     exports: &'a [ScanHeaderExportOutput],
+    /// Requested name-table entries that selected this package. This is a projection, not the
+    /// package's full name table, and makes cached name filters replayable at header depth.
+    matched_names: &'a [String],
 }
 
 #[derive(Serialize)]
@@ -2031,6 +2060,10 @@ struct ScanHeaderCacheEntry {
     /// Exports that matched the filters, or every export when no filters were given.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     exports: Vec<ScanHeaderExportOutput>,
+    /// Requested name-table entries present in this package. Keeping only matches preserves the
+    /// cache's compact projection while retaining the name-filter result.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    matched_names: Vec<String>,
     /// Recorded explicitly so a package that matched with zero exports stays distinct from a
     /// package that did not match at all.
     matched: bool,
@@ -3560,7 +3593,7 @@ Usage:
   uasset authoring <path|-> --format json
   uasset scan <project-root> [--format json] [--concurrency <count>]
               [--depth header|full] [--cache <path>]
-              [--maximum-assets <count>] [--path <dir|file>]...
+              [--maximum-assets <count>] [--path <dir|file>]... [--path-list <json-file>]...
               [--class <class>]... [--class-prefix <prefix>]...
               [--class-name-suffix <suffix>]... [--name <name>]...
   uasset saved-world <project-root> <map-path> [--format json] [--concurrency <count>]
@@ -3587,6 +3620,9 @@ Scan options:
                     the scan roots. This is independent of filter matches.
   --path            Directory, .uasset, or .umap to enumerate, relative to the project root
                     or absolute, and inside it. Repeatable. Defaults to Content.
+  --path-list       JSON array of paths with the same rules as --path. This keeps a large,
+                    already-selected package list out of the operating system command line.
+                    Repeatable.
   --maximum-assets  Refuse the scan when enumeration finds more packages than this,
                     before any package is decoded. Exits 7.
   --class           Select packages exporting this class, as a full path
@@ -3596,9 +3632,9 @@ Scan options:
   --class-name-suffix
                     Select packages whose serialized class object's name ends with this suffix.
                     This is a candidate filter, not native inheritance resolution. Repeatable.
-  --name            Select packages whose name table contains this entry, which selects
-                    by serialized property type (TextProperty). Repeatable. Requires
-                    --depth full, because a cached header carries no name table.
+  --name             Select packages whose name table contains this entry, which selects
+                    by serialized property type (TextProperty). Repeatable. Header depth retains
+                    only the requested matching names, so cached header scans can replay it.
 
   Filters are matched against the package header only, so unselected packages are never
   fully read or decoded. A package is selected when it matches any filter; with no filters
@@ -3711,6 +3747,47 @@ mod command_tests {
     }
 
     #[test]
+    fn parses_scan_path_list_contract() {
+        let path_list = std::env::temp_dir().join(format!(
+            "ue-shed-uasset-path-list-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time after the epoch")
+                .as_nanos()
+        ));
+        fs::write(
+            &path_list,
+            r#"["Content/Fixture", "Content/Other/DT_Test.uasset"]"#,
+        )
+        .expect("write path list");
+        let parsed = Command::parse(vec![
+            "scan".into(),
+            "project".into(),
+            "--path-list".into(),
+            path_list.clone().into_os_string(),
+        ]);
+        fs::remove_file(&path_list).expect("remove path list");
+        assert_eq!(
+            parsed.expect("scan command"),
+            Command::Scan(ScanOptions {
+                project_root: PathBuf::from("project"),
+                paths: vec![
+                    PathBuf::from("Content/Fixture"),
+                    PathBuf::from("Content/Other/DT_Test.uasset")
+                ],
+                format: OutputFormat::Json,
+                concurrency: std::thread::available_parallelism().map_or(4, usize::from),
+                maximum_assets: None,
+                filters: ScanFilters::default(),
+                depth: ScanDepth::Full,
+                cache: None,
+                inventory: false,
+            })
+        );
+    }
+
+    #[test]
     fn parses_scan_header_depth_with_a_cache() {
         assert_eq!(
             Command::parse(vec![
@@ -3768,18 +3845,17 @@ mod command_tests {
     }
 
     #[test]
-    fn scan_rejects_name_filters_at_header_depth() {
-        // A cached header carries no name table, so replaying this filter from cache is impossible.
-        assert!(
-            Command::parse(vec![
-                "scan".into(),
-                "project".into(),
-                "--depth=header".into(),
-                "--name".into(),
-                "TextProperty".into(),
-            ])
-            .is_err()
-        );
+    fn scan_accepts_name_filters_at_header_depth() {
+        let Ok(Command::Scan(options)) = Command::parse(vec![
+            "scan".into(),
+            "project".into(),
+            "--depth=header".into(),
+            "--name".into(),
+            "TextProperty".into(),
+        ]) else {
+            panic!("header scan with a name filter");
+        };
+        assert_eq!(options.filters.names, ["TextProperty"]);
     }
 
     #[test]
@@ -3822,6 +3898,7 @@ mod command_tests {
         let entry = ScanHeaderCacheEntry {
             failure_code: Some("asset_malformed_data".to_owned()),
             exports: Vec::new(),
+            matched_names: Vec::new(),
             matched: false,
             modified_nanos: 7,
             package_name: String::new(),
@@ -3839,6 +3916,7 @@ mod command_tests {
         let entry = ScanHeaderCacheEntry {
             failure_code: None,
             exports: Vec::new(),
+            matched_names: Vec::new(),
             matched: false,
             modified_nanos: 7,
             package_name: "/Game/Texture".to_owned(),
@@ -3882,6 +3960,7 @@ mod command_tests {
                         class_path: Some("/Script/Engine.DataTable".to_owned()),
                         object_path: "/Game/DT_Test.DT_Test".to_owned(),
                     }],
+                    matched_names: vec!["TextProperty".to_owned()],
                     matched: true,
                     modified_nanos: 42,
                     package_name: "/Game/DT_Test".to_owned(),
@@ -3891,6 +3970,7 @@ mod command_tests {
                 ScanHeaderCacheEntry {
                     failure_code: Some("asset_io".to_owned()),
                     exports: Vec::new(),
+                    matched_names: Vec::new(),
                     matched: false,
                     modified_nanos: 0,
                     package_name: String::new(),
@@ -3913,6 +3993,7 @@ mod command_tests {
         assert_eq!(restored.entries.len(), 2);
         assert_eq!(restored.filters, cache.filters);
         assert!(restored.entries[0].matched);
+        assert_eq!(restored.entries[0].matched_names, ["TextProperty"]);
         assert_eq!(
             restored.entries[0].exports[0].class_path.as_deref(),
             Some("/Script/Engine.DataTable")
@@ -3929,6 +4010,7 @@ mod command_tests {
         let entry = ScanHeaderCacheEntry {
             failure_code: None,
             exports: Vec::new(),
+            matched_names: Vec::new(),
             matched: false,
             modified_nanos: 100,
             package_name: String::new(),

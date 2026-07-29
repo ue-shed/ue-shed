@@ -101,6 +101,17 @@ describe.skipIf(!executable)("batched project scan", () => {
 		).toBe(true);
 	});
 
+	it("passes a large explicit package list without expanding the process command line", async () => {
+		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");
+		const paths = Array.from({ length: 512 }, () => assetPath);
+		const scan = await runReader(
+			scanSavedProject({ maximumAssets: 1, paths, projectRoot: fixtureRoot })
+		);
+		// Repeated roots are deduplicated after the path list is read, so one package is decoded.
+		expect(scan.summary.scannedAssets).toBe(1);
+		expect(scan.summary.roots).toHaveLength(paths.length);
+	});
+
 	it("refuses a scan above the requested asset limit before decoding", async () => {
 		const error = await Effect.runPromise(
 			scanSavedProject({ maximumAssets: 2, projectRoot: fixtureRoot }).pipe(
@@ -242,7 +253,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 		}
 	});
 
-	it("refuses a cache at full depth and a name filter at header depth", async () => {
+	it("refuses a cache at full depth and projects matching names at header depth", async () => {
 		const usage = <A>(effect: Effect.Effect<A, AssetReaderError, AssetReader>) =>
 			Effect.runPromise(
 				effect.pipe(
@@ -254,17 +265,19 @@ describe.skipIf(!executable)("batched project scan", () => {
 			(await usage(scanSavedProject({ cachePath: "index.json", projectRoot: fixtureRoot })))
 				.kind
 		).toBe("process");
+		const header = await runReader(
+			scanSavedProject({
+				depth: "header",
+				names: ["TextProperty"],
+				projectRoot: fixtureRoot
+			})
+		);
+		expect(header.summary.depth).toBe("header");
 		expect(
-			(
-				await usage(
-					scanSavedProject({
-						depth: "header",
-						names: ["TextProperty"],
-						projectRoot: fixtureRoot
-					})
-				)
-			).kind
-		).toBe("process");
+			header.assets
+				.filter(isHeaderScanEntry)
+				.every((entry) => entry.header.matched_names?.includes("TextProperty") === true)
+		).toBe(true);
 	});
 });
 

@@ -43,6 +43,7 @@ function projectIndex(mapSize = 256): SavedAssetScan {
 							object_path: "/Game/Tables/DT_Test.DT_Test"
 						}
 					],
+					matched_names: [],
 					package: { name: "/Game/Tables/DT_Test" },
 					path: `${projectRoot}/Content/Tables/DT_Test.uasset`,
 					schema_version: 8
@@ -102,6 +103,9 @@ it.effect("builds maps, tables, and Input Atlas from one shared header index", (
 			scanProject: (options) => {
 				expect(options.depth).toBe("header");
 				expect(options.inventory).toBe(true);
+				expect(options.classes).toContain("/Script/Engine.Texture2D");
+				expect(options.classes).toContain("/Script/Engine.StringTable");
+				expect(options.names).toEqual(["TextProperty"]);
 				return Ref.update(indexScans, (count) => count + 1).pipe(Effect.as(projectIndex()));
 			},
 			source: () => Effect.succeed("configured" as const)

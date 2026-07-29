@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -81,7 +82,7 @@ export interface SavedAssetScanOptions {
 	readonly maximumAssets?: number;
 	/**
 	 * Select packages whose name table contains this entry, e.g. the `TextProperty` type name.
-	 * Requires `depth: "full"`, because a cached header carries no name table.
+	 * Header scans retain only matching requested names, so this can reuse the header cache.
 	 */
 	readonly names?: readonly string[];
 	/** Roots to enumerate, relative to the project root or absolute. Defaults to `Content`. */
@@ -175,7 +176,7 @@ interface ProcessFailure {
 export type SavedPropertyValue =
 	| { readonly value_kind: "bool"; readonly value: boolean }
 	| { readonly value_kind: "int" | "uint"; readonly value: number }
-	| { readonly value_kind: "float" | "double"; readonly value: number }
+	| { readonly value_kind: "float" | "double"; readonly value: number | null }
 	| {
 			readonly value_kind: "name" | "enum" | "string" | "guid" | "soft_object_path";
 			readonly value: string;
@@ -198,20 +199,32 @@ export type SavedPropertyValue =
 			readonly table_object_path: string | null;
 			readonly row_name: string;
 	  }
-	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
+	| {
+			readonly value_kind: "vector";
+			readonly x: number | null;
+			readonly y: number | null;
+			readonly z: number | null;
+	  }
 	| { readonly value_kind: "int_point"; readonly x: number; readonly y: number }
 	| {
 			readonly value_kind: "rotator";
-			readonly pitch: number;
-			readonly yaw: number;
-			readonly roll: number;
+			readonly pitch: number | null;
+			readonly yaw: number | null;
+			readonly roll: number | null;
 	  }
 	| {
-			readonly value_kind: "color" | "linear_color";
+			readonly value_kind: "color";
 			readonly r: number;
 			readonly g: number;
 			readonly b: number;
 			readonly a: number;
+	  }
+	| {
+			readonly value_kind: "linear_color";
+			readonly r: number | null;
+			readonly g: number | null;
+			readonly b: number | null;
+			readonly a: number | null;
 	  }
 	| { readonly value_kind: "array" | "set"; readonly values: readonly SavedPropertyValue[] }
 	| {
@@ -240,11 +253,14 @@ const SavedProperty: Schema.Codec<SavedProperty> = Schema.suspend(() =>
 ).annotate({ identifier: "SavedProperty" });
 
 const stringKinds = ["name", "enum", "string", "guid", "soft_object_path"] as const;
+// `serde_json` serializes Unreal's NaN and infinity values as JSON null. Keep that explicit at
+// this boundary so one uncommon property cannot invalidate its whole package inspection.
+const savedFloatingPoint = Schema.NullOr(Schema.Number);
 
 const SavedPropertyValueUnion = Schema.Union([
 	Schema.Struct({ value_kind: Schema.Literal("bool"), value: Schema.Boolean }),
 	Schema.Struct({ value_kind: Schema.Literals(["int", "uint"]), value: Schema.Number }),
-	Schema.Struct({ value_kind: Schema.Literals(["float", "double"]), value: Schema.Number }),
+	Schema.Struct({ value_kind: Schema.Literals(["float", "double"]), value: savedFloatingPoint }),
 	Schema.Struct({ value_kind: Schema.Literals(stringKinds), value: Schema.String }),
 	Schema.Struct({
 		value_kind: Schema.Literal("text"),
@@ -269,9 +285,9 @@ const SavedPropertyValueUnion = Schema.Union([
 	}),
 	Schema.Struct({
 		value_kind: Schema.Literal("vector"),
-		x: Schema.Number,
-		y: Schema.Number,
-		z: Schema.Number
+		x: savedFloatingPoint,
+		y: savedFloatingPoint,
+		z: savedFloatingPoint
 	}),
 	Schema.Struct({
 		value_kind: Schema.Literal("int_point"),
@@ -280,16 +296,23 @@ const SavedPropertyValueUnion = Schema.Union([
 	}),
 	Schema.Struct({
 		value_kind: Schema.Literal("rotator"),
-		pitch: Schema.Number,
-		yaw: Schema.Number,
-		roll: Schema.Number
+		pitch: savedFloatingPoint,
+		yaw: savedFloatingPoint,
+		roll: savedFloatingPoint
 	}),
 	Schema.Struct({
-		value_kind: Schema.Literals(["color", "linear_color"]),
+		value_kind: Schema.Literal("color"),
 		r: Schema.Number,
 		g: Schema.Number,
 		b: Schema.Number,
 		a: Schema.Number
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literal("linear_color"),
+		r: savedFloatingPoint,
+		g: savedFloatingPoint,
+		b: savedFloatingPoint,
+		a: savedFloatingPoint
 	}),
 	Schema.Struct({
 		value_kind: Schema.Literals(["array", "set"]),
@@ -361,9 +384,79 @@ export const SavedAssetInspection = Schema.Struct({
 				tail_bytes: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 			}),
 			Schema.Struct({
+				kind: Schema.Literals(["DataAsset", "PrimaryDataAsset"]),
+				object_path: Schema.String,
+				class_path: Schema.String,
+				object_guid: Schema.optional(Schema.String),
+				properties: Schema.Array(SavedProperty).pipe(
+					Schema.withDecodingDefaultKey(Effect.succeed([]))
+				)
+			}),
+			Schema.Struct({
+				kind: Schema.Literal("CurveTable"),
+				object_path: Schema.String,
+				class_path: Schema.String,
+				properties: Schema.Array(SavedProperty).pipe(
+					Schema.withDecodingDefaultKey(Effect.succeed([]))
+				),
+				row_count: nonNegativeInt,
+				curve_rows: Schema.Array(
+					Schema.Struct({
+						name: Schema.String,
+						keys: Schema.Array(
+							Schema.Struct({ time: savedFloatingPoint, value: savedFloatingPoint })
+						)
+					})
+				)
+			}),
+			Schema.Struct({
+				kind: Schema.Literal("Skeleton"),
+				object_path: Schema.String,
+				class_path: Schema.String,
+				object_guid: Schema.optional(Schema.String),
+				properties: Schema.Array(SavedProperty).pipe(
+					Schema.withDecodingDefaultKey(Effect.succeed([]))
+				),
+				bones: Schema.Array(
+					Schema.Struct({ name: Schema.String, parent_index: Schema.Int })
+				)
+			}),
+			Schema.Struct({
+				kind: Schema.Literal("Enum"),
+				object_path: Schema.String,
+				class_path: Schema.String,
+				enum_cpp_form: Schema.String,
+				enum_entries: Schema.Array(
+					Schema.Struct({
+						name: Schema.String,
+						value: Schema.Int,
+						display_name: Schema.optional(Schema.String)
+					})
+				),
+				row_count: nonNegativeInt
+			}),
+			Schema.Struct({
+				kind: Schema.Literal("Struct"),
+				object_path: Schema.String,
+				class_path: Schema.String,
+				struct_flags: nonNegativeInt,
+				struct_fields: Schema.Array(
+					Schema.Struct({
+						name: Schema.String,
+						type: Schema.String,
+						referenced_path: Schema.optional(Schema.String),
+						display_name: Schema.optional(Schema.String)
+					})
+				),
+				properties: Schema.Array(SavedProperty).pipe(
+					Schema.withDecodingDefaultKey(Effect.succeed([]))
+				),
+				row_count: nonNegativeInt
+			}),
+			Schema.Struct({
 				kind: Schema.Literals(["DataTable", "CompositeDataTable"]),
 				object_path: Schema.String,
-				row_struct: Schema.String,
+				row_struct: Schema.optional(Schema.String),
 				parent_tables: Schema.optional(Schema.Array(Schema.String)),
 				row_count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 				rows: Schema.Array(
@@ -457,13 +550,15 @@ export const SavedAssetHeaderExport = Schema.Struct({
 export type SavedAssetHeaderExport = Schema.Schema.Type<typeof SavedAssetHeaderExport>;
 
 /**
- * One package projected through the scan's class filters at header depth. `exports` holds the
- * exports that matched, or every export when the scan supplied no filters.
+ * One package projected through the scan's class and name filters at header depth. `exports` holds
+ * the matching exports (or every export without filters); `matched_names` retains only requested
+ * name-table entries that selected this package.
  */
 export const SavedAssetHeader = Schema.Struct({
 	exports: Schema.Array(SavedAssetHeaderExport).pipe(
 		Schema.withDecodingDefaultKey(Effect.succeed([]))
 	),
+	matched_names: Schema.optionalKey(Schema.Array(Schema.String)),
 	package: Schema.Struct({ name: Schema.String }),
 	path: Schema.String,
 	schema_version: Schema.Literal(8)
@@ -699,7 +794,7 @@ function invokeReader(
 	});
 }
 
-function scanArguments(options: SavedAssetScanOptions): string[] {
+function scanArguments(options: SavedAssetScanOptions, pathList?: string): string[] {
 	const args = [
 		"scan",
 		options.projectRoot,
@@ -714,7 +809,9 @@ function scanArguments(options: SavedAssetScanOptions): string[] {
 	if (options.maximumAssets !== undefined) {
 		args.push("--maximum-assets", String(options.maximumAssets));
 	}
-	for (const path of options.paths ?? []) args.push("--path", path);
+	if (pathList === undefined) {
+		for (const path of options.paths ?? []) args.push("--path", path);
+	} else args.push("--path-list", pathList);
 	for (const value of options.classes ?? []) args.push("--class", value);
 	for (const value of options.classPrefixes ?? []) args.push("--class-prefix", value);
 	for (const value of options.classNameSuffixes ?? []) {
@@ -722,6 +819,34 @@ function scanArguments(options: SavedAssetScanOptions): string[] {
 	}
 	for (const value of options.names ?? []) args.push("--name", value);
 	return args;
+}
+
+interface ScanInvocation {
+	readonly arguments: readonly string[];
+	readonly removePathList: () => Promise<void>;
+}
+
+/**
+ * Keeps an index-derived package list out of the OS command line. A target list can be thousands
+ * of absolute paths on a real project; on Windows that otherwise fails before the reader starts.
+ */
+async function prepareScanInvocation(options: SavedAssetScanOptions): Promise<ScanInvocation> {
+	const paths = options.paths ?? [];
+	if (paths.length === 0) {
+		return { arguments: scanArguments(options), removePathList: async () => undefined };
+	}
+	const directory = await mkdtemp(join(tmpdir(), "ue-shed-scan-paths-"));
+	const pathList = join(directory, "paths.json");
+	try {
+		await writeFile(pathList, JSON.stringify(paths), "utf8");
+		return {
+			arguments: scanArguments(options, pathList),
+			removePathList: () => rm(directory, { force: true, recursive: true })
+		};
+	} catch (cause) {
+		await rm(directory, { force: true, recursive: true }).catch(() => undefined);
+		throw cause;
+	}
 }
 
 function savedWorldArguments(options: SavedWorldReadOptions): string[] {
@@ -912,164 +1037,174 @@ function invokeScanReader(
 	progress: ScanProgressStore
 ): Effect.Effect<SavedAssetScan, AssetReaderError> {
 	return Effect.tryPromise({
-		try: (signal) =>
-			new Promise<SavedAssetScan>((resolvePromise, rejectPromise) => {
-				progress.current = { ...idleScanProgress(), phase: "enumerating" };
-				const child = spawn(configuration.executable, scanArguments(options), {
-					signal,
-					timeout: configuration.catalogTimeoutMs,
-					windowsHide: true
-				});
-				const assets: SavedAssetScanEntry[] = [];
-				const failures: SavedAssetScanFailure[] = [];
-				const inventory: SavedAssetManifestEntry[] = [];
-				let summary: SavedAssetScanSummary | undefined;
-				let stdoutLine = "";
-				let stderrLine = "";
-				let stderr = "";
-				let settled = false;
-				const rejectOnce = (failure: ScanFailure) => {
-					if (settled) return;
-					settled = true;
-					progress.current = { ...progress.current, phase: "failed" };
-					child.kill();
-					rejectPromise(failure);
-				};
-				const consumeAssetLine = (line: string) => {
-					if (settled || line.trim().length === 0) return;
-					let parsed: unknown;
-					try {
-						parsed = JSON.parse(line) as unknown;
-					} catch (cause) {
-						rejectOnce({ contract: `Invalid scan output line: ${String(cause)}` });
-						return;
-					}
-					const event = (parsed as { event?: unknown }).event;
-					if (event === "asset") {
-						const decoded = decodeScanAssetLine(parsed);
-						if (decoded._tag === "Failure") {
-							rejectOnce({ contract: `Invalid scan asset: ${decoded.failure}` });
-							return;
-						}
-						const { event: _assetEvent, ...entry } = decoded.success;
-						assets.push(entry);
-						return;
-					}
-					if (event === "error") {
-						const decoded = decodeScanFailureLine(parsed);
-						if (decoded._tag === "Failure") {
-							rejectOnce({ contract: `Invalid scan error: ${decoded.failure}` });
-							return;
-						}
-						const { event: _event, ...failure } = decoded.success;
-						failures.push(failure);
-						return;
-					}
-					if (event === "inventory") {
-						const decoded = decodeScanInventoryLine(parsed);
-						if (decoded._tag === "Failure") {
-							rejectOnce({ contract: `Invalid scan inventory: ${decoded.failure}` });
-							return;
-						}
-						const { event: _event, ...entry } = decoded.success;
-						inventory.push(entry);
-						return;
-					}
-					if (event === "summary") {
-						const decoded = decodeScanSummaryLine(parsed);
-						if (decoded._tag === "Failure") {
-							rejectOnce({ contract: `Invalid scan summary: ${decoded.failure}` });
-							return;
-						}
-						const { event: _event, ...decodedSummary } = decoded.success;
-						summary = decodedSummary;
-						return;
-					}
-					rejectOnce({ contract: `Unknown scan event ${JSON.stringify(event)}` });
-				};
-				const consumeStderrLine = (line: string) => {
-					if (line.trim().length === 0) return;
-					try {
-						const decoded = decodeScanProgressLine(JSON.parse(line) as unknown);
-						if (Option.isSome(decoded)) {
-							const { event: _event, ...current } = decoded.value;
-							progress.current = current;
-							return;
-						}
-					} catch {
-						// Preserve non-progress stderr below as the process diagnostic.
-					}
-					stderr += `${line}\n`;
-				};
-				child.stdout.setEncoding("utf8");
-				child.stderr.setEncoding("utf8");
-				child.stdout.on("data", (chunk: string) => {
-					stdoutLine += chunk;
-					if (Buffer.byteLength(stdoutLine, "utf8") > MAX_OUTPUT_BYTES) {
-						rejectOnce({ message: "A single scan output line exceeded 64 MiB" });
-						return;
-					}
-					const lines = stdoutLine.split(/\r?\n/);
-					stdoutLine = lines.pop() ?? "";
-					for (const line of lines) consumeAssetLine(line);
-				});
-				child.stderr.on("data", (chunk: string) => {
-					stderrLine += chunk;
-					const lines = stderrLine.split(/\r?\n/);
-					stderrLine = lines.pop() ?? "";
-					for (const line of lines) consumeStderrLine(line);
-				});
-				child.once("error", (cause) => rejectOnce({ message: cause.message }));
-				child.once("close", (code, childSignal) => {
-					if (stdoutLine.length > 0) consumeAssetLine(stdoutLine);
-					if (stderrLine.length > 0) consumeStderrLine(stderrLine);
-					if (settled) return;
-					settled = true;
-					if (code === 7) {
+		try: async (signal) => {
+			const invocation = await prepareScanInvocation(options);
+			try {
+				return await new Promise<SavedAssetScan>((resolvePromise, rejectPromise) => {
+					progress.current = { ...idleScanProgress(), phase: "enumerating" };
+					const child = spawn(configuration.executable, invocation.arguments, {
+						signal,
+						timeout: configuration.catalogTimeoutMs,
+						windowsHide: true
+					});
+					const assets: SavedAssetScanEntry[] = [];
+					const failures: SavedAssetScanFailure[] = [];
+					const inventory: SavedAssetManifestEntry[] = [];
+					let summary: SavedAssetScanSummary | undefined;
+					let stdoutLine = "";
+					let stderrLine = "";
+					let stderr = "";
+					let settled = false;
+					const rejectOnce = (failure: ScanFailure) => {
+						if (settled) return;
+						settled = true;
 						progress.current = { ...progress.current, phase: "failed" };
-						rejectPromise({
-							code,
-							message:
-								structuredErrorMessage(stderr, "resource_limit") ??
-								"Scan exceeded the maximum asset limit",
-							resourceLimit: true
-						});
-						return;
-					}
-					// The reader exits 4 when a scan root cannot be enumerated, which is a
-					// misconfigured project rather than a reader fault.
-					if (code === 4) {
-						progress.current = { ...progress.current, phase: "failed" };
-						rejectPromise({
-							code,
-							discovery: true,
-							message:
-								structuredErrorMessage(stderr, "io") ??
-								"Scan could not enumerate the project"
-						});
-						return;
-					}
-					// The reader exits 6 when some package was partial or unreadable. The scan
-					// still produced every package it could read, so that is a partial success.
-					if (code !== 0 && code !== 6) {
-						progress.current = { ...progress.current, phase: "failed" };
-						rejectPromise({
-							...(typeof code === "number" ? { code } : {}),
-							killed: childSignal !== null,
-							message: `Asset scan exited ${code ?? childSignal ?? "without a status"}`,
-							stderr
-						});
-						return;
-					}
-					if (summary === undefined) {
-						progress.current = { ...progress.current, phase: "failed" };
-						rejectPromise({ contract: "Scan output ended without a summary line" });
-						return;
-					}
-					progress.current = { ...progress.current, phase: "ready" };
-					resolvePromise({ assets, failures, inventory, summary });
+						child.kill();
+						rejectPromise(failure);
+					};
+					const consumeAssetLine = (line: string) => {
+						if (settled || line.trim().length === 0) return;
+						let parsed: unknown;
+						try {
+							parsed = JSON.parse(line) as unknown;
+						} catch (cause) {
+							rejectOnce({ contract: `Invalid scan output line: ${String(cause)}` });
+							return;
+						}
+						const event = (parsed as { event?: unknown }).event;
+						if (event === "asset") {
+							const decoded = decodeScanAssetLine(parsed);
+							if (decoded._tag === "Failure") {
+								rejectOnce({ contract: `Invalid scan asset: ${decoded.failure}` });
+								return;
+							}
+							const { event: _assetEvent, ...entry } = decoded.success;
+							assets.push(entry);
+							return;
+						}
+						if (event === "error") {
+							const decoded = decodeScanFailureLine(parsed);
+							if (decoded._tag === "Failure") {
+								rejectOnce({ contract: `Invalid scan error: ${decoded.failure}` });
+								return;
+							}
+							const { event: _event, ...failure } = decoded.success;
+							failures.push(failure);
+							return;
+						}
+						if (event === "inventory") {
+							const decoded = decodeScanInventoryLine(parsed);
+							if (decoded._tag === "Failure") {
+								rejectOnce({
+									contract: `Invalid scan inventory: ${decoded.failure}`
+								});
+								return;
+							}
+							const { event: _event, ...entry } = decoded.success;
+							inventory.push(entry);
+							return;
+						}
+						if (event === "summary") {
+							const decoded = decodeScanSummaryLine(parsed);
+							if (decoded._tag === "Failure") {
+								rejectOnce({
+									contract: `Invalid scan summary: ${decoded.failure}`
+								});
+								return;
+							}
+							const { event: _event, ...decodedSummary } = decoded.success;
+							summary = decodedSummary;
+							return;
+						}
+						rejectOnce({ contract: `Unknown scan event ${JSON.stringify(event)}` });
+					};
+					const consumeStderrLine = (line: string) => {
+						if (line.trim().length === 0) return;
+						try {
+							const decoded = decodeScanProgressLine(JSON.parse(line) as unknown);
+							if (Option.isSome(decoded)) {
+								const { event: _event, ...current } = decoded.value;
+								progress.current = current;
+								return;
+							}
+						} catch {
+							// Preserve non-progress stderr below as the process diagnostic.
+						}
+						stderr += `${line}\n`;
+					};
+					child.stdout.setEncoding("utf8");
+					child.stderr.setEncoding("utf8");
+					child.stdout.on("data", (chunk: string) => {
+						stdoutLine += chunk;
+						if (Buffer.byteLength(stdoutLine, "utf8") > MAX_OUTPUT_BYTES) {
+							rejectOnce({ message: "A single scan output line exceeded 64 MiB" });
+							return;
+						}
+						const lines = stdoutLine.split(/\r?\n/);
+						stdoutLine = lines.pop() ?? "";
+						for (const line of lines) consumeAssetLine(line);
+					});
+					child.stderr.on("data", (chunk: string) => {
+						stderrLine += chunk;
+						const lines = stderrLine.split(/\r?\n/);
+						stderrLine = lines.pop() ?? "";
+						for (const line of lines) consumeStderrLine(line);
+					});
+					child.once("error", (cause) => rejectOnce({ message: cause.message }));
+					child.once("close", (code, childSignal) => {
+						if (stdoutLine.length > 0) consumeAssetLine(stdoutLine);
+						if (stderrLine.length > 0) consumeStderrLine(stderrLine);
+						if (settled) return;
+						settled = true;
+						if (code === 7) {
+							progress.current = { ...progress.current, phase: "failed" };
+							rejectPromise({
+								code,
+								message:
+									structuredErrorMessage(stderr, "resource_limit") ??
+									"Scan exceeded the maximum asset limit",
+								resourceLimit: true
+							});
+							return;
+						}
+						// The reader exits 4 when a scan root cannot be enumerated, which is a
+						// misconfigured project rather than a reader fault.
+						if (code === 4) {
+							progress.current = { ...progress.current, phase: "failed" };
+							rejectPromise({
+								code,
+								discovery: true,
+								message:
+									structuredErrorMessage(stderr, "io") ??
+									"Scan could not enumerate the project"
+							});
+							return;
+						}
+						// The reader exits 6 when some package was partial or unreadable. The scan
+						// still produced every package it could read, so that is a partial success.
+						if (code !== 0 && code !== 6) {
+							progress.current = { ...progress.current, phase: "failed" };
+							rejectPromise({
+								...(typeof code === "number" ? { code } : {}),
+								killed: childSignal !== null,
+								message: `Asset scan exited ${code ?? childSignal ?? "without a status"}`,
+								stderr
+							});
+							return;
+						}
+						if (summary === undefined) {
+							progress.current = { ...progress.current, phase: "failed" };
+							rejectPromise({ contract: "Scan output ended without a summary line" });
+							return;
+						}
+						progress.current = { ...progress.current, phase: "ready" };
+						resolvePromise({ assets, failures, inventory, summary });
+					});
 				});
-			}),
+			} finally {
+				await invocation.removePathList();
+			}
+		},
 		catch: (cause) => {
 			const failure = cause as ScanFailure;
 			if (failure.contract !== undefined) {

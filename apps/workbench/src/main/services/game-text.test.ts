@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
 import { makeTextCorpusServiceTestLayer, TextCorpusScanError } from "@ue-shed/game-text";
+import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
@@ -41,10 +42,28 @@ const projectSummary = {
 	projectName: "FixtureProject",
 	projectRoot: "C:/FixtureProject"
 };
+const projectIndex: SavedAssetScan = {
+	assets: [],
+	failures: [],
+	summary: {
+		cacheHits: 0,
+		depth: "header",
+		diagnostics: [],
+		emittedAssets: 0,
+		failedAssets: 0,
+		partialAssets: 0,
+		projectRoot: "C:/FixtureProject",
+		roots: ["C:/FixtureProject/Content"],
+		scannedAssets: 0,
+		schema_version: 8,
+		skippedAssets: 0
+	}
+};
 const selectedProject = makeWorkbenchProjectTestLayer({
 	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	inputAtlas: () => Effect.die("not used"),
+	index: () => Effect.succeed(projectIndex),
 	savedTables: () => Effect.die("savedTables is not used"),
 	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
 });
@@ -95,7 +114,10 @@ it.effect("scans the configured project", () =>
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
-						makeTextCorpusServiceTestLayer({ scan: () => Effect.succeed(emptyCorpus) }),
+						makeTextCorpusServiceTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+						}),
 						selectedProject
 					)
 				)
@@ -124,7 +146,8 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 					Layer.mergeAll(
 						configuration,
 						makeTextCorpusServiceTestLayer({
-							scan: () =>
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () =>
 								Effect.fail(
 									new TextCorpusScanError({
 										code: "invalid_project",
@@ -153,7 +176,10 @@ it.effect("uses the globally selected project when scanning", () =>
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
-						makeTextCorpusServiceTestLayer({ scan: () => Effect.succeed(emptyCorpus) }),
+						makeTextCorpusServiceTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+						}),
 						selectedProject
 					)
 				)

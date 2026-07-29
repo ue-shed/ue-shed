@@ -4,6 +4,7 @@ import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
+import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
@@ -49,10 +50,28 @@ const projectSummary = {
 	projectName: "FixtureProject",
 	projectRoot: "C:/FixtureProject"
 };
+const projectIndex: SavedAssetScan = {
+	assets: [],
+	failures: [],
+	summary: {
+		cacheHits: 0,
+		depth: "header",
+		diagnostics: [],
+		emittedAssets: 0,
+		failedAssets: 0,
+		partialAssets: 0,
+		projectRoot: "C:/FixtureProject",
+		roots: ["C:/FixtureProject/Content"],
+		scannedAssets: 0,
+		schema_version: 8,
+		skippedAssets: 0
+	}
+};
 const selectedProject = makeWorkbenchProjectTestLayer({
 	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	inputAtlas: () => Effect.die("not used"),
+	index: () => Effect.succeed(projectIndex),
 	savedTables: () => Effect.die("savedTables is not used"),
 	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
 });
@@ -105,7 +124,10 @@ it.effect("scans the configured project and rules", () =>
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
-						makeTextureAuditTestLayer({ scan: () => Effect.succeed(emptyReport) }),
+						makeTextureAuditTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyReport)
+						}),
 						dialogLayer({}),
 						selectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
@@ -136,7 +158,8 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 					Layer.mergeAll(
 						configuration,
 						makeTextureAuditTestLayer({
-							scan: () =>
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () =>
 								Effect.fail(
 									new TextureAuditScanError({
 										code: "scan_failed",

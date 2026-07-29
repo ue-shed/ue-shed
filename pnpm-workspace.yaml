@@ -28,3 +28,6 @@ allowBuilds:
     msgpackr-extract: true
     sharp: true
     workerd: true
+
+minimumReleaseAgeExclude:
+    - peculiar-sheets@0.11.1

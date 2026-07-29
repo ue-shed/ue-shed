@@ -110,6 +110,110 @@ it.effect("selects text-bearing packages by StringTable class and TextProperty n
 	})
 );
 
+it.effect("decodes only candidates from an existing project header index", () =>
+	Effect.gen(function* () {
+		const seen = yield* Ref.make<SavedAssetScanOptions[]>([]);
+		const reader = readerOffering(
+			Effect.fn("AssetReader.Test.scanProject")(function* (options) {
+				yield* Ref.update(seen, (current) => [...current, options]);
+				return {
+					assets: [
+						{
+							depth: "full" as const,
+							fileBytes: 1510,
+							inspection: stringTableInspection
+						}
+					],
+					failures: [],
+					summary: {
+						cacheHits: 0,
+						depth: "full" as const,
+						diagnostics: [],
+						emittedAssets: 1,
+						failedAssets: 0,
+						partialAssets: 0,
+						projectRoot: "C:/Fixture",
+						roots: ["C:/Fixture/Content/Text/ST_Game.uasset"],
+						scannedAssets: 1,
+						schema_version: 8 as const,
+						skippedAssets: 0
+					}
+				};
+			})
+		);
+		const index: SavedAssetScan = {
+			assets: [
+				{
+					depth: "header",
+					fileBytes: 1510,
+					header: {
+						exports: [],
+						matched_names: [TEXT_PROPERTY_NAME],
+						package: { name: "/Game/Text/ST_Game" },
+						path: "C:/Fixture/Content/Text/ST_Game.uasset",
+						schema_version: 8
+					}
+				}
+			],
+			failures: [],
+			summary: {
+				cacheHits: 0,
+				depth: "header",
+				diagnostics: [],
+				emittedAssets: 1,
+				failedAssets: 0,
+				partialAssets: 0,
+				projectRoot: "C:/Fixture",
+				roots: ["C:/Fixture/Content"],
+				scannedAssets: 30,
+				schema_version: 8,
+				skippedAssets: 29
+			}
+		};
+
+		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
+			service.scanFromProjectIndex(index, { projectRoot: "C:/Fixture" })
+		).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+
+		const [options] = yield* Ref.get(seen);
+		expect(options?.paths).toEqual(["C:/Fixture/Content/Text/ST_Game.uasset"]);
+		expect(options?.classes).toBeUndefined();
+		expect(options?.names).toBeUndefined();
+		expect(corpus.coverage.discoveredPackages).toBe(30);
+		expect(corpus.coverage.inspectedPackages).toBe(1);
+	})
+);
+
+it.effect("does not scan Content when the existing project index has no text candidates", () =>
+	Effect.gen(function* () {
+		const reader = readerOffering(() => unexpected("scanProject"));
+		const index: SavedAssetScan = {
+			assets: [],
+			failures: [],
+			summary: {
+				cacheHits: 0,
+				depth: "header",
+				diagnostics: [],
+				emittedAssets: 0,
+				failedAssets: 0,
+				partialAssets: 0,
+				projectRoot: "C:/Fixture",
+				roots: ["C:/Fixture/Content"],
+				scannedAssets: 30,
+				schema_version: 8,
+				skippedAssets: 30
+			}
+		};
+
+		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
+			service.scanFromProjectIndex(index, { projectRoot: "C:/Fixture" })
+		).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+
+		expect(corpus.coverage.discoveredPackages).toBe(30);
+		expect(corpus.coverage.inspectedPackages).toBe(0);
+	})
+);
+
 it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 	Effect.gen(function* () {
 		const reader = readerOffering((options) =>

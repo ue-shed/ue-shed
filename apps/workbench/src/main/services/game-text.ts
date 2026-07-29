@@ -1,4 +1,5 @@
 import { TextCorpusService, type TextCorpusRunResult } from "@ue-shed/game-text";
+import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Context, Effect, Layer } from "effect";
 import { WorkbenchProject } from "./project-workspace.js";
 
@@ -24,8 +25,8 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const project = yield* WorkbenchProject;
 		const textCorpus = yield* TextCorpusService;
 
-		const runScan = (projectRoot: string) =>
-			textCorpus.scan({ projectRoot }).pipe(
+		const runScan = (projectRoot: string, index: SavedAssetScan) =>
+			textCorpus.scanFromProjectIndex(index, { projectRoot }).pipe(
 				Effect.map((corpus) => ({ corpus, status: "completed" as const })),
 				Effect.catch((error) =>
 					Effect.succeed({
@@ -49,17 +50,12 @@ export const WorkbenchGameTextLive = Layer.effect(
 				if (current.status === "failed") {
 					return unavailableProject(current.error.message, current.error.recovery);
 				}
-				// `savedProject` is the already-built workspace inventory. Text still performs its
-				// own selective property decode, but it must use the global project's cached root.
-				const selected = yield* project.savedProject().pipe(
-					Effect.catch(() =>
-						Effect.succeed({
-							projectRoot: current.project.projectRoot,
-							maps: [] as const
-						})
+				return yield* project.index().pipe(
+					Effect.flatMap((index) => runScan(current.project.projectRoot, index)),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableProject(error.message, error.recovery))
 					)
 				);
-				return yield* runScan(selected.projectRoot);
 			}
 		);
 
@@ -70,7 +66,12 @@ export const WorkbenchGameTextLive = Layer.effect(
 			if (choice.status === "failed") {
 				return unavailableProject(choice.error.message, choice.error.recovery);
 			}
-			return yield* runScan(choice.project.projectRoot);
+			return yield* project.index().pipe(
+				Effect.flatMap((index) => runScan(choice.project.projectRoot, index)),
+				Effect.catch((error) =>
+					Effect.succeed(unavailableProject(error.message, error.recovery))
+				)
+			);
 		});
 
 		return WorkbenchGameText.of({ chooseAndScan, configuredScan });

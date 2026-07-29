@@ -124,5 +124,5 @@ contract material.
 
 UE Shed is available under the [MIT License](LICENSE). Third-party dependencies and Unreal Engine
 retain their own licenses. The Data Authoring grid uses the formula-free MIT
-`peculiar-sheets@0.11.0` core; UE Shed does not distribute HyperFormula or an optional formula-engine
+`peculiar-sheets@0.11.1` core; UE Shed does not distribute HyperFormula or an optional formula-engine
 adapter.

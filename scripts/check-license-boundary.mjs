@@ -19,9 +19,9 @@ export function validateLicenseBoundary({
 	if (!rootLicense.startsWith("MIT License\n")) {
 		failures.push("LICENSE: expected the MIT license text");
 	}
-	if (peculiarManifest.version !== "0.11.0") {
+	if (peculiarManifest.version !== "0.11.1") {
 		failures.push(
-			`peculiar-sheets: expected exact version 0.11.0, received ${peculiarManifest.version}`
+			`peculiar-sheets: expected exact version 0.11.1, received ${peculiarManifest.version}`
 		);
 	}
 	if (peculiarManifest.license !== "MIT") {
@@ -90,7 +90,7 @@ async function main() {
 		return;
 	}
 	console.log(
-		"License boundary ok: MIT root, peculiar-sheets 0.11.0 core, no formula-engine production path."
+		"License boundary ok: MIT root, peculiar-sheets 0.11.1 core, no formula-engine production path."
 	);
 }
 

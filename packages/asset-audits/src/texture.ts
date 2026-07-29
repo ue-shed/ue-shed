@@ -2,10 +2,13 @@ import { readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import {
 	AssetReader,
+	isHeaderScanEntry,
 	isFullScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
+	type SavedAssetScan,
+	type SavedAssetScanFailure,
 	type SavedProperty
 } from "@ue-shed/unreal-assets";
 import { Context, Effect, Layer, Schema } from "effect";
@@ -115,6 +118,20 @@ function sourceInteger(properties: readonly SavedProperty[], name: string) {
 }
 
 export const TEXTURE_CLASS = "/Script/Engine.Texture2D";
+
+/** Paths whose existing header-index projection proves they export a Texture2D. */
+export function texturePackagePathsFromProjectIndex(index: SavedAssetScan): readonly string[] {
+	return [
+		...new Set(
+			index.assets
+				.filter(isHeaderScanEntry)
+				.filter((entry) =>
+					entry.header.exports.some((exported) => exported.class_path === TEXTURE_CLASS)
+				)
+				.map((entry) => entry.header.path)
+		)
+	].sort((left, right) => left.localeCompare(right));
+}
 
 export function findTextureExports(inspection: SavedAssetInspection) {
 	type SavedAsset = SavedAssetInspection["assets"][number];
@@ -305,6 +322,54 @@ function readRuleSet(path: string): Effect.Effect<TextureAuditRuleSet, TextureAu
 	);
 }
 
+function textureAuditFromScan(
+	rules: TextureAuditRuleSet,
+	scan: SavedAssetScan,
+	projectRoot: string,
+	discoveredPackages: number,
+	inheritedFailures: readonly SavedAssetScanFailure[] = []
+): TextureAuditReport {
+	const records = scan.assets
+		.filter(isFullScanEntry)
+		.flatMap((entry) =>
+			textureRecordsFromInspection({
+				inspection: entry.inspection,
+				filePath: relative(projectRoot, entry.inspection.path),
+				packageFileBytes: entry.fileBytes
+			})
+		)
+		.sort((left, right) => left.objectPath.localeCompare(right.objectPath));
+	const failures = [...inheritedFailures, ...scan.failures];
+	const diagnostics = failures.slice(0, 100).map((failure) => ({
+		code: "package_inspection_failed",
+		message: failure.message,
+		filePath: relative(projectRoot, failure.path)
+	}));
+	const findings = records
+		.flatMap((record) => rules.rules.map((rule) => evaluateTextureRule(record, rule)))
+		.filter((finding): finding is TextureAuditFinding => finding !== undefined)
+		.sort(findingOrder);
+	const partialAssets = scan.summary.partialAssets;
+	const failedAssets = scan.summary.failedAssets + inheritedFailures.length;
+	return {
+		schemaVersion: 1 as const,
+		status:
+			partialAssets > 0 || failedAssets > 0 ? ("partial" as const) : ("complete" as const),
+		ruleSetName: rules.name,
+		coverage: {
+			discoveredPackages,
+			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets,
+			textureAssets: records.length,
+			partialPackages: partialAssets,
+			failedPackages: failedAssets
+		},
+		records,
+		findings,
+		distributions: foldTextureDistributions(records),
+		diagnostics
+	};
+}
+
 function scanTextureAuditWith(
 	reader: AssetReaderShape,
 	options: TextureAuditScanOptions
@@ -323,50 +388,64 @@ function scanTextureAuditWith(
 				projectRoot: options.projectRoot
 			})
 			.pipe(Effect.mapError(textureScanFailure));
-		const records = scan.assets
-			.filter(isFullScanEntry)
-			.flatMap((entry) =>
-				textureRecordsFromInspection({
-					inspection: entry.inspection,
-					filePath: relative(options.projectRoot, entry.inspection.path),
-					packageFileBytes: entry.fileBytes
-				})
-			)
-			.sort((left, right) => left.objectPath.localeCompare(right.objectPath));
-		const diagnostics = scan.failures.slice(0, 100).map((failure) => ({
-			code: "package_inspection_failed",
-			message: failure.message,
-			filePath: relative(options.projectRoot, failure.path)
-		}));
-		const findings = records
-			.flatMap((record) => rules.rules.map((rule) => evaluateTextureRule(record, rule)))
-			.filter((finding): finding is TextureAuditFinding => finding !== undefined)
-			.sort(findingOrder);
-		const { failedAssets, partialAssets } = scan.summary;
-		return {
-			schemaVersion: 1 as const,
-			status:
-				partialAssets > 0 || failedAssets > 0
-					? ("partial" as const)
-					: ("complete" as const),
-			ruleSetName: rules.name,
-			coverage: {
-				discoveredPackages: scan.summary.scannedAssets,
-				inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets,
-				textureAssets: records.length,
-				partialPackages: partialAssets,
-				failedPackages: failedAssets
-			},
-			records,
-			findings,
-			distributions: foldTextureDistributions(records),
-			diagnostics
-		};
+		return textureAuditFromScan(rules, scan, options.projectRoot, scan.summary.scannedAssets);
 	}).pipe(Effect.withSpan("asset-audits.scan-textures"));
+}
+
+function scanTextureAuditFromProjectIndexWith(
+	reader: AssetReaderShape,
+	index: SavedAssetScan,
+	options: TextureAuditScanOptions
+): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
+	return Effect.gen(function* () {
+		const rules = yield* readRuleSet(options.ruleFile);
+		const paths = texturePackagePathsFromProjectIndex(index);
+		if (paths.length === 0) {
+			return textureAuditFromScan(
+				rules,
+				{
+					assets: [],
+					failures: [],
+					summary: {
+						...index.summary,
+						depth: "full" as const,
+						emittedAssets: 0,
+						failedAssets: 0,
+						partialAssets: 0,
+						skippedAssets: 0
+					}
+				},
+				options.projectRoot,
+				index.summary.scannedAssets,
+				index.failures
+			);
+		}
+		const scan = yield* reader
+			.scanProject({
+				concurrency: Math.max(1, options.concurrency ?? 8),
+				...(options.maximumAssets === undefined
+					? {}
+					: { maximumAssets: options.maximumAssets }),
+				paths,
+				projectRoot: options.projectRoot
+			})
+			.pipe(Effect.mapError(textureScanFailure));
+		return textureAuditFromScan(
+			rules,
+			scan,
+			options.projectRoot,
+			index.summary.scannedAssets,
+			index.failures
+		);
+	}).pipe(Effect.withSpan("asset-audits.scan-textures-from-project-index"));
 }
 
 export interface TextureAuditShape {
 	readonly scan: (
+		options: TextureAuditScanOptions
+	) => Effect.Effect<TextureAuditReport, TextureAuditScanError>;
+	readonly scanFromProjectIndex: (
+		index: SavedAssetScan,
 		options: TextureAuditScanOptions
 	) => Effect.Effect<TextureAuditReport, TextureAuditScanError>;
 }
@@ -394,12 +473,42 @@ export const TextureAuditLive = Layer.effect(
 			);
 			return yield* scanTextureAuditWith(reader, validated);
 		});
-		return TextureAudit.of({ scan });
+		const scanFromProjectIndex = Effect.fn("TextureAudit.scanFromProjectIndex")(function* (
+			index: SavedAssetScan,
+			options: TextureAuditScanOptions
+		) {
+			const validated = yield* decodeScanOptions(options).pipe(
+				Effect.mapError(
+					(cause) =>
+						new TextureAuditScanError({
+							code: "scan_failed",
+							message: `Invalid texture audit scan options: ${String(cause)}`,
+							recovery:
+								"Provide a project root, rule file, and positive scan limits.",
+							retrySafe: false
+						})
+				)
+			);
+			return yield* scanTextureAuditFromProjectIndexWith(reader, index, validated);
+		});
+		return TextureAudit.of({ scan, scanFromProjectIndex });
 	})
 );
 
-export function makeTextureAuditTestLayer(service: TextureAuditShape): Layer.Layer<TextureAudit> {
-	return Layer.succeed(TextureAudit, TextureAudit.of(service));
+export type TextureAuditTestShape = Omit<TextureAuditShape, "scanFromProjectIndex"> &
+	Partial<Pick<TextureAuditShape, "scanFromProjectIndex">>;
+
+export function makeTextureAuditTestLayer(
+	service: TextureAuditTestShape
+): Layer.Layer<TextureAudit> {
+	return Layer.succeed(
+		TextureAudit,
+		TextureAudit.of({
+			...service,
+			scanFromProjectIndex:
+				service.scanFromProjectIndex ?? ((_index, options) => service.scan(options))
+		})
+	);
 }
 
 /** Compatibility accessor until Plans 012–014 compose TextureAudit layers directly. */

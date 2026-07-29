@@ -78,6 +78,15 @@ export const CliCommand = Schema.TaggedUnion({
 	SessionsReview: { ...SessionProject },
 	SessionsValidate: { ...SessionProject },
 	SessionsDiff: { ...SessionProject },
+	AssetsScan: {
+		classPrefixes: Schema.optionalKey(Schema.Array(Schema.String)),
+		classes: Schema.optionalKey(Schema.Array(Schema.String)),
+		full: Schema.optionalKey(Schema.Boolean),
+		maximumAssets: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+		names: Schema.optionalKey(Schema.Array(Schema.String)),
+		path: Schema.String,
+		...Reader
+	},
 	TextScan: { ...Project, ...Reader },
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
 	InputInspect: { path: Schema.String, ...Reader },
@@ -101,7 +110,13 @@ export const CliCommand = Schema.TaggedUnion({
 	ReviewAuthoringDiscard: { ...SessionProject },
 	ReviewAuthoringReframe: { ...SessionProject, endpoint: Schema.String },
 	ReviewAuthoringApprove: { ...SessionProject, endpoint: Schema.String },
-	ReviewCapture: { endpoint: Schema.String, ...Project, reviewSetPath: Schema.String },
+	ReviewCapture: {
+		cause: Schema.optionalKey(Schema.Literal("external_automation")),
+		correlationId: Schema.optionalKey(Schema.String),
+		endpoint: Schema.String,
+		...Project,
+		reviewSetPath: Schema.String
+	},
 	ReviewHistory: { ...Project },
 	ReviewShow: { runPath: Schema.String },
 	PluginsList: { manifestPath: Schema.String },
@@ -142,9 +157,11 @@ Usage:
   ue-shed authoring sessions reorder-rows <session-id> <table> <row-ids-json> --project <project-root>
   ue-shed authoring sessions review|validate|diff <session-id> --project <project-root>
   ue-shed authoring sessions apply|reconcile|save <session-id> <endpoint> --project <project-root>
+  ue-shed assets scan <path> [--class <class>] [--class-prefix <prefix>] [--name <name>]
+                             [--maximum-assets <count>] [--full] [--reader <path>]
   ue-shed text scan <project-root> [--reader <path>]
   ue-shed text search <project-root> <query> [--reader <path>]
-  ue-shed input inspect <asset-or-project> [--reader <path>]
+  ue-shed input inspect <path> [--reader <path>]
   ue-shed review sets validate <review-set>
 	ue-shed review framing candidates <endpoint>
 	ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
@@ -152,7 +169,7 @@ Usage:
 	ue-shed review authoring start <project-root> <review-set> <endpoint> <view-id>
 	ue-shed review authoring show|discard <project-root> <session-id>
 	ue-shed review authoring resume|reframe|approve <project-root> <session-id> <endpoint>
-	ue-shed review capture <project-root> <review-set> <endpoint>
+	ue-shed review capture <project-root> <review-set> <endpoint> [--cause external_automation] [--correlation <id>]
   ue-shed review history <project-root>
   ue-shed review show <run-json>
 	  ue-shed plugins list <manifest> (or --manifest <manifest>)
@@ -163,11 +180,25 @@ Usage:
   ue-shed doctor
   ue-shed help
 
-The reader defaults to UE_SHED_UASSET_EXECUTABLE or uasset on PATH.`;
+The reader defaults to UE_SHED_UASSET_EXECUTABLE or uasset on PATH.
+
+assets scan takes a project root, a subdirectory, or one asset; anything below a project scans only
+itself. Quote leading-slash filters ('/Script/EnhancedInput.') so Git Bash on Windows does not
+rewrite them into a Windows path.`;
 
 interface ParsedOptions {
+	/** Options declared `flags`, present when passed. */
+	readonly flags: ReadonlySet<string>;
 	readonly positionals: readonly string[];
+	/** Options declared `repeatable`, in the order they were passed. */
+	readonly repeated: Readonly<Record<string, readonly string[]>>;
 	readonly values: Readonly<Record<string, string>>;
+}
+
+/** Options that take no value, or that may be passed more than once. Both must also be `allowed`. */
+interface OptionShape {
+	readonly flags?: readonly string[];
+	readonly repeatable?: readonly string[];
 }
 
 function usage(message: string): Effect.Effect<never, CliUsageError> {
@@ -176,10 +207,13 @@ function usage(message: string): Effect.Effect<never, CliUsageError> {
 
 function parseOptions(
 	args: readonly string[],
-	allowed: readonly string[]
+	allowed: readonly string[],
+	shape: OptionShape = {}
 ): Effect.Effect<ParsedOptions, CliUsageError> {
 	return Effect.gen(function* () {
 		const values: Record<string, string> = {};
+		const repeated: Record<string, string[]> = {};
+		const flags = new Set<string>();
 		const positionals: string[] = [];
 		for (let index = 0; index < args.length; index += 1) {
 			const value = args[index];
@@ -189,16 +223,22 @@ function parseOptions(
 				continue;
 			}
 			if (!allowed.includes(value)) return yield* usage(`Unknown option: ${value}`);
-			if (values[value] !== undefined)
+			if (shape.flags?.includes(value)) {
+				flags.add(value);
+				continue;
+			}
+			const repeatable = shape.repeatable?.includes(value) ?? false;
+			if (!repeatable && values[value] !== undefined)
 				return yield* usage(`${value} may only be provided once`);
 			const optionValue = args[index + 1];
 			if (optionValue === undefined || optionValue.startsWith("--")) {
 				return yield* usage(`${value} requires a value`);
 			}
-			values[value] = optionValue;
+			if (repeatable) (repeated[value] ??= []).push(optionValue);
+			else values[value] = optionValue;
 			index += 1;
 		}
-		return { positionals, values };
+		return { flags, positionals, repeated, values };
 	});
 }
 
@@ -227,6 +267,14 @@ function parseValue(valueJson: string): Effect.Effect<typeof AuthoringValue.Type
 				: new CliUsageError({ message: `Invalid authoring value: ${String(cause)}` })
 		)
 	);
+}
+
+function parseCount(value: string | undefined): Effect.Effect<number | undefined, CliUsageError> {
+	if (value === undefined) return Effect.succeed(undefined);
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed >= 1
+		? Effect.succeed(parsed)
+		: usage(`--maximum-assets requires a positive integer: ${value}`);
 }
 
 function parseIndex(value: string | undefined): Effect.Effect<number | undefined, CliUsageError> {
@@ -609,6 +657,33 @@ export function parseCliCommand(args: readonly string[]): Effect.Effect<CliComma
 				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
 			});
 		}
+		if (command === "assets") {
+			const parsed = yield* parseOptions(
+				rest,
+				["--class", "--class-prefix", "--full", "--maximum-assets", "--name", "--reader"],
+				{
+					flags: ["--full"],
+					repeatable: ["--class", "--class-prefix", "--name"]
+				}
+			);
+			const [action, path] = parsed.positionals;
+			if (action !== "scan" || !path)
+				return yield* usage(`assets requires scan <path>\n\n${help}`);
+			yield* exact(parsed.positionals.slice(2), 0, "assets scan has unexpected arguments");
+			const maximumAssets = yield* parseCount(parsed.values["--maximum-assets"]);
+			const classes = parsed.repeated["--class"];
+			const classPrefixes = parsed.repeated["--class-prefix"];
+			const names = parsed.repeated["--name"];
+			return CliCommand.cases.AssetsScan.make({
+				path,
+				...(classes ? { classes } : {}),
+				...(classPrefixes ? { classPrefixes } : {}),
+				...(names ? { names } : {}),
+				...(maximumAssets === undefined ? {} : { maximumAssets }),
+				...(parsed.flags.has("--full") ? { full: true } : {}),
+				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
+			});
+		}
 		if (command === "text") {
 			const parsed = yield* parseOptions(rest, ["--reader"]);
 			const [action, projectRoot, ...query] = parsed.positionals;
@@ -730,15 +805,29 @@ export function parseCliCommand(args: readonly string[]): Effect.Effect<CliComma
 						: CliCommand.cases.ReviewAuthoringApprove.make(fields);
 			}
 			if (area === "capture") {
+				const parsed = yield* parseOptions(values, ["--cause", "--correlation"]);
 				const [projectRoot, reviewSetPath, endpoint] = yield* exact(
-					[action ?? "", ...values],
+					[action ?? "", ...parsed.positionals],
 					3,
 					"review capture requires project root, Review Set path, and Remote Control endpoint"
 				);
+				const cause = parsed.values["--cause"];
+				if (cause !== undefined && cause !== "external_automation") {
+					return yield* usage("review capture --cause supports only external_automation");
+				}
+				if (parsed.values["--correlation"] !== undefined && cause === undefined) {
+					return yield* usage(
+						"review capture --correlation requires --cause external_automation"
+					);
+				}
 				return CliCommand.cases.ReviewCapture.make({
 					endpoint: present(endpoint),
 					projectRoot: present(projectRoot),
-					reviewSetPath: present(reviewSetPath)
+					reviewSetPath: present(reviewSetPath),
+					...(cause === undefined ? {} : { cause }),
+					...(parsed.values["--correlation"] === undefined
+						? {}
+						: { correlationId: parsed.values["--correlation"] })
 				});
 			}
 			if (area === "history") {

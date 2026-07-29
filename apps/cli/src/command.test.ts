@@ -152,6 +152,24 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 	[["authoring", "sessions", "review", "draft", "--project", "project"], "SessionsReview"],
 	[["authoring", "sessions", "validate", "draft", "--project", "project"], "SessionsValidate"],
 	[["authoring", "sessions", "diff", "draft", "--project", "project"], "SessionsDiff"],
+	[["assets", "scan", "project"], "AssetsScan"],
+	[
+		[
+			"assets",
+			"scan",
+			"project/Content/Fixture/Input",
+			"--class-prefix",
+			"/Script/EnhancedInput.",
+			"--class",
+			"InputAction",
+			"--name",
+			"TextProperty",
+			"--maximum-assets",
+			"50",
+			"--full"
+		],
+		"AssetsScan"
+	],
 	[["text", "scan", "project"], "TextScan"],
 	[["text", "search", "project", "hello", "world"], "TextSearch"],
 	[["input", "inspect", "project"], "InputInspect"],
@@ -189,6 +207,20 @@ const commands: ReadonlyArray<readonly [readonly string[], string]> = [
 		"ReviewAuthoringApprove"
 	],
 	[["review", "capture", "project", "set.json", "http://editor"], "ReviewCapture"],
+	[
+		[
+			"review",
+			"capture",
+			"project",
+			"set.json",
+			"http://editor",
+			"--cause",
+			"external_automation",
+			"--correlation",
+			"daily-fixture"
+		],
+		"ReviewCapture"
+	],
 	[["review", "history", "project"], "ReviewHistory"],
 	[["review", "show", "run.json"], "ReviewShow"],
 	[["plugins", "list", "plugins.manifest.json"], "PluginsList"],
@@ -220,12 +252,62 @@ it.effect("decodes every CLI command variant", () =>
 	).pipe(Effect.asVoid)
 );
 
+it.effect("collects repeated assets scan filters in the order they were passed", () =>
+	parseCliCommand([
+		"assets",
+		"scan",
+		"project",
+		"--class-prefix",
+		"/Script/EnhancedInput.",
+		"--class-prefix",
+		"/Script/Engine.",
+		"--class",
+		"InputAction",
+		"--full"
+	]).pipe(
+		Effect.tap((command) =>
+			Effect.sync(() => {
+				if (command._tag !== "AssetsScan") throw new Error("expected AssetsScan");
+				expect(command.classPrefixes).toEqual([
+					"/Script/EnhancedInput.",
+					"/Script/Engine."
+				]);
+				expect(command.classes).toEqual(["InputAction"]);
+				expect(command.names).toBeUndefined();
+				expect(command.full).toBe(true);
+			})
+		),
+		Effect.asVoid
+	)
+);
+
+it.effect("requires an external cause before accepting capture correlation", () =>
+	parseCliCommand([
+		"review",
+		"capture",
+		"project",
+		"set.json",
+		"http://editor",
+		"--correlation",
+		"daily-fixture"
+	]).pipe(
+		Effect.exit,
+		Effect.tap((exit) => Effect.sync(() => expect(Exit.isFailure(exit)).toBe(true))),
+		Effect.asVoid
+	)
+);
+
 it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
 	Effect.forEach(
 		[
 			["audit", "textures", "project", "--rules"],
 			["audit", "textures", "project", "--rules", "one", "--rules", "two"],
 			["text", "scan", "project", "--wat", "value"],
+			["assets", "scan"],
+			["assets", "scan", "project", "extra"],
+			["assets", "scan", "project", "--maximum-assets", "0"],
+			["assets", "scan", "project", "--maximum-assets"],
+			["assets", "scan", "project", "--reader", "one", "--reader", "two"],
 			["plugins", "list"],
 			["plugins", "verify", "plugins.manifest.json", "--project", "project"],
 			["plugins", "install", "--project", "project"],

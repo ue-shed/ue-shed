@@ -21,6 +21,132 @@
 			"actionDescription": "Fixture move action",
 			"valueType": "EInputActionValueType::Axis2D",
 			"consumeInput": true
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Look.IA_Look",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Look around",
+			"valueType": "EInputActionValueType::Axis2D",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Sprint.IA_Sprint",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Sprint",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Crouch.IA_Crouch",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Crouch",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Interact.IA_Interact",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Interact",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": true
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Fire.IA_Fire",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Fire weapon",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": true
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Aim.IA_Aim",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Aim down sights",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Reload.IA_Reload",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Reload",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Melee.IA_Melee",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Melee attack",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_CycleWeapon.IA_CycleWeapon",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Cycle weapon",
+			"valueType": "EInputActionValueType::Axis1D",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Throttle.IA_Throttle",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Vehicle throttle",
+			"valueType": "EInputActionValueType::Axis1D",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Steer.IA_Steer",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Vehicle steering",
+			"valueType": "EInputActionValueType::Axis2D",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Handbrake.IA_Handbrake",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Handbrake",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_ExitVehicle.IA_ExitVehicle",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Exit vehicle",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": true
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Confirm.IA_Confirm",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Confirm selection",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": true
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_Back.IA_Back",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Back",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": true
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_NavigateMenu.IA_NavigateMenu",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Navigate menu",
+			"valueType": "EInputActionValueType::Axis2D",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_PhotoToggle.IA_PhotoToggle",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Toggle photo mode",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IA_PhotoCapture.IA_PhotoCapture",
+			"classPath": "/Script/EnhancedInput.InputAction",
+			"actionDescription": "Capture photo",
+			"valueType": "EInputActionValueType::Boolean",
+			"consumeInput": false
 		}
 	],
 	"mappingContexts": [
@@ -42,10 +168,579 @@
 					"triggers": [],
 					"modifiers": [
 						{
-							"objectPath": "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture:InputModifierNegate_0",
+							"objectPath": "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture:InputModifierNegate_1_0",
 							"classPath": "/Script/EnhancedInput.InputModifierNegate"
 						}
 					]
+				}
+			]
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay",
+			"classPath": "/Script/EnhancedInput.InputMappingContext",
+			"contextDescription": "On-foot gameplay",
+			"mappingsProperty": "DefaultKeyMappings",
+			"mappings": [
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "W",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "S",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputModifierNegate_1_0",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "A",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputModifierSwizzleAxis_2_0",
+							"classPath": "/Script/EnhancedInput.InputModifierSwizzleAxis"
+						},
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputModifierNegate_2_1",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputModifierSwizzleAxis_3_0",
+							"classPath": "/Script/EnhancedInput.InputModifierSwizzleAxis"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "Gamepad_Left2D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputModifierDeadZone_4_0",
+							"classPath": "/Script/EnhancedInput.InputModifierDeadZone"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Look.IA_Look",
+					"keyName": "Mouse2D",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Look.IA_Look",
+					"keyName": "Gamepad_Right2D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputModifierDeadZone_6_0",
+							"classPath": "/Script/EnhancedInput.InputModifierDeadZone"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+					"keyName": "SpaceBar",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerPressed_7",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+					"keyName": "Gamepad_FaceButton_Bottom",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerPressed_8",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Sprint.IA_Sprint",
+					"keyName": "LeftShift",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerHold_9",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Sprint.IA_Sprint",
+					"keyName": "Gamepad_LeftShoulder",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerHold_10",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Crouch.IA_Crouch",
+					"keyName": "LeftControl",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerDown_11",
+							"classPath": "/Script/EnhancedInput.InputTriggerDown"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Crouch.IA_Crouch",
+					"keyName": "Gamepad_RightThumbstick",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerPressed_12",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Interact.IA_Interact",
+					"keyName": "E",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerPressed_13",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Interact.IA_Interact",
+					"keyName": "Gamepad_FaceButton_Right",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerPressed_14",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Fire.IA_Fire",
+					"keyName": "LeftMouseButton",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Fire.IA_Fire",
+					"keyName": "Gamepad_RightTrigger",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Aim.IA_Aim",
+					"keyName": "RightMouseButton",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerHold_17",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Aim.IA_Aim",
+					"keyName": "Gamepad_LeftTrigger",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerHold_18",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Reload.IA_Reload",
+					"keyName": "R",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerTap_19",
+							"classPath": "/Script/EnhancedInput.InputTriggerTap"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Reload.IA_Reload",
+					"keyName": "Gamepad_FaceButton_Left",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerTap_20",
+							"classPath": "/Script/EnhancedInput.InputTriggerTap"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Melee.IA_Melee",
+					"keyName": "F",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Melee.IA_Melee",
+					"keyName": "Gamepad_FaceButton_Top",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_CycleWeapon.IA_CycleWeapon",
+					"keyName": "MouseWheelAxis",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_CycleWeapon.IA_CycleWeapon",
+					"keyName": "Gamepad_DPad_Up",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_PhotoToggle.IA_PhotoToggle",
+					"keyName": "P",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Gameplay.IMC_Gameplay:InputTriggerPressed_25",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				}
+			]
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle",
+			"classPath": "/Script/EnhancedInput.InputMappingContext",
+			"contextDescription": "Vehicle controls",
+			"mappingsProperty": "DefaultKeyMappings",
+			"mappings": [
+				{
+					"action": "/Game/Fixture/Input/IA_Throttle.IA_Throttle",
+					"keyName": "W",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Throttle.IA_Throttle",
+					"keyName": "S",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputModifierNegate_1_0",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Throttle.IA_Throttle",
+					"keyName": "Gamepad_RightTrigger",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Throttle.IA_Throttle",
+					"keyName": "Gamepad_LeftTrigger",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputModifierNegate_3_0",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Steer.IA_Steer",
+					"keyName": "A",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputModifierSwizzleAxis_4_0",
+							"classPath": "/Script/EnhancedInput.InputModifierSwizzleAxis"
+						},
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputModifierNegate_4_1",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Steer.IA_Steer",
+					"keyName": "D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputModifierSwizzleAxis_5_0",
+							"classPath": "/Script/EnhancedInput.InputModifierSwizzleAxis"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Steer.IA_Steer",
+					"keyName": "Gamepad_Left2D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputModifierDeadZone_6_0",
+							"classPath": "/Script/EnhancedInput.InputModifierDeadZone"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Handbrake.IA_Handbrake",
+					"keyName": "SpaceBar",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputTriggerHold_7",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Handbrake.IA_Handbrake",
+					"keyName": "Gamepad_FaceButton_Bottom",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputTriggerHold_8",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_ExitVehicle.IA_ExitVehicle",
+					"keyName": "E",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputTriggerHold_9",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_ExitVehicle.IA_ExitVehicle",
+					"keyName": "Gamepad_FaceButton_Right",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Vehicle.IMC_Vehicle:InputTriggerHold_10",
+							"classPath": "/Script/EnhancedInput.InputTriggerHold"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Look.IA_Look",
+					"keyName": "Mouse2D",
+					"triggers": [],
+					"modifiers": []
+				}
+			]
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu",
+			"classPath": "/Script/EnhancedInput.InputMappingContext",
+			"contextDescription": "Menu navigation",
+			"mappingsProperty": "DefaultKeyMappings",
+			"mappings": [
+				{
+					"action": "/Game/Fixture/Input/IA_Confirm.IA_Confirm",
+					"keyName": "Enter",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputTriggerPressed_0",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Confirm.IA_Confirm",
+					"keyName": "E",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputTriggerPressed_1",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Confirm.IA_Confirm",
+					"keyName": "Gamepad_FaceButton_Bottom",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputTriggerPressed_2",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Back.IA_Back",
+					"keyName": "Escape",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputTriggerPressed_3",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Back.IA_Back",
+					"keyName": "Gamepad_FaceButton_Right",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputTriggerPressed_4",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_NavigateMenu.IA_NavigateMenu",
+					"keyName": "Up",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_NavigateMenu.IA_NavigateMenu",
+					"keyName": "Down",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputModifierNegate_6_0",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_NavigateMenu.IA_NavigateMenu",
+					"keyName": "Gamepad_Left2D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputModifierDeadZone_7_0",
+							"classPath": "/Script/EnhancedInput.InputModifierDeadZone"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_CycleWeapon.IA_CycleWeapon",
+					"keyName": "Tab",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_Menu.IMC_Menu:InputTriggerPressed_8",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				}
+			]
+		},
+		{
+			"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode",
+			"classPath": "/Script/EnhancedInput.InputMappingContext",
+			"contextDescription": "Photo mode",
+			"mappingsProperty": "DefaultKeyMappings",
+			"mappings": [
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "W",
+					"triggers": [],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Move.IA_Move",
+					"keyName": "S",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode:InputModifierNegate_1_0",
+							"classPath": "/Script/EnhancedInput.InputModifierNegate"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Look.IA_Look",
+					"keyName": "Mouse2D",
+					"triggers": [],
+					"modifiers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode:InputModifierScalar_2_0",
+							"classPath": "/Script/EnhancedInput.InputModifierScalar"
+						}
+					]
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_PhotoCapture.IA_PhotoCapture",
+					"keyName": "LeftMouseButton",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode:InputTriggerPressed_3",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_PhotoCapture.IA_PhotoCapture",
+					"keyName": "Gamepad_RightTrigger",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode:InputTriggerPressed_4",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_PhotoToggle.IA_PhotoToggle",
+					"keyName": "P",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode:InputTriggerPressed_5",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
+				},
+				{
+					"action": "/Game/Fixture/Input/IA_Back.IA_Back",
+					"keyName": "Escape",
+					"triggers": [
+						{
+							"objectPath": "/Game/Fixture/Input/IMC_PhotoMode.IMC_PhotoMode:InputTriggerPressed_6",
+							"classPath": "/Script/EnhancedInput.InputTriggerPressed"
+						}
+					],
+					"modifiers": []
 				}
 			]
 		}

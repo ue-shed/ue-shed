@@ -20,13 +20,14 @@ const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 describe.skipIf(!executable)("batched project scan", () => {
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
-		// 28 `.uasset` packages (including six World Partition external actors) plus the two maps.
-		// Levels use the same classic package container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(30);
-		expect(scan.summary.emittedAssets).toBe(30);
+		// 50 `.uasset` packages (including six World Partition external actors and the 25-asset
+		// Enhanced Input surface) plus the two maps. Levels use the same classic package
+		// container, so enumeration selects them too.
+		expect(scan.summary.scannedAssets).toBe(52);
+		expect(scan.summary.emittedAssets).toBe(52);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(30);
+		expect(scan.assets).toHaveLength(52);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	});
 
@@ -44,11 +45,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(30);
+		expect(scan.summary.scannedAssets).toBe(52);
 		expect(scan.summary.emittedAssets).toBe(5);
-		// The two levels and saved World Partition actor packages carry no Texture2D export, so they
-		// are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(25);
+		// The levels, saved World Partition actor packages, and every Enhanced Input asset carry
+		// no Texture2D export, so they are ruled out before any decode.
+		expect(scan.summary.skippedAssets).toBe(47);
 		expect(
 			scan.assets.every((entry) =>
 				entry.inspection.assets.some(
@@ -67,7 +68,8 @@ describe.skipIf(!executable)("batched project scan", () => {
 				projectRoot: fixtureRoot
 			})
 		);
-		expect(scan.summary.emittedAssets).toBe(6);
+		// Every InputAction and InputMappingContext names TextProperty for its description.
+		expect(scan.summary.emittedAssets).toBe(28);
 		expect(
 			scan.assets.some((entry) =>
 				entry.inspection.assets.some((asset) => asset.kind === "StringTable")
@@ -79,7 +81,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ paths: ["Content/Fixture/Input"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(3);
+		expect(scan.summary.scannedAssets).toBe(25);
 		expect(scan.assets.every((entry) => entry.inspection.path.includes("Input"))).toBe(true);
 	});
 

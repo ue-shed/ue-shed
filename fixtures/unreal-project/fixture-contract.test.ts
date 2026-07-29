@@ -66,17 +66,20 @@ type FixtureContract = {
 			readonly consumeInput: boolean;
 			readonly actionDescription: string;
 		}[];
-		readonly mappingContext: {
+		readonly mappingContexts: readonly {
 			readonly assetPath: string;
 			readonly contextDescription: string;
 			readonly mappingsProperty: string;
 			readonly mappings: readonly {
 				readonly action: string;
 				readonly keyName: string;
+				readonly triggerClasses?: readonly string[];
 				readonly modifierCount: number;
-				readonly modifierClass?: string;
+				readonly modifierClasses?: readonly string[];
 			}[];
-		};
+		}[];
+		/** Keys more than one context claims, which is what the Input Atlas exists to surface. */
+		readonly contestedKeys: readonly string[];
 	};
 	readonly cameraLoad: {
 		readonly map: string;
@@ -184,7 +187,8 @@ function readContract(): FixtureContract {
 		!Array.isArray(value.tables) ||
 		!Array.isArray(value.enhancedInput.actions) ||
 		!Array.isArray(value.offlineWorld.labels) ||
-		!isRecord(value.enhancedInput.mappingContext) ||
+		!Array.isArray(value.enhancedInput.mappingContexts) ||
+		!Array.isArray(value.enhancedInput.contestedKeys) ||
 		!Array.isArray(value.textureAudit.textures)
 	) {
 		throw new Error("fixture-contract.json does not match the fixture contract envelope");
@@ -281,9 +285,13 @@ describe("generic Unreal fixture contract", () => {
 	it("declares a portable durable-loop Review Set and stable subject", () => {
 		expect(contract.mapReview).toEqual({
 			map: "/Game/Fixture/Cameras/L_CameraLoad",
+			occluder:
+				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewOccluder",
 			reviewSet: ".ue-shed/review/sets/fixture-structure.json",
 			subject:
 				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+			translucentSubject:
+				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewTranslucentSubject",
 			views: ["structure-context"]
 		});
 		expect(existsSync(join(fixtureRoot, contract.mapReview.reviewSet))).toBe(true);
@@ -329,10 +337,17 @@ describe("generic Unreal fixture contract", () => {
 		}
 	});
 
-	it("declares Enhanced Input action and mapping-context fixtures", () => {
+	it("declares the original Enhanced Input fixture unchanged", () => {
 		const input = contract.enhancedInput;
 		expect(input.contentRoot).toBe("/Game/Fixture/Input");
-		expect(input.actions).toEqual([
+		// IMC_Fixture and its two actions are the fixture's oldest Enhanced Input evidence.
+		// They stay pinned literally so growing the surface around them cannot quietly move them.
+		expect(
+			input.actions.filter(
+				(action) =>
+					action.assetPath.includes("IA_Jump.") || action.assetPath.includes("IA_Move.")
+			)
+		).toEqual([
 			{
 				assetPath: "/Game/Fixture/Input/IA_Jump.IA_Jump",
 				valueType: "EInputActionValueType::Boolean",
@@ -346,7 +361,11 @@ describe("generic Unreal fixture contract", () => {
 				actionDescription: "Fixture move action"
 			}
 		]);
-		expect(input.mappingContext).toEqual({
+		expect(
+			input.mappingContexts.find(
+				(context) => context.assetPath === "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture"
+			)
+		).toEqual({
 			assetPath: "/Game/Fixture/Input/IMC_Fixture.IMC_Fixture",
 			contextDescription: "Fixture mapping context",
 			mappingsProperty: "DefaultKeyMappings",
@@ -360,13 +379,73 @@ describe("generic Unreal fixture contract", () => {
 					action: "/Game/Fixture/Input/IA_Move.IA_Move",
 					keyName: "A",
 					modifierCount: 1,
-					modifierClass: "/Script/EnhancedInput.InputModifierNegate"
+					modifierClasses: ["/Script/EnhancedInput.InputModifierNegate"]
 				}
 			]
 		});
+	});
+
+	it("declares an Enhanced Input surface the size of a small real project", () => {
+		const input = contract.enhancedInput;
+		// Downstream tools are only exercised by a surface with real breadth: enough actions to
+		// need naming, several contexts, and keys that more than one of them claims.
+		expect(input.actions.length).toBeGreaterThanOrEqual(20);
+		expect(input.mappingContexts.length).toBeGreaterThanOrEqual(5);
+		expect(
+			input.mappingContexts.flatMap((context) => context.mappings).length
+		).toBeGreaterThanOrEqual(50);
+
+		const declaredActions = new Set(input.actions.map((action) => action.assetPath));
+		expect(declaredActions.size).toBe(input.actions.length);
+		for (const context of input.mappingContexts) {
+			expect(context.mappingsProperty).toBe("DefaultKeyMappings");
+			expect(context.contextDescription.length).toBeGreaterThan(0);
+			for (const mapping of context.mappings) {
+				expect(declaredActions.has(mapping.action), mapping.action).toBe(true);
+				expect(mapping.keyName.length).toBeGreaterThan(0);
+				expect(mapping.modifierCount).toBe(mapping.modifierClasses?.length ?? 0);
+			}
+		}
+	});
+
+	it("declares the contested keys its own mappings produce", () => {
+		const input = contract.enhancedInput;
+		const claims = new Map<string, Set<string>>();
+		for (const context of input.mappingContexts) {
+			for (const mapping of context.mappings) {
+				const owners = claims.get(mapping.keyName) ?? new Set<string>();
+				owners.add(context.assetPath);
+				claims.set(mapping.keyName, owners);
+			}
+		}
+		const contested = [...claims.entries()]
+			.filter(([, owners]) => owners.size > 1)
+			.map(([key]) => key)
+			.sort();
+		expect(input.contestedKeys).toEqual(contested);
+		expect(contested.length).toBeGreaterThanOrEqual(10);
+	});
+
+	it("carries serialized trigger and modifier variety, not just bare key mappings", () => {
+		const mappings = contract.enhancedInput.mappingContexts.flatMap(
+			(context) => context.mappings
+		);
+		const triggers = new Set(mappings.flatMap((mapping) => mapping.triggerClasses ?? []));
+		const modifiers = new Set(mappings.flatMap((mapping) => mapping.modifierClasses ?? []));
+		expect(triggers.size).toBeGreaterThanOrEqual(4);
+		expect(modifiers.size).toBeGreaterThanOrEqual(3);
+		for (const classPath of [...triggers, ...modifiers]) {
+			expect(classPath.startsWith("/Script/EnhancedInput.")).toBe(true);
+		}
+		// Some mappings must carry no trigger at all: absent evidence is a case tools must render.
+		expect(mappings.some((mapping) => mapping.triggerClasses === undefined)).toBe(true);
+	});
+
+	it("generates every declared Enhanced Input asset", () => {
+		const input = contract.enhancedInput;
 		for (const assetPath of [
 			...input.actions.map((action) => action.assetPath),
-			input.mappingContext.assetPath
+			...input.mappingContexts.map((context) => context.assetPath)
 		]) {
 			expect(assetPath.startsWith(`${input.contentRoot}/`)).toBe(true);
 			expect(existsSync(generatedAssetPath(assetPath)), assetPath).toBe(true);

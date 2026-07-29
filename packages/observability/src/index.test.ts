@@ -8,10 +8,12 @@ import {
 	observeOperation,
 	observatoryMetrics,
 	operationMetrics,
+	recordReviewAssessment,
 	recordObservatoryCadence,
 	recordObservatoryPacket,
 	recordObservatoryPaintDuration,
 	RuntimeHealthService,
+	reviewAssessmentMetrics,
 	runtimeObservabilityLayer
 } from "./index.js";
 
@@ -88,6 +90,29 @@ it.effect("updates Observatory packet and paint metrics", () =>
 		expect(afterPackets.count - beforePackets.count).toBe(1);
 		expect(afterPaint.count - beforePaint.count).toBe(1);
 		expect(sampleHz.value).toBe(60);
+	})
+);
+
+it.effect("records bounded Map Review assessment telemetry without identity labels", () =>
+	Effect.gen(function* () {
+		const beforeAttempts = yield* Metric.value(reviewAssessmentMetrics.attempts);
+		const beforeFailures = yield* Metric.value(reviewAssessmentMetrics.failures);
+		const beforeDuration = yield* Metric.value(reviewAssessmentMetrics.duration);
+		const beforeSamples = yield* Metric.value(reviewAssessmentMetrics.samples);
+		yield* recordReviewAssessment({
+			assessmentDurationMs: 2.5,
+			sampleCount: 576,
+			status: "assessed"
+		});
+		yield* recordReviewAssessment({ status: "assessment_failed" });
+		const afterAttempts = yield* Metric.value(reviewAssessmentMetrics.attempts);
+		const afterFailures = yield* Metric.value(reviewAssessmentMetrics.failures);
+		const afterDuration = yield* Metric.value(reviewAssessmentMetrics.duration);
+		const afterSamples = yield* Metric.value(reviewAssessmentMetrics.samples);
+		expect(afterAttempts.count - beforeAttempts.count).toBe(2);
+		expect(afterFailures.count - beforeFailures.count).toBe(1);
+		expect(afterDuration.count - beforeDuration.count).toBe(1);
+		expect(afterSamples.count - beforeSamples.count).toBe(1);
 	})
 );
 

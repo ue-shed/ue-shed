@@ -1,0 +1,62 @@
+{
+	"contract": {
+		"name": "ue-shed-review-capture",
+		"version": { "major": 1, "minor": 4 }
+	},
+	"status": "captured",
+	"operationId": "capture-clear-failed",
+	"viewId": "structure-clear",
+	"resolvedSubject": {
+		"kind": "actor_path",
+		"actorPath": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+		"transform": {
+			"location": { "x": 100, "y": 200, "z": 300 },
+			"rotation": { "pitch": 0, "yaw": 45, "roll": 0 }
+		}
+	},
+	"effectiveWorldPose": {
+		"aspectRatio": "16:9",
+		"fieldOfViewDegrees": 70,
+		"projection": "perspective",
+		"location": { "x": 1200, "y": -900, "z": 700 },
+		"rotation": { "pitch": -20, "yaw": 145, "roll": 0 }
+	},
+	"mapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"stagedArtifacts": [
+		{
+			"variant": "pure",
+			"stagingPath": "C:/fixture/Saved/UEShed/ReviewStaging/capture-clear-failed/pure.png"
+		}
+	],
+	"clearCompanion": {
+		"status": "failed",
+		"strategy": "hide_explicit",
+		"interventions": [],
+		"failure": {
+			"code": "clear_actor_not_found",
+			"message": "A requested Clear actor was not found.",
+			"recovery": "Update the explicit Clear actors and retry.",
+			"retrySafe": true
+		},
+		"restoration": {
+			"status": "restored",
+			"method": "transient_capture_component_lists"
+		}
+	},
+	"width": 1280,
+	"height": 720,
+	"captureDurationMs": 15.5,
+	"mapPackageDirtyBefore": false,
+	"mapPackageDirtyAfter": false,
+	"subjectProjection": {
+		"status": "projected",
+		"viewportStatus": "fully_within_viewport",
+		"normalizedBounds": { "minX": 0.2, "minY": 0.2, "maxX": 0.8, "maxY": 0.8 },
+		"margins": { "left": 0.2, "right": 0.2, "top": 0.2, "bottom": 0.2 }
+	},
+	"visibility": {
+		"status": "not_assessed",
+		"reason": "Clear preparation failed after Pure capture.",
+		"limitations": []
+	}
+}

@@ -2,13 +2,21 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import {
 	approveFramingCandidate,
+	createAreaReviewView,
+	createReviewViewFromCandidate,
 	framingDriftDiagnostics,
 	generateFramingCandidates,
-	realizationFramingDiagnostics
+	realizationFramingDiagnostics,
+	realizeTargetRelativePose,
+	reviseReviewView,
+	targetRelativePoseFromWorldPose,
+	targetRelativeViewpointFromWorldPose
 } from "./review-framing.js";
 import {
 	ReviewSetId,
+	CaptureProfileId,
 	ReviewViewId,
+	VisibilityPolicyId,
 	decodeReviewSet as decodeReviewSetEffect,
 	type ReviewSubjectProjection
 } from "./review-schema.js";
@@ -102,13 +110,135 @@ describe("spatial framing", () => {
 		expect(approved.status).toBe("approved");
 		if (approved.status !== "approved") return;
 		expect(approved.reviewSet.views[0]).toMatchObject({
-			approvedPose: manualPose,
 			framingRecipe: {
 				kind: "preset",
 				manualAdjustment: { reason: "Raised the view above the foreground edge." },
 				preset: "context_three_quarter"
-			}
+			},
+			viewpoint: { approvedPose: manualPose, kind: "world_fixed" }
 		});
+		expect(approved.reviewSet.views[0]?.revision).toMatchObject({
+			id: "structure-context-r2",
+			number: 2,
+			status: "numbered"
+		});
+	});
+
+	it("derives a moved actor's target-relative effective pose without changing the durable pose", () => {
+		const worldPose = selection.editorView!;
+		const initialTarget = {
+			location: { x: 100, y: 200, z: 300 },
+			rotation: { pitch: 0, roll: 0, yaw: 90 }
+		};
+		const relativePose = targetRelativePoseFromWorldPose({
+			targetTransform: initialTarget,
+			worldPose
+		});
+		expect(
+			targetRelativeViewpointFromWorldPose({ targetTransform: initialTarget, worldPose })
+		).toMatchObject({ kind: "target_relative", relativePose, targetSnapshot: initialTarget });
+		const movedTarget = {
+			location: { x: 500, y: 600, z: 700 },
+			rotation: { pitch: 0, roll: 0, yaw: 180 }
+		};
+		const realized = realizeTargetRelativePose({
+			relativePose,
+			targetTransform: movedTarget
+		});
+		expect(realized.location.x).toBeCloseTo(1600, 8);
+		expect(realized.location.y).toBeCloseTo(1700, 8);
+		expect(realized.location.z).toBeCloseTo(1100, 8);
+		expect(realized.rotation.pitch).toBeCloseTo(-12, 8);
+		expect(realized.rotation.yaw).toBeCloseTo(-128, 8);
+		expect(realized.rotation.roll).toBeCloseTo(0, 8);
+		expect(relativePose).toEqual(
+			targetRelativePoseFromWorldPose({ targetTransform: initialTarget, worldPose })
+		);
+	});
+
+	it("authors actor-following and fixed oriented-area Views as portable definitions", () => {
+		const candidate = generateFramingCandidates(selection)[0]!;
+		const targetTransform = {
+			location: { x: 100, y: 200, z: 300 },
+			rotation: { pitch: 0, roll: 0, yaw: 45 }
+		};
+		const following = createReviewViewFromCandidate({
+			anchoring: { mode: "target_relative", targetTransform },
+			candidate,
+			captureProfileId: CaptureProfileId.make("fixture-hd"),
+			displayName: "Following structure",
+			purpose: "Retain composition as the actor moves",
+			subject: {
+				actorPath: selection.actorPath,
+				kind: "actor_path"
+			},
+			tags: [],
+			viewId: ReviewViewId.make("structure-follow"),
+			visibilityPolicyId: VisibilityPolicyId.make("default-natural-only")
+		});
+		expect(following.viewpoint.kind).toBe("target_relative");
+		if (following.viewpoint.kind !== "target_relative" || following.target.kind !== "actor")
+			return;
+		const initialRealization = realizeTargetRelativePose({
+			relativePose: following.viewpoint.relativePose,
+			targetTransform
+		});
+		expect(initialRealization.location.x).toBeCloseTo(candidate.approvedPose.location.x, 8);
+		expect(initialRealization.location.y).toBeCloseTo(candidate.approvedPose.location.y, 8);
+		expect(initialRealization.location.z).toBeCloseTo(candidate.approvedPose.location.z, 8);
+		expect(initialRealization.rotation.pitch).toBeCloseTo(
+			candidate.approvedPose.rotation.pitch,
+			8
+		);
+		expect(initialRealization.rotation.yaw).toBeCloseTo(candidate.approvedPose.rotation.yaw, 8);
+		expect(initialRealization.rotation.roll).toBeCloseTo(
+			candidate.approvedPose.rotation.roll,
+			8
+		);
+
+		const area = createAreaReviewView({
+			approvedPose: candidate.approvedPose,
+			bounds: selection.bounds,
+			captureProfileId: CaptureProfileId.make("fixture-hd"),
+			displayName: "Loading area",
+			purpose: "Watch this place",
+			tags: ["area"],
+			viewId: ReviewViewId.make("loading-area"),
+			visibilityPolicyId: VisibilityPolicyId.make("default-natural-only")
+		});
+		const base = reviewSet();
+		const decoded = decodeReviewSet({ ...base, views: [following, area] });
+		expect(decoded.views[1]).toMatchObject({
+			target: { bounds: selection.bounds, kind: "oriented_box" },
+			viewpoint: { kind: "world_fixed" }
+		});
+
+		const baseView = base.views[0]!;
+		const revised = reviseReviewView({
+			definition: {
+				target: following.target,
+				viewpoint: following.viewpoint
+			},
+			reviewSet: base,
+			viewId: baseView.id
+		});
+		expect(revised.status).toBe("revised");
+		if (revised.status !== "revised") return;
+		expect(revised.reviewSet.views[0]?.revision).toMatchObject({
+			id: "structure-context-r2",
+			number: 2
+		});
+		const unchanged = reviseReviewView({
+			definition: {
+				target: following.target,
+				viewpoint: following.viewpoint
+			},
+			reviewSet: revised.reviewSet,
+			viewId: baseView.id
+		});
+		expect(unchanged.status).toBe("unchanged");
+		if (unchanged.status === "view_not_found") return;
+		expect(unchanged.reviewSet.views[0]?.revision.number).toBe(2);
 	});
 
 	it("warns on bounds drift without moving the approved pose", () => {

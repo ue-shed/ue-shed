@@ -35,9 +35,12 @@ public:
 	UPROPERTY(Transient)
 	bool bTransientProvisionedCamera = false;
 
-	/** Optional host-side binding key, currently a Map Review framing candidate id. */
+	/** Explicit temporary-camera correlation, never a durable camera identity. */
 	UPROPERTY(Transient)
-	FString ProvisioningKey;
+	FString ProvisioningCorrelationId;
+
+	UPROPERTY(Transient)
+	FString ProvisioningCorrelationType;
 
 	void EnsureCaptureTarget();
 };

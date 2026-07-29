@@ -1,0 +1,14 @@
+{
+	"contract": {
+		"name": "ue-shed-review-assessment-capabilities",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"depthCompareMaximumResolution": { "width": 320, "height": 180 },
+	"methods": [
+		{
+			"requestedMethod": "automatic",
+			"status": "supported",
+			"limitations": []
+		}
+	]
+}

@@ -277,7 +277,7 @@ describe("ReviewAuthoringSessions", () => {
 		expect(savedReviewSet?.views).toHaveLength(1);
 		expect(savedReviewSet?.views[0]).toMatchObject({
 			displayName: selection.displayName,
-			subject: { actorPath: selection.actorPath }
+			target: { kind: "actor", subject: { actorPath: selection.actorPath } }
 		});
 		const afterApproval = await readFile(
 			reviewAuthoringSessionPath({ id: created.id, projectRoot }),

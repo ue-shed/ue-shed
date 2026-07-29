@@ -898,18 +898,20 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const run = yield* repository.loadRun(summary.path);
 			const captured = run.results.find((result) => result.status === "captured");
 			if (!captured) return summary satisfies MapReviewRunView;
+			const pureArtifact = captured.artifacts.find((artifact) => artifact.variant === "pure");
+			if (!pureArtifact) return summary satisfies MapReviewRunView;
 			const view = reviewSet.views.find((candidate) => candidate.id === captured.viewId);
 			const bytes = yield* localFiles.readFileWithin(
 				dirname(summary.path),
-				captured.artifact.relativePath
+				pureArtifact.relativePath
 			);
 			return {
 				...summary,
 				preview: {
 					bytes,
-					height: captured.artifact.height,
+					height: pureArtifact.height,
 					viewName: view?.displayName ?? captured.viewId,
-					width: captured.artifact.width
+					width: pureArtifact.width
 				}
 			} satisfies MapReviewRunView;
 		});
@@ -1274,7 +1276,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									const next = yield* ensureProvisionedCameras(
 										configuration.remoteControlEndpoint,
 										session.candidates.map((item) => ({
-											candidateId: item.id,
+											correlation: {
+												candidateId: item.id,
+												type: "framing_candidate" as const
+											},
 											fieldOfViewDegrees:
 												item.approvedPose.fieldOfViewDegrees,
 											height: 180,
@@ -1290,7 +1295,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 										provisionedCameraBindings,
 										Option.some({
 											bindings: next.map((item) => ({
-												candidateId: item.candidateId,
+												candidateId:
+													"candidateId" in item.correlation
+														? item.correlation.candidateId
+														: "",
 												index: item.index
 											})),
 											poseFingerprint,
@@ -1298,7 +1306,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 										})
 									);
 									return next.map((item) => ({
-										candidateId: item.candidateId,
+										candidateId:
+											"candidateId" in item.correlation
+												? item.correlation.candidateId
+												: "",
 										index: item.index
 									}));
 								})

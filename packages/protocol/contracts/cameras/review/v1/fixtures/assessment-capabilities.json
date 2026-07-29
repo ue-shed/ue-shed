@@ -1,0 +1,36 @@
+{
+	"contract": {
+		"name": "ue-shed-review-assessment-capabilities",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"depthCompareMaximumResolution": { "width": 320, "height": 180 },
+	"methods": [
+		{
+			"requestedMethod": "automatic",
+			"status": "supported",
+			"effectiveMethod": { "method": "depth_compare", "version": 1 },
+			"limitations": [
+				"Automatic uses bounded depth comparison for depth-writing actor subjects."
+			]
+		},
+		{
+			"requestedMethod": "depth_compare",
+			"status": "supported",
+			"effectiveMethod": { "method": "depth_compare", "version": 1 },
+			"limitations": ["Depth comparison requires depth-writing actor subject pixels."]
+		},
+		{
+			"requestedMethod": "ray_samples",
+			"status": "supported",
+			"effectiveMethod": { "method": "ray_samples", "version": 1 },
+			"limitations": [
+				"Collision-ray samples are diagnostic and can disagree with rendered visibility."
+			]
+		},
+		{
+			"requestedMethod": "subject_mask",
+			"status": "unsupported",
+			"reason": "A render-truthful subject-mask method is not available from this producer."
+		}
+	]
+}

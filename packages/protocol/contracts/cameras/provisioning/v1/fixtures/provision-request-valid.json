@@ -1,0 +1,14 @@
+{
+	"schemaVersion": 2,
+	"previewFps": 5,
+	"cameras": [
+		{
+			"correlation": { "type": "framing_candidate", "candidateId": "context_three_quarter" },
+			"fieldOfViewDegrees": 60,
+			"location": { "x": 1200, "y": -1400, "z": 700 },
+			"rotation": { "pitch": -12, "yaw": 135, "roll": 0 },
+			"width": 320,
+			"height": 180
+		}
+	]
+}

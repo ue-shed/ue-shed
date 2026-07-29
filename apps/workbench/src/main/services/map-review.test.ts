@@ -321,27 +321,43 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 									completedAt: "2026-01-01T00:00:00.000Z",
 									contract: {
 										name: "ue-shed-capture-run" as const,
-										version: { major: 1, minor: 0 }
+										version: { major: 1, minor: 1 }
 									},
 									id: "run-1",
+									invocation: {
+										cause: { type: "manual" as const },
+										id: "invocation-1",
+										reviewSetId: fixtureReviewSet.id
+									},
 									project: fixtureReviewSet.project,
 									results: [
 										{
-											artifact: {
-												byteLength: 3,
-												contentHash: `sha256:${"a".repeat(64)}`,
-												height: 1080,
-												id: "artifact-1",
-												mediaType: "image/png" as const,
-												relativePath: "artifact.png",
-												variant: "pure" as const,
-												width: 1920
-											},
+											artifacts: [
+												{
+													byteLength: 3,
+													contentHash: `sha256:${"a".repeat(64)}`,
+													height: 1080,
+													id: "artifact-1",
+													mediaType: "image/png" as const,
+													relativePath: "artifact.png",
+													variant: "pure" as const,
+													width: 1920
+												}
+											],
 											captureDurationMs: 10,
 											resolvedActorPath:
 												"/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
 											status: "captured" as const,
-											viewId: "view-1"
+											viewId: "view-1",
+											viewRevision: {
+												id: "view-1-r1",
+												number: 1,
+												status: "numbered" as const
+											},
+											visibility: {
+												reason: "Fixture has no visibility assessment.",
+												status: "not_assessed" as const
+											}
 										}
 									],
 									reviewSetId: fixtureReviewSet.id,

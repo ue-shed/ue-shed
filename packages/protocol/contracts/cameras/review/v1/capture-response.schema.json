@@ -5,6 +5,127 @@
 	"oneOf": [
 		{
 			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"contract",
+				"status",
+				"operationId",
+				"viewId",
+				"resolvedSubject",
+				"effectiveWorldPose",
+				"mapPath",
+				"stagedArtifacts",
+				"clearCompanion",
+				"width",
+				"height",
+				"captureDurationMs",
+				"mapPackageDirtyBefore",
+				"mapPackageDirtyAfter",
+				"subjectProjection",
+				"visibility"
+			],
+			"properties": {
+				"contract": { "$ref": "#/$defs/currentContract" },
+				"status": { "const": "captured" },
+				"operationId": { "type": "string", "minLength": 1 },
+				"viewId": { "$ref": "#/$defs/safeId" },
+				"resolvedSubject": { "$ref": "#/$defs/resolvedSubject" },
+				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
+				"mapPath": { "type": "string", "minLength": 1 },
+				"stagedArtifacts": {
+					"type": "array",
+					"minItems": 1,
+					"maxItems": 2,
+					"items": { "$ref": "#/$defs/stagedArtifact" }
+				},
+				"clearCompanion": { "$ref": "#/$defs/clearCompanion" },
+				"width": { "type": "integer", "minimum": 1 },
+				"height": { "type": "integer", "minimum": 1 },
+				"captureDurationMs": { "type": "number", "minimum": 0 },
+				"mapPackageDirtyBefore": { "type": "boolean" },
+				"mapPackageDirtyAfter": { "type": "boolean" },
+				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
+				"visibility": { "$ref": "#/$defs/visibilityMeasurement" }
+			}
+		},
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"contract",
+				"status",
+				"operationId",
+				"viewId",
+				"resolvedSubject",
+				"effectiveWorldPose",
+				"mapPath",
+				"stagingPath",
+				"width",
+				"height",
+				"captureDurationMs",
+				"mapPackageDirtyBefore",
+				"mapPackageDirtyAfter",
+				"subjectProjection",
+				"visibility"
+			],
+			"properties": {
+				"contract": { "$ref": "#/$defs/previousCurrentContract" },
+				"status": { "const": "captured" },
+				"operationId": { "type": "string", "minLength": 1 },
+				"viewId": { "$ref": "#/$defs/safeId" },
+				"resolvedSubject": { "$ref": "#/$defs/resolvedSubject" },
+				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
+				"mapPath": { "type": "string", "minLength": 1 },
+				"stagingPath": { "type": "string", "minLength": 1 },
+				"width": { "type": "integer", "minimum": 1 },
+				"height": { "type": "integer", "minimum": 1 },
+				"captureDurationMs": { "type": "number", "minimum": 0 },
+				"mapPackageDirtyBefore": { "type": "boolean" },
+				"mapPackageDirtyAfter": { "type": "boolean" },
+				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
+				"visibility": { "$ref": "#/$defs/visibilityMeasurement" }
+			}
+		},
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"contract",
+				"status",
+				"operationId",
+				"viewId",
+				"resolvedSubject",
+				"effectiveWorldPose",
+				"mapPath",
+				"stagingPath",
+				"width",
+				"height",
+				"captureDurationMs",
+				"mapPackageDirtyBefore",
+				"mapPackageDirtyAfter",
+				"subjectProjection",
+				"visibility"
+			],
+			"properties": {
+				"contract": { "$ref": "#/$defs/previousContract" },
+				"status": { "const": "captured" },
+				"operationId": { "type": "string", "minLength": 1 },
+				"viewId": { "$ref": "#/$defs/safeId" },
+				"resolvedSubject": { "$ref": "#/$defs/resolvedSubject" },
+				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
+				"mapPath": { "type": "string", "minLength": 1 },
+				"stagingPath": { "type": "string", "minLength": 1 },
+				"width": { "type": "integer", "minimum": 1 },
+				"height": { "type": "integer", "minimum": 1 },
+				"captureDurationMs": { "type": "number", "minimum": 0 },
+				"mapPackageDirtyBefore": { "type": "boolean" },
+				"mapPackageDirtyAfter": { "type": "boolean" },
+				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
+				"visibility": { "$ref": "#/$defs/visibilityV2" }
+			}
+		},
+		{
+			"type": "object",
 			"required": [
 				"contract",
 				"status",
@@ -83,6 +204,57 @@
 		}
 	],
 	"$defs": {
+		"currentContract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-capture" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "const": 4 }
+					}
+				}
+			}
+		},
+		"previousCurrentContract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-capture" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "const": 3 }
+					}
+				}
+			}
+		},
+		"previousContract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-capture" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "const": 2 }
+					}
+				}
+			}
+		},
 		"contract": {
 			"type": "object",
 			"additionalProperties": false,
@@ -95,12 +267,415 @@
 					"required": ["major", "minor"],
 					"properties": {
 						"major": { "const": 1 },
-						"minor": { "type": "integer", "minimum": 0 }
+						"minor": { "type": "integer", "minimum": 0, "maximum": 4 }
 					}
 				}
 			}
 		},
 		"safeId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+		"vector": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["x", "y", "z"],
+			"properties": {
+				"x": { "type": "number" },
+				"y": { "type": "number" },
+				"z": { "type": "number" }
+			}
+		},
+		"rotation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["pitch", "yaw", "roll"],
+			"properties": {
+				"pitch": { "type": "number" },
+				"yaw": { "type": "number" },
+				"roll": { "type": "number" }
+			}
+		},
+		"bounds": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["center", "extent", "rotation"],
+			"properties": {
+				"center": { "$ref": "#/$defs/vector" },
+				"extent": { "$ref": "#/$defs/vector" },
+				"rotation": { "$ref": "#/$defs/rotation" }
+			}
+		},
+		"pose": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["aspectRatio", "fieldOfViewDegrees", "location", "projection", "rotation"],
+			"properties": {
+				"aspectRatio": { "const": "16:9" },
+				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
+				"projection": { "const": "perspective" },
+				"location": { "$ref": "#/$defs/vector" },
+				"rotation": { "$ref": "#/$defs/rotation" }
+			}
+		},
+		"resolvedSubject": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "actorPath", "transform"],
+					"properties": {
+						"kind": { "const": "actor_path" },
+						"actorPath": { "type": "string", "minLength": 1 },
+						"transform": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["location", "rotation"],
+							"properties": {
+								"location": { "$ref": "#/$defs/vector" },
+								"rotation": { "$ref": "#/$defs/rotation" }
+							}
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "bounds"],
+					"properties": {
+						"kind": { "const": "oriented_bounds" },
+						"bounds": { "$ref": "#/$defs/bounds" }
+					}
+				}
+			]
+		},
+		"stagedArtifact": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["stagingPath", "variant"],
+			"properties": {
+				"stagingPath": { "type": "string", "minLength": 1 },
+				"variant": { "enum": ["pure", "clear"] }
+			}
+		},
+		"objectLocator": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["kind", "actorPath"],
+			"properties": {
+				"kind": { "const": "actor_path" },
+				"actorPath": {
+					"type": "string",
+					"minLength": 7,
+					"maxLength": 4096,
+					"pattern": "^/Game/"
+				},
+				"diagnosticLabel": { "type": "string", "minLength": 1 }
+			}
+		},
+		"clearIntervention": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["subject", "type"],
+					"properties": {
+						"subject": { "$ref": "#/$defs/objectLocator" },
+						"type": { "const": "show_only_subject_components" }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["target", "type"],
+					"properties": {
+						"target": { "$ref": "#/$defs/objectLocator" },
+						"type": { "const": "hide_actor_components" }
+					}
+				}
+			]
+		},
+		"clearRestoration": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["method", "status"],
+					"properties": {
+						"method": { "const": "transient_capture_component_lists" },
+						"status": { "const": "restored" }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["code", "message", "recovery", "status"],
+					"properties": {
+						"code": { "type": "string", "minLength": 1 },
+						"message": { "type": "string", "minLength": 1 },
+						"recovery": { "type": "string", "minLength": 1 },
+						"status": { "const": "failed" }
+					}
+				}
+			]
+		},
+		"clearCompanion": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["status"],
+					"properties": { "status": { "const": "not_requested" } }
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["interventions", "restoration", "status", "strategy"],
+					"properties": {
+						"interventions": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 32,
+							"items": { "$ref": "#/$defs/clearIntervention" }
+						},
+						"restoration": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["method", "status"],
+							"properties": {
+								"method": { "const": "transient_capture_component_lists" },
+								"status": { "const": "restored" }
+							}
+						},
+						"status": { "const": "captured" },
+						"strategy": { "enum": ["isolate_target", "hide_explicit"] }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["failure", "interventions", "restoration", "status", "strategy"],
+					"properties": {
+						"failure": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["code", "message", "recovery", "retrySafe"],
+							"properties": {
+								"code": { "type": "string", "minLength": 1 },
+								"message": { "type": "string", "minLength": 1 },
+								"recovery": { "type": "string", "minLength": 1 },
+								"retrySafe": { "type": "boolean" }
+							}
+						},
+						"interventions": {
+							"type": "array",
+							"maxItems": 32,
+							"items": { "$ref": "#/$defs/clearIntervention" }
+						},
+						"restoration": { "$ref": "#/$defs/clearRestoration" },
+						"status": { "const": "failed" },
+						"strategy": { "enum": ["isolate_target", "hide_explicit"] }
+					}
+				}
+			]
+		},
+		"visibilityMeasurement": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["status", "reason"],
+					"properties": {
+						"status": { "const": "not_assessed" },
+						"reason": { "type": "string", "minLength": 1 },
+						"limitations": {
+							"type": "array",
+							"maxItems": 8,
+							"items": { "type": "string" }
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": [
+						"status",
+						"method",
+						"visibleFraction",
+						"sampleCount",
+						"assessmentDurationMs",
+						"limitations",
+						"occluders"
+					],
+					"properties": {
+						"status": { "const": "assessed" },
+						"method": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["method", "version"],
+							"properties": {
+								"method": {
+									"enum": ["ray_samples", "subject_mask", "depth_compare"]
+								},
+								"version": { "type": "integer", "minimum": 1 }
+							}
+						},
+						"visibleFraction": { "type": "number", "minimum": 0, "maximum": 1 },
+						"sampleCount": { "type": "integer", "minimum": 0 },
+						"assessmentDurationMs": { "type": "number", "minimum": 0 },
+						"limitations": {
+							"type": "array",
+							"maxItems": 8,
+							"items": { "type": "string" }
+						},
+						"occluders": {
+							"type": "array",
+							"maxItems": 32,
+							"items": {
+								"type": "object",
+								"additionalProperties": false,
+								"required": ["confidence", "locator", "reason"],
+								"properties": {
+									"confidence": {
+										"type": "number",
+										"minimum": 0,
+										"maximum": 1
+									},
+									"locator": {
+										"type": "object",
+										"additionalProperties": false,
+										"required": ["kind", "actorPath"],
+										"properties": {
+											"kind": { "const": "actor_path" },
+											"actorPath": { "type": "string", "minLength": 1 }
+										}
+									},
+									"reason": { "type": "string" }
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["status", "failure"],
+					"properties": {
+						"status": { "const": "assessment_failed" },
+						"failure": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["code", "message", "recovery", "retrySafe"],
+							"properties": {
+								"code": { "type": "string", "minLength": 1 },
+								"message": { "type": "string", "minLength": 1 },
+								"recovery": { "type": "string", "minLength": 1 },
+								"retrySafe": { "type": "boolean" }
+							}
+						}
+					}
+				}
+			]
+		},
+		"visibilityV2": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["status", "reason"],
+					"properties": {
+						"status": { "const": "not_assessed" },
+						"reason": { "type": "string", "minLength": 1 },
+						"limitations": {
+							"type": "array",
+							"maxItems": 8,
+							"items": { "type": "string" }
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": [
+						"status",
+						"classification",
+						"method",
+						"visibleFraction",
+						"sampleCount",
+						"assessmentDurationMs",
+						"limitations",
+						"occluders"
+					],
+					"properties": {
+						"status": { "const": "assessed" },
+						"classification": {
+							"enum": ["clear", "partial", "blocked", "not_visible"]
+						},
+						"method": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["method", "version"],
+							"properties": {
+								"method": {
+									"enum": ["ray_samples", "subject_mask", "depth_compare"]
+								},
+								"version": { "type": "integer", "minimum": 1 }
+							}
+						},
+						"visibleFraction": { "type": "number", "minimum": 0, "maximum": 1 },
+						"sampleCount": { "type": "integer", "minimum": 0 },
+						"assessmentDurationMs": { "type": "number", "minimum": 0 },
+						"limitations": {
+							"type": "array",
+							"maxItems": 8,
+							"items": { "type": "string" }
+						},
+						"occluders": {
+							"type": "array",
+							"maxItems": 32,
+							"items": {
+								"type": "object",
+								"additionalProperties": false,
+								"required": ["confidence", "locator", "reason"],
+								"properties": {
+									"confidence": {
+										"type": "number",
+										"minimum": 0,
+										"maximum": 1
+									},
+									"locator": {
+										"type": "object",
+										"additionalProperties": false,
+										"required": ["kind", "actorPath"],
+										"properties": {
+											"kind": { "const": "actor_path" },
+											"actorPath": { "type": "string", "minLength": 1 }
+										}
+									},
+									"reason": { "type": "string" }
+								}
+							}
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["status", "failure"],
+					"properties": {
+						"status": { "const": "assessment_failed" },
+						"failure": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["code", "message", "recovery", "retrySafe"],
+							"properties": {
+								"code": { "type": "string", "minLength": 1 },
+								"message": { "type": "string", "minLength": 1 },
+								"recovery": { "type": "string", "minLength": 1 },
+								"retrySafe": { "type": "boolean" }
+							}
+						}
+					}
+				}
+			]
+		},
 		"projectedBounds": {
 			"type": "object",
 			"additionalProperties": false,

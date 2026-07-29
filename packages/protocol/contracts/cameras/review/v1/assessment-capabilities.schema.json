@@ -1,0 +1,86 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/review/v1/assessment-capabilities.schema.json",
+	"title": "UE Shed Map Review assessment capabilities v1",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["contract", "depthCompareMaximumResolution", "methods"],
+	"properties": {
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-review-assessment-capabilities" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": {
+						"major": { "const": 1 },
+						"minor": { "const": 0 }
+					}
+				}
+			}
+		},
+		"depthCompareMaximumResolution": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["width", "height"],
+			"properties": {
+				"width": { "type": "integer", "minimum": 1 },
+				"height": { "type": "integer", "minimum": 1 }
+			}
+		},
+		"methods": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 16,
+			"items": { "$ref": "#/$defs/methodCapability" }
+		}
+	},
+	"$defs": {
+		"effectiveMethod": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["method", "version"],
+			"properties": {
+				"method": { "enum": ["ray_samples", "subject_mask", "depth_compare"] },
+				"version": { "type": "integer", "minimum": 1 }
+			}
+		},
+		"methodCapability": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["requestedMethod", "status", "effectiveMethod", "limitations"],
+					"properties": {
+						"requestedMethod": {
+							"enum": ["automatic", "ray_samples", "subject_mask", "depth_compare"]
+						},
+						"status": { "const": "supported" },
+						"effectiveMethod": { "$ref": "#/$defs/effectiveMethod" },
+						"limitations": {
+							"type": "array",
+							"maxItems": 8,
+							"items": { "type": "string" }
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["requestedMethod", "status", "reason"],
+					"properties": {
+						"requestedMethod": {
+							"enum": ["automatic", "ray_samples", "subject_mask", "depth_compare"]
+						},
+						"status": { "const": "unsupported" },
+						"reason": { "type": "string", "minLength": 1 }
+					}
+				}
+			]
+		}
+	}
+}

@@ -6,6 +6,7 @@ import {
 	ReviewSet,
 	ReviewSetId,
 	ReviewViewId,
+	defaultNaturalOnlyVisibilityPolicy,
 	type ReviewSelectionResponse
 } from "./review-schema.js";
 import { DEFAULT_REVIEW_ROOT } from "./review-repository.js";
@@ -48,19 +49,20 @@ export function bootstrapMapReviewSet(args: {
 		id: CaptureProfileId.make(defaultCaptureProfileId),
 		imageFormat: "png",
 		renderProfile: "full_fidelity",
-		resolution: { height: 720, width: 1280 },
-		variantPolicy: "pure_only"
+		resolution: { height: 720, width: 1280 }
 	});
+	const visibilityPolicy = defaultNaturalOnlyVisibilityPolicy();
 	return {
 		reviewSet: ReviewSet.make({
 			captureProfiles: [captureProfile],
-			contract: { name: "ue-shed-review-set", version: { major: 1, minor: 0 } },
+			contract: { name: "ue-shed-review-set", version: { major: 1, minor: 1 } },
 			description:
 				"Created from the first selected actor. Review Views remain portable and outside the map.",
 			displayName: mapDisplayName(args.selection.mapPath),
 			id,
 			project: { id: projectId, mapPath: args.selection.mapPath },
-			views: []
+			views: [],
+			visibilityPolicies: [visibilityPolicy]
 		}),
 		reviewSetPath: join(args.projectRoot, DEFAULT_REVIEW_ROOT, "sets", `${id}.json`),
 		viewId: ReviewViewId.make(initialReviewViewId)

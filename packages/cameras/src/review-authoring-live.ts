@@ -15,12 +15,24 @@ import {
 	decodeReviewSubjectInspectionResponse,
 	type CaptureProfile,
 	type FramingCandidate,
+	type ReviewCaptureResponse,
 	type ReviewSubjectInspectionResponse,
 	type ReviewSubjectProjection,
 	type ReviewSelectionResponse
 } from "./review-schema.js";
 
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
+
+function pureStagingPath(
+	response: Extract<ReviewCaptureResponse, { readonly status: "captured" }>
+) {
+	if (!("stagedArtifacts" in response)) return response.stagingPath;
+	const artifact = response.stagedArtifacts.find((candidate) => candidate.variant === "pure");
+	if (artifact === undefined) {
+		throw new Error("The editor response omitted the required staged Pure artifact.");
+	}
+	return artifact.stagingPath;
+}
 
 export class ReviewAuthoringConnectionError extends Schema.TaggedErrorClass<ReviewAuthoringConnectionError>()(
 	"ReviewAuthoringConnectionError",
@@ -232,17 +244,18 @@ export const ReviewAuthoringLive = Layer.effect(
 				});
 			}
 			const projection = response.subjectProjection;
+			const stagingPath = pureStagingPath(response);
 			return yield* Effect.tryPromise({
 				try: async () => {
 					try {
 						return {
-							bytes: new Uint8Array(await readFile(response.stagingPath)),
+							bytes: new Uint8Array(await readFile(stagingPath)),
 							height: response.height,
 							projection,
 							width: response.width
 						};
 					} finally {
-						await unlink(response.stagingPath).catch(() => undefined);
+						await unlink(stagingPath).catch(() => undefined);
 					}
 				},
 				catch: (cause) =>

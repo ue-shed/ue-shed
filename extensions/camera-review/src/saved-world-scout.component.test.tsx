@@ -109,4 +109,24 @@ describe("SavedWorldScout", () => {
 		expect(screen.getByText("PointLight")).toBeDefined();
 		expect(screen.queryByText("StaticMeshActor")).toBeNull();
 	});
+
+	it("keeps actor class chips selected by default and inverts the selection", async () => {
+		const user = userEvent.setup();
+		renderScout();
+
+		await screen.findByText("PointLight");
+		const light = screen.getByText("PointLight").closest("button");
+		const mesh = screen.getByText("StaticMeshActor").closest("button");
+		expect(light).not.toBeNull();
+		expect(mesh).not.toBeNull();
+		expect(light!.getAttribute("aria-pressed")).toBe("true");
+		expect(mesh!.getAttribute("aria-pressed")).toBe("true");
+
+		await user.click(light!);
+		expect(light!.getAttribute("aria-pressed")).toBe("false");
+
+		await user.click(screen.getByRole("button", { name: "INVERT" }));
+		expect(light!.getAttribute("aria-pressed")).toBe("true");
+		expect(mesh!.getAttribute("aria-pressed")).toBe("false");
+	});
 });

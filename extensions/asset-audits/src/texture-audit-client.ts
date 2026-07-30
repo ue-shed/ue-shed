@@ -1,4 +1,10 @@
-import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits/browser";
+import type {
+	TextureAuditQueryRunResult,
+	TextureAuditRecordResult,
+	TextureAuditSearchRequest,
+	TextureAuditSearchResult,
+	TexturePreviewResult
+} from "@ue-shed/asset-audits/browser";
 import { Context, type Effect, Schema } from "effect";
 
 export const TextureAuditLaunchResult = Schema.Union([
@@ -22,13 +28,19 @@ export class TextureAuditClientError extends Schema.TaggedErrorClass<TextureAudi
 
 export interface TextureAuditClientShape {
 	readonly loadConfiguredProject: () => Effect.Effect<
-		TextureAuditRunResult,
+		TextureAuditQueryRunResult,
 		TextureAuditClientError
 	>;
 	readonly chooseProjectAndScan: () => Effect.Effect<
-		TextureAuditRunResult,
+		TextureAuditQueryRunResult,
 		TextureAuditClientError
 	>;
+	readonly search: (
+		request: TextureAuditSearchRequest
+	) => Effect.Effect<TextureAuditSearchResult, TextureAuditClientError>;
+	readonly record: (
+		objectPath: string
+	) => Effect.Effect<TextureAuditRecordResult, TextureAuditClientError>;
 	readonly loadPreview: (
 		objectPath: string
 	) => Effect.Effect<TexturePreviewResult, TextureAuditClientError>;

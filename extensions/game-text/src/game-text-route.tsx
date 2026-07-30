@@ -8,7 +8,6 @@ import type {
 import { createEffectAction } from "@ue-shed/ui";
 import { Cause } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
-import type { GameTextClientShape } from "./game-text-client.js";
 import {
 	filterTextUnits,
 	identityLabel,
@@ -26,6 +25,18 @@ type ViewState =
 			readonly error: Extract<TextCorpusRunResult, { status: "failed" }>["error"];
 	  }
 	| { readonly status: "ready"; readonly corpus: TextCorpus };
+
+/** Retained only for compatibility with tests of the pre-query presentation model. */
+export interface LegacyGameTextClientShape {
+	readonly chooseProjectAndScan: () => import("effect").Effect.Effect<
+		TextCorpusRunResult,
+		unknown
+	>;
+	readonly loadConfiguredProject: () => import("effect").Effect.Effect<
+		TextCorpusRunResult,
+		unknown
+	>;
+}
 
 const filters: readonly { readonly value: CapabilityFilter; readonly label: string }[] = [
 	{ value: "all", label: "All text" },
@@ -66,7 +77,7 @@ function OccurrenceCard(props: { readonly occurrence: TextOccurrence }) {
 	);
 }
 
-export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
+export function LegacyGameTextRoute(props: { readonly client: LegacyGameTextClientShape }) {
 	const scanAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [query, setQuery] = createSignal("");

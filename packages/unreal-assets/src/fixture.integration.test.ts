@@ -2,13 +2,15 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	AssetReader,
 	assetReaderLayer,
 	discoverSavedAssets,
 	discoverSavedTables,
+	extractProjectText,
+	extractProjectTextures,
 	isFullScanEntry,
 	isHeaderScanEntry,
 	type AssetReaderError,
@@ -87,6 +89,43 @@ describe.skipIf(!executable)("batched project scan", () => {
 					entry.inspection.assets.some((asset) => asset.kind === "StringTable")
 				)
 		).toBe(true);
+	});
+
+	it("streams compact text occurrences rather than generic inspections", async () => {
+		const events = Array.from(
+			await runReader(Stream.runCollect(extractProjectText({ projectRoot: fixtureRoot })))
+		);
+		const occurrences = events.filter((event) => event.event === "text_occurrence");
+		expect(occurrences.length).toBeGreaterThan(0);
+		expect(occurrences.every((event) => "occurrence" in event)).toBe(true);
+		expect(events.some((event) => event.event === "text_summary")).toBe(true);
+	});
+
+	it("streams compact Texture2D records for explicit index candidates", async () => {
+		const assetPath = join(
+			fixtureRoot,
+			"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset"
+		);
+		const events = Array.from(
+			await runReader(
+				Stream.runCollect(
+					extractProjectTextures({ paths: [assetPath], projectRoot: fixtureRoot })
+				)
+			)
+		);
+		const records = events.filter((event) => event.event === "texture_record");
+		expect(records).toHaveLength(1);
+		expect(records[0]?.record.object_path).toContain("T_Audit_NonPowerOfTwo_300x180");
+		expect(events.some((event) => event.event === "texture_summary")).toBe(true);
+	});
+
+	it("does not fall back to Content for an explicit empty compact candidate list", async () => {
+		const events = Array.from(
+			await runReader(
+				Stream.runCollect(extractProjectText({ paths: [], projectRoot: fixtureRoot }))
+			)
+		);
+		expect(events).toEqual([]);
 	});
 
 	it("narrows enumeration to a requested subdirectory", async () => {

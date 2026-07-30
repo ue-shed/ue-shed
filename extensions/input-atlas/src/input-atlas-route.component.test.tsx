@@ -125,6 +125,22 @@ describe("InputAtlasRoute interactions", () => {
 		expect(screen.getByText("IA_Jump")).toBeDefined();
 	});
 
+	it("inverts context selection so only the previously off contexts remain", async () => {
+		const user = userEvent.setup();
+		renderRoute();
+		const vehicle = await screen.findByRole("button", { name: /IMC_Vehicle/ });
+		const gameplay = screen.getByRole("button", { name: /IMC_Gameplay/ });
+
+		await user.click(vehicle);
+		await user.click(screen.getByRole("button", { name: "Invert" }));
+
+		expect(vehicle.getAttribute("aria-pressed")).toBe("true");
+		expect(gameplay.getAttribute("aria-pressed")).toBe("false");
+		expect(screen.getByText("no contested keys")).toBeDefined();
+		expect(screen.queryByText("IA_Jump")).toBeNull();
+		expect(screen.getByText("IA_Handbrake")).toBeDefined();
+	});
+
 	it("reports a key nothing claims as unbound rather than hiding it", async () => {
 		const user = userEvent.setup();
 		renderRoute();

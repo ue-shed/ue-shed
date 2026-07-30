@@ -52,11 +52,19 @@ declare global {
 			readonly assetAudits: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
+				readonly refreshConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndRefresh: () => Promise<unknown>;
+				readonly search: (request: unknown) => Promise<unknown>;
+				readonly record: (objectPath: string) => Promise<unknown>;
 				readonly preview: (objectPath: string) => Promise<unknown>;
 			};
 			readonly gameText: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
+				readonly refreshConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndRefresh: () => Promise<unknown>;
+				readonly search: (request: unknown) => Promise<unknown>;
+				readonly focus: (request: unknown) => Promise<unknown>;
 			};
 			readonly inputAtlas: {
 				readonly loadConfiguredProject: () => Promise<unknown>;

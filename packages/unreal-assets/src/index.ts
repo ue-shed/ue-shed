@@ -10,7 +10,7 @@ import {
 	SavedWorldProgress,
 	type AuthoringTableSnapshot
 } from "@ue-shed/protocol";
-import { Config, Context, Duration, Effect, Layer, Option, Schema, Tuple } from "effect";
+import { Config, Context, Duration, Effect, Layer, Option, Schema, Stream, Tuple } from "effect";
 
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
@@ -26,6 +26,8 @@ export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>(
 		operation: Schema.Literals([
 			"authoring",
 			"catalog",
+			"extract_text",
+			"extract_texture",
 			"inspect",
 			"discovery",
 			"scan",
@@ -90,6 +92,18 @@ export interface SavedAssetScanOptions {
 	readonly projectRoot: string;
 }
 
+/**
+ * Runs one compact domain projection. When `paths` is omitted the reader selects its own
+ * candidates from package headers; an explicit empty list is intentionally a no-op and never
+ * falls back to `Content`.
+ */
+export interface SavedAssetExtractionOptions {
+	readonly concurrency?: number;
+	readonly maximumAssets?: number;
+	readonly paths?: readonly string[];
+	readonly projectRoot: string;
+}
+
 /** Reads saved actors belonging to exactly one conventional or World Partition map. */
 export interface SavedWorldReadOptions {
 	readonly concurrency?: number;
@@ -128,6 +142,14 @@ export interface AssetReaderShape {
 	readonly discoverTables: (
 		options: SavedTableCatalogOptions
 	) => Effect.Effect<SavedTableCatalog, AssetReaderError>;
+	/** Streams compact FText and StringTable evidence without generic inspection payloads. */
+	readonly extractProjectText: (
+		options: SavedAssetExtractionOptions
+	) => Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError>;
+	/** Streams compact Texture2D facts without generic inspection payloads. */
+	readonly extractProjectTextures: (
+		options: SavedAssetExtractionOptions
+	) => Stream.Stream<SavedAssetTextureExtractionEvent, AssetReaderError>;
 	readonly readAsset: (
 		assetPath: string
 	) => Effect.Effect<SavedAssetInspection, AssetReaderError>;
@@ -153,6 +175,8 @@ export interface AssetReaderShape {
 /** Optional members a test layer may omit; `makeAssetReaderTestLayer` supplies the defaults. */
 type AssetReaderTestDefaults =
 	| "catalogProgress"
+	| "extractProjectText"
+	| "extractProjectTextures"
 	| "readSavedWorld"
 	| "savedWorldProgress"
 	| "scanProgress"
@@ -613,6 +637,11 @@ const savedAssetScanFailureFields = {
 export const SavedAssetScanFailure = Schema.Struct(savedAssetScanFailureFields);
 export type SavedAssetScanFailure = Schema.Schema.Type<typeof SavedAssetScanFailure>;
 
+const ScanFailureLine = Schema.Struct({
+	event: Schema.Literal("error"),
+	...savedAssetScanFailureFields
+});
+
 const savedAssetScanSummaryFields = {
 	/** Packages answered from the header cache rather than re-read. Always 0 without `cachePath`. */
 	cacheHits: nonNegativeInt,
@@ -657,6 +686,173 @@ export interface SavedAssetScan {
 	readonly summary: SavedAssetScanSummary;
 }
 
+const TextExtractionIdentity = Schema.Union([
+	Schema.Struct({
+		status: Schema.Literal("resolved"),
+		namespace: Schema.String,
+		key: Schema.String
+	}),
+	Schema.Struct({
+		status: Schema.Literal("unresolved"),
+		reason: Schema.Literals(["culture_invariant", "missing_key"])
+	})
+]);
+
+const TextExtractionLocation = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("data_table_cell"),
+		object_path: Schema.String,
+		row: Schema.String,
+		property_path: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("string_table_entry"),
+		object_path: Schema.String,
+		entry_key: Schema.String
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("asset_property"),
+		object_path: Schema.String,
+		class_path: Schema.String,
+		property_path: Schema.String
+	})
+]);
+
+export const SavedAssetTextOccurrence = Schema.Struct({
+	source: Schema.String,
+	identity: TextExtractionIdentity,
+	location: TextExtractionLocation,
+	edit_capability: Schema.Literals(["source_editable", "read_only"])
+});
+export type SavedAssetTextOccurrence = Schema.Schema.Type<typeof SavedAssetTextOccurrence>;
+
+export const SavedAssetTextCoverageGap = Schema.Struct({
+	object_path: Schema.String,
+	property_path: Schema.String,
+	reason: Schema.Literal("unsupported_text_history")
+});
+export type SavedAssetTextCoverageGap = Schema.Schema.Type<typeof SavedAssetTextCoverageGap>;
+
+const SavedAssetProjectionDiagnostic = Schema.Struct({
+	object_path: Schema.String,
+	class_path: Schema.optionalKey(Schema.String),
+	code: Schema.Literals([
+		"malformed_data",
+		"resource_limit",
+		"unsupported_format",
+		"unsupported_version",
+		"unsupported_capability"
+	]),
+	message: Schema.String
+});
+
+const savedAssetProjectionPackageFields = {
+	fileBytes: nonNegativeInt,
+	path: Schema.String,
+	schema_version: Schema.Literal(1),
+	status: Schema.Literals(["complete", "partial"]),
+	diagnostics: Schema.Array(SavedAssetProjectionDiagnostic)
+};
+
+const TextExtractionOccurrenceLine = Schema.Struct({
+	event: Schema.Literal("text_occurrence"),
+	schema_version: Schema.Literal(1),
+	path: Schema.String,
+	fileBytes: nonNegativeInt,
+	occurrence: SavedAssetTextOccurrence
+});
+
+const TextExtractionCoverageGapLine = Schema.Struct({
+	event: Schema.Literal("text_coverage_gap"),
+	schema_version: Schema.Literal(1),
+	path: Schema.String,
+	coverage_gap: SavedAssetTextCoverageGap
+});
+
+const TextExtractionPackageLine = Schema.Struct({
+	event: Schema.Literal("text_package"),
+	...savedAssetProjectionPackageFields,
+	occurrences: nonNegativeInt,
+	coverage_gaps: nonNegativeInt
+});
+
+const TextExtractionSummaryLine = Schema.Struct({
+	event: Schema.Literal("text_summary"),
+	...savedAssetScanSummaryFields,
+	depth: Schema.Literal("text")
+});
+
+export const SavedAssetTextExtractionEvent = Schema.Union([
+	TextExtractionOccurrenceLine,
+	TextExtractionCoverageGapLine,
+	TextExtractionPackageLine,
+	TextExtractionSummaryLine,
+	ScanFailureLine
+]);
+export type SavedAssetTextExtractionEvent = Schema.Schema.Type<
+	typeof SavedAssetTextExtractionEvent
+>;
+
+const TextureExtractionDimensions = Schema.Struct({
+	width: nonNegativeInt,
+	height: nonNegativeInt
+});
+
+const TextureExtractionEvidence = <S extends Schema.Top>(value: S) =>
+	Schema.Union([
+		Schema.Struct({
+			status: Schema.Literal("available"),
+			source: Schema.Literals(["serialized", "file"]),
+			value
+		}),
+		Schema.Struct({
+			status: Schema.Literal("unavailable"),
+			reason: Schema.Literals(["not_serialized", "wrong_value_kind", "missing_source"])
+		})
+	]);
+
+export const SavedAssetTextureRecord = Schema.Struct({
+	object_path: Schema.String,
+	package_file_bytes: TextureExtractionEvidence(nonNegativeInt),
+	dimensions: TextureExtractionEvidence(TextureExtractionDimensions),
+	source_format: TextureExtractionEvidence(Schema.String),
+	source_mips: TextureExtractionEvidence(nonNegativeInt),
+	compression: TextureExtractionEvidence(Schema.String),
+	s_rgb: TextureExtractionEvidence(Schema.Boolean),
+	texture_group: TextureExtractionEvidence(Schema.String),
+	mip_generation: TextureExtractionEvidence(Schema.String)
+});
+export type SavedAssetTextureRecord = Schema.Schema.Type<typeof SavedAssetTextureRecord>;
+
+const TextureExtractionRecordLine = Schema.Struct({
+	event: Schema.Literal("texture_record"),
+	schema_version: Schema.Literal(1),
+	path: Schema.String,
+	record: SavedAssetTextureRecord
+});
+
+const TextureExtractionPackageLine = Schema.Struct({
+	event: Schema.Literal("texture_package"),
+	...savedAssetProjectionPackageFields,
+	records: nonNegativeInt
+});
+
+const TextureExtractionSummaryLine = Schema.Struct({
+	event: Schema.Literal("texture_summary"),
+	...savedAssetScanSummaryFields,
+	depth: Schema.Literal("texture")
+});
+
+export const SavedAssetTextureExtractionEvent = Schema.Union([
+	TextureExtractionRecordLine,
+	TextureExtractionPackageLine,
+	TextureExtractionSummaryLine,
+	ScanFailureLine
+]);
+export type SavedAssetTextureExtractionEvent = Schema.Schema.Type<
+	typeof SavedAssetTextureExtractionEvent
+>;
+
 const decodeSavedWorldProgressLine = Schema.decodeUnknownOption(
 	Schema.Struct({ event: Schema.Literal("saved_world_progress"), ...SavedWorldProgress.fields })
 );
@@ -665,11 +861,6 @@ const ScanAssetLine = Schema.Union([
 	Schema.Struct({ event: Schema.Literal("asset"), ...savedAssetFullScanEntryFields }),
 	Schema.Struct({ event: Schema.Literal("asset"), ...savedAssetHeaderScanEntryFields })
 ]);
-
-const ScanFailureLine = Schema.Struct({
-	event: Schema.Literal("error"),
-	...savedAssetScanFailureFields
-});
 
 const ScanInventoryLine = Schema.Struct({
 	event: Schema.Literal("inventory"),
@@ -685,6 +876,8 @@ const decodeScanAssetLine = Schema.decodeUnknownResult(ScanAssetLine);
 const decodeScanFailureLine = Schema.decodeUnknownResult(ScanFailureLine);
 const decodeScanInventoryLine = Schema.decodeUnknownResult(ScanInventoryLine);
 const decodeScanSummaryLine = Schema.decodeUnknownResult(ScanSummaryLine);
+const decodeTextExtractionEvent = Schema.decodeUnknownResult(SavedAssetTextExtractionEvent);
+const decodeTextureExtractionEvent = Schema.decodeUnknownResult(SavedAssetTextureExtractionEvent);
 const decodeScanProgressLine = Schema.decodeUnknownOption(
 	Schema.Struct({
 		event: Schema.Literal("scan_progress"),
@@ -826,27 +1019,83 @@ interface ScanInvocation {
 	readonly removePathList: () => Promise<void>;
 }
 
-/**
- * Keeps an index-derived package list out of the OS command line. A target list can be thousands
- * of absolute paths on a real project; on Windows that otherwise fails before the reader starts.
- */
-async function prepareScanInvocation(options: SavedAssetScanOptions): Promise<ScanInvocation> {
+async function preparePathListInvocation(options: {
+	readonly arguments: (pathList?: string) => readonly string[];
+	readonly paths: readonly string[] | undefined;
+}): Promise<ScanInvocation> {
 	const paths = options.paths ?? [];
 	if (paths.length === 0) {
-		return { arguments: scanArguments(options), removePathList: async () => undefined };
+		return { arguments: options.arguments(), removePathList: async () => undefined };
 	}
 	const directory = await mkdtemp(join(tmpdir(), "ue-shed-scan-paths-"));
 	const pathList = join(directory, "paths.json");
 	try {
 		await writeFile(pathList, JSON.stringify(paths), "utf8");
 		return {
-			arguments: scanArguments(options, pathList),
+			arguments: options.arguments(pathList),
 			removePathList: () => rm(directory, { force: true, recursive: true })
 		};
 	} catch (cause) {
 		await rm(directory, { force: true, recursive: true }).catch(() => undefined);
 		throw cause;
 	}
+}
+
+/**
+ * Keeps an index-derived package list out of the OS command line. A target list can be thousands
+ * of absolute paths on a real project; on Windows that otherwise fails before the reader starts.
+ */
+async function prepareScanInvocation(options: SavedAssetScanOptions): Promise<ScanInvocation> {
+	return preparePathListInvocation({
+		arguments: (pathList) => scanArguments(options, pathList),
+		paths: options.paths
+	});
+}
+
+type SavedAssetProjectionKind = "text" | "texture";
+
+const STRING_TABLE_CLASS = "/Script/Engine.StringTable";
+const TEXT_PROPERTY_NAME = "TextProperty";
+const TEXTURE2D_CLASS = "/Script/Engine.Texture2D";
+
+function projectionArguments(
+	options: SavedAssetExtractionOptions,
+	projection: SavedAssetProjectionKind,
+	pathList?: string
+): readonly string[] {
+	const args = [
+		"scan",
+		options.projectRoot,
+		"--format",
+		"json",
+		"--concurrency",
+		String(Math.max(1, options.concurrency ?? 8)),
+		"--projection",
+		projection
+	];
+	if (options.maximumAssets !== undefined) {
+		args.push("--maximum-assets", String(options.maximumAssets));
+	}
+	if (pathList !== undefined) {
+		args.push("--path-list", pathList);
+	} else if (options.paths !== undefined) {
+		for (const path of options.paths) args.push("--path", path);
+	} else if (projection === "text") {
+		args.push("--class", STRING_TABLE_CLASS, "--name", TEXT_PROPERTY_NAME);
+	} else {
+		args.push("--class", TEXTURE2D_CLASS);
+	}
+	return args;
+}
+
+async function prepareProjectionInvocation(
+	options: SavedAssetExtractionOptions,
+	projection: SavedAssetProjectionKind
+): Promise<ScanInvocation> {
+	return preparePathListInvocation({
+		arguments: (pathList) => projectionArguments(options, projection, pathList),
+		paths: options.paths
+	});
 }
 
 function savedWorldArguments(options: SavedWorldReadOptions): string[] {
@@ -1025,6 +1274,189 @@ function structuredErrorMessage(stderr: string, kind: string): string | undefine
 		}
 	}
 	return undefined;
+}
+
+interface ProjectionDecodeResult<A> {
+	readonly _tag: "Failure" | "Success";
+	readonly failure?: unknown;
+	readonly success?: A;
+}
+
+class ProjectionReaderFailure extends Error {
+	constructor(
+		readonly kind: "contract" | "discovery" | "process" | "resource_limit",
+		message: string,
+		readonly exitCode?: number
+	) {
+		super(message);
+	}
+}
+
+function projectionReaderError(
+	cause: unknown,
+	options: SavedAssetExtractionOptions,
+	projection: SavedAssetProjectionKind
+): AssetReaderError {
+	const operation = projection === "text" ? "extract_text" : "extract_texture";
+	if (cause instanceof ProjectionReaderFailure) {
+		return new AssetReaderError({
+			kind: cause.kind,
+			operation,
+			message: cause.message,
+			path: options.projectRoot,
+			retrySafe: cause.kind === "discovery" || cause.kind === "process",
+			...(cause.exitCode === undefined ? {} : { exitCode: cause.exitCode })
+		});
+	}
+	return new AssetReaderError({
+		kind: "process",
+		operation,
+		message: cause instanceof Error ? cause.message : String(cause),
+		path: options.projectRoot,
+		retrySafe: false
+	});
+}
+
+async function* projectionEvents<A>(options: {
+	readonly configuration: AssetReaderConfiguration;
+	readonly decode: (input: unknown) => ProjectionDecodeResult<A>;
+	readonly extraction: SavedAssetExtractionOptions;
+	readonly projection: SavedAssetProjectionKind;
+}): AsyncGenerator<A> {
+	const invocation = await prepareProjectionInvocation(options.extraction, options.projection);
+	const child = spawn(options.configuration.executable, invocation.arguments, {
+		timeout: options.configuration.catalogTimeoutMs,
+		windowsHide: true
+	});
+	let closed = false;
+	let stderr = "";
+	let stderrLine = "";
+	const appendStderr = (line: string) => {
+		if (stderr.length < MAX_OUTPUT_BYTES) stderr += `${line}\n`;
+	};
+	const closedPromise = new Promise<{
+		readonly code: number | null;
+		readonly signal: string | null;
+	}>((resolvePromise, rejectPromise) => {
+		child.once("error", (cause) =>
+			rejectPromise(new ProjectionReaderFailure("process", cause.message))
+		);
+		child.once("close", (code, signal) => {
+			closed = true;
+			resolvePromise({ code, signal });
+		});
+	});
+	try {
+		if (child.stdout === null || child.stderr === null) {
+			throw new ProjectionReaderFailure(
+				"process",
+				"Asset reader did not expose stdout and stderr"
+			);
+		}
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stderr.on("data", (chunk: string) => {
+			stderrLine += chunk;
+			const lines = stderrLine.split(/\r?\n/);
+			stderrLine = lines.pop() ?? "";
+			for (const line of lines) appendStderr(line);
+		});
+
+		let stdoutLine = "";
+		for await (const chunk of child.stdout) {
+			stdoutLine += chunk;
+			if (Buffer.byteLength(stdoutLine, "utf8") > MAX_OUTPUT_BYTES) {
+				throw new ProjectionReaderFailure(
+					"contract",
+					"A compact extraction output line exceeded 64 MiB"
+				);
+			}
+			const lines = stdoutLine.split(/\r?\n/);
+			stdoutLine = lines.pop() ?? "";
+			for (const line of lines) {
+				if (line.trim().length === 0) continue;
+				let parsed: unknown;
+				try {
+					parsed = JSON.parse(line) as unknown;
+				} catch (cause) {
+					throw new ProjectionReaderFailure(
+						"contract",
+						`Invalid compact extraction output line: ${String(cause)}`
+					);
+				}
+				const decoded = options.decode(parsed);
+				if (decoded._tag === "Failure" || decoded.success === undefined) {
+					throw new ProjectionReaderFailure(
+						"contract",
+						`Invalid compact extraction event: ${String(decoded.failure)}`
+					);
+				}
+				yield decoded.success;
+			}
+		}
+		if (stdoutLine.trim().length > 0) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(stdoutLine) as unknown;
+			} catch (cause) {
+				throw new ProjectionReaderFailure(
+					"contract",
+					`Invalid compact extraction output line: ${String(cause)}`
+				);
+			}
+			const decoded = options.decode(parsed);
+			if (decoded._tag === "Failure" || decoded.success === undefined) {
+				throw new ProjectionReaderFailure(
+					"contract",
+					`Invalid compact extraction event: ${String(decoded.failure)}`
+				);
+			}
+			yield decoded.success;
+		}
+
+		const { code, signal } = await closedPromise;
+		if (stderrLine.length > 0) appendStderr(stderrLine);
+		if (code === 0 || code === 6) return;
+		if (code === 7) {
+			throw new ProjectionReaderFailure(
+				"resource_limit",
+				structuredErrorMessage(stderr, "resource_limit") ??
+					"Compact extraction exceeded the maximum asset limit",
+				code
+			);
+		}
+		if (code === 4) {
+			throw new ProjectionReaderFailure(
+				"discovery",
+				structuredErrorMessage(stderr, "io") ??
+					"Compact extraction could not enumerate the project",
+				code
+			);
+		}
+		throw new ProjectionReaderFailure(
+			"process",
+			stderr.trim() || `Compact extraction exited ${code ?? signal ?? "without a status"}`,
+			code ?? undefined
+		);
+	} finally {
+		if (!closed && !child.killed) child.kill();
+		await invocation.removePathList();
+	}
+}
+
+function invokeProjectionReader<A>(options: {
+	readonly configuration: AssetReaderConfiguration;
+	readonly decode: (input: unknown) => ProjectionDecodeResult<A>;
+	readonly extraction: SavedAssetExtractionOptions;
+	readonly projection: SavedAssetProjectionKind;
+}): Stream.Stream<A, AssetReaderError> {
+	return Stream.fromAsyncIterable(projectionEvents(options), (cause) =>
+		projectionReaderError(cause, options.extraction, options.projection)
+	).pipe(
+		Stream.withSpan(`unreal_assets.extract_${options.projection}`, {
+			attributes: { "unreal.project_root": options.extraction.projectRoot }
+		})
+	);
 }
 
 /**
@@ -1489,6 +1921,24 @@ function makeAssetReader(
 			})
 		);
 	});
+	const extractProjectText = (options: SavedAssetExtractionOptions) =>
+		options.paths?.length === 0
+			? Stream.empty
+			: invokeProjectionReader({
+					configuration,
+					decode: decodeTextExtractionEvent,
+					extraction: options,
+					projection: "text"
+				});
+	const extractProjectTextures = (options: SavedAssetExtractionOptions) =>
+		options.paths?.length === 0
+			? Stream.empty
+			: invokeProjectionReader({
+					configuration,
+					decode: decodeTextureExtractionEvent,
+					extraction: options,
+					projection: "texture"
+				});
 	const discoverAssets = Effect.fn("AssetReader.discoverAssets")(function* (projectRoot: string) {
 		return yield* discoverSavedAssetsWith(projectRoot);
 	});
@@ -1513,6 +1963,8 @@ function makeAssetReader(
 		catalogProgress,
 		discoverAssets,
 		discoverTables,
+		extractProjectText,
+		extractProjectTextures,
 		readAsset,
 		readSavedWorld,
 		readTable,
@@ -1573,6 +2025,30 @@ export function makeAssetReaderTestLayer(service: AssetReaderTestShape): Layer.L
 		AssetReader.of({
 			catalogProgress:
 				service.catalogProgress ?? (() => Effect.succeed(idleCatalogProgress())),
+			extractProjectText:
+				service.extractProjectText ??
+				((options) =>
+					Stream.fail(
+						new AssetReaderError({
+							kind: "process",
+							operation: "extract_text",
+							message: "This test asset reader does not stub extractProjectText.",
+							path: options.projectRoot,
+							retrySafe: false
+						})
+					)),
+			extractProjectTextures:
+				service.extractProjectTextures ??
+				((options) =>
+					Stream.fail(
+						new AssetReaderError({
+							kind: "process",
+							operation: "extract_texture",
+							message: "This test asset reader does not stub extractProjectTextures.",
+							path: options.projectRoot,
+							retrySafe: false
+						})
+					)),
 			savedWorldProgress:
 				service.savedWorldProgress ?? (() => Effect.succeed(idleSavedWorldProgress())),
 			scanProgress: service.scanProgress ?? (() => Effect.succeed(idleScanProgress())),
@@ -1629,6 +2105,22 @@ export function scanSavedProject(
 	options: SavedAssetScanOptions
 ): Effect.Effect<SavedAssetScan, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.scanProject(options));
+}
+
+/** Streams compact text evidence for an explicit candidate list or a header-filtered project. */
+export function extractProjectText(
+	options: SavedAssetExtractionOptions
+): Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError, AssetReader> {
+	return Stream.unwrap(Effect.map(AssetReader, (reader) => reader.extractProjectText(options)));
+}
+
+/** Streams compact Texture2D evidence for an explicit candidate list or a header-filtered project. */
+export function extractProjectTextures(
+	options: SavedAssetExtractionOptions
+): Stream.Stream<SavedAssetTextureExtractionEvent, AssetReaderError, AssetReader> {
+	return Stream.unwrap(
+		Effect.map(AssetReader, (reader) => reader.extractProjectTextures(options))
+	);
 }
 
 /** A user-supplied path resolved onto the project root plus the roots to enumerate beneath it. */

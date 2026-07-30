@@ -62,6 +62,14 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("asset-audits:textures:configured-scan"),
 		chooseProjectAndScan: (): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:choose-and-scan"),
+		refreshConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:configured-refresh"),
+		chooseProjectAndRefresh: (): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:choose-and-refresh"),
+		search: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:search", request),
+		record: (objectPath: string): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:record", objectPath),
 		preview: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:preview", objectPath)
 	},
@@ -69,7 +77,15 @@ contextBridge.exposeInMainWorld("ueShed", {
 		loadConfiguredProject: (): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:configured-scan"),
 		chooseProjectAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:choose-and-scan")
+			ipcRenderer.invoke("game-text:choose-and-scan"),
+		refreshConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:configured-refresh"),
+		chooseProjectAndRefresh: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:choose-and-refresh"),
+		search: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:search", request),
+		focus: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:focus", request)
 	},
 	inputAtlas: {
 		loadConfiguredProject: (): Promise<unknown> =>

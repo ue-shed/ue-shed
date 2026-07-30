@@ -1,4 +1,10 @@
-import type { TextCorpusRunResult } from "@ue-shed/game-text/browser";
+import type {
+	TextCorpusFocusRequest,
+	TextCorpusFocusResult,
+	TextCorpusQueryRunResult,
+	TextCorpusSearchRequest,
+	TextCorpusSearchResult
+} from "@ue-shed/game-text/browser";
 import { Context, type Effect, Schema } from "effect";
 
 export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientError>()(
@@ -11,8 +17,20 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientShape {
-	readonly loadConfiguredProject: () => Effect.Effect<TextCorpusRunResult, GameTextClientError>;
-	readonly chooseProjectAndScan: () => Effect.Effect<TextCorpusRunResult, GameTextClientError>;
+	readonly chooseProjectAndScan: () => Effect.Effect<
+		TextCorpusQueryRunResult,
+		GameTextClientError
+	>;
+	readonly focus: (
+		request: TextCorpusFocusRequest
+	) => Effect.Effect<TextCorpusFocusResult, GameTextClientError>;
+	readonly loadConfiguredProject: () => Effect.Effect<
+		TextCorpusQueryRunResult,
+		GameTextClientError
+	>;
+	readonly search: (
+		request: TextCorpusSearchRequest
+	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;
 }
 
 export class GameTextClient extends Context.Service<GameTextClient, GameTextClientShape>()(

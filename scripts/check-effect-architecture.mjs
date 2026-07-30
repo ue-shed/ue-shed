@@ -38,6 +38,8 @@ const approvedRuntimeExits = new Set([
 	// The Workbench index benchmark is a Node process entrypoint, never part of the Electron main
 	// process. It owns one short-lived Effect runtime to measure the production reader boundary.
 	"apps/workbench/scripts/benchmark-project-index.ts",
+	// The compact-corpus benchmark is likewise an opt-in Node entrypoint over the production reader.
+	"apps/workbench/scripts/benchmark-compact-text.ts",
 	// Same pattern for the actor transform feed's per-socket decode-and-publish fork.
 	"packages/observatory/src/actor-feed.ts"
 ]);
@@ -55,6 +57,7 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
 	"apps/workbench/scripts/benchmark-project-index.ts",
+	"apps/workbench/scripts/benchmark-compact-text.ts",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	"packages/cameras/src/index.ts",
 	"packages/cameras/src/review-repository.ts",

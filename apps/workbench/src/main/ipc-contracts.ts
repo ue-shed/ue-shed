@@ -7,7 +7,14 @@ import {
 	AuthoringSessionReviewResult,
 	AuthoringSessionResult
 } from "@ue-shed/authoring-sdk";
-import { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
+import {
+	TextureAuditQueryRunResult,
+	TextureAuditRecordResult,
+	TextureAuditRunResult,
+	TextureAuditSearchRequest,
+	TextureAuditSearchResult,
+	TexturePreviewResult
+} from "@ue-shed/asset-audits";
 import {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
@@ -21,7 +28,14 @@ import {
 	MapReviewResult
 } from "@ue-shed/cameras/review-contracts";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
-import { TextCorpusRunResult } from "@ue-shed/game-text";
+import {
+	TextCorpusFocusRequest,
+	TextCorpusFocusResult,
+	TextCorpusQueryRunResult,
+	TextCorpusRunResult,
+	TextCorpusSearchRequest,
+	TextCorpusSearchResult
+} from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
 import {
 	ActorId,
@@ -267,6 +281,26 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: TextureAuditRunResult
 	}),
+	"asset-audits:textures:configured-refresh": invoke({
+		channel: "asset-audits:textures:configured-refresh",
+		args: EmptyArgs,
+		result: TextureAuditQueryRunResult
+	}),
+	"asset-audits:textures:choose-and-refresh": invoke({
+		channel: "asset-audits:textures:choose-and-refresh",
+		args: EmptyArgs,
+		result: TextureAuditQueryRunResult
+	}),
+	"asset-audits:textures:search": invoke({
+		channel: "asset-audits:textures:search",
+		args: Schema.Tuple([TextureAuditSearchRequest]),
+		result: TextureAuditSearchResult
+	}),
+	"asset-audits:textures:record": invoke({
+		channel: "asset-audits:textures:record",
+		args: Schema.Tuple([GameObjectPath]),
+		result: TextureAuditRecordResult
+	}),
 	"asset-audits:textures:preview": invoke({
 		channel: "asset-audits:textures:preview",
 		args: Schema.Tuple([GameObjectPath]),
@@ -281,6 +315,26 @@ export const invokeContracts = {
 		channel: "game-text:choose-and-scan",
 		args: EmptyArgs,
 		result: TextCorpusRunResult
+	}),
+	"game-text:configured-refresh": invoke({
+		channel: "game-text:configured-refresh",
+		args: EmptyArgs,
+		result: TextCorpusQueryRunResult
+	}),
+	"game-text:choose-and-refresh": invoke({
+		channel: "game-text:choose-and-refresh",
+		args: EmptyArgs,
+		result: TextCorpusQueryRunResult
+	}),
+	"game-text:search": invoke({
+		channel: "game-text:search",
+		args: Schema.Tuple([TextCorpusSearchRequest]),
+		result: TextCorpusSearchResult
+	}),
+	"game-text:focus": invoke({
+		channel: "game-text:focus",
+		args: Schema.Tuple([TextCorpusFocusRequest]),
+		result: TextCorpusFocusResult
 	}),
 	"input-atlas:configured-scan": invoke({
 		channel: "input-atlas:configured-scan",

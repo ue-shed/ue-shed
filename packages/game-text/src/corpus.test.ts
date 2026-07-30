@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildTextCorpus, textOccurrencesFromInspection } from "./corpus.js";
+import { textCorpusQuery } from "./query.js";
 import { searchTextCorpus } from "./search.js";
 import type { SavedAssetInspection } from "@ue-shed/unreal-assets";
 
@@ -103,13 +104,79 @@ describe("game text corpus", () => {
 		expect(corpus.coverage.unresolvedOccurrences).toBe(2);
 	});
 
-	it("searches source, identity, and occurrence context", () => {
+	it("searches visible source text without mixing in identity or occurrence metadata", () => {
 		const corpus = buildTextCorpus([
 			{ status: "inspected", packageFile: "Content/Text.uasset", inspection }
 		]);
 
-		expect(searchTextCorpus(corpus, "hello UI")).toHaveLength(1);
-		expect(searchTextCorpus(corpus, "GreetingAgain Label")).toHaveLength(1);
+		expect(searchTextCorpus(corpus, "hello")).toHaveLength(1);
+		expect(searchTextCorpus(corpus, "UI")).toHaveLength(0);
+		expect(searchTextCorpus(corpus, "Greeting")).toHaveLength(0);
+		expect(searchTextCorpus(corpus, "GreetingAgain Label")).toHaveLength(0);
 		expect(searchTextCorpus(corpus, "missing")).toHaveLength(0);
+		expect(
+			textCorpusQuery(corpus).search({ capability: "all", pageSize: 50, query: "Greeting" })
+		).toMatchObject({ total: 0 });
+	});
+
+	it("excludes empty FText values and does not search their asset metadata", () => {
+		const noisyInspection: SavedAssetInspection = {
+			...inspection,
+			assets: [
+				...inspection.assets,
+				{
+					kind: "DataTable",
+					object_path: "/Game/HelpShelf.DT_Noise",
+					row_struct: "/Script/Test.TextRow",
+					row_count: 1,
+					rows: [
+						{
+							name: "Help",
+							properties: [
+								{
+									name: "Label",
+									type: "TextProperty",
+									value_kind: "text",
+									value: "",
+									history: "none"
+								}
+							]
+						}
+					]
+				}
+			]
+		};
+		const corpus = buildTextCorpus([
+			{ status: "inspected", packageFile: "Content/Text.uasset", inspection: noisyInspection }
+		]);
+		const query = textCorpusQuery(corpus);
+
+		expect(searchTextCorpus(corpus, "hel")).toHaveLength(1);
+		expect(query.search({ capability: "all", pageSize: 50, query: "hel" }).total).toBe(1);
+		expect(query.search({ capability: "all", pageSize: 50, query: "" }).total).toBe(1);
+	});
+
+	it("indexes search fields once and returns bounded cursor pages with focused occurrences", () => {
+		const corpus = buildTextCorpus([
+			{ status: "inspected", packageFile: "Content/Text.uasset", inspection }
+		]);
+		const query = textCorpusQuery(corpus);
+
+		const page = query.search({
+			capability: "source_editable",
+			pageSize: 1,
+			query: "Hello"
+		});
+		expect(page.total).toBe(1);
+		expect(page.units).toHaveLength(1);
+		expect(page.units[0]?.occurrenceCount).toBe(2);
+
+		const unit = page.units[0];
+		expect(unit).toBeDefined();
+		if (!unit) return;
+		const focus = query.focus({ id: unit.id, pageSize: 1 });
+		expect(focus?.occurrences).toHaveLength(1);
+		expect(focus?.totalOccurrences).toBe(2);
+		expect(focus?.nextOccurrenceCursor).toBeDefined();
 	});
 });

@@ -138,6 +138,49 @@ it.effect("scans the configured project and rules", () =>
 	)
 );
 
+it.effect("keeps refreshed audit data in main and serves bounded query results", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchAssetAudits;
+		const refreshed = yield* service.configuredRefresh();
+		expect(refreshed).toEqual({
+			status: "completed",
+			summary: {
+				coverage: emptyReport.coverage,
+				diagnosticCount: 0,
+				distributions: emptyReport.distributions,
+				findingCount: 0,
+				ruleSetName: "test",
+				schemaVersion: 1,
+				status: "complete"
+			}
+		});
+		expect(yield* service.search({ findingsOnly: false, pageSize: 100, query: "" })).toEqual({
+			page: { findings: [], records: [], total: 0 },
+			status: "ready"
+		});
+		expect(yield* service.record("/Game/Textures/Missing.Missing")).toEqual({
+			status: "not_found"
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchAssetAuditsLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						configuration,
+						makeTextureAuditTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyReport)
+						}),
+						dialogLayer({}),
+						selectedProject,
+						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
+					)
+				)
+			)
+		)
+	)
+);
+
 it.effect("translates a typed scan failure into the failed result variant", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchAssetAudits;

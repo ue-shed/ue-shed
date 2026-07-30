@@ -52,7 +52,11 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 	// The last project we successfully scanned, kept across a Rescan so the banner still names it
 	// while the bar animates.
 	const [activeProject, setActiveProject] = createSignal<string | undefined>(undefined);
-	const [disabled, setDisabled] = createSignal<readonly string[]>([]);
+	// Context chips start selected; the atlas shows only the selected set. Empty selection shows
+	// nothing, so toggling and invert stay truthful about "filter by selected".
+	const [selectedContexts, setSelectedContexts] = createSignal<ReadonlySet<string> | undefined>(
+		undefined
+	);
 	const [selectedKey, setSelectedKey] = createSignal<string | null>(null);
 
 	const report = () => {
@@ -61,27 +65,54 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 	};
 
 	// The unfiltered atlas answers "which contexts exist"; the filtered one drives the diagram,
-	// so switching a context off can resolve a contest in front of you.
+	// so deselecting a context can resolve a contest in front of you.
 	const fullAtlas = createMemo(() => {
 		const current = report();
 		return current ? buildInputAtlas(current) : undefined;
 	});
 
+	const contextPaths = createMemo(
+		() => fullAtlas()?.contexts.map((context) => context.objectPath) ?? []
+	);
+
+	const isContextSelected = (objectPath: string): boolean => {
+		const selected = selectedContexts();
+		return selected === undefined ? true : selected.has(objectPath);
+	};
+
 	const atlas = createMemo(() => {
 		const current = report();
 		if (!current) return undefined;
-		const off = disabled();
+		const selected = selectedContexts();
 		return buildInputAtlas(
 			current,
-			off.length === 0
+			selected === undefined
 				? undefined
 				: {
-						contexts: current.mappingContexts
-							.map((context) => String(context.objectPath))
-							.filter((path) => !off.includes(path))
+						contexts: contextPaths().filter((path) => selected.has(path))
 					}
 		);
 	});
+
+	const toggleContext = (objectPath: string) => {
+		const paths = contextPaths();
+		setSelectedContexts((current) => {
+			const next = new Set(current ?? paths);
+			if (next.has(objectPath)) next.delete(objectPath);
+			else next.add(objectPath);
+			return next.size === paths.length ? undefined : next;
+		});
+	};
+
+	const invertContexts = () => {
+		const paths = contextPaths();
+		if (paths.length === 0) return;
+		setSelectedContexts((current) => {
+			const selected = current ?? new Set(paths);
+			const next = new Set(paths.filter((path) => !selected.has(path)));
+			return next.size === paths.length ? undefined : next;
+		});
+	};
 
 	const selected = createMemo(() => {
 		const current = atlas();
@@ -92,6 +123,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 		if (result.status === "completed") {
 			setState({ status: "ready", report: result.report, projectRoot: result.projectRoot });
 			setActiveProject(result.projectRoot);
+			setSelectedContexts(undefined);
 			const first = buildInputAtlas(result.report).contestedKeys[0];
 			setSelectedKey(first ?? buildInputAtlas(result.report).keys[0]?.key ?? null);
 		} else if (result.status === "failed") {
@@ -237,21 +269,12 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 									{(context) => (
 										<button
 											type="button"
-											aria-pressed={!disabled().includes(context.objectPath)}
+											aria-pressed={isContextSelected(context.objectPath)}
 											title={context.description ?? context.objectPath}
-											onClick={() =>
-												setDisabled((off) =>
-													off.includes(context.objectPath)
-														? off.filter(
-																(path) =>
-																	path !== context.objectPath
-															)
-														: [...off, context.objectPath]
-												)
-											}
+											onClick={() => toggleContext(context.objectPath)}
 											{...stylex.props(
 												styles.contextChip,
-												!disabled().includes(context.objectPath) &&
+												isContextSelected(context.objectPath) &&
 													styles.contextChipOn
 											)}
 										>
@@ -262,6 +285,14 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 										</button>
 									)}
 								</For>
+								<button
+									type="button"
+									title="Invert which mapping contexts are selected"
+									onClick={invertContexts}
+									{...stylex.props(styles.contextChip)}
+								>
+									Invert
+								</button>
 								<span {...stylex.props(styles.spacer)} />
 								<Show
 									when={current().contestedKeys.length > 0}

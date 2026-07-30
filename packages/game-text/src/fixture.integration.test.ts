@@ -33,9 +33,8 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 		expect(holdMatches).toHaveLength(2);
 		expect(holdMatches.flatMap((unit) => unit.occurrences)).toHaveLength(3);
 		// Two units share the exact source "Confirm" under distinct keys — that equal-source,
-		// distinct-identity pair is what this fixture exists to prove. Corpus search also covers
-		// object paths, so /Game/Fixture/Input/IA_Confirm matches the same query; assert the
-		// property rather than the match count, which any future asset name could move.
+		// distinct-identity pair is what this fixture exists to prove. Corpus lookup is
+		// intentionally source-text-only, so assert the resulting texts rather than identity keys.
 		const confirmMatches = searchTextCorpus(corpus, "Confirm");
 		expect(confirmMatches.length).toBeGreaterThanOrEqual(2);
 		const equalSource = confirmMatches.filter(

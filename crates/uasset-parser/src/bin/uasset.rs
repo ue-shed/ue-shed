@@ -19,6 +19,10 @@ use uasset_parser::asset::{
     USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{PackageError, PackageErrorKind, PackageIndex, TableLocation};
+use uasset_parser::projection::{
+    TextAssetProjection, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
+    project_texture_asset,
+};
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
 use uasset_parser::saved_world::{
     SavedWorldActorPosition, SavedWorldPackageFragment, SavedWorldPosition,
@@ -91,6 +95,16 @@ struct ScanOptions {
     cache: Option<PathBuf>,
     /// Streams one inventory signature for every package and sidecar found beneath the scan roots.
     inventory: bool,
+    /// Chooses a compact domain projection instead of the generic full inspection payload.
+    projection: ScanProjection,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum ScanProjection {
+    #[default]
+    Generic,
+    Text,
+    Texture,
 }
 
 /// How much of each selected package the scan decodes.
@@ -233,6 +247,7 @@ impl Command {
         let mut depth = ScanDepth::default();
         let mut cache = None;
         let mut inventory = false;
+        let mut projection = ScanProjection::default();
         let mut index = 0;
         while index < arguments.len() {
             let argument = arguments[index].clone();
@@ -279,6 +294,8 @@ impl Command {
                 depth = parse_scan_depth(&utf8_option_value(&value?, "--depth")?)?;
             } else if let Some(value) = option_value(&arguments, &mut index, text, "--cache") {
                 cache = Some(PathBuf::from(value?));
+            } else if let Some(value) = option_value(&arguments, &mut index, text, "--projection") {
+                projection = parse_scan_projection(&utf8_option_value(&value?, "--projection")?)?;
             } else if text == "--inventory" {
                 inventory = true;
             } else if text.starts_with('-') {
@@ -298,6 +315,12 @@ impl Command {
         if cache.is_some() && depth != ScanDepth::Header {
             return Err("scan --cache requires --depth header".to_owned());
         }
+        if projection != ScanProjection::Generic && depth != ScanDepth::Full {
+            return Err("scan --projection requires --depth full (the default)".to_owned());
+        }
+        if projection != ScanProjection::Generic && cache.is_some() {
+            return Err("scan --projection cannot reuse a header cache".to_owned());
+        }
         Ok(Self::Scan(ScanOptions {
             project_root: project_root.ok_or_else(|| "scan requires a project root".to_owned())?,
             paths,
@@ -308,6 +331,7 @@ impl Command {
             depth,
             cache,
             inventory,
+            projection,
         }))
     }
 
@@ -437,6 +461,14 @@ fn parse_scan_depth(value: &str) -> Result<ScanDepth, String> {
         other => Err(format!(
             "unsupported scan depth {other:?}; expected \"header\" or \"full\""
         )),
+    }
+}
+
+fn parse_scan_projection(value: &str) -> Result<ScanProjection, String> {
+    match value {
+        "text" => Ok(ScanProjection::Text),
+        "texture" => Ok(ScanProjection::Texture),
+        _ => Err("--projection requires text or texture".to_owned()),
     }
 }
 
@@ -1076,9 +1108,13 @@ fn scan(options: &ScanOptions) -> u8 {
             return EXIT_USAGE;
         }
     };
-    let depth_label = match options.depth {
-        ScanDepth::Header => "header",
-        ScanDepth::Full => "full",
+    let depth_label = match options.projection {
+        ScanProjection::Text => "text",
+        ScanProjection::Texture => "texture",
+        ScanProjection::Generic => match options.depth {
+            ScanDepth::Header => "header",
+            ScanDepth::Full => "full",
+        },
     };
     emit_scan_progress(ScanProgressOutput {
         event: "scan_progress",
@@ -1180,6 +1216,7 @@ fn scan(options: &ScanOptions) -> u8 {
             let cache_hits = &cache_hits;
             let cached_by_path = &cached_by_path;
             let depth = options.depth;
+            let projection = options.projection;
             let failures = &failures;
             let filters = &options.filters;
             let header_entries = &header_entries;
@@ -1223,15 +1260,15 @@ fn scan(options: &ScanOptions) -> u8 {
                                     }
                                     outcome
                                 }
-                                ScanDepth::Full => scan_asset(&signature, filters),
+                                ScanDepth::Full => scan_asset(&signature, filters, projection),
                             };
                             match outcome {
-                                ScanAssetOutcome::Emitted { line, partial } => {
+                                ScanAssetOutcome::Emitted { lines, partial } => {
                                     totals.emitted.fetch_add(1, Ordering::Relaxed);
                                     if partial {
                                         totals.partial.fetch_add(1, Ordering::Relaxed);
                                     }
-                                    Some(line)
+                                    Some(lines)
                                 }
                                 ScanAssetOutcome::Skipped => {
                                     totals.skipped.fetch_add(1, Ordering::Relaxed);
@@ -1244,7 +1281,7 @@ fn scan(options: &ScanOptions) -> u8 {
                                         .expect("scan failure tally must not be poisoned")
                                         .entry(code.clone())
                                         .or_insert(0) += 1;
-                                    Some(scan_error_line(&signature.path, &code))
+                                    Some(vec![scan_error_line(&signature.path, &code)])
                                 }
                             }
                         }
@@ -1256,11 +1293,13 @@ fn scan(options: &ScanOptions) -> u8 {
                                 .expect("scan failure tally must not be poisoned")
                                 .entry("asset_io".to_owned())
                                 .or_insert(0) += 1;
-                            Some(scan_error_line(asset_path, "asset_io"))
+                            Some(vec![scan_error_line(asset_path, "asset_io")])
                         }
                     };
                     if let Some(rendered) = rendered {
-                        write_scan_line(writer, totals, &rendered);
+                        for line in rendered {
+                            write_scan_line(writer, totals, &line);
+                        }
                     }
                     let processed = totals.processed.fetch_add(1, Ordering::Relaxed) + 1;
                     if processed % PROGRESS_INTERVAL == 0 || processed == total_assets {
@@ -1315,7 +1354,7 @@ fn scan(options: &ScanOptions) -> u8 {
             })
             .collect(),
         emitted_assets,
-        event: "summary",
+        event: projection_summary_event(options.projection),
         failed_assets,
         partial_assets,
         inventory_complete: inventory_complete.load(Ordering::Relaxed),
@@ -1470,7 +1509,7 @@ fn class_name_suffix_matches(suffix: &str, class_path: &str) -> bool {
 
 enum ScanAssetOutcome {
     Emitted {
-        line: Vec<u8>,
+        lines: Vec<Vec<u8>>,
         partial: bool,
     },
     Skipped,
@@ -1480,7 +1519,11 @@ enum ScanAssetOutcome {
     },
 }
 
-fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOutcome {
+fn scan_asset(
+    signature: &AssetSignature,
+    filters: &ScanFilters,
+    projection: ScanProjection,
+) -> ScanAssetOutcome {
     if !filters.is_empty() {
         match read_package_header(signature) {
             Ok(package) => {
@@ -1508,29 +1551,182 @@ fn scan_asset(signature: &AssetSignature, filters: &ScanFilters) -> ScanAssetOut
             };
         }
     };
-    let inspection = InspectOutput::from_package(
-        signature.path.to_string_lossy().into_owned(),
-        &bytes,
-        &package,
-    );
-    let partial = inspection.status == "partial";
-    let line = ScanAssetLine {
-        event: "asset",
-        depth: "full",
-        file_bytes: signature.size,
-        inspection,
+    match projection {
+        ScanProjection::Generic => {
+            let inspection = InspectOutput::from_package(
+                signature.path.to_string_lossy().into_owned(),
+                &bytes,
+                &package,
+            );
+            let partial = inspection.status == "partial";
+            let line = ScanAssetLine {
+                event: "asset",
+                depth: "full",
+                file_bytes: signature.size,
+                inspection,
+            };
+            serialize_scan_line(&line).map_or_else(
+                |_| ScanAssetOutcome::Failed {
+                    code: "asset_serialize".to_owned(),
+                },
+                |line| ScanAssetOutcome::Emitted {
+                    lines: vec![line],
+                    partial,
+                },
+            )
+        }
+        ScanProjection::Text | ScanProjection::Texture => {
+            scan_projection_asset(signature, &bytes, &package, projection)
+        }
+    }
+}
+
+fn scan_projection_asset(
+    signature: &AssetSignature,
+    source: &[u8],
+    package: &Package,
+    projection: ScanProjection,
+) -> ScanAssetOutcome {
+    let schemas = EmptySchemas;
+    let context = AssetDecodeContext {
+        source,
+        package,
+        schemas: &schemas,
     };
-    match serde_json::to_vec(&line) {
-        Ok(mut rendered) => {
-            rendered.push(b'\n');
-            ScanAssetOutcome::Emitted {
-                line: rendered,
-                partial,
-            }
+    let path = signature.path.to_string_lossy().into_owned();
+    let mut diagnostics = Vec::new();
+    let mut lines = Vec::new();
+    let mut text_occurrences = 0;
+    let mut text_coverage_gaps = 0;
+    let mut texture_records = 0;
+
+    for export in &package.exports {
+        if projection == ScanProjection::Texture
+            && export.class_path.as_ref().is_none_or(|class_path| {
+                class_path.as_str() != uasset_parser::projection::TEXTURE2D_CLASS
+            })
+        {
+            continue;
+        }
+        match decode_export(export, &context) {
+            Ok(Some(decoded)) => match projection {
+                ScanProjection::Text => {
+                    let TextAssetProjection {
+                        occurrences,
+                        coverage_gaps,
+                    } = project_text_asset(package, &decoded);
+                    text_occurrences += occurrences.len();
+                    text_coverage_gaps += coverage_gaps.len();
+                    for occurrence in &occurrences {
+                        let line = TextOccurrenceLine {
+                            event: "text_occurrence",
+                            schema_version: 1,
+                            path: &path,
+                            file_bytes: signature.size,
+                            occurrence,
+                        };
+                        match serialize_scan_line(&line) {
+                            Ok(line) => lines.push(line),
+                            Err(_) => {
+                                return ScanAssetOutcome::Failed {
+                                    code: "asset_serialize".to_owned(),
+                                };
+                            }
+                        }
+                    }
+                    for coverage_gap in &coverage_gaps {
+                        let line = TextCoverageGapLine {
+                            event: "text_coverage_gap",
+                            schema_version: 1,
+                            path: &path,
+                            coverage_gap,
+                        };
+                        match serialize_scan_line(&line) {
+                            Ok(line) => lines.push(line),
+                            Err(_) => {
+                                return ScanAssetOutcome::Failed {
+                                    code: "asset_serialize".to_owned(),
+                                };
+                            }
+                        }
+                    }
+                }
+                ScanProjection::Texture => {
+                    if let Some(record) = project_texture_asset(package, &decoded, signature.size) {
+                        texture_records += 1;
+                        let line = TextureRecordLine {
+                            event: "texture_record",
+                            schema_version: 1,
+                            path: &path,
+                            record: &record,
+                        };
+                        match serialize_scan_line(&line) {
+                            Ok(line) => lines.push(line),
+                            Err(_) => {
+                                return ScanAssetOutcome::Failed {
+                                    code: "asset_serialize".to_owned(),
+                                };
+                            }
+                        }
+                    }
+                }
+                ScanProjection::Generic => unreachable!("generic scan uses InspectOutput"),
+            },
+            Ok(None) => {}
+            Err(error) => diagnostics.push(ProjectionDecodeDiagnostic {
+                object_path: export.object_path.to_string(),
+                class_path: export.class_path.as_ref().map(ToString::to_string),
+                code: asset_error_kind_name(error.kind()),
+                message: error.message().to_owned(),
+            }),
+        }
+    }
+
+    let partial = !diagnostics.is_empty();
+    let package_line = match projection {
+        ScanProjection::Text => serialize_scan_line(&TextPackageLine {
+            event: "text_package",
+            schema_version: 1,
+            path: &path,
+            file_bytes: signature.size,
+            status: if partial { "partial" } else { "complete" },
+            occurrences: text_occurrences,
+            coverage_gaps: text_coverage_gaps,
+            diagnostics: &diagnostics,
+        }),
+        ScanProjection::Texture => serialize_scan_line(&TexturePackageLine {
+            event: "texture_package",
+            schema_version: 1,
+            path: &path,
+            file_bytes: signature.size,
+            status: if partial { "partial" } else { "complete" },
+            records: texture_records,
+            diagnostics: &diagnostics,
+        }),
+        ScanProjection::Generic => unreachable!("generic scan uses InspectOutput"),
+    };
+    match package_line {
+        Ok(line) => {
+            lines.push(line);
+            ScanAssetOutcome::Emitted { lines, partial }
         }
         Err(_) => ScanAssetOutcome::Failed {
             code: "asset_serialize".to_owned(),
         },
+    }
+}
+
+fn serialize_scan_line(value: &impl Serialize) -> Result<Vec<u8>, serde_json::Error> {
+    let mut rendered = serde_json::to_vec(value)?;
+    rendered.push(b'\n');
+    Ok(rendered)
+}
+
+fn projection_summary_event(projection: ScanProjection) -> &'static str {
+    match projection {
+        ScanProjection::Generic => "summary",
+        ScanProjection::Text => "text_summary",
+        ScanProjection::Texture => "texture_summary",
     }
 }
 
@@ -1561,7 +1757,7 @@ fn scan_header_asset(entry: &ScanHeaderCacheEntry) -> ScanAssetOutcome {
         Ok(mut rendered) => {
             rendered.push(b'\n');
             ScanAssetOutcome::Emitted {
-                line: rendered,
+                lines: vec![rendered],
                 partial: false,
             }
         }
@@ -1977,6 +2173,68 @@ struct ScanAssetLine {
     #[serde(rename = "fileBytes")]
     file_bytes: u64,
     inspection: InspectOutput,
+}
+
+/// One compact text occurrence. Its package context is carried by this native transport envelope,
+/// while the portable projection owns occurrence identity and location meaning.
+#[derive(Serialize)]
+struct TextOccurrenceLine<'a> {
+    event: &'static str,
+    schema_version: u32,
+    path: &'a str,
+    #[serde(rename = "fileBytes")]
+    file_bytes: u64,
+    occurrence: &'a TextOccurrence,
+}
+
+#[derive(Serialize)]
+struct TextCoverageGapLine<'a> {
+    event: &'static str,
+    schema_version: u32,
+    path: &'a str,
+    coverage_gap: &'a TextCoverageGap,
+}
+
+#[derive(Serialize)]
+struct TextPackageLine<'a> {
+    event: &'static str,
+    schema_version: u32,
+    path: &'a str,
+    #[serde(rename = "fileBytes")]
+    file_bytes: u64,
+    status: &'static str,
+    occurrences: usize,
+    coverage_gaps: usize,
+    diagnostics: &'a [ProjectionDecodeDiagnostic],
+}
+
+#[derive(Serialize)]
+struct TextureRecordLine<'a> {
+    event: &'static str,
+    schema_version: u32,
+    path: &'a str,
+    record: &'a TextureRecord,
+}
+
+#[derive(Serialize)]
+struct TexturePackageLine<'a> {
+    event: &'static str,
+    schema_version: u32,
+    path: &'a str,
+    #[serde(rename = "fileBytes")]
+    file_bytes: u64,
+    status: &'static str,
+    records: usize,
+    diagnostics: &'a [ProjectionDecodeDiagnostic],
+}
+
+#[derive(Serialize)]
+struct ProjectionDecodeDiagnostic {
+    object_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class_path: Option<String>,
+    code: &'static str,
+    message: String,
 }
 
 /// One selected package at header depth. Carries the same envelope as `ScanAssetLine` so a
@@ -3592,7 +3850,7 @@ Usage:
   uasset inspect <path|-> [--format text|json]
   uasset authoring <path|-> --format json
   uasset scan <project-root> [--format json] [--concurrency <count>]
-              [--depth header|full] [--cache <path>]
+              [--depth header|full] [--projection text|texture] [--cache <path>]
               [--maximum-assets <count>] [--path <dir|file>]... [--path-list <json-file>]...
               [--class <class>]... [--class-prefix <prefix>]...
               [--class-name-suffix <suffix>]... [--name <name>]...
@@ -3607,12 +3865,17 @@ Commands:
   scan       Inspect every selected package beneath one project in a single process.
              Use --depth header to discover which classes a project holds, e.g. its
              DataTables, without decoding any property stream.
+             Use --projection text or --projection texture to stream compact domain evidence
+             rather than complete generic property graphs.
   saved-world  Read one saved conventional or World Partition map and resolve actor positions.
 
 Scan options:
   --depth           header emits each selected package's export classes from the one header
                     read the filters already need. full decodes every property stream and
                     re-reads the whole file. Defaults to full.
+  --projection      text emits FText occurrences and coverage gaps. texture emits Texture2D
+                    evidence only. Both stream versioned NDJSON events and cannot be combined
+                    with --depth header or --cache.
   --cache           Reuse header results for packages whose size and mtime are unchanged.
                     Requires --depth header. Stores this scan's header projection, so a
                     different filter set deliberately refreshes the cache.
@@ -3742,6 +4005,7 @@ mod command_tests {
                 depth: ScanDepth::Full,
                 cache: None,
                 inventory: true,
+                projection: ScanProjection::Generic,
             })
         );
     }
@@ -3783,6 +4047,7 @@ mod command_tests {
                 depth: ScanDepth::Full,
                 cache: None,
                 inventory: false,
+                projection: ScanProjection::Generic,
             })
         );
     }
@@ -3815,6 +4080,7 @@ mod command_tests {
                 depth: ScanDepth::Header,
                 cache: Some(PathBuf::from("index.json")),
                 inventory: false,
+                projection: ScanProjection::Generic,
             })
         );
     }
@@ -3827,6 +4093,30 @@ mod command_tests {
         };
         assert_eq!(options.depth, ScanDepth::Full);
         assert_eq!(options.cache, None);
+        assert_eq!(options.projection, ScanProjection::Generic);
+    }
+
+    #[test]
+    fn parses_compact_scan_projections() {
+        let Ok(Command::Scan(options)) = Command::parse(vec![
+            "scan".into(),
+            "project".into(),
+            "--projection".into(),
+            "text".into(),
+        ]) else {
+            panic!("scan command");
+        };
+        assert_eq!(options.projection, ScanProjection::Text);
+
+        assert!(
+            Command::parse(vec![
+                "scan".into(),
+                "project".into(),
+                "--projection=texture".into(),
+                "--depth=header".into(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

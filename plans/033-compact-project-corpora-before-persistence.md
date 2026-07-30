@@ -17,7 +17,8 @@
 
 ## Status
 
-- **State**: TODO
+- **State**: IN PROGRESS — compact projections and paged Workbench queries are implemented;
+  complete comparative evidence and the persistence decision remain
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH — this changes native reader contracts, saved-asset process transport, domain
@@ -26,6 +27,18 @@
 - **Depends on**: ADR 0004 and the current project-index worktree
 - **Category**: direction
 - **Planned at**: current dirty worktree, 2026-07-30
+
+## Current local evidence (not a storage decision)
+
+The opt-in `benchmark:compact-text` command records aggregate evidence under ignored
+`test-results` only. A local large-project run on 2026-07-30 produced one shared header index of
+182,626 inventory files/packages in 5,892 ms. The explicit-candidate text extraction then opened
+7,057 packages in 8,228 ms, yielding 343,435 occurrences, 12,495 explicit coverage gaps, and no
+failed packages. It did not perform a second `Content` enumeration.
+
+This establishes the compact path is viable, but it is deliberately not yet the Step 8 storage
+decision: the benchmark still needs generic-vs-compact output-byte and peak-RSS comparisons, plus
+the texture equivalent and bounded IPC size evidence.
 
 ## Why this matters
 

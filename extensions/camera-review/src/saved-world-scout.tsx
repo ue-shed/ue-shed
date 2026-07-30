@@ -8,7 +8,9 @@ import {
 	collectVisibleIndices,
 	colorForClass,
 	contentBounds,
+	clampViewportSize,
 	createWorldScoutPaintGate,
+	fitViewportSize,
 	formatCoordinate,
 	hitTestVisibleActors,
 	nearestVisibleActor,
@@ -16,7 +18,9 @@ import {
 	panViewportBy,
 	projectVisibleActors,
 	resizeCanvasForDisplay,
+	resizeViewportToSize,
 	stabilizeViewport,
+	viewportSizeLimits,
 	WorldScoutRetainedStore,
 	zoomViewportAt,
 	type WorldScoutPaintGate
@@ -77,9 +81,27 @@ export function SavedWorldScout(props: {
 	const extentLabel = createMemo(() => {
 		presentationRevision();
 		const viewport = store.viewport;
-		return viewport === undefined
-			? "—"
-			: `${Math.round(viewport.size).toLocaleString()} × ${Math.round(viewport.size).toLocaleString()} UU`;
+		if (viewport === undefined) return "—";
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const height = viewport.size / aspect;
+		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(height).toLocaleString()} UU`;
+	});
+	const fitSize = createMemo(() => {
+		presentationRevision();
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		return fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+	});
+	const zoomLimits = createMemo(() => viewportSizeLimits(fitSize()));
+	const zoomFactor = createMemo(() => {
+		presentationRevision();
+		const viewport = store.viewport;
+		const fit = fitSize();
+		if (viewport === undefined || fit <= 0) return 1;
+		return fit / Math.max(viewport.size, 1);
+	});
+	const maxZoomFactor = createMemo(() => {
+		const { min, max } = zoomLimits();
+		return max / Math.max(min, 1);
 	});
 	const selected = createMemo(() => {
 		selectionRevision();
@@ -99,9 +121,13 @@ export function SavedWorldScout(props: {
 	const prepareVisibleProjection = () => {
 		collectVisibleIndices(store, query(), hiddenClasses(), store.visibleIndices);
 		const bounds = contentBounds(store, store.visibleIndices);
-		if (!viewLocked) store.viewport = stabilizeViewport(store.viewport, bounds);
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const fit = fitViewportSize(bounds, aspect);
+		if (!viewLocked) store.viewport = stabilizeViewport(store.viewport, bounds, aspect);
 		else if (store.viewport === undefined)
-			store.viewport = stabilizeViewport(undefined, bounds);
+			store.viewport = stabilizeViewport(undefined, bounds, aspect);
+		else if (store.viewport.size > fit)
+			store.viewport = resizeViewportToSize(store.viewport, fit);
 		if (cssWidth > 0 && cssHeight > 0 && store.viewport !== undefined) {
 			projectVisibleActors(store, store.viewport, cssWidth, cssHeight, store.visibleIndices);
 		}
@@ -212,6 +238,15 @@ export function SavedWorldScout(props: {
 			else next.add(className);
 			return next;
 		});
+	const invertClasses = () => {
+		setHiddenClasses((current) => {
+			const next = new Set<string>();
+			for (const [className] of classes()) {
+				if (!current.has(className)) next.add(className);
+			}
+			return next;
+		});
+	};
 	const selectStreamIndex = (streamIndex: number) => {
 		const actor = store.actorAt(streamIndex);
 		if (actor === undefined) return;
@@ -238,15 +273,20 @@ export function SavedWorldScout(props: {
 		const rect = event.currentTarget.getBoundingClientRect();
 		cssWidth = Math.max(1, rect.width);
 		cssHeight = Math.max(1, rect.height);
+		const aspect = cssWidth / cssHeight;
+		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+		const { min, max } = viewportSizeLimits(fit);
 		store.viewport = zoomViewportAt(
 			viewport,
 			cssWidth,
 			cssHeight,
 			event.clientX - rect.left,
 			event.clientY - rect.top,
-			event.deltaY < 0 ? 1.15 : 1 / 1.15
+			event.deltaY < 0 ? 1.15 : 1 / 1.15,
+			min,
+			max
 		);
-		viewLocked = true;
+		viewLocked = store.viewport.size < max - 1e-6;
 		requestPaint();
 	};
 	const onCanvasPointerDown = (
@@ -303,10 +343,7 @@ export function SavedWorldScout(props: {
 	const onCanvasKeyDown = (event: KeyboardEvent) => {
 		if (event.key === "Escape") {
 			event.preventDefault();
-			setSelectedStreamIndex(undefined);
-			setSelectionRevision((value) => value + 1);
-			setLiveRegion("Selection cleared");
-			requestPaint();
+			clearSelection();
 			return;
 		}
 		if (
@@ -322,6 +359,28 @@ export function SavedWorldScout(props: {
 			event.key === "ArrowLeft" || event.key === "ArrowUp" ? "previous" : "next";
 		const next = nearestVisibleActor(store, selectedStreamIndex(), direction);
 		if (next !== undefined) selectStreamIndex(next);
+	};
+	const clearSelection = () => {
+		setSelectedStreamIndex(undefined);
+		setSelectionRevision((value) => value + 1);
+		setLiveRegion("Selection cleared");
+		requestPaint();
+	};
+	const setZoomFactor = (value: string) => {
+		const viewport = store.viewport;
+		if (viewport === undefined) return;
+		const parsed = Number(value);
+		if (!Number.isFinite(parsed) || parsed <= 0) return;
+		const fit = fitSize();
+		const nextSize = clampViewportSize(fit / parsed, fit);
+		store.viewport = resizeViewportToSize(viewport, nextSize);
+		viewLocked = nextSize < fit - 1e-6;
+		requestPaint();
+	};
+	const resetView = () => {
+		viewLocked = false;
+		store.viewport = undefined;
+		requestPaint();
 	};
 	const setCanvasElement = (element: HTMLCanvasElement) => {
 		canvasRef = element;
@@ -455,18 +514,28 @@ export function SavedWorldScout(props: {
 								aria-label="Saved actor class filters"
 								{...stylex.props(styles.classFilters)}
 							>
-								<label {...stylex.props(styles.classFilterSearch)}>
-									<span>ACTOR CLASSES · {classes().length}</span>
-									<input
-										value={classQuery()}
-										onInput={(event) =>
-											setClassQuery(event.currentTarget.value)
-										}
-										aria-label="Filter saved actor classes"
-										placeholder="filter class name"
-										{...stylex.props(styles.classFilterInput)}
-									/>
-								</label>
+								<div {...stylex.props(styles.classFilterSearch)}>
+									<label {...stylex.props(styles.classFilterSearchLabel)}>
+										<span>ACTOR CLASSES · {classes().length}</span>
+										<input
+											value={classQuery()}
+											onInput={(event) =>
+												setClassQuery(event.currentTarget.value)
+											}
+											aria-label="Filter saved actor classes"
+											placeholder="filter class name"
+											{...stylex.props(styles.classFilterInput)}
+										/>
+									</label>
+									<button
+										type="button"
+										title="Invert which actor classes are selected"
+										onClick={invertClasses}
+										{...stylex.props(styles.classFilterAction)}
+									>
+										INVERT
+									</button>
+								</div>
 								<div role="list" {...stylex.props(styles.classList)}>
 									<For each={filteredClasses()}>
 										{([className, count]) => (
@@ -514,14 +583,26 @@ export function SavedWorldScout(props: {
 						<div {...stylex.props(styles.workspace)}>
 							<div {...stylex.props(styles.mapFrame)}>
 								<div {...stylex.props(styles.north)}>N ↑</div>
+								<label {...stylex.props(styles.zoomControl)}>
+									<span>ZOOM</span>
+									<input
+										type="range"
+										aria-label="Map zoom"
+										min="1"
+										max={maxZoomFactor()}
+										step="0.01"
+										value={Math.min(zoomFactor(), maxZoomFactor())}
+										onInput={(event) =>
+											setZoomFactor(event.currentTarget.value)
+										}
+										{...stylex.props(styles.zoomSlider)}
+									/>
+									<strong>{zoomFactor().toFixed(1)}×</strong>
+								</label>
 								<div {...stylex.props(styles.extentLabel)}>{extentLabel()}</div>
 								<button
 									type="button"
-									onClick={() => {
-										viewLocked = false;
-										store.viewport = undefined;
-										requestPaint();
-									}}
+									onClick={resetView}
 									{...stylex.props(styles.reset)}
 								>
 									RESET VIEW
@@ -600,6 +681,13 @@ export function SavedWorldScout(props: {
 													</dd>
 												</div>
 											</dl>
+											<button
+												type="button"
+												onClick={clearSelection}
+												{...stylex.props(styles.clearSelection)}
+											>
+												CLEAR SELECTION
+											</button>
 											<p {...stylex.props(styles.offlineCopy)}>
 												Read from saved project files. Open Unreal and
 												switch to Live World to focus or author review
@@ -742,6 +830,12 @@ const styles = stylex.create({
 		fontSize: 7,
 		letterSpacing: ".12em"
 	},
+	classFilterSearchLabel: {
+		display: "flex",
+		alignItems: "center",
+		gap: 10,
+		minWidth: 0
+	},
 	classFilterInput: {
 		minWidth: 220,
 		border: "1px solid #3b484a",
@@ -750,6 +844,16 @@ const styles = stylex.create({
 		padding: "6px 8px",
 		fontSize: 11,
 		outline: { ":focus": "1px solid #61d5df" }
+	},
+	classFilterAction: {
+		border: "1px solid #344042",
+		backgroundColor: { default: "#151b1c", ":hover": "#20292a" },
+		color: "#879294",
+		padding: "6px 8px",
+		fontSize: 8,
+		letterSpacing: ".08em",
+		cursor: "pointer",
+		flexShrink: 0
 	},
 	classList: {
 		display: "grid",
@@ -804,11 +908,12 @@ const styles = stylex.create({
 			default: "minmax(0, 1fr) 270px",
 			"@media (max-width: 900px)": "1fr"
 		},
-		minHeight: 430
+		alignItems: "start"
 	},
 	mapFrame: {
 		position: "relative",
-		minHeight: 430,
+		aspectRatio: "2 / 1",
+		width: "100%",
 		overflow: "hidden",
 		backgroundColor: "#0c1011",
 		backgroundImage:
@@ -855,7 +960,46 @@ const styles = stylex.create({
 		fontSize: 9,
 		letterSpacing: ".12em"
 	},
-	extentLabel: { position: "absolute", top: 12, right: 14, color: "#667476", fontSize: 8 },
+	extentLabel: {
+		position: "absolute",
+		top: 34,
+		right: 14,
+		color: "#667476",
+		fontSize: 8,
+		zIndex: 2
+	},
+	zoomControl: {
+		position: "absolute",
+		top: 8,
+		right: 14,
+		zIndex: 2,
+		display: "grid",
+		gridTemplateColumns: "auto minmax(88px, 120px) auto",
+		gap: "4px 8px",
+		alignItems: "center",
+		color: "#879294",
+		fontSize: 7,
+		letterSpacing: ".1em",
+		backgroundColor: "#101617d9",
+		border: "1px solid #3b494a",
+		padding: "4px 8px"
+	},
+	zoomSlider: {
+		width: "100%",
+		accentColor: "#61d5df",
+		cursor: "ew-resize"
+	},
+	clearSelection: {
+		marginTop: 8,
+		border: "1px solid #3b494a",
+		backgroundColor: { default: "transparent", ":hover": "#1d2829" },
+		color: "#a7b5b6",
+		padding: "10px 12px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
 	axisX: { position: "absolute", right: 12, bottom: 10, color: "#59686a", fontSize: 7 },
 	axisY: {
 		position: "absolute",

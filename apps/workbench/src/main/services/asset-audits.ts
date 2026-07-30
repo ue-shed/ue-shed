@@ -1,21 +1,36 @@
 import {
 	readLiveTexturePreview,
+	textureAuditQuery,
 	TextureAudit,
+	type TextureAuditQuery,
+	type TextureAuditQueryRunResult,
+	type TextureAuditRecordResult,
+	type TextureAuditSearchRequest,
+	type TextureAuditSearchResult,
 	type TextureAuditRunResult,
 	type TexturePreviewResult
 } from "@ue-shed/asset-audits";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Ref } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import type { WorkbenchWindowError } from "../adapters/electron-window.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchAssetAuditsShape {
+	readonly chooseAndRefresh: () => Effect.Effect<
+		TextureAuditQueryRunResult,
+		WorkbenchWindowError
+	>;
 	readonly chooseAndScan: () => Effect.Effect<TextureAuditRunResult, WorkbenchWindowError>;
+	readonly configuredRefresh: () => Effect.Effect<TextureAuditQueryRunResult>;
 	readonly configuredScan: () => Effect.Effect<TextureAuditRunResult>;
 	readonly preview: (objectPath: string) => Effect.Effect<TexturePreviewResult>;
+	readonly record: (objectPath: string) => Effect.Effect<TextureAuditRecordResult>;
+	readonly search: (
+		request: TextureAuditSearchRequest
+	) => Effect.Effect<TextureAuditSearchResult>;
 }
 
 export class WorkbenchAssetAudits extends Context.Service<
@@ -41,6 +56,13 @@ function unavailableProject(message: string, recovery: string): TextureAuditRunR
 	};
 }
 
+function unavailableQueryProject(message: string, recovery: string): TextureAuditQueryRunResult {
+	return {
+		error: { code: "invalid_project", message, recovery, retrySafe: true },
+		status: "failed"
+	};
+}
+
 export const WorkbenchAssetAuditsLive = Layer.effect(
 	WorkbenchAssetAudits,
 	Effect.gen(function* () {
@@ -49,10 +71,33 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const project = yield* WorkbenchProject;
 		const textureAudit = yield* TextureAudit;
 		const remoteControl = yield* RemoteControlClient;
+		const queryModel = yield* Ref.make<TextureAuditQuery | undefined>(undefined);
+		const scanAudit = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
+			textureAudit.scanFromProjectIndex(index, { projectRoot, ruleFile });
 
 		const runScan = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
-			textureAudit.scanFromProjectIndex(index, { projectRoot, ruleFile }).pipe(
+			scanAudit(projectRoot, ruleFile, index).pipe(
 				Effect.map((report) => ({ report, status: "completed" as const })),
+				Effect.catch((error) =>
+					Effect.succeed({
+						error: {
+							code: error.code,
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: error.retrySafe
+						},
+						status: "failed" as const
+					})
+				)
+			);
+		const runRefresh = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
+			scanAudit(projectRoot, ruleFile, index).pipe(
+				Effect.flatMap((report) => {
+					const next = textureAuditQuery(report);
+					return Ref.set(queryModel, next).pipe(
+						Effect.as({ summary: next.summary(), status: "completed" as const })
+					);
+				}),
 				Effect.catch((error) =>
 					Effect.succeed({
 						error: {
@@ -126,6 +171,89 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 			}
 		);
 
+		const configuredRefresh = Effect.fn("Workbench.WorkbenchAssetAudits.configuredRefresh")(
+			function* () {
+				if (configuration.textureAuditRules.status !== "configured") {
+					return { status: "not_configured" as const };
+				}
+				const ruleFile = configuration.textureAuditRules.path;
+				const current = yield* project.current();
+				if (current.status === "not_configured" || current.status === "cancelled") {
+					return { status: "not_configured" as const };
+				}
+				if (current.status === "failed") {
+					return unavailableQueryProject(current.error.message, current.error.recovery);
+				}
+				return yield* project.index().pipe(
+					Effect.flatMap((index) =>
+						runRefresh(current.project.projectRoot, ruleFile, index)
+					),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
+					)
+				);
+			}
+		);
+
+		const chooseAndRefresh = Effect.fn("Workbench.WorkbenchAssetAudits.chooseAndRefresh")(
+			function* () {
+				const projectChoice = yield* project.choose();
+				if (projectChoice.status === "cancelled") return { status: "cancelled" as const };
+				if (projectChoice.status === "not_configured") {
+					return { status: "not_configured" as const };
+				}
+				if (projectChoice.status === "failed") {
+					return unavailableQueryProject(
+						projectChoice.error.message,
+						projectChoice.error.recovery
+					);
+				}
+				let ruleFile =
+					configuration.textureAuditRules.status === "configured"
+						? configuration.textureAuditRules.path
+						: undefined;
+				if (!ruleFile) {
+					const ruleChoice = yield* dialog.chooseFile({
+						filters: [{ extensions: ["json"], name: "JSON rule set" }],
+						title: "Choose texture audit rules"
+					});
+					if (ruleChoice.status === "cancelled") return { status: "cancelled" as const };
+					ruleFile = ruleChoice.path;
+				}
+				return yield* project.index().pipe(
+					Effect.flatMap((index) =>
+						runRefresh(projectChoice.project.projectRoot, ruleFile, index)
+					),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
+					)
+				);
+			}
+		);
+
+		const search = Effect.fn("Workbench.WorkbenchAssetAudits.search")(
+			(request: TextureAuditSearchRequest) =>
+				Ref.get(queryModel).pipe(
+					Effect.map((model) =>
+						model === undefined
+							? { status: "not_ready" as const }
+							: { page: model.search(request), status: "ready" as const }
+					)
+				)
+		);
+
+		const record = Effect.fn("Workbench.WorkbenchAssetAudits.record")((objectPath: string) =>
+			Ref.get(queryModel).pipe(
+				Effect.map((model) => {
+					if (model === undefined) return { status: "not_ready" as const };
+					const result = model.record(objectPath);
+					return result === undefined
+						? { status: "not_found" as const }
+						: { record: result, status: "found" as const };
+				})
+			)
+		);
+
 		const preview = Effect.fn("Workbench.WorkbenchAssetAudits.preview")(function* (
 			objectPath: string
 		) {
@@ -145,12 +273,30 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 			);
 		});
 
-		return WorkbenchAssetAudits.of({ chooseAndScan, configuredScan, preview });
+		return WorkbenchAssetAudits.of({
+			chooseAndRefresh,
+			chooseAndScan,
+			configuredRefresh,
+			configuredScan,
+			preview,
+			record,
+			search
+		});
 	})
 );
 
 export function makeWorkbenchAssetAuditsTestLayer(
-	service: WorkbenchAssetAuditsShape
+	service: Pick<WorkbenchAssetAuditsShape, "chooseAndScan" | "configuredScan" | "preview"> &
+		Partial<Omit<WorkbenchAssetAuditsShape, "chooseAndScan" | "configuredScan" | "preview">>
 ): Layer.Layer<WorkbenchAssetAudits> {
-	return Layer.succeed(WorkbenchAssetAudits, WorkbenchAssetAudits.of(service));
+	return Layer.succeed(
+		WorkbenchAssetAudits,
+		WorkbenchAssetAudits.of({
+			chooseAndRefresh: () => Effect.succeed({ status: "not_configured" }),
+			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
+			record: () => Effect.succeed({ status: "not_ready" }),
+			search: () => Effect.succeed({ status: "not_ready" }),
+			...service
+		})
+	);
 }

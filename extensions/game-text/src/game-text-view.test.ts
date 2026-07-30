@@ -41,10 +41,11 @@ const corpus: TextCorpus = {
 };
 
 describe("game text presentation", () => {
-	it("filters the corpus by searchable context and edit capability", () => {
+	it("filters player-facing text and edit capability without searching metadata", () => {
 		expect(
 			filterTextUnits({ corpus, query: "PromptContinue", capability: "all" })
-		).toHaveLength(1);
+		).toHaveLength(0);
+		expect(filterTextUnits({ corpus, query: "Continue", capability: "all" })).toHaveLength(1);
 		expect(
 			filterTextUnits({ corpus, query: "Continue", capability: "read_only" })
 		).toHaveLength(0);

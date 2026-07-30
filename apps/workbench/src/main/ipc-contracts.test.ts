@@ -113,9 +113,17 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"project:choose": [],
 	"asset-audits:textures:configured-scan": [],
 	"asset-audits:textures:choose-and-scan": [],
+	"asset-audits:textures:configured-refresh": [],
+	"asset-audits:textures:choose-and-refresh": [],
+	"asset-audits:textures:search": [{ findingsOnly: false, pageSize: 100, query: "" }],
+	"asset-audits:textures:record": ["/Game/Textures/Example"],
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
 	"game-text:configured-scan": [],
 	"game-text:choose-and-scan": [],
+	"game-text:configured-refresh": [],
+	"game-text:choose-and-refresh": [],
+	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
+	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
 	"input-atlas:configured-scan": [],
 	"input-atlas:choose-and-scan": [],
 	"authoring:configured-table": [],
@@ -203,6 +211,10 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"project:choose": { status: "cancelled" },
 	"asset-audits:textures:configured-scan": { status: "not_configured" },
 	"asset-audits:textures:choose-and-scan": { status: "cancelled" },
+	"asset-audits:textures:configured-refresh": { status: "not_configured" },
+	"asset-audits:textures:choose-and-refresh": { status: "cancelled" },
+	"asset-audits:textures:search": { status: "not_ready" },
+	"asset-audits:textures:record": { status: "not_ready" },
 	"asset-audits:textures:preview": {
 		contract: { name: "texture-preview", version: { major: 1, minor: 0 } },
 		status: "unavailable",
@@ -213,6 +225,10 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"game-text:configured-scan": { status: "not_configured" },
 	"game-text:choose-and-scan": { status: "cancelled" },
+	"game-text:configured-refresh": { status: "not_configured" },
+	"game-text:choose-and-refresh": { status: "cancelled" },
+	"game-text:search": { status: "not_ready" },
+	"game-text:focus": { status: "not_ready" },
 	"input-atlas:configured-scan": { status: "not_configured" },
 	"input-atlas:choose-and-scan": { status: "cancelled" },
 	"authoring:configured-table": { status: "not_configured" },
@@ -332,9 +348,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 53 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(53);
-	expect(new Set(invokeChannelNames).size).toBe(53);
+it("registers exactly 61 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(61);
+	expect(new Set(invokeChannelNames).size).toBe(61);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

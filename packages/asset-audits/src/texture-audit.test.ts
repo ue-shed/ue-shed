@@ -9,8 +9,16 @@ import {
 	makeTextureAuditTestLayer,
 	texturePackagePathsFromProjectIndex
 } from "./texture.js";
+import { textureAuditQuery } from "./query.js";
+import { AuditRuleId, TextureObjectPath, type TextureAuditReport } from "./schema.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
+
+const available = <Value>(value: Value) => ({
+	status: "available" as const,
+	source: "serialized" as const,
+	value
+});
 
 it("selects only Texture2D packages from the shared header index", () => {
 	const index: SavedAssetScan = {
@@ -65,6 +73,59 @@ it("selects only Texture2D packages from the shared header index", () => {
 	expect(texturePackagePathsFromProjectIndex(index)).toEqual([
 		"C:/Fixture/Content/Textures/T_One.uasset"
 	]);
+});
+
+it("indexes compact records once and returns stable bounded audit pages", () => {
+	const first = TextureObjectPath.make("/Game/Textures/T_First.T_First");
+	const second = TextureObjectPath.make("/Game/Textures/T_Second.T_Second");
+	const report: TextureAuditReport = {
+		coverage: {
+			discoveredPackages: 2,
+			failedPackages: 0,
+			inspectedPackages: 2,
+			partialPackages: 0,
+			textureAssets: 2
+		},
+		diagnostics: [],
+		distributions: {
+			compression: [],
+			maximumDimension: [],
+			sRGB: [],
+			textureGroup: []
+		},
+		findings: [
+			{
+				actual: [],
+				expected: [],
+				explanation: "First texture is intentionally flagged.",
+				objectPath: first,
+				ruleId: AuditRuleId.make("power-of-two"),
+				severity: "warning"
+			}
+		],
+		records: [first, second].map((objectPath, index) => ({
+			compression: available("TC_Default"),
+			dimensions: available({ height: 256, width: 256 }),
+			filePath: `Content/Textures/T_${index}.uasset`,
+			mipGeneration: available("TMGS_FromTextureGroup"),
+			objectPath,
+			packageFileBytes: { source: "file" as const, status: "available" as const, value: 128 },
+			sRGB: available(true),
+			sourceFormat: available("TSF_BGRA8"),
+			sourceMips: available(1),
+			textureGroup: available("TEXTUREGROUP_World")
+		})),
+		ruleSetName: "test",
+		schemaVersion: 1,
+		status: "complete"
+	};
+
+	const query = textureAuditQuery(report);
+	const page = query.search({ findingsOnly: true, pageSize: 1, query: "" });
+	expect(page.total).toBe(1);
+	expect(page.records.map((record) => record.objectPath)).toEqual([first]);
+	expect(query.record(first)?.findings).toHaveLength(1);
+	expect(query.summary().findingCount).toBe(1);
 });
 
 it.effect("does not scan Content when the shared index has no texture candidates", () =>

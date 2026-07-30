@@ -6,7 +6,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { TextureAuditClientShape } from "./texture-audit-client.js";
-import { TextureAuditRoute } from "./texture-audit-route.js";
+import { TextureAuditRoute } from "./texture-audit-query-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
 afterEach(cleanup);
@@ -18,6 +18,8 @@ describe("TextureAuditRoute", () => {
 		const client: TextureAuditClientShape = {
 			chooseProjectAndScan: () =>
 				Effect.die("the route must use the Workbench header for project choice"),
+			record: () => Effect.die("unused"),
+			search: () => Effect.die("unused"),
 			launchUnreal: () => Effect.die("unused"),
 			loadConfiguredProject: () =>
 				Effect.sync(() => {

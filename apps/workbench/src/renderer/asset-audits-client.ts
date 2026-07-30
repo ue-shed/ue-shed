@@ -1,7 +1,12 @@
 import {
-	decodeTextureAuditRunResult,
+	decodeTextureAuditQueryRunResult,
+	decodeTextureAuditRecordResult,
+	decodeTextureAuditSearchResult,
+	type TextureAuditQueryRunResult,
+	type TextureAuditRecordResult,
+	type TextureAuditSearchRequest,
+	type TextureAuditSearchResult,
 	decodeTexturePreviewResult,
-	type TextureAuditRunResult,
 	type TexturePreviewResult
 } from "@ue-shed/asset-audits/browser";
 import {
@@ -34,19 +39,37 @@ function request<A>(args: {
 
 export const assetAuditsClient: TextureAuditClientShape = TextureAuditClient.of({
 	loadConfiguredProject: Effect.fn("TextureAuditClient.loadConfiguredProject")(
-		(): Effect.Effect<TextureAuditRunResult, TextureAuditClientError> =>
+		(): Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError> =>
 			request({
-				decode: decodeTextureAuditRunResult,
-				invoke: () => window.ueShed.assetAudits.loadConfiguredProject(),
+				decode: decodeTextureAuditQueryRunResult,
+				invoke: () => window.ueShed.assetAudits.refreshConfiguredProject(),
 				operation: "assetAudits.loadConfiguredProject"
 			})
 	),
 	chooseProjectAndScan: Effect.fn("TextureAuditClient.chooseProjectAndScan")(
-		(): Effect.Effect<TextureAuditRunResult, TextureAuditClientError> =>
+		(): Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError> =>
 			request({
-				decode: decodeTextureAuditRunResult,
-				invoke: () => window.ueShed.assetAudits.chooseProjectAndScan(),
+				decode: decodeTextureAuditQueryRunResult,
+				invoke: () => window.ueShed.assetAudits.chooseProjectAndRefresh(),
 				operation: "assetAudits.chooseProjectAndScan"
+			})
+	),
+	search: Effect.fn("TextureAuditClient.search")(
+		(
+			input: TextureAuditSearchRequest
+		): Effect.Effect<TextureAuditSearchResult, TextureAuditClientError> =>
+			request({
+				decode: decodeTextureAuditSearchResult,
+				invoke: () => window.ueShed.assetAudits.search(input),
+				operation: "assetAudits.search"
+			})
+	),
+	record: Effect.fn("TextureAuditClient.record")(
+		(objectPath: string): Effect.Effect<TextureAuditRecordResult, TextureAuditClientError> =>
+			request({
+				decode: decodeTextureAuditRecordResult,
+				invoke: () => window.ueShed.assetAudits.record(objectPath),
+				operation: "assetAudits.record"
 			})
 	),
 	loadPreview: Effect.fn("TextureAuditClient.loadPreview")(

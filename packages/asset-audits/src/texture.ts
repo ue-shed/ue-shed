@@ -3,15 +3,15 @@ import { relative } from "node:path";
 import {
 	AssetReader,
 	isHeaderScanEntry,
-	isFullScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
 	type SavedAssetScan,
-	type SavedAssetScanFailure,
+	type SavedAssetTextureExtractionEvent,
+	type SavedAssetTextureRecord,
 	type SavedProperty
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema, Stream } from "effect";
 import { maximumDimensionKey } from "./report.js";
 import {
 	AuditRuleId,
@@ -184,6 +184,24 @@ export function textureRecordsFromInspection(options: {
 		.sort((left, right) => left.objectPath.localeCompare(right.objectPath));
 }
 
+function textureRecordFromExtraction(options: {
+	readonly filePath: string;
+	readonly record: SavedAssetTextureRecord;
+}): TextureRecord {
+	return {
+		objectPath: makeTextureObjectPath(options.record.object_path),
+		filePath: options.filePath,
+		packageFileBytes: options.record.package_file_bytes,
+		dimensions: options.record.dimensions,
+		sourceFormat: options.record.source_format,
+		sourceMips: options.record.source_mips,
+		compression: options.record.compression,
+		sRGB: options.record.s_rgb,
+		textureGroup: options.record.texture_group,
+		mipGeneration: options.record.mip_generation
+	};
+}
+
 export function isPowerOfTwo(value: number): boolean {
 	return Number.isInteger(value) && value > 0 && (value & (value - 1)) === 0;
 }
@@ -322,52 +340,164 @@ function readRuleSet(path: string): Effect.Effect<TextureAuditRuleSet, TextureAu
 	);
 }
 
-function textureAuditFromScan(
-	rules: TextureAuditRuleSet,
-	scan: SavedAssetScan,
+interface TextureExtractionAccumulator {
+	readonly diagnostics: Array<{
+		readonly code: string;
+		readonly filePath?: string;
+		readonly message: string;
+	}>;
+	failedPackages: number;
+	inspectedPackages: number;
+	partialPackages: number;
+	readonly records: TextureRecord[];
+	summary?: Extract<SavedAssetTextureExtractionEvent, { readonly event: "texture_summary" }>;
+}
+
+function emptyTextureExtractionAccumulator(): TextureExtractionAccumulator {
+	return {
+		diagnostics: [],
+		failedPackages: 0,
+		inspectedPackages: 0,
+		partialPackages: 0,
+		records: []
+	};
+}
+
+function foldTextureExtractionEvent(
 	projectRoot: string,
-	discoveredPackages: number,
-	inheritedFailures: readonly SavedAssetScanFailure[] = []
-): TextureAuditReport {
-	const records = scan.assets
-		.filter(isFullScanEntry)
-		.flatMap((entry) =>
-			textureRecordsFromInspection({
-				inspection: entry.inspection,
-				filePath: relative(projectRoot, entry.inspection.path),
-				packageFileBytes: entry.fileBytes
+	accumulator: TextureExtractionAccumulator,
+	event: SavedAssetTextureExtractionEvent
+): TextureExtractionAccumulator {
+	if (event.event === "texture_record") {
+		accumulator.records.push(
+			textureRecordFromExtraction({
+				filePath: relative(projectRoot, event.path),
+				record: event.record
 			})
-		)
-		.sort((left, right) => left.objectPath.localeCompare(right.objectPath));
-	const failures = [...inheritedFailures, ...scan.failures];
-	const diagnostics = failures.slice(0, 100).map((failure) => ({
-		code: "package_inspection_failed",
-		message: failure.message,
-		filePath: relative(projectRoot, failure.path)
-	}));
+		);
+		return accumulator;
+	}
+	if (event.event === "texture_package") {
+		accumulator.inspectedPackages += 1;
+		if (event.status === "partial") accumulator.partialPackages += 1;
+		for (const diagnostic of event.diagnostics) {
+			accumulator.diagnostics.push({
+				code: diagnostic.code,
+				message: diagnostic.message,
+				filePath: relative(projectRoot, event.path)
+			});
+		}
+		return accumulator;
+	}
+	if (event.event === "error") {
+		accumulator.failedPackages += 1;
+		accumulator.diagnostics.push({
+			code: "package_inspection_failed",
+			message: event.message,
+			filePath: relative(projectRoot, event.path)
+		});
+		return accumulator;
+	}
+	accumulator.summary = event;
+	return accumulator;
+}
+
+function textureAuditFromExtraction(options: {
+	readonly accumulator: TextureExtractionAccumulator;
+	readonly discoveredPackages: number;
+	readonly rules: TextureAuditRuleSet;
+}): TextureAuditReport {
+	const records = [...options.accumulator.records].sort((left, right) =>
+		left.objectPath.localeCompare(right.objectPath)
+	);
 	const findings = records
-		.flatMap((record) => rules.rules.map((rule) => evaluateTextureRule(record, rule)))
+		.flatMap((record) => options.rules.rules.map((rule) => evaluateTextureRule(record, rule)))
 		.filter((finding): finding is TextureAuditFinding => finding !== undefined)
 		.sort(findingOrder);
-	const partialAssets = scan.summary.partialAssets;
-	const failedAssets = scan.summary.failedAssets + inheritedFailures.length;
+	const summary = options.accumulator.summary;
 	return {
-		schemaVersion: 1 as const,
+		schemaVersion: 1,
 		status:
-			partialAssets > 0 || failedAssets > 0 ? ("partial" as const) : ("complete" as const),
-		ruleSetName: rules.name,
+			options.accumulator.partialPackages > 0 || options.accumulator.failedPackages > 0
+				? "partial"
+				: "complete",
+		ruleSetName: options.rules.name,
 		coverage: {
-			discoveredPackages,
-			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets,
+			discoveredPackages:
+				options.discoveredPackages > 0
+					? options.discoveredPackages
+					: (summary?.scannedAssets ?? options.discoveredPackages),
+			inspectedPackages:
+				summary === undefined
+					? options.accumulator.inspectedPackages
+					: summary.emittedAssets + summary.skippedAssets,
 			textureAssets: records.length,
-			partialPackages: partialAssets,
-			failedPackages: failedAssets
+			partialPackages: options.accumulator.partialPackages,
+			failedPackages: options.accumulator.failedPackages
 		},
 		records,
 		findings,
 		distributions: foldTextureDistributions(records),
-		diagnostics
+		diagnostics: options.accumulator.diagnostics.slice(0, 100)
 	};
+}
+
+function extractTextureAuditWith(
+	reader: AssetReaderShape,
+	options: {
+		readonly concurrency?: number;
+		readonly discoveredPackages: number;
+		readonly maximumAssets?: number;
+		readonly paths?: readonly string[];
+		readonly projectRoot: string;
+		readonly rules: TextureAuditRuleSet;
+	},
+	inheritedFailures: readonly {
+		readonly code: string;
+		readonly filePath?: string;
+		readonly message: string;
+	}[] = []
+): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
+	if (options.paths?.length === 0) {
+		const accumulator = emptyTextureExtractionAccumulator();
+		accumulator.failedPackages = inheritedFailures.length;
+		accumulator.diagnostics.push(...inheritedFailures);
+		return Effect.succeed(
+			textureAuditFromExtraction({
+				accumulator,
+				discoveredPackages: options.discoveredPackages,
+				rules: options.rules
+			})
+		);
+	}
+	return reader
+		.extractProjectTextures({
+			concurrency: Math.max(1, options.concurrency ?? 8),
+			...(options.maximumAssets === undefined
+				? {}
+				: { maximumAssets: options.maximumAssets }),
+			...(options.paths === undefined ? {} : { paths: options.paths }),
+			projectRoot: options.projectRoot
+		})
+		.pipe(
+			Stream.runFold(
+				() => {
+					const accumulator = emptyTextureExtractionAccumulator();
+					accumulator.failedPackages = inheritedFailures.length;
+					accumulator.diagnostics.push(...inheritedFailures);
+					return accumulator;
+				},
+				(current, event) => foldTextureExtractionEvent(options.projectRoot, current, event)
+			),
+			Effect.map((accumulator) =>
+				textureAuditFromExtraction({
+					accumulator,
+					discoveredPackages: options.discoveredPackages,
+					rules: options.rules
+				})
+			),
+			Effect.mapError(textureScanFailure)
+		);
 }
 
 function scanTextureAuditWith(
@@ -376,19 +506,15 @@ function scanTextureAuditWith(
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
 		const rules = yield* readRuleSet(options.ruleFile);
-		// One reader process classifies the whole project from package headers and only decodes
-		// packages that actually export a Texture2D.
-		const scan = yield* reader
-			.scanProject({
-				classes: [TEXTURE_CLASS],
-				concurrency: Math.max(1, options.concurrency ?? 8),
-				...(options.maximumAssets === undefined
-					? {}
-					: { maximumAssets: options.maximumAssets }),
-				projectRoot: options.projectRoot
-			})
-			.pipe(Effect.mapError(textureScanFailure));
-		return textureAuditFromScan(rules, scan, options.projectRoot, scan.summary.scannedAssets);
+		return yield* extractTextureAuditWith(reader, {
+			discoveredPackages: 0,
+			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.maximumAssets === undefined
+				? {}
+				: { maximumAssets: options.maximumAssets }),
+			projectRoot: options.projectRoot,
+			rules
+		});
 	}).pipe(Effect.withSpan("asset-audits.scan-textures"));
 }
 
@@ -400,42 +526,23 @@ function scanTextureAuditFromProjectIndexWith(
 	return Effect.gen(function* () {
 		const rules = yield* readRuleSet(options.ruleFile);
 		const paths = texturePackagePathsFromProjectIndex(index);
-		if (paths.length === 0) {
-			return textureAuditFromScan(
-				rules,
-				{
-					assets: [],
-					failures: [],
-					summary: {
-						...index.summary,
-						depth: "full" as const,
-						emittedAssets: 0,
-						failedAssets: 0,
-						partialAssets: 0,
-						skippedAssets: 0
-					}
-				},
-				options.projectRoot,
-				index.summary.scannedAssets,
-				index.failures
-			);
-		}
-		const scan = yield* reader
-			.scanProject({
-				concurrency: Math.max(1, options.concurrency ?? 8),
+		return yield* extractTextureAuditWith(
+			reader,
+			{
+				discoveredPackages: index.summary.scannedAssets,
+				...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
 				...(options.maximumAssets === undefined
 					? {}
 					: { maximumAssets: options.maximumAssets }),
 				paths,
-				projectRoot: options.projectRoot
-			})
-			.pipe(Effect.mapError(textureScanFailure));
-		return textureAuditFromScan(
-			rules,
-			scan,
-			options.projectRoot,
-			index.summary.scannedAssets,
-			index.failures
+				projectRoot: options.projectRoot,
+				rules
+			},
+			index.failures.map((failure) => ({
+				code: "package_inspection_failed",
+				message: failure.message,
+				filePath: relative(options.projectRoot, failure.path)
+			}))
 		);
 	}).pipe(Effect.withSpan("asset-audits.scan-textures-from-project-index"));
 }

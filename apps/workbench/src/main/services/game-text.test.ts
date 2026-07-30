@@ -126,6 +126,44 @@ it.effect("scans the configured project", () =>
 	)
 );
 
+it.effect("keeps refreshed corpus data in main and serves bounded query results", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchGameText;
+		const refreshed = yield* service.configuredRefresh();
+		expect(refreshed).toEqual({
+			status: "completed",
+			summary: {
+				coverage: emptyCorpus.coverage,
+				diagnosticCount: 0,
+				schemaVersion: 1,
+				status: "complete"
+			}
+		});
+		expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
+			page: { total: 0, units: [] },
+			status: "ready"
+		});
+		expect(yield* service.focus({ id: "unreal:UI:Missing" as never, pageSize: 50 })).toEqual({
+			status: "not_found"
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchGameTextLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						configuration,
+						makeTextCorpusServiceTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+						}),
+						selectedProject
+					)
+				)
+			)
+		)
+	)
+);
+
 it.effect("translates a typed scan failure into the failed result variant", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchGameText;

@@ -190,3 +190,78 @@ export type TextureAuditRunResult = Schema.Schema.Type<typeof TextureAuditRunRes
 
 export const decodeTextureAuditRuleSet = Schema.decodeUnknownEffect(TextureAuditRuleSet);
 export const decodeTextureAuditRunResult = Schema.decodeUnknownEffect(TextureAuditRunResult);
+
+/** Upper bound applied at the public query boundary, including Workbench IPC. */
+export const MAX_TEXTURE_QUERY_PAGE_SIZE = 100;
+
+const TextureQueryPageSize = Schema.Int.pipe(
+	Schema.check(Schema.isBetween({ minimum: 1, maximum: MAX_TEXTURE_QUERY_PAGE_SIZE }))
+);
+
+export const TextureDistributionSelection = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("maximumDimension"), key: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("textureGroup"), key: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("compression"), key: Schema.String }),
+	Schema.Struct({ kind: Schema.Literal("sRGB"), key: Schema.String })
+]);
+export type TextureDistributionSelection = Schema.Schema.Type<typeof TextureDistributionSelection>;
+
+export const TextureAuditQuerySummary = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	status: Schema.Literals(["complete", "partial"]),
+	ruleSetName: Schema.String,
+	coverage: ScanCoverage,
+	diagnosticCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	findingCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	distributions: TextureDistributions
+});
+export type TextureAuditQuerySummary = Schema.Schema.Type<typeof TextureAuditQuerySummary>;
+
+export const TextureAuditQueryRunResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("completed"), summary: TextureAuditQuerySummary }),
+	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({ status: Schema.Literal("cancelled") }),
+	Schema.Struct({ status: Schema.Literal("failed"), error: TextureAuditPublicError })
+]);
+export type TextureAuditQueryRunResult = Schema.Schema.Type<typeof TextureAuditQueryRunResult>;
+export const decodeTextureAuditQueryRunResult = Schema.decodeUnknownEffect(
+	TextureAuditQueryRunResult
+);
+
+export const TextureAuditSearchRequest = Schema.Struct({
+	cursor: Schema.optional(TextureObjectPath),
+	findingsOnly: Schema.Boolean,
+	pageSize: TextureQueryPageSize,
+	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512))),
+	selection: Schema.optional(TextureDistributionSelection)
+});
+export type TextureAuditSearchRequest = Schema.Schema.Type<typeof TextureAuditSearchRequest>;
+
+export const TextureAuditSearchPage = Schema.Struct({
+	findings: Schema.Array(TextureAuditFinding),
+	nextCursor: Schema.optional(TextureObjectPath),
+	records: Schema.Array(TextureRecord),
+	total: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type TextureAuditSearchPage = Schema.Schema.Type<typeof TextureAuditSearchPage>;
+
+export const TextureAuditSearchResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("ready"), page: TextureAuditSearchPage }),
+	Schema.Struct({ status: Schema.Literal("not_ready") })
+]);
+export type TextureAuditSearchResult = Schema.Schema.Type<typeof TextureAuditSearchResult>;
+export const decodeTextureAuditSearchResult = Schema.decodeUnknownEffect(TextureAuditSearchResult);
+
+export const TextureAuditRecord = Schema.Struct({
+	findings: Schema.Array(TextureAuditFinding),
+	record: TextureRecord
+});
+export type TextureAuditRecord = Schema.Schema.Type<typeof TextureAuditRecord>;
+
+export const TextureAuditRecordResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("found"), record: TextureAuditRecord }),
+	Schema.Struct({ status: Schema.Literal("not_found") }),
+	Schema.Struct({ status: Schema.Literal("not_ready") })
+]);
+export type TextureAuditRecordResult = Schema.Schema.Type<typeof TextureAuditRecordResult>;
+export const decodeTextureAuditRecordResult = Schema.decodeUnknownEffect(TextureAuditRecordResult);

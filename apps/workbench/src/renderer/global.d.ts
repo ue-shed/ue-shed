@@ -48,12 +48,14 @@ declare global {
 			readonly project: {
 				readonly choose: () => Promise<WorkbenchProjectState>;
 				readonly current: () => Promise<WorkbenchProjectState>;
+				readonly progress: () => Promise<unknown>;
 			};
 			readonly assetAudits: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
 				readonly refreshConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndRefresh: () => Promise<unknown>;
+				readonly progress: () => Promise<unknown>;
 				readonly search: (request: unknown) => Promise<unknown>;
 				readonly record: (objectPath: string) => Promise<unknown>;
 				readonly preview: (objectPath: string) => Promise<unknown>;
@@ -63,6 +65,7 @@ declare global {
 				readonly chooseProjectAndScan: () => Promise<unknown>;
 				readonly refreshConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndRefresh: () => Promise<unknown>;
+				readonly progress: () => Promise<unknown>;
 				readonly search: (request: unknown) => Promise<unknown>;
 				readonly focus: (request: unknown) => Promise<unknown>;
 			};

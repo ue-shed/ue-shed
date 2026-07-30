@@ -6,7 +6,9 @@ import type {
 	TextCorpusSearchPage,
 	TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
-import { createEffectAction } from "@ue-shed/ui";
+import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
+import { Schedule, Stream } from "effect";
 import { For, Match, Show, Switch, createSignal, onMount, type Accessor } from "solid-js";
 import type { GameTextClientShape } from "./game-text-client.js";
 import {
@@ -69,7 +71,14 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const refreshAction = createEffectAction();
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
+	const progressSubscription = createEffectSubscription();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
+	const [progress, setProgress] = createSignal<TaskProgress>({
+		completed: 0,
+		phase: "idle",
+		stage: "game_text",
+		total: 0
+	});
 	const [summary, setSummary] = createSignal<TextCorpusQuerySummary>();
 	const [page, setPage] = createSignal<TextCorpusSearchPage>({ total: 0, units: [] });
 	const [query, setQuery] = createSignal("");
@@ -131,6 +140,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	};
 
 	const applyRefresh = (result: TextCorpusQueryRunResult) => {
+		progressSubscription.cancel();
 		if (result.status === "completed") {
 			setSummary(result.summary);
 			setPage({ total: 0, units: [] });
@@ -146,8 +156,16 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 
 	const refresh = () => {
 		setState({ status: "loading" });
+		setProgress({ completed: 0, phase: "idle", stage: "game_text", total: 0 });
+		progressSubscription.subscribe(
+			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("100 millis")),
+			{ onValue: setProgress }
+		);
 		refreshAction.run(props.client.loadConfiguredProject(), {
-			onFailure: (cause) => setState(failure(cause)),
+			onFailure: (cause) => {
+				progressSubscription.cancel();
+				setState(failure(cause));
+			},
 			onSuccess: applyRefresh
 		});
 	};
@@ -156,6 +174,12 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 
 	return (
 		<main {...stylex.props(styles.page)}>
+			<TaskProgressModal
+				open={state().status === "loading"}
+				progress={progress()}
+				title="Building the game-text corpus"
+				detail="Workbench is decoding the packages selected by the project index and preserving every text identity and occurrence."
+			/>
 			<header {...stylex.props(styles.header)}>
 				<nav aria-label="Breadcrumb">Game text / Corpus</nav>
 				<button type="button" onClick={refresh} {...stylex.props(styles.button)}>

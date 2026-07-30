@@ -101,6 +101,13 @@ function makeClient(): GameTextClientShape {
 	return {
 		chooseProjectAndScan: () => Effect.succeed(completed),
 		loadConfiguredProject: () => Effect.succeed(completed),
+		progress: () =>
+			Effect.succeed({
+				completed: 1,
+				phase: "ready",
+				stage: "game_text",
+				total: 1
+			}),
 		search: (request) => {
 			const terms = request.query.toLocaleLowerCase();
 			const units = corpus.units.filter(

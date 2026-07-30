@@ -16,7 +16,8 @@ import {
 	type TextureAuditClientShape,
 	type TextureAuditLaunchResult
 } from "@ue-shed/extension-asset-audits";
-import { Effect } from "effect";
+import { WorkbenchTaskProgress } from "../main/project-workspace-contract.js";
+import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
@@ -53,6 +54,13 @@ export const assetAuditsClient: TextureAuditClientShape = TextureAuditClient.of(
 				invoke: () => window.ueShed.assetAudits.chooseProjectAndRefresh(),
 				operation: "assetAudits.chooseProjectAndScan"
 			})
+	),
+	progress: Effect.fn("TextureAuditClient.progress")(() =>
+		request({
+			decode: Schema.decodeUnknownEffect(WorkbenchTaskProgress),
+			invoke: () => window.ueShed.assetAudits.progress(),
+			operation: "assetAudits.progress"
+		})
 	),
 	search: Effect.fn("TextureAuditClient.search")(
 		(

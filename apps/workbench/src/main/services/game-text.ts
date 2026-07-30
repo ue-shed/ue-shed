@@ -11,6 +11,7 @@ import {
 } from "@ue-shed/game-text";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Context, Effect, Layer, Ref } from "effect";
+import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchGameTextShape {
@@ -18,6 +19,7 @@ export interface WorkbenchGameTextShape {
 	readonly chooseAndScan: () => Effect.Effect<TextCorpusRunResult>;
 	readonly configuredRefresh: () => Effect.Effect<TextCorpusQueryRunResult>;
 	readonly configuredScan: () => Effect.Effect<TextCorpusRunResult>;
+	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
 }
@@ -46,6 +48,19 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const project = yield* WorkbenchProject;
 		const textCorpus = yield* TextCorpusService;
 		const queryModel = yield* Ref.make<TextCorpusQuery | undefined>(undefined);
+		const progress = Effect.fn("Workbench.WorkbenchGameText.progress")(function* () {
+			const projectProgress = yield* project.progress();
+			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
+				return projectProgress;
+			}
+			const corpusProgress = yield* textCorpus.progress();
+			return {
+				completed: corpusProgress.processedAssets,
+				phase: corpusProgress.phase,
+				stage: "game_text" as const,
+				total: corpusProgress.totalAssets
+			};
+		});
 		const scanCorpus = (projectRoot: string, index: SavedAssetScan) =>
 			textCorpus.scanFromProjectIndex(index, { projectRoot });
 
@@ -184,6 +199,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 			configuredRefresh,
 			configuredScan,
 			focus,
+			progress,
 			search
 		});
 	})
@@ -199,6 +215,13 @@ export function makeWorkbenchGameTextTestLayer(
 			chooseAndRefresh: () => Effect.succeed({ status: "not_configured" }),
 			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
 			focus: () => Effect.succeed({ status: "not_ready" }),
+			progress: () =>
+				Effect.succeed({
+					completed: 0,
+					phase: "idle",
+					stage: "game_text",
+					total: 0
+				}),
 			search: () => Effect.succeed({ status: "not_ready" }),
 			...service
 		})

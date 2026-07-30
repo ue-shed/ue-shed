@@ -1,13 +1,15 @@
 import * as stylex from "@stylexjs/stylex";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { createEffectAction } from "@ue-shed/ui";
+import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { AuthoringRoute } from "@ue-shed/extension-data-authoring";
 import { GameTextRoute } from "@ue-shed/extension-game-text";
 import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
+import { Schedule, Stream } from "effect";
 import type { ShowcaseContext } from "../main/preload.js";
 import { assetAuditsClient } from "./asset-audits-client.js";
 import { authoringClient } from "./authoring-client.js";
@@ -142,7 +144,14 @@ function ProjectChooser(props: { readonly onChosen: () => void }) {
 	// focus-triggered refresh: each action intentionally cancels only its own prior request.
 	const refreshAction = createEffectAction();
 	const chooseAction = createEffectAction();
+	const progressSubscription = createEffectSubscription();
 	const [pending, setPending] = createSignal(false);
+	const [progress, setProgress] = createSignal<TaskProgress>({
+		completed: 0,
+		phase: "idle",
+		stage: "project_index",
+		total: 0
+	});
 	const [project, setProject] = createSignal<WorkbenchProjectState>();
 	const applyProject = (next: WorkbenchProjectState, notifyRoutes: boolean) => {
 		const previous = project();
@@ -171,12 +180,22 @@ function ProjectChooser(props: { readonly onChosen: () => void }) {
 
 	const choose = () => {
 		setPending(true);
+		setProgress({ completed: 0, phase: "idle", stage: "project_index", total: 0 });
+		progressSubscription.subscribe(
+			Stream.fromEffectSchedule(
+				workbenchRendererClient.projectProgress(),
+				Schedule.spaced("100 millis")
+			),
+			{ onValue: setProgress }
+		);
 		chooseAction.run(workbenchRendererClient.chooseProject(), {
 			onFailure: () => {
+				progressSubscription.cancel();
 				setPending(false);
 				setProject(undefined);
 			},
 			onSuccess: (next) => {
+				progressSubscription.cancel();
 				setPending(false);
 				applyProject(next, true);
 			}
@@ -195,15 +214,23 @@ function ProjectChooser(props: { readonly onChosen: () => void }) {
 	};
 
 	return (
-		<button
-			type="button"
-			title={title()}
-			disabled={pending()}
-			onClick={choose}
-			{...stylex.props(styles.projectChooser)}
-		>
-			{label()}
-		</button>
+		<>
+			<button
+				type="button"
+				title={title()}
+				disabled={pending()}
+				onClick={choose}
+				{...stylex.props(styles.projectChooser)}
+			>
+				{label()}
+			</button>
+			<TaskProgressModal
+				open={pending()}
+				progress={progress()}
+				title="Indexing the selected project"
+				detail="Workbench is building one shared package inventory for every saved-asset route. The project will unlock when the index is ready."
+			/>
+		</>
 	);
 }
 

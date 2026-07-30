@@ -11,7 +11,7 @@ import {
 	type SavedProperty,
 	type SavedPropertyValue
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { Context, Effect, Layer, Ref, Schema, Stream } from "effect";
 import {
 	TextOccurrenceId,
 	TextUnitId,
@@ -25,6 +25,12 @@ import {
 
 const makeOccurrenceId = TextOccurrenceId.make;
 const makeUnitId = TextUnitId.make;
+
+interface ExtractionProgress {
+	readonly phase: "idle" | "scanning" | "ready" | "failed";
+	readonly processedAssets: number;
+	readonly totalAssets: number;
+}
 
 export class TextCorpusScanError extends Schema.TaggedErrorClass<TextCorpusScanError>()(
 	"TextCorpusScanError",
@@ -643,64 +649,110 @@ function extractTextCorpusWith(
 		readonly paths?: readonly string[];
 		readonly projectRoot: string;
 	},
-	inheritedFailures: readonly TextCorpusDiagnostic[] = []
+	inheritedFailures: readonly TextCorpusDiagnostic[] = [],
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void> = () => Effect.void
 ): Effect.Effect<TextCorpus, TextCorpusScanError> {
 	if (options.paths?.length === 0) {
 		const accumulator = emptyTextExtractionAccumulator();
 		accumulator.failedPackages = inheritedFailures.length;
 		accumulator.diagnostics.push(...inheritedFailures);
-		return Effect.succeed(
-			buildTextCorpusFromExtraction({
-				accumulator,
-				discoveredPackages: options.discoveredPackages
-			})
-		);
-	}
-	return reader
-		.extractProjectText({
-			concurrency: Math.max(1, options.concurrency ?? 8),
-			...(options.maximumAssets === undefined
-				? {}
-				: { maximumAssets: options.maximumAssets }),
-			...(options.paths === undefined ? {} : { paths: options.paths }),
-			projectRoot: options.projectRoot
-		})
-		.pipe(
-			Stream.runFold(
-				() => {
-					const accumulator = emptyTextExtractionAccumulator();
-					accumulator.failedPackages = inheritedFailures.length;
-					accumulator.diagnostics.push(...inheritedFailures);
-					return accumulator;
-				},
-				(current, event) => foldTextExtractionEvent(options.projectRoot, current, event)
-			),
-			Effect.map((folded) =>
+		return reportProgress({ phase: "ready", processedAssets: 0, totalAssets: 0 }).pipe(
+			Effect.as(
 				buildTextCorpusFromExtraction({
-					accumulator: folded,
+					accumulator,
 					discoveredPackages: options.discoveredPackages
 				})
-			),
-			Effect.mapError(textCorpusScanFailure)
+			)
 		);
+	}
+	const totalAssets = options.paths?.length ?? 0;
+	let processedAssets = 0;
+	return reportProgress({ phase: "scanning", processedAssets: 0, totalAssets }).pipe(
+		Effect.andThen(
+			reader
+				.extractProjectText({
+					concurrency: Math.max(1, options.concurrency ?? 8),
+					...(options.maximumAssets === undefined
+						? {}
+						: { maximumAssets: options.maximumAssets }),
+					...(options.paths === undefined ? {} : { paths: options.paths }),
+					projectRoot: options.projectRoot
+				})
+				.pipe(
+					Stream.tap((event) => {
+						if (event.event === "text_summary") {
+							processedAssets =
+								event.emittedAssets + event.failedAssets + event.skippedAssets;
+							return reportProgress({
+								phase: "scanning",
+								processedAssets,
+								totalAssets: totalAssets > 0 ? totalAssets : event.scannedAssets
+							});
+						}
+						if (event.event !== "text_package" && event.event !== "error") {
+							return Effect.void;
+						}
+						processedAssets += 1;
+						return reportProgress({
+							phase: "scanning",
+							processedAssets,
+							totalAssets
+						});
+					}),
+					Stream.runFold(
+						() => {
+							const accumulator = emptyTextExtractionAccumulator();
+							accumulator.failedPackages = inheritedFailures.length;
+							accumulator.diagnostics.push(...inheritedFailures);
+							return accumulator;
+						},
+						(current, event) =>
+							foldTextExtractionEvent(options.projectRoot, current, event)
+					),
+					Effect.map((folded) =>
+						buildTextCorpusFromExtraction({
+							accumulator: folded,
+							discoveredPackages: options.discoveredPackages
+						})
+					),
+					Effect.mapError(textCorpusScanFailure),
+					Effect.onExit((exit) =>
+						reportProgress({
+							phase: exit._tag === "Success" ? "ready" : "failed",
+							processedAssets,
+							totalAssets
+						})
+					)
+				)
+		)
+	);
 }
 
 function scanTextCorpusWith(
 	reader: AssetReaderShape,
-	options: TextCorpusScanOptions
+	options: TextCorpusScanOptions,
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextCorpus, TextCorpusScanError> {
-	return extractTextCorpusWith(reader, {
-		discoveredPackages: 0,
-		...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
-		...(options.maximumAssets === undefined ? {} : { maximumAssets: options.maximumAssets }),
-		projectRoot: options.projectRoot
-	}).pipe(Effect.withSpan("game-text.scan-corpus"));
+	return extractTextCorpusWith(
+		reader,
+		{
+			discoveredPackages: 0,
+			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.maximumAssets === undefined
+				? {}
+				: { maximumAssets: options.maximumAssets }),
+			projectRoot: options.projectRoot
+		},
+		[],
+		reportProgress
+	).pipe(Effect.withSpan("game-text.scan-corpus"));
 }
 
 function scanTextCorpusFromProjectIndexWith(
 	reader: AssetReaderShape,
 	index: SavedAssetScan,
-	options: TextCorpusScanOptions
+	options: TextCorpusScanOptions,
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextCorpus, TextCorpusScanError> {
 	const paths = textPackagePathsFromProjectIndex(index);
 	const inheritedFailures = index.failures.map(
@@ -721,11 +773,13 @@ function scanTextCorpusFromProjectIndexWith(
 			paths,
 			projectRoot: options.projectRoot
 		},
-		inheritedFailures
+		inheritedFailures,
+		reportProgress
 	).pipe(Effect.withSpan("game-text.scan-corpus-from-project-index"));
 }
 
 export interface TextCorpusServiceShape {
+	readonly progress: () => Effect.Effect<ExtractionProgress>;
 	readonly scan: (
 		options: TextCorpusScanOptions
 	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
@@ -744,6 +798,13 @@ export const TextCorpusServiceLive = Layer.effect(
 	TextCorpusService,
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
+		const progressState = yield* Ref.make<ExtractionProgress>({
+			phase: "idle",
+			processedAssets: 0,
+			totalAssets: 0
+		});
+		const reportProgress = (progress: ExtractionProgress) => Ref.set(progressState, progress);
+		const progress = Effect.fn("TextCorpus.progress")(() => Ref.get(progressState));
 		const scan = Effect.fn("TextCorpus.scan")(function* (options: TextCorpusScanOptions) {
 			const validated = yield* decodeScanOptions(options).pipe(
 				Effect.mapError(
@@ -756,7 +817,7 @@ export const TextCorpusServiceLive = Layer.effect(
 						})
 				)
 			);
-			return yield* scanTextCorpusWith(reader, validated);
+			return yield* scanTextCorpusWith(reader, validated, reportProgress);
 		});
 		const scanFromProjectIndex = Effect.fn("TextCorpus.scanFromProjectIndex")(function* (
 			index: SavedAssetScan,
@@ -773,14 +834,22 @@ export const TextCorpusServiceLive = Layer.effect(
 						})
 				)
 			);
-			return yield* scanTextCorpusFromProjectIndexWith(reader, index, validated);
+			return yield* scanTextCorpusFromProjectIndexWith(
+				reader,
+				index,
+				validated,
+				reportProgress
+			);
 		});
-		return TextCorpusService.of({ scan, scanFromProjectIndex });
+		return TextCorpusService.of({ progress, scan, scanFromProjectIndex });
 	})
 );
 
-export type TextCorpusServiceTestShape = Omit<TextCorpusServiceShape, "scanFromProjectIndex"> &
-	Partial<Pick<TextCorpusServiceShape, "scanFromProjectIndex">>;
+export type TextCorpusServiceTestShape = Omit<
+	TextCorpusServiceShape,
+	"progress" | "scanFromProjectIndex"
+> &
+	Partial<Pick<TextCorpusServiceShape, "progress" | "scanFromProjectIndex">>;
 
 export function makeTextCorpusServiceTestLayer(
 	service: TextCorpusServiceTestShape
@@ -789,6 +858,9 @@ export function makeTextCorpusServiceTestLayer(
 		TextCorpusService,
 		TextCorpusService.of({
 			...service,
+			progress:
+				service.progress ??
+				(() => Effect.succeed({ phase: "idle", processedAssets: 0, totalAssets: 0 })),
 			scanFromProjectIndex:
 				service.scanFromProjectIndex ?? ((_index, options) => service.scan(options))
 		})

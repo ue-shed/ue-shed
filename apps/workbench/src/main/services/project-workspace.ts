@@ -25,7 +25,8 @@ import { ProjectInventoryCache } from "../adapters/project-inventory-cache.js";
 import {
 	WorkbenchProjectSummary,
 	type WorkbenchProjectFailure,
-	type WorkbenchProjectState
+	type WorkbenchProjectState,
+	type WorkbenchTaskProgress
 } from "../project-workspace-contract.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { savedMapLabel, WorkbenchConfiguration } from "../workbench-config.js";
@@ -78,6 +79,7 @@ export interface WorkbenchProjectShape {
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
 	/** The current global header index. Consumers must not re-enumerate the project. */
 	readonly index: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
 	readonly savedProject: () => Effect.Effect<
 		{ readonly maps: readonly SavedWorldMapValue[]; readonly projectRoot: string },
 		WorkbenchProjectUnavailable
@@ -371,6 +373,16 @@ export const WorkbenchProjectLive = Layer.effect(
 				)
 			);
 		});
+		const progress = Effect.fn("Workbench.WorkbenchProject.progress")(function* () {
+			const currentProgress = yield* assetReader.scanProgress();
+			return {
+				cacheHits: currentProgress.cacheHits,
+				completed: currentProgress.processedAssets,
+				phase: currentProgress.phase,
+				stage: "project_index" as const,
+				total: currentProgress.totalAssets
+			};
+		});
 
 		const choose: WorkbenchProjectShape["choose"] = () =>
 			Effect.gen(function* () {
@@ -438,14 +450,15 @@ export const WorkbenchProjectLive = Layer.effect(
 			current,
 			inputAtlas,
 			index: projectIndex,
+			progress,
 			savedProject,
 			savedTables
 		});
 	})
 );
 
-export type WorkbenchProjectTestShape = Omit<WorkbenchProjectShape, "index"> &
-	Partial<Pick<WorkbenchProjectShape, "index">>;
+export type WorkbenchProjectTestShape = Omit<WorkbenchProjectShape, "index" | "progress"> &
+	Partial<Pick<WorkbenchProjectShape, "index" | "progress">>;
 
 export function makeWorkbenchProjectTestLayer(
 	service: WorkbenchProjectTestShape
@@ -454,7 +467,16 @@ export function makeWorkbenchProjectTestLayer(
 		WorkbenchProject,
 		WorkbenchProject.of({
 			...service,
-			index: service.index ?? (() => Effect.die("project index is not used by this test"))
+			index: service.index ?? (() => Effect.die("project index is not used by this test")),
+			progress:
+				service.progress ??
+				(() =>
+					Effect.succeed({
+						completed: 0,
+						phase: "idle",
+						stage: "project_index",
+						total: 0
+					}))
 		})
 	);
 }

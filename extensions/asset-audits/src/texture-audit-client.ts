@@ -5,6 +5,7 @@ import type {
 	TextureAuditSearchResult,
 	TexturePreviewResult
 } from "@ue-shed/asset-audits/browser";
+import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Context, type Effect, Schema } from "effect";
 
 export const TextureAuditLaunchResult = Schema.Union([
@@ -31,6 +32,7 @@ export interface TextureAuditClientShape {
 		TextureAuditQueryRunResult,
 		TextureAuditClientError
 	>;
+	readonly progress: () => Effect.Effect<TaskProgress, TextureAuditClientError>;
 	readonly chooseProjectAndScan: () => Effect.Effect<
 		TextureAuditQueryRunResult,
 		TextureAuditClientError

@@ -9,4 +9,5 @@ export const register = Effect.gen(function* () {
 
 	yield* ipc.register(invokeContracts["project:current"], () => project.current());
 	yield* ipc.register(invokeContracts["project:choose"], () => project.choose());
+	yield* ipc.register(invokeContracts["project:progress"], () => project.progress());
 }).pipe(Effect.withSpan("Workbench.Ipc.registerProjectWorkspace"));

@@ -21,6 +21,7 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["asset-audits:textures:choose-and-refresh"], () =>
 		audits.chooseAndRefresh().pipe(Effect.orDie)
 	);
+	yield* ipc.register(invokeContracts["asset-audits:textures:progress"], () => audits.progress());
 	yield* ipc.register(invokeContracts["asset-audits:textures:search"], (...args) => {
 		const [request] = args as [TextureAuditSearchRequest];
 		return audits.search(request);

@@ -32,7 +32,7 @@ import type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
-import type { WorkbenchProjectState } from "./project-workspace-contract.js";
+import type { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
 export type {
 	FixtureLaunchResult,
@@ -41,7 +41,7 @@ export type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
-export type { WorkbenchProjectState } from "./project-workspace-contract.js";
+export type { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
 contextBridge.exposeInMainWorld("ueShed", {
 	editorSession: {
@@ -55,7 +55,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
-		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current")
+		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current"),
+		progress: (): Promise<WorkbenchTaskProgress> => ipcRenderer.invoke("project:progress")
 	},
 	assetAudits: {
 		loadConfiguredProject: (): Promise<unknown> =>
@@ -66,6 +67,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("asset-audits:textures:configured-refresh"),
 		chooseProjectAndRefresh: (): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:choose-and-refresh"),
+		progress: (): Promise<unknown> => ipcRenderer.invoke("asset-audits:textures:progress"),
 		search: (request: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:search", request),
 		record: (objectPath: string): Promise<unknown> =>
@@ -82,6 +84,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("game-text:configured-refresh"),
 		chooseProjectAndRefresh: (): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:choose-and-refresh"),
+		progress: (): Promise<unknown> => ipcRenderer.invoke("game-text:progress"),
 		search: (request: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:search", request),
 		focus: (request: unknown): Promise<unknown> =>

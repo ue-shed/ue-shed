@@ -156,15 +156,18 @@ it.effect("does not scan Content when the shared index has no texture candidates
 			}
 		};
 
-		const report = yield* Effect.flatMap(TextureAudit, (service) =>
-			service.scanFromProjectIndex(index, {
+		const [report, progress] = yield* Effect.gen(function* () {
+			const service = yield* TextureAudit;
+			const report = yield* service.scanFromProjectIndex(index, {
 				projectRoot: "C:/Fixture",
 				ruleFile: "fixtures/unreal-project/FixtureSource/Audits/texture-rules.json"
-			})
-		).pipe(Effect.provide(TextureAuditLive), Effect.provide(reader));
+			});
+			return [report, yield* service.progress()] as const;
+		}).pipe(Effect.provide(TextureAuditLive), Effect.provide(reader));
 
 		expect(report.coverage.discoveredPackages).toBe(30);
 		expect(report.coverage.inspectedPackages).toBe(0);
+		expect(progress).toEqual({ phase: "ready", processedAssets: 0, totalAssets: 0 });
 	})
 );
 

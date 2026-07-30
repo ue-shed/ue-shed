@@ -58,7 +58,7 @@ import {
 	SavedWorldMap
 } from "@ue-shed/protocol";
 import { Schema, SchemaGetter } from "effect";
-import { WorkbenchProjectState } from "./project-workspace-contract.js";
+import { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
 
@@ -271,6 +271,11 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: WorkbenchProjectState
 	}),
+	"project:progress": invoke({
+		channel: "project:progress",
+		args: EmptyArgs,
+		result: WorkbenchTaskProgress
+	}),
 	"asset-audits:textures:configured-scan": invoke({
 		channel: "asset-audits:textures:configured-scan",
 		args: EmptyArgs,
@@ -290,6 +295,11 @@ export const invokeContracts = {
 		channel: "asset-audits:textures:choose-and-refresh",
 		args: EmptyArgs,
 		result: TextureAuditQueryRunResult
+	}),
+	"asset-audits:textures:progress": invoke({
+		channel: "asset-audits:textures:progress",
+		args: EmptyArgs,
+		result: WorkbenchTaskProgress
 	}),
 	"asset-audits:textures:search": invoke({
 		channel: "asset-audits:textures:search",
@@ -325,6 +335,11 @@ export const invokeContracts = {
 		channel: "game-text:choose-and-refresh",
 		args: EmptyArgs,
 		result: TextCorpusQueryRunResult
+	}),
+	"game-text:progress": invoke({
+		channel: "game-text:progress",
+		args: EmptyArgs,
+		result: WorkbenchTaskProgress
 	}),
 	"game-text:search": invoke({
 		channel: "game-text:search",

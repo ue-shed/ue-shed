@@ -111,10 +111,12 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"showcase:context": [],
 	"project:current": [],
 	"project:choose": [],
+	"project:progress": [],
 	"asset-audits:textures:configured-scan": [],
 	"asset-audits:textures:choose-and-scan": [],
 	"asset-audits:textures:configured-refresh": [],
 	"asset-audits:textures:choose-and-refresh": [],
+	"asset-audits:textures:progress": [],
 	"asset-audits:textures:search": [{ findingsOnly: false, pageSize: 100, query: "" }],
 	"asset-audits:textures:record": ["/Game/Textures/Example"],
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
@@ -122,6 +124,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"game-text:choose-and-scan": [],
 	"game-text:configured-refresh": [],
 	"game-text:choose-and-refresh": [],
+	"game-text:progress": [],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
 	"input-atlas:configured-scan": [],
@@ -209,10 +212,23 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
+	"project:progress": {
+		cacheHits: 0,
+		completed: 0,
+		phase: "idle",
+		stage: "project_index",
+		total: 0
+	},
 	"asset-audits:textures:configured-scan": { status: "not_configured" },
 	"asset-audits:textures:choose-and-scan": { status: "cancelled" },
 	"asset-audits:textures:configured-refresh": { status: "not_configured" },
 	"asset-audits:textures:choose-and-refresh": { status: "cancelled" },
+	"asset-audits:textures:progress": {
+		completed: 0,
+		phase: "idle",
+		stage: "texture_audit",
+		total: 0
+	},
 	"asset-audits:textures:search": { status: "not_ready" },
 	"asset-audits:textures:record": { status: "not_ready" },
 	"asset-audits:textures:preview": {
@@ -227,6 +243,12 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"game-text:choose-and-scan": { status: "cancelled" },
 	"game-text:configured-refresh": { status: "not_configured" },
 	"game-text:choose-and-refresh": { status: "cancelled" },
+	"game-text:progress": {
+		completed: 0,
+		phase: "idle",
+		stage: "game_text",
+		total: 0
+	},
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
 	"input-atlas:configured-scan": { status: "not_configured" },
@@ -348,9 +370,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 61 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(61);
-	expect(new Set(invokeChannelNames).size).toBe(61);
+it("registers exactly 64 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(64);
+	expect(new Set(invokeChannelNames).size).toBe(64);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

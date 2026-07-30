@@ -18,7 +18,9 @@ import type {
 } from "../main/preload.js";
 import {
 	WorkbenchProjectState,
-	type WorkbenchProjectState as WorkbenchProjectStateValue
+	type WorkbenchProjectState as WorkbenchProjectStateValue,
+	WorkbenchTaskProgress,
+	type WorkbenchTaskProgress as WorkbenchTaskProgressValue
 } from "../main/project-workspace-contract.js";
 
 export class WorkbenchRendererError extends Schema.TaggedErrorClass<WorkbenchRendererError>()(
@@ -83,6 +85,7 @@ const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResult
 const decodeWorkbenchCameraMetrics = Schema.decodeUnknownEffect(WorkbenchCameraMetricsSchema);
 const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
 const decodeWorkbenchProjectState = Schema.decodeUnknownEffect(WorkbenchProjectState);
+const decodeWorkbenchTaskProgress = Schema.decodeUnknownEffect(WorkbenchTaskProgress);
 
 const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
 	(): Effect.Effect<CameraStatus, WorkbenchRendererError> =>
@@ -123,6 +126,10 @@ export interface WorkbenchRendererClient {
 	readonly launchFixture: () => Effect.Effect<FixtureLaunchResult, WorkbenchRendererError>;
 	readonly chooseProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly project: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly projectProgress: () => Effect.Effect<
+		WorkbenchTaskProgressValue,
+		WorkbenchRendererError
+	>;
 	readonly metrics: Stream.Stream<Exit.Exit<WorkbenchCameraMetrics, WorkbenchRendererError>>;
 	readonly setPresentationBudget: (
 		megabytesPerSecond: number
@@ -201,6 +208,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			decode: decodeWorkbenchProjectState,
 			invoke: () => window.ueShed.project.current(),
 			operation: "project.current"
+		})
+	),
+	projectProgress: Effect.fn("WorkbenchRenderer.projectProgress")(() =>
+		request({
+			decode: decodeWorkbenchTaskProgress,
+			invoke: () => window.ueShed.project.progress(),
+			operation: "project.progress"
 		})
 	),
 	metrics: Stream.fromEffectSchedule(Effect.exit(getMetrics()), Schedule.spaced("750 millis")),

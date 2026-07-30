@@ -15,6 +15,7 @@ import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Context, Effect, Layer, Ref } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import type { WorkbenchWindowError } from "../adapters/electron-window.js";
+import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
@@ -26,6 +27,7 @@ export interface WorkbenchAssetAuditsShape {
 	readonly chooseAndScan: () => Effect.Effect<TextureAuditRunResult, WorkbenchWindowError>;
 	readonly configuredRefresh: () => Effect.Effect<TextureAuditQueryRunResult>;
 	readonly configuredScan: () => Effect.Effect<TextureAuditRunResult>;
+	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
 	readonly preview: (objectPath: string) => Effect.Effect<TexturePreviewResult>;
 	readonly record: (objectPath: string) => Effect.Effect<TextureAuditRecordResult>;
 	readonly search: (
@@ -72,6 +74,19 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const textureAudit = yield* TextureAudit;
 		const remoteControl = yield* RemoteControlClient;
 		const queryModel = yield* Ref.make<TextureAuditQuery | undefined>(undefined);
+		const progress = Effect.fn("Workbench.WorkbenchAssetAudits.progress")(function* () {
+			const projectProgress = yield* project.progress();
+			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
+				return projectProgress;
+			}
+			const auditProgress = yield* textureAudit.progress();
+			return {
+				completed: auditProgress.processedAssets,
+				phase: auditProgress.phase,
+				stage: "texture_audit" as const,
+				total: auditProgress.totalAssets
+			};
+		});
 		const scanAudit = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
 			textureAudit.scanFromProjectIndex(index, { projectRoot, ruleFile });
 
@@ -278,6 +293,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 			chooseAndScan,
 			configuredRefresh,
 			configuredScan,
+			progress,
 			preview,
 			record,
 			search
@@ -294,6 +310,13 @@ export function makeWorkbenchAssetAuditsTestLayer(
 		WorkbenchAssetAudits.of({
 			chooseAndRefresh: () => Effect.succeed({ status: "not_configured" }),
 			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
+			progress: () =>
+				Effect.succeed({
+					completed: 0,
+					phase: "idle",
+					stage: "texture_audit",
+					total: 0
+				}),
 			record: () => Effect.succeed({ status: "not_ready" }),
 			search: () => Effect.succeed({ status: "not_ready" }),
 			...service

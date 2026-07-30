@@ -8,7 +8,9 @@ import type {
 	TexturePreviewResult,
 	TextureRecord
 } from "@ue-shed/asset-audits/browser";
-import { createEffectAction } from "@ue-shed/ui";
+import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
+import { Schedule, Stream } from "effect";
 import { For, Match, Show, Switch, createSignal, onMount } from "solid-js";
 import type { TextureAuditClientShape } from "./texture-audit-client.js";
 
@@ -63,7 +65,14 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 	const searchAction = createEffectAction();
 	const detailAction = createEffectAction();
 	const previewAction = createEffectAction();
+	const progressSubscription = createEffectSubscription();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
+	const [progress, setProgress] = createSignal<TaskProgress>({
+		completed: 0,
+		phase: "idle",
+		stage: "texture_audit",
+		total: 0
+	});
 	const [query, setQuery] = createSignal("");
 	const [selection, setSelection] = createSignal<TextureDistributionSelection>();
 	const [findingsOnly, setFindingsOnly] = createSignal(false);
@@ -120,6 +129,7 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 	};
 
 	const applyRefresh = (result: TextureAuditQueryRunResult) => {
+		progressSubscription.cancel();
 		if (result.status === "completed") {
 			setState({
 				page: { findings: [], records: [], total: 0 },
@@ -136,8 +146,16 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 
 	const refresh = () => {
 		setState({ status: "loading" });
+		setProgress({ completed: 0, phase: "idle", stage: "texture_audit", total: 0 });
+		progressSubscription.subscribe(
+			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("100 millis")),
+			{ onValue: setProgress }
+		);
 		refreshAction.run(props.client.loadConfiguredProject(), {
-			onFailure: (cause) => setState(failure(cause)),
+			onFailure: (cause) => {
+				progressSubscription.cancel();
+				setState(failure(cause));
+			},
 			onSuccess: applyRefresh
 		});
 	};
@@ -146,6 +164,12 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 
 	return (
 		<main {...stylex.props(styles.page)}>
+			<TaskProgressModal
+				open={state().status === "loading"}
+				progress={progress()}
+				title="Building the texture audit"
+				detail="Workbench is decoding the selected Texture2D packages and evaluating their saved evidence against the active rule set."
+			/>
 			<header {...stylex.props(styles.header)}>
 				<nav aria-label="Breadcrumb">Asset audits / Texture audit</nav>
 				<button type="button" onClick={refresh}>

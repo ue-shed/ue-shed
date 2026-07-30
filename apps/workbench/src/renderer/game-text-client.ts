@@ -12,7 +12,8 @@ import {
 	GameTextClientError,
 	type GameTextClientShape
 } from "@ue-shed/extension-game-text";
-import { Effect } from "effect";
+import { WorkbenchTaskProgress } from "../main/project-workspace-contract.js";
+import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
@@ -43,6 +44,13 @@ export const gameTextClient: GameTextClientShape = GameTextClient.of({
 			"gameText.chooseProjectAndScan",
 			() => window.ueShed.gameText.chooseProjectAndRefresh(),
 			decodeTextCorpusQueryRunResult
+		)
+	),
+	progress: Effect.fn("GameTextClient.progress")(() =>
+		invokeRequest(
+			"gameText.progress",
+			() => window.ueShed.gameText.progress(),
+			Schema.decodeUnknownEffect(WorkbenchTaskProgress)
 		)
 	),
 	search: Effect.fn("GameTextClient.search")(

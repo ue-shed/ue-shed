@@ -5,6 +5,7 @@ import type {
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/browser";
+import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Context, type Effect, Schema } from "effect";
 
 export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientError>()(
@@ -28,6 +29,7 @@ export interface GameTextClientShape {
 		TextCorpusQueryRunResult,
 		GameTextClientError
 	>;
+	readonly progress: () => Effect.Effect<TaskProgress, GameTextClientError>;
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;

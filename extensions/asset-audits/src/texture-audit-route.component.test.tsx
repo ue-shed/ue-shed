@@ -26,7 +26,14 @@ describe("TextureAuditRoute", () => {
 					rescans += 1;
 					return { status: "not_configured" as const };
 				}),
-			loadPreview: () => Effect.die("unused")
+			loadPreview: () => Effect.die("unused"),
+			progress: () =>
+				Effect.succeed({
+					completed: 0,
+					phase: "idle",
+					stage: "texture_audit",
+					total: 0
+				})
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>

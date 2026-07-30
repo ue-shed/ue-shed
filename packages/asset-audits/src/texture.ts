@@ -11,7 +11,7 @@ import {
 	type SavedAssetTextureRecord,
 	type SavedProperty
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { Context, Effect, Layer, Ref, Schema, Stream } from "effect";
 import { maximumDimensionKey } from "./report.js";
 import {
 	AuditRuleId,
@@ -29,6 +29,12 @@ import {
 
 const makeTextureObjectPath = TextureObjectPath.make;
 const makeAuditRuleId = AuditRuleId.make;
+
+interface ExtractionProgress {
+	readonly phase: "idle" | "scanning" | "ready" | "failed";
+	readonly processedAssets: number;
+	readonly totalAssets: number;
+}
 
 export class TextureAuditScanError extends Schema.TaggedErrorClass<TextureAuditScanError>()(
 	"TextureAuditScanError",
@@ -456,72 +462,115 @@ function extractTextureAuditWith(
 		readonly code: string;
 		readonly filePath?: string;
 		readonly message: string;
-	}[] = []
+	}[] = [],
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void> = () => Effect.void
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	if (options.paths?.length === 0) {
 		const accumulator = emptyTextureExtractionAccumulator();
 		accumulator.failedPackages = inheritedFailures.length;
 		accumulator.diagnostics.push(...inheritedFailures);
-		return Effect.succeed(
-			textureAuditFromExtraction({
-				accumulator,
-				discoveredPackages: options.discoveredPackages,
-				rules: options.rules
-			})
-		);
-	}
-	return reader
-		.extractProjectTextures({
-			concurrency: Math.max(1, options.concurrency ?? 8),
-			...(options.maximumAssets === undefined
-				? {}
-				: { maximumAssets: options.maximumAssets }),
-			...(options.paths === undefined ? {} : { paths: options.paths }),
-			projectRoot: options.projectRoot
-		})
-		.pipe(
-			Stream.runFold(
-				() => {
-					const accumulator = emptyTextureExtractionAccumulator();
-					accumulator.failedPackages = inheritedFailures.length;
-					accumulator.diagnostics.push(...inheritedFailures);
-					return accumulator;
-				},
-				(current, event) => foldTextureExtractionEvent(options.projectRoot, current, event)
-			),
-			Effect.map((accumulator) =>
+		return reportProgress({ phase: "ready", processedAssets: 0, totalAssets: 0 }).pipe(
+			Effect.as(
 				textureAuditFromExtraction({
 					accumulator,
 					discoveredPackages: options.discoveredPackages,
 					rules: options.rules
 				})
-			),
-			Effect.mapError(textureScanFailure)
+			)
 		);
+	}
+	const totalAssets = options.paths?.length ?? 0;
+	let processedAssets = 0;
+	return reportProgress({ phase: "scanning", processedAssets: 0, totalAssets }).pipe(
+		Effect.andThen(
+			reader
+				.extractProjectTextures({
+					concurrency: Math.max(1, options.concurrency ?? 8),
+					...(options.maximumAssets === undefined
+						? {}
+						: { maximumAssets: options.maximumAssets }),
+					...(options.paths === undefined ? {} : { paths: options.paths }),
+					projectRoot: options.projectRoot
+				})
+				.pipe(
+					Stream.tap((event) => {
+						if (event.event === "texture_summary") {
+							processedAssets =
+								event.emittedAssets + event.failedAssets + event.skippedAssets;
+							return reportProgress({
+								phase: "scanning",
+								processedAssets,
+								totalAssets: totalAssets > 0 ? totalAssets : event.scannedAssets
+							});
+						}
+						if (event.event !== "texture_package" && event.event !== "error")
+							return Effect.void;
+						processedAssets += 1;
+						return reportProgress({
+							phase: "scanning",
+							processedAssets,
+							totalAssets
+						});
+					}),
+					Stream.runFold(
+						() => {
+							const accumulator = emptyTextureExtractionAccumulator();
+							accumulator.failedPackages = inheritedFailures.length;
+							accumulator.diagnostics.push(...inheritedFailures);
+							return accumulator;
+						},
+						(current, event) =>
+							foldTextureExtractionEvent(options.projectRoot, current, event)
+					),
+					Effect.map((accumulator) =>
+						textureAuditFromExtraction({
+							accumulator,
+							discoveredPackages: options.discoveredPackages,
+							rules: options.rules
+						})
+					),
+					Effect.mapError(textureScanFailure),
+					Effect.onExit((exit) =>
+						reportProgress({
+							phase: exit._tag === "Success" ? "ready" : "failed",
+							processedAssets,
+							totalAssets
+						})
+					)
+				)
+		)
+	);
 }
 
 function scanTextureAuditWith(
 	reader: AssetReaderShape,
-	options: TextureAuditScanOptions
+	options: TextureAuditScanOptions,
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
 		const rules = yield* readRuleSet(options.ruleFile);
-		return yield* extractTextureAuditWith(reader, {
-			discoveredPackages: 0,
-			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
-			...(options.maximumAssets === undefined
-				? {}
-				: { maximumAssets: options.maximumAssets }),
-			projectRoot: options.projectRoot,
-			rules
-		});
+		return yield* extractTextureAuditWith(
+			reader,
+			{
+				discoveredPackages: 0,
+				...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+				...(options.maximumAssets === undefined
+					? {}
+					: { maximumAssets: options.maximumAssets }),
+				projectRoot: options.projectRoot,
+				rules
+			},
+			[],
+			reportProgress
+		);
 	}).pipe(Effect.withSpan("asset-audits.scan-textures"));
 }
 
 function scanTextureAuditFromProjectIndexWith(
 	reader: AssetReaderShape,
 	index: SavedAssetScan,
-	options: TextureAuditScanOptions
+	options: TextureAuditScanOptions,
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
 		const rules = yield* readRuleSet(options.ruleFile);
@@ -542,12 +591,14 @@ function scanTextureAuditFromProjectIndexWith(
 				code: "package_inspection_failed",
 				message: failure.message,
 				filePath: relative(options.projectRoot, failure.path)
-			}))
+			})),
+			reportProgress
 		);
 	}).pipe(Effect.withSpan("asset-audits.scan-textures-from-project-index"));
 }
 
 export interface TextureAuditShape {
+	readonly progress: () => Effect.Effect<ExtractionProgress>;
 	readonly scan: (
 		options: TextureAuditScanOptions
 	) => Effect.Effect<TextureAuditReport, TextureAuditScanError>;
@@ -565,6 +616,13 @@ export const TextureAuditLive = Layer.effect(
 	TextureAudit,
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
+		const progressState = yield* Ref.make<ExtractionProgress>({
+			phase: "idle",
+			processedAssets: 0,
+			totalAssets: 0
+		});
+		const reportProgress = (progress: ExtractionProgress) => Ref.set(progressState, progress);
+		const progress = Effect.fn("TextureAudit.progress")(() => Ref.get(progressState));
 		const scan = Effect.fn("TextureAudit.scan")(function* (options: TextureAuditScanOptions) {
 			const validated = yield* decodeScanOptions(options).pipe(
 				Effect.mapError(
@@ -578,7 +636,7 @@ export const TextureAuditLive = Layer.effect(
 						})
 				)
 			);
-			return yield* scanTextureAuditWith(reader, validated);
+			return yield* scanTextureAuditWith(reader, validated, reportProgress);
 		});
 		const scanFromProjectIndex = Effect.fn("TextureAudit.scanFromProjectIndex")(function* (
 			index: SavedAssetScan,
@@ -596,14 +654,19 @@ export const TextureAuditLive = Layer.effect(
 						})
 				)
 			);
-			return yield* scanTextureAuditFromProjectIndexWith(reader, index, validated);
+			return yield* scanTextureAuditFromProjectIndexWith(
+				reader,
+				index,
+				validated,
+				reportProgress
+			);
 		});
-		return TextureAudit.of({ scan, scanFromProjectIndex });
+		return TextureAudit.of({ progress, scan, scanFromProjectIndex });
 	})
 );
 
-export type TextureAuditTestShape = Omit<TextureAuditShape, "scanFromProjectIndex"> &
-	Partial<Pick<TextureAuditShape, "scanFromProjectIndex">>;
+export type TextureAuditTestShape = Omit<TextureAuditShape, "progress" | "scanFromProjectIndex"> &
+	Partial<Pick<TextureAuditShape, "progress" | "scanFromProjectIndex">>;
 
 export function makeTextureAuditTestLayer(
 	service: TextureAuditTestShape
@@ -612,6 +675,9 @@ export function makeTextureAuditTestLayer(
 		TextureAudit,
 		TextureAudit.of({
 			...service,
+			progress:
+				service.progress ??
+				(() => Effect.succeed({ phase: "idle", processedAssets: 0, totalAssets: 0 })),
 			scanFromProjectIndex:
 				service.scanFromProjectIndex ?? ((_index, options) => service.scan(options))
 		})

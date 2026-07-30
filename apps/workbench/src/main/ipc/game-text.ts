@@ -20,6 +20,7 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:choose-and-refresh"], () =>
 		gameText.chooseAndRefresh().pipe(Effect.orDie)
 	);
+	yield* ipc.register(invokeContracts["game-text:progress"], () => gameText.progress());
 	yield* ipc.register(invokeContracts["game-text:search"], (...args) => {
 		const [request] = args as [TextCorpusSearchRequest];
 		return gameText.search(request);

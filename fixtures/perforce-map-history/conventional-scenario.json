@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"scenario": "conventional-map-actor-history",
+	"mapPath": "Content/Fixture/History/L_ConventionalMapHistory.umap",
+	"sourceKind": "level",
+	"revisions": [
+		{
+			"id": "conventional-baseline",
+			"files": [
+				{ "action": "add", "path": "Content/Fixture/History/L_ConventionalMapHistory.umap" }
+			],
+			"expectedChanges": ["actor_added"]
+		},
+		{
+			"id": "conventional-move-actor",
+			"files": [
+				{
+					"action": "edit",
+					"path": "Content/Fixture/History/L_ConventionalMapHistory.umap"
+				}
+			],
+			"expectedChanges": ["actor_moved"]
+		}
+	]
+}

@@ -11,6 +11,7 @@ import type {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/extension-camera-review/client";
+import type { ContentObservatoryHistoryRequest } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraScheduleConfig,
 	CameraStatus,
@@ -95,6 +96,12 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("input-atlas:configured-scan"),
 		chooseProjectAndScan: (): Promise<unknown> =>
 			ipcRenderer.invoke("input-atlas:choose-and-scan")
+	},
+	contentObservatory: {
+		status: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:status"),
+		start: (request: ContentObservatoryHistoryRequest): Promise<unknown> =>
+			ipcRenderer.invoke("content-observatory:start", request),
+		cancel: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:cancel")
 	},
 	authoring: {
 		beginSession: (objectPath: string): Promise<unknown> =>

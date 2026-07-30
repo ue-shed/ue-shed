@@ -57,6 +57,10 @@ import {
 	SavedWorldChoice,
 	SavedWorldMap
 } from "@ue-shed/protocol";
+import {
+	ContentObservatoryHistoryRequest,
+	ContentObservatoryState
+} from "@ue-shed/extension-content-observatory/client";
 import { Schema, SchemaGetter } from "effect";
 import { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
@@ -455,6 +459,21 @@ export const invokeContracts = {
 		channel: "camera:configure",
 		args: Schema.Tuple([CameraScheduleConfig]),
 		result: CameraStatus
+	}),
+	"content-observatory:status": invoke({
+		channel: "content-observatory:status",
+		args: EmptyArgs,
+		result: ContentObservatoryState
+	}),
+	"content-observatory:start": invoke({
+		channel: "content-observatory:start",
+		args: Schema.Tuple([ContentObservatoryHistoryRequest]),
+		result: ContentObservatoryState
+	}),
+	"content-observatory:cancel": invoke({
+		channel: "content-observatory:cancel",
+		args: EmptyArgs,
+		result: ContentObservatoryState
 	}),
 	"map-review:load": invoke({
 		channel: "map-review:load",

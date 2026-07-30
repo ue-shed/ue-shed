@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect";
 const Reader = { reader: Schema.optionalKey(Schema.String) };
 const Project = { projectRoot: Schema.String };
 const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
+const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 
 export const CliCommand = Schema.TaggedUnion({
 	Help: {},
@@ -90,6 +91,17 @@ export const CliCommand = Schema.TaggedUnion({
 	TextScan: { ...Project, ...Reader },
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
 	InputInspect: { path: Schema.String, ...Reader },
+	MapHistory: {
+		concurrency: Schema.optionalKey(PositiveInt),
+		mapPath: Schema.String,
+		maxChangelists: Schema.optionalKey(PositiveInt),
+		maxDurationMs: Schema.optionalKey(PositiveInt),
+		maxMaterializedFiles: Schema.optionalKey(PositiveInt),
+		maxPackages: Schema.optionalKey(PositiveInt),
+		projectRoot: Schema.String,
+		since: Schema.String,
+		until: Schema.optionalKey(Schema.String)
+	},
 	ReviewSetValidate: { reviewSetPath: Schema.String },
 	ReviewFramingCandidates: { endpoint: Schema.String },
 	ReviewFramingApprove: {
@@ -161,7 +173,10 @@ Usage:
                              [--maximum-assets <count>] [--full] [--reader <path>]
   ue-shed text scan <project-root> [--reader <path>]
   ue-shed text search <project-root> <query> [--reader <path>]
-  ue-shed input inspect <path> [--reader <path>]
+  ue-shed input inspect <asset-or-project> [--reader <path>]
+  ue-shed map history <project-root> <map-path> --since <ISO-UTC-or-duration> [--until <ISO-UTC>]
+    [--max-changelists <n>] [--max-packages <n>] [--max-materialized-files <n>]
+    [--concurrency <n>] [--max-duration-ms <n>]
   ue-shed review sets validate <review-set>
 	ue-shed review framing candidates <endpoint>
 	ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
@@ -297,6 +312,70 @@ function parseRowIds(value: string): Effect.Effect<readonly string[], CliUsageEr
 				: new CliUsageError({ message: `Invalid row IDs: ${String(cause)}` })
 		)
 	);
+}
+
+function parsePositiveInteger(
+	value: string | undefined,
+	option: string
+): Effect.Effect<number | undefined, CliUsageError> {
+	if (value === undefined) return Effect.succeed(undefined);
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed > 0
+		? Effect.succeed(parsed)
+		: usage(`${option} requires a positive integer`);
+}
+
+function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
+	return Effect.gen(function* () {
+		const parsed = yield* parseOptions(args, [
+			"--since",
+			"--until",
+			"--max-changelists",
+			"--max-packages",
+			"--max-materialized-files",
+			"--concurrency",
+			"--max-duration-ms"
+		]);
+		const [projectRoot, mapPath] = yield* exact(
+			parsed.positionals,
+			2,
+			"map history requires exactly one project root and one map path"
+		);
+		const since = parsed.values["--since"];
+		if (since === undefined)
+			return yield* usage("map history requires --since <ISO-UTC-or-duration>");
+		const concurrency = yield* parsePositiveInteger(
+			parsed.values["--concurrency"],
+			"--concurrency"
+		);
+		const maxChangelists = yield* parsePositiveInteger(
+			parsed.values["--max-changelists"],
+			"--max-changelists"
+		);
+		const maxDurationMs = yield* parsePositiveInteger(
+			parsed.values["--max-duration-ms"],
+			"--max-duration-ms"
+		);
+		const maxMaterializedFiles = yield* parsePositiveInteger(
+			parsed.values["--max-materialized-files"],
+			"--max-materialized-files"
+		);
+		const maxPackages = yield* parsePositiveInteger(
+			parsed.values["--max-packages"],
+			"--max-packages"
+		);
+		return CliCommand.cases.MapHistory.make({
+			...(concurrency === undefined ? {} : { concurrency }),
+			mapPath: present(mapPath),
+			...(maxChangelists === undefined ? {} : { maxChangelists }),
+			...(maxDurationMs === undefined ? {} : { maxDurationMs }),
+			...(maxMaterializedFiles === undefined ? {} : { maxMaterializedFiles }),
+			...(maxPackages === undefined ? {} : { maxPackages }),
+			projectRoot: present(projectRoot),
+			since,
+			...(parsed.values["--until"] === undefined ? {} : { until: parsed.values["--until"] })
+		});
+	});
 }
 
 function parseSessions(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
@@ -713,6 +792,11 @@ export function parseCliCommand(args: readonly string[]): Effect.Effect<CliComma
 				path,
 				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
 			});
+		}
+		if (command === "map") {
+			const [area, ...values] = rest;
+			if (area !== "history") return yield* usage(`Unknown map command\n\n${help}`);
+			return yield* parseMapHistory(values);
 		}
 		if (command === "review") {
 			const [area, action, ...values] = rest;

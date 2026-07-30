@@ -78,3 +78,19 @@ export function reportUnrealTestGates(environment, arguments_ = []) {
 	}
 	process.stdout.write("\n");
 }
+
+export function reportPerforceMapHistoryTestGate(environment, arguments_ = []) {
+	if (arguments_.includes("component")) return;
+	const file = "packages/map-history/src/perforce-map-history.integration.test.ts";
+	const explicitTests = arguments_.filter((argument) =>
+		/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(argument)
+	);
+	if (explicitTests.length > 0 && !explicitTests.some((test) => file.endsWith(test))) return;
+	const configured = environment.UE_SHED_PERFORCE_MAP_HISTORY_CONFIG !== undefined;
+	process.stdout.write("\nPerforce integration test gates:\n");
+	process.stdout.write(
+		`  ${configured ? "RUN " : "SKIP"} real disposable Map History conformance (${file})${
+			configured ? "" : " — run pnpm test:perforce-map-history"
+		}\n\n`
+	);
+}

@@ -4479,4 +4479,276 @@ mod command_tests {
         let error = Command::parse(vec!["inspect".into(), "one".into(), "two".into()]).unwrap_err();
         assert_eq!(error, "inspect accepts exactly one input");
     }
+
+    #[derive(Deserialize)]
+    struct MapHistoryFixtureScenario {
+        #[serde(rename = "mapPath")]
+        map_path: PathBuf,
+        revisions: Vec<MapHistoryFixtureRevision>,
+        scenario: String,
+        #[serde(rename = "schemaVersion")]
+        schema_version: u32,
+        #[serde(rename = "sourceKind")]
+        source_kind: String,
+    }
+
+    #[derive(Deserialize)]
+    struct MapHistoryFixtureRevision {
+        #[serde(rename = "expectedChanges")]
+        expected_changes: Vec<String>,
+        files: Vec<MapHistoryFixtureFile>,
+        id: String,
+    }
+
+    #[derive(Deserialize)]
+    struct MapHistoryFixtureFile {
+        action: String,
+        path: PathBuf,
+    }
+
+    fn map_history_fixture_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/perforce-map-history")
+    }
+
+    fn map_history_fixture_project_root() -> PathBuf {
+        let suffix = format!(
+            "ue-shed-map-history-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time after Unix epoch")
+                .as_nanos()
+        );
+        std::env::temp_dir().join(suffix)
+    }
+
+    fn apply_map_history_revision(
+        fixture_root: &Path,
+        project_root: &Path,
+        revision: &MapHistoryFixtureRevision,
+    ) {
+        for file in &revision.files {
+            assert!(
+                !file.path.is_absolute()
+                    && !file
+                        .path
+                        .components()
+                        .any(|component| { matches!(component, std::path::Component::ParentDir) }),
+                "fixture path must be project-relative: {}",
+                file.path.display()
+            );
+            let destination = project_root.join(&file.path);
+            match file.action.as_str() {
+                "add" | "edit" => {
+                    let source = fixture_root
+                        .join("revisions")
+                        .join(&revision.id)
+                        .join(&file.path);
+                    assert!(source.is_file(), "missing {}", source.display());
+                    fs::create_dir_all(
+                        destination
+                            .parent()
+                            .expect("fixture package must have a parent directory"),
+                    )
+                    .expect("create materialized package directory");
+                    fs::copy(&source, &destination).expect("materialize Unreal-generated package");
+                }
+                "delete" => {
+                    assert!(
+                        !fixture_root
+                            .join("revisions")
+                            .join(&revision.id)
+                            .join(&file.path)
+                            .exists(),
+                        "a deleted package must not have source bytes in its revision bundle"
+                    );
+                    fs::remove_file(&destination).expect("remove previously materialized package");
+                }
+                action => panic!("unsupported fixture action {action}"),
+            }
+        }
+    }
+
+    fn read_map_history_fixture_world(
+        project_root: &Path,
+        map_path: &Path,
+    ) -> Vec<SavedWorldActorPosition> {
+        let roots = resolve_saved_world_roots(project_root, map_path).expect("resolve fixture map");
+        let mut packages = match roots.source {
+            SavedWorldSource::Level => vec![roots.map_path],
+            SavedWorldSource::WorldPartition {
+                external_actor_root,
+            } => {
+                let mut packages = Vec::new();
+                discover_uassets(&external_actor_root, &mut packages)
+                    .expect("discover external actor packages");
+                packages
+            }
+        };
+        packages.sort();
+        let fragments = packages
+            .iter()
+            .map(|path| {
+                let result = read_saved_world_package(path);
+                assert!(
+                    !result.partial && result.failure_code.is_none(),
+                    "fixture package should have complete parser coverage: {}",
+                    path.display()
+                );
+                result.fragment.expect("fixture actor package projection")
+            })
+            .collect::<Vec<_>>();
+        resolve_saved_world_positions(&fragments)
+    }
+
+    fn fixture_actor<'a>(
+        actors: &'a [SavedWorldActorPosition],
+        label: &str,
+    ) -> &'a SavedWorldActorPosition {
+        actors
+            .iter()
+            .find(|actor| actor.label.as_deref() == Some(label))
+            .unwrap_or_else(|| panic!("expected fixture actor {label}"))
+    }
+
+    fn assert_fixture_location(
+        actors: &[SavedWorldActorPosition],
+        label: &str,
+        expected: (f64, f64, f64),
+    ) {
+        let SavedWorldPosition::Resolved { location } = fixture_actor(actors, label).position
+        else {
+            panic!("expected {label} to have a resolved saved position");
+        };
+        assert_eq!((location.x, location.y, location.z), expected);
+    }
+
+    #[test]
+    fn reconstructs_the_real_map_history_fixture_from_incremental_unreal_packages() {
+        let fixture_root = map_history_fixture_root();
+        let scenario: MapHistoryFixtureScenario = serde_json::from_slice(
+            &fs::read(fixture_root.join("scenario.json")).expect("read map history scenario"),
+        )
+        .expect("decode map history scenario");
+        assert_eq!(scenario.schema_version, 1);
+        assert_eq!(scenario.scenario, "world-partition-actor-history");
+        assert_eq!(scenario.source_kind, "world_partition");
+        assert_eq!(
+            scenario
+                .revisions
+                .iter()
+                .map(|revision| revision.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "baseline",
+                "move-east",
+                "label-north",
+                "add-arrival",
+                "delete-south",
+                "two-unclassified-package-edits",
+            ]
+        );
+
+        let project_root = map_history_fixture_project_root();
+        fs::create_dir_all(&project_root).expect("create materialized fixture project");
+        for revision in &scenario.revisions {
+            apply_map_history_revision(&fixture_root, &project_root, revision);
+            let actors = read_map_history_fixture_world(&project_root, &scenario.map_path);
+            match revision.id.as_str() {
+                "baseline" => {
+                    assert_eq!(revision.expected_changes, ["actor_added"]);
+                    assert_eq!(actors.len(), 6);
+                    assert_fixture_location(&actors, "East Marker", (900.0, -320.0, 200.0));
+                    assert_fixture_location(&actors, "Hub Attachment", (1840.0, 590.0, 1080.0));
+                }
+                "move-east" => {
+                    assert_eq!(revision.expected_changes, ["actor_moved"]);
+                    assert_fixture_location(&actors, "East Marker", (1450.0, -320.0, 260.0));
+                }
+                "label-north" => {
+                    assert_eq!(revision.expected_changes, ["actor_label_changed"]);
+                    assert!(fixture_actor(&actors, "North Beacon").actor_guid.is_some());
+                    assert_fixture_location(&actors, "East Marker", (1450.0, -320.0, 260.0));
+                }
+                "add-arrival" => {
+                    assert_eq!(revision.expected_changes, ["actor_added"]);
+                    assert_eq!(actors.len(), 7);
+                    assert_fixture_location(&actors, "Arrival Marker", (480.0, 760.0, 140.0));
+                }
+                "delete-south" => {
+                    assert_eq!(revision.expected_changes, ["actor_removed"]);
+                    assert_eq!(actors.len(), 6);
+                    assert!(
+                        actors
+                            .iter()
+                            .all(|actor| actor.label.as_deref() != Some("South Marker"))
+                    );
+                }
+                "two-unclassified-package-edits" => {
+                    assert_eq!(revision.expected_changes, ["unclassified_package_change"]);
+                    assert_eq!(actors.len(), 6);
+                    assert_fixture_location(&actors, "East Marker", (1450.0, -320.0, 260.0));
+                    assert_fixture_location(&actors, "West Marker", (-2050.0, 660.0, 260.0));
+                }
+                id => panic!("unexpected map history fixture revision {id}"),
+            }
+        }
+        fs::remove_dir_all(&project_root).expect("clean materialized fixture project");
+    }
+
+    #[test]
+    fn reconstructs_the_real_conventional_map_history_fixture() {
+        let fixture_root = map_history_fixture_root();
+        let scenario: MapHistoryFixtureScenario = serde_json::from_slice(
+            &fs::read(fixture_root.join("conventional-scenario.json"))
+                .expect("read conventional map history scenario"),
+        )
+        .expect("decode conventional map history scenario");
+        assert_eq!(scenario.schema_version, 1);
+        assert_eq!(scenario.scenario, "conventional-map-actor-history");
+        assert_eq!(scenario.source_kind, "level");
+        assert_eq!(
+            scenario
+                .revisions
+                .iter()
+                .map(|revision| revision.id.as_str())
+                .collect::<Vec<_>>(),
+            ["conventional-baseline", "conventional-move-actor"]
+        );
+
+        let project_root = map_history_fixture_project_root();
+        fs::create_dir_all(&project_root).expect("create materialized fixture project");
+        for revision in &scenario.revisions {
+            apply_map_history_revision(&fixture_root, &project_root, revision);
+            let actors = read_map_history_fixture_world(&project_root, &scenario.map_path);
+            // A conventional UE level also serializes its default Brush actor. The fixture contract
+            // is about the authored marker's stable identity and saved position, not a fabricated
+            // claim that the map contains no engine-owned actors.
+            assert_eq!(
+                actors
+                    .iter()
+                    .filter(|actor| actor.label.as_deref() == Some("Conventional Marker"))
+                    .count(),
+                1
+            );
+            match revision.id.as_str() {
+                "conventional-baseline" => {
+                    assert_eq!(
+                        revision.expected_changes,
+                        ["actor_added"].map(str::to_owned)
+                    );
+                    assert_fixture_location(&actors, "Conventional Marker", (-320.0, 640.0, 180.0));
+                }
+                "conventional-move-actor" => {
+                    assert_eq!(
+                        revision.expected_changes,
+                        ["actor_moved"].map(str::to_owned)
+                    );
+                    assert_fixture_location(&actors, "Conventional Marker", (960.0, 220.0, 340.0));
+                }
+                id => panic!("unexpected conventional map history revision {id}"),
+            }
+        }
+        fs::remove_dir_all(&project_root).expect("clean materialized fixture project");
+    }
 }

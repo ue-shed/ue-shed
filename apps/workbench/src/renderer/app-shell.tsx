@@ -8,6 +8,7 @@ import { GameTextRoute } from "@ue-shed/extension-game-text";
 import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapReviewRoute } from "@ue-shed/extension-camera-review";
+import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
 import { Schedule, Stream } from "effect";
 import type { ShowcaseContext } from "../main/preload.js";
@@ -16,6 +17,7 @@ import { authoringClient } from "./authoring-client.js";
 import { gameTextClient } from "./game-text-client.js";
 import { inputAtlasClient } from "./input-atlas-client.js";
 import { mapReviewClient } from "./map-review-client.js";
+import { contentObservatoryClient } from "./content-observatory-client.js";
 import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
@@ -28,6 +30,7 @@ const routes = [
 	{ href: "#/input-atlas", label: "Input Atlas", route: "#/input-atlas" },
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
+	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
 	{ href: "#/camera-lab", label: "Camera Lab", route: "#/camera-lab" }
 ] as const;
 
@@ -129,6 +132,9 @@ export function AppShell() {
 					</Match>
 					<Match when={route() === "#/map-review"}>
 						<MapReviewRoute client={mapReviewClient} />
+					</Match>
+					<Match when={route() === "#/content-observatory"}>
+						<ContentObservatoryRoute client={contentObservatoryClient} />
 					</Match>
 					<Match when={route() === "#/camera-lab"}>
 						<CameraLab />

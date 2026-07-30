@@ -16,7 +16,7 @@ import {
 	scanSavedProject,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect";
 import { type CliCommand, help } from "./command.js";
 
 // Command-specific feature packages are imported lazily inside their command handlers so
@@ -100,6 +100,14 @@ function summarizeScan(scan: SavedAssetScan) {
 function printJson(value: unknown): Effect.Effect<void, never, CliRuntime> {
 	return Effect.flatMap(CliRuntime, (runtime) => runtime.print(json(value)));
 }
+
+const DEFAULT_MAP_HISTORY_LIMITS = {
+	maxChangelists: 1_000,
+	maxConcurrency: 4,
+	maxDurationMs: 5 * 60_000,
+	maxMaterializedFiles: 10_000,
+	maxPackages: 10_000
+} as const;
 
 function loadCatalog(args: { readonly projectRoot?: string; readonly reader?: string }) {
 	return Effect.gen(function* () {
@@ -685,6 +693,93 @@ export function executeCommand(
 					)
 				);
 				return yield* printJson(report);
+			}
+			case "MapHistory": {
+				const {
+					mapHistoryLiveLayer,
+					PerforceMapHistory,
+					PerforceMapHistoryQuery,
+					readPerforceMapHistory,
+					UtcTimestamp
+				} = yield* Effect.promise(() => import("@ue-shed/map-history"));
+				const decodeUtcTimestamp = Schema.decodeUnknownOption(UtcTimestamp);
+				const until =
+					command.until === undefined
+						? yield* DateTime.now
+						: Option.getOrElse(decodeUtcTimestamp(command.until), () => undefined);
+				if (until === undefined) {
+					return yield* Effect.fail(
+						new CliCommandError({
+							message: "--until must be an ISO-8601 UTC timestamp."
+						})
+					);
+				}
+				const asTimestamp = decodeUtcTimestamp(command.since);
+				const duration = Duration.fromInput(command.since as Duration.Input);
+				const since = Option.isSome(asTimestamp)
+					? asTimestamp.value
+					: Option.isSome(duration) &&
+						  Duration.isFinite(duration.value) &&
+						  Duration.toMillis(duration.value) > 0
+						? DateTime.subtractDuration(until, duration.value)
+						: undefined;
+				if (since === undefined) {
+					return yield* Effect.fail(
+						new CliCommandError({
+							message:
+								"--since must be an ISO-8601 UTC timestamp or a positive Effect duration such as '7 days'."
+						})
+					);
+				}
+				const query = yield* Schema.decodeUnknownEffect(PerforceMapHistoryQuery)({
+					limits: {
+						maxChangelists:
+							command.maxChangelists ?? DEFAULT_MAP_HISTORY_LIMITS.maxChangelists,
+						maxConcurrency:
+							command.concurrency ?? DEFAULT_MAP_HISTORY_LIMITS.maxConcurrency,
+						maxDurationMs:
+							command.maxDurationMs ?? DEFAULT_MAP_HISTORY_LIMITS.maxDurationMs,
+						maxMaterializedFiles:
+							command.maxMaterializedFiles ??
+							DEFAULT_MAP_HISTORY_LIMITS.maxMaterializedFiles,
+						maxPackages: command.maxPackages ?? DEFAULT_MAP_HISTORY_LIMITS.maxPackages
+					},
+					mapPath: command.mapPath,
+					projectRoot: command.projectRoot,
+					range: {
+						since: DateTime.formatIso(since),
+						until: DateTime.formatIso(until)
+					}
+				}).pipe(
+					Effect.mapError(
+						() =>
+							new CliCommandError({
+								message:
+									"Map History requires a range ending at or after its start."
+							})
+					)
+				);
+				const history = yield* readPerforceMapHistory(query).pipe(
+					Effect.provide(mapHistoryLiveLayer)
+				);
+				const encoded = yield* Schema.encodeUnknownEffect(PerforceMapHistory)(history).pipe(
+					Effect.mapError(
+						() =>
+							new CliCommandError({
+								message: "Map History produced an invalid output document."
+							})
+					)
+				);
+				yield* printJson(encoded);
+				if (
+					history.completeness === "partial" ||
+					history.revisions.some(
+						(revision) => revision.unclassifiedPackageChanges.length > 0
+					)
+				) {
+					yield* runtime.setExitCode(3);
+				}
+				return;
 			}
 			case "ReviewSetValidate": {
 				const { ReviewRepository, ReviewRepositoryLive } = yield* Effect.promise(

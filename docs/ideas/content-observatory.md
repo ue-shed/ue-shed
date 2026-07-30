@@ -2,6 +2,10 @@
 
 > Status: product vision; combines project cartography, content growth, history, and hygiene
 
+The first focused product contract derived from this vision is
+[Perforce-backed Map History](../products/map-history.md). It covers one saved map's bounded actor
+history without claiming the wider Observatory destination is implemented.
+
 ## Ambition
 
 Make an Unreal project's content legible as a changing body of work rather than a folder tree full

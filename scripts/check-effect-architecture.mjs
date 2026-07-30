@@ -51,6 +51,7 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/main/preload.ts",
 	"apps/workbench/src/renderer/asset-audits-client.ts",
 	"apps/workbench/src/renderer/authoring-client.ts",
+	"apps/workbench/src/renderer/content-observatory-client.ts",
 	"apps/workbench/src/renderer/game-text-client.ts",
 	"apps/workbench/src/renderer/global.d.ts",
 	"apps/workbench/src/renderer/input-atlas-client.ts",
@@ -84,6 +85,8 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/src/main/preload.ts",
 	"apps/workbench/src/renderer/app-shell.tsx",
 	"apps/workbench/src/renderer/index.tsx",
+	// World Log owns one bounded status-poll timer through Solid cleanup while a query is running.
+	"extensions/content-observatory/src/content-observatory-route.tsx",
 	// The static-site Observatory mock owns its display-only timers through Solid cleanup.
 	"apps/site/src/showcase/ObservatoryMock.tsx",
 	// The copied adoption host owns its browser runtime lifecycle at the foreign framework boundary.
@@ -119,6 +122,13 @@ const externalServiceEvidence = new Map([
 		]
 	],
 	[
+		"extensions/content-observatory/src/content-observatory-client.ts",
+		[
+			"apps/workbench/src/renderer/index.tsx",
+			"extensions/content-observatory/src/content-observatory-route.component.test.tsx"
+		]
+	],
+	[
 		"extensions/game-text/src/game-text-client.ts",
 		[
 			"apps/workbench/src/renderer/index.tsx",
@@ -140,6 +150,7 @@ const workbenchRendererPrefix = "apps/workbench/src/renderer/";
 const rendererTransportFiles = new Set([
 	"apps/workbench/src/renderer/asset-audits-client.ts",
 	"apps/workbench/src/renderer/authoring-client.ts",
+	"apps/workbench/src/renderer/content-observatory-client.ts",
 	"apps/workbench/src/renderer/game-text-client.ts",
 	"apps/workbench/src/renderer/global.d.ts",
 	"apps/workbench/src/renderer/input-atlas-client.ts",

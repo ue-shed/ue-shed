@@ -13,6 +13,7 @@ import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import { EditorPlaySessionLive } from "@ue-shed/engine-discovery";
 import { AuthoringClientLive } from "@ue-shed/host";
+import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
 import { ObservatoryLive } from "@ue-shed/observatory";
 import { AssetReaderLive } from "@ue-shed/unreal-assets";
@@ -30,6 +31,7 @@ import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
 import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
+import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
@@ -116,6 +118,9 @@ function featureLayer(hosts: WorkbenchHosts) {
 	const authoring = WorkbenchAuthoringLive.pipe(Layer.provide(WorkbenchAuthoringSessionsLive));
 	const authoringClient = AuthoringClientLive.pipe(Layer.provide(authoring));
 	const mapReview = WorkbenchMapReviewLive.pipe(Layer.provide(ObservatoryLive));
+	const contentObservatory = WorkbenchContentObservatoryLive.pipe(
+		Layer.provide(mapHistoryLiveLayer)
+	);
 	return Layer.mergeAll(
 		ShowcaseLive,
 		WorkbenchAssetAuditsLive,
@@ -124,6 +129,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		authoring,
 		authoringClient,
 		mapReview,
+		contentObservatory,
 		CameraPresentationLive
 	).pipe(Layer.provideMerge(reviewAndFixtureLayer(hosts)));
 }

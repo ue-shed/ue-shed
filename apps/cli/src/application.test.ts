@@ -103,3 +103,26 @@ it.effect("executes the public plugin list command through the CLI runtime", () 
 		}
 	})
 );
+
+it.effect("rejects invalid Map History time input before contacting Perforce", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const layer = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (value) => Ref.update(output, (current) => current + value),
+				setExitCode: () => Effect.void
+			})
+		);
+		const error = yield* executeCommand(
+			CliCommand.cases.MapHistory.make({
+				mapPath: "Content/Maps/L_Example.umap",
+				projectRoot: "project",
+				since: "not-a-timestamp-or-duration"
+			})
+		).pipe(Effect.provide(layer), Effect.flip);
+
+		expect(error.message).toContain("--since");
+		expect(yield* Ref.get(output)).toBe("");
+	})
+);

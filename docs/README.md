@@ -38,6 +38,7 @@ there; do not invent a second status source in docs.
 | [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract |
 | [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates          |
 | [map-review.md](products/map-review.md)                   | Map Review product                 |
+| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history  |
 
 ## Decisions
 

@@ -13,6 +13,7 @@ import { invokeChannelNames } from "../ipc-contracts.js";
 import { makeWorkbenchAssetAuditsTestLayer } from "../services/asset-audits.js";
 import { makeWorkbenchAuthoringTestLayer } from "../services/authoring.js";
 import { makeCameraPresentationTestLayer } from "../services/camera-presentation.js";
+import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-observatory.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
@@ -126,6 +127,21 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record("gameText.configuredScan")
 				.pipe(Effect.as({ status: "not_configured" } as TextCorpusRunResult))
+	});
+
+	const contentObservatory = makeWorkbenchContentObservatoryTestLayer({
+		cancel: () =>
+			recorder
+				.record("contentObservatory.cancel")
+				.pipe(Effect.as({ status: "not_configured" as const })),
+		start: (request) =>
+			recorder
+				.record(`contentObservatory.start:${request.mapPath}`)
+				.pipe(Effect.as({ status: "not_configured" as const })),
+		status: () =>
+			recorder
+				.record("contentObservatory.status")
+				.pipe(Effect.as({ status: "not_configured" as const }))
 	});
 
 	const inputAtlas = makeWorkbenchInputAtlasTestLayer({
@@ -374,6 +390,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		showcase,
 		assetAudits,
 		gameText,
+		contentObservatory,
 		inputAtlas,
 		project,
 		authoring,
@@ -408,13 +425,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 64 contract channels", () =>
+it.effect("registers exactly the 67 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(64);
+		expect(result).toHaveLength(67);
 	})
 );
 
@@ -459,6 +476,36 @@ it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("game-text:configured-scan"));
 		expect(yield* recorder.calls()).toEqual(["gameText.configuredScan"]);
+	})
+);
+
+it.effect("dispatches Content Observatory query controls to its scoped service", () =>
+	Effect.gen(function* () {
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("content-observatory:status");
+				yield* ipc.invoke("content-observatory:start", {
+					limits: {
+						maxChangelists: 250,
+						maxConcurrency: 4,
+						maxDurationMs: 120000,
+						maxMaterializedFiles: 4000,
+						maxPackages: 4000
+					},
+					mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap",
+					range: {
+						since: "2026-07-20T00:00:00.000Z",
+						until: "2026-07-27T00:00:00.000Z"
+					}
+				});
+				yield* ipc.invoke("content-observatory:cancel");
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			"contentObservatory.status",
+			"contentObservatory.start:Content/Fixture/History/L_MapHistoryWorld.umap",
+			"contentObservatory.cancel"
+		]);
 	})
 );
 

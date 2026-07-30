@@ -35,6 +35,16 @@ export const SavedWorldMap = Schema.Struct({
 });
 export type SavedWorldMap = Schema.Schema.Type<typeof SavedWorldMap>;
 
+export const SavedWorldActor = Schema.Struct({
+	actorGuid: Schema.optionalKey(Schema.String),
+	actorPath: Schema.String,
+	classPath: Schema.String,
+	label: Schema.optionalKey(Schema.String),
+	packageName: Schema.String,
+	position: SavedWorldPosition
+});
+export type SavedWorldActor = Schema.Schema.Type<typeof SavedWorldActor>;
+
 /** The outcome of choosing an in-app project and reading its discovered saved maps. */
 export const SavedWorldChoice = Schema.Union([
 	Schema.Struct({
@@ -68,16 +78,7 @@ export const SavedWorld = Schema.Struct({
 	externalActorRoot: Schema.optionalKey(Schema.String),
 	mapPath: Schema.String,
 	sourceKind: Schema.Literals(["level", "world_partition"]),
-	actors: Schema.Array(
-		Schema.Struct({
-			actorGuid: Schema.optionalKey(Schema.String),
-			actorPath: Schema.String,
-			classPath: Schema.String,
-			label: Schema.optionalKey(Schema.String),
-			packageName: Schema.String,
-			position: SavedWorldPosition
-		})
-	),
+	actors: Schema.Array(SavedWorldActor),
 	summary: Schema.Struct({
 		failedPackages: NonNegativeInt,
 		partialPackages: NonNegativeInt,

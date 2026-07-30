@@ -21,6 +21,7 @@ import { planScopedRevision, type PlannedPackageChange } from "./revision-plan.j
 import {
 	type MapHistoryDiagnostic,
 	type MapHistoryProgress,
+	type MapHistoryRangeEndSnapshot,
 	type PerforceChangeNumber,
 	type PerforceDepotPath,
 	type PerforceMapHistory,
@@ -162,6 +163,18 @@ function readHistoricalWorld(options: {
 	})();
 }
 
+function rangeEndSnapshotOf(world: SavedWorld): MapHistoryRangeEndSnapshot {
+	return {
+		actors: world.actors,
+		completeness: world.completeness,
+		diagnostics: world.diagnostics,
+		mapPackage: world.authority.mapPackage,
+		mapPath: world.mapPath as MapHistoryRangeEndSnapshot["mapPath"],
+		sourceKind: world.sourceKind,
+		summary: world.summary
+	};
+}
+
 function readPerforceMapHistoryWorkflow(
 	query: PerforceMapHistoryQuery,
 	reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
@@ -287,6 +300,7 @@ function readPerforceMapHistoryWorkflow(
 				: { externalActorDepotRoot: scope.externalActorDepotRoot as PerforceDepotPath }),
 			mapDepotPath: scope.mapDepotPath as PerforceDepotPath,
 			query,
+			...(previous === undefined ? {} : { rangeEndSnapshot: rangeEndSnapshotOf(previous) }),
 			revisions,
 			schemaVersion: 1 as const
 		};

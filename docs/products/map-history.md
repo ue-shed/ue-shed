@@ -59,6 +59,11 @@ The first actor projection contains:
 - resolved saved root-component position or an explicit resolution failure; and
 - package/snapshot completeness diagnostics.
 
+The result also retains a renderer-safe saved-actor snapshot at the end of the bounded range. It
+contains actor facts, coordinate-resolution state, and coverage evidence, but never the owned
+temporary historical workspace path. Consumers can use it for a 2D actor map and outliner without
+reconstructing or scanning Perforce again.
+
 The first semantic change vocabulary is:
 
 - actor added or removed;

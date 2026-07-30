@@ -257,6 +257,9 @@ describe("readPerforceMapHistory", () => {
 						{ depotPath: mapDepotPath, reason: "projection_unchanged" }
 					]);
 					expect(result.revisions[1]?.unclassifiedPackageChanges).toEqual([]);
+					expect(result.rangeEndSnapshot?.actors).toEqual([]);
+					expect(result.rangeEndSnapshot?.mapPackage).toBe("/Game/Maps/L_Example");
+					expect(result.rangeEndSnapshot).not.toHaveProperty("externalActorRoot");
 					expect(history.finalProgress.phase).toBe("ready");
 					expect(observedHistoricalRoots.length).toBeGreaterThan(0);
 					for (const root of observedHistoricalRoots)
@@ -278,6 +281,7 @@ describe("readPerforceMapHistory", () => {
 			const result = yield* readPerforceMapHistory(query());
 			expect(result.baseline).toEqual({ status: "map_not_yet_created" });
 			expect(result.revisions).toEqual([]);
+			expect(result.rangeEndSnapshot).toBeUndefined();
 			expect(result.completeness).toBe("complete");
 			expect(observedHistoricalRoots).toEqual([]);
 		}).pipe(Effect.provide(layer));

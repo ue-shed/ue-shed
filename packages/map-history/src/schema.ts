@@ -179,11 +179,34 @@ export const PerforceMapRevision = Schema.Struct({
 });
 export type PerforceMapRevision = Schema.Schema.Type<typeof PerforceMapRevision>;
 
+/**
+ * Renderer-safe evidence for the saved world at the requested range end. This deliberately
+ * excludes the temporary reconstruction root: consumers can inspect saved actor facts without
+ * gaining a path into the owned historical workspace, which is removed after the operation.
+ */
+export const MapHistoryRangeEndSnapshot = Schema.Struct({
+	actors: Schema.Array(SavedWorldActor),
+	completeness: Schema.Literals(["complete", "partial"]),
+	diagnostics: Schema.Array(MapHistoryDiagnostic),
+	mapPackage: Schema.String,
+	mapPath: ProjectRelativeMapPath,
+	sourceKind: Schema.Literals(["level", "world_partition"]),
+	summary: Schema.Struct({
+		failedPackages: NonNegativeInt,
+		partialPackages: NonNegativeInt,
+		resolvedActors: NonNegativeInt,
+		scannedPackages: NonNegativeInt
+	})
+});
+export type MapHistoryRangeEndSnapshot = Schema.Schema.Type<typeof MapHistoryRangeEndSnapshot>;
+
 export const PerforceMapHistory = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	query: PerforceMapHistoryQuery,
 	mapDepotPath: PerforceDepotPath,
 	externalActorDepotRoot: Schema.optionalKey(PerforceDepotPath),
+	/** Absent only when the selected map did not exist by the requested range end. */
+	rangeEndSnapshot: Schema.optionalKey(MapHistoryRangeEndSnapshot),
 	baseline: Schema.Union([
 		Schema.Struct({ status: Schema.Literal("available"), change: PerforceChangeNumber }),
 		Schema.Struct({ status: Schema.Literal("map_not_yet_created") })

@@ -24,6 +24,10 @@ export interface ElectronDialogShape {
 	readonly chooseFile: (
 		options: ChooseFileOptions
 	) => Effect.Effect<DialogChoice, WorkbenchWindowError>;
+	/** Like chooseFile but allows several files; read `paths` on the selected choice. */
+	readonly chooseFiles: (
+		options: ChooseFileOptions
+	) => Effect.Effect<DialogChoice, WorkbenchWindowError>;
 }
 
 export class ElectronDialog extends Context.Service<ElectronDialog, ElectronDialogShape>()(
@@ -54,7 +58,18 @@ export const ElectronDialogLive = Layer.effect(
 			});
 		});
 
-		return ElectronDialog.of({ chooseDirectory, chooseFile });
+		const chooseFiles = Effect.fn("Workbench.ElectronDialog.chooseFiles")(function* (
+			options: ChooseFileOptions
+		) {
+			return yield* window.openDialog({
+				...(options.filters ? { filters: options.filters } : {}),
+				multiSelections: true,
+				properties: ["openFile"],
+				title: options.title
+			});
+		});
+
+		return ElectronDialog.of({ chooseDirectory, chooseFile, chooseFiles });
 	})
 );
 
@@ -69,6 +84,14 @@ export const makeElectronDialogTestLayer = Layer.effect(
 			chooseFile: Effect.fn("Workbench.ElectronDialog.Test.chooseFile")((options) =>
 				window.openDialog({
 					...(options.filters ? { filters: options.filters } : {}),
+					properties: ["openFile"],
+					title: options.title
+				})
+			),
+			chooseFiles: Effect.fn("Workbench.ElectronDialog.Test.chooseFiles")((options) =>
+				window.openDialog({
+					...(options.filters ? { filters: options.filters } : {}),
+					multiSelections: true,
 					properties: ["openFile"],
 					title: options.title
 				})

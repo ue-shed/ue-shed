@@ -84,6 +84,11 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		ResultJson = ErrorJson(TEXT("missing-cameras"));
 		return;
 	}
+	if (CamerasJson->Num() == 0 || CamerasJson->Num() > 32)
+	{
+		ResultJson = ErrorJson(TEXT("invalid-camera-count"));
+		return;
+	}
 	TArray<FUEShedProvisionedCameraSpec> Specs;
 	Specs.Reserve(CamerasJson->Num());
 	for (const TSharedPtr<FJsonValue>& Entry : *CamerasJson)
@@ -95,10 +100,34 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			return;
 		}
 		FUEShedProvisionedCameraSpec Spec;
-		if (!Object->TryGetStringField(TEXT("candidateId"), Spec.CandidateId)
-			|| Spec.CandidateId.IsEmpty())
+		const TSharedPtr<FJsonObject>* CorrelationObject = nullptr;
+		if (Object->TryGetObjectField(TEXT("correlation"), CorrelationObject))
 		{
-			ResultJson = ErrorJson(TEXT("invalid-candidate-id"));
+			if (!(*CorrelationObject)->TryGetStringField(TEXT("type"), Spec.CorrelationType)
+				|| (Spec.CorrelationType != TEXT("framing_candidate")
+					&& Spec.CorrelationType != TEXT("review_view")))
+			{
+				ResultJson = ErrorJson(TEXT("invalid-correlation-type"));
+				return;
+			}
+			const TCHAR* CorrelationIdField = Spec.CorrelationType == TEXT("framing_candidate")
+				? TEXT("candidateId") : TEXT("reviewViewId");
+			if (!(*CorrelationObject)->TryGetStringField(CorrelationIdField, Spec.CorrelationId)
+				|| Spec.CorrelationId.IsEmpty())
+			{
+				ResultJson = ErrorJson(TEXT("invalid-correlation-id"));
+				return;
+			}
+		}
+		else if (Object->TryGetStringField(TEXT("candidateId"), Spec.CorrelationId)
+			&& !Spec.CorrelationId.IsEmpty())
+		{
+			// Compatibility decoder for the candidate-only request emitted before Plan 032.
+			Spec.CorrelationType = TEXT("framing_candidate");
+		}
+		else
+		{
+			ResultJson = ErrorJson(TEXT("invalid-correlation"));
 			return;
 		}
 		const TSharedPtr<FJsonObject>* LocationObject = nullptr;
@@ -127,6 +156,12 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		Object->TryGetNumberField(TEXT("fieldOfViewDegrees"), Fov);
 		Object->TryGetNumberField(TEXT("width"), Width);
 		Object->TryGetNumberField(TEXT("height"), Height);
+		if (!FMath::IsFinite(Fov) || Fov < 5 || Fov > 170 || Width < 64 || Width > 2560
+			|| Height < 64 || Height > 1440)
+		{
+			ResultJson = ErrorJson(TEXT("invalid-camera-dimensions"));
+			return;
+		}
 		Spec.Location = FVector(X, Y, Z);
 		Spec.Rotation = FRotator(Pitch, Yaw, Roll);
 		Spec.FieldOfViewDegrees = static_cast<float>(Fov);

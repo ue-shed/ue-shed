@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted on 2026-07-15. Amended on 2026-07-23 after the formula-free MIT core release.
+Accepted on 2026-07-15. Amended on 2026-07-23 after the formula-free MIT core release and on
+2026-07-30 for the reviewed `0.11.1` performance upgrade.
 
 ## Context
 
@@ -15,10 +16,10 @@ The first reviewed release, `peculiar-sheets@0.9.1`, was GPL-3.0-only and depend
 HyperFormula. The repository owner approved that exact dependency for development and distribution,
 but its production graph remained incompatible with the intended MIT UE Shed boundary.
 
-Registry metadata checked on 2026-07-23 now reports:
+Registry metadata checked on 2026-07-30 now reports:
 
 - package: `peculiar-sheets`
-- pinned version: `0.11.0`
+- pinned version: `0.11.1`
 - source: `https://github.com/peculiarnewbie/spreadsheets`
 - license: `MIT`
 - production dependencies: `@tanstack/solid-virtual` and `better-result`
@@ -34,7 +35,7 @@ does not need.
 
 ## Decision
 
-- Pin the exact reviewed `peculiar-sheets@0.11.0` MIT core. Do not rely on a caret range while the
+- Pin the exact reviewed `peculiar-sheets@0.11.1` MIT core. Do not rely on a caret range while the
   library is on a pre-1.0 API.
 - Enforce the production boundary in `pnpm license:check`: UE Shed must not acquire HyperFormula,
   `peculiar-sheets-ironcalc`, or `@ironcalc/wasm` through a production dependency path.
@@ -65,13 +66,13 @@ to other Peculiar Sheets consumers without becoming an unused UE Shed dependency
 ## Approval record
 
 The repository owner stated that they own Peculiar Sheets and authorized the formula-free core under
-MIT. The published `0.11.0` registry metadata and installed manifest are checked by the release gate.
+MIT. The published `0.11.1` registry metadata and installed manifest are checked by the release gate.
 This decision does not alter the licenses of HyperFormula, IronCalc, Unreal Engine, or any other
 third-party dependency.
 
 ## Implementation evidence
 
-`peculiar-sheets@0.11.0` is pinned exactly in the Data Authoring extension. The browser adapter uses
+`peculiar-sheets@0.11.1` is pinned exactly in the Data Authoring extension. The browser adapter uses
 only `Sheet`, `rowId`, published types, and the published stylesheet. It does not instantiate a
 formula engine, use private selectors, or transfer authoring authority into the grid.
 

@@ -4,14 +4,19 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 import {
+	ReviewAssessmentCapabilities,
 	ReviewCaptureRequest,
 	ReviewCaptureResponse,
 	ReviewSelectionResponse,
 	ReviewSubjectInspectionResponse
 } from "../src/review-schema.js";
+import { ProvisionedCameraRequest } from "../src/provisioned-cameras-live.js";
 
 const fixturesDirectory = fileURLToPath(
 	new URL("../../protocol/contracts/cameras/review/v1/fixtures/", import.meta.url)
+);
+const provisioningFixturesDirectory = fileURLToPath(
+	new URL("../../protocol/contracts/cameras/provisioning/v1/fixtures/", import.meta.url)
 );
 
 type WireSchema = Schema.Top;
@@ -20,7 +25,16 @@ const validFixtures: ReadonlyArray<{
 	readonly file: string;
 	readonly schema: WireSchema;
 }> = [
+	{ file: "capture-request-area-valid.json", schema: ReviewCaptureRequest },
+	{ file: "capture-request-relative-valid.json", schema: ReviewCaptureRequest },
+	{ file: "capture-request-clear-valid.json", schema: ReviewCaptureRequest },
 	{ file: "capture-request-valid.json", schema: ReviewCaptureRequest },
+	{ file: "assessment-capabilities.json", schema: ReviewAssessmentCapabilities },
+	{ file: "capture-area.json", schema: ReviewCaptureResponse },
+	{ file: "capture-clear.json", schema: ReviewCaptureResponse },
+	{ file: "capture-clear-failed.json", schema: ReviewCaptureResponse },
+	{ file: "capture-assessed.json", schema: ReviewCaptureResponse },
+	{ file: "capture-assessed-v2.json", schema: ReviewCaptureResponse },
 	{ file: "capture-projected.json", schema: ReviewCaptureResponse },
 	{ file: "capture-unprojectable.json", schema: ReviewCaptureResponse },
 	{ file: "capture-legacy.json", schema: ReviewCaptureResponse },
@@ -33,6 +47,10 @@ const invalidFixtures: ReadonlyArray<{
 	readonly file: string;
 	readonly schema: WireSchema;
 }> = [
+	{
+		file: "invalid-assessment-capabilities-supported-without-effective-method.json",
+		schema: ReviewAssessmentCapabilities
+	},
 	{ file: "invalid-capture-request-bad-fov.json", schema: ReviewCaptureRequest },
 	{
 		file: "invalid-capture-response-projected-without-margins.json",
@@ -69,6 +87,15 @@ for (const { file, schema } of invalidFixtures) {
 	}
 }
 
+const provisioningFixture = JSON.parse(
+	readFileSync(join(provisioningFixturesDirectory, "provision-request-valid.json"), "utf8")
+) as unknown;
+try {
+	deepStrictEqual(roundTrip(ProvisionedCameraRequest, provisioningFixture), provisioningFixture);
+} catch (cause) {
+	throw new Error("provisioned camera request failed JSON/Effect compatibility", { cause });
+}
+
 const known = new Set([...validFixtures, ...invalidFixtures].map((entry) => entry.file));
 const present = readdirSync(fixturesDirectory);
 for (const file of present) {
@@ -81,5 +108,5 @@ for (const file of present) {
 }
 
 console.log(
-	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid`
+	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v2`
 );

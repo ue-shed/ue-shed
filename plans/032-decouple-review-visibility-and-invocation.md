@@ -16,7 +16,16 @@
 
 ## Status
 
-- **State**: TODO
+- **State**: IN PROGRESS — Steps 1–4 are implemented. Step 4 live-proves bounded raw depth evidence
+  for unoccluded, partial, fully occluded, and translucent/non-depth-writing actor views; missing,
+  behind-camera, and fully offscreen subjects produce no fabricated fraction. The optional producer
+  capability report is policy-free, and host telemetry records only bounded assessment cost/count
+  facts without actor, view, operation, map, artifact, or path labels. Step 5 now captures Pure plus
+  an optional Clear companion in one Unreal operation. It live-proves both supported strategies,
+  component-list restoration, and a missing-explicit-actor partial result that retains Pure. New
+  durable results also retain optional requested-policy and override snapshots. Do not advance the
+  plan yet: the current worktree's full `pnpm check` is blocked outside Plan 032 by an untracked
+  Enhanced Input browser entrypoint importing a missing `./atlas.js` module.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH — this changes portable Review Set data, public TypeScript APIs, TypeScript/C++
@@ -60,6 +69,21 @@ The durable model must separate:
 The provisioned camera and one-shot editor `ASceneCapture2D` remain disposable realizations. They do
 not become a second durable camera database.
 
+## Enablement boundary
+
+UE Shed's north star is what its libraries, protocols, CLI, and Unreal capabilities enable another
+application to build. The Workbench is a dogfood client and showcase, not the product boundary or
+the source of domain requirements.
+
+The durable contracts must carry enough identity and evidence for consumers to build timelines,
+comparisons, baselines, or no historical UI at all. New Views and View Results always carry revision
+identity because that makes evidence unambiguous. Consumers may ignore revision behavior, keep every
+View at revision 1, treat Views as immutable, or create a new View rather than revise one.
+
+An optional pure helper may create a revised View definition without owning persistence or workflow.
+The core does not prescribe history grouping, ordering, timeline storage, comparison presentation,
+undo, or baseline policy. Do not add a generic history module merely to support the Workbench.
+
 ## Product decisions fixed by this plan
 
 - The durable primary entity remains **Review View**. Do not introduce **Watch** as a Map Review
@@ -76,6 +100,12 @@ not become a second durable camera database.
   state whether it isolated the target or hid blockers.
 - Occlusion **assessment** and visibility **intervention** are separate. Detecting a blocker never
   grants permission to hide it.
+- The Unreal plugin reports raw visibility facts: status, effective method/version, bounded sample
+  count, visible fraction, limitations, and only evidence-backed attribution. Portable
+  classification is an optional pure package helper only when the consumer supplies explicit
+  thresholds. Capture orchestration and new Capture Runs preserve raw measurements and do not
+  prescribe a cutoff. Pre-v1.3 classified evidence remains readable as explicitly legacy
+  interpretation.
 - The primary UI uses project defaults and named presets. Exact assessment algorithms, thresholds,
   protected objects, explicit hidden objects, and automatic-intervention guardrails live under
   Advanced settings.
@@ -87,8 +117,8 @@ not become a second durable camera database.
   visibility intervention and restoration and returns structured stage outcomes. The host owns
   capture planning and evidence finalization, but it never holds authored actors in a modified
   state between independently recoverable requests.
-- Repeat capture never silently changes an Approved Pose. A revised pose starts a visible View
-  revision/history boundary.
+- Repeat capture never silently changes an Approved Pose. A revised definition receives a new View
+  revision identity, which consumers may use or ignore.
 - World-fixed and target-relative viewpoints are distinct durable meanings:
     - **Watch this place** uses a fixed world pose.
     - **Follow this actor** uses a pose relative to the resolved actor.
@@ -146,9 +176,9 @@ threshold behavior.
 ### Handle a permanent world change
 
 A new wall blocks the canonical View. The system does not silently reframe or hide it. The reviewer
-can preserve the historical View, add an alternate View, or explicitly revise the pose. History
-shows the revision boundary so images from different poses are not presented as one continuous
-comparison.
+can preserve the View, add an alternate View, or explicitly revise the pose. Each Capture Result
+retains the View and revision identity it used, allowing a consumer to avoid presenting captures
+from different definitions as one comparison.
 
 ### Review an area
 
@@ -228,7 +258,7 @@ VisibilityPolicy = {
 
 Only implemented strategies may decode as supported. Do not ship a UI option that the connected
 plugin cannot execute. `automatic` means capability-negotiated selection; the View Result always
-records the effective assessment algorithm and version so history is explainable.
+records the effective assessment algorithm and version so its evidence is explainable.
 
 Visibility Policies are immutable reusable presets. Changing assessment/output/intervention
 settings for one View creates a new preset identity and moves only that View's reference unless the
@@ -299,17 +329,21 @@ schedule, owner, and Review Set organization remain host-side.
 Visibility evidence is a discriminated result, never a nullable metric bag:
 
 ```ts
-VisibilityResult =
+VisibilityMeasurement =
 	| { status: "not_assessed"; reason: string }
 	| {
 			status: "assessed"
 			method: EffectiveVisibilityMethod
 			visibleFraction: number
-			classification: "clear" | "partial" | "blocked" | "not_visible"
 			occluders: ReadonlyArray<OccluderEvidence>
 	  }
 	| { status: "assessment_failed"; failure: TypedFailure }
 ```
+
+The editor wire and current durable Capture Run both use `VisibilityMeasurement`. An optional pure
+helper may convert an assessed measurement to a label only when its caller supplies thresholds.
+There is no UE Shed default cutoff. Migrated classified results retain the old label under explicit
+legacy provenance so it cannot be mistaken for current measurement truth.
 
 `visibleFraction` is finite and bounded from 0 through 1. The result records subject sample/mask
 coverage, effective algorithm/version, and bounded blocker evidence where attribution is supported.
@@ -373,7 +407,7 @@ Every Clear result records:
 | Launch authoring fixture  | `pnpm fixture:launch-authoring`                                                              | UE 5.7 fixture editor starts with Remote Control available             |
 | Real Map Review evidence  | `pnpm test:unreal-review`                                                                    | gate reports `RUN`; real paired/assessment/restoration assertions pass |
 | Full Unreal gate          | `pnpm check:unreal`                                                                          | all environment-dependent Unreal conformance passes                    |
-| Workbench E2E             | `pnpm test:e2e:workbench`                                                                    | authoring, capture, pair inspection, and history flows pass            |
+| Optional Workbench E2E    | `pnpm test:e2e:workbench`                                                                    | dogfood authoring, capture, and pair inspection pass                   |
 | Full repository gate      | `pnpm check`                                                                                 | exit 0 immediately before handoff                                      |
 
 Use `C:\Program Files\Epic Games\UE_5.7\Engine\Source` to verify Scene Capture visibility lists,
@@ -399,7 +433,7 @@ APIs. Do not guess at Unreal APIs or copy engine implementation.
 - Versioned Review Set migration from current actor/world-pose/`pure_only` data to explicit target,
   viewpoint anchoring, Visibility Policies, per-View overrides, and View revision identity.
 - Actor and map-scoped oriented-box area targets, with world-fixed area framing and capture.
-- World-fixed and target-relative actor viewpoints with explicit historical semantics.
+- World-fixed and target-relative actor viewpoints with explicit durable semantics.
 - Immutable reusable Visibility Policy presets with supported assessment/output/intervention
   unions, project defaults, validation, explicit reassignment/bulk application, and advanced
   per-View override data.
@@ -414,9 +448,10 @@ APIs. Do not guess at Unreal APIs or copy engine implementation.
 - A non-blocking `hide_detected_occluders` feasibility decision. The strategy ships only if
   assessment quality, attribution, bounded guardrails, and restoration pass Step 6; otherwise it
   remains an explicitly unsupported future capability.
-- Immutable paired evidence, partial failure, map-cleanliness proof, and history compatibility.
-- Headless/CLI parity and a maintained Workbench/extension UX with simple defaults and advanced
-  settings.
+- Immutable paired evidence, partial failure, map-cleanliness proof, and unambiguous View revision
+  provenance.
+- Headless library/CLI parity. Workbench may demonstrate the capabilities with simple defaults and
+  advanced settings, but its workflow and presentation do not define the public contracts.
 - Generic fixture additions and real UE 5.7 conformance for actor/area, partial/full occlusion,
   intervention, failure, and restoration.
 - Product and protocol documentation updated only after implementation evidence passes.
@@ -429,6 +464,10 @@ APIs. Do not guess at Unreal APIs or copy engine implementation.
   sequence/timelapse storage, or automatic live-frame promotion.
 - Continuous video, WebRTC, remote transport, or changing the bounded BGRA data plane.
 - Computer-vision/ML subject or occluder inference.
+- Generic history grouping, timeline ordering/storage, undo, baseline selection, or comparison
+  presentation. Consumers own these policies.
+- A public result-compatibility module when equality of View and revision identities expresses the
+  complete rule.
 - Arbitrary polygons, splines, geographic regions, dynamic “all actors in volume” queries, or
   component/actor-set target identity in the first area vertical.
 - Silent reframing, hiding without Pure, unlabeled modified evidence, or treating pixel difference
@@ -467,8 +506,8 @@ Refactor Review Set so:
 - existing `pure_only` Review Sets migrate to one generated/default Natural-only Visibility Policy,
   preserving Approved Pose, IDs, and capture behavior;
 - migration assigns an initial revision identity to each View for new captures, while old immutable
-  View Results with no stored revision decode as an explicit `legacy_unversioned` history state;
-  legacy results are never silently comparison-compatible with numbered revisions;
+  View Results with no stored revision decode as explicit `legacy_unversioned` provenance;
+- legacy results are never assigned or inferred to have a numbered revision;
 - encode after migration emits only the new version; and
 - invalid cross-references and impossible policy combinations fail with actionable typed errors.
 
@@ -481,7 +520,7 @@ JSON Schema first.
 **Verify**:
 
 - old Review Set fixture migrates without pose or ID drift;
-- old Capture Runs remain readable and appear under the distinct legacy revision boundary;
+- old Capture Runs remain readable and expose explicit `legacy_unversioned` revision provenance;
 - round-trip fixtures cover actor fixed, actor relative, area fixed, Natural-only, isolated Clear,
   explicit-hidden Clear, protected-object conflicts, and automatic guardrail rejection;
 - malformed policies, duplicate IDs, unsupported combinations, and future versions fail;
@@ -540,11 +579,13 @@ capture-request contract under `packages/protocol/contracts/cameras/review` with
 the editor capability to project supplied bounds without requiring an actor. Area visibility policy
 defaults to Natural-only and rejects automatic hiding in this plan.
 
-Add View revision metadata and a deliberate revise-pose operation. Changing target, anchoring,
-pose, projection, or visibility meaning creates a new revision boundary. Existing immutable runs
-continue referencing the revision captured. Pre-migration results without stored revision identity
-remain readable under `legacy_unversioned`; history and comparison never silently group them with a
-new numbered revision.
+Add View revision metadata and an optional pure helper for creating a revised View definition.
+Changing target, anchoring, pose, projection, or visibility meaning through that helper creates a
+new revision identity. The helper owns no persistence, timeline, or UI behavior. A consumer may
+ignore it, keep a View at revision 1, treat Views as immutable, or create a new View instead.
+Existing immutable runs continue referencing the revision captured. Pre-migration results without
+stored revision identity remain readable under `legacy_unversioned`; no numbered revision is
+inferred for them.
 
 **Verify**:
 
@@ -552,8 +593,11 @@ new numbered revision.
 - target-relative View derives a new world pose without mutating its durable relative pose;
 - area/follow-target is rejected by construction;
 - an area View survives restart and captures the same oriented bounds;
-- history queries group by View and revision, and comparison across incompatible revisions returns a
-  typed incompatibility instead of presenting one continuous history;
+- every new View Result records its View and revision identity, while legacy results remain
+  explicitly unversioned;
+- the optional revision helper changes identity only when durable View meaning changes and is not
+  required by capture consumers;
+- no generic grouping, ordering, timeline, or comparison-presentation module is introduced;
 - the oriented-bounds wire contract, TypeScript decoder, C++ request model, and fixtures remain
   conformant before real area capture is enabled;
 - real Unreal evidence matches expected transforms and leaves the map clean.
@@ -577,7 +621,8 @@ Assessment must:
 - operate from the exact effective capture pose/projection;
 - distinguish subject missing, clipped, behind camera, unloaded/incomplete, assessment failed, and
   rendered occlusion;
-- emit finite visible fraction and bounded classifications;
+- emit a finite visible fraction and bounded raw evidence; any optional package classification must
+  use validated thresholds supplied explicitly by its caller;
 - attribute likely occluders only when evidence supports it;
 - bound sample count, render target size, readback, object lists, and diagnostic payloads;
 - avoid metric labels containing actor IDs/names; and
@@ -588,15 +633,15 @@ structured spans/metrics. Do not log image bytes or unbounded object identity.
 
 **Verify**:
 
-- fixture cases cover clear, partial, full, missing, clipped, translucent/unsupported classification,
-  and area behavior;
+- fixture cases cover unoccluded, partially occluded, fully occluded, missing, clipped,
+  translucent/unsupported assessment, and area behavior;
 - quantitative results have tolerance-based real-Unreal assertions, not exact fragile pixels;
 - assessment cannot report a valid percentage for missing/unloaded subjects;
 - method/version and limitations appear in evidence;
 - benchmark records added render/readback cost at supported resolutions;
 - portable tests, fixture build, and real-Unreal integration pass.
 
-### Step 5: Implement paired Pure/Clear capture with Unreal-owned restoration
+### Step 5: Implement Pure capture with an optional Clear companion and Unreal-owned restoration
 
 Refactor one-View capture into one bounded host-visible Unreal operation with explicit reported
 stages:
@@ -627,9 +672,9 @@ Implement:
 - `natural_and_clear` with `hide_explicit`.
 
 Pure always completes first. Clear uses the exact same pose, projection, resolution, effective
-environment, and readiness snapshot or fails pairing validation. A Clear failure preserves valid
+environment, and readiness snapshot or fails variant-consistency validation. A Clear failure preserves valid
 Pure evidence and completes the run with a typed partial failure. A restoration failure is prominent
-even if both images were written, blocks baseline promotion of the pair, and retains diagnostics.
+even if both images were written, blocks baseline promotion of the capture variants, and retains diagnostics.
 
 Store artifacts as stable `pure` and `clear` variants with hashes and relationship identity. Record
 requested/effective visibility policy, resolved subject, interventions/reasons, assessment, and
@@ -639,7 +684,7 @@ restoration. Never infer Clear from a filename alone.
 
 - isolate target and explicit hide work against the fixture occluder;
 - Pure visibly retains the occluder while Clear removes only the requested content;
-- pose/projection mismatch invalidates the pair;
+- pose/projection mismatch invalidates the Clear companion;
 - missing explicit blocker fails Clear without discarding Pure;
 - injected failures before, during, and after Clear restore original actor/component visibility;
 - map dirty state is unchanged and no transient actor/render target leaks;
@@ -686,9 +731,11 @@ criteria.
   every accepted/rejected candidate;
 - the applicable real-Unreal and targeted recovery gates report `RUN` and pass.
 
-### Step 7: Build progressive-disclosure authoring and paired-review UX
+### Step 7: Dogfood the capabilities in the optional Workbench client
 
-Use the maintained extension as a client of public services. Preserve the simple path:
+Use the maintained extension only as a client of public services. It demonstrates one possible
+application without defining the public contracts, persistence model, or required consumer
+workflow. Preserve its simple path:
 
 1. choose actor or area;
 2. choose generated viewpoint;
@@ -716,7 +763,7 @@ Do not expose engine terms such as show-only arrays, Scene Capture flags, readba
 capture sources. Provide direct object-selection handoff to Unreal and an inspectable list with
 stable labels plus identity diagnostics.
 
-History/review UX treats Pure/Clear as one result:
+The dogfood review UX treats Pure/Clear as one result:
 
 - Natural is visually primary;
 - Clear carries a persistent **Modified visibility** label;
@@ -724,12 +771,12 @@ History/review UX treats Pure/Clear as one result:
 - visibility status/fraction and assessment limitations are concise;
 - an explainability panel lists interventions and restoration;
 - failed/missing Clear remains visible beside valid Pure;
-- View revision boundaries divide incompatible poses/policies; and
 - capture cause distinguishes manual, external automation, and supplied runtime provenance without
   implying UE Shed scheduled it.
 
 Use StyleX-local styles, existing accessibility/action patterns, keyboard access, reduced motion,
-and no Workbench-only domain state.
+and no Workbench-only domain state. Do not add generic history, timeline, baseline, or comparison
+interfaces to `@ue-shed/cameras` to support this presentation.
 
 **Verify**:
 
@@ -763,18 +810,21 @@ through the public service/test port and show that its bounded namespaced proven
 finalized Capture Run. This proof uses the supported editor-world capture path and does not claim
 PIE capture support. Do not add interval loops, event listeners, or sequence semantics.
 
-Build one deterministic Workbench E2E:
+Build one deterministic headless library/CLI E2E:
 
-1. author a fixed actor View through the simple path;
+1. author a fixed actor View through the public interface;
 2. capture Natural with a known occluder and see a warning;
-3. enable Natural + Clear with explicit blocker in Advanced;
-4. capture and inspect the paired result/intervention;
+3. enable Natural + Clear with an explicit blocker;
+4. capture and inspect Pure evidence, its optional Clear companion, and intervention evidence;
 5. simulate a Clear failure and prove Pure/restoration survive;
-6. revise the View pose and see a history boundary; and
-7. reopen Workbench and recover the same durable definitions/history.
+6. optionally revise the View definition and prove old and new results retain their respective
+   revision identities; and
+7. reload through the built-in repository adapter and recover the same durable definitions and
+   evidence.
 
 Add a smaller area E2E or real-Unreal integration proving fixed area capture and Natural-only
-semantics.
+semantics. A Workbench E2E may dogfood the same capabilities, but it is not the authority for their
+domain meaning.
 
 Update product delivery status, user vocabulary, supported/unsupported strategy table, CLI docs, and
 showcase only after corresponding evidence passes. Record scheduling and simulation trigger
@@ -784,7 +834,8 @@ mechanisms as callers outside Map Review, not implemented features.
 
 - focused tests and contract parity pass;
 - `pnpm fixture:build` and real Map Review integration pass on UE 5.7;
-- `pnpm test:e2e:workbench` passes;
+- the headless library/CLI E2E passes;
+- `pnpm test:e2e:workbench` passes when the optional dogfood client is exercised;
 - `pnpm check` passes immediately before handoff;
 - `git diff --check` reports no errors;
 - only in-scope files plus Plan 032/index coordination are changed.
@@ -799,7 +850,9 @@ mechanisms as callers outside Map Review, not implemented features.
 - oriented area validation and projection inputs;
 - policy references/defaults/overrides and impossible combinations;
 - invocation causes and branded identity separation;
-- visibility classification thresholds and View revision compatibility;
+- raw visibility bounds and optional classification with caller-supplied thresholds;
+- View revision identity propagation, optional revision-helper behavior, and explicit legacy
+  provenance;
 - paired artifact invariants and partial-failure folds.
 
 ### Contract tests
@@ -843,7 +896,8 @@ mechanisms as callers outside Map Review, not implemented features.
 - unsupported capability states;
 - Natural/Clear inspection and labels;
 - visibility/restoration explanation;
-- View revision boundary;
+- optional revision labels, if the dogfood client chooses to show them, without core history
+  semantics;
 - restart/recovery.
 
 ### Performance and observability
@@ -875,16 +929,21 @@ mechanisms as callers outside Map Review, not implemented features.
       step, and an unsupported strategy is never exposed as a promise.
 - [ ] The main authoring path remains select → frame → Keep with defaults; advanced visibility
       strategy remains available without becoming mandatory.
-- [ ] Workbench history clearly labels Natural versus modified Clear, shows visibility/intervention/
-      restoration evidence, and separates incompatible View revisions.
+- [ ] Every new View Result carries unambiguous View/revision identity; legacy results remain
+      explicitly unversioned; consumers are not required to adopt revision, history, comparison, or
+      baseline workflows.
+- [ ] No generic history grouping, timeline ordering/storage, comparison presentation, or
+      Workbench-derived domain interface is added to the core packages.
+- [ ] The optional Workbench client demonstrates Natural versus modified Clear and its
+      visibility/intervention/restoration evidence without becoming the acceptance authority.
 - [ ] CLI and public services provide full parity for definitions, invocation, capture, evidence,
       failures, and recovery.
 - [ ] External automation is proven by explicit repeated invocation; no scheduling mechanism or
       **Watch** entity is added.
 - [ ] Future runtime-trigger provenance can pass through the public seam without introducing timers,
       scenario coupling, or a universal event model.
-- [ ] Fixture build, real UE 5.7 integration, Workbench E2E, contract gates, architecture gates, and
-      `pnpm check` all pass.
+- [ ] Fixture build, real UE 5.7 integration, headless E2E, contract gates, architecture gates, and
+      `pnpm check` all pass; the optional Workbench E2E remains green when exercised.
 - [ ] Product and showcase claims match only the strategies and UX actually proven.
 
 ## STOP conditions

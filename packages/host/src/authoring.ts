@@ -34,8 +34,9 @@ import {
 	type UnrealConnectionError
 } from "@ue-shed/unreal-connection";
 import { Cache, Context, Duration, Effect, Exit, Layer, Option, Ref, Result } from "effect";
-import { ShedHostConfiguration } from "./configuration.js";
+import { ShedHostConfiguration, type ConfiguredProject } from "./configuration.js";
 import { AuthoringFilePicker } from "./file-picker.js";
+import { SavedTableIndex } from "./saved-table-index.js";
 
 interface CatalogIndex {
 	readonly assetPaths: ReadonlyMap<string, string>;
@@ -163,14 +164,10 @@ export const ShedAuthoringLive = Layer.effect(
 	ShedAuthoring,
 	Effect.gen(function* () {
 		const configurationService = yield* ShedHostConfiguration;
-		const configuration = yield* Effect.all({
-			authoringAsset: configurationService.authoringAsset(),
-			project: configurationService.project(),
-			remoteControlEndpoint: configurationService.remoteControlEndpoint()
-		});
 		const filePicker = yield* AuthoringFilePicker;
 		const assetReader = yield* AssetReader;
 		const catalog = yield* AuthoringCatalog;
+		const savedTableIndex = yield* SavedTableIndex;
 		const remoteControl = yield* RemoteControlClient;
 
 		const catalogIndex = yield* Ref.make<CatalogIndex>(emptyCatalogIndex);
@@ -190,14 +187,19 @@ export const ShedAuthoringLive = Layer.effect(
 		const sessions = yield* Effect.serviceOption(AuthoringSessions);
 
 		const getConnectionResult = Effect.fn("ShedAuthoring.getConnectionResult")(function* () {
-			return yield* Cache.get(connectionCache, configuration.remoteControlEndpoint).pipe(
-				Effect.result
-			);
+			const endpoint = yield* configurationService.remoteControlEndpoint();
+			return yield* Cache.get(connectionCache, endpoint).pipe(Effect.result);
 		});
 
 		const invalidateConnectionOnLiveFailure = (cause: unknown) =>
 			cause instanceof AuthoringSessionLiveError
-				? Cache.invalidate(connectionCache, configuration.remoteControlEndpoint)
+				? configurationService
+						.remoteControlEndpoint()
+						.pipe(
+							Effect.flatMap((endpoint) =>
+								Cache.invalidate(connectionCache, endpoint)
+							)
+						)
 				: Effect.void;
 
 		const loadSavedTable = Effect.fn("ShedAuthoring.loadSavedTable")(function* (
@@ -237,7 +239,8 @@ export const ShedAuthoringLive = Layer.effect(
 					).pipe(Effect.as({ snapshot, status: "ready" as const }))
 				),
 				Effect.catch((error) =>
-					Cache.invalidate(connectionCache, configuration.remoteControlEndpoint).pipe(
+					configurationService.remoteControlEndpoint().pipe(
+						Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)),
 						Effect.as(
 							readerFailure(
 								`Could not read the live DataTable: ${error.message}`,
@@ -250,16 +253,11 @@ export const ShedAuthoringLive = Layer.effect(
 		});
 
 		const refreshCatalog = Effect.fn("ShedAuthoring.refreshCatalog")(function* (
-			project: Extract<typeof configuration.project, { readonly status: "configured" }>
+			project: Extract<ConfiguredProject, { readonly status: "configured" }>
 		) {
-			const savedCatalogResult = yield* assetReader
-				.discoverTables({
-					...(project.catalogCachePath === undefined
-						? {}
-						: { cachePath: project.catalogCachePath }),
-					projectRoot: project.projectRoot
-				})
-				.pipe(Effect.result);
+			// Answered by the host's project index. In Workbench that is the one inventory the
+			// workspace already built, so opening this route no longer re-enumerates the project.
+			const savedCatalogResult = yield* savedTableIndex.savedTables().pipe(Effect.result);
 			if (Result.isFailure(savedCatalogResult)) {
 				return catalogReaderFailure(
 					`Could not discover saved DataTables: ${savedCatalogResult.failure.message}`
@@ -279,7 +277,8 @@ export const ShedAuthoringLive = Layer.effect(
 						.pipe(Effect.provideService(AuthoringLiveConnection, connection))
 			});
 			if (discovered.diagnostics.some((diagnostic) => diagnostic.authority === "live")) {
-				yield* Cache.invalidate(connectionCache, configuration.remoteControlEndpoint);
+				const endpoint = yield* configurationService.remoteControlEndpoint();
+				yield* Cache.invalidate(connectionCache, endpoint);
 			}
 
 			const assetPaths = new Map<string, string>();
@@ -329,17 +328,19 @@ export const ShedAuthoringLive = Layer.effect(
 		});
 
 		const configuredTable = Effect.fn("ShedAuthoring.configuredTable")(function* () {
-			if (configuration.authoringAsset.status !== "configured") {
+			const authoringAsset = yield* configurationService.authoringAsset();
+			if (authoringAsset.status !== "configured") {
 				return { status: "not_configured" as const };
 			}
-			return yield* loadSavedTable(configuration.authoringAsset.path);
+			return yield* loadSavedTable(authoringAsset.path);
 		});
 
 		const configuredCatalog = Effect.fn("ShedAuthoring.configuredCatalog")(function* () {
-			if (configuration.project.status !== "configured") {
+			const project = yield* configurationService.project();
+			if (project.status !== "configured") {
 				return { status: "not_configured" as const };
 			}
-			return yield* refreshCatalog(configuration.project);
+			return yield* refreshCatalog(project);
 		});
 
 		const catalogProgress = Effect.fn("ShedAuthoring.catalogProgress")(() =>
@@ -380,14 +381,15 @@ export const ShedAuthoringLive = Layer.effect(
 		) {
 			let index = yield* Ref.get(catalogIndex);
 			let assetPath = index.assetPaths.get(objectPath);
-			if (
-				!assetPath &&
-				!index.liveObjectPaths.has(objectPath) &&
-				configuration.project.status === "configured"
-			) {
-				yield* refreshCatalog(configuration.project);
-				index = yield* Ref.get(catalogIndex);
-				assetPath = index.assetPaths.get(objectPath);
+			// Resolving the configured project can cost a project-wide index, so it is deferred
+			// to the miss path. A table the catalog already indexed opens without touching it.
+			if (!assetPath && !index.liveObjectPaths.has(objectPath)) {
+				const project = yield* configurationService.project();
+				if (project.status === "configured") {
+					yield* refreshCatalog(project);
+					index = yield* Ref.get(catalogIndex);
+					assetPath = index.assetPaths.get(objectPath);
+				}
 			}
 			if (authority === "live") {
 				return index.liveObjectPaths.has(objectPath)
@@ -587,7 +589,10 @@ export const ShedAuthoringLive = Layer.effect(
 		const requireLiveConnection = (): Effect.Effect<
 			UnrealAuthoringConnection,
 			UnrealConnectionError | UnrealCapabilityError
-		> => Cache.get(connectionCache, configuration.remoteControlEndpoint);
+		> =>
+			configurationService
+				.remoteControlEndpoint()
+				.pipe(Effect.flatMap((endpoint) => Cache.get(connectionCache, endpoint)));
 
 		const applySession = Effect.fn("ShedAuthoring.applySession")(function* (sessionId: string) {
 			if (Option.isNone(sessions)) {

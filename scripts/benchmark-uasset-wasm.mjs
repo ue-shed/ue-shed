@@ -67,7 +67,7 @@ function measure(iterations, operation) {
 		const started = performance.now();
 		const output = operation();
 		const elapsed = performance.now() - started;
-		if (JSON.parse(output).schema_version !== 7) {
+		if (JSON.parse(output).schema_version !== 8) {
 			throw new Error("Benchmark producer returned an unexpected schema version");
 		}
 		samples.push(elapsed);

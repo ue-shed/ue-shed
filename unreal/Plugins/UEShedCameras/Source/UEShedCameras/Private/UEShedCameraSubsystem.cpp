@@ -359,7 +359,8 @@ bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
 			return false;
 		}
 		Source->bTransientProvisionedCamera = true;
-		Source->ProvisioningKey = Spec.CandidateId;
+		Source->ProvisioningCorrelationId = Spec.CorrelationId;
+		Source->ProvisioningCorrelationType = Spec.CorrelationType;
 		Source->CameraIndex = Index;
 		Source->CameraId = FGuid::NewGuid();
 		Source->CaptureWidth = FMath::Clamp(Spec.Width, 64, 2560);
@@ -872,15 +873,28 @@ FString UUEShedCameraSubsystem::StatusJson() const
 		const TSharedRef<FJsonObject> Camera = MakeShared<FJsonObject>();
 		Camera->SetStringField(TEXT("cameraId"), GuidString(Source->CameraId));
 		Camera->SetStringField(TEXT("displayName"),
-			Source->ProvisioningKey.IsEmpty()
+			Source->ProvisioningCorrelationId.IsEmpty()
 				? Source->GetActorNameOrLabel()
-				: Source->ProvisioningKey);
+				: Source->ProvisioningCorrelationId);
 		Camera->SetNumberField(TEXT("index"), Source->CameraIndex);
 		Camera->SetNumberField(TEXT("width"), Source->CaptureWidth);
 		Camera->SetNumberField(TEXT("height"), Source->CaptureHeight);
-		if (!Source->ProvisioningKey.IsEmpty())
+		if (!Source->ProvisioningCorrelationId.IsEmpty()
+			&& !Source->ProvisioningCorrelationType.IsEmpty())
 		{
-			Camera->SetStringField(TEXT("candidateId"), Source->ProvisioningKey);
+			const TSharedRef<FJsonObject> Correlation = MakeShared<FJsonObject>();
+			Correlation->SetStringField(TEXT("type"), Source->ProvisioningCorrelationType);
+			if (Source->ProvisioningCorrelationType == TEXT("framing_candidate"))
+			{
+				Correlation->SetStringField(TEXT("candidateId"), Source->ProvisioningCorrelationId);
+				// Compatibility field for older live-preview clients.
+				Camera->SetStringField(TEXT("candidateId"), Source->ProvisioningCorrelationId);
+			}
+			else if (Source->ProvisioningCorrelationType == TEXT("review_view"))
+			{
+				Correlation->SetStringField(TEXT("reviewViewId"), Source->ProvisioningCorrelationId);
+			}
+			Camera->SetObjectField(TEXT("correlation"), Correlation);
 		}
 		Cameras.Add(MakeShared<FJsonValueObject>(Camera));
 	}

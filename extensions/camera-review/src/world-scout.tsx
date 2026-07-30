@@ -14,7 +14,9 @@ import {
 	collectVisibleIndices,
 	colorForClass,
 	contentBounds,
+	clampViewportSize,
 	createWorldScoutPaintGate,
+	fitViewportSize,
 	formatCoordinate,
 	hitTestVisibleActors,
 	nearestVisibleActor,
@@ -22,7 +24,9 @@ import {
 	panViewportBy,
 	projectVisibleActors,
 	resizeCanvasForDisplay,
+	resizeViewportToSize,
 	stabilizeViewport,
+	viewportSizeLimits,
 	WorldScoutRetainedStore,
 	zoomViewportAt,
 	type WorldScoutPaintGate
@@ -141,7 +145,26 @@ export function WorldScout(props: {
 		presentationRevision();
 		const viewport = store.viewport;
 		if (viewport === undefined) return "—";
-		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(viewport.size).toLocaleString()} UU`;
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const height = viewport.size / aspect;
+		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(height).toLocaleString()} UU`;
+	});
+	const fitSize = createMemo(() => {
+		presentationRevision();
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		return fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+	});
+	const zoomLimits = createMemo(() => viewportSizeLimits(fitSize()));
+	const zoomFactor = createMemo(() => {
+		presentationRevision();
+		const viewport = store.viewport;
+		const fit = fitSize();
+		if (viewport === undefined || fit <= 0) return 1;
+		return fit / Math.max(viewport.size, 1);
+	});
+	const maxZoomFactor = createMemo(() => {
+		const { min, max } = zoomLimits();
+		return max / Math.max(min, 1);
 	});
 	const selected = createMemo(() => {
 		selectionRevision();
@@ -175,10 +198,14 @@ export function WorldScout(props: {
 	const prepareVisibleProjection = () => {
 		collectVisibleIndices(store, query(), hiddenClasses(), store.visibleIndices);
 		const bounds = contentBounds(store, store.visibleIndices);
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const fit = fitViewportSize(bounds, aspect);
 		if (!viewLocked) {
-			store.viewport = stabilizeViewport(store.viewport, bounds);
+			store.viewport = stabilizeViewport(store.viewport, bounds, aspect);
 		} else if (store.viewport === undefined) {
-			store.viewport = stabilizeViewport(undefined, bounds);
+			store.viewport = stabilizeViewport(undefined, bounds, aspect);
+		} else if (store.viewport.size > fit) {
+			store.viewport = resizeViewportToSize(store.viewport, fit);
 		}
 		if (cssWidth > 0 && cssHeight > 0 && store.viewport !== undefined) {
 			projectVisibleActors(store, store.viewport, cssWidth, cssHeight, store.visibleIndices);
@@ -365,6 +392,15 @@ export function WorldScout(props: {
 			else next.add(className);
 			return next;
 		});
+	const invertClasses = () => {
+		setHiddenClasses((current) => {
+			const next = new Set<string>();
+			for (const [className] of classes()) {
+				if (!current.has(className)) next.add(className);
+			}
+			return next;
+		});
+	};
 	const selectStreamIndex = (streamIndex: number) => {
 		const meta = store.actorAt(streamIndex);
 		if (meta === undefined) return;
@@ -405,6 +441,9 @@ export function WorldScout(props: {
 		const rect = event.currentTarget.getBoundingClientRect();
 		cssWidth = Math.max(1, rect.width);
 		cssHeight = Math.max(1, rect.height);
+		const aspect = cssWidth / cssHeight;
+		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+		const { min, max } = viewportSizeLimits(fit);
 		const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
 		store.viewport = zoomViewportAt(
 			viewport,
@@ -412,9 +451,11 @@ export function WorldScout(props: {
 			cssHeight,
 			event.clientX - rect.left,
 			event.clientY - rect.top,
-			factor
+			factor,
+			min,
+			max
 		);
-		viewLocked = true;
+		viewLocked = store.viewport.size < max - 1e-6;
 		requestPaint();
 	};
 	const onCanvasPointerDown = (event: PointerEvent & { currentTarget: HTMLCanvasElement }) => {
@@ -458,15 +499,30 @@ export function WorldScout(props: {
 		store.viewport = undefined;
 		requestPaint();
 	};
+	const clearSelection = () => {
+		setSelectedKey(undefined);
+		setSelectedStreamIndex(undefined);
+		setFollowing(false);
+		setNavigationStatus("SELECTION CLEARED");
+		setLiveRegion("Selection cleared");
+		setSelectionRevision((value) => value + 1);
+		requestPaint();
+	};
+	const setZoomFactor = (value: string) => {
+		const viewport = store.viewport;
+		if (viewport === undefined) return;
+		const parsed = Number(value);
+		if (!Number.isFinite(parsed) || parsed <= 0) return;
+		const fit = fitSize();
+		const nextSize = clampViewportSize(fit / parsed, fit);
+		store.viewport = resizeViewportToSize(viewport, nextSize);
+		viewLocked = nextSize < fit - 1e-6;
+		requestPaint();
+	};
 	const onCanvasKeyDown = (event: KeyboardEvent) => {
 		if (event.key === "Escape") {
 			event.preventDefault();
-			setSelectedKey(undefined);
-			setSelectedStreamIndex(undefined);
-			setFollowing(false);
-			setNavigationStatus("SELECTION CLEARED");
-			setLiveRegion("Selection cleared");
-			requestPaint();
+			clearSelection();
 			return;
 		}
 		if (event.key === "ArrowRight" || event.key === "ArrowDown") {
@@ -588,6 +644,14 @@ export function WorldScout(props: {
 						/>
 					</label>
 					<div aria-label="Actor class filters" {...stylex.props(styles.classFilters)}>
+						<button
+							type="button"
+							title="Invert which actor classes are selected"
+							onClick={invertClasses}
+							{...stylex.props(styles.classFilterAction)}
+						>
+							INVERT
+						</button>
 						<For each={classes()}>
 							{([className, count]) => (
 								<button
@@ -639,6 +703,20 @@ export function WorldScout(props: {
 				<div {...stylex.props(styles.workspace)}>
 					<div {...stylex.props(styles.mapFrame)}>
 						<div {...stylex.props(styles.north)}>N ↑</div>
+						<label {...stylex.props(styles.zoomControl)}>
+							<span>ZOOM</span>
+							<input
+								type="range"
+								aria-label="Map zoom"
+								min="1"
+								max={maxZoomFactor()}
+								step="0.01"
+								value={Math.min(zoomFactor(), maxZoomFactor())}
+								onInput={(event) => setZoomFactor(event.currentTarget.value)}
+								{...stylex.props(styles.zoomSlider)}
+							/>
+							<strong>{zoomFactor().toFixed(1)}×</strong>
+						</label>
 						<div {...stylex.props(styles.extentLabel)}>{extentLabel()}</div>
 						<button
 							type="button"
@@ -730,6 +808,13 @@ export function WorldScout(props: {
 											)}
 										>
 											{following() ? "STOP FOLLOWING" : "FOLLOW ACTOR"}
+										</button>
+										<button
+											type="button"
+											onClick={clearSelection}
+											{...stylex.props(styles.clearSelection)}
+										>
+											CLEAR SELECTION
 										</button>
 									</div>
 									<span {...stylex.props(styles.focusedCopy)}>
@@ -831,6 +916,19 @@ const styles = stylex.create({
 		padding: "8px 9px"
 	},
 	classFilters: { display: "flex", gap: 6, overflowX: "auto", minWidth: 0 },
+	classFilterAction: {
+		display: "flex",
+		alignItems: "center",
+		border: "1px solid #3c443e",
+		backgroundColor: { default: "#171b18", ":hover": "#222923" },
+		color: "#879188",
+		padding: "7px 9px",
+		whiteSpace: "nowrap",
+		fontSize: 8,
+		letterSpacing: ".08em",
+		cursor: "pointer",
+		flexShrink: 0
+	},
 	classFilter: {
 		display: "flex",
 		alignItems: "center",
@@ -867,12 +965,13 @@ const styles = stylex.create({
 			default: "minmax(0,1fr) minmax(240px, 280px)",
 			"@media (max-width: 900px)": "minmax(0, 1fr)"
 		},
-		minHeight: 480,
+		alignItems: "start",
 		minWidth: 0
 	},
 	mapFrame: {
 		position: "relative",
-		minHeight: 480,
+		aspectRatio: "2 / 1",
+		width: "100%",
 		overflow: "hidden",
 		backgroundColor: "#0c100d",
 		backgroundImage:
@@ -920,7 +1019,45 @@ const styles = stylex.create({
 		fontSize: 9,
 		letterSpacing: ".12em"
 	},
-	extentLabel: { position: "absolute", top: 12, right: 14, color: "#667069", fontSize: 8 },
+	extentLabel: {
+		position: "absolute",
+		top: 34,
+		right: 14,
+		color: "#667069",
+		fontSize: 8,
+		zIndex: 2
+	},
+	zoomControl: {
+		position: "absolute",
+		top: 8,
+		right: 14,
+		zIndex: 2,
+		display: "grid",
+		gridTemplateColumns: "auto minmax(88px, 120px) auto",
+		gap: "4px 8px",
+		alignItems: "center",
+		color: "#879188",
+		fontSize: 7,
+		letterSpacing: ".1em",
+		backgroundColor: "#111512cc",
+		border: "1px solid #3a433c",
+		padding: "4px 8px"
+	},
+	zoomSlider: {
+		width: "100%",
+		accentColor: "#b9f227",
+		cursor: "ew-resize"
+	},
+	clearSelection: {
+		border: "1px solid #3a433c",
+		backgroundColor: { default: "transparent", ":hover": "#1a211c" },
+		color: "#9aa49c",
+		padding: "10px 12px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
 	axisX: { position: "absolute", right: 12, bottom: 10, color: "#59625c", fontSize: 7 },
 	axisY: {
 		position: "absolute",

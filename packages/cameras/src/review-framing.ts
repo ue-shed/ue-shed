@@ -1,21 +1,177 @@
 import {
 	ApprovedPose,
+	nextReviewViewRevision,
 	FramingCandidate,
 	FramingCandidateId,
 	ReviewSet,
 	ReviewView,
+	initialReviewViewRevision,
+	reviewViewActorSubject,
 	type FramingDiagnostic,
 	type FramingPreset,
+	type ActorTransformSnapshot,
+	type NumberedReviewViewRevision,
+	type ReviewViewDefinition,
 	type ReviewSubjectProjection,
 	type CaptureProfileId,
 	type ReviewViewId,
-	type SubjectBounds
+	type SubjectBounds,
+	type SubjectLocator,
+	type VisibilityPolicyId
 } from "./review-schema.js";
 
 const degrees = 180 / Math.PI;
 const radians = Math.PI / 180;
 const defaultFieldOfViewDegrees = 60;
 const defaultMargin = 0.12;
+
+type ReviewQuaternion = {
+	readonly w: number;
+	readonly x: number;
+	readonly y: number;
+	readonly z: number;
+};
+
+function quaternionFromRotation(
+	rotation: (typeof ApprovedPose.Type)["rotation"]
+): ReviewQuaternion {
+	const pitch = rotation.pitch * radians * 0.5;
+	const yaw = rotation.yaw * radians * 0.5;
+	const roll = rotation.roll * radians * 0.5;
+	const sp = Math.sin(pitch);
+	const cp = Math.cos(pitch);
+	const sy = Math.sin(yaw);
+	const cy = Math.cos(yaw);
+	const sr = Math.sin(roll);
+	const cr = Math.cos(roll);
+	return {
+		w: cr * cp * cy + sr * sp * sy,
+		x: cr * sp * sy - sr * cp * cy,
+		y: -cr * sp * cy - sr * cp * sy,
+		z: cr * cp * sy - sr * sp * cy
+	};
+}
+
+function multiplyQuaternions(left: ReviewQuaternion, right: ReviewQuaternion): ReviewQuaternion {
+	return {
+		w: left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
+		x: left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+		y: left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+		z: left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w
+	};
+}
+
+function inverseQuaternion(value: ReviewQuaternion): ReviewQuaternion {
+	return { w: value.w, x: -value.x, y: -value.y, z: -value.z };
+}
+
+function rotateVector(
+	rotation: ReviewQuaternion,
+	vector: (typeof ApprovedPose.Type)["location"]
+): (typeof ApprovedPose.Type)["location"] {
+	const cross = {
+		x: rotation.y * vector.z - rotation.z * vector.y,
+		y: rotation.z * vector.x - rotation.x * vector.z,
+		z: rotation.x * vector.y - rotation.y * vector.x
+	};
+	return {
+		x: vector.x + 2 * (rotation.w * cross.x + rotation.y * cross.z - rotation.z * cross.y),
+		y: vector.y + 2 * (rotation.w * cross.y + rotation.z * cross.x - rotation.x * cross.z),
+		z: vector.z + 2 * (rotation.w * cross.z + rotation.x * cross.y - rotation.y * cross.x)
+	};
+}
+
+function rotationFromQuaternion(
+	quaternion: ReviewQuaternion
+): (typeof ApprovedPose.Type)["rotation"] {
+	const singularity = quaternion.z * quaternion.x - quaternion.w * quaternion.y;
+	const yawY = 2 * (quaternion.w * quaternion.z + quaternion.x * quaternion.y);
+	const yawX = 1 - 2 * (quaternion.y ** 2 + quaternion.z ** 2);
+	if (singularity < -0.4999995) {
+		return {
+			pitch: -90,
+			roll: 0,
+			yaw: -2 * Math.atan2(quaternion.x, quaternion.w) * degrees
+		};
+	}
+	if (singularity > 0.4999995) {
+		return {
+			pitch: 90,
+			roll: 0,
+			yaw: 2 * Math.atan2(quaternion.x, quaternion.w) * degrees
+		};
+	}
+	return {
+		pitch: Math.asin(2 * singularity) * degrees,
+		roll:
+			Math.atan2(
+				-2 * (quaternion.w * quaternion.x + quaternion.y * quaternion.z),
+				1 - 2 * (quaternion.x ** 2 + quaternion.y ** 2)
+			) * degrees,
+		yaw: Math.atan2(yawY, yawX) * degrees
+	};
+}
+
+/**
+ * Applies the same rotator/quaternion transform composition Unreal uses. The relative pose remains
+ * durable input; callers receive a newly derived world pose for a single realization only.
+ */
+export function realizeTargetRelativePose(args: {
+	readonly relativePose: typeof ApprovedPose.Type;
+	readonly targetTransform: ActorTransformSnapshot;
+}): typeof ApprovedPose.Type {
+	const targetRotation = quaternionFromRotation(args.targetTransform.rotation);
+	const relativeRotation = quaternionFromRotation(args.relativePose.rotation);
+	const rotatedLocation = rotateVector(targetRotation, args.relativePose.location);
+	return ApprovedPose.make({
+		...args.relativePose,
+		location: {
+			x: args.targetTransform.location.x + rotatedLocation.x,
+			y: args.targetTransform.location.y + rotatedLocation.y,
+			z: args.targetTransform.location.z + rotatedLocation.z
+		},
+		rotation: rotationFromQuaternion(multiplyQuaternions(targetRotation, relativeRotation))
+	});
+}
+
+/** Converts an approved world pose into the durable pose relative to its actor target. */
+export function targetRelativePoseFromWorldPose(args: {
+	readonly targetTransform: ActorTransformSnapshot;
+	readonly worldPose: typeof ApprovedPose.Type;
+}): typeof ApprovedPose.Type {
+	const targetRotation = quaternionFromRotation(args.targetTransform.rotation);
+	const inverseTargetRotation = inverseQuaternion(targetRotation);
+	return ApprovedPose.make({
+		...args.worldPose,
+		location: rotateVector(inverseTargetRotation, {
+			x: args.worldPose.location.x - args.targetTransform.location.x,
+			y: args.worldPose.location.y - args.targetTransform.location.y,
+			z: args.worldPose.location.z - args.targetTransform.location.z
+		}),
+		rotation: rotationFromQuaternion(
+			multiplyQuaternions(
+				inverseTargetRotation,
+				quaternionFromRotation(args.worldPose.rotation)
+			)
+		)
+	});
+}
+
+/**
+ * Captures the explicit anchoring provenance needed to approve an actor-following View. Clients
+ * retain this value unchanged and call `realizeTargetRelativePose` with a fresh actor transform
+ * for every capture.
+ */
+export function targetRelativeViewpointFromWorldPose(args: {
+	readonly targetTransform: ActorTransformSnapshot;
+	readonly worldPose: typeof ApprovedPose.Type;
+}) {
+	return {
+		kind: "target_relative" as const,
+		relativePose: targetRelativePoseFromWorldPose(args),
+		targetSnapshot: args.targetTransform
+	};
+}
 
 export interface ReviewSelection {
 	readonly actorPath: string;
@@ -288,16 +444,80 @@ export type ApproveFramingCandidateResult =
 	| { readonly status: "approved"; readonly reviewSet: ReviewSet }
 	| { readonly status: "view_not_found"; readonly viewId: string };
 
+function revisionMeaning(view: ReviewView): string {
+	return JSON.stringify({
+		captureProfileId: view.captureProfileId,
+		target: view.target,
+		viewpoint: view.viewpoint,
+		visibilityOverrides: view.visibilityOverrides,
+		visibilityPolicyId: view.visibilityPolicyId
+	});
+}
+
+export function revisedReviewViewRevision(args: {
+	readonly current: ReviewView;
+	readonly next: ReviewView;
+}): NumberedReviewViewRevision {
+	return revisionMeaning(args.current) === revisionMeaning(args.next)
+		? args.current.revision
+		: nextReviewViewRevision(args.current.id, args.current.revision);
+}
+
+export type ReviseReviewViewResult =
+	| { readonly reviewSet: ReviewSet; readonly status: "revised" }
+	| { readonly reviewSet: ReviewSet; readonly status: "unchanged" }
+	| { readonly status: "view_not_found"; readonly viewId: string };
+
+/** Optional pure helper that gives a changed durable View definition a new revision identity. */
+export function reviseReviewView(args: {
+	readonly definition: ReviewViewDefinition;
+	readonly reviewSet: ReviewSet;
+	readonly viewId: ReviewViewId;
+	readonly visibilityOverrides?: ReviewView["visibilityOverrides"];
+	readonly visibilityPolicyId?: VisibilityPolicyId;
+}): ReviseReviewViewResult {
+	const index = args.reviewSet.views.findIndex((view) => view.id === args.viewId);
+	if (index === -1) return { status: "view_not_found", viewId: args.viewId };
+	const current = args.reviewSet.views[index]!;
+	const next = ReviewView.make({
+		...current,
+		...args.definition,
+		...(args.visibilityOverrides === undefined
+			? {}
+			: { visibilityOverrides: args.visibilityOverrides }),
+		...(args.visibilityPolicyId === undefined
+			? {}
+			: { visibilityPolicyId: args.visibilityPolicyId })
+	});
+	const views = [...args.reviewSet.views];
+	const revision = revisedReviewViewRevision({ current, next });
+	views[index] = ReviewView.make({
+		...next,
+		revision
+	});
+	return {
+		reviewSet: ReviewSet.make({ ...args.reviewSet, views }),
+		status: revision.id === current.revision.id ? "unchanged" : "revised"
+	};
+}
+
 export function createReviewViewFromCandidate(args: {
+	readonly anchoring?:
+		| { readonly mode: "world_fixed" }
+		| {
+				readonly mode: "target_relative";
+				readonly targetTransform: ActorTransformSnapshot;
+		  };
 	readonly candidate: typeof FramingCandidate.Type;
 	readonly captureProfileId: CaptureProfileId;
 	readonly displayName: string;
 	readonly manualPose?: typeof ApprovedPose.Type;
 	readonly manualReason?: string;
 	readonly purpose: string;
-	readonly subject: ReviewView["subject"];
+	readonly subject: SubjectLocator;
 	readonly tags: readonly string[];
 	readonly viewId: ReviewViewId;
+	readonly visibilityPolicyId: VisibilityPolicyId;
 }): ReviewView {
 	const manuallyAdjusted = args.manualPose !== undefined;
 	const recipe = {
@@ -322,16 +542,57 @@ export function createReviewViewFromCandidate(args: {
 				]
 			: [])
 	];
+	const approvedWorldPose = args.manualPose ?? args.candidate.approvedPose;
 	return ReviewView.make({
-		approvedPose: args.manualPose ?? args.candidate.approvedPose,
 		captureProfileId: args.captureProfileId,
 		displayName: args.displayName,
 		framingDiagnostics,
 		framingRecipe: recipe,
 		id: args.viewId,
 		purpose: args.purpose,
-		subject: args.subject,
-		tags: [...args.tags]
+		revision: initialReviewViewRevision(args.viewId),
+		tags: [...args.tags],
+		target: { kind: "actor", subject: args.subject },
+		viewpoint:
+			args.anchoring?.mode === "target_relative"
+				? targetRelativeViewpointFromWorldPose({
+						targetTransform: args.anchoring.targetTransform,
+						worldPose: approvedWorldPose
+					})
+				: { approvedPose: approvedWorldPose, kind: "world_fixed" },
+		visibilityPolicyId: args.visibilityPolicyId
+	});
+}
+
+/** Numeric/current-selection area authoring without requiring a persistent Unreal actor. */
+export function createAreaReviewView(args: {
+	readonly approvedPose: typeof ApprovedPose.Type;
+	readonly bounds: SubjectBounds;
+	readonly captureProfileId: CaptureProfileId;
+	readonly displayName: string;
+	readonly purpose: string;
+	readonly tags: readonly string[];
+	readonly viewId: ReviewViewId;
+	readonly visibilityPolicyId: VisibilityPolicyId;
+}): ReviewView {
+	return ReviewView.make({
+		captureProfileId: args.captureProfileId,
+		displayName: args.displayName,
+		framingDiagnostics: [
+			{
+				code: "bounds_snapshot",
+				message: "Uses the portable oriented-area bounds approved for this View.",
+				severity: "info"
+			}
+		],
+		framingRecipe: { kind: "manual", version: 1 },
+		id: args.viewId,
+		purpose: args.purpose,
+		revision: initialReviewViewRevision(args.viewId),
+		tags: [...args.tags],
+		target: { bounds: args.bounds, kind: "oriented_box" },
+		viewpoint: { approvedPose: args.approvedPose, kind: "world_fixed" },
+		visibilityPolicyId: args.visibilityPolicyId
 	});
 }
 
@@ -340,23 +601,32 @@ export function approveFramingCandidate(args: {
 	readonly manualPose?: typeof ApprovedPose.Type;
 	readonly manualReason?: string;
 	readonly reviewSet: ReviewSet;
-	readonly subject?: ReviewSet["views"][number]["subject"];
+	readonly subject?: SubjectLocator;
 	readonly viewId: ReviewViewId;
 }): ApproveFramingCandidateResult {
 	const index = args.reviewSet.views.findIndex((view) => view.id === args.viewId);
 	if (index === -1) return { status: "view_not_found", viewId: args.viewId };
 	const views = [...args.reviewSet.views];
 	const current = views[index]!;
-	views[index] = createReviewViewFromCandidate({
+	const subject = args.subject ?? reviewViewActorSubject(current);
+	if (subject === undefined) {
+		return { status: "view_not_found", viewId: args.viewId };
+	}
+	const next = createReviewViewFromCandidate({
 		candidate: args.candidate,
 		captureProfileId: current.captureProfileId,
 		displayName: current.displayName,
 		...(args.manualPose === undefined ? {} : { manualPose: args.manualPose }),
 		...(args.manualReason === undefined ? {} : { manualReason: args.manualReason }),
 		purpose: current.purpose,
-		subject: args.subject ?? current.subject,
+		subject,
 		tags: current.tags,
-		viewId: current.id
+		viewId: current.id,
+		visibilityPolicyId: current.visibilityPolicyId
+	});
+	views[index] = ReviewView.make({
+		...next,
+		revision: revisedReviewViewRevision({ current, next })
 	});
 	return {
 		reviewSet: ReviewSet.make({ ...args.reviewSet, views }),

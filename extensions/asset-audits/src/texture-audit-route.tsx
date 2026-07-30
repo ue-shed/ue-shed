@@ -11,7 +11,6 @@ import {
 } from "@ue-shed/asset-audits/browser";
 import { Cause } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
-import type { TextureAuditClientShape } from "./texture-audit-client.js";
 
 type ViewState =
 	| { readonly status: "loading" }
@@ -34,6 +33,26 @@ type PreviewState =
 			readonly status: "unavailable";
 			readonly preview: TexturePreviewResult & { status: "unavailable" };
 	  };
+
+/** Retained only for compatibility with tests of the pre-query presentation model. */
+export interface LegacyTextureAuditClientShape {
+	readonly chooseProjectAndScan: () => import("effect").Effect.Effect<
+		TextureAuditRunResult,
+		unknown
+	>;
+	readonly launchUnreal: () => import("effect").Effect.Effect<
+		| { readonly status: "ready" }
+		| { readonly status: "failed"; readonly message: string; readonly recovery: string },
+		unknown
+	>;
+	readonly loadConfiguredProject: () => import("effect").Effect.Effect<
+		TextureAuditRunResult,
+		unknown
+	>;
+	readonly loadPreview: (
+		objectPath: string
+	) => import("effect").Effect.Effect<TexturePreviewResult, unknown>;
+}
 
 function shortName(objectPath: string): string {
 	return objectPath.slice(objectPath.lastIndexOf("/") + 1).split(".")[0] ?? objectPath;
@@ -118,7 +137,7 @@ function Distribution(props: {
 	);
 }
 
-export function TextureAuditRoute(props: { readonly client: TextureAuditClientShape }) {
+export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureAuditClientShape }) {
 	const scanAction = createEffectAction();
 	const previewAction = createEffectAction();
 	const launchAction = createEffectAction();
@@ -180,42 +199,34 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 		} else if (result.status === "failed") setState({ status: "failed", result });
 		else setState({ status: result.status });
 	};
-	const run = (choose: boolean) => {
+	const run = () => {
 		setState({ status: "loading" });
 		setPreview({ status: "idle" });
-		scanAction.run(
-			choose ? props.client.chooseProjectAndScan() : props.client.loadConfiguredProject(),
-			{
-				onFailure: (cause) =>
-					applyResult({
-						error: {
-							code: "contract_failure",
-							message: Cause.pretty(cause),
-							recovery:
-								"Restart Workbench. If the problem persists, verify package versions.",
-							retrySafe: true
-						},
-						status: "failed"
-					}),
-				onSuccess: applyResult
-			}
-		);
+		scanAction.run(props.client.loadConfiguredProject(), {
+			onFailure: (cause) =>
+				applyResult({
+					error: {
+						code: "contract_failure",
+						message: Cause.pretty(cause),
+						recovery:
+							"Restart Workbench. If the problem persists, verify package versions.",
+						retrySafe: true
+					},
+					status: "failed"
+				}),
+			onSuccess: applyResult
+		});
 	};
-	onMount(() => run(false));
+	onMount(run);
 
 	return (
 		<main {...stylex.props(styles.page)}>
 			<PageHeader
 				eyebrow="Asset audits / Texture audit"
 				actions={
-					<>
-						<Button type="button" tone="primary" onClick={() => void run(true)}>
-							Choose project
-						</Button>
-						<Button type="button" onClick={() => void run(false)}>
-							Rescan
-						</Button>
-					</>
+					<Button type="button" onClick={run}>
+						Rescan
+					</Button>
 				}
 			/>
 
@@ -227,8 +238,8 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 				</Match>
 				<Match when={state().status === "not_configured"}>
 					<div {...stylex.props(styles.emptyState)}>
-						<strong>No project configured.</strong> Choose a project and its texture
-						rule file to begin.
+						<strong>No project configured.</strong> Choose a project from the Workbench
+						header, then rescan this audit.
 					</div>
 				</Match>
 				<Match when={state().status === "cancelled"}>

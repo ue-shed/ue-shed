@@ -7,7 +7,14 @@ import {
 	AuthoringSessionReviewResult,
 	AuthoringSessionResult
 } from "@ue-shed/authoring-sdk";
-import { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
+import {
+	TextureAuditQueryRunResult,
+	TextureAuditRecordResult,
+	TextureAuditRunResult,
+	TextureAuditSearchRequest,
+	TextureAuditSearchResult,
+	TexturePreviewResult
+} from "@ue-shed/asset-audits";
 import {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
@@ -20,7 +27,15 @@ import {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/cameras/review-contracts";
-import { TextCorpusRunResult } from "@ue-shed/game-text";
+import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
+import {
+	TextCorpusFocusRequest,
+	TextCorpusFocusResult,
+	TextCorpusQueryRunResult,
+	TextCorpusRunResult,
+	TextCorpusSearchRequest,
+	TextCorpusSearchResult
+} from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
 import {
 	ActorId,
@@ -39,6 +54,7 @@ import {
 	EditorPlaySessionCommandResponse,
 	EditorPlaySessionStateResponse,
 	SavedWorld,
+	SavedWorldChoice,
 	SavedWorldMap
 } from "@ue-shed/protocol";
 import {
@@ -46,6 +62,7 @@ import {
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import { Schema, SchemaGetter } from "effect";
+import { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
 
@@ -248,6 +265,21 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: ShowcaseContext
 	}),
+	"project:current": invoke({
+		channel: "project:current",
+		args: EmptyArgs,
+		result: WorkbenchProjectState
+	}),
+	"project:choose": invoke({
+		channel: "project:choose",
+		args: EmptyArgs,
+		result: WorkbenchProjectState
+	}),
+	"project:progress": invoke({
+		channel: "project:progress",
+		args: EmptyArgs,
+		result: WorkbenchTaskProgress
+	}),
 	"asset-audits:textures:configured-scan": invoke({
 		channel: "asset-audits:textures:configured-scan",
 		args: EmptyArgs,
@@ -257,6 +289,31 @@ export const invokeContracts = {
 		channel: "asset-audits:textures:choose-and-scan",
 		args: EmptyArgs,
 		result: TextureAuditRunResult
+	}),
+	"asset-audits:textures:configured-refresh": invoke({
+		channel: "asset-audits:textures:configured-refresh",
+		args: EmptyArgs,
+		result: TextureAuditQueryRunResult
+	}),
+	"asset-audits:textures:choose-and-refresh": invoke({
+		channel: "asset-audits:textures:choose-and-refresh",
+		args: EmptyArgs,
+		result: TextureAuditQueryRunResult
+	}),
+	"asset-audits:textures:progress": invoke({
+		channel: "asset-audits:textures:progress",
+		args: EmptyArgs,
+		result: WorkbenchTaskProgress
+	}),
+	"asset-audits:textures:search": invoke({
+		channel: "asset-audits:textures:search",
+		args: Schema.Tuple([TextureAuditSearchRequest]),
+		result: TextureAuditSearchResult
+	}),
+	"asset-audits:textures:record": invoke({
+		channel: "asset-audits:textures:record",
+		args: Schema.Tuple([GameObjectPath]),
+		result: TextureAuditRecordResult
 	}),
 	"asset-audits:textures:preview": invoke({
 		channel: "asset-audits:textures:preview",
@@ -272,6 +329,41 @@ export const invokeContracts = {
 		channel: "game-text:choose-and-scan",
 		args: EmptyArgs,
 		result: TextCorpusRunResult
+	}),
+	"game-text:configured-refresh": invoke({
+		channel: "game-text:configured-refresh",
+		args: EmptyArgs,
+		result: TextCorpusQueryRunResult
+	}),
+	"game-text:choose-and-refresh": invoke({
+		channel: "game-text:choose-and-refresh",
+		args: EmptyArgs,
+		result: TextCorpusQueryRunResult
+	}),
+	"game-text:progress": invoke({
+		channel: "game-text:progress",
+		args: EmptyArgs,
+		result: WorkbenchTaskProgress
+	}),
+	"game-text:search": invoke({
+		channel: "game-text:search",
+		args: Schema.Tuple([TextCorpusSearchRequest]),
+		result: TextCorpusSearchResult
+	}),
+	"game-text:focus": invoke({
+		channel: "game-text:focus",
+		args: Schema.Tuple([TextCorpusFocusRequest]),
+		result: TextCorpusFocusResult
+	}),
+	"input-atlas:configured-scan": invoke({
+		channel: "input-atlas:configured-scan",
+		args: EmptyArgs,
+		result: EnhancedInputRunResult
+	}),
+	"input-atlas:choose-and-scan": invoke({
+		channel: "input-atlas:choose-and-scan",
+		args: EmptyArgs,
+		result: EnhancedInputRunResult
 	}),
 	"authoring:configured-table": invoke({
 		channel: "authoring:configured-table",
@@ -402,6 +494,11 @@ export const invokeContracts = {
 		channel: "map-review:saved-world-maps",
 		args: EmptyArgs,
 		result: Schema.Array(SavedWorldMap)
+	}),
+	"map-review:choose-project-and-maps": invoke({
+		channel: "map-review:choose-project-and-maps",
+		args: EmptyArgs,
+		result: SavedWorldChoice
 	}),
 	"map-review:focus-actor": invoke({
 		channel: "map-review:focus-actor",

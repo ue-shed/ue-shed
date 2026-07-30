@@ -33,6 +33,7 @@ import type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
+import type { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
 export type {
 	FixtureLaunchResult,
@@ -41,6 +42,7 @@ export type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
+export type { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
 contextBridge.exposeInMainWorld("ueShed", {
 	editorSession: {
@@ -52,11 +54,25 @@ contextBridge.exposeInMainWorld("ueShed", {
 	showcase: {
 		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context")
 	},
+	project: {
+		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
+		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current"),
+		progress: (): Promise<WorkbenchTaskProgress> => ipcRenderer.invoke("project:progress")
+	},
 	assetAudits: {
 		loadConfiguredProject: (): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:configured-scan"),
 		chooseProjectAndScan: (): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:choose-and-scan"),
+		refreshConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:configured-refresh"),
+		chooseProjectAndRefresh: (): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:choose-and-refresh"),
+		progress: (): Promise<unknown> => ipcRenderer.invoke("asset-audits:textures:progress"),
+		search: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:search", request),
+		record: (objectPath: string): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:record", objectPath),
 		preview: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:preview", objectPath)
 	},
@@ -64,7 +80,22 @@ contextBridge.exposeInMainWorld("ueShed", {
 		loadConfiguredProject: (): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:configured-scan"),
 		chooseProjectAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:choose-and-scan")
+			ipcRenderer.invoke("game-text:choose-and-scan"),
+		refreshConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:configured-refresh"),
+		chooseProjectAndRefresh: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:choose-and-refresh"),
+		progress: (): Promise<unknown> => ipcRenderer.invoke("game-text:progress"),
+		search: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:search", request),
+		focus: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:focus", request)
+	},
+	inputAtlas: {
+		loadConfiguredProject: (): Promise<unknown> =>
+			ipcRenderer.invoke("input-atlas:configured-scan"),
+		chooseProjectAndScan: (): Promise<unknown> =>
+			ipcRenderer.invoke("input-atlas:choose-and-scan")
 	},
 	contentObservatory: {
 		status: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:status"),
@@ -115,6 +146,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 		savedWorldMaps: (): Promise<
 			readonly { readonly label: string; readonly mapPath: string }[]
 		> => ipcRenderer.invoke("map-review:saved-world-maps"),
+		chooseProjectAndMaps: (): Promise<unknown> =>
+			ipcRenderer.invoke("map-review:choose-project-and-maps"),
 		focusActor: (actorId: string, bringToFront: boolean): Promise<WorldScoutFocusResult> =>
 			ipcRenderer.invoke("map-review:focus-actor", actorId, bringToFront),
 		approveCandidate: (

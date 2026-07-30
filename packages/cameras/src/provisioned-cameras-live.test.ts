@@ -1,9 +1,64 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
-import { awaitProvisionedCameraFrame, ProvisionedCameraError } from "./provisioned-cameras-live.js";
+import {
+	awaitProvisionedCameraFrame,
+	decodeProvisionedCameraRequest,
+	ProvisionedCameraError
+} from "./provisioned-cameras-live.js";
 
 describe("provisioned camera helpers", () => {
+	it.effect(
+		"migrates the candidate-only provisioning request during the compatibility window",
+		() =>
+			Effect.gen(function* () {
+				const request = yield* decodeProvisionedCameraRequest({
+					cameras: [
+						{
+							candidateId: "context_three_quarter",
+							fieldOfViewDegrees: 60,
+							height: 180,
+							location: { x: 1200, y: -1400, z: 700 },
+							rotation: { pitch: -12, roll: 0, yaw: 135 },
+							width: 320
+						}
+					],
+					previewFps: 5
+				});
+				expect(request).toMatchObject({
+					cameras: [
+						{
+							correlation: {
+								candidateId: "context_three_quarter",
+								type: "framing_candidate"
+							}
+						}
+					],
+					schemaVersion: 2
+				});
+			})
+	);
+
+	it.effect("rejects a temporary camera request with no durable correlation", () =>
+		decodeProvisionedCameraRequest({
+			cameras: [
+				{
+					fieldOfViewDegrees: 60,
+					height: 180,
+					location: { x: 1200, y: -1400, z: 700 },
+					rotation: { pitch: -12, roll: 0, yaw: 135 },
+					width: 320
+				}
+			],
+			previewFps: 5,
+			schemaVersion: 2
+		}).pipe(
+			Effect.exit,
+			Effect.tap((exit) => Effect.sync(() => expect(exit._tag).toBe("Failure"))),
+			Effect.asVoid
+		)
+	);
+
 	it.effect("awaits the latest BGRA frame for a posed camera index", () =>
 		Effect.gen(function* () {
 			const frame = yield* awaitProvisionedCameraFrame({

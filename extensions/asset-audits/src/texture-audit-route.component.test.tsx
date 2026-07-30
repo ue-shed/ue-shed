@@ -6,24 +6,34 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { TextureAuditClientShape } from "./texture-audit-client.js";
-import { TextureAuditRoute } from "./texture-audit-route.js";
+import { TextureAuditRoute } from "./texture-audit-query-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
 afterEach(cleanup);
 afterAll(() => runtime.dispose());
 
 describe("TextureAuditRoute", () => {
-	it("runs project selection through the Effect client", async () => {
-		let selections = 0;
+	it("uses the globally selected project and exposes no second chooser", async () => {
+		let rescans = 0;
 		const client: TextureAuditClientShape = {
 			chooseProjectAndScan: () =>
-				Effect.sync(() => {
-					selections += 1;
-					return { status: "cancelled" as const };
-				}),
+				Effect.die("the route must use the Workbench header for project choice"),
+			record: () => Effect.die("unused"),
+			search: () => Effect.die("unused"),
 			launchUnreal: () => Effect.die("unused"),
-			loadConfiguredProject: () => Effect.succeed({ status: "not_configured" as const }),
-			loadPreview: () => Effect.die("unused")
+			loadConfiguredProject: () =>
+				Effect.sync(() => {
+					rescans += 1;
+					return { status: "not_configured" as const };
+				}),
+			loadPreview: () => Effect.die("unused"),
+			progress: () =>
+				Effect.succeed({
+					completed: 0,
+					phase: "idle",
+					stage: "texture_audit",
+					total: 0
+				})
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -31,8 +41,8 @@ describe("TextureAuditRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		expect(await screen.findByText("No project configured.")).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Choose project" }));
-		expect(await screen.findByText("Selection cancelled. No scan was started.")).toBeDefined();
-		expect(selections).toBe(1);
+		expect(screen.queryByRole("button", { name: "Choose project" })).toBeNull();
+		await userEvent.setup().click(screen.getByRole("button", { name: "Rescan" }));
+		expect(rescans).toBe(2);
 	});
 });

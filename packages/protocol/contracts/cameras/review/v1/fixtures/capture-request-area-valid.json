@@ -1,0 +1,29 @@
+{
+	"assessment": { "method": "automatic" },
+	"contract": {
+		"name": "ue-shed-review-capture",
+		"version": { "major": 1, "minor": 3 }
+	},
+	"operationId": "33333333-3333-4333-8333-333333333333",
+	"viewId": "loading-area",
+	"expectedMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"subject": {
+		"kind": "oriented_bounds",
+		"bounds": {
+			"center": { "x": 0, "y": 0, "z": 200 },
+			"extent": { "x": 600, "y": 400, "z": 200 },
+			"rotation": { "pitch": 0, "yaw": 30, "roll": 0 }
+		}
+	},
+	"viewpoint": {
+		"kind": "world_fixed",
+		"approvedPose": {
+			"aspectRatio": "16:9",
+			"fieldOfViewDegrees": 70,
+			"projection": "perspective",
+			"location": { "x": 1200, "y": -900, "z": 700 },
+			"rotation": { "pitch": -20, "yaw": 145, "roll": 0 }
+		}
+	},
+	"resolution": { "width": 1280, "height": 720 }
+}

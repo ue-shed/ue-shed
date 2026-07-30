@@ -38,7 +38,7 @@ import {
 	type WorldObservationState,
 	type WorldScoutResult
 } from "@ue-shed/observatory";
-import { decodeSavedWorld, SavedWorldMap } from "@ue-shed/protocol";
+import { decodeSavedWorld, decodeSavedWorldChoice, SavedWorldMap } from "@ue-shed/protocol";
 import { Effect, Queue, Schema, Stream } from "effect";
 import type { RendererWorldObservationEvent } from "../main/ipc-contracts.js";
 
@@ -63,6 +63,13 @@ const loadSavedWorldMaps = () =>
 		decode: Schema.decodeUnknownEffect(Schema.Array(SavedWorldMap)),
 		invoke: () => window.ueShed.mapReview.savedWorldMaps(),
 		operation: "mapReview.savedWorldMaps"
+	});
+
+const chooseProjectAndMaps = () =>
+	request({
+		decode: decodeSavedWorldChoice,
+		invoke: () => window.ueShed.mapReview.chooseProjectAndMaps(),
+		operation: "mapReview.chooseProjectAndMaps"
 	});
 
 function request<A>(args: {
@@ -226,6 +233,9 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 		loadSavedWorld(mapPath)
 	),
 	savedWorldMaps: Effect.fn("MapReviewClient.savedWorldMaps")(() => loadSavedWorldMaps()),
+	chooseProjectAndMaps: Effect.fn("MapReviewClient.chooseProjectAndMaps")(() =>
+		chooseProjectAndMaps()
+	),
 	connectWorld: Effect.fn("MapReviewClient.connectWorld")(() => loadWorldSnapshot()),
 	focusActor: Effect.fn("MapReviewClient.focusActor")((actorId: ActorId, bringToFront: boolean) =>
 		request({

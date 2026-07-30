@@ -1,0 +1,42 @@
+{
+	"contract": {
+		"name": "ue-shed-review-capture",
+		"version": { "major": 1, "minor": 3 }
+	},
+	"status": "captured",
+	"operationId": "capture-area",
+	"viewId": "loading-area",
+	"resolvedSubject": {
+		"kind": "oriented_bounds",
+		"bounds": {
+			"center": { "x": 0, "y": 0, "z": 200 },
+			"extent": { "x": 600, "y": 400, "z": 200 },
+			"rotation": { "pitch": 0, "yaw": 30, "roll": 0 }
+		}
+	},
+	"effectiveWorldPose": {
+		"aspectRatio": "16:9",
+		"fieldOfViewDegrees": 70,
+		"projection": "perspective",
+		"location": { "x": 1200, "y": -900, "z": 700 },
+		"rotation": { "pitch": -20, "yaw": 145, "roll": 0 }
+	},
+	"mapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"stagingPath": "C:/fixture/Saved/UEShed/ReviewStaging/capture-area/pure.png",
+	"width": 1280,
+	"height": 720,
+	"captureDurationMs": 12.5,
+	"mapPackageDirtyBefore": false,
+	"mapPackageDirtyAfter": false,
+	"subjectProjection": {
+		"status": "projected",
+		"viewportStatus": "fully_within_viewport",
+		"normalizedBounds": { "minX": 0.15, "minY": 0.2, "maxX": 0.85, "maxY": 0.8 },
+		"margins": { "left": 0.15, "right": 0.15, "top": 0.2, "bottom": 0.2 }
+	},
+	"visibility": {
+		"status": "not_assessed",
+		"reason": "Oriented-area visibility needs a render-truthful region method.",
+		"limitations": ["Area contents are review subject matter and are not treated as blockers."]
+	}
+}

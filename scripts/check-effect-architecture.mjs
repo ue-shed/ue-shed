@@ -35,6 +35,11 @@ const approvedRuntimeExits = new Set([
 	"packages/cameras/src/index.ts",
 	// The live benchmark is a Node process entrypoint and owns the single Effect runtime exit.
 	"packages/observatory/scripts/benchmark-live.ts",
+	// The Workbench index benchmark is a Node process entrypoint, never part of the Electron main
+	// process. It owns one short-lived Effect runtime to measure the production reader boundary.
+	"apps/workbench/scripts/benchmark-project-index.ts",
+	// The compact-corpus benchmark is likewise an opt-in Node entrypoint over the production reader.
+	"apps/workbench/scripts/benchmark-compact-text.ts",
 	// Same pattern for the actor transform feed's per-socket decode-and-publish fork.
 	"packages/observatory/src/actor-feed.ts"
 ]);
@@ -49,8 +54,11 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/content-observatory-client.ts",
 	"apps/workbench/src/renderer/game-text-client.ts",
 	"apps/workbench/src/renderer/global.d.ts",
+	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
+	"apps/workbench/scripts/benchmark-project-index.ts",
+	"apps/workbench/scripts/benchmark-compact-text.ts",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	"packages/cameras/src/index.ts",
 	"packages/cameras/src/review-repository.ts",
@@ -126,6 +134,13 @@ const externalServiceEvidence = new Map([
 			"apps/workbench/src/renderer/index.tsx",
 			"extensions/game-text/src/game-text-route.component.test.tsx"
 		]
+	],
+	[
+		"extensions/input-atlas/src/input-atlas-client.ts",
+		[
+			"apps/workbench/src/renderer/index.tsx",
+			"extensions/input-atlas/src/input-atlas-route.component.test.tsx"
+		]
 	]
 ]);
 
@@ -138,6 +153,7 @@ const rendererTransportFiles = new Set([
 	"apps/workbench/src/renderer/content-observatory-client.ts",
 	"apps/workbench/src/renderer/game-text-client.ts",
 	"apps/workbench/src/renderer/global.d.ts",
+	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts"
 ]);

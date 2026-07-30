@@ -1,27 +1,27 @@
 import type { TextCorpus, TextUnit } from "./schema.js";
 
+function sourceValues(unit: TextUnit): readonly string[] {
+	return unit.source.status === "consistent" ? [unit.source.value] : unit.source.values;
+}
+
+/** Empty FText values are implementation noise, not searchable game text. */
+export function hasSearchableSource(unit: TextUnit): boolean {
+	return sourceValues(unit).some((source) => source.trim().length > 0);
+}
+
+/**
+ * Game-text search deliberately indexes only player-facing source text. Identity and occurrence
+ * metadata belong to the focused inspector, not the corpus query.
+ */
+export function searchableSourceText(unit: TextUnit): string {
+	return sourceValues(unit).join("\n").toLocaleLowerCase();
+}
+
 export function searchTextCorpus(corpus: TextCorpus, query: string): readonly TextUnit[] {
 	const terms = query.toLocaleLowerCase().trim().split(/\s+/u).filter(Boolean);
-	if (terms.length === 0) return corpus.units;
 	return corpus.units.filter((unit) => {
-		const identity =
-			unit.identity.status === "resolved"
-				? `${unit.identity.namespace} ${unit.identity.key}`
-				: unit.identity.reason;
-		const haystack = [
-			...unit.occurrences.map((occurrence) => occurrence.source),
-			identity,
-			...unit.occurrences.flatMap((occurrence) => [
-				occurrence.packageFile,
-				occurrence.location.objectPath,
-				occurrence.location.kind === "string_table_entry"
-					? occurrence.location.entryKey
-					: occurrence.location.propertyPath,
-				occurrence.location.kind === "data_table_cell" ? occurrence.location.row : ""
-			])
-		]
-			.join("\n")
-			.toLocaleLowerCase();
+		if (!hasSearchableSource(unit)) return false;
+		const haystack = searchableSourceText(unit);
 		return terms.every((term) => haystack.includes(term));
 	});
 }

@@ -2,14 +2,13 @@ import { it } from "@effect/vitest";
 import {
 	AssetReaderError,
 	makeAssetReaderTestLayer,
-	type SavedAssetInspection,
 	type SavedAssetScan,
-	type SavedAssetScanOptions
+	type SavedAssetExtractionOptions,
+	type SavedAssetTextExtractionEvent
 } from "@ue-shed/unreal-assets";
-import { Effect, Ref } from "effect";
+import { Effect, Ref, Stream } from "effect";
 import { expect } from "vitest";
 import {
-	STRING_TABLE_CLASS,
 	TEXT_PROPERTY_NAME,
 	TextCorpusScanError,
 	TextCorpusService,
@@ -18,69 +17,94 @@ import {
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
-const stringTableInspection: SavedAssetInspection = {
-	assets: [
-		{
-			kind: "StringTable",
-			object_path: "/Game/Text.ST_Game",
-			string_table_entries: [{ key: "GREETING", source: "Hello" }],
-			string_table_namespace: "Fixture"
+const textEvents = (options: {
+	readonly failed?: boolean;
+	readonly path: string;
+	readonly scannedAssets: number;
+}): readonly SavedAssetTextExtractionEvent[] => [
+	{
+		event: "text_occurrence",
+		schema_version: 1,
+		path: options.path,
+		fileBytes: 1510,
+		occurrence: {
+			source: "Hello",
+			identity: { status: "resolved", namespace: "Fixture", key: "GREETING" },
+			location: {
+				kind: "string_table_entry",
+				object_path: "/Game/Text.ST_Game",
+				entry_key: "GREETING"
+			},
+			edit_capability: "source_editable"
 		}
-	],
-	decode_errors: [],
-	package: {
-		name: "/Game/Text/ST_Game",
-		package_flags: 0,
-		summary_size: 1,
-		total_header_size: 1,
-		version: { legacy_file: -9, legacy_ue3: 0, licensee: 0, ue4: 522, ue5: 1018 }
 	},
-	path: "C:/Fixture/Content/Text/ST_Game.uasset",
-	schema_version: 7,
-	status: "ok"
-};
+	{
+		event: "text_package",
+		schema_version: 1,
+		path: options.path,
+		fileBytes: 1510,
+		status: "complete",
+		occurrences: 1,
+		coverage_gaps: 0,
+		diagnostics: []
+	},
+	...(options.failed === true
+		? [
+				{
+					event: "error" as const,
+					code: "asset_malformed_data",
+					message: "Saved asset could not be inspected (asset_malformed_data)",
+					path: "C:/Fixture/Content/Text/Broken.uasset",
+					retrySafe: false
+				}
+			]
+		: []),
+	{
+		event: "text_summary",
+		cacheHits: 0,
+		depth: "text",
+		diagnostics: [],
+		emittedAssets: 1,
+		failedAssets: options.failed === true ? 1 : 0,
+		partialAssets: 0,
+		projectRoot: "C:/Fixture",
+		roots: ["C:/Fixture/Content"],
+		scannedAssets: options.scannedAssets,
+		schema_version: 8,
+		skippedAssets: options.scannedAssets - 1 - (options.failed === true ? 1 : 0)
+	}
+];
 
 const readerOffering = (
-	scanProject: (options: SavedAssetScanOptions) => Effect.Effect<SavedAssetScan, AssetReaderError>
+	extractProjectText: (
+		options: SavedAssetExtractionOptions
+	) => Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError>
 ) =>
 	makeAssetReaderTestLayer({
 		discoverAssets: () => unexpected("discoverAssets"),
 		discoverTables: () => unexpected("discoverTables"),
 		readAsset: () => unexpected("readAsset"),
 		readTable: () => unexpected("readTable"),
-		scanProject,
+		extractProjectText,
 		source: () => Effect.succeed("configured")
 	});
 
-it.effect("selects text-bearing packages by StringTable class and TextProperty name", () =>
+it.effect("builds a corpus from compact text extraction events", () =>
 	Effect.gen(function* () {
-		const seen = yield* Ref.make<SavedAssetScanOptions[]>([]);
-		const reader = readerOffering(
-			Effect.fn("AssetReader.Test.scanProject")(function* (options) {
-				yield* Ref.update(seen, (current) => [...current, options]);
-				return {
-					assets: [{ fileBytes: 1510, inspection: stringTableInspection }],
-					failures: [
-						{
-							code: "asset_malformed_data",
-							message: "Saved asset could not be inspected (asset_malformed_data)",
-							path: "C:/Fixture/Content/Text/Broken.uasset",
-							retrySafe: false
-						}
-					],
-					summary: {
-						diagnostics: [],
-						emittedAssets: 1,
-						failedAssets: 1,
-						partialAssets: 0,
-						projectRoot: "C:/Fixture",
-						roots: ["C:/Fixture/Content"],
-						scannedAssets: 30,
-						schema_version: 7 as const,
-						skippedAssets: 28
-					}
-				};
-			})
+		const seen = yield* Ref.make<SavedAssetExtractionOptions[]>([]);
+		const reader = readerOffering((options) =>
+			Stream.unwrap(
+				Effect.gen(function* () {
+					yield* Ref.update(seen, (current) => [...current, options]);
+					return Stream.fromIterable(
+						textEvents({
+							failed: true,
+							path: "C:/Fixture/Content/Text/ST_Game.uasset",
+							scannedAssets: 30
+						})
+					);
+				})
+			)
 		);
 
 		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
@@ -88,8 +112,7 @@ it.effect("selects text-bearing packages by StringTable class and TextProperty n
 		).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
 
 		const [options] = yield* Ref.get(seen);
-		expect(options?.classes).toEqual([STRING_TABLE_CLASS]);
-		expect(options?.names).toEqual([TEXT_PROPERTY_NAME]);
+		expect(options?.paths).toBeUndefined();
 		// Packages the reader ruled out from their header still count as discovered and inspected.
 		expect(corpus.coverage.discoveredPackages).toBe(30);
 		expect(corpus.coverage.inspectedPackages).toBe(29);
@@ -102,13 +125,107 @@ it.effect("selects text-bearing packages by StringTable class and TextProperty n
 	})
 );
 
+it.effect("decodes only candidates from an existing project header index", () =>
+	Effect.gen(function* () {
+		const seen = yield* Ref.make<SavedAssetExtractionOptions[]>([]);
+		const reader = readerOffering((options) =>
+			Stream.unwrap(
+				Effect.gen(function* () {
+					yield* Ref.update(seen, (current) => [...current, options]);
+					return Stream.fromIterable(
+						textEvents({
+							path: "C:/Fixture/Content/Text/ST_Game.uasset",
+							scannedAssets: 1
+						})
+					);
+				})
+			)
+		);
+		const index: SavedAssetScan = {
+			assets: [
+				{
+					depth: "header",
+					fileBytes: 1510,
+					header: {
+						exports: [],
+						matched_names: [TEXT_PROPERTY_NAME],
+						package: { name: "/Game/Text/ST_Game" },
+						path: "C:/Fixture/Content/Text/ST_Game.uasset",
+						schema_version: 8
+					}
+				}
+			],
+			failures: [],
+			summary: {
+				cacheHits: 0,
+				depth: "header",
+				diagnostics: [],
+				emittedAssets: 1,
+				failedAssets: 0,
+				partialAssets: 0,
+				projectRoot: "C:/Fixture",
+				roots: ["C:/Fixture/Content"],
+				scannedAssets: 30,
+				schema_version: 8,
+				skippedAssets: 29
+			}
+		};
+
+		const [corpus, progress] = yield* Effect.gen(function* () {
+			const service = yield* TextCorpusService;
+			const corpus = yield* service.scanFromProjectIndex(index, {
+				projectRoot: "C:/Fixture"
+			});
+			return [corpus, yield* service.progress()] as const;
+		}).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+
+		const [options] = yield* Ref.get(seen);
+		expect(options?.paths).toEqual(["C:/Fixture/Content/Text/ST_Game.uasset"]);
+		expect(corpus.coverage.discoveredPackages).toBe(30);
+		expect(corpus.coverage.inspectedPackages).toBe(1);
+		expect(progress).toEqual({ phase: "ready", processedAssets: 1, totalAssets: 1 });
+	})
+);
+
+it.effect("does not scan Content when the existing project index has no text candidates", () =>
+	Effect.gen(function* () {
+		const reader = readerOffering(() =>
+			Stream.die(new Error("Unexpected extractProjectText call"))
+		);
+		const index: SavedAssetScan = {
+			assets: [],
+			failures: [],
+			summary: {
+				cacheHits: 0,
+				depth: "header",
+				diagnostics: [],
+				emittedAssets: 0,
+				failedAssets: 0,
+				partialAssets: 0,
+				projectRoot: "C:/Fixture",
+				roots: ["C:/Fixture/Content"],
+				scannedAssets: 30,
+				schema_version: 8,
+				skippedAssets: 30
+			}
+		};
+
+		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
+			service.scanFromProjectIndex(index, { projectRoot: "C:/Fixture" })
+		).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+
+		expect(corpus.coverage.discoveredPackages).toBe(30);
+		expect(corpus.coverage.inspectedPackages).toBe(0);
+	})
+);
+
 it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 	Effect.gen(function* () {
 		const reader = readerOffering((options) =>
-			Effect.fail(
+			Stream.fail(
 				new AssetReaderError({
 					kind: "resource_limit",
-					operation: "scan",
+					operation: "extract_text",
 					message: "Scan found 30 packages, above the limit of 2.",
 					path: options.projectRoot,
 					retrySafe: false

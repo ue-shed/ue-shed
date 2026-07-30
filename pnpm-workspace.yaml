@@ -31,3 +31,4 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
     - p4client-ts@0.7.1
+    - peculiar-sheets@0.11.1

@@ -25,6 +25,7 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
+#include "InputTriggers.h"
 #include "Internationalization/StringTable.h"
 #include "Internationalization/StringTableCore.h"
 #include "Internationalization/Text.h"
@@ -919,6 +920,189 @@ FString InputActionValueTypeName(const EInputActionValueType ValueType)
 	}
 }
 
+// One Enhanced Input action asset to generate.
+struct FFixtureInputActionSpec
+{
+	const TCHAR* AssetName;
+	const TCHAR* Description;
+	EInputActionValueType ValueType;
+	bool bConsumeInput;
+};
+
+// One key mapping inside a context. `TriggerClass` and each modifier are instanced subobjects,
+// which is how Enhanced Input serializes them and how the parser sees them.
+struct FFixtureInputMappingSpec
+{
+	const TCHAR* ActionName;
+	FKey Key;
+	UClass* TriggerClass;
+	TArray<UClass*> ModifierClasses;
+};
+
+struct FFixtureInputContextSpec
+{
+	const TCHAR* AssetName;
+	const TCHAR* Description;
+	TArray<FFixtureInputMappingSpec> Mappings;
+};
+
+/**
+ * The fixture's Enhanced Input surface. It is deliberately the size of a small real project so
+ * downstream tools meet overlapping contexts, contested keys, trigger and modifier variety, and
+ * keys no diagram will have a slot for.
+ */
+const TArray<FFixtureInputActionSpec>& FixtureInputActionSpecs()
+{
+	static const TArray<FFixtureInputActionSpec> Specs = {
+		// The two original fixture actions keep their names, descriptions, and value types so
+		// existing evidence and downstream expectations stay true.
+		{ TEXT("IA_Jump"), TEXT("Fixture jump action"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_Move"), TEXT("Fixture move action"), EInputActionValueType::Axis2D, true },
+		{ TEXT("IA_Look"), TEXT("Look around"), EInputActionValueType::Axis2D, false },
+		{ TEXT("IA_Sprint"), TEXT("Sprint"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_Crouch"), TEXT("Crouch"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_Interact"), TEXT("Interact"), EInputActionValueType::Boolean, true },
+		{ TEXT("IA_Fire"), TEXT("Fire weapon"), EInputActionValueType::Boolean, true },
+		{ TEXT("IA_Aim"), TEXT("Aim down sights"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_Reload"), TEXT("Reload"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_Melee"), TEXT("Melee attack"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_CycleWeapon"), TEXT("Cycle weapon"), EInputActionValueType::Axis1D, false },
+		{ TEXT("IA_Throttle"), TEXT("Vehicle throttle"), EInputActionValueType::Axis1D, false },
+		{ TEXT("IA_Steer"), TEXT("Vehicle steering"), EInputActionValueType::Axis2D, false },
+		{ TEXT("IA_Handbrake"), TEXT("Handbrake"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_ExitVehicle"), TEXT("Exit vehicle"), EInputActionValueType::Boolean, true },
+		{ TEXT("IA_Confirm"), TEXT("Confirm selection"), EInputActionValueType::Boolean, true },
+		{ TEXT("IA_Back"), TEXT("Back"), EInputActionValueType::Boolean, true },
+		{ TEXT("IA_NavigateMenu"), TEXT("Navigate menu"), EInputActionValueType::Axis2D, false },
+		{ TEXT("IA_PhotoToggle"), TEXT("Toggle photo mode"), EInputActionValueType::Boolean, false },
+		{ TEXT("IA_PhotoCapture"), TEXT("Capture photo"), EInputActionValueType::Boolean, false }
+	};
+	return Specs;
+}
+
+const TArray<FFixtureInputContextSpec>& FixtureInputContextSpecs()
+{
+	static const TArray<FFixtureInputContextSpec> Specs = {
+		// The original single-context fixture, unchanged: two mappings, one negate modifier.
+		{
+			TEXT("IMC_Fixture"), TEXT("Fixture mapping context"),
+			{
+				{ TEXT("IA_Jump"), EKeys::SpaceBar, nullptr, {} },
+				{ TEXT("IA_Move"), EKeys::A, nullptr, { UInputModifierNegate::StaticClass() } }
+			}
+		},
+		{
+			TEXT("IMC_Gameplay"), TEXT("On-foot gameplay"),
+			{
+				{ TEXT("IA_Move"), EKeys::W, nullptr, {} },
+				{ TEXT("IA_Move"), EKeys::S, nullptr, { UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_Move"), EKeys::A, nullptr,
+					{ UInputModifierSwizzleAxis::StaticClass(), UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_Move"), EKeys::D, nullptr,
+					{ UInputModifierSwizzleAxis::StaticClass() } },
+				{ TEXT("IA_Move"), EKeys::Gamepad_Left2D, nullptr,
+					{ UInputModifierDeadZone::StaticClass() } },
+				{ TEXT("IA_Look"), EKeys::Mouse2D, nullptr, {} },
+				{ TEXT("IA_Look"), EKeys::Gamepad_Right2D, nullptr,
+					{ UInputModifierDeadZone::StaticClass() } },
+				{ TEXT("IA_Jump"), EKeys::SpaceBar, UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Jump"), EKeys::Gamepad_FaceButton_Bottom,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Sprint"), EKeys::LeftShift, UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_Sprint"), EKeys::Gamepad_LeftShoulder,
+					UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_Crouch"), EKeys::LeftControl, UInputTriggerDown::StaticClass(), {} },
+				{ TEXT("IA_Crouch"), EKeys::Gamepad_RightThumbstick,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Interact"), EKeys::E, UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Interact"), EKeys::Gamepad_FaceButton_Right,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Fire"), EKeys::LeftMouseButton, nullptr, {} },
+				{ TEXT("IA_Fire"), EKeys::Gamepad_RightTrigger, nullptr, {} },
+				{ TEXT("IA_Aim"), EKeys::RightMouseButton, UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_Aim"), EKeys::Gamepad_LeftTrigger, UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_Reload"), EKeys::R, UInputTriggerTap::StaticClass(), {} },
+				{ TEXT("IA_Reload"), EKeys::Gamepad_FaceButton_Left,
+					UInputTriggerTap::StaticClass(), {} },
+				{ TEXT("IA_Melee"), EKeys::F, nullptr, {} },
+				{ TEXT("IA_Melee"), EKeys::Gamepad_FaceButton_Top, nullptr, {} },
+				{ TEXT("IA_CycleWeapon"), EKeys::MouseWheelAxis, nullptr, {} },
+				{ TEXT("IA_CycleWeapon"), EKeys::Gamepad_DPad_Up, nullptr, {} },
+				{ TEXT("IA_PhotoToggle"), EKeys::P, UInputTriggerPressed::StaticClass(), {} }
+			}
+		},
+		{
+			// Overlays gameplay while driving; it contests W, S, A, D, Space, E and both triggers.
+			TEXT("IMC_Vehicle"), TEXT("Vehicle controls"),
+			{
+				{ TEXT("IA_Throttle"), EKeys::W, nullptr, {} },
+				{ TEXT("IA_Throttle"), EKeys::S, nullptr, { UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_Throttle"), EKeys::Gamepad_RightTrigger, nullptr, {} },
+				{ TEXT("IA_Throttle"), EKeys::Gamepad_LeftTrigger, nullptr,
+					{ UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_Steer"), EKeys::A, nullptr,
+					{ UInputModifierSwizzleAxis::StaticClass(), UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_Steer"), EKeys::D, nullptr,
+					{ UInputModifierSwizzleAxis::StaticClass() } },
+				{ TEXT("IA_Steer"), EKeys::Gamepad_Left2D, nullptr,
+					{ UInputModifierDeadZone::StaticClass() } },
+				{ TEXT("IA_Handbrake"), EKeys::SpaceBar, UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_Handbrake"), EKeys::Gamepad_FaceButton_Bottom,
+					UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_ExitVehicle"), EKeys::E, UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_ExitVehicle"), EKeys::Gamepad_FaceButton_Right,
+					UInputTriggerHold::StaticClass(), {} },
+				{ TEXT("IA_Look"), EKeys::Mouse2D, nullptr, {} }
+			}
+		},
+		{
+			// The menu sits above everything, so its keys are contested by design.
+			TEXT("IMC_Menu"), TEXT("Menu navigation"),
+			{
+				{ TEXT("IA_Confirm"), EKeys::Enter, UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Confirm"), EKeys::E, UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Confirm"), EKeys::Gamepad_FaceButton_Bottom,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Back"), EKeys::Escape, UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Back"), EKeys::Gamepad_FaceButton_Right,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_NavigateMenu"), EKeys::Up, nullptr, {} },
+				{ TEXT("IA_NavigateMenu"), EKeys::Down, nullptr,
+					{ UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_NavigateMenu"), EKeys::Gamepad_Left2D, nullptr,
+					{ UInputModifierDeadZone::StaticClass() } },
+				{ TEXT("IA_CycleWeapon"), EKeys::Tab, UInputTriggerPressed::StaticClass(), {} }
+			}
+		},
+		{
+			TEXT("IMC_PhotoMode"), TEXT("Photo mode"),
+			{
+				{ TEXT("IA_Move"), EKeys::W, nullptr, {} },
+				{ TEXT("IA_Move"), EKeys::S, nullptr, { UInputModifierNegate::StaticClass() } },
+				{ TEXT("IA_Look"), EKeys::Mouse2D, nullptr,
+					{ UInputModifierScalar::StaticClass() } },
+				{ TEXT("IA_PhotoCapture"), EKeys::LeftMouseButton,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_PhotoCapture"), EKeys::Gamepad_RightTrigger,
+					UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_PhotoToggle"), EKeys::P, UInputTriggerPressed::StaticClass(), {} },
+				{ TEXT("IA_Back"), EKeys::Escape, UInputTriggerPressed::StaticClass(), {} }
+			}
+		}
+	};
+	return Specs;
+}
+
+FString FixtureInputActionPath(const TCHAR* AssetName)
+{
+	return FString::Printf(TEXT("/Game/Fixture/Input/%s.%s"), AssetName, AssetName);
+}
+
+FString FixtureInputContextPath(const TCHAR* AssetName)
+{
+	return FixtureInputActionPath(AssetName);
+}
+
 UInputAction* FindOrCreateInputAction(const TCHAR* PackageName, const TCHAR* AssetName)
 {
 	UPackage* Package = FindOrCreatePackage(PackageName);
@@ -935,147 +1119,201 @@ UInputAction* FindOrCreateInputAction(const TCHAR* PackageName, const TCHAR* Ass
 
 bool GenerateEnhancedInputFixtures()
 {
-	UInputAction* Jump = FindOrCreateInputAction(
-		TEXT("/Game/Fixture/Input/IA_Jump"), TEXT("IA_Jump"));
-	UInputAction* Move = FindOrCreateInputAction(
-		TEXT("/Game/Fixture/Input/IA_Move"), TEXT("IA_Move"));
-	if (Jump == nullptr || Move == nullptr) return false;
-
-	Jump->ActionDescription = FText::FromString(TEXT("Fixture jump action"));
-	Jump->bConsumeInput = false;
-	Jump->ValueType = EInputActionValueType::Boolean;
-	Jump->MarkPackageDirty();
-	if (!SaveAsset(Jump->GetOutermost(), Jump)) return false;
-
-	Move->ActionDescription = FText::FromString(TEXT("Fixture move action"));
-	Move->ValueType = EInputActionValueType::Axis2D;
-	Move->MarkPackageDirty();
-	if (!SaveAsset(Move->GetOutermost(), Move)) return false;
-
-	static const TCHAR* MappingPackageName = TEXT("/Game/Fixture/Input/IMC_Fixture");
-	static const TCHAR* MappingAssetName = TEXT("IMC_Fixture");
-	UPackage* MappingPackage = FindOrCreatePackage(MappingPackageName);
-	if (MappingPackage == nullptr) return false;
-	UInputMappingContext* MappingContext =
-		FindObject<UInputMappingContext>(MappingPackage, MappingAssetName);
-	const bool bCreated = MappingContext == nullptr;
-	if (bCreated)
+	TMap<FString, UInputAction*> ActionsByName;
+	for (const FFixtureInputActionSpec& Spec : FixtureInputActionSpecs())
 	{
-		MappingContext = NewObject<UInputMappingContext>(MappingPackage, MappingAssetName,
-			RF_Public | RF_Standalone | RF_Transactional);
+		const FString PackageName =
+			FString::Printf(TEXT("/Game/Fixture/Input/%s"), Spec.AssetName);
+		UInputAction* Action = FindOrCreateInputAction(*PackageName, Spec.AssetName);
+		if (Action == nullptr) return false;
+		Action->ActionDescription = FText::FromString(Spec.Description);
+		Action->ValueType = Spec.ValueType;
+		Action->bConsumeInput = Spec.bConsumeInput;
+		Action->MarkPackageDirty();
+		if (!SaveAsset(Action->GetOutermost(), Action)) return false;
+		ActionsByName.Add(Spec.AssetName, Action);
 	}
-	MappingContext->ContextDescription = FText::FromString(TEXT("Fixture mapping context"));
-	MappingContext->UnmapAll();
-	MappingContext->MapKey(Jump, EKeys::SpaceBar);
-	FEnhancedActionKeyMapping& MoveMapping = MappingContext->MapKey(Move, EKeys::A);
-	UInputModifierNegate* Negate = NewObject<UInputModifierNegate>(MappingContext,
-		TEXT("InputModifierNegate_0"));
-	Negate->bX = false;
-	MoveMapping.Modifiers.Add(Negate);
-	if (bCreated) FAssetRegistryModule::AssetCreated(MappingContext);
-	MappingPackage->MarkPackageDirty();
-	return SaveAsset(MappingPackage, MappingContext);
+
+	for (const FFixtureInputContextSpec& ContextSpec : FixtureInputContextSpecs())
+	{
+		const FString PackageName =
+			FString::Printf(TEXT("/Game/Fixture/Input/%s"), ContextSpec.AssetName);
+		UPackage* MappingPackage = FindOrCreatePackage(*PackageName);
+		if (MappingPackage == nullptr) return false;
+		UInputMappingContext* MappingContext =
+			FindObject<UInputMappingContext>(MappingPackage, ContextSpec.AssetName);
+		const bool bCreated = MappingContext == nullptr;
+		if (bCreated)
+		{
+			MappingContext = NewObject<UInputMappingContext>(MappingPackage,
+				ContextSpec.AssetName, RF_Public | RF_Standalone | RF_Transactional);
+		}
+		MappingContext->ContextDescription = FText::FromString(ContextSpec.Description);
+		MappingContext->UnmapAll();
+
+		int32 MappingIndex = 0;
+		for (const FFixtureInputMappingSpec& MappingSpec : ContextSpec.Mappings)
+		{
+			UInputAction* const* Action = ActionsByName.Find(MappingSpec.ActionName);
+			if (Action == nullptr || *Action == nullptr) return false;
+			FEnhancedActionKeyMapping& Mapping = MappingContext->MapKey(*Action, MappingSpec.Key);
+			// Subobjects are named deterministically so regenerating the fixture does not churn
+			// object paths in the recorded evidence.
+			if (MappingSpec.TriggerClass != nullptr)
+			{
+				const FString TriggerName = FString::Printf(TEXT("%s_%d"),
+					*MappingSpec.TriggerClass->GetName(), MappingIndex);
+				UInputTrigger* Trigger = NewObject<UInputTrigger>(MappingContext,
+					MappingSpec.TriggerClass, *TriggerName);
+				Mapping.Triggers.Add(Trigger);
+			}
+			int32 ModifierIndex = 0;
+			for (UClass* ModifierClass : MappingSpec.ModifierClasses)
+			{
+				const FString ModifierName = FString::Printf(TEXT("%s_%d_%d"),
+					*ModifierClass->GetName(), MappingIndex, ModifierIndex);
+				UInputModifier* Modifier = NewObject<UInputModifier>(MappingContext,
+					ModifierClass, *ModifierName);
+				if (UInputModifierNegate* Negate = Cast<UInputModifierNegate>(Modifier))
+				{
+					Negate->bX = false;
+				}
+				Mapping.Modifiers.Add(Modifier);
+				++ModifierIndex;
+			}
+			++MappingIndex;
+		}
+
+		if (bCreated) FAssetRegistryModule::AssetCreated(MappingContext);
+		MappingPackage->MarkPackageDirty();
+		if (!SaveAsset(MappingPackage, MappingContext)) return false;
+	}
+	return true;
 }
 
 bool VerifyEnhancedInputFixtures()
 {
-	const UInputAction* Jump = LoadObject<UInputAction>(
-		nullptr, TEXT("/Game/Fixture/Input/IA_Jump.IA_Jump"));
-	const UInputAction* Move = LoadObject<UInputAction>(
-		nullptr, TEXT("/Game/Fixture/Input/IA_Move.IA_Move"));
-	const UInputMappingContext* MappingContext = LoadObject<UInputMappingContext>(
-		nullptr, TEXT("/Game/Fixture/Input/IMC_Fixture.IMC_Fixture"));
-	if (Jump == nullptr || Move == nullptr || MappingContext == nullptr) return false;
-	if (Jump->ValueType != EInputActionValueType::Boolean || Jump->bConsumeInput) return false;
-	if (Jump->ActionDescription.ToString() != TEXT("Fixture jump action")) return false;
-	if (Move->ValueType != EInputActionValueType::Axis2D) return false;
-	if (Move->ActionDescription.ToString() != TEXT("Fixture move action")) return false;
-	if (MappingContext->ContextDescription.ToString() != TEXT("Fixture mapping context"))
+	TMap<FString, const UInputAction*> ActionsByName;
+	for (const FFixtureInputActionSpec& Spec : FixtureInputActionSpecs())
 	{
-		return false;
+		const UInputAction* Action = LoadObject<UInputAction>(
+			nullptr, *FixtureInputActionPath(Spec.AssetName));
+		if (Action == nullptr) return false;
+		if (Action->ValueType != Spec.ValueType) return false;
+		if (Action->bConsumeInput != Spec.bConsumeInput) return false;
+		if (Action->ActionDescription.ToString() != Spec.Description) return false;
+		ActionsByName.Add(Spec.AssetName, Action);
 	}
-	const TArray<FEnhancedActionKeyMapping>& Mappings = MappingContext->GetMappings();
-	if (Mappings.Num() != 2) return false;
-	if (Mappings[0].Action != Jump || Mappings[0].Key != EKeys::SpaceBar) return false;
-	if (Mappings[1].Action != Move || Mappings[1].Key != EKeys::A) return false;
-	if (Mappings[1].Modifiers.Num() != 1) return false;
-	const UInputModifierNegate* Negate = Cast<UInputModifierNegate>(Mappings[1].Modifiers[0]);
-	return Negate != nullptr && !Negate->bX && Negate->bY && Negate->bZ;
+
+	for (const FFixtureInputContextSpec& ContextSpec : FixtureInputContextSpecs())
+	{
+		const UInputMappingContext* MappingContext = LoadObject<UInputMappingContext>(
+			nullptr, *FixtureInputContextPath(ContextSpec.AssetName));
+		if (MappingContext == nullptr) return false;
+		if (MappingContext->ContextDescription.ToString() != ContextSpec.Description) return false;
+		const TArray<FEnhancedActionKeyMapping>& Mappings = MappingContext->GetMappings();
+		if (Mappings.Num() != ContextSpec.Mappings.Num()) return false;
+		for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+		{
+			const FFixtureInputMappingSpec& Spec = ContextSpec.Mappings[Index];
+			const UInputAction* const* Expected = ActionsByName.Find(Spec.ActionName);
+			if (Expected == nullptr) return false;
+			if (Mappings[Index].Action != *Expected) return false;
+			if (Mappings[Index].Key != Spec.Key) return false;
+			const int32 ExpectedTriggers = Spec.TriggerClass != nullptr ? 1 : 0;
+			if (Mappings[Index].Triggers.Num() != ExpectedTriggers) return false;
+			if (ExpectedTriggers == 1
+				&& Mappings[Index].Triggers[0]->GetClass() != Spec.TriggerClass)
+			{
+				return false;
+			}
+			if (Mappings[Index].Modifiers.Num() != Spec.ModifierClasses.Num()) return false;
+			for (int32 Slot = 0; Slot < Spec.ModifierClasses.Num(); ++Slot)
+			{
+				if (Mappings[Index].Modifiers[Slot]->GetClass() != Spec.ModifierClasses[Slot])
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
 }
 
 bool WriteEnhancedInputEvidence(const FString& OutputDirectory)
 {
-	const UInputAction* Jump = LoadObject<UInputAction>(
-		nullptr, TEXT("/Game/Fixture/Input/IA_Jump.IA_Jump"));
-	const UInputAction* Move = LoadObject<UInputAction>(
-		nullptr, TEXT("/Game/Fixture/Input/IA_Move.IA_Move"));
-	const UInputMappingContext* MappingContext = LoadObject<UInputMappingContext>(
-		nullptr, TEXT("/Game/Fixture/Input/IMC_Fixture.IMC_Fixture"));
-	if (Jump == nullptr || Move == nullptr || MappingContext == nullptr) return false;
-
 	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetObjectField(TEXT("contract"), EvidenceContract());
 	Root->SetStringField(TEXT("assetType"), TEXT("enhanced_input"));
 
-	auto ActionEvidence = [](const UInputAction* Action) -> TSharedRef<FJsonObject>
+	TArray<TSharedPtr<FJsonValue>> Actions;
+	for (const FFixtureInputActionSpec& Spec : FixtureInputActionSpecs())
 	{
+		const UInputAction* Action = LoadObject<UInputAction>(
+			nullptr, *FixtureInputActionPath(Spec.AssetName));
+		if (Action == nullptr) return false;
 		const TSharedRef<FJsonObject> Asset = MakeShared<FJsonObject>();
 		Asset->SetStringField(TEXT("objectPath"), Action->GetPathName());
 		Asset->SetStringField(TEXT("classPath"), Action->GetClass()->GetPathName());
 		Asset->SetStringField(TEXT("actionDescription"), Action->ActionDescription.ToString());
 		Asset->SetStringField(TEXT("valueType"), InputActionValueTypeName(Action->ValueType));
 		Asset->SetBoolField(TEXT("consumeInput"), Action->bConsumeInput);
-		return Asset;
-	};
-
-	TArray<TSharedPtr<FJsonValue>> Actions;
-	Actions.Add(MakeShared<FJsonValueObject>(ActionEvidence(Jump)));
-	Actions.Add(MakeShared<FJsonValueObject>(ActionEvidence(Move)));
+		Actions.Add(MakeShared<FJsonValueObject>(Asset));
+	}
 	Root->SetArrayField(TEXT("actions"), Actions);
 
-	const TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
-	Context->SetStringField(TEXT("objectPath"), MappingContext->GetPathName());
-	Context->SetStringField(TEXT("classPath"), MappingContext->GetClass()->GetPathName());
-	Context->SetStringField(TEXT("contextDescription"),
-		MappingContext->ContextDescription.ToString());
-	Context->SetStringField(TEXT("mappingsProperty"), TEXT("DefaultKeyMappings"));
-	TArray<TSharedPtr<FJsonValue>> Mappings;
-	for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
-	{
-		const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
-		Entry->SetStringField(TEXT("action"),
-			Mapping.Action != nullptr ? Mapping.Action->GetPathName() : FString());
-		Entry->SetStringField(TEXT("keyName"), Mapping.Key.GetFName().ToString());
-		TArray<TSharedPtr<FJsonValue>> Triggers;
-		for (const TObjectPtr<UInputTrigger>& Trigger : Mapping.Triggers)
-		{
-			if (Trigger == nullptr) continue;
-			const TSharedRef<FJsonObject> TriggerObject = MakeShared<FJsonObject>();
-			TriggerObject->SetStringField(TEXT("objectPath"), Trigger->GetPathName());
-			TriggerObject->SetStringField(TEXT("classPath"), Trigger->GetClass()->GetPathName());
-			Triggers.Add(MakeShared<FJsonValueObject>(TriggerObject));
-		}
-		Entry->SetArrayField(TEXT("triggers"), Triggers);
-		TArray<TSharedPtr<FJsonValue>> Modifiers;
-		for (const TObjectPtr<UInputModifier>& Modifier : Mapping.Modifiers)
-		{
-			if (Modifier == nullptr) continue;
-			const TSharedRef<FJsonObject> ModifierObject = MakeShared<FJsonObject>();
-			ModifierObject->SetStringField(TEXT("objectPath"), Modifier->GetPathName());
-			ModifierObject->SetStringField(TEXT("classPath"), Modifier->GetClass()->GetPathName());
-			Modifiers.Add(MakeShared<FJsonValueObject>(ModifierObject));
-		}
-		Entry->SetArrayField(TEXT("modifiers"), Modifiers);
-		Mappings.Add(MakeShared<FJsonValueObject>(Entry));
-	}
-	Context->SetArrayField(TEXT("mappings"), Mappings);
 	TArray<TSharedPtr<FJsonValue>> Contexts;
-	Contexts.Add(MakeShared<FJsonValueObject>(Context));
+	for (const FFixtureInputContextSpec& ContextSpec : FixtureInputContextSpecs())
+	{
+		const UInputMappingContext* MappingContext = LoadObject<UInputMappingContext>(
+			nullptr, *FixtureInputContextPath(ContextSpec.AssetName));
+		if (MappingContext == nullptr) return false;
+		const TSharedRef<FJsonObject> Context = MakeShared<FJsonObject>();
+		Context->SetStringField(TEXT("objectPath"), MappingContext->GetPathName());
+		Context->SetStringField(TEXT("classPath"), MappingContext->GetClass()->GetPathName());
+		Context->SetStringField(TEXT("contextDescription"),
+			MappingContext->ContextDescription.ToString());
+		Context->SetStringField(TEXT("mappingsProperty"), TEXT("DefaultKeyMappings"));
+		TArray<TSharedPtr<FJsonValue>> Mappings;
+		for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+		{
+			const TSharedRef<FJsonObject> Entry = MakeShared<FJsonObject>();
+			Entry->SetStringField(TEXT("action"),
+				Mapping.Action != nullptr ? Mapping.Action->GetPathName() : FString());
+			Entry->SetStringField(TEXT("keyName"), Mapping.Key.GetFName().ToString());
+			TArray<TSharedPtr<FJsonValue>> Triggers;
+			for (const TObjectPtr<UInputTrigger>& Trigger : Mapping.Triggers)
+			{
+				if (Trigger == nullptr) continue;
+				const TSharedRef<FJsonObject> TriggerObject = MakeShared<FJsonObject>();
+				TriggerObject->SetStringField(TEXT("objectPath"), Trigger->GetPathName());
+				TriggerObject->SetStringField(TEXT("classPath"),
+					Trigger->GetClass()->GetPathName());
+				Triggers.Add(MakeShared<FJsonValueObject>(TriggerObject));
+			}
+			Entry->SetArrayField(TEXT("triggers"), Triggers);
+			TArray<TSharedPtr<FJsonValue>> Modifiers;
+			for (const TObjectPtr<UInputModifier>& Modifier : Mapping.Modifiers)
+			{
+				if (Modifier == nullptr) continue;
+				const TSharedRef<FJsonObject> ModifierObject = MakeShared<FJsonObject>();
+				ModifierObject->SetStringField(TEXT("objectPath"), Modifier->GetPathName());
+				ModifierObject->SetStringField(TEXT("classPath"),
+					Modifier->GetClass()->GetPathName());
+				Modifiers.Add(MakeShared<FJsonValueObject>(ModifierObject));
+			}
+			Entry->SetArrayField(TEXT("modifiers"), Modifiers);
+			Mappings.Add(MakeShared<FJsonValueObject>(Entry));
+		}
+		Context->SetArrayField(TEXT("mappings"), Mappings);
+		Contexts.Add(MakeShared<FJsonValueObject>(Context));
+	}
 	Root->SetArrayField(TEXT("mappingContexts"), Contexts);
 
 	return WriteJsonEvidence(
 		FPaths::Combine(OutputDirectory, TEXT("parser-targets/enhanced-input.json")), Root);
 }
+
 
 bool WriteAuthoringEvidence(const FString& OutputDirectory)
 {
@@ -1821,6 +2059,8 @@ bool GenerateCameraMap()
 		int32 IntermittentMovers = 0;
 		bool bMoverMotionsMatch = true;
 		bool bHasReviewSubject = false;
+		bool bHasTranslucentReviewSubject = false;
+		bool bHasReviewOccluder = false;
 		bool bHasAtmosphere = false;
 		bool bAllCamerasBound = true;
 		for (AActor* Actor : World->PersistentLevel->Actors)
@@ -1828,6 +2068,9 @@ bool GenerateCameraMap()
 			if (Actor == nullptr) continue;
 			bHasAtmosphere = bHasAtmosphere || Actor->IsA<ASkyAtmosphere>();
 			bHasReviewSubject = bHasReviewSubject || Actor->GetFName() == TEXT("ReviewSubject");
+			bHasTranslucentReviewSubject = bHasTranslucentReviewSubject
+				|| Actor->GetFName() == TEXT("ReviewTranslucentSubject");
+			bHasReviewOccluder = bHasReviewOccluder || Actor->GetFName() == TEXT("ReviewOccluder");
 			if (const AUEShedFixtureMover* Mover = Cast<AUEShedFixtureMover>(Actor))
 			{
 				++ExistingMovers;
@@ -1852,7 +2095,9 @@ bool GenerateCameraMap()
 			&& FlyingMovers == FlyingMoverCount
 			&& IntermittentMovers == IntermittentMoverCount;
 		if (ExistingMovers == ObservationMoverCount && ExistingCameras == CameraFixtureCount
-			&& bAllCamerasBound && bHasReviewSubject && bHasAtmosphere && bFamiliesMatch
+			&& bAllCamerasBound && bHasReviewSubject && bHasTranslucentReviewSubject
+			&& bHasReviewOccluder && bHasAtmosphere
+			&& bFamiliesMatch
 			&& bMoverMotionsMatch)
 		{
 			UE_LOG(LogTemp, Display, TEXT("Camera fixture map already matches its contract"));
@@ -1949,8 +2194,29 @@ bool GenerateCameraMap()
 	AddChildShape(ReviewSubject, TEXT("Tower"), TEXT("/Engine/BasicShapes/Cylinder.Cylinder"),
 		FVector(-55, 35, 35), FVector(0.45, 0.45, 1.1), FLinearColor(0.48f, 0.52f, 0.58f, 1.0f));
 
+	FActorSpawnParameters TranslucentSubjectSpawn;
+	TranslucentSubjectSpawn.Name = TEXT("ReviewTranslucentSubject");
+	TranslucentSubjectSpawn.NameMode =
+		FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	AStaticMeshActor* TranslucentSubject = World->SpawnActor<AStaticMeshActor>(
+		FVector(0, -1600, 140), FRotator::ZeroRotator, TranslucentSubjectSpawn);
+	UMaterialInterface* TranslucentMaterial = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Engine/EngineDebugMaterials/M_SimpleTranslucent.M_SimpleTranslucent"));
+	if (TranslucentSubject == nullptr || TranslucentMaterial == nullptr) return false;
+	TranslucentSubject->Tags.Add(TEXT("UEShedCameraFixture"));
+	TranslucentSubject->Tags.Add(TEXT("UEShedReviewSubject"));
+	TranslucentSubject->SetActorLabel(TEXT("Review Translucent Subject"));
+	TranslucentSubject->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Cube.Cube")));
+	TranslucentSubject->SetActorScale3D(FVector(3.2, 3.2, 3.2));
+	TranslucentSubject->GetStaticMeshComponent()->SetMaterial(0, TranslucentMaterial);
+
+	FActorSpawnParameters ReviewOccluderSpawn;
+	ReviewOccluderSpawn.Name = TEXT("ReviewOccluder");
+	ReviewOccluderSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
 	AStaticMeshActor* Occluder = World->SpawnActor<AStaticMeshActor>(
-		FVector(420, -280, 80), FRotator(0, 25, 0));
+		FVector(420, -280, 80), FRotator(0, 25, 0), ReviewOccluderSpawn);
+	if (Occluder == nullptr) return false;
 	Occluder->Tags.Add(TEXT("UEShedCameraFixture"));
 	Occluder->SetActorLabel(TEXT("Review Occluder"));
 	Occluder->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
@@ -2039,12 +2305,17 @@ bool VerifyCameraMap()
 	int32 IntermittentMovers = 0;
 	bool bMoverMotionsMatch = true;
 	bool bHasReviewSubject = false;
+	bool bHasTranslucentReviewSubject = false;
+	bool bHasReviewOccluder = false;
 	bool bHasAtmosphere = false;
 	for (AActor* Actor : World->PersistentLevel->Actors)
 	{
 		if (Actor == nullptr) continue;
 		bHasAtmosphere = bHasAtmosphere || Actor->IsA<ASkyAtmosphere>();
 		bHasReviewSubject = bHasReviewSubject || Actor->GetFName() == TEXT("ReviewSubject");
+	bHasTranslucentReviewSubject = bHasTranslucentReviewSubject
+		|| Actor->GetFName() == TEXT("ReviewTranslucentSubject");
+	bHasReviewOccluder = bHasReviewOccluder || Actor->GetFName() == TEXT("ReviewOccluder");
 		if (const AUEShedFixtureMover* Mover = Cast<AUEShedFixtureMover>(Actor))
 		{
 			++Movers;
@@ -2066,11 +2337,15 @@ bool VerifyCameraMap()
 		}
 	}
 	UE_LOG(LogTemp, Display,
-		TEXT("Camera fixture verification found %d movers (%d stationary / %d flying / %d intermittent), %d cameras, atmosphere=%s"),
+		TEXT("Camera fixture verification found %d movers (%d stationary / %d flying / %d intermittent), %d cameras, opaque review subject=%s, translucent review subject=%s, review occluder=%s, atmosphere=%s"),
 		Movers, StationaryMovers, FlyingMovers, IntermittentMovers, Cameras,
+		bHasReviewSubject ? TEXT("yes") : TEXT("no"),
+		bHasTranslucentReviewSubject ? TEXT("yes") : TEXT("no"),
+		bHasReviewOccluder ? TEXT("yes") : TEXT("no"),
 		bHasAtmosphere ? TEXT("yes") : TEXT("no"));
 	return Movers == ObservationMoverCount && Cameras == CameraFixtureCount
-		&& BoundCameras == CameraFixtureCount && bHasReviewSubject && bHasAtmosphere
+		&& BoundCameras == CameraFixtureCount && bHasReviewSubject && bHasTranslucentReviewSubject
+		&& bHasReviewOccluder && bHasAtmosphere
 		&& StationaryMovers == StationaryMoverCount && FlyingMovers == FlyingMoverCount
 		&& IntermittentMovers == IntermittentMoverCount && bMoverMotionsMatch;
 }

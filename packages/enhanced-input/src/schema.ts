@@ -35,7 +35,7 @@ export type InputInstancedObjectRef = Schema.Schema.Type<typeof InputInstancedOb
 
 export const InputActionRecord = Schema.Struct({
 	objectPath: InputObjectPath,
-	classPath: Schema.Literal("/Script/EnhancedInput.InputAction"),
+	classPath: Schema.String,
 	packageFile: Schema.String,
 	actionDescription: StringEvidence,
 	valueType: StringEvidence,
@@ -56,7 +56,7 @@ export type InputMappingsProperty = Schema.Schema.Type<typeof InputMappingsPrope
 
 export const InputMappingContextRecord = Schema.Struct({
 	objectPath: InputObjectPath,
-	classPath: Schema.Literal("/Script/EnhancedInput.InputMappingContext"),
+	classPath: Schema.String,
 	packageFile: Schema.String,
 	contextDescription: StringEvidence,
 	mappingsProperty: Schema.NullOr(InputMappingsProperty),
@@ -106,3 +106,20 @@ export const EnhancedInputPublicError = Schema.Struct({
 	retrySafe: Schema.Boolean
 });
 export type EnhancedInputPublicError = Schema.Schema.Type<typeof EnhancedInputPublicError>;
+
+/** One host-initiated scan, including the outcomes a host must render rather than throw. */
+export const EnhancedInputRunResult = Schema.Union([
+	Schema.Struct({
+		status: Schema.Literal("completed"),
+		report: EnhancedInputReport,
+		// The absolute root the scan ran against, so a host can confirm which project is on screen —
+		// the report itself is coverage counts, not "what did we just scan".
+		projectRoot: Schema.String
+	}),
+	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({ status: Schema.Literal("cancelled") }),
+	Schema.Struct({ status: Schema.Literal("failed"), error: EnhancedInputPublicError })
+]);
+export type EnhancedInputRunResult = Schema.Schema.Type<typeof EnhancedInputRunResult>;
+
+export const decodeEnhancedInputRunResult = Schema.decodeUnknownEffect(EnhancedInputRunResult);

@@ -179,7 +179,7 @@ try {
 		{ env: consumerEnvironment }
 	);
 	const inspection = JSON.parse(inspectionRaw);
-	if (inspection.schema_version !== 7 || inspection.assets?.[0]?.kind !== "DataTable") {
+	if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== "DataTable") {
 		throw new Error("Packed CLI did not produce the stable DataTable inspection contract.");
 	}
 	const checksums = await readFile(join(packageDirectory, "SHA256SUMS"), "utf8");

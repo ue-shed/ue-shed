@@ -766,7 +766,8 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 									purpose: `Review ${session.subject.displayName}`,
 									subject,
 									tags: [],
-									viewId: session.viewId
+									viewId: session.viewId,
+									visibilityPolicyId: reviewSet.visibilityPolicies[0]!.id
 								})
 							]
 						});

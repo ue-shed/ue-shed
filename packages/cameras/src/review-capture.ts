@@ -17,12 +17,17 @@ import {
 import {
 	CaptureRunId,
 	ArtifactId,
-	ReviewCaptureRequest,
+	CaptureInvocation,
+	CaptureInvocationId,
+	ReviewClearCompanionRequest,
+	ReviewCaptureRequestCurrent,
 	decodeCaptureRun,
 	type CaptureRun,
+	type CaptureInvocation as CaptureInvocationValue,
 	type ReviewCaptureResponse,
 	type ReviewSet,
 	type ReviewViewId,
+	type VisibilityResult,
 	type ViewResult
 } from "./review-schema.js";
 
@@ -46,7 +51,7 @@ export type ReviewCaptureConcurrency = Schema.Schema.Type<typeof ReviewCaptureCo
  */
 export const defaultReviewCaptureConcurrency = ReviewCaptureConcurrency.make(1);
 
-type SchemaReviewCaptureRequest = typeof ReviewCaptureRequest.Type;
+type SchemaReviewCaptureRequest = typeof ReviewCaptureRequestCurrent.Type;
 
 export interface ReviewCapturePortShape {
 	readonly capture: (
@@ -85,9 +90,27 @@ export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<Review
 export interface CaptureReviewSetOptions {
 	readonly concurrency?: ReviewCaptureConcurrency;
 	readonly endpoint: string;
+	/**
+	 * A validated request from a person or an external caller. Scheduling remains outside Map Review.
+	 * Omit this only for the single-command ergonomic path, which creates a manual invocation.
+	 */
+	readonly invocation?: CaptureInvocationValue;
 	readonly projectRoot: string;
 	readonly reviewSetPath: string;
 	readonly viewIds?: ReadonlyArray<ReviewViewId>;
+}
+
+export function manualCaptureInvocation(args: {
+	readonly id: CaptureInvocationId;
+	readonly reviewSetId: (typeof CaptureInvocation)["Type"]["reviewSetId"];
+	readonly viewIds?: ReadonlyArray<ReviewViewId>;
+}): CaptureInvocationValue {
+	return CaptureInvocation.make({
+		cause: { type: "manual" },
+		id: args.id,
+		reviewSetId: args.reviewSetId,
+		...(args.viewIds === undefined ? {} : { viewIds: [...args.viewIds] })
+	});
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -128,6 +151,66 @@ export function reviewCapturePortLayer(
 	return Layer.succeed(ReviewCapturePort, ReviewCapturePort.of(service));
 }
 
+function durableVisibility(
+	response: Extract<ReviewCaptureResponse, { readonly status: "captured" }>
+): VisibilityResult {
+	if (!("visibility" in response)) {
+		return {
+			reason: "The connected editor capability does not provide visibility assessment.",
+			status: "not_assessed"
+		};
+	}
+	if (response.visibility.status === "assessed" && "classification" in response.visibility) {
+		const { classification, ...measurement } = response.visibility;
+		return {
+			...measurement,
+			legacyInterpretation: {
+				classification,
+				source: "capture_run_pre_1_3"
+			}
+		};
+	}
+	return response.visibility;
+}
+
+function clearCompanionRequest(args: {
+	readonly policy: ReviewSet["visibilityPolicies"][number];
+	readonly view: ReviewSet["views"][number];
+}): ReviewClearCompanionRequest {
+	if (args.policy.output.mode === "natural_only") {
+		return ReviewClearCompanionRequest.make({ status: "not_requested" });
+	}
+	if (args.policy.output.clearStrategy.type === "isolate_target") {
+		return ReviewClearCompanionRequest.make({
+			status: "requested",
+			strategy: "isolate_target"
+		});
+	}
+	return ReviewClearCompanionRequest.make({
+		actors: (args.view.visibilityOverrides?.hideInClear ?? []).map(
+			(locator) => locator.actorPath
+		),
+		status: "requested",
+		strategy: "hide_explicit"
+	});
+}
+
+function stagedArtifacts(
+	response: Extract<ReviewCaptureResponse, { readonly status: "captured" }>
+) {
+	return "stagedArtifacts" in response
+		? response.stagedArtifacts
+		: [{ stagingPath: response.stagingPath, variant: "pure" as const }];
+}
+
+function durableClearCompanion(
+	response: Extract<ReviewCaptureResponse, { readonly status: "captured" }>
+) {
+	return "clearCompanion" in response
+		? response.clearCompanion
+		: { status: "not_requested" as const };
+}
+
 function captureOneView(args: {
 	readonly capturePort: ReviewCapturePortShape;
 	readonly ids: ReviewIdGeneratorShape;
@@ -149,21 +232,41 @@ function captureOneView(args: {
 				recovery: "Add the profile to the Review Set or update the Review View.",
 				retrySafe: false,
 				status: "failed" as const,
-				viewId: args.view.id
+				viewId: args.view.id,
+				viewRevision: args.view.revision
+			};
+		}
+		const visibilityPolicy = args.reviewSet.visibilityPolicies.find(
+			(candidate) => candidate.id === args.view.visibilityPolicyId
+		);
+		if (!visibilityPolicy) {
+			return {
+				code: "visibility_policy_missing",
+				message: `Review View ${args.view.id} references missing policy ${args.view.visibilityPolicyId}`,
+				recovery: "Add the policy to the Review Set or update the Review View.",
+				retrySafe: false,
+				status: "failed" as const,
+				viewId: args.view.id,
+				viewRevision: args.view.revision
 			};
 		}
 		const operationId = yield* args.ids.generate();
-		const request = ReviewCaptureRequest.make({
-			approvedPose: args.view.approvedPose,
+		const request = ReviewCaptureRequestCurrent.make({
+			assessment: visibilityPolicy.assessment,
+			clearCompanion: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
 			contract: {
 				name: "ue-shed-review-capture",
-				version: { major: 1, minor: 0 }
+				version: { major: 1, minor: 4 }
 			},
 			expectedMapPath: args.reviewSet.project.mapPath,
 			operationId,
 			resolution: profile.resolution,
-			subject: args.view.subject,
-			viewId: args.view.id
+			subject:
+				args.view.target.kind === "actor"
+					? args.view.target.subject
+					: { bounds: args.view.target.bounds, kind: "oriented_bounds" },
+			viewId: args.view.id,
+			viewpoint: args.view.viewpoint
 		});
 		const response = yield* args.capturePort.capture(request).pipe(
 			Effect.catch((cause) =>
@@ -176,7 +279,7 @@ function captureOneView(args: {
 					retrySafe: true,
 					contract: {
 						name: "ue-shed-review-capture" as const,
-						version: { major: 1 as const, minor: 0 }
+						version: { major: 1 as const, minor: 4 as const }
 					},
 					status: "failed" as const,
 					viewId: args.view.id
@@ -190,7 +293,8 @@ function captureOneView(args: {
 				recovery: response.recovery,
 				retrySafe: response.retrySafe,
 				status: "failed" as const,
-				viewId: args.view.id
+				viewId: args.view.id,
+				viewRevision: args.view.revision
 			};
 		}
 		if (response.mapPackageDirtyAfter !== response.mapPackageDirtyBefore) {
@@ -200,41 +304,71 @@ function captureOneView(args: {
 				recovery: "Inspect the editor map before retrying; do not save tooling changes.",
 				retrySafe: false,
 				status: "failed" as const,
-				viewId: args.view.id
+				viewId: args.view.id,
+				viewRevision: args.view.revision
 			};
 		}
-		if (!isPathWithin(args.unrealStagingRoot, response.stagingPath)) {
+		const responseArtifacts = stagedArtifacts(response);
+		if (
+			responseArtifacts.some(
+				(artifact) => !isPathWithin(args.unrealStagingRoot, artifact.stagingPath)
+			)
+		) {
 			return {
 				code: "capture_staging_path_rejected",
 				message: "Unreal returned a capture path outside the project review staging root.",
 				recovery: "Verify the connected project and editor capability version.",
 				retrySafe: false,
 				status: "failed" as const,
-				viewId: args.view.id
+				viewId: args.view.id,
+				viewRevision: args.view.revision
 			};
 		}
 
-		const relativePath = `views/${args.view.id}/pure.png`;
-		const artifactPath = join(args.stagingRoot, ...relativePath.split("/"));
-		const stored = yield* args.repository.storeArtifact({
-			destinationPath: artifactPath,
-			sourcePath: response.stagingPath
+		const artifacts = yield* Effect.forEach(responseArtifacts, (artifact) => {
+			const relativePath = `views/${args.view.id}/${artifact.variant}.png`;
+			return args.repository
+				.storeArtifact({
+					destinationPath: join(args.stagingRoot, ...relativePath.split("/")),
+					sourcePath: artifact.stagingPath
+				})
+				.pipe(
+					Effect.map((stored) => ({
+						byteLength: stored.size,
+						contentHash: sha256(stored.bytes),
+						height: response.height,
+						id: ArtifactId.make(`${args.runId}:${args.view.id}:${artifact.variant}`),
+						mediaType: "image/png" as const,
+						relativePath,
+						variant: artifact.variant,
+						width: response.width
+					}))
+				);
 		});
 		const result = {
-			artifact: {
-				byteLength: stored.size,
-				contentHash: sha256(stored.bytes),
-				height: response.height,
-				id: ArtifactId.make(`${args.runId}:${args.view.id}:pure`),
-				mediaType: "image/png" as const,
-				relativePath,
-				variant: "pure" as const,
-				width: response.width
-			},
+			artifacts,
 			captureDurationMs: response.captureDurationMs,
-			resolvedActorPath: response.actorPath,
+			clearCompanion: durableClearCompanion(response),
+			realization:
+				"resolvedSubject" in response
+					? {
+							effectiveWorldPose: response.effectiveWorldPose,
+							resolvedSubject: response.resolvedSubject,
+							status: "resolved" as const,
+							viewpoint: args.view.viewpoint
+						}
+					: {
+							resolvedActorPath: response.actorPath,
+							status: "legacy_not_recorded" as const
+						},
 			status: "captured" as const,
-			viewId: args.view.id
+			viewId: args.view.id,
+			viewRevision: args.view.revision,
+			...(args.view.visibilityOverrides === undefined
+				? {}
+				: { visibilityOverrides: args.view.visibilityOverrides }),
+			visibilityPolicy,
+			visibility: durableVisibility(response)
 		};
 		yield* args.repository.writeRunDocument({
 			path: join(args.stagingRoot, "views", args.view.id, "result.json"),
@@ -254,10 +388,28 @@ function captureReviewSetWith(args: {
 	return Effect.gen(function* () {
 		const reviewSet = yield* args.repository.loadSet(args.options.reviewSetPath);
 		const runId = CaptureRunId.make(yield* args.ids.generate());
-		const views = args.options.viewIds
-			? reviewSet.views.filter((view) => args.options.viewIds?.includes(view.id))
+		const invocation =
+			args.options.invocation ??
+			manualCaptureInvocation({
+				id: CaptureInvocationId.make(yield* args.ids.generate()),
+				reviewSetId: reviewSet.id,
+				...(args.options.viewIds === undefined ? {} : { viewIds: args.options.viewIds })
+			});
+		if (invocation.reviewSetId !== reviewSet.id) {
+			return yield* Effect.fail(
+				new ReviewCaptureRunError({
+					message: "The Capture Invocation belongs to a different Review Set.",
+					operation: "prepare",
+					recovery: "Create an invocation for the Review Set being captured.",
+					runId
+				})
+			);
+		}
+		const requestedViewIds = invocation.viewIds ?? args.options.viewIds;
+		const views = requestedViewIds
+			? reviewSet.views.filter((view) => requestedViewIds.includes(view.id))
 			: reviewSet.views;
-		if (views.length === 0 || views.length !== (args.options.viewIds?.length ?? views.length)) {
+		if (views.length === 0 || views.length !== (requestedViewIds?.length ?? views.length)) {
 			return yield* Effect.fail(
 				new ReviewCaptureRunError({
 					message:
@@ -299,22 +451,26 @@ function captureReviewSetWith(args: {
 				{ concurrency }
 			);
 
-			const failures = results.filter((result) => result.status === "failed").length;
-			const successes = results.length - failures;
+			const hardFailures = results.filter((result) => result.status === "failed").length;
+			const clearFailures = results.filter(
+				(result) =>
+					result.status === "captured" && result.clearCompanion.status === "failed"
+			).length;
 			const run = yield* decodeCaptureRun({
 				completedAt: isoNow(yield* Clock.currentTimeMillis),
-				contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 0 } },
+				contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
 				id: runId,
+				invocation,
 				project: reviewSet.project,
 				results,
 				reviewSetId: reviewSet.id,
 				startedAt,
 				status:
-					failures === 0
-						? "completed"
-						: successes === 0
-							? "failed"
-							: "completed_with_failures"
+					hardFailures === results.length
+						? "failed"
+						: hardFailures > 0 || clearFailures > 0
+							? "completed_with_failures"
+							: "completed"
 			}).pipe(
 				Effect.mapError(
 					(cause) =>
@@ -348,8 +504,7 @@ function captureReviewSetWith(args: {
 	}).pipe(
 		Effect.withSpan("camera.review.run.capture", {
 			attributes: {
-				"camera.review.capture.concurrency": concurrency,
-				"camera.review.set.path": args.options.reviewSetPath
+				"camera.review.capture.concurrency": concurrency
 			}
 		})
 	);

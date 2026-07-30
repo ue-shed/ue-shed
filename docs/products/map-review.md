@@ -25,6 +25,53 @@ separately enabled Unreal editor capability, promoted atomically into an immutab
 rediscovered after an editor restart, and opened in the Workbench reference reviewer. The CLI uses
 the same repository and orchestration services.
 
+Plan 032 has established the compatibility foundation for visibility policy and caller provenance.
+Review Set v1.0 actor/world-pose definitions migrate in memory to v1.1, preserving IDs, Approved
+Poses, and Natural/Pure-only behavior. New writes emit v1.1: Capture Profiles no longer own variant
+policy; Views reference immutable Visibility Policy presets and carry explicit target, viewpoint,
+and revision identity. Legacy Capture Runs remain readable under an explicit `legacy_unversioned`
+revision state. Consumers may ignore revisions or use them to build their own organization and
+comparison behavior.
+
+Capture contract v1.4 now realizes all three first target/viewpoint meanings: fixed actor, actor
+relative to its current transform, and fixed oriented area. Unreal resolves relative actor poses
+inside the capture operation and returns the exact effective world pose and resolved target.
+Capture Run v1.4 retains that realization and raw visibility measurement beside the durable
+viewpoint. It can additionally retain an optional Clear companion: Pure is always captured first,
+and a Clear failure keeps that Pure evidence while marking the run as a typed partial failure. A
+narrow numeric/current-selection area operation produces portable oriented bounds without creating
+an actor.
+
+Every new View Result retains the View revision identity used for capture. An optional pure helper
+can create a revised View definition, but UE Shed does not prescribe history grouping, timeline
+storage, baseline policy, or comparison presentation.
+
+The first render-truthful visibility-assessment capability is implemented. For v1.3 actor requests,
+`automatic` resolves to a bounded depth comparison and records method/version, subject pixel count,
+duration, visible fraction, and its limitations. The Unreal plugin returns raw measurements rather
+than product-facing visibility labels, and Capture Runs preserve those measurements without
+assigning a cutoff. `@ue-shed/cameras` offers an optional pure classifier only with thresholds
+supplied by the consumer; it does not define defaults.
+Explicit collision-ray sampling remains available as a cheaper diagnostic. Missing subjects still
+fail resolution without inventing a percentage. A v1.3 behind-camera or fully offscreen subject
+keeps its projection diagnosis and returns `not_assessed`, rather than a fabricated fraction.
+Translucent or otherwise non-depth-writing subjects return the typed
+`subject_depth_unavailable` assessment failure with recovery guidance and no fraction. An optional
+capability report lists only the methods and bounded depth resolution the current producer supports;
+it does not choose a method or visibility policy for a consumer. Hosts aggregate duration, bounded
+sample counts, and failures without actor, view, operation, map, artifact, or path labels.
+Oriented areas report `not_assessed` because objects inside an area are review subject matter rather
+than disposable blockers. Subject-mask assessment remains pending.
+
+Clear is optional producer capability, not a required consumer workflow. A caller may request a
+same-operation Clear companion by isolating the actor subject or hiding bounded explicit actor paths;
+otherwise it requests only Pure. Unreal applies the intervention only to its transient scene-capture
+component, restores that component list before returning, and records intervention/restoration facts.
+It never changes global editor actor visibility. Consumers may ignore the companion entirely or use
+the resulting labeled artifacts to build their own review experience. New View Results also retain
+optional snapshots of the requested policy and view overrides, so a consumer can explain the request
+without treating those fields as a product-owned review model.
+
 The Slice 2 tracer bullet is now implemented on that spine. The editor capability inspects exactly
 one selected actor, normalized bounds, orientation, and the active perspective viewport. The
 headless camera domain deterministically generates Context three-quarter, Facade/front, four
@@ -60,8 +107,7 @@ authoring-session recovery. Authoring contact-sheet previews stream live BGRA wh
 active (a provisioned camera set at **320×180**, painted continuously to canvas at a user-selected
 **1–10 FPS**) and fall back to the same thumbnail size via PNG `CaptureReviewView` when the editor is
 stopped; Keep / Capture Set remain editor-world PNG evidence at the Review Set profile resolution.
-Richer orientation inputs and viewport manipulation, alongside layered identity, Clear captures,
-comparison, and review decisions, remain later milestones in this plan.
+Consumers may build artifact comparison and review applications from the durable evidence contracts.
 
 ## User outcomes
 
@@ -129,22 +175,24 @@ is not the intended final multi-user collaboration surface.
 
 Use these names consistently in schemas, APIs, CLI output, diagnostics, and UI copy.
 
-| Term            | Meaning                                                                                      |
-| --------------- | -------------------------------------------------------------------------------------------- |
-| Review Set      | A partitioned, versioned collection of Review Views and reusable Capture Profiles            |
-| Review View     | Durable visual intent: subject, purpose, framing, approved pose, and variant policy          |
-| Subject         | The actor, component collection, or region the view exists to review                         |
-| Subject Locator | An ordered, inspectable strategy for resolving a Subject in a particular world               |
-| Framing Recipe  | The preset and inputs that generated a candidate pose                                        |
-| Approved Pose   | The transform and projection an author accepted for repeat captures                          |
-| Capture Profile | Reusable requested environment, readiness, rendering, resolution, and warm-up policy         |
-| Capture Run     | One immutable attempt to capture a Review Set in a specific producer/world/session           |
-| View Result     | The success or typed failure for one Review View within a Capture Run                        |
-| Pure            | Ordinary rendered truth with natural context and occlusion                                   |
-| Clear           | A labeled companion captured from the same pose with explicit visibility intervention        |
-| Evidence Bundle | Manifests, images, thumbnails, diagnostics, and provenance produced by a run                 |
-| Review Record   | Append-only local review decisions and annotations referencing immutable evidence            |
-| Baseline        | An explicitly promoted Capture Run used as a comparison target, never an implicit latest run |
+| Term               | Meaning                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| Review Set         | A partitioned collection of Views, Capture Profiles, and immutable Visibility Policies       |
+| Review View        | Durable visual intent: target, viewpoint, purpose, framing, and named policy references      |
+| Subject            | The actor, component collection, or region the view exists to review                         |
+| Subject Locator    | An ordered, inspectable strategy for resolving a Subject in a particular world               |
+| Framing Recipe     | The preset and inputs that generated a candidate pose                                        |
+| Approved Pose      | The transform and projection an author accepted for repeat captures                          |
+| Capture Profile    | Reusable requested environment, readiness, rendering, resolution, and warm-up policy         |
+| Visibility Policy  | Immutable reusable preset for assessment, output, and low-visibility action                  |
+| Capture Invocation | Validated command that records why capture occurred; it is not a scheduler                   |
+| Capture Run        | One immutable attempt to capture a Review Set in a specific producer/world/session           |
+| View Result        | The success or typed failure for one Review View within a Capture Run                        |
+| Pure               | Ordinary rendered truth with natural context and occlusion                                   |
+| Clear              | A labeled companion captured from the same pose with explicit visibility intervention        |
+| Evidence Bundle    | Manifests, images, thumbnails, diagnostics, and provenance produced by a run                 |
+| Review Record      | Append-only local review decisions and annotations referencing immutable evidence            |
+| Baseline           | An explicitly promoted Capture Run used as a comparison target, never an implicit latest run |
 
 Camera origin uses two terms consistently:
 
@@ -169,8 +217,9 @@ Shared editor wire for capture request/response and selection / subject-inspecti
 under `packages/protocol/contracts/cameras/review`. Change that surface JSON Schema first, keep
 fixtures green via `pnpm --filter @ue-shed/cameras contract:check` (included in `pnpm check`), then
 update UEShedCameras and run `pnpm check:unreal` with Remote Control connected. Portable Review Set
-and Capture Run documents remain TypeScript-owned until their language-neutral freeze is explicitly
-planned.
+and Capture Run v1.1 documents remain TypeScript-owned, with Effect Schema migrations authoritative
+for portable persistence. The versioned provisioned-camera request is language-neutral JSON Schema
+under `packages/protocol/contracts/cameras/provisioning/v1`.
 
 Initial IDs include `ReviewSetId`, `ReviewViewId`, `SubjectId`, `CaptureProfileId`, `CaptureRunId`,
 `ViewResultId`, `ArtifactId`, `ReviewRecordId`, `ProducerId`, `SessionId`, and `WorldId`.
@@ -491,14 +540,16 @@ ue-shed review authoring bootstrap <project-root> <endpoint>
 ue-shed review authoring start <project-root> <review-set> <endpoint> <view-id>
 ue-shed review authoring show|discard <project-root> <session-id>
 ue-shed review authoring resume|reframe|approve <project-root> <session-id> <endpoint>
-ue-shed review capture <project-root> <review-set> <endpoint>
+ue-shed review capture <project-root> <review-set> <endpoint> [--cause external_automation] [--correlation <id>]
 ue-shed review history <project-root>
 ue-shed review show <run-json>
 ```
 
 `authoring bootstrap` holds the first map-scoped Review Set in a durable session; `authoring approve`
-writes it only after the author accepts a candidate. Commands print validated structured output,
-report partial View Result failures, use stable exit semantics, and never treat a
+writes it only after the author accepts a candidate. Capture defaults to a generated manual
+Invocation; `--cause external_automation` plus optional `--correlation` records an external caller
+without adding scheduling behavior. Commands print validated structured output, report partial View
+Result failures, use stable exit semantics, and never treat a
 completed-with-failures run as fully successful.
 
 ## Workbench experience
@@ -532,7 +583,7 @@ workspace.
 
 ### Pure and Clear inspection
 
-- Treat Pure and Clear as one paired result.
+- Treat Pure with its optional Clear companion as one capture result.
 - Provide instant toggle and side-by-side modes from the same focused view.
 - Persistently label Clear in the image chrome and exported thumbnail.
 - List visibility interventions and restoration status in an explainability panel.
@@ -551,7 +602,7 @@ workspace.
 - Group by subject and Review View, never by artifact filename.
 - Filter unreviewed, failed, subject-missing, framing-warning, environment-mismatch, and attention
   hints.
-- Review a Pure/Clear pair as one item.
+- Review a Pure image with its optional Clear companion as one item.
 - Support fast keyboard navigation and decisions without animation.
 - Keep decision, annotation, and baseline promotion separate.
 
@@ -742,17 +793,17 @@ Acceptance:
 - a completed-with-failures run is distinguishable in CLI exit behavior and Workbench;
 - capture remains bounded and demand-driven.
 
-### Slice 4: Paired Pure and Clear evidence
+### Slice 4: Pure evidence with an optional Clear companion
 
 - Add manual show-only-subject and explicit-hidden-object policies.
 - Capture both variants from one Approved Pose and projection.
 - Record every intervention and verify restoration.
-- Build paired variant inspection and explainability UI.
+- Build optional Clear companion inspection and explainability UI.
 
 Acceptance:
 
 - Clear is never emitted or displayed without its label and Pure relationship;
-- a pose/projection mismatch invalidates the pair;
+- a pose/projection mismatch invalidates the Clear companion;
 - visibility lists and reasons are preserved in the manifest;
 - failure during Clear capture still restores world state and preserves the valid Pure result;
 - variant behavior is proven against a real occluder in the fixture.

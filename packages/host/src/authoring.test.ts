@@ -10,10 +10,11 @@ import { it } from "@effect/vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { AuthoringClientLive, ShedAuthoringLive, ShedAuthoringSessionsLive } from "./authoring.js";
-import { shedHostConfigurationLayer } from "./configuration.js";
+import { SavedTableIndexLive } from "./saved-table-index.js";
+import { ShedHostConfiguration, shedHostConfigurationLayer } from "./configuration.js";
 import { AuthoringFilePickerCancelled } from "./file-picker.js";
 
 const snapshot: AuthoringTableSnapshot = {
@@ -48,6 +49,119 @@ const failingRemoteControl = makeRemoteControlClientTestLayer(() =>
 			retrySafe: true
 		})
 	)
+);
+
+it.effect("opens a catalog-indexed table without re-resolving the configured project", () =>
+	Effect.gen(function* () {
+		const projectRoot = "C:/Projects/Fixture";
+		const assetPath = "C:/Projects/Fixture/Content/Fixture/DT_Test.uasset";
+		const objectPath = snapshot.table.objectPath;
+		// Resolving the project is what drives a project-wide index in the Workbench host, so
+		// this counts the calls rather than the walk itself.
+		const projectResolutions = yield* Ref.make(0);
+		const tableReads = yield* Ref.make(0);
+		const configuration = Layer.succeed(
+			ShedHostConfiguration,
+			ShedHostConfiguration.of({
+				authoringAsset: () => Effect.succeed({ status: "not_configured" as const }),
+				project: () =>
+					Ref.update(projectResolutions, (count) => count + 1).pipe(
+						Effect.as({ projectRoot, status: "configured" as const })
+					),
+				remoteControlEndpoint: () => Effect.succeed("http://127.0.0.1:30001")
+			})
+		);
+		const reader = makeAssetReaderTestLayer({
+			catalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "idle" as const,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				}),
+			discoverAssets: () => Effect.succeed([]),
+			discoverTables: () =>
+				Effect.succeed({
+					diagnostics: [],
+					projectRoot,
+					scannedAssets: 1,
+					tables: [
+						{
+							assetPath,
+							authority: {
+								kind: "project_files" as const,
+								packageName: "/Game/Fixture/DT_Test"
+							},
+							completeness: "complete" as const,
+							kind: "data_table" as const,
+							objectPath,
+							parentTables: [],
+							rowStruct: "/Script/Fixture.Row",
+							schema: {
+								reason: "Saved packages carry no field schema.",
+								status: "unavailable" as const
+							}
+						}
+					]
+				}),
+			readAsset: () => Effect.die("not used"),
+			readTable: () => Ref.update(tableReads, (count) => count + 1).pipe(Effect.as(snapshot)),
+			source: () => Effect.succeed("configured")
+		});
+		const catalog = makeAuthoringCatalogTestLayer({
+			discover: () =>
+				Effect.succeed({
+					diagnostics: [],
+					scannedSavedAssets: 1,
+					tables: [
+						{
+							authorities: [
+								{
+									authority: "saved" as const,
+									completeness: "complete" as const,
+									schema: {
+										reason: "Saved packages carry no field schema.",
+										status: "unavailable" as const
+									}
+								}
+							],
+							divergence: { status: "none" as const },
+							kind: "data_table" as const,
+							objectPath,
+							packageName: "/Game/Fixture/DT_Test",
+							parentTables: [],
+							rowStruct: "/Script/Fixture.Row"
+						}
+					]
+				})
+		});
+		const dependencies = Layer.mergeAll(
+			configuration,
+			AuthoringFilePickerCancelled,
+			reader,
+			catalog,
+			failingRemoteControl
+		);
+		const authoring = ShedAuthoringLive.pipe(
+			Layer.provide(SavedTableIndexLive.pipe(Layer.provide(dependencies))),
+			Layer.provide(dependencies)
+		);
+
+		yield* Effect.gen(function* () {
+			const client = yield* AuthoringClient;
+			expect((yield* client.loadConfiguredCatalog()).status).toBe("ready");
+			const afterCatalog = yield* Ref.get(projectResolutions);
+
+			for (let open = 0; open < 5; open += 1) {
+				const opened = yield* client.openCatalogTable(objectPath, "saved");
+				expect(opened.status).toBe("ready");
+			}
+
+			expect(yield* Ref.get(projectResolutions)).toBe(afterCatalog);
+			expect(yield* Ref.get(tableReads)).toBe(5);
+		}).pipe(Effect.provide(AuthoringClientLive.pipe(Layer.provide(authoring))));
+	})
 );
 
 it.effect("loads a saved table and begins a session through the direct client", () =>
@@ -92,6 +206,7 @@ it.effect("loads a saved table and begins a session through the direct client", 
 			const sessions = ShedAuthoringSessionsLive.pipe(Layer.provide(configuration));
 			const authoring = ShedAuthoringLive.pipe(
 				Layer.provide(sessions),
+				Layer.provide(SavedTableIndexLive.pipe(Layer.provide(dependencies))),
 				Layer.provide(dependencies)
 			);
 			const clientLayer = AuthoringClientLive.pipe(Layer.provide(authoring));

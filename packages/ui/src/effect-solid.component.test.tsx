@@ -33,6 +33,20 @@ function TestSubscription(props: { readonly stream: Stream.Stream<string> }) {
 	return <span>subscriber</span>;
 }
 
+function TestIndependentActions(props: {
+	readonly first: Effect.Effect<string>;
+	readonly second: Effect.Effect<string>;
+	readonly onValue: (value: string) => void;
+}) {
+	const firstAction = createEffectAction();
+	const secondAction = createEffectAction();
+	onMount(() => {
+		firstAction.run(props.first, { onSuccess: props.onValue });
+		secondAction.run(props.second, { onSuccess: props.onValue });
+	});
+	return <span>independent runners</span>;
+}
+
 describe("Effect-to-Solid lifetime adapter", () => {
 	it("interrupts owner work on cleanup", async () => {
 		const runtime = ManagedRuntime.make(Layer.empty);
@@ -74,6 +88,32 @@ describe("Effect-to-Solid lifetime adapter", () => {
 		await runtime.runPromise(Effect.yieldNow);
 		expect(latest()).toBe("second");
 		expect(await Effect.runPromise(Ref.get(observed))).toEqual(["second"]);
+		view.unmount();
+		await runtime.dispose();
+	});
+
+	it("keeps independent actions alive when another action starts", async () => {
+		const runtime = ManagedRuntime.make(Layer.empty);
+		const releaseFirst = await Effect.runPromise(Deferred.make<void>());
+		const observed = await Effect.runPromise(Ref.make<ReadonlyArray<string>>([]));
+		const first = Deferred.await(releaseFirst).pipe(
+			Effect.as("choice"),
+			Effect.uninterruptible
+		);
+		const view = render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<TestIndependentActions
+					first={first}
+					second={Effect.succeed("refresh")}
+					onValue={(value) => {
+						Effect.runSync(Ref.update(observed, (values) => [...values, value]));
+					}}
+				/>
+			</EffectRuntimeProvider>
+		));
+		await runtime.runPromise(Deferred.succeed(releaseFirst, undefined));
+		await runtime.runPromise(Effect.yieldNow);
+		expect(await Effect.runPromise(Ref.get(observed))).toEqual(["refresh", "choice"]);
 		view.unmount();
 		await runtime.dispose();
 	});

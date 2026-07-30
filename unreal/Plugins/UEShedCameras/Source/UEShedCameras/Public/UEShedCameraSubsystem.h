@@ -50,7 +50,8 @@ struct FUEShedProvisionedCameraSpec
 {
 	GENERATED_BODY()
 
-	FString CandidateId;
+	FString CorrelationId;
+	FString CorrelationType;
 	FVector Location = FVector::ZeroVector;
 	FRotator Rotation = FRotator::ZeroRotator;
 	float FieldOfViewDegrees = 60.f;

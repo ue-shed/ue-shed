@@ -26,6 +26,34 @@ import {
 	type WorkbenchConfigurationShape
 } from "../workbench-config.js";
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
+import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
+
+// Map Review receives the app-wide project's cached map inventory from this focused test seam.
+const mapReviewProject = {
+	maps: [
+		{ label: "Alpha", mapPath: "Content/Maps/L_Alpha.umap" },
+		{ label: "Beta", mapPath: "Content/Maps/L_Beta.umap" }
+	],
+	project: {
+		inputAtlas: "ready" as const,
+		mapCount: 2,
+		packageCount: 3,
+		projectName: "MyProj",
+		projectRoot: "D:/Games/MyProj"
+	}
+};
+const projectTestLayer = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.succeed({ project: mapReviewProject.project, status: "ready" as const }),
+	current: () => Effect.succeed({ status: "not_configured" as const }),
+	inputAtlas: () => Effect.die("not used"),
+	savedTables: () => Effect.die("savedTables is not used"),
+	savedProject: () =>
+		Effect.succeed({
+			maps: mapReviewProject.maps,
+			projectRoot: mapReviewProject.project.projectRoot
+		})
+});
+const MapReviewLiveWithDialog = Layer.provide(WorkbenchMapReviewLive, projectTestLayer);
 
 const reviewSetPath = "C:/Fixture/.ue-shed/review/sets/fixture.json";
 const projectRoot = "C:/FixtureProject";
@@ -160,38 +188,82 @@ const assetReaderTestLayer = makeAssetReaderTestLayer({
 	source: () => Effect.succeed("configured" as const)
 });
 
-const WorkbenchMapReviewTestLive = WorkbenchMapReviewLive.pipe(
-	Layer.provide(
-		Layer.mergeAll(
-			assetReaderTestLayer,
-			makeCameraFeedTestLayer(),
-			makeWorkbenchWindowTestLayer(),
-			clearOnlyRemoteControl,
-			makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
-			Layer.succeed(
-				Observatory,
-				Observatory.of({
-					focus: () => Effect.die("not used"),
-					observe: () => Stream.die("not used"),
-					setObservationCadence: () => Effect.die("not used"),
-					snapshot: () => Effect.die("not used")
-				})
-			),
-			makeEditorPlaySessionTestLayer({
-				execute: () => Effect.die("not used"),
-				pause: () => Effect.die("not used"),
-				resume: () => Effect.die("not used"),
-				start: () => Effect.die("not used"),
-				status: () =>
-					Effect.succeed({
-						contract: {
-							name: "unreal-editor-play-session",
-							version: { major: 1, minor: 0 }
-						},
-						state: { status: "stopped" }
-					}),
-				stop: () => Effect.die("not used")
-			})
+const baseMapReviewDeps = Layer.mergeAll(
+	assetReaderTestLayer,
+	makeCameraFeedTestLayer(),
+	makeWorkbenchWindowTestLayer(),
+	clearOnlyRemoteControl,
+	makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
+	Layer.succeed(
+		Observatory,
+		Observatory.of({
+			focus: () => Effect.die("not used"),
+			observe: () => Stream.die("not used"),
+			setObservationCadence: () => Effect.die("not used"),
+			snapshot: () => Effect.die("not used")
+		})
+	),
+	makeEditorPlaySessionTestLayer({
+		execute: () => Effect.die("not used"),
+		pause: () => Effect.die("not used"),
+		resume: () => Effect.die("not used"),
+		start: () => Effect.die("not used"),
+		status: () =>
+			Effect.succeed({
+				contract: {
+					name: "unreal-editor-play-session",
+					version: { major: 1, minor: 0 }
+				},
+				state: { status: "stopped" }
+			}),
+		stop: () => Effect.die("not used")
+	})
+);
+
+const WorkbenchMapReviewTestLive = MapReviewLiveWithDialog.pipe(Layer.provide(baseMapReviewDeps));
+
+it.effect("uses the global project's cached .umap inventory for saved map review", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const choice = yield* service.chooseProjectAndMaps();
+		expect(choice.status).toBe("configured");
+		if (choice.status !== "configured") return;
+		expect(choice.projectName).toBe("MyProj");
+		// The selected project exposes its discovered maps as project-relative paths.
+		expect(choice.maps.map((map) => map.mapPath)).toEqual([
+			"Content/Maps/L_Alpha.umap",
+			"Content/Maps/L_Beta.umap"
+		]);
+		// That same cached inventory backs savedWorldMaps without a second native map picker.
+		const maps = yield* service.savedWorldMaps();
+		expect(maps.map((map) => map.mapPath)).toEqual([
+			"Content/Maps/L_Alpha.umap",
+			"Content/Maps/L_Beta.umap"
+		]);
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewTestLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeWorkbenchConfigurationLayer(notConfigured),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.die("not used"),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.die("not used"),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: () => Effect.die("not used"),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer(dyingAuthoring)
+					)
+				)
+			)
 		)
 	)
 );
@@ -321,27 +393,43 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 									completedAt: "2026-01-01T00:00:00.000Z",
 									contract: {
 										name: "ue-shed-capture-run" as const,
-										version: { major: 1, minor: 0 }
+										version: { major: 1, minor: 1 }
 									},
 									id: "run-1",
+									invocation: {
+										cause: { type: "manual" as const },
+										id: "invocation-1",
+										reviewSetId: fixtureReviewSet.id
+									},
 									project: fixtureReviewSet.project,
 									results: [
 										{
-											artifact: {
-												byteLength: 3,
-												contentHash: `sha256:${"a".repeat(64)}`,
-												height: 1080,
-												id: "artifact-1",
-												mediaType: "image/png" as const,
-												relativePath: "artifact.png",
-												variant: "pure" as const,
-												width: 1920
-											},
+											artifacts: [
+												{
+													byteLength: 3,
+													contentHash: `sha256:${"a".repeat(64)}`,
+													height: 1080,
+													id: "artifact-1",
+													mediaType: "image/png" as const,
+													relativePath: "artifact.png",
+													variant: "pure" as const,
+													width: 1920
+												}
+											],
 											captureDurationMs: 10,
 											resolvedActorPath:
 												"/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
 											status: "captured" as const,
-											viewId: "view-1"
+											viewId: "view-1",
+											viewRevision: {
+												id: "view-1-r1",
+												number: 1,
+												status: "numbered" as const
+											},
+											visibility: {
+												reason: "Fixture has no visibility assessment.",
+												status: "not_assessed" as const
+											}
 										}
 									],
 									reviewSetId: fixtureReviewSet.id,
@@ -501,7 +589,7 @@ it.effect(
 			});
 		}).pipe(
 			Effect.provide(
-				WorkbenchMapReviewLive.pipe(
+				MapReviewLiveWithDialog.pipe(
 					Layer.provide(
 						Layer.mergeAll(
 							assetReaderTestLayer,
@@ -850,7 +938,7 @@ it.effect("resumes the latest persisted authoring session after a fresh service 
 		expect(result.session?.draftPose).toMatchObject({ location: { z: 28 } });
 	}).pipe(
 		Effect.provide(
-			WorkbenchMapReviewLive.pipe(
+			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						assetReaderTestLayer,
@@ -937,7 +1025,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 		});
 	}).pipe(
 		Effect.provide(
-			WorkbenchMapReviewLive.pipe(
+			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						assetReaderTestLayer,
@@ -1059,7 +1147,7 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 		const activeObservers = yield* Ref.make(0);
 
 		const windowLayer = makeWorkbenchWindowTestLayer();
-		const serviceLayer = WorkbenchMapReviewLive.pipe(
+		const serviceLayer = MapReviewLiveWithDialog.pipe(
 			Layer.provide(
 				Layer.mergeAll(
 					assetReaderTestLayer,
@@ -1240,7 +1328,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 		const cadenceUpdates = yield* Ref.make<number[]>([]);
 
 		const windowLayer = makeWorkbenchWindowTestLayer();
-		const serviceLayer = WorkbenchMapReviewLive.pipe(
+		const serviceLayer = MapReviewLiveWithDialog.pipe(
 			Layer.provide(
 				Layer.mergeAll(
 					assetReaderTestLayer,
@@ -1436,7 +1524,7 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 		});
 	}).pipe(
 		Effect.provide(
-			WorkbenchMapReviewLive.pipe(
+			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						assetReaderTestLayer,
@@ -1556,7 +1644,7 @@ it.effect("blocks Capture Set while PIE is running", () =>
 		});
 	}).pipe(
 		Effect.provide(
-			WorkbenchMapReviewLive.pipe(
+			MapReviewLiveWithDialog.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						assetReaderTestLayer,

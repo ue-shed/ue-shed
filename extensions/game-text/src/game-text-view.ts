@@ -2,16 +2,19 @@ import {
 	searchTextCorpus,
 	type TextCorpus,
 	type TextOccurrence,
-	type TextUnit
+	type TextUnit,
+	type TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 
 export type CapabilityFilter = "all" | "source_editable" | "read_only";
 
-export function sourceText(unit: TextUnit): string {
+type TextUnitPresentation = Pick<TextUnit, "identity" | "source"> | TextUnitSearchResult;
+
+export function sourceText(unit: TextUnitPresentation): string {
 	return unit.source.status === "consistent" ? unit.source.value : unit.source.values.join(" / ");
 }
 
-export function identityLabel(unit: TextUnit): string {
+export function identityLabel(unit: TextUnitPresentation): string {
 	return unit.identity.status === "resolved"
 		? `${unit.identity.namespace} · ${unit.identity.key}`
 		: `Identity unresolved · ${unit.identity.reason.replaceAll("_", " ")}`;

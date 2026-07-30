@@ -9,9 +9,11 @@ import {
 	reviewCaptureRemotePortLayer
 } from "@ue-shed/cameras";
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
+import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
 import { EditorPlaySessionLive } from "@ue-shed/engine-discovery";
 import { AuthoringClientLive } from "@ue-shed/host";
+import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
 import { ObservatoryLive } from "@ue-shed/observatory";
 import { AssetReaderLive } from "@ue-shed/unreal-assets";
@@ -24,17 +26,19 @@ import { electronIpcLayer, type ElectronIpcHost } from "./adapters/electron-ipc.
 import { workbenchWindowLayer, type WorkbenchWindowOptions } from "./adapters/electron-window.js";
 import { fixtureProcessLayer } from "./adapters/fixture-process.js";
 import { LocalFilesLive } from "./adapters/local-files.js";
+import { ProjectInventoryCacheLive } from "./adapters/project-inventory-cache.js";
 import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
 import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
+import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
-import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
+import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
+import { WorkbenchProjectLive } from "./services/project-workspace.js";
 import { ShowcaseLive } from "./services/showcase.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
-import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 
 export interface WorkbenchHosts {
 	readonly app: ElectronAppHost;
@@ -79,11 +83,18 @@ function baseLayer(hosts: WorkbenchHosts) {
 
 /** Domain catalog and audit services that only need the base infrastructure. */
 function domainCatalogLayer(hosts: WorkbenchHosts) {
+	const project = WorkbenchProjectLive.pipe(
+		Layer.provide(
+			Layer.mergeAll(ElectronDialogLive, EnhancedInputServiceLive, ProjectInventoryCacheLive)
+		)
+	);
 	return Layer.mergeAll(
 		ElectronDialogLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
-		AuthoringCatalogLive
+		EnhancedInputServiceLive,
+		AuthoringCatalogLive,
+		project
 	).pipe(Layer.provideMerge(baseLayer(hosts)));
 }
 
@@ -114,6 +125,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		ShowcaseLive,
 		WorkbenchAssetAuditsLive,
 		WorkbenchGameTextLive,
+		WorkbenchInputAtlasLive,
 		authoring,
 		authoringClient,
 		mapReview,

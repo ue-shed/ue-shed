@@ -11,7 +11,7 @@ The first implementation is intentionally Perforce-specific. A source-neutral re
 is deferred until another real producer exists.
 
 See [the product contract](../../docs/products/map-history.md) and
-[Plan 033](../../plans/033-build-perforce-map-history.md).
+[Plan 034](../../plans/034-build-perforce-map-history.md).
 
 ## Real Perforce conformance
 

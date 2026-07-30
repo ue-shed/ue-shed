@@ -7,7 +7,15 @@ import {
 	observeOperation,
 	RuntimeHealthService
 } from "@ue-shed/observability";
-import { assetReaderLayer, AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
+import {
+	assetReaderLayer,
+	AssetReader,
+	AssetReaderLive,
+	isFullScanEntry,
+	resolveScanTarget,
+	scanSavedProject,
+	type SavedAssetScan
+} from "@ue-shed/unreal-assets";
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect";
 import { type CliCommand, help } from "./command.js";
 
@@ -55,6 +63,38 @@ function json(value: unknown): string {
 
 function readerLayer(reader?: string) {
 	return reader === undefined ? AssetReaderLive : assetReaderLayer({ executable: reader });
+}
+
+/**
+ * Projects a scan down to what each package holds. Full inspections carry every decoded property,
+ * which is the reader's own output rather than a summary, so `--full` opts into it explicitly.
+ */
+function summarizeScan(scan: SavedAssetScan) {
+	return {
+		schemaVersion: 1,
+		projectRoot: scan.summary.projectRoot,
+		roots: scan.summary.roots,
+		coverage: {
+			scannedAssets: scan.summary.scannedAssets,
+			emittedAssets: scan.summary.emittedAssets,
+			skippedAssets: scan.summary.skippedAssets,
+			partialAssets: scan.summary.partialAssets,
+			failedAssets: scan.summary.failedAssets
+		},
+		assets: scan.assets.filter(isFullScanEntry).map((entry) => ({
+			path: entry.inspection.path,
+			packageName: entry.inspection.package.name,
+			status: entry.inspection.status,
+			fileBytes: entry.fileBytes,
+			objects: entry.inspection.assets.map((asset) => ({
+				kind: asset.kind,
+				objectPath: asset.object_path,
+				...(asset.kind === "UObject" ? { classPath: asset.class_path } : {})
+			}))
+		})),
+		failures: scan.failures,
+		diagnostics: scan.summary.diagnostics
+	};
 }
 
 function printJson(value: unknown): Effect.Effect<void, never, CliRuntime> {
@@ -597,6 +637,25 @@ export function executeCommand(
 							}
 				);
 			}
+			case "AssetsScan": {
+				const scan = yield* Effect.gen(function* () {
+					const target = yield* resolveScanTarget(command.path);
+					return yield* scanSavedProject({
+						projectRoot: target.projectRoot,
+						...(target.paths.length > 0 ? { paths: target.paths } : {}),
+						...(command.classes ? { classes: command.classes } : {}),
+						...(command.classPrefixes ? { classPrefixes: command.classPrefixes } : {}),
+						...(command.names ? { names: command.names } : {}),
+						...(command.maximumAssets === undefined
+							? {}
+							: { maximumAssets: command.maximumAssets })
+					});
+				}).pipe(
+					Effect.provide(readerLayer(command.reader)),
+					Effect.mapError((error) => new CliCommandError({ message: messageOf(error) }))
+				);
+				return yield* printJson(command.full ? scan : summarizeScan(scan));
+			}
 			case "InputInspect": {
 				const report = yield* Effect.gen(function* () {
 					const service = yield* EnhancedInputService;
@@ -608,7 +667,13 @@ export function executeCommand(
 							})
 					});
 					if (info.isDirectory()) {
-						return yield* service.scan({ projectRoot: command.path });
+						// A subdirectory resolves onto its owning project and scopes enumeration
+						// to itself; a project root scans all of Content as before.
+						const target = yield* resolveScanTarget(command.path);
+						return yield* service.scan({
+							projectRoot: target.projectRoot,
+							...(target.paths.length > 0 ? { paths: target.paths } : {})
+						});
 					}
 					return yield* service.inspectPath(command.path);
 				}).pipe(
@@ -903,10 +968,14 @@ export function executeCommand(
 			}
 			case "ReviewCapture": {
 				const {
+					CaptureInvocation,
+					CaptureInvocationId,
 					ReviewCapture,
 					ReviewCaptureLive,
 					reviewCaptureRemotePortLayer,
 					ReviewIdGeneratorLive,
+					ReviewIdGenerator,
+					ReviewRepository,
 					ReviewRepositoryLive
 				} = yield* Effect.promise(() => import("@ue-shed/cameras"));
 				const { RemoteControlClientLive } = yield* Effect.promise(
@@ -921,12 +990,32 @@ export function executeCommand(
 				);
 				const program = Effect.gen(function* () {
 					const capture = yield* ReviewCapture;
-					const run = yield* capture.captureSet(command);
+					const repository = yield* ReviewRepository;
+					const ids = yield* ReviewIdGenerator;
+					const reviewSet = yield* repository.loadSet(command.reviewSetPath);
+					const invocation =
+						command.cause === undefined
+							? undefined
+							: CaptureInvocation.make({
+									cause: {
+										type: "external_automation",
+										...(command.correlationId === undefined
+											? {}
+											: { correlationId: command.correlationId })
+									},
+									id: CaptureInvocationId.make(yield* ids.generate()),
+									reviewSetId: reviewSet.id
+								});
+					const run = yield* capture.captureSet({
+						...command,
+						...(invocation === undefined ? {} : { invocation })
+					});
 					yield* printJson(run);
 					if (run.status !== "completed") yield* runtime.setExitCode(1);
 				});
 				return yield* program.pipe(
-					Effect.provide(ReviewCaptureLive.pipe(Layer.provide(captureDependencies)))
+					Effect.provide(ReviewCaptureLive.pipe(Layer.provide(captureDependencies))),
+					Effect.provide(captureDependencies)
 				);
 			}
 			case "ReviewHistory": {

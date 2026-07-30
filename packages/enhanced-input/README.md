@@ -16,4 +16,8 @@ const report = await Effect.runPromise(
 );
 ```
 
-CLI: `ue-shed input inspect <asset-or-project>`.
+`scan` accepts optional `paths` to scope enumeration to roots beneath the project, so a single
+directory can be inspected without walking all of `Content`.
+
+CLI: `ue-shed input inspect <path>`, where the path is a project root, a subdirectory, or one asset.
+For unfiltered package listings across any path, see `ue-shed assets scan`.

@@ -74,6 +74,23 @@ root or absolute, and must resolve inside it. It defaults to `Content`. `maximum
 scan during enumeration, before any package is decoded, and surfaces as an `AssetReaderError` of
 kind `resource_limit`.
 
+Pass `inventory: true` when a caller needs a persisted project signature. The same native scan then
+streams the path, size, and modified time of every package and `.uexp`, `.ubulk`, or `.uptnl`
+sidecar beneath the selected roots. This inventory is independent of class filters, so a client can
+derive maps and validate its own cached projections without a second Node filesystem walk.
+
+`resolveScanTarget` turns any user-supplied path into the `projectRoot` and `paths` pair a scan
+needs, so callers accepting a path from a person do not each reimplement the walk:
+
+```ts
+// A project root or .uproject scans all of Content; anything else scopes to itself.
+const target = yield * resolveScanTarget("Fixture/Content/Characters");
+yield * scanSavedProject({ ...target, projectRoot: target.projectRoot });
+```
+
+It walks up to the owning `.uproject` and fails when there is none, because object paths are only
+meaningful relative to a project root.
+
 Its authoring payload is derived from the same language-neutral schema and snapshot contract emitted
 by `UEShedAuthoring`; it is not a second package-reader-specific authoring model.
 

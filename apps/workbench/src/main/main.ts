@@ -15,6 +15,7 @@ function reportStartupFailure(cause: unknown): void {
 function toAppHost(): ElectronAppHost {
 	return {
 		getAppMetrics: () => app.getAppMetrics(),
+		getPath: (name) => app.getPath(name),
 		on: (event, listener) => {
 			if (event === "window-all-closed") app.on(event, listener);
 			else app.on(event, listener);

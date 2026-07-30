@@ -5,7 +5,7 @@ export class ElectronAppError extends Schema.TaggedErrorClass<ElectronAppError>(
 	{
 		causeText: Schema.String,
 		message: Schema.String,
-		operation: Schema.Literals(["whenReady", "getAppMetrics", "quit", "on"]),
+		operation: Schema.Literals(["whenReady", "getAppMetrics", "getPath", "quit", "on"]),
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
 	}
@@ -23,6 +23,7 @@ export type ElectronAppEvent = "window-all-closed" | "before-quit";
 
 export interface ElectronAppHost {
 	readonly getAppMetrics: () => ReadonlyArray<ElectronProcessMetric>;
+	readonly getPath: (name: "userData") => string;
 	readonly on: (event: ElectronAppEvent, listener: (...args: Array<unknown>) => void) => void;
 	readonly quit: () => void;
 	readonly removeListener: (
@@ -37,6 +38,7 @@ export interface ElectronAppShape {
 		ReadonlyArray<ElectronProcessMetric>,
 		ElectronAppError
 	>;
+	readonly getPath: (name: "userData") => Effect.Effect<string, ElectronAppError>;
 	readonly on: (
 		event: ElectronAppEvent,
 		listener: (event: { readonly preventDefault: () => void }) => void
@@ -121,6 +123,17 @@ export const electronAppLayer = (app: ElectronAppHost): Layer.Layer<ElectronApp>
 							)
 					})
 				),
+				getPath: Effect.fn("Workbench.ElectronApp.getPath")(function* (name) {
+					return yield* Effect.try({
+						try: () => app.getPath(name),
+						catch: (cause) =>
+							appError(
+								"getPath",
+								cause,
+								`Restart Workbench to resolve Electron's ${name} path.`
+							)
+					});
+				}),
 				quit: Effect.fn("Workbench.ElectronApp.quit")(() =>
 					Effect.try({
 						try: () => app.quit(),
@@ -159,6 +172,11 @@ export const makeElectronAppTestLayer = (
 								type: "Browser"
 							}
 						])
+					),
+				getPath:
+					overrides.getPath ??
+					Effect.fn("Workbench.ElectronApp.Test.getPath")(() =>
+						Effect.succeed("C:/Workbench-Test-UserData")
 					),
 				on: overrides.on ?? Effect.fn("Workbench.ElectronApp.Test.on")(() => Effect.void),
 				quit:

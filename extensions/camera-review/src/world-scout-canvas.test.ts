@@ -235,6 +235,61 @@ describe("world scout canvas store", () => {
 		expect(panned.size).toBe(1_000);
 	});
 
+	it("refuses to zoom out past the fit-all window size", () => {
+		const start = { centerX: 0, centerY: 0, size: 800 };
+		const zoomedOut = zoomViewportAt(start, 200, 100, 100, 50, 1 / 2, 50, 1_000);
+		expect(zoomedOut.size).toBe(1_000);
+		const zoomedIn = zoomViewportAt(start, 200, 100, 100, 50, 2, 50, 1_000);
+		expect(zoomedIn.size).toBe(400);
+	});
+
+	it("keeps equal world distances equal in pixels on a non-square canvas", () => {
+		const store = new WorldScoutRetainedStore();
+		store.installSnapshot(
+			snapshot([
+				actorA,
+				{
+					...actorA,
+					displayName: "East",
+					id: ActorId.make("east"),
+					location: { x: 100, y: 0, z: 0 },
+					path: "/Game/Fixture.East"
+				},
+				{
+					...actorA,
+					displayName: "North",
+					id: ActorId.make("north"),
+					location: { x: 0, y: 100, z: 0 },
+					path: "/Game/Fixture.North"
+				}
+			])
+		);
+		collectVisibleIndices(store, "", new Set(), store.visibleIndices);
+		// size is world width; on a 2:1 canvas the window is 200 × 100 UU.
+		store.viewport = { centerX: 50, centerY: 50, size: 200 };
+		projectVisibleActors(store, store.viewport, 400, 200, store.visibleIndices);
+		const originX = store.xs[0] ?? 0;
+		const originY = store.ys[0] ?? 0;
+		const eastDx = (store.xs[1] ?? 0) - originX;
+		const eastDy = (store.ys[1] ?? 0) - originY;
+		const northDx = (store.xs[2] ?? 0) - originX;
+		const northDy = (store.ys[2] ?? 0) - originY;
+		expect(Math.hypot(eastDx, eastDy)).toBeCloseTo(Math.hypot(northDx, northDy));
+		expect(Math.abs(eastDy)).toBeLessThan(1e-9);
+		expect(Math.abs(northDx)).toBeLessThan(1e-9);
+	});
+
+	it("sizes the world window to the canvas aspect so height is half width at 2:1", () => {
+		const viewport = stabilizeViewport(
+			undefined,
+			{ minX: 0, maxX: 100, minY: 0, maxY: 40 },
+			2,
+			0
+		);
+		expect(viewport.size).toBe(100);
+		expect(viewport.size / 2).toBe(50);
+	});
+
 	it("seeds draw locations from catalog bounds before transforms arrive", () => {
 		const store = new WorldScoutRetainedStore();
 		store.installCatalog({

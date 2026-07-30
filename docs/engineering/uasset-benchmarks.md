@@ -25,6 +25,19 @@ Measure the long-lived Node WASM binding against a fresh native process:
 pnpm benchmark:uasset:wasm
 ```
 
+Measure Workbench's shared project-index path against a specific project:
+
+```powershell
+pnpm benchmark:project-index -- --project <unreal-project-root> --output test-results/project-index.json
+```
+
+This records two application-cache states without embedding the supplied project path in the
+evidence: `workbench.index.cold_rebuild` performs the shared header index plus the targeted
+Enhanced Input decode with an empty native header cache; `workbench.index.warm_revalidate` repeats
+only the cached index refresh. Both states still enumerate and stat the selected roots, because
+that is how the inventory validates persisted Workbench projections. Filesystem caches are not
+dropped, so "cold" means the application cache, not an artificial cold disk.
+
 The WASM workload is the 2.4 MB `DT_LargeScalars` fixture. Both producers parse, decode, and serialize
 the same schema-v7 inspection output. The WASM lane receives already-read bytes and reuses one module
 instance; the native lane starts a process and reads the file for every sample. The benchmark labels
@@ -110,9 +123,30 @@ once a class filter lets the reader rule packages out from their headers. That m
 cost is what scales with project size; the remaining `typescript.input.project` time is dominated by
 Node startup, which one fixture-sized scan cannot amortize.
 
-Incremental caching is the next boundary. `uasset catalog` already keys entries by path, size, and
-modification time, but `uasset scan` has no `--cache` yet, and the CLI's own `catalog` invocations
-pass no cache path.
+Header-depth `uasset scan` now caches its filtered header projection by path, size, and modification
+time. A cache is intentionally specific to its filter set: persisting every export merely to share
+one cache would make map-heavy projects much larger. `scan --inventory` streams the same pass's
+package and sidecar signatures, allowing consumers to validate persisted derived catalogs without a
+separate Node filesystem walk.
+
+### Shared Workbench project-index result (2026-07-30)
+
+The new `benchmark:project-index` runner was measured on a representative 182,626-package project
+with an AMD Ryzen 9 7950X, Windows 11, Node 26.5.0, Rust 1.94.0, and a dirty development checkout.
+The three samples below keep filesystem caches warm; "cold" means an empty native header cache, not
+a cold disk. The ignored JSON evidence is `test-results/project-index-20260730.json`.
+
+| Scenario                          |          p50 |          p95 | Samples                            | Observed work                                                                     |
+| --------------------------------- | -----------: | -----------: | ---------------------------------- | --------------------------------------------------------------------------------- |
+| `workbench.index.cold_rebuild`    | 5,766.790 ms | 5,771.064 ms | 5,766.790; 5,771.064; 5,592.451 ms | One shared native header index plus 165 targeted Enhanced Input package decodes   |
+| `workbench.index.warm_revalidate` | 2,882.836 ms | 2,900.912 ms | 2,882.836; 2,869.162; 2,900.912 ms | One cached header refresh and complete signature inventory; no Input Atlas decode |
+
+The header scan emitted 728 class-filter matches and a complete 182,626-entry package inventory;
+there were no sidecars in this corpus. Maps and DataTables are pure projections of that header/index
+result, so they do not add a filesystem pass. The former Node manifest walk and dedicated DataTable
+scan are not re-run for a direct before/after comparison because their implementation was removed;
+the prior audit measured the Node walk alone at 5.7 seconds and the separate Rust header pass at
+2.6–4.1 seconds.
 
 This harness cannot see decode-only regressions or wins. Its fixture is about 3 KB, so
 `native.inspect.single` is dominated by process startup. Removing per-property allocation from the

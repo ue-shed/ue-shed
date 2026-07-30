@@ -2,6 +2,7 @@ import { it } from "@effect/vitest";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
+import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import type { TextCorpusRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
@@ -15,7 +16,9 @@ import { makeCameraPresentationTestLayer } from "../services/camera-presentation
 import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-observatory.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
+import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
+import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { register } from "./register.js";
@@ -139,6 +142,29 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record("contentObservatory.status")
 				.pipe(Effect.as({ status: "not_configured" as const }))
+	});
+
+	const inputAtlas = makeWorkbenchInputAtlasTestLayer({
+		chooseAndScan: () =>
+			recorder
+				.record("inputAtlas.chooseAndScan")
+				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult)),
+		configuredScan: () =>
+			recorder
+				.record("inputAtlas.configuredScan")
+				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult))
+	});
+
+	const project = makeWorkbenchProjectTestLayer({
+		choose: () =>
+			recorder.record("project.choose").pipe(Effect.as({ status: "cancelled" as const })),
+		current: () =>
+			recorder
+				.record("project.current")
+				.pipe(Effect.as({ status: "not_configured" as const })),
+		inputAtlas: () => Effect.die("not used"),
+		savedTables: () => Effect.die("savedTables is not used"),
+		savedProject: () => Effect.die("not used")
 	});
 
 	const sessionFailure = {
@@ -365,6 +391,8 @@ function buildRegistrationLayer(recorder: Recorder) {
 		assetAudits,
 		gameText,
 		contentObservatory,
+		inputAtlas,
+		project,
 		authoring,
 		mapReview,
 		fixtureLauncher,
@@ -397,13 +425,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 51 contract channels", () =>
+it.effect("registers exactly the 67 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(51);
+		expect(result).toHaveLength(67);
 	})
 );
 
@@ -477,6 +505,21 @@ it.effect("dispatches Content Observatory query controls to its scoped service",
 			"contentObservatory.status",
 			"contentObservatory.start:Content/Fixture/History/L_MapHistoryWorld.umap",
 			"contentObservatory.cancel"
+		]);
+	})
+);
+
+it.effect("dispatches input-atlas channels to WorkbenchInputAtlas", () =>
+	Effect.gen(function* () {
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("input-atlas:configured-scan");
+				yield* ipc.invoke("input-atlas:choose-and-scan");
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			"inputAtlas.configuredScan",
+			"inputAtlas.chooseAndScan"
 		]);
 	})
 );

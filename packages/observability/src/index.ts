@@ -107,6 +107,22 @@ const observatorySampleHz = Metric.gauge("ue_shed_observatory_sample_hz", {
 const observatoryPresentationHz = Metric.gauge("ue_shed_observatory_presentation_hz", {
 	description: "Effective World Scout presentation cadence"
 });
+const reviewAssessmentAttempts = Metric.counter("ue_shed_review_assessment_total", {
+	description: "Map Review visibility assessments with bounded producer evidence",
+	incremental: true
+});
+const reviewAssessmentFailures = Metric.counter("ue_shed_review_assessment_failure_total", {
+	description: "Map Review visibility assessments without usable raw evidence",
+	incremental: true
+});
+const reviewAssessmentDuration = Metric.histogram("ue_shed_review_assessment_duration_ms", {
+	boundaries: [0.1, 0.25, 0.5, 1, 2, 4, 8, 16, 33, 50, 100, 250, 500, 1_000, 5_000],
+	description: "Unreal auxiliary visibility assessment and readback duration in milliseconds"
+});
+const reviewAssessmentSamples = Metric.histogram("ue_shed_review_assessment_samples", {
+	boundaries: [0, 1, 9, 64, 256, 1_024, 4_096, 16_384, 57_600],
+	description: "Bounded image-space or collision samples in a Map Review visibility assessment"
+});
 
 export const observatoryMetrics = {
 	actorsChanged: observatoryActorsChanged,
@@ -123,6 +139,13 @@ export const observatoryMetrics = {
 	receiverReplacements: observatoryReceiverReplacements,
 	sampleHz: observatorySampleHz,
 	sequenceGaps: observatorySequenceGaps
+};
+
+export const reviewAssessmentMetrics = {
+	attempts: reviewAssessmentAttempts,
+	duration: reviewAssessmentDuration,
+	failures: reviewAssessmentFailures,
+	samples: reviewAssessmentSamples
 };
 
 export const operationMetrics = {
@@ -205,6 +228,30 @@ export function recordObservatoryCadence(input: {
 		updates.push(Metric.update(observatoryPresentationHz, Math.max(0, input.presentationHz)));
 	}
 	return updates.length === 0 ? Effect.void : Effect.all(updates).pipe(Effect.asVoid);
+}
+
+/**
+ * Aggregates only bounded assessment facts. Callers must not attach actor, view, operation, map,
+ * artifact, or filesystem identity to these metrics.
+ */
+export function recordReviewAssessment(input: {
+	readonly assessmentDurationMs?: number;
+	readonly sampleCount?: number;
+	readonly status: "assessed" | "assessment_failed" | "not_assessed";
+}): Effect.Effect<void> {
+	const updates: Array<Effect.Effect<void>> = [Metric.update(reviewAssessmentAttempts, 1)];
+	if (input.status === "assessment_failed") {
+		updates.push(Metric.update(reviewAssessmentFailures, 1));
+	}
+	if (input.assessmentDurationMs !== undefined) {
+		updates.push(
+			Metric.update(reviewAssessmentDuration, Math.max(0, input.assessmentDurationMs))
+		);
+	}
+	if (input.sampleCount !== undefined) {
+		updates.push(Metric.update(reviewAssessmentSamples, Math.max(0, input.sampleCount)));
+	}
+	return Effect.all(updates).pipe(Effect.asVoid);
 }
 
 export function observeOperation<A, E, R>(

@@ -1,13 +1,17 @@
 import { relative } from "node:path";
 import {
 	AssetReader,
+	isHeaderScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
 	type SavedAssetInspection,
+	type SavedAssetScan,
+	type SavedAssetTextExtractionEvent,
+	type SavedAssetTextOccurrence,
 	type SavedProperty,
 	type SavedPropertyValue
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Ref, Schema, Stream } from "effect";
 import {
 	TextOccurrenceId,
 	TextUnitId,
@@ -21,6 +25,12 @@ import {
 
 const makeOccurrenceId = TextOccurrenceId.make;
 const makeUnitId = TextUnitId.make;
+
+interface ExtractionProgress {
+	readonly phase: "idle" | "scanning" | "ready" | "failed";
+	readonly processedAssets: number;
+	readonly totalAssets: number;
+}
 
 export class TextCorpusScanError extends Schema.TaggedErrorClass<TextCorpusScanError>()(
 	"TextCorpusScanError",
@@ -122,6 +132,55 @@ function addTextOccurrence(options: {
 	});
 }
 
+function textOccurrenceFromExtraction(options: {
+	readonly occurrence: SavedAssetTextOccurrence;
+	readonly packageFile: string;
+}): TextOccurrence {
+	const identity: TextIdentity =
+		options.occurrence.identity.status === "resolved" &&
+		options.occurrence.identity.key.length > 0
+			? {
+					status: "resolved",
+					namespace: options.occurrence.identity.namespace,
+					key: options.occurrence.identity.key
+				}
+			: {
+					status: "unresolved",
+					reason:
+						options.occurrence.identity.status === "unresolved"
+							? options.occurrence.identity.reason
+							: "missing_key"
+				};
+	const location: TextLocation =
+		options.occurrence.location.kind === "string_table_entry"
+			? {
+					kind: "string_table_entry",
+					objectPath: options.occurrence.location.object_path,
+					entryKey: options.occurrence.location.entry_key
+				}
+			: options.occurrence.location.kind === "data_table_cell"
+				? {
+						kind: "data_table_cell",
+						objectPath: options.occurrence.location.object_path,
+						row: options.occurrence.location.row,
+						propertyPath: options.occurrence.location.property_path
+					}
+				: {
+						kind: "asset_property",
+						objectPath: options.occurrence.location.object_path,
+						classPath: options.occurrence.location.class_path,
+						propertyPath: options.occurrence.location.property_path
+					};
+	return {
+		id: makeOccurrenceId(occurrenceId(options.packageFile, location)),
+		packageFile: options.packageFile,
+		source: options.occurrence.source,
+		identity,
+		location,
+		editCapability: options.occurrence.edit_capability
+	};
+}
+
 function visitValue(options: {
 	readonly output: TextOccurrence[];
 	readonly packageFile: string;
@@ -193,13 +252,39 @@ function unsupportedTextProperties(
 		}
 	};
 	for (const asset of inspection.assets) {
-		if (asset.kind === "UObject") visit(asset.object_path, asset.properties, "");
+		if (isPropertyBearingAsset(asset)) visit(asset.object_path, asset.properties, "");
 		if (asset.kind === "DataTable" || asset.kind === "CompositeDataTable") {
 			for (const row of asset.rows)
 				visit(asset.object_path, row.properties, `row:${row.name}`);
 		}
 	}
 	return gaps;
+}
+
+type PropertyBearingAsset = Extract<
+	SavedAssetInspection["assets"][number],
+	{
+		readonly kind:
+			| "UObject"
+			| "DataAsset"
+			| "PrimaryDataAsset"
+			| "CurveTable"
+			| "Skeleton"
+			| "Struct";
+	}
+>;
+
+function isPropertyBearingAsset(
+	asset: SavedAssetInspection["assets"][number]
+): asset is PropertyBearingAsset {
+	return (
+		asset.kind === "UObject" ||
+		asset.kind === "DataAsset" ||
+		asset.kind === "PrimaryDataAsset" ||
+		asset.kind === "CurveTable" ||
+		asset.kind === "Skeleton" ||
+		asset.kind === "Struct"
+	);
 }
 
 export function textOccurrencesFromInspection(options: {
@@ -249,7 +334,7 @@ export function textOccurrencesFromInspection(options: {
 			}
 			continue;
 		}
-		if (asset.kind === "UObject") {
+		if (isPropertyBearingAsset(asset)) {
 			visitProperties({
 				output,
 				packageFile: options.packageFile,
@@ -266,6 +351,24 @@ export function textOccurrencesFromInspection(options: {
 		}
 	}
 	return output.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/** Paths whose existing header-index projection proves they may contribute game text. */
+export function textPackagePathsFromProjectIndex(index: SavedAssetScan): readonly string[] {
+	return [
+		...new Set(
+			index.assets
+				.filter(isHeaderScanEntry)
+				.filter(
+					(entry) =>
+						entry.header.matched_names?.includes(TEXT_PROPERTY_NAME) === true ||
+						entry.header.exports.some(
+							(exported) => exported.class_path === STRING_TABLE_CLASS
+						)
+				)
+				.map((entry) => entry.header.path)
+		)
+	].sort((left, right) => left.localeCompare(right));
 }
 
 function unitKey(occurrence: TextOccurrence): string {
@@ -387,48 +490,301 @@ export function buildTextCorpus(
 	};
 }
 
-function scanTextCorpusWith(
-	reader: AssetReaderShape,
-	options: TextCorpusScanOptions
-): Effect.Effect<TextCorpus, TextCorpusScanError> {
-	return Effect.gen(function* () {
-		// One reader process classifies the whole project from package headers. A package can only
-		// hold text through a serialized FText property or a StringTable export, and both are
-		// visible in the header, so everything else is ruled out without a full decode.
-		const scan = yield* reader
-			.scanProject({
-				classes: [STRING_TABLE_CLASS],
-				concurrency: Math.max(1, options.concurrency ?? 4),
-				maximumAssets: options.maximumAssets ?? 10_000,
-				names: [TEXT_PROPERTY_NAME],
-				projectRoot: options.projectRoot
+interface TextExtractionAccumulator {
+	readonly coverageGaps: Array<{
+		readonly objectPath: string;
+		readonly packageFile: string;
+		readonly propertyPath: string;
+	}>;
+	readonly diagnostics: TextCorpusDiagnostic[];
+	failedPackages: number;
+	inspectedPackages: number;
+	readonly occurrences: TextOccurrence[];
+	partialPackages: number;
+	summary?: Extract<SavedAssetTextExtractionEvent, { readonly event: "text_summary" }>;
+}
+
+function emptyTextExtractionAccumulator(): TextExtractionAccumulator {
+	return {
+		coverageGaps: [],
+		diagnostics: [],
+		failedPackages: 0,
+		inspectedPackages: 0,
+		occurrences: [],
+		partialPackages: 0
+	};
+}
+
+function foldTextExtractionEvent(
+	projectRoot: string,
+	accumulator: TextExtractionAccumulator,
+	event: SavedAssetTextExtractionEvent
+): TextExtractionAccumulator {
+	if (event.event === "text_occurrence") {
+		accumulator.occurrences.push(
+			textOccurrenceFromExtraction({
+				occurrence: event.occurrence,
+				packageFile: relative(projectRoot, event.path)
 			})
-			.pipe(Effect.mapError(textCorpusScanFailure));
-		const outcomes: TextPackageOutcome[] = [
-			...scan.assets.map(
-				(entry): TextPackageOutcome => ({
-					status: "inspected",
-					packageFile: relative(options.projectRoot, entry.inspection.path),
-					inspection: entry.inspection
-				})
-			),
-			...scan.failures.map(
-				(failure): TextPackageOutcome => ({
-					status: "failed",
-					packageFile: relative(options.projectRoot, failure.path),
-					message: failure.message
+		);
+		return accumulator;
+	}
+	if (event.event === "text_coverage_gap") {
+		accumulator.coverageGaps.push({
+			objectPath: event.coverage_gap.object_path,
+			packageFile: relative(projectRoot, event.path),
+			propertyPath: event.coverage_gap.property_path
+		});
+		return accumulator;
+	}
+	if (event.event === "text_package") {
+		accumulator.inspectedPackages += 1;
+		if (event.status === "partial") {
+			accumulator.partialPackages += 1;
+			accumulator.diagnostics.push({
+				code: "package_partially_decoded",
+				message: `${event.diagnostics.length} decode error(s) limit this package's coverage.`,
+				packageFile: relative(projectRoot, event.path)
+			});
+		}
+		return accumulator;
+	}
+	if (event.event === "error") {
+		accumulator.failedPackages += 1;
+		accumulator.diagnostics.push({
+			code: "package_inspection_failed",
+			message: event.message,
+			packageFile: relative(projectRoot, event.path)
+		});
+		return accumulator;
+	}
+	accumulator.summary = event;
+	return accumulator;
+}
+
+function buildTextCorpusFromExtraction(options: {
+	readonly accumulator: TextExtractionAccumulator;
+	readonly discoveredPackages: number;
+}): TextCorpus {
+	const { accumulator } = options;
+	const grouped = new Map<string, TextOccurrence[]>();
+	for (const occurrence of accumulator.occurrences) {
+		const key = unitKey(occurrence);
+		grouped.set(key, [...(grouped.get(key) ?? []), occurrence]);
+	}
+	const units: TextUnit[] = [...grouped.entries()]
+		.map(([id, groupedOccurrences]) => {
+			const sources = [
+				...new Set(groupedOccurrences.map((occurrence) => occurrence.source))
+			].sort();
+			return {
+				id: makeUnitId(id),
+				source:
+					sources.length === 1
+						? { status: "consistent" as const, value: sources[0] ?? "" }
+						: { status: "conflicting" as const, values: sources },
+				identity: groupedOccurrences[0]?.identity ?? {
+					status: "unresolved",
+					reason: "missing_key"
+				},
+				occurrences: groupedOccurrences
+			};
+		})
+		.sort((left, right) => left.id.localeCompare(right.id));
+	const diagnostics = [
+		...accumulator.diagnostics,
+		...accumulator.coverageGaps.map(
+			(gap): TextCorpusDiagnostic => ({
+				code: "unsupported_text_history",
+				message:
+					"This FText history is visible but not decoded by the saved-package reader.",
+				packageFile: gap.packageFile,
+				objectPath: gap.objectPath,
+				propertyPath: gap.propertyPath
+			})
+		)
+	];
+	const resolvedOccurrences = accumulator.occurrences.filter(
+		(occurrence) => occurrence.identity.status === "resolved"
+	).length;
+	const summary = accumulator.summary;
+	const inspectedPackages =
+		summary === undefined
+			? accumulator.inspectedPackages
+			: summary.emittedAssets + summary.skippedAssets;
+	const discoveredPackages =
+		options.discoveredPackages > 0
+			? options.discoveredPackages
+			: (summary?.scannedAssets ?? options.discoveredPackages);
+	return {
+		schemaVersion: 1,
+		status:
+			accumulator.partialPackages > 0 ||
+			accumulator.failedPackages > 0 ||
+			accumulator.coverageGaps.length > 0
+				? "partial"
+				: "complete",
+		coverage: {
+			discoveredPackages,
+			inspectedPackages,
+			partialPackages: accumulator.partialPackages,
+			failedPackages: accumulator.failedPackages,
+			textUnits: units.length,
+			textOccurrences: accumulator.occurrences.length,
+			resolvedOccurrences,
+			unresolvedOccurrences: accumulator.occurrences.length - resolvedOccurrences,
+			unsupportedTextProperties: accumulator.coverageGaps.length
+		},
+		units,
+		diagnostics
+	};
+}
+
+function extractTextCorpusWith(
+	reader: AssetReaderShape,
+	options: {
+		readonly concurrency?: number;
+		readonly discoveredPackages: number;
+		readonly maximumAssets?: number;
+		readonly paths?: readonly string[];
+		readonly projectRoot: string;
+	},
+	inheritedFailures: readonly TextCorpusDiagnostic[] = [],
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void> = () => Effect.void
+): Effect.Effect<TextCorpus, TextCorpusScanError> {
+	if (options.paths?.length === 0) {
+		const accumulator = emptyTextExtractionAccumulator();
+		accumulator.failedPackages = inheritedFailures.length;
+		accumulator.diagnostics.push(...inheritedFailures);
+		return reportProgress({ phase: "ready", processedAssets: 0, totalAssets: 0 }).pipe(
+			Effect.as(
+				buildTextCorpusFromExtraction({
+					accumulator,
+					discoveredPackages: options.discoveredPackages
 				})
 			)
-		];
-		return buildTextCorpus(outcomes, {
-			discoveredPackages: scan.summary.scannedAssets,
-			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets
-		});
-	}).pipe(Effect.withSpan("game-text.scan-corpus"));
+		);
+	}
+	const totalAssets = options.paths?.length ?? 0;
+	let processedAssets = 0;
+	return reportProgress({ phase: "scanning", processedAssets: 0, totalAssets }).pipe(
+		Effect.andThen(
+			reader
+				.extractProjectText({
+					concurrency: Math.max(1, options.concurrency ?? 8),
+					...(options.maximumAssets === undefined
+						? {}
+						: { maximumAssets: options.maximumAssets }),
+					...(options.paths === undefined ? {} : { paths: options.paths }),
+					projectRoot: options.projectRoot
+				})
+				.pipe(
+					Stream.tap((event) => {
+						if (event.event === "text_summary") {
+							processedAssets =
+								event.emittedAssets + event.failedAssets + event.skippedAssets;
+							return reportProgress({
+								phase: "scanning",
+								processedAssets,
+								totalAssets: totalAssets > 0 ? totalAssets : event.scannedAssets
+							});
+						}
+						if (event.event !== "text_package" && event.event !== "error") {
+							return Effect.void;
+						}
+						processedAssets += 1;
+						return reportProgress({
+							phase: "scanning",
+							processedAssets,
+							totalAssets
+						});
+					}),
+					Stream.runFold(
+						() => {
+							const accumulator = emptyTextExtractionAccumulator();
+							accumulator.failedPackages = inheritedFailures.length;
+							accumulator.diagnostics.push(...inheritedFailures);
+							return accumulator;
+						},
+						(current, event) =>
+							foldTextExtractionEvent(options.projectRoot, current, event)
+					),
+					Effect.map((folded) =>
+						buildTextCorpusFromExtraction({
+							accumulator: folded,
+							discoveredPackages: options.discoveredPackages
+						})
+					),
+					Effect.mapError(textCorpusScanFailure),
+					Effect.onExit((exit) =>
+						reportProgress({
+							phase: exit._tag === "Success" ? "ready" : "failed",
+							processedAssets,
+							totalAssets
+						})
+					)
+				)
+		)
+	);
+}
+
+function scanTextCorpusWith(
+	reader: AssetReaderShape,
+	options: TextCorpusScanOptions,
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
+): Effect.Effect<TextCorpus, TextCorpusScanError> {
+	return extractTextCorpusWith(
+		reader,
+		{
+			discoveredPackages: 0,
+			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.maximumAssets === undefined
+				? {}
+				: { maximumAssets: options.maximumAssets }),
+			projectRoot: options.projectRoot
+		},
+		[],
+		reportProgress
+	).pipe(Effect.withSpan("game-text.scan-corpus"));
+}
+
+function scanTextCorpusFromProjectIndexWith(
+	reader: AssetReaderShape,
+	index: SavedAssetScan,
+	options: TextCorpusScanOptions,
+	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
+): Effect.Effect<TextCorpus, TextCorpusScanError> {
+	const paths = textPackagePathsFromProjectIndex(index);
+	const inheritedFailures = index.failures.map(
+		(failure): TextCorpusDiagnostic => ({
+			code: "package_inspection_failed",
+			message: failure.message,
+			packageFile: relative(options.projectRoot, failure.path)
+		})
+	);
+	return extractTextCorpusWith(
+		reader,
+		{
+			discoveredPackages: index.summary.scannedAssets,
+			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.maximumAssets === undefined
+				? {}
+				: { maximumAssets: options.maximumAssets }),
+			paths,
+			projectRoot: options.projectRoot
+		},
+		inheritedFailures,
+		reportProgress
+	).pipe(Effect.withSpan("game-text.scan-corpus-from-project-index"));
 }
 
 export interface TextCorpusServiceShape {
+	readonly progress: () => Effect.Effect<ExtractionProgress>;
 	readonly scan: (
+		options: TextCorpusScanOptions
+	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
+	readonly scanFromProjectIndex: (
+		index: SavedAssetScan,
 		options: TextCorpusScanOptions
 	) => Effect.Effect<TextCorpus, TextCorpusScanError>;
 }
@@ -442,6 +798,13 @@ export const TextCorpusServiceLive = Layer.effect(
 	TextCorpusService,
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
+		const progressState = yield* Ref.make<ExtractionProgress>({
+			phase: "idle",
+			processedAssets: 0,
+			totalAssets: 0
+		});
+		const reportProgress = (progress: ExtractionProgress) => Ref.set(progressState, progress);
+		const progress = Effect.fn("TextCorpus.progress")(() => Ref.get(progressState));
 		const scan = Effect.fn("TextCorpus.scan")(function* (options: TextCorpusScanOptions) {
 			const validated = yield* decodeScanOptions(options).pipe(
 				Effect.mapError(
@@ -454,16 +817,54 @@ export const TextCorpusServiceLive = Layer.effect(
 						})
 				)
 			);
-			return yield* scanTextCorpusWith(reader, validated);
+			return yield* scanTextCorpusWith(reader, validated, reportProgress);
 		});
-		return TextCorpusService.of({ scan });
+		const scanFromProjectIndex = Effect.fn("TextCorpus.scanFromProjectIndex")(function* (
+			index: SavedAssetScan,
+			options: TextCorpusScanOptions
+		) {
+			const validated = yield* decodeScanOptions(options).pipe(
+				Effect.mapError(
+					(cause) =>
+						new TextCorpusScanError({
+							code: "scan_limit_exceeded",
+							message: `Invalid text corpus scan options: ${String(cause)}`,
+							recovery: "Provide a project root and positive scan limits.",
+							retrySafe: false
+						})
+				)
+			);
+			return yield* scanTextCorpusFromProjectIndexWith(
+				reader,
+				index,
+				validated,
+				reportProgress
+			);
+		});
+		return TextCorpusService.of({ progress, scan, scanFromProjectIndex });
 	})
 );
 
+export type TextCorpusServiceTestShape = Omit<
+	TextCorpusServiceShape,
+	"progress" | "scanFromProjectIndex"
+> &
+	Partial<Pick<TextCorpusServiceShape, "progress" | "scanFromProjectIndex">>;
+
 export function makeTextCorpusServiceTestLayer(
-	service: TextCorpusServiceShape
+	service: TextCorpusServiceTestShape
 ): Layer.Layer<TextCorpusService> {
-	return Layer.succeed(TextCorpusService, TextCorpusService.of(service));
+	return Layer.succeed(
+		TextCorpusService,
+		TextCorpusService.of({
+			...service,
+			progress:
+				service.progress ??
+				(() => Effect.succeed({ phase: "idle", processedAssets: 0, totalAssets: 0 })),
+			scanFromProjectIndex:
+				service.scanFromProjectIndex ?? ((_index, options) => service.scan(options))
+		})
+	);
 }
 
 /** Compatibility accessor until Plans 012–014 compose TextCorpusService layers directly. */

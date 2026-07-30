@@ -1,28 +1,92 @@
-import { TextCorpusService, type TextCorpusRunResult } from "@ue-shed/game-text";
-import { Context, Effect, Layer } from "effect";
-import { ElectronDialog } from "../adapters/electron-dialog.js";
-import type { WorkbenchWindowError } from "../adapters/electron-window.js";
-import { WorkbenchConfiguration } from "../workbench-config.js";
+import {
+	textCorpusQuery,
+	TextCorpusService,
+	type TextCorpusFocusRequest,
+	type TextCorpusFocusResult,
+	type TextCorpusQuery,
+	type TextCorpusQueryRunResult,
+	type TextCorpusRunResult,
+	type TextCorpusSearchRequest,
+	type TextCorpusSearchResult
+} from "@ue-shed/game-text";
+import type { SavedAssetScan } from "@ue-shed/unreal-assets";
+import { Context, Effect, Layer, Ref } from "effect";
+import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
+import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchGameTextShape {
-	readonly chooseAndScan: () => Effect.Effect<TextCorpusRunResult, WorkbenchWindowError>;
+	readonly chooseAndRefresh: () => Effect.Effect<TextCorpusQueryRunResult>;
+	readonly chooseAndScan: () => Effect.Effect<TextCorpusRunResult>;
+	readonly configuredRefresh: () => Effect.Effect<TextCorpusQueryRunResult>;
 	readonly configuredScan: () => Effect.Effect<TextCorpusRunResult>;
+	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
+	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
+	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
 }
 
 export class WorkbenchGameText extends Context.Service<WorkbenchGameText, WorkbenchGameTextShape>()(
 	"@ue-shed/workbench/WorkbenchGameText"
 ) {}
 
+function unavailableProject(message: string, recovery: string): TextCorpusRunResult {
+	return {
+		error: { code: "invalid_project", message, recovery, retrySafe: true },
+		status: "failed"
+	};
+}
+
+function unavailableQueryProject(message: string, recovery: string): TextCorpusQueryRunResult {
+	return {
+		error: { code: "invalid_project", message, recovery, retrySafe: true },
+		status: "failed"
+	};
+}
+
 export const WorkbenchGameTextLive = Layer.effect(
 	WorkbenchGameText,
 	Effect.gen(function* () {
-		const configuration = yield* WorkbenchConfiguration;
-		const dialog = yield* ElectronDialog;
+		const project = yield* WorkbenchProject;
 		const textCorpus = yield* TextCorpusService;
+		const queryModel = yield* Ref.make<TextCorpusQuery | undefined>(undefined);
+		const progress = Effect.fn("Workbench.WorkbenchGameText.progress")(function* () {
+			const projectProgress = yield* project.progress();
+			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
+				return projectProgress;
+			}
+			const corpusProgress = yield* textCorpus.progress();
+			return {
+				completed: corpusProgress.processedAssets,
+				phase: corpusProgress.phase,
+				stage: "game_text" as const,
+				total: corpusProgress.totalAssets
+			};
+		});
+		const scanCorpus = (projectRoot: string, index: SavedAssetScan) =>
+			textCorpus.scanFromProjectIndex(index, { projectRoot });
 
-		const runScan = (projectRoot: string) =>
-			textCorpus.scan({ projectRoot }).pipe(
+		const runScan = (projectRoot: string, index: SavedAssetScan) =>
+			scanCorpus(projectRoot, index).pipe(
 				Effect.map((corpus) => ({ corpus, status: "completed" as const })),
+				Effect.catch((error) =>
+					Effect.succeed({
+						error: {
+							code: error.code,
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: error.retrySafe
+						},
+						status: "failed" as const
+					})
+				)
+			);
+		const runRefresh = (projectRoot: string, index: SavedAssetScan) =>
+			scanCorpus(projectRoot, index).pipe(
+				Effect.flatMap((corpus) => {
+					const next = textCorpusQuery(corpus);
+					return Ref.set(queryModel, next).pipe(
+						Effect.as({ summary: next.summary(), status: "completed" as const })
+					);
+				}),
 				Effect.catch((error) =>
 					Effect.succeed({
 						error: {
@@ -38,27 +102,128 @@ export const WorkbenchGameTextLive = Layer.effect(
 
 		const configuredScan = Effect.fn("Workbench.WorkbenchGameText.configuredScan")(
 			function* () {
-				if (configuration.project.status !== "configured") {
+				const current = yield* project.current();
+				if (current.status === "not_configured" || current.status === "cancelled") {
 					return { status: "not_configured" as const };
 				}
-				return yield* runScan(configuration.project.projectRoot);
+				if (current.status === "failed") {
+					return unavailableProject(current.error.message, current.error.recovery);
+				}
+				return yield* project.index().pipe(
+					Effect.flatMap((index) => runScan(current.project.projectRoot, index)),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableProject(error.message, error.recovery))
+					)
+				);
 			}
 		);
 
 		const chooseAndScan = Effect.fn("Workbench.WorkbenchGameText.chooseAndScan")(function* () {
-			const choice = yield* dialog.chooseDirectory({
-				title: "Choose an Unreal project for Game Text"
-			});
+			const choice = yield* project.choose();
 			if (choice.status === "cancelled") return { status: "cancelled" as const };
-			return yield* runScan(choice.path);
+			if (choice.status === "not_configured") return { status: "not_configured" as const };
+			if (choice.status === "failed") {
+				return unavailableProject(choice.error.message, choice.error.recovery);
+			}
+			return yield* project.index().pipe(
+				Effect.flatMap((index) => runScan(choice.project.projectRoot, index)),
+				Effect.catch((error) =>
+					Effect.succeed(unavailableProject(error.message, error.recovery))
+				)
+			);
 		});
 
-		return WorkbenchGameText.of({ chooseAndScan, configuredScan });
+		const configuredRefresh = Effect.fn("Workbench.WorkbenchGameText.configuredRefresh")(
+			function* () {
+				const current = yield* project.current();
+				if (current.status === "not_configured" || current.status === "cancelled") {
+					return { status: "not_configured" as const };
+				}
+				if (current.status === "failed") {
+					return unavailableQueryProject(current.error.message, current.error.recovery);
+				}
+				return yield* project.index().pipe(
+					Effect.flatMap((index) => runRefresh(current.project.projectRoot, index)),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
+					)
+				);
+			}
+		);
+
+		const chooseAndRefresh = Effect.fn("Workbench.WorkbenchGameText.chooseAndRefresh")(
+			function* () {
+				const choice = yield* project.choose();
+				if (choice.status === "cancelled") return { status: "cancelled" as const };
+				if (choice.status === "not_configured")
+					return { status: "not_configured" as const };
+				if (choice.status === "failed") {
+					return unavailableQueryProject(choice.error.message, choice.error.recovery);
+				}
+				return yield* project.index().pipe(
+					Effect.flatMap((index) => runRefresh(choice.project.projectRoot, index)),
+					Effect.catch((error) =>
+						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
+					)
+				);
+			}
+		);
+
+		const search = Effect.fn("Workbench.WorkbenchGameText.search")(
+			(request: TextCorpusSearchRequest) =>
+				Ref.get(queryModel).pipe(
+					Effect.map((model) =>
+						model === undefined
+							? { status: "not_ready" as const }
+							: { page: model.search(request), status: "ready" as const }
+					)
+				)
+		);
+
+		const focus = Effect.fn("Workbench.WorkbenchGameText.focus")(
+			(request: TextCorpusFocusRequest) =>
+				Ref.get(queryModel).pipe(
+					Effect.map((model) => {
+						if (model === undefined) return { status: "not_ready" as const };
+						const result = model.focus(request);
+						return result === undefined
+							? { status: "not_found" as const }
+							: { focus: result, status: "found" as const };
+					})
+				)
+		);
+
+		return WorkbenchGameText.of({
+			chooseAndRefresh,
+			chooseAndScan,
+			configuredRefresh,
+			configuredScan,
+			focus,
+			progress,
+			search
+		});
 	})
 );
 
 export function makeWorkbenchGameTextTestLayer(
-	service: WorkbenchGameTextShape
+	service: Pick<WorkbenchGameTextShape, "chooseAndScan" | "configuredScan"> &
+		Partial<Omit<WorkbenchGameTextShape, "chooseAndScan" | "configuredScan">>
 ): Layer.Layer<WorkbenchGameText> {
-	return Layer.succeed(WorkbenchGameText, WorkbenchGameText.of(service));
+	return Layer.succeed(
+		WorkbenchGameText,
+		WorkbenchGameText.of({
+			chooseAndRefresh: () => Effect.succeed({ status: "not_configured" }),
+			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
+			focus: () => Effect.succeed({ status: "not_ready" }),
+			progress: () =>
+				Effect.succeed({
+					completed: 0,
+					phase: "idle",
+					stage: "game_text",
+					total: 0
+				}),
+			search: () => Effect.succeed({ status: "not_ready" }),
+			...service
+		})
+	);
 }

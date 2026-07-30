@@ -4,12 +4,14 @@ import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
+import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchAssetAudits, WorkbenchAssetAuditsLive } from "./asset-audits.js";
+import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const emptyReport = {
 	coverage: {
@@ -41,6 +43,46 @@ const configuration = makeWorkbenchConfigurationLayer({
 const dialogLayer = (openDialog: Parameters<typeof makeWorkbenchWindowTestLayer>[0]) =>
 	makeElectronDialogTestLayer.pipe(Layer.provide(makeWorkbenchWindowTestLayer(openDialog)));
 
+const projectSummary = {
+	inputAtlas: "ready" as const,
+	mapCount: 0,
+	packageCount: 0,
+	projectName: "FixtureProject",
+	projectRoot: "C:/FixtureProject"
+};
+const projectIndex: SavedAssetScan = {
+	assets: [],
+	failures: [],
+	summary: {
+		cacheHits: 0,
+		depth: "header",
+		diagnostics: [],
+		emittedAssets: 0,
+		failedAssets: 0,
+		partialAssets: 0,
+		projectRoot: "C:/FixtureProject",
+		roots: ["C:/FixtureProject/Content"],
+		scannedAssets: 0,
+		schema_version: 8,
+		skippedAssets: 0
+	}
+};
+const selectedProject = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
+	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
+	inputAtlas: () => Effect.die("not used"),
+	index: () => Effect.succeed(projectIndex),
+	savedTables: () => Effect.die("savedTables is not used"),
+	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
+});
+const unselectedProject = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.succeed({ status: "cancelled" as const }),
+	current: () => Effect.succeed({ status: "not_configured" as const }),
+	inputAtlas: () => Effect.die("not used"),
+	savedTables: () => Effect.die("savedTables is not used"),
+	savedProject: () => Effect.die("not used")
+});
+
 it.effect("returns not_configured when project or rules are absent", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchAssetAudits;
@@ -62,6 +104,7 @@ it.effect("returns not_configured when project or rules are absent", () =>
 						}),
 						makeTextureAuditTestLayer({ scan: () => Effect.die("not used") }),
 						dialogLayer({}),
+						unselectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
 				)
@@ -81,8 +124,55 @@ it.effect("scans the configured project and rules", () =>
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
-						makeTextureAuditTestLayer({ scan: () => Effect.succeed(emptyReport) }),
+						makeTextureAuditTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyReport)
+						}),
 						dialogLayer({}),
+						selectedProject,
+						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
+					)
+				)
+			)
+		)
+	)
+);
+
+it.effect("keeps refreshed audit data in main and serves bounded query results", () =>
+	Effect.gen(function* () {
+		const service = yield* WorkbenchAssetAudits;
+		const refreshed = yield* service.configuredRefresh();
+		expect(refreshed).toEqual({
+			status: "completed",
+			summary: {
+				coverage: emptyReport.coverage,
+				diagnosticCount: 0,
+				distributions: emptyReport.distributions,
+				findingCount: 0,
+				ruleSetName: "test",
+				schemaVersion: 1,
+				status: "complete"
+			}
+		});
+		expect(yield* service.search({ findingsOnly: false, pageSize: 100, query: "" })).toEqual({
+			page: { findings: [], records: [], total: 0 },
+			status: "ready"
+		});
+		expect(yield* service.record("/Game/Textures/Missing.Missing")).toEqual({
+			status: "not_found"
+		});
+	}).pipe(
+		Effect.provide(
+			WorkbenchAssetAuditsLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						configuration,
+						makeTextureAuditTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () => Effect.succeed(emptyReport)
+						}),
+						dialogLayer({}),
+						selectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
 				)
@@ -111,7 +201,8 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 					Layer.mergeAll(
 						configuration,
 						makeTextureAuditTestLayer({
-							scan: () =>
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () =>
 								Effect.fail(
 									new TextureAuditScanError({
 										code: "scan_failed",
@@ -122,6 +213,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 								)
 						}),
 						dialogLayer({}),
+						selectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
 				)
@@ -130,7 +222,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 	)
 );
 
-it.effect("cancels choose-and-scan when the project dialog is cancelled", () =>
+it.effect("cancels choose-and-scan when global project selection is cancelled", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchAssetAudits;
 		const result = yield* service.chooseAndScan();
@@ -142,11 +234,8 @@ it.effect("cancels choose-and-scan when the project dialog is cancelled", () =>
 					Layer.mergeAll(
 						configuration,
 						makeTextureAuditTestLayer({ scan: () => Effect.die("not used") }),
-						dialogLayer({
-							openDialog: Effect.fn("test.openDialog")(() =>
-								Effect.succeed({ status: "cancelled" as const })
-							)
-						}),
+						dialogLayer({}),
+						unselectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
 				)
@@ -172,6 +261,7 @@ it.effect("reports live preview unavailable when Remote Control fails", () =>
 						configuration,
 						makeTextureAuditTestLayer({ scan: () => Effect.die("not used") }),
 						dialogLayer({}),
+						selectedProject,
 						makeRemoteControlClientTestLayer(() =>
 							Effect.fail(
 								new RemoteControlClientError({

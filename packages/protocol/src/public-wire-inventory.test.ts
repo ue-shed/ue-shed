@@ -24,7 +24,8 @@ import type {
  * - Recursive Schema.suspend exceptions (manual type + bidirectional AssertExact in authoring.ts):
  *   AuthoringValue, AuthoringFieldValue, AuthoringTypeDescriptor, AuthoringFieldDescriptor.
  * - JSON-authoritative cross-language contracts: `contracts/authoring` and
- *   `contracts/cameras/review` (capture request/response + selection / subject-inspection response).
+ *   `contracts/cameras/review` (capture request/response, assessment capabilities, and selection /
+ *   subject-inspection response).
  *
  * TypeScript-owned Map Review persistence and Workbench IPC (ReviewSet, authoring session, live
  * preview DTOs) remain Effect-schema-first in `@ue-shed/cameras` and are not frozen into

@@ -32,6 +32,7 @@ import type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
+import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
 
 declare global {
 	interface Window {
@@ -45,12 +46,31 @@ declare global {
 			readonly showcase: {
 				readonly context: () => Promise<ShowcaseContext>;
 			};
+			readonly project: {
+				readonly choose: () => Promise<WorkbenchProjectState>;
+				readonly current: () => Promise<WorkbenchProjectState>;
+				readonly progress: () => Promise<unknown>;
+			};
 			readonly assetAudits: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
+				readonly refreshConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndRefresh: () => Promise<unknown>;
+				readonly progress: () => Promise<unknown>;
+				readonly search: (request: unknown) => Promise<unknown>;
+				readonly record: (objectPath: string) => Promise<unknown>;
 				readonly preview: (objectPath: string) => Promise<unknown>;
 			};
 			readonly gameText: {
+				readonly loadConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndScan: () => Promise<unknown>;
+				readonly refreshConfiguredProject: () => Promise<unknown>;
+				readonly chooseProjectAndRefresh: () => Promise<unknown>;
+				readonly progress: () => Promise<unknown>;
+				readonly search: (request: unknown) => Promise<unknown>;
+				readonly focus: (request: unknown) => Promise<unknown>;
+			};
+			readonly inputAtlas: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
 				readonly chooseProjectAndScan: () => Promise<unknown>;
 			};
@@ -89,6 +109,7 @@ declare global {
 				readonly savedWorldMaps: () => Promise<
 					readonly { readonly label: string; readonly mapPath: string }[]
 				>;
+				readonly chooseProjectAndMaps: () => Promise<unknown>;
 				readonly focusActor: (
 					actorId: string,
 					bringToFront: boolean

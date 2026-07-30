@@ -8,7 +8,9 @@ import {
 	collectVisibleIndices,
 	colorForClass,
 	contentBounds,
+	clampViewportSize,
 	createWorldScoutPaintGate,
+	fitViewportSize,
 	formatCoordinate,
 	hitTestVisibleActors,
 	nearestVisibleActor,
@@ -16,7 +18,9 @@ import {
 	panViewportBy,
 	projectVisibleActors,
 	resizeCanvasForDisplay,
+	resizeViewportToSize,
 	stabilizeViewport,
+	viewportSizeLimits,
 	WorldScoutRetainedStore,
 	zoomViewportAt,
 	type WorldScoutPaintGate
@@ -27,10 +31,14 @@ import {
  * with World Scout, but never materializes an actor as a live identity or offers editor actions.
  */
 export function SavedWorldScout(props: {
-	readonly client: Pick<MapReviewClientShape, "readSavedWorld" | "savedWorldMaps">;
+	readonly client: Pick<
+		MapReviewClientShape,
+		"readSavedWorld" | "savedWorldMaps" | "chooseProjectAndMaps"
+	>;
 }) {
 	const mapsAction = createEffectAction();
 	const worldAction = createEffectAction();
+	const chooseAction = createEffectAction();
 	const store = new WorldScoutRetainedStore();
 	let canvasRef: HTMLCanvasElement | undefined;
 	let cssWidth = 0;
@@ -44,9 +52,11 @@ export function SavedWorldScout(props: {
 
 	const [world, setWorld] = createSignal<SavedWorld>();
 	const [maps, setMaps] = createSignal<readonly SavedWorldMap[]>([]);
+	const [projectLabel, setProjectLabel] = createSignal<string>();
 	const [selectedMapPath, setSelectedMapPath] = createSignal<string>();
 	const [error, setError] = createSignal<string>();
 	const [query, setQuery] = createSignal("");
+	const [classQuery, setClassQuery] = createSignal("");
 	const [hiddenClasses, setHiddenClasses] = createSignal<ReadonlySet<string>>(new Set());
 	const [selectedStreamIndex, setSelectedStreamIndex] = createSignal<number>();
 	const [catalogRevision, setCatalogRevision] = createSignal(0);
@@ -58,6 +68,12 @@ export function SavedWorldScout(props: {
 		catalogRevision();
 		return store.classCounts();
 	});
+	const filteredClasses = createMemo(() => {
+		const needle = classQuery().trim().toLocaleLowerCase();
+		return needle.length === 0
+			? classes()
+			: classes().filter(([className]) => className.toLocaleLowerCase().includes(needle));
+	});
 	const visibleCount = createMemo(() => {
 		presentationRevision();
 		return store.visibleIndices.length;
@@ -65,9 +81,27 @@ export function SavedWorldScout(props: {
 	const extentLabel = createMemo(() => {
 		presentationRevision();
 		const viewport = store.viewport;
-		return viewport === undefined
-			? "—"
-			: `${Math.round(viewport.size).toLocaleString()} × ${Math.round(viewport.size).toLocaleString()} UU`;
+		if (viewport === undefined) return "—";
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const height = viewport.size / aspect;
+		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(height).toLocaleString()} UU`;
+	});
+	const fitSize = createMemo(() => {
+		presentationRevision();
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		return fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+	});
+	const zoomLimits = createMemo(() => viewportSizeLimits(fitSize()));
+	const zoomFactor = createMemo(() => {
+		presentationRevision();
+		const viewport = store.viewport;
+		const fit = fitSize();
+		if (viewport === undefined || fit <= 0) return 1;
+		return fit / Math.max(viewport.size, 1);
+	});
+	const maxZoomFactor = createMemo(() => {
+		const { min, max } = zoomLimits();
+		return max / Math.max(min, 1);
 	});
 	const selected = createMemo(() => {
 		selectionRevision();
@@ -87,9 +121,13 @@ export function SavedWorldScout(props: {
 	const prepareVisibleProjection = () => {
 		collectVisibleIndices(store, query(), hiddenClasses(), store.visibleIndices);
 		const bounds = contentBounds(store, store.visibleIndices);
-		if (!viewLocked) store.viewport = stabilizeViewport(store.viewport, bounds);
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const fit = fitViewportSize(bounds, aspect);
+		if (!viewLocked) store.viewport = stabilizeViewport(store.viewport, bounds, aspect);
 		else if (store.viewport === undefined)
-			store.viewport = stabilizeViewport(undefined, bounds);
+			store.viewport = stabilizeViewport(undefined, bounds, aspect);
+		else if (store.viewport.size > fit)
+			store.viewport = resizeViewportToSize(store.viewport, fit);
 		if (cssWidth > 0 && cssHeight > 0 && store.viewport !== undefined) {
 			projectVisibleActors(store, store.viewport, cssWidth, cssHeight, store.visibleIndices);
 		}
@@ -165,6 +203,33 @@ export function SavedWorldScout(props: {
 		setSelectedMapPath(mapPath);
 		load(mapPath);
 	};
+	const chooseProject = () => {
+		const choose = props.client.chooseProjectAndMaps;
+		if (choose === undefined) {
+			setError("This Workbench host cannot choose a project from the UI yet.");
+			return;
+		}
+		setError(undefined);
+		chooseAction.run(choose(), {
+			onFailure: (cause) => setError(Cause.pretty(cause)),
+			onSuccess: (choice) => {
+				if (choice.status === "cancelled") return;
+				if (choice.status === "failed") {
+					setError(`${choice.message} ${choice.recovery}`);
+					return;
+				}
+				const initialMap = choice.maps[0];
+				if (initialMap === undefined) {
+					setError("No maps were chosen for offline review.");
+					return;
+				}
+				setProjectLabel(choice.projectName);
+				setMaps(choice.maps);
+				setSelectedMapPath(initialMap.mapPath);
+				load(initialMap.mapPath);
+			}
+		});
+	};
 
 	const toggleClass = (className: string) =>
 		setHiddenClasses((current) => {
@@ -173,6 +238,15 @@ export function SavedWorldScout(props: {
 			else next.add(className);
 			return next;
 		});
+	const invertClasses = () => {
+		setHiddenClasses((current) => {
+			const next = new Set<string>();
+			for (const [className] of classes()) {
+				if (!current.has(className)) next.add(className);
+			}
+			return next;
+		});
+	};
 	const selectStreamIndex = (streamIndex: number) => {
 		const actor = store.actorAt(streamIndex);
 		if (actor === undefined) return;
@@ -199,15 +273,20 @@ export function SavedWorldScout(props: {
 		const rect = event.currentTarget.getBoundingClientRect();
 		cssWidth = Math.max(1, rect.width);
 		cssHeight = Math.max(1, rect.height);
+		const aspect = cssWidth / cssHeight;
+		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+		const { min, max } = viewportSizeLimits(fit);
 		store.viewport = zoomViewportAt(
 			viewport,
 			cssWidth,
 			cssHeight,
 			event.clientX - rect.left,
 			event.clientY - rect.top,
-			event.deltaY < 0 ? 1.15 : 1 / 1.15
+			event.deltaY < 0 ? 1.15 : 1 / 1.15,
+			min,
+			max
 		);
-		viewLocked = true;
+		viewLocked = store.viewport.size < max - 1e-6;
 		requestPaint();
 	};
 	const onCanvasPointerDown = (
@@ -264,10 +343,7 @@ export function SavedWorldScout(props: {
 	const onCanvasKeyDown = (event: KeyboardEvent) => {
 		if (event.key === "Escape") {
 			event.preventDefault();
-			setSelectedStreamIndex(undefined);
-			setSelectionRevision((value) => value + 1);
-			setLiveRegion("Selection cleared");
-			requestPaint();
+			clearSelection();
 			return;
 		}
 		if (
@@ -283,6 +359,28 @@ export function SavedWorldScout(props: {
 			event.key === "ArrowLeft" || event.key === "ArrowUp" ? "previous" : "next";
 		const next = nearestVisibleActor(store, selectedStreamIndex(), direction);
 		if (next !== undefined) selectStreamIndex(next);
+	};
+	const clearSelection = () => {
+		setSelectedStreamIndex(undefined);
+		setSelectionRevision((value) => value + 1);
+		setLiveRegion("Selection cleared");
+		requestPaint();
+	};
+	const setZoomFactor = (value: string) => {
+		const viewport = store.viewport;
+		if (viewport === undefined) return;
+		const parsed = Number(value);
+		if (!Number.isFinite(parsed) || parsed <= 0) return;
+		const fit = fitSize();
+		const nextSize = clampViewportSize(fit / parsed, fit);
+		store.viewport = resizeViewportToSize(viewport, nextSize);
+		viewLocked = nextSize < fit - 1e-6;
+		requestPaint();
+	};
+	const resetView = () => {
+		viewLocked = false;
+		store.viewport = undefined;
+		requestPaint();
 	};
 	const setCanvasElement = (element: HTMLCanvasElement) => {
 		canvasRef = element;
@@ -319,11 +417,26 @@ export function SavedWorldScout(props: {
 				<div>
 					<p {...stylex.props(styles.eyebrow)}>SAVED MAP</p>
 					<h2 {...stylex.props(styles.title)}>Actors from project files</h2>
+					<Show when={projectLabel()}>
+						{(label) => (
+							<p {...stylex.props(styles.projectLabel)}>PROJECT · {label()}</p>
+						)}
+					</Show>
 				</div>
-				<div {...stylex.props(styles.source)}>
-					<span {...stylex.props(styles.sourceDot)} />
-					<strong>PROJECT FILES</strong>
-					<code>{world()?.authority.mapPackage ?? "NOT LOADED"}</code>
+				<div {...stylex.props(styles.headerActions)}>
+					<button
+						type="button"
+						onClick={chooseProject}
+						disabled={props.client.chooseProjectAndMaps === undefined}
+						{...stylex.props(styles.chooseButton)}
+					>
+						CHOOSE PROJECT…
+					</button>
+					<div {...stylex.props(styles.source)}>
+						<span {...stylex.props(styles.sourceDot)} />
+						<strong>PROJECT FILES</strong>
+						<code>{world()?.authority.mapPackage ?? "NOT LOADED"}</code>
+					</div>
 				</div>
 			</header>
 
@@ -339,15 +452,26 @@ export function SavedWorldScout(props: {
 							{error() ??
 								"The selected level or its World Partition external-actor packages are being read from disk."}
 						</p>
-						<Show when={error()}>
-							<button
-								type="button"
-								onClick={loadMaps}
-								{...stylex.props(styles.retry)}
-							>
-								RETRY SAVED MAP
-							</button>
-						</Show>
+						<div {...stylex.props(styles.fallbackActions)}>
+							<Show when={error()}>
+								<button
+									type="button"
+									onClick={loadMaps}
+									{...stylex.props(styles.retry)}
+								>
+									RETRY SAVED MAP
+								</button>
+							</Show>
+							<Show when={props.client.chooseProjectAndMaps !== undefined}>
+								<button
+									type="button"
+									onClick={chooseProject}
+									{...stylex.props(styles.retry)}
+								>
+									CHOOSE PROJECT…
+								</button>
+							</Show>
+						</div>
 					</div>
 				}
 			>
@@ -365,7 +489,12 @@ export function SavedWorldScout(props: {
 									>
 										<For each={maps()}>
 											{(map) => (
-												<option value={map.mapPath}>{map.label}</option>
+												<option
+													value={map.mapPath}
+													selected={map.mapPath === selectedMapPath()}
+												>
+													{map.label}
+												</option>
 											)}
 										</For>
 									</select>
@@ -385,27 +514,53 @@ export function SavedWorldScout(props: {
 								aria-label="Saved actor class filters"
 								{...stylex.props(styles.classFilters)}
 							>
-								<For each={classes()}>
-									{([className, count]) => (
-										<button
-											type="button"
-											aria-pressed={!hiddenClasses().has(className)}
-											onClick={() => toggleClass(className)}
-											{...stylex.props(
-												styles.classFilter,
-												hiddenClasses().has(className) && styles.classHidden
-											)}
-										>
-											<i
-												{...stylex.props(styles.classSwatch)}
-												style={{
-													"background-color": colorForClass(className)
-												}}
-											/>
-											{className.replace(/^(BP_|A)/, "")} <b>{count}</b>
-										</button>
-									)}
-								</For>
+								<div {...stylex.props(styles.classFilterSearch)}>
+									<label {...stylex.props(styles.classFilterSearchLabel)}>
+										<span>ACTOR CLASSES · {classes().length}</span>
+										<input
+											value={classQuery()}
+											onInput={(event) =>
+												setClassQuery(event.currentTarget.value)
+											}
+											aria-label="Filter saved actor classes"
+											placeholder="filter class name"
+											{...stylex.props(styles.classFilterInput)}
+										/>
+									</label>
+									<button
+										type="button"
+										title="Invert which actor classes are selected"
+										onClick={invertClasses}
+										{...stylex.props(styles.classFilterAction)}
+									>
+										INVERT
+									</button>
+								</div>
+								<div role="list" {...stylex.props(styles.classList)}>
+									<For each={filteredClasses()}>
+										{([className, count]) => (
+											<button
+												type="button"
+												role="listitem"
+												aria-pressed={!hiddenClasses().has(className)}
+												onClick={() => toggleClass(className)}
+												{...stylex.props(
+													styles.classFilter,
+													hiddenClasses().has(className) &&
+														styles.classHidden
+												)}
+											>
+												<i
+													{...stylex.props(styles.classSwatch)}
+													style={{
+														"background-color": colorForClass(className)
+													}}
+												/>
+												{className.replace(/^(BP_|A)/, "")} <b>{count}</b>
+											</button>
+										)}
+									</For>
+								</div>
 							</div>
 							<div {...stylex.props(styles.summary)}>
 								<strong>{visibleCount()}</strong>
@@ -428,14 +583,26 @@ export function SavedWorldScout(props: {
 						<div {...stylex.props(styles.workspace)}>
 							<div {...stylex.props(styles.mapFrame)}>
 								<div {...stylex.props(styles.north)}>N ↑</div>
+								<label {...stylex.props(styles.zoomControl)}>
+									<span>ZOOM</span>
+									<input
+										type="range"
+										aria-label="Map zoom"
+										min="1"
+										max={maxZoomFactor()}
+										step="0.01"
+										value={Math.min(zoomFactor(), maxZoomFactor())}
+										onInput={(event) =>
+											setZoomFactor(event.currentTarget.value)
+										}
+										{...stylex.props(styles.zoomSlider)}
+									/>
+									<strong>{zoomFactor().toFixed(1)}×</strong>
+								</label>
 								<div {...stylex.props(styles.extentLabel)}>{extentLabel()}</div>
 								<button
 									type="button"
-									onClick={() => {
-										viewLocked = false;
-										store.viewport = undefined;
-										requestPaint();
-									}}
+									onClick={resetView}
 									{...stylex.props(styles.reset)}
 								>
 									RESET VIEW
@@ -514,6 +681,13 @@ export function SavedWorldScout(props: {
 													</dd>
 												</div>
 											</dl>
+											<button
+												type="button"
+												onClick={clearSelection}
+												{...stylex.props(styles.clearSelection)}
+											>
+												CLEAR SELECTION
+											</button>
 											<p {...stylex.props(styles.offlineCopy)}>
 												Read from saved project files. Open Unreal and
 												switch to Live World to focus or author review
@@ -542,6 +716,31 @@ const styles = stylex.create({
 		borderBottom: "1px solid #2c3637"
 	},
 	eyebrow: { margin: 0, color: "#61d5df", fontSize: 8, fontWeight: 800, letterSpacing: ".16em" },
+	projectLabel: {
+		margin: "6px 0 0",
+		color: "#75e0e8",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".12em"
+	},
+	headerActions: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-end",
+		gap: 8
+	},
+	chooseButton: {
+		border: "1px solid #61d5df",
+		backgroundColor: { default: "transparent", ":hover": "#1b3032" },
+		color: { default: "#b9eef2", ":disabled": "#4a5658" },
+		borderColor: { default: "#61d5df", ":disabled": "#33403f" },
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		padding: "7px 10px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em"
+	},
+	fallbackActions: { display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" },
 	title: {
 		margin: "5px 0 0",
 		color: "#eef7f8",
@@ -616,14 +815,66 @@ const styles = stylex.create({
 		fontSize: 12,
 		outline: { ":focus": "1px solid #61d5df" }
 	},
-	classFilters: { display: "flex", flexWrap: "wrap", gap: 5, flex: 1 },
+	classFilters: {
+		display: "grid",
+		gap: 7,
+		flexBasis: "100%",
+		minWidth: 0,
+		paddingTop: 2
+	},
+	classFilterSearch: {
+		display: "flex",
+		alignItems: "center",
+		gap: 10,
+		color: "#879294",
+		fontSize: 7,
+		letterSpacing: ".12em"
+	},
+	classFilterSearchLabel: {
+		display: "flex",
+		alignItems: "center",
+		gap: 10,
+		minWidth: 0
+	},
+	classFilterInput: {
+		minWidth: 220,
+		border: "1px solid #3b484a",
+		backgroundColor: "#0c1011",
+		color: "#e7eeee",
+		padding: "6px 8px",
+		fontSize: 11,
+		outline: { ":focus": "1px solid #61d5df" }
+	},
+	classFilterAction: {
+		border: "1px solid #344042",
+		backgroundColor: { default: "#151b1c", ":hover": "#20292a" },
+		color: "#879294",
+		padding: "6px 8px",
+		fontSize: 8,
+		letterSpacing: ".08em",
+		cursor: "pointer",
+		flexShrink: 0
+	},
+	classList: {
+		display: "grid",
+		gridTemplateColumns: "repeat(auto-fill, minmax(176px, 1fr))",
+		gap: 4,
+		maxHeight: 132,
+		overflowY: "auto",
+		paddingRight: 4
+	},
 	classFilter: {
 		border: "1px solid #344042",
 		backgroundColor: { default: "#151b1c", ":hover": "#20292a" },
 		color: "#aab5b6",
 		padding: "6px 7px",
 		fontSize: 8,
-		cursor: "pointer"
+		cursor: "pointer",
+		minWidth: 0,
+		overflow: "hidden",
+		textAlign: "left",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
 	},
 	classHidden: { opacity: 0.42 },
 	classSwatch: {
@@ -657,11 +908,12 @@ const styles = stylex.create({
 			default: "minmax(0, 1fr) 270px",
 			"@media (max-width: 900px)": "1fr"
 		},
-		minHeight: 430
+		alignItems: "start"
 	},
 	mapFrame: {
 		position: "relative",
-		minHeight: 430,
+		aspectRatio: "2 / 1",
+		width: "100%",
 		overflow: "hidden",
 		backgroundColor: "#0c1011",
 		backgroundImage:
@@ -708,7 +960,46 @@ const styles = stylex.create({
 		fontSize: 9,
 		letterSpacing: ".12em"
 	},
-	extentLabel: { position: "absolute", top: 12, right: 14, color: "#667476", fontSize: 8 },
+	extentLabel: {
+		position: "absolute",
+		top: 34,
+		right: 14,
+		color: "#667476",
+		fontSize: 8,
+		zIndex: 2
+	},
+	zoomControl: {
+		position: "absolute",
+		top: 8,
+		right: 14,
+		zIndex: 2,
+		display: "grid",
+		gridTemplateColumns: "auto minmax(88px, 120px) auto",
+		gap: "4px 8px",
+		alignItems: "center",
+		color: "#879294",
+		fontSize: 7,
+		letterSpacing: ".1em",
+		backgroundColor: "#101617d9",
+		border: "1px solid #3b494a",
+		padding: "4px 8px"
+	},
+	zoomSlider: {
+		width: "100%",
+		accentColor: "#61d5df",
+		cursor: "ew-resize"
+	},
+	clearSelection: {
+		marginTop: 8,
+		border: "1px solid #3b494a",
+		backgroundColor: { default: "transparent", ":hover": "#1d2829" },
+		color: "#a7b5b6",
+		padding: "10px 12px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
 	axisX: { position: "absolute", right: 12, bottom: 10, color: "#59686a", fontSize: 7 },
 	axisY: {
 		position: "absolute",

@@ -30,6 +30,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["map-review:saved-world-maps"], () =>
 		mapReview.savedWorldMaps().pipe(Effect.orDie)
 	);
+	yield* ipc.register(invokeContracts["map-review:choose-project-and-maps"], () =>
+		mapReview.chooseProjectAndMaps().pipe(Effect.orDie)
+	);
 	yield* ipc.register(invokeContracts["map-review:focus-actor"], (...args) => {
 		const [actorId, bringToFront] = args as [ActorId, boolean];
 		return mapReview.focusActor(actorId, bringToFront);

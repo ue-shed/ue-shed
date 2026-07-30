@@ -7,6 +7,10 @@
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./task-progress": {
+			"types": "./src/task-progress-modal.tsx",
+			"default": "./src/task-progress-modal.tsx"
 		}
 	},
 	"scripts": {

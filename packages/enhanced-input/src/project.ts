@@ -1,8 +1,11 @@
 import { relative } from "node:path";
 import {
 	AssetReader,
+	isHeaderScanEntry,
+	isFullScanEntry,
 	type AssetReaderError,
 	type AssetReaderShape,
+	type SavedAssetScan,
 	type SavedAssetInspection,
 	type SavedProperty,
 	type SavedPropertyValue
@@ -23,6 +26,30 @@ import {
 export const ENHANCED_INPUT_CLASS_PREFIX = "/Script/EnhancedInput.";
 export const INPUT_ACTION_CLASS = `${ENHANCED_INPUT_CLASS_PREFIX}InputAction`;
 export const INPUT_MAPPING_CONTEXT_CLASS = `${ENHANCED_INPUT_CLASS_PREFIX}InputMappingContext`;
+export const ENHANCED_INPUT_CLASS_NAME_SUFFIXES = ["InputAction", "InputMappingContext"] as const;
+
+function className(classPath: string): string | undefined {
+	const separator = classPath.lastIndexOf(".");
+	return separator === -1 ? undefined : classPath.slice(separator + 1);
+}
+
+/**
+ * Saved package headers record a concrete class, not its Unreal inheritance chain. The suffix
+ * convention admits native subclasses such as `M_InputMappingContext` while preserving their
+ * serialized class path in the projected record.
+ */
+function isInputActionClass(classPath: string): boolean {
+	return (
+		classPath === INPUT_ACTION_CLASS || className(classPath)?.endsWith("InputAction") === true
+	);
+}
+
+function isInputMappingContextClass(classPath: string): boolean {
+	return (
+		classPath === INPUT_MAPPING_CONTEXT_CLASS ||
+		className(classPath)?.endsWith("InputMappingContext") === true
+	);
+}
 
 export class EnhancedInputScanError extends Schema.TaggedErrorClass<EnhancedInputScanError>()(
 	"EnhancedInputScanError",
@@ -32,6 +59,8 @@ export class EnhancedInputScanError extends Schema.TaggedErrorClass<EnhancedInpu
 export const EnhancedInputScanOptions = Schema.Struct({
 	concurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	maximumAssets: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+	/** Roots to enumerate beneath the project, relative or absolute. Defaults to all of `Content`. */
+	paths: Schema.optional(Schema.Array(Schema.String)),
 	projectRoot: Schema.String
 });
 export type EnhancedInputScanOptions = Schema.Schema.Type<typeof EnhancedInputScanOptions>;
@@ -190,12 +219,12 @@ export function inputActionFromInspection(options: {
 	readonly packageFile: string;
 }): InputActionRecord | undefined {
 	const asset = options.inspection.assets.find(
-		(candidate) => candidate.kind === "UObject" && candidate.class_path === INPUT_ACTION_CLASS
+		(candidate) => candidate.kind === "UObject" && isInputActionClass(candidate.class_path)
 	);
 	if (!asset || asset.kind !== "UObject") return undefined;
 	return {
 		objectPath: makeInputObjectPath(asset.object_path),
-		classPath: INPUT_ACTION_CLASS,
+		classPath: asset.class_path,
 		packageFile: options.packageFile,
 		actionDescription: stringEvidence(asset.properties, "ActionDescription"),
 		valueType: stringEvidence(asset.properties, "ValueType"),
@@ -209,7 +238,7 @@ export function mappingContextFromInspection(options: {
 }): InputMappingContextRecord | undefined {
 	const context = options.inspection.assets.find(
 		(candidate) =>
-			candidate.kind === "UObject" && candidate.class_path === INPUT_MAPPING_CONTEXT_CLASS
+			candidate.kind === "UObject" && isInputMappingContextClass(candidate.class_path)
 	);
 	if (!context || context.kind !== "UObject") return undefined;
 	const exportsByPath = new Map(
@@ -223,7 +252,7 @@ export function mappingContextFromInspection(options: {
 	);
 	return {
 		objectPath: makeInputObjectPath(context.object_path),
-		classPath: INPUT_MAPPING_CONTEXT_CLASS,
+		classPath: context.class_path,
 		packageFile: options.packageFile,
 		contextDescription: stringEvidence(context.properties, "ContextDescription"),
 		mappingsProperty,
@@ -286,8 +315,8 @@ export function buildEnhancedInputReport(
 		const relevant = outcome.inspection.assets.some(
 			(asset) =>
 				asset.kind === "UObject" &&
-				(asset.class_path === INPUT_ACTION_CLASS ||
-					asset.class_path === INPUT_MAPPING_CONTEXT_CLASS)
+				(isInputActionClass(asset.class_path) ||
+					isInputMappingContextClass(asset.class_path))
 		);
 		if (!relevant && outcome.inspection.assets.length > 0) {
 			diagnostics.push({
@@ -325,37 +354,107 @@ export function buildEnhancedInputReport(
 	};
 }
 
-function scanEnhancedInputWith(
-	reader: AssetReaderShape,
-	options: EnhancedInputScanOptions
-): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
-	return Effect.gen(function* () {
-		// One reader process classifies the whole project from package headers, decoding only
-		// packages that export an Enhanced Input class.
-		const scan = yield* reader
-			.scanProject({
-				classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
-				concurrency: Math.max(1, options.concurrency ?? 4),
-				maximumAssets: options.maximumAssets ?? 10_000,
-				projectRoot: options.projectRoot
+function outcomesFromScan(
+	scan: SavedAssetScan,
+	projectRoot: string
+): EnhancedInputPackageOutcome[] {
+	return [
+		...scan.assets.filter(isFullScanEntry).map(
+			(entry): EnhancedInputPackageOutcome => ({
+				status: "inspected",
+				packageFile: relative(projectRoot, entry.inspection.path),
+				inspection: entry.inspection
 			})
-			.pipe(Effect.mapError(enhancedInputScanFailure));
-		const outcomes: EnhancedInputPackageOutcome[] = [
-			...scan.assets.map(
-				(entry): EnhancedInputPackageOutcome => ({
-					status: "inspected",
-					packageFile: relative(options.projectRoot, entry.inspection.path),
-					inspection: entry.inspection
+		),
+		...scan.failures.map(
+			(failure): EnhancedInputPackageOutcome => ({
+				status: "failed",
+				packageFile: relative(projectRoot, failure.path),
+				message: failure.message
+			})
+		)
+	];
+}
+
+/** Selects only packages whose existing header projection identifies Enhanced Input evidence. */
+export function enhancedInputCandidatePaths(scan: SavedAssetScan): readonly string[] {
+	return [
+		...new Set(
+			scan.assets
+				.filter(isHeaderScanEntry)
+				.filter((entry) =>
+					entry.header.exports.some(
+						(exported) =>
+							exported.class_path !== undefined &&
+							(isInputActionClass(exported.class_path) ||
+								isInputMappingContextClass(exported.class_path))
+					)
+				)
+				.map((entry) => entry.header.path)
+		)
+	].sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Reuses a project-wide header index, then fully decodes only the selected Enhanced Input packages.
+ * The follow-up calls receive explicit package paths, so they do not recursively enumerate Content.
+ */
+export function scanEnhancedInputFromProjectIndex(
+	index: SavedAssetScan,
+	options: EnhancedInputScanOptions
+): Effect.Effect<EnhancedInputReport, EnhancedInputScanError, AssetReader> {
+	return Effect.gen(function* () {
+		const reader = yield* AssetReader;
+		const candidates = enhancedInputCandidatePaths(index);
+		const batches = Array.from({ length: Math.ceil(candidates.length / 100) }, (_, batch) =>
+			candidates.slice(batch * 100, batch * 100 + 100)
+		);
+		const scans = yield* Effect.forEach(batches, (paths) =>
+			reader
+				.scanProject({
+					concurrency: Math.max(1, options.concurrency ?? 8),
+					paths,
+					projectRoot: options.projectRoot
 				})
-			),
-			...scan.failures.map(
+				.pipe(Effect.mapError(enhancedInputScanFailure))
+		);
+		const outcomes = [
+			...index.failures.map(
 				(failure): EnhancedInputPackageOutcome => ({
 					status: "failed",
 					packageFile: relative(options.projectRoot, failure.path),
 					message: failure.message
 				})
-			)
+			),
+			...scans.flatMap((scan) => outcomesFromScan(scan, options.projectRoot))
 		];
+		return buildEnhancedInputReport(outcomes, {
+			discoveredPackages: index.summary.scannedAssets,
+			inspectedPackages: scans.reduce((total, scan) => total + scan.summary.scannedAssets, 0)
+		});
+	}).pipe(Effect.withSpan("enhanced-input.scan_from_project_index"));
+}
+
+export function scanEnhancedInputWith(
+	reader: Pick<AssetReaderShape, "scanProject">,
+	options: EnhancedInputScanOptions
+): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
+	return Effect.gen(function* () {
+		// One reader process classifies the whole project from package headers, decoding only
+		// packages that export Enhanced Input classes or conventionally named native subclasses.
+		const scan = yield* reader
+			.scanProject({
+				classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
+				classNameSuffixes: ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
+				concurrency: Math.max(1, options.concurrency ?? 8),
+				...(options.maximumAssets === undefined
+					? {}
+					: { maximumAssets: options.maximumAssets }),
+				...(options.paths === undefined ? {} : { paths: options.paths }),
+				projectRoot: options.projectRoot
+			})
+			.pipe(Effect.mapError(enhancedInputScanFailure));
+		const outcomes = outcomesFromScan(scan, options.projectRoot);
 		return buildEnhancedInputReport(outcomes, {
 			discoveredPackages: scan.summary.scannedAssets,
 			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets

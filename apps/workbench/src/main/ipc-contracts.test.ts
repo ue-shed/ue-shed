@@ -109,11 +109,26 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
+	"project:current": [],
+	"project:choose": [],
+	"project:progress": [],
 	"asset-audits:textures:configured-scan": [],
 	"asset-audits:textures:choose-and-scan": [],
+	"asset-audits:textures:configured-refresh": [],
+	"asset-audits:textures:choose-and-refresh": [],
+	"asset-audits:textures:progress": [],
+	"asset-audits:textures:search": [{ findingsOnly: false, pageSize: 100, query: "" }],
+	"asset-audits:textures:record": ["/Game/Textures/Example"],
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
 	"game-text:configured-scan": [],
 	"game-text:choose-and-scan": [],
+	"game-text:configured-refresh": [],
+	"game-text:choose-and-refresh": [],
+	"game-text:progress": [],
+	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
+	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
+	"input-atlas:configured-scan": [],
+	"input-atlas:choose-and-scan": [],
 	"authoring:configured-table": [],
 	"authoring:configured-catalog": [],
 	"authoring:open-catalog-table": ["/Game/Data/Example", "live"],
@@ -159,6 +174,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:world-snapshot": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
 	"map-review:saved-world-maps": [],
+	"map-review:choose-project-and-maps": [],
 	"map-review:focus-actor": ["/Game/Fixture.Map:PersistentLevel.Actor", true],
 	"map-review:capture": [{ viewIds: ["view-1"] }],
 	"map-review:author-from-selection": [],
@@ -209,8 +225,27 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		health: aggregateHealth(defaultHealthInput),
 		reader: "path"
 	},
+	"project:current": { status: "not_configured" },
+	"project:choose": { status: "cancelled" },
+	"project:progress": {
+		cacheHits: 0,
+		completed: 0,
+		phase: "idle",
+		stage: "project_index",
+		total: 0
+	},
 	"asset-audits:textures:configured-scan": { status: "not_configured" },
 	"asset-audits:textures:choose-and-scan": { status: "cancelled" },
+	"asset-audits:textures:configured-refresh": { status: "not_configured" },
+	"asset-audits:textures:choose-and-refresh": { status: "cancelled" },
+	"asset-audits:textures:progress": {
+		completed: 0,
+		phase: "idle",
+		stage: "texture_audit",
+		total: 0
+	},
+	"asset-audits:textures:search": { status: "not_ready" },
+	"asset-audits:textures:record": { status: "not_ready" },
 	"asset-audits:textures:preview": {
 		contract: { name: "texture-preview", version: { major: 1, minor: 0 } },
 		status: "unavailable",
@@ -221,6 +256,18 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"game-text:configured-scan": { status: "not_configured" },
 	"game-text:choose-and-scan": { status: "cancelled" },
+	"game-text:configured-refresh": { status: "not_configured" },
+	"game-text:choose-and-refresh": { status: "cancelled" },
+	"game-text:progress": {
+		completed: 0,
+		phase: "idle",
+		stage: "game_text",
+		total: 0
+	},
+	"game-text:search": { status: "not_ready" },
+	"game-text:focus": { status: "not_ready" },
+	"input-atlas:configured-scan": { status: "not_configured" },
+	"input-atlas:choose-and-scan": { status: "cancelled" },
 	"authoring:configured-table": { status: "not_configured" },
 	"authoring:configured-catalog": { status: "not_configured" },
 	"authoring:open-catalog-table": { status: "cancelled" },
@@ -263,6 +310,12 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:saved-world-maps": [
 		{ label: "Offline World", mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap" }
 	],
+	"map-review:choose-project-and-maps": {
+		status: "configured",
+		projectRoot: "D:/Projects/DemoGame",
+		projectName: "DemoGame",
+		maps: [{ label: "Offline World", mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap" }]
+	},
 	"map-review:focus-actor": {
 		actorId: "/Game/Fixture.Map:PersistentLevel.Actor",
 		status: "not_supported"
@@ -336,9 +389,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 51 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(51);
-	expect(new Set(invokeChannelNames).size).toBe(51);
+it("registers exactly 67 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(67);
+	expect(new Set(invokeChannelNames).size).toBe(67);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

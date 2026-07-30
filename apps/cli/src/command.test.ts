@@ -299,6 +299,74 @@ it.effect("parses Map History bounds as positive numbers", () =>
 	)
 );
 
+it.effect("parses Fast History Investigation Target input", () =>
+	parseCliCommand([
+		"map",
+		"history",
+		"project",
+		"Content/Maps/L_Example.umap",
+		"--since",
+		"7 days",
+		"--mode",
+		"fast",
+		"--actor-guid",
+		"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	]).pipe(
+		Effect.tap((command) =>
+			Effect.sync(() => {
+				expect(command).toMatchObject({
+					_tag: "MapHistory",
+					actorGuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+					mode: "fast"
+				});
+			})
+		),
+		Effect.asVoid
+	)
+);
+
+it.effect("rejects Fast History without an Investigation Target", () =>
+	parseCliCommand([
+		"map",
+		"history",
+		"project",
+		"Content/Maps/L_Example.umap",
+		"--since",
+		"7 days",
+		"--mode",
+		"fast"
+	]).pipe(
+		Effect.flip,
+		Effect.tap((error) =>
+			Effect.sync(() => {
+				expect(error.message).toContain("--mode fast requires");
+			})
+		),
+		Effect.asVoid
+	)
+);
+
+it.effect("rejects actor target flags on Deep History", () =>
+	parseCliCommand([
+		"map",
+		"history",
+		"project",
+		"Content/Maps/L_Example.umap",
+		"--since",
+		"7 days",
+		"--actor-guid",
+		"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	]).pipe(
+		Effect.flip,
+		Effect.tap((error) =>
+			Effect.sync(() => {
+				expect(error.message).toContain("--mode fast");
+			})
+		),
+		Effect.asVoid
+	)
+);
+
 it.effect("collects repeated assets scan filters in the order they were passed", () =>
 	parseCliCommand([
 		"assets",

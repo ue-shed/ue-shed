@@ -11,6 +11,10 @@
 		"./contract": {
 			"types": "./src/schema.ts",
 			"default": "./src/schema.ts"
+		},
+		"./playback": {
+			"types": "./src/playback.ts",
+			"default": "./src/playback.ts"
 		}
 	},
 	"scripts": {

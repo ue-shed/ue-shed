@@ -1,29 +1,20 @@
 import * as stylex from "@stylexjs/stylex";
 import { createEffectAction } from "@ue-shed/ui";
+import {
+	PointMapCanvas,
+	type PointMapController,
+	type PointMapPoint,
+	type PointMapViewState
+} from "@ue-shed/ui/point-map";
 import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { Cause } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import type { MapReviewClientShape } from "./map-review-client.js";
 import {
-	collectVisibleIndices,
 	colorForClass,
-	contentBounds,
-	clampViewportSize,
-	createWorldScoutPaintGate,
-	fitViewportSize,
 	formatCoordinate,
-	hitTestVisibleActors,
-	nearestVisibleActor,
-	paintWorldScout,
-	panViewportBy,
-	projectVisibleActors,
-	resizeCanvasForDisplay,
-	resizeViewportToSize,
-	stabilizeViewport,
-	viewportSizeLimits,
-	WorldScoutRetainedStore,
-	zoomViewportAt,
-	type WorldScoutPaintGate
+	actorMatchesFilter,
+	WorldScoutRetainedStore
 } from "./world-scout-canvas.js";
 
 /**
@@ -40,15 +31,7 @@ export function SavedWorldScout(props: {
 	const worldAction = createEffectAction();
 	const chooseAction = createEffectAction();
 	const store = new WorldScoutRetainedStore();
-	let canvasRef: HTMLCanvasElement | undefined;
-	let cssWidth = 0;
-	let cssHeight = 0;
-	let paintGate: WorldScoutPaintGate | undefined;
-	let resizeObserver: ResizeObserver | undefined;
-	let viewLocked = false;
-	let pointerDrag:
-		| { readonly pointerId: number; startX: number; startY: number; moved: boolean }
-		| undefined;
+	let pointMap: PointMapController | undefined;
 
 	const [world, setWorld] = createSignal<SavedWorld>();
 	const [maps, setMaps] = createSignal<readonly SavedWorldMap[]>([]);
@@ -60,9 +43,9 @@ export function SavedWorldScout(props: {
 	const [hiddenClasses, setHiddenClasses] = createSignal<ReadonlySet<string>>(new Set());
 	const [selectedStreamIndex, setSelectedStreamIndex] = createSignal<number>();
 	const [catalogRevision, setCatalogRevision] = createSignal(0);
-	const [presentationRevision, setPresentationRevision] = createSignal(0);
 	const [selectionRevision, setSelectionRevision] = createSignal(0);
 	const [liveRegion, setLiveRegion] = createSignal("");
+	const [mapView, setMapView] = createSignal<PointMapViewState>();
 
 	const classes = createMemo(() => {
 		catalogRevision();
@@ -74,34 +57,34 @@ export function SavedWorldScout(props: {
 			? classes()
 			: classes().filter(([className]) => className.toLocaleLowerCase().includes(needle));
 	});
-	const visibleCount = createMemo(() => {
-		presentationRevision();
-		return store.visibleIndices.length;
+	const visiblePoints = createMemo<readonly PointMapPoint[]>(() => {
+		catalogRevision();
+		const points: PointMapPoint[] = [];
+		for (let index = 0; index < store.count; index += 1) {
+			if (!actorMatchesFilter(store, index, query(), hiddenClasses())) continue;
+			const actor = store.actorAt(index);
+			if (actor === undefined) continue;
+			points.push({
+				className: actor.className,
+				key: actor.instanceKey,
+				x: store.locationX[index] ?? 0,
+				y: store.locationY[index] ?? 0,
+				extentX: actor.bounds.extent.x,
+				extentY: actor.bounds.extent.y
+			});
+		}
+		return points;
 	});
+	const visibleCount = createMemo(() => visiblePoints().length);
 	const extentLabel = createMemo(() => {
-		presentationRevision();
-		const viewport = store.viewport;
-		if (viewport === undefined) return "—";
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		const height = viewport.size / aspect;
-		return `${Math.round(viewport.size).toLocaleString()} × ${Math.round(height).toLocaleString()} UU`;
+		const current = mapView();
+		if (current === undefined) return "—";
+		return `${Math.round(current.viewport.size).toLocaleString()} × ${Math.round(current.worldHeight).toLocaleString()} UU`;
 	});
-	const fitSize = createMemo(() => {
-		presentationRevision();
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		return fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-	});
-	const zoomLimits = createMemo(() => viewportSizeLimits(fitSize()));
-	const zoomFactor = createMemo(() => {
-		presentationRevision();
-		const viewport = store.viewport;
-		const fit = fitSize();
-		if (viewport === undefined || fit <= 0) return 1;
-		return fit / Math.max(viewport.size, 1);
-	});
+	const zoomFactor = createMemo(() => mapView()?.zoomFactor ?? 1);
 	const maxZoomFactor = createMemo(() => {
-		const { min, max } = zoomLimits();
-		return max / Math.max(min, 1);
+		const fit = mapView()?.fitSize ?? 1;
+		return fit / Math.min(50, fit);
 	});
 	const selected = createMemo(() => {
 		selectionRevision();
@@ -118,44 +101,6 @@ export function SavedWorldScout(props: {
 		};
 	});
 
-	const prepareVisibleProjection = () => {
-		collectVisibleIndices(store, query(), hiddenClasses(), store.visibleIndices);
-		const bounds = contentBounds(store, store.visibleIndices);
-		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
-		const fit = fitViewportSize(bounds, aspect);
-		if (!viewLocked) store.viewport = stabilizeViewport(store.viewport, bounds, aspect);
-		else if (store.viewport === undefined)
-			store.viewport = stabilizeViewport(undefined, bounds, aspect);
-		else if (store.viewport.size > fit)
-			store.viewport = resizeViewportToSize(store.viewport, fit);
-		if (cssWidth > 0 && cssHeight > 0 && store.viewport !== undefined) {
-			projectVisibleActors(store, store.viewport, cssWidth, cssHeight, store.visibleIndices);
-		}
-	};
-
-	const paint = () => {
-		const canvas = canvasRef;
-		if (canvas === undefined || cssWidth <= 0 || cssHeight <= 0) return;
-		const context = resizeCanvasForDisplay(
-			canvas,
-			cssWidth,
-			cssHeight,
-			typeof window === "undefined" ? 1 : window.devicePixelRatio || 1
-		);
-		if (context === undefined) return;
-		prepareVisibleProjection();
-		paintWorldScout(
-			context,
-			store,
-			store.visibleIndices.length,
-			selectedStreamIndex(),
-			cssWidth,
-			cssHeight
-		);
-		setPresentationRevision((value) => value + 1);
-	};
-	const requestPaint = () => paintGate?.markDirty();
-
 	const load = (mapPath: string) => {
 		const readSavedWorld = props.client.readSavedWorld;
 		if (readSavedWorld === undefined) {
@@ -171,10 +116,8 @@ export function SavedWorldScout(props: {
 				setWorld(nextWorld);
 				setSelectedStreamIndex(undefined);
 				setLiveRegion("");
-				viewLocked = false;
 				setCatalogRevision((value) => value + 1);
 				setSelectionRevision((value) => value + 1);
-				requestPaint();
 			}
 		});
 	};
@@ -255,160 +198,28 @@ export function SavedWorldScout(props: {
 		setLiveRegion(
 			`${actor.displayName}, ${actor.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
-		requestPaint();
-	};
-	const syncCanvasSize = (frame: Element) => {
-		const rect = frame.getBoundingClientRect();
-		const nextWidth = Math.max(1, rect.width - 56);
-		const nextHeight = Math.max(1, rect.height - 56);
-		if (nextWidth === cssWidth && nextHeight === cssHeight) return;
-		cssWidth = nextWidth;
-		cssHeight = nextHeight;
-		requestPaint();
-	};
-	const onCanvasWheel = (event: WheelEvent & { readonly currentTarget: HTMLCanvasElement }) => {
-		event.preventDefault();
-		const viewport = store.viewport;
-		if (viewport === undefined) return;
-		const rect = event.currentTarget.getBoundingClientRect();
-		cssWidth = Math.max(1, rect.width);
-		cssHeight = Math.max(1, rect.height);
-		const aspect = cssWidth / cssHeight;
-		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
-		const { min, max } = viewportSizeLimits(fit);
-		store.viewport = zoomViewportAt(
-			viewport,
-			cssWidth,
-			cssHeight,
-			event.clientX - rect.left,
-			event.clientY - rect.top,
-			event.deltaY < 0 ? 1.15 : 1 / 1.15,
-			min,
-			max
-		);
-		viewLocked = store.viewport.size < max - 1e-6;
-		requestPaint();
-	};
-	const onCanvasPointerDown = (
-		event: PointerEvent & { readonly currentTarget: HTMLCanvasElement }
-	) => {
-		if (event.button !== 0 && event.button !== 1) return;
-		const rect = event.currentTarget.getBoundingClientRect();
-		cssWidth = Math.max(1, rect.width);
-		cssHeight = Math.max(1, rect.height);
-		pointerDrag = {
-			pointerId: event.pointerId,
-			startX: event.clientX,
-			startY: event.clientY,
-			moved: false
-		};
-		event.currentTarget.setPointerCapture?.(event.pointerId);
-	};
-	const onCanvasPointerMove = (
-		event: PointerEvent & { readonly currentTarget: HTMLCanvasElement }
-	) => {
-		if (pointerDrag === undefined || pointerDrag.pointerId !== event.pointerId) return;
-		const dx = event.clientX - pointerDrag.startX;
-		const dy = event.clientY - pointerDrag.startY;
-		if (!pointerDrag.moved && Math.hypot(dx, dy) < 4) return;
-		const viewport = store.viewport;
-		if (viewport === undefined) return;
-		pointerDrag.moved = true;
-		pointerDrag.startX = event.clientX;
-		pointerDrag.startY = event.clientY;
-		store.viewport = panViewportBy(viewport, cssWidth, cssHeight, dx, dy);
-		viewLocked = true;
-		requestPaint();
-	};
-	const onCanvasPointerUp = (
-		event: PointerEvent & { readonly currentTarget: HTMLCanvasElement }
-	) => {
-		if (pointerDrag === undefined || pointerDrag.pointerId !== event.pointerId) return;
-		const drag = pointerDrag;
-		pointerDrag = undefined;
-		event.currentTarget.releasePointerCapture?.(event.pointerId);
-		if (drag.moved || event.button === 1) return;
-		const rect = event.currentTarget.getBoundingClientRect();
-		prepareVisibleProjection();
-		const hit = hitTestVisibleActors(
-			store,
-			store.visibleIndices.length,
-			event.clientX - rect.left,
-			event.clientY - rect.top,
-			cssWidth,
-			cssHeight
-		);
-		if (hit !== undefined) selectStreamIndex(hit);
-	};
-	const onCanvasKeyDown = (event: KeyboardEvent) => {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			clearSelection();
-			return;
-		}
-		if (
-			event.key !== "ArrowLeft" &&
-			event.key !== "ArrowRight" &&
-			event.key !== "ArrowUp" &&
-			event.key !== "ArrowDown"
-		)
-			return;
-		event.preventDefault();
-		prepareVisibleProjection();
-		const direction =
-			event.key === "ArrowLeft" || event.key === "ArrowUp" ? "previous" : "next";
-		const next = nearestVisibleActor(store, selectedStreamIndex(), direction);
-		if (next !== undefined) selectStreamIndex(next);
 	};
 	const clearSelection = () => {
 		setSelectedStreamIndex(undefined);
 		setSelectionRevision((value) => value + 1);
 		setLiveRegion("Selection cleared");
-		requestPaint();
 	};
 	const setZoomFactor = (value: string) => {
-		const viewport = store.viewport;
-		if (viewport === undefined) return;
 		const parsed = Number(value);
 		if (!Number.isFinite(parsed) || parsed <= 0) return;
-		const fit = fitSize();
-		const nextSize = clampViewportSize(fit / parsed, fit);
-		store.viewport = resizeViewportToSize(viewport, nextSize);
-		viewLocked = nextSize < fit - 1e-6;
-		requestPaint();
+		pointMap?.setZoomFactor(parsed);
 	};
-	const resetView = () => {
-		viewLocked = false;
-		store.viewport = undefined;
-		requestPaint();
-	};
-	const setCanvasElement = (element: HTMLCanvasElement) => {
-		canvasRef = element;
-		const frame = element.parentElement;
-		resizeObserver?.disconnect();
-		if (frame !== null) {
-			syncCanvasSize(frame);
-			if (typeof ResizeObserver !== "undefined") {
-				resizeObserver = new ResizeObserver(() => syncCanvasSize(frame));
-				resizeObserver.observe(frame);
-			}
+	const selectPoint = (key: string | undefined) => {
+		if (key === undefined) {
+			clearSelection();
+			return;
 		}
-		requestPaint();
+		const index = store.findByInstanceKey(key);
+		if (index !== undefined) selectStreamIndex(index);
 	};
 
 	onMount(() => {
-		paintGate = createWorldScoutPaintGate(paint);
 		loadMaps();
-	});
-	onCleanup(() => {
-		paintGate?.dispose();
-		resizeObserver?.disconnect();
-	});
-	createEffect(() => {
-		query();
-		hiddenClasses();
-		selectedStreamIndex();
-		requestPaint();
 	});
 
 	return (
@@ -602,25 +413,24 @@ export function SavedWorldScout(props: {
 								<div {...stylex.props(styles.extentLabel)}>{extentLabel()}</div>
 								<button
 									type="button"
-									onClick={resetView}
+									onClick={() => pointMap?.resetView()}
 									{...stylex.props(styles.reset)}
 								>
 									RESET VIEW
 								</button>
-								<canvas
-									ref={setCanvasElement}
-									role="application"
-									tabIndex={0}
-									aria-label="Top-down saved actor map"
-									aria-describedby="saved-world-scout-live"
+								<PointMapCanvas
+									ariaDescribedBy="saved-world-scout-live"
+									ariaLabel="Top-down saved actor map"
+									class={stylex.props(styles.map).className}
+									onController={(controller) => {
+										pointMap = controller;
+									}}
+									onSelect={selectPoint}
+									onViewChange={setMapView}
+									points={visiblePoints()}
+									resetKey={current().mapPath}
+									selectedKey={selected()?.instanceKey}
 									title="Scroll to zoom, drag to pan, click to inspect a saved actor"
-									onWheel={onCanvasWheel}
-									onPointerDown={onCanvasPointerDown}
-									onPointerMove={onCanvasPointerMove}
-									onPointerUp={onCanvasPointerUp}
-									onPointerCancel={onCanvasPointerUp}
-									onKeyDown={onCanvasKeyDown}
-									{...stylex.props(styles.map)}
 								/>
 								<div
 									id="saved-world-scout-live"

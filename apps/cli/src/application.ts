@@ -697,8 +697,11 @@ export function executeCommand(
 			case "MapHistory": {
 				const {
 					mapHistoryLiveLayer,
+					PerforceFastMapHistory,
+					PerforceFastMapHistoryQuery,
 					PerforceMapHistory,
 					PerforceMapHistoryQuery,
+					readPerforceFastMapHistory,
 					readPerforceMapHistory,
 					UtcTimestamp
 				} = yield* Effect.promise(() => import("@ue-shed/map-history"));
@@ -731,25 +734,86 @@ export function executeCommand(
 						})
 					);
 				}
+				const limits = {
+					maxChangelists:
+						command.maxChangelists ?? DEFAULT_MAP_HISTORY_LIMITS.maxChangelists,
+					maxConcurrency:
+						command.concurrency ?? DEFAULT_MAP_HISTORY_LIMITS.maxConcurrency,
+					maxDurationMs:
+						command.maxDurationMs ?? DEFAULT_MAP_HISTORY_LIMITS.maxDurationMs,
+					maxMaterializedFiles:
+						command.maxMaterializedFiles ??
+						DEFAULT_MAP_HISTORY_LIMITS.maxMaterializedFiles,
+					maxPackages: command.maxPackages ?? DEFAULT_MAP_HISTORY_LIMITS.maxPackages
+				};
+				const range = {
+					since: DateTime.formatIso(since),
+					until: DateTime.formatIso(until)
+				};
+				const mode = command.mode ?? "deep";
+				if (mode === "fast") {
+					const target =
+						command.actorGuid !== undefined
+							? {
+									identity: {
+										actorGuid: command.actorGuid,
+										kind: "actor_guid" as const
+									},
+									kind: "actor" as const
+								}
+							: {
+									identity: {
+										actorPath: command.actorPath ?? "",
+										kind: "object_path" as const,
+										packageName: command.actorPackage ?? ""
+									},
+									kind: "actor" as const
+								};
+					const query = yield* Schema.decodeUnknownEffect(PerforceFastMapHistoryQuery)({
+						limits,
+						mapPath: command.mapPath,
+						mode: "fast",
+						projectRoot: command.projectRoot,
+						range,
+						target
+					}).pipe(
+						Effect.mapError(
+							() =>
+								new CliCommandError({
+									message:
+										"Fast History requires a valid range and Investigation Target."
+								})
+						)
+					);
+					const history = yield* readPerforceFastMapHistory(query).pipe(
+						Effect.provide(mapHistoryLiveLayer)
+					);
+					const encoded = yield* Schema.encodeUnknownEffect(PerforceFastMapHistory)(
+						history
+					).pipe(
+						Effect.mapError(
+							() =>
+								new CliCommandError({
+									message: "Fast History produced an invalid output document."
+								})
+						)
+					);
+					yield* printJson(encoded);
+					if (
+						history.completeness === "partial" ||
+						history.revisions.some(
+							(revision) => revision.unclassifiedPackageChanges.length > 0
+						)
+					) {
+						yield* runtime.setExitCode(3);
+					}
+					return;
+				}
 				const query = yield* Schema.decodeUnknownEffect(PerforceMapHistoryQuery)({
-					limits: {
-						maxChangelists:
-							command.maxChangelists ?? DEFAULT_MAP_HISTORY_LIMITS.maxChangelists,
-						maxConcurrency:
-							command.concurrency ?? DEFAULT_MAP_HISTORY_LIMITS.maxConcurrency,
-						maxDurationMs:
-							command.maxDurationMs ?? DEFAULT_MAP_HISTORY_LIMITS.maxDurationMs,
-						maxMaterializedFiles:
-							command.maxMaterializedFiles ??
-							DEFAULT_MAP_HISTORY_LIMITS.maxMaterializedFiles,
-						maxPackages: command.maxPackages ?? DEFAULT_MAP_HISTORY_LIMITS.maxPackages
-					},
+					limits,
 					mapPath: command.mapPath,
 					projectRoot: command.projectRoot,
-					range: {
-						since: DateTime.formatIso(since),
-						until: DateTime.formatIso(until)
-					}
+					range
 				}).pipe(
 					Effect.mapError(
 						() =>

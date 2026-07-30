@@ -11,6 +11,14 @@
 		"./task-progress": {
 			"types": "./src/task-progress-modal.tsx",
 			"default": "./src/task-progress-modal.tsx"
+		},
+		"./point-map": {
+			"types": "./src/point-map.tsx",
+			"default": "./src/point-map.tsx"
+		},
+		"./point-map-core": {
+			"types": "./src/point-map-core.ts",
+			"default": "./src/point-map-core.ts"
 		}
 	},
 	"scripts": {

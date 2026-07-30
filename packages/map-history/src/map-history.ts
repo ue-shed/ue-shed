@@ -4,6 +4,7 @@ import type { SavedWorld } from "@ue-shed/protocol";
 import { materializeBaseline } from "./baseline-materialization.js";
 import { diffSavedWorldSnapshots } from "./diff.js";
 import { MapHistoryError } from "./errors.js";
+import { resolvePerforceFastMapScope } from "./fast-history-target.js";
 import { acquireHistoricalProjectTree } from "./historical-project-tree.js";
 import { findUnclassifiedPackageChanges } from "./package-correlation.js";
 import {
@@ -21,9 +22,11 @@ import { planScopedRevision, type PlannedPackageChange } from "./revision-plan.j
 import {
 	type MapHistoryDiagnostic,
 	type MapHistoryProgress,
-	type MapHistoryRangeEndSnapshot,
+	type MapHistorySnapshot,
 	type PerforceChangeNumber,
 	type PerforceDepotPath,
+	type PerforceFastMapHistory,
+	type PerforceFastMapHistoryQuery,
 	type PerforceMapHistory,
 	type PerforceMapHistoryQuery,
 	type PerforceMapRevision,
@@ -37,6 +40,9 @@ export interface MapHistoryShape {
 	readonly readPerforceMapHistory: (
 		query: PerforceMapHistoryQuery
 	) => Effect.Effect<PerforceMapHistory, MapHistoryError>;
+	readonly readPerforceFastMapHistory: (
+		query: PerforceFastMapHistoryQuery
+	) => Effect.Effect<PerforceFastMapHistory, MapHistoryError>;
 }
 
 /** The Perforce-first Map History workflow. It owns no credentials or source-control policy. */
@@ -140,7 +146,7 @@ function deduplicateDiagnostics(
 }
 
 function readHistoricalWorld(options: {
-	readonly query: PerforceMapHistoryQuery;
+	readonly limits: PerforceMapHistoryQuery["limits"];
 	readonly scope: ResolvedPerforceMapScope;
 	readonly treeProjectRoot: string;
 }): Effect.Effect<SavedWorld, MapHistoryError, AssetReader> {
@@ -148,9 +154,9 @@ function readHistoricalWorld(options: {
 		const reader = yield* AssetReader;
 		const world = yield* reader
 			.readSavedWorld({
-				concurrency: options.query.limits.maxConcurrency,
+				concurrency: options.limits.maxConcurrency,
 				mapPath: options.scope.mapProjectRelativePath,
-				maximumAssets: options.query.limits.maxPackages,
+				maximumAssets: options.limits.maxPackages,
 				projectRoot: options.treeProjectRoot
 			})
 			.pipe(
@@ -163,34 +169,46 @@ function readHistoricalWorld(options: {
 	})();
 }
 
-function rangeEndSnapshotOf(world: SavedWorld): MapHistoryRangeEndSnapshot {
+function snapshotOf(world: SavedWorld): MapHistorySnapshot {
 	return {
 		actors: world.actors,
 		completeness: world.completeness,
 		diagnostics: world.diagnostics,
 		mapPackage: world.authority.mapPackage,
-		mapPath: world.mapPath as MapHistoryRangeEndSnapshot["mapPath"],
+		mapPath: world.mapPath as MapHistorySnapshot["mapPath"],
 		sourceKind: world.sourceKind,
 		summary: world.summary
 	};
 }
 
-function readPerforceMapHistoryWorkflow(
-	query: PerforceMapHistoryQuery,
-	reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
-): Effect.Effect<
-	PerforceMapHistory,
+interface ReconstructedMapHistoryBody {
+	readonly baseline: PerforceMapHistory["baseline"];
+	readonly completeness: PerforceMapHistory["completeness"];
+	readonly diagnostics: readonly MapHistoryDiagnostic[];
+	readonly externalActorDepotRoot?: PerforceDepotPath;
+	readonly mapDepotPath: PerforceDepotPath;
+	readonly rangeEndSnapshot?: MapHistorySnapshot;
+	readonly rangeStartSnapshot?: MapHistorySnapshot;
+	readonly revisions: readonly PerforceMapRevision[];
+}
+
+function reconstructScopedMapHistory(options: {
+	readonly limits: PerforceMapHistoryQuery["limits"];
+	readonly range: PerforceMapHistoryQuery["range"];
+	readonly reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>;
+	readonly scope: ResolvedPerforceMapScope;
+}): Effect.Effect<
+	ReconstructedMapHistoryBody,
 	MapHistoryError,
 	AssetReader | PerforceHistorySource | import("effect").Scope.Scope
 > {
-	return Effect.fn("MapHistory.readPerforceMapHistory")(function* () {
-		yield* reportProgress(progress("resolving_scope", 0, 0));
-		const scope = yield* resolvePerforceMapScope(query);
+	return Effect.fn("MapHistory.reconstructScopedMapHistory")(function* () {
+		const { limits, range, reportProgress, scope } = options;
 		yield* reportProgress(progress("listing_changes", 0, 0));
 		const selection = yield* selectSubmittedChanges({
 			fileSpecs: scope.fileSpecs,
-			maxChangelists: query.limits.maxChangelists,
-			range: query.range
+			maxChangelists: limits.maxChangelists,
+			range
 		});
 		const totalChangelists = selection.revisions.length;
 		const tree = yield* acquireHistoricalProjectTree();
@@ -198,24 +216,26 @@ function readPerforceMapHistoryWorkflow(
 		let complete = true;
 		let materializedFiles = 0;
 		let previous: SavedWorld | undefined;
+		let rangeStartSnapshot: MapHistorySnapshot | undefined;
 
 		if (selection.baseline !== undefined) {
 			yield* reportProgress(progress("materializing_baseline", 0, totalChangelists));
 			materializedFiles += yield* materializeBaseline({
 				change: selection.baseline.change,
-				concurrency: query.limits.maxConcurrency,
-				maxFiles: query.limits.maxMaterializedFiles,
+				concurrency: limits.maxConcurrency,
+				maxFiles: limits.maxMaterializedFiles,
 				scope,
 				tree
 			});
 			yield* reportProgress(progress("parsing", 0, totalChangelists));
 			previous = yield* readHistoricalWorld({
-				query,
+				limits,
 				scope,
 				treeProjectRoot: tree.projectRoot
 			});
 			complete &&= previous.completeness === "complete";
 			diagnostics.push(...previous.diagnostics);
+			rangeStartSnapshot = snapshotOf(previous);
 		}
 
 		const source = yield* PerforceHistorySource;
@@ -239,17 +259,17 @@ function readPerforceMapHistoryWorkflow(
 					.map((file) => scopedPerforceFile(scope, file.depotPath))
 					.filter((file): file is NonNullable<typeof file> => file !== undefined)
 			});
-			const remainingMaterializations = query.limits.maxMaterializedFiles - materializedFiles;
+			const remainingMaterializations = limits.maxMaterializedFiles - materializedFiles;
 			materializedFiles += yield* materializePlannedRevision({
 				change: selected.change,
-				concurrency: query.limits.maxConcurrency,
+				concurrency: limits.maxConcurrency,
 				maxFiles: Math.max(0, remainingMaterializations),
 				plan,
 				tree
 			});
 			yield* reportProgress(progress("parsing", index, totalChangelists));
 			const current = yield* readHistoricalWorld({
-				query,
+				limits,
 				scope,
 				treeProjectRoot: tree.projectRoot
 			});
@@ -299,9 +319,60 @@ function readPerforceMapHistoryWorkflow(
 				? {}
 				: { externalActorDepotRoot: scope.externalActorDepotRoot as PerforceDepotPath }),
 			mapDepotPath: scope.mapDepotPath as PerforceDepotPath,
+			...(rangeStartSnapshot === undefined ? {} : { rangeStartSnapshot }),
+			...(previous === undefined ? {} : { rangeEndSnapshot: snapshotOf(previous) }),
+			revisions
+		};
+	})();
+}
+
+function readPerforceMapHistoryWorkflow(
+	query: PerforceMapHistoryQuery,
+	reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
+): Effect.Effect<
+	PerforceMapHistory,
+	MapHistoryError,
+	AssetReader | PerforceHistorySource | import("effect").Scope.Scope
+> {
+	return Effect.fn("MapHistory.readPerforceMapHistory")(function* () {
+		yield* reportProgress(progress("resolving_scope", 0, 0));
+		const scope = yield* resolvePerforceMapScope(query);
+		const body = yield* reconstructScopedMapHistory({
+			limits: query.limits,
+			range: query.range,
+			reportProgress,
+			scope
+		});
+		return {
+			...body,
 			query,
-			...(previous === undefined ? {} : { rangeEndSnapshot: rangeEndSnapshotOf(previous) }),
-			revisions,
+			schemaVersion: 1 as const
+		};
+	})();
+}
+
+function readPerforceFastMapHistoryWorkflow(
+	query: PerforceFastMapHistoryQuery,
+	reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
+): Effect.Effect<
+	PerforceFastMapHistory,
+	MapHistoryError,
+	AssetReader | PerforceHistorySource | import("effect").Scope.Scope
+> {
+	return Effect.fn("MapHistory.readPerforceFastMapHistory")(function* () {
+		yield* reportProgress(progress("resolving_scope", 0, 0));
+		const resolved = yield* resolvePerforceFastMapScope(query);
+		const body = yield* reconstructScopedMapHistory({
+			limits: query.limits,
+			range: query.range,
+			reportProgress,
+			scope: resolved.scope
+		});
+		return {
+			...body,
+			coverage: resolved.coverage,
+			mode: "fast" as const,
+			query,
 			schemaVersion: 1 as const
 		};
 	})();
@@ -327,6 +398,21 @@ export const mapHistoryLayer: Layer.Layer<MapHistory, never, AssetReader | Perfo
 			const reportProgress = (value: MapHistoryProgress) => Ref.set(latestProgress, value);
 			return MapHistory.of({
 				progress: () => Ref.get(latestProgress),
+				readPerforceFastMapHistory: (query) =>
+					Effect.scoped(readPerforceFastMapHistoryWorkflow(query, reportProgress)).pipe(
+						Effect.provideService(AssetReader, reader),
+						Effect.provideService(PerforceHistorySource, perforce),
+						Effect.timeoutOrElse({
+							duration: query.limits.maxDurationMs,
+							orElse: () => Effect.fail(durationError(query.limits.maxDurationMs))
+						}),
+						Effect.onExit((exit) =>
+							reportProgress(
+								progress(Exit.isSuccess(exit) ? "ready" : "failed", 0, 0)
+							)
+						),
+						Effect.withSpan("map_history.read_perforce_fast")
+					),
 				readPerforceMapHistory: (query) =>
 					Effect.scoped(readPerforceMapHistoryWorkflow(query, reportProgress)).pipe(
 						Effect.provideService(AssetReader, reader),
@@ -360,6 +446,12 @@ export function readPerforceMapHistory(
 	query: PerforceMapHistoryQuery
 ): Effect.Effect<PerforceMapHistory, MapHistoryError, MapHistory> {
 	return Effect.flatMap(MapHistory, (history) => history.readPerforceMapHistory(query));
+}
+
+export function readPerforceFastMapHistory(
+	query: PerforceFastMapHistoryQuery
+): Effect.Effect<PerforceFastMapHistory, MapHistoryError, MapHistory> {
+	return Effect.flatMap(MapHistory, (history) => history.readPerforceFastMapHistory(query));
 }
 
 export function mapHistoryProgress(): Effect.Effect<MapHistoryProgress, never, MapHistory> {

@@ -9,161 +9,42 @@ import {
 	type WorldTransform
 } from "@ue-shed/observatory/presentation";
 import type { SavedWorld } from "@ue-shed/protocol";
+import {
+	pointMapCanvasAspect,
+	pointMapClampViewportSize,
+	pointMapColorForClass,
+	pointMapFitViewportSize,
+	pointMapMarkerRadius,
+	pointMapMinViewportSize,
+	pointMapPanViewportBy,
+	pointMapResizeCanvasForDisplay,
+	pointMapResizeViewportToSize,
+	pointMapStabilizeViewport,
+	pointMapViewportSizeLimits,
+	pointMapWorldWindowSize,
+	pointMapZoomViewportAt,
+	type PointMapBounds,
+	type PointMapViewport
+} from "@ue-shed/ui/point-map-core";
 
-const classColors = ["#b9f227", "#61d5df", "#f4a261", "#e76f8a", "#9a8cff", "#e9c46a"];
-
-/** Max pick distance as a fraction of the canvas CSS size (~6% of the map). */
+export type WorldScoutBounds = PointMapBounds;
+export type WorldScoutViewport = PointMapViewport;
 export const worldScoutPickRadiusFraction = 0.06;
-const defaultPaddingRatio = 0.08;
-/** Smallest allowed world-window width when zooming in on a large map. */
-export const worldScoutMinViewportSize = 50;
-/** Grow the retained viewport when content needs more than this fraction beyond current size. */
-const viewportExpandSlack = 0.04;
-/** Shrink only when content fits under this fraction of the current size (hysteresis). */
-const viewportShrinkFraction = 0.72;
-/** Move the retained center when content center drifts beyond this fraction of size. */
-const viewportCenterDriftFraction = 0.18;
-
-export type WorldScoutBounds = {
-	readonly minX: number;
-	readonly maxX: number;
-	readonly minY: number;
-	readonly maxY: number;
-};
-
-/** World-window width that fits `bounds` at the given canvas aspect (width/height). */
-export function fitViewportSize(
-	bounds: WorldScoutBounds | undefined,
-	aspect = 1,
-	paddingRatio = defaultPaddingRatio
-): number {
-	if (bounds === undefined) return 1;
-	const rawWidth = Math.max(1, bounds.maxX - bounds.minX);
-	const rawHeight = Math.max(1, bounds.maxY - bounds.minY);
-	const contentW = rawWidth * (1 + paddingRatio * 2);
-	const contentH = rawHeight * (1 + paddingRatio * 2);
-	return Math.max(1, Math.max(contentW, contentH * Math.max(aspect, 1e-9)));
-}
-
-/** Zoom-in floor and fit-all ceiling for the world-window width. */
-export function viewportSizeLimits(
-	fitSize: number,
-	absoluteMin = worldScoutMinViewportSize
-): { readonly min: number; readonly max: number } {
-	const max = Math.max(fitSize, 1);
-	return { min: Math.min(absoluteMin, max), max };
-}
-
-export function clampViewportSize(
-	size: number,
-	fitSize: number,
-	absoluteMin = worldScoutMinViewportSize
-): number {
-	const { min, max } = viewportSizeLimits(fitSize, absoluteMin);
-	return Math.min(max, Math.max(min, size));
-}
-
-export function colorForClass(className: string): string {
-	let hash = 0;
-	for (const character of className) hash = (hash * 31 + character.charCodeAt(0)) | 0;
-	return classColors[Math.abs(hash) % classColors.length] ?? "#b9f227";
-}
-
-/**
- * Marker radius in CSS pixels so a dense full-world fit still reads as a lattice instead of noise.
- * Spacing is estimated from canvas size and visible count; radius tracks a fraction of that spacing.
- */
-export function worldScoutMarkerRadius(
-	visibleCount: number,
-	cssWidth: number,
-	cssHeight: number,
-	selected = false
-): number {
-	const count = Math.max(1, visibleCount);
-	const span = Math.max(1, Math.min(cssWidth, cssHeight));
-	const spacing = span / Math.sqrt(count);
-	const base = Math.min(8, Math.max(3.5, spacing * 0.38));
-	return selected ? Math.min(10, base + 2.25) : base;
-}
-
-/** Zoom a viewport around a CSS-pixel anchor. `factor` > 1 zooms in. */
-export function zoomViewportAt(
-	viewport: WorldScoutViewport,
-	cssWidth: number,
-	cssHeight: number,
-	cssX: number,
-	cssY: number,
-	factor: number,
-	minSize = worldScoutMinViewportSize,
-	maxSize = Number.POSITIVE_INFINITY
-): WorldScoutViewport {
-	const clamped = Math.min(8, Math.max(0.125, factor));
-	const nextSize = Math.min(maxSize, Math.max(minSize, viewport.size / clamped));
-	const aspect = canvasAspect(cssWidth, cssHeight);
-	const worldWidth = Math.max(viewport.size, 1);
-	const worldHeight = worldWidth / aspect;
-	const width = Math.max(cssWidth, 1);
-	const height = Math.max(cssHeight, 1);
-	const nx = cssX / width;
-	const ny = cssY / height;
-	const worldX = viewport.centerX - worldWidth / 2 + nx * worldWidth;
-	const worldY = viewport.centerY + worldHeight / 2 - ny * worldHeight;
-	const nextCenterX = worldX - (nx - 0.5) * nextSize;
-	const nextCenterY = worldY + (ny - 0.5) * (nextSize / aspect);
-	return { centerX: nextCenterX, centerY: nextCenterY, size: nextSize };
-}
-
-/** Resize the world window around the current center. */
-export function resizeViewportToSize(
-	viewport: WorldScoutViewport,
-	nextSize: number
-): WorldScoutViewport {
-	return {
-		centerX: viewport.centerX,
-		centerY: viewport.centerY,
-		size: Math.max(nextSize, 1)
-	};
-}
-
-/** Pan a viewport by a CSS-pixel drag delta (positive dx moves content right). */
-export function panViewportBy(
-	viewport: WorldScoutViewport,
-	cssWidth: number,
-	cssHeight: number,
-	cssDeltaX: number,
-	cssDeltaY: number
-): WorldScoutViewport {
-	const worldPerPixel = Math.max(viewport.size, 1) / Math.max(cssWidth, 1);
-	return {
-		centerX: viewport.centerX - cssDeltaX * worldPerPixel,
-		centerY: viewport.centerY + cssDeltaY * worldPerPixel,
-		size: viewport.size
-	};
-}
-
-/** Canvas width / height. Used so the world window matches the map frame without squashing. */
-export function canvasAspect(cssWidth: number, cssHeight: number): number {
-	return Math.max(cssWidth, 1) / Math.max(cssHeight, 1);
-}
-
-/** World-space width/height of the viewport window for a canvas aspect ratio. */
-export function worldWindowSize(
-	viewport: WorldScoutViewport,
-	aspect: number
-): { readonly width: number; readonly height: number } {
-	const width = Math.max(viewport.size, 1);
-	return { width, height: width / Math.max(aspect, 1e-9) };
-}
+export const worldScoutMinViewportSize = pointMapMinViewportSize;
+export const fitViewportSize = pointMapFitViewportSize;
+export const viewportSizeLimits = pointMapViewportSizeLimits;
+export const clampViewportSize = pointMapClampViewportSize;
+export const colorForClass = pointMapColorForClass;
+export const worldScoutMarkerRadius = pointMapMarkerRadius;
+export const zoomViewportAt = pointMapZoomViewportAt;
+export const resizeViewportToSize = pointMapResizeViewportToSize;
+export const panViewportBy = pointMapPanViewportBy;
+export const canvasAspect = pointMapCanvasAspect;
+export const worldWindowSize = pointMapWorldWindowSize;
+export const resizeCanvasForDisplay = pointMapResizeCanvasForDisplay;
 
 export function formatCoordinate(value: number): string {
 	return `${value >= 0 ? "+" : "−"}${Math.abs(Math.round(value)).toLocaleString()}`;
-}
-
-export interface WorldScoutViewport {
-	readonly centerX: number;
-	readonly centerY: number;
-	/** World-space width of the visible window. Height is `size / canvasAspect`. */
-	readonly size: number;
 }
 
 export interface WorldScoutActorRecord {
@@ -538,26 +419,9 @@ export function stabilizeViewport(
 	previous: WorldScoutViewport | undefined,
 	bounds: WorldScoutBounds | undefined,
 	aspect = 1,
-	paddingRatio = defaultPaddingRatio
+	paddingRatio = 0.08
 ): WorldScoutViewport {
-	if (bounds === undefined) {
-		return previous ?? { centerX: 0, centerY: 0, size: 1 };
-	}
-	const proposedSize = fitViewportSize(bounds, aspect, paddingRatio);
-	const proposedCenterX = (bounds.minX + bounds.maxX) / 2;
-	const proposedCenterY = (bounds.minY + bounds.maxY) / 2;
-	if (previous === undefined) {
-		return { centerX: proposedCenterX, centerY: proposedCenterY, size: proposedSize };
-	}
-	let size = previous.size;
-	if (proposedSize > previous.size * (1 + viewportExpandSlack)) size = proposedSize;
-	else if (proposedSize < previous.size * viewportShrinkFraction) size = proposedSize;
-	let centerX = previous.centerX;
-	let centerY = previous.centerY;
-	const driftLimit = size * viewportCenterDriftFraction;
-	if (Math.abs(proposedCenterX - previous.centerX) > driftLimit) centerX = proposedCenterX;
-	if (Math.abs(proposedCenterY - previous.centerY) > driftLimit) centerY = proposedCenterY;
-	return { centerX, centerY, size };
+	return pointMapStabilizeViewport(previous, bounds, aspect, paddingRatio);
 }
 
 export function collectVisibleIndices(
@@ -630,25 +494,6 @@ export function nearestVisibleActor(
 	if (currentOffset < 0) return visible[0];
 	if (direction === "next") return visible[(currentOffset + 1) % visible.length];
 	return visible[(currentOffset - 1 + visible.length) % visible.length];
-}
-
-export function resizeCanvasForDisplay(
-	canvas: HTMLCanvasElement,
-	cssWidth: number,
-	cssHeight: number,
-	devicePixelRatio: number
-): CanvasRenderingContext2D | undefined {
-	const dpr = Math.max(1, devicePixelRatio);
-	const width = Math.max(1, Math.round(cssWidth * dpr));
-	const height = Math.max(1, Math.round(cssHeight * dpr));
-	if (canvas.width !== width) canvas.width = width;
-	if (canvas.height !== height) canvas.height = height;
-	canvas.style.width = `${cssWidth}px`;
-	canvas.style.height = `${cssHeight}px`;
-	const context = canvas.getContext("2d");
-	if (!context) return undefined;
-	context.setTransform(dpr, 0, 0, dpr, 0, 0);
-	return context;
 }
 
 export type WorldScoutPaintContext = Pick<

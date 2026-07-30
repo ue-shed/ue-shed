@@ -193,4 +193,32 @@ describe("resolvePerforceMapScope", () => {
 			)
 		).toBeUndefined();
 	});
+
+	it("honors an allowedPackageNames allowlist for Fast History materialization", () => {
+		const scope = {
+			allowedPackageNames: new Set([
+				"/Game/Maps/L_Example",
+				"/Game/__ExternalActors__/Maps/L_Example/A/B/Actor"
+			]),
+			externalActorDepotRoot: "//Project/Main/Content/__ExternalActors__/Maps/L_Example",
+			externalActorProjectRoot: "Content/__ExternalActors__/Maps/L_Example",
+			fileSpecs: [],
+			mapDepotPath: "//Project/Main/Content/Maps/L_Example.umap",
+			mapPackageName: "/Game/Maps/L_Example",
+			mapProjectRelativePath: "Content/Maps/L_Example.umap",
+			sourceKind: "world_partition" as const
+		};
+		expect(
+			scopedPerforceFile(
+				scope,
+				"//Project/Main/Content/__ExternalActors__/Maps/L_Example/A/B/Actor.uasset"
+			)
+		).toMatchObject({ packageName: "/Game/__ExternalActors__/Maps/L_Example/A/B/Actor" });
+		expect(
+			scopedPerforceFile(
+				scope,
+				"//Project/Main/Content/__ExternalActors__/Maps/L_Example/C/D/Other.uasset"
+			)
+		).toBeUndefined();
+	});
 });

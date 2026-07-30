@@ -1,117 +1,143 @@
-import { PerforceMapHistory } from "@ue-shed/map-history/contract";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import { PerforceMapHistory } from "@ue-shed/map-history/contract";
 import {
-	actorKeyFromSavedActor,
-	changeMatchesActor,
 	collectWorldLogActors,
+	noWorldLogActorViewFilters,
+	worldLogActorLifecycle,
 	worldLogActorMatchesQuery,
-	worldLogMapBounds
+	worldLogActorMatchesViewFilters,
+	worldLogActorMovementEvents
 } from "./world-log-actors.js";
 
-const history = Schema.decodeUnknownSync(PerforceMapHistory)({
-	baseline: { change: 9, status: "available" },
-	completeness: "complete",
-	diagnostics: [],
-	mapDepotPath: "//Project/Main/Content/Maps/L_Example.umap",
-	query: {
-		limits: {
-			maxChangelists: 10,
-			maxConcurrency: 2,
-			maxDurationMs: 1000,
-			maxMaterializedFiles: 10,
-			maxPackages: 10
-		},
-		mapPath: "Content/Maps/L_Example.umap",
-		projectRoot: "C:/Project",
-		range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-21T00:00:00.000Z" }
-	},
-	rangeEndSnapshot: {
-		actors: [
-			{
-				actorGuid: "guid-present",
-				actorPath: "/Game/Maps/L_Example.L_Example:PersistentLevel.Lamp",
-				classPath: "/Script/Engine.PointLight",
-				label: "Key lamp",
-				packageName: "/Game/Actors/Lamp",
-				position: { location: { x: 120, y: 220, z: 30 }, status: "resolved" }
-			},
-			{
-				actorGuid: "guid-static",
-				actorPath: "/Game/Maps/L_Example.L_Example:PersistentLevel.Floor",
-				classPath: "/Script/Engine.StaticMeshActor",
-				label: "Floor",
-				packageName: "/Game/Actors/Floor",
-				position: { location: { x: 420, y: 520, z: 0 }, status: "resolved" }
-			}
-		],
-		completeness: "complete",
+const decodeHistory = Schema.decodeUnknownSync(PerforceMapHistory);
+
+function actor(input: {
+	readonly classPath?: string;
+	readonly guid: string;
+	readonly label: string;
+	readonly x: number;
+	readonly y: number;
+}) {
+	return {
+		actorGuid: input.guid,
+		actorPath: `/Game/Maps/L_Example.L_Example:PersistentLevel.${input.label}`,
+		classPath: input.classPath ?? "/Script/Game.Npc",
+		label: input.label,
+		packageName: `/Game/Actors/${input.label}`,
+		position: { location: { x: input.x, y: input.y, z: 0 }, status: "resolved" as const }
+	};
+}
+
+function snapshot(actors: readonly ReturnType<typeof actor>[]) {
+	return {
+		actors,
+		completeness: "complete" as const,
 		diagnostics: [],
 		mapPackage: "/Game/Maps/L_Example",
 		mapPath: "Content/Maps/L_Example.umap",
-		sourceKind: "level",
-		summary: { failedPackages: 0, partialPackages: 0, resolvedActors: 2, scannedPackages: 1 }
-	},
-	revisions: [
-		{
-			change: 10,
-			changes: [
-				{
-					after: {
-						actorGuid: "guid-present",
-						actorPath: "/Game/Maps/L_Example.L_Example:PersistentLevel.Lamp",
-						classPath: "/Script/Engine.PointLight",
-						label: "Key lamp",
-						packageName: "/Game/Actors/Lamp",
-						position: { location: { x: 120, y: 220, z: 30 }, status: "resolved" }
-					},
-					identity: { actorGuid: "guid-present", kind: "actor_guid" },
-					kind: "actor_added"
-				},
-				{
-					before: {
-						actorGuid: "guid-removed",
-						actorPath: "/Game/Maps/L_Example.L_Example:PersistentLevel.OldLight",
-						classPath: "/Script/Engine.PointLight",
-						label: "Old lamp",
-						packageName: "/Game/Actors/OldLamp",
-						position: { location: { x: -50, y: 20, z: 0 }, status: "resolved" }
-					},
-					identity: { actorGuid: "guid-removed", kind: "actor_guid" },
-					kind: "actor_removed"
-				}
-			],
+		sourceKind: "world_partition" as const,
+		summary: {
+			failedPackages: 0,
+			partialPackages: 0,
+			resolvedActors: actors.length,
+			scannedPackages: actors.length
+		}
+	};
+}
+
+describe("World Log actor projection", () => {
+	it("retains removed actors and gives stable-identity lifecycle, events, movement, and View Filters", () => {
+		const departed = actor({ guid: "departed", label: "Departed NPC", x: 10, y: 20 });
+		const movedBefore = actor({ guid: "moved", label: "Moved NPC", x: 30, y: 40 });
+		const movedAfter = actor({ guid: "moved", label: "Moved NPC", x: 70, y: 80 });
+		const unchanged = actor({ guid: "unchanged", label: "Static prop", x: 90, y: 100 });
+		const arrived = actor({ guid: "arrived", label: "Arrived NPC", x: 110, y: 120 });
+		const history = decodeHistory({
+			baseline: { change: 1, status: "available" },
 			completeness: "complete",
 			diagnostics: [],
-			files: [],
-			submittedAt: "2026-07-20T12:00:00.000Z",
-			unclassifiedPackageChanges: []
-		}
-	],
-	schemaVersion: 1
-});
+			mapDepotPath: "//Project/Main/Content/Maps/L_Example.umap",
+			query: {
+				limits: {
+					maxChangelists: 25,
+					maxConcurrency: 2,
+					maxDurationMs: 1000,
+					maxMaterializedFiles: 50,
+					maxPackages: 50
+				},
+				mapPath: "Content/Maps/L_Example.umap",
+				projectRoot: "C:/Project",
+				range: { since: "2026-07-01T00:00:00.000Z", until: "2026-07-02T00:00:00.000Z" }
+			},
+			rangeEndSnapshot: snapshot([movedAfter, unchanged, arrived]),
+			rangeStartSnapshot: snapshot([departed, movedBefore, unchanged]),
+			revisions: [
+				{
+					change: 2,
+					changes: [
+						{
+							after: arrived,
+							identity: { actorGuid: "arrived", kind: "actor_guid" },
+							kind: "actor_added"
+						},
+						{
+							before: departed,
+							identity: { actorGuid: "departed", kind: "actor_guid" },
+							kind: "actor_removed"
+						},
+						{
+							after: movedAfter,
+							afterLocation: { x: 70, y: 80, z: 0 },
+							before: movedBefore,
+							beforeLocation: { x: 30, y: 40, z: 0 },
+							identity: { actorGuid: "moved", kind: "actor_guid" },
+							kind: "actor_moved"
+						}
+					],
+					completeness: "complete",
+					diagnostics: [],
+					files: [],
+					submittedAt: "2026-07-01T12:00:00.000Z",
+					unclassifiedPackageChanges: []
+				}
+			],
+			schemaVersion: 1
+		});
 
-describe("World Log actor presentation", () => {
-	it("keeps the range-end map complete while retaining removed actors in the outliner", () => {
 		const actors = collectWorldLogActors(history);
+		const removed = actors.find((entry) => entry.key === "guid:departed");
+		const moved = actors.find((entry) => entry.key === "guid:moved");
+		const staticProp = actors.find((entry) => entry.key === "guid:unchanged");
+
+		expect(removed).toBeDefined();
+		expect(removed?.presentAtRangeEnd).toBe(false);
+		expect(removed === undefined ? undefined : worldLogActorLifecycle(removed)).toBe(
+			"removed_in_range"
+		);
+		expect(moved === undefined ? [] : worldLogActorMovementEvents(moved)).toHaveLength(1);
+		expect(staticProp?.changeCount).toBe(0);
 		expect(
-			actors.map((actor) => [actor.actor.label, actor.changeCount, actor.presentAtRangeEnd])
-		).toEqual([
-			["Floor", 0, true],
-			["Key lamp", 1, true],
-			["Old lamp", 1, false]
-		]);
-		expect(worldLogMapBounds(actors)).toEqual({ maxX: 450, maxY: 550, minX: 90, minY: 190 });
-	});
-
-	it("matches actor identity and exact outliner search across saved actor facts", () => {
-		const actors = collectWorldLogActors(history);
-		const keyLamp = actors.find((actor) => actor.actor.label === "Key lamp")!;
-		const floor = actors.find((actor) => actor.actor.label === "Floor")!;
-		expect(actorKeyFromSavedActor(keyLamp.actor)).toBe(keyLamp.key);
-		expect(worldLogActorMatchesQuery(keyLamp, "pointlight")).toBe(true);
-		expect(worldLogActorMatchesQuery(floor, "lamp")).toBe(false);
-		expect(changeMatchesActor(history.revisions[0]!.changes[0]!, keyLamp.key)).toBe(true);
-		expect(changeMatchesActor(history.revisions[0]!.changes[1]!, keyLamp.key)).toBe(false);
+			moved === undefined ? false : worldLogActorMatchesQuery(moved, "label:moved guid:moved")
+		).toBe(true);
+		expect(
+			moved === undefined ? false : worldLogActorMatchesQuery(moved, "package:departed")
+		).toBe(false);
+		expect(
+			staticProp === undefined
+				? true
+				: worldLogActorMatchesViewFilters(staticProp, {
+						...noWorldLogActorViewFilters,
+						changedOnly: true
+					})
+		).toBe(false);
+		expect(
+			removed === undefined
+				? false
+				: worldLogActorMatchesViewFilters(removed, {
+						...noWorldLogActorViewFilters,
+						presence: "removed"
+					})
+		).toBe(true);
 	});
 });

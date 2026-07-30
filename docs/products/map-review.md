@@ -97,6 +97,14 @@ forward, selects and focuses the actor, and starts transient Review View framing
 keeps re-framing it from the live observation stream until stopped. Map Review remains the authority
 only after the author keeps a view or captures durable evidence.
 
+Saved Map Review and World Log use the same browser-safe Canvas point-map component for resolved,
+static actor records: class-colored batched points, coordinate grid, fit/reset, pan, zoom, hit
+testing, and keyboard selection. The component also accepts product-provided semantic marker
+colors and directed vectors, which lets World Log render a selected changelist's actor diff without
+copying Canvas mechanics. The live scout retains its streaming-aware dense store and adapts the
+same viewport/projection core, so live transform batches do not become generic per-actor objects
+before every paint.
+
 PIE observations are valid navigation targets. When a PIE actor has an editor-world counterpart,
 Go to Actor selects that counterpart for the authoring workflow while focusing the observed runtime
 position. Runtime-only PIE actors can still focus the level viewport, but they do not invent a

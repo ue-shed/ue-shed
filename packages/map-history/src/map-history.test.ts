@@ -7,9 +7,14 @@ import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { TestClock } from "effect/testing";
-import { mapHistoryLayer, mapHistoryProgress, readPerforceMapHistory } from "./map-history.js";
+import {
+	mapHistoryLayer,
+	mapHistoryProgress,
+	readPerforceFastMapHistory,
+	readPerforceMapHistory
+} from "./map-history.js";
 import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceShape } from "./perforce.js";
-import { PerforceMapHistoryQuery } from "./schema.js";
+import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.js";
 
 const projectRoot = "C:/Project";
 const mapPath = "Content/Maps/L_Example.umap";
@@ -260,6 +265,9 @@ describe("readPerforceMapHistory", () => {
 					expect(result.rangeEndSnapshot?.actors).toEqual([]);
 					expect(result.rangeEndSnapshot?.mapPackage).toBe("/Game/Maps/L_Example");
 					expect(result.rangeEndSnapshot).not.toHaveProperty("externalActorRoot");
+					expect(result.rangeStartSnapshot?.actors).toEqual([]);
+					expect(result.rangeStartSnapshot?.mapPackage).toBe("/Game/Maps/L_Example");
+					expect(result.rangeStartSnapshot).not.toHaveProperty("externalActorRoot");
 					expect(history.finalProgress.phase).toBe("ready");
 					expect(observedHistoricalRoots.length).toBeGreaterThan(0);
 					for (const root of observedHistoricalRoots)
@@ -281,6 +289,7 @@ describe("readPerforceMapHistory", () => {
 			const result = yield* readPerforceMapHistory(query());
 			expect(result.baseline).toEqual({ status: "map_not_yet_created" });
 			expect(result.revisions).toEqual([]);
+			expect(result.rangeStartSnapshot).toBeUndefined();
 			expect(result.rangeEndSnapshot).toBeUndefined();
 			expect(result.completeness).toBe("complete");
 			expect(observedHistoricalRoots).toEqual([]);
@@ -340,6 +349,148 @@ describe("readPerforceMapHistory", () => {
 			expect(error.kind).toBe("resource_limit");
 			expect(materializationDirectories).toHaveLength(1);
 			expect(existsSync(materializationDirectories[0] ?? "")).toBe(false);
+		});
+	});
+});
+
+function fastQuery() {
+	return Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+		limits: {
+			maxChangelists: 10,
+			maxConcurrency: 2,
+			maxDurationMs: 60_000,
+			maxMaterializedFiles: 10,
+			maxPackages: 10
+		},
+		mapPath,
+		mode: "fast",
+		projectRoot,
+		range: {
+			since: "2026-07-21T00:00:00.000Z",
+			until: "2026-07-28T00:00:00.000Z"
+		},
+		target: {
+			identity: { actorGuid: actor.actorGuid!, kind: "actor_guid" },
+			kind: "actor"
+		}
+	});
+}
+
+function fastSource(materializedRoot: string): PerforceHistorySourceShape {
+	const base = source(materializedRoot);
+	return {
+		...base,
+		listDepotFilesAtChange: (options) => {
+			if (options.depotPath.endsWith("L_Example.*")) {
+				return base.listDepotFilesAtChange(options);
+			}
+			if (options.depotPath.includes("/A/Actor.")) {
+				return Effect.succeed({
+					files: [
+						{
+							action: "add",
+							changelist: 100,
+							depotPath: externalActorDepotPath,
+							revision: 1,
+							type: "binary"
+						}
+					],
+					hasMore: false
+				});
+			}
+			return Effect.succeed({ files: [], hasMore: false });
+		},
+		listSubmittedChangelists: (options) => {
+			expect(options.fileSpec).toEqual([
+				"//Project/Main/Content/Maps/L_Example.*",
+				"//Project/Main/Content/__ExternalActors__/Maps/L_Example/A/Actor.*"
+			]);
+			return base.listSubmittedChangelists(options);
+		},
+		resolveLocalPath: (path) => {
+			if (path.endsWith("L_Example.umap")) {
+				return Effect.succeed({ depotPath: mapDepotPath });
+			}
+			if (path.replaceAll("\\", "/").endsWith("/A/Actor.uasset")) {
+				return Effect.succeed({ depotPath: externalActorDepotPath });
+			}
+			return Effect.succeed({
+				depotPath: "//Project/Main/Content/__ExternalActors__/Maps/L_Example"
+			});
+		}
+	};
+}
+
+describe("readPerforceFastMapHistory", () => {
+	it.effect("scans only the selected map and proven Investigation Target actor package", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const materializedRoot = yield* Effect.acquireRelease(
+					Effect.promise(() => mkdtemp(resolve(tmpdir(), "ue-shed-map-history-fast-"))),
+					(root) => Effect.promise(() => rm(root, { force: true, recursive: true }))
+				);
+				const observedHistoricalRoots: string[] = [];
+				const layer = Layer.provide(
+					mapHistoryLayer,
+					Layer.merge(
+						readerLayer(observedHistoricalRoots),
+						makePerforceHistorySourceTestLayer(fastSource(materializedRoot))
+					)
+				);
+				const result = yield* readPerforceFastMapHistory(fastQuery()).pipe(
+					Effect.provide(layer)
+				);
+
+				expect(result.mode).toBe("fast");
+				expect(result.coverage.kind).toBe("targeted");
+				expect(result.coverage.claimsCompleteMapCoverage).toBe(false);
+				expect(result.coverage.claimsHistoricalClassCoverage).toBe(false);
+				expect(result.coverage.investigationTarget.packageName).toBe(actor.packageName);
+				expect(result.coverage.acquiredPackages.map((pkg) => pkg.role)).toEqual([
+					"selected_map",
+					"investigation_target_actor"
+				]);
+				expect(result.revisions.map((revision) => revision.change)).toEqual([101, 102]);
+				expect(result.revisions[0]?.changes.map((change) => change.kind)).toEqual([
+					"actor_added"
+				]);
+				for (const root of observedHistoricalRoots) expect(existsSync(root)).toBe(false);
+			})
+		)
+	);
+
+	it.effect("fails before Perforce when the Investigation Target is absent", () => {
+		const observedHistoricalRoots: string[] = [];
+		const layer = Layer.provide(
+			mapHistoryLayer,
+			Layer.merge(
+				readerLayer(observedHistoricalRoots),
+				makePerforceHistorySourceTestLayer({
+					...fastSource("unused"),
+					listSubmittedChangelists: () =>
+						Effect.die("Missing Fast History targets must not list changelists."),
+					materializeDepotFiles: () =>
+						Effect.die("Missing Fast History targets must not materialize files.")
+				})
+			)
+		);
+		return Effect.gen(function* () {
+			const missing = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+				...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
+				target: {
+					identity: {
+						actorGuid: "00000000-0000-0000-0000-000000000099",
+						kind: "actor_guid"
+					},
+					kind: "actor"
+				}
+			});
+			const error = yield* readPerforceFastMapHistory(missing).pipe(
+				Effect.provide(layer),
+				Effect.flip
+			);
+			expect(error.kind).toBe("invalid_target");
+			expect(observedHistoricalRoots).toEqual([]);
 		});
 	});
 });

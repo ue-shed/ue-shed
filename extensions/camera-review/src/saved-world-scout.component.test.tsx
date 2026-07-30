@@ -61,6 +61,7 @@ HTMLCanvasElement.prototype.getContext = (() =>
 		clearRect: () => undefined,
 		fill: () => undefined,
 		fillStyle: "",
+		lineTo: () => undefined,
 		lineWidth: 1,
 		moveTo: () => undefined,
 		setTransform: () => undefined,

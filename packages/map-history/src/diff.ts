@@ -46,7 +46,10 @@ function indexActors(actors: readonly SavedWorldActor[]): ActorIndex {
 	return { actors: indexed, identities, ambiguous };
 }
 
-function positionsEqual(before: SavedWorldPosition, after: SavedWorldPosition): boolean {
+export function savedWorldPositionsEqual(
+	before: SavedWorldPosition,
+	after: SavedWorldPosition
+): boolean {
 	if (before.status !== after.status) return false;
 	switch (before.status) {
 		case "resolved":
@@ -108,7 +111,7 @@ function compareMatchedActor(
 				kind: "actor_moved"
 			});
 		}
-	} else if (!positionsEqual(before.position, after.position)) {
+	} else if (!savedWorldPositionsEqual(before.position, after.position)) {
 		changes.push({
 			after,
 			afterPosition: after.position,

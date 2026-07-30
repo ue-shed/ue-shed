@@ -92,12 +92,16 @@ export const CliCommand = Schema.TaggedUnion({
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
 	InputInspect: { path: Schema.String, ...Reader },
 	MapHistory: {
+		actorGuid: Schema.optionalKey(Schema.String),
+		actorPackage: Schema.optionalKey(Schema.String),
+		actorPath: Schema.optionalKey(Schema.String),
 		concurrency: Schema.optionalKey(PositiveInt),
 		mapPath: Schema.String,
 		maxChangelists: Schema.optionalKey(PositiveInt),
 		maxDurationMs: Schema.optionalKey(PositiveInt),
 		maxMaterializedFiles: Schema.optionalKey(PositiveInt),
 		maxPackages: Schema.optionalKey(PositiveInt),
+		mode: Schema.optionalKey(Schema.Literals(["deep", "fast"])),
 		projectRoot: Schema.String,
 		since: Schema.String,
 		until: Schema.optionalKey(Schema.String)
@@ -175,6 +179,7 @@ Usage:
   ue-shed text search <project-root> <query> [--reader <path>]
   ue-shed input inspect <asset-or-project> [--reader <path>]
   ue-shed map history <project-root> <map-path> --since <ISO-UTC-or-duration> [--until <ISO-UTC>]
+    [--mode deep|fast] [--actor-guid <guid>] [--actor-package <package>] [--actor-path <path>]
     [--max-changelists <n>] [--max-packages <n>] [--max-materialized-files <n>]
     [--concurrency <n>] [--max-duration-ms <n>]
   ue-shed review sets validate <review-set>
@@ -330,6 +335,10 @@ function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, Cli
 		const parsed = yield* parseOptions(args, [
 			"--since",
 			"--until",
+			"--mode",
+			"--actor-guid",
+			"--actor-package",
+			"--actor-path",
 			"--max-changelists",
 			"--max-packages",
 			"--max-materialized-files",
@@ -344,6 +353,39 @@ function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, Cli
 		const since = parsed.values["--since"];
 		if (since === undefined)
 			return yield* usage("map history requires --since <ISO-UTC-or-duration>");
+		const modeValue = parsed.values["--mode"];
+		const mode =
+			modeValue === undefined
+				? undefined
+				: modeValue === "deep" || modeValue === "fast"
+					? modeValue
+					: undefined;
+		if (modeValue !== undefined && mode === undefined) {
+			return yield* usage("map history --mode must be deep or fast");
+		}
+		const actorGuid = parsed.values["--actor-guid"];
+		const actorPackage = parsed.values["--actor-package"];
+		const actorPath = parsed.values["--actor-path"];
+		const hasActorTarget =
+			actorGuid !== undefined || actorPackage !== undefined || actorPath !== undefined;
+		if ((mode ?? "deep") === "deep" && hasActorTarget) {
+			return yield* usage("map history actor Investigation Target flags require --mode fast");
+		}
+		if (mode === "fast") {
+			if (actorGuid !== undefined) {
+				if (actorPackage !== undefined || actorPath !== undefined) {
+					return yield* usage(
+						"map history Fast History accepts either --actor-guid or --actor-package with --actor-path"
+					);
+				}
+			} else if (actorPackage !== undefined && actorPath !== undefined) {
+				// path identity
+			} else {
+				return yield* usage(
+					"map history --mode fast requires --actor-guid <guid> or --actor-package <package> --actor-path <path>"
+				);
+			}
+		}
 		const concurrency = yield* parsePositiveInteger(
 			parsed.values["--concurrency"],
 			"--concurrency"
@@ -365,12 +407,16 @@ function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, Cli
 			"--max-packages"
 		);
 		return CliCommand.cases.MapHistory.make({
+			...(actorGuid === undefined ? {} : { actorGuid }),
+			...(actorPackage === undefined ? {} : { actorPackage }),
+			...(actorPath === undefined ? {} : { actorPath }),
 			...(concurrency === undefined ? {} : { concurrency }),
 			mapPath: present(mapPath),
 			...(maxChangelists === undefined ? {} : { maxChangelists }),
 			...(maxDurationMs === undefined ? {} : { maxDurationMs }),
 			...(maxMaterializedFiles === undefined ? {} : { maxMaterializedFiles }),
 			...(maxPackages === undefined ? {} : { maxPackages }),
+			...(mode === undefined ? {} : { mode }),
 			projectRoot: present(projectRoot),
 			since,
 			...(parsed.values["--until"] === undefined ? {} : { until: parsed.values["--until"] })

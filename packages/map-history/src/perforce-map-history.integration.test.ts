@@ -141,6 +141,7 @@ describe.skipIf(config === undefined)("real Perforce Map History conformance", (
 		expect(history.revisions[0]?.change).toBe(value.seeded.conventional.revisions[0]?.change);
 		expect(history.revisions[0]?.changes.map((change) => change.kind)).toEqual(["actor_moved"]);
 		expect(history.externalActorDepotRoot).toBeUndefined();
+		expect(history.rangeStartSnapshot?.actors).toHaveLength(1);
 		expect(history.completeness).toBe("complete");
 		expect(afterHave).toEqual(beforeHave);
 	});
@@ -203,6 +204,7 @@ describe.skipIf(config === undefined)("real Perforce Map History conformance", (
 			true
 		);
 		expect(history.completeness).toBe("complete");
+		expect(history.rangeStartSnapshot?.actors).toHaveLength(6);
 		expect(afterHave).toEqual(beforeHave);
 	});
 });

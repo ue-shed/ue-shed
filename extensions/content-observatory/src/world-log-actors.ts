@@ -1,4 +1,9 @@
-import type { ActorIdentity, MapChange, PerforceMapHistory } from "@ue-shed/map-history/contract";
+import type {
+	ActorIdentity,
+	MapChange,
+	PerforceMapHistory,
+	PerforceMapRevision
+} from "@ue-shed/map-history/contract";
 import type { SavedWorldActor } from "@ue-shed/protocol";
 
 const zeroActorGuid = /^0{8}-0{8}-0{8}-0{8}$/;
@@ -6,9 +11,40 @@ const zeroActorGuid = /^0{8}-0{8}-0{8}-0{8}$/;
 export interface WorldLogActor {
 	readonly actor: SavedWorldActor;
 	readonly changeCount: number;
+	readonly events: ReadonlyArray<WorldLogActorEvent>;
 	readonly key: string;
 	readonly presentAtRangeEnd: boolean;
+	readonly presentAtRangeStart: boolean;
 }
+
+export interface WorldLogActorEvent {
+	readonly change: MapChange;
+	readonly changeIndex: number;
+	readonly revision: PerforceMapRevision;
+	readonly revisionIndex: number;
+}
+
+export type WorldLogActorLifecycle =
+	| "added_in_range"
+	| "created_and_removed_in_range"
+	| "present_throughout_range"
+	| "removed_in_range";
+
+export interface WorldLogActorViewFilters {
+	readonly changedOnly: boolean;
+	readonly classPath: string | undefined;
+	readonly presence: "all" | "present" | "removed";
+	readonly query: string;
+	readonly resolution: "all" | "resolved" | "unresolved";
+}
+
+export const noWorldLogActorViewFilters: WorldLogActorViewFilters = {
+	changedOnly: false,
+	classPath: undefined,
+	presence: "all",
+	query: "",
+	resolution: "all"
+};
 
 export function actorKeyFromIdentity(identity: ActorIdentity): string {
 	return identity.kind === "actor_guid"
@@ -56,30 +92,50 @@ function actorSortLabel(actor: SavedWorldActor): string {
 export function collectWorldLogActors(history: PerforceMapHistory): readonly WorldLogActor[] {
 	const entries = new Map<
 		string,
-		{ actor: SavedWorldActor; changeCount: number; presentAtRangeEnd: boolean }
+		{
+			actor: SavedWorldActor;
+			events: WorldLogActorEvent[];
+			presentAtRangeEnd: boolean;
+			presentAtRangeStart: boolean;
+		}
 	>();
 	for (const actor of history.rangeEndSnapshot?.actors ?? []) {
 		entries.set(actorKeyFromSavedActor(actor), {
 			actor,
-			changeCount: 0,
-			presentAtRangeEnd: true
+			events: [],
+			presentAtRangeEnd: true,
+			presentAtRangeStart: false
 		});
 	}
-	for (const revision of history.revisions) {
-		for (const change of revision.changes) {
+	for (const actor of history.rangeStartSnapshot?.actors ?? []) {
+		const key = actorKeyFromSavedActor(actor);
+		const existing = entries.get(key);
+		entries.set(key, {
+			actor: existing?.actor ?? actor,
+			events: existing?.events ?? [],
+			presentAtRangeEnd: existing?.presentAtRangeEnd ?? false,
+			presentAtRangeStart: true
+		});
+	}
+	for (const [revisionIndex, revision] of history.revisions.entries()) {
+		for (const [changeIndex, change] of revision.changes.entries()) {
 			const key = actorKeyFromChange(change);
 			const evidence = actorEvidenceFromChange(change);
 			if (key === undefined || evidence === undefined) continue;
 			const existing = entries.get(key);
 			entries.set(key, {
 				actor: existing?.actor ?? evidence,
-				changeCount: (existing?.changeCount ?? 0) + 1,
-				presentAtRangeEnd: existing?.presentAtRangeEnd ?? false
+				events: [
+					...(existing?.events ?? []),
+					{ change, changeIndex, revision, revisionIndex }
+				],
+				presentAtRangeEnd: existing?.presentAtRangeEnd ?? false,
+				presentAtRangeStart: existing?.presentAtRangeStart ?? false
 			});
 		}
 	}
 	return [...entries.entries()]
-		.map(([key, entry]) => ({ ...entry, key }))
+		.map(([key, entry]) => ({ ...entry, changeCount: entry.events.length, key }))
 		.toSorted((left, right) => {
 			if (left.presentAtRangeEnd !== right.presentAtRangeEnd)
 				return left.presentAtRangeEnd ? -1 : 1;
@@ -87,17 +143,73 @@ export function collectWorldLogActors(history: PerforceMapHistory): readonly Wor
 		});
 }
 
+function textIncludes(value: string | undefined, query: string): boolean {
+	return value?.toLocaleLowerCase().includes(query) ?? false;
+}
+
+function matchesSearchTerm(actor: WorldLogActor, term: string): boolean {
+	const separator = term.indexOf(":");
+	const field = separator < 1 ? undefined : term.slice(0, separator).toLocaleLowerCase();
+	const query = (separator < 1 ? term : term.slice(separator + 1)).toLocaleLowerCase();
+	if (query.length === 0) return true;
+	switch (field) {
+		case "label":
+			return textIncludes(actor.actor.label, query);
+		case "class":
+			return textIncludes(actor.actor.classPath, query);
+		case "path":
+			return textIncludes(actor.actor.actorPath, query);
+		case "package":
+			return textIncludes(actor.actor.packageName, query);
+		case "guid":
+			return textIncludes(actor.actor.actorGuid, query);
+		case undefined:
+			return [
+				actor.actor.label,
+				actor.actor.actorPath,
+				actor.actor.classPath,
+				actor.actor.packageName,
+				actor.actor.actorGuid
+			].some((value) => textIncludes(value, query));
+		default:
+			return false;
+	}
+}
+
 export function worldLogActorMatchesQuery(actor: WorldLogActor, query: string): boolean {
-	const normalized = query.trim().toLocaleLowerCase();
-	if (normalized.length === 0) return true;
-	return [
-		actor.actor.label,
-		actor.actor.actorPath,
-		actor.actor.classPath,
-		actor.actor.packageName
-	]
-		.filter((value): value is string => value !== undefined)
-		.some((value) => value.toLocaleLowerCase().includes(normalized));
+	return query
+		.trim()
+		.split(/\s+/)
+		.filter((term) => term.length > 0)
+		.every((term) => matchesSearchTerm(actor, term));
+}
+
+export function worldLogActorLifecycle(actor: WorldLogActor): WorldLogActorLifecycle {
+	if (actor.presentAtRangeStart && actor.presentAtRangeEnd) return "present_throughout_range";
+	if (actor.presentAtRangeStart) return "removed_in_range";
+	return actor.presentAtRangeEnd ? "added_in_range" : "created_and_removed_in_range";
+}
+
+export function worldLogActorMatchesViewFilters(
+	actor: WorldLogActor,
+	filters: WorldLogActorViewFilters
+): boolean {
+	if (filters.changedOnly && actor.changeCount === 0) return false;
+	if (filters.classPath !== undefined && actor.actor.classPath !== filters.classPath)
+		return false;
+	if (filters.presence === "present" && !actor.presentAtRangeEnd) return false;
+	if (filters.presence === "removed" && actor.presentAtRangeEnd) return false;
+	if (filters.resolution === "resolved" && actor.actor.position.status !== "resolved")
+		return false;
+	if (filters.resolution === "unresolved" && actor.actor.position.status === "resolved")
+		return false;
+	return worldLogActorMatchesQuery(actor, filters.query);
+}
+
+export function worldLogActorMovementEvents(
+	actor: WorldLogActor
+): ReadonlyArray<WorldLogActorEvent> {
+	return actor.events.filter((event) => event.change.kind === "actor_moved");
 }
 
 export function changeMatchesActor(change: MapChange, actorKey: string | undefined): boolean {

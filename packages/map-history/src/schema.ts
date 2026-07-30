@@ -65,6 +65,47 @@ export const ActorIdentity = Schema.Union([
 ]);
 export type ActorIdentity = Schema.Schema.Type<typeof ActorIdentity>;
 
+/**
+ * Deep History request with an explicit mode tag. The legacy {@link PerforceMapHistoryQuery}
+ * remains the Deep History wire contract for existing CLI and Workbench callers.
+ */
+export const PerforceDeepMapHistoryQuery = Schema.Struct({
+	mode: Schema.Literal("deep"),
+	projectRoot: ProjectRoot,
+	mapPath: ProjectRelativeMapPath,
+	range: MapHistoryRange,
+	limits: MapHistoryLimits
+});
+export type PerforceDeepMapHistoryQuery = Schema.Schema.Type<typeof PerforceDeepMapHistoryQuery>;
+
+/** Pre-scan Investigation Target. Only a single present-day actor is supported in this slice. */
+export const FastHistoryInvestigationTarget = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("actor"),
+		identity: ActorIdentity
+	})
+]);
+export type FastHistoryInvestigationTarget = Schema.Schema.Type<
+	typeof FastHistoryInvestigationTarget
+>;
+
+export const PerforceFastMapHistoryQuery = Schema.Struct({
+	mode: Schema.Literal("fast"),
+	projectRoot: ProjectRoot,
+	mapPath: ProjectRelativeMapPath,
+	range: MapHistoryRange,
+	limits: MapHistoryLimits,
+	target: FastHistoryInvestigationTarget
+});
+export type PerforceFastMapHistoryQuery = Schema.Schema.Type<typeof PerforceFastMapHistoryQuery>;
+
+/** Discriminated Map History request. Prefer this when a caller must choose Deep vs Fast. */
+export const MapHistoryQuery = Schema.Union([
+	PerforceDeepMapHistoryQuery,
+	PerforceFastMapHistoryQuery
+]);
+export type MapHistoryQuery = Schema.Schema.Type<typeof MapHistoryQuery>;
+
 const ActorTransition = {
 	identity: ActorIdentity,
 	before: SavedWorldActor,
@@ -180,11 +221,11 @@ export const PerforceMapRevision = Schema.Struct({
 export type PerforceMapRevision = Schema.Schema.Type<typeof PerforceMapRevision>;
 
 /**
- * Renderer-safe evidence for the saved world at the requested range end. This deliberately
- * excludes the temporary reconstruction root: consumers can inspect saved actor facts without
- * gaining a path into the owned historical workspace, which is removed after the operation.
+ * Renderer-safe evidence for one reconstructed saved world. This deliberately excludes the
+ * temporary reconstruction root: consumers can inspect saved actor facts without gaining a path
+ * into the owned historical workspace, which is removed after the operation.
  */
-export const MapHistoryRangeEndSnapshot = Schema.Struct({
+export const MapHistorySnapshot = Schema.Struct({
 	actors: Schema.Array(SavedWorldActor),
 	completeness: Schema.Literals(["complete", "partial"]),
 	diagnostics: Schema.Array(MapHistoryDiagnostic),
@@ -198,13 +239,23 @@ export const MapHistoryRangeEndSnapshot = Schema.Struct({
 		scannedPackages: NonNegativeInt
 	})
 });
-export type MapHistoryRangeEndSnapshot = Schema.Schema.Type<typeof MapHistoryRangeEndSnapshot>;
+export type MapHistorySnapshot = Schema.Schema.Type<typeof MapHistorySnapshot>;
+
+/** Saved actor state immediately before the requested range. */
+export const MapHistoryRangeStartSnapshot = MapHistorySnapshot;
+export type MapHistoryRangeStartSnapshot = MapHistorySnapshot;
+
+/** Saved actor state at the requested range end. */
+export const MapHistoryRangeEndSnapshot = MapHistorySnapshot;
+export type MapHistoryRangeEndSnapshot = MapHistorySnapshot;
 
 export const PerforceMapHistory = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	query: PerforceMapHistoryQuery,
 	mapDepotPath: PerforceDepotPath,
 	externalActorDepotRoot: Schema.optionalKey(PerforceDepotPath),
+	/** Absent only when the selected map did not exist immediately before the requested range. */
+	rangeStartSnapshot: Schema.optionalKey(MapHistoryRangeStartSnapshot),
 	/** Absent only when the selected map did not exist by the requested range end. */
 	rangeEndSnapshot: Schema.optionalKey(MapHistoryRangeEndSnapshot),
 	baseline: Schema.Union([
@@ -216,6 +267,62 @@ export const PerforceMapHistory = Schema.Struct({
 	diagnostics: Schema.Array(MapHistoryDiagnostic)
 });
 export type PerforceMapHistory = Schema.Schema.Type<typeof PerforceMapHistory>;
+
+export const FastHistoryAcquiredPackage = Schema.Struct({
+	depotFileSpec: PerforceDepotPath,
+	packageName: Schema.NonEmptyString,
+	role: Schema.Literals(["selected_map", "investigation_target_actor"])
+});
+export type FastHistoryAcquiredPackage = Schema.Schema.Type<typeof FastHistoryAcquiredPackage>;
+
+/**
+ * Explicit Fast History coverage. Targeted acquisition must never claim a complete map corpus or
+ * historical class discovery.
+ */
+export const FastHistoryTargetedCoverage = Schema.Struct({
+	kind: Schema.Literal("targeted"),
+	claimsCompleteMapCoverage: Schema.Literal(false),
+	claimsHistoricalClassCoverage: Schema.Literal(false),
+	investigationTarget: Schema.Struct({
+		kind: Schema.Literal("actor"),
+		identity: ActorIdentity,
+		actorGuid: Schema.optionalKey(Schema.NonEmptyString),
+		actorPath: Schema.NonEmptyString,
+		classPath: Schema.NonEmptyString,
+		packageName: Schema.NonEmptyString
+	}),
+	acquiredPackages: Schema.Array(FastHistoryAcquiredPackage)
+});
+export type FastHistoryTargetedCoverage = Schema.Schema.Type<typeof FastHistoryTargetedCoverage>;
+
+export const PerforceFastMapHistory = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	mode: Schema.Literal("fast"),
+	query: PerforceFastMapHistoryQuery,
+	coverage: FastHistoryTargetedCoverage,
+	mapDepotPath: PerforceDepotPath,
+	externalActorDepotRoot: Schema.optionalKey(PerforceDepotPath),
+	rangeStartSnapshot: Schema.optionalKey(MapHistoryRangeStartSnapshot),
+	rangeEndSnapshot: Schema.optionalKey(MapHistoryRangeEndSnapshot),
+	baseline: Schema.Union([
+		Schema.Struct({ status: Schema.Literal("available"), change: PerforceChangeNumber }),
+		Schema.Struct({ status: Schema.Literal("map_not_yet_created") })
+	]),
+	revisions: Schema.Array(PerforceMapRevision),
+	completeness: Schema.Literals(["complete", "partial"]),
+	diagnostics: Schema.Array(MapHistoryDiagnostic)
+});
+export type PerforceFastMapHistory = Schema.Schema.Type<typeof PerforceFastMapHistory>;
+
+export const MapHistoryDeepResult = Schema.Struct({
+	mode: Schema.Literal("deep"),
+	history: PerforceMapHistory
+});
+export type MapHistoryDeepResult = Schema.Schema.Type<typeof MapHistoryDeepResult>;
+
+/** Discriminated Map History result. Deep History documents remain nestable without altering their wire shape. */
+export const MapHistoryResult = Schema.Union([MapHistoryDeepResult, PerforceFastMapHistory]);
+export type MapHistoryResult = Schema.Schema.Type<typeof MapHistoryResult>;
 
 export const MapHistoryProgress = Schema.Struct({
 	phase: Schema.Literals([
@@ -236,3 +343,9 @@ export type MapHistoryProgress = Schema.Schema.Type<typeof MapHistoryProgress>;
 
 export const decodePerforceMapHistoryQuery = Schema.decodeUnknownEffect(PerforceMapHistoryQuery);
 export const decodePerforceMapHistory = Schema.decodeUnknownEffect(PerforceMapHistory);
+export const decodePerforceFastMapHistoryQuery = Schema.decodeUnknownEffect(
+	PerforceFastMapHistoryQuery
+);
+export const decodePerforceFastMapHistory = Schema.decodeUnknownEffect(PerforceFastMapHistory);
+export const decodeMapHistoryQuery = Schema.decodeUnknownEffect(MapHistoryQuery);
+export const decodeMapHistoryResult = Schema.decodeUnknownEffect(MapHistoryResult);

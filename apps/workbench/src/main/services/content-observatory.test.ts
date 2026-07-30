@@ -93,6 +93,8 @@ describe("WorkbenchContentObservatory", () => {
 			Effect.provide(
 				stateLayer({
 					progress: () => Effect.succeed(idleProgress()),
+					readPerforceFastMapHistory: () =>
+						Effect.die("Deep History Workbench route must not call Fast History."),
 					readPerforceMapHistory: () =>
 						Effect.sync(() => {
 							calls += 1;
@@ -122,6 +124,8 @@ describe("WorkbenchContentObservatory", () => {
 				Effect.provide(
 					stateLayer({
 						progress: () => Effect.succeed(idleProgress()),
+						readPerforceFastMapHistory: () =>
+							Effect.die("Deep History Workbench route must not call Fast History."),
 						readPerforceMapHistory: () =>
 							Deferred.succeed(startedReading, undefined).pipe(
 								Effect.andThen(Effect.never),

@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
+import type { SavedWorld } from "@ue-shed/protocol";
 import { Effect } from "effect";
 import { MapHistoryError } from "./errors.js";
 import { PerforceHistorySource } from "./perforce.js";
@@ -7,6 +8,11 @@ import type { ScopedPerforceFile } from "./revision-plan.js";
 import type { PerforceMapHistoryQuery } from "./schema.js";
 
 export interface ResolvedPerforceMapScope {
+	/**
+	 * When set, only these package names may enter historical materialization. Fast History uses
+	 * this to keep unrelated external actors out of a targeted reconstruction.
+	 */
+	readonly allowedPackageNames?: ReadonlySet<string>;
 	readonly externalActorDepotRoot?: string;
 	readonly externalActorProjectRoot?: string;
 	readonly fileSpecs: readonly string[];
@@ -81,6 +87,26 @@ function packageNameForProjectPath(projectRelativePath: string): string | undefi
 }
 
 /**
+ * Converts a `/Game/...` package name to the project-relative saved package path for a primary
+ * `.uasset` or `.umap` file. Companion sidecar extensions are derived later from depot listings.
+ */
+export function projectRelativePathForPackageName(
+	packageName: string,
+	extension: ".uasset" | ".umap"
+): string | undefined {
+	if (!packageName.startsWith("/Game/")) return undefined;
+	const rest = packageName.slice("/Game/".length);
+	if (
+		rest.length === 0 ||
+		rest.includes("\\") ||
+		rest.split("/").some((part) => part.length === 0 || part === "." || part === "..")
+	) {
+		return undefined;
+	}
+	return `Content/${rest}${extension}`;
+}
+
+/**
  * Converts a depot path to one exact, supported saved-package file in the selected map scope.
  * Paths outside the map or current external-actor subtree, including unrelated depot metadata,
  * deliberately return `undefined` rather than becoming historical project files.
@@ -133,7 +159,11 @@ export function scopedPerforceFile(
 	}
 	const projectRelativePath = `${scope.externalActorProjectRoot}/${suffix}`;
 	const packageName = packageNameForProjectPath(projectRelativePath);
-	return packageName === undefined ? undefined : { depotPath, packageName, projectRelativePath };
+	if (packageName === undefined) return undefined;
+	if (scope.allowedPackageNames !== undefined && !scope.allowedPackageNames.has(packageName)) {
+		return undefined;
+	}
+	return { depotPath, packageName, projectRelativePath };
 }
 
 /** Resolves the selected saved map and its present-day World Partition actor subtree to P4 scopes. */
@@ -141,6 +171,21 @@ export function resolvePerforceMapScope(
 	query: PerforceMapHistoryQuery
 ): Effect.Effect<ResolvedPerforceMapScope, MapHistoryError, AssetReader | PerforceHistorySource> {
 	return Effect.fn("MapHistory.resolvePerforceMapScope")(function* () {
+		const { scope } = yield* resolvePresentDayMapScope(query);
+		return scope;
+	})();
+}
+
+export function resolvePresentDayMapScope(query: {
+	readonly limits: PerforceMapHistoryQuery["limits"];
+	readonly mapPath: PerforceMapHistoryQuery["mapPath"];
+	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+}): Effect.Effect<
+	{ readonly scope: ResolvedPerforceMapScope; readonly world: SavedWorld },
+	MapHistoryError,
+	AssetReader | PerforceHistorySource
+> {
+	return Effect.fn("MapHistory.resolvePresentDayMapScope")(function* () {
 		const reader = yield* AssetReader;
 		const perforce = yield* PerforceHistorySource;
 		const world = yield* reader
@@ -176,11 +221,14 @@ export function resolvePerforceMapScope(
 				);
 			}
 			return {
-				fileSpecs: [depotPackageFileSpec(mapMapping.depotPath)],
-				mapDepotPath: mapMapping.depotPath,
-				mapPackageName: world.authority.mapPackage,
-				mapProjectRelativePath,
-				sourceKind: world.sourceKind
+				scope: {
+					fileSpecs: [depotPackageFileSpec(mapMapping.depotPath)],
+					mapDepotPath: mapMapping.depotPath,
+					mapPackageName: world.authority.mapPackage,
+					mapProjectRelativePath,
+					sourceKind: world.sourceKind
+				},
+				world
 			};
 		}
 		const externalActorRoot = normalizeLocalPath(world.externalActorRoot);
@@ -193,16 +241,21 @@ export function resolvePerforceMapScope(
 		});
 		const externalActorMapping = yield* perforce.resolveLocalPath(externalActorRoot);
 		return {
-			externalActorDepotRoot: normalizeDepotRoot(externalActorMapping.depotPath),
-			externalActorProjectRoot,
-			fileSpecs: [
-				depotPackageFileSpec(mapMapping.depotPath),
-				depotSubtree(externalActorMapping.depotPath)
-			],
-			mapDepotPath: mapMapping.depotPath,
-			mapPackageName: world.authority.mapPackage,
-			mapProjectRelativePath,
-			sourceKind: world.sourceKind
+			scope: {
+				externalActorDepotRoot: normalizeDepotRoot(externalActorMapping.depotPath),
+				externalActorProjectRoot,
+				fileSpecs: [
+					depotPackageFileSpec(mapMapping.depotPath),
+					depotSubtree(externalActorMapping.depotPath)
+				],
+				mapDepotPath: mapMapping.depotPath,
+				mapPackageName: world.authority.mapPackage,
+				mapProjectRelativePath,
+				sourceKind: world.sourceKind
+			},
+			world
 		};
 	})();
 }
+
+export { depotPackageFileSpec };

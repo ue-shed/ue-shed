@@ -59,10 +59,41 @@ The first actor projection contains:
 - resolved saved root-component position or an explicit resolution failure; and
 - package/snapshot completeness diagnostics.
 
-The result also retains a renderer-safe saved-actor snapshot at the end of the bounded range. It
-contains actor facts, coordinate-resolution state, and coverage evidence, but never the owned
-temporary historical workspace path. Consumers can use it for a 2D actor map and outliner without
-reconstructing or scanning Perforce again.
+The result retains renderer-safe saved-actor snapshots immediately before the bounded range and at
+its end when the map exists at those points. They contain actor facts, coordinate-resolution state,
+and coverage evidence, but never the owned temporary historical workspace path. A map created
+inside the requested range has no range-start snapshot and is represented by the existing
+`map_not_yet_created` baseline state. Consumers can replay the semantic changelist transitions from
+that start state into discrete 2D actor-map frames without reconstructing or scanning Perforce
+again.
+
+World Log's World lens defaults to the saved state after the last submitted changelist and can
+scrub locally to range start or the exact saved state after any in-range changelist. It never
+interpolates between submissions or renders a historical Unreal world. Each active frame labels its
+coverage, empty-before-map-creation state, and retained unclassified package evidence. If the map
+or range controls change, the completed result stays inspectable but is visibly marked stale until
+the user starts another bounded scan.
+
+## Deep History changelist inspection
+
+World Log's Deep History view selects one submitted changelist locally from that completed result.
+It presents all of the selected revision's semantic changes, exact package revisions, and retained
+unclassified package evidence without another Perforce request. Its shared 2D point map renders
+additions, removals as ghosts, changed actors, and before-to-after movement vectors only where the
+saved top-down positions are resolved; unresolved actor evidence remains explicit in the ledger.
+Selecting an actor from that diff preserves the selected changelist.
+
+## Deep History actor inspection
+
+The completed Deep History corpus has an actor lens built from stable identity across its
+range-start snapshot, range-end snapshot, and semantic revisions. Its **View Filters** are local:
+field-qualified `label:`, `class:`, `path:`, `package:`, and `guid:` terms can be combined with
+changed, present/removed, position-resolution, and class controls without a Perforce request.
+
+Actors removed before range end remain searchable and inspectable. Their lifecycle and semantic
+event ledger retain the submitted changelists that explain their removal. A movement trail is shown
+only when serialized before-and-after saved positions exist. Selecting a semantic actor event
+locally focuses its corresponding changelist diff; it does not request history again.
 
 The first semantic change vocabulary is:
 
@@ -148,7 +179,7 @@ An empty range is a successful result with its effective scope and baseline stat
 
 ## Public workflow
 
-The headless package owns an Effect-native operation:
+The headless package owns Effect-native operations:
 
 ```ts
 readPerforceMapHistory({
@@ -157,22 +188,40 @@ readPerforceMapHistory({
 	range,
 	limits
 });
+
+readPerforceFastMapHistory({
+	mode: "fast",
+	projectRoot,
+	mapPath,
+	range,
+	limits,
+	target: { kind: "actor", identity }
+});
 ```
+
+**Deep History** reconstructs the complete selected-map scope for a bounded range. **Fast History**
+is a separate request mode: it accepts one present-day actor Investigation Target, proves that
+actor's package from the SavedWorld projection (`actorGuid`, `actorPath`, `classPath`,
+`packageName`), and scans only the selected map plus that proven package. Fast History results
+always include targeted-coverage metadata and never claim complete map or historical-class coverage.
 
 The CLI and Workbench use the same service. Workbench owns presentation only and does not receive
 filesystem, subprocess, or raw Perforce authority.
 
-The headless CLI mirrors that operation:
+The headless CLI mirrors those operations:
 
 ```text
 ue-shed map history <project-root> <map-path> --since "7 days" [--until <ISO-UTC>]
+ue-shed map history <project-root> <map-path> --since "7 days" --mode fast --actor-guid <guid>
 ```
 
 `--since` accepts ISO-8601 UTC or an Effect duration such as `7 days`; omitted `--until` means the
-current UTC time. The CLI writes the schema-encoded history document to stdout. It exits `0` for a
-complete, classified history, `3` when a successful history is partial or has unclassified package
-evidence, and `2` for invalid input or failed reconstruction. Its conservative default bounds may
-be tightened or raised with the `--max-*`, `--concurrency`, and `--max-duration-ms` options.
+current UTC time. Deep History writes the existing schema-encoded history document to stdout. Fast
+History writes a discriminated document that includes `mode: "fast"` and explicit targeted coverage.
+The CLI exits `0` for a complete, classified history, `3` when a successful history is partial or has
+unclassified package evidence, and `2` for invalid input or failed reconstruction. Its conservative
+default bounds may be tightened or raised with the `--max-*`, `--concurrency`, and
+`--max-duration-ms` options.
 
 ## Workbench World Log
 
@@ -182,11 +231,13 @@ start one bounded request, poll validated progress, and cancel its owned job. Th
 the configured project root, Perforce configuration, temporary tree, and child-process authority;
 the renderer never receives those capabilities.
 
-The route shows submitted changelists chronologically, filters the first actor-change vocabulary,
-and pairs a selected semantic change with its exact package-revision evidence. Unclassified package
-changes are highlighted as a coverage warning, never discarded or presented as no change. Opening
-Workbench or the route does not execute a Perforce command; acquisition begins only after the user
-starts a query.
+The route shows submitted changelists chronologically and pairs a selected semantic change with its
+exact package-revision evidence. The local actor lens supports precise View Filters and can focus an
+actor's event in its corresponding changelist diff. Unclassified package changes are highlighted as
+a coverage warning, never discarded or presented as no change. Opening Workbench or the route does
+not execute a Perforce command; acquisition begins only after the user starts a query. Conservative
+scan bounds are visible and editable under Advanced Limits, then validated at the same request
+boundary as every other renderer input.
 
 ## First convincing demo
 

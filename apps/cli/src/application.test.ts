@@ -126,3 +126,28 @@ it.effect("rejects invalid Map History time input before contacting Perforce", (
 		expect(yield* Ref.get(output)).toBe("");
 	})
 );
+
+it.effect("rejects Fast History path identity without both package and path", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const layer = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (value) => Ref.update(output, (current) => current + value),
+				setExitCode: () => Effect.void
+			})
+		);
+		const error = yield* executeCommand(
+			CliCommand.cases.MapHistory.make({
+				actorPackage: "/Game/__ExternalActors__/Maps/L_Example/A/Actor",
+				mapPath: "Content/Maps/L_Example.umap",
+				mode: "fast",
+				projectRoot: "project",
+				since: "2026-07-21T00:00:00.000Z"
+			})
+		).pipe(Effect.provide(layer), Effect.flip);
+
+		expect(error.message).toContain("Fast History");
+		expect(yield* Ref.get(output)).toBe("");
+	})
+);

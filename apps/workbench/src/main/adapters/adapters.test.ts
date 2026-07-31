@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest";
+import { ContentObservatoryState } from "@ue-shed/extension-content-observatory/client";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
-import { Deferred, Effect, Exit, Layer } from "effect";
+import { Deferred, Effect, Exit, Layer, Schema } from "effect";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -124,6 +125,65 @@ it.effect("ElectronIpc removes handlers when the scope closes", () =>
 		);
 		expect(yield* probe.handlers()).toEqual([]);
 	})
+);
+
+it.effect("ElectronIpc encodes transformed result fields before crossing the boundary", () =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const ipc = yield* ElectronIpc;
+			const probe = yield* ElectronIpcTest;
+			const state = Schema.decodeUnknownSync(ContentObservatoryState)({
+				jobId: "map-history-1",
+				maps: [],
+				progress: {
+					phase: "idle",
+					processedChangelists: 0,
+					totalChangelists: 0
+				},
+				projectRoot: "C:/Project",
+				request: {
+					limits: {
+						maxChangelists: 250,
+						maxConcurrency: 4,
+						maxDurationMs: 120000,
+						maxMaterializedFiles: 4000,
+						maxPackages: 4000
+					},
+					mapPath: "Content/Maps/L_Example.umap",
+					range: {
+						since: "2026-07-20T00:00:00.000Z",
+						until: "2026-07-27T00:00:00.000Z"
+					}
+				},
+				status: "running"
+			});
+			yield* ipc.register(invokeContracts["content-observatory:start"], () =>
+				Effect.succeed(state)
+			);
+			const result = yield* probe.invoke("content-observatory:start", {
+				limits: {
+					maxChangelists: 250,
+					maxConcurrency: 4,
+					maxDurationMs: 120000,
+					maxMaterializedFiles: 4000,
+					maxPackages: 4000
+				},
+				mapPath: "Content/Maps/L_Example.umap",
+				range: {
+					since: "2026-07-20T00:00:00.000Z",
+					until: "2026-07-27T00:00:00.000Z"
+				}
+			});
+			expect(result).toMatchObject({
+				request: {
+					range: {
+						since: "2026-07-20T00:00:00.000Z",
+						until: "2026-07-27T00:00:00.000Z"
+					}
+				}
+			});
+		}).pipe(Effect.provide(makeElectronIpcTestLayer()))
+	)
 );
 
 it.effect("ElectronIpc removes each real host handler exactly once", () =>

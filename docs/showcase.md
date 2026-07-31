@@ -138,7 +138,22 @@ pnpm ue-shed review authoring approve "C:\path\to\Project" <session-id> "http://
 
 See [`products/map-review.md`](products/map-review.md) for the product contract.
 
-## Demo 5: Camera Load Lab
+## Demo 5: World Log
+
+World Log is a saved-map history investigation workspace. It runs against Perforce but does not
+need Unreal. Start its self-contained fixture with:
+
+```powershell
+pnpm showcase:world-log
+```
+
+The command builds the reader and Workbench, starts a temporary localhost Perforce server, and
+opens Workbench with the World Partition map already selected. Open **World Log**, choose **Map
+History World**, and run the scan. Try the changelist lens, choose an actor from the list or the 2D
+map, then use the time control to see the actor move, appear, or disappear. The temporary server,
+client workspace, credentials, and configuration are removed when Workbench closes.
+
+## Demo 6: Camera Load Lab
 
 Camera Load Lab is the live camera data-plane slice. Open it and choose **Launch Camera Fixture**.
 Workbench then discovers Unreal Engine 5.7, incrementally builds the fixture editor target, launches
@@ -192,6 +207,16 @@ fixture before recording, then captures the approved Review Set live, verifies t
 and its 1280x720 image, and demonstrates before-and-after history navigation. Fixture startup stays
 out of the review video; a failed live capture fails the recording rather than presenting stale
 evidence as a successful showcase.
+
+To record the self-contained World Log history walkthrough:
+
+```powershell
+pnpm showcase:record world-log
+```
+
+It starts the disposable local Perforce fixture for the recording, scans the World Partition map,
+and records actor movement, a label change, removal across time, and unclassified package evidence.
+It does not launch Unreal.
 
 ## Publish captures to the site
 

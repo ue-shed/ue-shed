@@ -596,8 +596,8 @@ export const invokeChannelNames = Object.keys(invokeContracts) as Array<InvokeCh
 export const decodeInvokeArgs = <C extends InvokeContract>(contract: C) =>
 	Schema.decodeUnknownEffect(contract.args);
 
-export const decodeInvokeResult = <C extends InvokeContract>(contract: C) =>
-	Schema.decodeUnknownEffect(contract.result);
+export const encodeInvokeResult = <C extends InvokeContract>(contract: C) =>
+	Schema.encodeUnknownEffect(contract.result);
 
 export const decodeCameraFrameEvent = Schema.decodeUnknownEffect(cameraFrameEvent.payload);
 export const decodeWorldObservationEvent = Schema.decodeUnknownEffect(

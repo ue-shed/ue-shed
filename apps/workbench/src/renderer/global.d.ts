@@ -24,7 +24,7 @@ import type {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/extension-camera-review/client";
-import type { ContentObservatoryHistoryRequest } from "@ue-shed/extension-content-observatory/client";
+import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -76,7 +76,7 @@ declare global {
 			};
 			readonly contentObservatory: {
 				readonly status: () => Promise<unknown>;
-				readonly start: (request: ContentObservatoryHistoryRequest) => Promise<unknown>;
+				readonly start: (request: ContentObservatoryHistoryRequestWire) => Promise<unknown>;
 				readonly cancel: () => Promise<unknown>;
 			};
 			readonly authoring: {

@@ -1,13 +1,14 @@
 import {
 	ContentObservatoryClient,
 	ContentObservatoryClientError,
+	ContentObservatoryHistoryRequest,
 	decodeContentObservatoryState,
-	type ContentObservatoryClientShape,
-	type ContentObservatoryHistoryRequest
+	type ContentObservatoryClientShape
 } from "@ue-shed/extension-content-observatory/client";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
+const encodeHistoryRequest = Schema.encodeUnknownEffect(ContentObservatoryHistoryRequest);
 
 function request(
 	operation: string,
@@ -30,8 +31,20 @@ export const contentObservatoryClient: ContentObservatoryClientShape = ContentOb
 	),
 	start: Effect.fn("ContentObservatoryClient.start")(
 		(requestValue: ContentObservatoryHistoryRequest) =>
-			request("contentObservatory.start", () =>
-				window.ueShed.contentObservatory.start(requestValue)
+			encodeHistoryRequest(requestValue).pipe(
+				Effect.mapError(
+					(cause) =>
+						new ContentObservatoryClientError({
+							cause,
+							operation: "contentObservatory.start",
+							recovery
+						})
+				),
+				Effect.flatMap((wireRequest) =>
+					request("contentObservatory.start", () =>
+						window.ueShed.contentObservatory.start(wireRequest)
+					)
+				)
 			)
 	),
 	status: Effect.fn("ContentObservatoryClient.status")(() =>

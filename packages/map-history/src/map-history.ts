@@ -1,5 +1,5 @@
 import { Context, Effect, Exit, Layer, Ref } from "effect";
-import { assetReaderLayer, AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
+import { AssetReader, AssetReaderLive, type AssetReaderError } from "@ue-shed/unreal-assets";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { materializeBaseline } from "./baseline-materialization.js";
 import { diffSavedWorldSnapshots } from "./diff.js";
@@ -435,7 +435,7 @@ export const mapHistoryLayer: Layer.Layer<MapHistory, never, AssetReader | Perfo
 /** The optional default layer uses the configured asset reader and local Perforce configuration. */
 export const mapHistoryLiveLayer = Layer.provide(
 	mapHistoryLayer,
-	Layer.merge(assetReaderLayer(), perforceHistorySourceLayer())
+	Layer.merge(AssetReaderLive, perforceHistorySourceLayer())
 );
 
 export function makeMapHistoryTestLayer(service: MapHistoryShape): Layer.Layer<MapHistory> {

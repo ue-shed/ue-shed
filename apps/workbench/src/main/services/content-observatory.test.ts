@@ -89,6 +89,7 @@ describe("WorkbenchContentObservatory", () => {
 			yield* service.start(request);
 			yield* Effect.yieldNow;
 			expect(calls).toBe(1);
+			expect((yield* service.status()).status).toBe("complete");
 		}).pipe(
 			Effect.provide(
 				stateLayer({

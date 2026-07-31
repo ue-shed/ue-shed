@@ -1,5 +1,5 @@
 import { Context, Effect, Fiber, Layer, Ref, Schema, type Scope } from "effect";
-import { decodeInvokeArgs, decodeInvokeResult, type InvokeContract } from "../ipc-contracts.js";
+import { decodeInvokeArgs, encodeInvokeResult, type InvokeContract } from "../ipc-contracts.js";
 
 export class ElectronIpcError extends Schema.TaggedErrorClass<ElectronIpcError>()(
 	"Workbench.ElectronIpcError",
@@ -7,7 +7,7 @@ export class ElectronIpcError extends Schema.TaggedErrorClass<ElectronIpcError>(
 		causeText: Schema.String,
 		channel: Schema.String,
 		message: Schema.String,
-		operation: Schema.Literals(["register", "duplicate", "decodeArgs", "decodeResult"]),
+		operation: Schema.Literals(["register", "duplicate", "decodeArgs", "encodeResult"]),
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
 	}
@@ -83,10 +83,10 @@ const adaptHandler = (
 				)
 			)) as ReadonlyArray<unknown>;
 			const result = yield* handler(...decodedArgs);
-			return yield* decodeInvokeResult(contract)(result).pipe(
+			return yield* encodeInvokeResult(contract)(result).pipe(
 				Effect.mapError((cause) =>
 					ipcError(
-						"decodeResult",
+						"encodeResult",
 						contract.channel,
 						cause,
 						"Return a schema-owned IPC result from the handler."

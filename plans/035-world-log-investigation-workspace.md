@@ -1,6 +1,6 @@
 # Plan 035: Build the World Log investigation workspace
 
-**Status**: IN PROGRESS — Phase 7 showcase and conformance
+**Status**: IN PROGRESS — Phase 8 Fast History investigation targets
 
 **Priority**: P2
 
@@ -196,7 +196,7 @@ Connect the playback model to the World lens scrubber. Clearly distinguish compl
 unclassified, empty, failed, cancelled, and stale-query results. Preserve selections across lenses
 when still valid. Put scan limits behind advanced controls rather than hiding them.
 
-### Phase 7: Showcase and conformance
+### Phase 7: Showcase and conformance — COMPLETE (2026-07-30)
 
 Add an interactive `pnpm showcase:world-log` path that builds the reader and Workbench, starts the
 existing disposable localhost Perforce fixture, configures Workbench against its temporary client

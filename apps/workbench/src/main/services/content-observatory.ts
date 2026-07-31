@@ -74,9 +74,13 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 			const current = yield* Ref.get(state);
 			if (current.status !== "running") return current;
 			const progress = yield* mapHistory.progress();
-			const refreshed = { ...current, progress } as const;
-			yield* Ref.set(state, refreshed);
-			return refreshed;
+			return yield* Ref.modify(state, (latest) => {
+				if (latest.status !== "running" || latest.jobId !== current.jobId) {
+					return [latest, latest];
+				}
+				const refreshed = { ...latest, progress } as const;
+				return [refreshed, refreshed];
+			});
 		});
 
 		const cancel = Effect.fn("Workbench.ContentObservatory.cancel")(function* () {
@@ -113,7 +117,7 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 			yield* Ref.set(state, running);
 
 			const complete = mapHistory.readPerforceMapHistory(query).pipe(
-				Effect.match({
+				Effect.matchEffect({
 					onFailure: (error) =>
 						Ref.set(state, {
 							error: errorState(error),

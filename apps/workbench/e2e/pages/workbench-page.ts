@@ -6,7 +6,8 @@ export type WorkbenchRoute =
 	| "Game Text"
 	| "Map Review"
 	| "Texture Audit"
-	| "Camera Lab";
+	| "Camera Lab"
+	| "World Log";
 
 export class WorkbenchPage {
 	readonly page: Page;

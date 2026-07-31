@@ -11,7 +11,7 @@ import type {
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/extension-camera-review/client";
-import type { ContentObservatoryHistoryRequest } from "@ue-shed/extension-content-observatory/client";
+import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraScheduleConfig,
 	CameraStatus,
@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 	},
 	contentObservatory: {
 		status: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:status"),
-		start: (request: ContentObservatoryHistoryRequest): Promise<unknown> =>
+		start: (request: ContentObservatoryHistoryRequestWire): Promise<unknown> =>
 			ipcRenderer.invoke("content-observatory:start", request),
 		cancel: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:cancel")
 	},

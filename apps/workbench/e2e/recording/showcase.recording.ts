@@ -7,7 +7,7 @@ import { Schema } from "effect";
 import { _electron as electron, type ElectronApplication } from "playwright";
 import { WorkbenchPage } from "../pages/workbench-page.js";
 
-const RecordingJourney = Schema.Literals(["saved-workflows", "map-review"]);
+const RecordingJourney = Schema.Literals(["saved-workflows", "map-review", "world-log"]);
 const FixtureLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
 	Schema.Struct({
@@ -243,6 +243,127 @@ test(`records the ${journey} Workbench journey`, async ({
 					slug: "03-before-and-after",
 					testInfo,
 					title: "Review before and after"
+				})
+			);
+		} else if (journey === "world-log") {
+			await startScreencast();
+			const outliner = page.getByRole("complementary", { name: "Saved actor outliner" });
+			const timeline = page.getByRole("region", { name: "History timeline" });
+			const evidence = page.getByRole("complementary", {
+				name: "Selected changelist evidence"
+			});
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.openRoute("World Log");
+						await expect(
+							page!.getByRole("heading", { name: "WORLD LOG" })
+						).toBeVisible();
+						await page!.getByRole("button", { name: "Map History World" }).click();
+						await page!.getByRole("button", { name: /READ HISTORY/ }).click();
+						await expect(timeline).toContainText("map actor changes", {
+							timeout: 120_000
+						});
+					},
+					description:
+						"A bounded Deep History scan reconstructs the World Partition fixture from Perforce.",
+					page,
+					slug: "01-world-log-scan",
+					testInfo,
+					title: "Read the World Partition history"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await outliner.getByRole("button", { name: /East Marker/i }).click();
+						const selectedActor = page!.getByRole("complementary", {
+							name: "Selected saved actor"
+						});
+						await expect(selectedActor).toContainText("East Marker");
+						await expect(selectedActor).toContainText("MOVEMENT TRAIL");
+						await selectedActor.scrollIntoViewIfNeeded();
+					},
+					description:
+						"Select a moved actor to inspect its stable identity, current state, and movement trail.",
+					page,
+					resetScroll: false,
+					slug: "02-moved-actor",
+					testInfo,
+					title: "Inspect a moved actor"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await outliner.getByRole("button", { name: /East Marker/i }).click();
+						await timeline
+							.getByRole("toolbar", { name: "Change View Filter" })
+							.getByRole("button", { name: "LABEL CHANGED" })
+							.click();
+						const labelChange = timeline
+							.getByRole("button", {
+								name: /label changed/i
+							})
+							.last();
+						await labelChange.click();
+						await expect(evidence).toContainText("actor label changed");
+						await evidence.scrollIntoViewIfNeeded();
+					},
+					description:
+						"The selected label change keeps its semantic transition and package revision together.",
+					page,
+					resetScroll: false,
+					slug: "03-label-change",
+					testInfo,
+					title: "Inspect a label change"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await outliner.getByRole("button", { name: /South Marker/i }).click();
+						await page!.getByRole("button", { name: "Show state after CL 4" }).click();
+						await expect(
+							page!.getByRole("heading", { name: "AFTER CL 4 point map" })
+						).toBeVisible();
+						await expect(
+							page!.getByRole("complementary", { name: "Selected saved actor" })
+						).toContainText("AT FRAME");
+						await page!
+							.getByRole("navigation", { name: "Saved state scrubber" })
+							.getByRole("button", { name: /Show state after CL/ })
+							.last()
+							.click();
+						await expect(
+							page!.getByRole("complementary", { name: "Selected saved actor" })
+						).toContainText("NOT PRESENT");
+					},
+					description:
+						"The scrubber shows an actor before its removal and confirms that it is absent later.",
+					page,
+					slug: "04-removal-over-time",
+					testInfo,
+					title: "View removal across time"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await timeline
+							.getByRole("button", { name: /Select changelist/ })
+							.last()
+							.click();
+						await expect(evidence).toContainText("UNCLASSIFIED PACKAGE EVIDENCE");
+						await evidence.scrollIntoViewIfNeeded();
+					},
+					description:
+						"The final changelist retains package edits that cannot be safely explained as actor changes.",
+					page,
+					resetScroll: false,
+					slug: "05-unclassified-evidence",
+					testInfo,
+					title: "Keep unclassified evidence visible"
 				})
 			);
 		} else {

@@ -35,6 +35,7 @@ import { styles } from "./world-log-styles.js";
 import { WorldLogTimeline, type WorldLogChangeFilter } from "./world-log-timeline.js";
 
 type ViewState = { readonly status: "loading" } | ContentObservatoryState;
+type StateUpdateSource = "mutation" | "poll";
 
 const decodeHistoryRequest = Schema.decodeUnknownEffect(ContentObservatoryHistoryRequest);
 const defaultWorldLogScanLimits: WorldLogScanLimits = {
@@ -53,6 +54,18 @@ function rangeLengthDays(range: {
 	const until = Date.parse(String(range.until));
 	if (!Number.isFinite(since) || !Number.isFinite(until)) return undefined;
 	return Math.round((until - since) / (24 * 60 * 60 * 1000));
+}
+
+function isJobState(
+	state: ViewState
+): state is Exclude<ContentObservatoryState, { readonly status: "not_configured" | "ready" }> {
+	return "jobId" in state;
+}
+
+function shouldApplyPolledState(current: ViewState, next: ContentObservatoryState): boolean {
+	if (!isJobState(current) || !isJobState(next)) return true;
+	if (current.jobId !== next.jobId) return false;
+	return current.status === "running" || next.status !== "running";
 }
 
 /**
@@ -113,7 +126,9 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		);
 	});
 
-	const apply = (next: ContentObservatoryState) => {
+	const apply = (next: ContentObservatoryState, source: StateUpdateSource = "mutation") => {
+		const shouldApply = source !== "poll" || shouldApplyPolledState(state(), next);
+		if (!shouldApply) return;
 		setState(next);
 		if (mapPath().length === 0) {
 			setMapPath(
@@ -133,7 +148,8 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 			);
 		}
 	};
-	const refresh = () => action.run(props.client.status(), { onSuccess: apply });
+	const refresh = () =>
+		action.run(props.client.status(), { onSuccess: (next) => apply(next, "poll") });
 	const selectActor = (actorKey: string | undefined) => {
 		setSelection((current) => selectWorldLogActor(current, actorKey));
 	};

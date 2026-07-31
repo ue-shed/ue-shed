@@ -62,7 +62,9 @@ export async function createWorkbenchEnvironment(environment = process.env, opti
 	const usingFixtureProject = environment.UE_SHED_PROJECT_ROOT === undefined;
 	const reviewSet =
 		environment.UE_SHED_REVIEW_SET ??
-		join(fixtureRoot, ".ue-shed", "review", "sets", "fixture-structure.json");
+		(usingFixtureProject
+			? join(fixtureRoot, ".ue-shed", "review", "sets", "fixture-structure.json")
+			: undefined);
 	return {
 		...environment,
 		UE_SHED_PROJECT_NAME: environment.UE_SHED_PROJECT_NAME ?? "UEShedFixture",
@@ -77,7 +79,7 @@ export async function createWorkbenchEnvironment(environment = process.env, opti
 		UE_SHED_AUTHORING_ASSET: environment.UE_SHED_AUTHORING_ASSET ?? authoringAsset,
 		UE_SHED_REMOTE_CONTROL_ENDPOINT: await resolveRemoteControlEndpoint(environment, options),
 		UE_SHED_REPOSITORY_ROOT: repositoryRoot,
-		UE_SHED_REVIEW_SET: reviewSet,
+		...(reviewSet ? { UE_SHED_REVIEW_SET: reviewSet } : {}),
 		UE_SHED_TEXTURE_AUDIT_RULES: environment.UE_SHED_TEXTURE_AUDIT_RULES ?? textureRules,
 		UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable(environment)
 	};
@@ -100,5 +102,10 @@ export function runPnpm(args, environment) {
 		windowsHide: true
 	});
 	if (result.error) throw result.error;
-	if (result.status !== 0) process.exit(result.status ?? 1);
+	if (result.status !== 0) {
+		const resultDescription = result.signal
+			? `received ${result.signal}`
+			: `exited with ${result.status ?? "an unknown status"}`;
+		throw new Error(`pnpm ${args.join(" ")} ${resultDescription}.`);
+	}
 }

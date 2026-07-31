@@ -15,6 +15,10 @@ export const ContentObservatoryHistoryRequest = Schema.Struct({
 export type ContentObservatoryHistoryRequest = Schema.Schema.Type<
 	typeof ContentObservatoryHistoryRequest
 >;
+/** Browser-to-main payload with timestamps represented as ISO strings. */
+export type ContentObservatoryHistoryRequestWire = Schema.Codec.Encoded<
+	typeof ContentObservatoryHistoryRequest
+>;
 
 export const ContentObservatoryError = Schema.Struct({
 	kind: Schema.NonEmptyString,

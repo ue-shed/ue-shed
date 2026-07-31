@@ -1,9 +1,20 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { access, chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+	access,
+	chmod,
+	copyFile,
+	mkdtemp,
+	mkdir,
+	readFile,
+	rename,
+	rm,
+	writeFile
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.mjs";
 
 const perforceRelease = "r26.1";
@@ -470,12 +481,14 @@ async function stopServer({ child, p4, environment, cwd }) {
 	await waitForProcessExit(child);
 }
 
-async function main() {
+/**
+ * Starts the generic Map History fixture and returns its isolated Perforce client.
+ * Call `stop` once the caller has finished using the workspace.
+ */
+export async function startPerforceMapHistoryFixture() {
 	report("RUN ", "starting the disposable localhost p4d conformance lane");
 	const binaries = await resolveBinaries();
-	const operationRoot = await import("node:fs/promises").then(({ mkdtemp }) =>
-		mkdtemp(join(tmpdir(), "ue-shed-perforce-map-history-"))
-	);
+	const operationRoot = await mkdtemp(join(tmpdir(), "ue-shed-perforce-map-history-"));
 	const serverRoot = join(operationRoot, "server");
 	const workspace = join(operationRoot, "workspace");
 	const tickets = join(operationRoot, "tickets.txt");
@@ -483,7 +496,42 @@ async function main() {
 	const enviro = join(operationRoot, "p4enviro.txt");
 	const port = await getAvailablePort();
 	const p4Port = `127.0.0.1:${port}`;
+	const environment = p4Environment({
+		P4CHARSET: "none",
+		P4CLIENT: fixtureClient,
+		P4CONFIG: configFileName,
+		P4ENVIRO: enviro,
+		P4HOST: fixtureClient,
+		P4PORT: p4Port,
+		P4TICKETS: tickets,
+		P4TRUST: trust,
+		P4USER: fixtureUser
+	});
 	let server;
+	let stopped = false;
+	const stop = async () => {
+		if (stopped) return;
+		stopped = true;
+		if (server) {
+			await stopServer({ child: server, p4: binaries.p4, environment, cwd: operationRoot });
+		}
+		try {
+			await rm(operationRoot, {
+				force: true,
+				recursive: true,
+				maxRetries: 3,
+				retryDelay: 100
+			});
+		} catch (error) {
+			report(
+				"WARN",
+				`could not remove the failed disposable operation root ${operationRoot}: ${
+					error instanceof Error ? error.message : String(error)
+				}`
+			);
+		}
+		report("RUN ", "removed the disposable p4d server, client, tickets, and workspace");
+	};
 	try {
 		await Promise.all([mkdir(serverRoot), mkdir(workspace), writeFile(enviro, "")]);
 		const configuration = [
@@ -496,17 +544,6 @@ async function main() {
 			""
 		].join("\n");
 		await writeFile(join(operationRoot, configFileName), configuration);
-		const environment = p4Environment({
-			P4CHARSET: "none",
-			P4CLIENT: fixtureClient,
-			P4CONFIG: configFileName,
-			P4ENVIRO: enviro,
-			P4HOST: fixtureClient,
-			P4PORT: p4Port,
-			P4TICKETS: tickets,
-			P4TRUST: trust,
-			P4USER: fixtureUser
-		});
 		const startServer = () =>
 			spawn(
 				binaries.p4d,
@@ -573,23 +610,40 @@ async function main() {
 		await createDepot(binaries.p4, environment, operationRoot);
 		await createClient(binaries.p4, environment, workspace);
 		const seeded = await seedFixture({ p4: binaries.p4, environment, workspace });
-		const testConfigPath = join(operationRoot, "test-config.json");
+		return {
+			environment,
+			operationRoot,
+			p4: {
+				client: fixtureClient,
+				configFileName,
+				enviro,
+				executable: binaries.p4,
+				port: p4Port,
+				tickets,
+				trust,
+				user: fixtureUser
+			},
+			projectRoot: workspace,
+			seeded,
+			stop
+		};
+	} catch (error) {
+		await stop();
+		throw error;
+	}
+}
+
+async function main() {
+	const fixture = await startPerforceMapHistoryFixture();
+	try {
+		const testConfigPath = join(fixture.operationRoot, "test-config.json");
 		await writeFile(
 			testConfigPath,
 			JSON.stringify(
 				{
-					p4: {
-						configFileName,
-						enviro,
-						executable: binaries.p4,
-						port: p4Port,
-						tickets,
-						trust,
-						user: fixtureUser,
-						client: fixtureClient
-					},
-					projectRoot: workspace,
-					seeded,
+					p4: fixture.p4,
+					projectRoot: fixture.projectRoot,
+					seeded: fixture.seeded,
 					uassetExecutable: ensureUassetExecutable()
 				},
 				null,
@@ -603,7 +657,7 @@ async function main() {
 			{
 				cwd: repositoryRoot,
 				env: {
-					...environment,
+					...fixture.environment,
 					UE_SHED_PERFORCE_MAP_HISTORY_CONFIG: testConfigPath,
 					UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
 				},
@@ -613,41 +667,13 @@ async function main() {
 		process.stdout.write(result.stdout);
 		process.stderr.write(result.stderr);
 	} finally {
-		if (server) {
-			const environment = p4Environment({
-				P4CLIENT: fixtureClient,
-				P4CONFIG: configFileName,
-				P4ENVIRO: enviro,
-				P4PORT: p4Port,
-				P4TICKETS: tickets,
-				P4TRUST: trust,
-				P4USER: fixtureUser
-			});
-			await stopServer({ child: server, p4: binaries.p4, environment, cwd: operationRoot });
-		}
-		try {
-			await rm(operationRoot, {
-				force: true,
-				recursive: true,
-				maxRetries: 3,
-				retryDelay: 100
-			});
-		} catch (error) {
-			report(
-				"WARN",
-				`could not remove the failed disposable operation root ${operationRoot}: ${
-					error instanceof Error ? error.message : String(error)
-				}`
-			);
-		}
+		await fixture.stop();
 	}
-	report(
-		"RUN ",
-		"completed and removed the disposable p4d server, client, tickets, and workspace"
-	);
 }
 
-main().catch((error) => {
-	report("FAIL", error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	main().catch((error) => {
+		report("FAIL", error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	});
+}

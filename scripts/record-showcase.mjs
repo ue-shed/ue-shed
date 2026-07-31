@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { createWorkbenchEnvironment, repositoryRoot, runPnpm } from "./workbench-tools.mjs";
 import { startPerforceMapHistoryFixture } from "./test-perforce-map-history.mjs";
 
-const supportedJourneys = ["saved-workflows", "map-review", "world-log"];
+const supportedJourneys = ["saved-workflows", "map-review", "world-log", "world-log-fast"];
 const argumentsAfterCommand = process.argv.slice(2);
 const requestedJourney = argumentsAfterCommand.find((argument) => !argument.startsWith("--"));
 const journey = requestedJourney ?? "saved-workflows";
@@ -26,7 +26,10 @@ const recordedAt = new Date().toISOString();
 const recordingId = `${recordedAt.replaceAll(/[-:.TZ]/g, "")}-${journey}-${randomUUID().slice(0, 8)}`;
 const resultRoot = join(repositoryRoot, "test-results", "showcase", recordingId);
 
-const fixture = journey === "world-log" ? await startPerforceMapHistoryFixture() : undefined;
+const fixture =
+	journey === "world-log" || journey === "world-log-fast"
+		? await startPerforceMapHistoryFixture()
+		: undefined;
 
 try {
 	const {

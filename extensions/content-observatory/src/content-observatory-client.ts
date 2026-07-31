@@ -76,7 +76,8 @@ export const ContentObservatoryState = Schema.Union([
 	}),
 	Schema.Struct({
 		...RequestState.fields,
-		history: Schema.Union([PerforceMapHistory, PerforceFastMapHistory]),
+		// Fast first: its `mode` discriminator must not be decoded as the legacy deep document.
+		history: Schema.Union([PerforceFastMapHistory, PerforceMapHistory]),
 		maps: Schema.Array(ContentObservatoryMap),
 		projectRoot: Schema.NonEmptyString,
 		status: Schema.Literal("complete")

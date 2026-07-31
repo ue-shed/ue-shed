@@ -9,6 +9,9 @@ load the current saved actor list, choose one actor or exact actor class, and th
 proven package scope from Perforce. Fast results always explain that they do not claim complete map
 or historical class coverage; a class target covers current members only.
 
+Use `pnpm showcase:world-log-fast` for the dedicated recorded path that demonstrates selecting a
+current actor class and reading its targeted history.
+
 The extension receives a narrow browser client with `status`, `targets`, `start`, and `cancel` operations. It
 has no filesystem, child-process, Perforce credential, or workspace authority. Workbench keeps the
 configured project root in its main process, validates all IPC input/output, and owns the scoped

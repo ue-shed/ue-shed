@@ -229,6 +229,48 @@ function completeState(): CompletedContentObservatoryState {
 	}) as CompletedContentObservatoryState;
 }
 
+function fastCompleteState(): CompletedContentObservatoryState {
+	const complete = completeState();
+	const encoded = Schema.encodeSync(ContentObservatoryState)(complete) as Extract<
+		Schema.Codec.Encoded<typeof ContentObservatoryState>,
+		{ readonly status: "complete" }
+	>;
+	return Schema.decodeUnknownSync(ContentObservatoryState)({
+		...encoded,
+		request: {
+			...encoded.request,
+			mode: "fast",
+			target: { classPath: "/Script/Game.Npc", kind: "actor_class" }
+		},
+		history: {
+			...encoded.history,
+			coverage: {
+				acquiredPackages: [
+					{
+						depotFileSpec: "//Project/Main/Content/Maps/L_Example.*",
+						packageName: "/Game/Maps/L_Example",
+						role: "selected_map"
+					}
+				],
+				claimsCompleteMapCoverage: false,
+				claimsHistoricalClassCoverage: false,
+				investigationTarget: {
+					classPath: "/Script/Game.Npc",
+					currentActorCount: 1,
+					kind: "actor_class"
+				},
+				kind: "targeted"
+			},
+			mode: "fast",
+			query: {
+				...encoded.history.query,
+				mode: "fast",
+				target: { classPath: "/Script/Game.Npc", kind: "actor_class" }
+			}
+		}
+	}) as CompletedContentObservatoryState;
+}
+
 describe("ContentObservatoryRoute", () => {
 	it("explains the project prerequisite without exposing filesystem authority", async () => {
 		const client: ContentObservatoryClientShape = {
@@ -465,6 +507,27 @@ describe("ContentObservatoryRoute", () => {
 		if (received?.mode === "fast") {
 			expect(received.target).toEqual({ classPath: "/Script/Game.Npc", kind: "actor_class" });
 		}
+	});
+
+	it("preserves Fast coverage when decoding a completed actor-class result", async () => {
+		const complete = fastCompleteState();
+		const client: ContentObservatoryClientShape = {
+			cancel: () => Effect.succeed(complete),
+			start: () => Effect.succeed(complete),
+			status: () => Effect.succeed(complete)
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<ContentObservatoryRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		await screen.findByRole("region", { name: "Fast History coverage" });
+		expect(
+			screen.getByText("This result follows 1 current actor of /Script/Game.Npc.")
+		).toBeDefined();
+		expect(
+			screen.getByText(/Deleted or historically reclassified actors are outside this result/)
+		).toBeDefined();
 	});
 
 	it("uses the point map and outliner to narrow changelist evidence to one saved actor", async () => {

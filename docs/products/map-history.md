@@ -226,6 +226,10 @@ ue-shed map history <project-root> <map-path> --since "7 days" --mode fast --act
 ue-shed map history <project-root> <map-path> --since "7 days" --mode fast --actor-class <class-path>
 ```
 
+The dedicated Workbench recording path is `pnpm showcase:world-log-fast`. It starts the disposable
+fixture, selects an exact current actor class, runs Fast History, and records the targeted-coverage
+warning that distinguishes current members from deleted or historically reclassified actors.
+
 `--since` accepts ISO-8601 UTC or an Effect duration such as `7 days`; omitted `--until` means the
 current UTC time. Deep History writes the existing schema-encoded history document to stdout. Fast
 History writes a discriminated document that includes `mode: "fast"` and explicit targeted coverage.

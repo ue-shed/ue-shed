@@ -7,7 +7,12 @@ import { Schema } from "effect";
 import { _electron as electron, type ElectronApplication } from "playwright";
 import { WorkbenchPage } from "../pages/workbench-page.js";
 
-const RecordingJourney = Schema.Literals(["saved-workflows", "map-review", "world-log"]);
+const RecordingJourney = Schema.Literals([
+	"saved-workflows",
+	"map-review",
+	"world-log",
+	"world-log-fast"
+]);
 const FixtureLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
 	Schema.Struct({
@@ -243,6 +248,71 @@ test(`records the ${journey} Workbench journey`, async ({
 					slug: "03-before-and-after",
 					testInfo,
 					title: "Review before and after"
+				})
+			);
+		} else if (journey === "world-log-fast") {
+			await startScreencast();
+			const queryPanel = page.getByRole("region", { name: "Map history query" });
+			const targetPanel = page.getByRole("region", { name: "Fast History target" });
+			const timeline = page.getByRole("region", { name: "History timeline" });
+			const coverage = page.getByRole("region", { name: "Fast History coverage" });
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.openRoute("World Log");
+						await expect(
+							page!.getByRole("heading", { name: "WORLD LOG" })
+						).toBeVisible();
+						await page!.getByRole("button", { name: "Map History World" }).click();
+						await page!.getByRole("button", { name: "FAST HISTORY" }).click();
+						await expect(queryPanel).toContainText("FAST HISTORY TARGET");
+						await targetPanel
+							.getByRole("button", { name: "LOAD CURRENT ACTORS" })
+							.click();
+						await expect(
+							targetPanel.getByRole("list", { name: "Current actor targets" })
+						).toBeVisible();
+						await targetPanel.getByRole("button", { name: "ACTOR CLASS" }).click();
+						await expect(
+							targetPanel.getByRole("list", { name: "Current actor class targets" })
+						).toBeVisible();
+						const classTarget = targetPanel
+							.getByRole("button", { name: /\/Script\// })
+							.first();
+						await expect(classTarget).toBeVisible();
+						await classTarget.click();
+						await expect(classTarget).toHaveAttribute("aria-pressed", "true");
+					},
+					description:
+						"Fast History starts from the present-day actor projection and narrows the scan to one current class.",
+					page,
+					slug: "01-fast-history-target",
+					testInfo,
+					title: "Choose a current actor class"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /READ FAST HISTORY/ }).click();
+						await expect(timeline).toContainText("map actor changes", {
+							timeout: 120_000
+						});
+						await expect(coverage).toBeVisible();
+						await expect(coverage).toContainText("FAST HISTORY / TARGETED");
+						await expect(coverage).toContainText("current actor");
+						await expect(coverage).toContainText(
+							"Deleted or historically reclassified actors are outside this result"
+						);
+						await coverage.scrollIntoViewIfNeeded();
+					},
+					description:
+						"The result keeps the current-class boundary visible instead of implying complete historical coverage.",
+					page,
+					resetScroll: false,
+					slug: "02-fast-history-result",
+					testInfo,
+					title: "Read targeted class history"
 				})
 			);
 		} else if (journey === "world-log") {

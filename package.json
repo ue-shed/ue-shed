@@ -31,6 +31,7 @@
 		"format:check": "oxfmt --check .",
 		"showcase": "node scripts/showcase.mjs",
 		"showcase:world-log": "node scripts/showcase-world-log.mjs",
+		"showcase:world-log-fast": "node scripts/record-showcase.mjs world-log-fast",
 		"showcase:record": "node scripts/record-showcase.mjs",
 		"site:media": "node scripts/site-media.mjs",
 		"test": "node scripts/test.mjs",

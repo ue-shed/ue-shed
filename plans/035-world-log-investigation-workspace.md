@@ -1,6 +1,6 @@
 # Plan 035: Build the World Log investigation workspace
 
-**Status**: IN PROGRESS — Phase 8 Fast History investigation targets
+**Status**: COMPLETE — Phase 8 Fast History investigation targets
 
 **Priority**: P2
 
@@ -206,7 +206,7 @@ Record a deterministic journey that scans the World Partition fixture, selects a
 examines a label change, views addition/removal across time, inspects package evidence, and exposes
 the final unclassified package edit. No Unreal launch is required.
 
-### Phase 8: Fast History investigation targets — FIRST TWO SLICES COMPLETE (2026-07-31)
+### Phase 8: Fast History investigation targets — COMPLETE (2026-07-31)
 
 After the Deep History vertical is complete and its cost/coverage is demonstrated, add a separate
 Fast History request mode. Support a selected actor first, then a current-class candidate set from
@@ -227,7 +227,12 @@ targeted-coverage warning on the result.
 targets. The class list is built from the current saved-world actor projection, sends an exact
 class target through the same IPC contract, and labels the result with its current actor count.
 Target proof errors identify missing classes and explain when Deep History is needed for deleted or
-reclassified actors. The deterministic showcase journey remains for the next slice.
+reclassified actors.
+
+**Dedicated showcase (2026-07-31)**: `pnpm showcase:world-log-fast` starts the disposable
+Perforce fixture, selects an exact current actor class, runs Fast History, and records the targeted
+coverage warning that distinguishes current members from deleted or historically reclassified
+actors. The existing `world-log` journey remains the Deep History showcase.
 
 **Acceptance**:
 

@@ -2,16 +2,29 @@ import {
 	MapHistoryLimits,
 	MapHistoryProgress,
 	MapHistoryRange,
+	FastHistoryInvestigationTarget,
 	PerforceMapHistory,
+	PerforceFastMapHistory,
 	ProjectRelativeMapPath
 } from "@ue-shed/map-history/contract";
+import { SavedWorld, decodeSavedWorld } from "@ue-shed/protocol";
 import { Context, type Effect, Schema } from "effect";
 
-export const ContentObservatoryHistoryRequest = Schema.Struct({
+const historyRequestFields = {
 	limits: MapHistoryLimits,
 	mapPath: ProjectRelativeMapPath,
 	range: MapHistoryRange
-});
+};
+
+/** The browser must choose the acquisition depth explicitly; Deep is the route default. */
+export const ContentObservatoryHistoryRequest = Schema.Union([
+	Schema.Struct({ ...historyRequestFields, mode: Schema.Literal("deep") }),
+	Schema.Struct({
+		...historyRequestFields,
+		mode: Schema.Literal("fast"),
+		target: FastHistoryInvestigationTarget
+	})
+]);
 export type ContentObservatoryHistoryRequest = Schema.Schema.Type<
 	typeof ContentObservatoryHistoryRequest
 >;
@@ -19,6 +32,14 @@ export type ContentObservatoryHistoryRequest = Schema.Schema.Type<
 export type ContentObservatoryHistoryRequestWire = Schema.Codec.Encoded<
 	typeof ContentObservatoryHistoryRequest
 >;
+
+/** Current saved-world actors used to choose a Fast History Investigation Target. */
+export const ContentObservatoryTargetCatalog = SavedWorld;
+export type ContentObservatoryTargetCatalog = Schema.Schema.Type<
+	typeof ContentObservatoryTargetCatalog
+>;
+
+export const decodeContentObservatoryTargetCatalog = decodeSavedWorld;
 
 export const ContentObservatoryError = Schema.Struct({
 	kind: Schema.NonEmptyString,
@@ -55,7 +76,7 @@ export const ContentObservatoryState = Schema.Union([
 	}),
 	Schema.Struct({
 		...RequestState.fields,
-		history: PerforceMapHistory,
+		history: Schema.Union([PerforceMapHistory, PerforceFastMapHistory]),
 		maps: Schema.Array(ContentObservatoryMap),
 		projectRoot: Schema.NonEmptyString,
 		status: Schema.Literal("complete")
@@ -93,6 +114,9 @@ export interface ContentObservatoryClientShape {
 		request: ContentObservatoryHistoryRequest
 	) => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
 	readonly status: () => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
+	readonly targets?: (
+		mapPath: string
+	) => Effect.Effect<ContentObservatoryTargetCatalog, ContentObservatoryClientError>;
 }
 
 export class ContentObservatoryClient extends Context.Service<

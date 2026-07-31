@@ -1,6 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
 import { createEffectAction } from "@ue-shed/ui";
+import type { ActorIdentity } from "@ue-shed/map-history/contract";
 import { mapHistoryPlaybackFrameAt } from "@ue-shed/map-history/playback";
+import type { SavedWorldActor } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import {
 	Match,
@@ -14,13 +16,20 @@ import {
 } from "solid-js";
 import {
 	ContentObservatoryHistoryRequest,
+	type ContentObservatoryTargetCatalog,
 	type ContentObservatoryClientShape,
 	type ContentObservatoryState
 } from "./content-observatory-client.js";
 import { WorldLogActorAtlas } from "./world-log-actor-atlas.js";
+import { actorKeyFromIdentity, actorKeyFromSavedActor } from "./world-log-actors.js";
 import { WorldLogChangelistMap } from "./world-log-changelist-map.js";
 import { humanize } from "./world-log-format.js";
-import { WorldLogQueryForm, type WorldLogScanLimits } from "./world-log-query-form.js";
+import {
+	WorldLogQueryForm,
+	type WorldLogFastTargetKind,
+	type WorldLogHistoryMode,
+	type WorldLogScanLimits
+} from "./world-log-query-form.js";
 import {
 	actorKeyOfSelection,
 	changeSelectionOf,
@@ -68,14 +77,39 @@ function shouldApplyPolledState(current: ViewState, next: ContentObservatoryStat
 	return current.status === "running" || next.status !== "running";
 }
 
+const zeroActorGuid = /^0{8}-0{8}-0{8}-0{8}$/;
+
+function actorIdentityOfTarget(actor: SavedWorldActor): ActorIdentity {
+	if (
+		actor.actorGuid !== undefined &&
+		actor.actorGuid.length > 0 &&
+		!zeroActorGuid.test(actor.actorGuid)
+	) {
+		return { actorGuid: actor.actorGuid, kind: "actor_guid" };
+	}
+	return {
+		actorPath: actor.actorPath,
+		kind: "object_path",
+		packageName: actor.packageName
+	};
+}
+
 /**
  * The route owns only presentation state. Perforce acquisition, progress, cancellation, and
  * temporary reconstruction authority remain behind the injected browser client.
  */
 export function ContentObservatoryRoute(props: { readonly client: ContentObservatoryClientShape }) {
 	const action = createEffectAction();
+	const targetAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [mapPath, setMapPath] = createSignal("");
+	const [mode, setMode] = createSignal<WorldLogHistoryMode>("deep");
+	const [targetCatalog, setTargetCatalog] = createSignal<ContentObservatoryTargetCatalog>();
+	const [fastTargetKind, setFastTargetKind] = createSignal<WorldLogFastTargetKind>("actor");
+	const [targetClassPath, setTargetClassPath] = createSignal<string | undefined>(undefined);
+	const [targetKey, setTargetKey] = createSignal<string | undefined>(undefined);
+	const [targetLoading, setTargetLoading] = createSignal(false);
+	const [targetError, setTargetError] = createSignal<string | undefined>(undefined);
 	const [rangeDays, setRangeDays] = createSignal(7);
 	const [filter, setFilter] = createSignal<WorldLogChangeFilter>("all");
 	const [limits, setLimits] = createSignal<WorldLogScanLimits>(defaultWorldLogScanLimits);
@@ -116,6 +150,22 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 					revisionIndex: frameRevision()
 				});
 	});
+	const fastCoverageNotice = createMemo(() => {
+		const complete = completeState();
+		if (complete === undefined || complete.request.mode !== "fast") return undefined;
+		const history = complete.history;
+		if (!("coverage" in history)) return undefined;
+		const target = history.coverage.investigationTarget;
+		return target.kind === "actor"
+			? {
+					detail: "Other actors are outside this result. It does not claim complete map coverage or historical class coverage. Use Deep History when you need the full map.",
+					headline: `This result follows actor ${target.actorPath} only.`
+				}
+			: {
+					detail: "Deleted or historically reclassified actors are outside this result. It does not claim complete map coverage or historical class coverage. Use Deep History when you need the full map.",
+					headline: `This result follows ${target.currentActorCount} current actor${target.currentActorCount === 1 ? "" : "s"} of ${target.classPath}.`
+				};
+	});
 	const resultIsStale = createMemo(() => {
 		const complete = completeState();
 		if (complete === undefined) return false;
@@ -130,6 +180,19 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		const shouldApply = source !== "poll" || shouldApplyPolledState(state(), next);
 		if (!shouldApply) return;
 		setState(next);
+		if ("request" in next) {
+			setMode(next.request.mode);
+			if (next.request.mode === "fast") {
+				setFastTargetKind(next.request.target.kind);
+				if (next.request.target.kind === "actor") {
+					setTargetKey(actorKeyFromIdentity(next.request.target.identity));
+					setTargetClassPath(undefined);
+				} else {
+					setTargetClassPath(next.request.target.classPath);
+					setTargetKey(undefined);
+				}
+			}
+		}
 		if (mapPath().length === 0) {
 			setMapPath(
 				next.status === "complete"
@@ -169,17 +232,87 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 	const run = () => {
 		const until = new Date();
 		const since = new Date(until.getTime() - rangeDays() * 24 * 60 * 60 * 1000);
-		const request = {
+		const baseRequest = {
 			limits: limits(),
 			mapPath: mapPath().trim(),
 			range: { since: since.toISOString(), until: until.toISOString() }
 		};
+		const selectedTarget = targetCatalog()?.actors.find(
+			(actor) => actorKeyFromSavedActor(actor) === targetKey()
+		);
+		let request: object;
+		if (mode() === "fast") {
+			if (fastTargetKind() === "actor" && selectedTarget === undefined) return;
+			if (fastTargetKind() === "actor_class" && targetClassPath() === undefined) return;
+			request = {
+				...baseRequest,
+				mode: "fast" as const,
+				target:
+					fastTargetKind() === "actor"
+						? {
+								kind: "actor" as const,
+								identity: actorIdentityOfTarget(selectedTarget!)
+							}
+						: { classPath: targetClassPath()!, kind: "actor_class" as const }
+			};
+		} else {
+			request = { ...baseRequest, mode: "deep" as const };
+		}
 		action.run(
 			decodeHistoryRequest(request).pipe(
 				Effect.flatMap((decoded) => props.client.start(decoded))
 			),
 			{ onSuccess: apply }
 		);
+	};
+	const changeMapPath = (next: string) => {
+		setMapPath(next);
+		setTargetCatalog(undefined);
+		setTargetKey(undefined);
+		setTargetClassPath(undefined);
+		setTargetError(undefined);
+	};
+	const changeMode = (next: WorldLogHistoryMode) => {
+		setMode(next);
+		if (next === "deep") setTargetError(undefined);
+	};
+	const changeFastTargetKind = (next: WorldLogFastTargetKind) => {
+		setFastTargetKind(next);
+		setTargetKey(undefined);
+		setTargetClassPath(undefined);
+	};
+	const loadTargets = () => {
+		const selectedMap = mapPath().trim();
+		if (selectedMap.length === 0) return;
+		const targets = props.client.targets;
+		if (targets === undefined) {
+			setTargetError("Current actor discovery is not available in this Workbench build.");
+			return;
+		}
+		setTargetLoading(true);
+		setTargetError(undefined);
+		targetAction.run(targets(selectedMap), {
+			onFailure: (cause) => {
+				setTargetLoading(false);
+				const detail =
+					cause instanceof Error
+						? cause.message
+						: typeof cause === "object" && cause !== null && "message" in cause
+							? String(cause.message)
+							: undefined;
+				setTargetError(
+					detail === undefined
+						? "Current actors could not be loaded. Use Deep History or verify the map."
+						: `Current actors could not be loaded: ${detail}`
+				);
+			},
+			onSuccess: (catalog) => {
+				setTargetLoading(false);
+				setTargetCatalog(catalog);
+				setTargetKey(undefined);
+				setTargetClassPath(undefined);
+			}
+		});
 	};
 
 	createEffect(() => {
@@ -226,16 +359,31 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 						<>
 							<WorldLogQueryForm
 								disabled={current().status === "running"}
+								mode={mode()}
 								limits={limits()}
 								maps={current().maps}
 								mapPath={mapPath()}
 								onLimitsChange={(next) =>
 									setLimits((currentLimits) => ({ ...currentLimits, ...next }))
 								}
-								onMapPathChange={setMapPath}
+								onMapPathChange={changeMapPath}
+								onModeChange={changeMode}
+								onLoadTargets={loadTargets}
 								onRun={run}
+								onFastTargetKindChange={changeFastTargetKind}
+								onTargetClassChange={(classPath) => {
+									setTargetClassPath(classPath);
+									setTargetKey(undefined);
+								}}
+								onTargetChange={setTargetKey}
 								rangeDays={rangeDays()}
 								setRangeDays={setRangeDays}
+								targetActors={targetCatalog()?.actors ?? []}
+								targetError={targetError()}
+								targetClassPath={targetClassPath()}
+								targetKey={targetKey()}
+								fastTargetKind={fastTargetKind()}
+								targetLoading={targetLoading()}
 							/>
 							<Show when={runningState()}>
 								{(running) => (
@@ -297,6 +445,26 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 									>
 										{(frame) => (
 											<>
+												<Show when={fastCoverageNotice()}>
+													{(notice) => (
+														<section
+															aria-label="Fast History coverage"
+															{...stylex.props(
+																styles.fastCoverageNotice
+															)}
+														>
+															<span
+																{...stylex.props(
+																	styles.sectionKicker
+																)}
+															>
+																FAST HISTORY / TARGETED
+															</span>
+															<strong>{notice().headline}</strong>
+															<p>{notice().detail}</p>
+														</section>
+													)}
+												</Show>
 												<Show when={resultIsStale()}>
 													<section
 														aria-label="Stale World Log result"

@@ -260,7 +260,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							page!.getByRole("heading", { name: "WORLD LOG" })
 						).toBeVisible();
 						await page!.getByRole("button", { name: "Map History World" }).click();
-						await page!.getByRole("button", { name: /READ HISTORY/ }).click();
+						await page!.getByRole("button", { name: /READ DEEP HISTORY/ }).click();
 						await expect(timeline).toContainText("map actor changes", {
 							timeout: 120_000
 						});

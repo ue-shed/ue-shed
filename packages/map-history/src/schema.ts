@@ -78,11 +78,15 @@ export const PerforceDeepMapHistoryQuery = Schema.Struct({
 });
 export type PerforceDeepMapHistoryQuery = Schema.Schema.Type<typeof PerforceDeepMapHistoryQuery>;
 
-/** Pre-scan Investigation Target. Only a single present-day actor is supported in this slice. */
+/** Pre-scan Investigation Target. Fast History stays anchored to the present-day projection. */
 export const FastHistoryInvestigationTarget = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("actor"),
 		identity: ActorIdentity
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("actor_class"),
+		classPath: Schema.NonEmptyString
 	})
 ]);
 export type FastHistoryInvestigationTarget = Schema.Schema.Type<
@@ -271,7 +275,11 @@ export type PerforceMapHistory = Schema.Schema.Type<typeof PerforceMapHistory>;
 export const FastHistoryAcquiredPackage = Schema.Struct({
 	depotFileSpec: PerforceDepotPath,
 	packageName: Schema.NonEmptyString,
-	role: Schema.Literals(["selected_map", "investigation_target_actor"])
+	role: Schema.Literals([
+		"selected_map",
+		"investigation_target_actor",
+		"investigation_target_class"
+	])
 });
 export type FastHistoryAcquiredPackage = Schema.Schema.Type<typeof FastHistoryAcquiredPackage>;
 
@@ -283,14 +291,21 @@ export const FastHistoryTargetedCoverage = Schema.Struct({
 	kind: Schema.Literal("targeted"),
 	claimsCompleteMapCoverage: Schema.Literal(false),
 	claimsHistoricalClassCoverage: Schema.Literal(false),
-	investigationTarget: Schema.Struct({
-		kind: Schema.Literal("actor"),
-		identity: ActorIdentity,
-		actorGuid: Schema.optionalKey(Schema.NonEmptyString),
-		actorPath: Schema.NonEmptyString,
-		classPath: Schema.NonEmptyString,
-		packageName: Schema.NonEmptyString
-	}),
+	investigationTarget: Schema.Union([
+		Schema.Struct({
+			kind: Schema.Literal("actor"),
+			identity: ActorIdentity,
+			actorGuid: Schema.optionalKey(Schema.NonEmptyString),
+			actorPath: Schema.NonEmptyString,
+			classPath: Schema.NonEmptyString,
+			packageName: Schema.NonEmptyString
+		}),
+		Schema.Struct({
+			kind: Schema.Literal("actor_class"),
+			classPath: Schema.NonEmptyString,
+			currentActorCount: NonNegativeInt
+		})
+	]),
 	acquiredPackages: Schema.Array(FastHistoryAcquiredPackage)
 });
 export type FastHistoryTargetedCoverage = Schema.Schema.Type<typeof FastHistoryTargetedCoverage>;
@@ -313,6 +328,9 @@ export const PerforceFastMapHistory = Schema.Struct({
 	diagnostics: Schema.Array(MapHistoryDiagnostic)
 });
 export type PerforceFastMapHistory = Schema.Schema.Type<typeof PerforceFastMapHistory>;
+
+/** A renderer-facing history document from either the complete or targeted acquisition path. */
+export type PerforceMapHistoryDocument = PerforceMapHistory | PerforceFastMapHistory;
 
 export const MapHistoryDeepResult = Schema.Struct({
 	mode: Schema.Literal("deep"),

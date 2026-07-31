@@ -9,6 +9,10 @@ export const register = Effect.gen(function* () {
 	const observatory = yield* WorkbenchContentObservatory;
 
 	yield* ipc.register(invokeContracts["content-observatory:status"], () => observatory.status());
+	yield* ipc.register(invokeContracts["content-observatory:targets"], (...args) => {
+		const [mapPath] = args as [string];
+		return observatory.targets(mapPath).pipe(Effect.orDie);
+	});
 	yield* ipc.register(invokeContracts["content-observatory:start"], (...args) => {
 		const [request] = args as [ContentObservatoryHistoryRequest];
 		return observatory.start(request);

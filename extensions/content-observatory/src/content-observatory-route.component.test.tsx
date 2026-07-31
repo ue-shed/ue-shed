@@ -9,7 +9,10 @@ import type {
 	ContentObservatoryClientShape,
 	ContentObservatoryHistoryRequest
 } from "./content-observatory-client.js";
-import { ContentObservatoryState } from "./content-observatory-client.js";
+import {
+	ContentObservatoryState,
+	ContentObservatoryTargetCatalog
+} from "./content-observatory-client.js";
 import { ContentObservatoryRoute } from "./content-observatory-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -38,6 +41,7 @@ function completeState(): CompletedContentObservatoryState {
 		maps: [{ label: "Example map", mapPath: "Content/Maps/L_Example.umap" }],
 		projectRoot: "C:/Project",
 		request: {
+			mode: "deep",
 			limits: {
 				maxChangelists: 250,
 				maxConcurrency: 4,
@@ -264,6 +268,7 @@ describe("ContentObservatoryRoute", () => {
 			},
 			projectRoot: "C:/Project",
 			request: {
+				mode: "deep",
 				limits: {
 					maxChangelists: 250,
 					maxConcurrency: 4,
@@ -296,10 +301,170 @@ describe("ContentObservatoryRoute", () => {
 		await user.click(screen.getByRole("button", { name: "ADVANCED LIMITS" }));
 		await user.clear(screen.getByLabelText("CHANGE LISTS"));
 		await user.type(screen.getByLabelText("CHANGE LISTS"), "12");
-		await user.click(screen.getByRole("button", { name: /read history/i }));
+		await user.click(screen.getByRole("button", { name: /read deep history/i }));
 		expect(received?.mapPath).toBe("Content/Fixture/History/L_MapHistoryWorld.umap");
 		expect(received?.limits.maxChangelists).toBe(12);
 		expect(await screen.findByText("listing changes")).toBeDefined();
+	});
+
+	it("keeps Deep History as the default and sends an explicit Fast actor target", async () => {
+		let received: ContentObservatoryHistoryRequest | undefined;
+		const maps = [
+			{
+				label: "Map History World",
+				mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap"
+			}
+		];
+		const selectedMap = maps[0]!;
+		const actor = {
+			actorGuid: "actor-npc-1",
+			actorPath: "/Game/Maps/L_MapHistoryWorld.L_MapHistoryWorld:PersistentLevel.Npc",
+			classPath: "/Script/Game.Npc",
+			label: "North NPC",
+			packageName: "/Game/Maps/L_MapHistoryWorld",
+			position: { location: { x: 10, y: 20, z: 0 }, status: "resolved" as const }
+		};
+		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+			maps,
+			projectRoot: "C:/Project",
+			status: "ready" as const
+		});
+		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
+			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
+			completeness: "complete",
+			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			diagnostics: [],
+			mapPath: selectedMap.mapPath,
+			actors: [actor],
+			sourceKind: "level",
+			summary: {
+				failedPackages: 0,
+				partialPackages: 0,
+				resolvedActors: 1,
+				scannedPackages: 1
+			}
+		});
+		const running = Schema.decodeUnknownSync(ContentObservatoryState)({
+			jobId: "map-history-fast-1",
+			maps,
+			progress: {
+				phase: "resolving_scope" as const,
+				processedChangelists: 0,
+				totalChangelists: 0
+			},
+			projectRoot: "C:/Project",
+			request: {
+				mode: "fast",
+				limits: {
+					maxChangelists: 250,
+					maxConcurrency: 4,
+					maxDurationMs: 120000,
+					maxMaterializedFiles: 4000,
+					maxPackages: 4000
+				},
+				mapPath: selectedMap.mapPath,
+				range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" },
+				target: {
+					identity: { actorGuid: actor.actorGuid, kind: "actor_guid" },
+					kind: "actor"
+				}
+			},
+			status: "running" as const
+		});
+		const client: ContentObservatoryClientShape = {
+			cancel: () => Effect.succeed(running),
+			start: (request) =>
+				Effect.sync(() => {
+					received = request;
+					return running;
+				}),
+			status: () => Effect.succeed(ready),
+			targets: () => Effect.succeed(catalog)
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<ContentObservatoryRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		await screen.findByDisplayValue(selectedMap.mapPath);
+		expect(
+			screen.getByRole("button", { name: "DEEP HISTORY" }).getAttribute("aria-pressed")
+		).toBe("true");
+		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
+		await user.click(screen.getByRole("button", { name: "LOAD CURRENT ACTORS" }));
+		await user.click(await screen.findByRole("button", { name: /North NPC/ }));
+		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
+		expect(received?.mode).toBe("fast");
+		expect(received?.mode).toBe("fast");
+		if (received?.mode === "fast" && received.target.kind === "actor") {
+			expect(received.target.identity).toEqual({
+				actorGuid: actor.actorGuid,
+				kind: "actor_guid"
+			});
+		}
+	});
+
+	it("sends an explicit Fast actor-class target", async () => {
+		let received: ContentObservatoryHistoryRequest | undefined;
+		const selectedMap = {
+			label: "Map History World",
+			mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap"
+		};
+		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+			maps: [selectedMap],
+			projectRoot: "C:/Project",
+			status: "ready" as const
+		});
+		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
+			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
+			completeness: "complete",
+			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			diagnostics: [],
+			mapPath: selectedMap.mapPath,
+			actors: [
+				{
+					actorGuid: "actor-npc-1",
+					actorPath: "/Game/Maps/L_MapHistoryWorld.L_MapHistoryWorld:PersistentLevel.Npc",
+					classPath: "/Script/Game.Npc",
+					label: "North NPC",
+					packageName: "/Game/Maps/L_MapHistoryWorld",
+					position: { location: { x: 10, y: 20, z: 0 }, status: "resolved" as const }
+				}
+			],
+			sourceKind: "level",
+			summary: {
+				failedPackages: 0,
+				partialPackages: 0,
+				resolvedActors: 1,
+				scannedPackages: 1
+			}
+		});
+		const client: ContentObservatoryClientShape = {
+			cancel: () => Effect.succeed(ready),
+			start: (request) => {
+				received = request;
+				return Effect.succeed(ready);
+			},
+			status: () => Effect.succeed(ready),
+			targets: () => Effect.succeed(catalog)
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<ContentObservatoryRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		await screen.findByDisplayValue(selectedMap.mapPath);
+		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
+		await user.click(screen.getByRole("button", { name: "LOAD CURRENT ACTORS" }));
+		await user.click(screen.getByRole("button", { name: "ACTOR CLASS" }));
+		await user.click(await screen.findByRole("button", { name: /\/Script\/Game\.Npc/ }));
+		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
+		expect(received?.mode).toBe("fast");
+		if (received?.mode === "fast") {
+			expect(received.target).toEqual({ classPath: "/Script/Game.Npc", kind: "actor_class" });
+		}
 	});
 
 	it("uses the point map and outliner to narrow changelist evidence to one saved actor", async () => {

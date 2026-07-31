@@ -76,6 +76,7 @@ declare global {
 			};
 			readonly contentObservatory: {
 				readonly status: () => Promise<unknown>;
+				readonly targets: (mapPath: string) => Promise<unknown>;
 				readonly start: (request: ContentObservatoryHistoryRequestWire) => Promise<unknown>;
 				readonly cancel: () => Promise<unknown>;
 			};

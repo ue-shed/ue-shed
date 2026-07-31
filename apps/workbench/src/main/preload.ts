@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 	},
 	contentObservatory: {
 		status: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:status"),
+		targets: (mapPath: string): Promise<unknown> =>
+			ipcRenderer.invoke("content-observatory:targets", mapPath),
 		start: (request: ContentObservatoryHistoryRequestWire): Promise<unknown> =>
 			ipcRenderer.invoke("content-observatory:start", request),
 		cancel: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:cancel")

@@ -3,7 +3,7 @@ import { actorIdentityKey, actorIdentityOf, savedWorldPositionsEqual } from "./d
 import type {
 	ActorIdentity,
 	MapHistoryDiagnostic,
-	PerforceMapHistory,
+	PerforceMapHistoryDocument,
 	PerforceMapRevision,
 	UnclassifiedPackageChange
 } from "./schema.js";
@@ -142,7 +142,7 @@ function savedWorldActorsEqual(left: SavedWorldActor, right: SavedWorldActor): b
 	);
 }
 
-function initialSnapshot(history: PerforceMapHistory) {
+function initialSnapshot(history: PerforceMapHistoryDocument) {
 	if (history.rangeStartSnapshot !== undefined) return history.rangeStartSnapshot;
 	if (history.baseline.status === "map_not_yet_created") return undefined;
 	throw new Error(
@@ -152,7 +152,7 @@ function initialSnapshot(history: PerforceMapHistory) {
 
 /** Creates the actor state immediately before the requested history range. */
 export function createMapHistoryPlaybackState(input: {
-	readonly history: PerforceMapHistory;
+	readonly history: PerforceMapHistoryDocument;
 }): MapHistoryPlaybackState {
 	return stateFromActors(initialSnapshot(input.history)?.actors ?? []);
 }
@@ -182,7 +182,7 @@ export function revertMapHistoryRevision(input: {
  * changelist. This performs no Perforce or filesystem work and retains only the requested state.
  */
 export function mapHistoryPlaybackFrameAt(input: {
-	readonly history: PerforceMapHistory;
+	readonly history: PerforceMapHistoryDocument;
 	readonly revisionIndex: number | undefined;
 }): MapHistoryPlaybackFrame {
 	const startSnapshot = initialSnapshot(input.history);
@@ -231,7 +231,7 @@ export function mapHistoryPlaybackFrameAt(input: {
  * actor facts exactly equal the retained end-of-range saved-world projection.
  */
 export function mapHistoryPlaybackMatchesRangeEnd(input: {
-	readonly history: PerforceMapHistory;
+	readonly history: PerforceMapHistoryDocument;
 }): boolean | undefined {
 	const snapshot = input.history.rangeEndSnapshot;
 	if (snapshot === undefined || snapshot.completeness !== "complete") return undefined;

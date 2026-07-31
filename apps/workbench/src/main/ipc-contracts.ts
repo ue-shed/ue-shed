@@ -59,8 +59,10 @@ import {
 } from "@ue-shed/protocol";
 import {
 	ContentObservatoryHistoryRequest,
+	ContentObservatoryTargetCatalog,
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
+import { ProjectRelativeMapPath } from "@ue-shed/map-history/contract";
 import { Schema, SchemaGetter } from "effect";
 import { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
 
@@ -464,6 +466,11 @@ export const invokeContracts = {
 		channel: "content-observatory:status",
 		args: EmptyArgs,
 		result: ContentObservatoryState
+	}),
+	"content-observatory:targets": invoke({
+		channel: "content-observatory:targets",
+		args: Schema.Tuple([ProjectRelativeMapPath]),
+		result: ContentObservatoryTargetCatalog
 	}),
 	"content-observatory:start": invoke({
 		channel: "content-observatory:start",

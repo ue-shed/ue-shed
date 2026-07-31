@@ -1,7 +1,12 @@
 import type { SavedWorld } from "@ue-shed/protocol";
 import { describe, expect, it } from "vitest";
 import { MapHistoryError } from "./errors.js";
-import { fastHistoryTargetedCoverage, proveFastHistoryActorTarget } from "./fast-history-target.js";
+import {
+	fastHistoryActorClassTargetedCoverage,
+	fastHistoryTargetedCoverage,
+	proveFastHistoryActorClassTargets,
+	proveFastHistoryActorTarget
+} from "./fast-history-target.js";
 import type { ResolvedPerforceMapScope } from "./perforce-map-scope.js";
 import type { PerforceDepotPath } from "./schema.js";
 
@@ -105,6 +110,37 @@ describe("proveFastHistoryActorTarget", () => {
 	});
 });
 
+describe("proveFastHistoryActorClassTargets", () => {
+	it("proves every current actor with the exact requested class", () => {
+		const proven = proveFastHistoryActorClassTargets({
+			scope: worldPartitionScope,
+			target: { classPath: eastActor.classPath, kind: "actor_class" },
+			world: world([eastActor])
+		});
+		expect(proven).not.toBeInstanceOf(MapHistoryError);
+		if (proven instanceof MapHistoryError) return;
+		expect(proven).toHaveLength(1);
+		expect(proven[0]).toMatchObject({
+			actor: eastActor,
+			packageName: eastPackage
+		});
+	});
+
+	it("rejects a class with no current actors instead of guessing historical membership", () => {
+		const proven = proveFastHistoryActorClassTargets({
+			scope: worldPartitionScope,
+			target: { classPath: "/Script/Game.Npc", kind: "actor_class" },
+			world: world([eastActor])
+		});
+		expect(proven).toBeInstanceOf(MapHistoryError);
+		if (proven instanceof MapHistoryError) {
+			expect(proven.kind).toBe("invalid_target");
+			expect(proven.message).toContain("No current actors match class");
+			expect(proven.recovery).toContain("deleted or reclassified");
+		}
+	});
+});
+
 describe("fastHistoryTargetedCoverage", () => {
 	it("never claims complete map or historical class coverage", () => {
 		const proven = proveFastHistoryActorTarget({
@@ -151,5 +187,37 @@ describe("fastHistoryTargetedCoverage", () => {
 			},
 			kind: "targeted"
 		});
+	});
+
+	it("labels class targeting as current-only coverage", () => {
+		const proven = proveFastHistoryActorClassTargets({
+			scope: worldPartitionScope,
+			target: { classPath: eastActor.classPath, kind: "actor_class" },
+			world: world([eastActor])
+		});
+		expect(proven).not.toBeInstanceOf(MapHistoryError);
+		if (proven instanceof MapHistoryError) return;
+		const coverage = fastHistoryActorClassTargetedCoverage({
+			mapDepotFileSpec:
+				"//Project/Main/Content/Fixture/History/L_MapHistoryWorld.*" as PerforceDepotPath,
+			mapPackageName: worldPartitionScope.mapPackageName,
+			proven,
+			target: { classPath: eastActor.classPath, kind: "actor_class" },
+			targetPackages: [
+				{
+					depotFileSpec:
+						"//Project/Main/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.*" as PerforceDepotPath,
+					proven: proven[0]!
+				}
+			]
+		});
+		expect(coverage.investigationTarget).toEqual({
+			classPath: eastActor.classPath,
+			currentActorCount: 1,
+			kind: "actor_class"
+		});
+		expect(coverage.acquiredPackages[1]?.role).toBe("investigation_target_class");
+		expect(coverage.claimsCompleteMapCoverage).toBe(false);
+		expect(coverage.claimsHistoricalClassCoverage).toBe(false);
 	});
 });

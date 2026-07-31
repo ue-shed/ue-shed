@@ -108,6 +108,21 @@ describe("Map History schemas", () => {
 		decoded satisfies PerforceFastMapHistoryQueryType;
 	});
 
+	it("round-trips a Fast History actor-class Investigation Target query", () => {
+		const fastQuery = {
+			limits: query.limits,
+			mapPath: query.mapPath,
+			mode: "fast",
+			projectRoot: query.projectRoot,
+			range: query.range,
+			target: { classPath: "/Script/Game.Npc", kind: "actor_class" }
+		};
+		const decoded = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)(fastQuery);
+		const encoded = Schema.encodeSync(PerforceFastMapHistoryQuery)(decoded);
+		expect(encoded).toEqual(fastQuery);
+		decoded satisfies PerforceFastMapHistoryQueryType;
+	});
+
 	it("round-trips Fast History targeted coverage without claiming complete map coverage", () => {
 		const fastHistory = {
 			baseline: { status: "map_not_yet_created" },

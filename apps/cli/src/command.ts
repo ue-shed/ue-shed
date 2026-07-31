@@ -92,6 +92,7 @@ export const CliCommand = Schema.TaggedUnion({
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
 	InputInspect: { path: Schema.String, ...Reader },
 	MapHistory: {
+		actorClass: Schema.optionalKey(Schema.String),
 		actorGuid: Schema.optionalKey(Schema.String),
 		actorPackage: Schema.optionalKey(Schema.String),
 		actorPath: Schema.optionalKey(Schema.String),
@@ -180,6 +181,7 @@ Usage:
   ue-shed input inspect <asset-or-project> [--reader <path>]
   ue-shed map history <project-root> <map-path> --since <ISO-UTC-or-duration> [--until <ISO-UTC>]
     [--mode deep|fast] [--actor-guid <guid>] [--actor-package <package>] [--actor-path <path>]
+    [--actor-class <class-path>]
     [--max-changelists <n>] [--max-packages <n>] [--max-materialized-files <n>]
     [--concurrency <n>] [--max-duration-ms <n>]
   ue-shed review sets validate <review-set>
@@ -336,6 +338,7 @@ function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, Cli
 			"--since",
 			"--until",
 			"--mode",
+			"--actor-class",
 			"--actor-guid",
 			"--actor-package",
 			"--actor-path",
@@ -366,23 +369,26 @@ function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, Cli
 		const actorGuid = parsed.values["--actor-guid"];
 		const actorPackage = parsed.values["--actor-package"];
 		const actorPath = parsed.values["--actor-path"];
+		const actorClass = parsed.values["--actor-class"];
 		const hasActorTarget =
-			actorGuid !== undefined || actorPackage !== undefined || actorPath !== undefined;
+			actorGuid !== undefined ||
+			actorPackage !== undefined ||
+			actorPath !== undefined ||
+			actorClass !== undefined;
 		if ((mode ?? "deep") === "deep" && hasActorTarget) {
-			return yield* usage("map history actor Investigation Target flags require --mode fast");
+			return yield* usage("map history Investigation Target flags require --mode fast");
 		}
 		if (mode === "fast") {
-			if (actorGuid !== undefined) {
-				if (actorPackage !== undefined || actorPath !== undefined) {
-					return yield* usage(
-						"map history Fast History accepts either --actor-guid or --actor-package with --actor-path"
-					);
-				}
-			} else if (actorPackage !== undefined && actorPath !== undefined) {
-				// path identity
-			} else {
+			const hasGuidTarget = actorGuid !== undefined;
+			const hasPathTarget = actorPackage !== undefined || actorPath !== undefined;
+			const hasCompletePathTarget = actorPackage !== undefined && actorPath !== undefined;
+			const targetKinds =
+				Number(hasGuidTarget) +
+				Number(hasCompletePathTarget) +
+				Number(actorClass !== undefined);
+			if (targetKinds !== 1 || (hasPathTarget && !hasCompletePathTarget)) {
 				return yield* usage(
-					"map history --mode fast requires --actor-guid <guid> or --actor-package <package> --actor-path <path>"
+					"map history --mode fast requires exactly one target: --actor-guid <guid>, --actor-package <package> with --actor-path <path>, or --actor-class <class-path>"
 				);
 			}
 		}
@@ -407,6 +413,7 @@ function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, Cli
 			"--max-packages"
 		);
 		return CliCommand.cases.MapHistory.make({
+			...(actorClass === undefined ? {} : { actorClass }),
 			...(actorGuid === undefined ? {} : { actorGuid }),
 			...(actorPackage === undefined ? {} : { actorPackage }),
 			...(actorPath === undefined ? {} : { actorPath }),

@@ -376,6 +376,13 @@ function fastQuery() {
 	});
 }
 
+function fastClassQuery() {
+	return Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+		...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
+		target: { classPath: actor.classPath, kind: "actor_class" }
+	});
+}
+
 function fastSource(materializedRoot: string): PerforceHistorySourceShape {
 	const base = source(materializedRoot);
 	return {
@@ -445,7 +452,10 @@ describe("readPerforceFastMapHistory", () => {
 				expect(result.coverage.kind).toBe("targeted");
 				expect(result.coverage.claimsCompleteMapCoverage).toBe(false);
 				expect(result.coverage.claimsHistoricalClassCoverage).toBe(false);
-				expect(result.coverage.investigationTarget.packageName).toBe(actor.packageName);
+				expect(result.coverage.investigationTarget.kind).toBe("actor");
+				if (result.coverage.investigationTarget.kind === "actor") {
+					expect(result.coverage.investigationTarget.packageName).toBe(actor.packageName);
+				}
 				expect(result.coverage.acquiredPackages.map((pkg) => pkg.role)).toEqual([
 					"selected_map",
 					"investigation_target_actor"
@@ -493,4 +503,37 @@ describe("readPerforceFastMapHistory", () => {
 			expect(observedHistoricalRoots).toEqual([]);
 		});
 	});
+
+	it.effect("scans every current actor package for an exact class target", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const materializedRoot = yield* Effect.acquireRelease(
+					Effect.promise(() =>
+						mkdtemp(resolve(tmpdir(), "ue-shed-map-history-fast-class-"))
+					),
+					(root) => Effect.promise(() => rm(root, { force: true, recursive: true }))
+				);
+				const layer = Layer.provide(
+					mapHistoryLayer,
+					Layer.merge(
+						readerLayer([]),
+						makePerforceHistorySourceTestLayer(fastSource(materializedRoot))
+					)
+				);
+				const result = yield* readPerforceFastMapHistory(fastClassQuery()).pipe(
+					Effect.provide(layer)
+				);
+
+				expect(result.coverage.investigationTarget).toEqual({
+					classPath: actor.classPath,
+					currentActorCount: 1,
+					kind: "actor_class"
+				});
+				expect(result.coverage.acquiredPackages.map((pkg) => pkg.role)).toEqual([
+					"selected_map",
+					"investigation_target_class"
+				]);
+			})
+		)
+	);
 });

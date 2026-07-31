@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import type { PerforceMapHistory } from "@ue-shed/map-history/contract";
+import type { PerforceMapHistoryDocument } from "@ue-shed/map-history/contract";
 import type { MapHistoryPlaybackFrame } from "@ue-shed/map-history/playback";
 import {
 	PointMapCanvas,
@@ -43,7 +43,7 @@ function movementTrail(event: WorldLogActorEvent): string | undefined {
 
 export function WorldLogActorAtlas(props: {
 	readonly frame: MapHistoryPlaybackFrame;
-	readonly history: PerforceMapHistory;
+	readonly history: PerforceMapHistoryDocument;
 	readonly onSelectActor: (key: string | undefined) => void;
 	readonly onSelectActorEvent: (input: {
 		readonly actorKey: string;

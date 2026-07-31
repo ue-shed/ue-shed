@@ -325,6 +325,32 @@ it.effect("parses Fast History Investigation Target input", () =>
 	)
 );
 
+it.effect("parses a Fast History actor-class target", () =>
+	parseCliCommand([
+		"map",
+		"history",
+		"project",
+		"Content/Maps/L_Example.umap",
+		"--since",
+		"7 days",
+		"--mode",
+		"fast",
+		"--actor-class",
+		"/Script/Game.Npc"
+	]).pipe(
+		Effect.tap((command) =>
+			Effect.sync(() => {
+				expect(command).toMatchObject({
+					_tag: "MapHistory",
+					actorClass: "/Script/Game.Npc",
+					mode: "fast"
+				});
+			})
+		),
+		Effect.asVoid
+	)
+);
+
 it.effect("rejects Fast History without an Investigation Target", () =>
 	parseCliCommand([
 		"map",

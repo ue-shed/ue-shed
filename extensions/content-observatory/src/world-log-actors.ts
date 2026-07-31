@@ -1,7 +1,7 @@
 import type {
 	ActorIdentity,
 	MapChange,
-	PerforceMapHistory,
+	PerforceMapHistoryDocument,
 	PerforceMapRevision
 } from "@ue-shed/map-history/contract";
 import type { SavedWorldActor } from "@ue-shed/protocol";
@@ -89,7 +89,9 @@ function actorSortLabel(actor: SavedWorldActor): string {
  * Merges the range-end snapshot with actor evidence from the changelist timeline. Removed actors
  * remain searchable as history-only entries, while unchanged actors retain a zero event count.
  */
-export function collectWorldLogActors(history: PerforceMapHistory): readonly WorldLogActor[] {
+export function collectWorldLogActors(
+	history: PerforceMapHistoryDocument
+): readonly WorldLogActor[] {
 	const entries = new Map<
 		string,
 		{

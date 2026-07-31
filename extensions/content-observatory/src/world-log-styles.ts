@@ -92,6 +92,150 @@ export const styles = stylex.create({
 		cursor: "pointer"
 	},
 	mapChoiceActive: { borderColor: "#e1b85e", color: "#f0d79c", backgroundColor: "#312819" },
+	historyModes: {
+		display: "flex",
+		alignItems: "center",
+		gap: 5,
+		marginTop: -8,
+		color: "#839092",
+		fontSize: 9,
+		letterSpacing: ".1em"
+	},
+	historyModeButton: {
+		border: "1px solid #39464a",
+		backgroundColor: { default: "transparent", ":hover": "#202a2d" },
+		color: "#9aa6a8",
+		padding: "7px 8px",
+		fontSize: 9,
+		fontWeight: 800,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
+	historyModeButtonActive: {
+		borderColor: "#73c7d0",
+		backgroundColor: "#153034",
+		color: "#b7edf0"
+	},
+	fastTargetPanel: {
+		gridColumn: "1 / -1",
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) auto",
+		gap: "12px 18px",
+		padding: "13px 14px",
+		border: "1px solid #405053",
+		backgroundColor: "#0d1516",
+		color: "#98a8a8",
+		fontSize: 10,
+		lineHeight: 1.45
+	},
+	loadTargetsButton: {
+		alignSelf: "start",
+		border: "1px solid #73c7d0",
+		backgroundColor: { default: "transparent", ":hover": "#17383b", ":disabled": "#172224" },
+		color: { default: "#b7edf0", ":disabled": "#647678" },
+		padding: "8px 10px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em",
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	},
+	fastTargetModes: {
+		display: "flex",
+		alignItems: "center",
+		gap: 5,
+		gridColumn: "1 / -1",
+		color: "#839092",
+		fontSize: 8,
+		letterSpacing: ".08em"
+	},
+	fastTargetMode: {
+		border: "1px solid #39464a",
+		backgroundColor: { default: "transparent", ":hover": "#202a2d" },
+		color: "#9aa6a8",
+		padding: "6px 8px",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
+	fastTargetModeActive: {
+		borderColor: "#73c7d0",
+		backgroundColor: "#153034",
+		color: "#b7edf0"
+	},
+	targetSearchLabel: {
+		display: "grid",
+		gridColumn: "1 / -1",
+		gap: 5,
+		color: "#849596",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em"
+	},
+	targetSearchInput: {
+		width: "100%",
+		boxSizing: "border-box",
+		border: "1px solid #405053",
+		backgroundColor: "#0a1011",
+		color: "#e3edeb",
+		padding: "8px 9px",
+		fontFamily: "monospace",
+		fontSize: 10,
+		outline: { default: "none", ":focus": "1px solid #73c7d0" }
+	},
+	targetList: {
+		gridColumn: "1 / -1",
+		maxHeight: 260,
+		overflowY: "auto",
+		listStyle: "none",
+		margin: 0,
+		padding: 0,
+		borderTop: "1px solid #2e3a3c"
+	},
+	targetRow: {
+		width: "100%",
+		display: "grid",
+		gridTemplateColumns: "minmax(130px, .6fr) minmax(180px, 1fr) minmax(180px, 1.3fr)",
+		gap: 8,
+		border: 0,
+		borderBottom: "1px solid #273336",
+		backgroundColor: { default: "transparent", ":hover": "#1b282a" },
+		color: "#aebcbb",
+		padding: "8px 9px",
+		textAlign: "left",
+		cursor: "pointer",
+		fontSize: 9,
+		"@media (max-width: 720px)": { gridTemplateColumns: "1fr" }
+	},
+	targetClassRow: {
+		width: "100%",
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) auto",
+		alignItems: "center",
+		gap: 8,
+		border: 0,
+		borderBottom: "1px solid #273336",
+		backgroundColor: { default: "transparent", ":hover": "#1b282a" },
+		color: "#aebcbb",
+		padding: "8px 9px",
+		textAlign: "left",
+		cursor: "pointer",
+		fontSize: 9
+	},
+	targetRowActive: {
+		backgroundColor: "#263337",
+		color: "#f0f5f1",
+		boxShadow: "inset 2px 0 #e1b85e"
+	},
+	targetRowSmall: {
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		color: "#718486",
+		fontFamily: "monospace"
+	},
+	targetEmpty: { gridColumn: "1 / -1", margin: 0, color: "#7f9091" },
+	targetError: { gridColumn: "1 / -1", margin: 0, color: "#e9aa97" },
 	rangeControls: {
 		display: "flex",
 		alignItems: "center",
@@ -213,6 +357,15 @@ export const styles = stylex.create({
 	staleResult: {
 		marginTop: 14,
 		padding: "12px 14px",
+		border: "1px solid #826d3d",
+		backgroundColor: "#211d12",
+		color: "#ddca92",
+		fontSize: 10,
+		lineHeight: 1.5
+	},
+	fastCoverageNotice: {
+		marginTop: 14,
+		padding: "13px 14px",
 		border: "1px solid #826d3d",
 		backgroundColor: "#211d12",
 		color: "#ddca92",

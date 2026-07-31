@@ -141,7 +141,8 @@ function buildRegistrationLayer(recorder: Recorder) {
 		status: () =>
 			recorder
 				.record("contentObservatory.status")
-				.pipe(Effect.as({ status: "not_configured" as const }))
+				.pipe(Effect.as({ status: "not_configured" as const })),
+		targets: () => Effect.die("target discovery is not used by this registration test")
 	});
 
 	const inputAtlas = makeWorkbenchInputAtlasTestLayer({
@@ -425,13 +426,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 67 contract channels", () =>
+it.effect("registers exactly the 68 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(67);
+		expect(result).toHaveLength(68);
 	})
 );
 
@@ -485,6 +486,7 @@ it.effect("dispatches Content Observatory query controls to its scoped service",
 			Effect.gen(function* () {
 				yield* ipc.invoke("content-observatory:status");
 				yield* ipc.invoke("content-observatory:start", {
+					mode: "deep",
 					limits: {
 						maxChangelists: 250,
 						maxConcurrency: 4,

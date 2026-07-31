@@ -197,13 +197,23 @@ readPerforceFastMapHistory({
 	limits,
 	target: { kind: "actor", identity }
 });
+
+readPerforceFastMapHistory({
+	mode: "fast",
+	projectRoot,
+	mapPath,
+	range,
+	limits,
+	target: { kind: "actor_class", classPath: "/Script/Game.Npc" }
+});
 ```
 
 **Deep History** reconstructs the complete selected-map scope for a bounded range. **Fast History**
-is a separate request mode: it accepts one present-day actor Investigation Target, proves that
-actor's package from the SavedWorld projection (`actorGuid`, `actorPath`, `classPath`,
-`packageName`), and scans only the selected map plus that proven package. Fast History results
-always include targeted-coverage metadata and never claim complete map or historical-class coverage.
+is a separate request mode. It accepts either one present-day actor Investigation Target, proving
+that actor's package from the SavedWorld projection, or an exact current actor class, proving every
+current member's package. It scans only the selected map plus those proven packages. Fast History
+results always include targeted-coverage metadata and never claim complete map or historical-class
+coverage; deleted or historically reclassified class members require Deep History.
 
 The CLI and Workbench use the same service. Workbench owns presentation only and does not receive
 filesystem, subprocess, or raw Perforce authority.
@@ -213,6 +223,7 @@ The headless CLI mirrors those operations:
 ```text
 ue-shed map history <project-root> <map-path> --since "7 days" [--until <ISO-UTC>]
 ue-shed map history <project-root> <map-path> --since "7 days" --mode fast --actor-guid <guid>
+ue-shed map history <project-root> <map-path> --since "7 days" --mode fast --actor-class <class-path>
 ```
 
 `--since` accepts ISO-8601 UTC or an Effect duration such as `7 days`; omitted `--until` means the

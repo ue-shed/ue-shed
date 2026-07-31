@@ -206,7 +206,7 @@ Record a deterministic journey that scans the World Partition fixture, selects a
 examines a label change, views addition/removal across time, inspects package evidence, and exposes
 the final unclassified package edit. No Unreal launch is required.
 
-### Phase 8: Fast History investigation targets
+### Phase 8: Fast History investigation targets — FIRST TWO SLICES COMPLETE (2026-07-31)
 
 After the Deep History vertical is complete and its cost/coverage is demonstrated, add a separate
 Fast History request mode. Support a selected actor first, then a current-class candidate set from
@@ -215,8 +215,19 @@ do not reuse Deep History View Filters as hidden acquisition constraints.
 
 **Headless foundation (2026-07-30)**: `@ue-shed/map-history` and `ue-shed map history --mode fast`
 now support a single-actor Investigation Target with proven package-scope acquisition and explicit
-targeted-coverage metadata. Workbench UI for Fast History remains deferred with the rest of this
-phase.
+targeted-coverage metadata. The CLI now also accepts an exact `--actor-class` target and proves
+every current member's package before acquisition.
+
+**Workbench first slice (2026-07-31)**: World Log now defaults to Deep History and exposes Fast
+History as a separate choice. Fast History reads the current saved-world actor list locally, lets
+the user search and select one actor, sends the tagged Fast request through IPC, and shows the
+targeted-coverage warning on the result.
+
+**Workbench second slice (2026-07-31)**: Fast History now has separate Actor and Actor Class
+targets. The class list is built from the current saved-world actor projection, sends an exact
+class target through the same IPC contract, and labels the result with its current actor count.
+Target proof errors identify missing classes and explain when Deep History is needed for deleted or
+reclassified actors. The deterministic showcase journey remains for the next slice.
 
 **Acceptance**:
 

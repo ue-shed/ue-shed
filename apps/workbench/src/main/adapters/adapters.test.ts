@@ -142,6 +142,7 @@ it.effect("ElectronIpc encodes transformed result fields before crossing the bou
 				},
 				projectRoot: "C:/Project",
 				request: {
+					mode: "deep",
 					limits: {
 						maxChangelists: 250,
 						maxConcurrency: 4,
@@ -161,6 +162,7 @@ it.effect("ElectronIpc encodes transformed result fields before crossing the bou
 				Effect.succeed(state)
 			);
 			const result = yield* probe.invoke("content-observatory:start", {
+				mode: "deep",
 				limits: {
 					maxChangelists: 250,
 					maxConcurrency: 4,

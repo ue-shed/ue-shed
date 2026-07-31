@@ -2,13 +2,17 @@ import {
 	ContentObservatoryClient,
 	ContentObservatoryClientError,
 	ContentObservatoryHistoryRequest,
+	ContentObservatoryTargetCatalog,
+	decodeContentObservatoryTargetCatalog,
 	decodeContentObservatoryState,
 	type ContentObservatoryClientShape
 } from "@ue-shed/extension-content-observatory/client";
 import { Effect, Schema } from "effect";
+import { ProjectRelativeMapPath } from "@ue-shed/map-history/contract";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 const encodeHistoryRequest = Schema.encodeUnknownEffect(ContentObservatoryHistoryRequest);
+const decodeTargetMapPath = Schema.decodeUnknownEffect(ProjectRelativeMapPath);
 
 function request(
 	operation: string,
@@ -19,6 +23,21 @@ function request(
 		catch: (cause) => new ContentObservatoryClientError({ cause, operation, recovery })
 	}).pipe(
 		Effect.flatMap(decodeContentObservatoryState),
+		Effect.mapError(
+			(cause) => new ContentObservatoryClientError({ cause, operation, recovery })
+		)
+	);
+}
+
+function targetRequest(
+	operation: string,
+	invoke: () => Promise<unknown>
+): Effect.Effect<ContentObservatoryTargetCatalog, ContentObservatoryClientError> {
+	return Effect.tryPromise({
+		try: invoke,
+		catch: (cause) => new ContentObservatoryClientError({ cause, operation, recovery })
+	}).pipe(
+		Effect.flatMap(decodeContentObservatoryTargetCatalog),
 		Effect.mapError(
 			(cause) => new ContentObservatoryClientError({ cause, operation, recovery })
 		)
@@ -49,5 +68,22 @@ export const contentObservatoryClient: ContentObservatoryClientShape = ContentOb
 	),
 	status: Effect.fn("ContentObservatoryClient.status")(() =>
 		request("contentObservatory.status", () => window.ueShed.contentObservatory.status())
+	),
+	targets: Effect.fn("ContentObservatoryClient.targets")((mapPath: string) =>
+		decodeTargetMapPath(mapPath).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ContentObservatoryClientError({
+						cause,
+						operation: "contentObservatory.targets",
+						recovery
+					})
+			),
+			Effect.flatMap((decodedMapPath) =>
+				targetRequest("contentObservatory.targets", () =>
+					window.ueShed.contentObservatory.targets(decodedMapPath)
+				)
+			)
+		)
 	)
 });

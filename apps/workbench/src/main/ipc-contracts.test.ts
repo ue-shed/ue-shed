@@ -156,8 +156,10 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"camera:status": [],
 	"camera:configure": [cameraStatus.config],
 	"content-observatory:status": [],
+	"content-observatory:targets": ["Content/Fixture/History/L_MapHistoryWorld.umap"],
 	"content-observatory:start": [
 		{
+			mode: "deep",
 			limits: {
 				maxChangelists: 250,
 				maxConcurrency: 4,
@@ -288,6 +290,21 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"camera:status": cameraStatus,
 	"camera:configure": cameraStatus,
 	"content-observatory:status": { status: "not_configured" },
+	"content-observatory:targets": {
+		authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
+		completeness: "complete",
+		contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+		diagnostics: [],
+		mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap",
+		actors: [],
+		sourceKind: "level",
+		summary: {
+			failedPackages: 0,
+			partialPackages: 0,
+			resolvedActors: 0,
+			scannedPackages: 1
+		}
+	},
 	"content-observatory:start": { status: "not_configured" },
 	"content-observatory:cancel": { status: "not_configured" },
 	"map-review:load": { status: "not_configured" },
@@ -376,6 +393,7 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"camera:presentation-budget": [Number.NaN],
 	"camera:configure": [{ paused: true }],
 	"content-observatory:start": [{ mapPath: "" }],
+	"content-observatory:targets": [""],
 	"map-review:preview-candidate": [""],
 	"map-review:authoring-patch": [{ patch: {}, sessionId: "" }],
 	"map-review:authoring-reframe": [{ sessionId: "" }],
@@ -389,9 +407,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 67 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(67);
-	expect(new Set(invokeChannelNames).size).toBe(67);
+it("registers exactly 68 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(68);
+	expect(new Set(invokeChannelNames).size).toBe(68);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

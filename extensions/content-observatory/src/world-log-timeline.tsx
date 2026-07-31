@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import type { MapChange, PerforceMapHistory } from "@ue-shed/map-history/contract";
+import type { MapChange, PerforceMapHistoryDocument } from "@ue-shed/map-history/contract";
 import { For, Show, createMemo } from "solid-js";
 import {
 	actorKeyFromChange,
@@ -24,7 +24,7 @@ export type WorldLogChangeFilter = "all" | MapChange["kind"];
 export function WorldLogTimeline(props: {
 	readonly actorKey: string | undefined;
 	readonly filter: WorldLogChangeFilter;
-	readonly history: PerforceMapHistory;
+	readonly history: PerforceMapHistoryDocument;
 	readonly onSelect: (selection: {
 		readonly actorKey: string | undefined;
 		readonly changeIndex: number;
@@ -254,7 +254,7 @@ export function WorldLogTimeline(props: {
 }
 
 function WorldLogEvidencePanel(props: {
-	readonly history: PerforceMapHistory;
+	readonly history: PerforceMapHistoryDocument;
 	readonly selected: WorldLogChangelistSelection | undefined;
 }) {
 	const revision = createMemo(() =>

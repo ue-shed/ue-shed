@@ -753,22 +753,27 @@ export function executeCommand(
 				const mode = command.mode ?? "deep";
 				if (mode === "fast") {
 					const target =
-						command.actorGuid !== undefined
+						command.actorClass !== undefined
 							? {
-									identity: {
-										actorGuid: command.actorGuid,
-										kind: "actor_guid" as const
-									},
-									kind: "actor" as const
+									classPath: command.actorClass,
+									kind: "actor_class" as const
 								}
-							: {
-									identity: {
-										actorPath: command.actorPath ?? "",
-										kind: "object_path" as const,
-										packageName: command.actorPackage ?? ""
-									},
-									kind: "actor" as const
-								};
+							: command.actorGuid !== undefined
+								? {
+										identity: {
+											actorGuid: command.actorGuid,
+											kind: "actor_guid" as const
+										},
+										kind: "actor" as const
+									}
+								: {
+										identity: {
+											actorPath: command.actorPath ?? "",
+											kind: "object_path" as const,
+											packageName: command.actorPackage ?? ""
+										},
+										kind: "actor" as const
+									};
 					const query = yield* Schema.decodeUnknownEffect(PerforceFastMapHistoryQuery)({
 						limits,
 						mapPath: command.mapPath,

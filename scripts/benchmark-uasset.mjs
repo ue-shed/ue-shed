@@ -3,9 +3,19 @@ import {
 	cpus,
 	arch as operatingSystemArchitecture,
 	platform as operatingSystemPlatform,
+	tmpdir,
 	totalmem
 } from "node:os";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -283,11 +293,13 @@ function distribution(samples) {
 
 function measureScenario(options) {
 	for (let index = 0; index < options.warmups; index += 1) {
+		options.beforeInvoke?.({ index, phase: "warmup" });
 		invoke(options.command, options.arguments, options);
 	}
 	const samples = [];
 	let lastStdout = "";
 	for (let index = 0; index < options.runs; index += 1) {
+		options.beforeInvoke?.({ index, phase: "timed" });
 		const { elapsedMs, stdout } = invoke(options.command, options.arguments, options);
 		samples.push(elapsedMs);
 		lastStdout = stdout;
@@ -351,15 +363,29 @@ function validateNativeInspection(output) {
 	}
 }
 
-function validateNativeScan(output) {
-	const records = output
+function parseNativeScan(output) {
+	return output
 		.trim()
 		.split(/\r?\n/)
 		.filter((line) => line.length > 0)
 		.map((line) => parseJsonOutput("Native scan", line));
+}
+
+function validateNativeScan(output) {
+	const records = parseNativeScan(output);
 	if (!records.some((record) => record?.event === "summary")) {
 		throw new Error("Native scan did not return a summary record.");
 	}
+}
+
+function observeNativeScan(output) {
+	const summary = parseNativeScan(output).find((record) => record?.event === "summary");
+	if (summary === undefined) throw new Error("Native scan did not return a summary record.");
+	return {
+		cacheHits: summary.cacheHits,
+		emittedAssets: summary.emittedAssets,
+		scannedAssets: summary.scannedAssets
+	};
 }
 
 function validateNativeProjection(output, eventName, recordEvent = `${eventName}_record`) {
@@ -423,7 +449,7 @@ function validateEnhancedInputReport(output) {
 }
 
 function validateHelp(output) {
-	if (!output.includes("UE Shed") && !output.includes("uasset inspect")) {
+	if (!output.includes("UE Shed") && !output.includes("uasset — Unreal asset inspection")) {
 		throw new Error("CLI help output did not contain its command banner.");
 	}
 }
@@ -555,11 +581,17 @@ function printHuman(result) {
 				`min=${measured.minMs.toFixed(3)} ms max=${measured.maxMs.toFixed(3)} ms ` +
 				`n=${measured.count}\n`
 		);
-		if (scenario.observed !== undefined) {
+		if (scenario.observed?.parseMs !== undefined) {
 			process.stdout.write(
 				`${" ".repeat(30)}  in-process parse=${scenario.observed.parseMs.toFixed(3)} ms ` +
 					`(load=${scenario.observed.loadMs.toFixed(3)} walk=${scenario.observed.walkMs.toFixed(3)}) ` +
 					`exports=${scenario.observed.exports} properties=${scenario.observed.properties}\n`
+			);
+		}
+		if (scenario.observed?.scannedAssets !== undefined) {
+			process.stdout.write(
+				`${" ".repeat(30)}  scanned=${scenario.observed.scannedAssets} ` +
+					`emitted=${scenario.observed.emittedAssets} cacheHits=${scenario.observed.cacheHits}\n`
 			);
 		}
 		if (scenario.memory !== undefined) {
@@ -616,6 +648,9 @@ function main() {
 			`Release uasset executable not found at ${releaseExecutable}. Run without --no-build first.`
 		);
 	}
+	const temporaryRoot = mkdtempSync(join(tmpdir(), "ue-shed-uasset-benchmark-"));
+	process.once("exit", () => rmSync(temporaryRoot, { force: true, recursive: true }));
+	const headerCachePath = join(temporaryRoot, "header-cache.json");
 
 	const scenarios = [];
 	const nativeArguments = ["inspect", benchmarkAsset, "--format", "json"];
@@ -629,6 +664,70 @@ function main() {
 			validate: validateNativeInspection,
 			warmups: options.warmups,
 			workload: relative(repositoryRoot, benchmarkAsset)
+		})
+	);
+	for (const concurrency of [1, 4]) {
+		scenarios.push(
+			measureScenario({
+				arguments: [
+					"scan",
+					fixtureRoot,
+					"--format",
+					"json",
+					"--depth",
+					"header",
+					"--concurrency",
+					String(concurrency)
+				],
+				command: releaseExecutable,
+				id: `native.scan.header.concurrency${concurrency}`,
+				notes: `Release native header scan with explicit concurrency ${concurrency}.`,
+				observe: observeNativeScan,
+				runs: options.nativeRuns,
+				validate: validateNativeScan,
+				warmups: options.warmups,
+				workload: relative(repositoryRoot, fixtureRoot)
+			})
+		);
+	}
+	const cachedHeaderArguments = [
+		"scan",
+		fixtureRoot,
+		"--format",
+		"json",
+		"--depth",
+		"header",
+		"--cache",
+		headerCachePath,
+		"--concurrency",
+		"4"
+	];
+	scenarios.push(
+		measureScenario({
+			arguments: cachedHeaderArguments,
+			beforeInvoke: () => rmSync(headerCachePath, { force: true }),
+			command: releaseExecutable,
+			id: "native.scan.header.cache.cold",
+			notes: "Header cache absent before every sample; filesystem caches remain warm.",
+			observe: observeNativeScan,
+			runs: options.nativeRuns,
+			validate: validateNativeScan,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	invoke(releaseExecutable, cachedHeaderArguments, { validate: validateNativeScan });
+	scenarios.push(
+		measureScenario({
+			arguments: cachedHeaderArguments,
+			command: releaseExecutable,
+			id: "native.scan.header.cache.warm",
+			notes: "Header cache seeded before warmups and retained across samples.",
+			observe: observeNativeScan,
+			runs: options.nativeRuns,
+			validate: validateNativeScan,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
 		})
 	);
 	scenarios.push(

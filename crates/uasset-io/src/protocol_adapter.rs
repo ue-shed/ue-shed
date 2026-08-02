@@ -8,8 +8,11 @@ use std::io::{self, Read, Write};
 
 use serde_json::{Value, json};
 
+use crate::cancellation::CancellationToken;
 use crate::direct_executor;
-use crate::protocol::{Contract, Operation, Request, ResultFrame, decode_event, decode_request};
+use crate::protocol::{
+    Contract, Operation, Request, ResultFrame, decode_event, decode_request_frame,
+};
 use crate::protocol_result::{
     InspectionStatus, SavedAsset, SavedAssetDecodeError, SavedAssetDecodeErrorKind,
     SavedAssetInspection, SavedBone, SavedCurveKey, SavedCurveRow, SavedEnumEntry,
@@ -34,14 +37,15 @@ pub fn run() -> u8 {
         eprintln!("uasset protocol: request exceeds 4 MiB");
         return EXIT_MALFORMED;
     }
-    let request = match decode_request(&request_bytes) {
+    let request = match decode_request_frame(&request_bytes, MAX_REQUEST_BYTES) {
         Ok(request) => request,
         Err(error) => {
             eprintln!("uasset protocol: {error}");
             return EXIT_MALFORMED;
         }
     };
-    let mut emitter = Emitter::new(&request);
+    let cancellation = CancellationToken::new();
+    let mut emitter = Emitter::new(&request, cancellation.clone());
     if let Err(error) = emitter.emit(
         "accepted",
         json!({ "operation": operation_kind(&request.operation) }),
@@ -49,7 +53,7 @@ pub fn run() -> u8 {
         eprintln!("uasset protocol: {error}");
         return EXIT_INTERNAL;
     }
-    let result = execute_direct(&request, &mut emitter);
+    let result = execute_direct(&request, &mut emitter, &cancellation);
     let terminal = match result {
         Ok(partial) => emitter.emit(
             "completed",
@@ -78,10 +82,12 @@ struct Emitter {
     request_id: String,
     sequence: u64,
     maximum_output_bytes: usize,
+    emitted_output_bytes: usize,
+    cancellation: CancellationToken,
 }
 
 impl Emitter {
-    fn new(request: &Request) -> Self {
+    fn new(request: &Request, cancellation: CancellationToken) -> Self {
         Self {
             contract: request.contract.clone(),
             request_id: request.request_id.clone(),
@@ -90,6 +96,8 @@ impl Emitter {
                 .limits
                 .maximum_output_bytes
                 .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES) as usize,
+            emitted_output_bytes: 0,
+            cancellation,
         }
     }
 
@@ -107,6 +115,9 @@ impl Emitter {
     }
 
     fn emit_internal(&mut self, kind: &str, fields: Value, validate: bool) -> Result<(), String> {
+        self.cancellation
+            .checkpoint("event emission")
+            .map_err(|stage| format!("operation cancelled during {stage}"))?;
         let mut object = fields
             .as_object()
             .cloned()
@@ -125,17 +136,42 @@ impl Emitter {
             decode_event(&bytes)
                 .map_err(|error| format!("internal protocol event failed validation: {error}"))?;
         }
+        let frame_bytes = bytes
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| "protocol output size overflowed".to_owned())?;
+        let output_bytes = self
+            .emitted_output_bytes
+            .checked_add(frame_bytes)
+            .ok_or_else(|| "protocol output size overflowed".to_owned())?;
+        if output_bytes > self.maximum_output_bytes {
+            return Err(format!(
+                "protocol output exceeded configured limit of {} bytes",
+                self.maximum_output_bytes
+            ));
+        }
         let mut stdout = io::stdout().lock();
-        stdout
+        let result = stdout
             .write_all(&bytes)
             .and_then(|()| stdout.write_all(b"\n"))
             .and_then(|()| stdout.flush())
-            .map_err(|error| format!("could not write protocol event: {error}"))?;
+            .map_err(|error| format!("could not write protocol event: {error}"));
+        if let Err(error) = result {
+            self.cancellation.cancel();
+            return Err(error);
+        }
+        self.emitted_output_bytes = output_bytes;
+        self.cancellation
+            .checkpoint("event emission")
+            .map_err(|stage| format!("operation cancelled during {stage}"))?;
         self.sequence += 1;
         Ok(())
     }
 
     fn emit_result_frame(&mut self, result: &ResultFrame) -> Result<(), Failure> {
+        self.cancellation
+            .checkpoint("event emission")
+            .map_err(cancellation_failure)?;
         let mut value = serde_json::to_value(result).map_err(|error| Failure {
             code: "contract".to_owned(),
             message: format!("could not serialize typed result: {error}"),
@@ -156,20 +192,14 @@ impl Emitter {
                 }
             }
         }
-        let result_bytes = serde_json::to_vec(&value).map_err(|error| Failure {
-            code: "contract".to_owned(),
-            message: format!("could not serialize typed result: {error}"),
-            retry_safe: false,
-        })?;
-        if result_bytes.len() > self.maximum_output_bytes {
-            return Err(Failure {
-                code: "output_limit".to_owned(),
-                message: "result exceeded the configured output limit".to_owned(),
-                retry_safe: false,
-            });
-        }
+        self.cancellation
+            .checkpoint("event emission")
+            .map_err(cancellation_failure)?;
+        self.cancellation
+            .checkpoint("event emission")
+            .map_err(cancellation_failure)?;
         self.emit_unvalidated("result", json!({ "result": value }))
-            .map_err(internal_failure)
+            .map_err(emission_failure)
     }
 }
 
@@ -191,15 +221,21 @@ fn operation_kind(operation: &Operation) -> &'static str {
     }
 }
 
-fn execute_direct(request: &Request, emitter: &mut Emitter) -> Result<bool, Failure> {
+fn execute_direct(
+    request: &Request,
+    emitter: &mut Emitter,
+    cancellation: &CancellationToken,
+) -> Result<bool, Failure> {
     match &request.operation {
         Operation::Inspect { asset_path } => {
-            let (inspection, partial) = direct_executor::inspect(asset_path)?;
+            let (inspection, partial) =
+                direct_executor::inspect_with_cancellation(asset_path, cancellation)?;
             emit_typed_result(emitter, &ResultFrame::Inspect { inspection })?;
             Ok(partial)
         }
         Operation::Authoring { asset_path } => {
-            let (snapshot, partial) = direct_executor::authoring(asset_path)?;
+            let (snapshot, partial) =
+                direct_executor::authoring_with_cancellation(asset_path, cancellation)?;
             emit_typed_result(emitter, &ResultFrame::Authoring { snapshot })?;
             Ok(partial)
         }
@@ -208,7 +244,7 @@ fn execute_direct(request: &Request, emitter: &mut Emitter) -> Result<bool, Fail
             if !empty_paths {
                 emit_progress(emitter, 0, "discovering", None)?;
             }
-            let output = direct_executor::scan(request)?;
+            let output = direct_executor::scan_with_cancellation(request, cancellation)?;
             if !empty_paths {
                 emit_progress(
                     emitter,
@@ -243,7 +279,7 @@ fn execute_direct(request: &Request, emitter: &mut Emitter) -> Result<bool, Fail
             if !empty_paths {
                 emit_progress(emitter, 0, "discovering", None)?;
             }
-            let output = direct_executor::extract_text(request)?;
+            let output = direct_executor::extract_text_with_cancellation(request, cancellation)?;
             if !empty_paths {
                 emit_progress(
                     emitter,
@@ -269,7 +305,7 @@ fn execute_direct(request: &Request, emitter: &mut Emitter) -> Result<bool, Fail
             if !empty_paths {
                 emit_progress(emitter, 0, "discovering", None)?;
             }
-            let output = direct_executor::extract_texture(request)?;
+            let output = direct_executor::extract_texture_with_cancellation(request, cancellation)?;
             if !empty_paths {
                 emit_progress(
                     emitter,
@@ -292,7 +328,7 @@ fn execute_direct(request: &Request, emitter: &mut Emitter) -> Result<bool, Fail
         }
         Operation::SavedWorld { .. } => {
             emit_progress(emitter, 0, "discovering", None)?;
-            let output = direct_executor::saved_world(request)?;
+            let output = direct_executor::saved_world_with_cancellation(request, cancellation)?;
             let scanned_packages = output.world.summary.scanned_packages;
             let partial = output.partial;
             emit_typed_result(
@@ -322,7 +358,7 @@ fn emit_progress(
     if let Some(total_items) = total_items {
         fields["totalItems"] = Value::from(total_items);
     }
-    emitter.emit("progress", fields).map_err(internal_failure)
+    emitter.emit("progress", fields).map_err(emission_failure)
 }
 
 fn emit_diagnostic(
@@ -338,14 +374,27 @@ fn emit_diagnostic(
                 "severity": "warning"
             }),
         )
-        .map_err(internal_failure)
+        .map_err(emission_failure)
 }
 
-fn internal_failure(message: String) -> Failure {
+fn emission_failure(message: String) -> Failure {
     Failure {
-        code: "protocol".to_owned(),
+        code: if message.starts_with("protocol output exceeded") {
+            "output_limit"
+        } else {
+            "protocol"
+        }
+        .to_owned(),
         message,
         retry_safe: false,
+    }
+}
+
+fn cancellation_failure(stage: &'static str) -> Failure {
+    Failure {
+        code: "cancelled".to_owned(),
+        message: format!("operation cancelled during {stage}"),
+        retry_safe: true,
     }
 }
 
@@ -856,4 +905,46 @@ fn normalize_asset(value: &mut Value) {
 
 fn retain(object: &mut serde_json::Map<String, Value>, keys: &[&str]) {
     object.retain(|key, _| keys.iter().any(|candidate| *candidate == key));
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::Emitter;
+    use crate::cancellation::CancellationToken;
+    use crate::protocol::decode_request;
+
+    const VALID_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/scan-request.json"
+    );
+
+    #[test]
+    fn event_emission_checks_cancellation_before_writing() {
+        let request = decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let mut emitter = Emitter::new(&request, cancellation);
+        let error = emitter
+            .emit("accepted", json!({ "operation": "scan" }))
+            .expect_err("cancelled emission must not write a frame");
+        assert!(error.contains("event emission"));
+        assert_eq!(emitter.sequence, 0);
+    }
+
+    #[test]
+    fn event_emission_applies_one_cumulative_budget_to_every_frame() {
+        let request = decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
+        let cancellation = CancellationToken::new();
+        let mut emitter = Emitter::new(&request, cancellation);
+        emitter.maximum_output_bytes = 1;
+
+        let error = emitter
+            .emit("accepted", json!({ "operation": "scan" }))
+            .expect_err("the first frame must consume the shared output budget");
+
+        assert!(error.contains("protocol output exceeded"));
+        assert_eq!(emitter.emitted_output_bytes, 0);
+        assert_eq!(emitter.sequence, 0);
+    }
 }

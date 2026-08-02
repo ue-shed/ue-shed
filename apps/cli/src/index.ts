@@ -1,13 +1,21 @@
 import { NodeServices } from "@effect/platform-node";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
 import { Cause, Effect, Exit, Layer } from "effect";
-import { CliCommandError, CliRuntime, CliRuntimeLive } from "./application.js";
+import { CliCommandError, CliRuntime, CliRuntimeLive } from "./cli-runtime.js";
 import { runCli } from "./command.js";
+import { CliSignalError, withCliSignalHandling } from "./signal.js";
 
 export type CliError = CliCommandError;
 
 export function main(args: readonly string[]): Effect.Effect<void, CliError, CliRuntime> {
-	return runCli(args);
+	return withCliSignalHandling(runCli(args)).pipe(
+		Effect.mapError((error) =>
+			error instanceof CliSignalError
+				? new CliCommandError({ message: `Received ${error.signal}; operation cancelled.` })
+				: error
+		),
+		Effect.withSpan("cli.command_process")
+	);
 }
 
 const CliLive = Layer.mergeAll(

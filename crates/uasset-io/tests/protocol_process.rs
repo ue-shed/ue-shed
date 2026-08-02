@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
-use uasset_io::protocol::{Event, decode_event};
+use uasset_io::protocol::{Event, decode_event, validate_event_sequence};
 
 fn run_request(request: Value) -> (bool, Vec<Value>, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
@@ -57,6 +57,7 @@ fn protocol_process_emits_a_typed_inspection_stream() {
         assert_eq!(event["requestId"], "process-test");
         assert_eq!(event["sequence"], decoded_sequence(&decoded));
     }
+    assert_valid_events(&events);
     assert_eq!(events[0]["kind"], "accepted");
     assert_eq!(events[1]["kind"], "result");
     assert_eq!(events[1]["result"]["kind"], "inspect");
@@ -127,7 +128,8 @@ fn protocol_process_emits_typed_results_for_authoring_and_projections() {
             events.last().and_then(|event| event.get("kind")),
             Some(&serde_json::json!("completed"))
         );
-        for event in events {
+        assert_valid_events(&events);
+        for event in &events {
             decode_event(serde_json::to_string(&event).unwrap().as_bytes())
                 .expect("Rust validates every emitted event");
         }
@@ -409,19 +411,20 @@ fn protocol_process_can_be_interrupted_during_scan() {
 }
 
 #[test]
-fn protocol_process_enforces_the_typed_output_limit() {
+fn protocol_process_enforces_the_cumulative_output_limit() {
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset");
     let mut request = base_request(serde_json::json!({
         "kind": "inspect",
         "assetPath": fixture.to_string_lossy()
     }));
-    request["limits"]["maximumOutputBytes"] = serde_json::json!(1);
+    request["limits"]["maximumOutputBytes"] = serde_json::json!(512);
     let (success, events, stderr) = run_request(request);
     assert!(
         success,
         "protocol framing failure should be typed: {stderr}"
     );
+    assert_valid_events(&events);
     assert_eq!(events[0]["kind"], "accepted");
     assert_eq!(events.last().unwrap()["kind"], "failed");
     assert_eq!(events.last().unwrap()["code"], "output_limit");
@@ -480,6 +483,14 @@ fn decoded_sequence(event: &Event) -> u64 {
 }
 
 fn assert_valid_events(events: &[Value]) {
+    let decoded = events
+        .iter()
+        .map(|event| {
+            decode_event(serde_json::to_string(event).unwrap().as_bytes())
+                .expect("Rust validates every emitted event")
+        })
+        .collect::<Vec<_>>();
+    validate_event_sequence(&decoded).expect("event stream preserves protocol invariants");
     for event in events {
         decode_event(serde_json::to_string(event).unwrap().as_bytes())
             .expect("Rust validates every emitted event");

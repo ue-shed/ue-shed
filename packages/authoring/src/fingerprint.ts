@@ -6,6 +6,11 @@ export const FINGERPRINT_VERSION = "sha256-v1" as const;
 
 function normalizeValue(value: AuthoringValue): unknown {
 	switch (value.kind) {
+		case "float":
+			return {
+				kind: value.kind,
+				value: typeof value.value === "number" ? Math.fround(value.value) : value.value
+			};
 		case "array":
 			return { kind: value.kind, values: value.values.map(normalizeValue) };
 		case "set":

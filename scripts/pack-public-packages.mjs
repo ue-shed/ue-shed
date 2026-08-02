@@ -1,15 +1,27 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import {
+	cp,
+	copyFile,
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	rm,
+	stat,
+	writeFile
+} from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 export const PUBLIC_VERSION = "0.1.0-rc.4";
+export const WASM_PACKAGE_NAME = "@ue-shed/uasset-inspection-wasm";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Plan 025 shipped the parser slice; Plans 030 and 031 add the headless Map Review and Observatory
- * closures without making a UI package public.
+ * closures without making a UI package public. Plan 036 adds the bytes-only WASM inspection surface.
  */
 export const PUBLIC_PACKAGES = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
@@ -17,6 +29,7 @@ export const PUBLIC_PACKAGES = [
 	{ name: "@ue-shed/unreal-connection", directory: "packages/unreal-connection" },
 	{ name: "@ue-shed/cameras", directory: "packages/cameras" },
 	{ name: "@ue-shed/observatory", directory: "packages/observatory" },
+	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },
 	{ name: "@ue-shed/unreal-assets", directory: "packages/unreal-assets" },
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" }
@@ -103,28 +116,92 @@ function listPackedFiles(tarball) {
 		.filter(Boolean);
 }
 
+async function packWorkspacePackage(workspacePackage, outputDirectory) {
+	const packageDirectory = join(repositoryRoot, workspacePackage.directory);
+	const before = new Set(await readdir(outputDirectory));
+	let packDirectory = packageDirectory;
+	let stagedDirectory;
+	if (workspacePackage.name === WASM_PACKAGE_NAME) {
+		stagedDirectory = await mkdtemp(join(tmpdir(), "ue-shed-wasm-package-"));
+		await Promise.all([
+			copyFile(join(packageDirectory, "LICENSE"), join(stagedDirectory, "LICENSE")),
+			copyFile(join(packageDirectory, "README.md"), join(stagedDirectory, "README.md")),
+			copyFile(join(packageDirectory, "package.json"), join(stagedDirectory, "package.json")),
+			cp(join(packageDirectory, "dist"), join(stagedDirectory, "dist"), {
+				recursive: true,
+				filter: (source) => basename(source) !== ".gitignore"
+			})
+		]);
+		packDirectory = stagedDirectory;
+	}
+	try {
+		const packCommand = stagedDirectory === undefined ? executable("pnpm") : executable("npm");
+		const packArguments = ["pack", "--pack-destination", outputDirectory];
+		if (stagedDirectory !== undefined) packArguments.push("--ignore-scripts");
+		run(packCommand, packArguments, { cwd: packDirectory });
+		const filename = (await readdir(outputDirectory)).find(
+			(entry) => !before.has(entry) && entry.endsWith(".tgz")
+		);
+		if (!filename) throw new Error(`${workspacePackage.name} did not produce a tarball.`);
+		return join(outputDirectory, filename);
+	} finally {
+		if (stagedDirectory !== undefined) {
+			await rm(stagedDirectory, { recursive: true, force: true });
+		}
+	}
+}
+
 function collectExportTargets(exportsValue, failures, prefix = "exports") {
 	if (typeof exportsValue === "string") return [exportsValue];
+	if (Array.isArray(exportsValue)) {
+		return exportsValue.flatMap((value, index) =>
+			collectExportTargets(value, failures, `${prefix}[${index}]`)
+		);
+	}
 	if (exportsValue === null || typeof exportsValue !== "object") {
 		failures.push(`${prefix} must be a string or object`);
 		return [];
 	}
 	const targets = [];
 	for (const [key, value] of Object.entries(exportsValue)) {
-		if (typeof value === "string") targets.push(value);
-		else if (value && typeof value === "object") {
-			for (const [condition, target] of Object.entries(value)) {
-				if (typeof target === "string") targets.push(target);
-				else
-					failures.push(
-						`${prefix}.${key}.${condition} must resolve to a packed file path`
-					);
-			}
-		} else {
-			failures.push(`${prefix}.${key} must resolve to a packed file path`);
-		}
+		targets.push(...collectExportTargets(value, failures, `${prefix}.${key}`));
 	}
 	return targets;
+}
+
+export function validateWasmPackageManifest({ manifest, files }) {
+	const failures = [];
+	if (manifest.type !== "module") failures.push("WASM package must use ES modules");
+	if (manifest.publishConfig?.access !== "public") {
+		failures.push("WASM package must declare publishConfig.access public");
+	}
+	if (manifest.exports === undefined) failures.push("WASM package must declare exports");
+	const exportTargets = collectExportTargets(manifest.exports, failures);
+	const exportDescription = JSON.stringify(manifest.exports ?? "");
+	const hasBrowserTarget =
+		/\b(?:browser|web)\b/iu.test(exportDescription) ||
+		exportTargets.some((target) => /(?:^|[/._-])(?:browser|web)(?:[/._-]|$)/iu.test(target));
+	const hasNodeTarget =
+		/\b(?:node|server)\b/iu.test(exportDescription) ||
+		exportTargets.some((target) => /(?:^|[/._-])(?:node|server)(?:[/._-]|$)/iu.test(target));
+	if (!hasBrowserTarget) failures.push("WASM package must expose a browser runtime target");
+	if (!hasNodeTarget) failures.push("WASM package must expose a Node runtime target");
+	if (!files.some((path) => path.endsWith(".wasm"))) {
+		failures.push("WASM package must contain a generated .wasm artifact");
+	}
+	if (!files.some((path) => path.endsWith(".d.ts"))) {
+		failures.push("WASM package must contain generated TypeScript declarations");
+	}
+	if (!files.includes("package/dist/build-info.json")) {
+		failures.push("WASM package must contain dist/build-info.json build evidence");
+	}
+	const sourceLeak = files.filter((path) =>
+		/(?:^|\/)(?:Cargo\.(?:toml|lock)|\.cargo|target)(?:\/|$)/iu.test(path)
+	);
+	if (sourceLeak.length > 0) {
+		failures.push(`WASM package contains source-build files: ${sourceLeak.join(", ")}`);
+	}
+	return failures;
 }
 
 export function validatePackedManifest({ manifest, manifestRaw, expectedName, files }) {
@@ -138,6 +215,9 @@ export function validatePackedManifest({ manifest, manifestRaw, expectedName, fi
 	if (manifest.repository?.url !== canonicalRepository) {
 		failures.push(`repository must be ${canonicalRepository}`);
 	}
+	for (const requiredFile of ["package/LICENSE", "package/README.md"]) {
+		if (!files.includes(requiredFile)) failures.push(`archive is missing ${requiredFile}`);
+	}
 	if (localProtocolPattern.test(manifestRaw)) {
 		failures.push("packed manifest contains a local workspace/catalog/file/link protocol");
 	}
@@ -150,6 +230,9 @@ export function validatePackedManifest({ manifest, manifestRaw, expectedName, fi
 		if (!files.includes(packedPath(exportPath))) {
 			failures.push(`exports points to missing packed file ${exportPath}`);
 		}
+	}
+	if (expectedName === WASM_PACKAGE_NAME) {
+		failures.push(...validateWasmPackageManifest({ manifest, files }));
 	}
 	const bins =
 		typeof manifest.bin === "string" ? { [manifest.name]: manifest.bin } : manifest.bin;
@@ -187,6 +270,7 @@ function validateExactPackageGraph(manifests) {
 	const unrealConnection = byName.get("@ue-shed/unreal-connection");
 	const cameras = byName.get("@ue-shed/cameras");
 	const observatory = byName.get("@ue-shed/observatory");
+	const wasm = byName.get(WASM_PACKAGE_NAME);
 	const unrealAssets = byName.get("@ue-shed/unreal-assets");
 	const launcher = byName.get("@ue-shed/uasset");
 	const platform = byName.get("@ue-shed/uasset-win32-x64");
@@ -204,6 +288,12 @@ function validateExactPackageGraph(manifests) {
 	requireExactDependency(observatory, "effect", exactEffectVersion, failures);
 	requireExactDependency(unrealAssets, "@ue-shed/protocol", PUBLIC_VERSION, failures);
 	requireExactDependency(unrealAssets, "effect", exactEffectVersion, failures);
+	if (wasm?.license !== "MIT") {
+		failures.push(`${WASM_PACKAGE_NAME} must retain MIT license metadata`);
+	}
+	if (wasm?.version !== PUBLIC_VERSION) {
+		failures.push(`${WASM_PACKAGE_NAME} must pin version ${PUBLIC_VERSION}`);
+	}
 	const platformVersion =
 		launcher?.optionalDependencies?.["@ue-shed/uasset-win32-x64"] ??
 		launcher?.dependencies?.["@ue-shed/uasset-win32-x64"];
@@ -240,21 +330,14 @@ export async function packPublicPackages({ output, build = true }) {
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/cameras", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observatory", "build"]);
+		run(executable("pnpm"), ["--filter", WASM_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
 	}
 	const packed = [];
 	for (const workspacePackage of PUBLIC_PACKAGES) {
-		const packageDirectory = join(repositoryRoot, workspacePackage.directory);
-		const before = new Set(await readdir(outputDirectory));
-		run(executable("pnpm"), ["pack", "--pack-destination", outputDirectory], {
-			cwd: packageDirectory
-		});
-		const filename = (await readdir(outputDirectory)).find(
-			(entry) => !before.has(entry) && entry.endsWith(".tgz")
-		);
-		if (!filename) throw new Error(`${workspacePackage.name} did not produce a tarball.`);
-		const path = join(outputDirectory, filename);
+		const path = await packWorkspacePackage(workspacePackage, outputDirectory);
+		const filename = basename(path);
 		const manifestRaw = readPackedFile(path, "package/package.json");
 		const manifest = JSON.parse(manifestRaw);
 		const files = listPackedFiles(path);
@@ -290,9 +373,10 @@ export async function packPublicPackages({ output, build = true }) {
 			{
 				schemaVersion: 1,
 				version: PUBLIC_VERSION,
-				packages: packed.map(({ name, filename, sha256, bytes }) => ({
+				packages: packed.map(({ name, filename, sha256, bytes, manifest }) => ({
 					name,
 					version: PUBLIC_VERSION,
+					license: manifest.license,
 					filename,
 					sha256,
 					bytes

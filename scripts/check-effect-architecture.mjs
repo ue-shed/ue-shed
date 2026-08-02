@@ -66,7 +66,9 @@ const approvedPromiseAdapters = new Set([
 	// The synthetic benchmark invokes Playwright as its foreign child-process adapter.
 	"packages/observatory/scripts/benchmark.ts",
 	"packages/observatory/src/actor-feed.ts",
-	"packages/unreal-assets/src/index.ts"
+	"packages/unreal-assets/src/index.ts",
+	// The generated browser declaration is a foreign WebAssembly adapter surface.
+	"packages/uasset-inspection-wasm/src/browser.d.ts"
 ]);
 const approvedEnvironmentAdapters = new Set([
 	"apps/cli/src/index.ts",
@@ -79,6 +81,8 @@ const approvedRawFetchAdapters = new Set([
 	"packages/unreal-connection/src/remote-control-client.ts"
 ]);
 const approvedResourceAdapters = new Set([
+	// CLI signal listeners are installed through Effect.callback and removed by its scope.
+	"apps/cli/src/signal.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",
 	"apps/workbench/src/main/adapters/fixture-process.ts",
 	"apps/workbench/src/main/main.ts",

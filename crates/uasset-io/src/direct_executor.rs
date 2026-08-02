@@ -10,6 +10,7 @@ use std::fs;
 
 use uasset_inspection::generic::inspect_bytes as inspect_package_bytes;
 
+use crate::cancellation::CancellationToken;
 use crate::protocol_result::{
     AuthoringAuthority, AuthoringContractName, AuthoringContractV2, AuthoringContractVersionV2,
     AuthoringDiagnostic, AuthoringFieldValue, AuthoringFingerprint, AuthoringFloatValue,
@@ -19,13 +20,28 @@ use crate::protocol_result::{
     SavedAssetScanDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary, SavedPropertyValue,
 };
 
-pub(crate) use project_io::{extract_text, extract_texture, saved_world, scan};
+pub(crate) use project_io::{
+    extract_text, extract_text_with_cancellation, extract_texture,
+    extract_texture_with_cancellation, saved_world, saved_world_with_cancellation, scan,
+    scan_with_cancellation,
+};
 
 #[derive(Debug)]
 pub(crate) struct Failure {
     pub(crate) code: String,
     pub(crate) message: String,
     pub(crate) retry_safe: bool,
+}
+
+pub(crate) fn checkpoint(
+    cancellation: &CancellationToken,
+    stage: &'static str,
+) -> Result<(), Failure> {
+    cancellation.checkpoint(stage).map_err(|stage| Failure {
+        code: "cancelled".to_owned(),
+        message: format!("operation cancelled during {stage}"),
+        retry_safe: true,
+    })
 }
 
 #[derive(Debug)]
@@ -59,8 +75,10 @@ pub(crate) struct SavedWorldOutput {
     pub(crate) partial: bool,
 }
 
-/// Executes one inspection without starting another process.
-pub(crate) fn inspect(path: &str) -> Result<(SavedAssetInspection, bool), Failure> {
+pub(crate) fn inspect_with_cancellation(
+    path: &str,
+    cancellation: &CancellationToken,
+) -> Result<(SavedAssetInspection, bool), Failure> {
     if path == "-" {
         return Err(Failure {
             code: "io".to_owned(),
@@ -68,26 +86,31 @@ pub(crate) fn inspect(path: &str) -> Result<(SavedAssetInspection, bool), Failur
             retry_safe: false,
         });
     }
+    checkpoint(cancellation, "read")?;
     let bytes = fs::read(path).map_err(|error| Failure {
         code: "io".to_owned(),
         message: format!("could not read asset {path}: {error}"),
         retry_safe: true,
     })?;
-    let (inspection, partial) = inspect_bytes(path, &bytes)?;
+    checkpoint(cancellation, "read")?;
+    let (inspection, partial) = inspect_bytes_with_cancellation(path, &bytes, cancellation)?;
     Ok((inspection, partial))
 }
 
-pub(crate) fn inspect_bytes(
+pub(crate) fn inspect_bytes_with_cancellation(
     path: &str,
     bytes: &[u8],
+    cancellation: &CancellationToken,
 ) -> Result<(SavedAssetInspection, bool), Failure> {
-    let (output, partial) = inspect_generic_bytes(path, bytes)?;
+    let (output, partial) = inspect_generic_bytes_with_cancellation(path, bytes, cancellation)?;
+    checkpoint(cancellation, "inspection")?;
     let inspection =
         crate::protocol_adapter::adapt_inspection(output).map_err(|message| Failure {
             code: "contract".to_owned(),
             message,
             retry_safe: false,
         })?;
+    checkpoint(cancellation, "inspection")?;
     Ok((inspection, partial))
 }
 
@@ -95,31 +118,56 @@ pub(crate) fn inspect_generic_bytes(
     path: &str,
     bytes: &[u8],
 ) -> Result<(uasset_inspection::generic::InspectOutput, bool), Failure> {
+    inspect_generic_bytes_with_cancellation(path, bytes, &CancellationToken::new())
+}
+
+pub(crate) fn inspect_generic_bytes_with_cancellation(
+    path: &str,
+    bytes: &[u8],
+    cancellation: &CancellationToken,
+) -> Result<(uasset_inspection::generic::InspectOutput, bool), Failure> {
+    checkpoint(cancellation, "parsing")?;
     let output = inspect_package_bytes(path, bytes).map_err(|error| Failure {
         code: error.kind.to_owned(),
         message: error.message,
         retry_safe: false,
     })?;
+    checkpoint(cancellation, "parsing")?;
+    checkpoint(cancellation, "inspection")?;
     let partial = output.status == "partial";
+    checkpoint(cancellation, "inspection")?;
     Ok((output, partial))
 }
 
-/// Builds the saved-package authoring projection from the same typed inspection used by
-/// `inspect`. The conversion is recursive and never passes through JSON.
-pub(crate) fn authoring(path: &str) -> Result<(AuthoringTableSnapshot, bool), Failure> {
+pub(crate) fn authoring_with_cancellation(
+    path: &str,
+    cancellation: &CancellationToken,
+) -> Result<(AuthoringTableSnapshot, bool), Failure> {
+    checkpoint(cancellation, "read")?;
     let bytes = fs::read(path).map_err(|error| Failure {
         code: "io".to_owned(),
         message: format!("could not read asset {path}: {error}"),
         retry_safe: true,
     })?;
-    authoring_bytes(path, &bytes)
+    checkpoint(cancellation, "read")?;
+    authoring_bytes_with_cancellation(path, &bytes, cancellation)
 }
 
 pub(crate) fn authoring_bytes(
     path: &str,
     bytes: &[u8],
 ) -> Result<(AuthoringTableSnapshot, bool), Failure> {
-    let (inspection, inspection_partial) = inspect_bytes(path, bytes)?;
+    authoring_bytes_with_cancellation(path, bytes, &CancellationToken::new())
+}
+
+pub(crate) fn authoring_bytes_with_cancellation(
+    path: &str,
+    bytes: &[u8],
+    cancellation: &CancellationToken,
+) -> Result<(AuthoringTableSnapshot, bool), Failure> {
+    let (inspection, inspection_partial) =
+        inspect_bytes_with_cancellation(path, bytes, cancellation)?;
+    checkpoint(cancellation, "inspection")?;
     let mut tables = inspection.assets.iter().filter_map(|asset| match asset {
         SavedAsset::DataTable {
             object_path,
@@ -165,6 +213,7 @@ pub(crate) fn authoring_bytes(
     }
 
     let mut partial = inspection_partial;
+    checkpoint(cancellation, "inspection")?;
     let authoring_rows = rows
         .iter()
         .map(|row| {
@@ -188,6 +237,7 @@ pub(crate) fn authoring_bytes(
             }
         })
         .collect();
+    checkpoint(cancellation, "inspection")?;
     let diagnostics = inspection
         .decode_errors
         .iter()
@@ -197,6 +247,7 @@ pub(crate) fn authoring_bytes(
             path: Some(error.object_path.clone()),
         })
         .collect();
+    checkpoint(cancellation, "inspection")?;
     let snapshot = AuthoringTableSnapshot::V2(AuthoringTableSnapshotV2 {
         contract: AuthoringContractV2 {
             name: AuthoringContractName,
@@ -230,6 +281,7 @@ pub(crate) fn authoring_bytes(
             },
         },
     });
+    checkpoint(cancellation, "inspection")?;
     Ok((snapshot, partial))
 }
 
@@ -519,4 +571,59 @@ pub(crate) fn summary_diagnostics(diagnostics: &[Diagnostic]) -> Vec<SavedAssetS
             retry_safe: diagnostic.retry_safe,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        authoring_bytes_with_cancellation, inspect_generic_bytes_with_cancellation,
+        inspect_with_cancellation, scan_with_cancellation,
+    };
+    use crate::cancellation::CancellationToken;
+    use crate::protocol::decode_request;
+
+    const VALID_SCAN_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/scan-request.json"
+    );
+
+    #[test]
+    fn cancellation_stops_before_read_parsing_and_discovery() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+
+        let read_error = inspect_with_cancellation("missing.uasset", &cancellation)
+            .expect_err("cancelled read should not touch the filesystem");
+        assert_eq!(read_error.code, "cancelled");
+        assert!(read_error.message.contains("read"));
+
+        let parsing_error = inspect_generic_bytes_with_cancellation("memory", &[], &cancellation)
+            .err()
+            .expect("cancelled parsing should not enter the parser");
+        assert_eq!(parsing_error.code, "cancelled");
+        assert!(parsing_error.message.contains("parsing"));
+
+        let request = decode_request(VALID_SCAN_REQUEST.as_bytes()).expect("valid scan request");
+        let discovery_error = scan_with_cancellation(&request, &cancellation)
+            .expect_err("cancelled discovery should not enumerate files");
+        assert_eq!(discovery_error.code, "cancelled");
+
+        let authoring_error = authoring_bytes_with_cancellation("memory", &[], &cancellation)
+            .expect_err("cancelled authoring should stop at its inspection boundary");
+        assert_eq!(authoring_error.code, "cancelled");
+    }
+
+    #[test]
+    fn cancellation_token_reports_each_protocol_stage_deterministically() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        for stage in [
+            "discovery",
+            "read",
+            "parsing",
+            "inspection",
+            "event emission",
+        ] {
+            assert_eq!(cancellation.checkpoint(stage), Err(stage));
+        }
+    }
 }

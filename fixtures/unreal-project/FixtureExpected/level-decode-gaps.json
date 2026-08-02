@@ -2,10 +2,10 @@
 	"schemaVersion": 2,
 	"packagePath": "/Game/Fixture/Cameras/L_CameraLoad",
 	"note": "Level decode coverage measured against the UEShedBuildFixture commandlet, which records the property tags Unreal's own tagged-property serializer emits for each loaded object. The parser decodes every tag that is actually on disk, so undecodedByClass is empty. Regenerate with: pnpm test:uasset-conformance.",
-	"exports": 16525,
+	"exports": 16527,
 	"classes": 29,
-	"engineWrittenTags": 72187,
-	"decodedProperties": 68085,
+	"engineWrittenTags": 72196,
+	"decodedProperties": 68094,
 	"undecodedByClass": {},
 	"postLoadMutatedByClass": {
 		"/Script/Engine.MaterialInstanceDynamic": ["BasePropertyOverrides"]

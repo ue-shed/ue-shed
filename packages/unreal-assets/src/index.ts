@@ -24,11 +24,75 @@ import {
 	type UAssetIoRequest,
 	type AuthoringTableSnapshot
 } from "@ue-shed/protocol";
-import { Config, Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect";
+import {
+	Config,
+	Context,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Metric,
+	Option,
+	Schema,
+	Stream
+} from "effect";
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
+
+const assetReaderQueueDuration = Metric.histogram("ue_shed_asset_reader_queue_duration_ms", {
+	boundaries: [0, 1, 5, 10, 25, 50, 100, 250, 1_000, 5_000],
+	description: "Time an AssetReader operation waits before its native worker starts"
+});
+const assetReaderStartupDuration = Metric.histogram("ue_shed_asset_reader_startup_duration_ms", {
+	boundaries: [0, 1, 5, 10, 25, 50, 100, 250, 1_000, 5_000],
+	description: "Time for a native AssetReader worker to accept a request"
+});
+const assetReaderDiscoveryDuration = Metric.histogram(
+	"ue_shed_asset_reader_discovery_duration_ms",
+	{
+		boundaries: [0, 1, 5, 10, 25, 50, 100, 250, 1_000, 5_000, 30_000],
+		description: "Time an AssetReader worker spends discovering package inputs"
+	}
+);
+const assetReaderReadBytes = Metric.counter("ue_shed_asset_reader_read_bytes_total", {
+	description:
+		"Package and sidecar bytes explicitly reported in AssetReader result frames; operations without byte fields contribute zero",
+	incremental: true
+});
+const assetReaderInspectedFiles = Metric.counter("ue_shed_asset_reader_inspected_files_total", {
+	description:
+		"Asset/package/item counts explicitly reported in AssetReader result frames; this is not an estimate of unreported file reads",
+	incremental: true
+});
+const assetReaderPartialFailures = Metric.counter("ue_shed_asset_reader_partial_failure_total", {
+	description: "Partial package results and per-file AssetReader failures",
+	incremental: true
+});
+const assetReaderCancellations = Metric.counter("ue_shed_asset_reader_cancellation_total", {
+	description: "AssetReader operations cancelled before their terminal event",
+	incremental: true
+});
+const assetReaderCacheOutcome = Metric.frequency("ue_shed_asset_reader_cache_outcome_total", {
+	description: "AssetReader cache outcomes"
+});
+const assetReaderTerminalState = Metric.frequency("ue_shed_asset_reader_terminal_total", {
+	description: "AssetReader protocol terminal states"
+});
+
+/** Metrics are exported for hosts that install an Effect metrics exporter. */
+export const assetReaderMetrics = {
+	cacheOutcome: assetReaderCacheOutcome,
+	cancellations: assetReaderCancellations,
+	discoveryDuration: assetReaderDiscoveryDuration,
+	inspectedFiles: assetReaderInspectedFiles,
+	partialFailures: assetReaderPartialFailures,
+	queueDuration: assetReaderQueueDuration,
+	readBytes: assetReaderReadBytes,
+	startupDuration: assetReaderStartupDuration,
+	terminalState: assetReaderTerminalState
+};
 
 export {
 	decodeSavedAssetCatalogInspection,
@@ -276,6 +340,142 @@ export function savedTableDescriptorsFromInspection(
 
 type ProtocolEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
 
+function sameProtocolContract(
+	left: UAssetIoRequest["contract"],
+	right: UAssetIoRequest["contract"]
+): boolean {
+	return (
+		left.name === right.name &&
+		left.version.major === right.version.major &&
+		left.version.minor === right.version.minor
+	);
+}
+
+function isProtocolTerminal(event: ProtocolEvent): boolean {
+	return event.kind === "completed" || event.kind === "failed" || event.kind === "rejected";
+}
+
+/** @internal Shared byte accounting for the newline-delimited protocol reader. */
+export class ProtocolOutputBudget {
+	private totalBytes = 0;
+
+	constructor(private readonly maximumBytes: number) {}
+
+	get bytes(): number {
+		return this.totalBytes;
+	}
+
+	observe(chunk: string): void {
+		const nextBytes = this.totalBytes + Buffer.byteLength(chunk, "utf8");
+		if (nextBytes > this.maximumBytes) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				`Protocol output exceeded ${this.maximumBytes} bytes`
+			);
+		}
+		this.totalBytes = nextBytes;
+	}
+}
+
+/** @internal Shared stream validation used by every AssetReader protocol operation. */
+export class ProtocolStreamValidator {
+	private expectedSequence = 0;
+	private sawAccepted = false;
+	private sawTerminal = false;
+	private sawEvent = false;
+
+	constructor(
+		private readonly expectedContract: UAssetIoRequest["contract"],
+		private readonly expectedRequestId: string
+	) {}
+
+	pushLine(line: string): ProtocolEvent {
+		if (line.trim().length === 0) {
+			throw new ProtocolStreamFailure("contract", "Protocol stream contains an empty frame");
+		}
+		let event: ProtocolEvent;
+		try {
+			event = Schema.decodeUnknownSync(UAssetIoEvent)(JSON.parse(line) as unknown);
+		} catch (cause) {
+			throw new ProtocolStreamFailure("contract", `Invalid protocol event: ${String(cause)}`);
+		}
+		this.push(event);
+		return event;
+	}
+
+	push(event: ProtocolEvent): void {
+		if (this.sawTerminal) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Protocol emitted an event after its terminal event"
+			);
+		}
+		if (event.requestId !== this.expectedRequestId) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Protocol requestId changed during the stream"
+			);
+		}
+		if (!sameProtocolContract(event.contract, this.expectedContract)) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				this.sawEvent
+					? "Protocol stream changes contract between frames"
+					: "Protocol event contract does not match the request contract"
+			);
+		}
+		if (!this.sawEvent) {
+			if (event.kind !== "accepted") {
+				throw new ProtocolStreamFailure(
+					"contract",
+					"Protocol stream must begin with an accepted event"
+				);
+			}
+			if (event.sequence !== 0) {
+				throw new ProtocolStreamFailure(
+					"contract",
+					"Protocol stream sequence must begin at zero"
+				);
+			}
+		} else {
+			if (event.kind === "accepted") {
+				throw new ProtocolStreamFailure(
+					"contract",
+					"Protocol stream contains more than one accepted event"
+				);
+			}
+			if (event.sequence !== this.expectedSequence) {
+				throw new ProtocolStreamFailure(
+					"contract",
+					`Protocol sequence expected ${this.expectedSequence} but received ${event.sequence}`
+				);
+			}
+		}
+		this.sawEvent = true;
+		this.sawAccepted = true;
+		this.expectedSequence += 1;
+		this.sawTerminal = isProtocolTerminal(event);
+	}
+
+	finish(): void {
+		if (!this.sawEvent) {
+			throw new ProtocolStreamFailure("contract", "Protocol stream must not be empty");
+		}
+		if (!this.sawAccepted) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Protocol stream must begin with an accepted event"
+			);
+		}
+		if (!this.sawTerminal) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Protocol stream ended without a terminal event"
+			);
+		}
+	}
+}
+
 type ProtocolFailureKind = "contract" | "discovery" | "process" | "resource_limit" | "timeout";
 
 class ProtocolStreamFailure extends Error {
@@ -288,6 +488,222 @@ class ProtocolStreamFailure extends Error {
 	) {
 		super(message);
 	}
+}
+
+type ProtocolTerminalState = "complete" | "partial" | "failed" | "rejected" | "cancelled";
+
+interface ProtocolTelemetry {
+	readonly queuedAt: number;
+	startedAt: number | undefined;
+	acceptedAt: number | undefined;
+	discoveryStartedAt: number | undefined;
+	discoveryDurationMs: number | undefined;
+	readBytes: number;
+	inspectedFiles: number;
+	cacheRequested: boolean;
+	cacheHits: number;
+	cacheMisses: number;
+	partialFailures: number;
+	cancelled: boolean;
+	terminalState: ProtocolTerminalState | undefined;
+}
+
+function nowMs(): number {
+	return Date.now();
+}
+
+function makeProtocolTelemetry(cacheRequested = false): ProtocolTelemetry {
+	return {
+		acceptedAt: undefined,
+		cacheRequested,
+		cacheHits: 0,
+		cacheMisses: 0,
+		cancelled: false,
+		discoveryDurationMs: undefined,
+		discoveryStartedAt: undefined,
+		inspectedFiles: 0,
+		partialFailures: 0,
+		queuedAt: nowMs(),
+		readBytes: 0,
+		startedAt: undefined,
+		terminalState: undefined
+	};
+}
+
+export function protocolCacheOutcome(
+	cacheRequested: boolean,
+	cacheHits: number,
+	_cacheMisses: number
+): "hit" | "miss" | "not_requested" {
+	if (!cacheRequested) return "not_requested";
+	return cacheHits > 0 ? "hit" : "miss";
+}
+
+function observeCacheSummary(
+	telemetry: ProtocolTelemetry,
+	scannedAssets: number,
+	cacheHits: number
+): void {
+	if (!telemetry.cacheRequested) return;
+	telemetry.cacheHits = Math.max(telemetry.cacheHits, cacheHits);
+	telemetry.cacheMisses = Math.max(telemetry.cacheMisses, Math.max(0, scannedAssets - cacheHits));
+}
+
+function finishDiscovery(telemetry: ProtocolTelemetry, at: number): void {
+	if (telemetry.discoveryStartedAt !== undefined && telemetry.discoveryDurationMs === undefined) {
+		telemetry.discoveryDurationMs = Math.max(0, at - telemetry.discoveryStartedAt);
+	}
+}
+
+function observeProtocolResult(result: UAssetIoResult, telemetry: ProtocolTelemetry): void {
+	switch (result.kind) {
+		case "inspect":
+			telemetry.inspectedFiles += 1;
+			if (result.inspection.status === "partial") telemetry.partialFailures += 1;
+			return;
+		case "authoring":
+		case "saved_world":
+			telemetry.inspectedFiles += 1;
+			return;
+		case "scan_asset":
+			telemetry.inspectedFiles += 1;
+			telemetry.readBytes += result.entry.fileBytes;
+			if (result.entry.depth === "full" && result.entry.inspection.status === "partial") {
+				telemetry.partialFailures += 1;
+			}
+			return;
+		case "scan_inventory":
+			telemetry.readBytes += result.entry.size;
+			return;
+		case "scan_summary":
+			observeCacheSummary(telemetry, result.summary.scannedAssets, result.summary.cacheHits);
+			telemetry.inspectedFiles = Math.max(
+				telemetry.inspectedFiles,
+				result.summary.scannedAssets
+			);
+			telemetry.partialFailures = Math.max(
+				telemetry.partialFailures,
+				result.summary.partialAssets + result.summary.failedAssets
+			);
+			return;
+		case "extract_text":
+			if (result.event.event === "text_package") {
+				telemetry.inspectedFiles += 1;
+				telemetry.readBytes += result.event.fileBytes;
+				if (result.event.status === "partial") telemetry.partialFailures += 1;
+			}
+			if (result.event.event === "text_summary") {
+				observeCacheSummary(telemetry, result.event.scannedAssets, result.event.cacheHits);
+				telemetry.inspectedFiles = Math.max(
+					telemetry.inspectedFiles,
+					result.event.scannedAssets
+				);
+				telemetry.partialFailures = Math.max(
+					telemetry.partialFailures,
+					result.event.partialAssets + result.event.failedAssets
+				);
+			}
+			return;
+		case "extract_texture":
+			if (result.event.event === "texture_package") {
+				telemetry.inspectedFiles += 1;
+				telemetry.readBytes += result.event.fileBytes;
+				if (result.event.status === "partial") telemetry.partialFailures += 1;
+			}
+			if (result.event.event === "texture_summary") {
+				observeCacheSummary(telemetry, result.event.scannedAssets, result.event.cacheHits);
+				telemetry.inspectedFiles = Math.max(
+					telemetry.inspectedFiles,
+					result.event.scannedAssets
+				);
+				telemetry.partialFailures = Math.max(
+					telemetry.partialFailures,
+					result.event.partialAssets + result.event.failedAssets
+				);
+			}
+			return;
+	}
+}
+
+function observeProtocolEvent(event: ProtocolEvent, telemetry: ProtocolTelemetry): void {
+	const at = nowMs();
+	if (event.kind === "accepted") {
+		telemetry.acceptedAt = at;
+		if (telemetry.startedAt !== undefined) finishDiscovery(telemetry, at);
+		return;
+	}
+	if (event.kind === "progress") {
+		if (event.phase === "discovering" && telemetry.discoveryStartedAt === undefined) {
+			telemetry.discoveryStartedAt = at;
+		}
+		if (
+			(event.phase === "reading" || event.phase === "inspecting") &&
+			telemetry.discoveryStartedAt !== undefined
+		) {
+			finishDiscovery(telemetry, at);
+		}
+		telemetry.inspectedFiles = Math.max(telemetry.inspectedFiles, event.completedItems);
+		return;
+	}
+	if (event.kind === "diagnostic") {
+		telemetry.partialFailures += 1;
+		return;
+	}
+	if (event.kind === "result") {
+		observeProtocolResult(event.result, telemetry);
+		return;
+	}
+	if (event.kind === "completed") {
+		finishDiscovery(telemetry, at);
+		telemetry.terminalState = event.outcome;
+		if (event.outcome === "partial" && telemetry.partialFailures === 0) {
+			telemetry.partialFailures = 1;
+		}
+		return;
+	}
+	if (event.kind === "rejected") {
+		telemetry.terminalState = "rejected";
+		return;
+	}
+	telemetry.terminalState = "failed";
+}
+
+function recordProtocolTelemetry(
+	operation: AssetReaderError["operation"],
+	telemetry: ProtocolTelemetry
+): Effect.Effect<void> {
+	const at = nowMs();
+	finishDiscovery(telemetry, at);
+	const terminalState = telemetry.cancelled ? "cancelled" : (telemetry.terminalState ?? "failed");
+	const cacheOutcome = protocolCacheOutcome(
+		telemetry.cacheRequested,
+		telemetry.cacheHits,
+		telemetry.cacheMisses
+	);
+	return Effect.all([
+		Metric.update(
+			assetReaderQueueDuration,
+			Math.max(0, (telemetry.startedAt ?? at) - telemetry.queuedAt)
+		),
+		Metric.update(
+			assetReaderStartupDuration,
+			Math.max(
+				0,
+				(telemetry.acceptedAt ?? telemetry.startedAt ?? at) -
+					(telemetry.startedAt ?? telemetry.queuedAt)
+			)
+		),
+		Metric.update(
+			assetReaderDiscoveryDuration,
+			Math.max(0, telemetry.discoveryDurationMs ?? 0)
+		),
+		Metric.update(assetReaderReadBytes, Math.max(0, telemetry.readBytes)),
+		Metric.update(assetReaderInspectedFiles, Math.max(0, telemetry.inspectedFiles)),
+		Metric.update(assetReaderPartialFailures, Math.max(0, telemetry.partialFailures)),
+		Metric.update(assetReaderCacheOutcome, `${operation}:${cacheOutcome}`),
+		Metric.update(assetReaderTerminalState, `${operation}:${terminalState}`),
+		...(telemetry.cancelled ? [Metric.update(assetReaderCancellations, 1)] : [])
+	]).pipe(Effect.asVoid);
 }
 
 let protocolRequestCounter = 0;
@@ -373,16 +789,23 @@ async function* protocolEvents(options: {
 	readonly path: string;
 	readonly request: UAssetIoRequest;
 	readonly signal: AbortSignal | undefined;
+	readonly telemetry: ProtocolTelemetry;
 	readonly timeoutMs: number;
 }): AsyncGenerator<ProtocolEvent> {
+	const queuedAt = options.telemetry.queuedAt;
 	const child = spawn(options.configuration.executable, ["protocol"], {
 		signal: options.signal,
 		timeout: options.timeoutMs,
 		windowsHide: true
 	});
 	let closed = false;
+	options.telemetry.startedAt = nowMs();
 	let processError: Error | undefined;
 	let stderr = "";
+	const onAbort = () => {
+		if (!closed) options.telemetry.cancelled = true;
+	};
+	options.signal?.addEventListener("abort", onAbort, { once: true });
 	if (child.stderr !== null) {
 		child.stderr.setEncoding("utf8");
 		child.stderr.on("data", (chunk: string) => {
@@ -413,78 +836,34 @@ async function* protocolEvents(options: {
 		child.stdin.end(`${JSON.stringify(options.request)}\n`);
 		child.stdout.setEncoding("utf8");
 		let pending = "";
-		let expectedSequence = 0;
-		let sawAccepted = false;
-		let sawTerminal = false;
+		const outputBudget = new ProtocolOutputBudget(
+			options.request.limits.maximumOutputBytes ?? MAX_OUTPUT_BYTES
+		);
+		const validator = new ProtocolStreamValidator(
+			options.request.contract,
+			options.request.requestId
+		);
 		for await (const chunk of child.stdout as AsyncIterable<string>) {
+			outputBudget.observe(chunk);
 			pending += chunk;
-			if (Buffer.byteLength(pending, "utf8") > MAX_OUTPUT_BYTES) {
-				throw new ProtocolStreamFailure("contract", "Protocol output exceeded 64 MiB");
-			}
 			const lines = pending.split(/\r?\n/);
 			pending = lines.pop() ?? "";
 			for (const line of lines) {
-				if (line.trim().length === 0) continue;
-				let decoded: ProtocolEvent;
-				try {
-					decoded = Schema.decodeUnknownSync(UAssetIoEvent)(JSON.parse(line) as unknown);
-				} catch (cause) {
-					throw new ProtocolStreamFailure(
-						"contract",
-						`Invalid protocol event: ${String(cause)}`
-					);
-				}
-				if (decoded.requestId !== options.request.requestId) {
-					throw new ProtocolStreamFailure(
-						"contract",
-						"Protocol requestId changed during the stream"
-					);
-				}
-				if (decoded.sequence !== expectedSequence) {
-					throw new ProtocolStreamFailure(
-						"contract",
-						`Protocol sequence expected ${expectedSequence} but received ${decoded.sequence}`
-					);
-				}
-				expectedSequence += 1;
-				if (!sawAccepted && decoded.kind !== "accepted") {
-					throw new ProtocolStreamFailure(
-						"contract",
-						"Protocol stream did not start with accepted"
-					);
-				}
-				if (sawTerminal) {
-					throw new ProtocolStreamFailure(
-						"contract",
-						"Protocol emitted an event after its terminal event"
-					);
-				}
-				if (decoded.kind === "accepted") sawAccepted = true;
-				if (
-					decoded.kind === "completed" ||
-					decoded.kind === "failed" ||
-					decoded.kind === "rejected"
-				) {
-					sawTerminal = true;
-				}
+				const decoded = validator.pushLine(line);
+				observeProtocolEvent(decoded, options.telemetry);
 				yield decoded;
 			}
 		}
-		if (pending.trim().length > 0) {
+		if (pending.length > 0) {
 			throw new ProtocolStreamFailure(
 				"contract",
 				"Protocol output ended with an incomplete JSON line"
 			);
 		}
+		validator.finish();
 		const closedResult = await closePromise;
 		if (processError !== undefined)
 			throw new ProtocolStreamFailure("process", processError.message);
-		if (!sawAccepted || !sawTerminal) {
-			throw new ProtocolStreamFailure(
-				closedResult.signal === "SIGTERM" ? "timeout" : "contract",
-				stderr.trim() || "Protocol stream ended without a terminal event"
-			);
-		}
 		if (closedResult.code !== 0) {
 			throw new ProtocolStreamFailure(
 				"process",
@@ -494,6 +873,8 @@ async function* protocolEvents(options: {
 			);
 		}
 	} finally {
+		options.signal?.removeEventListener("abort", onAbort);
+		if (options.telemetry.startedAt === undefined) options.telemetry.startedAt = queuedAt;
 		if (!closed && !child.killed) child.kill();
 	}
 }
@@ -502,6 +883,7 @@ async function collectProtocolScan(
 	configuration: AssetReaderConfiguration,
 	options: SavedAssetScanOptions,
 	progress: ScanProgressStore,
+	telemetry: ProtocolTelemetry,
 	signal?: AbortSignal
 ): Promise<SavedAssetScan> {
 	const request = makeProtocolRequest(
@@ -541,6 +923,7 @@ async function collectProtocolScan(
 		path: options.projectRoot,
 		request,
 		signal,
+		telemetry,
 		timeoutMs: configuration.catalogTimeoutMs
 	})) {
 		if (event.kind === "progress") {
@@ -568,6 +951,12 @@ async function collectProtocolScan(
 					break;
 				case "scan_summary":
 					summary = event.result.summary;
+					progress.current = {
+						...progress.current,
+						cacheHits: event.result.summary.cacheHits,
+						emittedAssets: event.result.summary.emittedAssets,
+						totalAssets: event.result.summary.scannedAssets
+					};
 					break;
 			}
 		} else if (event.kind === "failed" || event.kind === "rejected") {
@@ -596,10 +985,24 @@ function invokeProtocolScan(
 	options: SavedAssetScanOptions,
 	progress: ScanProgressStore
 ): Effect.Effect<SavedAssetScan, AssetReaderError> {
-	return Effect.tryPromise({
-		try: (signal) => collectProtocolScan(configuration, options, progress, signal),
+	const telemetry = makeProtocolTelemetry(options.cachePath !== undefined);
+	const operation = Effect.tryPromise({
+		try: (signal) => collectProtocolScan(configuration, options, progress, telemetry, signal),
 		catch: (cause) => mapProtocolFailure(cause, "scan", options.projectRoot)
-	}).pipe(Effect.withSpan("unreal_assets.protocol_scan"));
+	});
+	return Effect.gen(function* () {
+		const exit = yield* Effect.exit(operation);
+		if (Exit.isFailure(exit) && telemetry.terminalState === undefined && !telemetry.cancelled) {
+			telemetry.terminalState = "failed";
+		}
+		yield* recordProtocolTelemetry("scan", telemetry);
+		return yield* exit;
+	}).pipe(
+		Effect.withSpan("unreal_assets.protocol_scan"),
+		Effect.withSpan("unreal_assets.protocol_process", {
+			attributes: { "unreal.operation": "scan", "unreal.path": options.projectRoot }
+		})
+	);
 }
 
 async function collectProtocolSingle<A>(options: {
@@ -610,6 +1013,7 @@ async function collectProtocolSingle<A>(options: {
 	readonly expected: UAssetIoResult["kind"];
 	readonly select: (result: UAssetIoResult) => A | undefined;
 	readonly signal: AbortSignal | undefined;
+	readonly telemetry: ProtocolTelemetry;
 }): Promise<A> {
 	let selected: A | undefined;
 	for await (const event of protocolEvents({
@@ -618,6 +1022,7 @@ async function collectProtocolSingle<A>(options: {
 		path: options.path,
 		request: options.request,
 		signal: options.signal,
+		telemetry: options.telemetry,
 		timeoutMs: options.configuration.timeoutMs
 	})) {
 		if (event.kind === "failed" || event.kind === "rejected") {
@@ -644,12 +1049,24 @@ function invokeProtocolSingle<A>(options: {
 	readonly expected: UAssetIoResult["kind"];
 	readonly select: (result: UAssetIoResult) => A | undefined;
 }): Effect.Effect<A, AssetReaderError> {
-	return Effect.tryPromise({
-		try: (signal) => collectProtocolSingle({ ...options, signal }),
+	const telemetry = makeProtocolTelemetry();
+	const operation = Effect.tryPromise({
+		try: (signal) => collectProtocolSingle({ ...options, signal, telemetry }),
 		catch: (cause) => mapProtocolFailure(cause, options.operation, options.path)
+	});
+	return Effect.gen(function* () {
+		const exit = yield* Effect.exit(operation);
+		if (Exit.isFailure(exit) && telemetry.terminalState === undefined && !telemetry.cancelled) {
+			telemetry.terminalState = "failed";
+		}
+		yield* recordProtocolTelemetry(options.operation, telemetry);
+		return yield* exit;
 	}).pipe(
 		Effect.withSpan(`unreal_assets.protocol_${options.operation}`, {
 			attributes: { "unreal.asset_path": options.path }
+		}),
+		Effect.withSpan("unreal_assets.protocol_process", {
+			attributes: { "unreal.operation": options.operation, "unreal.path": options.path }
 		})
 	);
 }
@@ -681,37 +1098,69 @@ function protocolProjectionStream<A>(options: {
 			timeoutMs: options.configuration.catalogTimeoutMs
 		}
 	);
+	const telemetry = makeProtocolTelemetry();
+	const controller = new AbortController();
 	const events = (async function* (): AsyncGenerator<A> {
-		for await (const event of protocolEvents({
-			configuration: options.configuration,
-			operation,
-			path: options.extraction.projectRoot,
-			request,
-			signal: undefined,
-			timeoutMs: options.configuration.catalogTimeoutMs
-		})) {
-			if (event.kind === "failed" || event.kind === "rejected") {
-				throw protocolFailureFromEvent(event);
+		try {
+			for await (const event of protocolEvents({
+				configuration: options.configuration,
+				operation,
+				path: options.extraction.projectRoot,
+				request,
+				signal: controller.signal,
+				telemetry,
+				timeoutMs: options.configuration.catalogTimeoutMs
+			})) {
+				if (event.kind === "failed" || event.kind === "rejected") {
+					throw protocolFailureFromEvent(event);
+				}
+				if (event.kind === "progress") {
+					options.scanStore.current = {
+						...options.scanStore.current,
+						phase: protocolPhase(event.phase),
+						processedAssets: event.completedItems,
+						...(event.totalItems === undefined ? {} : { totalAssets: event.totalItems })
+					};
+				}
+				if (event.kind === "result") {
+					if (
+						(event.result.kind === "extract_text" ||
+							event.result.kind === "extract_texture") &&
+						(event.result.event.event === "text_summary" ||
+							event.result.event.event === "texture_summary")
+					) {
+						options.scanStore.current = {
+							...options.scanStore.current,
+							cacheHits: event.result.event.cacheHits,
+							emittedAssets: event.result.event.emittedAssets,
+							processedAssets: event.result.event.scannedAssets,
+							totalAssets: event.result.event.scannedAssets
+						};
+					}
+					const value = options.decode(event.result);
+					if (value !== undefined) yield value;
+				}
 			}
-			if (event.kind === "progress") {
-				options.scanStore.current = {
-					...options.scanStore.current,
-					phase: protocolPhase(event.phase),
-					processedAssets: event.completedItems,
-					...(event.totalItems === undefined ? {} : { totalAssets: event.totalItems })
-				};
+		} catch (cause) {
+			if (telemetry.terminalState === undefined && !telemetry.cancelled) {
+				telemetry.terminalState = "failed";
 			}
-			if (event.kind === "result") {
-				const value = options.decode(event.result);
-				if (value !== undefined) yield value;
-			}
+			throw cause;
 		}
 	})();
 	return Stream.fromAsyncIterable(events, (cause) =>
 		mapProtocolFailure(cause, operation, options.extraction.projectRoot)
 	).pipe(
+		Stream.ensuring(Effect.sync(() => controller.abort())),
+		Stream.ensuring(recordProtocolTelemetry(operation, telemetry)),
 		Stream.withSpan(`unreal_assets.protocol_extract_${options.projection}`, {
 			attributes: { "unreal.project_root": options.extraction.projectRoot }
+		}),
+		Stream.withSpan("unreal_assets.protocol_process", {
+			attributes: {
+				"unreal.operation": operation,
+				"unreal.path": options.extraction.projectRoot
+			}
 		})
 	);
 }

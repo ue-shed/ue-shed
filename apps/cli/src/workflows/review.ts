@@ -1,0 +1,317 @@
+import { Effect, Layer } from "effect";
+import { CliCommandError, CliRuntime, printJson } from "../cli-runtime.js";
+import { observeCliOperation } from "../cli-operation.js";
+import type { CliCommand } from "../command-model.js";
+
+type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _tag: Tag }>;
+type FramingCommand = Command<"ReviewFramingCandidates" | "ReviewFramingApprove">;
+type AuthoringCommand = Command<
+	| "ReviewAuthoringStart"
+	| "ReviewAuthoringBootstrap"
+	| "ReviewAuthoringShow"
+	| "ReviewAuthoringResume"
+	| "ReviewAuthoringDiscard"
+	| "ReviewAuthoringReframe"
+	| "ReviewAuthoringApprove"
+>;
+
+export const runReviewSetValidate = Effect.fn("Cli.workflow.review_set_validate")(
+	(command: Command<"ReviewSetValidate">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { ReviewRepository, ReviewRepositoryLive } = yield* Effect.promise(
+					() => import("@ue-shed/cameras")
+				);
+				const program = Effect.gen(function* () {
+					const repository = yield* ReviewRepository;
+					const reviewSet = yield* repository.loadSet(command.reviewSetPath);
+					return yield* printJson({
+						contract: reviewSet.contract,
+						id: reviewSet.id,
+						profiles: reviewSet.captureProfiles.length,
+						status: "valid",
+						views: reviewSet.views.length
+					});
+				});
+				return yield* program.pipe(Effect.provide(ReviewRepositoryLive));
+			})
+		)
+);
+
+export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
+	(command: FramingCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const {
+					approveFramingCandidate,
+					FramingCandidateId,
+					generateFramingCandidates,
+					ReviewAuthoring,
+					ReviewAuthoringLive,
+					ReviewRepository,
+					ReviewRepositoryLive,
+					ReviewViewId
+				} = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const { RemoteControlClientLive } = yield* Effect.promise(
+					() => import("@ue-shed/unreal-connection")
+				);
+				const program = Effect.gen(function* () {
+					const authoring = yield* ReviewAuthoring;
+					const selection = yield* authoring.inspectSelection(command.endpoint);
+					if (selection.status === "failed") {
+						return yield* Effect.fail(
+							new CliCommandError({
+								message: `${selection.message} ${selection.recovery}`
+							})
+						);
+					}
+					const candidates = generateFramingCandidates(selection);
+					if (command._tag === "ReviewFramingCandidates") {
+						return yield* printJson({ candidates, selection });
+					}
+					const candidate = candidates.find(
+						(item) => item.id === FramingCandidateId.make(command.candidateId)
+					);
+					if (!candidate) {
+						return yield* Effect.fail(
+							new CliCommandError({
+								message: `Unknown framing candidate: ${command.candidateId}`
+							})
+						);
+					}
+					const repository = yield* ReviewRepository;
+					const reviewSet = yield* repository.loadSet(command.reviewSetPath);
+					const approved = approveFramingCandidate({
+						candidate,
+						reviewSet,
+						subject: {
+							actorPath: selection.actorPath,
+							diagnosticLabel: selection.displayName,
+							kind: "actor_path"
+						},
+						viewId: ReviewViewId.make(command.viewId)
+					});
+					if (approved.status === "view_not_found") {
+						return yield* Effect.fail(
+							new CliCommandError({
+								message: `Review View ${approved.viewId} was not found`
+							})
+						);
+					}
+					yield* repository.saveSet({
+						path: command.reviewSetPath,
+						reviewSet: approved.reviewSet
+					});
+					return yield* printJson({
+						candidateId: candidate.id,
+						status: "approved",
+						viewId: command.viewId
+					});
+				});
+				return yield* program.pipe(
+					Effect.provide(ReviewRepositoryLive),
+					Effect.provide(ReviewAuthoringLive.pipe(Layer.provide(RemoteControlClientLive)))
+				);
+			})
+		)
+);
+
+export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
+	(command: AuthoringCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const {
+					generateFramingCandidates,
+					ReviewAuthoring,
+					ReviewAuthoringLive,
+					ReviewAuthoringSessions,
+					ReviewAuthoringSessionsLive,
+					ReviewRepositoryLive
+				} = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const { RemoteControlClientLive } = yield* Effect.promise(
+					() => import("@ue-shed/unreal-connection")
+				);
+				const reviewAuthoring = ReviewAuthoringLive.pipe(
+					Layer.provide(RemoteControlClientLive)
+				);
+				const program = Effect.gen(function* () {
+					const sessions = yield* ReviewAuthoringSessions;
+					if (command._tag === "ReviewAuthoringShow") {
+						return yield* sessions
+							.load({
+								projectRoot: command.projectRoot,
+								sessionId: command.sessionId
+							})
+							.pipe(Effect.flatMap(printJson));
+					}
+					if (command._tag === "ReviewAuthoringDiscard") {
+						return yield* sessions
+							.discard({
+								projectRoot: command.projectRoot,
+								sessionId: command.sessionId
+							})
+							.pipe(Effect.flatMap(printJson));
+					}
+					if (command._tag === "ReviewAuthoringResume") {
+						return yield* sessions
+							.resume({
+								endpoint: command.endpoint,
+								projectRoot: command.projectRoot,
+								sessionId: command.sessionId
+							})
+							.pipe(Effect.flatMap(printJson));
+					}
+					if (command._tag === "ReviewAuthoringApprove") {
+						return yield* sessions
+							.approve({
+								endpoint: command.endpoint,
+								projectRoot: command.projectRoot,
+								sessionId: command.sessionId
+							})
+							.pipe(Effect.flatMap(printJson));
+					}
+					const authoring = yield* ReviewAuthoring;
+					const selection = yield* authoring.inspectSelection(command.endpoint);
+					if (selection.status === "failed") {
+						return yield* Effect.fail(
+							new CliCommandError({
+								message: `${selection.message} ${selection.recovery}`
+							})
+						);
+					}
+					const candidates = generateFramingCandidates(selection);
+					const session =
+						command._tag === "ReviewAuthoringBootstrap"
+							? yield* sessions.start({
+									candidates,
+									projectRoot: command.projectRoot,
+									selection
+								})
+							: command._tag === "ReviewAuthoringStart"
+								? yield* sessions.create({
+										candidates,
+										projectRoot: command.projectRoot,
+										reviewSetPath: command.reviewSetPath,
+										selection,
+										viewId: command.viewId
+									})
+								: yield* sessions.reframe({
+										candidates,
+										projectRoot: command.projectRoot,
+										selection,
+										sessionId: command.sessionId
+									});
+					return yield* printJson(session);
+				});
+				return yield* program.pipe(
+					Effect.provide(reviewAuthoring),
+					Effect.provide(
+						ReviewAuthoringSessionsLive.pipe(
+							Layer.provide(Layer.mergeAll(ReviewRepositoryLive, reviewAuthoring))
+						)
+					)
+				);
+			})
+		)
+);
+
+export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
+	(command: Command<"ReviewCapture">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const runtime = yield* CliRuntime;
+				const {
+					CaptureInvocation,
+					CaptureInvocationId,
+					ReviewCapture,
+					ReviewCaptureLive,
+					reviewCaptureRemotePortLayer,
+					ReviewIdGeneratorLive,
+					ReviewIdGenerator,
+					ReviewRepository,
+					ReviewRepositoryLive
+				} = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const { RemoteControlClientLive } = yield* Effect.promise(
+					() => import("@ue-shed/unreal-connection")
+				);
+				const captureDependencies = Layer.mergeAll(
+					ReviewRepositoryLive,
+					ReviewIdGeneratorLive,
+					reviewCaptureRemotePortLayer(command.endpoint).pipe(
+						Layer.provide(RemoteControlClientLive)
+					)
+				);
+				const program = Effect.gen(function* () {
+					const capture = yield* ReviewCapture;
+					const repository = yield* ReviewRepository;
+					const ids = yield* ReviewIdGenerator;
+					const reviewSet = yield* repository.loadSet(command.reviewSetPath);
+					const invocation =
+						command.cause === undefined
+							? undefined
+							: CaptureInvocation.make({
+									cause: {
+										type: "external_automation",
+										...(command.correlationId === undefined
+											? {}
+											: { correlationId: command.correlationId })
+									},
+									id: CaptureInvocationId.make(yield* ids.generate()),
+									reviewSetId: reviewSet.id
+								});
+					const run = yield* capture.captureSet({
+						...command,
+						...(invocation === undefined ? {} : { invocation })
+					});
+					yield* printJson(run);
+					if (run.status !== "completed") yield* runtime.setExitCode(1);
+				});
+				return yield* program.pipe(
+					Effect.provide(ReviewCaptureLive.pipe(Layer.provide(captureDependencies))),
+					Effect.provide(captureDependencies)
+				);
+			})
+		)
+);
+
+export const runReviewHistory = Effect.fn("Cli.workflow.review_history")(
+	(command: Command<"ReviewHistory">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { ReviewRepository, ReviewRepositoryLive } = yield* Effect.promise(
+					() => import("@ue-shed/cameras")
+				);
+				const program = Effect.gen(function* () {
+					const repository = yield* ReviewRepository;
+					return yield* repository
+						.listRuns(command.projectRoot)
+						.pipe(Effect.flatMap((runs) => printJson({ runs })));
+				});
+				return yield* program.pipe(Effect.provide(ReviewRepositoryLive));
+			})
+		)
+);
+
+export const runReviewShow = Effect.fn("Cli.workflow.review_show")(
+	(command: Command<"ReviewShow">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { ReviewRepository, ReviewRepositoryLive } = yield* Effect.promise(
+					() => import("@ue-shed/cameras")
+				);
+				const program = Effect.gen(function* () {
+					const repository = yield* ReviewRepository;
+					return yield* repository
+						.loadRun(command.runPath)
+						.pipe(Effect.flatMap(printJson));
+				});
+				return yield* program.pipe(Effect.provide(ReviewRepositoryLive));
+			})
+		)
+);

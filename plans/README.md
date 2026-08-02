@@ -8,18 +8,17 @@ the status row when done.
 
 ## Active
 
-| Plan                                                          | Title                                                            | Priority | Effort | Depends on              | Status                                                              |
-| ------------------------------------------------------------- | ---------------------------------------------------------------- | -------- | ------ | ----------------------- | ------------------------------------------------------------------- |
-| [007](007-conflicts-rich-types-and-views.md)                  | Complete conflicts, rich Unreal types, composites, and views     | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff                                           |
-| [024](024-establish-ci-and-candidate-releases.md)             | Establish CI, Unreal evidence, and candidate-release provenance  | P1       | L      | 020, 021                | IN PROGRESS — first hosted runs                                     |
-| [027](027-adopt-parser-in-downstream-host.md)                 | Adopt the released parser in the first downstream host           | P1       | M      | 021, 025, 026           | TODO                                                                |
-| [028](028-compose-map-review-downstream.md)                   | Compose finished Map Review capabilities downstream              | P2       | XL     | 017–019, 022, 026, 032  | TODO                                                                |
-| [029](029-authoring-downstream-integration-gate.md)           | Gate authoring integration behind finished generic slices        | P2       | L      | 007, 022, 026           | TODO                                                                |
-| [030](030-resolve-authoring-row-identity.md)                  | Resolve `AuthoringRow` identity provenance                       | P1       | M      | none                    | TODO                                                                |
-| [032](032-decouple-review-visibility-and-invocation.md)       | Decouple Review Views, visibility policy, and capture invocation | P1       | XL     | 017, 018, 022           | TODO                                                                |
-| [033](033-compact-project-corpora-before-persistence.md)      | Compact project corpora before persistence                       | P1       | XL     | ADR 0004, project index | IN PROGRESS                                                         |
-| [035](035-world-log-investigation-workspace.md)               | Build the World Log investigation workspace                      | P2       | XL     | 034 Map History         | IN PROGRESS — Phase 7                                               |
-| [036](036-split-uasset-inspection-io-and-adopt-effect-cli.md) | Split UAsset inspection and IO, and adopt Effect CLI             | P1       | XL     | ADR 0004, 022, 025, 033 | IN PROGRESS — Effect CLI parser landed; workflow extraction pending |
+| Plan                                                     | Title                                                            | Priority | Effort | Depends on              | Status                          |
+| -------------------------------------------------------- | ---------------------------------------------------------------- | -------- | ------ | ----------------------- | ------------------------------- |
+| [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views     | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff       |
+| [024](024-establish-ci-and-candidate-releases.md)        | Establish CI, Unreal evidence, and candidate-release provenance  | P1       | L      | 020, 021                | IN PROGRESS — first hosted runs |
+| [027](027-adopt-parser-in-downstream-host.md)            | Adopt the released parser in the first downstream host           | P1       | M      | 021, 025, 026           | TODO                            |
+| [028](028-compose-map-review-downstream.md)              | Compose finished Map Review capabilities downstream              | P2       | XL     | 017–019, 022, 026, 032  | TODO                            |
+| [029](029-authoring-downstream-integration-gate.md)      | Gate authoring integration behind finished generic slices        | P2       | L      | 007, 022, 026           | TODO                            |
+| [030](030-resolve-authoring-row-identity.md)             | Resolve `AuthoringRow` identity provenance                       | P1       | M      | none                    | TODO                            |
+| [032](032-decouple-review-visibility-and-invocation.md)  | Decouple Review Views, visibility policy, and capture invocation | P1       | XL     | 017, 018, 022           | TODO                            |
+| [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                       | P1       | XL     | ADR 0004, project index | IN PROGRESS                     |
+| [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                      | P2       | XL     | 034 Map History         | IN PROGRESS — Phase 7           |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -27,11 +26,9 @@ table and the archive index.
 
 ## Notes for active work
 
-- Plan 036 splits the native UAsset implementation into parser, inspection, and IO responsibilities,
-  connects JavaScript through a versioned request/event protocol, and now has the public CLI using a
-  declarative Effect CLI parser. The CLI leaves temporarily use a compatibility execution adapter;
-  direct workflow extraction must preserve the frozen command and machine-output contracts and must
-  not change Plan 033-owned project scan, extraction, cache, or persistence behavior.
+- Plan 036 completed and is archived under
+  [`archive/036-split-uasset-inspection-io-and-adopt-effect-cli.md`](archive/036-split-uasset-inspection-io-and-adopt-effect-cli.md)
+  after portable WASM, packed-consumer, release, benchmark, CLI, protocol, and UE 5.7 evidence passed.
 - Plan 019 completed and archived under
   [`archive/019-stream-world-scout-transforms.md`](archive/019-stream-world-scout-transforms.md)
   after the bounded Observatory USOT transform stream, Canvas World Scout, reference budgets,
@@ -76,11 +73,6 @@ table and the archive index.
   requires paired Pure/Clear evidence to remain labeled, explainable, and restored by one guarded
   Unreal operation. Automatic detected-occluder intervention remains a non-blocking feasibility
   decision.
-- Plan 036 splits the native UAsset implementation into parser, inspection, and IO responsibilities,
-  connects JavaScript through a versioned request/event protocol, and now has the public CLI using a
-  declarative Effect CLI parser. The CLI leaves temporarily use a compatibility execution adapter;
-  direct workflow extraction must preserve the frozen command and machine-output contracts and must
-  not change Plan 033-owned project scan, extraction, cache, or persistence behavior.
 - Plan 028 waits for released Map Review headless packages and Core/Cameras install evidence. Plan
   030 prepared that public boundary at `0.1.0-rc.2` without publishing or claiming Plan 028 DONE;
   Plan 031 advances the complete public candidate tuple to `0.1.0-rc.3`. Plan 030 is archived under

@@ -1,9 +1,16 @@
+import { createHash } from "node:crypto";
 import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import assert from "node:assert/strict";
+import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { packPublicPackages, PUBLIC_VERSION } from "./pack-public-packages.mjs";
+import {
+	packPublicPackages,
+	PUBLIC_PACKAGES,
+	PUBLIC_VERSION,
+	WASM_PACKAGE_NAME
+} from "./pack-public-packages.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -32,6 +39,10 @@ function run(command, args, cwd, options = {}) {
 	return result.stdout.trim();
 }
 
+function sha256(bytes) {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
 const temporaryRoot = await mkdtemp(join(tmpdir(), "ue-shed-public-packages-"));
 try {
 	const packageDirectory = join(temporaryRoot, "packages");
@@ -39,6 +50,83 @@ try {
 	await mkdir(packageDirectory);
 	await mkdir(consumerDirectory);
 	const packed = await packPublicPackages({ output: packageDirectory });
+	assert.deepEqual(
+		packed.map((entry) => entry.name),
+		PUBLIC_PACKAGES.map((entry) => entry.name),
+		"packed package order must match the protected release order"
+	);
+	for (const entry of packed) {
+		assert.equal(entry.manifest.license, "MIT", `${entry.name} must retain MIT metadata`);
+	}
+	const wasmEntry = packed.find((entry) => entry.name === WASM_PACKAGE_NAME);
+	assert.ok(wasmEntry, "the public package graph must contain the WASM package");
+	const wasmFiles = run("tar", ["-tzf", basename(wasmEntry.path)], packageDirectory)
+		.split(/\r?\n/u)
+		.filter(Boolean);
+	assert.ok(
+		wasmFiles.some((file) => file.endsWith(".wasm")),
+		"the packed WASM package must contain a .wasm artifact"
+	);
+	assert.ok(
+		wasmFiles.some((file) => file.endsWith(".d.ts")),
+		"the packed WASM package must contain TypeScript declarations"
+	);
+	const wasmBuildInfo = JSON.parse(
+		run(
+			"tar",
+			["-xOf", basename(wasmEntry.path), "package/dist/build-info.json"],
+			packageDirectory
+		)
+	);
+	assert.equal(wasmBuildInfo.packageVersion, PUBLIC_VERSION);
+	assert.deepEqual(wasmBuildInfo.targets, ["nodejs", "web"]);
+	assert.equal(typeof wasmBuildInfo.optimizer?.enabled, "boolean");
+	assert.equal(typeof wasmBuildInfo.tools?.wasmOpt, "string");
+	if (wasmBuildInfo.optimizer.enabled) {
+		assert.equal(typeof wasmBuildInfo.optimizer.version, "string");
+		assert.equal(wasmBuildInfo.tools.wasmOpt, wasmBuildInfo.optimizer.version);
+	} else {
+		assert.equal(wasmBuildInfo.optimizer.status, "disabled");
+		assert.equal(typeof wasmBuildInfo.optimizer.reason, "string");
+		assert.match(wasmBuildInfo.tools.wasmOpt, /disabled|no[ -]?opt/iu);
+	}
+	const packageChecksums = await readFile(join(packageDirectory, "SHA256SUMS"), "utf8");
+	const checksumRows = packageChecksums
+		.trim()
+		.split(/\r?\n/u)
+		.map((line) => line.trim().split(/\s+/u));
+	assert.equal(checksumRows.length, packed.length, "checksum manifest must cover every package");
+	for (const [expectedDigest, filename] of checksumRows) {
+		const entry = packed.find((candidate) => candidate.filename === filename);
+		assert.ok(entry, `checksum manifest contains an unknown package ${filename}`);
+		assert.equal(
+			sha256(await readFile(entry.path)),
+			expectedDigest,
+			`checksum mismatch for ${filename}`
+		);
+		assert.equal(entry.sha256, expectedDigest, `returned digest mismatch for ${filename}`);
+	}
+	const packagesManifest = JSON.parse(
+		await readFile(join(packageDirectory, "packages-manifest.json"), "utf8")
+	);
+	assert.equal(packagesManifest.schemaVersion, 1);
+	assert.equal(packagesManifest.version, PUBLIC_VERSION);
+	assert.deepEqual(
+		packagesManifest.packages.map(({ name }) => name),
+		PUBLIC_PACKAGES.map(({ name }) => name)
+	);
+	for (const packageEntry of packagesManifest.packages) {
+		const packedEntry = packed.find((entry) => entry.name === packageEntry.name);
+		assert.ok(
+			packedEntry,
+			`packages manifest contains an unknown package ${packageEntry.name}`
+		);
+		assert.equal(packageEntry.version, PUBLIC_VERSION);
+		assert.equal(packageEntry.license, "MIT");
+		assert.equal(packageEntry.filename, packedEntry.filename);
+		assert.equal(packageEntry.sha256, packedEntry.sha256);
+		assert.equal(packageEntry.bytes, packedEntry.bytes);
+	}
 	const dependencyEntries = Object.fromEntries(
 		packed.map((entry) => [entry.name, `file:${entry.path.replaceAll("\\", "/")}`])
 	);
@@ -182,9 +270,53 @@ try {
 	if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== "DataTable") {
 		throw new Error("Packed CLI did not produce the stable DataTable inspection contract.");
 	}
-	const checksums = await readFile(join(packageDirectory, "SHA256SUMS"), "utf8");
-	if (checksums.trim().split(/\r?\n/u).length !== packed.length) {
-		throw new Error("Packed checksum manifest does not cover every public package.");
+	const wasmConsumerScript = join(consumerDirectory, "verify-wasm.mjs");
+	await writeFile(
+		wasmConsumerScript,
+		`${[
+			"import { readFile } from 'node:fs/promises';",
+			"import * as imported from '@ue-shed/uasset-inspection-wasm';",
+			"const api = { ...imported };",
+			"if (imported.default && typeof imported.default === 'object') Object.assign(api, imported.default);",
+			"if (typeof api.initialize === 'function') await api.initialize();",
+			"if (typeof api.init === 'function') await api.init();",
+			"if (typeof api.inspect !== 'function' && typeof imported.default === 'function') {",
+			"  const initialized = await imported.default();",
+			"  if (initialized && typeof initialized === 'object') Object.assign(api, initialized);",
+			"}",
+			"const extractText = api.extractText ?? api.extract_text;",
+			"const extractTextures = api.extractTextures ?? api.extract_textures;",
+			"for (const [name, value] of [['inspect', api.inspect], ['version', api.version], ['extractText', extractText], ['extractTextures', extractTextures]]) {",
+			"  if (typeof value !== 'function') throw new Error(`missing WASM export ${name}`);",
+			"}",
+			"const bytes = new Uint8Array(await readFile('./fixture/DT_Scalars.uasset'));",
+			"const path = 'fixture/DT_Scalars.uasset';",
+			"const decode = async (fn, input = bytes) => {",
+			"  const output = await fn(path, input);",
+			"  return typeof output === 'string' ? JSON.parse(output) : output;",
+			"};",
+			"const version = String(await api.version()).replace(/^uasset\\s+/u, '');",
+			`if (version !== '${PUBLIC_VERSION}') throw new Error('unexpected WASM version ' + version);`,
+			"const inspection = await decode(api.inspect);",
+			"if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== 'DataTable') throw new Error('WASM inspection contract failed');",
+			"const repeated = await decode(api.inspect);",
+			"if (JSON.stringify(repeated) !== JSON.stringify(inspection)) throw new Error('WASM repeated call changed output');",
+			"const text = await decode(extractText);",
+			"if (text.schema_version !== 1) throw new Error('WASM text projection contract failed');",
+			"const textures = await decode(extractTextures);",
+			"if (textures.schema_version !== 1) throw new Error('WASM texture projection contract failed');",
+			"const malformed = new Uint8Array([0, 1, 2, 3]);",
+			"const malformedInspection = await decode(api.inspect, malformed);",
+			"if (malformedInspection.schema_version !== 8 || malformedInspection.status !== 'error') throw new Error('WASM malformed-input contract failed');",
+			"console.log('wasm-offline-ok');"
+		].join("\n")}\n`,
+		"utf8"
+	);
+	const wasmStatus = run(process.execPath, [wasmConsumerScript], consumerDirectory, {
+		env: consumerEnvironment
+	});
+	if (wasmStatus !== "wasm-offline-ok") {
+		throw new Error(`WASM offline consumer returned ${JSON.stringify(wasmStatus)}.`);
 	}
 	const lockfile = await readFile(join(consumerDirectory, "pnpm-lock.yaml"), "utf8");
 	for (const entry of packed) {

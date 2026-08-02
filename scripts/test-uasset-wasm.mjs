@@ -5,11 +5,12 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const wasmPackage = join(
+const packageNodeEntry = join(
 	repositoryRoot,
-	"target",
-	"uasset-inspection-wasm-node",
-	"uasset_inspection_wasm.js"
+	"packages",
+	"uasset-inspection-wasm",
+	"dist",
+	"node.js"
 );
 const nativeExecutable = join(
 	repositoryRoot,
@@ -17,43 +18,35 @@ const nativeExecutable = join(
 	"release",
 	process.platform === "win32" ? "uasset.exe" : "uasset"
 );
+const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const fixtures = [
-	join(
-		repositoryRoot,
-		"fixtures",
-		"unreal-project",
-		"Content",
-		"Fixture",
-		"Authoring",
-		"DT_Scalars.uasset"
-	),
-	join(
-		repositoryRoot,
-		"fixtures",
-		"unreal-project",
-		"Content",
-		"Fixture",
-		"Input",
-		"IMC_Fixture.uasset"
-	),
-	join(
-		repositoryRoot,
-		"fixtures",
-		"unreal-project",
-		"Content",
-		"Fixture",
-		"Audits",
-		"Textures",
-		"T_Audit_NonPowerOfTwo_300x180.uasset"
-	)
+	"Content/Fixture/Authoring/DT_Scalars.uasset",
+	"Content/Fixture/Authoring/DT_LargeScalars.uasset",
+	"Content/Fixture/Input/IMC_Fixture.uasset",
+	"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset",
+	"Content/Fixture/Text/ST_Game.uasset",
+	"Content/Fixture/Cameras/L_CameraLoad.umap"
+].map((path) => join(fixtureRoot, path));
+const projectionFixtures = [
+	{ path: join(fixtureRoot, "Content/Fixture/Text/DA_TextOccurrences.uasset"), kind: "text" },
+	{
+		path: join(
+			fixtureRoot,
+			"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset"
+		),
+		kind: "texture"
+	}
 ];
 
-const wasm = await import(pathToFileURL(wasmPackage));
+const wasm = await import(pathToFileURL(packageNodeEntry));
+const runtime = wasm.createNodeRuntime();
 
 assert.equal(
-	`uasset ${wasm.version()}`,
+	`uasset ${runtime.version()}`,
 	execFileSync(nativeExecutable, ["--version"], { encoding: "utf8" }).trim()
 );
+assert.equal(runtime.limits.maxInputBytes, 64 * 1024 * 1024);
+assert.equal(runtime.limits.maxOutputBytes, 64 * 1024 * 1024);
 
 for (const fixture of fixtures) {
 	const displayPath = relative(repositoryRoot, fixture).replaceAll("\\", "/");
@@ -67,86 +60,95 @@ for (const fixture of fixtures) {
 	const nativeInspection = JSON.parse(nativeOutput);
 	nativeInspection.path = displayPath;
 
-	const wasmOutput = wasm.inspect(displayPath, bytes);
-	const wasmInspection = JSON.parse(wasmOutput);
-
 	assert.deepEqual(
-		wasmInspection,
+		runtime.inspect(displayPath, bytes),
 		nativeInspection,
 		`${displayPath} must match native inspection`
 	);
 
-	const nativeProjection = (projection) => {
-		const lines = execFileSync(
-			nativeExecutable,
-			[
-				"scan",
-				join(repositoryRoot, "fixtures", "unreal-project"),
-				"--path",
-				fixture,
-				"--projection",
-				projection,
-				"--concurrency",
-				"1"
-			],
-			{ cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
-		)
-			.trim()
-			.split(/\r?\n/)
-			.filter((line) => line.length > 0)
-			.map((line) => JSON.parse(line));
-		const eventPrefix = projection === "text" ? "text" : "texture";
-		const packageEvent = lines.find((line) => line.event === `${eventPrefix}_package`);
-		assert.ok(packageEvent, `${displayPath} must produce a ${eventPrefix} package event`);
-		if (projection === "text") {
-			return {
-				schema_version: 1,
-				status: packageEvent.status,
-				path: displayPath,
-				occurrences: lines
-					.filter((line) => line.event === "text_occurrence")
-					.map((line) => line.occurrence),
-				coverage_gaps: lines
-					.filter((line) => line.event === "text_coverage_gap")
-					.map((line) => line.coverage_gap),
-				diagnostics: packageEvent.diagnostics
-			};
-		}
-		return {
-			schema_version: 1,
-			status: packageEvent.status,
-			path: displayPath,
-			records: lines
-				.filter((line) => line.event === "texture_record")
-				.map((line) => line.record),
-			diagnostics: packageEvent.diagnostics
-		};
-	};
-
+	const repeated = runtime.inspect(displayPath, bytes);
 	assert.deepEqual(
-		JSON.parse(wasm.extract_text(displayPath, bytes)),
-		nativeProjection("text"),
-		`${displayPath} text projection must match native`
-	);
-	assert.deepEqual(
-		JSON.parse(wasm.extract_textures(displayPath, bytes)),
-		nativeProjection("texture"),
-		`${displayPath} texture projection must match native`
+		repeated,
+		nativeInspection,
+		`${displayPath} must be stable across repeated calls`
 	);
 }
 
-const malformed = JSON.parse(wasm.inspect("Broken.uasset", Uint8Array.from([0, 1, 2, 3])));
+for (const { path: fixture, kind } of projectionFixtures) {
+	const displayPath = relative(repositoryRoot, fixture).replaceAll("\\", "/");
+	const bytes = readFileSync(fixture);
+	const nativeProjection = readNativeProjection(fixture, kind, displayPath);
+	const wasmProjection =
+		kind === "text"
+			? runtime.extractText(displayPath, bytes)
+			: runtime.extractTextures(displayPath, bytes);
+	assert.deepEqual(
+		wasmProjection,
+		nativeProjection,
+		`${displayPath} ${kind} projection must match native`
+	);
+}
+
+const unsupported = runtime.inspect("BigEndian.uasset", Uint8Array.from([0x9e, 0x2a, 0x83, 0xc1]));
+assert.equal(unsupported.schema_version, 8);
+assert.equal(unsupported.status, "error");
+assert.equal(unsupported.path, "BigEndian.uasset");
+assert.equal(unsupported.kind, "unsupported_capability");
+
+const malformed = runtime.inspect("Broken.uasset", Uint8Array.from([0, 1, 2, 3]));
 assert.equal(malformed.schema_version, 8);
 assert.equal(malformed.status, "error");
 assert.equal(malformed.path, "Broken.uasset");
 assert.equal(malformed.kind, "unsupported_format");
 
-const malformedText = JSON.parse(wasm.extract_text("Broken.uasset", Uint8Array.from([0, 1, 2, 3])));
+const malformedText = runtime.extractText("Broken.uasset", Uint8Array.from([0, 1, 2, 3]));
 assert.equal(malformedText.schema_version, 1);
 assert.equal(malformedText.status, "error");
 assert.equal(malformedText.path, "Broken.uasset");
 assert.equal(malformedText.kind, "unsupported_format");
 
-process.stdout.write(
-	`WASM inspection and compact-projection parity passed for ${fixtures.length} fixtures plus malformed input.\n`
+const narrowRuntime = wasm.createNodeRuntime({ maxInputBytes: 4 });
+assert.throws(
+	() => narrowRuntime.inspect("TooLarge.uasset", new Uint8Array(5)),
+	(error) => error?.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT"
 );
+
+process.stdout.write(
+	`WASM inspection parity passed for ${fixtures.length} fixtures, compact projections passed for ${projectionFixtures.length} fixtures, and typed failures/limits passed.\n`
+);
+
+function readNativeProjection(fixture, projection, displayPath) {
+	const lines = execFileSync(
+		nativeExecutable,
+		["scan", fixtureRoot, "--path", fixture, "--projection", projection, "--concurrency", "1"],
+		{ cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+	)
+		.trim()
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0)
+		.map((line) => JSON.parse(line));
+	const eventPrefix = projection === "text" ? "text" : "texture";
+	const packageEvent = lines.find((line) => line.event === `${eventPrefix}_package`);
+	assert.ok(packageEvent, `${displayPath} must produce a ${eventPrefix} package event`);
+	if (projection === "text") {
+		return {
+			schema_version: 1,
+			status: packageEvent.status,
+			path: displayPath,
+			occurrences: lines
+				.filter((line) => line.event === "text_occurrence")
+				.map((line) => line.occurrence),
+			coverage_gaps: lines
+				.filter((line) => line.event === "text_coverage_gap")
+				.map((line) => line.coverage_gap),
+			diagnostics: packageEvent.diagnostics
+		};
+	}
+	return {
+		schema_version: 1,
+		status: packageEvent.status,
+		path: displayPath,
+		records: lines.filter((line) => line.event === "texture_record").map((line) => line.record),
+		diagnostics: packageEvent.diagnostics
+	};
+}

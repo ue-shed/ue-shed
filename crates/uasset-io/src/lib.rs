@@ -3,6 +3,7 @@
 //! The library exposes typed request/event boundary models. The `uasset` executable adapts the
 //! library to human compatibility commands and the bounded NDJSON process seam.
 
+mod cancellation;
 mod direct_executor;
 mod legacy;
 pub mod protocol;

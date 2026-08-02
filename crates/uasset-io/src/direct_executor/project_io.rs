@@ -22,9 +22,10 @@ use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 
 use super::{
-    Diagnostic, Failure, ProjectionOutput, SavedWorldOutput, ScanOutput, scan_diagnostic,
-    scan_failure_code, summary_diagnostics,
+    Diagnostic, Failure, ProjectionOutput, SavedWorldOutput, ScanOutput, checkpoint,
+    scan_diagnostic, scan_failure_code, summary_diagnostics,
 };
+use crate::cancellation::CancellationToken;
 use crate::protocol::{Operation, ProjectSelection, Request, ScanDepth, ScanFilters};
 use crate::protocol_result::{
     Completeness, EditCapability, ManifestEntryKind, ProjectionStatus, ResultFrame,
@@ -108,6 +109,13 @@ struct ProjectionWorkResult {
 }
 
 pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
+    scan_with_cancellation(request, &CancellationToken::new())
+}
+
+pub(crate) fn scan_with_cancellation(
+    request: &Request,
+    cancellation: &CancellationToken,
+) -> Result<ScanOutput, Failure> {
     let Operation::Scan {
         cache_path,
         depth,
@@ -129,8 +137,11 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
             retry_safe: false,
         });
     }
-    let roots = resolve_roots(selection)?;
-    let (asset_paths, sidecar_paths) = discover_paths(&roots, inventory.unwrap_or(false))?;
+    checkpoint(cancellation, "discovery")?;
+    let roots = resolve_roots(selection, cancellation)?;
+    let (asset_paths, sidecar_paths) =
+        discover_paths(&roots, inventory.unwrap_or(false), cancellation)?;
+    checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, asset_paths.len())?;
     let inventory_requested = inventory.unwrap_or(false);
     let mut diagnostics = Vec::new();
@@ -139,7 +150,8 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
 
     if inventory_requested {
         for path in sidecar_paths.iter().chain(asset_paths.iter()) {
-            match read_asset_signature(path) {
+            let signature = read_asset_signature_with_cancellation(path, cancellation)?;
+            match signature {
                 Some(signature) => {
                     inventory_entries.push(manifest_entry(&signature, path_kind(path)))
                 }
@@ -154,19 +166,22 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
             }
         }
         inventory_entries.sort_by(|left, right| left.path.cmp(&right.path));
+        checkpoint(cancellation, "read")?;
     }
 
+    checkpoint(cancellation, "read")?;
     let cached_by_path = load_scan_header_cache(cache_path.as_deref(), filters)
         .unwrap_or_default()
         .into_iter()
         .map(|entry| (entry.path.clone(), entry))
         .collect::<BTreeMap<_, _>>();
+    checkpoint(cancellation, "read")?;
     let collect_headers = cache_path.is_some() && *depth == ScanDepth::Header;
     let next_path = AtomicUsize::new(0);
     let worker_count = request.limits.concurrency.unwrap_or(4).max(1) as usize;
     let slots = Mutex::new(
         (0..asset_paths.len())
-            .map(|_| None::<ScanWorkResult>)
+            .map(|_| None::<Result<ScanWorkResult, Failure>>)
             .collect::<Vec<_>>(),
     );
     let paths = &asset_paths;
@@ -175,18 +190,23 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
             let next_path = &next_path;
             let slots = &slots;
             let cached_by_path = &cached_by_path;
+            let cancellation = cancellation.clone();
             scope.spawn(move || {
                 loop {
+                    if checkpoint(&cancellation, "discovery").is_err() {
+                        break;
+                    }
                     let index = next_path.fetch_add(1, Ordering::Relaxed);
                     let Some(path) = paths.get(index) else {
                         break;
                     };
-                    let result = scan_one_path(
+                    let result = scan_one_path_with_cancellation(
                         path,
                         depth.clone(),
                         filters,
                         cached_by_path,
                         collect_headers,
+                        &cancellation,
                     );
                     slots
                         .lock()
@@ -206,6 +226,8 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
         .into_inner()
         .expect("direct scan slots must not be poisoned");
     for result in results.into_iter().flatten() {
+        let result = result?;
+        checkpoint(cancellation, "inspection")?;
         if result.cache_hit {
             cache_hits += 1;
         }
@@ -230,6 +252,7 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
     }
 
     if collect_headers {
+        checkpoint(cancellation, "emitting")?;
         cache_entries.sort_by(|left, right| left.path.cmp(&right.path));
         if let Err(error) = save_scan_header_cache(cache_path.as_deref(), filters, cache_entries) {
             diagnostics.push(scan_diagnostic(
@@ -238,6 +261,7 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
                 cache_path.as_deref().unwrap_or_default(),
             ));
         }
+        checkpoint(cancellation, "emitting")?;
     }
 
     let depth = match depth {
@@ -272,6 +296,7 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
         || diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "scan_cache_write");
+    checkpoint(cancellation, "inspection")?;
     Ok(ScanOutput {
         entries,
         inventory: inventory_entries,
@@ -281,15 +306,17 @@ pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
     })
 }
 
-fn scan_one_path(
+fn scan_one_path_with_cancellation(
     path: &Path,
     depth: ScanDepth,
     filters: &ScanFilters,
     cached_by_path: &BTreeMap<String, ScanHeaderCacheEntry>,
     collect_headers: bool,
-) -> ScanWorkResult {
-    let Some(signature) = read_asset_signature(path) else {
-        return ScanWorkResult {
+    cancellation: &CancellationToken,
+) -> Result<ScanWorkResult, Failure> {
+    checkpoint(cancellation, "read")?;
+    let Some(signature) = read_asset_signature_with_cancellation(path, cancellation)? else {
+        return Ok(ScanWorkResult {
             entry: None,
             diagnostic: Some(scan_diagnostic(
                 "asset_io",
@@ -301,7 +328,7 @@ fn scan_one_path(
             failed: true,
             partial: false,
             skipped: false,
-        };
+        });
     };
     match depth {
         ScanDepth::Header => {
@@ -310,10 +337,10 @@ fn scan_one_path(
                 Some(entry) if scan_header_entry_matches(entry, &signature) => {
                     (entry.clone(), true)
                 }
-                _ => (read_scan_header(&signature, filters), false),
+                _ => (read_scan_header(&signature, filters, cancellation)?, false),
             };
             if let Some(code) = &entry.failure_code {
-                return ScanWorkResult {
+                return Ok(ScanWorkResult {
                     entry: None,
                     diagnostic: Some(scan_diagnostic(
                         code,
@@ -325,10 +352,10 @@ fn scan_one_path(
                     failed: true,
                     partial: false,
                     skipped: false,
-                };
+                });
             }
             if !entry.matched {
-                return ScanWorkResult {
+                return Ok(ScanWorkResult {
                     entry: None,
                     diagnostic: None,
                     cache_entry: collect_headers.then_some(entry),
@@ -336,10 +363,10 @@ fn scan_one_path(
                     failed: false,
                     partial: false,
                     skipped: true,
-                };
+                });
             }
             let header = header_result(&entry);
-            ScanWorkResult {
+            Ok(ScanWorkResult {
                 entry: Some(SavedAssetScanEntry::Header {
                     file_bytes: signature.size,
                     header,
@@ -350,29 +377,33 @@ fn scan_one_path(
                 failed: false,
                 partial: false,
                 skipped: false,
-            }
+            })
         }
         ScanDepth::Full => {
             if !filters_empty(filters) {
-                match read_package_header(&signature) {
-                    Ok(package) if !package_matches(&package, filters) => {
-                        return ScanWorkResult {
-                            entry: None,
-                            diagnostic: None,
-                            cache_entry: None,
-                            cache_hit: false,
-                            failed: false,
-                            partial: false,
-                            skipped: true,
-                        };
+                match read_package_header(&signature, cancellation) {
+                    Ok(package) => {
+                        checkpoint(cancellation, "inspection")?;
+                        if !package_matches(&package, filters) {
+                            return Ok(ScanWorkResult {
+                                entry: None,
+                                diagnostic: None,
+                                cache_entry: None,
+                                cache_hit: false,
+                                failed: false,
+                                partial: false,
+                                skipped: true,
+                            });
+                        }
+                        checkpoint(cancellation, "inspection")?;
                     }
-                    Ok(_) => {}
-                    Err(code) => {
-                        return ScanWorkResult {
+                    Err(error) if error.code == "cancelled" => return Err(error),
+                    Err(error) => {
+                        return Ok(ScanWorkResult {
                             entry: None,
                             diagnostic: Some(scan_diagnostic(
-                                code,
-                                format!("could not inspect asset ({code})"),
+                                &error.code,
+                                format!("could not inspect asset ({})", error.code),
                                 &signature.path.to_string_lossy(),
                             )),
                             cache_entry: None,
@@ -380,15 +411,16 @@ fn scan_one_path(
                             failed: true,
                             partial: false,
                             skipped: false,
-                        };
+                        });
                     }
                 }
             }
             let path_string = signature.path.to_string_lossy().into_owned();
+            checkpoint(cancellation, "read")?;
             let bytes = match fs::read(path) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    return ScanWorkResult {
+                    return Ok(ScanWorkResult {
                         entry: None,
                         diagnostic: Some(scan_diagnostic(
                             "asset_io",
@@ -400,11 +432,12 @@ fn scan_one_path(
                         failed: true,
                         partial: false,
                         skipped: false,
-                    };
+                    });
                 }
             };
-            match super::inspect_bytes(&path_string, &bytes) {
-                Ok((inspection, partial)) => ScanWorkResult {
+            checkpoint(cancellation, "read")?;
+            match super::inspect_bytes_with_cancellation(&path_string, &bytes, cancellation) {
+                Ok((inspection, partial)) => Ok(ScanWorkResult {
                     entry: Some(SavedAssetScanEntry::Full {
                         file_bytes: bytes.len() as u64,
                         inspection,
@@ -415,8 +448,9 @@ fn scan_one_path(
                     failed: false,
                     partial,
                     skipped: false,
-                },
-                Err(error) => ScanWorkResult {
+                }),
+                Err(error) if error.code == "cancelled" => Err(error),
+                Err(error) => Ok(ScanWorkResult {
                     entry: None,
                     diagnostic: Some(scan_diagnostic(
                         &scan_failure_code(&error.code),
@@ -431,18 +465,32 @@ fn scan_one_path(
                     failed: true,
                     partial: false,
                     skipped: false,
-                },
+                }),
             }
         }
     }
 }
 
 pub(crate) fn extract_text(request: &Request) -> Result<ProjectionOutput, Failure> {
-    projection(request, ProjectionKind::Text)
+    extract_text_with_cancellation(request, &CancellationToken::new())
+}
+
+pub(crate) fn extract_text_with_cancellation(
+    request: &Request,
+    cancellation: &CancellationToken,
+) -> Result<ProjectionOutput, Failure> {
+    projection(request, ProjectionKind::Text, cancellation)
 }
 
 pub(crate) fn extract_texture(request: &Request) -> Result<ProjectionOutput, Failure> {
-    projection(request, ProjectionKind::Texture)
+    extract_texture_with_cancellation(request, &CancellationToken::new())
+}
+
+pub(crate) fn extract_texture_with_cancellation(
+    request: &Request,
+    cancellation: &CancellationToken,
+) -> Result<ProjectionOutput, Failure> {
+    projection(request, ProjectionKind::Texture, cancellation)
 }
 
 #[derive(Clone, Copy)]
@@ -451,7 +499,11 @@ enum ProjectionKind {
     Texture,
 }
 
-fn projection(request: &Request, kind: ProjectionKind) -> Result<ProjectionOutput, Failure> {
+fn projection(
+    request: &Request,
+    kind: ProjectionKind,
+    cancellation: &CancellationToken,
+) -> Result<ProjectionOutput, Failure> {
     let selection = match (&request.operation, kind) {
         (Operation::ExtractText { selection }, ProjectionKind::Text)
         | (Operation::ExtractTexture { selection }, ProjectionKind::Texture) => selection,
@@ -463,15 +515,17 @@ fn projection(request: &Request, kind: ProjectionKind) -> Result<ProjectionOutpu
             });
         }
     };
-    let roots = resolve_roots(selection)?;
-    let (paths, _) = discover_paths(&roots, false)?;
+    checkpoint(cancellation, "discovery")?;
+    let roots = resolve_roots(selection, cancellation)?;
+    let (paths, _) = discover_paths(&roots, false, cancellation)?;
+    checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
     let filters = projection_filters(kind, selection.paths.is_none());
     let next_path = AtomicUsize::new(0);
     let worker_count = request.limits.concurrency.unwrap_or(4).max(1) as usize;
     let slots = Mutex::new(
         (0..paths.len())
-            .map(|_| None::<ProjectionWorkResult>)
+            .map(|_| None::<Result<ProjectionWorkResult, Failure>>)
             .collect::<Vec<_>>(),
     );
     let path_refs = &paths;
@@ -480,13 +534,17 @@ fn projection(request: &Request, kind: ProjectionKind) -> Result<ProjectionOutpu
             let next_path = &next_path;
             let slots = &slots;
             let filters = &filters;
+            let cancellation = cancellation.clone();
             scope.spawn(move || {
                 loop {
+                    if checkpoint(&cancellation, "discovery").is_err() {
+                        break;
+                    }
                     let index = next_path.fetch_add(1, Ordering::Relaxed);
                     let Some(path) = path_refs.get(index) else {
                         break;
                     };
-                    let result = project_one_path(path, kind, filters);
+                    let result = project_one_path(path, kind, filters, &cancellation);
                     slots
                         .lock()
                         .expect("direct projection slots must not be poisoned")[index] =
@@ -508,6 +566,8 @@ fn projection(request: &Request, kind: ProjectionKind) -> Result<ProjectionOutpu
         .into_iter()
         .flatten()
     {
+        let result = result?;
+        checkpoint(cancellation, "inspection")?;
         if result.diagnostic.is_some() {
             failed_assets += u64::from(result.failed);
         }
@@ -559,6 +619,7 @@ fn projection(request: &Request, kind: ProjectionKind) -> Result<ProjectionOutpu
         },
     };
     results.push(summary_result);
+    checkpoint(cancellation, "inspection")?;
     let partial = failed_assets > 0 || partial_assets > 0;
     Ok(ProjectionOutput {
         results,
@@ -572,11 +633,13 @@ fn project_one_path(
     path: &Path,
     kind: ProjectionKind,
     filters: &ScanFilters,
-) -> ProjectionWorkResult {
+    cancellation: &CancellationToken,
+) -> Result<ProjectionWorkResult, Failure> {
     let path_string = path.to_string_lossy().into_owned();
+    checkpoint(cancellation, "read")?;
     if !filters_empty(filters) {
-        let Some(signature) = read_asset_signature(path) else {
-            return ProjectionWorkResult {
+        let Some(signature) = read_asset_signature_with_cancellation(path, cancellation)? else {
+            return Ok(ProjectionWorkResult {
                 results: Vec::new(),
                 diagnostic: Some(scan_diagnostic(
                     "asset_io",
@@ -586,38 +649,43 @@ fn project_one_path(
                 failed: true,
                 partial: false,
                 skipped: false,
-            };
+            });
         };
-        match read_package_header(&signature) {
-            Ok(package) if !package_matches(&package, filters) => {
-                return ProjectionWorkResult {
-                    results: Vec::new(),
-                    diagnostic: None,
-                    failed: false,
-                    partial: false,
-                    skipped: true,
-                };
+        match read_package_header(&signature, cancellation) {
+            Ok(package) => {
+                checkpoint(cancellation, "inspection")?;
+                if !package_matches(&package, filters) {
+                    return Ok(ProjectionWorkResult {
+                        results: Vec::new(),
+                        diagnostic: None,
+                        failed: false,
+                        partial: false,
+                        skipped: true,
+                    });
+                }
+                checkpoint(cancellation, "inspection")?;
             }
-            Ok(_) => {}
-            Err(code) => {
-                return ProjectionWorkResult {
+            Err(error) if error.code == "cancelled" => return Err(error),
+            Err(error) => {
+                return Ok(ProjectionWorkResult {
                     results: Vec::new(),
                     diagnostic: Some(scan_diagnostic(
-                        code,
-                        format!("could not inspect asset ({code})"),
+                        &error.code,
+                        format!("could not inspect asset ({})", error.code),
                         &path_string,
                     )),
                     failed: true,
                     partial: false,
                     skipped: false,
-                };
+                });
             }
         }
     }
+    checkpoint(cancellation, "read")?;
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) => {
-            return ProjectionWorkResult {
+            return Ok(ProjectionWorkResult {
                 results: Vec::new(),
                 diagnostic: Some(scan_diagnostic(
                     "asset_io",
@@ -627,14 +695,16 @@ fn project_one_path(
                 failed: true,
                 partial: false,
                 skipped: false,
-            };
+            });
         }
     };
+    checkpoint(cancellation, "read")?;
+    checkpoint(cancellation, "parsing")?;
     let package = match Package::parse(&bytes) {
         Ok(package) => package,
         Err(error) => {
             let code = package_error_code(&error);
-            return ProjectionWorkResult {
+            return Ok(ProjectionWorkResult {
                 results: Vec::new(),
                 diagnostic: Some(scan_diagnostic(
                     code,
@@ -644,9 +714,11 @@ fn project_one_path(
                 failed: true,
                 partial: false,
                 skipped: false,
-            };
+            });
         }
     };
+    checkpoint(cancellation, "parsing")?;
+    checkpoint(cancellation, "inspection")?;
     let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: &bytes,
@@ -659,6 +731,7 @@ fn project_one_path(
     let mut coverage_gap_count = 0_u64;
     let mut texture_count = 0_u64;
     for export in &package.exports {
+        checkpoint(cancellation, "parsing")?;
         if matches!(kind, ProjectionKind::Texture)
             && export.class_path.as_ref().is_none_or(|class_path| {
                 class_path.as_str() != uasset_inspection::projection::TEXTURE2D_CLASS
@@ -666,10 +739,12 @@ fn project_one_path(
         {
             continue;
         }
+        checkpoint(cancellation, "inspection")?;
         match decode_export(export, &context) {
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text => {
                     let projection = project_text_asset(&package, &asset);
+                    checkpoint(cancellation, "inspection")?;
                     occurrence_count += projection.occurrences.len() as u64;
                     coverage_gap_count += projection.coverage_gaps.len() as u64;
                     results.extend(text_results(&path_string, bytes.len() as u64, projection));
@@ -678,6 +753,7 @@ fn project_one_path(
                     if let Some(record) =
                         project_texture_asset(&package, &asset, bytes.len() as u64)
                     {
+                        checkpoint(cancellation, "inspection")?;
                         texture_count += 1;
                         results.push(texture_record_result(&path_string, record));
                     }
@@ -689,6 +765,7 @@ fn project_one_path(
             }
         }
     }
+    checkpoint(cancellation, "inspection")?;
     let partial = !diagnostics.is_empty();
     match kind {
         ProjectionKind::Text => results.push(ResultFrame::ExtractText {
@@ -721,13 +798,13 @@ fn project_one_path(
             },
         }),
     }
-    ProjectionWorkResult {
+    Ok(ProjectionWorkResult {
         results,
         diagnostic: None,
         failed: false,
         partial,
         skipped: false,
-    }
+    })
 }
 
 fn text_results(path: &str, file_bytes: u64, projection: TextAssetProjection) -> Vec<ResultFrame> {
@@ -1030,13 +1107,17 @@ fn class_name_suffix_matches(suffix: &str, class_path: &str) -> bool {
             .is_some_and(|(_, name)| name.ends_with(suffix))
 }
 
-fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHeaderCacheEntry {
+fn read_scan_header(
+    signature: &AssetSignature,
+    filters: &ScanFilters,
+    cancellation: &CancellationToken,
+) -> Result<ScanHeaderCacheEntry, Failure> {
     let path = signature.path.to_string_lossy().into_owned();
-    let package = match read_package_header(signature) {
+    let package = match read_package_header(signature, cancellation) {
         Ok(package) => package,
-        Err(code) => {
-            return ScanHeaderCacheEntry {
-                failure_code: Some(code.to_owned()),
+        Err(error) if error.code != "cancelled" => {
+            return Ok(ScanHeaderCacheEntry {
+                failure_code: Some(error.code),
                 exports: Vec::new(),
                 matched_names: Vec::new(),
                 matched: false,
@@ -1044,9 +1125,11 @@ fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHe
                 package_name: String::new(),
                 path,
                 size: signature.size,
-            };
+            });
         }
+        Err(error) => return Err(error),
     };
+    checkpoint(cancellation, "inspection")?;
     let exports = package
         .exports
         .iter()
@@ -1077,7 +1160,8 @@ fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHe
         .filter(|name| package.names.iter().any(|entry| entry == *name))
         .cloned()
         .collect::<Vec<_>>();
-    ScanHeaderCacheEntry {
+    checkpoint(cancellation, "inspection")?;
+    Ok(ScanHeaderCacheEntry {
         failure_code: None,
         matched: filters_empty(filters) || !exports.is_empty() || !matched_names.is_empty(),
         exports,
@@ -1086,7 +1170,7 @@ fn read_scan_header(signature: &AssetSignature, filters: &ScanFilters) -> ScanHe
         package_name: package.summary.package_name.clone(),
         path,
         size: signature.size,
-    }
+    })
 }
 
 fn class_matches(class_path: &str, filters: &ScanFilters) -> bool {
@@ -1185,7 +1269,11 @@ fn save_scan_header_cache(
     fs::write(path, rendered)
 }
 
-fn resolve_roots(selection: &ProjectSelection) -> Result<Vec<PathBuf>, Failure> {
+fn resolve_roots(
+    selection: &ProjectSelection,
+    cancellation: &CancellationToken,
+) -> Result<Vec<PathBuf>, Failure> {
+    checkpoint(cancellation, "discovery")?;
     let project_root = PathBuf::from(&selection.project_root);
     let Some(requested) = &selection.paths else {
         return Ok(vec![project_root.join("Content")]);
@@ -1200,6 +1288,7 @@ fn resolve_roots(selection: &ProjectSelection) -> Result<Vec<PathBuf>, Failure> 
     })?;
     let mut roots = Vec::with_capacity(requested.len());
     for requested in requested {
+        checkpoint(cancellation, "discovery")?;
         let path = PathBuf::from(requested);
         let joined = if path.is_absolute() {
             path
@@ -1227,32 +1316,37 @@ fn resolve_roots(selection: &ProjectSelection) -> Result<Vec<PathBuf>, Failure> 
         }
         roots.push(joined);
     }
+    checkpoint(cancellation, "discovery")?;
     Ok(roots)
 }
 
 fn discover_paths(
     roots: &[PathBuf],
     include_sidecars: bool,
+    cancellation: &CancellationToken,
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Failure> {
     let mut packages = Vec::new();
     let mut sidecars = Vec::new();
     for root in roots {
+        checkpoint(cancellation, "discovery")?;
         if root.is_file() {
             packages.push(root.clone());
             continue;
         }
-        discover_scan_files(root, &mut packages, &mut sidecars, include_sidecars).map_err(
-            |error| Failure {
-                code: "discovery".to_owned(),
-                message: format!("could not enumerate {}: {error}", root.display()),
-                retry_safe: true,
-            },
+        discover_scan_files(
+            root,
+            &mut packages,
+            &mut sidecars,
+            include_sidecars,
+            cancellation,
         )?;
     }
+    checkpoint(cancellation, "discovery")?;
     packages.sort();
     packages.dedup();
     sidecars.sort();
     sidecars.dedup();
+    checkpoint(cancellation, "discovery")?;
     Ok((packages, sidecars))
 }
 
@@ -1274,20 +1368,39 @@ fn discover_scan_files(
     packages: &mut Vec<PathBuf>,
     sidecars: &mut Vec<PathBuf>,
     include_sidecars: bool,
-) -> io::Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+    cancellation: &CancellationToken,
+) -> Result<(), Failure> {
+    checkpoint(cancellation, "discovery")?;
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| Failure {
+            code: "discovery".to_owned(),
+            message: format!("could not enumerate {}: {error}", directory.display()),
+            retry_safe: true,
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| Failure {
+            code: "discovery".to_owned(),
+            message: format!("could not enumerate {}: {error}", directory.display()),
+            retry_safe: true,
+        })?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
+        checkpoint(cancellation, "discovery")?;
         let path = entry.path();
-        let file_type = entry.file_type()?;
+        let file_type = entry.file_type().map_err(|error| Failure {
+            code: "discovery".to_owned(),
+            message: format!("could not enumerate {}: {error}", path.display()),
+            retry_safe: true,
+        })?;
         if file_type.is_dir() {
-            discover_scan_files(&path, packages, sidecars, include_sidecars)?;
+            discover_scan_files(&path, packages, sidecars, include_sidecars, cancellation)?;
         } else if file_type.is_file() && is_package_path(&path) {
             packages.push(path);
         } else if include_sidecars && file_type.is_file() && is_sidecar_path(&path) {
             sidecars.push(path);
         }
     }
+    checkpoint(cancellation, "discovery")?;
     Ok(())
 }
 
@@ -1325,6 +1438,16 @@ fn read_asset_signature(path: &Path) -> Option<AssetSignature> {
     })
 }
 
+fn read_asset_signature_with_cancellation(
+    path: &Path,
+    cancellation: &CancellationToken,
+) -> Result<Option<AssetSignature>, Failure> {
+    checkpoint(cancellation, "read")?;
+    let signature = read_asset_signature(path);
+    checkpoint(cancellation, "read")?;
+    Ok(signature)
+}
+
 fn path_kind(path: &Path) -> ManifestEntryKind {
     if is_sidecar_path(path) {
         ManifestEntryKind::Sidecar
@@ -1342,16 +1465,24 @@ fn manifest_entry(signature: &AssetSignature, kind: ManifestEntryKind) -> SavedA
     }
 }
 
-fn read_package_header(signature: &AssetSignature) -> Result<Package, &'static str> {
-    let file_len = usize::try_from(signature.size).map_err(|_| "asset_resource_limit")?;
+fn read_package_header(
+    signature: &AssetSignature,
+    cancellation: &CancellationToken,
+) -> Result<Package, Failure> {
+    checkpoint(cancellation, "read")?;
+    let file_len =
+        usize::try_from(signature.size).map_err(|_| header_failure("asset_resource_limit"))?;
     if file_len == 0 {
-        return Err("asset_malformed_data");
+        return Err(header_failure("asset_malformed_data"));
     }
-    let mut file = File::open(&signature.path).map_err(|_| "asset_io")?;
+    let mut file = File::open(&signature.path).map_err(|_| header_failure("asset_io"))?;
     let mut prefix_len = HEADER_PROBE_BYTES.min(file_len);
     let mut bytes = vec![0; prefix_len];
-    file.read_exact(&mut bytes).map_err(|_| "asset_io")?;
+    file.read_exact(&mut bytes)
+        .map_err(|_| header_failure("asset_io"))?;
+    checkpoint(cancellation, "read")?;
     let summary = loop {
+        checkpoint(cancellation, "parsing")?;
         match PackageSummary::parse_with_file_len(&bytes, file_len) {
             Ok(summary) => break summary,
             Err(error)
@@ -1361,26 +1492,39 @@ fn read_package_header(signature: &AssetSignature) -> Result<Package, &'static s
                 let next_len = (prefix_len * 2).min(MAX_SUMMARY_BYTES).min(file_len);
                 bytes.resize(next_len, 0);
                 file.read_exact(&mut bytes[prefix_len..])
-                    .map_err(|_| "asset_io")?;
+                    .map_err(|_| header_failure("asset_io"))?;
+                checkpoint(cancellation, "read")?;
                 prefix_len = next_len;
             }
-            Err(error) => return Err(package_error_code(&error)),
+            Err(error) => return Err(header_failure(package_error_code(&error))),
         }
     };
-    let header_len =
-        usize::try_from(summary.total_header_size).map_err(|_| "asset_resource_limit")?;
+    checkpoint(cancellation, "parsing")?;
+    let header_len = usize::try_from(summary.total_header_size)
+        .map_err(|_| header_failure("asset_resource_limit"))?;
     if header_len > MAX_HEADER_BYTES {
-        return Err("asset_resource_limit");
+        return Err(header_failure("asset_resource_limit"));
     }
     if header_len > bytes.len() {
         let previous_len = bytes.len();
         bytes.resize(header_len, 0);
         file.read_exact(&mut bytes[previous_len..])
-            .map_err(|_| "asset_io")?;
+            .map_err(|_| header_failure("asset_io"))?;
     } else {
         bytes.truncate(header_len);
     }
-    Package::parse_header(&bytes, file_len).map_err(|error| package_error_code(&error))
+    checkpoint(cancellation, "read")?;
+    checkpoint(cancellation, "inspection")?;
+    Package::parse_header(&bytes, file_len)
+        .map_err(|error| header_failure(package_error_code(&error)))
+}
+
+fn header_failure(code: &'static str) -> Failure {
+    Failure {
+        code: code.to_owned(),
+        message: format!("could not inspect package header ({code})"),
+        retry_safe: matches!(code, "asset_io"),
+    }
 }
 
 fn package_error_code(error: &PackageError) -> &'static str {
@@ -1394,6 +1538,13 @@ fn package_error_code(error: &PackageError) -> &'static str {
 }
 
 pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure> {
+    saved_world_with_cancellation(request, &CancellationToken::new())
+}
+
+pub(crate) fn saved_world_with_cancellation(
+    request: &Request,
+    cancellation: &CancellationToken,
+) -> Result<SavedWorldOutput, Failure> {
     let Operation::SavedWorld {
         map_path,
         project_root,
@@ -1405,13 +1556,19 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
             retry_safe: false,
         });
     };
-    let roots = resolve_saved_world_roots(Path::new(project_root), Path::new(map_path))?;
+    checkpoint(cancellation, "discovery")?;
+    let roots =
+        resolve_saved_world_roots(Path::new(project_root), Path::new(map_path), cancellation)?;
     let mut package_paths = match &roots.source {
         SavedWorldSource::Level => vec![roots.map_path.clone()],
         SavedWorldSource::WorldPartition {
             external_actor_root,
         } => {
-            let (paths, _) = discover_paths(std::slice::from_ref(external_actor_root), false)?;
+            let (paths, _) = discover_paths(
+                std::slice::from_ref(external_actor_root),
+                false,
+                cancellation,
+            )?;
             paths
         }
     };
@@ -1436,7 +1593,7 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
     let worker_count = request.limits.concurrency.unwrap_or(4).max(1) as usize;
     let slots = Mutex::new(
         (0..package_paths.len())
-            .map(|_| None::<SavedWorldPackageRead>)
+            .map(|_| None::<Result<SavedWorldPackageRead, Failure>>)
             .collect::<Vec<_>>(),
     );
     let paths = &package_paths;
@@ -1444,8 +1601,12 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
         for _ in 0..worker_count.min(package_paths.len().max(1)) {
             let next_path = &next_path;
             let slots = &slots;
+            let cancellation = cancellation.clone();
             scope.spawn(move || {
                 loop {
+                    if checkpoint(&cancellation, "discovery").is_err() {
+                        break;
+                    }
                     let index = next_path.fetch_add(1, Ordering::Relaxed);
                     let Some(path) = paths.get(index) else {
                         break;
@@ -1453,7 +1614,7 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
                     slots
                         .lock()
                         .expect("saved-world slots must not be poisoned")[index] =
-                        Some(read_saved_world_package(path));
+                        Some(read_saved_world_package(path, &cancellation));
                 }
             });
         }
@@ -1469,6 +1630,8 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
         .into_iter()
         .flatten()
     {
+        let result = result?;
+        checkpoint(cancellation, "inspection")?;
         if let Some(fragment) = result.fragment {
             fragments.push(fragment);
             if result.partial {
@@ -1481,7 +1644,9 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
             *diagnostic_counts.entry(code).or_default() += 1;
         }
     }
+    checkpoint(cancellation, "inspection")?;
     let positions = resolve_saved_world_positions(&fragments);
+    checkpoint(cancellation, "inspection")?;
     let resolved_actors = positions
         .iter()
         .filter(|position| matches!(position.position, SavedWorldPosition::Resolved { .. }))
@@ -1495,6 +1660,7 @@ pub(crate) fn saved_world(request: &Request) -> Result<SavedWorldOutput, Failure
         })
         .collect();
     let partial = partial_packages > 0 || failed_packages > 0;
+    checkpoint(cancellation, "inspection")?;
     let world = SavedWorld {
         authority: SavedWorldAuthority {
             kind: crate::protocol_result::ProjectFilesKind,
@@ -1559,7 +1725,9 @@ impl SavedWorldSource {
 fn resolve_saved_world_roots(
     project_root: &Path,
     requested_map_path: &Path,
+    cancellation: &CancellationToken,
 ) -> Result<SavedWorldRoots, Failure> {
+    checkpoint(cancellation, "discovery")?;
     let project_root = fs::canonicalize(project_root).map_err(|error| Failure {
         code: "io".to_owned(),
         message: format!(
@@ -1582,6 +1750,7 @@ fn resolve_saved_world_roots(
         ),
         retry_safe: true,
     })?;
+    checkpoint(cancellation, "discovery")?;
     if !map_path.starts_with(&content_root) {
         return Err(Failure {
             code: "invalid_request".to_owned(),
@@ -1601,6 +1770,7 @@ fn resolve_saved_world_roots(
     let external_actor_root = content_root
         .join("__ExternalActors__")
         .join(external_actor_relative);
+    checkpoint(cancellation, "discovery")?;
     Ok(SavedWorldRoots {
         map_package: format!(
             "/Game/{}",
@@ -1652,27 +1822,34 @@ struct SavedWorldPackageRead {
     partial: bool,
 }
 
-fn read_saved_world_package(path: &Path) -> SavedWorldPackageRead {
+fn read_saved_world_package(
+    path: &Path,
+    cancellation: &CancellationToken,
+) -> Result<SavedWorldPackageRead, Failure> {
+    checkpoint(cancellation, "read")?;
     let source = match fs::read(path) {
         Ok(source) => source,
         Err(_) => {
-            return SavedWorldPackageRead {
+            return Ok(SavedWorldPackageRead {
                 failure_code: Some("asset_io".to_owned()),
                 fragment: None,
                 partial: false,
-            };
+            });
         }
     };
+    checkpoint(cancellation, "read")?;
+    checkpoint(cancellation, "parsing")?;
     let package = match Package::parse(&source) {
         Ok(package) => package,
         Err(error) => {
-            return SavedWorldPackageRead {
+            return Ok(SavedWorldPackageRead {
                 failure_code: Some(package_error_code(&error).to_owned()),
                 fragment: None,
                 partial: false,
-            };
+            });
         }
     };
+    checkpoint(cancellation, "parsing")?;
     let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: &source,
@@ -1682,17 +1859,21 @@ fn read_saved_world_package(path: &Path) -> SavedWorldPackageRead {
     let mut decoded = Vec::new();
     let mut partial = false;
     for export in &package.exports {
+        checkpoint(cancellation, "parsing")?;
         match decode_export(export, &context) {
             Ok(Some(asset)) => decoded.push(asset),
             Ok(None) => {}
             Err(_) => partial = true,
         }
+        checkpoint(cancellation, "inspection")?;
     }
-    SavedWorldPackageRead {
+    let fragment = project_saved_world_package(&package, &decoded);
+    checkpoint(cancellation, "inspection")?;
+    Ok(SavedWorldPackageRead {
         failure_code: partial.then_some("export_decode".to_owned()),
-        fragment: Some(project_saved_world_package(&package, &decoded)),
+        fragment: Some(fragment),
         partial,
-    }
+    })
 }
 
 fn saved_world_actor(position: SavedWorldActorPosition) -> SavedWorldActor {

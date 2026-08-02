@@ -1,17 +1,20 @@
-import { it } from "@effect/vitest";
+import { it as effectIt } from "@effect/vitest";
 import { Effect, Ref } from "effect";
-import { expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	AssetReaderError,
+	ProtocolOutputBudget,
+	ProtocolStreamValidator,
 	discoverSavedAssets,
 	makeAssetReaderTestLayer,
+	protocolCacheOutcome,
 	readSavedWorld,
 	type SavedWorld
 } from "./index.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
-it.effect("routes saved-asset discovery through the AssetReader service", () =>
+effectIt.effect("routes saved-asset discovery through the AssetReader service", () =>
 	Effect.gen(function* () {
 		const requestedRoots = yield* Ref.make<readonly string[]>([]);
 		const layer = makeAssetReaderTestLayer({
@@ -34,7 +37,7 @@ it.effect("routes saved-asset discovery through the AssetReader service", () =>
 	})
 );
 
-it.effect("preserves typed discovery failures from a test layer", () =>
+effectIt.effect("preserves typed discovery failures from a test layer", () =>
 	Effect.gen(function* () {
 		const failure = new AssetReaderError({
 			kind: "discovery",
@@ -60,7 +63,7 @@ it.effect("preserves typed discovery failures from a test layer", () =>
 	})
 );
 
-it.effect("routes a map-targeted saved-world read through the AssetReader service", () =>
+effectIt.effect("routes a map-targeted saved-world read through the AssetReader service", () =>
 	Effect.gen(function* () {
 		const requestedMaps = yield* Ref.make<readonly string[]>([]);
 		const savedWorld: SavedWorld = {
@@ -100,3 +103,89 @@ it.effect("routes a map-targeted saved-world read through the AssetReader servic
 		expect(yield* Ref.get(requestedMaps)).toEqual(["Content/Maps/L_Example.umap"]);
 	})
 );
+
+const protocolContract = {
+	name: "uasset-io",
+	version: { major: 1, minor: 0 }
+} as const;
+
+type TestProtocolContract = {
+	readonly name: "uasset-io";
+	readonly version: { readonly major: 1; readonly minor: number };
+};
+
+function acceptedEvent(sequence = 0, contract: TestProtocolContract = protocolContract) {
+	return {
+		contract,
+		kind: "accepted" as const,
+		operation: "inspect" as const,
+		requestId: "protocol-test",
+		sequence
+	};
+}
+
+function completedEvent(sequence = 1, contract: TestProtocolContract = protocolContract) {
+	return {
+		contract,
+		kind: "completed" as const,
+		outcome: "complete" as const,
+		requestId: "protocol-test",
+		sequence
+	};
+}
+
+describe("AssetReader protocol boundary validation", () => {
+	it("uses a cumulative byte budget for chunks and partial lines", () => {
+		const budget = new ProtocolOutputBudget(5);
+		budget.observe("{}\n");
+		budget.observe("{");
+		expect(budget.bytes).toBe(4);
+		expect(() => budget.observe("123")).toThrow("Protocol output exceeded 5 bytes");
+		expect(budget.bytes).toBe(4);
+	});
+
+	it("reports cache misses only when a cache was requested", () => {
+		expect(protocolCacheOutcome(false, 0, 5)).toBe("not_requested");
+		expect(protocolCacheOutcome(true, 0, 0)).toBe("miss");
+		expect(protocolCacheOutcome(true, 2, 0)).toBe("hit");
+	});
+
+	it("requires the request contract, one accepted first, and contiguous sequence", () => {
+		const validator = new ProtocolStreamValidator(protocolContract, "protocol-test");
+		validator.push(acceptedEvent());
+		validator.push(completedEvent());
+		validator.finish();
+
+		expect(() =>
+			new ProtocolStreamValidator(protocolContract, "protocol-test").push(completedEvent(0))
+		).toThrow("must begin with an accepted");
+		expect(() => {
+			const duplicate = new ProtocolStreamValidator(protocolContract, "protocol-test");
+			duplicate.push(acceptedEvent());
+			duplicate.push(acceptedEvent(1));
+		}).toThrow("more than one accepted");
+		expect(() => {
+			const skipped = new ProtocolStreamValidator(protocolContract, "protocol-test");
+			skipped.push(acceptedEvent());
+			skipped.push(completedEvent(2));
+		}).toThrow("sequence expected 1");
+		expect(() => {
+			const mismatched = new ProtocolStreamValidator(protocolContract, "protocol-test");
+			mismatched.push(
+				acceptedEvent(0, { ...protocolContract, version: { major: 1, minor: 1 } })
+			);
+		}).toThrow("does not match the request contract");
+	});
+
+	it("rejects blank frames and frames after terminal", () => {
+		const blank = new ProtocolStreamValidator(protocolContract, "protocol-test");
+		expect(() => blank.pushLine(" ")).toThrow("empty frame");
+
+		const afterTerminal = new ProtocolStreamValidator(protocolContract, "protocol-test");
+		afterTerminal.pushLine(JSON.stringify(acceptedEvent()));
+		afterTerminal.pushLine(JSON.stringify(completedEvent()));
+		expect(() => afterTerminal.pushLine(JSON.stringify(acceptedEvent(2)))).toThrow(
+			"after its terminal event"
+		);
+	});
+});

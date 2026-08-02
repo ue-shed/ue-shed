@@ -39,7 +39,7 @@ that is how the inventory validates persisted Workbench projections. Filesystem 
 dropped, so "cold" means the application cache, not an artificial cold disk.
 
 The WASM workload is the 2.4 MB `DT_LargeScalars` fixture. Both producers parse, decode, and serialize
-the same schema-v7 inspection output. The WASM lane receives already-read bytes and reuses one module
+the same schema-v8 inspection output. The WASM lane receives already-read bytes and reuses one module
 instance; the native lane starts a process and reads the file for every sample. The benchmark labels
 that authority difference rather than presenting it as a codec-only comparison. Its JSON result
 records every sample, environment and revision identity, input/output size, and optimized module
@@ -70,6 +70,12 @@ The harness reports:
 
 - `native.inspect.single`: release `uasset inspect` for the fixed Enhanced Input mapping-context
   fixture. This includes process startup, file read, decode, and JSON serialization.
+- `native.scan.header.concurrency1` and `native.scan.header.concurrency4`: the same uncached header
+  scan with explicit worker counts. Their observed output records scanned assets, emitted assets,
+  and cache hits so a faster result cannot silently represent less work.
+- `native.scan.header.cache.cold` and `native.scan.header.cache.warm`: the same four-worker header
+  scan with a temporary cache. Cold removes the application cache before every sample; warm seeds it
+  before measurement. Filesystem caches remain warm in both cases.
 - `typescript.input.single`: the source TypeScript CLI application and release reader for the same
   asset. This includes Effect/schema projection and process orchestration, but excludes the
   source-checkout Cargo launcher.
@@ -111,6 +117,12 @@ reduce one-time loader noise but do not make measurements portable across machin
 budgets belong in an accepted decision only after a representative small, medium, and large corpus
 has been measured.
 
+The fixture benchmark deliberately has no wall-clock regression threshold. Its TypeScript scenarios
+are dominated by source-loader and process startup, while its 52-package cache/concurrency sample is
+too small to establish a portable budget. Correctness gates instead require identical validated
+output and explicit observed work. Add a numeric threshold only after repeated clean-checkout runs on
+a representative project demonstrate a stable distribution.
+
 Optimize the highest boundary cost first. A fast Rust decode does not compensate for spawning one
 reader per package, parsing irrelevant exports, or rebuilding unchanged catalogs. Prefer generic
 batch inspection, header filtering, streaming progress, and incremental caches before specializing
@@ -128,6 +140,23 @@ time. A cache is intentionally specific to its filter set: persisting every expo
 one cache would make map-heavy projects much larger. `scan --inventory` streams the same pass's
 package and sidecar signatures, allowing consumers to validate persisted derived catalogs without a
 separate Node filesystem walk.
+
+### Plan 036 closure sample (2026-08-02)
+
+A three-sample closure run on the 52-package fixture verified identical scanned/emitted counts while
+varying concurrency and application-cache state. Filesystem caches remained warm. The complete
+machine-readable result was written to the ignored `test-results/uasset-plan036-final-native.json`.
+
+| Scenario                          |      p50 |      p95 | Observed work                         |
+| --------------------------------- | -------: | -------: | ------------------------------------- |
+| `native.scan.header.concurrency1` | 103.2 ms | 103.5 ms | 52 scanned, 52 emitted, 0 cache hits  |
+| `native.scan.header.concurrency4` |  99.6 ms | 116.8 ms | 52 scanned, 52 emitted, 0 cache hits  |
+| `native.scan.header.cache.cold`   | 105.5 ms | 107.9 ms | 52 scanned, 52 emitted, 0 cache hits  |
+| `native.scan.header.cache.warm`   |  67.4 ms |  76.4 ms | 52 scanned, 52 emitted, 52 cache hits |
+
+This corpus proves cache behavior and stable output but is too small to justify a concurrency or
+wall-clock regression threshold. Four workers were only marginally faster at p50 and noisier at p95;
+the warm application cache was the material improvement.
 
 ### Shared Workbench project-index result (2026-07-30)
 

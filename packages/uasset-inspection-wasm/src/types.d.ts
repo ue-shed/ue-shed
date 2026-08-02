@@ -1,0 +1,294 @@
+export type FailureKind =
+	| "malformed_data"
+	| "resource_limit"
+	| "unsupported_format"
+	| "unsupported_version"
+	| "unsupported_capability";
+
+export interface InspectionDecodeError {
+	readonly object_path: string;
+	readonly class_path?: string;
+	readonly kind: FailureKind;
+	readonly message: string;
+}
+
+export type InspectionValue =
+	| { readonly value_kind: "bool"; readonly value: boolean }
+	| { readonly value_kind: "int"; readonly value: number }
+	| { readonly value_kind: "uint"; readonly value: number }
+	| { readonly value_kind: "float"; readonly value: number }
+	| { readonly value_kind: "double"; readonly value: number }
+	| {
+			readonly value_kind: "name" | "enum" | "string" | "guid" | "soft_object_path";
+			readonly value: string;
+	  }
+	| {
+			readonly value_kind: "text";
+			readonly value: string;
+			readonly history: "none" | "base";
+			readonly namespace?: string;
+			readonly key?: string;
+	  }
+	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
+	| { readonly value_kind: "int_point"; readonly x: number; readonly y: number }
+	| {
+			readonly value_kind: "rotator";
+			readonly pitch: number;
+			readonly yaw: number;
+			readonly roll: number;
+	  }
+	| {
+			readonly value_kind: "color";
+			readonly r: number;
+			readonly g: number;
+			readonly b: number;
+			readonly a: number;
+	  }
+	| {
+			readonly value_kind: "linear_color";
+			readonly r: number;
+			readonly g: number;
+			readonly b: number;
+			readonly a: number;
+	  }
+	| {
+			readonly value_kind: "data_table_row_handle";
+			readonly table_object_path: string | null;
+			readonly row_name: string;
+	  }
+	| { readonly value_kind: "object_ref"; readonly value: string | null }
+	| { readonly value_kind: "array" | "set"; readonly values: readonly InspectionValue[] }
+	| {
+			readonly value_kind: "map";
+			readonly entries: readonly {
+				readonly key: InspectionValue;
+				readonly value: InspectionValue;
+			}[];
+	  }
+	| { readonly value_kind: "struct"; readonly properties: readonly InspectionProperty[] }
+	| { readonly value_kind: "raw"; readonly reason: string; readonly size: number };
+
+export type InspectionProperty = InspectionValue & {
+	readonly name: string;
+	readonly type: string;
+};
+
+export interface InspectionAsset {
+	readonly kind: string;
+	readonly object_path: string;
+	readonly class_path?: string;
+	readonly object_guid?: string;
+	readonly row_struct?: string;
+	readonly parent_tables?: readonly string[];
+	readonly string_table_namespace?: string;
+	readonly string_table_entries?: readonly { readonly key: string; readonly source: string }[];
+	readonly enum_cpp_form?: string;
+	readonly enum_entries?: readonly {
+		readonly name: string;
+		readonly value: number;
+		readonly display_name?: string;
+	}[];
+	readonly struct_flags?: number;
+	readonly struct_fields?: readonly {
+		readonly name: string;
+		readonly type: string;
+		readonly referenced_path?: string;
+		readonly display_name?: string;
+	}[];
+	readonly properties: readonly InspectionProperty[];
+	readonly tail_bytes?: number;
+	readonly bones: readonly { readonly name: string; readonly parent_index: number }[];
+	readonly row_count: number;
+	readonly curve_rows: readonly {
+		readonly name: string;
+		readonly keys: readonly { readonly time: number; readonly value: number }[];
+	}[];
+	readonly rows: readonly {
+		readonly name: string;
+		readonly properties: readonly InspectionProperty[];
+	}[];
+}
+
+export interface InspectionPackage {
+	readonly name: string;
+	readonly version: {
+		readonly legacy_file: number;
+		readonly legacy_ue3: number | null;
+		readonly ue4: number;
+		readonly ue5: number;
+		readonly licensee: number;
+	};
+	readonly package_flags: number;
+	readonly summary_size: number;
+	readonly total_header_size: number;
+	readonly names: { readonly count: number; readonly offset: number };
+	readonly soft_object_paths?: {
+		readonly count: number;
+		readonly offset: number;
+		readonly parsed_count: number;
+	};
+	readonly imports: { readonly count: number; readonly offset: number };
+	readonly exports: { readonly count: number; readonly offset: number };
+}
+
+export interface InspectionSuccess {
+	readonly schema_version: 8;
+	readonly status: "ok" | "partial";
+	readonly path: string;
+	readonly package: InspectionPackage;
+	readonly assets: readonly InspectionAsset[];
+	readonly decode_errors?: readonly InspectionDecodeError[];
+}
+
+export interface InspectionError {
+	readonly schema_version: 8;
+	readonly status: "error";
+	readonly path: string;
+	readonly kind: FailureKind | "internal";
+	readonly message: string;
+	readonly field: string | null;
+	readonly offset: number | null;
+}
+
+export type InspectionResult = InspectionSuccess | InspectionError;
+
+export interface TextOccurrence {
+	readonly source: string;
+	readonly identity:
+		| { readonly status: "resolved"; readonly namespace: string; readonly key: string }
+		| { readonly status: "unresolved"; readonly reason: "culture_invariant" | "missing_key" };
+	readonly location:
+		| {
+				readonly kind: "data_table_cell";
+				readonly object_path: string;
+				readonly row: string;
+				readonly property_path: string;
+		  }
+		| {
+				readonly kind: "string_table_entry";
+				readonly object_path: string;
+				readonly entry_key: string;
+		  }
+		| {
+				readonly kind: "asset_property";
+				readonly object_path: string;
+				readonly class_path: string;
+				readonly property_path: string;
+		  };
+	readonly edit_capability: "source_editable" | "read_only";
+}
+
+export interface TextCoverageGap {
+	readonly object_path: string;
+	readonly property_path: string;
+	readonly reason: "unsupported_text_history";
+}
+
+export interface ProjectionDiagnostic {
+	readonly object_path: string;
+	readonly class_path?: string;
+	readonly code: FailureKind;
+	readonly message: string;
+}
+
+export interface TextProjection {
+	readonly schema_version: 1;
+	readonly status: "complete" | "partial";
+	readonly path: string;
+	readonly occurrences: readonly TextOccurrence[];
+	readonly coverage_gaps: readonly TextCoverageGap[];
+	readonly diagnostics: readonly ProjectionDiagnostic[];
+}
+
+export interface TextureEvidence<T> {
+	readonly status: "available" | "unavailable";
+	readonly source?: "serialized" | "file";
+	readonly value?: T;
+	readonly reason?: "not_serialized" | "wrong_value_kind" | "missing_source";
+}
+
+export interface TextureRecord {
+	readonly object_path: string;
+	readonly package_file_bytes: TextureEvidence<number>;
+	readonly dimensions: TextureEvidence<{ readonly width: number; readonly height: number }>;
+	readonly source_format: TextureEvidence<string>;
+	readonly source_mips: TextureEvidence<number>;
+	readonly compression: TextureEvidence<string>;
+	readonly s_rgb: TextureEvidence<boolean>;
+	readonly texture_group: TextureEvidence<string>;
+	readonly mip_generation: TextureEvidence<string>;
+}
+
+export interface TextureProjection {
+	readonly schema_version: 1;
+	readonly status: "complete" | "partial";
+	readonly path: string;
+	readonly records: readonly TextureRecord[];
+	readonly diagnostics: readonly ProjectionDiagnostic[];
+}
+
+export interface ProjectionError {
+	readonly schema_version: 1;
+	readonly status: "error";
+	readonly path: string;
+	readonly kind: FailureKind | "internal";
+	readonly message: string;
+}
+
+export type TextResult = TextProjection | ProjectionError;
+export type TextureResult = TextureProjection | ProjectionError;
+
+export interface RuntimeLimits {
+	readonly maxInputBytes: number;
+	readonly maxOutputBytes: number;
+	readonly maxExports: number;
+	readonly maxProjectionItems: number;
+}
+
+export interface RuntimeOptions {
+	readonly maxInputBytes?: number;
+	readonly maxOutputBytes?: number;
+}
+
+export type BrowserWasmModule = WebAssembly.Module | ArrayBuffer | ArrayBufferView | URL;
+
+export interface BrowserRuntimeOptions extends RuntimeOptions {
+	readonly module?: BrowserWasmModule;
+}
+
+export interface WasmRuntime {
+	readonly limits: RuntimeLimits;
+	readonly inspect: (path: string, bytes: Uint8Array) => InspectionResult;
+	readonly extractText: (path: string, bytes: Uint8Array) => TextResult;
+	readonly extractTextures: (path: string, bytes: Uint8Array) => TextureResult;
+	readonly version: () => string;
+}
+
+export class WasmInputLimitError extends Error {
+	readonly name: "WasmInputLimitError";
+	readonly code: "UE_SHED_UASSET_WASM_INPUT_LIMIT";
+	readonly actualBytes: number;
+	readonly maxBytes: number;
+	constructor(actualBytes: number, maxBytes: number);
+}
+
+export class WasmOutputLimitError extends Error {
+	readonly name: "WasmOutputLimitError";
+	readonly code: "UE_SHED_UASSET_WASM_OUTPUT_LIMIT";
+	readonly actualBytes: number;
+	readonly maxBytes: number;
+	constructor(actualBytes: number, maxBytes: number);
+}
+
+export class WasmProtocolError extends Error {
+	readonly name: "WasmProtocolError";
+	readonly code: "UE_SHED_UASSET_WASM_PROTOCOL";
+	readonly operation: string;
+	constructor(operation: string, message: string, cause?: unknown);
+}
+
+export class WasmInitializationError extends Error {
+	readonly name: "WasmInitializationError";
+	readonly code: "UE_SHED_UASSET_WASM_INITIALIZATION";
+	constructor(message: string, cause?: unknown);
+}

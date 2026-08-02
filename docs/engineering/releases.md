@@ -36,7 +36,8 @@ Use an exact prerelease version and, when available, the exact successful Truste
 1. Dispatch `Candidate Release` on the reviewed protected ref.
 2. Enter a version such as `0.1.0-rc.1` and leave `publish` disabled.
 3. Enter the numeric Unreal run ID to bind its evidence into the candidate. Omitting it is allowed
-   only for a portable dry run and is represented as `null` in the manifest.
+   only for a portable dry run and is represented as `null` in the manifest. Any publication input
+   without that exact successful run is rejected.
 4. Download `ue-shed-<version>` and verify `SHA256SUMS`.
 5. Inspect `candidate-manifest.json`: the source commit, ref, pnpm version, lockfile digest, evidence
    run, and every artifact digest must be exact. The candidate's `plugins/plugins.manifest.json`
@@ -45,12 +46,14 @@ Use an exact prerelease version and, when available, the exact successful Truste
 
 The candidate always contains immutable source and checksummed plugin-source artifacts. Its npm allowlist is
 exactly `@ue-shed/protocol`, `@ue-shed/observability`, `@ue-shed/unreal-connection`,
-`@ue-shed/cameras`, `@ue-shed/observatory`, `@ue-shed/uasset-win32-x64`,
-`@ue-shed/unreal-assets`, and `@ue-shed/uasset`; candidate construction fails if another workspace
-becomes public accidentally. Observatory is a headless Node host surface: it pins Observability and
-Unreal Connection, and its USOT v1 wire contract remains in Protocol. The Windows candidate job
-builds the native parser once, validates the packed manifests and checksums, installs the tarballs
-into a clean offline consumer, and dry-runs all eight publications.
+`@ue-shed/cameras`, `@ue-shed/observatory`, `@ue-shed/uasset-inspection-wasm`,
+`@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and `@ue-shed/uasset`; candidate
+construction fails if another workspace becomes public accidentally. Observatory is a headless Node
+host surface: it pins Observability and Unreal Connection, and its USOT v1 wire contract remains in
+Protocol. The Windows candidate job builds the native parser and WASM package, validates packed
+manifests, MIT license metadata, checksums, the generated WASM `dist/build-info.json` optimizer
+evidence, and provenance subjects, installs the tarballs into a clean offline consumer, loads the
+WASM package, and dry-runs all nine publications.
 
 For a local artifact-only dry run:
 
@@ -105,9 +108,11 @@ pnpm ue-shed plugins install --project <project.uproject> `
 The initial `0.1.0-rc.1` publication bootstrapped the parser packages before npm trusted publishers
 could be configured. Later Map Review candidates add `@ue-shed/unreal-connection` and
 `@ue-shed/cameras`, `@ue-shed/observability`, and `@ue-shed/observatory` to the same exact-version,
-protected OIDC path. From a clean reviewed checkout on Windows, run `pnpm check`, then
-`pnpm release:pack` to inspect the local artifacts. Do not publish those tarballs with a personal
-token: protected OIDC publication is the only supported path. Confirm the local manifest and checksums:
+protected OIDC path. The new `@ue-shed/uasset-inspection-wasm` package is a special first-publish
+case: npm cannot configure a trusted publisher until the package exists, and npm staged publishing
+cannot create a brand-new package. Follow the one-time bootstrap procedure below; do not improvise a
+token-based path for any other package. From a clean reviewed checkout on Windows, run `pnpm check`,
+then `pnpm release:pack` to inspect the local artifacts. Confirm the local manifest and checksums:
 
 ```powershell
 Get-Content out/releases/0.1.0-rc.4/npm/packages-manifest.json
@@ -116,8 +121,55 @@ Get-Content out/releases/0.1.0-rc.4/npm/SHA256SUMS
 
 Do not treat local packing as publication: protected OIDC publication requires the exact candidate
 tag, the protected `npm-release` environment, and human approval. If publication fails after an
-earlier package succeeds, do not unpublish or rebuild that version; rerun the protected publish job
-only after resolving the account or registry issue.
+earlier package succeeds, do not unpublish or rebuild that version. The protected job is retry-safe:
+for every exact `name@version`, it computes SHA-512 SRI from the candidate `.tgz` and queries npm's
+`dist.integrity`. It publishes an absent version, skips an existing version only when the registry
+integrity exactly matches, and fails closed on a mismatch or registry-query error. Rerun the same
+protected job only after resolving the account or registry issue.
+
+## One-time WASM bootstrap
+
+The npm registry requires the package to exist before `npm trust` can configure its GitHub trusted
+publisher, while staged publishing also requires an existing package. Therefore the first
+`@ue-shed/uasset-inspection-wasm` publication uses a deliberately separate, one-time path:
+
+1. Confirm the candidate has the exact protected tag, successful portable evidence, and successful
+   Trusted Unreal evidence for the same commit. The workflow refuses publication without the exact
+   run ID.
+2. Dispatch `Candidate Release` from `refs/tags/v<version>` with `publish=true` and
+   `bootstrap=true`. Approve the protected `npm-bootstrap-release` environment.
+3. Store only a narrowly scoped, short-lived `NPM_BOOTSTRAP_TOKEN` in that protected environment.
+   It is used only as `NODE_AUTH_TOKEN` for the new WASM tarball; it must not be a repository-wide
+   secret or be exposed to candidate construction, dry runs, or the normal publish job.
+4. The bootstrap job publishes only the WASM tarball with `npm publish --provenance --access public
+--tag next`. It does not use staged publishing and does not publish the existing package set.
+   The later normal nine-package OIDC job queries this exact version, verifies that its registry
+   integrity matches the bootstrap tarball, and skips it instead of attempting an immutable-version
+   republish.
+5. After the package exists, configure its GitHub trusted publisher with npm's `npm trust` command
+   or package settings. The intended relationship is:
+
+    ```powershell
+    npm trust github @ue-shed/uasset-inspection-wasm --file candidate-release.yml `
+      --repo ue-shed/ue-shed --env npm-release --allow-publish --yes
+    npm trust list @ue-shed/uasset-inspection-wasm
+    ```
+
+6. Verify a protected OIDC candidate dry run, revoke/delete `NPM_BOOTSTRAP_TOKEN`, remove it from
+   `npm-bootstrap-release`, and enable npm's “require two-factor authentication and disallow
+   tokens” setting for the package. Only then is the normal OIDC publish path allowed.
+
+The bootstrap job completes successfully after the first publish, but writes a prominent
+`GITHUB_STEP_SUMMARY` handoff and workflow warning. Green status is not the steady-state release
+postcondition: a human must configure the trusted publisher, verify OIDC, revoke/delete the
+`NPM_BOOTSTRAP_TOKEN` at npm, and remove the `npm-bootstrap-release` secret before any later
+publication. Re-running with `bootstrap=true` is not a recovery strategy: the package version is
+immutable and the one-time token must not be reused. If bootstrap prerequisites are not ready, leave
+`publish=false`; the workflow fails closed.
+
+See npm's [trusted publishers](https://docs.npmjs.com/trusted-publishers/), [`npm trust`](https://docs.npmjs.com/cli/v11/commands/npm-trust/),
+[provenance](https://docs.npmjs.com/generating-provenance-statements/), and
+[staged publishing](https://docs.npmjs.com/staged-publishing/) documentation for the registry rules.
 
 ## Protected npm publication
 
@@ -132,9 +184,15 @@ Publication is deliberately narrower than candidate creation:
   self-hosted runner;
 - provide no `NODE_AUTH_TOKEN`: npm obtains a short-lived OIDC identity and creates provenance for a
   public package from a public repository.
+- the steady-state job rejects any `NODE_AUTH_TOKEN` or `NPM_TOKEN` in its environment; token
+  authentication is reserved for the one-time protected bootstrap job above.
 
-The job publishes only the previously built `.tgz` files. It fails when the tag and exact version do
-not agree or when no public package artifacts exist.
+The job reconciles only the previously built `.tgz` files in the exact manifest order. Before each
+package, it queries the exact registry `name@version`: an absent version is published, an existing
+version with byte-identical SHA-512 SRI is skipped, and an integrity mismatch fails closed. This also
+makes a rerun safe after a partial multi-package publication. The job still fails when the tag and
+exact version do not agree, Trusted Unreal evidence is not bound, token auth is present, the registry
+query is ambiguous or fails, or no public package artifacts exist.
 
 ## Two-repository handshake
 

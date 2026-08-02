@@ -16,6 +16,11 @@ on:
                 required: true
                 default: false
                 type: boolean
+            bootstrap:
+                description: One-time first publish for the new WASM package using protected NPM_BOOTSTRAP_TOKEN
+                required: true
+                default: false
+                type: boolean
 
 permissions:
     contents: read
@@ -54,6 +59,29 @@ jobs:
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
 
+            - name: Require bootstrap to be explicitly paired with publication
+              if: inputs.bootstrap && !inputs.publish
+              shell: pwsh
+              run: throw "The bootstrap path cannot run without publish=true."
+
+            - name: Require Trusted Unreal evidence for publication
+              if: inputs.publish && inputs.unreal_run_id == ''
+              shell: pwsh
+              run: throw "Publication requires an exact successful Trusted Unreal run ID."
+
+            - name: Validate exact Trusted Unreal run
+              if: inputs.unreal_run_id != ''
+              shell: pwsh
+              env:
+                  UNREAL_RUN_ID: ${{ inputs.unreal_run_id }}
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  $run = gh run view $env:UNREAL_RUN_ID --json conclusion,headSha,workflowName | ConvertFrom-Json
+                  if ($LASTEXITCODE -ne 0) { throw "Could not inspect Trusted Unreal run $env:UNREAL_RUN_ID." }
+                  if ($run.workflowName -ne "Trusted Unreal") { throw "Run $env:UNREAL_RUN_ID is not the Trusted Unreal workflow." }
+                  if ($run.conclusion -ne "success") { throw "Trusted Unreal run $env:UNREAL_RUN_ID is not successful." }
+                  if ($run.headSha -ne $env:GITHUB_SHA) { throw "Trusted Unreal run $env:UNREAL_RUN_ID does not test $env:GITHUB_SHA." }
+
             - name: Run portable release gate
               run: pnpm check
 
@@ -74,6 +102,7 @@ jobs:
               env:
                   CANDIDATE_VERSION: ${{ inputs.version }}
                   UNREAL_RUN_ID: ${{ inputs.unreal_run_id }}
+                  REQUIRE_UNREAL_EVIDENCE: ${{ inputs.publish }}
               run: |
                   args=(
                     --version "$CANDIDATE_VERSION"
@@ -83,6 +112,9 @@ jobs:
                   )
                   if [[ -n "$UNREAL_RUN_ID" ]]; then
                     args+=(--unreal-evidence unreal-evidence --unreal-run-id "$UNREAL_RUN_ID")
+                  fi
+                  if [[ "$REQUIRE_UNREAL_EVIDENCE" == "true" ]]; then
+                    args+=(--require-unreal-evidence)
                   fi
                   node scripts/create-release-candidate.mjs "${args[@]}"
 
@@ -105,6 +137,7 @@ jobs:
                     "release/npm/ue-shed-unreal-connection-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-cameras-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-observatory-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-uasset-inspection-wasm-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
@@ -137,10 +170,13 @@ jobs:
                       candidate/**/*.tar.gz
                       candidate/**/*.tgz
                       candidate/candidate-manifest.json
+                      candidate/SHA256SUMS
+                      candidate/npm/SHA256SUMS
+                      candidate/npm/packages-manifest.json
 
     publish:
         name: Publish npm candidate
-        if: inputs.publish
+        if: inputs.publish && !inputs.bootstrap
         needs:
             - candidate
             - provenance
@@ -160,6 +196,12 @@ jobs:
                     exit 1
                   fi
 
+            - name: Checkout exact publication helper
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.sha }}
+                  persist-credentials: false
+
             - name: Install Node.js for npm trusted publishing
               uses: actions/setup-node@v6
               with:
@@ -176,21 +218,128 @@ jobs:
                   name: ue-shed-${{ inputs.version }}
                   path: candidate
 
-            - name: Publish candidate tarballs through OIDC
+            - name: Reject token authentication in steady-state publication
+              shell: bash
+              run: |
+                  if [[ -n "${NODE_AUTH_TOKEN:-}" || -n "${NPM_TOKEN:-}" ]]; then
+                    echo "Steady-state publication is OIDC-only; token authentication is forbidden." >&2
+                    exit 1
+                  fi
+
+            - name: Require bound Trusted Unreal evidence
+              shell: bash
+              env:
+                  UNREAL_RUN_ID: ${{ inputs.unreal_run_id }}
+              run: |
+                  node --input-type=module --eval '
+                    import { readFile } from "node:fs/promises";
+                    const manifest = JSON.parse(await readFile("candidate/candidate-manifest.json", "utf8"));
+                    if (manifest.evidence?.unrealWorkflow !== "Trusted Unreal" || manifest.evidence?.unrealRunId !== process.env.UNREAL_RUN_ID) {
+                      throw new Error("Candidate is not bound to the requested successful Trusted Unreal run.");
+                    }
+                    if (!manifest.artifacts?.some((entry) => entry.kind === "trusted-unreal-evidence")) {
+                      throw new Error("Candidate is missing the trusted Unreal evidence artifact.");
+                    }
+                  '
+
+            - name: Reconcile and publish candidate tarballs through OIDC
               shell: bash
               env:
                   CANDIDATE_VERSION: ${{ inputs.version }}
               run: |
-                  packages=(
-                    "candidate/npm/ue-shed-protocol-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-observability-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-unreal-connection-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-cameras-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-observatory-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
-                    "candidate/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
-                  )
-                  for package in "${packages[@]}"; do
-                    npm publish "$package" --access public --tag next
-                  done
+                  node scripts/publish-public-packages.mjs \
+                    --manifest candidate/npm/packages-manifest.json \
+                    --version "$CANDIDATE_VERSION" \
+                    --tag next
+
+    bootstrap:
+        name: Bootstrap new npm package with short-lived token
+        if: inputs.publish && inputs.bootstrap
+        needs:
+            - candidate
+            - provenance
+        environment: npm-bootstrap-release
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write
+        steps:
+            - name: Require the exact candidate tag
+              shell: bash
+              env:
+                  CANDIDATE_VERSION: ${{ inputs.version }}
+              run: |
+                  if [[ "$GITHUB_REF" != "refs/tags/v$CANDIDATE_VERSION" ]]; then
+                    echo "Bootstrap publication requires dispatching the exact tag refs/tags/v$CANDIDATE_VERSION." >&2
+                    exit 1
+                  fi
+
+            - name: Checkout exact publication helper
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.sha }}
+                  persist-credentials: false
+
+            - name: Install Node.js for bootstrap provenance
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "24"
+                  registry-url: https://registry.npmjs.org
+                  package-manager-cache: false
+
+            - name: Install exact npm CLI
+              run: npm install --global npm@12.0.1
+
+            - name: Download attested candidate
+              uses: actions/download-artifact@v7
+              with:
+                  name: ue-shed-${{ inputs.version }}
+                  path: candidate
+
+            - name: Require bound Trusted Unreal evidence
+              shell: bash
+              env:
+                  UNREAL_RUN_ID: ${{ inputs.unreal_run_id }}
+              run: |
+                  node --input-type=module --eval '
+                    import { readFile } from "node:fs/promises";
+                    const manifest = JSON.parse(await readFile("candidate/candidate-manifest.json", "utf8"));
+                    if (manifest.evidence?.unrealWorkflow !== "Trusted Unreal" || manifest.evidence?.unrealRunId !== process.env.UNREAL_RUN_ID) {
+                      throw new Error("Candidate is not bound to the requested successful Trusted Unreal run.");
+                    }
+                    if (!manifest.artifacts?.some((entry) => entry.kind === "trusted-unreal-evidence")) {
+                      throw new Error("Candidate is missing the trusted Unreal evidence artifact.");
+                    }
+                  '
+
+            - name: Bootstrap only the new WASM package with provenance
+              shell: bash
+              env:
+                  CANDIDATE_VERSION: ${{ inputs.version }}
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+              run: |
+                  node scripts/publish-public-packages.mjs \
+                    --manifest candidate/npm/packages-manifest.json \
+                    --version "$CANDIDATE_VERSION" \
+                    --tag next \
+                    --only @ue-shed/uasset-inspection-wasm \
+                    --provenance
+
+            - name: Record required trusted-publisher handoff
+              shell: bash
+              run: |
+                  cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+                  # WASM bootstrap published — manual handoff required
+
+                  :warning: The one-time `@ue-shed/uasset-inspection-wasm` bootstrap publish completed with a short-lived token.
+
+                  The green job is **not** the steady-state release postcondition. Before any later candidate publication:
+
+                  - [ ] Configure the package GitHub trusted publisher for `candidate-release.yml`, environment `npm-release`, with publish allowed.
+                  - [ ] Verify the configuration with `npm trust list` and a protected OIDC dry run.
+                  - [ ] Revoke/delete `NPM_BOOTSTRAP_TOKEN` at npm and remove the `npm-bootstrap-release` environment secret.
+                  - [ ] Confirm the normal publish job has no token authentication and uses OIDC only.
+
+                  Do not rerun `bootstrap=true`; the published version is immutable and this token path is one-time.
+                  EOF
+                  echo "::warning::WASM bootstrap published. Configure npm trusted publishing, verify OIDC, and revoke/remove NPM_BOOTSTRAP_TOKEN before any normal publication." >&2

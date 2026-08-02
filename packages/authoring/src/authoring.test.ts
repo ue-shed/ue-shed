@@ -1,4 +1,4 @@
-import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
+import type { AuthoringTableSnapshot, AuthoringValue } from "@ue-shed/protocol";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,7 +14,10 @@ import {
 	type DraftSession
 } from "./index.js";
 
-function snapshot(authority: AuthoringTableSnapshot["authority"]): AuthoringTableSnapshot {
+function snapshot(
+	authority: AuthoringTableSnapshot["authority"],
+	value: AuthoringValue = { kind: "int", value: "1" }
+): AuthoringTableSnapshot {
 	return {
 		contract: { name: "unreal-authoring", version: { major: 1, minor: 0 } },
 		authority,
@@ -31,7 +34,7 @@ function snapshot(authority: AuthoringTableSnapshot["authority"]): AuthoringTabl
 						{
 							name: "Count",
 							typeName: "IntProperty",
-							value: { kind: "int", value: "1" }
+							value
 						}
 					],
 					id: "row:Alpha",
@@ -61,6 +64,22 @@ describe("semantic fingerprints", () => {
 			producerId: "producer",
 			sessionId: "session"
 		});
+		expect(fingerprintTable(saved)).toBe(fingerprintTable(live));
+	});
+
+	it("canonicalizes float values to their stored 32-bit semantics", () => {
+		const saved = snapshot(
+			{ kind: "project_files", packageName: "/Game/Fixture/DT_Test" },
+			{ kind: "float", value: 0.01 }
+		);
+		const live = snapshot(
+			{
+				kind: "live_editor",
+				producerId: "producer",
+				sessionId: "session"
+			},
+			{ kind: "float", value: 0.009999999776482582 }
+		);
 		expect(fingerprintTable(saved)).toBe(fingerprintTable(live));
 	});
 });

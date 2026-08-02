@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { packPublicPackages, PUBLIC_VERSION } from "./pack-public-packages.mjs";
+import { packPublicPackages, PUBLIC_VERSION, WASM_PACKAGE_NAME } from "./pack-public-packages.mjs";
 import { buildPluginBundle } from "./plugin-bundle.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,6 +52,127 @@ function run(command, args, options = {}) {
 		);
 	}
 	return result.stdout.trim();
+}
+
+const expectedWasmTargets = ["nodejs", "web"];
+const expectedWasmLimits = {
+	maxInputBytes: 64 * 1024 * 1024,
+	maxOutputBytes: 64 * 1024 * 1024,
+	maxExports: 100_000,
+	maxProjectionItems: 1_000_000
+};
+
+export function validateWasmBuildInfo(buildInfo) {
+	const failures = [];
+	if (buildInfo?.schemaVersion !== 1) failures.push("schemaVersion must be 1");
+	if (buildInfo?.cargoLocked !== true) failures.push("cargoLocked must be true");
+	if (buildInfo?.packageVersion !== PUBLIC_VERSION) {
+		failures.push(`packageVersion must be ${PUBLIC_VERSION}`);
+	}
+	if (buildInfo?.crateVersion !== PUBLIC_VERSION) {
+		failures.push(`crateVersion must be ${PUBLIC_VERSION}`);
+	}
+	if (JSON.stringify(buildInfo?.targets) !== JSON.stringify(expectedWasmTargets)) {
+		failures.push(`targets must be ${JSON.stringify(expectedWasmTargets)}`);
+	}
+	for (const tool of ["rustc", "wasmPack", "wasmBindgen"]) {
+		if (typeof buildInfo?.tools?.[tool] !== "string" || buildInfo.tools[tool].length === 0) {
+			failures.push(`tools.${tool} must record the build identity`);
+		}
+	}
+	const optimizer = buildInfo?.optimizer;
+	if (optimizer?.name !== "wasm-opt") failures.push("optimizer.name must be wasm-opt");
+	if (typeof optimizer?.enabled !== "boolean") {
+		failures.push("optimizer.enabled must state whether wasm-opt ran");
+	}
+	if (typeof buildInfo?.tools?.wasmOpt !== "string" || buildInfo.tools.wasmOpt.length === 0) {
+		failures.push("tools.wasmOpt must describe the optimizer state");
+	}
+	if (optimizer?.enabled === true) {
+		if (typeof optimizer.version !== "string" || optimizer.version.length === 0) {
+			failures.push("enabled optimizer must record a concrete version");
+		}
+		if (typeof optimizer.command !== "string" || optimizer.command.length === 0) {
+			failures.push("enabled optimizer must record its invocation");
+		}
+		if (
+			typeof optimizer.version === "string" &&
+			/(?:unavailable|disabled|not[ -]?run)/iu.test(optimizer.version)
+		) {
+			failures.push("enabled optimizer must have a concrete version");
+		}
+		if (buildInfo.tools.wasmOpt !== optimizer.version) {
+			failures.push("tools.wasmOpt must match the enabled optimizer version");
+		}
+	}
+	if (optimizer?.enabled === false) {
+		if (optimizer.status !== "disabled") {
+			failures.push("disabled optimizer must record status disabled");
+		}
+		if (typeof optimizer.reason !== "string" || optimizer.reason.length === 0) {
+			failures.push("disabled optimizer must record why it did not run");
+		}
+		if (!/(?:disabled|no[ -]?opt|not[ -]?run|not[ -]?used)/iu.test(buildInfo.tools.wasmOpt)) {
+			failures.push("tools.wasmOpt must explicitly record that optimization was disabled");
+		}
+	}
+	for (const [name, expected] of Object.entries(expectedWasmLimits)) {
+		if (buildInfo?.limits?.[name] !== expected) {
+			failures.push(`limits.${name} must be ${expected}`);
+		}
+	}
+	if (failures.length > 0) {
+		throw new Error(`Invalid WASM build-info.json:\n- ${failures.join("\n- ")}`);
+	}
+	return buildInfo;
+}
+
+async function readWasmBuildInfo() {
+	const path = join(
+		repositoryRoot,
+		"packages",
+		"uasset-inspection-wasm",
+		"dist",
+		"build-info.json"
+	);
+	let buildInfo;
+	try {
+		buildInfo = JSON.parse(await readFile(path, "utf8"));
+	} catch (cause) {
+		throw new Error(`Could not read generated WASM build evidence at ${path}.`, { cause });
+	}
+	return validateWasmBuildInfo(buildInfo);
+}
+
+const trustedUnrealEvidenceFiles = ["runner.json", "unreal-build.json", "unreal-check.log"];
+
+function assertEvidenceDirectory(directory) {
+	const missing = trustedUnrealEvidenceFiles.filter(
+		(file) => !existsSync(join(resolve(directory), file))
+	);
+	if (missing.length > 0) {
+		throw new Error(
+			`Trusted Unreal evidence is missing required files: ${missing.join(", ")}.`
+		);
+	}
+}
+
+export function assertTrustedUnrealEvidence({ manifest, expectedRunId }) {
+	if (manifest.evidence?.unrealWorkflow !== "Trusted Unreal") {
+		throw new Error("Candidate is not bound to the Trusted Unreal workflow.");
+	}
+	if (manifest.evidence?.unrealRunId !== expectedRunId) {
+		throw new Error(
+			`Candidate is bound to Unreal run ${manifest.evidence?.unrealRunId ?? "none"}, expected ${expectedRunId}.`
+		);
+	}
+	if (
+		!manifest.artifacts?.some(
+			(artifactEntry) => artifactEntry.kind === "trusted-unreal-evidence"
+		)
+	) {
+		throw new Error("Candidate does not contain a trusted-unreal-evidence artifact.");
+	}
 }
 
 async function ensureEmptyOutput(output) {
@@ -106,7 +227,8 @@ export async function createReleaseCandidate({
 	ref,
 	output,
 	unrealEvidenceDirectory,
-	unrealRunId
+	unrealRunId,
+	requireTrustedUnrealEvidence = false
 }) {
 	validateCandidateVersion(version);
 	if (version !== PUBLIC_VERSION) {
@@ -117,6 +239,10 @@ export async function createReleaseCandidate({
 	if ((unrealEvidenceDirectory === undefined) !== (unrealRunId === undefined)) {
 		throw new Error("Unreal evidence directory and run ID must be supplied together.");
 	}
+	if (requireTrustedUnrealEvidence && unrealRunId === undefined) {
+		throw new Error("Actual publication requires a successful Trusted Unreal evidence run.");
+	}
+	if (unrealEvidenceDirectory !== undefined) assertEvidenceDirectory(unrealEvidenceDirectory);
 	assertCandidateSource(commit);
 	const outputDirectory = resolve(output);
 	await ensureEmptyOutput(outputDirectory);
@@ -160,6 +286,7 @@ export async function createReleaseCandidate({
 	}
 	artifacts.sort((left, right) => left.path.localeCompare(right.path));
 
+	const wasmBuildInfo = await readWasmBuildInfo();
 	const rootManifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
 	const lockfilePath = join(repositoryRoot, "pnpm-lock.yaml");
 	const createdAt = run("git", ["show", "-s", "--format=%cI", commit]);
@@ -174,15 +301,27 @@ export async function createReleaseCandidate({
 		},
 		toolchain: {
 			packageManager: rootManifest.packageManager,
-			lockfileSha256: await sha256(lockfilePath)
+			lockfileSha256: await sha256(lockfilePath),
+			wasm: wasmBuildInfo
 		},
 		evidence: {
 			portableCommand: "pnpm check",
 			unrealCommand: unrealRunId === undefined ? null : "pnpm check:unreal",
+			unrealWorkflow: unrealRunId === undefined ? null : "Trusted Unreal",
 			unrealRunId: unrealRunId ?? null
+		},
+		compatibility: {
+			wasmPackage: WASM_PACKAGE_NAME,
+			inspectionSchemaVersion: 8,
+			projectionSchemaVersion: 1,
+			input: "package-bytes",
+			runtimes: ["browser", "node"]
 		},
 		artifacts
 	};
+	if (requireTrustedUnrealEvidence) {
+		assertTrustedUnrealEvidence({ manifest, expectedRunId: unrealRunId });
+	}
 	const manifestPath = join(outputDirectory, "candidate-manifest.json");
 	await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 	const checksumEntries = [
@@ -199,13 +338,21 @@ export async function createReleaseCandidate({
 
 function parseArguments(args) {
 	const values = new Map();
-	for (let index = 0; index < args.length; index += 2) {
+	for (let index = 0; index < args.length; index += 1) {
 		const key = args[index];
+		if (!key?.startsWith("--")) {
+			throw new Error(`Expected --key value arguments, received ${args.join(" ")}.`);
+		}
+		if (key === "--require-unreal-evidence") {
+			values.set("require-unreal-evidence", true);
+			continue;
+		}
 		const value = args[index + 1];
-		if (!key?.startsWith("--") || value === undefined) {
+		if (value === undefined) {
 			throw new Error(`Expected --key value arguments, received ${args.join(" ")}.`);
 		}
 		values.set(key.slice(2), value);
+		index += 1;
 	}
 	for (const required of ["version", "commit", "ref", "output"]) {
 		if (!values.has(required)) throw new Error(`Missing required --${required} argument.`);
@@ -221,7 +368,8 @@ async function main() {
 		ref: args.get("ref"),
 		output: args.get("output"),
 		unrealEvidenceDirectory: args.get("unreal-evidence"),
-		unrealRunId: args.get("unreal-run-id")
+		unrealRunId: args.get("unreal-run-id"),
+		requireTrustedUnrealEvidence: args.has("require-unreal-evidence")
 	});
 	console.log(
 		`Candidate ${manifest.candidateVersion} contains ${manifest.artifacts.length} checksummed artifacts.`

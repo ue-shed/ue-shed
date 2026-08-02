@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { CliRuntime, type CliRuntimeShape } from "./application.js";
+import { CliRuntime, type CliRuntimeShape } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 
 function runtimeLayer(output: Ref.Ref<string>, errors: Ref.Ref<string>, exitCode: Ref.Ref<number>) {

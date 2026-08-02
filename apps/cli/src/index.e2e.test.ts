@@ -96,6 +96,22 @@ describe("ue-shed CLI process", () => {
 		expect(snapshot.table.rows.map((row) => row.name)).toEqual(["Scalar_Alpha", "Scalar_Beta"]);
 	});
 
+	it("runs the direct assets workflow against a real saved fixture", () => {
+		const report = parseRecord(runSuccessfulCli(["assets", "scan", scalarAsset]));
+
+		expect(report.coverage).toMatchObject({
+			emittedAssets: 1,
+			failedAssets: 0,
+			scannedAssets: 1
+		});
+		expect(report.assets).toEqual([
+			expect.objectContaining({
+				packageName: "/Game/Fixture/Authoring/DT_Scalars",
+				status: "ok"
+			})
+		]);
+	});
+
 	it("resolves fixture row references through the public headless command", () => {
 		const report = parseRecord(
 			runSuccessfulCli(["authoring", "relationships", fixtureProject])

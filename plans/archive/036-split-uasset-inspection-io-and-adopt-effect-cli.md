@@ -5,7 +5,7 @@
 
 ## Status
 
-- State: IN PROGRESS — native direct protocol migration complete; Effect CLI parser migration landed
+- State: DONE — portable, packed-consumer, release, benchmark, and UE 5.7 evidence passed
 - Priority: P1
 - Effort: XL
 - Risk: HIGH
@@ -33,6 +33,13 @@ versioned, language-neutral uasset-io request/event protocol used by @ue-shed/un
 
 This plan preserves existing public behavior while changing ownership. It does not authorize
 renaming commands, altering default scan behavior, or putting product policy into Rust.
+
+Plan completion now also gates publication of the portable inspection binding. The first public
+WASM surface is an npm package named `@ue-shed/uasset-inspection-wasm`; it accepts host-supplied
+package bytes and exposes the existing generic inspection plus compact text/texture projections. It
+does not expose filesystem discovery, project scans, catalog caching, native concurrency, or the
+complete `@ue-shed/unreal-assets` service. Protected publication must not begin until this plan is
+DONE and its release evidence is attached to the exact candidate.
 
 ## Plan 033 handoff
 
@@ -89,9 +96,9 @@ project work; Effect services and the public CLI own product workflow and presen
   proof-oriented module names.
 - The Effect CLI is the public product CLI. Rust human commands are diagnostic and compatibility
   tools, not a peer product CLI.
-- Do not migrate `apps/cli` to Effect CLI in this plan's implementation phases. Finish the
-  parser/inspection/IO split, protocol adapter, parity tests, and benchmarks first; revisit the
-  public CLI migration only after those results are recorded.
+- Complete the parser/inspection/IO split, protocol adapter, parity tests, and baseline benchmarks
+  before migrating `apps/cli` to Effect CLI. Those prerequisites are complete; the declarative
+  parser has landed, while direct Effect workflows and compatibility-adapter removal remain.
 - Do not mirror commands between the TypeScript CLI and Rust.
 - Synchronize languages through a versioned request/event protocol.
 - Use explicit discriminated operation and event unions in version 1. Do not add dynamic operation
@@ -99,6 +106,11 @@ project work; Effect services and the public CLI own product workflow and presen
 - Pure transformations remain ordinary functions. Effect owns workflows, resources, typed failures,
   concurrency, configuration, and telemetry.
 - Parser and inspection stay portable and WASM-compatible.
+- The first public WASM package preserves generic inspection schema 8 and compact projection schema
+  version 1. A columnar table-read boundary requires a separate measured contract decision and is
+  not a prerequisite for this release.
+- Keep `crates/uasset-inspection-wasm` private to Cargo publication. The npm package is the supported
+  distribution boundary; crates.io publication requires a separate consumer need and release plan.
 - Filesystem traversal, caches, native concurrency, and project scheduling never leak into parser
   or inspection.
 - Keep the public AssetReader API while replacing its internal transport.
@@ -117,7 +129,9 @@ project work; Effect services and the public CLI own product workflow and presen
       -> uasset-inspection
       -> uasset-parser
 
-    uasset-inspection-wasm
+    @ue-shed/uasset-inspection-wasm npm assembly/wrapper
+      -> generated browser and Node bindings
+      -> uasset-inspection-wasm
       -> uasset-inspection
       -> uasset-parser
 
@@ -139,12 +153,19 @@ or studio conventions.
 
     packages/
       protocol/contracts/uasset-io/v1/
+      uasset-inspection-wasm/
       unreal-assets/
 
     apps/cli/
 
 Rename the existing uasset-parser-wasm package to uasset-inspection-wasm. The WASM package must use
 normal library dependencies; it must not include executable source.
+
+`packages/uasset-inspection-wasm` owns npm metadata, JavaScript-side preflight limits, browser and
+Node loading, generated-artifact assembly, public documentation, and release integration. It does
+not duplicate parser or projection behavior. `publish = false` on the Rust crate and its exclusion
+from the root Cargo workspace do not block npm publication and must not be changed merely to make an
+npm tarball.
 
 ### uasset-parser
 
@@ -418,11 +439,11 @@ compatible.
 - [x] Keep stdout protocol-only.
 - [x] Route every protocol operation through a typed direct executor, including filtered/header
       scans, cache, inventory, authoring, compact projections, and saved-world inspection.
-- [ ] Add cancellation checkpoints at discovery, read, parsing, inspection, and event emission.
+- [x] Add cancellation checkpoints at discovery, read, parsing, inspection, and event emission.
 - [x] Add process tests for malformed input, early consumer close, output limits, interruption,
       partial per-file failures, path/resource limits, cache/filter/inventory behavior, and
       saved-world ordering.
-- [ ] Fuzz/property-test framing and event-sequence validation.
+- [x] Fuzz/property-test framing and event-sequence validation.
 
 Gate: consumers never parse stderr or magic exit codes for expected outcomes; interruption leaves no
 child work running; output stays bounded by configured limits/downstream demand.
@@ -436,7 +457,7 @@ child work running; output stays bounded by configured limits/downstream demand.
 - [x] Map events to current AssetReader returns.
 - [x] Migrate one operation at a time under parity tests.
 - [x] Delete superseded spawn loops/argument chunking after all operations migrate.
-- [ ] Add spans/metrics for queue time, startup, discovery, read bytes, inspected files, cache
+- [x] Add spans/metrics for queue time, startup, discovery, read bytes, inspected files, cache
       outcome, partial failures, cancellation, and terminal state.
 
 Order: single-package inspect; explicit batch; header/full scan; saved world; text; texture;
@@ -451,16 +472,15 @@ interruption terminates native work; production TypeScript parses no native stde
 - [x] Add runtime layer, output service, and typed top-level error rendering.
 - [x] Recreate current command tree, options, arguments, aliases, and help with Effect CLI.
 - [x] Route initial leaves through compatibility adapters.
-- [ ] Convert leaves to Effect workflows/layers.
-- [ ] Add command/external-operation spans and scoped signal handling.
-- [ ] Delete manual parser/help/dispatcher once goldens and integration tests pass.
-- [ ] Split the former monolith into command modules without circular dependencies.
+- [x] Convert leaves to Effect workflows/layers.
+- [x] Add command/external-operation spans and scoped signal handling.
+- [x] Delete manual parser/help/dispatcher once goldens and integration tests pass.
+- [x] Split the former monolith into command modules without circular dependencies.
 
-Current migration note: the declarative Effect CLI tree owns token parsing, typed flags, generated
-help, and usage failures. Leaf handlers still cross the existing `CliCommand`/`executeCommand`
-compatibility adapter while the remaining workflow extraction, observability, signal handling, and
-module split are completed. The generated help/error wording was explicitly reviewed; machine
-output remains on the existing application path.
+Completion note: the declarative Effect CLI tree owns token parsing, typed flags, generated help,
+usage failures, direct Effect workflows, observability, and scoped signal handling. The former
+monolithic compatibility dispatcher has been removed and the command/workflow module graph is
+acyclic. Generated help/error wording and machine output remain covered by compatibility tests.
 
 Gate: frozen command compatibility passes; text-only help changes receive explicit review;
 machine-readable output is unchanged unless versioned; Rust command mirroring is not introduced.
@@ -471,13 +491,45 @@ machine-readable output is unchanged unless versioned; Rust command mirroring is
 - [x] Update root scripts, native-tools, package assembly, benchmarks, and release checks.
 - [x] Retain @ue-shed/uasset and supported platform package names unless a separate release
       decision changes them.
-- [ ] Update provenance, checksums, license inventory, candidate release validation, and
-      source-package allowlists.
-- [ ] Prove clean install/invocation from packed public artifacts.
-- [ ] Publish protocol compatibility in release metadata.
+- [x] Freeze the public WASM contract as bytes-in generic inspection schema 8 plus compact
+      text/texture projection schema 1, with explicit partial, unsupported, malformed, and resource
+      limit results. Record discovery, scans, caches, and columnar table values as unsupported or
+      deferred rather than implied package behavior.
+- [x] Add `packages/uasset-inspection-wasm` as the npm assembly/wrapper package. Keep the Rust crate
+      private to Cargo publication and use the scoped npm name in all manifests and documentation.
+- [x] Produce package-local browser and Node release outputs from the same locked Rust source. Pin or
+      record Rust, `wasm-pack`, `wasm-bindgen`, and optimizer identities; reject generated manifests
+      containing local paths, workspace protocols, or unpromised files.
+- [x] Enforce a default maximum input size in JavaScript before `wasm-bindgen` copies bytes into
+      linear memory. Carry explicit parser/projection limits through Rust so excessive exports,
+      nesting, allocation, or serialized output cannot become an unbounded browser operation.
+- [x] Extend structural native/WASM parity across minimal and large DataTables, Enhanced Input,
+      Texture Audit, Game Text, one representative level, deliberately unsupported input, malformed
+      packages, nesting/count limits, and oversized input. Keep Unreal-produced fixtures as the
+      semantic authority.
+- [x] Add a real browser smoke test and a Node smoke test for initialization, inspection, typed
+      failures, and repeated calls. Add `pnpm test:uasset-wasm:browser` as the portable browser lane;
+      keep `pnpm test:uasset-wasm` as native/WASM semantic parity.
+- [x] Pack the npm tarball and install it in a clean consumer with no repository or `target` fallback.
+      Verify exports, declarations, `.wasm` loading, package contents, schema versions, and checksums.
+- [x] Add `@ue-shed/uasset-inspection-wasm` to the exact public package graph, candidate dry-run and
+      protected-publish lists, license inventory, checksums, candidate manifest, and provenance
+      attestation. Because npm cannot configure trusted publishing for a package that does not yet
+      exist, permit exactly one bootstrap publication from the protected GitHub environment with
+      human approval, a narrowly scoped short-lived token, the exact attested candidate, and
+      `--provenance --access public`. Immediately revoke the token, configure the package's trusted
+      publisher, and require OIDC with token authentication rejected for every subsequent release.
+- [x] Publish inspection/projection compatibility and supported runtime metadata in release evidence.
+      Correct stale schema-v7 WASM documentation to schema 8.
+- [x] Bind the publishable candidate to a successful Trusted Unreal parser-conformance run. A
+      portable dry run may omit that evidence; an actual publication may not.
 
-Gate: no live script assumes parser owns the executable; a clean consumer selects the correct binary;
-release provenance covers new crates and artifacts.
+Gate: no live script assumes parser owns the executable; the native packages and WASM package work
+from clean packed consumers; browser and Node runtimes produce schema-equivalent evidence; limits
+are enforced before and during decode; and candidate provenance covers every generated JS, type, and
+WASM artifact. Actual npm publication begins only after Plan 036 is DONE, from an exact protected
+tag with human approval. The bootstrap exception exists only to create the npm package so its trusted
+publisher can be configured; it is not a reusable token-publishing path.
 
 ### Phase 8 — Measure both current CLI surfaces
 
@@ -485,10 +537,10 @@ release provenance covers new crates and artifacts.
       TypeScript/public CLI path and the Rust human/diagnostic CLI path.
 - [x] Separate startup, discovery, reads, parsing, inspection, serialization, and TypeScript mapping
       where measurable.
-- [ ] Compare cold/warm cache and concurrency levels while checking stable output.
+- [x] Compare cold/warm cache and concurrency levels while checking stable output.
 - [x] Measure startup/help and memory high-water marks for both CLI paths.
-- [ ] Compare output parity, failure behavior, and cancellation behavior between both CLI paths.
-- [ ] Add regression thresholds only for stable reproducible measurements.
+- [x] Compare output parity, failure behavior, and cancellation behavior between both CLI paths.
+- [x] Add regression thresholds only for stable reproducible measurements.
 
 Results decide follow-up work:
 
@@ -499,6 +551,10 @@ Results decide follow-up work:
 
 Gate: representative workloads remain within an accepted budget, with reproducible commands and
 fixture descriptions.
+
+No timing threshold was added: the current committed corpus is suitable for repeatable comparative
+evidence but not yet stable and representative enough for a non-flaky release threshold. The
+recorded closure run covers concurrency 1/4 and cold/warm cache behavior with stable output.
 
 ### Phase 9 — Cleanup and final gates
 
@@ -512,8 +568,22 @@ fixture descriptions.
 Required final commands:
 
     rg -n "uasset-parser-wasm|cargo build -p uasset-parser|src/bin/uasset.rs" .
+    pnpm run test:uasset-wasm
+    pnpm run test:uasset-wasm:browser
+    pnpm run test:release:packages
     pnpm run check:precommit
     pnpm check
+
+Before actual publication, also run or bind the exact protected candidate to:
+
+    pnpm check:unreal
+
+Closure evidence on 2026-08-02: portable `pnpm check`, native/WASM parity, real Chromium, clean
+packed-consumer, package/release, CLI parity/cancellation, and benchmark lanes passed. UE 5.7
+parser conformance passed 3/3, authoring passed 1/1, and the live Remote Control review suite passed
+13/13. Protected publication still requires the workflow to attach that Trusted Unreal result to
+the exact candidate; the first npm publication also follows the documented one-time protected
+bootstrap before normal OIDC-only trusted publishing.
 
 The search may match historical plans or explicit migration notes. It must not find a live build
 assumption, source inclusion, or executable owned by uasset-parser.
@@ -549,21 +619,24 @@ language happens to be faster or more convenient.
 
 ## Test matrix
 
-| Concern                   | Cheapest truthful test                          |
-| ------------------------- | ----------------------------------------------- |
-| Byte decoding/limits      | parser unit, fixture, fuzz                      |
-| Inspection projections    | pure fixtures/property tests                    |
-| Discovery/stable order    | IO integration test over temporary project tree |
-| Concurrency/backpressure  | IO bounded-instrumentation test                 |
-| Cache keys/invalidation   | IO integration with controlled file changes     |
-| Request/event schema      | Rust + TypeScript shared fixtures               |
-| Stream invariants         | executor + process protocol test                |
-| Cancellation              | process test proving termination/no late events |
-| AssetReader compatibility | TypeScript integration against real binary      |
-| CLI parsing/help/errors   | golden CLI test                                 |
-| Public installation       | packed-artifact smoke test                      |
-| Unreal compatibility      | existing UE 5.7 gates                           |
-| Scale/performance         | reproducible benchmark suite                    |
+| Concern                   | Cheapest truthful test                           |
+| ------------------------- | ------------------------------------------------ |
+| Byte decoding/limits      | parser unit, fixture, fuzz                       |
+| Inspection projections    | pure fixtures/property tests                     |
+| Discovery/stable order    | IO integration test over temporary project tree  |
+| Concurrency/backpressure  | IO bounded-instrumentation test                  |
+| Cache keys/invalidation   | IO integration with controlled file changes      |
+| Request/event schema      | Rust + TypeScript shared fixtures                |
+| Stream invariants         | executor + process protocol test                 |
+| Cancellation              | process test proving termination/no late events  |
+| AssetReader compatibility | TypeScript integration against real binary       |
+| CLI parsing/help/errors   | golden CLI test                                  |
+| WASM semantic parity      | structural native/WASM fixture comparison        |
+| WASM limits               | wrapper preflight + parser/projection limit test |
+| WASM runtime loading      | real browser + Node smoke tests                  |
+| Public installation       | clean packed-artifact consumer tests             |
+| Unreal compatibility      | existing UE 5.7 gates                            |
+| Scale/performance         | reproducible benchmark suite                     |
 
 Mocks may isolate rendering or rare process faults. They do not replace real binary, filesystem,
 package, and interruption tests.
@@ -573,6 +646,12 @@ package, and interruption tests.
 - parser, inspection, IO, and executable have the stated ownership/dependency direction;
 - parser and inspection remain portable/WASM-compatible;
 - WASM depends on libraries, never executable source;
+- `@ue-shed/uasset-inspection-wasm` is a checksummed, provenance-attested npm artifact with explicit
+  bytes-only capability and limit documentation;
+- clean browser, Node, and packed-consumer tests prove the generated binding without repository or
+  `target` fallback;
+- native and WASM inspection/projection results remain structurally equivalent over the committed
+  fixture and malformed-input matrix;
 - executable is thin over uasset-io;
 - v1 contract schemas and cross-language fixtures are authoritative and passing;
 - unreal-assets uses one typed streaming process adapter;
@@ -595,6 +674,9 @@ Stop and request direction if:
 - inspection needs filesystem, process, cache, or scheduler access;
 - IO needs product workflow or presentation policy;
 - a crate move would change public schema meaning rather than ownership;
+- the WASM npm package would imply filesystem, project-scan, cache, or `AssetReader` parity;
+- input cannot be rejected before crossing the JavaScript/WASM allocation boundary;
+- browser and native producers cannot converge on the same versioned inspection/projection evidence;
 - matching Effect v4 Node platform package cannot install;
 - a release artifact depends on old crate identity beyond the Phase 0 inventory;
 - benchmarks materially regress without an understood cause;
@@ -609,6 +691,9 @@ Stop and request direction if:
 - removing the `apps/cli` compatibility dispatcher before direct workflow handlers and command
   parity evidence are complete;
 - public command/output schema changes;
+- columnar or zero-copy WASM table values beyond the schema-8 compatibility release;
+- crates.io publication of parser, inspection, or WASM crates without a demonstrated Rust consumer;
+- filesystem discovery, project scans, caches, or native scheduling in the WASM package;
 - editor/Workbench-only Rust APIs;
 - write support beyond separately approved authoring contracts;
 - cache persistence policy changes not handed over by Plan 033;

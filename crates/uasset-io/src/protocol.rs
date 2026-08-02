@@ -235,11 +235,162 @@ pub fn decode_request(input: &[u8]) -> Result<Request, ProtocolError> {
     Ok(request)
 }
 
+/// Decodes exactly one bounded request frame.
+pub fn decode_request_frame(input: &[u8], maximum_bytes: usize) -> Result<Request, ProtocolError> {
+    if input.len() > maximum_bytes {
+        return Err(ProtocolError(format!(
+            "request frame exceeds configured limit of {maximum_bytes} bytes"
+        )));
+    }
+    decode_request(input)
+}
+
 pub fn decode_event(input: &[u8]) -> Result<Event, ProtocolError> {
     let event = serde_json::from_slice::<Event>(input)
         .map_err(|error| ProtocolError(format!("invalid event: {error}")))?;
     validate_event(&event)?;
     Ok(event)
+}
+
+/// Decodes one newline-delimited event frame with a per-frame bound.
+pub fn decode_event_frame(input: &[u8], maximum_bytes: usize) -> Result<Event, ProtocolError> {
+    if input.is_empty() {
+        return Err(ProtocolError("event frame must not be empty".to_owned()));
+    }
+    if input.len() > maximum_bytes {
+        return Err(ProtocolError(format!(
+            "event frame exceeds configured limit of {maximum_bytes} bytes"
+        )));
+    }
+    decode_event(input)
+}
+
+/// Decodes and validates a complete NDJSON event stream.
+pub fn decode_event_stream(
+    input: &[u8],
+    maximum_frame_bytes: usize,
+) -> Result<Vec<Event>, ProtocolError> {
+    let lines = input.split(|byte| *byte == b'\n').collect::<Vec<_>>();
+    let mut events = Vec::with_capacity(lines.len());
+    for (index, line) in lines.iter().enumerate() {
+        if index + 1 == lines.len() && line.is_empty() {
+            continue;
+        }
+        if line.is_empty() {
+            return Err(ProtocolError(format!(
+                "event stream contains an empty frame at line {}",
+                index + 1
+            )));
+        }
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        events.push(decode_event_frame(line, maximum_frame_bytes)?);
+    }
+    validate_event_sequence(&events)?;
+    Ok(events)
+}
+
+#[derive(Debug, Default)]
+pub struct EventSequenceValidator {
+    contract: Option<Contract>,
+    request_id: Option<String>,
+    previous_sequence: Option<u64>,
+    terminal_seen: bool,
+}
+
+impl EventSequenceValidator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&mut self, event: &Event) -> Result<(), ProtocolError> {
+        validate_event(event)?;
+        if self.terminal_seen {
+            return Err(ProtocolError(
+                "event stream contains a frame after its terminal event".to_owned(),
+            ));
+        }
+        let fields = event_fields(event);
+        if self.previous_sequence.is_none() {
+            if !matches!(event, Event::Accepted { .. }) {
+                return Err(ProtocolError(
+                    "event stream must begin with an accepted event".to_owned(),
+                ));
+            }
+            if fields.sequence != 0 {
+                return Err(ProtocolError(
+                    "event stream sequence must begin at zero".to_owned(),
+                ));
+            }
+            self.contract = Some(fields.contract.clone());
+            self.request_id = Some(fields.request_id.clone());
+        } else {
+            if matches!(event, Event::Accepted { .. }) {
+                return Err(ProtocolError(
+                    "event stream contains more than one accepted event".to_owned(),
+                ));
+            }
+            if self.contract.as_ref() != Some(&fields.contract) {
+                return Err(ProtocolError(
+                    "event stream changes contract between frames".to_owned(),
+                ));
+            }
+            if self.request_id.as_deref() != Some(fields.request_id.as_str()) {
+                return Err(ProtocolError(
+                    "event stream changes requestId between frames".to_owned(),
+                ));
+            }
+            if self
+                .previous_sequence
+                .is_some_and(|previous| previous.checked_add(1) != Some(fields.sequence))
+            {
+                return Err(ProtocolError(
+                    "event stream sequence must be contiguous".to_owned(),
+                ));
+            }
+        }
+        self.previous_sequence = Some(fields.sequence);
+        self.terminal_seen = is_terminal_event(event);
+        Ok(())
+    }
+
+    pub fn finish(&self) -> Result<(), ProtocolError> {
+        if self.previous_sequence.is_none() {
+            return Err(ProtocolError("event stream must not be empty".to_owned()));
+        }
+        if !self.terminal_seen {
+            return Err(ProtocolError(
+                "event stream must end with a terminal event".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+pub fn validate_event_sequence(events: &[Event]) -> Result<(), ProtocolError> {
+    let mut validator = EventSequenceValidator::new();
+    for event in events {
+        validator.push(event)?;
+    }
+    validator.finish()
+}
+
+fn event_fields(event: &Event) -> &EventFields {
+    match event {
+        Event::Accepted { fields, .. }
+        | Event::Progress { fields, .. }
+        | Event::Diagnostic { fields, .. }
+        | Event::Completed { fields, .. }
+        | Event::Failed { fields, .. }
+        | Event::Rejected { fields, .. }
+        | Event::Result { fields, .. } => fields,
+    }
+}
+
+fn is_terminal_event(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Completed { .. } | Event::Failed { .. } | Event::Rejected { .. }
+    )
 }
 
 fn validate_contract(contract: &Contract) -> Result<(), ProtocolError> {
@@ -355,7 +506,14 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_event, decode_request};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    use serde_json::Value;
+
+    use super::{
+        EventSequenceValidator, decode_event, decode_event_stream, decode_request,
+        decode_request_frame, validate_event_sequence,
+    };
 
     const VALID_REQUEST: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/scan-request.json"
@@ -428,5 +586,99 @@ mod tests {
     fn rejects_shared_invalid_fixtures() {
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn validates_a_complete_event_sequence() {
+        let mut accepted = serde_json::from_str::<Value>(VALID_ACCEPTED).expect("accepted JSON");
+        let mut completed = serde_json::from_str::<Value>(VALID_COMPLETED).expect("completed JSON");
+        completed["sequence"] = Value::from(1_u64);
+        accepted["requestId"] = Value::String("sequence-test".to_owned());
+        completed["requestId"] = Value::String("sequence-test".to_owned());
+        let stream = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&accepted).expect("accepted serializes"),
+            serde_json::to_string(&completed).expect("completed serializes")
+        );
+        let events = decode_event_stream(stream.as_bytes(), 4096).expect("valid event stream");
+        validate_event_sequence(&events).expect("sequence validates twice");
+
+        let mut validator = EventSequenceValidator::new();
+        validator.push(&events[0]).expect("accepted event");
+        validator.push(&events[1]).expect("completed event");
+        validator.finish().expect("terminal event");
+    }
+
+    #[test]
+    fn rejects_event_sequences_with_invalid_order_or_frames() {
+        let mut accepted = serde_json::from_str::<Value>(VALID_ACCEPTED).expect("accepted JSON");
+        let mut completed = serde_json::from_str::<Value>(VALID_COMPLETED).expect("completed JSON");
+        accepted["requestId"] = Value::String("sequence-test".to_owned());
+        completed["requestId"] = Value::String("sequence-test".to_owned());
+        completed["sequence"] = Value::from(0_u64);
+        let stream = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&accepted).expect("accepted serializes"),
+            serde_json::to_string(&completed).expect("completed serializes")
+        );
+        assert!(decode_event_stream(stream.as_bytes(), 4096).is_err());
+
+        completed["sequence"] = Value::from(2_u64);
+        let skipped_sequence = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&accepted).expect("accepted serializes"),
+            serde_json::to_string(&completed).expect("completed serializes")
+        );
+        assert!(decode_event_stream(skipped_sequence.as_bytes(), 4096).is_err());
+
+        let only_accepted = format!(
+            "{}\n",
+            serde_json::to_string(&accepted).expect("accepted serializes")
+        );
+        assert!(decode_event_stream(only_accepted.as_bytes(), 4096).is_err());
+        assert!(decode_event_stream(b"\n", 4096).is_err());
+    }
+
+    #[test]
+    fn deterministic_mutations_never_panic_and_never_bypass_sequence_validation() {
+        let mut accepted = serde_json::from_str::<Value>(VALID_ACCEPTED).expect("accepted JSON");
+        let mut completed = serde_json::from_str::<Value>(VALID_COMPLETED).expect("completed JSON");
+        accepted["requestId"] = Value::String("mutation-test".to_owned());
+        completed["requestId"] = Value::String("mutation-test".to_owned());
+        completed["sequence"] = Value::from(1_u64);
+        let source = format!(
+            "{}\n{}\n",
+            serde_json::to_string(&accepted).expect("accepted serializes"),
+            serde_json::to_string(&completed).expect("completed serializes")
+        )
+        .into_bytes();
+
+        for seed in 0_u64..512 {
+            let mut candidate = source.clone();
+            let mut state = seed.wrapping_add(0x9e37_79b9);
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            let index = (state as usize) % candidate.len();
+            match seed % 4 {
+                0 => candidate[index] ^= (state as u8).max(1),
+                1 => candidate.truncate(index),
+                2 => candidate.insert(index, b' '),
+                _ => candidate.push(b'}'),
+            }
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                decode_event_stream(&candidate, source.len() + 8)
+            }));
+            let Ok(decoded) = result else {
+                panic!("mutation {seed} panicked");
+            };
+            if let Ok(events) = decoded {
+                validate_event_sequence(&events).expect("successful decode has valid sequence");
+            }
+        }
+
+        let request = VALID_REQUEST.as_bytes();
+        assert!(decode_request_frame(request, request.len()).is_ok());
+        assert!(decode_request_frame(request, request.len() - 1).is_err());
     }
 }

@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { CliRuntime, executeCommand } from "./application.js";
-import { CliCommand } from "./command.js";
+import { CliRuntime } from "./cli-runtime.js";
+import { runVersion } from "./core-workflows.js";
+import { runMapHistory } from "./workflows/map.js";
+import { runPluginsList } from "./workflows/plugins.js";
 
 it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 	Effect.gen(function* () {
@@ -28,9 +30,7 @@ it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 			)
 		);
 
-		yield* Effect.scoped(
-			executeCommand(CliCommand.cases.Version.make({})).pipe(Effect.provide(layer))
-		);
+		yield* Effect.scoped(runVersion().pipe(Effect.provide(layer)));
 
 		expect(yield* Ref.get(acquired)).toBe(1);
 		expect(yield* Ref.get(finalized)).toBe(1);
@@ -94,9 +94,7 @@ it.effect("executes the public plugin list command through the CLI runtime", () 
 				})
 			);
 			yield* Effect.scoped(
-				executeCommand(CliCommand.cases.PluginsList.make({ manifestPath })).pipe(
-					Effect.provide(layer)
-				)
+				runPluginsList({ _tag: "PluginsList", manifestPath }).pipe(Effect.provide(layer))
 			);
 			expect(yield* Ref.get(output)).toContain("UEShedCore");
 			expect(yield* Ref.get(output)).toContain("0.1.0-rc.1");
@@ -117,13 +115,12 @@ it.effect("rejects invalid Map History time input before contacting Perforce", (
 				setExitCode: () => Effect.void
 			})
 		);
-		const error = yield* executeCommand(
-			CliCommand.cases.MapHistory.make({
-				mapPath: "Content/Maps/L_Example.umap",
-				projectRoot: "project",
-				since: "not-a-timestamp-or-duration"
-			})
-		).pipe(Effect.provide(layer), Effect.flip);
+		const error = yield* runMapHistory({
+			_tag: "MapHistory",
+			mapPath: "Content/Maps/L_Example.umap",
+			projectRoot: "project",
+			since: "not-a-timestamp-or-duration"
+		}).pipe(Effect.provide(layer), Effect.flip);
 
 		expect(error.message).toContain("--since");
 		expect(yield* Ref.get(output)).toBe("");
@@ -141,15 +138,14 @@ it.effect("rejects Fast History path identity without both package and path", ()
 				setExitCode: () => Effect.void
 			})
 		);
-		const error = yield* executeCommand(
-			CliCommand.cases.MapHistory.make({
-				actorPackage: "/Game/__ExternalActors__/Maps/L_Example/A/Actor",
-				mapPath: "Content/Maps/L_Example.umap",
-				mode: "fast",
-				projectRoot: "project",
-				since: "2026-07-21T00:00:00.000Z"
-			})
-		).pipe(Effect.provide(layer), Effect.flip);
+		const error = yield* runMapHistory({
+			_tag: "MapHistory",
+			actorPackage: "/Game/__ExternalActors__/Maps/L_Example/A/Actor",
+			mapPath: "Content/Maps/L_Example.umap",
+			mode: "fast",
+			projectRoot: "project",
+			since: "2026-07-21T00:00:00.000Z"
+		}).pipe(Effect.provide(layer), Effect.flip);
 
 		expect(error.message).toContain("Fast History");
 		expect(yield* Ref.get(output)).toBe("");

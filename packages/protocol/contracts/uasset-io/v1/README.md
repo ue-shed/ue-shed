@@ -6,7 +6,7 @@ one NDJSON event stream to stdout.
 
 Version 1 carries the complete request envelope, stream-control events, and typed result frames.
 Every frame carries the same contract, requestId, and sequence. A supported request begins with
-accepted and ends with exactly one terminal event. Sequence strictly increases; completed, failed,
+accepted and ends with exactly one terminal event. Sequence is contiguous from zero; completed, failed,
 and rejected are terminal. An explicitly supplied empty paths array means zero work and must not
 select a project root.
 

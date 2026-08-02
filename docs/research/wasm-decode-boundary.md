@@ -4,13 +4,21 @@ This note records why the decode hot path matters most under WASM, and what the 
 WASM-first table read should be. It is exploratory. Nothing here is an accepted decision, and the
 central claims about WASM are reasoned from a native measurement rather than measured under WASM.
 
-## What ships today, and how it differs
+## Public release boundary
 
-WASM is not a prerequisite for anything. An external host such as Electroswag consumes the parser
-today through the published native artifacts: `@ue-shed/uasset` selects a platform binary,
-`@ue-shed/uasset-win32-x64` carries it, and `@ue-shed/unreal-assets` provides the `AssetReader`
-service over it. All three are already in the candidate npm allowlist, and the candidate job installs
-the packed tarballs into a clean offline consumer, so no new packaging work is required.
+The first public WASM surface is `@ue-shed/uasset-inspection-wasm`. An external host such as
+Electroswag can consume either the published native artifacts—`@ue-shed/uasset` selects a platform
+binary, `@ue-shed/uasset-win32-x64` carries it, and `@ue-shed/unreal-assets` provides the
+`AssetReader` service—or the bytes-only WASM package. The candidate job packs every public tarball,
+checks its MIT metadata and SHA-256 manifest, installs the artifacts into a clean offline consumer,
+and loads the WASM module from the installed package.
+
+The WASM package is a compatibility release, not a new table-value representation. Its public
+contract is generic inspection schema 8 plus compact text/texture projection schema 1. It accepts
+host-supplied package bytes, exposes Node and browser loading targets, and has no filesystem,
+discovery, project-scan, cache, process, or native scheduling authority. A maximum input size and
+parser/projection resource limits are part of the package boundary. Columnar table values remain
+deferred until a separately measured contract decision.
 
 The two surfaces differ in capability, not only in speed.
 
@@ -21,9 +29,16 @@ The two surfaces differ in capability, not only in speed.
 | Platform coverage              | Windows x64 only today; the launcher raises `UnsupportedPlatformError` elsewhere | Platform neutral                                                                                              |
 | Per-call process startup       | About 8 ms                                                                       | None                                                                                                          |
 
-The source checkout now builds the binding with `pnpm uasset:build:wasm` and proves native schema-v7
+The source checkout builds the binding with `pnpm uasset:build:wasm` and proves native schema-8
 parity with `pnpm test:uasset-wasm`. The adapter accepts bytes and a provenance display path, while
-discovery and file I/O remain host responsibilities.
+discovery and file I/O remain host responsibilities. The npm wrapper keeps the generated binding and
+its `.wasm` file in one versioned artifact so runtime skew is not an implicit compatibility mode.
+
+Candidate provenance records the exact source commit, lockfile digest, Rust and `wasm-pack`
+identities, locked `wasm-bindgen` version, optimizer status, package digest, and Trusted Unreal
+evidence binding. The first npm publication is a one-time protected bootstrap because npm requires
+the package to exist before its GitHub trusted publisher can be configured; steady-state publication
+is OIDC-only after that bootstrap token is revoked.
 
 So the native artifact is the complete surface and the WASM binding would be a partial one, useful
 where bytes are already in hand and startup is worth avoiding. Adding a second platform artifact is a
@@ -137,7 +152,7 @@ the data handed to it rather than hoping to accelerate it.
    not measured here. Instrument it and separate `JSON.parse` from union dispatch from struct
    decode. The fix priority flips depending on the split.
 2. **Separate the remaining WASM costs.** The versioned binding and Node host scenario now exist.
-   On the first local run over `DT_LargeScalars`, schema-v7 inspection measured 18.2 ms p50 in a
+   On the first local run over `DT_LargeScalars`, schema-8 inspection measured 18.2 ms p50 in a
    long-lived WASM instance versus 41.0 ms p50 through a fresh native process. Both include decode
    and JSON serialization; only native includes process startup and file I/O, so this is a product
    boundary result, not a codec ratio. A parse-once decode-many export and the historical

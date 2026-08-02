@@ -1,0 +1,26 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 2,
+	"result": {
+		"kind": "authoring",
+		"snapshot": {
+			"contract": { "name": "unreal-authoring", "version": { "major": 2, "minor": 1 } },
+			"authority": { "kind": "project_files", "packageName": "/Game/Example" },
+			"completeness": "complete",
+			"diagnostics": [],
+			"fingerprint": { "status": "unavailable", "reason": "not_available" },
+			"producer": { "name": "fixture", "version": "1" },
+			"table": {
+				"kind": "data_table",
+				"objectPath": "/Game/Example.Example",
+				"rowStruct": "/Script/Example.Row",
+				"parentTables": [],
+				"rows": [],
+				"packageName": "/Game/Example",
+				"schema": { "status": "unavailable", "reason": "not_available" }
+			}
+		}
+	}
+}

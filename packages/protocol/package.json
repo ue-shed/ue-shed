@@ -33,7 +33,8 @@
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
-		"contract:check": "tsx scripts/check-authoring-contract.ts",
+		"contract:check": "tsx scripts/check-authoring-contract.ts && tsx scripts/check-uasset-io-contract.ts",
+		"contract:generate": "tsx scripts/generate-uasset-io-contract.ts && oxfmt contracts/uasset-io/v1/*.schema.json",
 		"prepack": "pnpm run build",
 		"typecheck": "tsc --noEmit"
 	},

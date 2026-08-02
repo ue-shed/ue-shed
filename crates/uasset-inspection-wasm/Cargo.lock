@@ -122,21 +122,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "uasset-parser"
-version = "0.1.0-rc.4"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "uasset-parser-wasm"
+name = "uasset-inspection"
 version = "0.1.0-rc.4"
 dependencies = [
  "serde",
  "serde_json",
  "uasset-parser",
+]
+
+[[package]]
+name = "uasset-inspection-wasm"
+version = "0.1.0-rc.4"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uasset-inspection",
+ "uasset-parser",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "uasset-parser"
+version = "0.1.0-rc.4"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

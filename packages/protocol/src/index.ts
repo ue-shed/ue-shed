@@ -154,3 +154,5 @@ export * from "./companion.js";
 export * from "./cameras.js";
 export * from "./editor-play-session.js";
 export * from "./saved-world.js";
+export * from "./uasset-io.js";
+export * from "./uasset-inspection.js";

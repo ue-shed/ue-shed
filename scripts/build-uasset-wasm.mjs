@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const outputDirectory = join(repositoryRoot, "target", "uasset-parser-wasm-node");
+const outputDirectory = join(repositoryRoot, "target", "uasset-inspection-wasm-node");
 
 mkdirSync(outputDirectory, { recursive: true });
 
@@ -13,11 +13,11 @@ const result = spawnSync(
 	command,
 	[
 		"build",
-		"crates/uasset-parser-wasm",
+		"crates/uasset-inspection-wasm",
 		"--target",
 		"nodejs",
 		"--out-dir",
-		"../../target/uasset-parser-wasm-node",
+		"../../target/uasset-inspection-wasm-node",
 		"--release"
 	],
 	{

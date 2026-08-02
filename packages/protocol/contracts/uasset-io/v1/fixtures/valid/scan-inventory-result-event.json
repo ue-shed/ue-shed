@@ -1,0 +1,15 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 4,
+	"result": {
+		"kind": "scan_inventory",
+		"entry": {
+			"kind": "package",
+			"modifiedMs": 0,
+			"path": "Content/Example.uasset",
+			"size": 128
+		}
+	}
+}

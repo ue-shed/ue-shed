@@ -1,71 +1,45 @@
 # `uasset-parser`
 
-The portable saved-package parser for UE Shed. It provides the `uasset` Rust library and the native
-CLI used by `@ue-shed/unreal-assets` for editor-free `inspect` and `authoring` operations.
+The portable saved-package parser for UE Shed. It accepts bounded package bytes and produces
+parsed Unreal package structures and parser diagnostics. It does not open paths, discover a
+project, start processes, schedule work, or choose product projections.
 
-The parser remains behind a versioned JSON process boundary. TypeScript packages consume that
-contract rather than Rust implementation details, and the crate has no Workbench dependency. The
-library is also required to compile for `wasm32-unknown-unknown`; package bytes, not filesystem or
-process authority, are its reusable input boundary.
+`uasset-inspection` interprets these parsed structures as generic inspection, authoring, text,
+texture, and saved-world results. `uasset-io` owns filesystem access, project discovery,
+concurrency, cache participation, and the native `uasset` process/protocol boundary. TypeScript
+packages consume the versioned protocol rather than Rust implementation details.
 
 ## What it decodes
 
-Every classic saved package, including levels. `.umap` and `.uasset` are the same container, and
-`scan`/`catalog` enumerate both. Class-specific decoders in `src/asset.rs` handle DataTable,
-CompositeDataTable, CurveTable, DataAsset, StringTable, UserDefinedEnum, UserDefinedStruct, and
-Skeleton; **every other class falls through to the generic UObject tagged-property decoder.** The
-class constants at the top of `asset.rs` are dispatch targets, not a supported-type allowlist —
-`is_generic_uobject_class` is a permissive default. Reading that list as the scope of the parser is
-wrong: `uasset inspect Content/.../L_CameraLoad.umap` decodes 16,525 exports across 29 classes
-(actors, components, `Level`, `World`, `WorldSettings`) with no level-specific code, and
-`pnpm test:uasset-conformance` pins that decode against Unreal's own serializer.
+Every classic saved package, including levels. `.umap` and `.uasset` use the same package
+container. Class-specific decoders in `src/asset.rs` handle DataTable, CompositeDataTable,
+CurveTable, DataAsset, StringTable, UserDefinedEnum, UserDefinedStruct, and Skeleton; every other
+class falls through to the generic UObject tagged-property decoder. The class constants at the
+top of `asset.rs` are dispatch targets, not a supported-type allowlist: level packages can decode
+thousands of exports across many classes without level-specific parser code.
 
-The real boundary is native serialization, not asset type. Classes with a custom `UObject::Serialize`
-append binary after their tagged properties, which the parser preserves as `tail_bytes` instead of
-decoding — `UModel`'s BSP arrays are the clearest example. A non-zero `tail_bytes` therefore means
-"undecoded native payload", not "failed parse", and `status: "ok"` is still correct alongside it.
+The boundary is native serialization, not asset type. Classes with a custom `UObject::Serialize`
+append binary after their tagged properties; the parser preserves that data as `tail_bytes` rather
+than pretending to decode it. A non-zero `tail_bytes` therefore means "undecoded native payload",
+not "failed parse".
 
-## Saved maps
+## Portable boundary
 
-`uasset saved-world <project-root> <map-path> --format json` is a narrow projection for offline map
-review. A conventional level is read from its single `.umap`; a World Partition map derives and
-reads only its matching `Content/__ExternalActors__/...` subtree. It resolves actor root-component
-positions from saved scene-component properties and attachment references. It does not scan
-unrelated packages and never launches Unreal.
-
-The output is authority-tagged as `project_files` and distinguishes resolved positions from missing
-roots, missing attachment parents, cycles, ambiguous component paths, and unsupported absolute
-rotation/scale composition. It intentionally does not claim live bounds, live actor IDs, focus, or
-camera framing authority. The default 100,000-package limit is explicit and can be reduced or raised
-with `--maximum-assets`.
-
-This code was extracted from the pre-publication `ue-parser` development repository after UAsset
-and UTrace grew into separate products. UTrace parsing and dashboards are intentionally not part of
-this crate. The extracted parser code retains its MIT license.
-
-Build the CLI from the repository root:
+The library compiles for `wasm32-unknown-unknown`. Package bytes, not filesystem or process
+authority, are its reusable input boundary:
 
 ```text
-cargo build --release -p uasset-parser
-```
-
-The executable is written to `target/release/uasset` (`uasset.exe` on Windows).
-
-Verify the portable library target with:
-
-```text
-rustup target add wasm32-unknown-unknown
 cargo check --locked -p uasset-parser --lib --target wasm32-unknown-unknown
 ```
 
-Build and exercise the Node WASM binding from the repository root:
+The `uasset-inspection-wasm` binding accepts those bytes from its host and returns the same
+schema-versioned inspection evidence as the native inspection layer. It does not own filesystem
+discovery, scanning, caching, or subprocess authority.
+
+Build the native diagnostic executable from the repository root with:
 
 ```text
-pnpm run uasset:build:wasm
-pnpm run test:uasset-wasm
-pnpm run benchmark:uasset:wasm
+cargo build --release -p uasset-io
 ```
 
-The binding lives in `crates/uasset-parser-wasm`. It accepts package bytes supplied by its host and
-returns the same schema-versioned inspection evidence as native `uasset inspect`; it does not own
-filesystem discovery, scanning, caching, or subprocess authority.
+The executable is written to `target/release/uasset` (`uasset.exe` on Windows).

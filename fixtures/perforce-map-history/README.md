@@ -43,7 +43,7 @@ The portable parser test reconstructs every revision by applying the manifest to
 project tree and reads its saved world without Unreal or Perforce:
 
 ```powershell
-cargo test -p uasset-parser --bin uasset reconstructs_the_real
+cargo test -p uasset-io reconstructs_the_real
 ```
 
 The ordinary repository check remains independent of a Perforce server, Perforce binaries, network

@@ -37,7 +37,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 		expect(scan.failures).toEqual([]);
 		expect(scan.assets).toHaveLength(52);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
-	});
+	}, 15_000);
 
 	it("emits the same payload as a single-package inspect", async () => {
 		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");

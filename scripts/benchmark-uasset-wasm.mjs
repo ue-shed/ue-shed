@@ -10,8 +10,8 @@ const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const wasmPackage = join(
 	repositoryRoot,
 	"target",
-	"uasset-parser-wasm-node",
-	"uasset_parser_wasm.js"
+	"uasset-inspection-wasm-node",
+	"uasset_inspection_wasm.js"
 );
 const nativeExecutable = join(
 	repositoryRoot,
@@ -107,7 +107,12 @@ const result = {
 	fileBytes: bytes.byteLength,
 	outputBytes: Buffer.byteLength(exampleOutput),
 	wasmModuleBytes: statSync(
-		join(repositoryRoot, "target", "uasset-parser-wasm-node", "uasset_parser_wasm_bg.wasm")
+		join(
+			repositoryRoot,
+			"target",
+			"uasset-inspection-wasm-node",
+			"uasset_inspection_wasm_bg.wasm"
+		)
 	).size,
 	note: "WASM is a long-lived in-process call. Native includes fresh process startup and file I/O; both include decode and JSON serialization.",
 	scenarios: {

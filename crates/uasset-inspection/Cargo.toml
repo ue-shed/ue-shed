@@ -1,21 +1,16 @@
 [package]
-name = "uasset-parser-wasm"
+name = "uasset-inspection"
 version = "0.1.0-rc.4"
 edition = "2024"
 rust-version = "1.85"
-description = "WebAssembly binding for UE Shed's read-only UAsset parser"
+description = "Portable inspection projections for Unreal Engine asset packages"
 license = "MIT"
 repository = "https://github.com/ue-shed/ue-shed"
-publish = false
-
-[lib]
-crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uasset-parser = { path = "../uasset-parser" }
-wasm-bindgen = "0.2"
 
 [lints.rust]
 unsafe_code = "forbid"

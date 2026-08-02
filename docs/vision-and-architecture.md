@@ -93,7 +93,10 @@ apps/
   site/                        # Public showcase website (Cloudflare Workers static assets)
   workbench/                   # Showcase and dogfood desktop app
 crates/
-  uasset-parser/               # Native/WASM-ready read-only UAsset library and native `uasset` CLI
+  uasset-parser/               # Bounded package decoding and parser diagnostics
+  uasset-inspection/           # Generic and compact projections over decoded packages
+  uasset-io/                   # Project IO, scheduling, protocol adapter, and diagnostic `uasset`
+  uasset-inspection-wasm/      # WASM adapter over parser + inspection libraries
 packages/
   protocol/                    # Wire primitives, runtime schemas, compatibility
   observability/               # Shared telemetry policy, metrics, and public health
@@ -251,7 +254,7 @@ The first public spine is proven:
 
 Live and review workflows have also earned their place on the same architecture:
 
-- Texture Asset Audit scans a saved corpus and optionally previews live texture authority.
+- Texture Asset Audit scans a saved project and optionally previews live texture authority.
 - Game Text searches player-facing language across saved packages without flattening identity.
 - Camera Load Lab measures a bounded live camera data plane.
 - Map Review authors Review Views, captures immutable runs, and uses Live World Scout

@@ -5,12 +5,20 @@ use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
+use uasset_inspection::generic::inspect_bytes_json;
+use uasset_inspection::projection::{
+    TextAssetProjection, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
+    project_texture_asset,
+};
+use uasset_inspection::saved_world::{
+    SavedWorldActorPosition, SavedWorldPackageFragment, SavedWorldPosition,
+    project_saved_world_package, resolve_saved_world_positions,
+};
 use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
 };
@@ -19,15 +27,7 @@ use uasset_parser::asset::{
     USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{PackageError, PackageErrorKind, PackageIndex, TableLocation};
-use uasset_parser::projection::{
-    TextAssetProjection, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
-    project_texture_asset,
-};
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
-use uasset_parser::saved_world::{
-    SavedWorldActorPosition, SavedWorldPackageFragment, SavedWorldPosition,
-    project_saved_world_package, resolve_saved_world_positions,
-};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageSummary};
 
@@ -47,11 +47,8 @@ const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 const PROGRESS_INTERVAL: usize = 1_000;
 const DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS: usize = 100_000;
 
-fn main() -> ExitCode {
-    ExitCode::from(run(env::args_os().skip(1).collect()))
-}
-
-fn run(arguments: Vec<OsString>) -> u8 {
+pub fn run(arguments: Vec<OsString>) -> u8 {
+    start_protocol_parent_watchdog();
     match Command::parse(arguments) {
         Ok(Command::Help) => write_stdout(HELP.as_bytes()),
         Ok(Command::Version) => {
@@ -66,6 +63,23 @@ fn run(arguments: Vec<OsString>) -> u8 {
             EXIT_USAGE
         }
     }
+}
+
+/// The protocol adapter gives each compatibility worker a pipe whose write end belongs to the
+/// adapter process. If the adapter is interrupted, the pipe closes and this worker exits instead
+/// of continuing a project scan after its consumer is gone.
+fn start_protocol_parent_watchdog() {
+    if env::var_os("UE_SHED_PROTOCOL_PARENT_WATCHDOG").is_none() {
+        return;
+    }
+    std::thread::spawn(|| {
+        let mut input = io::stdin().lock();
+        let mut byte = [0_u8; 1];
+        match input.read(&mut byte) {
+            Ok(0) | Err(_) => std::process::exit(130),
+            Ok(_) => {}
+        }
+    });
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -493,6 +507,23 @@ fn inspect(options: &InspectOptions) -> u8 {
         }
     };
 
+    if options.format == OutputFormat::Json {
+        let rendered = inspect_bytes_json(&input_name, &bytes);
+        let partial = serde_json::from_str::<serde_json::Value>(&rendered)
+            .ok()
+            .is_some_and(|value| {
+                value.get("status").and_then(serde_json::Value::as_str) == Some("partial")
+            });
+        let mut rendered = rendered.into_bytes();
+        rendered.push(b'\n');
+        let exit = write_stdout(&rendered);
+        return if exit == EXIT_SUCCESS && partial {
+            EXIT_PARTIAL
+        } else {
+            exit
+        };
+    }
+
     let package = match Package::parse(&bytes) {
         Ok(package) => package,
         Err(error) => {
@@ -516,42 +547,6 @@ fn inspect(options: &InspectOptions) -> u8 {
         EXIT_PARTIAL
     } else {
         exit
-    }
-}
-
-/// Shares the native inspection projection with the separately packaged WASM adapter.
-///
-/// The host supplies bounded package bytes and a display path. Filesystem discovery, scanning,
-/// subprocess management, and caching intentionally remain native host responsibilities.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn inspect_bytes_json(path: &str, bytes: &[u8]) -> String {
-    match Package::parse(bytes) {
-        Ok(package) => serde_json::to_string(&InspectOutput::from_package(
-            path.to_owned(),
-            bytes,
-            &package,
-        ))
-        .unwrap_or_else(|error| {
-            serde_json::json!({
-                "schema_version": SCHEMA_VERSION,
-                "status": "error",
-                "path": path,
-                "kind": "internal",
-                "message": error.to_string()
-            })
-            .to_string()
-        }),
-        Err(error) => serde_json::to_string(&ErrorOutput::package(path.to_owned(), &error))
-            .unwrap_or_else(|serialization_error| {
-                serde_json::json!({
-                    "schema_version": SCHEMA_VERSION,
-                    "status": "error",
-                    "path": path,
-                    "kind": "internal",
-                    "message": serialization_error.to_string()
-                })
-                .to_string()
-            }),
     }
 }
 
@@ -1603,7 +1598,7 @@ fn scan_projection_asset(
     for export in &package.exports {
         if projection == ScanProjection::Texture
             && export.class_path.as_ref().is_none_or(|class_path| {
-                class_path.as_str() != uasset_parser::projection::TEXTURE2D_CLASS
+                class_path.as_str() != uasset_inspection::projection::TEXTURE2D_CLASS
             })
         {
             continue;

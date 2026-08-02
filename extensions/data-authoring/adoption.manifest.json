@@ -27,6 +27,10 @@
 			"crates/uasset-parser/Cargo.toml",
 			"crates/uasset-parser/LICENSE",
 			"crates/uasset-parser/src",
+			"crates/uasset-inspection/Cargo.toml",
+			"crates/uasset-inspection/src",
+			"crates/uasset-io/Cargo.toml",
+			"crates/uasset-io/src",
 			"packages/protocol/package.json",
 			"packages/protocol/tsconfig.json",
 			"packages/protocol/tsconfig.build.json",
@@ -37,6 +41,8 @@
 			"packages/protocol/src/editor-play-session.ts",
 			"packages/protocol/src/index.ts",
 			"packages/protocol/src/saved-world.ts",
+			"packages/protocol/src/uasset-io.ts",
+			"packages/protocol/src/uasset-inspection.ts",
 			"packages/authoring-sdk/package.json",
 			"packages/authoring-sdk/tsconfig.json",
 			"packages/authoring-sdk/tsconfig.browser.json",
@@ -102,7 +108,7 @@
 	},
 	"consumerTemplate": "extensions/data-authoring/adoption/consumer",
 	"toolchain": {
-		"nativeReader": "cargo build --locked --release -p uasset-parser",
+		"nativeReader": "cargo build --locked --release -p uasset-io",
 		"runtime": {
 			"browser": "schema-validated HTTP AuthoringClient",
 			"host": "ShedHostLive Node server"

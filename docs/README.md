@@ -50,6 +50,7 @@ there; do not invent a second status source in docs.
 | [0004](decisions/0004-own-the-uasset-parser.md)                              | Own the UAsset parser                           |
 | [0005](decisions/0005-gate-peculiar-sheets-and-defer-custom-authoring-ui.md) | Gate Peculiar Sheets; defer custom authoring UI |
 | [0006](decisions/0006-bounded-observatory-transform-stream.md)               | Bounded Observatory transform stream            |
+| [0007](decisions/0007-separate-uasset-inspection-and-io.md)                  | Separate UAsset parsing, inspection, and IO     |
 
 ## Research
 

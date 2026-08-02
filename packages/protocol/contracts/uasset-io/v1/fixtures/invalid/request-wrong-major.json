@@ -1,0 +1,6 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 2, "minor": 0 } },
+	"limits": {},
+	"operation": { "assetPath": "C:/project/Content/A.uasset", "kind": "inspect" },
+	"requestId": "request-001"
+}

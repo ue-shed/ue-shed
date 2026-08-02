@@ -3,17 +3,13 @@ name = "uasset-parser"
 version = "0.1.0-rc.4"
 edition = "2024"
 rust-version = "1.85"
-description = "Read-only parser and CLI for classic Unreal Engine asset packages"
+description = "Read-only parser for classic Unreal Engine asset packages"
 license = "MIT"
 repository = "https://github.com/ue-shed/ue-shed"
 
 [lib]
 name = "uasset_parser"
 path = "src/lib.rs"
-
-[[bin]]
-name = "uasset"
-path = "src/bin/uasset.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

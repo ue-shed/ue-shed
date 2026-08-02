@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	cpus,
 	arch as operatingSystemArchitecture,
@@ -11,11 +11,21 @@ import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const benchmarkScript = fileURLToPath(import.meta.url);
 const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const fixtureProject = join(fixtureRoot, "UEShedFixture.uproject");
 const fixtureContractPath = join(fixtureRoot, "fixture-contract.json");
 const benchmarkAsset = join(fixtureRoot, "Content", "Fixture", "Input", "IMC_Fixture.uasset");
 const benchmarkLevel = join(fixtureRoot, "Content", "Fixture", "Cameras", "L_CameraLoad.umap");
+const benchmarkMap = benchmarkLevel;
+const benchmarkAuthoringAsset = join(
+	fixtureRoot,
+	"Content",
+	"Fixture",
+	"Authoring",
+	"DT_Scalars.uasset"
+);
+const benchmarkTextureRules = join(fixtureRoot, "FixtureSource", "Audits", "texture-rules.json");
 const releaseExecutable = join(
 	repositoryRoot,
 	"target",
@@ -23,6 +33,7 @@ const releaseExecutable = join(
 	process.platform === "win32" ? "uasset.exe" : "uasset"
 );
 const maxOutputBytes = 64 * 1024 * 1024;
+let collectMemory = true;
 
 const usage = `Usage: node scripts/benchmark-uasset.mjs [options]
 
@@ -32,6 +43,7 @@ Options:
   --warmups <count>      Untimed warmups for each scenario (default: 1)
   --output <path>        Write the complete JSON result
   --json                 Print only JSON
+  --memory               Add separate working-set sampling (slower)
   --no-build             Reuse existing release parser and fixture binaries
   --unreal               Include the Unreal commandlet scenario
   -h, --help             Show this help
@@ -49,6 +61,7 @@ function integerArgument(name, input, { minimum }) {
 function parseArguments(arguments_) {
 	const options = {
 		build: true,
+		collectMemory: false,
 		json: false,
 		nativeRuns: 10,
 		output: undefined,
@@ -81,6 +94,9 @@ function parseArguments(arguments_) {
 				break;
 			case "--no-build":
 				options.build = false;
+				break;
+			case "--memory":
+				options.collectMemory = true;
 				break;
 			case "--unreal":
 				options.unreal = true;
@@ -136,6 +152,106 @@ function invoke(command, arguments_, options) {
 	return { elapsedMs, stdout: result.stdout };
 }
 
+function processWorkingSetBytes(pid) {
+	if (pid === undefined) return undefined;
+	if (process.platform === "win32") {
+		const result = spawnSync(
+			"powershell",
+			[
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				`(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).WorkingSet64`
+			],
+			{
+				encoding: "utf8",
+				maxBuffer: 1024 * 1024,
+				windowsHide: true
+			}
+		);
+		const value = Number(result.stdout?.trim());
+		return Number.isFinite(value) && value > 0 ? value : undefined;
+	}
+	if (process.platform === "linux") {
+		try {
+			const status = readFileSync(`/proc/${pid}/status`, "utf8");
+			const match = /^VmHWM:\s+(\d+)\s+kB$/m.exec(status);
+			return match === null ? undefined : Number(match[1]) * 1024;
+		} catch {
+			return undefined;
+		}
+	}
+	const result = spawnSync("ps", ["-o", "rss=", "-p", String(pid)], {
+		encoding: "utf8",
+		maxBuffer: 1024 * 1024,
+		windowsHide: true
+	});
+	const value = Number(result.stdout?.trim());
+	return Number.isFinite(value) && value > 0 ? value * 1024 : undefined;
+}
+
+async function runMemoryHelper(options) {
+	const child = spawn(options.command, options.arguments, {
+		cwd: repositoryRoot,
+		env: { ...process.env, ...options.environmentOverrides },
+		windowsHide: true
+	});
+	let childError;
+	child.once("error", (cause) => {
+		childError = cause;
+	});
+	child.stdout?.resume();
+	child.stderr?.resume();
+	let peakWorkingSetBytes;
+	const sample = () => {
+		const workingSetBytes = processWorkingSetBytes(child.pid);
+		if (workingSetBytes !== undefined) {
+			peakWorkingSetBytes = Math.max(peakWorkingSetBytes ?? 0, workingSetBytes);
+		}
+	};
+	sample();
+	const interval = setInterval(sample, 5);
+	const result = await new Promise((resolvePromise) => {
+		child.once("close", (code, signal) => resolvePromise({ code, signal }));
+	});
+	clearInterval(interval);
+	sample();
+	if (childError !== undefined || result.code !== 0) {
+		throw new Error(
+			childError?.message ??
+				`memory sample target exited ${result.code ?? result.signal ?? "unknown"}`
+		);
+	}
+	process.stdout.write(
+		`${JSON.stringify({ peakWorkingSetBytes: peakWorkingSetBytes ?? null })}\n`
+	);
+}
+
+function measureMemory(options) {
+	const payload = Buffer.from(
+		JSON.stringify({
+			arguments: options.arguments,
+			command: options.command,
+			environmentOverrides: options.environmentOverrides ?? {}
+		}),
+		"utf8"
+	).toString("base64url");
+	const result = spawnSync(process.execPath, [benchmarkScript, "--memory-helper", payload], {
+		cwd: repositoryRoot,
+		encoding: "utf8",
+		maxBuffer: maxOutputBytes,
+		windowsHide: true
+	});
+	if (result.error !== undefined || result.status !== 0) {
+		throw commandFailure(process.execPath, [benchmarkScript, "--memory-helper"], result);
+	}
+	try {
+		return JSON.parse(result.stdout);
+	} catch (cause) {
+		throw new Error(`Memory helper returned invalid JSON: ${String(cause)}`);
+	}
+}
+
 function percentile(sorted, ratio) {
 	if (sorted.length === 0) return 0;
 	const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
@@ -144,6 +260,11 @@ function percentile(sorted, ratio) {
 
 function roundMilliseconds(value) {
 	return Math.round(value * 1_000) / 1_000;
+}
+
+function formatBytes(value) {
+	if (value === null || value === undefined) return "unavailable";
+	return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 function distribution(samples) {
@@ -176,6 +297,7 @@ function measureScenario(options) {
 		command: [options.command, ...options.arguments],
 		distribution: distribution(samples),
 		id: options.id,
+		...(options.memory === true && collectMemory ? { memory: measureMemory(options) } : {}),
 		notes: options.notes,
 		runs: options.runs,
 		warmups: options.warmups,
@@ -229,6 +351,66 @@ function validateNativeInspection(output) {
 	}
 }
 
+function validateNativeScan(output) {
+	const records = output
+		.trim()
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0)
+		.map((line) => parseJsonOutput("Native scan", line));
+	if (!records.some((record) => record?.event === "summary")) {
+		throw new Error("Native scan did not return a summary record.");
+	}
+}
+
+function validateNativeProjection(output, eventName, recordEvent = `${eventName}_record`) {
+	const records = output
+		.trim()
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0)
+		.map((line) => parseJsonOutput(`Native ${eventName} projection`, line));
+	if (!records.some((record) => record?.event === recordEvent)) {
+		throw new Error(`Native ${eventName} projection did not return a record.`);
+	}
+}
+
+function validateAuthoringReport(output) {
+	const decoded = parseJsonOutput("Authoring report", output);
+	if (
+		decoded?.table?.objectPath === undefined &&
+		decoded?.snapshot?.table?.objectPath === undefined
+	) {
+		throw new Error("Authoring report returned an unexpected snapshot.");
+	}
+}
+
+function validateSavedWorldReport(output) {
+	const decoded = parseJsonOutput("Saved-world report", output);
+	if (decoded?.authority?.kind === undefined || !Array.isArray(decoded.actors)) {
+		throw new Error("Saved-world report returned an unexpected shape.");
+	}
+}
+
+function validateTextReport(output) {
+	const decoded = parseJsonOutput("TypeScript text report", output);
+	if (decoded?.schemaVersion !== 1 || !Array.isArray(decoded.units)) {
+		throw new Error("TypeScript text report returned an unexpected shape.");
+	}
+}
+
+function validateTextureReport(output) {
+	const decoded = parseJsonOutput("TypeScript texture report", output);
+	if (decoded?.schemaVersion !== 1 || !Array.isArray(decoded.records)) {
+		throw new Error("TypeScript texture report returned an unexpected shape.");
+	}
+}
+
+function validateAssetScanReport(output) {
+	const decoded = parseJsonOutput("TypeScript assets scan", output);
+	if (!Array.isArray(decoded.assets) || decoded.summary?.scannedAssets === undefined) {
+		throw new Error("TypeScript assets scan returned an unexpected report.");
+	}
+}
+
 function validateEnhancedInputReport(output) {
 	const decoded = parseJsonOutput("TypeScript input projection", output);
 	if (
@@ -237,6 +419,12 @@ function validateEnhancedInputReport(output) {
 		!Array.isArray(decoded.mappingContexts)
 	) {
 		throw new Error("TypeScript input projection returned an unexpected report.");
+	}
+}
+
+function validateHelp(output) {
+	if (!output.includes("UE Shed") && !output.includes("uasset inspect")) {
+		throw new Error("CLI help output did not contain its command banner.");
 	}
 }
 
@@ -350,7 +538,7 @@ function machineContext() {
 }
 
 function printHuman(result) {
-	process.stdout.write("UAsset parser benchmark\n");
+	process.stdout.write("UAsset CLI benchmark\n");
 	process.stdout.write(
 		`revision=${result.git.revision.slice(0, 12)} dirty=${String(result.git.dirty)} ` +
 			`platform=${result.machine.operatingSystem}/${result.machine.architecture}\n`
@@ -372,6 +560,11 @@ function printHuman(result) {
 				`${" ".repeat(30)}  in-process parse=${scenario.observed.parseMs.toFixed(3)} ms ` +
 					`(load=${scenario.observed.loadMs.toFixed(3)} walk=${scenario.observed.walkMs.toFixed(3)}) ` +
 					`exports=${scenario.observed.exports} properties=${scenario.observed.properties}\n`
+			);
+		}
+		if (scenario.memory !== undefined) {
+			process.stdout.write(
+				`${" ".repeat(30)}  peak working set=${formatBytes(scenario.memory.peakWorkingSetBytes)}\n`
 			);
 		}
 	}
@@ -408,6 +601,7 @@ function main() {
 		return;
 	}
 	const options = parsed.options;
+	collectMemory = options.collectMemory;
 	if (!existsSync(benchmarkAsset)) {
 		throw new Error(
 			`Benchmark fixture is missing: ${relative(repositoryRoot, benchmarkAsset)}. ` +
@@ -415,11 +609,11 @@ function main() {
 		);
 	}
 	if (options.build) {
-		runSetup("cargo", ["build", "--locked", "--release", "-p", "uasset-parser"], options.json);
+		runSetup("cargo", ["build", "--locked", "--release", "-p", "uasset-io"], options.json);
 	}
 	if (!existsSync(releaseExecutable)) {
 		throw new Error(
-			`Release parser not found at ${releaseExecutable}. Run without --no-build first.`
+			`Release uasset executable not found at ${releaseExecutable}. Run without --no-build first.`
 		);
 	}
 
@@ -437,12 +631,88 @@ function main() {
 			workload: relative(repositoryRoot, benchmarkAsset)
 		})
 	);
+	scenarios.push(
+		measureScenario({
+			arguments: ["authoring", benchmarkAuthoringAsset, "--format", "json"],
+			command: releaseExecutable,
+			id: "native.authoring.inspect",
+			notes: "Release native authoring projection for one fixture DataTable.",
+			runs: options.nativeRuns,
+			validate: validateAuthoringReport,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, benchmarkAuthoringAsset)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: ["scan", fixtureRoot, "--format", "json", "--projection", "text"],
+			command: releaseExecutable,
+			id: "native.text.scan",
+			notes: "Release native compact text projection over the fixture.",
+			runs: options.nativeRuns,
+			validate: (output) => validateNativeProjection(output, "text", "text_occurrence"),
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: ["scan", fixtureRoot, "--format", "json", "--projection", "texture"],
+			command: releaseExecutable,
+			id: "native.texture.scan",
+			notes: "Release native compact texture projection over the fixture.",
+			runs: options.nativeRuns,
+			validate: (output) => validateNativeProjection(output, "texture"),
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: ["saved-world", fixtureRoot, benchmarkMap, "--format", "json"],
+			command: releaseExecutable,
+			id: "native.saved-world.inspect",
+			notes: "Release native saved-world projection for the fixture level.",
+			runs: options.nativeRuns,
+			validate: validateSavedWorldReport,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, benchmarkMap)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: ["scan", fixtureRoot, "--format", "json", "--depth", "full"],
+			command: releaseExecutable,
+			environmentOverrides: {},
+			id: "native.scan.project",
+			memory: true,
+			notes: "Release native full project scan with NDJSON asset records and summary.",
+			runs: options.nativeRuns,
+			validate: validateNativeScan,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: ["--help"],
+			command: releaseExecutable,
+			id: "native.cli.help",
+			memory: true,
+			notes: "Diagnostic Rust CLI startup and help rendering.",
+			runs: options.nativeRuns,
+			validate: validateHelp,
+			warmups: options.warmups,
+			workload: "uasset --help"
+		})
+	);
 
 	scenarios.push(
 		measureScenario({
 			arguments: ["inspect", benchmarkLevel, "--format", "json"],
 			command: releaseExecutable,
 			id: "native.inspect.level",
+			memory: true,
 			notes:
 				"Release native process over the fixture level, the largest package in the fixture " +
 				"(16,525 exports). Directly comparable to unreal.commandlet.level.",
@@ -464,11 +734,82 @@ function main() {
 		...process.env,
 		UE_SHED_UASSET_EXECUTABLE: releaseExecutable
 	};
+	const applicationEnvironmentOverrides = {
+		UE_SHED_UASSET_EXECUTABLE: releaseExecutable
+	};
+	scenarios.push(
+		measureScenario({
+			arguments: [
+				...applicationArguments.slice(0, 3),
+				"authoring",
+				"inspect",
+				benchmarkAuthoringAsset
+			],
+			command: process.execPath,
+			environment: applicationEnvironment,
+			environmentOverrides: applicationEnvironmentOverrides,
+			id: "typescript.authoring.inspect",
+			notes: "Source TypeScript authoring inspection with the release reader.",
+			runs: options.nativeRuns,
+			validate: validateAuthoringReport,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, benchmarkAuthoringAsset)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: [...applicationArguments.slice(0, 3), "text", "scan", fixtureRoot],
+			command: process.execPath,
+			environment: applicationEnvironment,
+			environmentOverrides: applicationEnvironmentOverrides,
+			id: "typescript.text.scan",
+			notes: "Source TypeScript compact text scan with the release reader.",
+			runs: options.nativeRuns,
+			validate: validateTextReport,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: [
+				...applicationArguments.slice(0, 3),
+				"audit",
+				"textures",
+				fixtureRoot,
+				"--rules",
+				benchmarkTextureRules
+			],
+			command: process.execPath,
+			environment: applicationEnvironment,
+			environmentOverrides: applicationEnvironmentOverrides,
+			id: "typescript.texture.audit",
+			notes: "Source TypeScript texture audit with compact reader results and fixture rules.",
+			runs: options.nativeRuns,
+			validate: validateTextureReport,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: [...applicationArguments.slice(0, 3), "--help"],
+			command: process.execPath,
+			id: "typescript.cli.help",
+			memory: true,
+			notes: "Current TypeScript CLI startup and help rendering.",
+			runs: options.nativeRuns,
+			validate: validateHelp,
+			warmups: options.warmups,
+			workload: "apps/cli --help"
+		})
+	);
 	scenarios.push(
 		measureScenario({
 			arguments: [...applicationArguments, benchmarkAsset],
 			command: process.execPath,
 			environment: applicationEnvironment,
+			environmentOverrides: applicationEnvironmentOverrides,
 			id: "typescript.input.single",
 			notes: "Source TypeScript application with release reader; excludes the Cargo launcher.",
 			runs: options.nativeRuns,
@@ -482,10 +823,33 @@ function main() {
 			arguments: [...applicationArguments, fixtureRoot],
 			command: process.execPath,
 			environment: applicationEnvironment,
+			environmentOverrides: applicationEnvironmentOverrides,
 			id: "typescript.input.project",
+			memory: true,
 			notes: "Source TypeScript application scans the fixture and invokes the release reader.",
 			runs: options.nativeRuns,
 			validate: validateEnhancedInputReport,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, fixtureRoot)
+		})
+	);
+	scenarios.push(
+		measureScenario({
+			arguments: [
+				...applicationArguments.slice(0, 3),
+				"assets",
+				"scan",
+				fixtureRoot,
+				"--full"
+			],
+			command: process.execPath,
+			environment: applicationEnvironment,
+			environmentOverrides: applicationEnvironmentOverrides,
+			id: "typescript.assets.scan",
+			memory: true,
+			notes: "Source TypeScript assets scan with the full report and release reader.",
+			runs: options.nativeRuns,
+			validate: validateAssetScanReport,
 			warmups: options.warmups,
 			workload: relative(repositoryRoot, fixtureRoot)
 		})
@@ -567,6 +931,7 @@ function main() {
 		generatedAt: new Date().toISOString(),
 		configuration: {
 			buildsExcluded: true,
+			memorySampling: options.collectMemory,
 			nativeRuns: options.nativeRuns,
 			unrealIncluded: options.unreal,
 			unrealRuns: options.unrealRuns,
@@ -590,11 +955,30 @@ function main() {
 	}
 }
 
-try {
-	main();
-} catch (error) {
-	process.stderr.write(
-		`UAsset benchmark failed: ${error instanceof Error ? error.message : String(error)}\n`
-	);
-	process.exitCode = 1;
+if (process.argv[2] === "--memory-helper") {
+	try {
+		const payload = JSON.parse(
+			Buffer.from(process.argv[3] ?? "", "base64url").toString("utf8")
+		);
+		runMemoryHelper(payload).catch((error) => {
+			process.stderr.write(
+				`UAsset memory helper failed: ${error instanceof Error ? error.message : String(error)}\n`
+			);
+			process.exitCode = 1;
+		});
+	} catch (error) {
+		process.stderr.write(
+			`UAsset memory helper failed: ${error instanceof Error ? error.message : String(error)}\n`
+		);
+		process.exitCode = 1;
+	}
+} else {
+	try {
+		main();
+	} catch (error) {
+		process.stderr.write(
+			`UAsset benchmark failed: ${error instanceof Error ? error.message : String(error)}\n`
+		);
+		process.exitCode = 1;
+	}
 }

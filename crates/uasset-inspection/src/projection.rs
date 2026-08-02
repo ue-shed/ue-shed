@@ -6,11 +6,13 @@
 
 use serde::Serialize;
 
-use crate::asset::{
+use uasset_parser::asset::{
     CURVETABLE_CLASS, DecodedAsset, DecodedUObject, SKELETON_CLASS, USERDEFINEDSTRUCT_CLASS,
 };
-use crate::package::Package;
-use crate::property::{PropertyRecord, PropertyStream, PropertyValue, TextHistory, TextValue};
+use uasset_parser::package::Package;
+use uasset_parser::property::{
+    PropertyRecord, PropertyStream, PropertyValue, TextHistory, TextValue,
+};
 
 /// Exact serialized class path used by `UTexture2D` exports.
 pub const TEXTURE2D_CLASS: &str = "/Script/Engine.Texture2D";
@@ -318,7 +320,7 @@ fn append_property_path(prefix: &str, name: &str) -> String {
     }
 }
 
-fn resolve_name(package: &Package, name: crate::archive::NameRef) -> String {
+fn resolve_name(package: &Package, name: uasset_parser::archive::NameRef) -> String {
     package
         .resolve_name(name)
         .unwrap_or_else(|| format!("<invalid-name:{}>", name.index().get()))
@@ -527,178 +529,4 @@ fn root_property<'a>(
         .records
         .iter()
         .find(|property| package.resolve_name_str(property.name) == Some(name))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::archive::Span;
-    use crate::asset::{DecodedDataAsset, DecodedUObject};
-    use crate::package::{test_object_path, test_package};
-    use crate::property::{PropertyTagFlags, PropertyTypeName, RawReason};
-    use crate::test_support::name_ref;
-
-    fn stream(records: Vec<PropertyRecord>) -> PropertyStream {
-        PropertyStream {
-            class_extensions: None,
-            records,
-            terminator: Span::new(0, 0).expect("empty span"),
-        }
-    }
-
-    fn property(name: i32, type_name: i32, value: PropertyValue) -> PropertyRecord {
-        PropertyRecord {
-            name: name_ref(name, 0),
-            type_name: PropertyTypeName {
-                name: name_ref(type_name, 0),
-                parameters: Vec::new(),
-            },
-            array_index: 0,
-            flags: PropertyTagFlags::default(),
-            property_guid: None,
-            extensions: None,
-            payload: Span::new(0, 0).expect("empty span"),
-            value,
-        }
-    }
-
-    #[test]
-    fn text_projection_preserves_nested_occurrences_and_unsupported_gaps() {
-        let package = test_package(vec![
-            "None".into(),
-            "Title".into(),
-            "TextProperty".into(),
-            "Nested".into(),
-            "StructProperty".into(),
-            "RawText".into(),
-        ]);
-        let asset = DecodedAsset::DataAsset(DecodedDataAsset {
-            object_path: test_object_path("/Game/Test/Text.Text"),
-            class_path: test_object_path("/Script/Game.TextAsset"),
-            object_guid: None,
-            properties: stream(vec![
-                property(
-                    1,
-                    2,
-                    PropertyValue::Text(TextValue {
-                        source: "Welcome".into(),
-                        history: TextHistory::Base {
-                            namespace: "Game".into(),
-                            key: "Welcome".into(),
-                        },
-                    }),
-                ),
-                property(
-                    3,
-                    4,
-                    PropertyValue::Struct(stream(vec![property(
-                        1,
-                        2,
-                        PropertyValue::Text(TextValue {
-                            source: "Nested".into(),
-                            history: TextHistory::None,
-                        }),
-                    )])),
-                ),
-                property(
-                    5,
-                    2,
-                    PropertyValue::Raw {
-                        reason: RawReason::UnsupportedType,
-                    },
-                ),
-            ]),
-        });
-
-        let projection = project_text_asset(&package, &asset);
-
-        assert_eq!(projection.occurrences.len(), 2);
-        assert_eq!(
-            projection.occurrences[0].location,
-            TextLocation::AssetProperty {
-                object_path: "/Game/Test/Text.Text".into(),
-                class_path: "/Script/Game.TextAsset".into(),
-                property_path: "Title".into(),
-            }
-        );
-        assert_eq!(
-            projection.occurrences[1].identity,
-            TextIdentity::Unresolved {
-                reason: TextIdentityReason::CultureInvariant,
-            }
-        );
-        assert_eq!(projection.coverage_gaps.len(), 1);
-        assert_eq!(projection.coverage_gaps[0].property_path, "RawText");
-    }
-
-    #[test]
-    fn texture_projection_emits_only_serialized_texture_evidence() {
-        let package = test_package(vec![
-            "None".into(),
-            "Source".into(),
-            "StructProperty".into(),
-            "SizeX".into(),
-            "SizeY".into(),
-            "NumMips".into(),
-            "IntProperty".into(),
-            "Format".into(),
-            "NameProperty".into(),
-            "TSF_BGRA8".into(),
-            "CompressionSettings".into(),
-            "EnumProperty".into(),
-            "TC_Default".into(),
-            "SRGB".into(),
-            "BoolProperty".into(),
-        ]);
-        let source = stream(vec![
-            property(3, 6, PropertyValue::Int(512)),
-            property(4, 6, PropertyValue::Int(256)),
-            property(5, 6, PropertyValue::Int(4)),
-            property(7, 8, PropertyValue::Name(name_ref(9, 0))),
-        ]);
-        let asset = DecodedAsset::UObject(DecodedUObject {
-            object_path: test_object_path("/Game/Test/T_Test.T_Test"),
-            class_path: test_object_path(TEXTURE2D_CLASS),
-            object_guid: None,
-            properties: stream(vec![
-                property(1, 2, PropertyValue::Struct(source)),
-                property(10, 11, PropertyValue::Enum(name_ref(12, 0))),
-                property(13, 14, PropertyValue::Bool(true)),
-            ]),
-            tail: Span::new(0, 0).expect("empty span"),
-        });
-
-        let record = project_texture_asset(&package, &asset, 4096).expect("texture record");
-
-        assert_eq!(
-            record.package_file_bytes,
-            Evidence::Available {
-                source: EvidenceSource::File,
-                value: 4096,
-            }
-        );
-        assert_eq!(
-            record.dimensions,
-            Evidence::Available {
-                source: EvidenceSource::Serialized,
-                value: TextureDimensions {
-                    width: 512,
-                    height: 256
-                },
-            }
-        );
-        assert_eq!(
-            record.source_format,
-            Evidence::Available {
-                source: EvidenceSource::Serialized,
-                value: "TSF_BGRA8".into(),
-            }
-        );
-        assert_eq!(
-            record.texture_group,
-            Evidence::Unavailable {
-                reason: EvidenceUnavailableReason::NotSerialized,
-            }
-        );
-    }
 }

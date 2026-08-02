@@ -8,8 +8,8 @@ const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const wasmPackage = join(
 	repositoryRoot,
 	"target",
-	"uasset-parser-wasm-node",
-	"uasset_parser_wasm.js"
+	"uasset-inspection-wasm-node",
+	"uasset_inspection_wasm.js"
 );
 const nativeExecutable = join(
 	repositoryRoot,

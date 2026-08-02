@@ -1,0 +1,17 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"limits": {
+		"concurrency": 4,
+		"maximumAssets": 1024,
+		"maximumOutputBytes": 67108864,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"depth": "header",
+		"inventory": true,
+		"kind": "scan",
+		"paths": [],
+		"projectRoot": "C:/project"
+	},
+	"requestId": "request-001"
+}

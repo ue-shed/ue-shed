@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"build": "pnpm --filter @ue-shed/protocol build && pnpm --filter @ue-shed/observability build && pnpm --filter @ue-shed/unreal-connection build && pnpm --filter @ue-shed/unreal-assets build && pnpm --filter foreign-authoring-host build && pnpm --filter foreign-authoring-server typecheck",
-		"build:reader": "cargo build --locked --release -p uasset-parser",
+		"build:reader": "cargo build --locked --release -p uasset-io",
 		"start": "pnpm --filter foreign-authoring-server start",
 		"verify": "node scripts/verify-adoption.mjs",
 		"verify:host": "node scripts/verify-host.mjs"

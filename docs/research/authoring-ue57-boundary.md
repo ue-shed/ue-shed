@@ -5,8 +5,9 @@ implementation input, not a public protocol decision.
 
 ## Saved package inspection
 
-The `uasset-parser` project provides a read-only `uasset inspect --format json` process boundary for
-classic, uncooked editor packages. Its Rust library is an implementation detail. The current
+The `uasset-io` executable provides a read-only `uasset inspect --format json` process boundary for
+classic, uncooked editor packages; it delegates decoding to `uasset-parser` and projections to
+`uasset-inspection`. The Rust libraries are implementation details. The current
 versioned inspection JSON established fixture coverage, but the authoring projection should derive
 from the same language-neutral contract as `UEShedAuthoring`, not require TypeScript to reconcile two
 independently designed table models. Generic parser diagnostics and package metadata can remain in a

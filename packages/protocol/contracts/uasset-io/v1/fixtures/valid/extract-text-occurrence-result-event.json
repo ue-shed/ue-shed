@@ -1,0 +1,26 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 9,
+	"result": {
+		"kind": "extract_text",
+		"event": {
+			"event": "text_occurrence",
+			"schema_version": 1,
+			"path": "Content/Example.uasset",
+			"fileBytes": 128,
+			"occurrence": {
+				"source": "Hello",
+				"identity": { "status": "resolved", "namespace": "Example", "key": "Hello" },
+				"location": {
+					"kind": "asset_property",
+					"object_path": "/Game/Example.Example",
+					"class_path": "/Script/Example.Example",
+					"property_path": "Title"
+				},
+				"edit_capability": "source_editable"
+			}
+		}
+	}
+}

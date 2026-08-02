@@ -1,0 +1,29 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 10,
+	"result": {
+		"kind": "extract_texture",
+		"event": {
+			"event": "texture_record",
+			"schema_version": 1,
+			"path": "Content/Example.uasset",
+			"record": {
+				"object_path": "/Game/Example.Example",
+				"package_file_bytes": { "status": "available", "source": "file", "value": 128 },
+				"dimensions": {
+					"status": "available",
+					"source": "serialized",
+					"value": { "width": 64, "height": 64 }
+				},
+				"source_format": { "status": "unavailable", "reason": "not_serialized" },
+				"source_mips": { "status": "unavailable", "reason": "wrong_value_kind" },
+				"compression": { "status": "unavailable", "reason": "missing_source" },
+				"s_rgb": { "status": "available", "source": "serialized", "value": true },
+				"texture_group": { "status": "unavailable", "reason": "not_serialized" },
+				"mip_generation": { "status": "unavailable", "reason": "not_serialized" }
+			}
+		}
+	}
+}

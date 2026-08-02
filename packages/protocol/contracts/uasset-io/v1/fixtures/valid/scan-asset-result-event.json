@@ -1,0 +1,47 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 3,
+	"result": {
+		"kind": "scan_asset",
+		"entry": {
+			"depth": "full",
+			"fileBytes": 128,
+			"inspection": {
+				"assets": [
+					{
+						"kind": "UObject",
+						"object_path": "/Game/Example.Example",
+						"class_path": "/Script/Example.Example",
+						"properties": [
+							{
+								"name": "Title",
+								"type": "StrProperty",
+								"value_kind": "string",
+								"value": "hello"
+							}
+						]
+					}
+				],
+				"decode_errors": [],
+				"package": {
+					"name": "/Game/Example",
+					"package_flags": 0,
+					"summary_size": 64,
+					"total_header_size": 128,
+					"version": {
+						"legacy_file": 0,
+						"legacy_ue3": 0,
+						"ue4": 1,
+						"ue5": 0,
+						"licensee": 0
+					}
+				},
+				"path": "Content/Example.uasset",
+				"schema_version": 8,
+				"status": "ok"
+			}
+		}
+	}
+}

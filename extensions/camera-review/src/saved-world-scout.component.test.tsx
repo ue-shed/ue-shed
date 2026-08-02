@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import type { SavedWorld } from "@ue-shed/protocol";
@@ -99,35 +99,47 @@ describe("SavedWorldScout", () => {
 		);
 	});
 
-	it("filters saved actor classes in a bounded list instead of rendering an unscoped chip wall", async () => {
+	it("filters saved actors and classes through one bounded explorer", async () => {
 		const user = userEvent.setup();
 		renderScout();
 
 		await screen.findByText("PointLight");
-		const filter = screen.getByRole("textbox", { name: "Filter saved actor classes" });
+		const filter = screen.getByRole("textbox", { name: "Find saved actor" });
 		await user.type(filter, "light");
 
 		expect(screen.getByText("PointLight")).toBeDefined();
 		expect(screen.queryByText("StaticMeshActor")).toBeNull();
 	});
 
-	it("keeps actor class chips selected by default and inverts the selection", async () => {
+	it("keeps actor classes selected by default and can invert the selection", async () => {
 		const user = userEvent.setup();
 		renderScout();
 
 		await screen.findByText("PointLight");
-		const light = screen.getByText("PointLight").closest("button");
-		const mesh = screen.getByText("StaticMeshActor").closest("button");
-		expect(light).not.toBeNull();
-		expect(mesh).not.toBeNull();
+		await user.click(screen.getByRole("button", { name: "Toggle actor class filters" }));
+		const classFilters = screen.getByLabelText("Actor class filters");
+		const light = within(classFilters).getByRole("button", { name: /PointLight/ });
+		const mesh = within(classFilters).getByRole("button", { name: /StaticMeshActor/ });
 		expect(light!.getAttribute("aria-pressed")).toBe("true");
 		expect(mesh!.getAttribute("aria-pressed")).toBe("true");
 
 		await user.click(light!);
 		expect(light!.getAttribute("aria-pressed")).toBe("false");
+		expect(mesh!.getAttribute("aria-pressed")).toBe("true");
 
 		await user.click(screen.getByRole("button", { name: "INVERT" }));
 		expect(light!.getAttribute("aria-pressed")).toBe("true");
 		expect(mesh!.getAttribute("aria-pressed")).toBe("false");
+	});
+
+	it("keeps an outliner selection in sync with the saved actor inspector", async () => {
+		const user = userEvent.setup();
+		renderScout();
+
+		const actor = await screen.findByRole("button", { name: /Ground mesh/ });
+		await user.click(actor);
+
+		expect(screen.getByRole("heading", { name: "Ground mesh" })).toBeDefined();
+		expect(actor.getAttribute("aria-pressed")).toBe("true");
 	});
 });

@@ -1,5 +1,11 @@
 import * as stylex from "@stylexjs/stylex";
-import { createEffectAction } from "@ue-shed/ui";
+import {
+	ActorExplorer,
+	actorExplorerMatches,
+	createEffectAction,
+	SavedMapPicker,
+	type ActorExplorerFilters
+} from "@ue-shed/ui";
 import {
 	PointMapCanvas,
 	type PointMapController,
@@ -8,14 +14,9 @@ import {
 } from "@ue-shed/ui/point-map";
 import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { Cause } from "effect";
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { Show, createMemo, createSignal, onMount } from "solid-js";
 import type { MapReviewClientShape } from "./map-review-client.js";
-import {
-	colorForClass,
-	formatCoordinate,
-	actorMatchesFilter,
-	WorldScoutRetainedStore
-} from "./world-scout-canvas.js";
+import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.js";
 
 /**
  * Saved-package Map Review surface. It intentionally shares the retained rendering mechanics
@@ -38,9 +39,10 @@ export function SavedWorldScout(props: {
 	const [projectLabel, setProjectLabel] = createSignal<string>();
 	const [selectedMapPath, setSelectedMapPath] = createSignal<string>();
 	const [error, setError] = createSignal<string>();
-	const [query, setQuery] = createSignal("");
-	const [classQuery, setClassQuery] = createSignal("");
-	const [hiddenClasses, setHiddenClasses] = createSignal<ReadonlySet<string>>(new Set());
+	const [actorFilters, setActorFilters] = createSignal<ActorExplorerFilters>({
+		classPaths: undefined,
+		query: ""
+	});
 	const [selectedStreamIndex, setSelectedStreamIndex] = createSignal<number>();
 	const [catalogRevision, setCatalogRevision] = createSignal(0);
 	const [selectionRevision, setSelectionRevision] = createSignal(0);
@@ -51,19 +53,47 @@ export function SavedWorldScout(props: {
 		catalogRevision();
 		return store.classCounts();
 	});
-	const filteredClasses = createMemo(() => {
-		const needle = classQuery().trim().toLocaleLowerCase();
-		return needle.length === 0
-			? classes()
-			: classes().filter(([className]) => className.toLocaleLowerCase().includes(needle));
-	});
-	const visiblePoints = createMemo<readonly PointMapPoint[]>(() => {
+	const actorItems = createMemo(() => {
 		catalogRevision();
-		const points: PointMapPoint[] = [];
+		const items = [];
 		for (let index = 0; index < store.count; index += 1) {
-			if (!actorMatchesFilter(store, index, query(), hiddenClasses())) continue;
 			const actor = store.actorAt(index);
 			if (actor === undefined) continue;
+			items.push({
+				classPath: actor.className,
+				key: actor.instanceKey,
+				label: actor.displayName,
+				packageName: actor.packageName,
+				path: actor.path,
+				searchFields: {
+					class: actor.className,
+					label: actor.displayName,
+					package: actor.packageName,
+					path: actor.path
+				}
+			});
+		}
+		return items;
+	});
+	const classOptions = createMemo(() =>
+		classes().map(([classPath, count]) => ({
+			classPath,
+			count,
+			label: classPath.replace(/^(BP_|A)/, "")
+		}))
+	);
+	const visiblePoints = createMemo<readonly PointMapPoint[]>(() => {
+		catalogRevision();
+		const visibleKeys = new Set(
+			actorItems()
+				.filter((item) => actorExplorerMatches(item, actorFilters()))
+				.map((item) => item.key)
+		);
+		const points: PointMapPoint[] = [];
+		for (let index = 0; index < store.count; index += 1) {
+			const actor = store.actorAt(index);
+			if (actor === undefined) continue;
+			if (!visibleKeys.has(actor.instanceKey)) continue;
 			points.push({
 				className: actor.className,
 				key: actor.instanceKey,
@@ -108,6 +138,7 @@ export function SavedWorldScout(props: {
 			return;
 		}
 		setError(undefined);
+		setActorFilters({ classPaths: undefined, query: "" });
 		setWorld(undefined);
 		worldAction.run(readSavedWorld(mapPath), {
 			onFailure: (cause) => setError(Cause.pretty(cause)),
@@ -174,22 +205,6 @@ export function SavedWorldScout(props: {
 		});
 	};
 
-	const toggleClass = (className: string) =>
-		setHiddenClasses((current) => {
-			const next = new Set(current);
-			if (next.has(className)) next.delete(className);
-			else next.add(className);
-			return next;
-		});
-	const invertClasses = () => {
-		setHiddenClasses((current) => {
-			const next = new Set<string>();
-			for (const [className] of classes()) {
-				if (!current.has(className)) next.add(className);
-			}
-			return next;
-		});
-	};
 	const selectStreamIndex = (streamIndex: number) => {
 		const actor = store.actorAt(streamIndex);
 		if (actor === undefined) return;
@@ -217,6 +232,7 @@ export function SavedWorldScout(props: {
 		const index = store.findByInstanceKey(key);
 		if (index !== undefined) selectStreamIndex(index);
 	};
+	const focusActor = (key: string) => pointMap?.focusKey(key);
 
 	onMount(() => {
 		loadMaps();
@@ -289,90 +305,11 @@ export function SavedWorldScout(props: {
 				{(current) => (
 					<>
 						<div {...stylex.props(styles.tools)}>
-							<Show when={maps().length > 1}>
-								<label {...stylex.props(styles.mapPicker)}>
-									<span>SAVED MAP</span>
-									<select
-										value={selectedMapPath()}
-										onChange={(event) => selectMap(event.currentTarget.value)}
-										aria-label="Saved map"
-										{...stylex.props(styles.mapSelect)}
-									>
-										<For each={maps()}>
-											{(map) => (
-												<option
-													value={map.mapPath}
-													selected={map.mapPath === selectedMapPath()}
-												>
-													{map.label}
-												</option>
-											)}
-										</For>
-									</select>
-								</label>
-							</Show>
-							<label {...stylex.props(styles.search)}>
-								<span>FIND SAVED ACTOR</span>
-								<input
-									value={query()}
-									onInput={(event) => setQuery(event.currentTarget.value)}
-									aria-label="Find saved actor"
-									placeholder="label or class"
-									{...stylex.props(styles.searchInput)}
-								/>
-							</label>
-							<div
-								aria-label="Saved actor class filters"
-								{...stylex.props(styles.classFilters)}
-							>
-								<div {...stylex.props(styles.classFilterSearch)}>
-									<label {...stylex.props(styles.classFilterSearchLabel)}>
-										<span>ACTOR CLASSES · {classes().length}</span>
-										<input
-											value={classQuery()}
-											onInput={(event) =>
-												setClassQuery(event.currentTarget.value)
-											}
-											aria-label="Filter saved actor classes"
-											placeholder="filter class name"
-											{...stylex.props(styles.classFilterInput)}
-										/>
-									</label>
-									<button
-										type="button"
-										title="Invert which actor classes are selected"
-										onClick={invertClasses}
-										{...stylex.props(styles.classFilterAction)}
-									>
-										INVERT
-									</button>
-								</div>
-								<div role="list" {...stylex.props(styles.classList)}>
-									<For each={filteredClasses()}>
-										{([className, count]) => (
-											<button
-												type="button"
-												role="listitem"
-												aria-pressed={!hiddenClasses().has(className)}
-												onClick={() => toggleClass(className)}
-												{...stylex.props(
-													styles.classFilter,
-													hiddenClasses().has(className) &&
-														styles.classHidden
-												)}
-											>
-												<i
-													{...stylex.props(styles.classSwatch)}
-													style={{
-														"background-color": colorForClass(className)
-													}}
-												/>
-												{className.replace(/^(BP_|A)/, "")} <b>{count}</b>
-											</button>
-										)}
-									</For>
-								</div>
-							</div>
+							<SavedMapPicker
+								maps={maps()}
+								mapPath={selectedMapPath() ?? ""}
+								onMapPathChange={selectMap}
+							/>
 							<div {...stylex.props(styles.summary)}>
 								<strong>{visibleCount()}</strong>
 								<span>VISIBLE / {store.count} RESOLVED</span>
@@ -392,6 +329,31 @@ export function SavedWorldScout(props: {
 						</div>
 
 						<div {...stylex.props(styles.workspace)}>
+							<ActorExplorer
+								ariaLabel="Saved actor outliner"
+								classOptions={classOptions()}
+								filters={actorFilters()}
+								itemListLabel="Saved actors"
+								items={actorItems()}
+								label="SAVED ACTORS"
+								onClassPathsChange={(classPaths) =>
+									setActorFilters((current) => ({ ...current, classPaths }))
+								}
+								onFiltersChange={setActorFilters}
+								onFocus={focusActor}
+								onSelect={(key) => {
+									if (key === undefined) {
+										clearSelection();
+										return;
+									}
+									const index = store.findByInstanceKey(key);
+									if (index !== undefined) selectStreamIndex(index);
+								}}
+								queryAriaLabel="Find saved actor"
+								selectedClassPath={undefined}
+								selectedKey={selected()?.instanceKey}
+								title="Select an actor to inspect it on the map"
+							/>
 							<div {...stylex.props(styles.mapFrame)}>
 								<div {...stylex.props(styles.north)}>N ↑</div>
 								<label {...stylex.props(styles.zoomControl)}>
@@ -605,95 +567,6 @@ const styles = stylex.create({
 		padding: "12px 14px",
 		borderBottom: "1px solid #293233"
 	},
-	mapPicker: { display: "grid", gap: 4, color: "#879294", fontSize: 7, letterSpacing: ".12em" },
-	mapSelect: {
-		minWidth: 160,
-		border: "1px solid #3b484a",
-		backgroundColor: "#0c1011",
-		color: "#e7eeee",
-		padding: "7px 8px",
-		fontSize: 11,
-		outline: { ":focus": "1px solid #61d5df" }
-	},
-	search: { display: "grid", gap: 4, color: "#879294", fontSize: 7, letterSpacing: ".12em" },
-	searchInput: {
-		width: 190,
-		border: "1px solid #3b484a",
-		backgroundColor: "#0c1011",
-		color: "#e7eeee",
-		padding: "8px 9px",
-		fontSize: 12,
-		outline: { ":focus": "1px solid #61d5df" }
-	},
-	classFilters: {
-		display: "grid",
-		gap: 7,
-		flexBasis: "100%",
-		minWidth: 0,
-		paddingTop: 2
-	},
-	classFilterSearch: {
-		display: "flex",
-		alignItems: "center",
-		gap: 10,
-		color: "#879294",
-		fontSize: 7,
-		letterSpacing: ".12em"
-	},
-	classFilterSearchLabel: {
-		display: "flex",
-		alignItems: "center",
-		gap: 10,
-		minWidth: 0
-	},
-	classFilterInput: {
-		minWidth: 220,
-		border: "1px solid #3b484a",
-		backgroundColor: "#0c1011",
-		color: "#e7eeee",
-		padding: "6px 8px",
-		fontSize: 11,
-		outline: { ":focus": "1px solid #61d5df" }
-	},
-	classFilterAction: {
-		border: "1px solid #344042",
-		backgroundColor: { default: "#151b1c", ":hover": "#20292a" },
-		color: "#879294",
-		padding: "6px 8px",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		cursor: "pointer",
-		flexShrink: 0
-	},
-	classList: {
-		display: "grid",
-		gridTemplateColumns: "repeat(auto-fill, minmax(176px, 1fr))",
-		gap: 4,
-		maxHeight: 132,
-		overflowY: "auto",
-		paddingRight: 4
-	},
-	classFilter: {
-		border: "1px solid #344042",
-		backgroundColor: { default: "#151b1c", ":hover": "#20292a" },
-		color: "#aab5b6",
-		padding: "6px 7px",
-		fontSize: 8,
-		cursor: "pointer",
-		minWidth: 0,
-		overflow: "hidden",
-		textAlign: "left",
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	classHidden: { opacity: 0.42 },
-	classSwatch: {
-		display: "inline-block",
-		width: 6,
-		height: 6,
-		marginRight: 5,
-		borderRadius: "50%"
-	},
 	summary: {
 		display: "grid",
 		gap: 1,
@@ -715,10 +588,10 @@ const styles = stylex.create({
 	workspace: {
 		display: "grid",
 		gridTemplateColumns: {
-			default: "minmax(0, 1fr) 270px",
+			default: "280px minmax(0, 1fr) 270px",
 			"@media (max-width: 900px)": "1fr"
 		},
-		alignItems: "start"
+		alignItems: "stretch"
 	},
 	mapFrame: {
 		position: "relative",

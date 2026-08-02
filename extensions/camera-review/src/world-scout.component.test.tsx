@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import {
 	ActorId,
@@ -170,6 +170,12 @@ describe("WorldScout", () => {
 		fireEvent.pointerUp(canvas, { button: 0, clientX: 200, clientY: 200, pointerId: 1 });
 		paint.flush();
 		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();
+		const outlinerActor = within(screen.getByRole("list", { name: "Live actors" })).getByRole(
+			"button",
+			{ name: /Orbit 07/ }
+		);
+		await user.click(outlinerActor);
+		expect(outlinerActor.getAttribute("aria-pressed")).toBe("true");
 		await user.click(screen.getByRole("button", { name: "GO TO ACTOR ↗" }));
 		expect(focused).toBe(observed.id);
 		expect(foregroundRequests).toEqual([true]);
@@ -469,7 +475,7 @@ describe("WorldScout", () => {
 			</EffectRuntimeProvider>
 		));
 		paint.flush();
-		await screen.findByRole("button", { name: "UEShedFixtureMover 2" });
+		await screen.findByRole("button", { name: /Orbit 07/ });
 		expect(appliedCounts).toEqual([1]);
 	});
 

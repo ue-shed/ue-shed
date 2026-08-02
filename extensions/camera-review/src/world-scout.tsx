@@ -6,13 +6,17 @@ import {
 	type WorldObservationState,
 	type WorldScoutResult
 } from "@ue-shed/observatory";
-import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import {
+	ActorExplorer,
+	actorExplorerMatches,
+	createEffectAction,
+	createEffectSubscription,
+	type ActorExplorerFilters
+} from "@ue-shed/ui";
 import { Effect } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { MapReviewClientShape, MapReviewWorldObservation } from "./map-review-client.js";
 import {
-	collectVisibleIndices,
-	colorForClass,
 	contentBounds,
 	clampViewportSize,
 	createWorldScoutPaintGate,
@@ -28,6 +32,7 @@ import {
 	stabilizeViewport,
 	viewportSizeLimits,
 	WorldScoutRetainedStore,
+	worldScoutMinViewportSize,
 	zoomViewportAt,
 	type WorldScoutPaintGate
 } from "./world-scout-canvas.js";
@@ -66,6 +71,10 @@ function observationConnectionLabel(state: WorldObservationState | undefined): s
 
 function maxRefreshRateFor(state: WorldObservationState | undefined): number {
 	return state?.status === "polling_fallback" ? pollingFallbackMaxHz : streamMaxHz;
+}
+
+function actorObjectName(actorPath: string): string {
+	return actorPath.split(".").at(-1) ?? actorPath;
 }
 
 export function WorldScout(props: {
@@ -107,8 +116,10 @@ export function WorldScout(props: {
 	const [latest, setLatest] = createSignal<WorldObservationState>();
 	const [hasWorld, setHasWorld] = createSignal(false);
 	const [refreshRate, setRefreshRate] = createSignal(WorldScoutRefreshRate.make(30));
-	const [query, setQuery] = createSignal("");
-	const [hiddenClasses, setHiddenClasses] = createSignal<ReadonlySet<string>>(new Set());
+	const [actorFilters, setActorFilters] = createSignal<ActorExplorerFilters>({
+		classPaths: undefined,
+		query: ""
+	});
 	const [selectedKey, setSelectedKey] = createSignal<string>();
 	const [selectedStreamIndex, setSelectedStreamIndex] = createSignal<number>();
 	const [following, setFollowing] = createSignal(false);
@@ -133,9 +144,51 @@ export function WorldScout(props: {
 		catalogRevision();
 		return store.classCounts();
 	});
+	const actorItems = createMemo(() => {
+		catalogRevision();
+		const items = [];
+		for (let index = 0; index < store.count; index += 1) {
+			const actor = store.actorAt(index);
+			if (actor === undefined) continue;
+			items.push({
+				classLabel: actor.className.replace(/^(BP_|A)/, ""),
+				classPath: actor.className,
+				key: actor.instanceKey,
+				label: actor.displayName,
+				packageName: actor.packageName,
+				path: actor.path,
+				searchFields: {
+					class: actor.className,
+					guid: actor.instanceKey,
+					label: actor.displayName,
+					package: actor.packageName,
+					path: actor.path
+				},
+				...(actorObjectName(actor.path) === actor.displayName
+					? {}
+					: { secondary: actorObjectName(actor.path) }),
+				...(actor.id === undefined ? { badges: ["CATALOG ONLY"] } : {})
+			});
+		}
+		return items;
+	});
+	const classOptions = createMemo(() =>
+		classes().map(([classPath, count]) => ({
+			classPath,
+			count,
+			label: classPath.replace(/^(BP_|A)/, "")
+		}))
+	);
+	const visibleActorKeys = createMemo(() => {
+		const filters = actorFilters();
+		return new Set(
+			actorItems()
+				.filter((item) => actorExplorerMatches(item, filters))
+				.map((item) => item.key)
+		);
+	});
 	const visibleCount = createMemo(() => {
-		presentationRevision();
-		return store.visibleIndices.length;
+		return visibleActorKeys().size;
 	});
 	const observedCount = createMemo(() => {
 		catalogRevision();
@@ -196,7 +249,12 @@ export function WorldScout(props: {
 	};
 
 	const prepareVisibleProjection = () => {
-		collectVisibleIndices(store, query(), hiddenClasses(), store.visibleIndices);
+		const visibleKeys = visibleActorKeys();
+		store.visibleIndices.length = 0;
+		for (let index = 0; index < store.count; index += 1) {
+			const key = store.instanceKeys[index];
+			if (key !== undefined && visibleKeys.has(key)) store.visibleIndices.push(index);
+		}
 		const bounds = contentBounds(store, store.visibleIndices);
 		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
 		const fit = fitViewportSize(bounds, aspect);
@@ -364,8 +422,7 @@ export function WorldScout(props: {
 	});
 
 	createEffect(() => {
-		query();
-		hiddenClasses();
+		actorFilters();
 		selectedStreamIndex();
 		requestPaint();
 	});
@@ -385,22 +442,6 @@ export function WorldScout(props: {
 			onSuccess: (applied) => setRefreshRate(applied)
 		});
 	};
-	const toggleClass = (className: string) =>
-		setHiddenClasses((current) => {
-			const next = new Set(current);
-			if (next.has(className)) next.delete(className);
-			else next.add(className);
-			return next;
-		});
-	const invertClasses = () => {
-		setHiddenClasses((current) => {
-			const next = new Set<string>();
-			for (const [className] of classes()) {
-				if (!current.has(className)) next.add(className);
-			}
-			return next;
-		});
-	};
 	const selectStreamIndex = (streamIndex: number) => {
 		const meta = store.actorAt(streamIndex);
 		if (meta === undefined) return;
@@ -411,6 +452,25 @@ export function WorldScout(props: {
 		setLiveRegion(
 			`${meta.displayName}, ${meta.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
+		requestPaint();
+	};
+	const focusActorOnMap = (key: string) => {
+		const index = store.findByInstanceKey(key);
+		if (index === undefined) return;
+		prepareVisibleProjection();
+		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
+		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+		const actorExtent = Math.max(
+			store.boundExtentX[index] ?? 0,
+			store.boundExtentY[index] ?? 0,
+			worldScoutMinViewportSize
+		);
+		store.viewport = {
+			centerX: store.locationX[index] ?? 0,
+			centerY: store.locationY[index] ?? 0,
+			size: clampViewportSize(Math.max(fit / 6, actorExtent * 8), fit)
+		};
+		viewLocked = true;
 		requestPaint();
 	};
 	const pickNearestActor = (cssX: number, cssY: number) => {
@@ -633,45 +693,6 @@ export function WorldScout(props: {
 				}
 			>
 				<div {...stylex.props(styles.tools)}>
-					<label {...stylex.props(styles.search)}>
-						<span>FIND ACTOR</span>
-						<input
-							value={query()}
-							onInput={(event) => setQuery(event.currentTarget.value)}
-							aria-label="Find actor"
-							placeholder="label or class"
-							{...stylex.props(styles.searchInput)}
-						/>
-					</label>
-					<div aria-label="Actor class filters" {...stylex.props(styles.classFilters)}>
-						<button
-							type="button"
-							title="Invert which actor classes are selected"
-							onClick={invertClasses}
-							{...stylex.props(styles.classFilterAction)}
-						>
-							INVERT
-						</button>
-						<For each={classes()}>
-							{([className, count]) => (
-								<button
-									type="button"
-									aria-pressed={!hiddenClasses().has(className)}
-									onClick={() => toggleClass(className)}
-									{...stylex.props(
-										styles.classFilter,
-										hiddenClasses().has(className) && styles.classHidden
-									)}
-								>
-									<i
-										{...stylex.props(styles.classSwatch)}
-										style={{ "background-color": colorForClass(className) }}
-									/>
-									{className.replace(/^(BP_|A)/, "")} <b>{count}</b>
-								</button>
-							)}
-						</For>
-					</div>
 					<div
 						aria-label={`${visibleCount()} visible of ${observedCount()} observed actors`}
 						{...stylex.props(styles.sampleMeta)}
@@ -701,6 +722,31 @@ export function WorldScout(props: {
 				</div>
 
 				<div {...stylex.props(styles.workspace)}>
+					<ActorExplorer
+						ariaLabel="Live actor outliner"
+						classOptions={classOptions()}
+						filters={actorFilters()}
+						itemListLabel="Live actors"
+						items={actorItems()}
+						label="LIVE ACTORS"
+						onClassPathsChange={(classPaths) =>
+							setActorFilters((current) => ({ ...current, classPaths }))
+						}
+						onFiltersChange={setActorFilters}
+						onFocus={focusActorOnMap}
+						onSelect={(key) => {
+							if (key === undefined) {
+								clearSelection();
+								return;
+							}
+							const index = store.findByInstanceKey(key);
+							if (index !== undefined) selectStreamIndex(index);
+						}}
+						queryAriaLabel="Find live actor"
+						selectedClassPath={undefined}
+						selectedKey={selectedKey()}
+						title="Select an actor to inspect it on the live map"
+					/>
 					<div {...stylex.props(styles.mapFrame)}>
 						<div {...stylex.props(styles.north)}>N ↑</div>
 						<label {...stylex.props(styles.zoomControl)}>
@@ -904,45 +950,10 @@ const styles = stylex.create({
 		backgroundColor: "#111512",
 		minWidth: 0,
 		gridTemplateColumns: {
-			default: "220px minmax(0,1fr) 130px 150px",
-			"@media (max-width: 1050px)": "minmax(170px, .7fr) minmax(0, 1.3fr) 100px 130px"
+			default: "minmax(0, 1fr) 180px",
+			"@media (max-width: 600px)": "1fr"
 		}
 	},
-	search: { display: "grid", gap: 5, color: "#879188", fontSize: 8, letterSpacing: ".1em" },
-	searchInput: {
-		border: "1px solid #465048",
-		backgroundColor: "#080a09",
-		color: "#edf1ed",
-		padding: "8px 9px"
-	},
-	classFilters: { display: "flex", gap: 6, overflowX: "auto", minWidth: 0 },
-	classFilterAction: {
-		display: "flex",
-		alignItems: "center",
-		border: "1px solid #3c443e",
-		backgroundColor: { default: "#171b18", ":hover": "#222923" },
-		color: "#879188",
-		padding: "7px 9px",
-		whiteSpace: "nowrap",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		cursor: "pointer",
-		flexShrink: 0
-	},
-	classFilter: {
-		display: "flex",
-		alignItems: "center",
-		gap: 6,
-		border: "1px solid #3c443e",
-		backgroundColor: { default: "#171b18", ":hover": "#222923" },
-		color: "#aab2ac",
-		padding: "7px 9px",
-		whiteSpace: "nowrap",
-		fontSize: 8,
-		cursor: "pointer"
-	},
-	classHidden: { opacity: 0.35 },
-	classSwatch: { width: 6, height: 6, borderRadius: "50%" },
 	sampleMeta: { display: "grid", textAlign: "right", color: "#7f8882", fontSize: 8 },
 	rateControl: {
 		display: "grid",
@@ -962,10 +973,11 @@ const styles = stylex.create({
 	workspace: {
 		display: "grid",
 		gridTemplateColumns: {
-			default: "minmax(0,1fr) minmax(240px, 280px)",
+			default: "minmax(240px, 280px) minmax(0, 1fr) minmax(240px, 280px)",
+			"@media (max-width: 1150px)": "240px minmax(0, 1fr) 220px",
 			"@media (max-width: 900px)": "minmax(0, 1fr)"
 		},
-		alignItems: "start",
+		alignItems: "stretch",
 		minWidth: 0
 	},
 	mapFrame: {

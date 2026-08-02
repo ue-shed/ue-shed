@@ -19,6 +19,7 @@ the status row when done.
 | [032](032-decouple-review-visibility-and-invocation.md)       | Decouple Review Views, visibility policy, and capture invocation | P1       | XL     | 017, 018, 022           | TODO                                                                   |
 | [033](033-compact-project-corpora-before-persistence.md)      | Compact project corpora before persistence                       | P1       | XL     | ADR 0004, project index | IN PROGRESS                                                            |
 | [034](034-build-perforce-map-history.md)                      | Build the Perforce-backed Map History vertical                   | P2       | XL     | p4client-ts 0.7.1       | IN PROGRESS                                                            |
+| [035](035-world-log-investigation-workspace.md)               | Build the World Log investigation workspace                      | P2       | XL     | 034 Map History         | IN PROGRESS — Phase 7                                                  |
 | [036](036-split-uasset-inspection-io-and-adopt-effect-cli.md) | Split UAsset inspection and IO, and adopt Effect CLI             | P1       | XL     | ADR 0004, 022, 025, 033 | IN PROGRESS — native split and protocol parity; CLI migration deferred |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
@@ -77,6 +78,12 @@ table and the archive index.
   requires paired Pure/Clear evidence to remain labeled, explainable, and restored by one guarded
   Unreal operation. Automatic detected-occluder intervention remains a non-blocking feasibility
   decision.
+- Plan 036 splits the native UAsset implementation into parser, inspection, and IO responsibilities,
+  connects JavaScript through a versioned request/event protocol, and prepares the later public CLI
+  migration to Effect CLI. The public CLI migration is intentionally deferred until the native and
+  TypeScript surfaces have completed their parity and benchmark gates. It must receive an explicit
+  handoff from Plan 033 before changing overlapping project scan, extraction, cache, or persistence
+  work.
 - Plan 028 waits for released Map Review headless packages and Core/Cameras install evidence. Plan
   030 prepared that public boundary at `0.1.0-rc.2` without publishing or claiming Plan 028 DONE;
   Plan 031 advances the complete public candidate tuple to `0.1.0-rc.3`. Plan 030 is archived under

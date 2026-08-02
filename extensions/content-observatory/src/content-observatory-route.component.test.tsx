@@ -338,7 +338,7 @@ describe("ContentObservatoryRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		const user = userEvent.setup();
-		await screen.findByDisplayValue("Content/Fixture/History/L_MapHistoryWorld.umap");
+		await screen.findByRole("combobox", { name: "Saved map" });
 		expect(screen.queryByLabelText("Advanced scan limits")).toBeNull();
 		await user.click(screen.getByRole("button", { name: "ADVANCED LIMITS" }));
 		await user.clear(screen.getByLabelText("CHANGE LISTS"));
@@ -429,7 +429,7 @@ describe("ContentObservatoryRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		const user = userEvent.setup();
-		await screen.findByDisplayValue(selectedMap.mapPath);
+		await screen.findByRole("combobox", { name: "Saved map" });
 		expect(
 			screen.getByRole("button", { name: "DEEP HISTORY" }).getAttribute("aria-pressed")
 		).toBe("true");
@@ -497,11 +497,22 @@ describe("ContentObservatoryRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		const user = userEvent.setup();
-		await screen.findByDisplayValue(selectedMap.mapPath);
+		await screen.findByRole("combobox", { name: "Saved map" });
 		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
 		await user.click(screen.getByRole("button", { name: "LOAD CURRENT ACTORS" }));
 		await user.click(screen.getByRole("button", { name: "ACTOR CLASS" }));
-		await user.click(await screen.findByRole("button", { name: /\/Script\/Game\.Npc/ }));
+		const targetExplorer = screen.getByRole("region", { name: "Fast History actor explorer" });
+		await user.click(
+			within(targetExplorer).getByRole("button", {
+				name: "Toggle actor class filters"
+			})
+		);
+		await user.click(
+			within(within(targetExplorer).getByLabelText("Actor class filters")).getByRole(
+				"button",
+				{ name: /Npc/ }
+			)
+		);
 		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
 		expect(received?.mode).toBe("fast");
 		if (received?.mode === "fast") {
@@ -724,8 +735,13 @@ describe("ContentObservatoryRoute", () => {
 		await screen.findByRole("application", { name: "Top-down saved actor points map" });
 		expect(screen.queryByLabelText("Stale World Log result")).toBeNull();
 
-		await user.clear(screen.getByLabelText("MAP PATH"));
-		await user.type(screen.getByLabelText("MAP PATH"), "Content/Maps/L_Other.umap");
+		const mapPicker = screen.getByRole("combobox", { name: "Saved map" });
+		await user.selectOptions(mapPicker, "__custom__");
+		await user.clear(screen.getByRole("textbox", { name: "Custom map path" }));
+		await user.type(
+			screen.getByRole("textbox", { name: "Custom map path" }),
+			"Content/Maps/L_Other.umap"
+		);
 
 		expect(screen.getByLabelText("Stale World Log result")).toBeDefined();
 		expect(screen.getByRole("heading", { name: "AFTER CL 11 point map" })).toBeDefined();

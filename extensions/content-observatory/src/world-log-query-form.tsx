@@ -1,6 +1,13 @@
 import * as stylex from "@stylexjs/stylex";
+import {
+	ActorExplorer,
+	actorExplorerMatches,
+	noActorExplorerFilters,
+	SavedMapPicker,
+	type ActorExplorerFilters
+} from "@ue-shed/ui";
 import type { SavedWorldActor } from "@ue-shed/protocol";
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { actorKeyFromSavedActor } from "./world-log-actors.js";
 import { styles } from "./world-log-styles.js";
 
@@ -17,6 +24,10 @@ export type WorldLogFastTargetKind = "actor" | "actor_class";
 
 function actorDisplayName(actor: SavedWorldActor): string {
 	return actor.label?.trim() || actor.actorPath.split(".").at(-1) || actor.actorPath;
+}
+
+function actorObjectName(actorPath: string): string {
+	return actorPath.split(".").at(-1) ?? actorPath;
 }
 
 type WorldLogScanLimitName = keyof WorldLogScanLimits;
@@ -45,19 +56,14 @@ export function WorldLogQueryForm(props: {
 	readonly targetLoading: boolean;
 }) {
 	const [advancedOpen, setAdvancedOpen] = createSignal(false);
-	const [targetQuery, setTargetQuery] = createSignal("");
-	const filteredTargets = createMemo(() => {
-		const query = targetQuery().trim().toLocaleLowerCase();
-		if (query.length === 0) return props.targetActors;
-		return props.targetActors.filter((actor) =>
-			[
-				actor.label,
-				actor.actorPath,
-				actor.classPath,
-				actor.packageName,
-				actor.actorGuid
-			].some((value) => value?.toLocaleLowerCase().includes(query) ?? false)
-		);
+	const [targetFilters, setTargetFilters] =
+		createSignal<ActorExplorerFilters>(noActorExplorerFilters);
+	let targetResetKey = "";
+	createEffect(() => {
+		const nextKey = `${props.mapPath}:${props.fastTargetKind}`;
+		if (nextKey === targetResetKey) return;
+		targetResetKey = nextKey;
+		setTargetFilters(noActorExplorerFilters);
 	});
 	const classTargets = createMemo(() => {
 		const counts = new Map<string, number>();
@@ -68,13 +74,25 @@ export function WorldLogQueryForm(props: {
 			.map(([classPath, count]) => ({ classPath, count }))
 			.toSorted((left, right) => left.classPath.localeCompare(right.classPath));
 	});
-	const filteredClasses = createMemo(() => {
-		const query = targetQuery().trim().toLocaleLowerCase();
-		if (query.length === 0) return classTargets();
-		return classTargets().filter((target) =>
-			target.classPath.toLocaleLowerCase().includes(query)
-		);
-	});
+	const targetItems = createMemo(() =>
+		props.targetActors.map((actor) => ({
+			classPath: actor.classPath,
+			key: actorKeyFromSavedActor(actor),
+			label: actorDisplayName(actor),
+			packageName: actor.packageName,
+			path: actor.actorPath,
+			...(actorObjectName(actor.actorPath) === actorDisplayName(actor)
+				? {}
+				: { secondary: actorObjectName(actor.actorPath) }),
+			searchFields: {
+				class: actor.classPath,
+				guid: actor.actorGuid,
+				label: actor.label,
+				package: actor.packageName,
+				path: actor.actorPath
+			}
+		}))
+	);
 	const setLimit = (name: WorldLogScanLimitName, raw: string) => {
 		const value = Number(raw);
 		if (!Number.isSafeInteger(value) || value < 1) return;
@@ -91,36 +109,13 @@ export function WorldLogQueryForm(props: {
 					Unexplained package edits remain visible below.
 				</p>
 			</div>
-			<label {...stylex.props(styles.mapInputLabel)}>
-				<span>MAP PATH</span>
-				<input
-					disabled={props.disabled}
-					value={props.mapPath}
-					onInput={(event) => props.onMapPathChange(event.currentTarget.value)}
-					placeholder="Content/Maps/L_MyMap.umap"
-					{...stylex.props(styles.mapInput)}
-				/>
-			</label>
-			<Show when={props.maps.length > 0}>
-				<div {...stylex.props(styles.mapChoices)}>
-					<For each={props.maps}>
-						{(map) => (
-							<button
-								type="button"
-								disabled={props.disabled}
-								aria-pressed={map.mapPath === props.mapPath}
-								onClick={() => props.onMapPathChange(map.mapPath)}
-								{...stylex.props(
-									styles.mapChoice,
-									map.mapPath === props.mapPath && styles.mapChoiceActive
-								)}
-							>
-								{map.label}
-							</button>
-						)}
-					</For>
-				</div>
-			</Show>
+			<SavedMapPicker
+				maps={props.maps}
+				mapPath={props.mapPath}
+				onMapPathChange={props.onMapPathChange}
+				disabled={props.disabled}
+				allowCustomPath
+			/>
 			<div role="group" aria-label="History mode" {...stylex.props(styles.historyModes)}>
 				<button
 					type="button"
@@ -203,106 +198,55 @@ export function WorldLogQueryForm(props: {
 						</button>
 					</div>
 					<Show when={props.targetActors.length > 0 || props.targetLoading}>
-						<label {...stylex.props(styles.targetSearchLabel)}>
-							<span>
-								{props.fastTargetKind === "actor" ? "FIND ACTOR" : "FIND CLASS"}
-							</span>
-							<input
-								disabled={props.disabled || props.targetLoading}
-								value={targetQuery()}
-								onInput={(event) => setTargetQuery(event.currentTarget.value)}
-								placeholder={
-									props.fastTargetKind === "actor"
-										? "label, class, path, or GUID"
-										: "exact actor class path"
-								}
-								aria-label={
-									props.fastTargetKind === "actor"
-										? "Find current actor"
-										: "Find actor class"
-								}
-								{...stylex.props(styles.targetSearchInput)}
-							/>
-						</label>
-						<Show
-							when={props.fastTargetKind === "actor"}
-							fallback={
-								<ul
-									aria-label="Current actor class targets"
-									{...stylex.props(styles.targetList)}
-								>
-									<For each={filteredClasses()}>
-										{(target) => (
-											<li>
-												<button
-													type="button"
-													disabled={props.disabled}
-													aria-pressed={
-														props.targetClassPath === target.classPath
-													}
-													onClick={() =>
-														props.onTargetClassChange(target.classPath)
-													}
-													{...stylex.props(
-														styles.targetClassRow,
-														props.targetClassPath ===
-															target.classPath &&
-															styles.targetRowActive
-													)}
-												>
-													<strong>{target.classPath}</strong>
-													<small {...stylex.props(styles.targetRowSmall)}>
-														{target.count} current actor
-														{target.count === 1 ? "" : "s"}
-													</small>
-												</button>
-											</li>
-										)}
-									</For>
-								</ul>
+						<ActorExplorer
+							ariaLabel="Fast History actor explorer"
+							classMode={props.fastTargetKind === "actor_class" ? "target" : "filter"}
+							classOptions={classTargets()}
+							disabled={props.disabled || props.targetLoading}
+							filters={targetFilters()}
+							itemListLabel={
+								props.fastTargetKind === "actor"
+									? "Current actor targets"
+									: "Current actor members"
 							}
-						>
-							<ul
-								aria-label="Current actor targets"
-								{...stylex.props(styles.targetList)}
-							>
-								<For each={filteredTargets()}>
-									{(actor) => {
-										const actorKey = actorKeyFromSavedActor(actor);
-										return (
-											<li>
-												<button
-													type="button"
-													disabled={props.disabled}
-													aria-pressed={props.targetKey === actorKey}
-													onClick={() => props.onTargetChange(actorKey)}
-													{...stylex.props(
-														styles.targetRow,
-														props.targetKey === actorKey &&
-															styles.targetRowActive
-													)}
-												>
-													<strong>{actorDisplayName(actor)}</strong>
-													<small {...stylex.props(styles.targetRowSmall)}>
-														{actor.classPath}
-													</small>
-													<small {...stylex.props(styles.targetRowSmall)}>
-														{actor.actorPath}
-													</small>
-												</button>
-											</li>
-										);
-									}}
-								</For>
-							</ul>
-						</Show>
+							items={targetItems()}
+							label="FAST HISTORY TARGET ACTORS"
+							onClassPathsChange={(classPaths) =>
+								setTargetFilters((current) => ({ ...current, classPaths }))
+							}
+							onClassTargetChange={props.onTargetClassChange}
+							onFiltersChange={setTargetFilters}
+							onSelect={(key) => {
+								if (props.fastTargetKind === "actor") props.onTargetChange(key);
+							}}
+							queryAriaLabel={
+								props.fastTargetKind === "actor"
+									? "Find current actor"
+									: "Find actor class"
+							}
+							selectedClassPath={props.targetClassPath}
+							selectedKey={props.targetKey}
+							title={
+								props.fastTargetKind === "actor"
+									? "Select one actor"
+									: "Select a class target"
+							}
+						/>
 					</Show>
 					<Show
 						when={
 							props.targetActors.length > 0 &&
 							(props.fastTargetKind === "actor"
-								? filteredTargets().length === 0
-								: filteredClasses().length === 0)
+								? targetItems().filter((item) =>
+										actorExplorerMatches(item, targetFilters())
+									).length === 0
+								: classTargets().filter((target) => {
+										const query = targetFilters().query.toLocaleLowerCase();
+										return (
+											query.length === 0 ||
+											target.classPath.toLocaleLowerCase().includes(query)
+										);
+									}).length === 0)
 						}
 					>
 						<p {...stylex.props(styles.targetEmpty)}>

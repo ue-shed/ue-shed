@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { PerforceMapHistoryDocument } from "@ue-shed/map-history/contract";
 import type { MapHistoryPlaybackFrame } from "@ue-shed/map-history/playback";
+import { ActorExplorer, type ActorExplorerFilters } from "@ue-shed/ui";
 import {
 	PointMapCanvas,
 	pointMapColorForClass,
@@ -59,6 +60,11 @@ export function WorldLogActorAtlas(props: {
 	const visibleActors = createMemo(() =>
 		actors().filter((actor) => worldLogActorMatchesViewFilters(actor, viewFilters()))
 	);
+	const actorFilters = createMemo<ActorExplorerFilters>(() => ({
+		classPaths:
+			viewFilters().classPath === undefined ? undefined : [viewFilters().classPath as string],
+		query: viewFilters().query
+	}));
 	const classPaths = createMemo(() =>
 		[...new Set(actors().map((actor) => actor.actor.classPath))].toSorted((left, right) =>
 			shortClass(left).localeCompare(shortClass(right))
@@ -66,6 +72,31 @@ export function WorldLogActorAtlas(props: {
 	);
 	const frameActorsByKey = createMemo(
 		() => new Map(props.frame.actors.map((entry) => [entry.key, entry.actor]))
+	);
+	const explorerItems = createMemo(() =>
+		visibleActors().map((actor) => {
+			const actorAtFrame = frameActorsByKey().get(actor.key);
+			return {
+				badges: [
+					...(actor.presentAtRangeEnd ? [] : ["REMOVED"]),
+					...(actorAtFrame === undefined ? ["NOT AT FRAME"] : [])
+				],
+				classLabel: shortClass((actorAtFrame ?? actor.actor).classPath),
+				classPath: actor.actor.classPath,
+				key: actor.key,
+				label: actorTitle(actorAtFrame ?? actor.actor),
+				packageName: (actorAtFrame ?? actor.actor).packageName,
+				path: (actorAtFrame ?? actor.actor).actorPath,
+				secondary: shortActorPath((actorAtFrame ?? actor.actor).actorPath),
+				searchFields: {
+					class: actor.actor.classPath,
+					guid: actor.actor.actorGuid,
+					label: actor.actor.label,
+					package: actor.actor.packageName,
+					path: actor.actor.actorPath
+				}
+			};
+		})
 	);
 	const plottedActors = createMemo(() =>
 		visibleActors().flatMap((actor) => {
@@ -125,6 +156,52 @@ export function WorldLogActorAtlas(props: {
 		setViewFilters((current) => ({ ...current, presence }));
 	const setResolution = (resolution: "all" | "resolved" | "unresolved") =>
 		setViewFilters((current) => ({ ...current, resolution }));
+	const extraFilters = (
+		<div aria-label="Historical actor filters" {...stylex.props(styles.actorFilterBar)}>
+			<button
+				type="button"
+				aria-pressed={viewFilters().changedOnly}
+				onClick={setChangedOnly}
+				{...stylex.props(
+					styles.actorFilterButton,
+					viewFilters().changedOnly && styles.actorFilterButtonActive
+				)}
+			>
+				CHANGED
+			</button>
+			<For each={["all", "present", "removed"] as const}>
+				{(presence) => (
+					<button
+						type="button"
+						aria-pressed={viewFilters().presence === presence}
+						onClick={() => setPresence(presence)}
+						{...stylex.props(
+							styles.actorFilterButton,
+							viewFilters().presence === presence && styles.actorFilterButtonActive
+						)}
+					>
+						{presence.toUpperCase()}
+					</button>
+				)}
+			</For>
+			<For each={["all", "resolved", "unresolved"] as const}>
+				{(resolution) => (
+					<button
+						type="button"
+						aria-pressed={viewFilters().resolution === resolution}
+						onClick={() => setResolution(resolution)}
+						{...stylex.props(
+							styles.actorFilterButton,
+							viewFilters().resolution === resolution &&
+								styles.actorFilterButtonActive
+						)}
+					>
+						{resolution === "all" ? "ANY POSITION" : resolution.toUpperCase()}
+					</button>
+				)}
+			</For>
+		</div>
+	);
 
 	return (
 		<section aria-label="Saved actor point map" {...stylex.props(styles.actorAtlas)}>
@@ -194,144 +271,37 @@ export function WorldLogActorAtlas(props: {
 				</div>
 			</Show>
 			<div {...stylex.props(styles.actorAtlasWorkspace)}>
-				<aside aria-label="Saved actor outliner" {...stylex.props(styles.actorOutliner)}>
-					<label {...stylex.props(styles.actorSearch)}>
-						<span>ACTOR VIEW FILTERS</span>
-						<input
-							value={viewFilters().query}
-							onInput={(event) =>
-								setViewFilters((current) => ({
-									...current,
-									query: event.currentTarget.value
-								}))
-							}
-							placeholder="label: class: path: package: guid:"
-							aria-label="Find World Log actor"
-							{...stylex.props(styles.actorSearchInput)}
-						/>
-						<small {...stylex.props(styles.actorSearchHelp)}>
-							Terms combine precisely. Unqualified words search all actor facts.
-						</small>
-					</label>
-					<div aria-label="Actor View Filters" {...stylex.props(styles.actorFilterBar)}>
-						<button
-							type="button"
-							aria-pressed={viewFilters().changedOnly}
-							onClick={setChangedOnly}
-							{...stylex.props(
-								styles.actorFilterButton,
-								viewFilters().changedOnly && styles.actorFilterButtonActive
-							)}
-						>
-							CHANGED
-						</button>
-						<For each={["all", "present", "removed"] as const}>
-							{(presence) => (
-								<button
-									type="button"
-									aria-pressed={viewFilters().presence === presence}
-									onClick={() => setPresence(presence)}
-									{...stylex.props(
-										styles.actorFilterButton,
-										viewFilters().presence === presence &&
-											styles.actorFilterButtonActive
-									)}
-								>
-									{presence.toUpperCase()}
-								</button>
-							)}
-						</For>
-						<For each={["all", "resolved", "unresolved"] as const}>
-							{(resolution) => (
-								<button
-									type="button"
-									aria-pressed={viewFilters().resolution === resolution}
-									onClick={() => setResolution(resolution)}
-									{...stylex.props(
-										styles.actorFilterButton,
-										viewFilters().resolution === resolution &&
-											styles.actorFilterButtonActive
-									)}
-								>
-									{resolution === "all"
-										? "ANY POSITION"
-										: resolution.toUpperCase()}
-								</button>
-							)}
-						</For>
-						<select
-							value={viewFilters().classPath ?? ""}
-							onInput={(event) =>
-								setViewFilters((current) => ({
-									...current,
-									classPath:
-										event.currentTarget.value.length === 0
-											? undefined
-											: event.currentTarget.value
-								}))
-							}
-							aria-label="Actor class View Filter"
-							{...stylex.props(styles.actorFilterSelect)}
-						>
-							<option value="">ALL CLASSES</option>
-							<For each={classPaths()}>
-								{(classPath) => (
-									<option value={classPath}>{shortClass(classPath)}</option>
-								)}
-							</For>
-						</select>
-					</div>
-					<div {...stylex.props(styles.outlinerCount)}>
-						<span>{visibleActors().length} INDEXED</span>
-						<Show when={actors().some((actor) => !actor.presentAtRangeEnd)}>
-							<span>REMOVED ACTORS RETAINED</span>
-						</Show>
-					</div>
-					<ul aria-label="Saved actors" {...stylex.props(styles.actorList)}>
-						<For each={visibleActors()}>
-							{(actor) => {
-								const actorAtFrame = () => frameActorsByKey().get(actor.key);
-								return (
-									<li {...stylex.props(styles.actorListItem)}>
-										<button
-											type="button"
-											aria-pressed={props.selectedActorKey === actor.key}
-											onClick={() => selectActor(actor.key)}
-											{...stylex.props(
-												styles.actorRow,
-												props.selectedActorKey === actor.key &&
-													styles.actorRowSelected,
-												!actor.presentAtRangeEnd &&
-													styles.actorRowHistorical
-											)}
-										>
-											<span {...stylex.props(styles.actorEventCount)}>
-												{actor.changeCount}
-											</span>
-											<span {...stylex.props(styles.actorRowCopy)}>
-												<strong>
-													{actorTitle(actorAtFrame() ?? actor.actor)}
-												</strong>
-												<small>
-													{shortClass(
-														(actorAtFrame() ?? actor.actor).classPath
-													)}
-												</small>
-											</span>
-											<Show when={actorAtFrame() === undefined}>
-												<em>
-													{actor.presentAtRangeEnd
-														? "NOT AT FRAME"
-														: "REMOVED"}
-												</em>
-											</Show>
-										</button>
-									</li>
-								);
-							}}
-						</For>
-					</ul>
-				</aside>
+				<ActorExplorer
+					ariaLabel="Saved actor outliner"
+					classOptions={classPaths().map((classPath) => ({
+						classPath,
+						count: actors().filter((actor) => actor.actor.classPath === classPath)
+							.length,
+						label: shortClass(classPath)
+					}))}
+					classSelection="single"
+					extraControls={extraFilters}
+					filters={actorFilters()}
+					itemListLabel="Saved actors"
+					items={explorerItems()}
+					label="ACTOR VIEW FILTERS"
+					onClassPathsChange={(classPaths) =>
+						setViewFilters((current) => ({
+							...current,
+							classPath: classPaths?.[0]
+						}))
+					}
+					onFiltersChange={(filters) =>
+						setViewFilters((current) => ({ ...current, query: filters.query }))
+					}
+					onFocus={(key) => pointMap?.focusKey(key)}
+					onSelect={(key) => props.onSelectActor(key)}
+					queryAriaLabel="Find World Log actor"
+					role="complementary"
+					selectedClassPath={undefined}
+					selectedKey={props.selectedActorKey}
+					title="Actors in this history range"
+				/>
 				<div {...stylex.props(styles.pointMapFrame)}>
 					<div {...stylex.props(styles.northMarker)}>N ↑</div>
 					<div {...stylex.props(styles.pointMapLegend)}>

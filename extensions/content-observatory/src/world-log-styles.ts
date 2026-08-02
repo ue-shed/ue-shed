@@ -766,9 +766,10 @@ export const styles = stylex.create({
 	},
 	timelineShell: {
 		display: "grid",
-		gridTemplateColumns: "minmax(0, 1.7fr) minmax(290px, .75fr)",
+		gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 340px)",
 		gap: 14,
-		marginTop: 14
+		marginTop: 14,
+		"@media (max-width: 900px)": { gridTemplateColumns: "1fr" }
 	},
 	timeline: { border: "1px solid #3c4749", backgroundColor: "#101617" },
 	timelineHeader: {
@@ -809,20 +810,26 @@ export const styles = stylex.create({
 	timelineList: { padding: 14 },
 	revision: {
 		display: "grid",
-		gridTemplateColumns: "58px minmax(0, 1fr)",
+		gridTemplateColumns: "72px minmax(0, 1fr)",
 		borderBottom: "1px solid #293438",
-		paddingBottom: 16,
-		marginBottom: 16
+		paddingBottom: 11,
+		marginBottom: 11
 	},
 	revisionSelected: { marginLeft: -5, paddingLeft: 5, borderLeft: "2px solid #e1b85e" },
 	changeMarker: {
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "start",
-		gap: 4,
+		display: "grid",
+		alignContent: "start",
+		justifyItems: "start",
+		gap: 5,
 		color: "#738588",
 		fontSize: 8,
 		letterSpacing: ".1em"
+	},
+	changeMarkerLabel: {
+		display: "flex",
+		alignItems: "baseline",
+		gap: 4,
+		whiteSpace: "nowrap"
 	},
 	changelistSelect: {
 		marginTop: 3,
@@ -843,11 +850,25 @@ export const styles = stylex.create({
 	revisionBody: { minWidth: 0 },
 	revisionHeader: {
 		display: "grid",
-		gridTemplateColumns: "150px 1fr",
+		gridTemplateColumns: "minmax(180px, .38fr) minmax(0, 1fr)",
 		gap: 10,
-		marginBottom: 10,
+		marginBottom: 7,
 		color: "#9ca9a9",
-		fontSize: 11
+		fontSize: 10,
+		minWidth: 0
+	},
+	revisionMeta: {
+		display: "grid",
+		gap: 3,
+		minWidth: 0,
+		color: "#aebbbb"
+	},
+	revisionDescription: {
+		minWidth: 0,
+		margin: 0,
+		color: "#9ca9a9",
+		lineHeight: 1.35,
+		overflowWrap: "anywhere"
 	},
 	revisionSummary: {
 		marginBottom: 8,
@@ -855,11 +876,11 @@ export const styles = stylex.create({
 		fontSize: 8,
 		letterSpacing: ".08em"
 	},
-	revisionEmpty: { margin: "9px 0", color: "#78888a", fontSize: 10, lineHeight: 1.45 },
+	revisionEmpty: { margin: "5px 0", color: "#78888a", fontSize: 9, lineHeight: 1.35 },
 	changeRow: {
 		width: "100%",
 		display: "grid",
-		gridTemplateColumns: "95px minmax(120px, .9fr) minmax(0, 1.4fr)",
+		gridTemplateColumns: "minmax(92px, .38fr) minmax(120px, .8fr) minmax(0, 1.5fr)",
 		gap: 8,
 		alignItems: "center",
 		border: "1px solid #354145",
@@ -869,13 +890,38 @@ export const styles = stylex.create({
 		padding: "9px 10px",
 		marginTop: 5,
 		textAlign: "left",
-		cursor: "pointer"
+		cursor: "pointer",
+		minWidth: 0
 	},
 	changeRowSelected: { backgroundColor: "#243034", borderColor: "#e1b85e", color: "#e9efec" },
 	added: { borderLeftColor: "#6ebd88" },
 	removed: { borderLeftColor: "#d77d6a" },
 	changed: { borderLeftColor: "#73c7d0" },
 	warning: { borderLeftColor: "#e1b85e" },
+	changeType: {
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		color: "#8ea0a1",
+		fontSize: 8,
+		letterSpacing: ".08em"
+	},
+	changeTitle: {
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		fontSize: 10
+	},
+	changeDetail: {
+		minWidth: 0,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		color: "#7e9091",
+		fontSize: 9
+	},
 	unclassifiedNotice: {
 		display: "grid",
 		gridTemplateColumns: "1fr auto",
@@ -886,6 +932,7 @@ export const styles = stylex.create({
 		color: "#dfbd7a",
 		fontSize: 10
 	},
+	unclassifiedNoticeCopy: { gridColumn: "1 / -1", margin: 0, lineHeight: 1.35 },
 	evidencePanel: {
 		alignSelf: "start",
 		position: "sticky",
@@ -928,7 +975,16 @@ export const styles = stylex.create({
 		margin: "16px 0",
 		color: "#96a4a5",
 		fontFamily: "monospace",
-		fontSize: 10
+		fontSize: 10,
+		minWidth: 0
+	},
+	packageEntry: { minWidth: 0 },
+	packageAction: { display: "block", color: "#d7b469", fontSize: 8, letterSpacing: ".08em" },
+	packagePath: {
+		margin: "3px 0 0",
+		color: "#96a4a5",
+		overflowWrap: "anywhere",
+		lineHeight: 1.35
 	},
 	coverageFooter: {
 		display: "flex",

@@ -142,8 +142,10 @@ export function WorldLogTimeline(props: {
 									)}
 								>
 									<div {...stylex.props(styles.changeMarker)}>
-										<span>CL</span>
-										<strong>{revision.change}</strong>
+										<span {...stylex.props(styles.changeMarkerLabel)}>
+											<span>CL</span>
+											<strong>{revision.change}</strong>
+										</span>
 										<button
 											type="button"
 											aria-label={`Select changelist ${revision.change}`}
@@ -164,13 +166,13 @@ export function WorldLogTimeline(props: {
 									</div>
 									<div {...stylex.props(styles.revisionBody)}>
 										<header {...stylex.props(styles.revisionHeader)}>
-											<div>
+											<div {...stylex.props(styles.revisionMeta)}>
 												<strong>
 													{revision.user ?? "unknown submitter"}
 												</strong>
 												<span>{formatSubmittedAt(revision)}</span>
 											</div>
-											<p>
+											<p {...stylex.props(styles.revisionDescription)}>
 												{revision.description ??
 													"No changelist description."}
 											</p>
@@ -204,21 +206,24 @@ export function WorldLogTimeline(props: {
 															styles.changeRowSelected
 													)}
 												>
-													<span>
+													<span {...stylex.props(styles.changeType)}>
 														{humanize(
 															change.kind.replace("actor_", "")
 														)}
 													</span>
-													<strong>{changeTitle(change)}</strong>
-													<small>{changeDetail(change)}</small>
+													<strong {...stylex.props(styles.changeTitle)}>
+														{changeTitle(change)}
+													</strong>
+													<small {...stylex.props(styles.changeDetail)}>
+														{changeDetail(change)}
+													</small>
 												</button>
 											)}
 										</For>
 										<Show when={listedChanges().length === 0}>
 											<p {...stylex.props(styles.revisionEmpty)}>
-												No semantic change matches the active View Filters.
-												This submitted changelist remains available for
-												full-map inspection.
+												No matching actor change. Select this changelist to
+												inspect the full diff.
 											</p>
 										</Show>
 										<Show
@@ -235,7 +240,7 @@ export function WorldLogTimeline(props: {
 														? revision.unclassifiedPackageChanges.length
 														: filteredUnclassified().length}
 												</strong>
-												<p>
+												<p {...stylex.props(styles.unclassifiedNoticeCopy)}>
 													Changed bytes were retained because this
 													projection cannot explain them as actor changes.
 												</p>
@@ -303,9 +308,11 @@ function WorldLogEvidencePanel(props: {
 						<dl {...stylex.props(styles.packageList)}>
 							<For each={selectedRevision().files}>
 								{(file) => (
-									<div>
-										<dt>{file.action}</dt>
-										<dd>
+									<div {...stylex.props(styles.packageEntry)}>
+										<dt {...stylex.props(styles.packageAction)}>
+											{file.action}
+										</dt>
+										<dd {...stylex.props(styles.packagePath)}>
 											{file.depotPath}#{file.revision}
 										</dd>
 									</div>
@@ -318,7 +325,7 @@ function WorldLogEvidencePanel(props: {
 								<strong>
 									{selectedRevision().unclassifiedPackageChanges.length}
 								</strong>
-								<p>
+								<p {...stylex.props(styles.unclassifiedNoticeCopy)}>
 									The evidence is retained in this diff because no safe actor
 									explanation was available.
 								</p>

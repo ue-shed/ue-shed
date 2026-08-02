@@ -324,6 +324,12 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
         .iter()
         .find(|event| event["result"]["kind"] == "saved_world")
         .expect("single-worker saved-world result");
+    assert!(
+        one_world["result"]["world"]
+            .get("externalActorRoot")
+            .is_none(),
+        "conventional saved worlds omit the absent external-actor root"
+    );
     assert_eq!(
         one_world["result"]["world"]["summary"]["scannedPackages"],
         1

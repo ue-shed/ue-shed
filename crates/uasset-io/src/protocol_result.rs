@@ -657,7 +657,11 @@ pub struct SavedWorld {
     pub completeness: Completeness,
     pub contract: SavedWorldContract,
     pub diagnostics: Vec<SavedWorldDiagnostic>,
-    #[serde(rename = "externalActorRoot")]
+    #[serde(
+        default,
+        rename = "externalActorRoot",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub external_actor_root: Option<String>,
     #[serde(rename = "mapPath")]
     pub map_path: String,
@@ -767,12 +771,13 @@ pub enum SavedWorldSourceKind {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SavedWorldActor {
-    #[serde(rename = "actorGuid")]
+    #[serde(default, rename = "actorGuid", skip_serializing_if = "Option::is_none")]
     pub actor_guid: Option<String>,
     #[serde(rename = "actorPath")]
     pub actor_path: String,
     #[serde(rename = "classPath")]
     pub class_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(rename = "packageName")]
     pub package_name: String,

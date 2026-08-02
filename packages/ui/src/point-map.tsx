@@ -5,6 +5,7 @@ import {
 	pointMapClampViewportSize,
 	pointMapColorForClass,
 	pointMapFitViewportSize,
+	pointMapMinViewportSize,
 	pointMapMarkerRadius,
 	pointMapPanViewportBy,
 	pointMapPickRadiusFraction,
@@ -29,6 +30,7 @@ export interface PointMapViewState {
 }
 
 export interface PointMapController {
+	readonly focusKey: (key: string) => void;
 	readonly resetView: () => void;
 	readonly setZoomFactor: (factor: number) => void;
 }
@@ -305,6 +307,24 @@ export function PointMapCanvas(props: {
 		viewLocked = size < fit - 1e-6;
 		requestPaint();
 	};
+	const focusKey = (key: string) => {
+		syncCanvasSize();
+		const point = props.points.find(
+			(candidate) => (candidate.selectionKey ?? candidate.key) === key
+		);
+		if (point === undefined) return;
+		const fit = currentFitSize();
+		const actorExtent = Math.max(
+			point.extentX ?? 0,
+			point.extentY ?? 0,
+			pointMapMinViewportSize
+		);
+		const focusSize = pointMapClampViewportSize(Math.max(fit / 6, actorExtent * 8), fit);
+		viewport = { centerX: point.x, centerY: point.y, size: focusSize };
+		viewLocked = true;
+		reportView();
+		requestPaint();
+	};
 	const selectNearestAt = (cssX: number, cssY: number) => {
 		prepareProjection();
 		const radius = Math.min(cssWidth, cssHeight) * pointMapPickRadiusFraction;
@@ -429,7 +449,7 @@ export function PointMapCanvas(props: {
 		observePointMapInput(props.selectedKey);
 		requestPaint();
 	});
-	onMount(() => props.onController?.({ resetView, setZoomFactor }));
+	onMount(() => props.onController?.({ focusKey, resetView, setZoomFactor }));
 	onCleanup(() => {
 		if (paintHandle !== undefined) {
 			if (typeof cancelAnimationFrame === "undefined") clearTimeout(paintHandle);

@@ -142,21 +142,50 @@ test(`records the ${journey} Workbench journey`, async ({
 		childProcess.stderr?.on("data", (chunk: Buffer) =>
 			logs.push(`[main:stderr] ${chunk.toString()}`)
 		);
-		await application.context().tracing.start({
-			screenshots: true,
-			snapshots: true,
-			sources: true
-		});
-		traceStarted = true;
-
 		const workbench = new WorkbenchPage(page);
 		const startScreencast = async () => {
+			// Electron's outer-window screenshot can be taller than the frame CDP delivers.
+			// Probe one frame first so FFmpeg uses the actual content dimensions.
+			const screenshot = await page!.screenshot({ type: "png" });
+			const requestedSize = {
+				height: screenshot.readUInt32BE(20) & ~1,
+				width: screenshot.readUInt32BE(16) & ~1
+			};
+			let resolveFirstFrame: (size: {
+				readonly height: number;
+				readonly width: number;
+			}) => void = () => undefined;
+			const firstFrame = new Promise<{ readonly height: number; readonly width: number }>(
+				(resolve) => {
+					resolveFirstFrame = resolve;
+				}
+			);
+			await page!.screencast.start({
+				onFrame: ({ viewportHeight, viewportWidth }) =>
+					resolveFirstFrame({ height: viewportHeight, width: viewportWidth }),
+				size: requestedSize
+			});
+			const streamedSize = await firstFrame;
+			await page!.screencast.stop();
+			const size = {
+				height: streamedSize.height & ~1,
+				width: streamedSize.width & ~1
+			};
 			await page!.screencast.start({
 				annotate: { duration: 700, fontSize: 18, position: "top-right" },
 				path: testInfo.outputPath("demo.webm"),
-				size: { height: 940, width: 1540 }
+				size
 			});
 			screencastStarted = true;
+		};
+		const startTracing = async () => {
+			// Tracing must join the correctly-sized video stream instead of creating the first stream.
+			await application!.context().tracing.start({
+				screenshots: true,
+				snapshots: true,
+				sources: true
+			});
+			traceStarted = true;
 		};
 		if (journey === "map-review") {
 			await workbench.expectShowcaseReady();
@@ -189,6 +218,7 @@ test(`records the ${journey} Workbench journey`, async ({
 				throw new Error(`${launch.message} ${launch.recovery}`);
 			}
 			await startScreencast();
+			await startTracing();
 
 			chapters.push(
 				await recordChapter({
@@ -252,8 +282,12 @@ test(`records the ${journey} Workbench journey`, async ({
 			);
 		} else if (journey === "world-log-fast") {
 			await startScreencast();
+			await startTracing();
 			const queryPanel = page.getByRole("region", { name: "Map history query" });
 			const targetPanel = page.getByRole("region", { name: "Fast History target" });
+			const targetExplorer = targetPanel.getByRole("region", {
+				name: "Fast History actor explorer"
+			});
 			const timeline = page.getByRole("region", { name: "History timeline" });
 			const coverage = page.getByRole("region", { name: "Fast History coverage" });
 			chapters.push(
@@ -263,21 +297,49 @@ test(`records the ${journey} Workbench journey`, async ({
 						await expect(
 							page!.getByRole("heading", { name: "WORLD LOG" })
 						).toBeVisible();
-						await page!.getByRole("button", { name: "Map History World" }).click();
+						await page!
+							.getByRole("combobox", { name: "Saved map" })
+							.selectOption("Content/Fixture/History/L_MapHistoryWorld.umap");
 						await page!.getByRole("button", { name: "FAST HISTORY" }).click();
 						await expect(queryPanel).toContainText("FAST HISTORY TARGET");
 						await targetPanel
 							.getByRole("button", { name: "LOAD CURRENT ACTORS" })
 							.click();
+						const actorTargets = targetPanel.getByRole("list", {
+							name: "Current actor targets"
+						});
+						await expect(actorTargets).toBeVisible();
+						const firstActor = actorTargets.locator("button[aria-pressed]").first();
+						await expect(firstActor).toBeVisible();
+						await firstActor.click();
+						await expect(firstActor).toHaveAttribute("aria-pressed", "true");
+					},
+					description:
+						"Fast History can start from one current actor in the selected map before any Perforce scan runs.",
+					page,
+					slug: "01-fast-history-actor-target",
+					testInfo,
+					title: "Choose a current actor target"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
 						await expect(
 							targetPanel.getByRole("list", { name: "Current actor targets" })
 						).toBeVisible();
-						await targetPanel.getByRole("button", { name: "ACTOR CLASS" }).click();
+						await targetPanel
+							.getByRole("button", { name: "ACTOR CLASS", exact: true })
+							.click();
 						await expect(
-							targetPanel.getByRole("list", { name: "Current actor class targets" })
+							targetPanel.getByRole("list", { name: "Current actor members" })
 						).toBeVisible();
-						const classTarget = targetPanel
-							.getByRole("button", { name: /\/Script\// })
+						await targetExplorer
+							.getByRole("button", { name: "Toggle actor class filters" })
+							.click();
+						const classTarget = targetExplorer
+							.getByLabel("Actor class filters")
+							.getByRole("button")
 							.first();
 						await expect(classTarget).toBeVisible();
 						await classTarget.click();
@@ -286,7 +348,7 @@ test(`records the ${journey} Workbench journey`, async ({
 					description:
 						"Fast History starts from the present-day actor projection and narrows the scan to one current class.",
 					page,
-					slug: "01-fast-history-target",
+					slug: "02-fast-history-class-target",
 					testInfo,
 					title: "Choose a current actor class"
 				})
@@ -310,14 +372,19 @@ test(`records the ${journey} Workbench journey`, async ({
 						"The result keeps the current-class boundary visible instead of implying complete historical coverage.",
 					page,
 					resetScroll: false,
-					slug: "02-fast-history-result",
+					slug: "03-fast-history-result",
 					testInfo,
 					title: "Read targeted class history"
 				})
 			);
 		} else if (journey === "world-log") {
 			await startScreencast();
+			await startTracing();
 			const outliner = page.getByRole("complementary", { name: "Saved actor outliner" });
+			const savedActors = outliner.getByRole("list", { name: "Saved actors" });
+			const actorSearch = outliner.getByRole("textbox", {
+				name: "Find World Log actor"
+			});
 			const timeline = page.getByRole("region", { name: "History timeline" });
 			const evidence = page.getByRole("complementary", {
 				name: "Selected changelist evidence"
@@ -329,7 +396,9 @@ test(`records the ${journey} Workbench journey`, async ({
 						await expect(
 							page!.getByRole("heading", { name: "WORLD LOG" })
 						).toBeVisible();
-						await page!.getByRole("button", { name: "Map History World" }).click();
+						await page!
+							.getByRole("combobox", { name: "Saved map" })
+							.selectOption("Content/Fixture/History/L_MapHistoryWorld.umap");
 						await page!.getByRole("button", { name: /READ DEEP HISTORY/ }).click();
 						await expect(timeline).toContainText("map actor changes", {
 							timeout: 120_000
@@ -346,7 +415,50 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await outliner.getByRole("button", { name: /East Marker/i }).click();
+						const eastMarker = savedActors.getByRole("button", {
+							name: /East Marker/i
+						});
+						const eastGroup = eastMarker.locator("xpath=../../..");
+						const eastClass = (
+							await eastGroup
+								.getByRole("button")
+								.first()
+								.locator("strong")
+								.textContent()
+						)?.trim();
+						expect(eastClass).toBeTruthy();
+						await outliner
+							.getByRole("button", { name: "Toggle actor class filters" })
+							.click();
+						const classFilters = outliner.getByLabel("Actor class filters");
+						const classFilter = classFilters
+							.getByRole("button")
+							.filter({ hasText: eastClass! })
+							.first();
+						await expect(classFilter).toBeVisible();
+						await classFilter.click();
+						await expect(classFilter).toHaveAttribute("aria-pressed", "true");
+						await actorSearch.fill("East Marker");
+						await expect(eastMarker).toBeVisible();
+						await expect(savedActors.locator("button[aria-pressed]")).toHaveCount(1);
+					},
+					description:
+						"The shared actor explorer combines class facets and text search without leaving the map workspace.",
+					page,
+					slug: "02-actor-explorer",
+					testInfo,
+					title: "Filter actors by class and label"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await actorSearch.fill("");
+						const eastMarker = savedActors.getByRole("button", {
+							name: /East Marker/i
+						});
+						await eastMarker.click();
+						await expect(eastMarker).toHaveAttribute("aria-pressed", "true");
 						const selectedActor = page!.getByRole("complementary", {
 							name: "Selected saved actor"
 						});
@@ -355,10 +467,10 @@ test(`records the ${journey} Workbench journey`, async ({
 						await selectedActor.scrollIntoViewIfNeeded();
 					},
 					description:
-						"Select a moved actor to inspect its stable identity, current state, and movement trail.",
+						"Selecting a row selects the same actor on the point map and inspector, then focuses the map on it.",
 					page,
 					resetScroll: false,
-					slug: "02-moved-actor",
+					slug: "03-moved-actor",
 					testInfo,
 					title: "Inspect a moved actor"
 				})
@@ -384,7 +496,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						"The selected label change keeps its semantic transition and package revision together.",
 					page,
 					resetScroll: false,
-					slug: "03-label-change",
+					slug: "04-label-change",
 					testInfo,
 					title: "Inspect a label change"
 				})
@@ -412,7 +524,7 @@ test(`records the ${journey} Workbench journey`, async ({
 					description:
 						"The scrubber shows an actor before its removal and confirms that it is absent later.",
 					page,
-					slug: "04-removal-over-time",
+					slug: "05-removal-over-time",
 					testInfo,
 					title: "View removal across time"
 				})
@@ -431,13 +543,14 @@ test(`records the ${journey} Workbench journey`, async ({
 						"The final changelist retains package edits that cannot be safely explained as actor changes.",
 					page,
 					resetScroll: false,
-					slug: "05-unclassified-evidence",
+					slug: "06-unclassified-evidence",
 					testInfo,
 					title: "Keep unclassified evidence visible"
 				})
 			);
 		} else {
 			await startScreencast();
+			await startTracing();
 			chapters.push(
 				await recordChapter({
 					action: () => workbench.expectShowcaseReady(),

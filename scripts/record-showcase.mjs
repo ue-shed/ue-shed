@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { globSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createWorkbenchEnvironment, repositoryRoot, runPnpm } from "./workbench-tools.mjs";
 import { startPerforceMapHistoryFixture } from "./test-perforce-map-history.mjs";
 
@@ -24,7 +24,11 @@ function gitOutput(args) {
 
 const recordedAt = new Date().toISOString();
 const recordingId = `${recordedAt.replaceAll(/[-:.TZ]/g, "")}-${journey}-${randomUUID().slice(0, 8)}`;
-const resultRoot = join(repositoryRoot, "test-results", "showcase", recordingId);
+const recordingRoot = resolve(
+	repositoryRoot,
+	process.env.UE_SHED_RECORDING_OUTPUT_ROOT ?? "test-results/showcase"
+);
+const resultRoot = join(recordingRoot, recordingId);
 
 const fixture =
 	journey === "world-log" || journey === "world-log-fast"

@@ -135,7 +135,243 @@ fn protocol_process_emits_typed_results_for_authoring_and_projections() {
 }
 
 #[test]
-fn protocol_process_can_be_closed_before_worker_finishes() {
+fn protocol_process_migrates_header_filters_cache_inventory_and_ordering() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let cache_path = std::env::temp_dir().join(format!(
+        "ue-shed-uasset-direct-header-cache-{}.json",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&cache_path);
+    let operation = serde_json::json!({
+        "kind": "scan",
+        "depth": "header",
+        "projectRoot": project_root.to_string_lossy(),
+        "classes": ["DataTable"],
+        "inventory": true,
+        "cachePath": cache_path.to_string_lossy()
+    });
+    let cold_request = base_request(operation.clone());
+    let (success, cold_events, stderr) = run_request(cold_request);
+    assert!(success, "cold header scan failed: {stderr}");
+    assert_valid_events(&cold_events);
+    assert!(
+        cold_events
+            .iter()
+            .any(|event| { event["kind"] == "progress" && event["phase"] == "discovering" })
+    );
+    assert!(
+        cold_events.iter().any(|event| {
+            event["kind"] == "result" && event["result"]["kind"] == "scan_inventory"
+        })
+    );
+    assert!(
+        cold_events
+            .iter()
+            .any(|event| { event["kind"] == "result" && event["result"]["kind"] == "scan_asset" })
+    );
+    assert!(
+        cold_events
+            .iter()
+            .filter(|event| event["kind"] == "result" && event["result"]["kind"] == "scan_asset")
+            .all(|event| {
+                event["result"]["entry"]["header"]["exports"]
+                    .as_array()
+                    .is_some_and(|exports| {
+                        exports.iter().all(|export| {
+                            export["class_path"]
+                                .as_str()
+                                .is_some_and(|class_path| class_path.ends_with(".DataTable"))
+                        })
+                    })
+            })
+    );
+    let cold_summary = cold_events
+        .iter()
+        .find(|event| event["result"]["kind"] == "scan_summary")
+        .expect("cold scan summary");
+    assert_eq!(cold_summary["result"]["summary"]["cacheHits"], 0);
+    assert_eq!(cold_summary["result"]["summary"]["depth"], "header");
+    assert_eq!(cold_events.last().unwrap()["kind"], "completed");
+
+    let mut warm_request = base_request(operation);
+    warm_request["requestId"] = serde_json::json!("warm-cache");
+    let (success, warm_events, stderr) = run_request(warm_request);
+    assert!(success, "warm header scan failed: {stderr}");
+    assert_valid_events(&warm_events);
+    let warm_summary = warm_events
+        .iter()
+        .find(|event| event["result"]["kind"] == "scan_summary")
+        .expect("warm scan summary");
+    assert!(
+        warm_summary["result"]["summary"]["cacheHits"]
+            .as_u64()
+            .is_some_and(|hits| hits > 0)
+    );
+
+    let filter_miss_request = base_request(serde_json::json!({
+        "kind": "scan",
+        "depth": "header",
+        "projectRoot": project_root.to_string_lossy(),
+        "classes": ["StringTable"],
+        "cachePath": cache_path.to_string_lossy()
+    }));
+    let (success, filter_miss_events, stderr) = run_request(filter_miss_request);
+    assert!(success, "filter-fingerprint scan failed: {stderr}");
+    let filter_miss_summary = filter_miss_events
+        .iter()
+        .find(|event| event["result"]["kind"] == "scan_summary")
+        .expect("filter-miss scan summary");
+    assert_eq!(filter_miss_summary["result"]["summary"]["cacheHits"], 0);
+
+    let mut one_request = base_request(serde_json::json!({
+        "kind": "scan",
+        "depth": "header",
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    one_request["limits"]["concurrency"] = serde_json::json!(1);
+    let (_, one_events, stderr) = run_request(one_request);
+    assert!(
+        stderr.is_empty(),
+        "single-worker header scan wrote stderr: {stderr}"
+    );
+    let mut many_request = base_request(serde_json::json!({
+        "kind": "scan",
+        "depth": "header",
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    many_request["limits"]["concurrency"] = serde_json::json!(4);
+    let (_, many_events, stderr) = run_request(many_request);
+    assert!(
+        stderr.is_empty(),
+        "multi-worker header scan wrote stderr: {stderr}"
+    );
+    assert_eq!(header_paths(&one_events), header_paths(&many_events));
+
+    let _ = std::fs::remove_file(cache_path);
+}
+
+#[test]
+fn protocol_process_enforces_path_and_asset_resource_limits() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let outside = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let request = base_request(serde_json::json!({
+        "kind": "scan",
+        "depth": "header",
+        "paths": [outside.to_string_lossy()],
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    let (success, events, stderr) = run_request(request);
+    assert!(
+        success,
+        "path validation should be a typed failure: {stderr}"
+    );
+    assert_eq!(events.last().unwrap()["kind"], "failed");
+    assert_eq!(events.last().unwrap()["code"], "invalid_request");
+
+    let mut request = base_request(serde_json::json!({
+        "kind": "scan",
+        "depth": "full",
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    request["limits"]["maximumAssets"] = serde_json::json!(1);
+    let (success, events, stderr) = run_request(request);
+    assert!(success, "asset limit should be a typed failure: {stderr}");
+    assert_eq!(events.last().unwrap()["kind"], "failed");
+    assert_eq!(events.last().unwrap()["code"], "resource_limit");
+}
+
+#[test]
+fn protocol_process_emits_typed_empty_projection_summaries() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    for (kind, summary_event) in [
+        ("extract_text", "text_summary"),
+        ("extract_texture", "texture_summary"),
+    ] {
+        let request = base_request(serde_json::json!({
+            "kind": kind,
+            "paths": [],
+            "projectRoot": project_root.to_string_lossy()
+        }));
+        let (success, events, stderr) = run_request(request);
+        assert!(success, "empty projection failed: {stderr}");
+        assert_valid_events(&events);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[1]["result"]["kind"], kind);
+        assert_eq!(events[1]["result"]["event"]["event"], summary_event);
+        assert_eq!(events[2]["kind"], "completed");
+    }
+}
+
+#[test]
+fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let map_path = project_root.join("Content/Fixture/Cameras/L_CameraLoad.umap");
+    let operation = serde_json::json!({
+        "kind": "saved_world",
+        "projectRoot": project_root.to_string_lossy(),
+        "mapPath": map_path.to_string_lossy()
+    });
+    let mut one_request = base_request(operation.clone());
+    one_request["limits"]["concurrency"] = serde_json::json!(1);
+    let (success, one_events, stderr) = run_request(one_request);
+    assert!(success, "single-worker saved world failed: {stderr}");
+    assert_valid_events(&one_events);
+    let one_world = one_events
+        .iter()
+        .find(|event| event["result"]["kind"] == "saved_world")
+        .expect("single-worker saved-world result");
+    assert_eq!(
+        one_world["result"]["world"]["summary"]["scannedPackages"],
+        1
+    );
+    assert!(
+        one_world["result"]["world"]["summary"]["resolvedActors"]
+            .as_u64()
+            .is_some_and(|actors| actors > 0)
+    );
+    assert!(one_events.iter().any(|event| event["kind"] == "progress"));
+    assert_eq!(one_events.last().unwrap()["kind"], "completed");
+
+    let mut many_request = base_request(operation);
+    many_request["limits"]["concurrency"] = serde_json::json!(4);
+    let (success, many_events, stderr) = run_request(many_request);
+    assert!(success, "multi-worker saved world failed: {stderr}");
+    assert_valid_events(&many_events);
+    let many_world = many_events
+        .iter()
+        .find(|event| event["result"]["kind"] == "saved_world")
+        .expect("multi-worker saved-world result");
+    assert_eq!(
+        one_world["result"]["world"]["actors"],
+        many_world["result"]["world"]["actors"]
+    );
+}
+
+#[test]
+fn protocol_process_rejects_saved_world_outside_content() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let outside = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+    let request = base_request(serde_json::json!({
+        "kind": "saved_world",
+        "projectRoot": project_root.to_string_lossy(),
+        "mapPath": outside.to_string_lossy()
+    }));
+    let (success, events, stderr) = run_request(request);
+    assert!(
+        success,
+        "saved-world path failure should be typed: {stderr}"
+    );
+    assert_eq!(events.last().unwrap()["kind"], "failed");
+    assert_eq!(events.last().unwrap()["code"], "invalid_request");
+}
+
+#[test]
+fn protocol_process_can_be_interrupted_during_scan() {
     let project_root =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
     let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
@@ -167,7 +403,7 @@ fn protocol_process_can_be_closed_before_worker_finishes() {
 }
 
 #[test]
-fn protocol_process_emits_a_typed_failure_for_broken_worker_output() {
+fn protocol_process_enforces_the_typed_output_limit() {
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset");
     let mut request = base_request(serde_json::json!({
@@ -235,4 +471,24 @@ fn decoded_sequence(event: &Event) -> u64 {
         | Event::Rejected { fields, .. }
         | Event::Result { fields, .. } => fields.sequence,
     }
+}
+
+fn assert_valid_events(events: &[Value]) {
+    for event in events {
+        decode_event(serde_json::to_string(event).unwrap().as_bytes())
+            .expect("Rust validates every emitted event");
+    }
+}
+
+fn header_paths(events: &[Value]) -> Vec<String> {
+    events
+        .iter()
+        .filter(|event| event["kind"] == "result" && event["result"]["kind"] == "scan_asset")
+        .map(|event| {
+            event["result"]["entry"]["header"]["path"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect()
 }

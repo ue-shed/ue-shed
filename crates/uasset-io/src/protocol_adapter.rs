@@ -1,22 +1,15 @@
 //! Process adapter for the versioned UAsset IO protocol.
 //!
-//! The adapter keeps the process boundary small and typed. Human compatibility commands remain
-//! in `legacy`; this module translates their established JSON records into the versioned event
-//! stream consumed by TypeScript.
+//! The adapter keeps the process boundary small and typed. Human command presentation remains in
+//! `legacy`; every protocol operation is executed by the native direct executors and serialized
+//! only at this process-output boundary.
 
-use std::env;
-use std::fs;
-use std::io::{self, BufRead, Read, Write};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::io::{self, Read, Write};
 
 use serde_json::{Value, json};
 
 use crate::direct_executor;
-use crate::protocol::{
-    Contract, Operation, Request, ResultFrame, ScanDepth, decode_event, decode_request,
-};
+use crate::protocol::{Contract, Operation, Request, ResultFrame, decode_event, decode_request};
 use crate::protocol_result::{
     InspectionStatus, SavedAsset, SavedAssetDecodeError, SavedAssetDecodeErrorKind,
     SavedAssetInspection, SavedBone, SavedCurveKey, SavedCurveRow, SavedEnumEntry,
@@ -26,11 +19,7 @@ use crate::protocol_result::{
 
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_MALFORMED: u8 = 2;
-const EXIT_UNSUPPORTED: u8 = 3;
-const EXIT_IO: u8 = 4;
 const EXIT_INTERNAL: u8 = 5;
-const EXIT_PARTIAL: u8 = 6;
-const EXIT_RESOURCE_LIMIT: u8 = 7;
 const DEFAULT_MAX_OUTPUT_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 
@@ -60,7 +49,7 @@ pub fn run() -> u8 {
         eprintln!("uasset protocol: {error}");
         return EXIT_INTERNAL;
     }
-    let result = execute(&request, &mut emitter);
+    let result = execute_direct(&request, &mut emitter);
     let terminal = match result {
         Ok(partial) => emitter.emit(
             "completed",
@@ -82,27 +71,13 @@ pub fn run() -> u8 {
     EXIT_SUCCESS
 }
 
-#[derive(Debug)]
-struct Failure {
-    code: String,
-    message: String,
-    retry_safe: bool,
-}
-
-struct TemporaryPath(Option<PathBuf>);
-
-impl Drop for TemporaryPath {
-    fn drop(&mut self) {
-        if let Some(path) = self.0.take() {
-            let _ = fs::remove_file(path);
-        }
-    }
-}
+type Failure = direct_executor::Failure;
 
 struct Emitter {
     contract: Contract,
     request_id: String,
     sequence: u64,
+    maximum_output_bytes: usize,
 }
 
 impl Emitter {
@@ -111,6 +86,10 @@ impl Emitter {
             contract: request.contract.clone(),
             request_id: request.request_id.clone(),
             sequence: 0,
+            maximum_output_bytes: request
+                .limits
+                .maximum_output_bytes
+                .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES) as usize,
         }
     }
 
@@ -155,6 +134,43 @@ impl Emitter {
         self.sequence += 1;
         Ok(())
     }
+
+    fn emit_result_frame(&mut self, result: &ResultFrame) -> Result<(), Failure> {
+        let mut value = serde_json::to_value(result).map_err(|error| Failure {
+            code: "contract".to_owned(),
+            message: format!("could not serialize typed result: {error}"),
+            retry_safe: false,
+        })?;
+        if let Some(inspection) = value.get_mut("inspection") {
+            *inspection = normalize_inspection(inspection.take());
+        }
+        if let Some(entry) = value.get_mut("entry") {
+            if let Some(inspection) = entry.get_mut("inspection") {
+                *inspection = normalize_inspection(inspection.take());
+            }
+        }
+        if let Some(summary) = value.get_mut("summary").and_then(Value::as_object_mut) {
+            for key in ["inventoryComplete", "inventoryFiles"] {
+                if summary.get(key).is_some_and(Value::is_null) {
+                    summary.remove(key);
+                }
+            }
+        }
+        let result_bytes = serde_json::to_vec(&value).map_err(|error| Failure {
+            code: "contract".to_owned(),
+            message: format!("could not serialize typed result: {error}"),
+            retry_safe: false,
+        })?;
+        if result_bytes.len() > self.maximum_output_bytes {
+            return Err(Failure {
+                code: "output_limit".to_owned(),
+                message: "result exceeded the configured output limit".to_owned(),
+                retry_safe: false,
+            });
+        }
+        self.emit_unvalidated("result", json!({ "result": value }))
+            .map_err(internal_failure)
+    }
 }
 
 fn contract_value(contract: &Contract) -> Value {
@@ -175,212 +191,154 @@ fn operation_kind(operation: &Operation) -> &'static str {
     }
 }
 
-fn execute(request: &Request, emitter: &mut Emitter) -> Result<bool, Failure> {
-    if explicit_empty_paths(&request.operation) {
-        emit_empty_result(request, emitter).map_err(internal_failure)?;
-        return Ok(false);
-    }
-    if let Operation::Inspect { asset_path } = &request.operation {
-        let (inspection, partial) = direct_executor::inspect(
-            asset_path,
-            request
-                .limits
-                .maximum_output_bytes
-                .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES) as usize,
-        )
-        .map_err(|error| Failure {
-            code: error.code,
-            message: error.message,
-            retry_safe: error.retry_safe,
-        })?;
-        emit_typed_result(emitter, &ResultFrame::Inspect { inspection })?;
-        return Ok(partial);
-    }
-    if direct_executor::supports_full_scan(request) {
-        emitter
-            .emit(
-                "progress",
-                json!({ "completedItems": 0, "phase": "discovering", "totalItems": 0 }),
-            )
-            .map_err(internal_failure)?;
-        let output = direct_executor::scan(request).map_err(|error| Failure {
-            code: error.code,
-            message: error.message,
-            retry_safe: error.retry_safe,
-        })?;
-        emitter
-            .emit(
-                "progress",
-                json!({
-                    "completedItems": 0,
-                    "phase": "inspecting",
-                    "totalItems": output.summary.scanned_assets
-                }),
-            )
-            .map_err(internal_failure)?;
-        for diagnostic in output.diagnostics {
-            emitter
-                .emit(
-                    "diagnostic",
-                    json!({
-                        "code": diagnostic.code,
-                        "message": diagnostic.message,
-                        "severity": "warning"
-                    }),
-                )
-                .map_err(internal_failure)?;
+fn execute_direct(request: &Request, emitter: &mut Emitter) -> Result<bool, Failure> {
+    match &request.operation {
+        Operation::Inspect { asset_path } => {
+            let (inspection, partial) = direct_executor::inspect(asset_path)?;
+            emit_typed_result(emitter, &ResultFrame::Inspect { inspection })?;
+            Ok(partial)
         }
-        let scanned_assets = output.summary.scanned_assets;
-        for entry in output.entries {
-            emit_typed_result(emitter, &ResultFrame::ScanAsset { entry })?;
+        Operation::Authoring { asset_path } => {
+            let (snapshot, partial) = direct_executor::authoring(asset_path)?;
+            emit_typed_result(emitter, &ResultFrame::Authoring { snapshot })?;
+            Ok(partial)
         }
-        emit_typed_result(
-            emitter,
-            &ResultFrame::ScanSummary {
-                summary: output.summary,
-            },
-        )?;
-        emitter
-            .emit(
-                "progress",
-                json!({
-                    "completedItems": scanned_assets,
-                    "phase": "emitting",
-                    "totalItems": scanned_assets
-                }),
-            )
-            .map_err(internal_failure)?;
-        return Ok(output.partial);
-    }
-    let (arguments, path_list) = legacy_arguments(request).map_err(invalid_failure)?;
-    let _path_guard = TemporaryPath(path_list);
-    let executable = env::current_exe().map_err(|error| Failure {
-        code: "startup".to_owned(),
-        message: format!("could not locate uasset executable: {error}"),
-        retry_safe: false,
-    })?;
-    let watch_worker = !request_reads_stdin(request);
-    let mut command = Command::new(executable);
-    command
-        .args(arguments)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if watch_worker {
-        command
-            .stdin(Stdio::piped())
-            .env("UE_SHED_PROTOCOL_PARENT_WATCHDOG", "1");
-    } else {
-        command.stdin(Stdio::null());
-    }
-    let mut child = command.spawn().map_err(|error| Failure {
-        code: "startup".to_owned(),
-        message: format!("could not start uasset worker: {error}"),
-        retry_safe: true,
-    })?;
-    let worker_stdin = child.stdin.take();
-    let (stderr_receiver, stderr_handle) = child.stderr.take().map_or((None, None), |stderr| {
-        let (sender, receiver) = mpsc::channel();
-        let handle = std::thread::spawn(move || {
-            let mut captured = String::new();
-            for line in io::BufReader::new(stderr).lines() {
-                let Ok(line) = line else { break };
-                captured.push_str(&line);
-                captured.push('\n');
-                let _ = sender.send(line);
+        Operation::Scan { selection, .. } => {
+            let empty_paths = selection.paths.as_deref() == Some(&[]);
+            if !empty_paths {
+                emit_progress(emitter, 0, "discovering", None)?;
             }
-            captured
-        });
-        (Some(receiver), Some(handle))
-    });
-    let stdout = child.stdout.take().ok_or_else(|| Failure {
-        code: "startup".to_owned(),
-        message: "uasset worker did not expose stdout".to_owned(),
-        retry_safe: false,
-    })?;
-    let maximum_output_bytes = request
-        .limits
-        .maximum_output_bytes
-        .unwrap_or(DEFAULT_MAX_OUTPUT_BYTES) as usize;
-    let mut reader = io::BufReader::new(stdout);
-    let mut line = String::new();
-    let mut partial = false;
-    loop {
-        line.clear();
-        let bytes = reader.read_line(&mut line).map_err(|error| Failure {
-            code: "read".to_owned(),
-            message: format!("could not read uasset worker output: {error}"),
-            retry_safe: true,
-        })?;
-        if bytes == 0 {
-            break;
+            let output = direct_executor::scan(request)?;
+            if !empty_paths {
+                emit_progress(
+                    emitter,
+                    0,
+                    "inspecting",
+                    Some(output.summary.scanned_assets),
+                )?;
+            }
+            for diagnostic in &output.diagnostics {
+                emit_diagnostic(emitter, diagnostic)?;
+            }
+            for entry in output.inventory {
+                emit_typed_result(emitter, &ResultFrame::ScanInventory { entry })?;
+            }
+            for entry in output.entries {
+                emit_typed_result(emitter, &ResultFrame::ScanAsset { entry })?;
+            }
+            let scanned_assets = output.summary.scanned_assets;
+            emit_typed_result(
+                emitter,
+                &ResultFrame::ScanSummary {
+                    summary: output.summary,
+                },
+            )?;
+            if !empty_paths {
+                emit_progress(emitter, scanned_assets, "emitting", Some(scanned_assets))?;
+            }
+            Ok(output.partial)
         }
-        if let Some(receiver) = &stderr_receiver {
-            emit_progress_lines(emitter, receiver).map_err(internal_failure)?;
+        Operation::ExtractText { selection } => {
+            let empty_paths = selection.paths.as_deref() == Some(&[]);
+            if !empty_paths {
+                emit_progress(emitter, 0, "discovering", None)?;
+            }
+            let output = direct_executor::extract_text(request)?;
+            if !empty_paths {
+                emit_progress(
+                    emitter,
+                    0,
+                    "inspecting",
+                    Some(output.summary.scanned_assets),
+                )?;
+            }
+            for diagnostic in &output.diagnostics {
+                emit_diagnostic(emitter, diagnostic)?;
+            }
+            for result in output.results {
+                emit_typed_result(emitter, &result)?;
+            }
+            let scanned_assets = output.summary.scanned_assets;
+            if !empty_paths {
+                emit_progress(emitter, scanned_assets, "emitting", Some(scanned_assets))?;
+            }
+            Ok(output.partial)
         }
-        if line.len() > maximum_output_bytes {
-            let _ = child.kill();
-            return Err(Failure {
-                code: "output_limit".to_owned(),
-                message: "uasset worker output exceeded the configured limit".to_owned(),
-                retry_safe: false,
-            });
+        Operation::ExtractTexture { selection } => {
+            let empty_paths = selection.paths.as_deref() == Some(&[]);
+            if !empty_paths {
+                emit_progress(emitter, 0, "discovering", None)?;
+            }
+            let output = direct_executor::extract_texture(request)?;
+            if !empty_paths {
+                emit_progress(
+                    emitter,
+                    0,
+                    "inspecting",
+                    Some(output.summary.scanned_assets),
+                )?;
+            }
+            for diagnostic in &output.diagnostics {
+                emit_diagnostic(emitter, diagnostic)?;
+            }
+            for result in output.results {
+                emit_typed_result(emitter, &result)?;
+            }
+            let scanned_assets = output.summary.scanned_assets;
+            if !empty_paths {
+                emit_progress(emitter, scanned_assets, "emitting", Some(scanned_assets))?;
+            }
+            Ok(output.partial)
         }
-        if line.trim().is_empty() {
-            continue;
+        Operation::SavedWorld { .. } => {
+            emit_progress(emitter, 0, "discovering", None)?;
+            let output = direct_executor::saved_world(request)?;
+            let scanned_packages = output.world.summary.scanned_packages;
+            let partial = output.partial;
+            emit_typed_result(
+                emitter,
+                &ResultFrame::SavedWorld {
+                    world: output.world,
+                },
+            )?;
+            emit_progress(
+                emitter,
+                scanned_packages,
+                "emitting",
+                Some(scanned_packages),
+            )?;
+            Ok(partial)
         }
-        let value = serde_json::from_str::<Value>(line.trim()).map_err(|error| Failure {
-            code: "worker_output".to_owned(),
-            message: format!("uasset worker emitted invalid JSON: {error}"),
-            retry_safe: false,
-        })?;
-        consume_line(request, emitter, value, &mut partial)?;
     }
-    let status = child.wait().map_err(|error| Failure {
-        code: "wait".to_owned(),
-        message: format!("could not wait for uasset worker: {error}"),
-        retry_safe: true,
-    })?;
-    drop(worker_stdin);
-    let stderr = stderr_handle
-        .and_then(|handle| handle.join().ok())
-        .unwrap_or_default();
-    if let Some(receiver) = &stderr_receiver {
-        emit_progress_lines(emitter, receiver).map_err(internal_failure)?;
-    }
-    let code = status.code().unwrap_or(EXIT_INTERNAL as i32);
-    if code == EXIT_PARTIAL as i32 {
-        partial = true;
-    } else if code != EXIT_SUCCESS as i32 {
-        let (failure_code, retry_safe) = match code as u8 {
-            EXIT_IO => ("io", true),
-            EXIT_RESOURCE_LIMIT => ("resource_limit", false),
-            EXIT_MALFORMED | EXIT_UNSUPPORTED => ("worker_rejected", false),
-            _ => ("worker", false),
-        };
-        let message = worker_message(&stderr, code);
-        emitter
-            .emit(
-                "diagnostic",
-                json!({ "code": failure_code, "message": message, "severity": "warning" }),
-            )
-            .map_err(internal_failure)?;
-        return Err(Failure {
-            code: failure_code.to_owned(),
-            message: worker_message(&stderr, code),
-            retry_safe,
-        });
-    }
-    Ok(partial)
 }
 
-fn worker_message(stderr: &str, code: i32) -> String {
-    stderr
-        .lines()
-        .rfind(|line| !line.trim().is_empty())
-        .map_or_else(
-            || format!("uasset worker exited with code {code}"),
-            str::to_owned,
+fn emit_progress(
+    emitter: &mut Emitter,
+    completed_items: u64,
+    phase: &str,
+    total_items: Option<u64>,
+) -> Result<(), Failure> {
+    let mut fields = json!({ "completedItems": completed_items, "phase": phase });
+    if let Some(total_items) = total_items {
+        fields["totalItems"] = Value::from(total_items);
+    }
+    emitter.emit("progress", fields).map_err(internal_failure)
+}
+
+fn emit_diagnostic(
+    emitter: &mut Emitter,
+    diagnostic: &direct_executor::Diagnostic,
+) -> Result<(), Failure> {
+    emitter
+        .emit(
+            "diagnostic",
+            json!({
+                "code": diagnostic.code,
+                "message": diagnostic.message,
+                "severity": "warning"
+            }),
         )
+        .map_err(internal_failure)
 }
 
 fn internal_failure(message: String) -> Failure {
@@ -391,153 +349,8 @@ fn internal_failure(message: String) -> Failure {
     }
 }
 
-fn invalid_failure(message: String) -> Failure {
-    Failure {
-        code: "invalid_request".to_owned(),
-        message,
-        retry_safe: false,
-    }
-}
-
-fn explicit_empty_paths(operation: &Operation) -> bool {
-    match operation {
-        Operation::Scan { selection, .. }
-        | Operation::ExtractText { selection }
-        | Operation::ExtractTexture { selection } => selection.paths.as_deref() == Some(&[]),
-        _ => false,
-    }
-}
-
-fn request_reads_stdin(request: &Request) -> bool {
-    matches!(
-        &request.operation,
-        Operation::Inspect { asset_path } | Operation::Authoring { asset_path }
-            if asset_path == "-"
-    )
-}
-
-fn consume_line(
-    request: &Request,
-    emitter: &mut Emitter,
-    mut value: Value,
-    partial: &mut bool,
-) -> Result<(), Failure> {
-    match operation_kind(&request.operation) {
-        "inspect" => {
-            value = normalize_inspection(value);
-            emit_result(emitter, json!({ "kind": "inspect", "inspection": value }))?;
-        }
-        "authoring" => emit_result(emitter, json!({ "kind": "authoring", "snapshot": value }))?,
-        "saved_world" => emit_result(emitter, json!({ "kind": "saved_world", "world": value }))?,
-        "scan" => {
-            let event = value
-                .as_object_mut()
-                .and_then(|object| object.remove("event"))
-                .and_then(|event| event.as_str().map(str::to_owned));
-            match event.as_deref() {
-                Some("asset") => {
-                    if let Some(inspection) = value.get_mut("inspection") {
-                        *inspection = normalize_inspection(inspection.take());
-                    }
-                    emit_result(emitter, json!({ "kind": "scan_asset", "entry": value }))?;
-                }
-                Some("inventory") => {
-                    emit_result(emitter, json!({ "kind": "scan_inventory", "entry": value }))?
-                }
-                Some("summary") => {
-                    emit_result(emitter, json!({ "kind": "scan_summary", "summary": value }))?
-                }
-                Some("error") => {
-                    *partial = true;
-                    let object = value.as_object().ok_or_else(|| {
-                        invalid_failure("scan error was not an object".to_owned())
-                    })?;
-                    emitter
-						.emit(
-							"diagnostic",
-							json!({
-								"code": object.get("code").and_then(Value::as_str).unwrap_or("asset"),
-								"message": object.get("message").and_then(Value::as_str).unwrap_or("asset scan failed"),
-								"severity": "warning",
-							}),
-						)
-						.map_err(internal_failure)?;
-                }
-                Some(other) => {
-                    return Err(invalid_failure(format!("unknown scan event {other:?}")));
-                }
-                None => {
-                    return Err(invalid_failure(
-                        "scan output did not contain an event".to_owned(),
-                    ));
-                }
-            }
-        }
-        "extract_text" | "extract_texture" => {
-            if value.get("event").and_then(Value::as_str) == Some("error") {
-                *partial = true;
-                let object = value.as_object().ok_or_else(|| {
-                    invalid_failure("projection error was not an object".to_owned())
-                })?;
-                emitter
-					.emit(
-						"diagnostic",
-						json!({
-							"code": object.get("code").and_then(Value::as_str).unwrap_or("projection"),
-							"message": object.get("message").and_then(Value::as_str).unwrap_or("projection failed"),
-							"severity": "warning",
-						}),
-					)
-					.map_err(internal_failure)?;
-            } else {
-                let kind = if operation_kind(&request.operation) == "extract_text" {
-                    "extract_text"
-                } else {
-                    "extract_texture"
-                };
-                emit_result(emitter, json!({ "kind": kind, "event": value }))?;
-            }
-        }
-        _ => unreachable!(),
-    }
-    Ok(())
-}
-
-fn emit_result(emitter: &mut Emitter, result: Value) -> Result<(), Failure> {
-    serde_json::from_value::<ResultFrame>(result.clone()).map_err(|error| Failure {
-        code: "contract".to_owned(),
-        message: format!("worker result did not match the protocol: {error}"),
-        retry_safe: false,
-    })?;
-    emitter
-        .emit("result", json!({ "result": result }))
-        .map_err(internal_failure)
-}
-
 fn emit_typed_result(emitter: &mut Emitter, result: &ResultFrame) -> Result<(), Failure> {
-    let mut value = serde_json::to_value(result).map_err(|error| Failure {
-        code: "contract".to_owned(),
-        message: format!("could not serialize typed result: {error}"),
-        retry_safe: false,
-    })?;
-    if let Some(inspection) = value.get_mut("inspection") {
-        *inspection = normalize_inspection(inspection.take());
-    }
-    if let Some(entry) = value.get_mut("entry") {
-        if let Some(inspection) = entry.get_mut("inspection") {
-            *inspection = normalize_inspection(inspection.take());
-        }
-    }
-    if let Some(summary) = value.get_mut("summary").and_then(Value::as_object_mut) {
-        for key in ["inventoryComplete", "inventoryFiles"] {
-            if summary.get(key).is_some_and(Value::is_null) {
-                summary.remove(key);
-            }
-        }
-    }
-    emitter
-        .emit_unvalidated("result", json!({ "result": value }))
-        .map_err(internal_failure)
+    emitter.emit_result_frame(result)
 }
 
 /// Adapts the inspection crate's typed generic projection to the versioned process contract.
@@ -1043,272 +856,4 @@ fn normalize_asset(value: &mut Value) {
 
 fn retain(object: &mut serde_json::Map<String, Value>, keys: &[&str]) {
     object.retain(|key, _| keys.iter().any(|candidate| *candidate == key));
-}
-
-fn emit_progress_lines(emitter: &mut Emitter, receiver: &Receiver<String>) -> Result<(), String> {
-    for line in receiver.try_iter() {
-        emit_progress_line(emitter, &line)?;
-    }
-    Ok(())
-}
-
-fn emit_progress_line(emitter: &mut Emitter, line: &str) -> Result<(), String> {
-    if line.trim().is_empty() {
-        return Ok(());
-    }
-    let Ok(value) = serde_json::from_str::<Value>(line) else {
-        return Ok(());
-    };
-    let Some(event) = value.get("event").and_then(Value::as_str) else {
-        return Ok(());
-    };
-    let (phase, completed, total) = match event {
-        "scan_progress" => {
-            let phase = match value.get("phase").and_then(Value::as_str) {
-                Some("enumerating") => "discovering",
-                Some("scanning") => "inspecting",
-                Some("ready") => "emitting",
-                _ => "reading",
-            };
-            (
-                phase,
-                value.get("processedAssets").and_then(Value::as_u64),
-                value.get("totalAssets").and_then(Value::as_u64),
-            )
-        }
-        "saved_world_progress" => {
-            let phase = match value.get("phase").and_then(Value::as_str) {
-                Some("enumerating") => "discovering",
-                Some("scanning") | Some("resolving") => "inspecting",
-                Some("ready") => "emitting",
-                _ => "reading",
-            };
-            (
-                phase,
-                value.get("processedPackages").and_then(Value::as_u64),
-                value.get("totalPackages").and_then(Value::as_u64),
-            )
-        }
-        _ => return Ok(()),
-    };
-    let mut fields = json!({
-            "completedItems": completed.unwrap_or(0),
-            "phase": phase,
-    });
-    if let Some(total) = total {
-        fields["totalItems"] = Value::from(total);
-    }
-    emitter.emit("progress", fields)
-}
-
-fn emit_empty_result(request: &Request, emitter: &mut Emitter) -> Result<(), String> {
-    let result = match &request.operation {
-        Operation::Scan { depth, .. } => json!({
-            "kind": "scan_summary",
-            "summary": empty_summary(request, match depth { ScanDepth::Header => "header", ScanDepth::Full => "full" }),
-        }),
-        Operation::ExtractText { .. } => json!({
-            "kind": "extract_text",
-            "event": empty_projection_summary(request, "text"),
-        }),
-        Operation::ExtractTexture { .. } => json!({
-            "kind": "extract_texture",
-            "event": empty_projection_summary(request, "texture"),
-        }),
-        _ => unreachable!(),
-    };
-    emit_result(emitter, result).map_err(|error| error.message)
-}
-
-fn empty_summary(request: &Request, depth: &str) -> Value {
-    json!({
-        "cacheHits": 0,
-        "depth": depth,
-        "diagnostics": [],
-        "emittedAssets": 0,
-        "failedAssets": 0,
-        "inventoryComplete": false,
-        "inventoryFiles": 0,
-        "partialAssets": 0,
-        "projectRoot": project_root(request),
-        "roots": [],
-        "scannedAssets": 0,
-        "schema_version": 8,
-        "skippedAssets": 0,
-    })
-}
-
-fn empty_projection_summary(request: &Request, depth: &str) -> Value {
-    let mut summary = empty_summary(request, depth);
-    summary["event"] = Value::String(
-        if depth == "text" {
-            "text_summary"
-        } else {
-            "texture_summary"
-        }
-        .to_owned(),
-    );
-    summary
-}
-
-fn project_root(request: &Request) -> String {
-    match &request.operation {
-        Operation::Scan { selection, .. }
-        | Operation::ExtractText { selection }
-        | Operation::ExtractTexture { selection } => selection.project_root.clone(),
-        Operation::SavedWorld { project_root, .. } => project_root.clone(),
-        Operation::Inspect { asset_path } | Operation::Authoring { asset_path } => {
-            asset_path.clone()
-        }
-    }
-}
-
-fn legacy_arguments(request: &Request) -> Result<(Vec<String>, Option<PathBuf>), String> {
-    let mut args = Vec::new();
-    let mut path_list = None;
-    match &request.operation {
-        Operation::Inspect { asset_path } => {
-            args.extend([
-                "inspect".to_owned(),
-                asset_path.clone(),
-                "--format".to_owned(),
-                "json".to_owned(),
-            ]);
-        }
-        Operation::Authoring { asset_path } => {
-            args.extend([
-                "authoring".to_owned(),
-                asset_path.clone(),
-                "--format".to_owned(),
-                "json".to_owned(),
-            ]);
-        }
-        Operation::Scan {
-            cache_path,
-            depth,
-            selection,
-            filters,
-            inventory,
-        } => {
-            args.extend([
-                "scan".to_owned(),
-                selection.project_root.clone(),
-                "--format".to_owned(),
-                "json".to_owned(),
-                "--concurrency".to_owned(),
-                request.limits.concurrency.unwrap_or(4).to_string(),
-                "--depth".to_owned(),
-                match depth {
-                    ScanDepth::Header => "header".to_owned(),
-                    ScanDepth::Full => "full".to_owned(),
-                },
-            ]);
-            if let Some(cache_path) = cache_path {
-                args.extend(["--cache".to_owned(), cache_path.clone()]);
-            }
-            if inventory.unwrap_or(false) {
-                args.push("--inventory".to_owned());
-            }
-            append_paths(&mut args, &mut path_list, selection.paths.as_deref())?;
-            append_filters(&mut args, filters);
-            if let Some(maximum_assets) = request.limits.maximum_assets {
-                args.extend(["--maximum-assets".to_owned(), maximum_assets.to_string()]);
-            }
-        }
-        Operation::ExtractText { selection } | Operation::ExtractTexture { selection } => {
-            let projection = if matches!(&request.operation, Operation::ExtractText { .. }) {
-                "text"
-            } else {
-                "texture"
-            };
-            args.extend([
-                "scan".to_owned(),
-                selection.project_root.clone(),
-                "--format".to_owned(),
-                "json".to_owned(),
-                "--concurrency".to_owned(),
-                request.limits.concurrency.unwrap_or(4).to_string(),
-                "--projection".to_owned(),
-                projection.to_owned(),
-            ]);
-            append_paths(&mut args, &mut path_list, selection.paths.as_deref())?;
-            if selection.paths.is_none() {
-                if projection == "text" {
-                    args.extend([
-                        "--class".to_owned(),
-                        "/Script/Engine.StringTable".to_owned(),
-                        "--name".to_owned(),
-                        "TextProperty".to_owned(),
-                    ]);
-                } else {
-                    args.extend(["--class".to_owned(), "/Script/Engine.Texture2D".to_owned()]);
-                }
-            }
-            if let Some(maximum_assets) = request.limits.maximum_assets {
-                args.extend(["--maximum-assets".to_owned(), maximum_assets.to_string()]);
-            }
-        }
-        Operation::SavedWorld {
-            map_path,
-            project_root,
-        } => {
-            args.extend([
-                "saved-world".to_owned(),
-                project_root.clone(),
-                map_path.clone(),
-                "--format".to_owned(),
-                "json".to_owned(),
-                "--concurrency".to_owned(),
-                request.limits.concurrency.unwrap_or(4).to_string(),
-            ]);
-            if let Some(maximum_assets) = request.limits.maximum_assets {
-                args.extend(["--maximum-assets".to_owned(), maximum_assets.to_string()]);
-            }
-        }
-    }
-    Ok((args, path_list))
-}
-
-fn append_paths(
-    args: &mut Vec<String>,
-    path_list: &mut Option<PathBuf>,
-    paths: Option<&[String]>,
-) -> Result<(), String> {
-    let Some(paths) = paths else {
-        return Ok(());
-    };
-    let path = env::temp_dir().join(format!(
-        "ue-shed-uasset-protocol-{}-{}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|error| error.to_string())?
-            .as_nanos()
-    ));
-    fs::write(
-        &path,
-        serde_json::to_vec(paths).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
-    args.extend([
-        "--path-list".to_owned(),
-        path.to_string_lossy().into_owned(),
-    ]);
-    *path_list = Some(path);
-    Ok(())
-}
-
-fn append_filters(args: &mut Vec<String>, filters: &crate::protocol::ScanFilters) {
-    for value in filters.classes.as_deref().unwrap_or_default() {
-        args.extend(["--class".to_owned(), value.clone()]);
-    }
-    for value in filters.class_prefixes.as_deref().unwrap_or_default() {
-        args.extend(["--class-prefix".to_owned(), value.clone()]);
-    }
-    for value in filters.class_name_suffixes.as_deref().unwrap_or_default() {
-        args.extend(["--class-name-suffix".to_owned(), value.clone()]);
-    }
-    for value in filters.names.as_deref().unwrap_or_default() {
-        args.extend(["--name".to_owned(), value.clone()]);
-    }
 }

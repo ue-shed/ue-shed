@@ -5,8 +5,8 @@
 
 ## Status
 
-- State: IN PROGRESS — native split, protocol parity, and benchmark gates substantially complete;
-  apps/cli migration intentionally deferred
+- State: IN PROGRESS — native direct protocol migration complete; apps/cli migration intentionally
+  deferred
 - Priority: P1
 - Effort: XL
 - Risk: HIGH
@@ -401,8 +401,8 @@ frozen native fixtures preserve schema-equivalent output.
 - [x] Express supported work as typed IO requests.
 - [x] Expose typed generic inspection values for native executors instead of decoding their JSON
       projection back into Rust structs.
-- [ ] Adapt human Rust commands to construct those same requests; the legacy human path remains a
-      compatibility adapter until its typed library entry points are extracted.
+- [x] Adapt human Rust commands to call the same typed direct executors; `legacy.rs` is now only a
+      CLI parsing and presentation adapter.
 - [x] Remove the binary target from uasset-parser.
 - [x] Add source/dependency checks that keep the executable thin.
 
@@ -417,11 +417,12 @@ compatible.
 - [x] Execute only through uasset-io.
 - [x] Emit validated NDJSON with stable sequences and exactly one terminal event.
 - [x] Keep stdout protocol-only.
-- [x] Add a direct typed executor for single-package inspection and the unfiltered full-scan
-      vertical slice; make it the default after parity and benchmark validation.
+- [x] Route every protocol operation through a typed direct executor, including filtered/header
+      scans, cache, inventory, authoring, compact projections, and saved-world inspection.
 - [ ] Add cancellation checkpoints at discovery, read, parsing, inspection, and event emission.
-- [x] Add process tests for malformed input, early consumer close, broken output, interruption,
-      partial per-file failures, and catastrophic startup faults.
+- [x] Add process tests for malformed input, early consumer close, output limits, interruption,
+      partial per-file failures, path/resource limits, cache/filter/inventory behavior, and
+      saved-world ordering.
 - [ ] Fuzz/property-test framing and event-sequence validation.
 
 Gate: consumers never parse stderr or magic exit codes for expected outcomes; interruption leaves no
@@ -534,11 +535,9 @@ language happens to be faster or more convenient.
 
 - `crates/uasset-io/src/legacy.rs` retains the human Rust commands and their established exit
   behavior. It is a compatibility adapter over the new crate boundary, not a second product CLI.
-- `crates/uasset-io/src/protocol_adapter.rs` uses the direct typed executor for single-package
-  inspection and unfiltered full scans. Filtered, cached, inventory, and compact projection
-  operations still use the scoped compatibility worker until their typed IO entry points are
-  extracted. The parent-watchdog pipe ensures an interrupted compatibility worker does not remain
-  running.
+- `crates/uasset-io/src/protocol_adapter.rs` routes every operation through typed direct executors;
+  it owns only request framing, event sequencing, progress/diagnostic envelopes, and final JSON
+  serialization. There is no child worker or duplicate protocol implementation.
 - `apps/cli` remains the public TypeScript command surface. Its Effect CLI migration is Phase 6 and
   is deliberately outside this implementation gate.
 

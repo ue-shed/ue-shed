@@ -1,20 +1,25 @@
-//! Direct typed execution for protocol operations.
+//! Typed direct execution for the versioned UAsset IO protocol.
 //!
-//! This module is intentionally introduced behind the protocol boundary. Human compatibility
-//! commands remain in `legacy` while operations move here one vertical slice at a time.
+//! This module owns the native execution seam. It reads files, discovers project packages,
+//! schedules bounded work, and returns protocol result types. Serialization is deliberately left
+//! to `protocol_adapter`, which is the only process-output seam.
+
+mod project_io;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use uasset_inspection::generic::inspect_bytes as inspect_package_bytes;
 
-use crate::protocol::{Operation, Request, ScanDepth};
 use crate::protocol_result::{
-    ResultFrame, SavedAssetInspection, SavedAssetScanDiagnostic, SavedAssetScanEntry,
-    SavedAssetScanSummary, ScanSummaryDepth,
+    AuthoringAuthority, AuthoringContractName, AuthoringContractV2, AuthoringContractVersionV2,
+    AuthoringDiagnostic, AuthoringFieldValue, AuthoringFingerprint, AuthoringFloatValue,
+    AuthoringMapEntry, AuthoringProducer, AuthoringRow, AuthoringSpecialFloat, AuthoringTableKind,
+    AuthoringTableSchema, AuthoringTableSnapshot, AuthoringTableSnapshotV2, AuthoringTableV2,
+    AuthoringValue, Completeness, ResultFrame, SavedAsset, SavedAssetInspection,
+    SavedAssetScanDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary, SavedPropertyValue,
 };
+
+pub(crate) use project_io::{extract_text, extract_texture, saved_world, scan};
 
 #[derive(Debug)]
 pub(crate) struct Failure {
@@ -34,19 +39,28 @@ pub(crate) struct Diagnostic {
 #[derive(Debug)]
 pub(crate) struct ScanOutput {
     pub(crate) entries: Vec<SavedAssetScanEntry>,
+    pub(crate) inventory: Vec<crate::protocol_result::SavedAssetManifestEntry>,
     pub(crate) summary: SavedAssetScanSummary,
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) partial: bool,
 }
 
-/// Executes one inspection without starting the compatibility worker process.
-///
-/// The generic inspection projection is adapted to the versioned Rust protocol type without
-/// serializing and decoding the inspection through JSON.
-pub(crate) fn inspect(
-    path: &str,
-    maximum_output_bytes: usize,
-) -> Result<(SavedAssetInspection, bool), Failure> {
+#[derive(Debug)]
+pub(crate) struct ProjectionOutput {
+    pub(crate) results: Vec<ResultFrame>,
+    pub(crate) summary: SavedAssetScanSummary,
+    pub(crate) diagnostics: Vec<Diagnostic>,
+    pub(crate) partial: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct SavedWorldOutput {
+    pub(crate) world: crate::protocol_result::SavedWorld,
+    pub(crate) partial: bool,
+}
+
+/// Executes one inspection without starting another process.
+pub(crate) fn inspect(path: &str) -> Result<(SavedAssetInspection, bool), Failure> {
     if path == "-" {
         return Err(Failure {
             code: "io".to_owned(),
@@ -60,22 +74,14 @@ pub(crate) fn inspect(
         retry_safe: true,
     })?;
     let (inspection, partial) = inspect_bytes(path, &bytes)?;
-    check_result_limit(
-        &ResultFrame::Inspect {
-            inspection: inspection.clone(),
-        },
-        maximum_output_bytes,
-    )?;
     Ok((inspection, partial))
 }
 
-fn inspect_bytes(path: &str, bytes: &[u8]) -> Result<(SavedAssetInspection, bool), Failure> {
-    let output = inspect_package_bytes(path, bytes).map_err(|error| Failure {
-        code: error.kind.to_owned(),
-        message: error.message,
-        retry_safe: false,
-    })?;
-    let partial = output.status == "partial";
+pub(crate) fn inspect_bytes(
+    path: &str,
+    bytes: &[u8],
+) -> Result<(SavedAssetInspection, bool), Failure> {
+    let (output, partial) = inspect_generic_bytes(path, bytes)?;
     let inspection =
         crate::protocol_adapter::adapt_inspection(output).map_err(|message| Failure {
             code: "contract".to_owned(),
@@ -85,265 +91,405 @@ fn inspect_bytes(path: &str, bytes: &[u8]) -> Result<(SavedAssetInspection, bool
     Ok((inspection, partial))
 }
 
-fn check_result_limit(result: &ResultFrame, maximum_output_bytes: usize) -> Result<(), Failure> {
-    let bytes = serde_json::to_vec(result).map_err(|error| Failure {
-        code: "contract".to_owned(),
-        message: format!("result could not be serialized: {error}"),
+pub(crate) fn inspect_generic_bytes(
+    path: &str,
+    bytes: &[u8],
+) -> Result<(uasset_inspection::generic::InspectOutput, bool), Failure> {
+    let output = inspect_package_bytes(path, bytes).map_err(|error| Failure {
+        code: error.kind.to_owned(),
+        message: error.message,
         retry_safe: false,
     })?;
-    if bytes.len() > maximum_output_bytes {
-        return Err(Failure {
-            code: "output_limit".to_owned(),
-            message: "result exceeded the configured output limit".to_owned(),
-            retry_safe: false,
-        });
-    }
-    Ok(())
+    let partial = output.status == "partial";
+    Ok((output, partial))
 }
 
-pub(crate) fn supports_full_scan(request: &Request) -> bool {
-    let Operation::Scan {
-        cache_path,
-        depth,
-        filters,
-        inventory,
-        ..
-    } = &request.operation
-    else {
-        return false;
-    };
-    *depth == ScanDepth::Full
-        && cache_path.is_none()
-        && !inventory.unwrap_or(false)
-        && filters.classes.as_deref().unwrap_or_default().is_empty()
-        && filters
-            .class_prefixes
-            .as_deref()
-            .unwrap_or_default()
-            .is_empty()
-        && filters
-            .class_name_suffixes
-            .as_deref()
-            .unwrap_or_default()
-            .is_empty()
-        && filters.names.as_deref().unwrap_or_default().is_empty()
+/// Builds the saved-package authoring projection from the same typed inspection used by
+/// `inspect`. The conversion is recursive and never passes through JSON.
+pub(crate) fn authoring(path: &str) -> Result<(AuthoringTableSnapshot, bool), Failure> {
+    let bytes = fs::read(path).map_err(|error| Failure {
+        code: "io".to_owned(),
+        message: format!("could not read asset {path}: {error}"),
+        retry_safe: true,
+    })?;
+    authoring_bytes(path, &bytes)
 }
 
-/// Runs the common unfiltered full scan in this process. Header filters, caches, inventories, and
-/// compact projections still use the compatibility path until their typed executors are extracted.
-pub(crate) fn scan(request: &Request) -> Result<ScanOutput, Failure> {
-    let Operation::Scan {
-        selection,
-        depth: ScanDepth::Full,
-        ..
-    } = &request.operation
-    else {
+pub(crate) fn authoring_bytes(
+    path: &str,
+    bytes: &[u8],
+) -> Result<(AuthoringTableSnapshot, bool), Failure> {
+    let (inspection, inspection_partial) = inspect_bytes(path, bytes)?;
+    let mut tables = inspection.assets.iter().filter_map(|asset| match asset {
+        SavedAsset::DataTable {
+            object_path,
+            row_struct,
+            parent_tables,
+            rows,
+            ..
+        } => Some((
+            AuthoringTableKind::DataTable,
+            object_path,
+            row_struct,
+            parent_tables,
+            rows,
+        )),
+        SavedAsset::CompositeDataTable {
+            object_path,
+            row_struct,
+            parent_tables,
+            rows,
+            ..
+        } => Some((
+            AuthoringTableKind::CompositeDataTable,
+            object_path,
+            row_struct,
+            parent_tables,
+            rows,
+        )),
+        _ => None,
+    });
+    let Some((kind, object_path, row_struct, parent_tables, rows)) = tables.next() else {
         return Err(Failure {
             code: "unsupported".to_owned(),
-            message: "direct executor only supports unfiltered full scans".to_owned(),
+            message: "package contains no supported DataTable export".to_owned(),
             retry_safe: false,
         });
     };
-    let roots = resolve_roots(&selection.project_root, selection.paths.as_deref())?;
-    let mut paths = Vec::new();
-    for root in &roots {
-        if root.is_file() {
-            paths.push(root.clone());
-        } else {
-            discover_packages(root, &mut paths).map_err(|error| Failure {
-                code: "discovery".to_owned(),
-                message: format!("could not enumerate {}: {error}", root.display()),
-                retry_safe: true,
-            })?;
-        }
-    }
-    paths.sort();
-    paths.dedup();
-    if let Some(maximum_assets) = request.limits.maximum_assets {
-        if paths.len() as u64 > maximum_assets {
-            return Err(Failure {
-                code: "resource_limit".to_owned(),
-                message: format!(
-                    "Scan found {} packages, above the limit of {maximum_assets}.",
-                    paths.len()
-                ),
-                retry_safe: false,
-            });
-        }
+    if tables.next().is_some() {
+        return Err(Failure {
+            code: "unsupported".to_owned(),
+            message: "package contains more than one DataTable export".to_owned(),
+            retry_safe: false,
+        });
     }
 
-    let maximum_output_bytes = request
-        .limits
-        .maximum_output_bytes
-        .unwrap_or(64 * 1024 * 1024) as usize;
-    let entries = Mutex::new(Vec::with_capacity(paths.len()));
-    let diagnostics = Mutex::new(Vec::new());
-    let next_path = AtomicUsize::new(0);
-    let failed_assets = AtomicU64::new(0);
-    let partial_assets = AtomicU64::new(0);
-    let fatal = Mutex::new(None);
-    let worker_count = request.limits.concurrency.unwrap_or(4).max(1) as usize;
-    let scanned_assets = paths.len() as u64;
-    let paths = &paths;
-    let next_path_ref = &next_path;
-    let failed_assets_ref = &failed_assets;
-    let partial_assets_ref = &partial_assets;
-    std::thread::scope(|scope| {
-        for _ in 0..worker_count.min(paths.len().max(1)) {
-            let entries = &entries;
-            let diagnostics = &diagnostics;
-            let fatal = &fatal;
-            let next_path = next_path_ref;
-            let failed_assets = failed_assets_ref;
-            let partial_assets = partial_assets_ref;
-            scope.spawn(move || {
-                loop {
-                    let index = next_path.fetch_add(1, Ordering::Relaxed);
-                    let Some(path) = paths.get(index) else {
-                        break;
-                    };
-                    let path_string = path.to_string_lossy().into_owned();
-                    match fs::read(path).map_err(|error| Failure {
-                        code: "asset_io".to_owned(),
-                        message: format!("could not read asset {path_string}: {error}"),
-                        retry_safe: true,
-                    }) {
-                        Ok(bytes) => match inspect_bytes(&path_string, &bytes) {
-                            Ok((inspection, asset_partial)) => {
-                                if asset_partial {
-                                    partial_assets.fetch_add(1, Ordering::Relaxed);
-                                }
-                                let entry = SavedAssetScanEntry::Full {
-                                    file_bytes: bytes.len() as u64,
-                                    inspection,
-                                };
-                                let result = ResultFrame::ScanAsset {
-                                    entry: entry.clone(),
-                                };
-                                if let Err(error) =
-                                    check_result_limit(&result, maximum_output_bytes)
-                                {
-                                    let mut guard = fatal
-                                        .lock()
-                                        .expect("direct scan fatal state must not be poisoned");
-                                    if guard.is_none() {
-                                        *guard = Some(error);
-                                    }
-                                } else {
-                                    entries
-                                        .lock()
-                                        .expect("direct scan entries must not be poisoned")
-                                        .push(entry);
-                                }
-                            }
-                            Err(error)
-                                if error.code == "output_limit" || error.code == "contract" =>
-                            {
-                                let mut guard = fatal
-                                    .lock()
-                                    .expect("direct scan fatal state must not be poisoned");
-                                if guard.is_none() {
-                                    *guard = Some(error);
-                                }
-                            }
-                            Err(error) => {
-                                failed_assets.fetch_add(1, Ordering::Relaxed);
-                                let code = scan_failure_code(&error.code);
-                                diagnostics
-                                    .lock()
-                                    .expect("direct scan diagnostics must not be poisoned")
-                                    .push(scan_diagnostic(
-                                        &code,
-                                        format!("could not inspect asset ({code})"),
-                                        &path_string,
-                                    ));
-                            }
-                        },
-                        Err(error) => {
-                            failed_assets.fetch_add(1, Ordering::Relaxed);
-                            let code = scan_failure_code(&error.code);
-                            diagnostics
-                                .lock()
-                                .expect("direct scan diagnostics must not be poisoned")
-                                .push(scan_diagnostic(
-                                    &code,
-                                    format!("could not inspect asset ({code})"),
-                                    &path_string,
-                                ));
-                        }
-                    }
-                }
-            });
-        }
-    });
-    if let Some(error) = fatal
-        .into_inner()
-        .expect("direct scan fatal state must not be poisoned")
-    {
-        return Err(error);
-    }
-    let mut entries = entries
-        .into_inner()
-        .expect("direct scan entries must not be poisoned");
-    entries.sort_by(|left, right| {
-        let left_path = match left {
-            SavedAssetScanEntry::Full { inspection, .. } => inspection.path.as_str(),
-            SavedAssetScanEntry::Header { .. } => "",
-        };
-        let right_path = match right {
-            SavedAssetScanEntry::Full { inspection, .. } => inspection.path.as_str(),
-            SavedAssetScanEntry::Header { .. } => "",
-        };
-        left_path.cmp(right_path)
-    });
-    let diagnostics = diagnostics
-        .into_inner()
-        .expect("direct scan diagnostics must not be poisoned");
-    let failed_assets = failed_assets.load(Ordering::Relaxed);
-    let partial_assets = partial_assets.load(Ordering::Relaxed);
-    let partial = failed_assets > 0 || partial_assets > 0;
-    let summary_diagnostics = diagnostics
+    let mut partial = inspection_partial;
+    let authoring_rows = rows
         .iter()
-        .map(|diagnostic| SavedAssetScanDiagnostic {
-            code: diagnostic.code.clone(),
-            message: diagnostic.message.clone(),
-            path: diagnostic.path.clone(),
-            retry_safe: diagnostic.retry_safe,
+        .map(|row| {
+            let fields = row
+                .properties
+                .iter()
+                .map(|property| {
+                    let (value, value_partial) = authoring_value(&property.value);
+                    partial |= value_partial;
+                    AuthoringFieldValue {
+                        name: property.name.clone(),
+                        type_name: property.type_name.clone(),
+                        value,
+                    }
+                })
+                .collect();
+            AuthoringRow {
+                id: format!("row:{}", row.name),
+                name: row.name.clone(),
+                fields,
+            }
         })
         .collect();
-    let summary = SavedAssetScanSummary {
-        cache_hits: 0,
-        depth: ScanSummaryDepth::Full,
-        diagnostics: summary_diagnostics,
-        emitted_assets: entries.len() as u64,
-        failed_assets,
-        inventory_complete: None,
-        inventory_files: None,
-        partial_assets,
-        project_root: selection.project_root.clone(),
-        roots: roots
-            .iter()
-            .map(|root| root.to_string_lossy().into_owned())
-            .collect(),
-        scanned_assets,
-        schema_version: 8,
-        skipped_assets: 0,
-    };
-    check_result_limit(
-        &ResultFrame::ScanSummary {
-            summary: summary.clone(),
+    let diagnostics = inspection
+        .decode_errors
+        .iter()
+        .map(|error| AuthoringDiagnostic {
+            code: authoring_error_code(&error.kind).to_owned(),
+            message: error.message.clone(),
+            path: Some(error.object_path.clone()),
+        })
+        .collect();
+    let snapshot = AuthoringTableSnapshot::V2(AuthoringTableSnapshotV2 {
+        contract: AuthoringContractV2 {
+            name: AuthoringContractName,
+            version: AuthoringContractVersionV2 { major: 2, minor: 1 },
         },
-        maximum_output_bytes,
-    )?;
-    Ok(ScanOutput {
-        entries,
-        summary,
+        authority: AuthoringAuthority::ProjectFiles {
+            package_name: inspection.package.name.clone(),
+        },
+        completeness: if partial {
+            Completeness::Partial
+        } else {
+            Completeness::Complete
+        },
         diagnostics,
-        partial,
-    })
+        fingerprint: AuthoringFingerprint::Unavailable {
+            reason: "not_available".to_owned(),
+        },
+        producer: AuthoringProducer {
+            name: "uasset-parser".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+        },
+        table: AuthoringTableV2 {
+            kind,
+            object_path: object_path.clone(),
+            row_struct: row_struct.clone().unwrap_or_default(),
+            parent_tables: parent_tables.clone().unwrap_or_default(),
+            rows: authoring_rows,
+            package_name: inspection.package.name,
+            schema: AuthoringTableSchema::Unavailable {
+                reason: "not_available".to_owned(),
+            },
+        },
+    });
+    Ok((snapshot, partial))
 }
 
-fn scan_failure_code(code: &str) -> String {
+fn authoring_error_code(kind: &crate::protocol_result::SavedAssetDecodeErrorKind) -> &'static str {
+    match kind {
+        crate::protocol_result::SavedAssetDecodeErrorKind::MalformedData => "malformed_data",
+        crate::protocol_result::SavedAssetDecodeErrorKind::ResourceLimit => "resource_limit",
+        crate::protocol_result::SavedAssetDecodeErrorKind::UnsupportedFormat => {
+            "unsupported_format"
+        }
+        crate::protocol_result::SavedAssetDecodeErrorKind::UnsupportedVersion => {
+            "unsupported_version"
+        }
+        crate::protocol_result::SavedAssetDecodeErrorKind::UnsupportedCapability => {
+            "unsupported_capability"
+        }
+    }
+}
+
+fn authoring_value(value: &SavedPropertyValue) -> (AuthoringValue, bool) {
+    match value {
+        SavedPropertyValue::Bool { value } => (AuthoringValue::Bool { value: *value }, false),
+        SavedPropertyValue::Int { value } => (
+            AuthoringValue::Int {
+                value: value.to_string(),
+            },
+            false,
+        ),
+        SavedPropertyValue::UInt { value } => (
+            AuthoringValue::UInt {
+                value: value.to_string(),
+            },
+            false,
+        ),
+        SavedPropertyValue::Float { value } => authoring_float(value, false),
+        SavedPropertyValue::Double { value } => authoring_float(value, true),
+        SavedPropertyValue::Name { value } => (
+            AuthoringValue::Name {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::EnumValue { value } => (
+            AuthoringValue::Enum {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::StringValue { value } => (
+            AuthoringValue::StringValue {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::Text { value, .. } => (
+            AuthoringValue::Text {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::Guid { value } => (
+            AuthoringValue::Guid {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::SoftObjectPath { value } => (
+            AuthoringValue::SoftObjectPath {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::ObjectRef { value } => (
+            AuthoringValue::ObjectRef {
+                value: value.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::DataTableRowHandle {
+            table_object_path,
+            row_name,
+        } => (
+            AuthoringValue::RowReference {
+                table_object_path: table_object_path.clone(),
+                row_name: row_name.clone(),
+            },
+            false,
+        ),
+        SavedPropertyValue::Vector { x, y, z } => (
+            AuthoringValue::Vector {
+                x: x.unwrap_or_default(),
+                y: y.unwrap_or_default(),
+                z: z.unwrap_or_default(),
+            },
+            x.is_none() || y.is_none() || z.is_none(),
+        ),
+        SavedPropertyValue::Array { values } => {
+            let (values, partial) = authoring_values(values);
+            (AuthoringValue::Array { values }, partial)
+        }
+        SavedPropertyValue::Set { values } => {
+            let (values, partial) = authoring_values(values);
+            (AuthoringValue::Set { values }, partial)
+        }
+        SavedPropertyValue::Map { entries } => {
+            let mut partial = false;
+            let values = entries
+                .iter()
+                .map(|entry| {
+                    let (key, key_partial) = authoring_value(&entry.key);
+                    let (value, value_partial) = authoring_value(&entry.value);
+                    partial |= key_partial || value_partial;
+                    AuthoringMapEntry { key, value }
+                })
+                .collect();
+            (AuthoringValue::Map { entries: values }, partial)
+        }
+        SavedPropertyValue::Struct { properties } => {
+            let mut partial = false;
+            let fields = properties
+                .iter()
+                .map(|property| {
+                    let (value, value_partial) = authoring_value(&property.value);
+                    partial |= value_partial;
+                    AuthoringFieldValue {
+                        name: property.name.clone(),
+                        type_name: property.type_name.clone(),
+                        value,
+                    }
+                })
+                .collect();
+            (AuthoringValue::Struct { fields }, partial)
+        }
+        SavedPropertyValue::IntPoint { x, y } => (
+            AuthoringValue::Struct {
+                fields: vec![
+                    authoring_field(
+                        "X",
+                        "IntProperty",
+                        AuthoringValue::Int {
+                            value: x.to_string(),
+                        },
+                    ),
+                    authoring_field(
+                        "Y",
+                        "IntProperty",
+                        AuthoringValue::Int {
+                            value: y.to_string(),
+                        },
+                    ),
+                ],
+            },
+            false,
+        ),
+        SavedPropertyValue::Rotator { pitch, yaw, roll } => {
+            let (pitch, pitch_partial) = authoring_float(pitch, true);
+            let (yaw, yaw_partial) = authoring_float(yaw, true);
+            let (roll, roll_partial) = authoring_float(roll, true);
+            (
+                AuthoringValue::Struct {
+                    fields: vec![
+                        authoring_field("Pitch", "DoubleProperty", pitch),
+                        authoring_field("Yaw", "DoubleProperty", yaw),
+                        authoring_field("Roll", "DoubleProperty", roll),
+                    ],
+                },
+                pitch_partial || yaw_partial || roll_partial,
+            )
+        }
+        SavedPropertyValue::Color { r, g, b, a } => (
+            AuthoringValue::Struct {
+                fields: [("R", *r), ("G", *g), ("B", *b), ("A", *a)]
+                    .into_iter()
+                    .map(|(name, value)| {
+                        authoring_field(
+                            name,
+                            "IntProperty",
+                            AuthoringValue::Int {
+                                value: value.to_string(),
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+            false,
+        ),
+        SavedPropertyValue::LinearColor { r, g, b, a } => {
+            let (r, r_partial) = authoring_float(r, false);
+            let (g, g_partial) = authoring_float(g, false);
+            let (b, b_partial) = authoring_float(b, false);
+            let (a, a_partial) = authoring_float(a, false);
+            (
+                AuthoringValue::Struct {
+                    fields: vec![
+                        authoring_field("R", "FloatProperty", r),
+                        authoring_field("G", "FloatProperty", g),
+                        authoring_field("B", "FloatProperty", b),
+                        authoring_field("A", "FloatProperty", a),
+                    ],
+                },
+                r_partial || g_partial || b_partial || a_partial,
+            )
+        }
+        SavedPropertyValue::Raw { reason, size } => (
+            AuthoringValue::Unsupported {
+                reason: reason.clone(),
+                byte_size: *size,
+            },
+            true,
+        ),
+    }
+}
+
+fn authoring_float(value: &Option<f64>, is_double: bool) -> (AuthoringValue, bool) {
+    let value = match value {
+        Some(value) if value.is_finite() => AuthoringFloatValue::Number(*value),
+        Some(value) if value.is_nan() => AuthoringFloatValue::Special(AuthoringSpecialFloat::Nan),
+        Some(value) if *value == f64::INFINITY => {
+            AuthoringFloatValue::Special(AuthoringSpecialFloat::Infinity)
+        }
+        Some(_) => AuthoringFloatValue::Special(AuthoringSpecialFloat::NegativeInfinity),
+        None => {
+            return (
+                AuthoringValue::Unsupported {
+                    reason: "non-finite floating-point value".to_owned(),
+                    byte_size: 0,
+                },
+                true,
+            );
+        }
+    };
+    if is_double {
+        (AuthoringValue::Double { value }, false)
+    } else {
+        (AuthoringValue::Float { value }, false)
+    }
+}
+
+fn authoring_values(values: &[SavedPropertyValue]) -> (Vec<AuthoringValue>, bool) {
+    let mut partial = false;
+    let values = values
+        .iter()
+        .map(|value| {
+            let (value, value_partial) = authoring_value(value);
+            partial |= value_partial;
+            value
+        })
+        .collect();
+    (values, partial)
+}
+
+fn authoring_field(name: &str, type_name: &str, value: AuthoringValue) -> AuthoringFieldValue {
+    AuthoringFieldValue {
+        name: name.to_owned(),
+        type_name: type_name.to_owned(),
+        value,
+    }
+}
+
+pub(crate) fn scan_failure_code(code: &str) -> String {
     match code {
         "malformed_data" => "asset_malformed_data".to_owned(),
         "resource_limit" => "asset_resource_limit".to_owned(),
@@ -354,136 +500,23 @@ fn scan_failure_code(code: &str) -> String {
     }
 }
 
-fn scan_diagnostic(code: &str, message: String, path: &str) -> Diagnostic {
+pub(crate) fn scan_diagnostic(code: &str, message: String, path: &str) -> Diagnostic {
     Diagnostic {
         code: code.to_owned(),
         message,
         path: path.to_owned(),
-        retry_safe: matches!(code, "asset_io" | "scan_cache_write"),
+        retry_safe: matches!(code, "asset_io" | "scan_cache_write" | "inventory_io"),
     }
 }
 
-fn resolve_roots(
-    project_root: &str,
-    requested: Option<&[String]>,
-) -> Result<Vec<PathBuf>, Failure> {
-    let project_root = PathBuf::from(project_root);
-    let Some(requested) = requested else {
-        return Ok(vec![project_root.join("Content")]);
-    };
-    let canonical_project_root = fs::canonicalize(&project_root).map_err(|error| Failure {
-        code: "discovery".to_owned(),
-        message: format!(
-            "scan requires a readable project root {}: {error}",
-            project_root.display()
-        ),
-        retry_safe: true,
-    })?;
-    let mut roots = Vec::with_capacity(requested.len());
-    for requested in requested {
-        let path = PathBuf::from(requested);
-        let joined = if path.is_absolute() {
-            path
-        } else {
-            project_root.join(path)
-        };
-        let canonical = fs::canonicalize(&joined).map_err(|error| Failure {
-            code: "discovery".to_owned(),
-            message: format!("--path {} is not readable: {error}", joined.display()),
-            retry_safe: true,
-        })?;
-        if !canonical.starts_with(&canonical_project_root) {
-            return Err(Failure {
-                code: "invalid_request".to_owned(),
-                message: format!("--path {} is outside the project root", joined.display()),
-                retry_safe: false,
-            });
-        }
-        if canonical.is_file() && !is_package_path(&canonical) {
-            return Err(Failure {
-                code: "invalid_request".to_owned(),
-                message: format!("--path {} is not a .uasset or .umap file", joined.display()),
-                retry_safe: false,
-            });
-        }
-        roots.push(joined);
-    }
-    Ok(roots)
-}
-
-fn discover_packages(directory: &Path, found: &mut Vec<PathBuf>) -> std::io::Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            discover_packages(&path, found)?;
-        } else if entry.file_type()?.is_file() && is_package_path(&path) {
-            found.push(path);
-        }
-    }
-    Ok(())
-}
-
-fn is_package_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("uasset") || extension.eq_ignore_ascii_case("umap")
+pub(crate) fn summary_diagnostics(diagnostics: &[Diagnostic]) -> Vec<SavedAssetScanDiagnostic> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| SavedAssetScanDiagnostic {
+            code: diagnostic.code.clone(),
+            message: diagnostic.message.clone(),
+            path: diagnostic.path.clone(),
+            retry_safe: diagnostic.retry_safe,
         })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn fixture() -> String {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset")
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    #[test]
-    fn inspect_decodes_the_versioned_result_without_a_worker() {
-        let (inspection, partial) = inspect(&fixture(), 64 * 1024 * 1024).expect("inspection");
-
-        assert!(!partial);
-        assert_eq!(inspection.schema_version, 8);
-        assert!(!inspection.assets.is_empty());
-    }
-
-    #[test]
-    fn inspect_applies_the_protocol_output_limit() {
-        let error = inspect(&fixture(), 1).expect_err("result should exceed the limit");
-
-        assert_eq!(error.code, "output_limit");
-    }
-
-    #[test]
-    fn full_scan_uses_the_typed_inspection_projection() {
-        let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/unreal-project");
-        let request: Request = serde_json::from_value(json!({
-            "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
-            "limits": { "concurrency": 1, "maximumOutputBytes": 67108864 },
-            "operation": {
-                "kind": "scan",
-                "depth": "full",
-                "projectRoot": project_root.to_string_lossy(),
-                "paths": ["Content/Fixture/Text"]
-            },
-            "requestId": "direct-scan-test"
-        }))
-        .expect("scan request decodes");
-
-        let output = scan(&request).expect("typed scan succeeds");
-        assert!(!output.partial);
-        assert!(!output.entries.is_empty());
-        assert!(output.entries.iter().all(|entry| matches!(
-            entry,
-            SavedAssetScanEntry::Full { inspection, .. } if inspection.schema_version == 8
-        )));
-    }
+        .collect()
 }

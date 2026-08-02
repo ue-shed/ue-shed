@@ -17,7 +17,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS
+- **State**: DONE
 - **Priority**: P2
 - **Effort**: XL
 - **Risk**: HIGH — an incorrect path scope, baseline, deletion fold, actor-identity match, or
@@ -27,34 +27,29 @@
   `unreal-saved-world` v1.1 projection
 - **Category**: product vertical
 - **Planned at**: commit `4cf4267`, 2026-07-28
+- **Completed at**: 2026-08-02
 
 ## Implementation checkpoint
 
-- Steps 1–3 are complete: the product contract, private package, schema-owned output, Perforce
-  adapter, actor continuity/diff, and unclassified evidence are in place.
-- Step 4 is proven through the deterministic acquisition layer: verified local-to-depot scope,
-  companion package mapping, bounded submitted-change selection, exact baseline inventory,
-  incremental add/edit/delete fold, temporary-tree cleanup, aggregate materialization bounds,
-  timeout cleanup, and World Partition conversion refusal all have focused tests.
-- The headless portion of Step 6 is also in place ahead of real conformance: `MapHistory`, live/test
-  layers, `readPerforceMapHistory`, encoded CLI output, bounded CLI defaults/overrides, and the
-  partial-or-unclassified exit status are implemented. Real-Perforce CLI journey coverage remains
-  gated on Step 5.
-- The portable half of Step 5 is complete: `fixtures/perforce-map-history` carries generic,
-  Unreal-generated conventional and World Partition histories. The conventional map proves a
-  map-file actor move; World Partition covers incremental move, label, add, delete, and
-  two-package unclassified bundles. Rust conformance tests reconstruct every revision into an
-  owned temporary project tree and read the resulting saved world without Unreal or Perforce.
-- The portable UI portion of Step 7 is complete: `@ue-shed/extension-content-observatory` provides
-  the Workbench **World Log** route with a validated browser client, bounded query controls,
-  progress polling, scoped cancellation, chronological changelist/actor evidence, package evidence,
-  and explicit unclassified warnings. The Workbench main process owns the Map History fiber; opening
-  Workbench or the route does not issue a Perforce command. Real-Perforce UI E2E remains gated on
-  Step 5.
-- Real-Perforce conformance remains deferred. The ordinary test/check lane is still entirely
-  independent of Perforce binaries, network access, credentials, and a studio depot. The next work
-  is the disposable, generic local-server harness described in Step 5—not a contributor's project
-  or shared service.
+- Steps 1–4 are complete: the product contract, private package, schema-owned output, Perforce
+  adapter, actor continuity/diff, unclassified evidence, deterministic scope discovery, exact
+  baseline materialization, incremental add/edit/delete reconstruction, bounds, cancellation, and
+  temporary-tree cleanup are implemented and covered by focused tests.
+- Step 5 is complete: the generic fixture uses Unreal-generated conventional and World Partition
+  bundles, the disposable localhost `p4d` harness uses pinned hash-verified binaries, and the real
+  conformance lane proves scope exclusion, exact revisions, metadata, semantic/unclassified
+  attribution, and unchanged have-state.
+- Step 6 is complete: the Effect-native `MapHistory` service, `readPerforceMapHistory`, CLI command,
+  schema-validated JSON, bounded options, partial/unclassified exit behavior, parser tests, and a
+  real-Perforce CLI child-process journey are in place.
+- Step 7 is complete: the browser-safe World Log client and Workbench route provide bounded query
+  controls, progress, scoped cancellation, chronological actor/changelist evidence, package
+  evidence, and explicit unclassified warnings. The automated World Log recording journey passes
+  against the disposable Perforce fixture.
+- Step 8 is complete: package/product/showcase documentation, the `p4client-ts` architecture
+  boundary, the portable repository check, CLI E2E, Workbench E2E, World Log recording, real
+  Perforce conformance, and whitespace verification all pass. The ordinary test/check lane remains
+  independent of Perforce binaries, credentials, and network access.
 
 ## Why this matters
 
@@ -145,7 +140,7 @@ cartography, growth, dependency-history, or Janitor vision.
   `materializeDepotFiles`.
 - `p4client-ts` materializes exact revisions beneath a caller-owned directory without updating
   workspace have-state.
-- UE Shed does not currently depend on `p4client-ts`.
+- `@ue-shed/map-history` is the only UE Shed package that depends on `p4client-ts`.
 - `@ue-shed/unreal-assets.readSavedWorld` accepts a project root and map path, enumerates either the
   conventional `.umap` or matching local `__ExternalActors__` subtree, and returns saved-package
   authority.
@@ -153,8 +148,10 @@ cartography, growth, dependency-history, or Janitor vision.
   label, position resolution, completeness, and diagnostics.
 - The current projection does not expose arbitrary actor properties, component graphs, asset
   references, native tails, map settings, Data Layers, HLODs, or runtime-effective behavior.
-- The Content Observatory document is product vision rather than a shipped contract.
-- No generic Perforce history fixture or end-to-end map-history command exists in UE Shed.
+- The wider Content Observatory document remains product vision; this plan owns the focused
+  Map History product contract.
+- The generic Perforce history fixture, headless map-history command, and World Log presentation are
+  implemented by this plan.
 
 ## Target public model
 
@@ -480,25 +477,25 @@ in-scope files.
 
 ## Done criteria
 
-- [ ] `@ue-shed/map-history` is the only package that depends on or imports `p4client-ts`.
-- [ ] The package exposes one complete Effect-native `readPerforceMapHistory` workflow.
-- [ ] A conventional map and World Partition map both reconstruct from an exact baseline and
+- [x] `@ue-shed/map-history` is the only package that depends on or imports `p4client-ts`.
+- [x] The package exposes one complete Effect-native `readPerforceMapHistory` workflow.
+- [x] A conventional map and World Partition map both reconstruct from an exact baseline and
       ascending in-range changelists.
-- [ ] Only the selected map and matching external-actor scope influence the history.
-- [ ] Baseline materialization happens once; subsequent changelists apply only changed files.
-- [ ] Actor continuity uses GUID first, exact path fallback second, and never label identity.
-- [ ] Added, removed, moved, label, class, package, position-resolution, and coverage changes are
+- [x] Only the selected map and matching external-actor scope influence the history.
+- [x] Baseline materialization happens once; subsequent changelists apply only changed files.
+- [x] Actor continuity uses GUID first, exact path fallback second, and never label identity.
+- [x] Added, removed, moved, label, class, package, position-resolution, and coverage changes are
       schema-owned and tested.
-- [ ] Changed saved packages not explained by the supported projection remain visible as
+- [x] Changed saved packages not explained by the supported projection remain visible as
       unclassified evidence.
-- [ ] Complete, partial, empty, unavailable, cancelled, and resource-limited outcomes are distinct.
-- [ ] Temporary files are scoped and removed on success, failure, interruption, and cancellation.
-- [ ] The operation never syncs or changes Perforce workspace/server state.
-- [ ] The library and CLI provide the complete workflow without Workbench.
-- [ ] Workbench uses the same public service through a validated browser-safe client.
-- [ ] Portable tests and the configured real-Perforce fixture prove the semantics at their truthful
+- [x] Complete, partial, empty, unavailable, cancelled, and resource-limited outcomes are distinct.
+- [x] Temporary files are scoped and removed on success, failure, interruption, and cancellation.
+- [x] The operation never syncs or changes Perforce workspace/server state.
+- [x] The library and CLI provide the complete workflow without Workbench.
+- [x] Workbench uses the same public service through a validated browser-safe client.
+- [x] Portable tests and the configured real-Perforce fixture prove the semantics at their truthful
       layers.
-- [ ] `pnpm check`, CLI E2E, Workbench E2E, `git diff --check`, and the configured Perforce lane
+- [x] `pnpm check`, CLI E2E, Workbench E2E, `git diff --check`, and the configured Perforce lane
       pass.
 
 ## STOP conditions

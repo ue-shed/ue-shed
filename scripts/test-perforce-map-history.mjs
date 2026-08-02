@@ -13,7 +13,7 @@ import {
 	writeFile
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.mjs";
 
@@ -481,6 +481,61 @@ async function stopServer({ child, p4, environment, cwd }) {
 	await waitForProcessExit(child);
 }
 
+async function runCliJourney(fixture) {
+	const tsx = join(repositoryRoot, "node_modules", "tsx", "dist", "cli.mjs");
+	const cli = join(repositoryRoot, "apps", "cli", "src", "index.ts");
+	const range = fixture.seeded.conventional.range;
+	const environment = {
+		...fixture.environment,
+		PATH: [dirname(fixture.p4.executable), process.env.PATH].filter(Boolean).join(delimiter),
+		UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
+	};
+	const result = await run(
+		process.execPath,
+		[
+			tsx,
+			cli,
+			"map",
+			"history",
+			fixture.projectRoot,
+			fixture.seeded.conventional.mapPath,
+			"--since",
+			range.since,
+			"--until",
+			range.until
+		],
+		{
+			cwd: fixture.projectRoot,
+			env: environment,
+			timeoutMs: 120_000
+		}
+	);
+	let history;
+	try {
+		history = JSON.parse(result.stdout);
+	} catch (error) {
+		throw new Error(
+			`The Map History CLI did not emit one JSON document: ${
+				error instanceof Error ? error.message : String(error)
+			}`
+		);
+	}
+	assert(
+		history.baseline?.status === "available",
+		"The Map History CLI baseline was unavailable."
+	);
+	assert(history.completeness === "complete", "The Map History CLI returned partial history.");
+	assert(
+		history.revisions?.length === 1,
+		"The Map History CLI returned an unexpected revision count."
+	);
+	assert(
+		history.revisions[0]?.changes?.map((change) => change.kind).join(",") === "actor_moved",
+		"The Map History CLI did not preserve the conventional actor move."
+	);
+	report("RUN ", "CLI child-process journey passed against the disposable conventional fixture");
+}
+
 /**
  * Starts the generic Map History fixture and returns its isolated Perforce client.
  * Call `stop` once the caller has finished using the workspace.
@@ -666,6 +721,7 @@ async function main() {
 		);
 		process.stdout.write(result.stdout);
 		process.stderr.write(result.stderr);
+		await runCliJourney(fixture);
 	} finally {
 		await fixture.stop();
 	}

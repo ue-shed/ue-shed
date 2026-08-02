@@ -31,6 +31,7 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 	});
 
 	await workbench.openRoute("Map Review");
+	await workbench.page.getByRole("tab", { name: "LIVE WORLD" }).click();
 	await expect(workbench.page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(
 		"Map review / Live world"
 	);

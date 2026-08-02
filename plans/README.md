@@ -18,7 +18,6 @@ the status row when done.
 | [030](030-resolve-authoring-row-identity.md)                  | Resolve `AuthoringRow` identity provenance                       | P1       | M      | none                    | TODO                                                                |
 | [032](032-decouple-review-visibility-and-invocation.md)       | Decouple Review Views, visibility policy, and capture invocation | P1       | XL     | 017, 018, 022           | TODO                                                                |
 | [033](033-compact-project-corpora-before-persistence.md)      | Compact project corpora before persistence                       | P1       | XL     | ADR 0004, project index | IN PROGRESS                                                         |
-| [034](034-build-perforce-map-history.md)                      | Build the Perforce-backed Map History vertical                   | P2       | XL     | p4client-ts 0.7.1       | IN PROGRESS                                                         |
 | [035](035-world-log-investigation-workspace.md)               | Build the World Log investigation workspace                      | P2       | XL     | 034 Map History         | IN PROGRESS — Phase 7                                               |
 | [036](036-split-uasset-inspection-io-and-adopt-effect-cli.md) | Split UAsset inspection and IO, and adopt Effect CLI             | P1       | XL     | ADR 0004, 022, 025, 033 | IN PROGRESS — Effect CLI parser landed; workflow extraction pending |
 

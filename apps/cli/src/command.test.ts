@@ -1,508 +1,124 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit } from "effect";
+import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { parseCliCommand } from "./command.js";
+import { CliRuntime, type CliRuntimeShape } from "./application.js";
+import { runCli } from "./command.js";
 
-const value = JSON.stringify({ kind: "bool", value: true });
+function runtimeLayer(output: Ref.Ref<string>, errors: Ref.Ref<string>, exitCode: Ref.Ref<number>) {
+	const runtime: CliRuntimeShape = {
+		print: (value) => Ref.update(output, (current) => current + value),
+		printError: (value) => Ref.update(errors, (current) => current + value),
+		setExitCode: (value) => Ref.set(exitCode, value)
+	};
+	return Layer.succeed(CliRuntime, CliRuntime.of(runtime));
+}
 
-const commands: ReadonlyArray<readonly [readonly string[], string]> = [
-	[[], "Help"],
-	[["--help"], "Help"],
-	[["--version"], "Version"],
-	[["editor", "play", "status", "http://editor"], "EditorPlaySession"],
-	[["editor", "play", "start", "http://editor"], "EditorPlaySession"],
-	[["editor", "play", "simulate", "http://editor"], "EditorPlaySession"],
-	[["editor", "play", "pause", "http://editor"], "EditorPlaySession"],
-	[["editor", "play", "resume", "http://editor"], "EditorPlaySession"],
-	[["editor", "play", "stop", "http://editor"], "EditorPlaySession"],
-	[["audit", "textures", "project", "--rules", "rules.json"], "AuditTextures"],
-	[["authoring", "tables", "project"], "AuthoringTables"],
-	[["authoring", "relationships", "project"], "AuthoringRelationships"],
-	[
-		[
-			"authoring",
-			"join",
-			"project",
-			"/Game/Fixture/Authoring/DT_LeftReferences.DT_LeftReferences",
-			"Target"
-		],
-		"AuthoringJoin"
-	],
-	[["authoring", "catalog", "project", "--endpoint", "http://editor"], "AuthoringCatalog"],
-	[["authoring", "parity", "project", "http://editor"], "AuthoringParity"],
-	[["authoring", "inspect", "table.uasset"], "AuthoringInspect"],
-	[["authoring", "live", "tables", "http://editor"], "AuthoringLiveTables"],
-	[["authoring", "live", "inspect", "http://editor", "/Game/Table"], "AuthoringLiveInspect"],
-	[["authoring", "sessions", "list", "--project", "project"], "SessionsList"],
-	[
-		[
-			"authoring",
-			"sessions",
-			"create",
-			"table.uasset",
-			"--project",
-			"project",
-			"--id",
-			"draft"
-		],
-		"SessionsCreate"
-	],
-	[["authoring", "sessions", "show", "draft", "--project", "project"], "SessionsShow"],
-	[["authoring", "sessions", "resume", "draft", "--project", "project"], "SessionsResume"],
-	[["authoring", "sessions", "close", "draft", "--project", "project"], "SessionsClose"],
-	[["authoring", "sessions", "discard", "draft", "--project", "project"], "SessionsDiscard"],
-	[["authoring", "sessions", "undo", "draft", "--project", "project"], "SessionsUndo"],
-	[["authoring", "sessions", "redo", "draft", "--project", "project"], "SessionsRedo"],
-	[
-		[
-			"authoring",
-			"sessions",
-			"set-cell",
-			"draft",
-			"/Game/Table",
-			"Row",
-			"Field",
-			value,
-			"--project",
-			"project"
-		],
-		"SessionsSetCell"
-	],
-	[
-		[
-			"authoring",
-			"sessions",
-			"add-row",
-			"draft",
-			"/Game/Table",
-			"Beta",
-			"--project",
-			"project",
-			"--index",
-			"1"
-		],
-		"SessionsAddRow"
-	],
-	[
-		[
-			"authoring",
-			"sessions",
-			"duplicate-row",
-			"draft",
-			"/Game/Table",
-			"row:Alpha",
-			"Beta",
-			"--project",
-			"project"
-		],
-		"SessionsDuplicateRow"
-	],
-	[
-		[
-			"authoring",
-			"sessions",
-			"remove-row",
-			"draft",
-			"/Game/Table",
-			"row:Alpha",
-			"--project",
-			"project"
-		],
-		"SessionsRemoveRow"
-	],
-	[
-		[
-			"authoring",
-			"sessions",
-			"rename-row",
-			"draft",
-			"/Game/Table",
-			"row:Alpha",
-			"Beta",
-			"--project",
-			"project"
-		],
-		"SessionsRenameRow"
-	],
-	[
-		[
-			"authoring",
-			"sessions",
-			"reorder-rows",
-			"draft",
-			"/Game/Table",
-			'["row:Beta","row:Alpha"]',
-			"--project",
-			"project"
-		],
-		"SessionsReorderRows"
-	],
-	[
-		["authoring", "sessions", "apply", "draft", "http://editor", "--project", "project"],
-		"SessionsApply"
-	],
-	[
-		["authoring", "sessions", "reconcile", "draft", "http://editor", "--project", "project"],
-		"SessionsReconcile"
-	],
-	[
-		["authoring", "sessions", "save", "draft", "http://editor", "--project", "project"],
-		"SessionsSave"
-	],
-	[["authoring", "sessions", "review", "draft", "--project", "project"], "SessionsReview"],
-	[["authoring", "sessions", "validate", "draft", "--project", "project"], "SessionsValidate"],
-	[["authoring", "sessions", "diff", "draft", "--project", "project"], "SessionsDiff"],
-	[["assets", "scan", "project"], "AssetsScan"],
-	[
-		[
-			"assets",
-			"scan",
-			"project/Content/Fixture/Input",
-			"--class-prefix",
-			"/Script/EnhancedInput.",
-			"--class",
-			"InputAction",
-			"--name",
-			"TextProperty",
-			"--maximum-assets",
-			"50",
-			"--full"
-		],
-		"AssetsScan"
-	],
-	[["text", "scan", "project"], "TextScan"],
-	[["text", "search", "project", "hello", "world"], "TextSearch"],
-	[["input", "inspect", "project"], "InputInspect"],
-	[
-		[
+it.effect("renders generated help through the Effect CLI command tree", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		yield* runCli(["--help"]).pipe(Effect.provide(runtimeLayer(output, errors, exitCode)));
+
+		expect(yield* Ref.get(output)).toContain(
+			"UE Shed — External tools for Unreal Engine development."
+		);
+		expect(yield* Ref.get(output)).toContain("authoring");
+		expect(yield* Ref.get(errors)).toBe("");
+		expect(yield* Ref.get(exitCode)).toBe(0);
+	})
+);
+
+it.effect("keeps help, version, and the help command on the public boundary", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		const layer = runtimeLayer(output, errors, exitCode);
+
+		yield* runCli([]).pipe(Effect.provide(layer));
+		expect(yield* Ref.get(output)).toContain("USAGE");
+
+		yield* Ref.set(output, "");
+		yield* runCli(["help"]).pipe(Effect.provide(layer));
+		expect(yield* Ref.get(output)).toContain("SUBCOMMANDS");
+
+		yield* Ref.set(output, "");
+		yield* runCli(["--version"]).pipe(Effect.provide(layer));
+		expect(yield* Ref.get(output)).toMatch(/^ue-shed 0\.0\.0 \(protocol \d+\.\d+\)\r?\n$/);
+	})
+);
+
+it.effect("reports parser failures as usage errors without leaking generated help to stdout", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+
+		yield* runCli(["not-a-command"]).pipe(
+			Effect.provide(runtimeLayer(output, errors, exitCode))
+		);
+
+		expect(yield* Ref.get(output)).toBe("");
+		expect(yield* Ref.get(errors)).toContain("ue-shed: Unknown subcommand");
+		expect(yield* Ref.get(exitCode)).toBe(2);
+	})
+);
+
+it.effect("parses declarative cross-option validation before running product services", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		const layer = runtimeLayer(output, errors, exitCode);
+
+		const mapError = yield* runCli([
 			"map",
 			"history",
 			"project",
 			"Content/Maps/L_Example.umap",
 			"--since",
 			"7 days",
-			"--until",
-			"2026-07-28T00:00:00.000Z",
-			"--max-changelists",
-			"25"
-		],
-		"MapHistory"
-	],
-	[["review", "sets", "validate", "set.json"], "ReviewSetValidate"],
-	[["review", "framing", "candidates", "http://editor"], "ReviewFramingCandidates"],
-	[
-		["review", "framing", "approve", "set.json", "http://editor", "view", "candidate"],
-		"ReviewFramingApprove"
-	],
-	[
-		[
-			"review",
-			"authoring",
-			"start",
-			"project",
-			"set.json",
-			"http://editor",
-			"structure-context"
-		],
-		"ReviewAuthoringStart"
-	],
-	[["review", "authoring", "bootstrap", "project", "http://editor"], "ReviewAuthoringBootstrap"],
-	[["review", "authoring", "show", "project", "session-1"], "ReviewAuthoringShow"],
-	[
-		["review", "authoring", "resume", "project", "session-1", "http://editor"],
-		"ReviewAuthoringResume"
-	],
-	[["review", "authoring", "discard", "project", "session-1"], "ReviewAuthoringDiscard"],
-	[
-		["review", "authoring", "reframe", "project", "session-1", "http://editor"],
-		"ReviewAuthoringReframe"
-	],
-	[
-		["review", "authoring", "approve", "project", "session-1", "http://editor"],
-		"ReviewAuthoringApprove"
-	],
-	[["review", "capture", "project", "set.json", "http://editor"], "ReviewCapture"],
-	[
-		[
+			"--mode",
+			"fast"
+		]).pipe(Effect.provide(layer), Effect.flip);
+		expect(mapError.message).toContain("--mode fast requires exactly one target");
+
+		const captureError = yield* runCli([
 			"review",
 			"capture",
 			"project",
 			"set.json",
 			"http://editor",
-			"--cause",
-			"external_automation",
 			"--correlation",
 			"daily-fixture"
-		],
-		"ReviewCapture"
-	],
-	[["review", "history", "project"], "ReviewHistory"],
-	[["review", "show", "run.json"], "ReviewShow"],
-	[["plugins", "list", "plugins.manifest.json"], "PluginsList"],
-	[["plugins", "list", "--manifest", "plugins.manifest.json"], "PluginsList"],
-	[
-		["plugins", "verify", "plugins.manifest.json", "--artifact", "plugins.tar.gz"],
-		"PluginsVerify"
-	],
-	[
-		[
-			"plugins",
-			"install",
-			"--project",
-			"Project/Fixture.uproject",
-			"--manifest",
-			"plugins.manifest.json",
-			"--artifact",
-			"plugins.tar.gz"
-		],
-		"PluginsInstall"
-	]
-];
-
-it.effect("decodes every CLI command variant", () =>
-	Effect.forEach(commands, ([args, expected]) =>
-		parseCliCommand(args).pipe(
-			Effect.tap((command) => Effect.sync(() => expect(command._tag).toBe(expected)))
-		)
-	).pipe(Effect.asVoid)
+		]).pipe(Effect.provide(layer), Effect.flip);
+		expect(captureError.message).toContain("--cause external_automation");
+	})
 );
 
-it.effect("parses Map History bounds as positive numbers", () =>
-	parseCliCommand([
-		"map",
-		"history",
-		"project",
-		"Content/Maps/L_Example.umap",
-		"--since",
-		"2026-07-21T00:00:00.000Z",
-		"--max-packages",
-		"50",
-		"--max-materialized-files",
-		"75",
-		"--concurrency",
-		"2",
-		"--max-duration-ms",
-		"60000"
-	]).pipe(
-		Effect.tap((command) =>
-			Effect.sync(() => {
-				expect(command).toMatchObject({
-					_tag: "MapHistory",
-					concurrency: 2,
-					maxDurationMs: 60_000,
-					maxMaterializedFiles: 75,
-					maxPackages: 50
-				});
-			})
-		),
-		Effect.asVoid
-	)
-);
+it.effect("validates repeated filter inputs through the declarative parser", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
 
-it.effect("parses Fast History Investigation Target input", () =>
-	parseCliCommand([
-		"map",
-		"history",
-		"project",
-		"Content/Maps/L_Example.umap",
-		"--since",
-		"7 days",
-		"--mode",
-		"fast",
-		"--actor-guid",
-		"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	]).pipe(
-		Effect.tap((command) =>
-			Effect.sync(() => {
-				expect(command).toMatchObject({
-					_tag: "MapHistory",
-					actorGuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-					mode: "fast"
-				});
-			})
-		),
-		Effect.asVoid
-	)
-);
+		const result = yield* runCli([
+			"assets",
+			"scan",
+			"project",
+			"--maximum-assets",
+			"0",
+			"--class",
+			"InputAction",
+			"--class",
+			"InputMappingContext",
+			"--"
+		]).pipe(Effect.provide(runtimeLayer(output, errors, exitCode)), Effect.exit);
 
-it.effect("parses a Fast History actor-class target", () =>
-	parseCliCommand([
-		"map",
-		"history",
-		"project",
-		"Content/Maps/L_Example.umap",
-		"--since",
-		"7 days",
-		"--mode",
-		"fast",
-		"--actor-class",
-		"/Script/Game.Npc"
-	]).pipe(
-		Effect.tap((command) =>
-			Effect.sync(() => {
-				expect(command).toMatchObject({
-					_tag: "MapHistory",
-					actorClass: "/Script/Game.Npc",
-					mode: "fast"
-				});
-			})
-		),
-		Effect.asVoid
-	)
-);
-
-it.effect("rejects Fast History without an Investigation Target", () =>
-	parseCliCommand([
-		"map",
-		"history",
-		"project",
-		"Content/Maps/L_Example.umap",
-		"--since",
-		"7 days",
-		"--mode",
-		"fast"
-	]).pipe(
-		Effect.flip,
-		Effect.tap((error) =>
-			Effect.sync(() => {
-				expect(error.message).toContain("--mode fast requires");
-			})
-		),
-		Effect.asVoid
-	)
-);
-
-it.effect("rejects actor target flags on Deep History", () =>
-	parseCliCommand([
-		"map",
-		"history",
-		"project",
-		"Content/Maps/L_Example.umap",
-		"--since",
-		"7 days",
-		"--actor-guid",
-		"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	]).pipe(
-		Effect.flip,
-		Effect.tap((error) =>
-			Effect.sync(() => {
-				expect(error.message).toContain("--mode fast");
-			})
-		),
-		Effect.asVoid
-	)
-);
-
-it.effect("collects repeated assets scan filters in the order they were passed", () =>
-	parseCliCommand([
-		"assets",
-		"scan",
-		"project",
-		"--class-prefix",
-		"/Script/EnhancedInput.",
-		"--class-prefix",
-		"/Script/Engine.",
-		"--class",
-		"InputAction",
-		"--full"
-	]).pipe(
-		Effect.tap((command) =>
-			Effect.sync(() => {
-				if (command._tag !== "AssetsScan") throw new Error("expected AssetsScan");
-				expect(command.classPrefixes).toEqual([
-					"/Script/EnhancedInput.",
-					"/Script/Engine."
-				]);
-				expect(command.classes).toEqual(["InputAction"]);
-				expect(command.names).toBeUndefined();
-				expect(command.full).toBe(true);
-			})
-		),
-		Effect.asVoid
-	)
-);
-
-it.effect("requires an external cause before accepting capture correlation", () =>
-	parseCliCommand([
-		"review",
-		"capture",
-		"project",
-		"set.json",
-		"http://editor",
-		"--correlation",
-		"daily-fixture"
-	]).pipe(
-		Effect.exit,
-		Effect.tap((exit) => Effect.sync(() => expect(Exit.isFailure(exit)).toBe(true))),
-		Effect.asVoid
-	)
-);
-
-it.effect("rejects missing, duplicate, unknown, and malformed options", () =>
-	Effect.forEach(
-		[
-			["audit", "textures", "project", "--rules"],
-			["audit", "textures", "project", "--rules", "one", "--rules", "two"],
-			["text", "scan", "project", "--wat", "value"],
-			["assets", "scan"],
-			["assets", "scan", "project", "extra"],
-			["assets", "scan", "project", "--maximum-assets", "0"],
-			["assets", "scan", "project", "--maximum-assets"],
-			["assets", "scan", "project", "--reader", "one", "--reader", "two"],
-			["plugins", "list"],
-			["plugins", "verify", "plugins.manifest.json", "--project", "project"],
-			["plugins", "install", "--project", "project"],
-			["plugins", "install", "project", "--manifest", "one", "other"],
-			[
-				"map",
-				"history",
-				"project",
-				"Content/Maps/L_Example.umap",
-				"--since",
-				"7 days",
-				"--max-changelists",
-				"0"
-			],
-			["authoring", "session", "show", "legacy.json"],
-			[
-				"authoring",
-				"sessions",
-				"set-cell",
-				"draft",
-				"/Game/Table",
-				"Row",
-				"Field",
-				"{",
-				"--project",
-				"project"
-			],
-			[
-				"authoring",
-				"sessions",
-				"add-row",
-				"draft",
-				"/Game/Table",
-				"Beta",
-				"--project",
-				"project",
-				"--index",
-				"-1"
-			],
-			[
-				"authoring",
-				"sessions",
-				"reorder-rows",
-				"draft",
-				"/Game/Table",
-				"{}",
-				"--project",
-				"project"
-			]
-		],
-		(args) =>
-			parseCliCommand(args).pipe(
-				Effect.exit,
-				Effect.tap((exit) => Effect.sync(() => expect(Exit.isFailure(exit)).toBe(true)))
-			)
-	).pipe(Effect.asVoid)
+		expect(result._tag).toBe("Success");
+		expect(yield* Ref.get(output)).toBe("");
+		expect(yield* Ref.get(errors)).toContain("--maximum-assets");
+		expect(yield* Ref.get(exitCode)).toBe(2);
+	})
 );

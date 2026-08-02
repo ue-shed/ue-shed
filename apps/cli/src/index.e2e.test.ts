@@ -83,8 +83,7 @@ describe("ue-shed CLI process", () => {
 		const invalid = runCli(["not-a-command"]);
 		expect(invalid.status).toBe(2);
 		expect(invalid.stdout).toBe("");
-		expect(invalid.stderr).toContain("ue-shed: Unknown command: not-a-command");
-		expect(invalid.stderr).toContain("ue-shed authoring inspect");
+		expect(invalid.stderr).toContain('ue-shed: Unknown subcommand "not-a-command"');
 	}, 20_000);
 
 	it("inspects a real saved fixture asset through the native reader", () => {

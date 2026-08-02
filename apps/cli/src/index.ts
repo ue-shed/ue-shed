@@ -1,16 +1,18 @@
+import { NodeServices } from "@effect/platform-node";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
 import { Cause, Effect, Exit, Layer } from "effect";
-import { CliRuntime, CliRuntimeLive, executeCommand } from "./application.js";
-import { type CliUsageError, parseCliCommand } from "./command.js";
+import { CliCommandError, CliRuntime, CliRuntimeLive } from "./application.js";
+import { runCli } from "./command.js";
 
-export type CliError = CliUsageError | import("./application.js").CliCommandError;
+export type CliError = CliCommandError;
 
 export function main(args: readonly string[]): Effect.Effect<void, CliError, CliRuntime> {
-	return parseCliCommand(args).pipe(Effect.flatMap(executeCommand));
+	return runCli(args);
 }
 
-const CliLive = Layer.merge(
+const CliLive = Layer.mergeAll(
 	CliRuntimeLive,
+	NodeServices.layer,
 	runtimeObservabilityLayer({ serviceName: "ue-shed-cli", serviceVersion: "0.0.0" })
 );
 

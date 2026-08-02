@@ -19,6 +19,7 @@ it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 					Effect.as(
 						CliRuntime.of({
 							print: (value) => Ref.update(output, (current) => current + value),
+							printError: () => Effect.void,
 							setExitCode: () => Effect.void
 						})
 					)
@@ -28,12 +29,12 @@ it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 		);
 
 		yield* Effect.scoped(
-			executeCommand(CliCommand.cases.Help.make({})).pipe(Effect.provide(layer))
+			executeCommand(CliCommand.cases.Version.make({})).pipe(Effect.provide(layer))
 		);
 
 		expect(yield* Ref.get(acquired)).toBe(1);
 		expect(yield* Ref.get(finalized)).toBe(1);
-		expect(yield* Ref.get(output)).toContain("UE Shed");
+		expect(yield* Ref.get(output)).toContain("ue-shed");
 	})
 );
 
@@ -88,6 +89,7 @@ it.effect("executes the public plugin list command through the CLI runtime", () 
 				CliRuntime,
 				CliRuntime.of({
 					print: (value) => Ref.update(output, (current) => current + value),
+					printError: () => Effect.void,
 					setExitCode: () => Effect.void
 				})
 			);
@@ -111,6 +113,7 @@ it.effect("rejects invalid Map History time input before contacting Perforce", (
 			CliRuntime,
 			CliRuntime.of({
 				print: (value) => Ref.update(output, (current) => current + value),
+				printError: () => Effect.void,
 				setExitCode: () => Effect.void
 			})
 		);
@@ -134,6 +137,7 @@ it.effect("rejects Fast History path identity without both package and path", ()
 			CliRuntime,
 			CliRuntime.of({
 				print: (value) => Ref.update(output, (current) => current + value),
+				printError: () => Effect.void,
 				setExitCode: () => Effect.void
 			})
 		);

@@ -6,6 +6,7 @@ packages:
 
 catalog:
     "@effect/opentelemetry": "4.0.0-beta.98"
+    "@effect/platform-node": "4.0.0-beta.98"
     "@effect/vitest": "4.0.0-beta.98"
     "@opentelemetry/api": "^1.9.0"
     "@opentelemetry/api-logs": "^0.205.0"

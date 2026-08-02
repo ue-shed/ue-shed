@@ -1,17 +1,27 @@
-import { AuthoringValue } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { NodeServices } from "@effect/platform-node";
+import { AuthoringValue, CURRENT_PROTOCOL_VERSION } from "@ue-shed/protocol";
+import { Argument, CliError, CliOutput, Command, Flag } from "effect/unstable/cli";
+import { Cause, Console, Effect, Exit, Layer, Option, Schema } from "effect";
+import { CliCommandError, CliRuntime, executeCommand } from "./application.js";
 
-const Reader = { reader: Schema.optionalKey(Schema.String) };
 const Project = { projectRoot: Schema.String };
+const Reader = { reader: Schema.optionalKey(Schema.String) };
 const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
+const EditorPlayAction = Schema.Literals([
+	"status",
+	"start",
+	"simulate",
+	"pause",
+	"resume",
+	"stop"
+]);
 
 export const CliCommand = Schema.TaggedUnion({
-	Help: {},
 	Version: {},
 	Doctor: {},
 	EditorPlaySession: {
-		action: Schema.Literals(["status", "start", "simulate", "pause", "resume", "stop"]),
+		action: EditorPlayAction,
 		endpoint: Schema.String
 	},
 	AuditTextures: { ...Project, ruleFile: Schema.String, ...Reader },
@@ -147,844 +157,1067 @@ export const CliCommand = Schema.TaggedUnion({
 
 export type CliCommand = typeof CliCommand.Type;
 
-export class CliUsageError extends Schema.TaggedErrorClass<CliUsageError>()("CliUsageError", {
-	message: Schema.String
-}) {}
-
-export const help = `UE Shed — External tools for Unreal Engine development.
-
-Usage:
-  ue-shed audit textures <project-root> --rules <rule-file> [--reader <path>]
-  ue-shed authoring tables <project-root> [--reader <path>]
-  ue-shed authoring relationships <project-root> [--reader <path>]
-  ue-shed authoring join <project-root> <source-table> <reference-field> [--reader <path>]
-  ue-shed authoring catalog <project-root> [--endpoint <url>] [--reader <path>]
-  ue-shed authoring parity <project-root> <endpoint> [--reader <path>]
-  ue-shed authoring inspect <asset> [--reader <path>]
-  ue-shed authoring live tables <endpoint>
-  ue-shed authoring live inspect <endpoint> <table>
-  ue-shed authoring sessions list --project <project-root>
-  ue-shed authoring sessions create <asset> --project <project-root> [--id <session-id>] [--reader <path>]
-  ue-shed authoring sessions show|resume|close|discard|undo|redo <session-id> --project <project-root>
-  ue-shed authoring sessions set-cell <session-id> <table> <row-id> <field> <value-json> --project <project-root>
-  ue-shed authoring sessions add-row <session-id> <table> <row-name> --project <project-root> [--index <index>]
-  ue-shed authoring sessions duplicate-row <session-id> <table> <source-row-id> <row-name> --project <project-root> [--index <index>]
-  ue-shed authoring sessions remove-row <session-id> <table> <row-id> --project <project-root>
-  ue-shed authoring sessions rename-row <session-id> <table> <row-id> <row-name> --project <project-root>
-  ue-shed authoring sessions reorder-rows <session-id> <table> <row-ids-json> --project <project-root>
-  ue-shed authoring sessions review|validate|diff <session-id> --project <project-root>
-  ue-shed authoring sessions apply|reconcile|save <session-id> <endpoint> --project <project-root>
-  ue-shed assets scan <path> [--class <class>] [--class-prefix <prefix>] [--name <name>]
-                             [--maximum-assets <count>] [--full] [--reader <path>]
-  ue-shed text scan <project-root> [--reader <path>]
-  ue-shed text search <project-root> <query> [--reader <path>]
-  ue-shed input inspect <asset-or-project> [--reader <path>]
-  ue-shed map history <project-root> <map-path> --since <ISO-UTC-or-duration> [--until <ISO-UTC>]
-    [--mode deep|fast] [--actor-guid <guid>] [--actor-package <package>] [--actor-path <path>]
-    [--actor-class <class-path>]
-    [--max-changelists <n>] [--max-packages <n>] [--max-materialized-files <n>]
-    [--concurrency <n>] [--max-duration-ms <n>]
-  ue-shed review sets validate <review-set>
-	ue-shed review framing candidates <endpoint>
-	ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
-	ue-shed review authoring bootstrap <project-root> <endpoint>
-	ue-shed review authoring start <project-root> <review-set> <endpoint> <view-id>
-	ue-shed review authoring show|discard <project-root> <session-id>
-	ue-shed review authoring resume|reframe|approve <project-root> <session-id> <endpoint>
-	ue-shed review capture <project-root> <review-set> <endpoint> [--cause external_automation] [--correlation <id>]
-  ue-shed review history <project-root>
-  ue-shed review show <run-json>
-	  ue-shed plugins list <manifest> (or --manifest <manifest>)
-	  ue-shed plugins verify <manifest> [--artifact <archive>]
-  ue-shed plugins install --project <project-root-or-uproject> --manifest <manifest> [--artifact <archive>]
-  ue-shed editor play status|start|simulate|pause|resume|stop <endpoint>
-  ue-shed version
-  ue-shed doctor
-  ue-shed help
-
-The reader defaults to UE_SHED_UASSET_EXECUTABLE or uasset on PATH.
-
-assets scan takes a project root, a subdirectory, or one asset; anything below a project scans only
-itself. Quote leading-slash filters ('/Script/EnhancedInput.') so Git Bash on Windows does not
-rewrite them into a Windows path.`;
-
-interface ParsedOptions {
-	/** Options declared `flags`, present when passed. */
-	readonly flags: ReadonlySet<string>;
-	readonly positionals: readonly string[];
-	/** Options declared `repeatable`, in the order they were passed. */
-	readonly repeated: Readonly<Record<string, readonly string[]>>;
-	readonly values: Readonly<Record<string, string>>;
+function optionalFlag(name: string) {
+	return Flag.string(name).pipe(Flag.optional);
 }
 
-/** Options that take no value, or that may be passed more than once. Both must also be `allowed`. */
-interface OptionShape {
-	readonly flags?: readonly string[];
-	readonly repeatable?: readonly string[];
+function optionalValue<A>(value: Option.Option<A>): A | undefined {
+	return Option.isSome(value) ? value.value : undefined;
 }
 
-function usage(message: string): Effect.Effect<never, CliUsageError> {
-	return Effect.fail(new CliUsageError({ message }));
+function readerFields(reader: Option.Option<string>) {
+	const value = optionalValue(reader);
+	return value === undefined ? {} : { reader: value };
 }
 
-function parseOptions(
-	args: readonly string[],
-	allowed: readonly string[],
-	shape: OptionShape = {}
-): Effect.Effect<ParsedOptions, CliUsageError> {
-	return Effect.gen(function* () {
-		const values: Record<string, string> = {};
-		const repeated: Record<string, string[]> = {};
-		const flags = new Set<string>();
-		const positionals: string[] = [];
-		for (let index = 0; index < args.length; index += 1) {
-			const value = args[index];
-			if (value === undefined) continue;
-			if (!value.startsWith("--")) {
-				positionals.push(value);
-				continue;
-			}
-			if (!allowed.includes(value)) return yield* usage(`Unknown option: ${value}`);
-			if (shape.flags?.includes(value)) {
-				flags.add(value);
-				continue;
-			}
-			const repeatable = shape.repeatable?.includes(value) ?? false;
-			if (!repeatable && values[value] !== undefined)
-				return yield* usage(`${value} may only be provided once`);
-			const optionValue = args[index + 1];
-			if (optionValue === undefined || optionValue.startsWith("--")) {
-				return yield* usage(`${value} requires a value`);
-			}
-			if (repeatable) (repeated[value] ??= []).push(optionValue);
-			else values[value] = optionValue;
-			index += 1;
-		}
-		return { flags, positionals, repeated, values };
-	});
+function repeatedStringFlag(name: string) {
+	return Flag.string(name).pipe(Flag.atMost(Number.MAX_SAFE_INTEGER));
 }
 
-function exact(
-	values: readonly string[],
-	count: number,
-	message: string
-): Effect.Effect<readonly string[], CliUsageError> {
-	return values.length === count ? Effect.succeed(values) : usage(message);
+function positiveIntegerFlag(name: string, message: string) {
+	return Flag.integer(name).pipe(
+		Flag.filter(
+			(value) => value > 0,
+			() => message
+		)
+	);
 }
 
-function present(value: string | undefined): string {
-	if (value === undefined) throw new Error("CLI parser arity invariant was violated");
-	return value;
+function nonNegativeIntegerFlag(name: string, message: string) {
+	return Flag.integer(name).pipe(
+		Flag.filter(
+			(value) => value >= 0,
+			() => message
+		)
+	);
 }
 
-function parseValue(valueJson: string): Effect.Effect<typeof AuthoringValue.Type, CliUsageError> {
+function parseAuthoringValue(valueJson: string) {
 	return Effect.try({
 		try: () => JSON.parse(valueJson) as unknown,
-		catch: (cause) => new CliUsageError({ message: `Invalid value JSON: ${String(cause)}` })
+		catch: (cause) => new CliCommandError({ message: `Invalid value JSON: ${String(cause)}` })
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(AuthoringValue)),
 		Effect.mapError((cause) =>
-			cause instanceof CliUsageError
+			cause instanceof CliCommandError
 				? cause
-				: new CliUsageError({ message: `Invalid authoring value: ${String(cause)}` })
+				: new CliCommandError({ message: `Invalid authoring value: ${String(cause)}` })
 		)
 	);
 }
 
-function parseCount(value: string | undefined): Effect.Effect<number | undefined, CliUsageError> {
-	if (value === undefined) return Effect.succeed(undefined);
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed >= 1
-		? Effect.succeed(parsed)
-		: usage(`--maximum-assets requires a positive integer: ${value}`);
-}
-
-function parseIndex(value: string | undefined): Effect.Effect<number | undefined, CliUsageError> {
-	if (value === undefined) return Effect.succeed(undefined);
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed >= 0
-		? Effect.succeed(parsed)
-		: usage(`Invalid non-negative row index: ${value}`);
-}
-
-function parseRowIds(value: string): Effect.Effect<readonly string[], CliUsageError> {
+function parseRowIds(value: string) {
 	return Effect.try({
 		try: () => JSON.parse(value) as unknown,
-		catch: (cause) => new CliUsageError({ message: `Invalid row IDs JSON: ${String(cause)}` })
+		catch: (cause) => new CliCommandError({ message: `Invalid row IDs JSON: ${String(cause)}` })
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(Schema.String))),
 		Effect.mapError((cause) =>
-			cause instanceof CliUsageError
+			cause instanceof CliCommandError
 				? cause
-				: new CliUsageError({ message: `Invalid row IDs: ${String(cause)}` })
+				: new CliCommandError({ message: `Invalid row IDs: ${String(cause)}` })
 		)
 	);
 }
 
-function parsePositiveInteger(
-	value: string | undefined,
-	option: string
-): Effect.Effect<number | undefined, CliUsageError> {
-	if (value === undefined) return Effect.succeed(undefined);
-	const parsed = Number(value);
-	return Number.isSafeInteger(parsed) && parsed > 0
-		? Effect.succeed(parsed)
-		: usage(`${option} requires a positive integer`);
+function runModel(command: CliCommand): Effect.Effect<void, CliCommandError, CliRuntime> {
+	return executeCommand(command);
 }
 
-function parseMapHistory(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
-	return Effect.gen(function* () {
-		const parsed = yield* parseOptions(args, [
-			"--since",
-			"--until",
-			"--mode",
-			"--actor-class",
-			"--actor-guid",
-			"--actor-package",
-			"--actor-path",
-			"--max-changelists",
-			"--max-packages",
-			"--max-materialized-files",
-			"--concurrency",
-			"--max-duration-ms"
-		]);
-		const [projectRoot, mapPath] = yield* exact(
-			parsed.positionals,
-			2,
-			"map history requires exactly one project root and one map path"
+const version = `0.0.0 (protocol ${CURRENT_PROTOCOL_VERSION.major}.${CURRENT_PROTOCOL_VERSION.minor})`;
+
+const versionCommand = Command.make("version", {}, () =>
+	runModel(CliCommand.cases.Version.make({}))
+).pipe(Command.withDescription("Print the UE Shed and protocol versions."));
+
+const doctorCommand = Command.make("doctor", {}, () =>
+	runModel(CliCommand.cases.Doctor.make({}))
+).pipe(Command.withDescription("Report local service and capability health."));
+
+const playActions = ["status", "start", "simulate", "pause", "resume", "stop"] as const;
+type PlayAction = (typeof playActions)[number];
+
+function makePlayCommand(action: PlayAction) {
+	return Command.make(action, { endpoint: Argument.string("endpoint") }, ({ endpoint }) =>
+		runModel(
+			CliCommand.cases.EditorPlaySession.make({
+				action,
+				endpoint
+			})
+		)
+	).pipe(Command.withDescription(`Run the editor play-session ${action} operation.`));
+}
+
+const editorCommand = Command.make("editor").pipe(
+	Command.withDescription("Control a connected Unreal Editor session."),
+	Command.withSubcommands([
+		Command.make("play").pipe(
+			Command.withDescription("Inspect or control Play In Editor."),
+			Command.withSubcommands(playActions.map(makePlayCommand))
+		)
+	])
+);
+
+const readerFlag = optionalFlag("reader");
+
+const auditTexturesCommand = Command.make(
+	"textures",
+	{
+		projectRoot: Argument.string("project-root"),
+		ruleFile: Flag.string("rules"),
+		reader: readerFlag
+	},
+	({ projectRoot, ruleFile, reader }) =>
+		runModel(
+			CliCommand.cases.AuditTextures.make({
+				projectRoot,
+				ruleFile,
+				...readerFields(reader)
+			})
+		)
+).pipe(Command.withDescription("Audit saved Texture2D assets against rule definitions."));
+
+const auditCommand = Command.make("audit").pipe(
+	Command.withDescription("Run saved-asset audits."),
+	Command.withSubcommands([auditTexturesCommand])
+);
+
+const authoringTablesCommand = Command.make(
+	"tables",
+	{ projectRoot: Argument.string("project-root"), reader: readerFlag },
+	({ projectRoot, reader }) =>
+		runModel(CliCommand.cases.AuthoringTables.make({ projectRoot, ...readerFields(reader) }))
+).pipe(Command.withDescription("Discover saved DataTables."));
+
+const authoringRelationshipsCommand = Command.make(
+	"relationships",
+	{ projectRoot: Argument.string("project-root"), reader: readerFlag },
+	({ projectRoot, reader }) =>
+		runModel(
+			CliCommand.cases.AuthoringRelationships.make({ projectRoot, ...readerFields(reader) })
+		)
+).pipe(Command.withDescription("Resolve saved DataTable row references."));
+
+const authoringJoinCommand = Command.make(
+	"join",
+	{
+		projectRoot: Argument.string("project-root"),
+		sourceTableObjectPath: Argument.string("source-table"),
+		referenceFieldName: Argument.string("reference-field"),
+		reader: readerFlag
+	},
+	({ projectRoot, sourceTableObjectPath, referenceFieldName, reader }) =>
+		runModel(
+			CliCommand.cases.AuthoringJoin.make({
+				projectRoot,
+				referenceFieldName,
+				sourceTableObjectPath,
+				...readerFields(reader)
+			})
+		)
+).pipe(Command.withDescription("Build a read-only joined DataTable view."));
+
+const authoringCatalogCommand = Command.make(
+	"catalog",
+	{
+		projectRoot: Argument.string("project-root"),
+		endpoint: optionalFlag("endpoint"),
+		reader: readerFlag
+	},
+	({ projectRoot, endpoint, reader }) =>
+		Effect.gen(function* () {
+			const endpointValue = optionalValue(endpoint);
+			return yield* runModel(
+				CliCommand.cases.AuthoringCatalog.make({
+					projectRoot,
+					...(endpointValue === undefined ? {} : { endpoint: endpointValue }),
+					...readerFields(reader)
+				})
+			);
+		})
+).pipe(Command.withDescription("Discover saved and optionally live DataTables."));
+
+const authoringParityCommand = Command.make(
+	"parity",
+	{
+		projectRoot: Argument.string("project-root"),
+		endpoint: Argument.string("endpoint"),
+		reader: readerFlag
+	},
+	({ projectRoot, endpoint, reader }) =>
+		runModel(
+			CliCommand.cases.AuthoringParity.make({
+				endpoint,
+				projectRoot,
+				...readerFields(reader)
+			})
+		)
+).pipe(Command.withDescription("Compare saved and live authoring snapshots."));
+
+const authoringInspectCommand = Command.make(
+	"inspect",
+	{ assetPath: Argument.string("asset"), reader: readerFlag },
+	({ assetPath, reader }) =>
+		runModel(CliCommand.cases.AuthoringInspect.make({ assetPath, ...readerFields(reader) }))
+).pipe(Command.withDescription("Inspect one saved DataTable."));
+
+const authoringLiveTablesCommand = Command.make(
+	"tables",
+	{ endpoint: Argument.string("endpoint") },
+	({ endpoint }) => runModel(CliCommand.cases.AuthoringLiveTables.make({ endpoint }))
+).pipe(Command.withDescription("List live DataTables from Unreal."));
+
+const authoringLiveInspectCommand = Command.make(
+	"inspect",
+	{
+		endpoint: Argument.string("endpoint"),
+		tablePath: Argument.string("table")
+	},
+	({ endpoint, tablePath }) =>
+		runModel(CliCommand.cases.AuthoringLiveInspect.make({ endpoint, tablePath }))
+).pipe(Command.withDescription("Inspect one live DataTable."));
+
+const sessionProjectFlag = Flag.string("project");
+const sessionIdOption = optionalFlag("id");
+const sessionIndexOption = nonNegativeIntegerFlag("index", "Invalid non-negative row index").pipe(
+	Flag.optional
+);
+const sessionReaderOption = optionalFlag("reader");
+
+const sessionsListCommand = Command.make(
+	"list",
+	{
+		projectRoot: sessionProjectFlag,
+		id: sessionIdOption,
+		index: sessionIndexOption,
+		reader: sessionReaderOption
+	},
+	({ projectRoot }) => runModel(CliCommand.cases.SessionsList.make({ projectRoot }))
+).pipe(Command.withDescription("List durable authoring sessions."));
+
+const sessionsCreateCommand = Command.make(
+	"create",
+	{
+		assetPath: Argument.string("asset"),
+		projectRoot: sessionProjectFlag,
+		id: sessionIdOption,
+		index: sessionIndexOption,
+		reader: sessionReaderOption
+	},
+	({ assetPath, projectRoot, id, reader }) =>
+		Effect.gen(function* () {
+			const idValue = optionalValue(id);
+			return yield* runModel(
+				CliCommand.cases.SessionsCreate.make({
+					assetPath,
+					projectRoot,
+					...(idValue === undefined ? {} : { id: idValue }),
+					...readerFields(reader)
+				})
+			);
+		})
+).pipe(Command.withDescription("Create a durable authoring session."));
+
+function makeSessionLifecycleCommand(
+	action: "show" | "resume" | "close" | "discard" | "undo" | "redo"
+) {
+	return Command.make(
+		action,
+		{
+			sessionId: Argument.string("session-id"),
+			projectRoot: sessionProjectFlag,
+			id: sessionIdOption,
+			index: sessionIndexOption,
+			reader: sessionReaderOption
+		},
+		({ sessionId, projectRoot }) => {
+			const fields = { projectRoot, sessionId };
+			switch (action) {
+				case "show":
+					return runModel(CliCommand.cases.SessionsShow.make(fields));
+				case "resume":
+					return runModel(CliCommand.cases.SessionsResume.make(fields));
+				case "close":
+					return runModel(CliCommand.cases.SessionsClose.make(fields));
+				case "discard":
+					return runModel(CliCommand.cases.SessionsDiscard.make(fields));
+				case "undo":
+					return runModel(CliCommand.cases.SessionsUndo.make(fields));
+				default:
+					return runModel(CliCommand.cases.SessionsRedo.make(fields));
+			}
+		}
+	).pipe(Command.withDescription(`Run the authoring session ${action} operation.`));
+}
+
+function makeSessionReviewCommand(action: "review" | "validate" | "diff") {
+	return Command.make(
+		action,
+		{
+			sessionId: Argument.string("session-id"),
+			projectRoot: sessionProjectFlag,
+			id: sessionIdOption,
+			index: sessionIndexOption,
+			reader: sessionReaderOption
+		},
+		({ sessionId, projectRoot }) => {
+			const fields = { projectRoot, sessionId };
+			return action === "review"
+				? runModel(CliCommand.cases.SessionsReview.make(fields))
+				: action === "validate"
+					? runModel(CliCommand.cases.SessionsValidate.make(fields))
+					: runModel(CliCommand.cases.SessionsDiff.make(fields));
+		}
+	).pipe(Command.withDescription(`Run the authoring session ${action} operation.`));
+}
+
+const sessionsSetCellCommand = Command.make(
+	"set-cell",
+	{
+		sessionId: Argument.string("session-id"),
+		tablePath: Argument.string("table"),
+		rowId: Argument.string("row-id"),
+		fieldName: Argument.string("field"),
+		valueJson: Argument.string("value-json"),
+		projectRoot: sessionProjectFlag,
+		id: sessionIdOption,
+		index: sessionIndexOption,
+		reader: sessionReaderOption
+	},
+	({ sessionId, tablePath, rowId, fieldName, valueJson, projectRoot }) =>
+		parseAuthoringValue(valueJson).pipe(
+			Effect.flatMap((value) =>
+				runModel(
+					CliCommand.cases.SessionsSetCell.make({
+						fieldName,
+						projectRoot,
+						rowId,
+						sessionId,
+						tablePath,
+						value
+					})
+				)
+			)
+		)
+).pipe(Command.withDescription("Set one authoring session cell."));
+
+const sessionsAddRowCommand = Command.make(
+	"add-row",
+	{
+		sessionId: Argument.string("session-id"),
+		tablePath: Argument.string("table"),
+		rowName: Argument.string("row-name"),
+		projectRoot: sessionProjectFlag,
+		index: sessionIndexOption,
+		id: sessionIdOption,
+		reader: sessionReaderOption
+	},
+	({ sessionId, tablePath, rowName, projectRoot, index }) => {
+		const atIndex = optionalValue(index);
+		return runModel(
+			CliCommand.cases.SessionsAddRow.make({
+				projectRoot,
+				rowName,
+				sessionId,
+				tablePath,
+				...(atIndex === undefined ? {} : { atIndex })
+			})
 		);
-		const since = parsed.values["--since"];
-		if (since === undefined)
-			return yield* usage("map history requires --since <ISO-UTC-or-duration>");
-		const modeValue = parsed.values["--mode"];
-		const mode =
-			modeValue === undefined
-				? undefined
-				: modeValue === "deep" || modeValue === "fast"
-					? modeValue
-					: undefined;
-		if (modeValue !== undefined && mode === undefined) {
-			return yield* usage("map history --mode must be deep or fast");
+	}
+).pipe(Command.withDescription("Add a row to an authoring session."));
+
+const sessionsDuplicateRowCommand = Command.make(
+	"duplicate-row",
+	{
+		sessionId: Argument.string("session-id"),
+		tablePath: Argument.string("table"),
+		sourceRowId: Argument.string("source-row-id"),
+		rowName: Argument.string("row-name"),
+		projectRoot: sessionProjectFlag,
+		index: sessionIndexOption,
+		id: sessionIdOption,
+		reader: sessionReaderOption
+	},
+	({ sessionId, tablePath, sourceRowId, rowName, projectRoot, index }) => {
+		const atIndex = optionalValue(index);
+		return runModel(
+			CliCommand.cases.SessionsDuplicateRow.make({
+				projectRoot,
+				rowName,
+				sessionId,
+				sourceRowId,
+				tablePath,
+				...(atIndex === undefined ? {} : { atIndex })
+			})
+		);
+	}
+).pipe(Command.withDescription("Duplicate a row in an authoring session."));
+
+const sessionsRemoveRowCommand = Command.make(
+	"remove-row",
+	{
+		sessionId: Argument.string("session-id"),
+		tablePath: Argument.string("table"),
+		rowId: Argument.string("row-id"),
+		projectRoot: sessionProjectFlag,
+		id: sessionIdOption,
+		index: sessionIndexOption,
+		reader: sessionReaderOption
+	},
+	({ sessionId, tablePath, rowId, projectRoot }) =>
+		runModel(
+			CliCommand.cases.SessionsRemoveRow.make({ projectRoot, rowId, sessionId, tablePath })
+		)
+).pipe(Command.withDescription("Remove a row from an authoring session."));
+
+const sessionsRenameRowCommand = Command.make(
+	"rename-row",
+	{
+		sessionId: Argument.string("session-id"),
+		tablePath: Argument.string("table"),
+		rowId: Argument.string("row-id"),
+		rowName: Argument.string("row-name"),
+		projectRoot: sessionProjectFlag,
+		id: sessionIdOption,
+		index: sessionIndexOption,
+		reader: sessionReaderOption
+	},
+	({ sessionId, tablePath, rowId, rowName, projectRoot }) =>
+		runModel(
+			CliCommand.cases.SessionsRenameRow.make({
+				projectRoot,
+				rowId,
+				rowName,
+				sessionId,
+				tablePath
+			})
+		)
+).pipe(Command.withDescription("Rename a row in an authoring session."));
+
+const sessionsReorderRowsCommand = Command.make(
+	"reorder-rows",
+	{
+		sessionId: Argument.string("session-id"),
+		tablePath: Argument.string("table"),
+		rowIdsJson: Argument.string("row-ids-json"),
+		projectRoot: sessionProjectFlag,
+		id: sessionIdOption,
+		index: sessionIndexOption,
+		reader: sessionReaderOption
+	},
+	({ sessionId, tablePath, rowIdsJson, projectRoot }) =>
+		parseRowIds(rowIdsJson).pipe(
+			Effect.flatMap((rowIds) =>
+				runModel(
+					CliCommand.cases.SessionsReorderRows.make({
+						projectRoot,
+						rowIds,
+						sessionId,
+						tablePath
+					})
+				)
+			)
+		)
+).pipe(Command.withDescription("Reorder rows in an authoring session."));
+
+function makeSessionLiveCommand(action: "apply" | "reconcile" | "save") {
+	return Command.make(
+		action,
+		{
+			sessionId: Argument.string("session-id"),
+			endpoint: Argument.string("endpoint"),
+			projectRoot: sessionProjectFlag,
+			id: sessionIdOption,
+			index: sessionIndexOption,
+			reader: sessionReaderOption
+		},
+		({ sessionId, endpoint, projectRoot }) => {
+			const fields = { endpoint, projectRoot, sessionId };
+			return action === "apply"
+				? runModel(CliCommand.cases.SessionsApply.make(fields))
+				: action === "reconcile"
+					? runModel(CliCommand.cases.SessionsReconcile.make(fields))
+					: runModel(CliCommand.cases.SessionsSave.make(fields));
 		}
-		const actorGuid = parsed.values["--actor-guid"];
-		const actorPackage = parsed.values["--actor-package"];
-		const actorPath = parsed.values["--actor-path"];
-		const actorClass = parsed.values["--actor-class"];
+	).pipe(Command.withDescription(`Run the authoring session ${action} operation.`));
+}
+
+const sessionsCommand = Command.make("sessions").pipe(
+	Command.withDescription("Create and operate durable authoring sessions."),
+	Command.withSubcommands([
+		sessionsListCommand,
+		sessionsCreateCommand,
+		...(["show", "resume", "close", "discard", "undo", "redo"] as const).map(
+			makeSessionLifecycleCommand
+		),
+		sessionsSetCellCommand,
+		sessionsAddRowCommand,
+		sessionsDuplicateRowCommand,
+		sessionsRemoveRowCommand,
+		sessionsRenameRowCommand,
+		sessionsReorderRowsCommand,
+		...(["review", "validate", "diff"] as const).map(makeSessionReviewCommand),
+		...(["apply", "reconcile", "save"] as const).map(makeSessionLiveCommand)
+	])
+);
+
+const authoringCommand = Command.make("authoring").pipe(
+	Command.withDescription("Inspect, compare, and author DataTables."),
+	Command.withSubcommands([
+		authoringTablesCommand,
+		authoringRelationshipsCommand,
+		authoringJoinCommand,
+		authoringCatalogCommand,
+		authoringParityCommand,
+		authoringInspectCommand,
+		Command.make("live").pipe(
+			Command.withDescription("Read live authoring state from Unreal."),
+			Command.withSubcommands([authoringLiveTablesCommand, authoringLiveInspectCommand])
+		),
+		sessionsCommand
+	])
+);
+
+const assetsScanCommand = Command.make(
+	"scan",
+	{
+		path: Argument.string("path"),
+		classPrefixes: repeatedStringFlag("class-prefix"),
+		classes: repeatedStringFlag("class"),
+		names: repeatedStringFlag("name"),
+		maximumAssets: positiveIntegerFlag(
+			"maximum-assets",
+			"--maximum-assets requires a positive integer"
+		).pipe(Flag.optional),
+		full: Flag.boolean("full").pipe(Flag.optional),
+		reader: readerFlag
+	},
+	({ path, classPrefixes, classes, names, maximumAssets, full, reader }) => {
+		const maximumAssetsValue = optionalValue(maximumAssets);
+		const fullValue = optionalValue(full);
+		return runModel(
+			CliCommand.cases.AssetsScan.make({
+				path,
+				...(classPrefixes.length === 0 ? {} : { classPrefixes }),
+				...(classes.length === 0 ? {} : { classes }),
+				...(names.length === 0 ? {} : { names }),
+				...(maximumAssetsValue === undefined ? {} : { maximumAssets: maximumAssetsValue }),
+				...(fullValue === undefined ? {} : { full: fullValue }),
+				...readerFields(reader)
+			})
+		);
+	}
+).pipe(Command.withDescription("Scan saved assets under a project or explicit path."));
+
+const assetsCommand = Command.make("assets").pipe(
+	Command.withDescription("Inspect saved Unreal assets."),
+	Command.withSubcommands([assetsScanCommand])
+);
+
+const textScanCommand = Command.make(
+	"scan",
+	{ projectRoot: Argument.string("project-root"), reader: readerFlag },
+	({ projectRoot, reader }) =>
+		runModel(CliCommand.cases.TextScan.make({ projectRoot, ...readerFields(reader) }))
+).pipe(Command.withDescription("Build the saved player-facing text corpus."));
+
+const textSearchCommand = Command.make(
+	"search",
+	{
+		projectRoot: Argument.string("project-root"),
+		query: Argument.string("query").pipe(Argument.variadic({ min: 1 })),
+		reader: readerFlag
+	},
+	({ projectRoot, query, reader }) => {
+		const value = query.join(" ").trim();
+		return value.length === 0
+			? Effect.fail(
+					new CliCommandError({ message: "text search requires a non-empty query" })
+				)
+			: runModel(
+					CliCommand.cases.TextSearch.make({
+						projectRoot,
+						query: value,
+						...readerFields(reader)
+					})
+				);
+	}
+).pipe(Command.withDescription("Search the saved player-facing text corpus."));
+
+const textCommand = Command.make("text").pipe(
+	Command.withDescription("Inspect and search saved player-facing text."),
+	Command.withSubcommands([textScanCommand, textSearchCommand])
+);
+
+const inputInspectCommand = Command.make(
+	"inspect",
+	{ path: Argument.string("asset-or-project"), reader: readerFlag },
+	({ path, reader }) =>
+		runModel(CliCommand.cases.InputInspect.make({ path, ...readerFields(reader) }))
+).pipe(Command.withDescription("Inspect saved Enhanced Input assets."));
+
+const inputCommand = Command.make("input").pipe(
+	Command.withDescription("Inspect saved Enhanced Input assets."),
+	Command.withSubcommands([inputInspectCommand])
+);
+
+const mapHistoryCommand = Command.make(
+	"history",
+	{
+		projectRoot: Argument.string("project-root"),
+		mapPath: Argument.string("map-path"),
+		since: Flag.string("since"),
+		until: optionalFlag("until"),
+		mode: Flag.choice("mode", ["deep", "fast"]).pipe(Flag.optional),
+		actorGuid: optionalFlag("actor-guid"),
+		actorPackage: optionalFlag("actor-package"),
+		actorPath: optionalFlag("actor-path"),
+		actorClass: optionalFlag("actor-class"),
+		maxChangelists: positiveIntegerFlag(
+			"max-changelists",
+			"--max-changelists requires a positive integer"
+		).pipe(Flag.optional),
+		maxPackages: positiveIntegerFlag(
+			"max-packages",
+			"--max-packages requires a positive integer"
+		).pipe(Flag.optional),
+		maxMaterializedFiles: positiveIntegerFlag(
+			"max-materialized-files",
+			"--max-materialized-files requires a positive integer"
+		).pipe(Flag.optional),
+		concurrency: positiveIntegerFlag(
+			"concurrency",
+			"--concurrency requires a positive integer"
+		).pipe(Flag.optional),
+		maxDurationMs: positiveIntegerFlag(
+			"max-duration-ms",
+			"--max-duration-ms requires a positive integer"
+		).pipe(Flag.optional)
+	},
+	({
+		projectRoot,
+		mapPath,
+		since,
+		until,
+		mode,
+		actorGuid,
+		actorPackage,
+		actorPath,
+		actorClass,
+		maxChangelists,
+		maxPackages,
+		maxMaterializedFiles,
+		concurrency,
+		maxDurationMs
+	}) => {
+		const modeValue = optionalValue(mode);
+		const actorGuidValue = optionalValue(actorGuid);
+		const actorPackageValue = optionalValue(actorPackage);
+		const actorPathValue = optionalValue(actorPath);
+		const actorClassValue = optionalValue(actorClass);
+		const untilValue = optionalValue(until);
+		const concurrencyValue = optionalValue(concurrency);
+		const maxChangelistsValue = optionalValue(maxChangelists);
+		const maxDurationMsValue = optionalValue(maxDurationMs);
+		const maxMaterializedFilesValue = optionalValue(maxMaterializedFiles);
+		const maxPackagesValue = optionalValue(maxPackages);
 		const hasActorTarget =
-			actorGuid !== undefined ||
-			actorPackage !== undefined ||
-			actorPath !== undefined ||
-			actorClass !== undefined;
-		if ((mode ?? "deep") === "deep" && hasActorTarget) {
-			return yield* usage("map history Investigation Target flags require --mode fast");
+			actorGuidValue !== undefined ||
+			actorPackageValue !== undefined ||
+			actorPathValue !== undefined ||
+			actorClassValue !== undefined;
+		if ((modeValue ?? "deep") === "deep" && hasActorTarget) {
+			return Effect.fail(
+				new CliCommandError({
+					message: "map history Investigation Target flags require --mode fast"
+				})
+			);
 		}
-		if (mode === "fast") {
-			const hasGuidTarget = actorGuid !== undefined;
-			const hasPathTarget = actorPackage !== undefined || actorPath !== undefined;
-			const hasCompletePathTarget = actorPackage !== undefined && actorPath !== undefined;
+		if (modeValue === "fast") {
+			const hasGuidTarget = actorGuidValue !== undefined;
+			const hasPathTarget = actorPackageValue !== undefined || actorPathValue !== undefined;
+			const hasCompletePathTarget =
+				actorPackageValue !== undefined && actorPathValue !== undefined;
 			const targetKinds =
 				Number(hasGuidTarget) +
 				Number(hasCompletePathTarget) +
-				Number(actorClass !== undefined);
+				Number(actorClassValue !== undefined);
 			if (targetKinds !== 1 || (hasPathTarget && !hasCompletePathTarget)) {
-				return yield* usage(
-					"map history --mode fast requires exactly one target: --actor-guid <guid>, --actor-package <package> with --actor-path <path>, or --actor-class <class-path>"
+				return Effect.fail(
+					new CliCommandError({
+						message:
+							"map history --mode fast requires exactly one target: --actor-guid <guid>, --actor-package <package> with --actor-path <path>, or --actor-class <class-path>"
+					})
 				);
 			}
 		}
-		const concurrency = yield* parsePositiveInteger(
-			parsed.values["--concurrency"],
-			"--concurrency"
+		return runModel(
+			CliCommand.cases.MapHistory.make({
+				...(actorClassValue === undefined ? {} : { actorClass: actorClassValue }),
+				...(actorGuidValue === undefined ? {} : { actorGuid: actorGuidValue }),
+				...(actorPackageValue === undefined ? {} : { actorPackage: actorPackageValue }),
+				...(actorPathValue === undefined ? {} : { actorPath: actorPathValue }),
+				...(concurrencyValue === undefined ? {} : { concurrency: concurrencyValue }),
+				mapPath,
+				...(maxChangelistsValue === undefined
+					? {}
+					: { maxChangelists: maxChangelistsValue }),
+				...(maxDurationMsValue === undefined ? {} : { maxDurationMs: maxDurationMsValue }),
+				...(maxMaterializedFilesValue === undefined
+					? {}
+					: { maxMaterializedFiles: maxMaterializedFilesValue }),
+				...(maxPackagesValue === undefined ? {} : { maxPackages: maxPackagesValue }),
+				...(modeValue === undefined ? {} : { mode: modeValue }),
+				projectRoot,
+				since,
+				...(untilValue === undefined ? {} : { until: untilValue })
+			})
 		);
-		const maxChangelists = yield* parsePositiveInteger(
-			parsed.values["--max-changelists"],
-			"--max-changelists"
-		);
-		const maxDurationMs = yield* parsePositiveInteger(
-			parsed.values["--max-duration-ms"],
-			"--max-duration-ms"
-		);
-		const maxMaterializedFiles = yield* parsePositiveInteger(
-			parsed.values["--max-materialized-files"],
-			"--max-materialized-files"
-		);
-		const maxPackages = yield* parsePositiveInteger(
-			parsed.values["--max-packages"],
-			"--max-packages"
-		);
-		return CliCommand.cases.MapHistory.make({
-			...(actorClass === undefined ? {} : { actorClass }),
-			...(actorGuid === undefined ? {} : { actorGuid }),
-			...(actorPackage === undefined ? {} : { actorPackage }),
-			...(actorPath === undefined ? {} : { actorPath }),
-			...(concurrency === undefined ? {} : { concurrency }),
-			mapPath: present(mapPath),
-			...(maxChangelists === undefined ? {} : { maxChangelists }),
-			...(maxDurationMs === undefined ? {} : { maxDurationMs }),
-			...(maxMaterializedFiles === undefined ? {} : { maxMaterializedFiles }),
-			...(maxPackages === undefined ? {} : { maxPackages }),
-			...(mode === undefined ? {} : { mode }),
-			projectRoot: present(projectRoot),
-			since,
-			...(parsed.values["--until"] === undefined ? {} : { until: parsed.values["--until"] })
-		});
-	});
+	}
+).pipe(Command.withDescription("Read Perforce-backed saved map history."));
+
+const mapCommand = Command.make("map").pipe(
+	Command.withDescription("Inspect saved map history."),
+	Command.withSubcommands([mapHistoryCommand])
+);
+
+const reviewSetValidateCommand = Command.make(
+	"validate",
+	{ reviewSetPath: Argument.string("review-set") },
+	({ reviewSetPath }) => runModel(CliCommand.cases.ReviewSetValidate.make({ reviewSetPath }))
+).pipe(Command.withDescription("Validate a Review Set document."));
+
+const reviewFramingCandidatesCommand = Command.make(
+	"candidates",
+	{ endpoint: Argument.string("endpoint") },
+	({ endpoint }) => runModel(CliCommand.cases.ReviewFramingCandidates.make({ endpoint }))
+).pipe(Command.withDescription("List live framing candidates."));
+
+const reviewFramingApproveCommand = Command.make(
+	"approve",
+	{
+		reviewSetPath: Argument.string("review-set"),
+		endpoint: Argument.string("endpoint"),
+		viewId: Argument.string("view-id"),
+		candidateId: Argument.string("candidate-id")
+	},
+	({ reviewSetPath, endpoint, viewId, candidateId }) =>
+		runModel(
+			CliCommand.cases.ReviewFramingApprove.make({
+				candidateId,
+				endpoint,
+				reviewSetPath,
+				viewId
+			})
+		)
+).pipe(Command.withDescription("Approve a live framing candidate."));
+
+const reviewAuthoringBootstrapCommand = Command.make(
+	"bootstrap",
+	{ projectRoot: Argument.string("project-root"), endpoint: Argument.string("endpoint") },
+	({ projectRoot, endpoint }) =>
+		runModel(CliCommand.cases.ReviewAuthoringBootstrap.make({ endpoint, projectRoot }))
+).pipe(Command.withDescription("Bootstrap a Review authoring session."));
+
+const reviewAuthoringStartCommand = Command.make(
+	"start",
+	{
+		projectRoot: Argument.string("project-root"),
+		reviewSetPath: Argument.string("review-set"),
+		endpoint: Argument.string("endpoint"),
+		viewId: Argument.string("view-id")
+	},
+	({ projectRoot, reviewSetPath, endpoint, viewId }) =>
+		runModel(
+			CliCommand.cases.ReviewAuthoringStart.make({
+				endpoint,
+				projectRoot,
+				reviewSetPath,
+				viewId
+			})
+		)
+).pipe(Command.withDescription("Start Review authoring for one View."));
+
+function makeReviewAuthoringLocalCommand(action: "show" | "discard") {
+	return Command.make(
+		action,
+		{
+			projectRoot: Argument.string("project-root"),
+			sessionId: Argument.string("session-id")
+		},
+		({ projectRoot, sessionId }) => {
+			const fields = { projectRoot, sessionId };
+			return action === "show"
+				? runModel(CliCommand.cases.ReviewAuthoringShow.make(fields))
+				: runModel(CliCommand.cases.ReviewAuthoringDiscard.make(fields));
+		}
+	).pipe(Command.withDescription(`Run Review authoring ${action}.`));
 }
 
-function parseSessions(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
-	return Effect.gen(function* () {
-		const [action, ...rest] = args;
-		const parsed = yield* parseOptions(rest, ["--project", "--id", "--index", "--reader"]);
-		const projectRoot = parsed.values["--project"];
-		if (!action || !projectRoot) return yield* usage(`sessions ${action} requires --project`);
-		const p = parsed.positionals;
-		if (action === "list") {
-			yield* exact(p, 0, "sessions list has unexpected arguments");
-			return CliCommand.cases.SessionsList.make({ projectRoot });
+function makeReviewAuthoringLiveCommand(action: "resume" | "reframe" | "approve") {
+	return Command.make(
+		action,
+		{
+			projectRoot: Argument.string("project-root"),
+			sessionId: Argument.string("session-id"),
+			endpoint: Argument.string("endpoint")
+		},
+		({ projectRoot, sessionId, endpoint }) => {
+			const fields = { endpoint, projectRoot, sessionId };
+			return action === "resume"
+				? runModel(CliCommand.cases.ReviewAuthoringResume.make(fields))
+				: action === "reframe"
+					? runModel(CliCommand.cases.ReviewAuthoringReframe.make(fields))
+					: runModel(CliCommand.cases.ReviewAuthoringApprove.make(fields));
 		}
-		if (action === "create") {
-			const [assetPath] = yield* exact(
-				p,
-				1,
-				"sessions create requires exactly one saved DataTable asset"
-			);
-			return CliCommand.cases.SessionsCreate.make({
-				assetPath: present(assetPath),
-				projectRoot,
-				...(parsed.values["--id"] ? { id: parsed.values["--id"] } : {}),
-				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
-			});
-		}
-		if (["show", "resume", "close", "discard", "undo", "redo"].includes(action)) {
-			const [sessionId] = yield* exact(
-				p,
-				1,
-				`sessions ${action} requires exactly one session id`
-			);
-			const fields = { projectRoot, sessionId: present(sessionId) };
-			switch (action) {
-				case "show":
-					return CliCommand.cases.SessionsShow.make(fields);
-				case "resume":
-					return CliCommand.cases.SessionsResume.make(fields);
-				case "close":
-					return CliCommand.cases.SessionsClose.make(fields);
-				case "discard":
-					return CliCommand.cases.SessionsDiscard.make(fields);
-				case "undo":
-					return CliCommand.cases.SessionsUndo.make(fields);
-				default:
-					return CliCommand.cases.SessionsRedo.make(fields);
-			}
-		}
-		if (["review", "validate", "diff"].includes(action)) {
-			const [sessionId] = yield* exact(
-				p,
-				1,
-				`sessions ${action} requires exactly one session id`
-			);
-			const fields = { projectRoot, sessionId: present(sessionId) };
-			return action === "review"
-				? CliCommand.cases.SessionsReview.make(fields)
-				: action === "validate"
-					? CliCommand.cases.SessionsValidate.make(fields)
-					: CliCommand.cases.SessionsDiff.make(fields);
-		}
-		if (action === "set-cell") {
-			const [sessionId, tablePath, rowId, fieldName, valueJson] = yield* exact(
-				p,
-				5,
-				"sessions set-cell requires session, table, row, field, and value JSON"
-			);
-			return CliCommand.cases.SessionsSetCell.make({
-				fieldName: present(fieldName),
-				projectRoot,
-				rowId: present(rowId),
-				sessionId: present(sessionId),
-				tablePath: present(tablePath),
-				value: yield* parseValue(present(valueJson))
-			});
-		}
-		if (action === "add-row") {
-			const [sessionId, tablePath, rowName] = yield* exact(
-				p,
-				3,
-				"sessions add-row requires session, table, and row name"
-			);
-			const atIndex = yield* parseIndex(parsed.values["--index"]);
-			return CliCommand.cases.SessionsAddRow.make({
-				projectRoot,
-				rowName: present(rowName),
-				sessionId: present(sessionId),
-				tablePath: present(tablePath),
-				...(atIndex === undefined ? {} : { atIndex })
-			});
-		}
-		if (action === "duplicate-row") {
-			const [sessionId, tablePath, sourceRowId, rowName] = yield* exact(
-				p,
-				4,
-				"sessions duplicate-row requires session, table, source row id, and row name"
-			);
-			const atIndex = yield* parseIndex(parsed.values["--index"]);
-			return CliCommand.cases.SessionsDuplicateRow.make({
-				projectRoot,
-				rowName: present(rowName),
-				sessionId: present(sessionId),
-				sourceRowId: present(sourceRowId),
-				tablePath: present(tablePath),
-				...(atIndex === undefined ? {} : { atIndex })
-			});
-		}
-		if (action === "remove-row") {
-			const [sessionId, tablePath, rowId] = yield* exact(
-				p,
-				3,
-				"sessions remove-row requires session, table, and row id"
-			);
-			return CliCommand.cases.SessionsRemoveRow.make({
-				projectRoot,
-				rowId: present(rowId),
-				sessionId: present(sessionId),
-				tablePath: present(tablePath)
-			});
-		}
-		if (action === "rename-row") {
-			const [sessionId, tablePath, rowId, rowName] = yield* exact(
-				p,
-				4,
-				"sessions rename-row requires session, table, row id, and row name"
-			);
-			return CliCommand.cases.SessionsRenameRow.make({
-				projectRoot,
-				rowId: present(rowId),
-				rowName: present(rowName),
-				sessionId: present(sessionId),
-				tablePath: present(tablePath)
-			});
-		}
-		if (action === "reorder-rows") {
-			const [sessionId, tablePath, rowIdsJson] = yield* exact(
-				p,
-				3,
-				"sessions reorder-rows requires session, table, and row IDs JSON"
-			);
-			return CliCommand.cases.SessionsReorderRows.make({
-				projectRoot,
-				rowIds: yield* parseRowIds(present(rowIdsJson)),
-				sessionId: present(sessionId),
-				tablePath: present(tablePath)
-			});
-		}
-		if (["apply", "reconcile", "save"].includes(action)) {
-			const [sessionId, endpoint] = yield* exact(
-				p,
-				2,
-				`sessions ${action} requires session id and endpoint`
-			);
-			const fields = {
-				endpoint: present(endpoint),
-				projectRoot,
-				sessionId: present(sessionId)
-			};
-			return action === "apply"
-				? CliCommand.cases.SessionsApply.make(fields)
-				: action === "reconcile"
-					? CliCommand.cases.SessionsReconcile.make(fields)
-					: CliCommand.cases.SessionsSave.make(fields);
-		}
-		return yield* usage(`Unknown authoring sessions command: ${action}`);
-	});
+	).pipe(Command.withDescription(`Run Review authoring ${action}.`));
 }
 
-function parseAuthoring(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
-	return Effect.gen(function* () {
-		const [area, action, ...rest] = args;
-		if (area === "sessions") return yield* parseSessions([action ?? "", ...rest]);
-		const parsed = yield* parseOptions([action ?? "", ...rest], ["--reader", "--endpoint"]);
-		const p = parsed.positionals.filter((value, index) => index > 0 || value !== "");
-		const nested = p.slice(1);
-		const reader = parsed.values["--reader"];
-		const withReader = reader ? { reader } : {};
-		if (area === "tables") {
-			const [projectRoot] = yield* exact(p, 1, "authoring tables requires a project root");
-			return CliCommand.cases.AuthoringTables.make({
-				projectRoot: present(projectRoot),
-				...withReader
-			});
-		}
-		if (area === "relationships") {
-			const [projectRoot] = yield* exact(
-				p,
-				1,
-				"authoring relationships requires a project root"
+const reviewCaptureCommand = Command.make(
+	"capture",
+	{
+		projectRoot: Argument.string("project-root"),
+		reviewSetPath: Argument.string("review-set"),
+		endpoint: Argument.string("endpoint"),
+		cause: Flag.choice("cause", ["external_automation"]).pipe(Flag.optional),
+		correlationId: optionalFlag("correlation")
+	},
+	({ projectRoot, reviewSetPath, endpoint, cause, correlationId }) => {
+		const causeValue = optionalValue(cause);
+		const correlationValue = optionalValue(correlationId);
+		if (correlationValue !== undefined && causeValue === undefined) {
+			return Effect.fail(
+				new CliCommandError({
+					message: "review capture --correlation requires --cause external_automation"
+				})
 			);
-			return CliCommand.cases.AuthoringRelationships.make({
-				projectRoot: present(projectRoot),
-				...withReader
-			});
 		}
-		if (area === "join") {
-			const [projectRoot, sourceTableObjectPath, referenceFieldName] = yield* exact(
-				p,
-				3,
-				"authoring join requires a project root, source table, and reference field"
-			);
-			return CliCommand.cases.AuthoringJoin.make({
-				projectRoot: present(projectRoot),
-				referenceFieldName: present(referenceFieldName),
-				sourceTableObjectPath: present(sourceTableObjectPath),
-				...withReader
-			});
-		}
-		if (area === "catalog") {
-			const [projectRoot] = yield* exact(p, 1, "authoring catalog requires a project root");
-			return CliCommand.cases.AuthoringCatalog.make({
-				projectRoot: present(projectRoot),
-				...(parsed.values["--endpoint"] ? { endpoint: parsed.values["--endpoint"] } : {}),
-				...withReader
-			});
-		}
-		if (area === "parity") {
-			const [projectRoot, endpoint] = yield* exact(
-				p,
-				2,
-				"authoring parity requires a project root and live endpoint"
-			);
-			return CliCommand.cases.AuthoringParity.make({
-				endpoint: present(endpoint),
-				projectRoot: present(projectRoot),
-				...withReader
-			});
-		}
-		if (area === "inspect") {
-			const [assetPath] = yield* exact(p, 1, "authoring inspect requires an asset path");
-			return CliCommand.cases.AuthoringInspect.make({
-				assetPath: present(assetPath),
-				...withReader
-			});
-		}
-		if (area === "live" && action === "tables") {
-			const [endpoint] = yield* exact(nested, 1, "live tables requires an endpoint");
-			return CliCommand.cases.AuthoringLiveTables.make({ endpoint: present(endpoint) });
-		}
-		if (area === "live" && action === "inspect") {
-			const [endpoint, tablePath] = yield* exact(
-				nested,
-				2,
-				"live inspect requires endpoint and table"
-			);
-			return CliCommand.cases.AuthoringLiveInspect.make({
-				endpoint: present(endpoint),
-				tablePath: present(tablePath)
-			});
-		}
-		return yield* usage(`Unknown authoring command\n\n${help}`);
-	});
-}
-
-function parsePlugins(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
-	return Effect.gen(function* () {
-		const [action, ...rest] = args;
-		const parsed = yield* parseOptions(rest, ["--artifact", "--manifest", "--project"]);
-		const [positional] = parsed.positionals;
-		const manifestPath = parsed.values["--manifest"] ?? positional;
-		if (parsed.values["--manifest"] !== undefined && positional !== undefined)
-			return yield* usage(
-				"plugins accepts the manifest either positionally or with --manifest, not both"
-			);
-		if (action === "list") {
-			if (parsed.values["--artifact"] || parsed.values["--project"])
-				return yield* usage("plugins list only accepts a manifest path");
-			if (!manifestPath) return yield* usage("plugins list requires a manifest path");
-			if (parsed.positionals.length > 1)
-				return yield* usage("plugins list has unexpected arguments");
-			return CliCommand.cases.PluginsList.make({ manifestPath });
-		}
-		if (action === "verify") {
-			if (parsed.values["--project"])
-				return yield* usage("plugins verify does not accept --project");
-			if (!manifestPath) return yield* usage("plugins verify requires a manifest path");
-			if (parsed.positionals.length > 1)
-				return yield* usage("plugins verify has unexpected arguments");
-			return CliCommand.cases.PluginsVerify.make({
-				...(parsed.values["--artifact"]
-					? { artifactPath: parsed.values["--artifact"] }
-					: {}),
-				manifestPath
-			});
-		}
-		if (action === "install") {
-			const projectRoot = parsed.values["--project"] ?? positional;
-			if (parsed.values["--project"] !== undefined && positional !== undefined)
-				return yield* usage(
-					"plugins install accepts the project either positionally or with --project, not both"
-				);
-			if (!projectRoot)
-				return yield* usage(
-					"plugins install requires --project <project-root-or-uproject>"
-				);
-			if (!parsed.values["--manifest"])
-				return yield* usage("plugins install requires --manifest <manifest>");
-			if (parsed.positionals.length > 1)
-				return yield* usage("plugins install has unexpected arguments");
-			return CliCommand.cases.PluginsInstall.make({
-				...(parsed.values["--artifact"]
-					? { artifactPath: parsed.values["--artifact"] }
-					: {}),
-				manifestPath: parsed.values["--manifest"],
-				projectRoot
-			});
-		}
-		return yield* usage(`Unknown plugins command: ${action ?? ""}\n\n${help}`);
-	});
-}
-
-export function parseCliCommand(args: readonly string[]): Effect.Effect<CliCommand, CliUsageError> {
-	return Effect.gen(function* () {
-		const [command, ...rest] = args;
-		if (command === undefined || ["help", "--help", "-h"].includes(command))
-			return CliCommand.cases.Help.make({});
-		if (["version", "--version", "-v"].includes(command))
-			return CliCommand.cases.Version.make({});
-		if (command === "doctor") return CliCommand.cases.Doctor.make({});
-		if (command === "editor") {
-			const [area, action, endpoint, ...extra] = rest;
-			if (
-				area !== "play" ||
-				!action ||
-				!["status", "start", "simulate", "pause", "resume", "stop"].includes(action) ||
-				!endpoint ||
-				extra.length > 0
-			) {
-				return yield* usage(
-					"editor play requires status, start, simulate, pause, resume, or stop and one endpoint"
-				);
-			}
-			return CliCommand.cases.EditorPlaySession.make({
-				action: yield* Schema.decodeUnknownEffect(
-					CliCommand.cases.EditorPlaySession.fields.action
-				)(action).pipe(
-					Effect.mapError(
-						() => new CliUsageError({ message: `Unknown play action: ${action}` })
-					)
-				),
-				endpoint
-			});
-		}
-		if (command === "authoring") return yield* parseAuthoring(rest);
-		if (command === "plugins") return yield* parsePlugins(rest);
-		if (command === "audit") {
-			const [kind, projectRoot, ...flags] = rest;
-			if (kind !== "textures" || !projectRoot)
-				return yield* usage(`audit textures requires a project root\n\n${help}`);
-			const parsed = yield* parseOptions(flags, ["--rules", "--reader"]);
-			if (parsed.positionals.length > 0)
-				return yield* usage(`Unknown audit option: ${parsed.positionals[0]}`);
-			const ruleFile = parsed.values["--rules"];
-			if (!ruleFile) return yield* usage("audit textures requires --rules <rule-file>");
-			return CliCommand.cases.AuditTextures.make({
+		return runModel(
+			CliCommand.cases.ReviewCapture.make({
+				endpoint,
 				projectRoot,
-				ruleFile,
-				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
-			});
-		}
-		if (command === "assets") {
-			const parsed = yield* parseOptions(
-				rest,
-				["--class", "--class-prefix", "--full", "--maximum-assets", "--name", "--reader"],
-				{
-					flags: ["--full"],
-					repeatable: ["--class", "--class-prefix", "--name"]
-				}
+				reviewSetPath,
+				...(causeValue === undefined ? {} : { cause: causeValue }),
+				...(correlationValue === undefined ? {} : { correlationId: correlationValue })
+			})
+		);
+	}
+).pipe(Command.withDescription("Capture a Review Set run."));
+
+const reviewHistoryCommand = Command.make(
+	"history",
+	{ projectRoot: Argument.string("project-root") },
+	({ projectRoot }) => runModel(CliCommand.cases.ReviewHistory.make({ projectRoot }))
+).pipe(Command.withDescription("List local Review capture history."));
+
+const reviewShowCommand = Command.make(
+	"show",
+	{ runPath: Argument.string("run-json") },
+	({ runPath }) => runModel(CliCommand.cases.ReviewShow.make({ runPath }))
+).pipe(Command.withDescription("Show one Review capture run."));
+
+const reviewCommand = Command.make("review").pipe(
+	Command.withDescription("Author and inspect Map Review evidence."),
+	Command.withSubcommands([
+		Command.make("sets").pipe(
+			Command.withDescription("Validate Review Set documents."),
+			Command.withSubcommands([reviewSetValidateCommand])
+		),
+		Command.make("framing").pipe(
+			Command.withDescription("Inspect and approve live framing."),
+			Command.withSubcommands([reviewFramingCandidatesCommand, reviewFramingApproveCommand])
+		),
+		Command.make("authoring").pipe(
+			Command.withDescription("Manage Review authoring sessions."),
+			Command.withSubcommands([
+				reviewAuthoringStartCommand,
+				reviewAuthoringBootstrapCommand,
+				...(["show", "discard"] as const).map(makeReviewAuthoringLocalCommand),
+				...(["resume", "reframe", "approve"] as const).map(makeReviewAuthoringLiveCommand)
+			])
+		),
+		reviewCaptureCommand,
+		reviewHistoryCommand,
+		reviewShowCommand
+	])
+);
+
+const pluginManifestArgument = Argument.string("manifest").pipe(Argument.optional);
+const pluginManifestFlag = optionalFlag("manifest");
+const pluginArtifactFlag = optionalFlag("artifact");
+const pluginProjectFlag = optionalFlag("project");
+
+function resolvePluginPath(
+	positional: Option.Option<string>,
+	flag: Option.Option<string>,
+	message: string
+) {
+	const positionalValue = optionalValue(positional);
+	const flagValue = optionalValue(flag);
+	if (positionalValue !== undefined && flagValue !== undefined) {
+		return Effect.fail(new CliCommandError({ message }));
+	}
+	const value = positionalValue ?? flagValue;
+	return value === undefined
+		? Effect.fail(new CliCommandError({ message }))
+		: Effect.succeed(value);
+}
+
+const pluginsListCommand = Command.make(
+	"list",
+	{
+		manifest: pluginManifestArgument,
+		manifestFlag: pluginManifestFlag,
+		artifact: pluginArtifactFlag,
+		project: pluginProjectFlag
+	},
+	({ manifest, manifestFlag, artifact, project }) =>
+		Effect.gen(function* () {
+			if (optionalValue(artifact) !== undefined || optionalValue(project) !== undefined) {
+				return yield* Effect.fail(
+					new CliCommandError({ message: "plugins list only accepts a manifest path" })
+				);
+			}
+			const manifestPath = yield* resolvePluginPath(
+				manifest,
+				manifestFlag,
+				"plugins list requires a manifest path"
 			);
-			const [action, path] = parsed.positionals;
-			if (action !== "scan" || !path)
-				return yield* usage(`assets requires scan <path>\n\n${help}`);
-			yield* exact(parsed.positionals.slice(2), 0, "assets scan has unexpected arguments");
-			const maximumAssets = yield* parseCount(parsed.values["--maximum-assets"]);
-			const classes = parsed.repeated["--class"];
-			const classPrefixes = parsed.repeated["--class-prefix"];
-			const names = parsed.repeated["--name"];
-			return CliCommand.cases.AssetsScan.make({
-				path,
-				...(classes ? { classes } : {}),
-				...(classPrefixes ? { classPrefixes } : {}),
-				...(names ? { names } : {}),
-				...(maximumAssets === undefined ? {} : { maximumAssets }),
-				...(parsed.flags.has("--full") ? { full: true } : {}),
-				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
-			});
+			return yield* runModel(CliCommand.cases.PluginsList.make({ manifestPath }));
+		})
+).pipe(Command.withDescription("List plugins in a release manifest."));
+
+const pluginsVerifyCommand = Command.make(
+	"verify",
+	{
+		manifest: pluginManifestArgument,
+		manifestFlag: pluginManifestFlag,
+		artifact: pluginArtifactFlag,
+		project: pluginProjectFlag
+	},
+	({ manifest, manifestFlag, artifact, project }) =>
+		Effect.gen(function* () {
+			const projectValue = optionalValue(project);
+			const artifactValue = optionalValue(artifact);
+			if (projectValue !== undefined) {
+				return yield* Effect.fail(
+					new CliCommandError({ message: "plugins verify does not accept --project" })
+				);
+			}
+			const manifestPath = yield* resolvePluginPath(
+				manifest,
+				manifestFlag,
+				"plugins verify requires a manifest path"
+			);
+			return yield* runModel(
+				CliCommand.cases.PluginsVerify.make({
+					manifestPath,
+					...(artifactValue === undefined ? {} : { artifactPath: artifactValue })
+				})
+			);
+		})
+).pipe(Command.withDescription("Verify a plugin release manifest and artifact."));
+
+const pluginsInstallCommand = Command.make(
+	"install",
+	{
+		project: Argument.string("project").pipe(Argument.optional),
+		projectFlag: pluginProjectFlag,
+		manifest: Flag.string("manifest"),
+		artifact: pluginArtifactFlag
+	},
+	({ project, projectFlag, manifest, artifact }) =>
+		Effect.gen(function* () {
+			const projectRoot = yield* resolvePluginPath(
+				project,
+				projectFlag,
+				"plugins install requires --project <project-root-or-uproject>"
+			);
+			const artifactValue = optionalValue(artifact);
+			return yield* runModel(
+				CliCommand.cases.PluginsInstall.make({
+					manifestPath: manifest,
+					projectRoot,
+					...(artifactValue === undefined ? {} : { artifactPath: artifactValue })
+				})
+			);
+		})
+).pipe(Command.withDescription("Install a plugin bundle into a project."));
+
+const pluginsCommand = Command.make("plugins").pipe(
+	Command.withDescription("Inspect, verify, and install plugin bundles."),
+	Command.withSubcommands([pluginsListCommand, pluginsVerifyCommand, pluginsInstallCommand])
+);
+
+export const cliCommand = Command.make("ue-shed").pipe(
+	Command.withDescription("UE Shed — External tools for Unreal Engine development."),
+	Command.withSubcommands([
+		versionCommand,
+		doctorCommand,
+		editorCommand,
+		auditCommand,
+		authoringCommand,
+		assetsCommand,
+		textCommand,
+		inputCommand,
+		mapCommand,
+		reviewCommand,
+		pluginsCommand
+	])
+);
+
+const cliFormatter = (() => {
+	const formatter = CliOutput.defaultFormatter({ colors: false });
+	return CliOutput.layer({
+		...formatter,
+		formatErrors: (errors) =>
+			errors.map((error) => `ue-shed: ${formatter.formatCliError(error)}`).join("\n"),
+		formatVersion: (name, value) => `${name} ${value}`
+	});
+})();
+
+function makeBufferedConsole(help: string[], errors: string[]): Console.Console {
+	return {
+		...globalThis.console,
+		log: (...args) => help.push(args.map(String).join(" ")),
+		error: (...args) => errors.push(args.map(String).join(" "))
+	};
+}
+
+function normalizeArgs(args: readonly string[]): ReadonlyArray<string> {
+	return args.length === 0 || args[0] === "help" ? ["--help"] : args;
+}
+
+export function runCli(args: readonly string[]): Effect.Effect<void, CliCommandError, CliRuntime> {
+	return Effect.gen(function* () {
+		const runtime = yield* CliRuntime;
+		const help = [] as string[];
+		const errors = [] as string[];
+		const consoleLayer = Layer.succeed(Console.Console, makeBufferedConsole(help, errors));
+		const result = yield* Effect.exit(
+			Command.runWith(cliCommand, { version })(normalizeArgs(args)).pipe(
+				Effect.provide(cliFormatter),
+				Effect.provide(consoleLayer),
+				Effect.provide(NodeServices.layer)
+			)
+		);
+		if (Exit.isSuccess(result)) {
+			for (const message of help) yield* runtime.print(`${message}\n`);
+			return;
 		}
-		if (command === "text") {
-			const parsed = yield* parseOptions(rest, ["--reader"]);
-			const [action, projectRoot, ...query] = parsed.positionals;
-			if ((action !== "scan" && action !== "search") || !projectRoot)
-				return yield* usage(
-					"text requires scan <project-root> or search <project-root> <query>"
-				);
-			const withReader = parsed.values["--reader"]
-				? { reader: parsed.values["--reader"] }
-				: {};
-			if (action === "scan") {
-				yield* exact(query, 0, "text scan has unexpected arguments");
-				return CliCommand.cases.TextScan.make({ projectRoot, ...withReader });
+		const error = Cause.findErrorOption(result.cause);
+		if (Option.isSome(error) && CliError.isCliError(error.value)) {
+			if (errors.length > 0) {
+				yield* runtime.printError(`${errors.join("\n")}\n`);
+			} else {
+				yield* runtime.printError(`ue-shed: ${error.value.message}\n`);
 			}
-			const value = query.join(" ").trim();
-			if (!value) return yield* usage("text search requires a non-empty query");
-			return CliCommand.cases.TextSearch.make({ projectRoot, query: value, ...withReader });
+			yield* runtime.setExitCode(2);
+			return;
 		}
-		if (command === "input") {
-			const parsed = yield* parseOptions(rest, ["--reader"]);
-			const [action, path] = parsed.positionals;
-			if (action !== "inspect" || !path)
-				return yield* usage("input requires inspect <asset-or-project>");
-			if (parsed.positionals.length > 2)
-				return yield* usage("input inspect has unexpected arguments");
-			return CliCommand.cases.InputInspect.make({
-				path,
-				...(parsed.values["--reader"] ? { reader: parsed.values["--reader"] } : {})
-			});
+		if (Option.isSome(error) && error.value instanceof CliCommandError) {
+			return yield* Effect.fail<CliCommandError>(error.value);
 		}
-		if (command === "map") {
-			const [area, ...values] = rest;
-			if (area !== "history") return yield* usage(`Unknown map command\n\n${help}`);
-			return yield* parseMapHistory(values);
-		}
-		if (command === "review") {
-			const [area, action, ...values] = rest;
-			if (area === "sets" && action === "validate") {
-				const [reviewSetPath] = yield* exact(
-					values,
-					1,
-					"review sets validate requires exactly one Review Set path"
-				);
-				return CliCommand.cases.ReviewSetValidate.make({
-					reviewSetPath: present(reviewSetPath)
-				});
-			}
-			if (area === "framing" && action === "candidates") {
-				const [endpoint] = yield* exact(
-					values,
-					1,
-					"review framing candidates requires exactly one Remote Control endpoint"
-				);
-				return CliCommand.cases.ReviewFramingCandidates.make({
-					endpoint: present(endpoint)
-				});
-			}
-			if (area === "framing" && action === "approve") {
-				const [reviewSetPath, endpoint, viewId, candidateId] = yield* exact(
-					values,
-					4,
-					"review framing approve requires Review Set, endpoint, Review View ID, and candidate ID"
-				);
-				return CliCommand.cases.ReviewFramingApprove.make({
-					candidateId: present(candidateId),
-					endpoint: present(endpoint),
-					reviewSetPath: present(reviewSetPath),
-					viewId: present(viewId)
-				});
-			}
-			if (area === "authoring" && action === "start") {
-				const [projectRoot, reviewSetPath, endpoint, viewId] = yield* exact(
-					values,
-					4,
-					"review authoring start requires project root, Review Set, endpoint, and Review View ID"
-				);
-				return CliCommand.cases.ReviewAuthoringStart.make({
-					endpoint: present(endpoint),
-					projectRoot: present(projectRoot),
-					reviewSetPath: present(reviewSetPath),
-					viewId: present(viewId)
-				});
-			}
-			if (area === "authoring" && action === "bootstrap") {
-				const [projectRoot, endpoint] = yield* exact(
-					values,
-					2,
-					"review authoring bootstrap requires project root and Remote Control endpoint"
-				);
-				return CliCommand.cases.ReviewAuthoringBootstrap.make({
-					endpoint: present(endpoint),
-					projectRoot: present(projectRoot)
-				});
-			}
-			if (area === "authoring" && (action === "show" || action === "discard")) {
-				const [projectRoot, sessionId] = yield* exact(
-					values,
-					2,
-					`review authoring ${action} requires project root and session ID`
-				);
-				const fields = { projectRoot: present(projectRoot), sessionId: present(sessionId) };
-				return action === "show"
-					? CliCommand.cases.ReviewAuthoringShow.make(fields)
-					: CliCommand.cases.ReviewAuthoringDiscard.make(fields);
-			}
-			if (
-				area === "authoring" &&
-				(action === "resume" || action === "reframe" || action === "approve")
-			) {
-				const [projectRoot, sessionId, endpoint] = yield* exact(
-					values,
-					3,
-					`review authoring ${action} requires project root, session ID, and endpoint`
-				);
-				const fields = {
-					endpoint: present(endpoint),
-					projectRoot: present(projectRoot),
-					sessionId: present(sessionId)
-				};
-				return action === "resume"
-					? CliCommand.cases.ReviewAuthoringResume.make(fields)
-					: action === "reframe"
-						? CliCommand.cases.ReviewAuthoringReframe.make(fields)
-						: CliCommand.cases.ReviewAuthoringApprove.make(fields);
-			}
-			if (area === "capture") {
-				const parsed = yield* parseOptions(values, ["--cause", "--correlation"]);
-				const [projectRoot, reviewSetPath, endpoint] = yield* exact(
-					[action ?? "", ...parsed.positionals],
-					3,
-					"review capture requires project root, Review Set path, and Remote Control endpoint"
-				);
-				const cause = parsed.values["--cause"];
-				if (cause !== undefined && cause !== "external_automation") {
-					return yield* usage("review capture --cause supports only external_automation");
-				}
-				if (parsed.values["--correlation"] !== undefined && cause === undefined) {
-					return yield* usage(
-						"review capture --correlation requires --cause external_automation"
-					);
-				}
-				return CliCommand.cases.ReviewCapture.make({
-					endpoint: present(endpoint),
-					projectRoot: present(projectRoot),
-					reviewSetPath: present(reviewSetPath),
-					...(cause === undefined ? {} : { cause }),
-					...(parsed.values["--correlation"] === undefined
-						? {}
-						: { correlationId: parsed.values["--correlation"] })
-				});
-			}
-			if (area === "history") {
-				const [projectRoot] = yield* exact(
-					[action ?? "", ...values],
-					1,
-					"review history requires exactly one project root"
-				);
-				return CliCommand.cases.ReviewHistory.make({ projectRoot: present(projectRoot) });
-			}
-			if (area === "show") {
-				const [runPath] = yield* exact(
-					[action ?? "", ...values],
-					1,
-					"review show requires exactly one run.json path"
-				);
-				return CliCommand.cases.ReviewShow.make({ runPath: present(runPath) });
-			}
-			return yield* usage(`Unknown review command\n\n${help}`);
-		}
-		return yield* usage(`Unknown command: ${command}\n\n${help}`);
+		return yield* Effect.die(error);
 	});
 }

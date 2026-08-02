@@ -17,7 +17,7 @@ import {
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect";
-import { type CliCommand, help } from "./command.js";
+import type { CliCommand } from "./command.js";
 
 // Command-specific feature packages are imported lazily inside their command handlers so
 // lightweight invocations (input inspect, help, version, doctor) do not pay module-evaluation
@@ -29,6 +29,7 @@ export class CliCommandError extends Schema.TaggedErrorClass<CliCommandError>()(
 
 export interface CliRuntimeShape {
 	readonly print: (value: string) => Effect.Effect<void>;
+	readonly printError: (value: string) => Effect.Effect<void>;
 	readonly setExitCode: (code: number) => Effect.Effect<void>;
 }
 
@@ -41,6 +42,9 @@ export const CliRuntimeLive = Layer.succeed(
 	CliRuntime.of({
 		print: Effect.fn("CliRuntime.print")((value) =>
 			Effect.sync(() => process.stdout.write(value)).pipe(Effect.asVoid)
+		),
+		printError: Effect.fn("CliRuntime.printError")((value) =>
+			Effect.sync(() => process.stderr.write(value)).pipe(Effect.asVoid)
 		),
 		setExitCode: Effect.fn("CliRuntime.setExitCode")((code) =>
 			Effect.sync(() => {
@@ -345,8 +349,6 @@ export function executeCommand(
 						: aggregateHealth(defaultHealthInput)
 				);
 			}
-			case "Help":
-				return yield* runtime.print(`${help}\n`);
 			case "Version":
 				return yield* runtime.print(
 					`ue-shed 0.0.0 (protocol ${CURRENT_PROTOCOL_VERSION.major}.${CURRENT_PROTOCOL_VERSION.minor})\n`

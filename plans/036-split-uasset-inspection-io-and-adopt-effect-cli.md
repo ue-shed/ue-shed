@@ -5,8 +5,7 @@
 
 ## Status
 
-- State: IN PROGRESS — native direct protocol migration complete; apps/cli migration intentionally
-  deferred
+- State: IN PROGRESS — native direct protocol migration complete; Effect CLI parser migration landed
 - Priority: P1
 - Effort: XL
 - Risk: HIGH
@@ -446,20 +445,25 @@ authoring.
 Gate: AssetReader behavior stays compatible; malformed output is a typed contract failure;
 interruption terminates native work; production TypeScript parses no native stderr.
 
-### Phase 6 — Deferred follow-up: move apps/cli to Effect CLI
+### Phase 6 — Move apps/cli to Effect CLI
 
-- [ ] Add matching Node platform package through the workspace catalog.
-- [ ] Add runtime layer, output service, and typed top-level error rendering.
-- [ ] Recreate current command tree, options, arguments, aliases, and help with Effect CLI.
-- [ ] Route initial leaves through compatibility adapters.
+- [x] Add matching Node platform package through the workspace catalog.
+- [x] Add runtime layer, output service, and typed top-level error rendering.
+- [x] Recreate current command tree, options, arguments, aliases, and help with Effect CLI.
+- [x] Route initial leaves through compatibility adapters.
 - [ ] Convert leaves to Effect workflows/layers.
 - [ ] Add command/external-operation spans and scoped signal handling.
 - [ ] Delete manual parser/help/dispatcher once goldens and integration tests pass.
 - [ ] Split the former monolith into command modules without circular dependencies.
 
-Gate for the later follow-up: frozen command compatibility passes; text-only help changes receive
-explicit review; machine-readable output is unchanged unless versioned; Rust command mirroring is
-not introduced. This phase is deliberately outside the current implementation gate.
+Current migration note: the declarative Effect CLI tree owns token parsing, typed flags, generated
+help, and usage failures. Leaf handlers still cross the existing `CliCommand`/`executeCommand`
+compatibility adapter while the remaining workflow extraction, observability, signal handling, and
+module split are completed. The generated help/error wording was explicitly reviewed; machine
+output remains on the existing application path.
+
+Gate: frozen command compatibility passes; text-only help changes receive explicit review;
+machine-readable output is unchanged unless versioned; Rust command mirroring is not introduced.
 
 ### Phase 7 — Build, package, install, release
 
@@ -538,8 +542,10 @@ language happens to be faster or more convenient.
 - `crates/uasset-io/src/protocol_adapter.rs` routes every operation through typed direct executors;
   it owns only request framing, event sequencing, progress/diagnostic envelopes, and final JSON
   serialization. There is no child worker or duplicate protocol implementation.
-- `apps/cli` remains the public TypeScript command surface. Its Effect CLI migration is Phase 6 and
-  is deliberately outside this implementation gate.
+- `apps/cli` remains the public TypeScript command surface. Its declarative Effect CLI tree now
+  owns parsing and presentation; leaf execution temporarily crosses the existing
+  `CliCommand`/`executeCommand` compatibility adapter. Remove that adapter after direct workflow
+  handlers, command spans/signal handling, and the command-module split are complete.
 
 ## Test matrix
 
@@ -573,7 +579,7 @@ package, and interruption tests.
 - production TypeScript parses neither native stderr nor expected-failure exit codes;
 - AssetReader stays compatible;
 - existing public and Rust diagnostic CLI compatibility tests pass;
-- both current CLI paths have reproducible benchmark results before any `apps/cli` migration;
+- both current CLI paths have reproducible benchmark results recorded;
 - build/package/install/release/benchmark tooling uses new ownership;
 - docs answer where new work goes;
 - benchmark results are recorded and accepted;
@@ -600,8 +606,8 @@ Stop and request direction if:
 - bidirectional cancellation frames;
 - dynamic operation/plugin registries;
 - making Rust human commands a product peer of Effect CLI;
-- migrating `apps/cli` to Effect CLI before parser/inspection/IO parity and benchmark evidence is
-  complete;
+- removing the `apps/cli` compatibility dispatcher before direct workflow handlers and command
+  parity evidence are complete;
 - public command/output schema changes;
 - editor/Workbench-only Rust APIs;
 - write support beyond separately approved authoring contracts;

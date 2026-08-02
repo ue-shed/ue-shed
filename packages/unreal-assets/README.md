@@ -97,12 +97,13 @@ by `UEShedAuthoring`; it is not a second package-reader-specific authoring model
 This package owns process execution, schema-version negotiation, limits, and diagnostics. It does not
 own DataTable authoring policy, live editor state, mutation, or Save.
 
-`readSavedTable` invokes `uasset authoring <asset> --format json` and validates every result against
-the shared runtime contract. Callers can pass an explicit executable, set
+`readSavedTable` sends one `uasset-io` protocol request and validates every streamed result against
+the shared runtime contract. The executable keeps the human `authoring` command for compatibility.
+Callers can pass an explicit executable, set
 `UE_SHED_UASSET_EXECUTABLE`, or provide `uasset` on `PATH`. The UE Shed source-checkout launchers
-incrementally build `crates/uasset-parser` and configure its executable automatically; this package
-does not depend on a monorepo-relative path. Exit code 6 is a successful partial result, not a process
-failure.
+incrementally build `crates/uasset-io` and configure its executable automatically; this package
+does not depend on a monorepo-relative path. Expected partial outcomes are typed terminal protocol
+events; the legacy human command retains exit code 6 for compatibility.
 
 The reader currently normalizes DataTables and the parser's supported saved-asset inspection models.
 Unsupported classes, parser versions, malformed output, process failures, and configured limits are

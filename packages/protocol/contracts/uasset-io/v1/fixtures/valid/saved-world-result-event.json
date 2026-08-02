@@ -1,0 +1,27 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 8,
+	"result": {
+		"kind": "saved_world",
+		"world": {
+			"authority": { "kind": "project_files", "mapPackage": "/Game/Maps/Example" },
+			"completeness": "complete",
+			"contract": {
+				"name": "unreal-saved-world",
+				"version": { "major": 1, "minor": 0 }
+			},
+			"diagnostics": [],
+			"mapPath": "Content/Maps/Example.umap",
+			"sourceKind": "level",
+			"actors": [],
+			"summary": {
+				"failedPackages": 0,
+				"partialPackages": 0,
+				"resolvedActors": 0,
+				"scannedPackages": 0
+			}
+		}
+	}
+}

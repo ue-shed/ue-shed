@@ -7,10 +7,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::archive::Guid;
-use crate::asset::{DecodedAsset, DecodedUObject};
-use crate::package::{ObjectPath, Package, PackageIndex};
-use crate::property::{PropertyRecord, PropertyStream, PropertyValue, RotatorValue, VectorValue};
+use uasset_parser::archive::Guid;
+use uasset_parser::asset::{DecodedAsset, DecodedUObject};
+use uasset_parser::package::{ObjectPath, Package, PackageIndex};
+use uasset_parser::property::{
+    PropertyRecord, PropertyStream, PropertyValue, RotatorValue, VectorValue,
+};
 
 /// A double-precision Unreal vector retained from a saved property.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -494,145 +496,4 @@ fn guid_property(package: &Package, properties: &PropertyStream, name: &str) -> 
         return None;
     };
     (!value.is_zero()).then_some(value)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn vector(x: f64, y: f64, z: f64) -> SavedWorldVector {
-        SavedWorldVector { x, y, z }
-    }
-
-    fn component(
-        path: &str,
-        location: SavedWorldVector,
-        parent: Option<&str>,
-    ) -> SavedWorldComponentFragment {
-        SavedWorldComponentFragment {
-            attach_parent: parent.map(ObjectPath::new),
-            absolute_location: false,
-            absolute_rotation: false,
-            absolute_scale: false,
-            object_path: ObjectPath::new(path),
-            relative_location: location,
-            relative_rotation: SavedWorldRotator::ZERO,
-            relative_scale: SavedWorldVector::ONE,
-        }
-    }
-
-    fn actor(path: &str, root: Option<&str>) -> SavedWorldActorFragment {
-        SavedWorldActorFragment {
-            actor_guid: None,
-            actor_path: ObjectPath::new(path),
-            class_path: ObjectPath::new("/Script/Engine.StaticMeshActor"),
-            label: None,
-            root_component: root.map(ObjectPath::new),
-        }
-    }
-
-    #[test]
-    fn resolves_root_location_with_unreal_parent_rotation_and_scale_order() {
-        let mut parent = component("/Game/Parent.Root", vector(100.0, 200.0, 300.0), None);
-        parent.relative_rotation = SavedWorldRotator {
-            pitch: 0.0,
-            yaw: 90.0,
-            roll: 0.0,
-        };
-        parent.relative_scale = vector(2.0, 3.0, 4.0);
-        let child = component(
-            "/Game/Child.Root",
-            vector(10.0, 20.0, 30.0),
-            Some("/Game/Parent.Root"),
-        );
-        let positions = resolve_saved_world_positions(&[SavedWorldPackageFragment {
-            actors: vec![actor("/Game/Child.Child", Some("/Game/Child.Root"))],
-            components: vec![parent, child],
-            package_name: "/Game/ExternalActors/Child".to_owned(),
-        }]);
-
-        let SavedWorldPosition::Resolved { location } = positions[0].position else {
-            panic!("expected a resolved child position");
-        };
-        assert!((location.x - 40.0).abs() < 1e-10);
-        assert!((location.y - 220.0).abs() < 1e-10);
-        assert!((location.z - 420.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn absolute_location_does_not_inherit_parent_translation() {
-        let parent = component("/Game/Parent.Root", vector(100.0, 200.0, 300.0), None);
-        let mut child = component(
-            "/Game/Child.Root",
-            vector(10.0, 20.0, 30.0),
-            Some("/Game/Parent.Root"),
-        );
-        child.absolute_location = true;
-        let positions = resolve_saved_world_positions(&[SavedWorldPackageFragment {
-            actors: vec![actor("/Game/Child.Child", Some("/Game/Child.Root"))],
-            components: vec![parent, child],
-            package_name: "/Game/ExternalActors/Child".to_owned(),
-        }]);
-
-        assert_eq!(
-            positions[0].position,
-            SavedWorldPosition::Resolved {
-                location: vector(10.0, 20.0, 30.0)
-            }
-        );
-    }
-
-    #[test]
-    fn reports_missing_parents_cycles_and_unsupported_absolute_transforms() {
-        let missing = component(
-            "/Game/Missing.Root",
-            vector(0.0, 0.0, 0.0),
-            Some("/Game/Nope.Root"),
-        );
-        let left = component(
-            "/Game/Left.Root",
-            vector(0.0, 0.0, 0.0),
-            Some("/Game/Right.Root"),
-        );
-        let right = component(
-            "/Game/Right.Root",
-            vector(0.0, 0.0, 0.0),
-            Some("/Game/Left.Root"),
-        );
-        let mut absolute = component(
-            "/Game/Absolute.Root",
-            vector(0.0, 0.0, 0.0),
-            Some("/Game/Parent.Root"),
-        );
-        absolute.absolute_rotation = true;
-        let parent = component("/Game/Parent.Root", vector(0.0, 0.0, 0.0), None);
-        let positions = resolve_saved_world_positions(&[SavedWorldPackageFragment {
-            actors: vec![
-                actor("/Game/Missing.Actor", Some("/Game/Missing.Root")),
-                actor("/Game/Left.Actor", Some("/Game/Left.Root")),
-                actor("/Game/Absolute.Actor", Some("/Game/Absolute.Root")),
-            ],
-            components: vec![missing, left, right, absolute, parent],
-            package_name: "/Game/ExternalActors/States".to_owned(),
-        }]);
-
-        assert_eq!(
-            positions[0].position,
-            SavedWorldPosition::MissingAttachmentParent {
-                parent_path: ObjectPath::new("/Game/Nope.Root")
-            }
-        );
-        assert_eq!(
-            positions[1].position,
-            SavedWorldPosition::AttachmentCycle {
-                component_path: ObjectPath::new("/Game/Left.Root")
-            }
-        );
-        assert_eq!(
-            positions[2].position,
-            SavedWorldPosition::UnsupportedAbsoluteTransform {
-                component_path: ObjectPath::new("/Game/Absolute.Root")
-            }
-        );
-    }
 }

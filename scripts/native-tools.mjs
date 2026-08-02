@@ -10,7 +10,7 @@ export function ensureUassetExecutable(environment = process.env) {
 		return environment.UE_SHED_UASSET_EXECUTABLE;
 	}
 
-	const result = spawnSync("cargo", ["build", "--locked", "-p", "uasset-parser"], {
+	const result = spawnSync("cargo", ["build", "--locked", "-p", "uasset-io"], {
 		cwd: repositoryRoot,
 		env: environment,
 		stdio: "inherit",
@@ -18,14 +18,14 @@ export function ensureUassetExecutable(environment = process.env) {
 	});
 	if (result.error) {
 		throw new Error(
-			"Could not build the in-repo uasset parser. Install Rust 1.85 or newer, or set " +
+			"Could not build the in-repo uasset IO executable. Install Rust 1.85 or newer, or set " +
 				"UE_SHED_UASSET_EXECUTABLE to a compatible executable.",
 			{ cause: result.error }
 		);
 	}
 	if (result.status !== 0) {
 		throw new Error(
-			`Building the in-repo uasset parser failed with exit code ${result.status}.`
+			`Building the in-repo uasset IO executable failed with exit code ${result.status}.`
 		);
 	}
 

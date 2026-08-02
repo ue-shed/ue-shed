@@ -1,27 +1,20 @@
 //! WebAssembly adapter for the portable UAsset parser.
 
 use serde::Serialize;
-use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
-use uasset_parser::projection::{
+use uasset_inspection::generic::inspect_bytes_json;
+use uasset_inspection::projection::{
     TEXTURE2D_CLASS, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
     project_texture_asset,
 };
+use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageError, PackageErrorKind};
 use wasm_bindgen::prelude::*;
 
-// Keep the versioned inspection projection shared with the native executable. The module contains
-// native host adapters too, but the linker removes those unreachable functions from the WASM
-// artifact. Moving the projection into a dedicated library module can follow without changing this
-// public binding.
-#[allow(dead_code)]
-#[path = "../../uasset-parser/src/bin/uasset.rs"]
-mod native_inspection;
-
 /// Parses bounded package bytes and returns the native schema-versioned inspection JSON.
 #[wasm_bindgen]
 pub fn inspect(path: &str, bytes: &[u8]) -> String {
-    native_inspection::inspect_bytes_json(path, bytes)
+    inspect_bytes_json(path, bytes)
 }
 
 /// Parses one package and emits the compact, portable Game Text projection.

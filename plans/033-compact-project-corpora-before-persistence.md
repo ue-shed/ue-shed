@@ -28,6 +28,20 @@
 - **Category**: direction
 - **Planned at**: current dirty worktree, 2026-07-30
 
+## Plan 036 handoff
+
+Recorded 2026-07-30:
+
+- Plan 036 may relocate generic parser, inspection, filesystem, scheduling, and process-transport
+  implementation while preserving this plan's compact extraction contracts.
+- This plan retains ownership of text/texture meaning, identity and coverage accounting, compact
+  benchmark acceptance, and the persistence decision.
+- The shared invariants remain: one project-header enumeration, explicit candidate paths only,
+  empty candidate paths mean zero work, compact evidence before TypeScript transport, and no generic
+  full-inspection bulk route.
+- Any change to those invariants, fixture meaning, benchmark budget, or persistence requires review
+  under this plan.
+
 ## Current local evidence (not a storage decision)
 
 The opt-in `benchmark:compact-text` command records aggregate evidence under ignored

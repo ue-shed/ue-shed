@@ -1,0 +1,23 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 6,
+	"result": {
+		"kind": "extract_text",
+		"event": {
+			"event": "text_summary",
+			"cacheHits": 0,
+			"depth": "text",
+			"diagnostics": [],
+			"emittedAssets": 0,
+			"failedAssets": 0,
+			"partialAssets": 0,
+			"projectRoot": ".",
+			"roots": [],
+			"scannedAssets": 0,
+			"schema_version": 8,
+			"skippedAssets": 0
+		}
+	}
+}

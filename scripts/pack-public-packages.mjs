@@ -234,7 +234,7 @@ export async function packPublicPackages({ output, build = true }) {
 	await ensureEmptyOutput(outputDirectory);
 	await assertPublicPackageSet();
 	if (build) {
-		run("cargo", ["build", "--locked", "--release", "-p", "uasset-parser"]);
+		run("cargo", ["build", "--locked", "--release", "-p", "uasset-io"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/protocol", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observability", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);

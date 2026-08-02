@@ -1,0 +1,7 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+	"kind": "result",
+	"requestId": "request-001",
+	"sequence": 1,
+	"result": { "kind": "unknown", "value": true }
+}

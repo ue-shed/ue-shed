@@ -20,7 +20,9 @@ use must not require filesystem access, subprocesses, or a native Rust installat
 
 ## Decision
 
-- UE Shed owns `crates/uasset-parser`, its Rust library, native `uasset` CLI, tests, and lockfile.
+- UE Shed owns `crates/uasset-parser`, its Rust library, parser tests, and lockfile. Native project
+  IO and the diagnostic `uasset` executable live in `crates/uasset-io`; portable projections live
+  in `crates/uasset-inspection` and `crates/uasset-inspection-wasm`.
 - The versioned JSON process contract remains the integration boundary. TypeScript packages do not
   link to Rust or depend on its internal model.
 - Source-checkout launchers incrementally build the debug executable when no explicit

@@ -14,6 +14,10 @@ SavedWorld projection, and returns explicit targeted-coverage metadata.
 The first implementation is intentionally Perforce-specific. A source-neutral revision abstraction
 is deferred until another real producer exists.
 
+Conventional map history follows a bounded linear chain of direct Perforce moves, including when a
+stale local source path still exists after the depot map moved. Copy, branch, merge, and ambiguous
+integration graphs are not treated as map identity.
+
 Browser-safe consumers can import `@ue-shed/map-history/playback` to derive the saved actor state at
 the range start or immediately after a selected submitted changelist. Playback uses the retained
 range-start snapshot and semantic deltas locally; it neither serializes full snapshots per

@@ -397,6 +397,7 @@ async function seedFixture({ p4, environment, workspace }) {
 		revision: conventional.revisions[1],
 		workspace
 	});
+	await advancePast(conventionalMove.submittedAtSeconds);
 
 	const unrelatedPath = workspacePath(workspace, "Content/Fixture/Unrelated/L_Unrelated.umap");
 	await mkdir(dirname(unrelatedPath), { recursive: true });
@@ -409,6 +410,25 @@ async function seedFixture({ p4, environment, workspace }) {
 		cwd: workspace,
 		env: environment
 	});
+	const unrelatedChange = await latestSubmittedChange(p4, environment, workspace);
+	await advancePast(unrelatedChange.submittedAtSeconds);
+
+	const relocatedConventionalMapPath =
+		"Content/Fixture/History/Relocated/L_ConventionalMapHistory.umap";
+	const conventionalMapPath = workspacePath(workspace, conventional.mapPath);
+	const relocatedConventionalPath = workspacePath(workspace, relocatedConventionalMapPath);
+	await mkdir(dirname(relocatedConventionalPath), { recursive: true });
+	await run(p4, ["edit", conventionalMapPath], { cwd: workspace, env: environment });
+	await run(p4, ["move", conventionalMapPath, relocatedConventionalPath], {
+		cwd: workspace,
+		env: environment
+	});
+	await run(p4, ["submit", "-d", "Map History fixture: relocate conventional map"], {
+		cwd: workspace,
+		env: environment
+	});
+	const conventionalRelocation = await latestSubmittedChange(p4, environment, workspace);
+	await copyFile(relocatedConventionalPath, conventionalMapPath);
 
 	const worldPartitionBaseline = await submitFixtureRevision({
 		p4,
@@ -456,6 +476,18 @@ async function seedFixture({ p4, environment, workspace }) {
 				until: new Date((conventionalMove.submittedAtSeconds + 0.999) * 1_000).toISOString()
 			},
 			revisions: [conventionalMove]
+		},
+		relocatedConventional: {
+			baseline: conventionalMove,
+			mapPath: conventional.mapPath,
+			relocatedMapPath: relocatedConventionalMapPath,
+			range: {
+				since: new Date((conventionalMove.submittedAtSeconds + 0.5) * 1_000).toISOString(),
+				until: new Date(
+					(conventionalRelocation.submittedAtSeconds + 0.999) * 1_000
+				).toISOString()
+			},
+			revisions: [conventionalRelocation]
 		},
 		worldPartition: {
 			baseline: worldPartitionBaseline,

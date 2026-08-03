@@ -33,6 +33,13 @@ const HarnessConfig = Schema.Struct({
 			range: Schema.Struct({ since: Schema.NonEmptyString, until: Schema.NonEmptyString }),
 			revisions: Schema.Array(SubmittedChange)
 		}),
+		relocatedConventional: Schema.Struct({
+			baseline: SubmittedChange,
+			mapPath: Schema.NonEmptyString,
+			relocatedMapPath: Schema.NonEmptyString,
+			range: Schema.Struct({ since: Schema.NonEmptyString, until: Schema.NonEmptyString }),
+			revisions: Schema.Array(SubmittedChange)
+		}),
 		worldPartition: Schema.Struct({
 			baseline: SubmittedChange,
 			mapPath: Schema.NonEmptyString,
@@ -145,6 +152,36 @@ describe.skipIf(config === undefined)("real Perforce Map History conformance", (
 			expect.arrayContaining([expect.objectContaining({ label: "Conventional Marker" })])
 		);
 		expect(history.completeness).toBe("complete");
+		expect(afterHave).toEqual(beforeHave);
+	});
+
+	it("follows a direct map move from a stale local source path", async () => {
+		const value = requireConfig();
+		const fixture = value.seeded.relocatedConventional;
+		const beforeHave = await p4Have(value);
+		const history = await Effect.runPromise(
+			readPerforceMapHistory(query(value, fixture.mapPath, fixture.range)).pipe(
+				Effect.provide(layer(value))
+			)
+		);
+		const afterHave = await p4Have(value);
+
+		expect(history.baseline).toEqual({
+			change: fixture.baseline.change,
+			status: "available"
+		});
+		expect(history.mapDepotPath).toBe(`//ue-shed-map-history/${fixture.relocatedMapPath}`);
+		expect(history.revisions.map((revision) => revision.change)).toEqual(
+			fixture.revisions.map((revision) => revision.change)
+		);
+		expect(history.revisions[0]?.files.map((file) => file.action)).toEqual([
+			"move/delete",
+			"move/add"
+		]);
+		expect(history.revisions[0]?.changes).toEqual([]);
+		expect(history.revisions[0]?.unclassifiedPackageChanges).toHaveLength(2);
+		expect(history.rangeStartSnapshot?.mapPath).toBe(fixture.mapPath);
+		expect(history.rangeEndSnapshot?.mapPath).toBe(fixture.relocatedMapPath);
 		expect(afterHave).toEqual(beforeHave);
 	});
 

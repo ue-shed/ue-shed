@@ -7,6 +7,8 @@ export const MapHistoryErrorKind = Schema.Literals([
 	"perforce_authentication",
 	"perforce_command",
 	"ambiguous_depot_mapping",
+	"ambiguous_map_lineage",
+	"map_lineage_limit",
 	"resource_limit",
 	"materialization",
 	"temporary_storage",

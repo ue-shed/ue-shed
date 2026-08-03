@@ -69,6 +69,28 @@ export interface PerforceLocalMapping {
 	readonly depotPath: string;
 }
 
+export interface PerforceMapLocation {
+	readonly depotPath: string;
+	readonly localPath: string;
+}
+
+export interface PerforceMapMove {
+	readonly change: number;
+	readonly fromDepotPath: string;
+	readonly toDepotPath: string;
+}
+
+export interface PerforceMapLineage {
+	readonly locations: readonly PerforceMapLocation[];
+	readonly moves: readonly PerforceMapMove[];
+}
+
+export interface PerforceMapLineageOptions {
+	readonly depotPath: string;
+	readonly maxMoves: number;
+	readonly maxRevisionRecords: number;
+}
+
 export interface PerforceHistorySourceShape {
 	readonly describeChangelist: (
 		change: number
@@ -90,6 +112,10 @@ export interface PerforceHistorySourceShape {
 	readonly resolveLocalPath: (
 		localPath: string
 	) => Effect.Effect<PerforceLocalMapping, MapHistoryError>;
+	/** Optional for narrow test sources; the live adapter always provides this capability. */
+	readonly resolveMapLineage?: (
+		options: PerforceMapLineageOptions
+	) => Effect.Effect<PerforceMapLineage, MapHistoryError>;
 }
 
 export class PerforceHistorySource extends Context.Service<
@@ -121,9 +147,13 @@ type PerforceBackendResolver = (projectRoot: string | undefined) => PerforceBack
 
 const P4WhereRecord = Schema.Struct({
 	depotFile: Schema.optionalKey(Schema.String),
+	path: Schema.optionalKey(Schema.String),
 	unmap: Schema.optionalKey(Schema.String)
 });
 const decodeP4WhereRecords = Schema.decodeUnknownEffect(Schema.Array(P4WhereRecord));
+const decodeP4TaggedRecords = Schema.decodeUnknownEffect(
+	Schema.Array(Schema.Record(Schema.String, Schema.Unknown))
+);
 
 const P4MaterializationFile = Schema.Struct({
 	action: Schema.NonEmptyString.pipe(Schema.brand("P4FileAction")),
@@ -203,6 +233,149 @@ function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
 	});
 }
 
+function mapLineageError(
+	kind: "ambiguous_map_lineage" | "map_lineage_limit",
+	message: string
+): MapHistoryError {
+	return new MapHistoryError({
+		kind,
+		message,
+		recovery:
+			kind === "map_lineage_limit"
+				? "Choose a range with fewer direct map relocations."
+				: "Inspect the map's direct Perforce move records and resolve the ambiguity before retrying.",
+		retrySafe: false
+	});
+}
+
+function taggedString(record: Readonly<Record<string, unknown>>, key: string): string | undefined {
+	const value = record[key];
+	return typeof value === "string" ? value : undefined;
+}
+
+function positiveTaggedInt(
+	record: Readonly<Record<string, unknown>>,
+	key: string
+): number | undefined {
+	const value = taggedString(record, key);
+	if (value === undefined) return undefined;
+	const parsed = Number(value);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function directMovesFromFilelog(
+	records: readonly Readonly<Record<string, unknown>>[]
+): readonly PerforceMapMove[] {
+	const moves: PerforceMapMove[] = [];
+	for (const record of records) {
+		const depotPath = taggedString(record, "depotFile");
+		if (depotPath === undefined) continue;
+		for (const key of Object.keys(record)) {
+			const match = /^action(\d+)$/u.exec(key);
+			if (match === null) continue;
+			const revisionIndex = match[1];
+			const action = taggedString(record, key);
+			const change = positiveTaggedInt(record, `change${revisionIndex}`);
+			if (action === undefined || change === undefined) continue;
+			if (action === "move/add") {
+				for (const integrationKey of Object.keys(record)) {
+					const integration = new RegExp(`^how${revisionIndex},(\\d+)$`, "u").exec(
+						integrationKey
+					);
+					if (
+						integration === null ||
+						taggedString(record, integrationKey) !== "moved from"
+					)
+						continue;
+					const fromDepotPath = taggedString(
+						record,
+						`file${revisionIndex},${integration[1]}`
+					);
+					if (fromDepotPath !== undefined) {
+						moves.push({ change, fromDepotPath, toDepotPath: depotPath });
+					}
+				}
+				continue;
+			}
+			if (action !== "move/delete") continue;
+			for (const integrationKey of Object.keys(record)) {
+				const integration = /^how(\d+),(\d+)$/u.exec(integrationKey);
+				if (integration === null || taggedString(record, integrationKey) !== "moved into")
+					continue;
+				const toDepotPath = taggedString(record, `file${integration[1]},${integration[2]}`);
+				if (toDepotPath !== undefined) {
+					moves.push({ change, fromDepotPath: depotPath, toDepotPath });
+				}
+			}
+		}
+	}
+	const unique = new Map<string, PerforceMapMove>();
+	for (const move of moves) {
+		unique.set(`${move.change}\u0000${move.fromDepotPath}\u0000${move.toDepotPath}`, move);
+	}
+	return [...unique.values()];
+}
+
+function orderedDirectLineage(options: {
+	readonly moves: readonly PerforceMapMove[];
+	readonly selectedDepotPath: string;
+}): { readonly depotPaths: readonly string[]; readonly moves: readonly PerforceMapMove[] } {
+	const outgoing = new Map<string, PerforceMapMove>();
+	const incoming = new Map<string, PerforceMapMove>();
+	for (const move of options.moves) {
+		const previousOutgoing = outgoing.get(move.fromDepotPath);
+		const previousIncoming = incoming.get(move.toDepotPath);
+		if (
+			(previousOutgoing !== undefined &&
+				(previousOutgoing.toDepotPath !== move.toDepotPath ||
+					previousOutgoing.change !== move.change)) ||
+			(previousIncoming !== undefined &&
+				(previousIncoming.fromDepotPath !== move.fromDepotPath ||
+					previousIncoming.change !== move.change))
+		) {
+			throw mapLineageError(
+				"ambiguous_map_lineage",
+				`Perforce reported multiple direct move paths for ${options.selectedDepotPath}.`
+			);
+		}
+		outgoing.set(move.fromDepotPath, move);
+		incoming.set(move.toDepotPath, move);
+	}
+
+	let oldest = options.selectedDepotPath;
+	const visitedBackwards = new Set([oldest]);
+	while (incoming.has(oldest)) {
+		const prior = incoming.get(oldest);
+		if (prior === undefined) break;
+		oldest = prior.fromDepotPath;
+		if (visitedBackwards.has(oldest)) {
+			throw mapLineageError(
+				"ambiguous_map_lineage",
+				`Perforce reported a direct-move cycle for ${options.selectedDepotPath}.`
+			);
+		}
+		visitedBackwards.add(oldest);
+	}
+
+	const depotPaths = [oldest];
+	const orderedMoves: PerforceMapMove[] = [];
+	const visitedForwards = new Set([oldest]);
+	while (outgoing.has(depotPaths.at(-1) ?? "")) {
+		const move = outgoing.get(depotPaths.at(-1) ?? "");
+		if (move === undefined) break;
+		if (visitedForwards.has(move.toDepotPath)) {
+			throw mapLineageError(
+				"ambiguous_map_lineage",
+				`Perforce reported a direct-move cycle for ${options.selectedDepotPath}.`
+			);
+		}
+		orderedMoves.push(move);
+		depotPaths.push(move.toDepotPath);
+		visitedForwards.add(move.toDepotPath);
+	}
+	return { depotPaths, moves: orderedMoves };
+}
+
 function selectedProjectRoot(): Effect.Effect<string | undefined> {
 	return Effect.map(Effect.serviceOption(PerforceProjectContext), (root) =>
 		Option.isSome(root) ? root.value : undefined
@@ -228,7 +401,8 @@ export function makePerforceHistorySource(
 				recovery: "Provide a resolveLocalPath test implementation.",
 				retrySafe: false
 			})
-		)
+		),
+	resolveMapLineage?: NonNullable<PerforceHistorySourceShape["resolveMapLineage"]>
 ): PerforceHistorySourceShape {
 	return PerforceHistorySource.of({
 		describeChangelist: Effect.fn("PerforceHistorySource.describeChangelist")(function* (
@@ -309,7 +483,8 @@ export function makePerforceHistorySource(
 				totalCount: result.totalCount
 			};
 		}),
-		resolveLocalPath
+		resolveLocalPath,
+		...(resolveMapLineage === undefined ? {} : { resolveMapLineage })
 	});
 }
 
@@ -427,25 +602,21 @@ export function perforceHistorySourceLayer(
 						)
 				};
 			};
-			const resolveLocalPath = Effect.fn("PerforceHistorySource.resolveLocalPath")(function* (
-				localPath: string
-			) {
+			const where = Effect.fn("PerforceHistorySource.where")(function* (path: string) {
 				const projectRoot = yield* selectedProjectRoot();
 				const context = yield* contextForProject(projectRoot).pipe(
-					Effect.mapError((cause) =>
-						toMapHistoryError("resolve local Perforce path", cause)
-					)
+					Effect.mapError((cause) => toMapHistoryError("resolve Perforce path", cause))
 				);
 				const raw = yield* Effect.tryPromise({
-					try: () => context.client.runTaggedJson(["where", localPath]),
-					catch: (cause) => toMapHistoryError("resolve local Perforce path", cause)
+					try: () => context.client.runTaggedJson(["where", path]),
+					catch: (cause) => toMapHistoryError("resolve Perforce path", cause)
 				});
 				const records = yield* decodeP4WhereRecords(raw).pipe(
 					Effect.mapError(
 						() =>
 							new MapHistoryError({
 								kind: "ambiguous_depot_mapping",
-								message: `Perforce returned an invalid mapping for ${localPath}.`,
+								message: `Perforce returned an invalid mapping for ${path}.`,
 								recovery: "Check the Perforce client mapping and retry.",
 								retrySafe: false
 							})
@@ -459,16 +630,117 @@ export function perforceHistorySourceLayer(
 					return yield* Effect.fail(
 						new MapHistoryError({
 							kind: "ambiguous_depot_mapping",
-							message: `Perforce could not map ${localPath} to exactly one depot file.`,
+							message: `Perforce could not map ${path} to exactly one depot file.`,
 							recovery:
 								"Use a project path covered by one unambiguous Perforce client mapping.",
 							retrySafe: false
 						})
 					);
 				}
-				return { depotPath: records[0].depotFile };
+				return records[0];
 			});
-			return makePerforceHistorySource(backendForProject, resolveLocalPath);
+			const resolveLocalPath = Effect.fn("PerforceHistorySource.resolveLocalPath")(function* (
+				localPath: string
+			) {
+				const mapping = yield* where(localPath);
+				if (mapping.depotFile === undefined) {
+					return yield* Effect.fail(
+						new MapHistoryError({
+							kind: "ambiguous_depot_mapping",
+							message: `Perforce did not return a depot path for ${localPath}.`,
+							recovery: "Check the Perforce client mapping and retry.",
+							retrySafe: false
+						})
+					);
+				}
+				return { depotPath: mapping.depotFile };
+			});
+			const resolveMapLineage = Effect.fn("PerforceHistorySource.resolveMapLineage")(
+				function* (request: PerforceMapLineageOptions) {
+					const projectRoot = yield* selectedProjectRoot();
+					const context = yield* contextForProject(projectRoot).pipe(
+						Effect.mapError((cause) => toMapHistoryError("resolve map lineage", cause))
+					);
+					const pending = [request.depotPath];
+					const queried = new Set<string>();
+					const discovered = new Map<string, PerforceMapMove>();
+					while (pending.length > 0) {
+						const depotPath = pending.shift();
+						if (depotPath === undefined || queried.has(depotPath)) continue;
+						queried.add(depotPath);
+						const raw = yield* Effect.tryPromise({
+							try: () =>
+								context.client.runTaggedJson([
+									"filelog",
+									"-i",
+									"-m",
+									String(request.maxRevisionRecords),
+									depotPath
+								]),
+							catch: (cause) => toMapHistoryError("resolve map lineage", cause)
+						});
+						const records = yield* decodeP4TaggedRecords(raw).pipe(
+							Effect.mapError(() =>
+								mapLineageError(
+									"ambiguous_map_lineage",
+									`Perforce returned invalid filelog records for ${depotPath}.`
+								)
+							)
+						);
+						for (const move of directMovesFromFilelog(records)) {
+							discovered.set(
+								`${move.change}\u0000${move.fromDepotPath}\u0000${move.toDepotPath}`,
+								move
+							);
+							if (!queried.has(move.fromDepotPath)) pending.push(move.fromDepotPath);
+							if (!queried.has(move.toDepotPath)) pending.push(move.toDepotPath);
+						}
+						if (discovered.size > request.maxMoves) {
+							return yield* Effect.fail(
+								mapLineageError(
+									"map_lineage_limit",
+									`Map lineage exceeds the direct-move limit of ${request.maxMoves}.`
+								)
+							);
+						}
+					}
+					const ordered = yield* Effect.try({
+						try: () =>
+							orderedDirectLineage({
+								moves: [...discovered.values()],
+								selectedDepotPath: request.depotPath
+							}),
+						catch: (cause) =>
+							cause instanceof MapHistoryError
+								? cause
+								: mapLineageError(
+										"ambiguous_map_lineage",
+										`Could not order the direct move lineage for ${request.depotPath}.`
+									)
+					});
+					const locations: PerforceMapLocation[] = [];
+					for (const depotPath of ordered.depotPaths) {
+						const mapping = yield* where(depotPath);
+						if (mapping.path === undefined) {
+							return yield* Effect.fail(
+								new MapHistoryError({
+									kind: "ambiguous_depot_mapping",
+									message: `Perforce did not return a workspace path for ${depotPath}.`,
+									recovery: "Check the Perforce client mapping and retry.",
+									retrySafe: false
+								})
+							);
+						}
+						locations.push({ depotPath, localPath: mapping.path });
+					}
+					return { locations, moves: ordered.moves };
+				}
+			);
+			return makePerforceHistorySource(
+				backendForProject,
+				resolveLocalPath,
+				resolveMapLineage
+			);
 		})
 	);
 }

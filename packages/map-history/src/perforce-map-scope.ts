@@ -3,7 +3,7 @@ import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { Effect } from "effect";
 import { MapHistoryError } from "./errors.js";
-import { PerforceHistorySource } from "./perforce.js";
+import { PerforceHistorySource, type PerforceMapMove } from "./perforce.js";
 import type { ScopedPerforceFile } from "./revision-plan.js";
 import type { PerforceMapHistoryQuery } from "./schema.js";
 
@@ -21,6 +21,13 @@ export interface ResolvedPerforceMapScope {
 	readonly mapProjectRelativePath: string;
 	readonly sourceKind: "level" | "world_partition";
 }
+
+export interface ResolvedPerforceMapLineage {
+	readonly locations: readonly ResolvedPerforceMapScope[];
+	readonly moves: readonly PerforceMapMove[];
+}
+
+export const MAX_DIRECT_MAP_MOVES = 16;
 
 function savedWorldError(error: AssetReaderError): MapHistoryError {
 	return new MapHistoryError({
@@ -173,6 +180,118 @@ export function resolvePerforceMapScope(
 	return Effect.fn("MapHistory.resolvePerforceMapScope")(function* () {
 		const { scope } = yield* resolvePresentDayMapScope(query);
 		return scope;
+	})();
+}
+
+/** Resolves only direct map moves and keeps every resulting location inside the selected project. */
+export function resolvePerforceMapLineage(options: {
+	readonly limits: PerforceMapHistoryQuery["limits"];
+	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+	readonly scope: ResolvedPerforceMapScope;
+}): Effect.Effect<ResolvedPerforceMapLineage, MapHistoryError, PerforceHistorySource> {
+	return Effect.fn("MapHistory.resolvePerforceMapLineage")(function* () {
+		const source = yield* PerforceHistorySource;
+		if (source.resolveMapLineage === undefined) {
+			return { locations: [options.scope], moves: [] };
+		}
+		const lineage = yield* source.resolveMapLineage({
+			depotPath: options.scope.mapDepotPath,
+			maxMoves: MAX_DIRECT_MAP_MOVES,
+			maxRevisionRecords: options.limits.maxChangelists + MAX_DIRECT_MAP_MOVES + 2
+		});
+		if (lineage.locations.length === 0) {
+			return yield* Effect.fail(
+				new MapHistoryError({
+					kind: "ambiguous_map_lineage",
+					message: `Perforce returned no direct lineage location for ${options.scope.mapDepotPath}.`,
+					recovery: "Inspect the selected map's Perforce filelog and retry.",
+					retrySafe: false
+				})
+			);
+		}
+		if (lineage.moves.length === 0) {
+			if (
+				lineage.locations.length !== 1 ||
+				lineage.locations[0]?.depotPath !== options.scope.mapDepotPath
+			) {
+				return yield* Effect.fail(
+					new MapHistoryError({
+						kind: "ambiguous_map_lineage",
+						message: `Perforce returned an inconsistent direct lineage for ${options.scope.mapDepotPath}.`,
+						recovery: "Inspect the selected map's Perforce filelog and retry.",
+						retrySafe: false
+					})
+				);
+			}
+			return { locations: [options.scope], moves: [] };
+		}
+		if (lineage.moves.length > 0 && options.scope.sourceKind === "world_partition") {
+			return yield* Effect.fail(
+				new MapHistoryError({
+					kind: "unsupported_history_layout",
+					message:
+						"Direct map relocation currently cannot prove the matching historical World Partition external-actor roots.",
+					recovery:
+						"Choose a range after the World Partition map move, or use a conventional saved map.",
+					retrySafe: false
+				})
+			);
+		}
+
+		const locations: ResolvedPerforceMapScope[] = [];
+		for (const location of lineage.locations) {
+			const mapProjectRelativePath = yield* Effect.try({
+				try: () => projectRelativePath(options.projectRoot, location.localPath),
+				catch: (cause) =>
+					cause instanceof MapHistoryError
+						? cause
+						: invalidScope(
+								`Could not resolve historical map location ${location.localPath} beneath the selected project.`
+							)
+			});
+			const mapPackageName = packageNameForProjectPath(mapProjectRelativePath);
+			if (mapPackageName === undefined || !/\.umap$/iu.test(mapProjectRelativePath)) {
+				return yield* Effect.fail(
+					new MapHistoryError({
+						kind: "ambiguous_map_lineage",
+						message: `Direct map move destination ${location.depotPath} is not a supported project .umap path.`,
+						recovery:
+							"Inspect the selected map's direct Perforce move records and retry.",
+						retrySafe: false
+					})
+				);
+			}
+			locations.push({
+				fileSpecs: [depotPackageFileSpec(location.depotPath)],
+				mapDepotPath: location.depotPath,
+				mapPackageName,
+				mapProjectRelativePath,
+				sourceKind: options.scope.sourceKind
+			});
+		}
+		for (const [index, move] of lineage.moves.entries()) {
+			const from = locations[index];
+			const to = locations[index + 1];
+			const previous = lineage.moves[index - 1];
+			if (
+				from === undefined ||
+				to === undefined ||
+				move.fromDepotPath !== from.mapDepotPath ||
+				move.toDepotPath !== to.mapDepotPath ||
+				(previous !== undefined && previous.change >= move.change)
+			) {
+				return yield* Effect.fail(
+					new MapHistoryError({
+						kind: "ambiguous_map_lineage",
+						message: `Perforce returned an unordered direct move lineage for ${options.scope.mapDepotPath}.`,
+						recovery:
+							"Inspect the selected map's direct Perforce move records and retry.",
+						retrySafe: false
+					})
+				);
+			}
+		}
+		return { locations, moves: lineage.moves };
 	})();
 }
 

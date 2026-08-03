@@ -14,8 +14,10 @@ import {
 	type PerforceChangedFile
 } from "./perforce.js";
 import {
+	resolvePerforceMapLineage,
 	resolvePerforceMapScope,
 	scopedPerforceFile,
+	type ResolvedPerforceMapLineage,
 	type ResolvedPerforceMapScope
 } from "./perforce-map-scope.js";
 import { materializePlannedRevision } from "./revision-materialization.js";
@@ -111,11 +113,12 @@ function packageChangeEvidence(
 
 function packageRevisionEvidence(
 	files: readonly PerforceChangedFile[],
-	scope: ResolvedPerforceMapScope
+	scopes: readonly ResolvedPerforceMapScope[]
 ): Effect.Effect<readonly PerforcePackageRevision[], MapHistoryError> {
 	const evidence: PerforcePackageRevision[] = [];
 	for (const file of files) {
-		if (scopedPerforceFile(scope, file.depotPath) === undefined) continue;
+		if (!scopes.some((scope) => scopedPerforceFile(scope, file.depotPath) !== undefined))
+			continue;
 		if (file.revision === null || file.revision <= 0) return Effect.fail(evidenceError(file));
 		evidence.push({
 			action: file.action,
@@ -125,6 +128,59 @@ function packageRevisionEvidence(
 	}
 	evidence.sort((left, right) => compareText(left.depotPath, right.depotPath));
 	return Effect.succeed(evidence);
+}
+
+function lineageScopeAtChange(
+	lineage: ResolvedPerforceMapLineage,
+	change: number
+): ResolvedPerforceMapScope {
+	let index = 0;
+	while (true) {
+		const move = lineage.moves[index];
+		if (move === undefined || move.change > change) break;
+		index += 1;
+	}
+	const scope = lineage.locations[index];
+	if (scope === undefined) {
+		throw new Error("Resolved map lineage has no location for the requested changelist.");
+	}
+	return scope;
+}
+
+function scopedFilesForRevision(
+	files: readonly PerforceChangedFile[],
+	scopes: readonly ResolvedPerforceMapScope[]
+) {
+	const byDepotPath = new Map<string, NonNullable<ReturnType<typeof scopedPerforceFile>>>();
+	for (const file of files) {
+		for (const scope of scopes) {
+			const scoped = scopedPerforceFile(scope, file.depotPath);
+			if (scoped !== undefined) byDepotPath.set(scoped.depotPath, scoped);
+		}
+	}
+	return [...byDepotPath.values()];
+}
+
+function assertResolvedMove(options: {
+	readonly after: ResolvedPerforceMapScope;
+	readonly before: ResolvedPerforceMapScope;
+	readonly change: number;
+	readonly files: readonly PerforceChangedFile[];
+}): Effect.Effect<void, MapHistoryError> {
+	const deletesCurrentMap = options.files.some(
+		(file) => file.depotPath === options.before.mapDepotPath && file.action === "move/delete"
+	);
+	if (!deletesCurrentMap || options.after.mapDepotPath !== options.before.mapDepotPath) {
+		return Effect.void;
+	}
+	return Effect.fail(
+		new MapHistoryError({
+			kind: "ambiguous_map_lineage",
+			message: `Changelist ${options.change} moves ${options.before.mapDepotPath}, but Perforce did not provide one bounded direct destination.`,
+			recovery: "Inspect the map's direct Perforce move records and retry.",
+			retrySafe: false
+		})
+	);
 }
 
 function emptyWorldBeforeCreation(world: SavedWorld): SavedWorld {
@@ -170,13 +226,13 @@ function readHistoricalWorld(options: {
 	})();
 }
 
-function snapshotOf(world: SavedWorld): MapHistorySnapshot {
+function snapshotOf(world: SavedWorld, scope: ResolvedPerforceMapScope): MapHistorySnapshot {
 	return {
 		actors: world.actors,
 		completeness: world.completeness,
 		diagnostics: world.diagnostics,
 		mapPackage: world.authority.mapPackage,
-		mapPath: world.mapPath as MapHistorySnapshot["mapPath"],
+		mapPath: scope.mapProjectRelativePath as MapHistorySnapshot["mapPath"],
 		sourceKind: world.sourceKind,
 		summary: world.summary
 	};
@@ -195,6 +251,7 @@ interface ReconstructedMapHistoryBody {
 
 function reconstructScopedMapHistory(options: {
 	readonly limits: PerforceMapHistoryQuery["limits"];
+	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
 	readonly range: PerforceMapHistoryQuery["range"];
 	readonly reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>;
 	readonly scope: ResolvedPerforceMapScope;
@@ -206,8 +263,13 @@ function reconstructScopedMapHistory(options: {
 	return Effect.fn("MapHistory.reconstructScopedMapHistory")(function* () {
 		const { limits, range, reportProgress, scope } = options;
 		yield* reportProgress(progress("listing_changes", 0, 0));
+		const lineage = yield* resolvePerforceMapLineage({
+			limits,
+			projectRoot: options.projectRoot,
+			scope
+		});
 		const selection = yield* selectSubmittedChanges({
-			fileSpecs: scope.fileSpecs,
+			fileSpecs: lineage.locations.flatMap((location) => location.fileSpecs),
 			maxChangelists: limits.maxChangelists,
 			range
 		});
@@ -217,26 +279,29 @@ function reconstructScopedMapHistory(options: {
 		let complete = true;
 		let materializedFiles = 0;
 		let previous: SavedWorld | undefined;
+		let previousScope: ResolvedPerforceMapScope | undefined;
 		let rangeStartSnapshot: MapHistorySnapshot | undefined;
 
 		if (selection.baseline !== undefined) {
+			const baselineScope = lineageScopeAtChange(lineage, selection.baseline.change);
 			yield* reportProgress(progress("materializing_baseline", 0, totalChangelists));
 			materializedFiles += yield* materializeBaseline({
 				change: selection.baseline.change,
 				concurrency: limits.maxConcurrency,
 				maxFiles: limits.maxMaterializedFiles,
-				scope,
+				scope: baselineScope,
 				tree
 			});
 			yield* reportProgress(progress("parsing", 0, totalChangelists));
 			previous = yield* readHistoricalWorld({
 				limits,
-				scope,
+				scope: baselineScope,
 				treeProjectRoot: tree.projectRoot
 			});
 			complete &&= previous.completeness === "complete";
 			diagnostics.push(...previous.diagnostics);
-			rangeStartSnapshot = snapshotOf(previous);
+			previousScope = baselineScope;
+			rangeStartSnapshot = snapshotOf(previous, baselineScope);
 		}
 
 		const source = yield* PerforceHistorySource;
@@ -254,11 +319,21 @@ function reconstructScopedMapHistory(options: {
 					})
 				);
 			}
+			const beforeScope = lineageScopeAtChange(lineage, selected.change - 1);
+			const afterScope = lineageScopeAtChange(lineage, selected.change);
+			yield* assertResolvedMove({
+				after: afterScope,
+				before: beforeScope,
+				change: selected.change,
+				files: described.files
+			});
+			const revisionScopes =
+				beforeScope.mapDepotPath === afterScope.mapDepotPath
+					? [afterScope]
+					: [beforeScope, afterScope];
 			const plan = planScopedRevision({
 				files: described.files,
-				scope: described.files
-					.map((file) => scopedPerforceFile(scope, file.depotPath))
-					.filter((file): file is NonNullable<typeof file> => file !== undefined)
+				scope: scopedFilesForRevision(described.files, revisionScopes)
 			});
 			const remainingMaterializations = limits.maxMaterializedFiles - materializedFiles;
 			materializedFiles += yield* materializePlannedRevision({
@@ -271,13 +346,13 @@ function reconstructScopedMapHistory(options: {
 			yield* reportProgress(progress("parsing", index, totalChangelists));
 			const current = yield* readHistoricalWorld({
 				limits,
-				scope,
+				scope: afterScope,
 				treeProjectRoot: tree.projectRoot
 			});
 			yield* reportProgress(progress("diffing", index, totalChangelists));
 			const before = previous ?? emptyWorldBeforeCreation(current);
 			const snapshotDiff = diffSavedWorldSnapshots(before, current);
-			const evidence = yield* packageRevisionEvidence(described.files, scope);
+			const evidence = yield* packageRevisionEvidence(described.files, revisionScopes);
 			const unclassifiedPackageChanges = findUnclassifiedPackageChanges({
 				after: current,
 				before,
@@ -302,6 +377,7 @@ function reconstructScopedMapHistory(options: {
 			complete &&= current.completeness === "complete";
 			diagnostics.push(...revisionDiagnostics);
 			previous = current;
+			previousScope = afterScope;
 			yield* reportProgress(progress("applying_revision", index + 1, totalChangelists));
 		}
 
@@ -319,9 +395,11 @@ function reconstructScopedMapHistory(options: {
 			...(scope.externalActorDepotRoot === undefined
 				? {}
 				: { externalActorDepotRoot: scope.externalActorDepotRoot as PerforceDepotPath }),
-			mapDepotPath: scope.mapDepotPath as PerforceDepotPath,
+			mapDepotPath: (lineage.locations.at(-1) ?? scope).mapDepotPath as PerforceDepotPath,
 			...(rangeStartSnapshot === undefined ? {} : { rangeStartSnapshot }),
-			...(previous === undefined ? {} : { rangeEndSnapshot: snapshotOf(previous) }),
+			...(previous === undefined || previousScope === undefined
+				? {}
+				: { rangeEndSnapshot: snapshotOf(previous, previousScope) }),
 			revisions
 		};
 	})();
@@ -340,6 +418,7 @@ function readPerforceMapHistoryWorkflow(
 		const scope = yield* resolvePerforceMapScope(query);
 		const body = yield* reconstructScopedMapHistory({
 			limits: query.limits,
+			projectRoot: query.projectRoot,
 			range: query.range,
 			reportProgress,
 			scope
@@ -365,6 +444,7 @@ function readPerforceFastMapHistoryWorkflow(
 		const resolved = yield* resolvePerforceFastMapScope(query);
 		const body = yield* reconstructScopedMapHistory({
 			limits: query.limits,
+			projectRoot: query.projectRoot,
 			range: query.range,
 			reportProgress,
 			scope: resolved.scope

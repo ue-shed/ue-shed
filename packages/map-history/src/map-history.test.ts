@@ -19,6 +19,8 @@ import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.j
 const projectRoot = "C:/Project";
 const mapPath = "Content/Maps/L_Example.umap";
 const mapDepotPath = "//Project/Main/Content/Maps/L_Example.umap";
+const movedMapPath = "Content/Relocated/L_Example.umap";
+const movedMapDepotPath = "//Project/Main/Content/Relocated/L_Example.umap";
 const externalActorDepotPath =
 	"//Project/Main/Content/__ExternalActors__/Maps/L_Example/A/Actor.uasset";
 const externalActorRoot = "C:/Project/Content/__ExternalActors__/Maps/L_Example";
@@ -208,6 +210,133 @@ function historyLayer(materializedRoot: string, observedHistoricalRoots: string[
 	);
 }
 
+function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: string[]) {
+	const relocatedWorld = (selectedMapPath: string): SavedWorld => ({
+		authority: {
+			kind: "project_files",
+			mapPackage:
+				selectedMapPath === mapPath ? "/Game/Maps/L_Example" : "/Game/Relocated/L_Example"
+		},
+		completeness: "complete",
+		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		diagnostics: [],
+		mapPath: selectedMapPath,
+		sourceKind: "level",
+		actors: [],
+		summary: {
+			failedPackages: 0,
+			partialPackages: 0,
+			resolvedActors: 0,
+			scannedPackages: 1
+		}
+	});
+	const reader = makeAssetReaderTestLayer({
+		discoverAssets: () => Effect.die("Map History must not discover arbitrary assets."),
+		discoverTables: () => Effect.die("Map History must not discover tables."),
+		readAsset: () => Effect.die("Map History must not read individual assets."),
+		readSavedWorld: (options) => {
+			observedMapPaths.push(options.mapPath);
+			return Effect.promise(async () => {
+				if (options.projectRoot === projectRoot) return relocatedWorld(options.mapPath);
+				await readFile(resolve(options.projectRoot, options.mapPath), "utf8");
+				return relocatedWorld(options.mapPath);
+			});
+		},
+		readTable: () => Effect.die("Map History must not read tables."),
+		source: () => Effect.succeed("configured")
+	});
+	const materializedPath = (file: { readonly depotPath: string; readonly revision: number }) =>
+		resolve(materializedRoot, `${file.revision}-${basename(file.depotPath)}`);
+	const perforce: PerforceHistorySourceShape = {
+		describeChangelist: (change) =>
+			Effect.succeed({
+				change,
+				files:
+					change === 101
+						? [
+								{
+									action: "move/delete",
+									depotPath: mapDepotPath,
+									revision: 2,
+									type: "binary"
+								},
+								{
+									action: "move/add",
+									depotPath: movedMapDepotPath,
+									revision: 1,
+									type: "binary"
+								}
+							]
+						: [
+								{
+									action: "edit",
+									depotPath: movedMapDepotPath,
+									revision: 2,
+									type: "binary"
+								}
+							],
+				status: "submitted"
+			}),
+		listDepotFilesAtChange: (options) =>
+			Effect.succeed({
+				files: options.depotPath.includes("/Maps/L_Example.")
+					? [
+							{
+								action: "add",
+								changelist: 100,
+								depotPath: mapDepotPath,
+								revision: 1,
+								type: "binary"
+							}
+						]
+					: [],
+				hasMore: false
+			}),
+		listSubmittedChangelists: () =>
+			Effect.succeed({
+				hasMore: false,
+				items: [
+					{ change: 102, submittedAt: "2026-07-23T00:00:00.000Z" },
+					{ change: 101, submittedAt: "2026-07-22T00:00:00.000Z" },
+					{ change: 100, submittedAt: "2026-07-20T00:00:00.000Z" }
+				],
+				nextBeforeChange: null
+			}),
+		materializeDepotFiles: (options) =>
+			Effect.forEach(options.files, (file) =>
+				Effect.promise(async () => {
+					const path = materializedPath(file);
+					await writeFile(path, `${file.depotPath}#${file.revision}`);
+					return { file, localPath: path };
+				})
+			).pipe(
+				Effect.map((files) => ({
+					directory: options.directory,
+					files,
+					totalCount: files.length
+				}))
+			),
+		resolveLocalPath: () => Effect.succeed({ depotPath: mapDepotPath }),
+		resolveMapLineage: () =>
+			Effect.succeed({
+				locations: [
+					{ depotPath: mapDepotPath, localPath: resolve(projectRoot, mapPath) },
+					{
+						depotPath: movedMapDepotPath,
+						localPath: resolve(projectRoot, movedMapPath)
+					}
+				],
+				moves: [
+					{ change: 101, fromDepotPath: mapDepotPath, toDepotPath: movedMapDepotPath }
+				]
+			})
+	};
+	return Layer.provide(
+		mapHistoryLayer,
+		Layer.merge(reader, makePerforceHistorySourceTestLayer(perforce))
+	);
+}
+
 function futureOnlySource(): PerforceHistorySourceShape {
 	return {
 		describeChangelist: () => Effect.die("An empty range must not describe changelists."),
@@ -274,6 +403,33 @@ describe("readPerforceMapHistory", () => {
 						expect(existsSync(root)).toBe(false);
 				})
 			)
+	);
+
+	it.effect("continues reconstruction across one direct map move", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const materializedRoot = yield* Effect.acquireRelease(
+					Effect.promise(() => mkdtemp(resolve(tmpdir(), "ue-shed-map-lineage-"))),
+					(root) => Effect.promise(() => rm(root, { force: true, recursive: true }))
+				);
+				const observedMapPaths: string[] = [];
+				const result = yield* readPerforceMapHistory(query()).pipe(
+					Effect.provide(relocatedHistoryLayer(materializedRoot, observedMapPaths))
+				);
+
+				expect(result.baseline).toEqual({ change: 100, status: "available" });
+				expect(result.mapDepotPath).toBe(movedMapDepotPath);
+				expect(result.revisions.map((revision) => revision.change)).toEqual([101, 102]);
+				expect(result.revisions[0]?.files.map((file) => file.action)).toEqual([
+					"move/delete",
+					"move/add"
+				]);
+				expect(result.rangeStartSnapshot?.mapPath).toBe(mapPath);
+				expect(result.rangeEndSnapshot?.mapPath).toBe(movedMapPath);
+				expect(observedMapPaths).toContain(mapPath);
+				expect(observedMapPaths).toContain(movedMapPath);
+			})
+		)
 	);
 
 	it.effect("reports a successful empty range before the map was created", () => {

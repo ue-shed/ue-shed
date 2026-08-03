@@ -125,13 +125,21 @@ Every matched change records whether continuity came from a GUID or exact path f
 
 The operation:
 
-1. Resolves the selected local map to one depot map path.
+1. Resolves the selected local map to one depot map path and follows only its bounded direct
+   `move/add`/`move/delete` lineage.
 2. Adds the matching external-actor subtree when the current map is World Partition.
 3. Lists submitted changelists touching only that scope.
 4. Materializes one exact baseline before the requested range.
 5. Applies each relevant changelist's in-scope adds, edits, and deletes in ascending order.
 6. Reads and diffs the saved world after each atomic changelist.
 7. Cleans the temporary project tree on success, failure, interruption, or cancellation.
+
+Direct map relocation is bounded to 16 moves. Reconstruction follows only the linear selected-map
+lineage, bounds filelog discovery by the request's changelist limit plus the move allowance,
+reconstructs only the requested changelists plus one baseline, and reports ambiguous, cyclic, or
+over-limit lineage explicitly. It does not traverse copy, branch, merge, or unrelated integration
+history. Historical World Partition relocation remains unsupported until the matching external-actor
+roots can be proven without scanning unrelated depot paths.
 
 The operation never uses `p4 sync`, changes have-state, checks out files, or mutates the Perforce
 server.

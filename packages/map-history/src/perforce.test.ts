@@ -98,10 +98,16 @@ describe("PerforceHistorySource", () => {
 		const calls: {
 			readonly args: readonly string[];
 			readonly client: string | undefined;
+			readonly config: string | undefined;
 			readonly cwd: string | undefined;
 		}[] = [];
 		const executor: P4CommandExecutor = async (_command, args, options) => {
-			calls.push({ args, cwd: options.cwd, client: options.env?.P4CLIENT });
+			calls.push({
+				args,
+				client: options.env?.P4CLIENT,
+				config: options.env?.P4CONFIG,
+				cwd: options.cwd
+			});
 			const command = args.find(
 				(argument) => argument === "info" || argument === "clients" || argument === "where"
 			);
@@ -128,6 +134,7 @@ describe("PerforceHistorySource", () => {
 		const whereCall = calls.find((call) => call.args.includes("where"));
 		expect(whereCall?.cwd).toBe("D:/Perforce/ExampleProject");
 		expect(whereCall?.client).toBe("example-client");
+		expect(whereCall?.config).toMatch(/ue-shed-no-p4config$/u);
 	});
 
 	it("translates p4client values at the acquisition boundary", async () => {

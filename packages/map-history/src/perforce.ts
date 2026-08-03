@@ -11,7 +11,8 @@ import {
 	type P4ClientOptions,
 	type P4MaterializeResult
 } from "p4client-ts";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { MapHistoryError } from "./errors.js";
 
 export interface PerforceChangedFile {
@@ -318,6 +319,8 @@ function localRootKey(root: string): string {
 		.toLocaleLowerCase("en-US");
 }
 
+const p4ConfigBypassPath = join(tmpdir(), "ue-shed-no-p4config");
+
 /** Selects the client whose local workspace root is the selected project root. */
 export function selectPerforceWorkspace(options: {
 	readonly configuredClient: string | null;
@@ -338,16 +341,20 @@ async function optionsForProject(options: P4ClientOptions, projectRoot: string |
 
 	const projectOptions: P4ClientOptions = { ...options, cwd: projectRoot };
 	const probe = new P4Client(projectOptions);
+	const localEnvironment = await probe
+		.getEnvironment({ mode: "local", refresh: true })
+		.catch(() => undefined);
 	const environment = await probe.getEnvironment({ refresh: true }).catch(() => undefined);
-	const configuredClient = environment?.p4Client ?? null;
+	const configuredClient = localEnvironment?.p4Client ?? environment?.p4Client ?? null;
+	const user = environment?.p4User ?? localEnvironment?.p4User;
 	const workspaces =
-		environment?.p4User === null || environment?.p4User === undefined
+		user === null || user === undefined
 			? []
 			: await probe
 					.listWorkspaces({
 						includeNonLocal: true,
 						refresh: true,
-						user: environment.p4User
+						user
 					})
 					.catch(() => []);
 	const selectedClient = selectPerforceWorkspace({
@@ -358,7 +365,17 @@ async function optionsForProject(options: P4ClientOptions, projectRoot: string |
 	if (selectedClient === undefined) return projectOptions;
 	return {
 		...projectOptions,
-		env: { ...options.env, P4CLIENT: selectedClient }
+		env: {
+			...(localEnvironment?.p4Port === null || localEnvironment?.p4Port === undefined
+				? {}
+				: { P4PORT: localEnvironment.p4Port }),
+			...(localEnvironment?.p4User === null || localEnvironment?.p4User === undefined
+				? {}
+				: { P4USER: localEnvironment.p4User }),
+			...options.env,
+			P4CONFIG: p4ConfigBypassPath,
+			P4CLIENT: selectedClient
+		}
 	};
 }
 

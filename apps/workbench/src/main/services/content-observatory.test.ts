@@ -12,11 +12,11 @@ import {
 } from "@ue-shed/extension-content-observatory/client";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { Deferred, Effect, Layer, Schema } from "effect";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import {
 	WorkbenchContentObservatory,
 	WorkbenchContentObservatoryLive
 } from "./content-observatory.js";
+import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const request = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	mode: "deep",
@@ -66,6 +66,16 @@ const currentWorld: SavedWorld = {
 	summary: { failedPackages: 0, partialPackages: 0, resolvedActors: 1, scannedPackages: 1 }
 };
 const currentActor = currentWorld.actors[0]!;
+
+type TestSavedProject = {
+	readonly maps: ReadonlyArray<{ readonly label: string; readonly mapPath: string }>;
+	readonly projectRoot: string;
+};
+
+const defaultSavedProject: TestSavedProject = {
+	maps: [{ label: "Map History World", mapPath: request.mapPath }],
+	projectRoot: "C:/Project"
+};
 
 const fastRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	mode: "fast",
@@ -121,7 +131,11 @@ const fastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory)({
 	schemaVersion: 1
 });
 
-function stateLayer(source: MapHistoryShape, savedWorld: SavedWorld | undefined = undefined) {
+function stateLayer(
+	source: MapHistoryShape,
+	savedWorld: SavedWorld | undefined = undefined,
+	savedProject: () => Effect.Effect<TestSavedProject> = () => Effect.succeed(defaultSavedProject)
+) {
 	return WorkbenchContentObservatoryLive.pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -143,23 +157,22 @@ function stateLayer(source: MapHistoryShape, savedWorld: SavedWorld | undefined 
 					source: () => Effect.succeed("path" as const)
 				} satisfies AssetReaderTestShape),
 				makeMapHistoryTestLayer(source),
-				makeWorkbenchConfigurationLayer({
-					authoringAsset: { status: "not_configured" },
-					expectedProject: { status: "not_configured" },
-					project: { projectRoot: "C:/Project", status: "configured" },
-					remoteControlEndpoint: "http://127.0.0.1:30001",
-					review: { projectRoot: "C:/Project", status: "project_configured" },
-					savedWorldMaps: {
-						maps: [
-							{
-								label: "Map History World",
-								mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap"
-							}
-						],
-						status: "configured"
-					},
-					sourceCheckout: { status: "not_configured" },
-					textureAuditRules: { status: "not_configured" }
+				makeWorkbenchProjectTestLayer({
+					choose: () => Effect.succeed({ status: "cancelled" as const }),
+					current: () =>
+						Effect.succeed({
+							project: {
+								inputAtlas: "ready" as const,
+								mapCount: defaultSavedProject.maps.length,
+								packageCount: defaultSavedProject.maps.length,
+								projectName: "Project",
+								projectRoot: defaultSavedProject.projectRoot
+							},
+							status: "ready" as const
+						}),
+					inputAtlas: () => Effect.die("not used"),
+					savedProject,
+					savedTables: () => Effect.die("not used")
 				})
 			)
 		)
@@ -198,6 +211,43 @@ describe("WorkbenchContentObservatory", () => {
 							return history;
 						})
 				})
+			),
+			Effect.scoped
+		);
+	});
+
+	it.effect("refreshes its map inventory when the Workbench project changes", () => {
+		const firstProject = defaultSavedProject;
+		const secondProject: TestSavedProject = {
+			maps: [{ label: "New World", mapPath: "Content/New/L_NewWorld.umap" }],
+			projectRoot: "D:/Projects/NewProject"
+		};
+		let selectedProject = firstProject;
+		return Effect.gen(function* () {
+			const service = yield* WorkbenchContentObservatory;
+			expect(yield* service.status()).toMatchObject({
+				maps: firstProject.maps,
+				projectRoot: firstProject.projectRoot,
+				status: "ready"
+			});
+
+			selectedProject = secondProject;
+			expect(yield* service.status()).toMatchObject({
+				maps: secondProject.maps,
+				projectRoot: secondProject.projectRoot,
+				status: "ready"
+			});
+		}).pipe(
+			Effect.provide(
+				stateLayer(
+					{
+						progress: () => Effect.succeed(idleProgress()),
+						readPerforceFastMapHistory: () => Effect.die("not used"),
+						readPerforceMapHistory: () => Effect.die("not used")
+					},
+					undefined,
+					() => Effect.succeed(selectedProject)
+				)
 			),
 			Effect.scoped
 		);

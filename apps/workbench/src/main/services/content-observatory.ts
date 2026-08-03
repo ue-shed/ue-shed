@@ -11,7 +11,7 @@ import type {
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import { Context, Effect, Fiber, Layer, Option, Ref } from "effect";
-import { WorkbenchConfiguration, type WorkbenchConfigurationShape } from "../workbench-config.js";
+import { WorkbenchProject, type WorkbenchProjectShape } from "./project-workspace.js";
 
 export interface WorkbenchContentObservatoryShape {
 	readonly cancel: () => Effect.Effect<ContentObservatoryState>;
@@ -34,19 +34,12 @@ export class WorkbenchContentObservatory extends Context.Service<
 
 type ActiveJob = Fiber.Fiber<unknown, unknown>;
 
-function configuredMaps(configuration: WorkbenchConfigurationShape) {
-	if (configuration.savedWorldMaps?.status !== "configured") return [];
-	return configuration.savedWorldMaps.maps.map((map) => ({
-		label: map.label,
-		mapPath: map.mapPath
-	}));
-}
+type SavedProject = Effect.Success<ReturnType<WorkbenchProjectShape["savedProject"]>>;
 
-function readyState(configuration: WorkbenchConfigurationShape): ContentObservatoryState {
-	if (configuration.project.status !== "configured") return { status: "not_configured" };
+function readyState(project: SavedProject): Extract<ContentObservatoryState, { status: "ready" }> {
 	return {
-		maps: configuredMaps(configuration),
-		projectRoot: configuration.project.projectRoot,
+		maps: project.maps.map((map) => ({ label: map.label, mapPath: map.mapPath })),
+		projectRoot: project.projectRoot,
 		status: "ready"
 	};
 }
@@ -75,12 +68,11 @@ function targetCatalogError(operation: string, error: AssetReaderError): MapHist
 export const WorkbenchContentObservatoryLive = Layer.effect(
 	WorkbenchContentObservatory,
 	Effect.gen(function* () {
-		const configuration = yield* WorkbenchConfiguration;
 		const mapHistory = yield* MapHistory;
 		const assetReader = yield* AssetReader;
+		const project = yield* WorkbenchProject;
 		const layerScope = yield* Effect.scope;
-		const maps = configuredMaps(configuration);
-		const state = yield* Ref.make<ContentObservatoryState>(readyState(configuration));
+		const state = yield* Ref.make<ContentObservatoryState>({ status: "not_configured" });
 		const activeJob = yield* Ref.make<Option.Option<ActiveJob>>(Option.none());
 		const nextJobId = yield* Ref.make(0);
 
@@ -91,15 +83,49 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 			}
 		);
 
+		const resolveProjectState = Effect.fn("Workbench.ContentObservatory.resolveProjectState")(
+			function* () {
+				return yield* project.savedProject().pipe(
+					Effect.map(readyState),
+					Effect.catch(() => Effect.succeed({ status: "not_configured" as const }))
+				);
+			}
+		);
+
 		const status = Effect.fn("Workbench.ContentObservatory.status")(function* () {
 			const current = yield* Ref.get(state);
-			if (current.status !== "running") return current;
+			const latestProject = yield* resolveProjectState();
+			if (latestProject.status === "not_configured") {
+				if (current.status === "running") yield* interruptActive();
+				yield* Ref.set(state, latestProject);
+				return latestProject;
+			}
+			if (current.status !== "running") {
+				if (
+					!("projectRoot" in current) ||
+					current.projectRoot !== latestProject.projectRoot
+				) {
+					yield* Ref.set(state, latestProject);
+					return latestProject;
+				}
+				const refreshed = {
+					...current,
+					maps: latestProject.maps
+				} as ContentObservatoryState;
+				yield* Ref.set(state, refreshed);
+				return refreshed;
+			}
+			if (current.projectRoot !== latestProject.projectRoot) {
+				yield* interruptActive();
+				yield* Ref.set(state, latestProject);
+				return latestProject;
+			}
 			const progress = yield* mapHistory.progress();
 			return yield* Ref.modify(state, (latest) => {
 				if (latest.status !== "running" || latest.jobId !== current.jobId) {
 					return [latest, latest];
 				}
-				const refreshed = { ...latest, progress } as const;
+				const refreshed = { ...latest, maps: latestProject.maps, progress } as const;
 				return [refreshed, refreshed];
 			});
 		});
@@ -107,18 +133,19 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 		const targets = Effect.fn("Workbench.ContentObservatory.targets")(function* (
 			mapPath: string
 		) {
-			const project = configuration.project;
-			if (project.status !== "configured") {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "invalid_target",
-						message: "No Workbench project is configured for current actor discovery.",
-						recovery: "Configure a project, then retry loading current actors.",
-						retrySafe: false
-					})
-				);
-			}
-			if (!maps.some((map) => map.mapPath === mapPath)) {
+			const selectedProject = yield* project.savedProject().pipe(
+				Effect.mapError(
+					() =>
+						new MapHistoryError({
+							kind: "invalid_target",
+							message:
+								"No Workbench project is configured for current actor discovery.",
+							recovery: "Configure a project, then retry loading current actors.",
+							retrySafe: false
+						})
+				)
+			);
+			if (!selectedProject.maps.some((map) => map.mapPath === mapPath)) {
 				return yield* Effect.fail(
 					new MapHistoryError({
 						kind: "invalid_target",
@@ -132,7 +159,7 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 				.readSavedWorld({
 					concurrency: 8,
 					mapPath,
-					projectRoot: project.projectRoot
+					projectRoot: selectedProject.projectRoot
 				})
 				.pipe(
 					Effect.mapError((error) => targetCatalogError("Current actor discovery", error))
@@ -151,9 +178,12 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 		const start = Effect.fn("Workbench.ContentObservatory.start")(function* (
 			request: ContentObservatoryHistoryRequest
 		) {
-			const project = configuration.project;
-			if (project.status !== "configured") return yield* Ref.get(state);
-			const projectRoot = project.projectRoot;
+			const selectedProject = yield* resolveProjectState();
+			if (selectedProject.status === "not_configured") {
+				return selectedProject;
+			}
+			const maps = selectedProject.maps;
+			const projectRoot = selectedProject.projectRoot;
 			yield* interruptActive();
 			const jobId = `map-history-${(yield* Ref.updateAndGet(nextJobId, (value) => value + 1)).toString()}`;
 			const running: ContentObservatoryState = {

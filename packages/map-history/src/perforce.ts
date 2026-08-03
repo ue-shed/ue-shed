@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Cache, Context, Effect, Layer, Option, Schema } from "effect";
 import {
 	P4Client,
 	createP4Service,
@@ -11,6 +11,7 @@ import {
 	type P4ClientOptions,
 	type P4MaterializeResult
 } from "p4client-ts";
+import { resolve } from "node:path";
 import { MapHistoryError } from "./errors.js";
 
 export interface PerforceChangedFile {
@@ -95,6 +96,11 @@ export class PerforceHistorySource extends Context.Service<
 	PerforceHistorySourceShape
 >()("@ue-shed/map-history/PerforceHistorySource") {}
 
+/** The selected project root used to resolve local Perforce configuration and workspace context. */
+export const PerforceProjectContext = Context.Service<string>(
+	"@ue-shed/map-history/PerforceProjectContext"
+);
+
 interface PerforceBackend {
 	readonly describeChangelist: (
 		change: number
@@ -109,6 +115,8 @@ interface PerforceBackend {
 		options: MaterializeDepotFilesOptions
 	) => Effect.Effect<P4MaterializeResult, unknown>;
 }
+
+type PerforceBackendResolver = (projectRoot: string | undefined) => PerforceBackend;
 
 const P4WhereRecord = Schema.Struct({
 	depotFile: Schema.optionalKey(Schema.String),
@@ -194,8 +202,23 @@ function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
 	});
 }
 
+function selectedProjectRoot(): Effect.Effect<string | undefined> {
+	return Effect.map(Effect.serviceOption(PerforceProjectContext), (root) =>
+		Option.isSome(root) ? root.value : undefined
+	);
+}
+
+function resolveBackend(
+	backend: PerforceBackend | PerforceBackendResolver
+): Effect.Effect<PerforceBackend> {
+	return Effect.gen(function* () {
+		if (typeof backend !== "function") return backend;
+		return backend(yield* selectedProjectRoot());
+	});
+}
+
 export function makePerforceHistorySource(
-	backend: PerforceBackend,
+	backend: PerforceBackend | PerforceBackendResolver,
 	resolveLocalPath: PerforceHistorySourceShape["resolveLocalPath"] = (localPath) =>
 		Effect.fail(
 			new MapHistoryError({
@@ -210,7 +233,7 @@ export function makePerforceHistorySource(
 		describeChangelist: Effect.fn("PerforceHistorySource.describeChangelist")(function* (
 			change: number
 		) {
-			const result = yield* backend
+			const result = yield* (yield* resolveBackend(backend))
 				.describeChangelist(change)
 				.pipe(Effect.mapError((cause) => toMapHistoryError("describe changelist", cause)));
 			return {
@@ -226,7 +249,7 @@ export function makePerforceHistorySource(
 		}),
 		listDepotFilesAtChange: Effect.fn("PerforceHistorySource.listDepotFilesAtChange")(
 			function* (options: ListDepotFilesAtChangeOptions) {
-				const result = yield* backend
+				const result = yield* (yield* resolveBackend(backend))
 					.listDepotFilesAtChange(options)
 					.pipe(Effect.mapError((cause) => toMapHistoryError("list depot files", cause)));
 				return { files: result.items.map(toDepotFile), hasMore: result.hasMore };
@@ -234,7 +257,7 @@ export function makePerforceHistorySource(
 		),
 		listSubmittedChangelists: Effect.fn("PerforceHistorySource.listSubmittedChangelists")(
 			function* (options: ListSubmittedChangelistsOptions) {
-				const result = yield* backend
+				const result = yield* (yield* resolveBackend(backend))
 					.listSubmittedChangelists(options)
 					.pipe(
 						Effect.mapError((cause) =>
@@ -271,7 +294,7 @@ export function makePerforceHistorySource(
 						})
 				)
 			);
-			const result = yield* backend
+			const result = yield* (yield* resolveBackend(backend))
 				.materializeDepotFiles({ ...options, files })
 				.pipe(
 					Effect.mapError((cause) => toMapHistoryError("materialize depot files", cause))
@@ -289,48 +312,147 @@ export function makePerforceHistorySource(
 	});
 }
 
+function localRootKey(root: string): string {
+	return resolve(root)
+		.replace(/[\\/]+$/u, "")
+		.toLocaleLowerCase("en-US");
+}
+
+/** Selects the client whose local workspace root is the selected project root. */
+export function selectPerforceWorkspace(options: {
+	readonly configuredClient: string | null;
+	readonly projectRoot: string;
+	readonly workspaces: readonly { readonly client: string; readonly root: string }[];
+}): string | undefined {
+	const matching = options.workspaces.filter(
+		(workspace) => localRootKey(workspace.root) === localRootKey(options.projectRoot)
+	);
+	if (matching.length === 1) return matching[0]?.client;
+	return matching.some((workspace) => workspace.client === options.configuredClient)
+		? (options.configuredClient ?? undefined)
+		: undefined;
+}
+
+async function optionsForProject(options: P4ClientOptions, projectRoot: string | undefined) {
+	if (projectRoot === undefined) return options;
+
+	const projectOptions: P4ClientOptions = { ...options, cwd: projectRoot };
+	const probe = new P4Client(projectOptions);
+	const environment = await probe.getEnvironment({ refresh: true }).catch(() => undefined);
+	const configuredClient = environment?.p4Client ?? null;
+	const workspaces =
+		environment?.p4User === null || environment?.p4User === undefined
+			? []
+			: await probe
+					.listWorkspaces({
+						includeNonLocal: true,
+						refresh: true,
+						user: environment.p4User
+					})
+					.catch(() => []);
+	const selectedClient = selectPerforceWorkspace({
+		configuredClient,
+		projectRoot,
+		workspaces
+	});
+	if (selectedClient === undefined) return projectOptions;
+	return {
+		...projectOptions,
+		env: { ...options.env, P4CLIENT: selectedClient }
+	};
+}
+
 export function perforceHistorySourceLayer(
 	options: P4ClientOptions = {}
 ): Layer.Layer<PerforceHistorySource> {
-	const client = new P4Client(options);
-	const resolveLocalPath = Effect.fn("PerforceHistorySource.resolveLocalPath")(function* (
-		localPath: string
-	) {
-		const raw = yield* Effect.tryPromise({
-			try: () => client.runTaggedJson(["where", localPath]),
-			catch: (cause) => toMapHistoryError("resolve local Perforce path", cause)
-		});
-		const records = yield* decodeP4WhereRecords(raw).pipe(
-			Effect.mapError(
-				() =>
-					new MapHistoryError({
-						kind: "ambiguous_depot_mapping",
-						message: `Perforce returned an invalid mapping for ${localPath}.`,
-						recovery: "Check the Perforce client mapping and retry.",
-						retrySafe: false
-					})
-			)
-		);
-		if (
-			records.length !== 1 ||
-			records[0]?.depotFile === undefined ||
-			records[0].unmap !== undefined
-		) {
-			return yield* Effect.fail(
-				new MapHistoryError({
-					kind: "ambiguous_depot_mapping",
-					message: `Perforce could not map ${localPath} to exactly one depot file.`,
-					recovery:
-						"Use a project path covered by one unambiguous Perforce client mapping.",
-					retrySafe: false
-				})
-			);
-		}
-		return { depotPath: records[0].depotFile };
-	});
-	return Layer.succeed(
+	return Layer.effect(
 		PerforceHistorySource,
-		makePerforceHistorySource(createP4Service(options), resolveLocalPath)
+		Effect.gen(function* () {
+			const contexts = yield* Cache.makeWith(
+				(projectRoot: string | undefined) =>
+					Effect.tryPromise({
+						try: () => optionsForProject(options, projectRoot),
+						catch: (cause) => cause
+					}).pipe(
+						Effect.map((resolvedOptions) => ({
+							client: new P4Client(resolvedOptions),
+							service: createP4Service(resolvedOptions)
+						}))
+					),
+				{ capacity: 4 }
+			);
+			const contextForProject = (projectRoot: string | undefined) =>
+				Cache.get(contexts, projectRoot);
+			const backendForProject: PerforceBackendResolver = (projectRoot) => {
+				const service = contextForProject(projectRoot);
+				return {
+					describeChangelist: (change) =>
+						service.pipe(
+							Effect.flatMap((current) => current.service.describeChangelist(change))
+						),
+					listDepotFilesAtChange: (request) =>
+						service.pipe(
+							Effect.flatMap((current) =>
+								current.service.listDepotFilesAtChange(request)
+							)
+						),
+					listSubmittedChangelists: (request) =>
+						service.pipe(
+							Effect.flatMap((current) =>
+								current.service.listSubmittedChangelists(request)
+							)
+						),
+					materializeDepotFiles: (request) =>
+						service.pipe(
+							Effect.flatMap((current) =>
+								current.service.materializeDepotFiles(request)
+							)
+						)
+				};
+			};
+			const resolveLocalPath = Effect.fn("PerforceHistorySource.resolveLocalPath")(function* (
+				localPath: string
+			) {
+				const projectRoot = yield* selectedProjectRoot();
+				const context = yield* contextForProject(projectRoot).pipe(
+					Effect.mapError((cause) =>
+						toMapHistoryError("resolve local Perforce path", cause)
+					)
+				);
+				const raw = yield* Effect.tryPromise({
+					try: () => context.client.runTaggedJson(["where", localPath]),
+					catch: (cause) => toMapHistoryError("resolve local Perforce path", cause)
+				});
+				const records = yield* decodeP4WhereRecords(raw).pipe(
+					Effect.mapError(
+						() =>
+							new MapHistoryError({
+								kind: "ambiguous_depot_mapping",
+								message: `Perforce returned an invalid mapping for ${localPath}.`,
+								recovery: "Check the Perforce client mapping and retry.",
+								retrySafe: false
+							})
+					)
+				);
+				if (
+					records.length !== 1 ||
+					records[0]?.depotFile === undefined ||
+					records[0].unmap !== undefined
+				) {
+					return yield* Effect.fail(
+						new MapHistoryError({
+							kind: "ambiguous_depot_mapping",
+							message: `Perforce could not map ${localPath} to exactly one depot file.`,
+							recovery:
+								"Use a project path covered by one unambiguous Perforce client mapping.",
+							retrySafe: false
+						})
+					);
+				}
+				return { depotPath: records[0].depotFile };
+			});
+			return makePerforceHistorySource(backendForProject, resolveLocalPath);
+		})
 	);
 }
 

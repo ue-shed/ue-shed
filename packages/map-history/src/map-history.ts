@@ -9,6 +9,7 @@ import { acquireHistoricalProjectTree } from "./historical-project-tree.js";
 import { findUnclassifiedPackageChanges } from "./package-correlation.js";
 import {
 	perforceHistorySourceLayer,
+	PerforceProjectContext,
 	PerforceHistorySource,
 	type PerforceChangedFile
 } from "./perforce.js";
@@ -402,6 +403,7 @@ export const mapHistoryLayer: Layer.Layer<MapHistory, never, AssetReader | Perfo
 					Effect.scoped(readPerforceFastMapHistoryWorkflow(query, reportProgress)).pipe(
 						Effect.provideService(AssetReader, reader),
 						Effect.provideService(PerforceHistorySource, perforce),
+						Effect.provideService(PerforceProjectContext, query.projectRoot),
 						Effect.timeoutOrElse({
 							duration: query.limits.maxDurationMs,
 							orElse: () => Effect.fail(durationError(query.limits.maxDurationMs))
@@ -417,6 +419,7 @@ export const mapHistoryLayer: Layer.Layer<MapHistory, never, AssetReader | Perfo
 					Effect.scoped(readPerforceMapHistoryWorkflow(query, reportProgress)).pipe(
 						Effect.provideService(AssetReader, reader),
 						Effect.provideService(PerforceHistorySource, perforce),
+						Effect.provideService(PerforceProjectContext, query.projectRoot),
 						Effect.timeoutOrElse({
 							duration: query.limits.maxDurationMs,
 							orElse: () => Effect.fail(durationError(query.limits.maxDurationMs))

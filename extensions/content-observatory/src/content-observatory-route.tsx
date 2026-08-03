@@ -23,6 +23,7 @@ import {
 import { WorldLogActorAtlas } from "./world-log-actor-atlas.js";
 import { actorKeyFromIdentity, actorKeyFromSavedActor } from "./world-log-actors.js";
 import { WorldLogChangelistMap } from "./world-log-changelist-map.js";
+import { WorldLogCurrentMap } from "./world-log-current-map.js";
 import { humanize } from "./world-log-format.js";
 import {
 	WorldLogQueryForm,
@@ -115,6 +116,8 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 	const [limits, setLimits] = createSignal<WorldLogScanLimits>(defaultWorldLogScanLimits);
 	const [frameRevision, setFrameRevision] = createSignal<number | undefined>(undefined);
 	const [selection, setSelection] = createSignal<WorldLogSelection>(noWorldLogSelection);
+	let appliedProjectRoot: string | undefined;
+	let loadedCurrentMapKey = "";
 
 	const readyState = createMemo(() => {
 		const current = state();
@@ -179,6 +182,19 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 	const apply = (next: ContentObservatoryState, source: StateUpdateSource = "mutation") => {
 		const shouldApply = source !== "poll" || shouldApplyPolledState(state(), next);
 		if (!shouldApply) return;
+		const projectChanged = "projectRoot" in next && next.projectRoot !== appliedProjectRoot;
+		if (projectChanged) {
+			appliedProjectRoot = next.projectRoot;
+			setTargetCatalog(undefined);
+			setTargetKey(undefined);
+			setTargetClassPath(undefined);
+			setTargetError(undefined);
+			setMapPath(
+				next.status === "complete"
+					? next.history.query.mapPath
+					: (next.maps[0]?.mapPath ?? "")
+			);
+		}
 		setState(next);
 		if ("request" in next) {
 			setMode(next.request.mode);
@@ -193,7 +209,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 				}
 			}
 		}
-		if (mapPath().length === 0) {
+		if (!projectChanged && mapPath().length === 0) {
 			setMapPath(
 				next.status === "complete"
 					? next.history.query.mapPath
@@ -289,6 +305,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 			setTargetError("Current actor discovery is not available in this Workbench build.");
 			return;
 		}
+		setTargetCatalog(undefined);
 		setTargetLoading(true);
 		setTargetError(undefined);
 		targetAction.run(targets(selectedMap), {
@@ -314,6 +331,17 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 			}
 		});
 	};
+
+	createEffect(() => {
+		const current = readyState();
+		const projectRoot = current?.projectRoot;
+		const selectedMap = mapPath().trim();
+		if (projectRoot === undefined || selectedMap.length === 0) return;
+		const requestKey = `${projectRoot}\u0000${selectedMap}`;
+		if (requestKey === loadedCurrentMapKey) return;
+		loadedCurrentMapKey = requestKey;
+		loadTargets();
+	});
 
 	createEffect(() => {
 		if (state().status !== "running") return;
@@ -385,6 +413,24 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 								fastTargetKind={fastTargetKind()}
 								targetLoading={targetLoading()}
 							/>
+							<Show when={targetLoading() && targetCatalog() === undefined}>
+								<section
+									aria-live="polite"
+									{...stylex.props(styles.currentMapLoading)}
+								>
+									<span {...stylex.props(styles.sectionKicker)}>
+										CURRENT SAVED MAP
+									</span>
+									<strong>Reading the selected map…</strong>
+									<p {...stylex.props(styles.currentMapLoadingCopy)}>
+										The current map stays available while history is
+										reconstructed.
+									</p>
+								</section>
+							</Show>
+							<Show when={targetCatalog()}>
+								{(catalog) => <WorldLogCurrentMap world={catalog()} />}
+							</Show>
 							<Show when={runningState()}>
 								{(running) => (
 									<section
@@ -400,6 +446,18 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 												{running().progress.processedChangelists} /{" "}
 												{running().progress.totalChangelists} changelists
 											</p>
+											<Show when={running().progress.savedWorld}>
+												{(savedWorld) => (
+													<small
+														{...stylex.props(styles.runningSubprogress)}
+													>
+														{humanize(savedWorld().phase)} ·{" "}
+														{savedWorld().processedPackages} /{" "}
+														{savedWorld().totalPackages} packages ·{" "}
+														{savedWorld().actorsFound} actors found
+													</small>
+												)}
+											</Show>
 										</div>
 										<button
 											type="button"

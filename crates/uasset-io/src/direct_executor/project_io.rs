@@ -1545,6 +1545,17 @@ pub(crate) fn saved_world_with_cancellation(
     request: &Request,
     cancellation: &CancellationToken,
 ) -> Result<SavedWorldOutput, Failure> {
+    saved_world_with_cancellation_and_progress(request, cancellation, &|_, _| {})
+}
+
+pub(crate) fn saved_world_with_cancellation_and_progress<F>(
+    request: &Request,
+    cancellation: &CancellationToken,
+    on_progress: &F,
+) -> Result<SavedWorldOutput, Failure>
+where
+    F: Fn(u64, u64) + Sync,
+{
     let Operation::SavedWorld {
         map_path,
         project_root,
@@ -1589,7 +1600,10 @@ pub(crate) fn saved_world_with_cancellation(
             retry_safe: false,
         });
     }
+    let total_packages = package_paths.len() as u64;
+    on_progress(0, total_packages);
     let next_path = AtomicUsize::new(0);
+    let completed_packages = AtomicUsize::new(0);
     let worker_count = request.limits.concurrency.unwrap_or(4).max(1) as usize;
     let slots = Mutex::new(
         (0..package_paths.len())
@@ -1600,6 +1614,7 @@ pub(crate) fn saved_world_with_cancellation(
     std::thread::scope(|scope| {
         for _ in 0..worker_count.min(package_paths.len().max(1)) {
             let next_path = &next_path;
+            let completed_packages = &completed_packages;
             let slots = &slots;
             let cancellation = cancellation.clone();
             scope.spawn(move || {
@@ -1611,10 +1626,13 @@ pub(crate) fn saved_world_with_cancellation(
                     let Some(path) = paths.get(index) else {
                         break;
                     };
+                    let result = read_saved_world_package(path, &cancellation);
                     slots
                         .lock()
-                        .expect("saved-world slots must not be poisoned")[index] =
-                        Some(read_saved_world_package(path, &cancellation));
+                        .expect("saved-world slots must not be poisoned")[index] = Some(result);
+                    let completed_packages =
+                        completed_packages.fetch_add(1, Ordering::Relaxed) as u64 + 1;
+                    on_progress(completed_packages, total_packages);
                 }
             });
         }

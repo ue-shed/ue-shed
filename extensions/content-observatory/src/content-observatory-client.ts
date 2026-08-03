@@ -7,7 +7,7 @@ import {
 	PerforceFastMapHistory,
 	ProjectRelativeMapPath
 } from "@ue-shed/map-history/contract";
-import { SavedWorld, decodeSavedWorld } from "@ue-shed/protocol";
+import { SavedWorld, SavedWorldProgress, decodeSavedWorld } from "@ue-shed/protocol";
 import { Context, type Effect, Schema } from "effect";
 
 const historyRequestFields = {
@@ -55,6 +55,12 @@ export const ContentObservatoryMap = Schema.Struct({
 });
 export type ContentObservatoryMap = Schema.Schema.Type<typeof ContentObservatoryMap>;
 
+export const ContentObservatoryProgress = Schema.Struct({
+	...MapHistoryProgress.fields,
+	savedWorld: Schema.optionalKey(SavedWorldProgress)
+});
+export type ContentObservatoryProgress = Schema.Schema.Type<typeof ContentObservatoryProgress>;
+
 const RequestState = Schema.Struct({
 	jobId: Schema.NonEmptyString,
 	request: ContentObservatoryHistoryRequest
@@ -70,7 +76,7 @@ export const ContentObservatoryState = Schema.Union([
 	Schema.Struct({
 		...RequestState.fields,
 		maps: Schema.Array(ContentObservatoryMap),
-		progress: MapHistoryProgress,
+		progress: ContentObservatoryProgress,
 		projectRoot: Schema.NonEmptyString,
 		status: Schema.Literal("running")
 	}),

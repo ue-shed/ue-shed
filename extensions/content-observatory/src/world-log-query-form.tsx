@@ -150,8 +150,9 @@ export function WorldLogQueryForm(props: {
 							Choose one current actor or actor class before reading its history.
 						</strong>
 						<p>
-							This reads the selected map's saved actor list locally. It does not scan
-							Perforce until you press READ FAST HISTORY.
+							The current actor list loads as soon as a map is selected. It reads
+							local saved files and does not scan Perforce until you press READ FAST
+							HISTORY.
 						</p>
 					</div>
 					<button
@@ -164,7 +165,11 @@ export function WorldLogQueryForm(props: {
 						onClick={props.onLoadTargets}
 						{...stylex.props(styles.loadTargetsButton)}
 					>
-						{props.targetLoading ? "LOADING ACTORS…" : "LOAD CURRENT ACTORS"}
+						{props.targetLoading
+							? "LOADING ACTORS…"
+							: props.targetActors.length > 0
+								? "REFRESH CURRENT ACTORS"
+								: "LOAD CURRENT ACTORS"}
 					</button>
 					<div
 						role="group"

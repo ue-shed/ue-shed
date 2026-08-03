@@ -434,7 +434,6 @@ describe("ContentObservatoryRoute", () => {
 			screen.getByRole("button", { name: "DEEP HISTORY" }).getAttribute("aria-pressed")
 		).toBe("true");
 		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
-		await user.click(screen.getByRole("button", { name: "LOAD CURRENT ACTORS" }));
 		await user.click(await screen.findByRole("button", { name: /North NPC/ }));
 		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
 		expect(received?.mode).toBe("fast");
@@ -499,7 +498,6 @@ describe("ContentObservatoryRoute", () => {
 		const user = userEvent.setup();
 		await screen.findByRole("combobox", { name: "Saved map" });
 		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
-		await user.click(screen.getByRole("button", { name: "LOAD CURRENT ACTORS" }));
 		await user.click(screen.getByRole("button", { name: "ACTOR CLASS" }));
 		const targetExplorer = screen.getByRole("region", { name: "Fast History actor explorer" });
 		await user.click(

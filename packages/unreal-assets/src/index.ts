@@ -737,6 +737,42 @@ function protocolPhase(
 	}
 }
 
+function savedWorldPhase(
+	phase: Extract<ProtocolEvent, { readonly kind: "progress" }>["phase"]
+): SavedWorldProgress["phase"] {
+	switch (phase) {
+		case "starting":
+		case "discovering":
+			return "enumerating";
+		case "reading":
+			return "scanning";
+		case "inspecting":
+			return "resolving";
+		case "emitting":
+			return "ready";
+	}
+}
+
+function updateSavedWorldProgress(store: SavedWorldProgressStore, event: ProtocolEvent): void {
+	if (event.kind === "progress") {
+		store.current = {
+			...store.current,
+			phase: savedWorldPhase(event.phase),
+			processedPackages: event.completedItems,
+			...(event.totalItems === undefined ? {} : { totalPackages: event.totalItems })
+		};
+		return;
+	}
+	if (event.kind === "result" && event.result.kind === "saved_world") {
+		store.current = {
+			actorsFound: event.result.world.actors.length,
+			phase: "ready",
+			processedPackages: event.result.world.summary.scannedPackages,
+			totalPackages: event.result.world.summary.scannedPackages
+		};
+	}
+}
+
 function protocolFailureFromEvent(
 	event: Extract<ProtocolEvent, { readonly kind: "failed" | "rejected" }>
 ): ProtocolStreamFailure {
@@ -791,6 +827,7 @@ async function* protocolEvents(options: {
 	readonly signal: AbortSignal | undefined;
 	readonly telemetry: ProtocolTelemetry;
 	readonly timeoutMs: number;
+	readonly onEvent?: (event: ProtocolEvent) => void;
 }): AsyncGenerator<ProtocolEvent> {
 	const queuedAt = options.telemetry.queuedAt;
 	const child = spawn(options.configuration.executable, ["protocol"], {
@@ -851,6 +888,7 @@ async function* protocolEvents(options: {
 			for (const line of lines) {
 				const decoded = validator.pushLine(line);
 				observeProtocolEvent(decoded, options.telemetry);
+				options.onEvent?.(decoded);
 				yield decoded;
 			}
 		}
@@ -1014,6 +1052,7 @@ async function collectProtocolSingle<A>(options: {
 	readonly select: (result: UAssetIoResult) => A | undefined;
 	readonly signal: AbortSignal | undefined;
 	readonly telemetry: ProtocolTelemetry;
+	readonly onEvent?: (event: ProtocolEvent) => void;
 }): Promise<A> {
 	let selected: A | undefined;
 	for await (const event of protocolEvents({
@@ -1023,7 +1062,8 @@ async function collectProtocolSingle<A>(options: {
 		request: options.request,
 		signal: options.signal,
 		telemetry: options.telemetry,
-		timeoutMs: options.configuration.timeoutMs
+		timeoutMs: options.configuration.timeoutMs,
+		...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
 	})) {
 		if (event.kind === "failed" || event.kind === "rejected") {
 			throw protocolFailureFromEvent(event);
@@ -1048,6 +1088,7 @@ function invokeProtocolSingle<A>(options: {
 	readonly request: UAssetIoRequest;
 	readonly expected: UAssetIoResult["kind"];
 	readonly select: (result: UAssetIoResult) => A | undefined;
+	readonly onEvent?: (event: ProtocolEvent) => void;
 }): Effect.Effect<A, AssetReaderError> {
 	const telemetry = makeProtocolTelemetry();
 	const operation = Effect.tryPromise({
@@ -1356,6 +1397,7 @@ function makeAssetReader(
 	const readSavedWorld = Effect.fn("AssetReader.readSavedWorld")(function* (
 		options: SavedWorldReadOptions
 	) {
+		savedWorldStore.current = { ...idleSavedWorldProgress(), phase: "enumerating" };
 		return yield* invokeProtocolSingle({
 			configuration: { ...configuration, timeoutMs: configuration.catalogTimeoutMs },
 			operation: "saved_world",
@@ -1378,8 +1420,25 @@ function makeAssetReader(
 				}
 			),
 			expected: "saved_world",
+			onEvent: (event) => updateSavedWorldProgress(savedWorldStore, event),
 			select: (result) => (result.kind === "saved_world" ? result.world : undefined)
-		});
+		}).pipe(
+			Effect.tap((world) =>
+				Effect.sync(() => {
+					savedWorldStore.current = {
+						actorsFound: world.actors.length,
+						phase: "ready",
+						processedPackages: world.summary.scannedPackages,
+						totalPackages: world.summary.scannedPackages
+					};
+				})
+			),
+			Effect.tapError(() =>
+				Effect.sync(() => {
+					savedWorldStore.current = { ...savedWorldStore.current, phase: "failed" };
+				})
+			)
+		);
 	});
 	const discoverTables = Effect.fn("AssetReader.discoverTables")(function* (
 		options: SavedTableCatalogOptions

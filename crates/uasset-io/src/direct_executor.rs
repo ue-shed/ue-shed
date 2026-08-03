@@ -22,8 +22,8 @@ use crate::protocol_result::{
 
 pub(crate) use project_io::{
     extract_text, extract_text_with_cancellation, extract_texture,
-    extract_texture_with_cancellation, saved_world, saved_world_with_cancellation, scan,
-    scan_with_cancellation,
+    extract_texture_with_cancellation, saved_world, saved_world_with_cancellation_and_progress,
+    scan, scan_with_cancellation,
 };
 
 #[derive(Debug)]

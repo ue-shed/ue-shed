@@ -380,6 +380,8 @@ const styles = stylex.create({
 		flexDirection: "column",
 		minWidth: 0,
 		minHeight: 0,
+		maxHeight: "min(70vh, 520px)",
+		overflow: "hidden",
 		border: "1px solid #344245",
 		backgroundColor: "#0d1415",
 		color: "#dce6e4"

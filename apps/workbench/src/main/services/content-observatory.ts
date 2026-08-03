@@ -8,6 +8,7 @@ import {
 import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
 import type {
 	ContentObservatoryHistoryRequest,
+	ContentObservatoryProgress,
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import { Context, Effect, Fiber, Layer, Option, Ref } from "effect";
@@ -91,6 +92,13 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 				);
 			}
 		);
+		const readProgress = Effect.fn("Workbench.ContentObservatory.readProgress")(
+			(): Effect.Effect<ContentObservatoryProgress> =>
+				Effect.all({
+					history: mapHistory.progress(),
+					savedWorld: assetReader.savedWorldProgress()
+				}).pipe(Effect.map(({ history, savedWorld }) => ({ ...history, savedWorld })))
+		);
 
 		const status = Effect.fn("Workbench.ContentObservatory.status")(function* () {
 			const current = yield* Ref.get(state);
@@ -120,7 +128,7 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 				yield* Ref.set(state, latestProject);
 				return latestProject;
 			}
-			const progress = yield* mapHistory.progress();
+			const progress = yield* readProgress();
 			return yield* Ref.modify(state, (latest) => {
 				if (latest.status !== "running" || latest.jobId !== current.jobId) {
 					return [latest, latest];
@@ -189,7 +197,7 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 			const running: ContentObservatoryState = {
 				jobId,
 				maps,
-				progress: yield* mapHistory.progress(),
+				progress: yield* readProgress(),
 				projectRoot,
 				request,
 				status: "running"

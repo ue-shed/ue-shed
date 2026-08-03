@@ -342,6 +342,18 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
             .is_some_and(|actors| actors > 0)
     );
     assert!(one_events.iter().any(|event| event["kind"] == "progress"));
+    assert!(one_events.iter().any(|event| {
+        event["kind"] == "progress"
+            && event["phase"] == "reading"
+            && event["completedItems"] == 0
+            && event["totalItems"] == 1
+    }));
+    assert!(one_events.iter().any(|event| {
+        event["kind"] == "progress"
+            && event["phase"] == "reading"
+            && event["completedItems"] == 1
+            && event["totalItems"] == 1
+    }));
     assert_eq!(one_events.last().unwrap()["kind"], "completed");
 
     let mut many_request = base_request(operation);

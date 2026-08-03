@@ -5,6 +5,9 @@
 //! only at this process-output boundary.
 
 use std::io::{self, Read, Write};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -327,8 +330,7 @@ fn execute_direct(
             Ok(output.partial)
         }
         Operation::SavedWorld { .. } => {
-            emit_progress(emitter, 0, "discovering", None)?;
-            let output = direct_executor::saved_world_with_cancellation(request, cancellation)?;
+            let output = execute_saved_world(request, emitter, cancellation)?;
             let scanned_packages = output.world.summary.scanned_packages;
             let partial = output.partial;
             emit_typed_result(
@@ -346,6 +348,61 @@ fn execute_direct(
             Ok(partial)
         }
     }
+}
+
+fn execute_saved_world(
+    request: &Request,
+    emitter: &mut Emitter,
+    cancellation: &CancellationToken,
+) -> Result<direct_executor::SavedWorldOutput, Failure> {
+    let (progress_sender, progress_receiver) = mpsc::channel();
+    let worker_request = request.clone();
+    let worker_cancellation = cancellation.clone();
+    let worker = thread::spawn(move || {
+        direct_executor::saved_world_with_cancellation_and_progress(
+            &worker_request,
+            &worker_cancellation,
+            &|completed, total| {
+                let _ = progress_sender.send((completed, total));
+            },
+        )
+    });
+    let mut emission_error = None;
+    loop {
+        match progress_receiver.recv_timeout(Duration::from_millis(25)) {
+            Ok((completed, total)) => {
+                if emission_error.is_none() {
+                    if let Err(error) = emit_progress(emitter, completed, "reading", Some(total)) {
+                        cancellation.cancel();
+                        emission_error = Some(error);
+                    }
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) if !worker.is_finished() => {}
+            Err(mpsc::RecvTimeoutError::Timeout) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if worker.is_finished() {
+                    break;
+                }
+            }
+        }
+    }
+    while let Ok((completed, total)) = progress_receiver.try_recv() {
+        if emission_error.is_none() {
+            if let Err(error) = emit_progress(emitter, completed, "reading", Some(total)) {
+                cancellation.cancel();
+                emission_error = Some(error);
+            }
+        }
+    }
+    let result = worker.join().map_err(|_| Failure {
+        code: "process".to_owned(),
+        message: "saved-world worker thread panicked".to_owned(),
+        retry_safe: false,
+    })?;
+    if let Some(error) = emission_error {
+        return Err(error);
+    }
+    result
 }
 
 fn emit_progress(

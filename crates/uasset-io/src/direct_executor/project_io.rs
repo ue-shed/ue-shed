@@ -147,30 +147,45 @@ pub(crate) fn scan_with_cancellation(
     let mut diagnostics = Vec::new();
     let mut inventory_entries = Vec::new();
     let mut inventory_complete = true;
-
-    if inventory_requested {
-        for path in sidecar_paths.iter().chain(asset_paths.iter()) {
-            let signature = read_asset_signature_with_cancellation(path, cancellation)?;
-            match signature {
-                Some(signature) => {
-                    inventory_entries.push(manifest_entry(&signature, path_kind(path)))
-                }
-                None => {
-                    inventory_complete = false;
-                    diagnostics.push(scan_diagnostic(
-                        "inventory_io",
-                        format!("could not read inventory metadata for {}", path.display()),
-                        &path.to_string_lossy(),
-                    ));
+    let asset_signatures =
+        if inventory_requested {
+            for path in &sidecar_paths {
+                match read_asset_signature_with_cancellation(path, cancellation)? {
+                    Some(signature) => inventory_entries
+                        .push(manifest_entry(&signature, ManifestEntryKind::Sidecar)),
+                    None => record_inventory_metadata_failure(
+                        path,
+                        &mut inventory_complete,
+                        &mut diagnostics,
+                    ),
                 }
             }
-        }
-        inventory_entries.sort_by(|left, right| left.path.cmp(&right.path));
-        checkpoint(cancellation, "read")?;
-    }
+            let mut signatures = Vec::with_capacity(asset_paths.len());
+            for path in &asset_paths {
+                let signature = read_asset_signature_with_cancellation(path, cancellation)?;
+                match &signature {
+                    Some(signature) => inventory_entries
+                        .push(manifest_entry(signature, ManifestEntryKind::Package)),
+                    None => record_inventory_metadata_failure(
+                        path,
+                        &mut inventory_complete,
+                        &mut diagnostics,
+                    ),
+                }
+                signatures.push(signature);
+            }
+            inventory_entries.sort_by(|left, right| left.path.cmp(&right.path));
+            checkpoint(cancellation, "read")?;
+            Some(signatures)
+        } else {
+            None
+        };
 
     checkpoint(cancellation, "read")?;
-    let cached_by_path = load_scan_header_cache(cache_path.as_deref(), filters)
+    let cached_entries = load_scan_header_cache(cache_path.as_deref(), filters);
+    let cache_was_loaded = cached_entries.is_some();
+    let cached_entry_count = cached_entries.as_ref().map_or(0, Vec::len);
+    let cached_by_path = cached_entries
         .unwrap_or_default()
         .into_iter()
         .map(|entry| (entry.path.clone(), entry))
@@ -185,6 +200,7 @@ pub(crate) fn scan_with_cancellation(
             .collect::<Vec<_>>(),
     );
     let paths = &asset_paths;
+    let signatures = asset_signatures.as_deref();
     std::thread::scope(|scope| {
         for _ in 0..worker_count.min(asset_paths.len().max(1)) {
             let next_path = &next_path;
@@ -200,8 +216,22 @@ pub(crate) fn scan_with_cancellation(
                     let Some(path) = paths.get(index) else {
                         break;
                     };
+                    let signature = match signatures {
+                        Some(signatures) => signatures[index].clone(),
+                        None => match read_asset_signature_with_cancellation(path, &cancellation) {
+                            Ok(signature) => signature,
+                            Err(error) => {
+                                slots
+                                    .lock()
+                                    .expect("direct scan slots must not be poisoned")[index] =
+                                    Some(Err(error));
+                                continue;
+                            }
+                        },
+                    };
                     let result = scan_one_path_with_cancellation(
                         path,
+                        signature,
                         depth.clone(),
                         filters,
                         cached_by_path,
@@ -251,7 +281,15 @@ pub(crate) fn scan_with_cancellation(
         }
     }
 
-    if collect_headers {
+    if collect_headers
+        && scan_header_cache_needs_write(
+            cache_was_loaded,
+            cached_entry_count,
+            cached_by_path.len(),
+            asset_paths.len(),
+            cache_hits,
+        )
+    {
         checkpoint(cancellation, "emitting")?;
         cache_entries.sort_by(|left, right| left.path.cmp(&right.path));
         if let Err(error) = save_scan_header_cache(cache_path.as_deref(), filters, cache_entries) {
@@ -308,6 +346,7 @@ pub(crate) fn scan_with_cancellation(
 
 fn scan_one_path_with_cancellation(
     path: &Path,
+    signature: Option<AssetSignature>,
     depth: ScanDepth,
     filters: &ScanFilters,
     cached_by_path: &BTreeMap<String, ScanHeaderCacheEntry>,
@@ -315,7 +354,7 @@ fn scan_one_path_with_cancellation(
     cancellation: &CancellationToken,
 ) -> Result<ScanWorkResult, Failure> {
     checkpoint(cancellation, "read")?;
-    let Some(signature) = read_asset_signature_with_cancellation(path, cancellation)? else {
+    let Some(signature) = signature else {
         return Ok(ScanWorkResult {
             entry: None,
             diagnostic: Some(scan_diagnostic(
@@ -1235,6 +1274,19 @@ fn scan_header_entry_matches(entry: &ScanHeaderCacheEntry, signature: &AssetSign
         && entry.modified_nanos == signature.modified_nanos
 }
 
+fn scan_header_cache_needs_write(
+    cache_was_loaded: bool,
+    cached_entry_count: usize,
+    unique_cached_entry_count: usize,
+    asset_count: usize,
+    cache_hits: u64,
+) -> bool {
+    !cache_was_loaded
+        || cached_entry_count != asset_count
+        || unique_cached_entry_count != asset_count
+        || cache_hits != asset_count as u64
+}
+
 fn load_scan_header_cache(
     path: Option<&str>,
     filters: &ScanFilters,
@@ -1448,12 +1500,17 @@ fn read_asset_signature_with_cancellation(
     Ok(signature)
 }
 
-fn path_kind(path: &Path) -> ManifestEntryKind {
-    if is_sidecar_path(path) {
-        ManifestEntryKind::Sidecar
-    } else {
-        ManifestEntryKind::Package
-    }
+fn record_inventory_metadata_failure(
+    path: &Path,
+    inventory_complete: &mut bool,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    *inventory_complete = false;
+    diagnostics.push(scan_diagnostic(
+        "inventory_io",
+        format!("could not read inventory metadata for {}", path.display()),
+        &path.to_string_lossy(),
+    ));
 }
 
 fn manifest_entry(signature: &AssetSignature, kind: ManifestEntryKind) -> SavedAssetManifestEntry {
@@ -1947,5 +2004,24 @@ impl SchemaProvider for EmptySchemas {
 
     fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scan_header_cache_needs_write;
+
+    #[test]
+    fn exact_header_cache_hit_is_a_no_op() {
+        assert!(!scan_header_cache_needs_write(true, 10, 10, 10, 10));
+    }
+
+    #[test]
+    fn header_cache_rewrites_for_missing_changed_added_deleted_or_duplicate_entries() {
+        assert!(scan_header_cache_needs_write(false, 0, 0, 10, 0));
+        assert!(scan_header_cache_needs_write(true, 10, 10, 10, 9));
+        assert!(scan_header_cache_needs_write(true, 10, 10, 11, 10));
+        assert!(scan_header_cache_needs_write(true, 11, 11, 10, 10));
+        assert!(scan_header_cache_needs_write(true, 11, 10, 10, 10));
     }
 }

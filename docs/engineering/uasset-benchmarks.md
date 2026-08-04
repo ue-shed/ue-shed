@@ -240,6 +240,14 @@ legacy path now works for this corpus, but its roughly 68–69 MiB protocol tran
 TypeScript inventory remain the architectural baseline that bounded Project Index queries must
 replace.
 
+A same-machine follow-up reused each package signature for both inventory and cache comparison and
+skipped serializing/writing the 54.828 MiB JSON cache on an exact no-op. Warm p50 improved from
+7.111 seconds to 6.592 seconds (7.3%); its three samples were 6.568, 6.592, and 6.653 seconds. Cold
+p50 improved from 11.695 seconds to 11.455 seconds across two normal samples of 10.613 and 11.455
+seconds, while a third cold filesystem pass took 245.416 seconds and is retained as an outlier. The
+ignored follow-up evidence is
+`test-results/project-index-mb-research-scan-cache-optimized.json`.
+
 This harness cannot see decode-only regressions or wins. Its fixture is about 3 KB, so
 `native.inspect.single` is dominated by process startup. Removing per-property allocation from the
 decoder took `DT_LargeScalars` (10,000 rows) from 45.8 ms to 12.0 ms p50 for decode alone, measured

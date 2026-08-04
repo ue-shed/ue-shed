@@ -247,7 +247,9 @@ sidecars and failure paths. CLI and Workbench usage tests exercise the same publ
 and ADR 0007 records paired v1.1 compatibility plus private Catalog ownership. The representative
 184,559-package rerun reproduced the former 64 MiB cumulative failure, then completed every sample
 under the paired 1 GiB compatibility ceiling: 11.695-second cold p50 and 7.111-second warm p50,
-with 69.166 MiB and 67.989 MiB of protocol output respectively.
+with 69.166 MiB and 67.989 MiB of protocol output respectively. Reusing the inventory signature for
+cache comparison and skipping the exact no-op JSON rewrite reduced warm p50 to 6.592 seconds while
+leaving the full inventory transfer visible for the Catalog work to remove.
 
 ### Step 3 — Deepen `@ue-shed/unreal-assets`
 

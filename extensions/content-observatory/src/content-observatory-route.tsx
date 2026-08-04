@@ -20,10 +20,8 @@ import {
 	type ContentObservatoryClientShape,
 	type ContentObservatoryState
 } from "./content-observatory-client.js";
-import { WorldLogActorAtlas } from "./world-log-actor-atlas.js";
+import { WorldLogScene, type WorldLogSceneView } from "./world-log-actor-atlas.js";
 import { actorKeyFromIdentity, actorKeyFromSavedActor } from "./world-log-actors.js";
-import { WorldLogChangelistMap } from "./world-log-changelist-map.js";
-import { WorldLogCurrentMap } from "./world-log-current-map.js";
 import { humanize } from "./world-log-format.js";
 import {
 	WorldLogQueryForm,
@@ -36,9 +34,8 @@ import {
 	changeSelectionOf,
 	changelistSelectionOf,
 	noWorldLogSelection,
-	selectWorldLogActor,
-	selectWorldLogChange,
-	selectWorldLogChangelist,
+	reduceWorldLogEvent,
+	type WorldLogEvent,
 	type WorldLogSelection
 } from "./world-log-selection.js";
 import { styles } from "./world-log-styles.js";
@@ -178,6 +175,19 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 			(completedRangeDays !== undefined && rangeDays() !== completedRangeDays)
 		);
 	});
+	const sceneView = createMemo<WorldLogSceneView | undefined>(() => {
+		const complete = completeState();
+		const frame = playbackFrame();
+		const catalog = targetCatalog();
+		if (
+			complete !== undefined &&
+			frame !== undefined &&
+			(!resultIsStale() || catalog === undefined)
+		) {
+			return { frame, history: complete.history, kind: "history" };
+		}
+		return catalog === undefined ? undefined : { kind: "current", world: catalog };
+	});
 
 	const apply = (next: ContentObservatoryState, source: StateUpdateSource = "mutation") => {
 		const shouldApply = source !== "poll" || shouldApplyPolledState(state(), next);
@@ -229,20 +239,12 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 	};
 	const refresh = () =>
 		action.run(props.client.status(), { onSuccess: (next) => apply(next, "poll") });
-	const selectActor = (actorKey: string | undefined) => {
-		setSelection((current) => selectWorldLogActor(current, actorKey));
-	};
-	const selectChangelist = (revision: number) => {
-		setFrameRevision(revision);
-		setSelection((current) => selectWorldLogChangelist(current, revision));
-	};
-	const selectChange = (input: {
-		readonly actorKey: string | undefined;
-		readonly changeIndex: number;
-		readonly revision: number;
-	}) => {
-		setFrameRevision(input.revision);
-		setSelection((current) => selectWorldLogChange(current, input));
+	const dispatchWorldLogEvent = (event: WorldLogEvent) => {
+		if (event.type === "frame_selected") setFrameRevision(event.revisionIndex);
+		if (event.type === "actor_event_selected" || event.type === "changelist_selected") {
+			setFrameRevision(event.revision);
+		}
+		setSelection((current) => reduceWorldLogEvent(current, event));
 	};
 
 	const run = () => {
@@ -416,20 +418,27 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 							<Show when={targetLoading() && targetCatalog() === undefined}>
 								<section
 									aria-live="polite"
-									{...stylex.props(styles.currentMapLoading)}
+									{...stylex.props(styles.worldLogTargetLoading)}
 								>
 									<span {...stylex.props(styles.sectionKicker)}>
 										CURRENT SAVED MAP
 									</span>
 									<strong>Reading the selected map…</strong>
-									<p {...stylex.props(styles.currentMapLoadingCopy)}>
+									<p {...stylex.props(styles.worldLogTargetLoadingCopy)}>
 										The current map stays available while history is
 										reconstructed.
 									</p>
 								</section>
 							</Show>
-							<Show when={targetCatalog()}>
-								{(catalog) => <WorldLogCurrentMap world={catalog()} />}
+							<Show when={sceneView()}>
+								{(view) => (
+									<WorldLogScene
+										onEvent={dispatchWorldLogEvent}
+										selectedActorKey={selectedActorKey()}
+										selectedChangelist={selectedChangelist()}
+										view={view()}
+									/>
+								)}
 							</Show>
 							<Show when={runningState()}>
 								{(running) => (
@@ -501,82 +510,57 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 											</section>
 										}
 									>
-										{(frame) => (
-											<>
-												<Show when={fastCoverageNotice()}>
-													{(notice) => (
-														<section
-															aria-label="Fast History coverage"
-															{...stylex.props(
-																styles.fastCoverageNotice
-															)}
-														>
-															<span
-																{...stylex.props(
-																	styles.sectionKicker
-																)}
-															>
-																FAST HISTORY / TARGETED
-															</span>
-															<strong>{notice().headline}</strong>
-															<p>{notice().detail}</p>
-														</section>
-													)}
-												</Show>
-												<Show when={resultIsStale()}>
+										<>
+											<Show when={fastCoverageNotice()}>
+												{(notice) => (
 													<section
-														aria-label="Stale World Log result"
-														{...stylex.props(styles.staleResult)}
+														aria-label="Fast History coverage"
+														{...stylex.props(styles.fastCoverageNotice)}
 													>
 														<span
 															{...stylex.props(styles.sectionKicker)}
 														>
-															QUERY CHANGED
+															FAST HISTORY / TARGETED
 														</span>
-														This retained result describes its completed
-														map and time range. Read history again to
-														update it for the current query.
+														<strong>{notice().headline}</strong>
+														<p>{notice().detail}</p>
 													</section>
-												</Show>
-												<WorldLogActorAtlas
-													frame={frame()}
-													history={complete().history}
-													onSelectActor={selectActor}
-													onSelectActorEvent={selectChange}
-													onSelectFrame={setFrameRevision}
-													selectedActorKey={selectedActorKey()}
-												/>
-												<Show when={selectedChangelist()}>
-													{(selected) => {
-														const revision = () =>
-															complete().history.revisions[
-																selected().revision
-															];
-														return (
-															<Show when={revision()}>
-																{(currentRevision) => (
-																	<WorldLogChangelistMap
-																		onSelectActor={selectActor}
-																		revision={currentRevision()}
-																		selectedActorKey={selectedActorKey()}
-																	/>
-																)}
-															</Show>
-														);
-													}}
-												</Show>
-												<WorldLogTimeline
-													actorKey={selectedActorKey()}
-													filter={filter()}
-													history={complete().history}
-													onSelect={selectChange}
-													onSelectChangelist={selectChangelist}
-													selectedChangelist={selectedChangelist()}
-													selected={selectedChange()}
-													setFilter={setFilter}
-												/>
-											</>
-										)}
+												)}
+											</Show>
+											<Show when={resultIsStale()}>
+												<section
+													aria-label="Stale World Log result"
+													{...stylex.props(styles.staleResult)}
+												>
+													<span {...stylex.props(styles.sectionKicker)}>
+														QUERY CHANGED
+													</span>
+													This retained result describes its completed map
+													and time range. Read history again to update it
+													for the current query.
+												</section>
+											</Show>
+											<WorldLogTimeline
+												actorKey={selectedActorKey()}
+												filter={filter()}
+												history={complete().history}
+												onSelect={(input) =>
+													dispatchWorldLogEvent({
+														...input,
+														type: "actor_event_selected"
+													})
+												}
+												onSelectChangelist={(revision) =>
+													dispatchWorldLogEvent({
+														revision,
+														type: "changelist_selected"
+													})
+												}
+												selectedChangelist={selectedChangelist()}
+												selected={selectedChange()}
+												setFilter={setFilter}
+											/>
+										</>
 									</Show>
 								)}
 							</Show>

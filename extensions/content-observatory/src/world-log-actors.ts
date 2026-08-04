@@ -4,7 +4,7 @@ import type {
 	PerforceMapHistoryDocument,
 	PerforceMapRevision
 } from "@ue-shed/map-history/contract";
-import type { SavedWorldActor } from "@ue-shed/protocol";
+import type { SavedWorld, SavedWorldActor } from "@ue-shed/protocol";
 
 const zeroActorGuid = /^0{8}-0{8}-0{8}-0{8}$/;
 
@@ -62,6 +62,22 @@ export function actorKeyFromChange(change: MapChange): string | undefined {
 	return change.kind === "snapshot_coverage_changed"
 		? undefined
 		: actorKeyFromIdentity(change.identity);
+}
+
+/** Projects the immediately available saved map into the same actor model used by history. */
+export function collectCurrentWorldLogActors(world: SavedWorld): readonly WorldLogActor[] {
+	return world.actors
+		.map((actor) => ({
+			actor,
+			changeCount: 0,
+			events: [],
+			key: actorKeyFromSavedActor(actor),
+			presentAtRangeEnd: true,
+			presentAtRangeStart: true
+		}))
+		.toSorted((left, right) =>
+			actorSortLabel(left.actor).localeCompare(actorSortLabel(right.actor))
+		);
 }
 
 function actorEvidenceFromChange(change: MapChange): SavedWorldActor | undefined {

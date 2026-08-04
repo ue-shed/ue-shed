@@ -379,13 +379,7 @@ export const styles = stylex.create({
 		fontSize: 10,
 		lineHeight: 1.5
 	},
-	currentMap: {
-		marginTop: 14,
-		border: "1px solid #344447",
-		backgroundColor: "#10191a",
-		minWidth: 0
-	},
-	currentMapLoading: {
+	worldLogTargetLoading: {
 		marginTop: 14,
 		display: "grid",
 		gap: 5,
@@ -395,23 +389,8 @@ export const styles = stylex.create({
 		color: "#b7e4e6",
 		fontSize: 11
 	},
-	currentMapLoadingCopy: { margin: 0, color: "#86a9ac", fontSize: 10 },
-	currentMapHeader: {
-		display: "flex",
-		alignItems: "flex-start",
-		justifyContent: "space-between",
-		gap: 16,
-		padding: "15px 16px",
-		borderBottom: "1px solid #2e3a3c",
-		color: "#a8b7b6"
-	},
-	currentMapTitle: {
-		margin: "5px 0 4px",
-		color: "#e8f1ee",
-		fontSize: 15,
-		fontWeight: 700
-	},
-	currentMapPath: {
+	worldLogTargetLoadingCopy: { margin: 0, color: "#86a9ac", fontSize: 10 },
+	actorAtlasPath: {
 		display: "block",
 		maxWidth: "min(70vw, 720px)",
 		overflow: "hidden",
@@ -420,175 +399,11 @@ export const styles = stylex.create({
 		color: "#738889",
 		fontSize: 9
 	},
-	currentMapSummary: {
-		display: "grid",
-		gridTemplateColumns: "auto auto",
-		columnGap: 7,
-		alignItems: "baseline",
-		color: "#87a5a8",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textAlign: "right"
-	},
-	currentMapSummaryCount: { color: "#d9f5f1", fontSize: 18 },
-	currentMapSummaryLabel: { color: "#87a5a8", fontSize: 8 },
-	currentMapSummaryDetail: { gridColumn: "1 / -1", color: "#718385", fontSize: 7 },
-	currentMapFrame: {
-		position: "relative",
-		height: 420,
-		minHeight: 360,
-		overflow: "hidden",
-		backgroundColor: "#0a1112",
-		backgroundImage:
-			"radial-gradient(circle at 50% 45%, #2a56542b, transparent 46%), linear-gradient(135deg, #ffffff05 25%, transparent 25%)",
-		backgroundSize: "auto, 18px 18px"
-	},
-	currentMapCanvas: { width: "100%", height: "100%", minHeight: 360, display: "block" },
-	currentMapNorth: {
-		position: "absolute",
-		top: 12,
-		left: 14,
-		zIndex: 2,
-		color: "#73c7d0",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".12em"
-	},
-	currentMapLegend: {
-		position: "absolute",
-		display: "flex",
-		maxWidth: "68%",
-		gap: 10,
-		alignItems: "center",
-		right: 13,
-		bottom: 12,
-		zIndex: 2,
-		border: "1px solid #3a4a4c",
-		backgroundColor: "#101819df",
-		color: "#a8b8b8",
-		padding: "5px 7px",
-		fontSize: 7,
-		letterSpacing: ".08em",
-		overflow: "hidden",
-		whiteSpace: "nowrap"
-	},
-	currentMapReset: {
-		position: "absolute",
-		left: "50%",
-		bottom: 12,
-		zIndex: 2,
-		border: "1px solid #445557",
-		backgroundColor: { default: "#10191ad9", ":hover": "#1d2d2e" },
-		color: "#b5c5c4",
-		padding: "5px 8px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
-		transform: "translateX(-50%)",
-		cursor: "pointer"
-	},
-	currentMapSelection: {
-		position: "absolute",
-		left: 14,
-		bottom: 12,
-		zIndex: 2,
-		display: "grid",
-		gap: 2,
-		maxWidth: "34%",
-		padding: "6px 8px",
-		border: "1px solid #3a4a4c",
-		backgroundColor: "#101819df",
-		color: "#d9e8e5",
-		fontSize: 9
-	},
-	currentMapSelectionClass: { color: "#81999b", fontSize: 7, letterSpacing: ".08em" },
-	currentMapEmpty: {
-		minHeight: 360,
-		display: "grid",
-		placeItems: "center",
-		padding: 24,
-		color: "#819193",
-		fontSize: 12,
-		textAlign: "center"
-	},
 	actorAtlas: {
 		marginTop: 14,
 		border: "1px solid #3c4749",
 		backgroundColor: "#0f1516",
 		boxShadow: "inset 3px 0 #73c7d0"
-	},
-	changelistMap: {
-		marginTop: 14,
-		border: "1px solid #3c4749",
-		backgroundColor: "#0f1516",
-		boxShadow: "inset 3px 0 #e1b85e"
-	},
-	changelistMapHeader: {
-		display: "flex",
-		alignItems: "start",
-		justifyContent: "space-between",
-		gap: 18,
-		padding: "17px 18px 14px",
-		borderBottom: "1px solid #344043",
-		color: "#aab7b6",
-		fontSize: 10
-	},
-	changelistMapCounts: {
-		display: "flex",
-		flexWrap: "wrap",
-		justifyContent: "end",
-		gap: 9,
-		maxWidth: 380,
-		color: "#9aa9a9",
-		fontSize: 8,
-		letterSpacing: ".08em"
-	},
-	changelistMapDot: {
-		display: "inline-block",
-		width: 7,
-		height: 7,
-		marginRight: 4,
-		borderRadius: "50%"
-	},
-	changelistMapUnclassified: { color: "#e1b85e" },
-	changelistMapFrame: {
-		position: "relative",
-		minHeight: 300,
-		overflow: "hidden",
-		backgroundColor: "#0a1112",
-		backgroundImage:
-			"radial-gradient(circle at 50% 45%, #66542a21, transparent 46%), linear-gradient(135deg, #ffffff05 25%, transparent 25%)",
-		backgroundSize: "auto, 18px 18px"
-	},
-	changelistPointMap: {
-		width: "100%",
-		height: "100%",
-		minHeight: 300,
-		display: "block",
-		outline: "none"
-	},
-	changelistMapLegend: {
-		position: "absolute",
-		display: "flex",
-		gap: 9,
-		right: 13,
-		bottom: 12,
-		zIndex: 2,
-		border: "1px solid #3a4a4c",
-		backgroundColor: "#101819df",
-		color: "#a8b8b8",
-		padding: "5px 7px",
-		fontSize: 7,
-		letterSpacing: ".08em"
-	},
-	changelistMapEmpty: {
-		minHeight: 300,
-		display: "grid",
-		placeItems: "center",
-		padding: 24,
-		color: "#819193",
-		fontSize: 12,
-		textAlign: "center"
 	},
 	actorAtlasHeader: {
 		display: "flex",
@@ -814,6 +629,24 @@ export const styles = stylex.create({
 		letterSpacing: ".08em",
 		overflow: "hidden",
 		whiteSpace: "nowrap"
+	},
+	pointMapOverlayLegend: {
+		position: "absolute",
+		display: "flex",
+		flexWrap: "wrap",
+		maxWidth: "62%",
+		gap: 8,
+		alignItems: "center",
+		left: 13,
+		bottom: 12,
+		zIndex: 2,
+		border: "1px solid #806d3c",
+		backgroundColor: "#211d12e8",
+		color: "#ddca92",
+		padding: "5px 7px",
+		fontSize: 7,
+		letterSpacing: ".08em",
+		overflow: "hidden"
 	},
 	pointMapClassDot: {
 		display: "inline-block",

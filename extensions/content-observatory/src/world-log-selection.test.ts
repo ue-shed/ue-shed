@@ -4,6 +4,7 @@ import {
 	changeSelectionOf,
 	changelistSelectionOf,
 	noWorldLogSelection,
+	reduceWorldLogEvent,
 	selectWorldLogActor,
 	selectWorldLogChangelist,
 	selectWorldLogChange
@@ -40,6 +41,24 @@ describe("World Log selection", () => {
 		expect(selectWorldLogChangelist(selected, 2)).toEqual({
 			actorKey: "guid:north",
 			changelist: undefined
+		});
+	});
+
+	it("reduces scene interactions through one local event stream", () => {
+		const selectedActor = reduceWorldLogEvent(noWorldLogSelection, {
+			actorKey: "guid:north",
+			type: "actor_selected"
+		});
+		const selectedChange = reduceWorldLogEvent(selectedActor, {
+			actorKey: "guid:north",
+			changeIndex: 2,
+			revision: 4,
+			type: "actor_event_selected"
+		});
+
+		expect(selectedChange).toEqual({
+			actorKey: "guid:north",
+			changelist: { changeIndex: 2, kind: "change", revision: 4 }
 		});
 	});
 });

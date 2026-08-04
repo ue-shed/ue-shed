@@ -349,6 +349,61 @@ describe("ContentObservatoryRoute", () => {
 		expect(await screen.findByText("listing changes")).toBeDefined();
 	});
 
+	it("mounts one interactive map immediately and updates that map after history", async () => {
+		const complete = completeState();
+		const currentWorld = complete.history.rangeEndSnapshot!;
+		const maps = complete.maps;
+		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+			maps,
+			projectRoot: "C:/Project",
+			status: "ready" as const
+		});
+		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
+			authority: { kind: "project_files", mapPackage: currentWorld.mapPackage },
+			completeness: currentWorld.completeness,
+			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			diagnostics: currentWorld.diagnostics,
+			mapPath: currentWorld.mapPath,
+			actors: currentWorld.actors,
+			sourceKind: currentWorld.sourceKind,
+			summary: currentWorld.summary
+		});
+		const client: ContentObservatoryClientShape = {
+			cancel: () => Effect.succeed(complete),
+			start: () => Effect.succeed(complete),
+			status: () => Effect.succeed(ready),
+			targets: () => Effect.succeed(catalog)
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<ContentObservatoryRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+		const user = userEvent.setup();
+		const pointMap = await screen.findByRole("application", {
+			name: "Top-down saved actor points map"
+		});
+
+		expect(screen.getByRole("complementary", { name: "Saved actor outliner" })).toBeDefined();
+		expect(screen.getByRole("complementary", { name: "Selected saved actor" })).toBeDefined();
+		expect(
+			screen.getAllByRole("application", { name: "Top-down saved actor points map" })
+		).toHaveLength(1);
+		expect(
+			screen.getByRole("heading", { name: "CURRENT SAVED STATE point map" })
+		).toBeDefined();
+
+		await user.click(screen.getByRole("button", { name: /READ DEEP HISTORY/ }));
+		await screen.findByRole("heading", { name: "AFTER CL 11 point map" });
+
+		expect(screen.getByRole("application", { name: "Top-down saved actor points map" })).toBe(
+			pointMap
+		);
+		expect(
+			screen.getAllByRole("application", { name: "Top-down saved actor points map" })
+		).toHaveLength(1);
+	});
+
 	it("keeps Deep History as the default and sends an explicit Fast actor target", async () => {
 		let received: ContentObservatoryHistoryRequest | undefined;
 		const maps = [
@@ -434,7 +489,8 @@ describe("ContentObservatoryRoute", () => {
 			screen.getByRole("button", { name: "DEEP HISTORY" }).getAttribute("aria-pressed")
 		).toBe("true");
 		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
-		await user.click(await screen.findByRole("button", { name: /North NPC/ }));
+		const targetExplorer = screen.getByRole("region", { name: "Fast History actor explorer" });
+		await user.click(within(targetExplorer).getByRole("button", { name: /North NPC/ }));
 		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
 		expect(received?.mode).toBe("fast");
 		expect(received?.mode).toBe("fast");
@@ -595,9 +651,7 @@ describe("ContentObservatoryRoute", () => {
 			name: "Selected changelist evidence"
 		});
 		expect(within(evidence).getByRole("heading", { name: "CL 10" })).toBeDefined();
-		expect(
-			await screen.findByRole("application", { name: "Top-down changelist 10 diff map" })
-		).toBeDefined();
+		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
 	});
 
 	it("keeps a selected changelist visible while its diff map focuses an actor", async () => {
@@ -614,13 +668,14 @@ describe("ContentObservatoryRoute", () => {
 		));
 		const user = userEvent.setup();
 		await user.click(screen.getByRole("button", { name: "Select changelist 10" }));
-		const changelistMap = await screen.findByRole("application", {
-			name: "Top-down changelist 10 diff map"
+		const pointMap = await screen.findByRole("application", {
+			name: "Top-down saved actor points map"
 		});
-		changelistMap.focus();
+		expect(screen.getByText("CL 10 DIFF OVERLAY")).toBeDefined();
+		pointMap.focus();
 		await user.keyboard("{ArrowRight}");
 
-		expect(screen.getByRole("heading", { name: "CL 10 map diff" })).toBeDefined();
+		expect(screen.getByText("CL 10 DIFF OVERLAY")).toBeDefined();
 		expect(screen.getByRole("button", { name: "Select changelist 11" })).toBeDefined();
 	});
 
@@ -648,9 +703,7 @@ describe("ContentObservatoryRoute", () => {
 		expect(within(inspector).getByText("added in range")).toBeDefined();
 		await user.click(within(inspector).getByRole("button", { name: /CL 10.*key lamp/i }));
 
-		expect(
-			await screen.findByRole("application", { name: "Top-down changelist 10 diff map" })
-		).toBeDefined();
+		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
 	});
 
 	it("keeps a range-removed actor inspectable with its lifecycle evidence", async () => {

@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { PerforceMapHistory } from "@ue-shed/map-history/contract";
 import {
+	collectCurrentWorldLogActors,
 	collectWorldLogActors,
 	noWorldLogActorViewFilters,
 	worldLogActorLifecycle,
@@ -47,6 +48,27 @@ function snapshot(actors: readonly ReturnType<typeof actor>[]) {
 }
 
 describe("World Log actor projection", () => {
+	it("uses the current saved map as the initial actor projection", () => {
+		const lamp = actor({ guid: "lamp", label: "Key lamp", x: 10, y: 20 });
+		const world = {
+			actors: [lamp],
+			mapPath: "Content/Maps/L_Example.umap"
+		} as unknown as Parameters<typeof collectCurrentWorldLogActors>[0];
+
+		const projected = collectCurrentWorldLogActors(world);
+
+		expect(projected).toEqual([
+			{
+				actor: lamp,
+				changeCount: 0,
+				events: [],
+				key: "guid:lamp",
+				presentAtRangeEnd: true,
+				presentAtRangeStart: true
+			}
+		]);
+	});
+
 	it("retains removed actors and gives stable-identity lifecycle, events, movement, and View Filters", () => {
 		const departed = actor({ guid: "departed", label: "Departed NPC", x: 10, y: 20 });
 		const movedBefore = actor({ guid: "moved", label: "Moved NPC", x: 30, y: 40 });

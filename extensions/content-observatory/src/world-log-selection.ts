@@ -16,6 +16,17 @@ export interface WorldLogSelection {
 	readonly changelist: WorldLogChangelistSelection | undefined;
 }
 
+export type WorldLogEvent =
+	| { readonly actorKey: string | undefined; readonly type: "actor_selected" }
+	| {
+			readonly actorKey: string | undefined;
+			readonly changeIndex: number;
+			readonly revision: number;
+			readonly type: "actor_event_selected";
+	  }
+	| { readonly revision: number; readonly type: "changelist_selected" }
+	| { readonly revisionIndex: number | undefined; readonly type: "frame_selected" };
+
 export const noWorldLogSelection: WorldLogSelection = {
 	actorKey: undefined,
 	changelist: undefined
@@ -73,4 +84,20 @@ export function selectWorldLogChange(
 		actorKey: input.actorKey,
 		changelist: { changeIndex: input.changeIndex, kind: "change", revision: input.revision }
 	};
+}
+
+export function reduceWorldLogEvent(
+	selection: WorldLogSelection,
+	event: WorldLogEvent
+): WorldLogSelection {
+	switch (event.type) {
+		case "actor_selected":
+			return selectWorldLogActor(selection, event.actorKey);
+		case "actor_event_selected":
+			return selectWorldLogChange(selection, event);
+		case "changelist_selected":
+			return selectWorldLogChangelist(selection, event.revision);
+		case "frame_selected":
+			return selection;
+	}
 }

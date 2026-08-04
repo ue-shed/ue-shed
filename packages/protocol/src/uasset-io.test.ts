@@ -56,7 +56,17 @@ describe("uasset IO protocol v1", () => {
 					"valid/extract-text-summary-result-event.json",
 					"valid/extract-texture-record-result-event.json",
 					"valid/saved-world-result-event.json",
-					"valid/partial-completed-event.json"
+					"valid/partial-completed-event.json",
+					"valid/project-index-status-request.json",
+					"valid/project-index-refresh-request.json",
+					"valid/project-index-rebuild-request.json",
+					"valid/project-index-query-request.json",
+					"valid/project-index-accepted-event.json",
+					"valid/project-index-progress-event.json",
+					"valid/project-index-status-result-event.json",
+					"valid/project-index-summary-result-event.json",
+					"valid/project-index-page-result-event.json",
+					"valid/project-index-stale-generation-failed-event.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
 					if (name.includes("request")) yield* decodeUAssetIoRequest(value);
@@ -72,12 +82,15 @@ describe("uasset IO protocol v1", () => {
 				for (const name of [
 					"invalid/request-wrong-major.json",
 					"invalid/event-unknown-kind.json",
-					"invalid/event-result-unknown-kind.json"
+					"invalid/event-result-unknown-kind.json",
+					"invalid/project-index-query-oversize-limit.json",
+					"invalid/project-index-page-unbounded.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
-					const decoded = name.includes("request")
-						? yield* Effect.result(decodeUAssetIoRequest(value))
-						: yield* Effect.result(decodeUAssetIoEvent(value));
+					const decoded =
+						name.includes("-request") || name.includes("oversize-limit")
+							? yield* Effect.result(decodeUAssetIoRequest(value))
+							: yield* Effect.result(decodeUAssetIoEvent(value));
 					expect(decoded._tag).toBe("Failure");
 				}
 			})

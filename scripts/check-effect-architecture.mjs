@@ -68,7 +68,8 @@ const approvedPromiseAdapters = new Set([
 	// The synthetic benchmark invokes Playwright as its foreign child-process adapter.
 	"packages/observatory/scripts/benchmark.ts",
 	"packages/observatory/src/actor-feed.ts",
-	"packages/unreal-assets/src/index.ts",
+	"packages/unreal-assets/src/protocol-transport.ts",
+	"packages/unreal-assets/src/scan-target.ts",
 	// The generated browser declaration is a foreign WebAssembly adapter surface.
 	"packages/uasset-inspection-wasm/src/browser.d.ts"
 ]);
@@ -105,8 +106,8 @@ const approvedResourceAdapters = new Set([
 	"packages/cameras/src/index.ts",
 	// The actor feed owns its named-pipe server and per-connection sockets through Effect.acquireRelease.
 	"packages/observatory/src/actor-feed.ts",
-	// The saved-asset adapter owns and cancels the bounded native catalog child process.
-	"packages/unreal-assets/src/index.ts"
+	// The saved-asset protocol transport owns and cancels the bounded native child process.
+	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
 const externalServiceEvidence = new Map([

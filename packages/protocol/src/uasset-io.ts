@@ -49,6 +49,128 @@ const UAssetIoScanFilters = Schema.Struct({
 	names: Schema.optionalKey(Schema.Array(NonEmptyString))
 });
 
+/** Enforced below every Project Index caller; mirrored in `@ue-shed/unreal-assets`. */
+export const UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE = 256;
+export const UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
+
+const ProjectIndexPageLimit = Schema.Int.check(
+	Schema.isGreaterThan(0),
+	Schema.isLessThanOrEqualTo(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE)
+);
+const ProjectIndexQueryValues = Schema.Array(NonEmptyString).check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(64)
+);
+
+const UAssetIoProjectIndexTarget = {
+	cacheRoot: NonEmptyString,
+	projectRoot: NonEmptyString
+};
+
+const UAssetIoProjectIndexQueryBase = {
+	cursor: Schema.optionalKey(NonEmptyString),
+	expectedGeneration: PositiveInt,
+	limit: ProjectIndexPageLimit,
+	projectId: NonEmptyString
+};
+
+export const UAssetIoProjectIndexQuery = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("maps"),
+		...UAssetIoProjectIndexQueryBase
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("exact_classes"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("class_prefixes"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("class_name_suffixes"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("serialized_names"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues
+	})
+]).annotate({ identifier: "UAssetIoProjectIndexQuery" });
+export type UAssetIoProjectIndexQuery = Schema.Schema.Type<typeof UAssetIoProjectIndexQuery>;
+
+export const UAssetIoProjectIndexDiagnostic = Schema.Struct({
+	code: NonEmptyString,
+	message: NonEmptyString,
+	retrySafe: Schema.Boolean
+}).annotate({ identifier: "UAssetIoProjectIndexDiagnostic" });
+export interface UAssetIoProjectIndexDiagnostic extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexDiagnostic
+> {}
+
+export const UAssetIoProjectIndexSummary = Schema.Struct({
+	changedPackages: NonNegativeInt,
+	completeness: Schema.Literals(["complete", "partial"]),
+	diagnostics: Schema.Array(UAssetIoProjectIndexDiagnostic).check(
+		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS)
+	),
+	generation: PositiveInt,
+	mapCount: NonNegativeInt,
+	packageCount: NonNegativeInt,
+	projectId: NonEmptyString,
+	removedPackages: NonNegativeInt
+}).annotate({ identifier: "UAssetIoProjectIndexSummary" });
+export interface UAssetIoProjectIndexSummary extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexSummary
+> {}
+
+export const UAssetIoProjectIndexStatus = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("absent") }),
+	Schema.Struct({ status: Schema.Literal("ready"), summary: UAssetIoProjectIndexSummary })
+]).annotate({ identifier: "UAssetIoProjectIndexStatus" });
+export type UAssetIoProjectIndexStatus = Schema.Schema.Type<typeof UAssetIoProjectIndexStatus>;
+
+export const UAssetIoProjectIndexMap = Schema.Struct({
+	kind: Schema.Literal("map"),
+	mapPath: NonEmptyString,
+	packageName: NonEmptyString
+}).annotate({ identifier: "UAssetIoProjectIndexMap" });
+export interface UAssetIoProjectIndexMap extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexMap
+> {}
+
+export const UAssetIoProjectIndexHeader = Schema.Struct({
+	classes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
+	kind: Schema.Literal("header"),
+	packageName: NonEmptyString,
+	packagePath: NonEmptyString,
+	serializedNames: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64))
+}).annotate({ identifier: "UAssetIoProjectIndexHeader" });
+export interface UAssetIoProjectIndexHeader extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexHeader
+> {}
+
+export const UAssetIoProjectIndexItem = Schema.Union([
+	UAssetIoProjectIndexMap,
+	UAssetIoProjectIndexHeader
+]).annotate({ identifier: "UAssetIoProjectIndexItem" });
+export type UAssetIoProjectIndexItem = Schema.Schema.Type<typeof UAssetIoProjectIndexItem>;
+
+export const UAssetIoProjectIndexPage = Schema.Struct({
+	generation: PositiveInt,
+	items: Schema.Array(UAssetIoProjectIndexItem).check(
+		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE)
+	),
+	nextCursor: Schema.optionalKey(NonEmptyString),
+	projectId: NonEmptyString
+}).annotate({ identifier: "UAssetIoProjectIndexPage" });
+export interface UAssetIoProjectIndexPage extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexPage
+> {}
+
 export const UAssetIoOperation = Schema.Union([
 	Schema.Struct({
 		assetPath: NonEmptyString,
@@ -78,6 +200,23 @@ export const UAssetIoOperation = Schema.Union([
 		kind: Schema.Literal("saved_world"),
 		mapPath: NonEmptyString,
 		projectRoot: NonEmptyString
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_status"),
+		...UAssetIoProjectIndexTarget
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_refresh"),
+		...UAssetIoProjectIndexTarget
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_rebuild"),
+		...UAssetIoProjectIndexTarget
+	}),
+	Schema.Struct({
+		cacheRoot: NonEmptyString,
+		kind: Schema.Literal("project_index_query"),
+		query: UAssetIoProjectIndexQuery
 	})
 ]).annotate({ identifier: "UAssetIoOperation" });
 export type UAssetIoOperation = Schema.Schema.Type<typeof UAssetIoOperation>;
@@ -96,7 +235,11 @@ const UAssetIoOperationKind = Schema.Literals([
 	"scan",
 	"extract_text",
 	"extract_texture",
-	"saved_world"
+	"saved_world",
+	"project_index_status",
+	"project_index_refresh",
+	"project_index_rebuild",
+	"project_index_query"
 ]);
 export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationKind>;
 
@@ -112,7 +255,19 @@ export const UAssetIoResult = Schema.Union([
 		event: SavedAssetTextureExtractionEvent,
 		kind: Schema.Literal("extract_texture")
 	}),
-	Schema.Struct({ kind: Schema.Literal("saved_world"), world: SavedWorld })
+	Schema.Struct({ kind: Schema.Literal("saved_world"), world: SavedWorld }),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_status"),
+		status: UAssetIoProjectIndexStatus
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_summary"),
+		summary: UAssetIoProjectIndexSummary
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_page"),
+		page: UAssetIoProjectIndexPage
+	})
 ]).annotate({ identifier: "UAssetIoResult" });
 export type UAssetIoResult = Schema.Schema.Type<typeof UAssetIoResult>;
 
@@ -132,7 +287,17 @@ export const UAssetIoEvent = Schema.Union([
 		...UAssetIoEventFields,
 		completedItems: NonNegativeInt,
 		kind: Schema.Literal("progress"),
-		phase: Schema.Literals(["starting", "discovering", "reading", "inspecting", "emitting"]),
+		phase: Schema.Literals([
+			"starting",
+			"discovering",
+			"reading",
+			"inspecting",
+			"emitting",
+			"enumerating",
+			"comparing",
+			"reading_headers",
+			"committing"
+		]),
 		totalItems: Schema.optionalKey(NonNegativeInt)
 	}),
 	Schema.Struct({
@@ -149,7 +314,9 @@ export const UAssetIoEvent = Schema.Union([
 	}),
 	Schema.Struct({
 		...UAssetIoEventFields,
+		actualGeneration: Schema.optionalKey(PositiveInt),
 		code: NonEmptyString,
+		expectedGeneration: Schema.optionalKey(PositiveInt),
 		kind: Schema.Literal("failed"),
 		message: NonEmptyString,
 		retrySafe: Schema.Boolean

@@ -1,0 +1,19 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_query",
+		"query": {
+			"expectedGeneration": 3,
+			"kind": "exact_classes",
+			"limit": 50,
+			"projectId": "fixture-project",
+			"values": ["/Script/Engine.DataTable"]
+		}
+	},
+	"requestId": "project-index-query-001"
+}

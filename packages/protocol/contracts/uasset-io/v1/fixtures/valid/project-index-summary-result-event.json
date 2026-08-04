@@ -1,0 +1,25 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"kind": "result",
+	"requestId": "project-index-refresh-001",
+	"result": {
+		"kind": "project_index_summary",
+		"summary": {
+			"changedPackages": 2,
+			"completeness": "complete",
+			"diagnostics": [
+				{
+					"code": "header_partial",
+					"message": "One package header decoded incompletely.",
+					"retrySafe": true
+				}
+			],
+			"generation": 4,
+			"mapCount": 1,
+			"packageCount": 40,
+			"projectId": "fixture-project",
+			"removedPackages": 1
+		}
+	},
+	"sequence": 2
+}

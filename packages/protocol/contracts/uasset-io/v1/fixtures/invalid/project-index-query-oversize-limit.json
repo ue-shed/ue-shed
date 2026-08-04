@@ -1,0 +1,15 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"limits": {},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_query",
+		"query": {
+			"expectedGeneration": 1,
+			"kind": "maps",
+			"limit": 257,
+			"projectId": "fixture-project"
+		}
+	},
+	"requestId": "project-index-query-oversize"
+}

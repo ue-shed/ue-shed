@@ -1,0 +1,11 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"actualGeneration": 4,
+	"code": "stale_generation",
+	"expectedGeneration": 3,
+	"kind": "failed",
+	"message": "The Project Index generation changed since this query started.",
+	"requestId": "project-index-query-001",
+	"retrySafe": true,
+	"sequence": 1
+}

@@ -4,7 +4,15 @@
 //! schedules bounded work, and returns protocol result types. Serialization is deliberately left
 //! to `protocol_adapter`, which is the only process-output seam.
 
+#[allow(dead_code)]
+mod catalog;
+#[allow(dead_code)]
+mod catalog_memory;
+#[allow(dead_code)]
+mod project_index;
 mod project_io;
+#[allow(dead_code)]
+mod scanner;
 
 use std::fs;
 
@@ -25,6 +33,18 @@ pub(crate) use project_io::{
     extract_texture_with_cancellation, saved_world, saved_world_with_cancellation_and_progress,
     scan, scan_with_cancellation,
 };
+
+// Step 5 Catalog/coordinator surface. Protocol wiring lands in Step 7.
+#[allow(unused_imports)]
+pub(crate) use catalog_memory::MemoryCatalog;
+#[allow(unused_imports)]
+pub(crate) use project_index::{
+    CatalogSnapshot, ProjectScanner, RefreshEvent, query as project_index_query,
+    rebuild as project_index_rebuild, refresh as project_index_refresh,
+    status as project_index_status,
+};
+#[allow(unused_imports)]
+pub(crate) use scanner::FilesystemProjectScanner;
 
 #[derive(Debug)]
 pub(crate) struct Failure {

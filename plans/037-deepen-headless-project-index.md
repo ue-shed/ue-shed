@@ -19,7 +19,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS — Step 2 complete
+- **State**: IN PROGRESS — Step 5 complete
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH — changes native persistence, the language-neutral process seam, project refresh
@@ -93,6 +93,32 @@ The current implementation duplicates and leaks index state:
 SQLite alone does not repair this design. The Project Index interface must stop transmitting the
 complete manifest during ordinary project opening.
 
+### Architecture review outcome (2026-08-04)
+
+The selected deepening sequence is:
+
+1. Deepen the public TypeScript Project Index module and freeze the schema-first v1.1 interface.
+2. Extract the native refresh coordinator and prove it against an in-memory Catalog adapter.
+3. Add SQLite as a private Catalog adapter only after dependency and release probes pass.
+4. Connect bounded summaries and query pages; never carry the complete manifest over the wire.
+5. Migrate consumers one at a time, then delete both old JSON cache implementations.
+
+This ordering keeps the public interface independent from the storage implementation. The Project
+Index becomes a deep module: its small lifecycle/query interface hides traversal, signature
+comparison, header probes, Generations, transactions, migrations, locking, and recovery. The memory
+and SQLite adapters make the Catalog seam real, while keeping storage-specific knowledge local to
+the native adapter.
+
+Do not introduce a sharded or per-module JSON cache as an intermediate architecture. It would retain
+the shallow whole-index interface, duplicate invalidation and atomicity rules, and pay a second
+migration cost without removing the unbounded protocol transfer. If SQLite fails a release gate,
+keep the coordinator and memory adapter usable while reconsidering the production Catalog adapter.
+
+The deletion test for this work is explicit: after consumer migration, deleting
+`ProjectInventoryCacheLive`, `projectIndexCacheLocator`, Workbench manifest hashing/materialization,
+and `WorkbenchProject.index(): SavedAssetScan` must not remove Project Index behavior. Deleting the
+SQLite adapter alone must leave the coordinator and its in-memory adapter usable.
+
 ## Target flow
 
 ```text
@@ -131,6 +157,11 @@ Callers do not receive: complete signatures, SQL schema, entire manifest
 10. SQL, SQLite filenames, journal details, and migrations never cross the public TypeScript seam.
 11. `scanProject` remains available for generic explicit scans and compatibility.
 12. Deleting `apps/workbench` leaves refresh, status, query, rebuild, and CLI use intact.
+13. An exact warm no-op rewrites no package evidence and reads zero package headers.
+14. A changed or new package is signature-checked again after its header read, before its evidence
+    can be staged, so concurrent writes cannot pair new evidence with an old signature.
+15. Package and sidecar signatures remain distinct. A sidecar-only change updates inventory evidence
+    without pretending the package header changed.
 
 ## Interface constraints
 
@@ -214,6 +245,53 @@ against Windows packaging, binary size, license gates, and offline builds before
 Prefer a bundled SQLite only if it keeps released binaries deterministic and passes repository
 license/release checks.
 
+`rusqlite` with narrowly selected bundled SQLite features is the leading dependency probe, not an
+accepted dependency. Pin an exact version only after proving compatibility with the repository's
+Rust 1.85 floor. Do not enable broad convenience features or build-time binding generation without
+measured need. The release probe must verify a locked offline build, a self-contained Windows
+`uasset.exe` with no new runtime DLL requirement, the executable and npm-package size delta, and
+Rust transitive-license evidence; the existing npm-focused license check is not sufficient alone.
+
+WAL is also a measured adapter choice rather than a default architectural requirement. Start from
+the required behavior—one writer refresh, bounded readers of the previous committed Generation, a
+finite busy timeout, and atomic publication—then choose and document the journal mode that passes
+concurrency, crash, packaging, and performance tests.
+
+## Refresh and caching algorithm
+
+The coordinator implementation must preserve this storage-neutral algorithm:
+
+1. Canonicalize the project identity and open its disposable Catalog beneath the configured cache
+   root. Windows path-case and alias behavior must be specified and fixture-tested before hashing a
+   Catalog location.
+2. Keep the current committed Generation queryable and create isolated staging state for the
+   refresh. Do not mutate or delete committed rows in place while enumeration is incomplete.
+3. Enumerate the configured project roots once. For each package and sidecar, read one signature
+   containing its canonical project-relative path, kind, size, and high-resolution modification
+   timestamp.
+4. Compare that signature with the Catalog before any header IO. If the signature and Index Profile
+   evidence version match, mark the row observed and reuse its evidence without reading the package
+   header or rewriting the evidence row.
+5. If the signature matches but the Index Profile evidence is stale, retain the signature and
+   rebuild only the compact header evidence. A wider profile must never reuse narrower evidence.
+6. For a new or signature-changed package, read only the compact header probe, then re-read its
+   signature before staging. A concurrent change retries within a bounded policy or produces a
+   diagnostic that prevents publication of an incorrectly paired signature/evidence row.
+7. Treat sidecars as separate signature rows. Sidecar changes participate in inventory state and
+   deletion detection but do not force a package-header read unless a future versioned profile
+   explicitly requires sidecar-derived evidence.
+8. Mark missing prior rows as deletions only after the one enumeration completes. Publish staged
+   evidence, deletions, summary metadata, and the next immutable Generation in one successful
+   transaction.
+9. On cancellation, timeout, process failure, partial enumeration, failed signature revalidation,
+   or transaction failure, discard staging and leave the prior committed Generation intact.
+10. Serve only stable, bounded, Generation-checked pages from committed state. Ordinary queries
+    never refresh, enumerate, or fall back to scanning `Content`.
+
+The coordinator interface is the test surface. Its conformance suite must run unchanged against the
+in-memory and SQLite adapters; coordinator tests must never name SQL tables, pragmas, journal files,
+or migrations.
+
 ## Execution plan
 
 ### Step 1 — Make current failures visible
@@ -258,11 +336,23 @@ leaving the full inventory transfer visible for the Catalog work to remove.
 2. Add Project Index schemas, branded identity/Generation, lifecycle, typed failures, query cursors,
    and enforced maximum page size.
 3. Provide the public Effect module with an in-memory test adapter.
-4. Keep cache-root selection configurable and free of Electron imports.
-5. Add an architecture check preventing Workbench dependencies and SQLite-specific types.
+4. Concentrate lifecycle folding, Generation/page validation, typed recovery, and cache-root policy
+   in the Project Index implementation rather than duplicating them in CLI or Workbench callers.
+5. Keep the child-process transport as an internal adapter and cache-root selection configurable and
+   free of Electron imports.
+6. Add an architecture check preventing Workbench dependencies and SQLite-specific types.
 
 **Gate**: public interface tests pass with the in-memory adapter and deleting Workbench imports does
 not remove any Project Index behavior.
+
+**Implementation evidence (2026-08-04)**: `@ue-shed/unreal-assets` now splits process transport
+(`protocol-transport.ts`), ordinary AssetReader operations (`asset-reader.ts` + `scan-target.ts`),
+and the Project Index module (`project-index.ts` + `project-index-memory.ts`) behind a thin public
+barrel. The Project Index surface owns branded identity/Generation, bounded query schemas, typed
+failures, refresh folding, page validation, and cache-root configuration via
+`UE_SHED_PROJECT_INDEX_CACHE_ROOT` with no Electron imports. An in-memory adapter exercises refresh,
+stale-generation rejection, and enforced page limits. `pnpm run uasset:architecture` forbids
+Workbench and SQLite leakage from the package TypeScript seam.
 
 ### Step 4 — Add the schema-first v1.1 protocol
 
@@ -276,6 +366,15 @@ not remove any Project Index behavior.
 **Gate**: TypeScript and Rust accept the same fixtures, old operations are unchanged, every query
 page is bounded, and an old worker produces a typed incompatible-worker result.
 
+**Implementation evidence (2026-08-04)**: `uasset-io` v1.1 fixtures cover Project Index status,
+refresh, rebuild, and query requests plus status/summary/page results, progress, and stale-generation
+failures. Invalid fixtures reject oversize page limits and unbounded result pages. Effect schemas,
+generated JSON Schemas, and Rust request/result models decode the same fixtures; v1.0 fixtures remain
+green. The TypeScript process adapter maps pre-`accepted` worker exits to
+`ProjectIndexIncompatibleWorker`, and maps stale-generation, corrupt-catalog, cancelled, and
+unavailable failed frames onto the public Project Index error surface. Native execution of the new
+operations remains intentionally unavailable until the Catalog coordinator lands.
+
 ### Step 5 — Extract the Rust refresh coordinator
 
 1. Split `project_io.rs` into internal scanner, Project Index coordinator, and existing scan
@@ -285,21 +384,38 @@ page is bounded, and an old worker produces a typed incompatible-worker result.
 3. Implement the in-memory Catalog adapter first.
 4. Prove add/change/delete/rename/sidecar behavior and stable ordering through the coordinator
    interface.
-5. Preserve cancellation checkpoints and one traversal.
+5. Separate reusable signature evidence from versioned Index Profile header evidence.
+6. Revalidate changed/new package signatures after header reads and prove bounded concurrent-write
+   handling.
+7. Preserve cancellation checkpoints, previous-Generation queries, and one traversal.
 
 **Gate**: coordinator tests never mention SQLite, and legacy scan conformance remains green.
 
+**Implementation evidence (2026-08-04)**: `direct_executor` now splits Catalog seam
+(`catalog.rs`), in-memory adapter (`catalog_memory.rs`), refresh coordinator
+(`project_index.rs`), filesystem scanner helpers (`scanner.rs`), and legacy scan compatibility
+(`project_io.rs`). The coordinator proves cold/warm no-op header reuse, add/change/delete/rename
+plus sidecar updates, bounded signature revalidation, cancellation that discards staging while
+preserving the prior Generation, stale-generation query rejection with stable path ordering, and
+rebuild clearing committed state before generation `1`. Coordinator and scanner tests never mention
+SQLite. `FilesystemProjectScanner` walks `Content` and probes Index Profile evidence; protocol
+wiring remains deferred to Step 7. `cargo test -p uasset-io --lib` is green (25 tests).
+
 ### Step 6 — Implement the SQLite Catalog adapter
 
-1. Add the selected Rust SQLite dependency only after license, build, release-size, and Windows
-   packaging probes pass.
+1. Probe a narrowly featured bundled `rusqlite` build, but add the selected exact Rust SQLite
+   dependency only after Rust 1.85, license, locked-offline-build, release-size, self-contained EXE,
+   and Windows packaging checks pass.
 2. Implement schema creation, migrations, transactional staging, atomic Generation publication,
    indexed evidence queries, and stable pagination.
 3. Inspect headers only for new or signature-changed packages.
 4. Mark observed rows during enumeration and delete unseen rows only at successful commit.
 5. Preserve the last committed Generation during concurrent refresh and after interruption.
 6. Quarantine the exact corrupt/incompatible Catalog and rebuild; never touch project content.
-7. Run one conformance suite against both memory and SQLite adapters.
+7. Select rollback journal or WAL from measured concurrent-read, crash, and warm-refresh evidence;
+   enforce a finite busy timeout either way.
+8. Add Rust transitive-license evidence and record native executable/npm-package size deltas.
+9. Run one conformance suite against both memory and SQLite adapters.
 
 **Gate**: SQLite and memory adapters produce equal fixture results; cancellation and injected failure
 leave the prior Generation queryable and delete nothing.
@@ -311,7 +427,8 @@ leave the prior Generation queryable and delete nothing.
 3. Stream refresh progress without inventory rows.
 4. Reject stale cursors/Generations and oversized page requests with typed recovery.
 5. Instrument refresh, changed/header-read counts, transaction duration, query latency, cache bytes,
-   and rebuild/quarantine events without recording paths or asset identities.
+   evidence-row writes, generation transitions, and rebuild/quarantine events without recording
+   paths or asset identities.
 
 **Gate**: a representative refresh emits no `scan_inventory` frames and every response remains
 bounded regardless of total project size.
@@ -365,11 +482,15 @@ Workbench code.
 
 1. Run cold, warm, one-change, delete, cancellation, corruption, and query benchmarks against the
    representative large project.
-2. Verify unchanged refresh reads zero package headers after signature comparison.
-3. Verify changed/deleted counts and generation transitions against controlled fixture mutations.
+2. Verify unchanged refresh reads zero package headers, rewrites zero package evidence rows, and
+   emits only bounded lifecycle output after signature comparison.
+3. Verify one changed package reads exactly one header, and verify changed/deleted counts and
+   generation transitions against controlled fixture mutations.
 4. Verify Workbench loads the representative project and presents useful failures.
-5. Record aggregate results in benchmark documentation without project-specific names or paths.
-6. Run focused checks, full `pnpm check`, fix every failure, and run `pnpm check` again immediately
+5. Record database bytes, write amplification, transaction duration, query p95, protocol bytes, and
+   peak RSS alongside wall time without project-specific names or paths.
+6. Compare rollback-journal and WAL behavior if both remain viable after the adapter tests.
+7. Run focused checks, full `pnpm check`, fix every failure, and run `pnpm check` again immediately
    before handoff.
 
 **Gate**: no operation hits the cumulative output limit, no whole manifest crosses into TypeScript,
@@ -377,18 +498,18 @@ and all repository checks pass.
 
 ## Verification matrix
 
-| Scope                | Required evidence                                                                    |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| Rust coordinator     | add/change/delete/rename/sidecars, one traversal, cancellation, generation atomicity |
-| Catalog conformance  | memory/SQLite equivalence, migration, corruption, locking, stable pagination         |
-| Protocol             | schema fixtures, v1.0 compatibility, v1.1 ops, stale generation, bounded pages       |
-| TypeScript module    | lifecycle, typed failures, cache-root policy, progress, pagination                   |
-| Domain integration   | maps, tables, input, text, texture consume bounded candidates                        |
-| CLI                  | explicit refresh/status/query/rebuild without Workbench                              |
-| Workbench            | visible failure/retry, progress, ready project, no private JSON cache                |
-| Large project        | cold/warm/change/delete, bytes, largest frame, RSS, cache size, query p95            |
-| Architecture/release | portable crates unchanged, packaged native binary, license and public-package gates  |
-| Repository           | `pnpm check` passes twice at handoff                                                 |
+| Scope                | Required evidence                                                                   |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| Rust coordinator     | add/change/delete/rename/sidecars, revalidation, one traversal, atomic Generations  |
+| Catalog conformance  | memory/SQLite equivalence, no-op writes, migration, corruption, locking, pagination |
+| Protocol             | schema fixtures, v1.0 compatibility, v1.1 ops, stale generation, bounded pages      |
+| TypeScript module    | lifecycle, typed failures, cache-root policy, progress, pagination                  |
+| Domain integration   | maps, tables, input, text, texture consume bounded candidates                       |
+| CLI                  | explicit refresh/status/query/rebuild without Workbench                             |
+| Workbench            | visible failure/retry, progress, ready project, no private JSON cache               |
+| Large project        | cold/warm/change/delete, header/row writes, wire/DB bytes, RSS, query p95           |
+| Architecture/release | Rust 1.85/offline build, EXE/package size, licenses, portable crates unchanged      |
+| Repository           | `pnpm check` passes twice at handoff                                                |
 
 Focused commands must include:
 
@@ -408,10 +529,11 @@ pnpm check
 ## Done criteria
 
 - [x] Failed project selection remains visible with message, recovery, and retry.
-- [ ] Project Index is a headless public module in `@ue-shed/unreal-assets`.
-- [ ] TypeScript owns cache-root/policy and never reads or writes SQLite.
+- [x] Project Index is a headless public module in `@ue-shed/unreal-assets`.
+- [x] TypeScript owns cache-root/policy and never reads or writes SQLite.
 - [ ] Rust owns the private SQLite Catalog behind memory/SQLite adapters.
 - [ ] Refresh performs one traversal and decodes headers only for changed/new packages.
+- [ ] An exact warm no-op reads zero package headers and rewrites zero package evidence rows.
 - [ ] A committed Generation is atomic and stale queries are explicit.
 - [ ] Workbench and CLI use the same Project Index interface.
 - [ ] No ordinary caller receives the complete project manifest.

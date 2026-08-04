@@ -221,6 +221,10 @@ fn operation_kind(operation: &Operation) -> &'static str {
         Operation::ExtractText { .. } => "extract_text",
         Operation::ExtractTexture { .. } => "extract_texture",
         Operation::SavedWorld { .. } => "saved_world",
+        Operation::ProjectIndexStatus { .. } => "project_index_status",
+        Operation::ProjectIndexRefresh { .. } => "project_index_refresh",
+        Operation::ProjectIndexRebuild { .. } => "project_index_rebuild",
+        Operation::ProjectIndexQuery { .. } => "project_index_query",
     }
 }
 
@@ -347,6 +351,15 @@ fn execute_direct(
             )?;
             Ok(partial)
         }
+        Operation::ProjectIndexStatus { .. }
+        | Operation::ProjectIndexRefresh { .. }
+        | Operation::ProjectIndexRebuild { .. }
+        | Operation::ProjectIndexQuery { .. } => Err(Failure {
+            code: "unavailable".to_owned(),
+            message: "Project Index Catalog execution is not wired in this worker build yet."
+                .to_owned(),
+            retry_safe: true,
+        }),
     }
 }
 

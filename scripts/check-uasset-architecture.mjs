@@ -73,12 +73,50 @@ async function main() {
 		failures.push("uasset-inspection-wasm source-includes executable code");
 	}
 
+	await checkProjectIndexTypeScriptBoundary(failures);
+
 	if (failures.length > 0) {
 		throw new Error(
 			`UAsset architecture check failed:\n${failures.map((value) => `- ${value}`).join("\n")}`
 		);
 	}
 	process.stdout.write("UAsset architecture ownership checks passed.\n");
+}
+
+async function typescriptFiles(directory) {
+	const entries = await readdir(join(repositoryRoot, directory), { withFileTypes: true });
+	const files = [];
+	for (const entry of entries) {
+		const path = join(directory, entry.name);
+		if (entry.isDirectory()) {
+			if (entry.name === "node_modules" || entry.name === "dist") continue;
+			files.push(...(await typescriptFiles(path)));
+		} else if (/\.[cm]?tsx?$/.test(entry.name)) {
+			files.push(path);
+		}
+	}
+	return files;
+}
+
+async function checkProjectIndexTypeScriptBoundary(failures) {
+	const forbidden = [
+		{ label: "apps/workbench import", pattern: /from\s+["'][^"']*apps\/workbench/ },
+		{ label: "@ue-shed/workbench dependency", pattern: /@ue-shed\/workbench/ },
+		{ label: "electron import", pattern: /from\s+["']electron(?:\/|$)/ },
+		{ label: "SQLite client import", pattern: /\b(?:better-sqlite3|sql\.js|node:sqlite)\b/ },
+		{ label: "SQLite SQL surface", pattern: /\b(?:CREATE TABLE|PRAGMA|sqlite3|rusqlite)\b/i }
+	];
+	for (const path of await typescriptFiles("packages/unreal-assets/src")) {
+		const absolute = join(repositoryRoot, path);
+		const source = await readFile(absolute, "utf8");
+		for (const rule of forbidden) {
+			if (rule.pattern.test(source)) {
+				failures.push(
+					`${relative(repositoryRoot, absolute)} leaks ${rule.label} across the Project Index TypeScript seam`
+				);
+			}
+		}
+	}
 }
 
 main().catch((error) => {

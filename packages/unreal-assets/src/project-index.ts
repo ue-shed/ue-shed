@@ -1,7 +1,8 @@
-import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { Config, Context, Effect, Layer, Option, Schema, Stream } from "effect";
 
 export const PROJECT_INDEX_MAX_PAGE_SIZE = 256;
 export const PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
+export const PROJECT_INDEX_CACHE_ROOT_ENV = "UE_SHED_PROJECT_INDEX_CACHE_ROOT";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
@@ -21,6 +22,9 @@ export const ProjectIndexCursor = Schema.NonEmptyString.check(Schema.isMaxLength
 	Schema.brand("ProjectIndexCursor")
 );
 export type ProjectIndexCursor = typeof ProjectIndexCursor.Type;
+
+export const ProjectIndexCacheRoot = BoundedPath.pipe(Schema.brand("ProjectIndexCacheRoot"));
+export type ProjectIndexCacheRoot = typeof ProjectIndexCacheRoot.Type;
 
 export const ProjectIndexTarget = Schema.Struct({
 	projectRoot: BoundedPath
@@ -163,6 +167,10 @@ export type ProjectIndexError =
 	| ProjectIndexCorruptCatalog
 	| ProjectIndexRefreshFailed;
 
+export interface ProjectIndexConfiguration {
+	readonly cacheRoot: ProjectIndexCacheRoot;
+}
+
 export interface ProjectIndexShape {
 	readonly rebuild: (
 		target: ProjectIndexTarget
@@ -182,12 +190,101 @@ export class ProjectIndex extends Context.Service<ProjectIndex, ProjectIndexShap
 	"@ue-shed/unreal-assets/ProjectIndex"
 ) {}
 
+export class ProjectIndexConfig extends Context.Service<
+	ProjectIndexConfig,
+	ProjectIndexConfiguration
+>()("@ue-shed/unreal-assets/ProjectIndexConfig") {}
+
+export const projectIndexCacheRootConfig = Config.schema(
+	ProjectIndexCacheRoot,
+	PROJECT_INDEX_CACHE_ROOT_ENV
+);
+
+export function projectIndexConfigLayer(
+	configuration: ProjectIndexConfiguration
+): Layer.Layer<ProjectIndexConfig> {
+	return Layer.succeed(ProjectIndexConfig, ProjectIndexConfig.of(configuration));
+}
+
+export const ProjectIndexConfigLive = Layer.effect(
+	ProjectIndexConfig,
+	Effect.gen(function* () {
+		const cacheRoot = yield* projectIndexCacheRootConfig;
+		return ProjectIndexConfig.of({ cacheRoot });
+	})
+);
+
+const invalidRequest = (message: string): ProjectIndexInvalidRequest =>
+	new ProjectIndexInvalidRequest({
+		message,
+		recovery: "Correct the Project Index request and retry.",
+		retrySafe: false
+	});
+
+export const decodeProjectIndexTarget = Effect.fn("ProjectIndex.decodeTarget")((input: unknown) =>
+	Schema.decodeUnknownEffect(ProjectIndexTarget)(input).pipe(
+		Effect.mapError(() =>
+			invalidRequest("Project Index target must include a non-empty project root.")
+		)
+	)
+);
+
+export const decodeProjectIndexQuery = Effect.fn("ProjectIndex.decodeQuery")((input: unknown) =>
+	Schema.decodeUnknownEffect(ProjectIndexQuery)(input).pipe(
+		Effect.mapError(() =>
+			invalidRequest(
+				`Project Index queries must be bounded to at most ${PROJECT_INDEX_MAX_PAGE_SIZE} items.`
+			)
+		)
+	)
+);
+
+export const decodeProjectIndexPage = Effect.fn("ProjectIndex.decodePage")((input: unknown) =>
+	Schema.decodeUnknownEffect(ProjectIndexPage)(input).pipe(
+		Effect.mapError(
+			() =>
+				new ProjectIndexUnavailable({
+					message: "The Project Index adapter returned an unbounded or invalid page.",
+					recovery: "Rebuild the Catalog, then retry with a bounded query.",
+					retrySafe: true
+				})
+		)
+	)
+);
+
+export function foldProjectIndexRefresh(
+	events: Iterable<ProjectIndexRefreshEvent>
+): Effect.Effect<ProjectIndexSummary, ProjectIndexRefreshFailed> {
+	let summary: ProjectIndexSummary | undefined;
+	for (const event of events) {
+		if (event._tag === "Completed") summary = event.summary;
+	}
+	if (summary === undefined) {
+		return Effect.fail(
+			new ProjectIndexRefreshFailed({
+				message: "Project Index refresh ended without a completed summary.",
+				recovery: "Retry the refresh. If it keeps failing, rebuild the Catalog.",
+				retrySafe: true
+			})
+		);
+	}
+	return Effect.succeed(summary);
+}
+
 const acquireRefresh = Effect.fn("ProjectIndex.refresh")((target: ProjectIndexTarget) =>
-	Effect.map(ProjectIndex, (index) => index.refresh(target))
+	Effect.gen(function* () {
+		const decoded = yield* decodeProjectIndexTarget(target);
+		const index = yield* ProjectIndex;
+		return index.refresh(decoded);
+	})
 );
 
 const acquireRebuild = Effect.fn("ProjectIndex.rebuild")((target: ProjectIndexTarget) =>
-	Effect.map(ProjectIndex, (index) => index.rebuild(target))
+	Effect.gen(function* () {
+		const decoded = yield* decodeProjectIndexTarget(target);
+		const index = yield* ProjectIndex;
+		return index.rebuild(decoded);
+	})
 );
 
 export function refreshProjectIndex(
@@ -203,13 +300,51 @@ export function rebuildProjectIndex(
 }
 
 export const queryProjectIndex = Effect.fn("ProjectIndex.query")((request: ProjectIndexQuery) =>
-	Effect.flatMap(ProjectIndex, (index) => index.query(request))
+	Effect.gen(function* () {
+		const decoded = yield* decodeProjectIndexQuery(request);
+		const index = yield* ProjectIndex;
+		const page = yield* index.query(decoded);
+		return yield* decodeProjectIndexPage(page);
+	})
 );
 
 export const getProjectIndexStatus = Effect.fn("ProjectIndex.status")(
-	(target: ProjectIndexTarget) => Effect.flatMap(ProjectIndex, (index) => index.status(target))
+	(target: ProjectIndexTarget) =>
+		Effect.gen(function* () {
+			const decoded = yield* decodeProjectIndexTarget(target);
+			const index = yield* ProjectIndex;
+			return yield* index.status(decoded);
+		})
+);
+
+export const getProjectIndexCacheRoot = Effect.fn("ProjectIndex.cacheRoot")(() =>
+	Effect.map(ProjectIndexConfig, (configuration) => configuration.cacheRoot)
 );
 
 export function makeProjectIndexTestLayer(service: ProjectIndexShape): Layer.Layer<ProjectIndex> {
 	return Layer.succeed(ProjectIndex, ProjectIndex.of(service));
+}
+
+export function requireProjectIndexCacheRoot(
+	cacheRoot: Option.Option<ProjectIndexCacheRoot> | ProjectIndexCacheRoot | undefined
+): Effect.Effect<ProjectIndexCacheRoot, ProjectIndexInvalidRequest> {
+	if (cacheRoot === undefined) {
+		return Effect.fail(
+			invalidRequest(
+				`Project Index requires ${PROJECT_INDEX_CACHE_ROOT_ENV} or an explicit cache root.`
+			)
+		);
+	}
+	if (Option.isOption(cacheRoot)) {
+		return Option.match(cacheRoot, {
+			onNone: () =>
+				Effect.fail(
+					invalidRequest(
+						`Project Index requires ${PROJECT_INDEX_CACHE_ROOT_ENV} or an explicit cache root.`
+					)
+				),
+			onSome: (value) => Effect.succeed(value)
+		});
+	}
+	return Effect.succeed(cacheRoot);
 }

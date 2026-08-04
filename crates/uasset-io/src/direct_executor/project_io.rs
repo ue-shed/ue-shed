@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{self, Read};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 use uasset_inspection::projection::{
@@ -16,11 +15,11 @@ use uasset_inspection::saved_world::{
     SavedWorldActorPosition, SavedWorldPackageFragment, SavedWorldPosition,
     project_saved_world_package, resolve_saved_world_positions,
 };
-use uasset_parser::PackageSummary;
 use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 
+use super::scanner;
 use super::{
     Diagnostic, Failure, ProjectionOutput, SavedWorldOutput, ScanOutput, checkpoint,
     scan_diagnostic, scan_failure_code, summary_diagnostics,
@@ -42,13 +41,7 @@ use crate::protocol_result::{
 
 const SCHEMA_VERSION: u8 = 8;
 const SCAN_CACHE_VERSION: u32 = 2;
-const HEADER_PROBE_BYTES: usize = 4 * 1024;
-const MAX_SUMMARY_BYTES: usize = 64 * 1024;
-const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_SAVED_WORLD_MAXIMUM_ASSETS: u64 = 100_000;
-
-const PACKAGE_EXTENSIONS: &[&str] = &["uasset", "umap"];
-const SIDECAR_EXTENSIONS: &[&str] = &["uexp", "ubulk", "uptnl"];
 
 #[derive(Clone)]
 struct AssetSignature {
@@ -140,7 +133,7 @@ pub(crate) fn scan_with_cancellation(
     checkpoint(cancellation, "discovery")?;
     let roots = resolve_roots(selection, cancellation)?;
     let (asset_paths, sidecar_paths) =
-        discover_paths(&roots, inventory.unwrap_or(false), cancellation)?;
+        scanner::discover_paths(&roots, inventory.unwrap_or(false), cancellation)?;
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, asset_paths.len())?;
     let inventory_requested = inventory.unwrap_or(false);
@@ -556,7 +549,7 @@ fn projection(
     };
     checkpoint(cancellation, "discovery")?;
     let roots = resolve_roots(selection, cancellation)?;
-    let (paths, _) = discover_paths(&roots, false, cancellation)?;
+    let (paths, _) = scanner::discover_paths(&roots, false, cancellation)?;
     checkpoint(cancellation, "discovery")?;
     enforce_maximum_assets(request, paths.len())?;
     let filters = projection_filters(kind, selection.paths.is_none());
@@ -1359,7 +1352,7 @@ fn resolve_roots(
                 retry_safe: false,
             });
         }
-        if canonical.is_file() && !is_package_path(&canonical) {
+        if canonical.is_file() && !scanner::is_package_path(&canonical) {
             return Err(Failure {
                 code: "invalid_request".to_owned(),
                 message: format!("--path {} is not a .uasset or .umap file", joined.display()),
@@ -1370,36 +1363,6 @@ fn resolve_roots(
     }
     checkpoint(cancellation, "discovery")?;
     Ok(roots)
-}
-
-fn discover_paths(
-    roots: &[PathBuf],
-    include_sidecars: bool,
-    cancellation: &CancellationToken,
-) -> Result<(Vec<PathBuf>, Vec<PathBuf>), Failure> {
-    let mut packages = Vec::new();
-    let mut sidecars = Vec::new();
-    for root in roots {
-        checkpoint(cancellation, "discovery")?;
-        if root.is_file() {
-            packages.push(root.clone());
-            continue;
-        }
-        discover_scan_files(
-            root,
-            &mut packages,
-            &mut sidecars,
-            include_sidecars,
-            cancellation,
-        )?;
-    }
-    checkpoint(cancellation, "discovery")?;
-    packages.sort();
-    packages.dedup();
-    sidecars.sort();
-    sidecars.dedup();
-    checkpoint(cancellation, "discovery")?;
-    Ok((packages, sidecars))
 }
 
 fn enforce_maximum_assets(request: &Request, count: usize) -> Result<(), Failure> {
@@ -1415,89 +1378,19 @@ fn enforce_maximum_assets(request: &Request, count: usize) -> Result<(), Failure
     Ok(())
 }
 
-fn discover_scan_files(
-    directory: &Path,
-    packages: &mut Vec<PathBuf>,
-    sidecars: &mut Vec<PathBuf>,
-    include_sidecars: bool,
-    cancellation: &CancellationToken,
-) -> Result<(), Failure> {
-    checkpoint(cancellation, "discovery")?;
-    let mut entries = fs::read_dir(directory)
-        .map_err(|error| Failure {
-            code: "discovery".to_owned(),
-            message: format!("could not enumerate {}: {error}", directory.display()),
-            retry_safe: true,
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| Failure {
-            code: "discovery".to_owned(),
-            message: format!("could not enumerate {}: {error}", directory.display()),
-            retry_safe: true,
-        })?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
-    for entry in entries {
-        checkpoint(cancellation, "discovery")?;
-        let path = entry.path();
-        let file_type = entry.file_type().map_err(|error| Failure {
-            code: "discovery".to_owned(),
-            message: format!("could not enumerate {}: {error}", path.display()),
-            retry_safe: true,
-        })?;
-        if file_type.is_dir() {
-            discover_scan_files(&path, packages, sidecars, include_sidecars, cancellation)?;
-        } else if file_type.is_file() && is_package_path(&path) {
-            packages.push(path);
-        } else if include_sidecars && file_type.is_file() && is_sidecar_path(&path) {
-            sidecars.push(path);
-        }
-    }
-    checkpoint(cancellation, "discovery")?;
-    Ok(())
-}
-
-fn is_package_path(path: &Path) -> bool {
-    has_extension(path, PACKAGE_EXTENSIONS)
-}
-
-fn is_sidecar_path(path: &Path) -> bool {
-    has_extension(path, SIDECAR_EXTENSIONS)
-}
-
-fn has_extension(path: &Path, extensions: &[&str]) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extensions
-                .iter()
-                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-        })
-}
-
-fn read_asset_signature(path: &Path) -> Option<AssetSignature> {
-    let metadata = fs::metadata(path).ok()?;
-    let modified_nanos = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |duration| {
-            u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
-        });
-    Some(AssetSignature {
-        modified_nanos,
-        path: path.to_owned(),
-        size: metadata.len(),
-    })
-}
-
 fn read_asset_signature_with_cancellation(
     path: &Path,
     cancellation: &CancellationToken,
 ) -> Result<Option<AssetSignature>, Failure> {
-    checkpoint(cancellation, "read")?;
-    let signature = read_asset_signature(path);
-    checkpoint(cancellation, "read")?;
-    Ok(signature)
+    Ok(
+        scanner::read_asset_signature_with_cancellation(path, cancellation)?.map(|signature| {
+            AssetSignature {
+                modified_nanos: signature.modified_nanos,
+                path: signature.path,
+                size: signature.size,
+            }
+        }),
+    )
 }
 
 fn record_inventory_metadata_failure(
@@ -1526,62 +1419,7 @@ fn read_package_header(
     signature: &AssetSignature,
     cancellation: &CancellationToken,
 ) -> Result<Package, Failure> {
-    checkpoint(cancellation, "read")?;
-    let file_len =
-        usize::try_from(signature.size).map_err(|_| header_failure("asset_resource_limit"))?;
-    if file_len == 0 {
-        return Err(header_failure("asset_malformed_data"));
-    }
-    let mut file = File::open(&signature.path).map_err(|_| header_failure("asset_io"))?;
-    let mut prefix_len = HEADER_PROBE_BYTES.min(file_len);
-    let mut bytes = vec![0; prefix_len];
-    file.read_exact(&mut bytes)
-        .map_err(|_| header_failure("asset_io"))?;
-    checkpoint(cancellation, "read")?;
-    let summary = loop {
-        checkpoint(cancellation, "parsing")?;
-        match PackageSummary::parse_with_file_len(&bytes, file_len) {
-            Ok(summary) => break summary,
-            Err(error)
-                if error.kind() == PackageErrorKind::MalformedData
-                    && prefix_len < MAX_SUMMARY_BYTES.min(file_len) =>
-            {
-                let next_len = (prefix_len * 2).min(MAX_SUMMARY_BYTES).min(file_len);
-                bytes.resize(next_len, 0);
-                file.read_exact(&mut bytes[prefix_len..])
-                    .map_err(|_| header_failure("asset_io"))?;
-                checkpoint(cancellation, "read")?;
-                prefix_len = next_len;
-            }
-            Err(error) => return Err(header_failure(package_error_code(&error))),
-        }
-    };
-    checkpoint(cancellation, "parsing")?;
-    let header_len = usize::try_from(summary.total_header_size)
-        .map_err(|_| header_failure("asset_resource_limit"))?;
-    if header_len > MAX_HEADER_BYTES {
-        return Err(header_failure("asset_resource_limit"));
-    }
-    if header_len > bytes.len() {
-        let previous_len = bytes.len();
-        bytes.resize(header_len, 0);
-        file.read_exact(&mut bytes[previous_len..])
-            .map_err(|_| header_failure("asset_io"))?;
-    } else {
-        bytes.truncate(header_len);
-    }
-    checkpoint(cancellation, "read")?;
-    checkpoint(cancellation, "inspection")?;
-    Package::parse_header(&bytes, file_len)
-        .map_err(|error| header_failure(package_error_code(&error)))
-}
-
-fn header_failure(code: &'static str) -> Failure {
-    Failure {
-        code: code.to_owned(),
-        message: format!("could not inspect package header ({code})"),
-        retry_safe: matches!(code, "asset_io"),
-    }
+    scanner::read_package_header(&signature.path, signature.size, cancellation)
 }
 
 fn package_error_code(error: &PackageError) -> &'static str {
@@ -1632,7 +1470,7 @@ where
         SavedWorldSource::WorldPartition {
             external_actor_root,
         } => {
-            let (paths, _) = discover_paths(
+            let (paths, _) = scanner::discover_paths(
                 std::slice::from_ref(external_actor_root),
                 false,
                 cancellation,

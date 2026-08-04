@@ -29,6 +29,88 @@ pub enum ResultFrame {
     },
     #[serde(rename = "saved_world")]
     SavedWorld { world: SavedWorld },
+    #[serde(rename = "project_index_status")]
+    ProjectIndexStatus { status: ProjectIndexStatusPayload },
+    #[serde(rename = "project_index_summary")]
+    ProjectIndexSummary { summary: ProjectIndexSummary },
+    #[serde(rename = "project_index_page")]
+    ProjectIndexPage { page: ProjectIndexPage },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexDiagnostic {
+    pub code: String,
+    pub message: String,
+    #[serde(rename = "retrySafe")]
+    pub retry_safe: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexSummary {
+    #[serde(rename = "changedPackages")]
+    pub changed_packages: u64,
+    pub completeness: ProjectIndexCompleteness,
+    pub diagnostics: Vec<ProjectIndexDiagnostic>,
+    pub generation: u64,
+    #[serde(rename = "mapCount")]
+    pub map_count: u64,
+    #[serde(rename = "packageCount")]
+    pub package_count: u64,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    #[serde(rename = "removedPackages")]
+    pub removed_packages: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectIndexCompleteness {
+    Complete,
+    Partial,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "status", deny_unknown_fields)]
+pub enum ProjectIndexStatusPayload {
+    #[serde(rename = "absent")]
+    Absent,
+    #[serde(rename = "ready")]
+    Ready { summary: ProjectIndexSummary },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum ProjectIndexItem {
+    #[serde(rename = "map")]
+    Map {
+        #[serde(rename = "mapPath")]
+        map_path: String,
+        #[serde(rename = "packageName")]
+        package_name: String,
+    },
+    #[serde(rename = "header")]
+    Header {
+        classes: Vec<String>,
+        #[serde(rename = "packageName")]
+        package_name: String,
+        #[serde(rename = "packagePath")]
+        package_path: String,
+        #[serde(rename = "serializedNames")]
+        serialized_names: Vec<String>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexPage {
+    pub generation: u64,
+    pub items: Vec<ProjectIndexItem>,
+    #[serde(rename = "nextCursor")]
+    pub next_cursor: Option<String>,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

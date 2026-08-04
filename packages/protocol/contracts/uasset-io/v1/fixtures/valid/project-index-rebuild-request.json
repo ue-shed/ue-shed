@@ -1,0 +1,13 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_rebuild",
+		"projectRoot": "C:/project"
+	},
+	"requestId": "project-index-rebuild-001"
+}

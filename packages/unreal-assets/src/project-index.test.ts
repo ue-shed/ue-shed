@@ -1,22 +1,67 @@
-import { Effect, Schema } from "effect";
+import { it as effectIt } from "@effect/vitest";
+import { ConfigProvider, Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	foldProjectIndexRefresh,
+	getProjectIndexCacheRoot,
+	getProjectIndexStatus,
+	PROJECT_INDEX_CACHE_ROOT_ENV,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIdentity,
+	ProjectIndexConfigLive,
 	ProjectIndexGeneration,
+	ProjectIndexHeader,
+	ProjectIndexMap,
 	ProjectIndexPage,
-	ProjectIndexQuery
+	ProjectIndexQuery,
+	queryProjectIndex,
+	refreshProjectIndex
 } from "./project-index.js";
+import {
+	projectIndexMemoryLayer,
+	projectIndexMemoryLayerWithConfig
+} from "./project-index-memory.js";
 
 const projectId = ProjectIdentity.make("fixture-project");
-const generation = ProjectIndexGeneration.make(1);
+const projectRoot = "C:/Fixture";
+const cacheRoot = "C:/Caches/project-index";
+
+const maps: readonly ProjectIndexMap[] = [
+	{
+		kind: "map",
+		mapPath: "Content/Maps/L_Fixture.umap",
+		packageName: "/Game/Maps/L_Fixture"
+	}
+];
+
+const headers: readonly ProjectIndexHeader[] = [
+	{
+		classes: ["/Script/Engine.DataTable", "/Script/EnhancedInput.InputAction"],
+		kind: "header",
+		packageName: "/Game/Data/DT_Items",
+		packagePath: "Content/Data/DT_Items.uasset",
+		serializedNames: ["TextProperty", "RowStruct"]
+	},
+	{
+		classes: ["/Script/Engine.Texture2D"],
+		kind: "header",
+		packageName: "/Game/Textures/T_Icon",
+		packagePath: "Content/Textures/T_Icon.uasset",
+		serializedNames: ["BulkData"]
+	}
+];
+
+const memoryLayer = projectIndexMemoryLayerWithConfig({
+	cacheRoot,
+	seed: { headers, maps, projectId }
+});
 
 describe("Project Index public contract", () => {
 	it("rejects a query above the package-enforced page limit", async () => {
 		const result = await Effect.runPromiseExit(
 			Schema.decodeUnknownEffect(ProjectIndexQuery)({
 				_tag: "Maps",
-				expectedGeneration: generation,
+				expectedGeneration: ProjectIndexGeneration.make(1),
 				limit: PROJECT_INDEX_MAX_PAGE_SIZE + 1,
 				projectId
 			})
@@ -27,7 +72,7 @@ describe("Project Index public contract", () => {
 	it("rejects an adapter page above the same bound", async () => {
 		const result = await Effect.runPromiseExit(
 			Schema.decodeUnknownEffect(ProjectIndexPage)({
-				generation,
+				generation: ProjectIndexGeneration.make(1),
 				items: Array.from({ length: PROJECT_INDEX_MAX_PAGE_SIZE + 1 }, (_, index) => ({
 					classes: [],
 					kind: "header",
@@ -41,3 +86,100 @@ describe("Project Index public contract", () => {
 		expect(result._tag).toBe("Failure");
 	});
 });
+
+effectIt.effect("refreshes and answers bounded queries through the in-memory adapter", () =>
+	Effect.gen(function* () {
+		expect(yield* getProjectIndexStatus({ projectRoot })).toEqual({ status: "absent" });
+
+		const summary = yield* foldProjectIndexRefresh(
+			yield* Stream.runCollect(refreshProjectIndex({ projectRoot }))
+		);
+		expect(summary.projectId).toBe(projectId);
+		expect(summary.generation).toBe(1);
+		expect(summary.mapCount).toBe(1);
+		expect(summary.packageCount).toBe(3);
+
+		const mapsPage = yield* queryProjectIndex(
+			ProjectIndexQuery.cases.Maps.make({
+				expectedGeneration: summary.generation,
+				limit: 10,
+				projectId: summary.projectId
+			})
+		);
+		expect(mapsPage.items).toEqual(maps);
+
+		const tables = yield* queryProjectIndex(
+			ProjectIndexQuery.cases.ExactClasses.make({
+				expectedGeneration: summary.generation,
+				limit: 10,
+				projectId: summary.projectId,
+				values: ["/Script/Engine.DataTable"]
+			})
+		);
+		expect(tables.items).toEqual([headers[0]]);
+
+		const prefixes = yield* queryProjectIndex(
+			ProjectIndexQuery.cases.ClassPrefixes.make({
+				expectedGeneration: summary.generation,
+				limit: 10,
+				projectId: summary.projectId,
+				values: ["/Script/EnhancedInput."]
+			})
+		);
+		expect(prefixes.items).toEqual([headers[0]]);
+
+		expect(yield* getProjectIndexCacheRoot()).toBe(cacheRoot);
+	}).pipe(Effect.provide(memoryLayer))
+);
+
+effectIt.effect("rejects stale generations and pages with an enforced limit", () =>
+	Effect.gen(function* () {
+		const summary = yield* foldProjectIndexRefresh(
+			yield* Stream.runCollect(refreshProjectIndex({ projectRoot }))
+		);
+		yield* foldProjectIndexRefresh(
+			yield* Stream.runCollect(refreshProjectIndex({ projectRoot }))
+		);
+
+		const stale = yield* queryProjectIndex(
+			ProjectIndexQuery.cases.Maps.make({
+				expectedGeneration: summary.generation,
+				limit: 10,
+				projectId: summary.projectId
+			})
+		).pipe(Effect.flip);
+		expect(stale._tag).toBe("ProjectIndexStaleGeneration");
+
+		const page = yield* queryProjectIndex(
+			ProjectIndexQuery.cases.ExactClasses.make({
+				expectedGeneration: ProjectIndexGeneration.make(2),
+				limit: 1,
+				projectId: summary.projectId,
+				values: ["/Script/Engine.DataTable", "/Script/Engine.Texture2D"]
+			})
+		);
+		expect(page.items).toHaveLength(1);
+		expect(page.nextCursor).toBe("1");
+	}).pipe(Effect.provide(memoryLayer))
+);
+
+effectIt.effect("loads cache-root policy from configuration without Electron imports", () =>
+	Effect.gen(function* () {
+		const root = yield* getProjectIndexCacheRoot();
+		expect(root).toBe("D:/Caches/from-config");
+	}).pipe(
+		Effect.provide(
+			Layer.merge(
+				projectIndexMemoryLayer({ cacheRoot: "D:/Caches/from-config" }),
+				ProjectIndexConfigLive
+			)
+		),
+		Effect.provide(
+			ConfigProvider.layer(
+				ConfigProvider.fromUnknown({
+					[PROJECT_INDEX_CACHE_ROOT_ENV]: "D:/Caches/from-config"
+				})
+			)
+		)
+	)
+);

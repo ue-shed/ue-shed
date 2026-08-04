@@ -1,0 +1,7 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"kind": "accepted",
+	"operation": "project_index_refresh",
+	"requestId": "project-index-refresh-001",
+	"sequence": 0
+}

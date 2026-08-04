@@ -6,6 +6,7 @@
 
 use serde::Deserialize;
 
+use crate::protocol_result::ProjectIndexStatusPayload;
 pub use crate::protocol_result::{ResultFrame, SavedAssetInspection};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -94,6 +95,87 @@ pub enum Operation {
         #[serde(rename = "projectRoot")]
         project_root: String,
     },
+    #[serde(rename = "project_index_status")]
+    ProjectIndexStatus {
+        #[serde(rename = "cacheRoot")]
+        cache_root: String,
+        #[serde(rename = "projectRoot")]
+        project_root: String,
+    },
+    #[serde(rename = "project_index_refresh")]
+    ProjectIndexRefresh {
+        #[serde(rename = "cacheRoot")]
+        cache_root: String,
+        #[serde(rename = "projectRoot")]
+        project_root: String,
+    },
+    #[serde(rename = "project_index_rebuild")]
+    ProjectIndexRebuild {
+        #[serde(rename = "cacheRoot")]
+        cache_root: String,
+        #[serde(rename = "projectRoot")]
+        project_root: String,
+    },
+    #[serde(rename = "project_index_query")]
+    ProjectIndexQuery {
+        #[serde(rename = "cacheRoot")]
+        cache_root: String,
+        query: ProjectIndexQuery,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", deny_unknown_fields)]
+pub enum ProjectIndexQuery {
+    #[serde(rename = "maps")]
+    Maps {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+    },
+    #[serde(rename = "exact_classes")]
+    ExactClasses {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        values: Vec<String>,
+    },
+    #[serde(rename = "class_prefixes")]
+    ClassPrefixes {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        values: Vec<String>,
+    },
+    #[serde(rename = "class_name_suffixes")]
+    ClassNameSuffixes {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        values: Vec<String>,
+    },
+    #[serde(rename = "serialized_names")]
+    SerializedNames {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        values: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -125,6 +207,14 @@ pub enum OperationKind {
     ExtractTexture,
     #[serde(rename = "saved_world")]
     SavedWorld,
+    #[serde(rename = "project_index_status")]
+    ProjectIndexStatus,
+    #[serde(rename = "project_index_refresh")]
+    ProjectIndexRefresh,
+    #[serde(rename = "project_index_rebuild")]
+    ProjectIndexRebuild,
+    #[serde(rename = "project_index_query")]
+    ProjectIndexQuery,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -135,6 +225,11 @@ pub enum ProgressPhase {
     Reading,
     Inspecting,
     Emitting,
+    Enumerating,
+    Comparing,
+    #[serde(rename = "reading_headers")]
+    ReadingHeaders,
+    Committing,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -197,7 +292,11 @@ pub enum Event {
     Failed {
         #[serde(flatten)]
         fields: EventFields,
+        #[serde(rename = "actualGeneration")]
+        actual_generation: Option<u64>,
         code: String,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: Option<u64>,
         message: String,
         #[serde(rename = "retrySafe")]
         retry_safe: bool,
@@ -471,7 +570,98 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             validate_non_empty(map_path, "mapPath")?;
             validate_non_empty(project_root, "projectRoot")
         }
+        Operation::ProjectIndexStatus {
+            cache_root,
+            project_root,
+        }
+        | Operation::ProjectIndexRefresh {
+            cache_root,
+            project_root,
+        }
+        | Operation::ProjectIndexRebuild {
+            cache_root,
+            project_root,
+        } => {
+            validate_non_empty(cache_root, "cacheRoot")?;
+            validate_non_empty(project_root, "projectRoot")
+        }
+        Operation::ProjectIndexQuery { cache_root, query } => {
+            validate_non_empty(cache_root, "cacheRoot")?;
+            validate_project_index_query(query)
+        }
     }
+}
+
+const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 256;
+
+fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), ProtocolError> {
+    let (project_id, expected_generation, limit, cursor, values) = match query {
+        ProjectIndexQuery::Maps {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+        } => (project_id, *expected_generation, *limit, cursor, None),
+        ProjectIndexQuery::ExactClasses {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            values,
+        }
+        | ProjectIndexQuery::ClassPrefixes {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            values,
+        }
+        | ProjectIndexQuery::ClassNameSuffixes {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            values,
+        }
+        | ProjectIndexQuery::SerializedNames {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            values,
+        } => (
+            project_id,
+            *expected_generation,
+            *limit,
+            cursor,
+            Some(values.as_slice()),
+        ),
+    };
+    validate_non_empty(project_id, "projectId")?;
+    if expected_generation == 0 {
+        return Err(ProtocolError(
+            "expectedGeneration must be greater than zero".to_owned(),
+        ));
+    }
+    if limit == 0 || limit > PROJECT_INDEX_MAX_PAGE_SIZE {
+        return Err(ProtocolError(format!(
+            "Project Index query limit must be between 1 and {PROJECT_INDEX_MAX_PAGE_SIZE}"
+        )));
+    }
+    if let Some(cursor) = cursor {
+        validate_non_empty(cursor, "cursor")?;
+    }
+    if let Some(values) = values {
+        if values.is_empty() || values.len() > 64 {
+            return Err(ProtocolError(
+                "Project Index query values must contain between 1 and 64 entries".to_owned(),
+            ));
+        }
+        for value in values {
+            validate_non_empty(value, "query value")?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_event(event: &Event) -> Result<(), ProtocolError> {
@@ -500,8 +690,60 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
             }
             Ok(())
         }
+        Event::Result { result, .. } => validate_result_frame(result),
         _ => Ok(()),
     }
+}
+
+fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
+    match result {
+        ResultFrame::ProjectIndexPage { page } => {
+            if page.items.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize {
+                return Err(ProtocolError(format!(
+                    "Project Index page must contain at most {PROJECT_INDEX_MAX_PAGE_SIZE} items"
+                )));
+            }
+            if page.generation == 0 {
+                return Err(ProtocolError(
+                    "Project Index page generation must be greater than zero".to_owned(),
+                ));
+            }
+            validate_non_empty(&page.project_id, "projectId")?;
+            if let Some(cursor) = &page.next_cursor {
+                validate_non_empty(cursor, "nextCursor")?;
+            }
+            Ok(())
+        }
+        ResultFrame::ProjectIndexSummary { summary }
+        | ResultFrame::ProjectIndexStatus {
+            status: ProjectIndexStatusPayload::Ready { summary },
+        } => validate_project_index_summary(summary),
+        ResultFrame::ProjectIndexStatus {
+            status: ProjectIndexStatusPayload::Absent,
+        } => Ok(()),
+        _ => Ok(()),
+    }
+}
+
+fn validate_project_index_summary(
+    summary: &crate::protocol_result::ProjectIndexSummary,
+) -> Result<(), ProtocolError> {
+    validate_non_empty(&summary.project_id, "projectId")?;
+    if summary.generation == 0 {
+        return Err(ProtocolError(
+            "Project Index generation must be greater than zero".to_owned(),
+        ));
+    }
+    if summary.diagnostics.len() > 64 {
+        return Err(ProtocolError(
+            "Project Index diagnostics must contain at most 64 entries".to_owned(),
+        ));
+    }
+    for diagnostic in &summary.diagnostics {
+        validate_non_empty(&diagnostic.code, "diagnostic code")?;
+        validate_non_empty(&diagnostic.message, "diagnostic message")?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -554,11 +796,47 @@ mod tests {
     const VALID_SAVED_WORLD_RESULT: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/saved-world-result-event.json"
     );
+    const VALID_PROJECT_INDEX_STATUS_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-status-request.json"
+    );
+    const VALID_PROJECT_INDEX_REFRESH_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-refresh-request.json"
+    );
+    const VALID_PROJECT_INDEX_REBUILD_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-rebuild-request.json"
+    );
+    const VALID_PROJECT_INDEX_QUERY_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-query-request.json"
+    );
+    const VALID_PROJECT_INDEX_ACCEPTED: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-accepted-event.json"
+    );
+    const VALID_PROJECT_INDEX_PROGRESS: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-progress-event.json"
+    );
+    const VALID_PROJECT_INDEX_STATUS_RESULT: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-status-result-event.json"
+    );
+    const VALID_PROJECT_INDEX_SUMMARY_RESULT: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-summary-result-event.json"
+    );
+    const VALID_PROJECT_INDEX_PAGE_RESULT: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-page-result-event.json"
+    );
+    const VALID_PROJECT_INDEX_STALE: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-stale-generation-failed-event.json"
+    );
     const INVALID_MAJOR: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/request-wrong-major.json"
     );
     const INVALID_KIND: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/event-unknown-kind.json"
+    );
+    const INVALID_PROJECT_INDEX_OVERSIZE: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-query-oversize-limit.json"
+    );
+    const INVALID_PROJECT_INDEX_UNBOUNDED: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-page-unbounded.json"
     );
 
     #[test]
@@ -577,8 +855,22 @@ mod tests {
             VALID_EXTRACT_TEXTURE_RESULT,
             VALID_EXTRACT_TEXTURE_RECORD_RESULT,
             VALID_SAVED_WORLD_RESULT,
+            VALID_PROJECT_INDEX_ACCEPTED,
+            VALID_PROJECT_INDEX_PROGRESS,
+            VALID_PROJECT_INDEX_STATUS_RESULT,
+            VALID_PROJECT_INDEX_SUMMARY_RESULT,
+            VALID_PROJECT_INDEX_PAGE_RESULT,
+            VALID_PROJECT_INDEX_STALE,
         ] {
             decode_event(fixture.as_bytes()).expect("valid typed result event");
+        }
+        for fixture in [
+            VALID_PROJECT_INDEX_STATUS_REQUEST,
+            VALID_PROJECT_INDEX_REFRESH_REQUEST,
+            VALID_PROJECT_INDEX_REBUILD_REQUEST,
+            VALID_PROJECT_INDEX_QUERY_REQUEST,
+        ] {
+            decode_request(fixture.as_bytes()).expect("valid project index request");
         }
     }
 
@@ -586,6 +878,8 @@ mod tests {
     fn rejects_shared_invalid_fixtures() {
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());
+        assert!(decode_request(INVALID_PROJECT_INDEX_OVERSIZE.as_bytes()).is_err());
+        assert!(decode_event(INVALID_PROJECT_INDEX_UNBOUNDED.as_bytes()).is_err());
     }
 
     #[test]

@@ -1,0 +1,22 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"kind": "result",
+	"requestId": "project-index-status-001",
+	"result": {
+		"kind": "project_index_status",
+		"status": {
+			"status": "ready",
+			"summary": {
+				"changedPackages": 0,
+				"completeness": "complete",
+				"diagnostics": [],
+				"generation": 3,
+				"mapCount": 1,
+				"packageCount": 40,
+				"projectId": "fixture-project",
+				"removedPackages": 0
+			}
+		}
+	},
+	"sequence": 1
+}

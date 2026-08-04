@@ -1,0 +1,9 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+	"completedItems": 12,
+	"kind": "progress",
+	"phase": "reading_headers",
+	"requestId": "project-index-refresh-001",
+	"sequence": 1,
+	"totalItems": 40
+}

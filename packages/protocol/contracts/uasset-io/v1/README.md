@@ -10,6 +10,12 @@ accepted and ends with exactly one terminal event. Sequence is contiguous from z
 and rejected are terminal. An explicitly supplied empty paths array means zero work and must not
 select a project root.
 
+Minor version 1.1 adds bounded Project Index operations (`project_index_status`,
+`project_index_refresh`, `project_index_rebuild`, `project_index_query`) and their typed result
+frames. Version 1.0 operations and the cumulative meaning of `maximumOutputBytes` remain unchanged.
+Paired TypeScript and native workers negotiate additive operations; a worker that cannot decode an
+operation rejects it before `accepted`.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, and saved-world values each have a named schema; there is no untyped result field.
 The shared inspection schemas are exported from `@ue-shed/protocol` so the Effect reader and the

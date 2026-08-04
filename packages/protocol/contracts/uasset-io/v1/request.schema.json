@@ -62,6 +62,221 @@
 			"title": "string",
 			"minLength": 1
 		},
+		"UAssetIoProjectIndexQuery": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["maps"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 256
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["exact_classes"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 256
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["class_prefixes"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 256
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["class_name_suffixes"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 256
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["serialized_names"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 256
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
+					"additionalProperties": false
+				}
+			]
+		},
 		"UAssetIoOperation": {
 			"anyOf": [
 				{
@@ -201,6 +416,74 @@
 						}
 					},
 					"required": ["kind", "mapPath", "projectRoot"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_status"]
+						},
+						"cacheRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"projectRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						}
+					},
+					"required": ["kind", "cacheRoot", "projectRoot"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_refresh"]
+						},
+						"cacheRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"projectRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						}
+					},
+					"required": ["kind", "cacheRoot", "projectRoot"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_rebuild"]
+						},
+						"cacheRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"projectRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						}
+					},
+					"required": ["kind", "cacheRoot", "projectRoot"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"cacheRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_query"]
+						},
+						"query": {
+							"$ref": "#/$defs/UAssetIoProjectIndexQuery"
+						}
+					},
+					"required": ["cacheRoot", "kind", "query"],
 					"additionalProperties": false
 				}
 			]

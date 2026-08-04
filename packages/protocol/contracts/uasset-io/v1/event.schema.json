@@ -38,6 +38,12 @@
 			"title": "string",
 			"minLength": 1
 		},
+		"UAssetIoPositiveInt": {
+			"type": "integer",
+			"description": "an integer",
+			"title": "int",
+			"exclusiveMinimum": 0
+		},
 		"UAssetInspectionNonNegativeInt": {
 			"type": "integer",
 			"allOf": [
@@ -6183,6 +6189,193 @@
 			],
 			"additionalProperties": false
 		},
+		"UAssetIoProjectIndexDiagnostic": {
+			"type": "object",
+			"properties": {
+				"code": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"message": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"retrySafe": {
+					"type": "boolean"
+				}
+			},
+			"required": ["code", "message", "retrySafe"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexSummary": {
+			"type": "object",
+			"properties": {
+				"changedPackages": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
+				},
+				"completeness": {
+					"type": "string",
+					"enum": ["complete", "partial"]
+				},
+				"diagnostics": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoProjectIndexDiagnostic"
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				},
+				"generation": {
+					"$ref": "#/$defs/UAssetIoPositiveInt"
+				},
+				"mapCount": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
+				},
+				"packageCount": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
+				},
+				"projectId": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"removedPackages": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
+				}
+			},
+			"required": [
+				"changedPackages",
+				"completeness",
+				"diagnostics",
+				"generation",
+				"mapCount",
+				"packageCount",
+				"projectId",
+				"removedPackages"
+			],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexStatus": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"status": {
+							"type": "string",
+							"enum": ["absent"]
+						}
+					},
+					"required": ["status"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"status": {
+							"type": "string",
+							"enum": ["ready"]
+						},
+						"summary": {
+							"$ref": "#/$defs/UAssetIoProjectIndexSummary"
+						}
+					},
+					"required": ["status", "summary"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"UAssetIoProjectIndexMap": {
+			"type": "object",
+			"properties": {
+				"kind": {
+					"type": "string",
+					"enum": ["map"]
+				},
+				"mapPath": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"packageName": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				}
+			},
+			"required": ["kind", "mapPath", "packageName"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexHeader": {
+			"type": "object",
+			"properties": {
+				"classes": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoNonEmptyString"
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["header"]
+				},
+				"packageName": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"packagePath": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"serializedNames": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoNonEmptyString"
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				}
+			},
+			"required": ["classes", "kind", "packageName", "packagePath", "serializedNames"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexItem": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/UAssetIoProjectIndexMap"
+				},
+				{
+					"$ref": "#/$defs/UAssetIoProjectIndexHeader"
+				}
+			]
+		},
+		"UAssetIoProjectIndexPage": {
+			"type": "object",
+			"properties": {
+				"generation": {
+					"$ref": "#/$defs/UAssetIoPositiveInt"
+				},
+				"items": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoProjectIndexItem"
+					},
+					"allOf": [
+						{
+							"maxItems": 256
+						}
+					]
+				},
+				"nextCursor": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"projectId": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				}
+			},
+			"required": ["generation", "items", "projectId"],
+			"additionalProperties": false
+		},
 		"UAssetIoResult": {
 			"anyOf": [
 				{
@@ -6296,6 +6489,48 @@
 					},
 					"required": ["kind", "world"],
 					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_status"]
+						},
+						"status": {
+							"$ref": "#/$defs/UAssetIoProjectIndexStatus"
+						}
+					},
+					"required": ["kind", "status"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_summary"]
+						},
+						"summary": {
+							"$ref": "#/$defs/UAssetIoProjectIndexSummary"
+						}
+					},
+					"required": ["kind", "summary"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_page"]
+						},
+						"page": {
+							"$ref": "#/$defs/UAssetIoProjectIndexPage"
+						}
+					},
+					"required": ["kind", "page"],
+					"additionalProperties": false
 				}
 			]
 		},
@@ -6325,7 +6560,11 @@
 								"scan",
 								"extract_text",
 								"extract_texture",
-								"saved_world"
+								"saved_world",
+								"project_index_status",
+								"project_index_refresh",
+								"project_index_rebuild",
+								"project_index_query"
 							]
 						}
 					},
@@ -6353,7 +6592,17 @@
 						},
 						"phase": {
 							"type": "string",
-							"enum": ["starting", "discovering", "reading", "inspecting", "emitting"]
+							"enum": [
+								"starting",
+								"discovering",
+								"reading",
+								"inspecting",
+								"emitting",
+								"enumerating",
+								"comparing",
+								"reading_headers",
+								"committing"
+							]
 						},
 						"totalItems": {
 							"$ref": "#/$defs/UAssetIoNonNegativeInt"
@@ -6443,8 +6692,14 @@
 						"sequence": {
 							"$ref": "#/$defs/UAssetIoNonNegativeInt"
 						},
+						"actualGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
 						"code": {
 							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
 						},
 						"kind": {
 							"type": "string",

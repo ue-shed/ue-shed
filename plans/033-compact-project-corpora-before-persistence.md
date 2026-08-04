@@ -42,6 +42,18 @@ Recorded 2026-07-30:
 - Any change to those invariants, fixture meaning, benchmark budget, or persistence requires review
   under this plan.
 
+## Plan 037 ownership clarification
+
+Recorded 2026-08-04:
+
+- Plan 037 owns the foundational saved-package Catalog: package/sidecar signatures, compact
+  package-header evidence, atomic generations, and bounded candidate queries.
+- Plan 033 retains the persistence decision for compact Game Text and Texture Audit query models.
+- A Rust-managed SQLite Catalog under Plan 037 does not authorize a universal property database or
+  domain corpus persistence here.
+- The shared invariants remain one project-wide enumeration, compact evidence, explicit candidate
+  paths, zero work for empty candidates, bounded IPC, and headless availability.
+
 ## Current local evidence (not a storage decision)
 
 The opt-in `benchmark:compact-text` command records aggregate evidence under ignored
@@ -345,7 +357,10 @@ If wall time remains dominated by parsing after JSON volume is removed:
 Do not use persistence to hide slow cold extraction. Persistence can improve unchanged reopen time;
 it cannot make the first trustworthy index cheaper.
 
-### Step 8 — Make the persistence decision
+### Step 8 — Make the domain-corpus persistence decision
+
+This step applies to the compact Game Text and Texture Audit query models. Foundational
+saved-package Catalog persistence is owned by Plan 037.
 
 Evaluate storage only after Step 7 produces compact measurements.
 
@@ -419,7 +434,7 @@ Stop and report if any of the following occurs:
 - renderer IPC still transfers a complete corpus;
 - implementation introduces project-specific names, paths, schemas, or assumptions;
 - benchmark or ordinary telemetry records text or asset identities;
-- SQLite or IndexedDB is introduced before the Step 8 decision;
+- SQLite or IndexedDB is introduced for a domain corpus before the Step 8 decision;
 - `pnpm check` fails.
 
 ## Out of scope

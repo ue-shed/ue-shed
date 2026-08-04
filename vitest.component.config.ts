@@ -10,7 +10,11 @@ export default defineProject({
 	ssr: { noExternal: ["peculiar-sheets"] },
 	test: {
 		environment: "jsdom",
-		include: ["extensions/**/*.component.test.tsx", "packages/ui/**/*.component.test.tsx"],
+		include: [
+			"apps/workbench/**/*.component.test.tsx",
+			"extensions/**/*.component.test.tsx",
+			"packages/ui/**/*.component.test.tsx"
+		],
 		name: "component"
 	}
 });

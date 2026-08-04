@@ -31,12 +31,50 @@ Measure Workbench's shared project-index path against a specific project:
 pnpm benchmark:project-index -- --project <unreal-project-root> --output test-results/project-index.json
 ```
 
-This records two application-cache states without embedding the supplied project path in the
-evidence: `workbench.index.cold_rebuild` performs the shared header index plus the targeted
-Enhanced Input decode with an empty native header cache; `workbench.index.warm_revalidate` repeats
-only the cached index refresh. Both states still enumerate and stat the selected roots, because
-that is how the inventory validates persisted Workbench projections. Filesystem caches are not
-dropped, so "cold" means the application cache, not an artificial cold disk.
+This records `project_index.cold_build` and `project_index.warm_noop` without embedding the supplied
+project path or asset identities in the evidence. Cold performs the shared header inventory plus
+the targeted Enhanced Input decode with an empty native header cache; warm repeats only the cached
+index refresh. Both states still enumerate and stat the selected roots, because that is how the
+inventory validates persisted Workbench projections. Filesystem caches are not dropped, so "cold"
+means the application cache, not an artificial cold disk.
+
+The command builds the locked release `uasset-io` reader before measurement and records
+`readerBuild: "performed"`; setup time is excluded from every sample. Use `--no-build` only to reuse
+an already-built default reader. Supplying `--reader <path>` also selects a prebuilt artifact and
+records `readerBuild: "skipped"`.
+
+Each sample records total protocol bytes, the largest complete protocol frame, Node and Rust peak
+RSS, native cache bytes, duration, aggregate inventory counts, and only the typed failure kind when
+a run fails. `rustPeakRssBytes` is `null` when a worker exits before the platform sampler can observe
+it. This is common for the small fixture and should not occur during a representative multi-second
+project scan.
+
+Before writing or printing evidence, the harness decodes it through its versioned Effect Schema and
+checks that scenario counts, distributions, failure summaries, and mutation configuration agree.
+Unknown fields are rejected rather than silently serialized. It also scans the final evidence for
+the supplied project and mutation paths, including slash and case variants, and aborts if either
+escaped into the aggregate result.
+
+Changed-package and deletion baselines are opt-in because they mutate the filesystem. Supply a
+second disposable project, never the read-only measured project:
+
+```powershell
+pnpm benchmark:project-index -- --project <read-only-project-root> `
+  --mutation-project <disposable-project-root> --output test-results/project-index.json
+```
+
+The disposable root must be distinct after path canonicalization, contain at least one package, and
+carry `.ue-shed-project-index-benchmark-disposable` with exactly this content (including the final
+newline):
+
+```text
+UE_SHED_PROJECT_INDEX_BENCHMARK_DISPOSABLE=1
+```
+
+The harness changes one package timestamp for `project_index.one_changed_package` and temporarily
+renames one package plus its sidecars for `project_index.one_deleted_package`. It restores the
+original timestamp and names in `finally` blocks. Refusing a missing/mismatched marker or an existing
+backup is part of the safety contract.
 
 The WASM workload is the 2.4 MB `DT_LargeScalars` fixture. Both producers parse, decode, and serialize
 the same schema-v8 inspection output. The WASM lane receives already-read bytes and reuses one module

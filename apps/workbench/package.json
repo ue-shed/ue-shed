@@ -7,7 +7,7 @@
 	"scripts": {
 		"build": "tsup && vite build",
 		"start": "electron .",
-		"typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p e2e/tsconfig.json --noEmit"
+		"typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit"
 	},
 	"dependencies": {
 		"@stylexjs/stylex": "catalog:",

@@ -74,6 +74,34 @@ The migration must preserve existing public commands and AssetReader behavior un
 versioned otherwise. Plan 033 continues to decide compact extraction meaning, benchmark acceptance,
 and persistence; this ADR only relocates generic implementation and defines the shared process seam.
 
+## Amendment: Project Index v1.1 and private Catalog ownership
+
+Accepted for Plan 037 on 2026-08-04.
+
+The additive `uasset-io` v1.1 contract introduces bounded Project Index status, refresh, rebuild,
+and query operations. Version 1.0 operations and the cumulative meaning of `maximumOutputBytes`
+remain unchanged. TypeScript and native workers are paired releases; a worker that does not support
+the requested minor-version operation must reject it before `accepted`, and TypeScript reports an
+explicit incompatible-worker failure with upgrade guidance.
+
+`@ue-shed/unreal-assets` owns the public, headless Project Index interface and user-facing policy:
+cache-root configuration, explicit refresh versus rebuild, branded project identities and
+Generations, bounded queries, stale-generation failures, and recovery guidance. Workbench and the
+CLI consume that same module and receive no privileged index access.
+
+`uasset-io` owns refresh coordination, canonical project identity, signatures, changed/deleted
+detection, atomic Generations, and the storage-neutral Catalog seam. The production Catalog adapter
+owns its private SQLite schema, migrations, transactions, locking, integrity checks, quarantine,
+and files beneath the TypeScript-supplied cache root. An in-memory adapter exercises the same
+coordinator in conformance tests.
+
+SQL, table and column names, migrations, SQLite paths, journal details, and locking behavior do not
+cross the TypeScript seam. The Catalog persists only project identity, package/sidecar signatures,
+compact header evidence, bounded package failures, and generation metadata. Domain corpora,
+complete inspections, generic property graphs, reports, source-control state, and presentation
+state remain outside it. Plan 033 continues to own any later persistence decision for compact Game
+Text and Texture Audit query models.
+
 The workspace must update build, package, release, benchmark, and installation scripts because the
 uasset executable will no longer be owned by the parser crate. A persistent worker, request
 multiplexing, dynamic operation registries, and bidirectional cancel frames remain deferred until

@@ -57,6 +57,8 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
+	// The opt-in benchmark isolates marker validation and reversible mutations in one filesystem adapter.
+	"apps/workbench/scripts/benchmark-project-index-support.ts",
 	"apps/workbench/scripts/benchmark-project-index.ts",
 	"apps/workbench/scripts/benchmark-compact-text.ts",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
@@ -87,7 +89,11 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/src/main/adapters/fixture-process.ts",
 	"apps/workbench/src/main/main.ts",
 	"apps/workbench/src/main/preload.ts",
+	// The opt-in benchmark owns bounded RSS sampling timers around each native worker.
+	"apps/workbench/scripts/benchmark-project-index.ts",
 	"apps/workbench/src/renderer/app-shell.tsx",
+	// The chooser owns focus and progress-polling resources through Solid cleanup adapters.
+	"apps/workbench/src/renderer/project-chooser.tsx",
 	"apps/workbench/src/renderer/index.tsx",
 	// World Log owns one bounded status-poll timer through Solid cleanup while a query is running.
 	"extensions/content-observatory/src/content-observatory-route.tsx",

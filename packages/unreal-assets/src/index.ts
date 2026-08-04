@@ -37,6 +37,8 @@ import {
 	Stream
 } from "effect";
 
+export * from "./project-index.js";
+
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
@@ -222,8 +224,23 @@ export interface SavedWorldReadOptions {
 export interface AssetReaderConfiguration {
 	readonly catalogTimeoutMs: number;
 	readonly executable: string;
+	/** Aggregate process evidence for benchmarks and host telemetry; never includes asset paths. */
+	readonly protocolObserver?: (event: AssetReaderProtocolObservation) => void;
 	readonly timeoutMs: number;
 }
+
+export type AssetReaderProtocolObservation =
+	| {
+			readonly kind: "worker_started";
+			readonly pid: number;
+	  }
+	| {
+			readonly kind: "worker_completed";
+			readonly largestFrameBytes: number;
+			readonly outputBytes: number;
+			readonly pid?: number;
+			readonly terminalState: ProtocolTerminalState;
+	  };
 
 export interface AssetReaderShape {
 	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
@@ -490,7 +507,7 @@ class ProtocolStreamFailure extends Error {
 	}
 }
 
-type ProtocolTerminalState = "complete" | "partial" | "failed" | "rejected" | "cancelled";
+export type ProtocolTerminalState = "complete" | "partial" | "failed" | "rejected" | "cancelled";
 
 interface ProtocolTelemetry {
 	readonly queuedAt: number;
@@ -498,6 +515,7 @@ interface ProtocolTelemetry {
 	acceptedAt: number | undefined;
 	discoveryStartedAt: number | undefined;
 	discoveryDurationMs: number | undefined;
+	framePending: string;
 	readBytes: number;
 	inspectedFiles: number;
 	cacheRequested: boolean;
@@ -505,6 +523,10 @@ interface ProtocolTelemetry {
 	cacheMisses: number;
 	partialFailures: number;
 	cancelled: boolean;
+	largestFrameBytes: number;
+	observer: ((event: AssetReaderProtocolObservation) => void) | undefined;
+	outputBytes: number;
+	workerPid: number | undefined;
 	terminalState: ProtocolTerminalState | undefined;
 }
 
@@ -512,7 +534,21 @@ function nowMs(): number {
 	return Date.now();
 }
 
-function makeProtocolTelemetry(cacheRequested = false): ProtocolTelemetry {
+function notifyProtocolObserver(
+	telemetry: ProtocolTelemetry,
+	event: AssetReaderProtocolObservation
+): void {
+	try {
+		telemetry.observer?.(event);
+	} catch {
+		// Optional measurement hooks must never change reader behavior.
+	}
+}
+
+function makeProtocolTelemetry(
+	cacheRequested = false,
+	observer?: (event: AssetReaderProtocolObservation) => void
+): ProtocolTelemetry {
 	return {
 		acceptedAt: undefined,
 		cacheRequested,
@@ -521,12 +557,17 @@ function makeProtocolTelemetry(cacheRequested = false): ProtocolTelemetry {
 		cancelled: false,
 		discoveryDurationMs: undefined,
 		discoveryStartedAt: undefined,
+		framePending: "",
 		inspectedFiles: 0,
+		largestFrameBytes: 0,
+		observer,
+		outputBytes: 0,
 		partialFailures: 0,
 		queuedAt: nowMs(),
 		readBytes: 0,
 		startedAt: undefined,
-		terminalState: undefined
+		terminalState: undefined,
+		workerPid: undefined
 	};
 }
 
@@ -668,6 +709,19 @@ function observeProtocolEvent(event: ProtocolEvent, telemetry: ProtocolTelemetry
 	telemetry.terminalState = "failed";
 }
 
+function observeProtocolChunk(chunk: string, telemetry: ProtocolTelemetry): void {
+	telemetry.outputBytes += Buffer.byteLength(chunk, "utf8");
+	telemetry.framePending += chunk;
+	const lines = telemetry.framePending.split(/\r?\n/);
+	telemetry.framePending = lines.pop() ?? "";
+	for (const line of lines) {
+		telemetry.largestFrameBytes = Math.max(
+			telemetry.largestFrameBytes,
+			Buffer.byteLength(line, "utf8") + 1
+		);
+	}
+}
+
 function recordProtocolTelemetry(
 	operation: AssetReaderError["operation"],
 	telemetry: ProtocolTelemetry
@@ -675,6 +729,13 @@ function recordProtocolTelemetry(
 	const at = nowMs();
 	finishDiscovery(telemetry, at);
 	const terminalState = telemetry.cancelled ? "cancelled" : (telemetry.terminalState ?? "failed");
+	notifyProtocolObserver(telemetry, {
+		kind: "worker_completed",
+		largestFrameBytes: telemetry.largestFrameBytes,
+		outputBytes: telemetry.outputBytes,
+		...(telemetry.workerPid === undefined ? {} : { pid: telemetry.workerPid }),
+		terminalState
+	});
 	const cacheOutcome = protocolCacheOutcome(
 		telemetry.cacheRequested,
 		telemetry.cacheHits,
@@ -835,6 +896,10 @@ async function* protocolEvents(options: {
 		timeout: options.timeoutMs,
 		windowsHide: true
 	});
+	if (child.pid !== undefined) {
+		options.telemetry.workerPid = child.pid;
+		notifyProtocolObserver(options.telemetry, { kind: "worker_started", pid: child.pid });
+	}
 	let closed = false;
 	options.telemetry.startedAt = nowMs();
 	let processError: Error | undefined;
@@ -881,6 +946,7 @@ async function* protocolEvents(options: {
 			options.request.requestId
 		);
 		for await (const chunk of child.stdout as AsyncIterable<string>) {
+			observeProtocolChunk(chunk, options.telemetry);
 			outputBudget.observe(chunk);
 			pending += chunk;
 			const lines = pending.split(/\r?\n/);
@@ -1023,7 +1089,10 @@ function invokeProtocolScan(
 	options: SavedAssetScanOptions,
 	progress: ScanProgressStore
 ): Effect.Effect<SavedAssetScan, AssetReaderError> {
-	const telemetry = makeProtocolTelemetry(options.cachePath !== undefined);
+	const telemetry = makeProtocolTelemetry(
+		options.cachePath !== undefined,
+		configuration.protocolObserver
+	);
 	const operation = Effect.tryPromise({
 		try: (signal) => collectProtocolScan(configuration, options, progress, telemetry, signal),
 		catch: (cause) => mapProtocolFailure(cause, "scan", options.projectRoot)
@@ -1090,7 +1159,7 @@ function invokeProtocolSingle<A>(options: {
 	readonly select: (result: UAssetIoResult) => A | undefined;
 	readonly onEvent?: (event: ProtocolEvent) => void;
 }): Effect.Effect<A, AssetReaderError> {
-	const telemetry = makeProtocolTelemetry();
+	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);
 	const operation = Effect.tryPromise({
 		try: (signal) => collectProtocolSingle({ ...options, signal, telemetry }),
 		catch: (cause) => mapProtocolFailure(cause, options.operation, options.path)
@@ -1139,7 +1208,7 @@ function protocolProjectionStream<A>(options: {
 			timeoutMs: options.configuration.catalogTimeoutMs
 		}
 	);
-	const telemetry = makeProtocolTelemetry();
+	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);
 	const controller = new AbortController();
 	const events = (async function* (): AsyncGenerator<A> {
 		try {
@@ -1480,6 +1549,9 @@ export function assetReaderLayer(
 			{
 				catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
 				executable: configuration.executable ?? "uasset",
+				...(configuration.protocolObserver === undefined
+					? {}
+					: { protocolObserver: configuration.protocolObserver }),
 				source: configuration.executable === undefined ? "path" : "configured",
 				timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
 			},

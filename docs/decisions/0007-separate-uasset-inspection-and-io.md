@@ -80,7 +80,8 @@ Accepted for Plan 037 on 2026-08-04.
 
 The additive `uasset-io` v1.1 contract introduces bounded Project Index status, refresh, rebuild,
 and query operations. Version 1.0 operations and the cumulative meaning of `maximumOutputBytes`
-remain unchanged. TypeScript and native workers are paired releases; a worker that does not support
+remain unchanged; paired releases may negotiate a larger finite byte budget. The current legacy
+compatibility ceiling is 1 GiB. TypeScript and native workers are paired releases; a worker that does not support
 the requested minor-version operation must reject it before `accepted`, and TypeScript reports an
 explicit incompatible-worker failure with upgrade guidance.
 

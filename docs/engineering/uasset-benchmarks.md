@@ -38,10 +38,16 @@ index refresh. Both states still enumerate and stat the selected roots, because 
 inventory validates persisted Workbench projections. Filesystem caches are not dropped, so "cold"
 means the application cache, not an artificial cold disk.
 
-The command builds the locked release `uasset-io` reader before measurement and records
-`readerBuild: "performed"`; setup time is excluded from every sample. Use `--no-build` only to reuse
-an already-built default reader. Supplying `--reader <path>` also selects a prebuilt artifact and
-records `readerBuild: "skipped"`.
+The command builds `@ue-shed/unreal-assets` and the locked release `uasset-io` reader before
+measurement, then records `readerBuild: "performed"`; setup time is excluded from every sample. Use
+`--no-build` only to reuse already-built TypeScript and native artifacts. Supplying `--reader <path>`
+selects a prebuilt native artifact while still rebuilding the TypeScript package, and records
+`readerBuild: "skipped"`.
+
+The paired TypeScript/native legacy protocol uses a 1 GiB cumulative output ceiling. This remains a
+finite compatibility guard for generic v1 scans, not a target payload size; the bounded Project
+Index operations are expected to remain far below it. Individual protocol frames remain measured
+separately so a large cumulative result is not confused with one oversized frame.
 
 Each sample records total protocol bytes, the largest complete protocol frame, Node and Rust peak
 RSS, native cache bytes, duration, aggregate inventory counts, and only the typed failure kind when
@@ -214,6 +220,25 @@ result, so they do not add a filesystem pass. The former Node manifest walk and 
 scan are not re-run for a direct before/after comparison because their implementation was removed;
 the prior audit measured the Node walk alone at 5.7 seconds and the separate Rust header pass at
 2.6–4.1 seconds.
+
+### Plan 037 legacy-ceiling sample (2026-08-04)
+
+The hardened schema-v2 harness first reproduced the cumulative 64 MiB failure, then reran the same
+184,559-package corpus after paired TypeScript/native releases raised the finite legacy ceiling to
+1 GiB. All three cold and warm samples completed and returned the terminal summary. The ignored
+aggregate evidence is `test-results/project-index-mb-research-1gib.json`; privacy validation rejects
+project paths, asset identities, and fields outside the evidence contract.
+
+| Scenario                   |      p50 |      p95 | Protocol output | Cache bytes | Peak Node RSS | Peak Rust RSS |
+| -------------------------- | -------: | -------: | --------------: | ----------: | ------------: | ------------: |
+| `project_index.cold_build` | 11.695 s | 11.857 s |      69.166 MiB |  54.828 MiB |     232.0 MiB |     337.2 MiB |
+| `project_index.warm_noop`  |  7.111 s |  7.188 s |      67.989 MiB |  54.828 MiB |     218.1 MiB |     322.3 MiB |
+
+Every sample reported 184,559 package inventory entries. Cold reported zero cache hits; warm
+reported 184,559. Cold also performed the targeted Enhanced Input decode for 165 candidates. The
+legacy path now works for this corpus, but its roughly 68–69 MiB protocol transfer and complete
+TypeScript inventory remain the architectural baseline that bounded Project Index queries must
+replace.
 
 This harness cannot see decode-only regressions or wins. Its fixture is about 3 KB, so
 `native.inspect.single` is dominated by process startup. Removing per-property allocation from the

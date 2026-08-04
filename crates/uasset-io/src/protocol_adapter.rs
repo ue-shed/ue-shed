@@ -26,7 +26,7 @@ use crate::protocol_result::{
 const EXIT_SUCCESS: u8 = 0;
 const EXIT_MALFORMED: u8 = 2;
 const EXIT_INTERNAL: u8 = 5;
-const DEFAULT_MAX_OUTPUT_BYTES: u64 = 64 * 1024 * 1024;
+const DEFAULT_MAX_OUTPUT_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 
 pub fn run() -> u8 {
@@ -975,6 +975,15 @@ mod tests {
     const VALID_REQUEST: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/scan-request.json"
     );
+
+    #[test]
+    fn event_emission_defaults_to_one_gibibyte_cumulative_output() {
+        let mut request = decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
+        request.limits.maximum_output_bytes = None;
+        let emitter = Emitter::new(&request, CancellationToken::new());
+
+        assert_eq!(emitter.maximum_output_bytes, 1024 * 1024 * 1024);
+    }
 
     #[test]
     fn event_emission_checks_cancellation_before_writing() {

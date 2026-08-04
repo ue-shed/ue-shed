@@ -19,7 +19,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS — Step 2 implementation complete; representative rerun pending
+- **State**: IN PROGRESS — Step 2 complete
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH — changes native persistence, the language-neutral process seam, project refresh
@@ -181,8 +181,9 @@ old workers reject unknown operations before `accepted`. Detect and report an in
 with explicit recovery guidance.
 
 Do not reinterpret v1.0 `maximumOutputBytes`. Both Rust and TypeScript tests establish it as a
-cumulative budget; changing its meaning requires `uasset-io` v2. New Project Index operations avoid
-the cliff through small summaries and bounded pages. Keep a per-frame decoder bound independently.
+cumulative budget; changing its meaning requires `uasset-io` v2. Paired releases use a finite 1 GiB
+legacy compatibility ceiling while new Project Index operations avoid the cliff through small
+summaries and bounded pages. Keep a per-frame decoder bound independently.
 
 Change the authoritative JSON Schema and fixtures first, then Effect schemas, Rust protocol types,
 Rust adapters, and TypeScript process adapters. Every operation/result variant needs a shared valid
@@ -234,8 +235,9 @@ returning to `CHOOSE PROJECT...`.
 4. Record the v1.1 compatibility rule and private Catalog ownership in a new decision record or an
    explicit amendment to ADR 0007.
 
-**Gate**: the benchmark reproduces the 64 MiB failure and usage tests settle the public interface
-before SQLite code lands.
+**Gate**: the benchmark records the historical 64 MiB failure, completes the representative scan
+under the 1 GiB legacy compatibility ceiling, and usage tests settle the public interface before
+SQLite code lands.
 
 **Implementation evidence (2026-08-04)**: the v2 harness now emits all four scenarios and records
 aggregate protocol/frame/cache/RSS evidence without paths or asset identities. A guarded mutation
@@ -243,8 +245,9 @@ run on the 52-package fixture observed 52 cold/warm packages, 51 cache hits afte
 change, and 51 remaining packages after one temporary deletion; restoration tests cover package
 sidecars and failure paths. CLI and Workbench usage tests exercise the same public Effect module,
 and ADR 0007 records paired v1.1 compatibility plus private Catalog ownership. The representative
-184,559-package rerun remains required to close this gate and capture the `output_limit` sample with
-the new evidence schema.
+184,559-package rerun reproduced the former 64 MiB cumulative failure, then completed every sample
+under the paired 1 GiB compatibility ceiling: 11.695-second cold p50 and 7.111-second warm p50,
+with 69.166 MiB and 67.989 MiB of protocol output respectively.
 
 ### Step 3 — Deepen `@ue-shed/unreal-assets`
 

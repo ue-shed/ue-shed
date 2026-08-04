@@ -39,7 +39,8 @@ import {
 
 export * from "./project-index.js";
 
-const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+const MAX_PROTOCOL_OUTPUT_BYTES = 1024 * 1024 * 1024;
+const MAX_CAPTURED_STDERR_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_CATALOG_TIMEOUT_MS = 5 * 60_000;
 
@@ -911,8 +912,9 @@ async function* protocolEvents(options: {
 	if (child.stderr !== null) {
 		child.stderr.setEncoding("utf8");
 		child.stderr.on("data", (chunk: string) => {
-			if (stderr.length < MAX_OUTPUT_BYTES)
-				stderr += chunk.slice(0, MAX_OUTPUT_BYTES - stderr.length);
+			if (stderr.length < MAX_CAPTURED_STDERR_BYTES) {
+				stderr += chunk.slice(0, MAX_CAPTURED_STDERR_BYTES - stderr.length);
+			}
 		});
 	}
 	const closePromise = new Promise<{
@@ -939,7 +941,7 @@ async function* protocolEvents(options: {
 		child.stdout.setEncoding("utf8");
 		let pending = "";
 		const outputBudget = new ProtocolOutputBudget(
-			options.request.limits.maximumOutputBytes ?? MAX_OUTPUT_BYTES
+			options.request.limits.maximumOutputBytes ?? MAX_PROTOCOL_OUTPUT_BYTES
 		);
 		const validator = new ProtocolStreamValidator(
 			options.request.contract,
@@ -1012,7 +1014,7 @@ async function collectProtocolScan(
 			...(options.maximumAssets === undefined
 				? {}
 				: { maximumAssets: options.maximumAssets }),
-			maximumOutputBytes: MAX_OUTPUT_BYTES,
+			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: configuration.catalogTimeoutMs
 		}
 	);
@@ -1204,7 +1206,7 @@ function protocolProjectionStream<A>(options: {
 			...(options.extraction.maximumAssets === undefined
 				? {}
 				: { maximumAssets: options.extraction.maximumAssets }),
-			maximumOutputBytes: MAX_OUTPUT_BYTES,
+			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: options.configuration.catalogTimeoutMs
 		}
 	);
@@ -1444,7 +1446,10 @@ function makeAssetReader(
 			path: assetPath,
 			request: makeProtocolRequest(
 				{ kind: "inspect", assetPath },
-				{ maximumOutputBytes: MAX_OUTPUT_BYTES, timeoutMs: configuration.timeoutMs }
+				{
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
+					timeoutMs: configuration.timeoutMs
+				}
 			),
 			expected: "inspect",
 			select: (result) => (result.kind === "inspect" ? result.inspection : undefined)
@@ -1457,7 +1462,10 @@ function makeAssetReader(
 			path: assetPath,
 			request: makeProtocolRequest(
 				{ kind: "authoring", assetPath },
-				{ maximumOutputBytes: MAX_OUTPUT_BYTES, timeoutMs: configuration.timeoutMs }
+				{
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
+					timeoutMs: configuration.timeoutMs
+				}
 			),
 			expected: "authoring",
 			select: (result) => (result.kind === "authoring" ? result.snapshot : undefined)
@@ -1484,7 +1492,7 @@ function makeAssetReader(
 					...(options.maximumAssets === undefined
 						? {}
 						: { maximumAssets: options.maximumAssets }),
-					maximumOutputBytes: MAX_OUTPUT_BYTES,
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 					timeoutMs: configuration.catalogTimeoutMs
 				}
 			),

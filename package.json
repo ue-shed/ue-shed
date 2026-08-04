@@ -52,7 +52,7 @@
 		"test:perforce-map-history": "node scripts/test-perforce-map-history.mjs",
 		"benchmark:observatory": "tsx packages/observatory/scripts/benchmark.ts",
 		"benchmark:observatory:live": "tsx packages/observatory/scripts/benchmark-live.ts",
-		"benchmark:project-index": "pnpm --filter @ue-shed/workbench exec tsx scripts/benchmark-project-index.ts",
+		"benchmark:project-index": "node scripts/benchmark-project-index.mjs",
 		"benchmark:compact-text": "pnpm --filter @ue-shed/workbench exec tsx scripts/benchmark-compact-text.ts",
 		"benchmark:uasset": "node scripts/benchmark-uasset.mjs",
 		"benchmark:uasset:wasm": "pnpm run uasset:build:wasm && cargo build --locked --release -p uasset-io && node scripts/benchmark-uasset-wasm.mjs",

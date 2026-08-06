@@ -21,8 +21,8 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 			// The maps and World Partition external actors carry no text. Every InputAction and
 			// InputMappingContext carries one FText description, so the Enhanced Input surface
 			// contributes a text unit each.
-			discoveredPackages: 52,
-			inspectedPackages: 52,
+			discoveredPackages: 53,
+			inspectedPackages: 53,
 			failedPackages: 0,
 			textUnits: 33,
 			textOccurrences: 34,

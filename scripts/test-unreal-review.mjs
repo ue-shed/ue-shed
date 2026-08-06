@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { ensureUassetExecutable, repositoryRoot } from "./native-tools.mjs";
 import { reportUnrealTestGates } from "./test-gates.mjs";
+import { loadFixtureEditorMap } from "./workbench-tools.mjs";
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 if (!endpoint) {
@@ -26,6 +27,7 @@ const environment = {
 	UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint,
 	UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
 };
+await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
 const testFile = "packages/cameras/src/review-unreal.integration.test.ts";
 reportUnrealTestGates(environment, [testFile]);
 const result = spawnSync(process.execPath, [vitest, "run", testFile], {
@@ -35,4 +37,13 @@ const result = spawnSync(process.execPath, [vitest, "run", testFile], {
 	windowsHide: true
 });
 if (result.error) throw result.error;
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+const flows = spawnSync(process.execPath, ["scripts/test-map-review-flow.mjs"], {
+	cwd: repositoryRoot,
+	env: environment,
+	stdio: "inherit",
+	windowsHide: true
+});
+if (flows.error) throw flows.error;
+process.exit(flows.status ?? 1);

@@ -141,6 +141,32 @@ pnpm ue-shed review authoring approve "C:\path\to\Project" <session-id> "http://
 
 See [`products/map-review.md`](products/map-review.md) for the product contract.
 
+### Exercise and record the complete Map Review flow
+
+The dedicated fixture gallery contains compact, tall, wide, asymmetric, compound, translucent, and
+occluded subjects. With its editor running, exercise all five real-Unreal scenarios—including
+persistence across a Workbench restart and the permissive 37-camera case—with:
+
+```powershell
+$env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/MapReview/L_MapReviewFixture"
+$env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
+pnpm fixture:launch-authoring
+pnpm test:flow:map-review
+```
+
+On demand, record the same asserted authoring actions rather than a separate demo path:
+
+```powershell
+pnpm record:flow:map-review -- --flow authoring-roundtrip
+pnpm record:flow:map-review -- --flow high-count-rig
+```
+
+Each invocation creates a new bundle under `test-results/map-review-flows` containing the combined
+Workbench video across restart, Playwright trace segments, process and renderer logs, checkpoint
+screenshots, raw 1280x720 Unreal capture, persisted authoring/Review Set JSON, and a versioned
+manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
+total and leaves the requested count intact.
+
 ## Demo 5: World Log
 
 World Log is a saved-map history investigation workspace. It runs against Perforce but does not

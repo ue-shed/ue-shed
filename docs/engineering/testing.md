@@ -116,4 +116,18 @@ pnpm check:unreal
 This command requires the configured local Unreal Engine installation. Run it before landing changes
 to Unreal plugins, fixture generation, or live authoring mutation behavior. The Map Review wire
 evidence step (`pnpm test:unreal-review`) additionally needs a fixture editor with Remote Control;
-start it with `pnpm fixture:launch-authoring` and set `UE_SHED_REMOTE_CONTROL_ENDPOINT`.
+start it with `pnpm fixture:launch-authoring` and set `UE_SHED_REMOTE_CONTROL_ENDPOINT`. That trusted
+gate runs both the protocol integration evidence and the Map Review gallery flows: restart/load,
+37-camera soft-limit behavior, stale-bounds recovery, varied subject framing, and Natural/Clear
+occlusion capture.
+
+Run just the gallery flows during focused iteration with:
+
+```powershell
+pnpm test:flow:map-review
+```
+
+The command keeps the fixture map clean, removes only the sessions and Capture Runs it creates, and
+retains projection, visibility, recovery, and raw PNG evidence in Playwright's `test-results` output.
+It requires a live fixture editor; the command refuses to discard dirty map state and establishes
+`/Game/Fixture/MapReview/L_MapReviewFixture` in a clean connected editor before running.

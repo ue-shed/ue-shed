@@ -39,6 +39,13 @@ positive counts, partial group+index overrides, and durable recipe v2 provenance
 and Cardinal are convenience presets rather than domain limits. Workbench provides progressive
 controls and a 1–24 ergonomic range while the library and CLI remain permissive.
 
+The maintained fixture evidence includes a dedicated Map Review gallery with varied geometry and
+occlusion bays. `pnpm test:flow:map-review` exercises full authoring persistence, restart/load,
+capture, a 37-candidate rig, bounds-change recovery, framing variation, and explicit Clear
+restoration against UE 5.7. The authoring and high-count journeys can record those same asserted
+actions with `pnpm record:flow:map-review`; video, traces, logs, checkpoint screenshots, raw Unreal
+images, and durable JSON are described by a versioned relative-path manifest.
+
 Capture contract v1.4 now realizes all three first target/viewpoint meanings: fixed actor, actor
 relative to its current transform, and fixed oriented area. Unreal resolves relative actor poses
 inside the capture operation and returns the exact effective world pose and resolved target.

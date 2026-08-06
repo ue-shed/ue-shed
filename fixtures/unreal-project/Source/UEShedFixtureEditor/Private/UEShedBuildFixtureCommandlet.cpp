@@ -2349,6 +2349,277 @@ bool VerifyCameraMap()
 		&& StationaryMovers == StationaryMoverCount && FlyingMovers == FlyingMoverCount
 		&& IntermittentMovers == IntermittentMoverCount && bMoverMotionsMatch;
 }
+
+struct FMapReviewGalleryActorDefinition
+{
+	const TCHAR* Name;
+	const TCHAR* Label;
+	const TCHAR* MeshPath;
+	FVector Location;
+	FRotator Rotation;
+	FVector Scale;
+	FLinearColor Color;
+	bool bSubject = false;
+	bool bTranslucent = false;
+};
+
+const TArray<FMapReviewGalleryActorDefinition>& MapReviewGalleryActors()
+{
+	static const TArray<FMapReviewGalleryActorDefinition> Definitions = {
+		{ TEXT("MapReviewCompact"), TEXT("Compact Subject"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+			FVector(0, 0, 90), FRotator::ZeroRotator, FVector(1.6, 1.6, 1.8),
+			FLinearColor(0.72f, 0.52f, 0.30f, 1.0f), true },
+		{ TEXT("MapReviewTall"), TEXT("Tall Subject"), TEXT("/Engine/BasicShapes/Cylinder.Cylinder"),
+			FVector(0, 2200, 260), FRotator::ZeroRotator, FVector(1.5, 1.5, 5.2),
+			FLinearColor(0.35f, 0.58f, 0.72f, 1.0f), true },
+		{ TEXT("MapReviewWide"), TEXT("Wide Subject"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+			FVector(0, 4400, 85), FRotator::ZeroRotator, FVector(6.0, 1.4, 1.7),
+			FLinearColor(0.62f, 0.68f, 0.34f, 1.0f), true },
+		{ TEXT("MapReviewAsymmetric"), TEXT("Rotated Asymmetric Subject"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(3000, 0, 120), FRotator(0, 35, 0),
+			FVector(3.2, 1.8, 2.4), FLinearColor(0.68f, 0.42f, 0.52f, 1.0f), true },
+		{ TEXT("MapReviewCompound"), TEXT("Compound Subject"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+			FVector(3000, 2200, 140), FRotator(0, -20, 0), FVector(3.8, 2.6, 2.8),
+			FLinearColor(0.58f, 0.54f, 0.46f, 1.0f), true },
+		{ TEXT("MapReviewClear"), TEXT("Unobstructed Subject"), TEXT("/Engine/BasicShapes/Sphere.Sphere"),
+			FVector(6000, 0, 150), FRotator::ZeroRotator, FVector(3.0),
+			FLinearColor(0.38f, 0.72f, 0.52f, 1.0f), true },
+		{ TEXT("MapReviewPartial"), TEXT("Partially Occluded Subject"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(6000, 2200, 160), FRotator(0, 15, 0),
+			FVector(3.2), FLinearColor(0.42f, 0.64f, 0.76f, 1.0f), true },
+		{ TEXT("MapReviewPartialOccluder"), TEXT("Partial Occluder"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(5500, 2330, 120), FRotator(0, -10, 0),
+			FVector(1.4, 2.4, 2.4), FLinearColor(0.20f, 0.22f, 0.25f, 1.0f) },
+		{ TEXT("MapReviewFull"), TEXT("Fully Occluded Subject"), TEXT("/Engine/BasicShapes/Sphere.Sphere"),
+			FVector(6000, 4400, 150), FRotator::ZeroRotator, FVector(3.0),
+			FLinearColor(0.74f, 0.40f, 0.32f, 1.0f), true },
+		{ TEXT("MapReviewFullOccluder"), TEXT("Full Occluder"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+			FVector(5480, 4400, 180), FRotator::ZeroRotator, FVector(1.8, 4.6, 3.6),
+			FLinearColor(0.18f, 0.20f, 0.23f, 1.0f) },
+		{ TEXT("MapReviewTranslucent"), TEXT("Translucent Subject"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(9000, 0, 160), FRotator(0, 25, 0),
+			FVector(3.2), FLinearColor::White, true, true },
+		{ TEXT("MapReviewEnclosed"), TEXT("Enclosed Subject"), TEXT("/Engine/BasicShapes/Cylinder.Cylinder"),
+			FVector(9000, 2200, 180), FRotator::ZeroRotator, FVector(2.4, 2.4, 3.6),
+			FLinearColor(0.70f, 0.58f, 0.30f, 1.0f), true },
+		{ TEXT("MapReviewEnclosureSide"), TEXT("Enclosure Side Wall"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(9000, 2560, 220), FRotator::ZeroRotator,
+			FVector(6.0, 0.5, 4.4), FLinearColor(0.24f, 0.28f, 0.32f, 1.0f) },
+		{ TEXT("MapReviewEnclosureBack"), TEXT("Enclosure Back Wall"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(9360, 2200, 220), FRotator::ZeroRotator,
+			FVector(0.5, 6.0, 4.4), FLinearColor(0.24f, 0.28f, 0.32f, 1.0f) },
+		{ TEXT("MapReviewEnclosureRoof"), TEXT("Enclosure Roof"),
+			TEXT("/Engine/BasicShapes/Cube.Cube"), FVector(9000, 2200, 480), FRotator::ZeroRotator,
+			FVector(6.0, 6.0, 0.45), FLinearColor(0.20f, 0.23f, 0.27f, 1.0f) },
+		{ TEXT("MapReviewForegroundColumn"), TEXT("Foreground Column"),
+			TEXT("/Engine/BasicShapes/Cylinder.Cylinder"), FVector(8520, 2050, 220), FRotator::ZeroRotator,
+			FVector(1.1, 1.1, 4.4), FLinearColor(0.28f, 0.30f, 0.34f, 1.0f) }
+	};
+	return Definitions;
+}
+
+bool VerifyMapReviewGalleryWorld(UWorld* World, const bool bLog)
+{
+	if (World == nullptr) return false;
+	int32 FixtureActors = 0;
+	int32 Subjects = 0;
+	bool bHasAtmosphere = false;
+	bool bHasSun = false;
+	bool bHasSky = false;
+	bool bHasFloor = false;
+	bool bMatches = true;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor == nullptr) continue;
+		if (Actor->ActorHasTag(TEXT("UEShedMapReviewFixture"))) ++FixtureActors;
+		Subjects += Actor->ActorHasTag(TEXT("UEShedReviewSubject")) ? 1 : 0;
+		bHasAtmosphere = bHasAtmosphere || Actor->IsA<ASkyAtmosphere>();
+		bHasSun = bHasSun || Actor->IsA<ADirectionalLight>();
+		bHasSky = bHasSky || Actor->IsA<ASkyLight>();
+		bHasFloor = bHasFloor || Actor->GetFName() == TEXT("MapReviewFloor");
+	}
+	for (const FMapReviewGalleryActorDefinition& Definition : MapReviewGalleryActors())
+	{
+		AActor* Actor = FindObject<AActor>(World->PersistentLevel, Definition.Name);
+		if (Actor == nullptr)
+		{
+			if (bLog) UE_LOG(LogTemp, Error, TEXT("Map Review gallery actor is missing: %s"), Definition.Name);
+			bMatches = false;
+			continue;
+		}
+		const USceneComponent* Root = Actor->GetRootComponent();
+		if (Root == nullptr)
+		{
+			if (bLog) UE_LOG(LogTemp, Error, TEXT("Map Review gallery actor has no root: %s"), Definition.Name);
+			bMatches = false;
+			continue;
+		}
+		const bool bActorMatches = Actor->ActorHasTag(TEXT("UEShedMapReviewFixture"))
+			&& Root->GetRelativeLocation().Equals(Definition.Location, 0.01)
+			&& Root->GetRelativeRotation().Equals(Definition.Rotation, 0.01)
+			&& Root->GetRelativeScale3D().Equals(Definition.Scale, 0.001)
+			&& Actor->ActorHasTag(TEXT("UEShedReviewSubject")) == Definition.bSubject;
+		if (bLog && !bActorMatches)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("Map Review gallery actor mismatch %s: location=%s rotation=%s scale=%s fixtureTag=%s subjectTag=%s"),
+				Definition.Name, *Root->GetRelativeLocation().ToString(), *Root->GetRelativeRotation().ToString(),
+				*Root->GetRelativeScale3D().ToString(),
+				Actor->ActorHasTag(TEXT("UEShedMapReviewFixture")) ? TEXT("yes") : TEXT("no"),
+				Actor->ActorHasTag(TEXT("UEShedReviewSubject")) ? TEXT("yes") : TEXT("no"));
+		}
+		bMatches = bMatches && bActorMatches;
+	}
+	AActor* Compound = FindObject<AActor>(World->PersistentLevel, TEXT("MapReviewCompound"));
+	const bool bCompoundMatches = Compound != nullptr
+		&& FindObject<UStaticMeshComponent>(Compound, TEXT("GalleryWing")) != nullptr
+		&& FindObject<UStaticMeshComponent>(Compound, TEXT("GalleryTower")) != nullptr
+		&& FindObject<UStaticMeshComponent>(Compound, TEXT("GalleryRoof")) != nullptr;
+	if (bLog && !bCompoundMatches)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Map Review compound child component contract does not match"));
+	}
+	bMatches = bMatches && bCompoundMatches;
+	const int32 ExpectedFixtureActors = MapReviewGalleryActors().Num() + 4;
+	if (bLog)
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("Map Review gallery verification found %d fixture actors, %d subjects, atmosphere=%s, sun=%s, sky=%s, floor=%s"),
+			FixtureActors, Subjects, bHasAtmosphere ? TEXT("yes") : TEXT("no"),
+			bHasSun ? TEXT("yes") : TEXT("no"), bHasSky ? TEXT("yes") : TEXT("no"),
+			bHasFloor ? TEXT("yes") : TEXT("no"));
+	}
+	return bMatches && FixtureActors == ExpectedFixtureActors && Subjects == 10
+		&& bHasAtmosphere && bHasSun && bHasSky && bHasFloor;
+}
+
+bool GenerateMapReviewGallery()
+{
+	static const TCHAR* PackageName = TEXT("/Game/Fixture/MapReview/L_MapReviewFixture");
+	static const TCHAR* AssetName = TEXT("L_MapReviewFixture");
+	UPackage* Package = FindOrCreatePackage(PackageName);
+	if (Package == nullptr) return false;
+	UWorld* World = UWorld::FindWorldInPackage(Package);
+	const bool bCreatedWorld = World == nullptr;
+	if (World == nullptr)
+	{
+		UWorldFactory* Factory = NewObject<UWorldFactory>();
+		Factory->WorldType = EWorldType::Editor;
+		Factory->bCreateWorldPartition = false;
+		World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package, AssetName,
+			RF_Public | RF_Standalone, nullptr, GWarn));
+	}
+	if (World == nullptr) return false;
+	if (!bCreatedWorld && VerifyMapReviewGalleryWorld(World, false))
+	{
+		UE_LOG(LogTemp, Display, TEXT("Map Review fixture gallery already matches its contract"));
+		return true;
+	}
+
+	TArray<AActor*> Existing;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor != nullptr && Actor->ActorHasTag(TEXT("UEShedMapReviewFixture"))) Existing.Add(Actor);
+	}
+	for (AActor* Actor : Existing)
+	{
+		Actor->Rename(nullptr, Actor->GetOuter(),
+			REN_ForceNoResetLoaders | REN_DontCreateRedirectors | REN_NonTransactional);
+		World->EditorDestroyActor(Actor, true);
+	}
+
+	FActorSpawnParameters FloorSpawn;
+	FloorSpawn.Name = TEXT("MapReviewFloor");
+	FloorSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	AStaticMeshActor* Floor = World->SpawnActor<AStaticMeshActor>(
+		FVector(4500, 2200, -20), FRotator::ZeroRotator, FloorSpawn);
+	if (Floor == nullptr) return false;
+	Floor->Tags.Add(TEXT("UEShedMapReviewFixture"));
+	Floor->SetActorLabel(TEXT("Map Review Gallery Floor"));
+	Floor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+		TEXT("/Engine/BasicShapes/Plane.Plane")));
+	Floor->SetActorScale3D(FVector(110, 70, 1));
+	ApplySolidColor(Floor->GetStaticMeshComponent(), FLinearColor(0.16f, 0.18f, 0.20f, 1.0f));
+
+	ADirectionalLight* Sun = World->SpawnActor<ADirectionalLight>(FVector::ZeroVector, FRotator(-45, -30, 0));
+	ASkyAtmosphere* Atmosphere = World->SpawnActor<ASkyAtmosphere>();
+	ASkyLight* Sky = World->SpawnActor<ASkyLight>();
+	if (Sun == nullptr || Atmosphere == nullptr || Sky == nullptr) return false;
+	for (AActor* Environment : { static_cast<AActor*>(Sun), static_cast<AActor*>(Atmosphere), static_cast<AActor*>(Sky) })
+	{
+		Environment->Tags.Add(TEXT("UEShedMapReviewFixture"));
+	}
+	Sun->SetActorLabel(TEXT("Map Review Gallery Sun"));
+	Atmosphere->SetActorLabel(TEXT("Map Review Gallery Atmosphere"));
+	Sky->SetActorLabel(TEXT("Map Review Gallery Sky"));
+	if (UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
+	{
+		Light->SetAtmosphereSunLight(true);
+		Light->SetIntensity(7.0f);
+	}
+	if (USkyLightComponent* SkyLight = Sky->GetLightComponent())
+	{
+		SkyLight->bRealTimeCapture = true;
+		SkyLight->SetIntensity(1.0f);
+		SkyLight->RecaptureSky();
+	}
+
+	UMaterialInterface* TranslucentMaterial = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Engine/EngineDebugMaterials/M_SimpleTranslucent.M_SimpleTranslucent"));
+	if (TranslucentMaterial == nullptr) return false;
+	for (const FMapReviewGalleryActorDefinition& Definition : MapReviewGalleryActors())
+	{
+		FActorSpawnParameters Spawn;
+		Spawn.Name = Definition.Name;
+		Spawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
+			Definition.Location, Definition.Rotation, Spawn);
+		if (Actor == nullptr) return false;
+		Actor->Tags.Add(TEXT("UEShedMapReviewFixture"));
+		if (Definition.bSubject) Actor->Tags.Add(TEXT("UEShedReviewSubject"));
+		Actor->SetActorLabel(Definition.Label);
+		Actor->GetStaticMeshComponent()->SetStaticMesh(
+			LoadObject<UStaticMesh>(nullptr, Definition.MeshPath));
+		Actor->SetActorScale3D(Definition.Scale);
+		if (Definition.bTranslucent)
+		{
+			Actor->GetStaticMeshComponent()->SetMaterial(0, TranslucentMaterial);
+		}
+		else
+		{
+			ApplySolidColor(Actor->GetStaticMeshComponent(), Definition.Color);
+		}
+		if (FCString::Strcmp(Definition.Name, TEXT("MapReviewAsymmetric")) == 0)
+		{
+			AddChildShape(Actor, TEXT("GalleryOffset"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+				FVector(95, 45, 25), FVector(0.55, 1.0, 1.5), FLinearColor(0.84f, 0.62f, 0.34f, 1.0f));
+		}
+		if (FCString::Strcmp(Definition.Name, TEXT("MapReviewCompound")) == 0)
+		{
+			AddChildShape(Actor, TEXT("GalleryWing"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+				FVector(100, 0, -15), FVector(0.75, 1.2, 0.8), FLinearColor(0.72f, 0.60f, 0.42f, 1.0f));
+			AddChildShape(Actor, TEXT("GalleryTower"), TEXT("/Engine/BasicShapes/Cylinder.Cylinder"),
+				FVector(-90, 45, 70), FVector(0.55, 0.55, 1.5), FLinearColor(0.38f, 0.48f, 0.62f, 1.0f));
+			AddChildShape(Actor, TEXT("GalleryRoof"), TEXT("/Engine/BasicShapes/Cube.Cube"),
+				FVector(0, 0, 95), FVector(1.25, 1.25, 0.20), FLinearColor(0.28f, 0.26f, 0.24f, 1.0f));
+		}
+	}
+
+	Package->MarkPackageDirty();
+	const bool bSaved = SaveAsset(Package, World);
+	if (bCreatedWorld) World->CleanupWorld();
+	if (!bSaved) return false;
+	UE_LOG(LogTemp, Display, TEXT("Generated %s with %d gallery actors"),
+		PackageName, MapReviewGalleryActors().Num());
+	return true;
+}
+
+bool VerifyMapReviewGallery()
+{
+	UPackage* Package = LoadPackage(nullptr, TEXT("/Game/Fixture/MapReview/L_MapReviewFixture"), LOAD_None);
+	UWorld* World = Package == nullptr ? nullptr : UWorld::FindWorldInPackage(Package);
+	return VerifyMapReviewGalleryWorld(World, true);
+}
 }
 
 UUEShedBuildFixtureCommandlet::UUEShedBuildFixtureCommandlet()
@@ -2494,6 +2765,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateGameTextCorpus() && Succeeded;
 		Succeeded = GenerateOfflineWorldMap() && Succeeded;
 		Succeeded = GenerateCameraMap() && Succeeded;
+		Succeeded = GenerateMapReviewGallery() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
 	}
@@ -2507,6 +2779,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyGameTextCorpus() && Succeeded;
 		Succeeded = VerifyOfflineWorldMap() && Succeeded;
 		Succeeded = VerifyCameraMap() && Succeeded;
+		Succeeded = VerifyMapReviewGallery() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
 		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;
 	}

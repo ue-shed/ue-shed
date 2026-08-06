@@ -25,6 +25,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 039 completed and is archived under
+  [`archive/039-map-review-fixture-and-recordable-flows.md`](archive/039-map-review-fixture-and-recordable-flows.md)
+  after the dedicated UE 5.7 gallery, restart/load E2E, 37-camera soft-limit flow, varied framing,
+  occlusion/recovery evidence, and complete recordable bundles passed the trusted and portable gates.
 - Plan 038 completed and is archived under
   [`archive/038-adjustable-framing-knobs-and-overrides.md`](archive/038-adjustable-framing-knobs-and-overrides.md)
   after permissive arc/ring primitives, exact-count generation, recipe v2 provenance, durable

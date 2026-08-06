@@ -29,13 +29,13 @@ describe.skipIf(!executable)("batched project scan", () => {
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
 		// 50 `.uasset` packages (including six World Partition external actors and the 25-asset
-		// Enhanced Input surface) plus the two maps. Levels use the same classic package
+		// Enhanced Input surface) plus the three maps. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(52);
-		expect(scan.summary.emittedAssets).toBe(52);
+		expect(scan.summary.scannedAssets).toBe(53);
+		expect(scan.summary.emittedAssets).toBe(53);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(52);
+		expect(scan.assets).toHaveLength(53);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -54,11 +54,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(52);
+		expect(scan.summary.scannedAssets).toBe(53);
 		expect(scan.summary.emittedAssets).toBe(5);
 		// The levels, saved World Partition actor packages, and every Enhanced Input asset carry
 		// no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(47);
+		expect(scan.summary.skippedAssets).toBe(48);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -182,7 +182,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(52);
+		expect(scan.summary.scannedAssets).toBe(53);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import {
 	RemoteControlClient,
@@ -191,6 +191,9 @@ export const ReviewAuthoringLive = Layer.effect(
 			args: PreviewReviewCandidateArgs
 		) {
 			const operationId = randomUUID();
+			const previewViewId = ReviewViewId.make(
+				`preview-${createHash("sha256").update(args.candidate.id).digest("hex").slice(0, 24)}`
+			);
 			const response = yield* captureReviewView({
 				endpoint: args.endpoint,
 				request: ReviewCaptureRequest.make({
@@ -207,7 +210,7 @@ export const ReviewAuthoringLive = Layer.effect(
 						diagnosticLabel: args.subject.displayName,
 						kind: "actor_path"
 					},
-					viewId: ReviewViewId.make(args.candidate.id)
+					viewId: previewViewId
 				})
 			}).pipe(
 				Effect.provideService(RemoteControlClient, client),

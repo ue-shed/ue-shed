@@ -577,6 +577,36 @@
 		"translucentSubject": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewTranslucentSubject",
 		"views": ["structure-context"]
 	},
+	"mapReviewGallery": {
+		"map": "/Game/Fixture/MapReview/L_MapReviewFixture",
+		"subjects": {
+			"compact": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewCompact",
+			"tall": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewTall",
+			"wide": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewWide",
+			"asymmetric": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewAsymmetric",
+			"compound": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewCompound",
+			"clear": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewClear",
+			"partial": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewPartial",
+			"full": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewFull",
+			"translucent": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewTranslucent",
+			"enclosed": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewEnclosed"
+		},
+		"occluders": {
+			"partial": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewPartialOccluder",
+			"full": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewFullOccluder",
+			"enclosureSide": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewEnclosureSide",
+			"enclosureBack": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewEnclosureBack",
+			"enclosureRoof": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewEnclosureRoof",
+			"foregroundColumn": "/Game/Fixture/MapReview/L_MapReviewFixture.L_MapReviewFixture:PersistentLevel.MapReviewForegroundColumn"
+		},
+		"transforms": {
+			"compound": {
+				"location": { "x": 3000, "y": 2200, "z": 140 },
+				"rotation": { "pitch": 0, "yaw": -20, "roll": 0 },
+				"scale": { "x": 3.8, "y": 2.6, "z": 2.8 }
+			}
+		}
+	},
 	"offlineWorld": {
 		"map": "/Game/Fixture/Offline/L_OfflineWorld.L_OfflineWorld",
 		"relativeMapPath": "Content/Fixture/Offline/L_OfflineWorld.umap",

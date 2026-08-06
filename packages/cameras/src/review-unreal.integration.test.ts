@@ -801,7 +801,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 							diagnosticLabel: selection.displayName,
 							kind: "actor_path"
 						},
-						viewId: ReviewViewId.make(candidate.id)
+						viewId: ReviewViewId.make("deliberately-poor-pose")
 					})
 				}).pipe(Effect.provide(RemoteControlClientLive))
 			);

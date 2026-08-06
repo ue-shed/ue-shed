@@ -122,7 +122,7 @@ function launch(tools) {
 		tools.editor,
 		[
 			projectFile,
-			"/Game/Fixture/Cameras/L_CameraLoad",
+			process.env.UE_SHED_FIXTURE_AUTHORING_MAP ?? "/Game/Fixture/Cameras/L_CameraLoad",
 			"-game",
 			"-windowed",
 			"-ResX=1280",
@@ -155,6 +155,7 @@ function launchAuthoring(tools) {
 		tools.editor,
 		[
 			projectFile,
+			process.env.UE_SHED_FIXTURE_AUTHORING_MAP ?? "/Game/Fixture/Cameras/L_CameraLoad",
 			"-RCWebControlEnable",
 			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${remoteControlPort}`,
 			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${Number(remoteControlPort) + 1}`,

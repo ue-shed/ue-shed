@@ -85,6 +85,39 @@ export async function createWorkbenchEnvironment(environment = process.env, opti
 	};
 }
 
+async function remoteObjectCall(endpoint, objectPath, functionName, parameters = {}) {
+	const response = await fetch(`${endpoint.replace(/\/+$/, "")}/remote/object/call`, {
+		body: JSON.stringify({ functionName, generateTransaction: false, objectPath, parameters }),
+		headers: { "content-type": "application/json" },
+		method: "PUT",
+		signal: AbortSignal.timeout(30_000)
+	});
+	if (!response.ok) throw new Error(`${functionName} failed with HTTP ${response.status}.`);
+	return response.json();
+}
+
+/** Establish a clean fixture editor map before a live evidence lane. */
+export async function loadFixtureEditorMap(endpoint, mapPath) {
+	const loadingLibrary = "/Script/UnrealEd.Default__EditorLoadingAndSavingUtils";
+	const dirty = await remoteObjectCall(endpoint, loadingLibrary, "GetDirtyMapPackages");
+	if (Array.isArray(dirty.OutDirtyPackages) && dirty.OutDirtyPackages.length > 0) {
+		throw new Error(
+			`Refusing to switch fixture maps while dirty maps exist: ${dirty.OutDirtyPackages.join(", ")}`
+		);
+	}
+	await remoteObjectCall(
+		endpoint,
+		"/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary",
+		"StopPlaySession"
+	).catch(() => undefined);
+	const loaded = await remoteObjectCall(endpoint, loadingLibrary, "LoadMap", {
+		Filename: mapPath
+	});
+	if (typeof loaded.ReturnValue !== "string" || !loaded.ReturnValue.startsWith(`${mapPath}.`)) {
+		throw new Error(`Unreal did not confirm loading ${mapPath}.`);
+	}
+}
+
 export function runPnpm(args, environment) {
 	const pnpmScript = environment.npm_execpath;
 	const pnpmScriptIsJavaScript = pnpmScript ? /\.(?:c|m)?js$/i.test(pnpmScript) : false;

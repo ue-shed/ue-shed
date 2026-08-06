@@ -30,6 +30,15 @@ allowBuilds:
     sharp: true
     workerd: true
 
+overrides:
+    "@opentelemetry/core@<2.8.0": 2.8.0
+    "esbuild@>=0.27.3 <0.28.1": 0.28.1
+    "postcss@<=8.5.22": 8.5.23
+    "undici@>=7.0.0 <7.29.0": 7.29.0
+
 minimumReleaseAgeExclude:
     - p4client-ts@0.7.1
     - peculiar-sheets@0.11.1
+    - "@cloudflare/vite-plugin@1.51.0"
+    - miniflare@5.20260801.0-alpha
+    - wrangler@4.119.0

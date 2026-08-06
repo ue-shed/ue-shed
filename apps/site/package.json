@@ -16,10 +16,10 @@
 		"solid-js": "catalog:"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.45.1",
+		"@cloudflare/vite-plugin": "^1.51.0",
 		"@stylexjs/rollup-plugin": "catalog:",
 		"vite": "^8.1.4",
 		"vite-plugin-solid": "catalog:",
-		"wrangler": "^4.112.0"
+		"wrangler": "^4.119.0"
 	}
 }

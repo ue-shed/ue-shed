@@ -6,8 +6,10 @@ import {
 	runReviewCapture,
 	runReviewFraming,
 	runReviewHistory,
+	runReviewPolicies,
 	runReviewSetValidate,
-	runReviewShow
+	runReviewShow,
+	runReviewViewPut
 } from "../workflows/review.js";
 import { optionalFlag, optionalValue } from "./options.js";
 
@@ -16,6 +18,66 @@ const reviewSetValidateCommand = Command.make(
 	{ reviewSetPath: Argument.string("review-set") },
 	({ reviewSetPath }) => runReviewSetValidate({ _tag: "ReviewSetValidate", reviewSetPath })
 ).pipe(Command.withDescription("Validate a Review Set document."));
+
+const reviewPoliciesListCommand = Command.make(
+	"list",
+	{ reviewSetPath: Argument.string("review-set") },
+	({ reviewSetPath }) => runReviewPolicies({ _tag: "ReviewPoliciesList", reviewSetPath })
+).pipe(Command.withDescription("Validate and list Visibility Policies and View overrides."));
+
+const reviewPoliciesReplaceCommand = Command.make(
+	"replace",
+	{
+		reviewSetPath: Argument.string("review-set"),
+		viewId: Argument.string("view-id"),
+		policyPath: Argument.string("policy-json"),
+		overridesPath: optionalFlag("overrides")
+	},
+	({ reviewSetPath, viewId, policyPath, overridesPath }) => {
+		const overrides = optionalValue(overridesPath);
+		return runReviewPolicies({
+			_tag: "ReviewPoliciesReplace",
+			policyPath,
+			reviewSetPath,
+			viewId,
+			...(overrides === undefined ? {} : { overridesPath: overrides })
+		});
+	}
+).pipe(
+	Command.withDescription(
+		"Create an immutable policy preset and assign it to exactly one Review View."
+	)
+);
+
+const reviewPoliciesApplyCommand = Command.make(
+	"apply",
+	{
+		reviewSetPath: Argument.string("review-set"),
+		policyId: Argument.string("policy-id"),
+		viewIds: Argument.string("view-id").pipe(Argument.variadic({ min: 1 }))
+	},
+	({ reviewSetPath, policyId, viewIds }) =>
+		runReviewPolicies({
+			_tag: "ReviewPoliciesApply",
+			policyId,
+			reviewSetPath,
+			viewIds
+		})
+).pipe(Command.withDescription("Apply an existing policy preset to selected Review Views."));
+
+const reviewViewPutCommand = Command.make(
+	"put",
+	{
+		reviewSetPath: Argument.string("review-set"),
+		viewPath: Argument.string("view-json")
+	},
+	({ reviewSetPath, viewPath }) =>
+		runReviewViewPut({ _tag: "ReviewViewPut", reviewSetPath, viewPath })
+).pipe(
+	Command.withDescription(
+		"Create or revise a fixed actor, target-relative actor, or fixed area Review View."
+	)
+);
 
 const reviewFramingCandidatesCommand = Command.make(
 	"candidates",
@@ -147,6 +209,18 @@ export const reviewCommand = Command.make("review").pipe(
 		Command.make("sets").pipe(
 			Command.withDescription("Validate Review Set documents."),
 			Command.withSubcommands([reviewSetValidateCommand])
+		),
+		Command.make("policies").pipe(
+			Command.withDescription("Inspect and assign immutable Visibility Policy presets."),
+			Command.withSubcommands([
+				reviewPoliciesListCommand,
+				reviewPoliciesReplaceCommand,
+				reviewPoliciesApplyCommand
+			])
+		),
+		Command.make("views").pipe(
+			Command.withDescription("Author and revise portable Review View definitions."),
+			Command.withSubcommands([reviewViewPutCommand])
 		),
 		Command.make("framing").pipe(
 			Command.withDescription("Inspect and approve live framing."),

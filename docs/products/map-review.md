@@ -25,7 +25,8 @@ separately enabled Unreal editor capability, promoted atomically into an immutab
 rediscovered after an editor restart, and opened in the Workbench reference reviewer. The CLI uses
 the same repository and orchestration services.
 
-Plan 032 has established the compatibility foundation for visibility policy and caller provenance.
+Plan 032 is complete. It established the compatibility foundation for visibility policy and caller
+provenance, then closed public service, CLI, Workbench dogfood, recovery, and UE 5.7 evidence.
 Review Set v1.0 actor/world-pose definitions migrate in memory to v1.1, preserving IDs, Approved
 Poses, and Natural/Pure-only behavior. New writes emit v1.1: Capture Profiles no longer own variant
 policy; Views reference immutable Visibility Policy presets and carry explicit target, viewpoint,
@@ -71,6 +72,13 @@ It never changes global editor actor visibility. Consumers may ignore the compan
 the resulting labeled artifacts to build their own review experience. New View Results also retain
 optional snapshots of the requested policy and view overrides, so a consumer can explain the request
 without treating those fields as a product-owned review model.
+
+Automatic detected-occluder intervention is explicitly unsupported. Render-truthful depth
+assessment measures visibility but does not attribute obscured pixels to actors, while collision-ray
+attribution is diagnostic and can disagree with rendered foliage, translucency, compound subjects,
+and broad environment actors. The executable schema, CLI, and maintained UI therefore expose only
+isolate-target and explicit-hide Clear strategies. See the
+[feasibility evidence](../research/map-review-detected-occluder-feasibility.md).
 
 The Slice 2 tracer bullet is now implemented on that spine. The editor capability inspects exactly
 one selected actor, normalized bounds, orientation, and the active perspective viewport. The
@@ -345,8 +353,9 @@ the policy and reason, and whether restoration succeeded. Clear is permanently l
 thumbnails, comparison UI, and exports.
 
 The MVP supports manual show-only subjects and explicit visibility overrides. Automatic occluder
-discovery is deferred until its explainability and false-positive behavior can be tested on a richer
-fixture.
+intervention is rejected for this version: render-truthful assessment has no actor attribution, and
+collision attribution is not render-truthful. Diagnostic likely-blocker evidence may help an author
+choose an explicit override, but it never grants permission to hide an object.
 
 ### Capture Run and View Result
 
@@ -542,6 +551,10 @@ The implemented CLI surface covers these current actions:
 
 ```text
 ue-shed review sets validate <review-set>
+ue-shed review policies list <review-set>
+ue-shed review policies replace <review-set> <view-id> <policy-json> [--overrides <overrides-json>]
+ue-shed review policies apply <review-set> <policy-id> <view-id>...
+ue-shed review views put <review-set> <view-json>
 ue-shed review framing candidates <endpoint>
 ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
 ue-shed review authoring bootstrap <project-root> <endpoint>

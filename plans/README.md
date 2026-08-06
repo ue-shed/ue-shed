@@ -8,19 +8,17 @@ the status row when done.
 
 ## Active
 
-| Plan                                                     | Title                                                            | Priority | Effort | Depends on              | Status                          |
-| -------------------------------------------------------- | ---------------------------------------------------------------- | -------- | ------ | ----------------------- | ------------------------------- |
-| [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views     | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff       |
-| [024](024-establish-ci-and-candidate-releases.md)        | Establish CI, Unreal evidence, and candidate-release provenance  | P1       | L      | 020, 021                | IN PROGRESS — first hosted runs |
-| [027](027-adopt-parser-in-downstream-host.md)            | Adopt the released parser in the first downstream host           | P1       | M      | 021, 025, 026           | TODO                            |
-| [028](028-compose-map-review-downstream.md)              | Compose finished Map Review capabilities downstream              | P2       | XL     | 017–019, 022, 026, 032  | TODO                            |
-| [029](029-authoring-downstream-integration-gate.md)      | Gate authoring integration behind finished generic slices        | P2       | L      | 007, 022, 026           | TODO                            |
-| [030](030-resolve-authoring-row-identity.md)             | Resolve `AuthoringRow` identity provenance                       | P1       | M      | none                    | TODO                            |
-| [032](032-decouple-review-visibility-and-invocation.md)  | Decouple Review Views, visibility policy, and capture invocation | P1       | XL     | 017, 018, 022           | TODO                            |
-| [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                       | P1       | XL     | ADR 0004, project index | IN PROGRESS                     |
-| [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                      | P2       | XL     | 034 Map History         | IN PROGRESS — Phase 7           |
-| [037](037-deepen-headless-project-index.md)              | Deepen the headless Project Index with a native Catalog          | P1       | XL     | ADR 0007, 033           | IN PROGRESS — Step 5 complete   |
-| [038](038-adjustable-framing-knobs-and-overrides.md)     | Adjustable framing knobs and per-camera overrides                | P1       | L      | 017, 018, 032           | TODO                            |
+| Plan                                                     | Title                                                           | Priority | Effort | Depends on              | Status                          |
+| -------------------------------------------------------- | --------------------------------------------------------------- | -------- | ------ | ----------------------- | ------------------------------- |
+| [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views    | P1       | XL     | 006, 015                | IN PROGRESS — demo cutoff       |
+| [024](024-establish-ci-and-candidate-releases.md)        | Establish CI, Unreal evidence, and candidate-release provenance | P1       | L      | 020, 021                | IN PROGRESS — first hosted runs |
+| [027](027-adopt-parser-in-downstream-host.md)            | Adopt the released parser in the first downstream host          | P1       | M      | 021, 025, 026           | TODO                            |
+| [028](028-compose-map-review-downstream.md)              | Compose finished Map Review capabilities downstream             | P2       | XL     | 017–019, 022, 026, 032  | TODO                            |
+| [029](029-authoring-downstream-integration-gate.md)      | Gate authoring integration behind finished generic slices       | P2       | L      | 007, 022, 026           | TODO                            |
+| [030](030-resolve-authoring-row-identity.md)             | Resolve `AuthoringRow` identity provenance                      | P1       | M      | none                    | TODO                            |
+| [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                      | P1       | XL     | ADR 0004, project index | IN PROGRESS                     |
+| [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History         | IN PROGRESS — Phase 7           |
+| [038](038-adjustable-framing-knobs-and-overrides.md)     | Adjustable framing knobs and per-camera overrides               | P1       | L      | 017, 018, 032           | TODO                            |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -28,6 +26,16 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 032 completed and is archived under
+  [`archive/032-decouple-review-visibility-and-invocation.md`](archive/032-decouple-review-visibility-and-invocation.md)
+  after immutable Visibility Policy operations, all three View target/viewpoint variants, caller
+  provenance, render-truthful assessment, guarded Natural/Clear capture, CLI/Workbench parity,
+  fresh-process automation, and live UE 5.7 gates passed.
+- Plan 037 completed and is archived under
+  [`archive/037-deepen-headless-project-index.md`](archive/037-deepen-headless-project-index.md)
+  after the bounded headless interface, immutable DuckDB Catalog, committed-generation-first
+  startup, shared CLI/Workbench adoption, representative-project benchmarks, release gates, and
+  SQLite/legacy-cache retirement passed.
 - Plan 036 completed and is archived under
   [`archive/036-split-uasset-inspection-io-and-adopt-effect-cli.md`](archive/036-split-uasset-inspection-io-and-adopt-effect-cli.md)
   after portable WASM, packed-consumer, release, benchmark, CLI, protocol, and UE 5.7 evidence passed.

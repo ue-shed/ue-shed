@@ -179,6 +179,19 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:choose-project-and-maps": [],
 	"map-review:focus-actor": ["/Game/Fixture.Map:PersistentLevel.Actor", true],
 	"map-review:capture": [{ viewIds: ["view-1"] }],
+	"map-review:apply-visibility-policy": [{ policyId: "natural", viewIds: ["view-1"] }],
+	"map-review:replace-visibility-policy": [
+		{
+			policy: {
+				assessment: { method: "automatic" },
+				id: "natural-v2",
+				name: "Natural v2",
+				onLowVisibility: { action: "record" },
+				output: { mode: "natural_only" }
+			},
+			viewId: "view-1"
+		}
+	],
 	"map-review:author-from-selection": [],
 	"map-review:authoring-resume": [],
 	"map-review:authoring-patch": [
@@ -338,6 +351,8 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		status: "not_supported"
 	},
 	"map-review:capture": { status: "not_configured" },
+	"map-review:apply-visibility-policy": { status: "not_configured" },
+	"map-review:replace-visibility-policy": { status: "not_configured" },
 	"map-review:author-from-selection": {
 		status: "failed",
 		error: { message: "missing", recovery: "select an actor" }
@@ -407,9 +422,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 68 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(68);
-	expect(new Set(invokeChannelNames).size).toBe(68);
+it("registers exactly 70 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(70);
+	expect(new Set(invokeChannelNames).size).toBe(70);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

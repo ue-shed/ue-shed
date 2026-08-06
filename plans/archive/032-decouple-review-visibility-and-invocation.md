@@ -16,16 +16,23 @@
 
 ## Status
 
-- **State**: IN PROGRESS — Steps 1–4 are implemented. Step 4 live-proves bounded raw depth evidence
+- **State**: DONE — Steps 1–8 are implemented. Step 4 live-proves bounded raw depth evidence
   for unoccluded, partial, fully occluded, and translucent/non-depth-writing actor views; missing,
   behind-camera, and fully offscreen subjects produce no fabricated fraction. The optional producer
   capability report is policy-free, and host telemetry records only bounded assessment cost/count
   facts without actor, view, operation, map, artifact, or path labels. Step 5 now captures Pure plus
   an optional Clear companion in one Unreal operation. It live-proves both supported strategies,
   component-list restoration, and a missing-explicit-actor partial result that retains Pure. New
-  durable results also retain optional requested-policy and override snapshots. Do not advance the
-  plan yet: the current worktree's full `pnpm check` is blocked outside Plan 032 by an untracked
-  Enhanced Input browser entrypoint importing a missing `./atlas.js` module.
+  durable results also retain optional requested-policy and override snapshots. Step 6 rejects
+  automatic detected-occluder intervention because render-truthful depth evidence has no actor
+  attribution and collision-ray attribution is not render-truthful. The strategy remains absent
+  from executable schemas, CLI, and UI; explicit diagnostic suggestions remain allowed. Step 7
+  dogfoods named profile/policy summaries, immutable per-View replacement, confirmed multi-View
+  application, explicit overrides, and matched Natural/Clear evidence through the public headless
+  operations. Step 8 adds schema-valid View create/revise and policy operations to the CLI, proves
+  two separate external-automation processes, carries bounded runtime-trigger provenance, and
+  closes headless reload/partial-failure/area evidence. Fixture build and all 13 live UE 5.7 Map
+  Review integration tests pass.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH — this changes portable Review Set data, public TypeScript APIs, TypeScript/C++
@@ -692,6 +699,18 @@ restoration. Never infer Clear from a filename alone.
 
 ### Step 6: Evaluate detected-occluder policy without blocking the dependable path
 
+**Decision (2026-08-06): unsupported and deferred.** The render-truthful `depth_compare` method
+proves bounded visibility but returns no actor attribution. `ray_samples` can name collision hits,
+but its own evidence states that collision may differ from rendering, especially for foliage,
+translucency, compound subjects, non-colliding geometry, and large environment actors. Combining
+the two would guess that a ray hit caused a depth deficit without a per-pixel identity join.
+
+The executable `VisibilityOutput` union therefore continues to exclude
+`hide_detected_occluders`; malformed documents containing it fail decoding, and neither CLI nor UI
+can advertise it. Ray attribution may support a suggestion to add an actor to explicit Hide in
+Clear, but never authorizes mutation. Full evidence is recorded in
+`docs/research/map-review-detected-occluder-feasibility.md`.
+
 Do not expose `hide_detected_occluders` merely because the union has a planned shape. First compare
 assessment attribution with the deterministic fixture and at least one richer generic case. Produce
 an evidence note covering false positives/negatives, collision/render disagreement, foliage,
@@ -732,6 +751,13 @@ criteria.
 - the applicable real-Unreal and targeted recovery gates report `RUN` and pass.
 
 ### Step 7: Dogfood the capabilities in the optional Workbench client
+
+**Implemented (2026-08-06).** The optional Workbench receives schema-validated policy/profile
+summaries and paired capture evidence through `review-ipc`; it owns no visibility-policy domain
+rules. Advanced changes call the public immutable replacement and explicit-application operations.
+Detected-occluder hiding is disabled with the Step 6 explanation. The result stage keeps Natural
+primary, labels Clear as **Modified visibility**, supports instant/side-by-side inspection, and
+shows visibility, cause, intervention, and restoration evidence even when no Clear artifact exists.
 
 Use the maintained extension only as a client of public services. It demonstrates one possible
 application without defining the public contracts, persistence model, or required consumer
@@ -790,6 +816,15 @@ interfaces to `@ue-shed/cameras` to support this presentation.
 - component tests and Workbench service tests pass.
 
 ### Step 8: Close CLI, automation, runtime-seam, and end-to-end evidence
+
+**Implemented (2026-08-06).** `review policies list|replace|apply` and `review views put` exercise
+schema-validated JSON and the same repository-backed headless operations in fresh CLI processes.
+The View operation accepts all three target/viewpoint variants and advances immutable revision
+identity only when definition meaning changes. Existing capture/show commands preserve full run
+evidence and typed partial-failure exit behavior. The E2E starts two separate CLI capture processes
+against the actual Remote Control adapter, retains one external correlation across distinct runs,
+and proves matching View revision/realization. Focused headless tests cover runtime provenance,
+Clear failure with retained Pure/restoration, repository reload, and fixed-area capture.
 
 Extend CLI commands to:
 
@@ -911,40 +946,40 @@ mechanisms as callers outside Map Review, not implemented features.
 
 ## Done criteria
 
-- [ ] Existing Review Sets migrate without View ID, Approved Pose, or Pure behavior drift.
-- [ ] Review View supports actor fixed, actor target-relative, and fixed oriented-area semantics
+- [x] Existing Review Sets migrate without View ID, Approved Pose, or Pure behavior drift.
+- [x] Review View supports actor fixed, actor target-relative, and fixed oriented-area semantics
       through discriminated schema variants.
-- [ ] Capture Profile, immutable reusable Visibility Policy presets, and per-View object overrides
+- [x] Capture Profile, immutable reusable Visibility Policy presets, and per-View object overrides
       are separate, validated concepts with simple defaults and no silent shared-policy mutation.
-- [ ] Capture Invocation records why capture occurred without implementing or persisting a scheduler.
-- [ ] Candidate, View, provisioned-camera, invocation, run, and artifact identities are not
+- [x] Capture Invocation records why capture occurred without implementing or persisting a scheduler.
+- [x] Candidate, View, provisioned-camera, invocation, run, and artifact identities are not
       interchangeable.
-- [ ] At least one render-truthful visibility assessment produces bounded, explainable evidence and
+- [x] At least one render-truthful visibility assessment produces bounded, explainable evidence and
       distinguishes occlusion from missing/clipped/unready targets.
-- [ ] Pure plus isolated/explicit-hidden Clear captures run as one guarded Unreal operation, share
+- [x] Pure plus isolated/explicit-hidden Clear captures run as one guarded Unreal operation, share
       the exact pose/projection, retain immutable relationship metadata, and restore Unreal state on
       success, failure, and cancellation.
-- [ ] Automatic detected-occluder behavior is either proven with guardrails and explicitly enabled,
+- [x] Automatic detected-occluder behavior is either proven with guardrails and explicitly enabled,
       or rejected and recorded as unsupported; either result completes its non-blocking feasibility
       step, and an unsupported strategy is never exposed as a promise.
-- [ ] The main authoring path remains select → frame → Keep with defaults; advanced visibility
+- [x] The main authoring path remains select → frame → Keep with defaults; advanced visibility
       strategy remains available without becoming mandatory.
-- [ ] Every new View Result carries unambiguous View/revision identity; legacy results remain
+- [x] Every new View Result carries unambiguous View/revision identity; legacy results remain
       explicitly unversioned; consumers are not required to adopt revision, history, comparison, or
       baseline workflows.
-- [ ] No generic history grouping, timeline ordering/storage, comparison presentation, or
+- [x] No generic history grouping, timeline ordering/storage, comparison presentation, or
       Workbench-derived domain interface is added to the core packages.
-- [ ] The optional Workbench client demonstrates Natural versus modified Clear and its
+- [x] The optional Workbench client demonstrates Natural versus modified Clear and its
       visibility/intervention/restoration evidence without becoming the acceptance authority.
-- [ ] CLI and public services provide full parity for definitions, invocation, capture, evidence,
+- [x] CLI and public services provide full parity for definitions, invocation, capture, evidence,
       failures, and recovery.
-- [ ] External automation is proven by explicit repeated invocation; no scheduling mechanism or
+- [x] External automation is proven by explicit repeated invocation; no scheduling mechanism or
       **Watch** entity is added.
-- [ ] Future runtime-trigger provenance can pass through the public seam without introducing timers,
+- [x] Future runtime-trigger provenance can pass through the public seam without introducing timers,
       scenario coupling, or a universal event model.
-- [ ] Fixture build, real UE 5.7 integration, headless E2E, contract gates, architecture gates, and
+- [x] Fixture build, real UE 5.7 integration, headless E2E, contract gates, architecture gates, and
       `pnpm check` all pass; the optional Workbench E2E remains green when exercised.
-- [ ] Product and showcase claims match only the strategies and UX actually proven.
+- [x] Product and showcase claims match only the strategies and UX actually proven.
 
 ## STOP conditions
 

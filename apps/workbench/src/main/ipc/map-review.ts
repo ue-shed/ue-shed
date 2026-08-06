@@ -3,7 +3,9 @@ import type {
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringSessionIntent,
-	MapReviewCaptureIntent
+	MapReviewCaptureIntent,
+	MapReviewApplyVisibilityPolicyIntent,
+	MapReviewReplaceVisibilityPolicyIntent
 } from "@ue-shed/cameras/review-contracts";
 import type { ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
 import { Effect } from "effect";
@@ -19,6 +21,14 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["map-review:capture"], (...args) => {
 		const [intent] = args as [MapReviewCaptureIntent];
 		return mapReview.capture(intent);
+	});
+	yield* ipc.register(invokeContracts["map-review:apply-visibility-policy"], (...args) => {
+		const [intent] = args as [MapReviewApplyVisibilityPolicyIntent];
+		return mapReview.applyVisibilityPolicy(intent);
+	});
+	yield* ipc.register(invokeContracts["map-review:replace-visibility-policy"], (...args) => {
+		const [intent] = args as [MapReviewReplaceVisibilityPolicyIntent];
+		return mapReview.replaceVisibilityPolicy(intent);
 	});
 	yield* ipc.register(invokeContracts["map-review:world-snapshot"], () =>
 		mapReview.worldSnapshot()

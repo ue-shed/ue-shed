@@ -224,6 +224,14 @@ export function CaptureWorkflow(props: {
 															{view.resolution.width} ×{" "}
 															{view.resolution.height} / APPROVED POSE
 														</small>
+														<small>
+															PROFILE{" "}
+															{view.captureProfileId ??
+																"PROJECT DEFAULT"}{" "}
+															/ POLICY{" "}
+															{view.visibilityPolicy?.name ??
+																"PROJECT DEFAULT"}
+														</small>
 													</span>
 												</label>
 											</li>

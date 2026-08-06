@@ -1,10 +1,15 @@
 import { Schema } from "effect";
 import { ReviewCaptureBlock } from "./review-session-policy.js";
 import {
+	CaptureInvocationCause,
+	ClearCompanionResult,
 	FramingDiagnostic,
 	ReviewAuthoringSession,
 	ReviewAuthoringSessionPatch,
-	ReviewSubjectProjection
+	ReviewSubjectProjection,
+	VisibilityOverrides,
+	VisibilityPolicy,
+	VisibilityResult
 } from "./review-schema.js";
 
 const IpcFailure = Schema.Struct({ message: Schema.String, recovery: Schema.String });
@@ -17,6 +22,25 @@ const IpcPose = Schema.Struct({
 });
 
 export const MapReviewRunView = Schema.Struct({
+	capture: Schema.optional(
+		Schema.Struct({
+			artifacts: Schema.Array(
+				Schema.Struct({
+					bytes: Schema.Uint8Array,
+					height: Schema.Int.check(Schema.isGreaterThan(0)),
+					variant: Schema.Literals(["pure", "clear"]),
+					width: Schema.Int.check(Schema.isGreaterThan(0))
+				})
+			),
+			cause: CaptureInvocationCause,
+			clearCompanion: ClearCompanionResult,
+			viewId: Schema.String,
+			viewName: Schema.String,
+			visibility: VisibilityResult,
+			visibilityOverrides: Schema.optional(VisibilityOverrides),
+			visibilityPolicy: Schema.optional(VisibilityPolicy)
+		})
+	),
 	completedAt: Schema.String,
 	failedViews: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	id: Schema.String,
@@ -34,12 +58,15 @@ export const MapReviewRunView = Schema.Struct({
 export type MapReviewRunView = Schema.Schema.Type<typeof MapReviewRunView>;
 
 export const MapReviewCapturePlanView = Schema.Struct({
+	captureProfileId: Schema.optional(Schema.NonEmptyString),
 	displayName: Schema.NonEmptyString,
 	id: Schema.NonEmptyString,
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isGreaterThan(0)),
 		width: Schema.Int.check(Schema.isGreaterThan(0))
-	})
+	}),
+	visibilityOverrides: Schema.optional(VisibilityOverrides),
+	visibilityPolicy: Schema.optional(VisibilityPolicy)
 });
 export type MapReviewCapturePlanView = Schema.Schema.Type<typeof MapReviewCapturePlanView>;
 
@@ -67,6 +94,26 @@ export const MapReviewCaptureIntent = Schema.Struct({
 	viewIds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1))
 });
 export type MapReviewCaptureIntent = Schema.Schema.Type<typeof MapReviewCaptureIntent>;
+
+export const MapReviewReplaceVisibilityPolicyIntent = Schema.Struct({
+	policy: VisibilityPolicy,
+	viewId: Schema.NonEmptyString,
+	visibilityOverrides: Schema.optional(VisibilityOverrides)
+});
+export type MapReviewReplaceVisibilityPolicyIntent = Schema.Schema.Type<
+	typeof MapReviewReplaceVisibilityPolicyIntent
+>;
+
+export const MapReviewApplyVisibilityPolicyIntent = Schema.Struct({
+	policyId: Schema.NonEmptyString,
+	viewIds: Schema.Array(Schema.NonEmptyString).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(64)
+	)
+});
+export type MapReviewApplyVisibilityPolicyIntent = Schema.Schema.Type<
+	typeof MapReviewApplyVisibilityPolicyIntent
+>;
 
 const CaptureJobFields = {
 	context: Schema.Literal("editor"),
@@ -214,6 +261,12 @@ export type MapReviewApprovalResult = Schema.Schema.Type<typeof MapReviewApprova
 
 export const decodeMapReviewResult = Schema.decodeUnknownEffect(MapReviewResult);
 export const decodeMapReviewCaptureResult = Schema.decodeUnknownEffect(MapReviewCaptureResult);
+export const decodeMapReviewReplaceVisibilityPolicyIntent = Schema.decodeUnknownEffect(
+	MapReviewReplaceVisibilityPolicyIntent
+);
+export const decodeMapReviewApplyVisibilityPolicyIntent = Schema.decodeUnknownEffect(
+	MapReviewApplyVisibilityPolicyIntent
+);
 export const decodeMapReviewAuthoringResult = Schema.decodeUnknownEffect(MapReviewAuthoringResult);
 export const decodeMapReviewAuthoringSessionIntent = Schema.decodeUnknownEffect(
 	MapReviewAuthoringSessionIntent

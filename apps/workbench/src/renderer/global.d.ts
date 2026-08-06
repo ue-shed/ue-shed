@@ -21,6 +21,8 @@ import type {
 	MapReviewAuthoringSessionIntent,
 	MapReviewCaptureIntent,
 	MapReviewCaptureResult,
+	MapReviewApplyVisibilityPolicyIntent,
+	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/extension-camera-review/client";
@@ -105,6 +107,9 @@ declare global {
 				readonly launchReview: () => Promise<FixtureLaunchResult>;
 			};
 			readonly mapReview: {
+				readonly applyVisibilityPolicy: (
+					intent: MapReviewApplyVisibilityPolicyIntent
+				) => Promise<MapReviewResult>;
 				readonly worldSnapshot: () => Promise<WorldScoutResult>;
 				readonly savedWorld: (mapPath: string) => Promise<SavedWorld>;
 				readonly savedWorldMaps: () => Promise<
@@ -142,6 +147,9 @@ declare global {
 					intent: MapReviewCaptureIntent
 				) => Promise<MapReviewCaptureResult>;
 				readonly load: () => Promise<MapReviewResult>;
+				readonly replaceVisibilityPolicy: (
+					intent: MapReviewReplaceVisibilityPolicyIntent
+				) => Promise<MapReviewResult>;
 				readonly setLivePreviewFps: (fps: number) => Promise<number>;
 				readonly subscribeWorldObservations: (
 					cadenceHz: WorldScoutRefreshRate

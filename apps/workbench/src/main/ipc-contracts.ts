@@ -24,6 +24,8 @@ import {
 	MapReviewAuthoringSessionIntent,
 	MapReviewCaptureIntent,
 	MapReviewCaptureResult,
+	MapReviewApplyVisibilityPolicyIntent,
+	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/cameras/review-contracts";
@@ -516,6 +518,16 @@ export const invokeContracts = {
 		channel: "map-review:capture",
 		args: Schema.Tuple([MapReviewCaptureIntent]),
 		result: MapReviewCaptureResult
+	}),
+	"map-review:apply-visibility-policy": invoke({
+		channel: "map-review:apply-visibility-policy",
+		args: Schema.Tuple([MapReviewApplyVisibilityPolicyIntent]),
+		result: MapReviewResult
+	}),
+	"map-review:replace-visibility-policy": invoke({
+		channel: "map-review:replace-visibility-policy",
+		args: Schema.Tuple([MapReviewReplaceVisibilityPolicyIntent]),
+		result: MapReviewResult
 	}),
 	"map-review:author-from-selection": invoke({
 		channel: "map-review:author-from-selection",

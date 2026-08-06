@@ -201,6 +201,92 @@ describe("MapReviewRoute", () => {
 		expect(captureViewIds).toEqual(["structure-context"]);
 	});
 
+	it("keeps Natural primary and exposes matched Clear evidence with a permanent label", async () => {
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: () => "blob:review-artifact"
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: () => undefined
+		});
+		const paired = {
+			...empty,
+			runs: [
+				{
+					capture: {
+						artifacts: [
+							{
+								bytes: new Uint8Array([1]),
+								height: 720,
+								variant: "pure",
+								width: 1280
+							},
+							{
+								bytes: new Uint8Array([2]),
+								height: 720,
+								variant: "clear",
+								width: 1280
+							}
+						],
+						cause: { type: "external_automation", correlationId: "build-42" },
+						clearCompanion: {
+							interventions: [
+								{
+									target: {
+										actorPath: "/Game/Fixture.Blocker",
+										kind: "actor_path"
+									},
+									type: "hide_actor_components"
+								}
+							],
+							restoration: {
+								method: "transient_capture_component_lists",
+								status: "restored"
+							},
+							status: "captured",
+							strategy: "hide_explicit"
+						},
+						viewId: "structure-context",
+						viewName: "Structure context",
+						visibility: {
+							assessmentDurationMs: 4,
+							limitations: ["Translucent pixels may not write depth."],
+							method: { method: "depth_compare", version: 1 },
+							occluders: [],
+							sampleCount: 4096,
+							status: "assessed",
+							visibleFraction: 0.42
+						}
+					},
+					completedAt: "2026-07-15T08:00:00.000Z",
+					failedViews: 0,
+					id: "run-paired",
+					status: "completed",
+					successfulViews: 1
+				}
+			],
+			status: "ready"
+		} as unknown as MapReviewResult;
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(paired),
+			previewCandidate: () => Effect.die("not used")
+		};
+		const user = userEvent.setup();
+		renderRoute(client);
+		expect(await screen.findByText("NATURAL / ORDINARY WORLD")).toBeDefined();
+		expect(screen.getByText("42% · depth compare")).toBeDefined();
+		expect(screen.getByText("restored")).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "CLEAR · MODIFIED VISIBILITY" }));
+		expect(screen.getAllByText("CLEAR / MODIFIED VISIBILITY")).toHaveLength(1);
+		expect(screen.getByAltText(/Clear capture with modified visibility/)).toBeDefined();
+	});
+
 	it("generates, adjusts, and approves a framing candidate through the public client", async () => {
 		const pose = {
 			aspectRatio: "16:9" as const,

@@ -140,6 +140,19 @@ export const CliCommand = Schema.TaggedUnion({
 		until: Schema.optionalKey(Schema.String)
 	},
 	ReviewSetValidate: { reviewSetPath: Schema.String },
+	ReviewPoliciesList: { reviewSetPath: Schema.String },
+	ReviewPoliciesReplace: {
+		overridesPath: Schema.optionalKey(Schema.String),
+		policyPath: Schema.String,
+		reviewSetPath: Schema.String,
+		viewId: Schema.String
+	},
+	ReviewPoliciesApply: {
+		policyId: Schema.String,
+		reviewSetPath: Schema.String,
+		viewIds: Schema.Array(Schema.String).check(Schema.isMinLength(1))
+	},
+	ReviewViewPut: { reviewSetPath: Schema.String, viewPath: Schema.String },
 	ReviewFramingCandidates: { endpoint: Schema.String },
 	ReviewFramingApprove: {
 		candidateId: Schema.String,

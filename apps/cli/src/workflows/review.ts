@@ -1,10 +1,14 @@
-import { Effect, Layer } from "effect";
+import { readFile } from "node:fs/promises";
+import { Effect, Layer, Schema } from "effect";
 import { CliCommandError, CliRuntime, printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
 
 type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _tag: Tag }>;
 type FramingCommand = Command<"ReviewFramingCandidates" | "ReviewFramingApprove">;
+type PoliciesCommand = Command<
+	"ReviewPoliciesList" | "ReviewPoliciesReplace" | "ReviewPoliciesApply"
+>;
 type AuthoringCommand = Command<
 	| "ReviewAuthoringStart"
 	| "ReviewAuthoringBootstrap"
@@ -35,6 +39,121 @@ export const runReviewSetValidate = Effect.fn("Cli.workflow.review_set_validate"
 					});
 				});
 				return yield* program.pipe(Effect.provide(ReviewRepositoryLive));
+			})
+		)
+);
+
+function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError> {
+	return Effect.tryPromise({
+		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+		catch: (cause) =>
+			new CliCommandError({
+				message: `Could not read JSON document ${path}: ${String(cause)}`
+			})
+	});
+}
+
+export const runReviewPolicies = Effect.fn("Cli.workflow.review_policies")(
+	(command: PoliciesCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const {
+					applyVisibilityPolicyToViewsAtPath,
+					inspectReviewVisibilityPolicies,
+					inspectReviewVisibilityPoliciesAtPath,
+					replaceViewVisibilityPolicyAtPath,
+					ReviewRepositoryLive,
+					ReviewViewId,
+					VisibilityOverrides,
+					VisibilityPolicy,
+					VisibilityPolicyId
+				} = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const program = Effect.gen(function* () {
+					if (command._tag === "ReviewPoliciesList") {
+						return yield* inspectReviewVisibilityPoliciesAtPath(
+							command.reviewSetPath
+						).pipe(Effect.flatMap(printJson));
+					}
+					if (command._tag === "ReviewPoliciesApply") {
+						const reviewSet = yield* applyVisibilityPolicyToViewsAtPath({
+							path: command.reviewSetPath,
+							policyId: VisibilityPolicyId.make(command.policyId),
+							viewIds: command.viewIds.map((viewId) => ReviewViewId.make(viewId))
+						});
+						return yield* printJson({
+							policyId: command.policyId,
+							status: "applied",
+							viewIds: command.viewIds,
+							visibility: inspectReviewVisibilityPolicies(reviewSet)
+						});
+					}
+					const policyInput = yield* readJsonDocument(command.policyPath);
+					const policy = yield* Schema.decodeUnknownEffect(VisibilityPolicy)(
+						policyInput
+					).pipe(
+						Effect.mapError(
+							(cause) =>
+								new CliCommandError({
+									message: `Invalid Visibility Policy: ${String(cause)}`
+								})
+						)
+					);
+					const overrides =
+						command.overridesPath === undefined
+							? undefined
+							: yield* readJsonDocument(command.overridesPath).pipe(
+									Effect.flatMap(Schema.decodeUnknownEffect(VisibilityOverrides)),
+									Effect.mapError(
+										(cause) =>
+											new CliCommandError({
+												message: `Invalid Visibility Overrides: ${String(cause)}`
+											})
+									)
+								);
+					const reviewSet = yield* replaceViewVisibilityPolicyAtPath({
+						path: command.reviewSetPath,
+						policy,
+						viewId: ReviewViewId.make(command.viewId),
+						...(overrides === undefined ? {} : { visibilityOverrides: overrides })
+					});
+					return yield* printJson({
+						policyId: policy.id,
+						status: "replaced",
+						viewId: command.viewId,
+						visibility: inspectReviewVisibilityPolicies(reviewSet)
+					});
+				});
+				return yield* program.pipe(Effect.provide(ReviewRepositoryLive));
+			})
+		)
+);
+
+export const runReviewViewPut = Effect.fn("Cli.workflow.review_view_put")(
+	(command: Command<"ReviewViewPut">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { putReviewViewAtPath, ReviewRepositoryLive, ReviewView } =
+					yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const input = yield* readJsonDocument(command.viewPath);
+				const view = yield* Schema.decodeUnknownEffect(ReviewView)(input).pipe(
+					Effect.mapError(
+						(cause) =>
+							new CliCommandError({
+								message: `Invalid Review View: ${String(cause)}`
+							})
+					)
+				);
+				const result = yield* putReviewViewAtPath({
+					path: command.reviewSetPath,
+					view
+				}).pipe(Effect.provide(ReviewRepositoryLive));
+				return yield* printJson({
+					revision: result.view.revision,
+					status: result.status,
+					viewId: result.view.id
+				});
 			})
 		)
 );

@@ -8,6 +8,8 @@ import type {
 	MapReviewAuthoringSessionIntent,
 	MapReviewCaptureIntent,
 	MapReviewCaptureResult,
+	MapReviewApplyVisibilityPolicyIntent,
+	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
 	MapReviewResult
 } from "@ue-shed/extension-camera-review/client";
@@ -141,6 +143,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("fixture:launch-review")
 	},
 	mapReview: {
+		applyVisibilityPolicy: (
+			intent: MapReviewApplyVisibilityPolicyIntent
+		): Promise<MapReviewResult> =>
+			ipcRenderer.invoke("map-review:apply-visibility-policy", intent),
 		worldSnapshot: (): Promise<WorldScoutResult> =>
 			ipcRenderer.invoke("map-review:world-snapshot"),
 		savedWorld: (mapPath: string): Promise<SavedWorld> =>
@@ -185,6 +191,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 		capture: (intent: MapReviewCaptureIntent): Promise<MapReviewCaptureResult> =>
 			ipcRenderer.invoke("map-review:capture", intent),
 		load: (): Promise<MapReviewResult> => ipcRenderer.invoke("map-review:load"),
+		replaceVisibilityPolicy: (
+			intent: MapReviewReplaceVisibilityPolicyIntent
+		): Promise<MapReviewResult> =>
+			ipcRenderer.invoke("map-review:replace-visibility-policy", intent),
 		setLivePreviewFps: (fps: number): Promise<number> =>
 			ipcRenderer.invoke("map-review:set-live-preview-fps", fps),
 		subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate): Promise<void> =>

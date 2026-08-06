@@ -22,9 +22,59 @@ import { MapReviewAuthoring } from "./map-review-authoring.js";
 import { CaptureWorkflow } from "./capture-workflow.js";
 import { SavedWorldScout } from "./saved-world-scout.js";
 import { WorldScout } from "./world-scout.js";
+import { VisibilityPolicySettings } from "./visibility-policy-settings.js";
 import type { ObservedActor } from "@ue-shed/observatory";
 
 type ViewState = { readonly status: "loading" } | MapReviewResult;
+type RunArtifact = NonNullable<MapReviewRunView["capture"]>["artifacts"][number];
+type RunCapture = NonNullable<MapReviewRunView["capture"]>;
+
+function visibilitySummary(visibility: RunCapture["visibility"]): string {
+	return visibility.status === "assessed"
+		? `${Math.round(visibility.visibleFraction * 100)}% · ${visibility.method.method.replaceAll("_", " ")}`
+		: visibility.status.replaceAll("_", " ");
+}
+
+function clearSummary(clear: RunCapture["clearCompanion"]): string {
+	return clear.status === "not_requested"
+		? "not requested"
+		: `${clear.status} · ${clear.strategy.replaceAll("_", " ")}`;
+}
+
+function restorationSummary(clear: RunCapture["clearCompanion"]): string {
+	return clear.status === "not_requested" ? "not applicable" : clear.restoration.status;
+}
+
+function captureExplanations(capture: RunCapture): ReadonlyArray<string> {
+	const limitations =
+		capture.visibility.status === "assessment_failed"
+			? [capture.visibility.failure.message]
+			: [...(capture.visibility.limitations ?? [])];
+	if (capture.clearCompanion.status === "not_requested") return limitations;
+	const interventions = capture.clearCompanion.interventions.map((intervention) =>
+		intervention.type === "show_only_subject_components"
+			? `Isolated ${intervention.subject.diagnosticLabel ?? intervention.subject.actorPath}`
+			: `Hid ${intervention.target.diagnosticLabel ?? intervention.target.actorPath}`
+	);
+	return capture.clearCompanion.status === "failed"
+		? [...limitations, ...interventions, capture.clearCompanion.failure.message]
+		: [...limitations, ...interventions];
+}
+
+function ArtifactImage(props: { readonly artifact: RunArtifact; readonly alt: string }) {
+	const [source, setSource] = createSignal<string>();
+	createEffect(() => {
+		const bytes = Uint8Array.from(props.artifact.bytes);
+		const url = URL.createObjectURL(new Blob([bytes.buffer], { type: "image/png" }));
+		setSource(url);
+		onCleanup(() => URL.revokeObjectURL(url));
+	});
+	return (
+		<Show when={source()}>
+			{(url) => <img src={url()} alt={props.alt} {...stylex.props(styles.previewImage)} />}
+		</Show>
+	);
+}
 
 function PreviewImage(props: { readonly run: MapReviewRunView }) {
 	const [source, setSource] = createSignal<string>();
@@ -64,6 +114,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 	const action = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [selectedRunId, setSelectedRunId] = createSignal<string>();
+	const [comparisonMode, setComparisonMode] = createSignal<"pure" | "clear" | "side_by_side">(
+		"pure"
+	);
 	const [focusRequest, setFocusRequest] = createSignal<{
 		readonly actor: ObservedActor;
 		readonly nonce: number;
@@ -83,9 +136,17 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 		const current = ready();
 		return current?.runs.find((run) => run.id === selectedRunId()) ?? current?.runs[0];
 	});
+	const selectedCapture = createMemo(() => selected()?.capture);
+	const pureArtifact = createMemo(() =>
+		selectedCapture()?.artifacts.find((artifact) => artifact.variant === "pure")
+	);
+	const clearArtifact = createMemo(() =>
+		selectedCapture()?.artifacts.find((artifact) => artifact.variant === "clear")
+	);
 	const apply = (result: MapReviewResult) => {
 		setState(result);
 		if (result.status === "ready") setSelectedRunId(result.runs[0]?.id);
+		setComparisonMode("pure");
 	};
 	const clientFailure = (cause: Cause.Cause<unknown>): MapReviewResult => ({
 		error: {
@@ -269,6 +330,11 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 									onApproved={load}
 								/>
 							</Show>
+							<VisibilityPolicySettings
+								client={props.client}
+								onUpdated={apply}
+								review={current()}
+							/>
 
 							<Show
 								when={selected()}
@@ -286,17 +352,201 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 										aria-label="Selected capture"
 										{...stylex.props(styles.stage)}
 									>
-										<div {...stylex.props(styles.imageFrame)}>
-											<PreviewImage run={run()} />
-											<div {...stylex.props(styles.imageChrome)}>
-												<span>PURE / ORDINARY WORLD</span>
-												<code>{run().id}</code>
+										<div>
+											<Show when={selectedCapture()}>
+												<div
+													role="group"
+													aria-label="Natural and Clear display"
+													{...stylex.props(styles.comparisonControls)}
+												>
+													<button
+														type="button"
+														aria-pressed={comparisonMode() === "pure"}
+														onClick={() => setComparisonMode("pure")}
+													>
+														NATURAL
+													</button>
+													<button
+														type="button"
+														disabled={clearArtifact() === undefined}
+														aria-pressed={comparisonMode() === "clear"}
+														onClick={() => setComparisonMode("clear")}
+													>
+														CLEAR · MODIFIED VISIBILITY
+													</button>
+													<button
+														type="button"
+														disabled={clearArtifact() === undefined}
+														aria-pressed={
+															comparisonMode() === "side_by_side"
+														}
+														onClick={() =>
+															setComparisonMode("side_by_side")
+														}
+													>
+														SIDE BY SIDE
+													</button>
+												</div>
+											</Show>
+											<div
+												{...stylex.props(
+													styles.comparisonStage,
+													comparisonMode() === "side_by_side" &&
+														styles.comparisonStagePaired
+												)}
+											>
+												<Show
+													when={pureArtifact()}
+													fallback={
+														<div {...stylex.props(styles.imageFrame)}>
+															<PreviewImage run={run()} />
+															<div
+																{...stylex.props(
+																	styles.imageChrome
+																)}
+															>
+																<span>PURE / ORDINARY WORLD</span>
+																<code>{run().id}</code>
+															</div>
+														</div>
+													}
+												>
+													{(pure) => (
+														<Show when={comparisonMode() !== "clear"}>
+															<div
+																{...stylex.props(styles.imageFrame)}
+															>
+																<ArtifactImage
+																	artifact={pure()}
+																	alt={`Natural capture of ${selectedCapture()?.viewName ?? "Review view"}`}
+																/>
+																<div
+																	{...stylex.props(
+																		styles.imageChrome
+																	)}
+																>
+																	<span>
+																		NATURAL / ORDINARY WORLD
+																	</span>
+																	<code>{run().id}</code>
+																</div>
+															</div>
+														</Show>
+													)}
+												</Show>
+												<Show
+													when={
+														comparisonMode() !== "pure"
+															? clearArtifact()
+															: undefined
+													}
+												>
+													{(clear) => (
+														<div
+															{...stylex.props(
+																styles.imageFrame,
+																styles.clearFrame
+															)}
+														>
+															<ArtifactImage
+																artifact={clear()}
+																alt={`Clear capture with modified visibility of ${selectedCapture()?.viewName ?? "Review view"}`}
+															/>
+															<div
+																{...stylex.props(
+																	styles.imageChrome,
+																	styles.clearChrome
+																)}
+															>
+																<span>
+																	CLEAR / MODIFIED VISIBILITY
+																</span>
+																<code>MATCHED FRAMING</code>
+															</div>
+														</div>
+													)}
+												</Show>
 											</div>
 										</div>
 										<aside {...stylex.props(styles.runInspector)}>
 											<p>CAPTURE RUN</p>
 											<h2>{new Date(run().completedAt).toLocaleString()}</h2>
 											<dl>
+												<Show when={selectedCapture()}>
+													{(capture) => (
+														<>
+															<div>
+																<dt>Cause</dt>
+																<dd>
+																	{capture().cause.type.replaceAll(
+																		"_",
+																		" "
+																	)}
+																</dd>
+															</div>
+															<div>
+																<dt>Visibility</dt>
+																<dd>
+																	{visibilitySummary(
+																		capture().visibility
+																	)}
+																</dd>
+															</div>
+															<div>
+																<dt>Clear</dt>
+																<dd>
+																	{clearSummary(
+																		capture().clearCompanion
+																	)}
+																</dd>
+															</div>
+															<Show
+																when={
+																	capture().clearCompanion
+																		.status !== "not_requested"
+																}
+															>
+																<div>
+																	<dt>Restoration</dt>
+																	<dd>
+																		{restorationSummary(
+																			capture().clearCompanion
+																		)}
+																	</dd>
+																</div>
+															</Show>
+															<Show
+																when={
+																	captureExplanations(capture())
+																		.length > 0
+																}
+															>
+																<details
+																	{...stylex.props(
+																		styles.explainability
+																	)}
+																>
+																	<summary>
+																		Explainability
+																	</summary>
+																	<ul>
+																		<For
+																			each={captureExplanations(
+																				capture()
+																			)}
+																		>
+																			{(explanation) => (
+																				<li>
+																					{explanation}
+																				</li>
+																			)}
+																		</For>
+																	</ul>
+																</details>
+															</Show>
+														</>
+													)}
+												</Show>
 												<div>
 													<dt>Result</dt>
 													<dd>{run().status.replaceAll("_", " ")}</dd>
@@ -447,6 +697,13 @@ const styles = stylex.create({
 	},
 	setIdentity: { borderTop: "3px solid #b9f227" },
 	stage: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px", gap: 12, marginTop: 12 },
+	comparisonControls: {
+		display: "flex",
+		gap: 6,
+		marginBottom: 7
+	},
+	comparisonStage: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 7 },
+	comparisonStagePaired: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" },
 	imageFrame: {
 		minHeight: 430,
 		position: "relative",
@@ -485,6 +742,9 @@ const styles = stylex.create({
 		fontSize: 8,
 		letterSpacing: ".12em"
 	},
+	clearFrame: { borderColor: "#61d5df" },
+	clearChrome: { color: "#61d5df" },
+	explainability: { margin: "8px 0", color: "#9ab6b8", fontSize: 10 },
 	runInspector: { border: "1px solid #373d39", backgroundColor: "#131614", padding: 18 },
 	firstCapture: {
 		marginTop: 12,

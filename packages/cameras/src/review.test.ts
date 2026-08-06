@@ -299,6 +299,27 @@ describe("Map Review contracts", () => {
 		).toThrow(/Natural-only policy/);
 	});
 
+	it("rejects unsupported detected-occluder intervention instead of advertising it", () => {
+		const reviewSet = fixtureReviewSet();
+		expect(() =>
+			decodeReviewSet({
+				...reviewSet,
+				visibilityPolicies: [
+					{
+						...reviewSet.visibilityPolicies[0]!,
+						output: {
+							clearStrategy: {
+								guardrails: { maximumHiddenObjects: 4 },
+								type: "hide_detected_occluders"
+							},
+							mode: "natural_and_clear"
+						}
+					}
+				]
+			})
+		).toThrow(/isolate_target|hide_explicit/);
+	});
+
 	it("requires bounded quantitative evidence before visibility can be assessed", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(VisibilityResult)({
@@ -544,6 +565,52 @@ describe("durable capture loop", () => {
 		});
 		expect(second.invocation).toMatchObject({
 			cause: { correlationId: "daily-fixture", type: "external_automation" }
+		});
+	});
+
+	it("carries bounded runtime-trigger provenance through the supplied public seam", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-runtime-cause-"));
+		temporaryDirectories.push(projectRoot);
+		const reviewSet = fixtureReviewSet();
+		const reviewSetPath = join(projectRoot, "set.json");
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		const invocation = CaptureInvocation.make({
+			cause: {
+				namespace: "fixture.scenario",
+				provenance: { event: "door-opened", sourceId: "door-a" },
+				schemaVersion: 1,
+				type: "runtime_trigger"
+			},
+			id: CaptureInvocationId.make("runtime-invocation"),
+			reviewSetId: reviewSet.id
+		});
+		const ids = ["runtime-run", "runtime-operation"];
+		const run = await runCapture(
+			{ invocation, projectRoot, reviewSetPath },
+			{
+				capture: (request) =>
+					Effect.succeed({
+						code: "fixture_failure",
+						contract: request.contract,
+						message: "Expected fixture failure",
+						operationId: request.operationId,
+						recovery: "No recovery required",
+						retrySafe: false,
+						status: "failed",
+						viewId: request.viewId
+					})
+			},
+			() => ids.shift()!
+		);
+		expect(run.invocation.cause).toEqual({
+			namespace: "fixture.scenario",
+			provenance: { event: "door-opened", sourceId: "door-a" },
+			schemaVersion: 1,
+			type: "runtime_trigger"
 		});
 	});
 

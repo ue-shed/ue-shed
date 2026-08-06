@@ -11,6 +11,8 @@ import {
 	type MapReviewCandidatePreviewResult,
 	type MapReviewCaptureIntent,
 	type MapReviewCaptureResult,
+	type MapReviewApplyVisibilityPolicyIntent,
+	type MapReviewReplaceVisibilityPolicyIntent,
 	type MapReviewResult
 } from "@ue-shed/cameras/review-contracts";
 import {
@@ -229,6 +231,14 @@ export function reconcileSparseTransformChanges(
 }
 
 export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
+	applyVisibilityPolicy: Effect.fn("MapReviewClient.applyVisibilityPolicy")(
+		(intent: MapReviewApplyVisibilityPolicyIntent) =>
+			request({
+				decode: decodeMapReviewResult,
+				invoke: () => window.ueShed.mapReview.applyVisibilityPolicy(intent),
+				operation: "mapReview.applyVisibilityPolicy"
+			})
+	),
 	readSavedWorld: Effect.fn("MapReviewClient.readSavedWorld")((mapPath) =>
 		loadSavedWorld(mapPath)
 	),
@@ -422,6 +432,14 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 				decode: decodeMapReviewCandidatePreviewResult,
 				invoke: () => window.ueShed.mapReview.previewCandidate(candidateId),
 				operation: "mapReview.previewCandidate"
+			})
+	),
+	replaceVisibilityPolicy: Effect.fn("MapReviewClient.replaceVisibilityPolicy")(
+		(intent: MapReviewReplaceVisibilityPolicyIntent) =>
+			request({
+				decode: decodeMapReviewResult,
+				invoke: () => window.ueShed.mapReview.replaceVisibilityPolicy(intent),
+				operation: "mapReview.replaceVisibilityPolicy"
 			})
 	)
 });

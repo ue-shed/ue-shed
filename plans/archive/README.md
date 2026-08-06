@@ -32,5 +32,7 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [026](026-ship-plugin-bundles-and-installer.md)               | Ship versioned plugin bundles through the CLI installer              | DONE — UE 5.7.4 verified                    |
 | [030](030-map-review-public-boundary.md)                      | Prepare the Map Review headless package boundary                     | DONE — offline consumer verified            |
 | [031](031-publish-observatory-boundary.md)                    | Publish the headless Observatory package boundary                    | DONE — `0.1.0-rc.3` packed                  |
+| [032](032-decouple-review-visibility-and-invocation.md)       | Decouple Review Views, visibility policy, and capture invocation     | DONE — UE 5.7 and CLI E2E verified          |
 | [034](034-build-perforce-map-history.md)                      | Build the Perforce-backed Map History vertical                       | DONE — real Perforce and World Log verified |
 | [036](036-split-uasset-inspection-io-and-adopt-effect-cli.md) | Split UAsset inspection and IO, and adopt Effect CLI                 | DONE — portable and UE 5.7 evidence passed  |
+| [037](037-deepen-headless-project-index.md)                   | Deepen the headless Project Index with a native Catalog              | DONE — DuckDB cutover and adoption verified |

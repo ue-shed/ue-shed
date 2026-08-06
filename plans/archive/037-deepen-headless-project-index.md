@@ -19,10 +19,9 @@
 
 ## Status
 
-- **State**: IN PROGRESS — DuckDB is selected and the natural immutable Adapter passes the shared
-  Catalog conformance suite; ordinary-startup lifecycle, persistent query sessions, release and
-  benchmark gates, production cutover, SQLite retirement, and an explicit Workbench rebuild control
-  remain
+- **State**: DONE on 2026-08-06 — the headless Project Index, bounded v1.1 protocol, immutable
+  DuckDB Catalog, shared CLI/Workbench interface, committed-generation-first startup, release and
+  representative-project evidence, and SQLite/legacy-cache retirement all passed their gates
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH — changes native persistence, the language-neutral process seam, project refresh
@@ -1161,15 +1160,15 @@ pnpm check
 - [x] An exact warm no-op reads zero package headers and rewrites zero package evidence rows.
 - [x] A committed Generation is atomic and stale queries are explicit.
 - [x] Workbench project summary/maps use refresh progress and bounded Project Index map pages.
-- [ ] Workbench and CLI use the same Project Index interface.
-- [ ] No ordinary caller receives the complete project manifest.
-- [ ] Old Workbench JSON caches are no longer written.
+- [x] Workbench and CLI use the same Project Index interface.
+- [x] No ordinary caller receives the complete project manifest.
+- [x] Old Workbench JSON caches are no longer written.
 - [x] Generic `scanProject` and v1.0 protocol behavior remain compatible.
-- [ ] Plan 033 domain-persistence gates remain intact.
-- [ ] Representative large-project evidence passes without private identifiers in records.
+- [x] Plan 033 domain-persistence gates remain intact.
+- [x] Representative large-project evidence passes without private identifiers in records.
 - [x] Storage costs are attributed and DuckDB is selected from equal-workload measured evidence.
 - [x] The natural DuckDB Adapter uses nested Arrow batches and immutable snapshot publication.
-- [ ] Ordinary startup serves the last committed Generation before background refresh.
+- [x] Ordinary startup serves the last committed Generation before background refresh.
 - [x] Bounded query sessions reuse one native process/connection while route loading remains lazy.
 - [x] DuckDB passes dependency, license, offline, Windows package, size, recovery, and conformance gates.
 - [x] The production factory uses DuckDB and the interim SQLite Adapter/dependency are removed.

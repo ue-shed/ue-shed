@@ -18,6 +18,8 @@ export * from "./provisioned-cameras-live.js";
 export * from "./review-repository.js";
 export * from "./review-schema.js";
 export * from "./review-session-policy.js";
+export * from "./review-visibility-policy.js";
+export * from "./review-view.js";
 
 export const CAMERA_PIPE_NAME = "\\\\.\\pipe\\ue-shed-cameras-v1";
 export const CAMERA_FRAME_HEADER_BYTES = 128;

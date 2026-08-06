@@ -4,6 +4,7 @@ import {
 	makeReviewCaptureTestLayer,
 	makeReviewRepositoryTestLayer,
 	makeCameraFeedTestLayer,
+	decodeReviewSet,
 	type ReviewAuthoringShape,
 	ReviewAuthoringSessionError,
 	type ReviewAuthoringSessionsShape,
@@ -94,6 +95,7 @@ const fixtureReviewSet: ReviewSet = {
 		}
 	]
 } as unknown as ReviewSet;
+const policyReviewSet = Effect.runSync(decodeReviewSet(fixtureReviewSet));
 
 const configuredReview: WorkbenchConfigurationShape = {
 	authoringAsset: { status: "not_configured" },
@@ -345,6 +347,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 			viewCount: 1,
 			views: [
 				{
+					captureProfileId: "profile-1",
 					displayName: "Front view",
 					id: "view-1",
 					resolution: { height: 1080, width: 1920 }
@@ -450,6 +453,58 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 		)
 	)
 );
+
+it.effect("round-trips immutable policy replacement through the headless service", () => {
+	let stored = policyReviewSet;
+	return Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const result = yield* service.replaceVisibilityPolicy({
+			policy: {
+				assessment: { method: "depth_compare" },
+				id: "clear-v2" as ReviewSet["visibilityPolicies"][number]["id"],
+				name: "Clear v2",
+				onLowVisibility: { action: "warn", threshold: 0.5 },
+				output: {
+					clearStrategy: { type: "isolate_target" },
+					mode: "natural_and_clear"
+				}
+			},
+			viewId: "view-1"
+		});
+		expect(result.status).toBe("ready");
+		expect(stored.visibilityPolicies.map((policy) => policy.id)).toEqual([
+			"default-natural-only",
+			"clear-v2"
+		]);
+		expect(stored.views[0]?.visibilityPolicyId).toBe("clear-v2");
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewTestLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeWorkbenchConfigurationLayer(configuredReview),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.succeed(stored),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.succeed([]),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.succeed(stored),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: ({ reviewSet }) =>
+								Effect.sync(() => void (stored = reviewSet)),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer(dyingAuthoring)
+					)
+				)
+			)
+		)
+	);
+});
 
 it.effect("reports authoring failure when the selection map does not match the review set", () =>
 	Effect.gen(function* () {

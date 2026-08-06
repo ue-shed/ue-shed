@@ -129,10 +129,13 @@ picker should offer more than one map. It takes precedence over the single-map v
 With no `UE_SHED_REVIEW_SET`, live Map Review enters first-run authoring. Select an actor, review a
 candidate, and keep it; only then does UE Shed write a deterministic map-scoped Review Set under
 `.ue-shed/review/sets`. Set `UE_SHED_REVIEW_SET` when you want to work with an explicit existing
-set. The headless equivalent is:
+set. Open **Framing** to tune the named arc/ring presets or one selected view. The count sliders show
+the ordinary 1–24 range; exact larger counts remain valid and show a preview-cost hint. The headless
+equivalent is:
 
 ```powershell
 pnpm ue-shed review authoring bootstrap "C:\path\to\Project" "http://127.0.0.1:30001"
+pnpm ue-shed review authoring tune "C:\path\to\Project" <session-id> framing-patch.json
 pnpm ue-shed review authoring approve "C:\path\to\Project" <session-id> "http://127.0.0.1:30001"
 ```
 

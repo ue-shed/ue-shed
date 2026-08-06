@@ -13,6 +13,7 @@ type AuthoringCommand = Command<
 	| "ReviewAuthoringStart"
 	| "ReviewAuthoringBootstrap"
 	| "ReviewAuthoringShow"
+	| "ReviewAuthoringTune"
 	| "ReviewAuthoringResume"
 	| "ReviewAuthoringDiscard"
 	| "ReviewAuthoringReframe"
@@ -166,6 +167,7 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 				const {
 					approveFramingCandidate,
 					FramingCandidateId,
+					FramingParameters,
 					generateFramingCandidates,
 					ReviewAuthoring,
 					ReviewAuthoringLive,
@@ -186,7 +188,22 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 							})
 						);
 					}
-					const candidates = generateFramingCandidates(selection);
+					const parameters =
+						command.parametersPath === undefined
+							? undefined
+							: yield* readJsonDocument(command.parametersPath).pipe(
+									Effect.flatMap(Schema.decodeUnknownEffect(FramingParameters)),
+									Effect.mapError(
+										(cause) =>
+											new CliCommandError({
+												message: `Invalid Framing Parameters: ${String(cause)}`
+											})
+									)
+								);
+					const candidates =
+						parameters === undefined
+							? generateFramingCandidates(selection)
+							: generateFramingCandidates(selection, parameters);
 					if (command._tag === "ReviewFramingCandidates") {
 						return yield* printJson({ candidates, selection });
 					}
@@ -248,6 +265,7 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					ReviewAuthoringLive,
 					ReviewAuthoringSessions,
 					ReviewAuthoringSessionsLive,
+					ReviewAuthoringSessionPatch,
 					ReviewRepositoryLive
 				} = yield* Effect.promise(() => import("@ue-shed/cameras"));
 				const { RemoteControlClientLive } = yield* Effect.promise(
@@ -261,6 +279,26 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					if (command._tag === "ReviewAuthoringShow") {
 						return yield* sessions
 							.load({
+								projectRoot: command.projectRoot,
+								sessionId: command.sessionId
+							})
+							.pipe(Effect.flatMap(printJson));
+					}
+					if (command._tag === "ReviewAuthoringTune") {
+						const patchInput = yield* readJsonDocument(command.patchPath);
+						const patch = yield* Schema.decodeUnknownEffect(
+							ReviewAuthoringSessionPatch
+						)(patchInput).pipe(
+							Effect.mapError(
+								(cause) =>
+									new CliCommandError({
+										message: `Invalid Review Authoring Patch: ${String(cause)}`
+									})
+							)
+						);
+						return yield* sessions
+							.patch({
+								patch,
 								projectRoot: command.projectRoot,
 								sessionId: command.sessionId
 							})

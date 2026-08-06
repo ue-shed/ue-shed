@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import {
 	approveFramingCandidate,
+	applyCandidateOverrides,
 	createAreaReviewView,
 	createReviewViewFromCandidate,
+	defaultFramingParameters,
 	framingDriftDiagnostics,
 	generateFramingCandidates,
 	realizationFramingDiagnostics,
@@ -18,6 +20,7 @@ import {
 	ReviewViewId,
 	VisibilityPolicyId,
 	decodeReviewSet as decodeReviewSetEffect,
+	FramingParameters,
 	type ReviewSubjectProjection
 } from "./review-schema.js";
 
@@ -79,16 +82,162 @@ describe("spatial framing", () => {
 		expect(first.map((candidate) => candidate.recipe.preset)).toEqual([
 			"context_three_quarter",
 			"facade_front",
-			"cardinal_north",
-			"cardinal_east",
-			"cardinal_south",
-			"cardinal_west",
+			"cardinal_orbit",
+			"cardinal_orbit",
+			"cardinal_orbit",
+			"cardinal_orbit",
 			"editor_view"
+		]);
+		expect(first.slice(0, 6).map((candidate) => candidate.id)).toEqual([
+			"preset/context_three_quarter/1",
+			"preset/facade_front/1",
+			"preset/cardinal_orbit/1",
+			"preset/cardinal_orbit/2",
+			"preset/cardinal_orbit/3",
+			"preset/cardinal_orbit/4"
 		]);
 		for (const candidate of first) {
 			expect(Number.isFinite(candidate.approvedPose.location.x)).toBe(true);
 			expect(candidate.recipe.subjectBounds).toEqual(selection.bounds);
 		}
+	});
+
+	it("builds named presets from permissive arc and ring primitives", () => {
+		const defaults = defaultFramingParameters();
+		expect(defaults).toMatchObject({
+			fieldOfViewDegrees: 60,
+			groups: [
+				{
+					distanceScale: 1.8,
+					elevation: 0.5,
+					pattern: { count: 1, kind: "arc", yawOffsetDegrees: 42 }
+				},
+				{
+					distanceScale: 1.25,
+					elevation: 0.08,
+					pattern: { count: 1, kind: "arc", yawOffsetDegrees: 0 }
+				},
+				{
+					distanceScale: 1.45,
+					elevation: 0.18,
+					pattern: { count: 4, kind: "ring", ringOffsetDegrees: 90 }
+				}
+			],
+			margin: 0.12
+		});
+
+		const parameters = FramingParameters.make({
+			fieldOfViewDegrees: 75,
+			groups: [
+				{
+					displayName: "Wide arc",
+					distanceScale: 2,
+					elevation: 0.25,
+					enabled: true,
+					id: defaults.groups[0]!.id,
+					pattern: {
+						count: 3,
+						kind: "arc",
+						spreadDegrees: 60,
+						yawOffsetDegrees: 0
+					}
+				},
+				{
+					displayName: "Dense ring",
+					distanceScale: 1.5,
+					elevation: 0.1,
+					enabled: true,
+					id: defaults.groups[2]!.id,
+					pattern: { count: 8, kind: "ring", ringOffsetDegrees: 22.5 }
+				}
+			],
+			margin: 0.2
+		});
+		const candidates = generateFramingCandidates(
+			{ ...selection, editorView: undefined },
+			parameters
+		);
+		expect(candidates).toHaveLength(11);
+		const locationYaw = (index: number) => {
+			const location = candidates[index]!.approvedPose.location;
+			return (
+				(Math.atan2(
+					location.y - selection.bounds.center.y,
+					location.x - selection.bounds.center.x
+				) *
+					180) /
+				Math.PI
+			);
+		};
+		expect(locationYaw(0)).toBeCloseTo(-15, 8);
+		expect(locationYaw(1)).toBeCloseTo(15, 8);
+		expect(locationYaw(2)).toBeCloseTo(45, 8);
+		expect(locationYaw(3)).toBeCloseTo(22.5, 8);
+		expect(locationYaw(4)).toBeCloseTo(-22.5, 8);
+	});
+
+	it("does not impose a product camera cap", () => {
+		const defaults = defaultFramingParameters();
+		const parameters = FramingParameters.make({
+			...defaults,
+			groups: [
+				{
+					...defaults.groups[2]!,
+					pattern: { count: 37, kind: "ring", ringOffsetDegrees: 0 }
+				}
+			]
+		});
+		expect(
+			generateFramingCandidates({ ...selection, editorView: undefined }, parameters)
+		).toHaveLength(37);
+	});
+
+	it("rejects invalid primitive counts and non-finite geometry at the boundary", () => {
+		const defaults = defaultFramingParameters();
+		const decode = Schema.decodeUnknownEffect(FramingParameters);
+		const invalidCount = Effect.runSyncExit(
+			decode({
+				...defaults,
+				groups: [
+					{
+						...defaults.groups[0],
+						pattern: { count: 0, kind: "arc", spreadDegrees: 0, yawOffsetDegrees: 0 }
+					}
+				]
+			})
+		);
+		const invalidDistance = Effect.runSyncExit(
+			decode({
+				...defaults,
+				groups: [{ ...defaults.groups[0], distanceScale: Number.POSITIVE_INFINITY }]
+			})
+		);
+		expect(Exit.isFailure(invalidCount)).toBe(true);
+		expect(Exit.isFailure(invalidDistance)).toBe(true);
+	});
+
+	it("applies partial overrides to only one candidate", () => {
+		const candidates = generateFramingCandidates({ ...selection, editorView: undefined });
+		const target = candidates[2]!;
+		const overridden = applyCandidateOverrides(target, {
+			distanceScale: 2.2,
+			fieldOfViewDegrees: 80,
+			yawOffsetDegrees: 12
+		});
+		expect(overridden.id).toBe(target.id);
+		expect(overridden.approvedPose).not.toEqual(target.approvedPose);
+		expect(overridden.approvedPose.fieldOfViewDegrees).toBe(80);
+		expect(overridden.recipe).toMatchObject({
+			candidateOverrides: {
+				distanceScale: 2.2,
+				fieldOfViewDegrees: 80,
+				yawOffsetDegrees: 12
+			},
+			version: 2
+		});
+		expect(candidates[3]).toEqual(
+			generateFramingCandidates({ ...selection, editorView: undefined })[3]
+		);
 	});
 
 	it("persists preset lineage and an explicit manual adjustment", () => {

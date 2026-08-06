@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
+import {
+	defaultFramingParameters,
+	generateFramingCandidates,
+	ReviewAuthoringSession,
+	ReviewAuthoringSessionId,
+	ReviewSetId,
+	ReviewSubjectActorPath,
+	ReviewViewId
+} from "@ue-shed/cameras";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type {
@@ -122,6 +131,106 @@ function renderRoute(client: MapReviewClientShape) {
 }
 
 describe("MapReviewRoute", () => {
+	it("debounces framing edits into one durable regeneration patch", async () => {
+		const parameters = defaultFramingParameters();
+		const selection = {
+			actorPath:
+				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+			bounds: {
+				center: { x: 0, y: 0, z: 250 },
+				extent: { x: 600, y: 450, z: 250 },
+				rotation: { pitch: 0, roll: 0, yaw: 15 }
+			},
+			displayName: "Review Subject",
+			mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+		};
+		const candidates = generateFramingCandidates(selection);
+		const durable = ReviewAuthoringSession.make({
+			candidateOverrides: [],
+			candidates,
+			contract: {
+				name: "ue-shed-review-authoring-session",
+				version: { major: 1, minor: 0 }
+			},
+			createdAt: "2026-08-06T00:00:00.000Z",
+			diagnostics: [],
+			discardedCandidateIds: [],
+			framingParameters: parameters,
+			id: ReviewAuthoringSessionId.make("framing-session"),
+			lifecycle: "active",
+			realizations: [],
+			reviewSet: {
+				id: ReviewSetId.make("fixture-review-set"),
+				mapPath: selection.mapPath,
+				path: "C:/Fixture/.ue-shed/review/sets/fixture.json"
+			},
+			selectedCandidateId: candidates[0]?.id,
+			subject: {
+				actorPath: ReviewSubjectActorPath.make(selection.actorPath),
+				bounds: selection.bounds,
+				displayName: selection.displayName,
+				mapPath: selection.mapPath
+			},
+			updatedAt: "2026-08-06T00:00:00.000Z",
+			viewId: ReviewViewId.make("structure-context")
+		});
+		const ready: MapReviewAuthoringResult = {
+			candidates: candidates.map((candidate) => ({
+				diagnostics: candidate.diagnostics,
+				displayName: candidate.displayName,
+				id: candidate.id,
+				pose: candidate.approvedPose,
+				preset: candidate.recipe.preset,
+				preview: { status: "pending" }
+			})),
+			selection: {
+				actorPath: selection.actorPath,
+				displayName: selection.displayName,
+				mapPath: selection.mapPath
+			},
+			session: durable,
+			sessionId: durable.id,
+			status: "ready",
+			viewId: durable.viewId
+		};
+		const patches: Array<Parameters<MapReviewClientShape["authoringPatch"]>[0]> = [];
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			authoringResume: () => Effect.succeed(ready),
+			authoringPatch: (intent) =>
+				Effect.sync(() => {
+					patches.push(intent);
+					return ready;
+				}),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(empty),
+			previewAuthoringCandidate: () =>
+				Effect.succeed({
+					error: { message: "No preview", recovery: "Continue" },
+					status: "failed"
+				}),
+			previewCandidate: () => Effect.die("not used")
+		};
+		renderRoute(client);
+		await screen.findByText("Review Subject");
+		await userEvent.setup().click(screen.getByText("FRAMING"));
+		const count = screen.getByRole("spinbutton", {
+			name: "Context three-quarter exact camera count"
+		});
+		fireEvent.input(count, { target: { value: "2" } });
+		fireEvent.input(
+			screen.getByRole("spinbutton", {
+				name: "Context three-quarter exact camera count"
+			}),
+			{ target: { value: "3" } }
+		);
+		await waitFor(() => expect(patches).toHaveLength(1), { timeout: 1_500 });
+		expect(patches[0]?.patch.framingParameters?.groups[0]?.pattern.count).toBe(3);
+	});
+
 	it("offers first-run authoring when a configured project has no Review Set", async () => {
 		const client: MapReviewClientShape = {
 			...offlineScout,

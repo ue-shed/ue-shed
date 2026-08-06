@@ -1254,16 +1254,22 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				return mapReviewAuthoringFailure({ message: "No review project is configured." });
 			}
 			const projectRoot = reviewProject.projectRoot;
-			return yield* authoringSessions
-				.patch({
+			return yield* Effect.gen(function* () {
+				if (
+					intent.patch.framingParameters !== undefined ||
+					intent.patch.candidateOverrides !== undefined
+				) {
+					yield* invalidateProvisionedCameras();
+				}
+				return yield* authoringSessions.patch({
 					patch: intent.patch,
 					projectRoot,
 					sessionId: intent.sessionId
-				})
-				.pipe(
-					Effect.map(authoringResult),
-					Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause)))
-				);
+				});
+			}).pipe(
+				Effect.map(authoringResult),
+				Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause)))
+			);
 		});
 
 		const discardAuthoring = Effect.fn("Workbench.WorkbenchMapReview.discardAuthoring")(
@@ -1389,7 +1395,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								)
 				});
 
-				if (playActive) {
+				if (playActive && session.candidates.length <= 32) {
 					const bindings = yield* liveEnsureGate.withPermits(1)(
 						Effect.gen(function* () {
 							const cached = yield* Ref.get(provisionedCameraBindings);

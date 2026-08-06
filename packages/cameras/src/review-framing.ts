@@ -3,12 +3,16 @@ import {
 	nextReviewViewRevision,
 	FramingCandidate,
 	FramingCandidateId,
+	FramingGroup,
+	FramingGroupId,
+	FramingParameters,
 	ReviewSet,
 	ReviewView,
 	initialReviewViewRevision,
 	reviewViewActorSubject,
 	type FramingDiagnostic,
-	type FramingPreset,
+	type FramingCandidateOverrides,
+	type FramingParameters as FramingParametersDocument,
 	type ActorTransformSnapshot,
 	type NumberedReviewViewRevision,
 	type ReviewViewDefinition,
@@ -181,59 +185,81 @@ export interface ReviewSelection {
 	readonly mapPath: string;
 }
 
-interface PresetDefinition {
-	readonly displayName: string;
-	readonly distanceScale: number;
-	readonly elevation: number;
-	readonly preset: Exclude<FramingPreset, "editor_view">;
+export const contextThreeQuarterGroupId = FramingGroupId.make("context_three_quarter");
+export const facadeFrontGroupId = FramingGroupId.make("facade_front");
+export const cardinalOrbitGroupId = FramingGroupId.make("cardinal_orbit");
+
+export interface ArcFramingPresetOptions {
+	readonly count?: number;
+	readonly distanceScale?: number;
+	readonly elevation?: number;
+	readonly enabled?: boolean;
+	readonly spreadDegrees?: number;
 	readonly yawOffsetDegrees?: number;
-	readonly worldYawDegrees?: number;
 }
 
-const presetDefinitions: readonly PresetDefinition[] = [
-	{
+export function contextThreeQuarterGroup(options: ArcFramingPresetOptions = {}): FramingGroup {
+	return FramingGroup.make({
 		displayName: "Context three-quarter",
-		distanceScale: 1.8,
-		elevation: 0.5,
-		preset: "context_three_quarter",
-		yawOffsetDegrees: 42
-	},
-	{
+		distanceScale: options.distanceScale ?? 1.8,
+		elevation: options.elevation ?? 0.5,
+		enabled: options.enabled ?? true,
+		id: contextThreeQuarterGroupId,
+		pattern: {
+			count: options.count ?? 1,
+			kind: "arc",
+			spreadDegrees: options.spreadDegrees ?? 0,
+			yawOffsetDegrees: options.yawOffsetDegrees ?? 42
+		}
+	});
+}
+
+export function facadeFrontGroup(options: ArcFramingPresetOptions = {}): FramingGroup {
+	return FramingGroup.make({
 		displayName: "Facade front",
-		distanceScale: 1.25,
-		elevation: 0.08,
-		preset: "facade_front",
-		yawOffsetDegrees: 0
-	},
-	{
-		displayName: "Cardinal north",
-		distanceScale: 1.45,
-		elevation: 0.18,
-		preset: "cardinal_north",
-		worldYawDegrees: 90
-	},
-	{
-		displayName: "Cardinal east",
-		distanceScale: 1.45,
-		elevation: 0.18,
-		preset: "cardinal_east",
-		worldYawDegrees: 0
-	},
-	{
-		displayName: "Cardinal south",
-		distanceScale: 1.45,
-		elevation: 0.18,
-		preset: "cardinal_south",
-		worldYawDegrees: -90
-	},
-	{
-		displayName: "Cardinal west",
-		distanceScale: 1.45,
-		elevation: 0.18,
-		preset: "cardinal_west",
-		worldYawDegrees: 180
-	}
-];
+		distanceScale: options.distanceScale ?? 1.25,
+		elevation: options.elevation ?? 0.08,
+		enabled: options.enabled ?? true,
+		id: facadeFrontGroupId,
+		pattern: {
+			count: options.count ?? 1,
+			kind: "arc",
+			spreadDegrees: options.spreadDegrees ?? 0,
+			yawOffsetDegrees: options.yawOffsetDegrees ?? 0
+		}
+	});
+}
+
+export function cardinalOrbitGroup(
+	options: {
+		readonly count?: number;
+		readonly distanceScale?: number;
+		readonly elevation?: number;
+		readonly enabled?: boolean;
+		readonly ringOffsetDegrees?: number;
+	} = {}
+): FramingGroup {
+	return FramingGroup.make({
+		displayName: "Cardinal orbit",
+		distanceScale: options.distanceScale ?? 1.45,
+		elevation: options.elevation ?? 0.18,
+		enabled: options.enabled ?? true,
+		id: cardinalOrbitGroupId,
+		pattern: {
+			count: options.count ?? 4,
+			kind: "ring",
+			ringOffsetDegrees: options.ringOffsetDegrees ?? 90
+		}
+	});
+}
+
+export function defaultFramingParameters(): FramingParametersDocument {
+	return FramingParameters.make({
+		fieldOfViewDegrees: defaultFieldOfViewDegrees,
+		groups: [contextThreeQuarterGroup(), facadeFrontGroup(), cardinalOrbitGroup()],
+		margin: defaultMargin
+	});
+}
 
 function finiteBounds(bounds: SubjectBounds): boolean {
 	return (
@@ -274,28 +300,62 @@ function fitDistance(bounds: SubjectBounds, fieldOfViewDegrees: number, margin: 
 	return radius / Math.sin((fieldOfViewDegrees * radians) / 2) / usableFrame;
 }
 
-function candidateFromPreset(
-	selection: ReviewSelection,
-	definition: PresetDefinition
-): typeof FramingCandidate.Type {
+function groupYaw(args: {
+	readonly group: FramingGroup;
+	readonly index: number;
+	readonly subjectYaw: number;
+}): number {
+	const { pattern } = args.group;
+	if (pattern.kind === "ring") {
+		return pattern.ringOffsetDegrees - ((args.index - 1) * 360) / pattern.count;
+	}
+	if (pattern.count === 1) return args.subjectYaw + pattern.yawOffsetDegrees;
+	return (
+		args.subjectYaw +
+		pattern.yawOffsetDegrees -
+		pattern.spreadDegrees / 2 +
+		((args.index - 1) * pattern.spreadDegrees) / (pattern.count - 1)
+	);
+}
+
+export function generateFramingCandidateId(args: {
+	readonly groupId: FramingGroupId;
+	readonly index: number;
+}): typeof FramingCandidateId.Type {
+	return FramingCandidateId.make(`preset/${args.groupId}/${args.index}`);
+}
+
+function candidateFromGroup(args: {
+	readonly group: FramingGroup;
+	readonly index: number;
+	readonly overrides?: FramingCandidateOverrides | undefined;
+	readonly parameters: FramingParametersDocument;
+	readonly selection: ReviewSelection;
+}): typeof FramingCandidate.Type {
+	const fieldOfViewDegrees =
+		args.overrides?.fieldOfViewDegrees ?? args.parameters.fieldOfViewDegrees;
+	const margin = args.overrides?.margin ?? args.parameters.margin;
+	const distanceScale = args.overrides?.distanceScale ?? args.group.distanceScale;
+	const elevation = args.overrides?.elevation ?? args.group.elevation;
 	const yaw =
-		definition.worldYawDegrees ??
-		selection.bounds.rotation.yaw + (definition.yawOffsetDegrees ?? 0);
-	const distance =
-		fitDistance(selection.bounds, defaultFieldOfViewDegrees, defaultMargin) *
-		definition.distanceScale;
+		groupYaw({
+			group: args.group,
+			index: args.index,
+			subjectYaw: args.selection.bounds.rotation.yaw
+		}) + (args.overrides?.yawOffsetDegrees ?? 0);
+	const distance = fitDistance(args.selection.bounds, fieldOfViewDegrees, margin) * distanceScale;
 	const location = {
-		x: selection.bounds.center.x + Math.cos(yaw * radians) * distance,
-		y: selection.bounds.center.y + Math.sin(yaw * radians) * distance,
-		z: selection.bounds.center.z + selection.bounds.extent.z * definition.elevation
+		x: args.selection.bounds.center.x + Math.cos(yaw * radians) * distance,
+		y: args.selection.bounds.center.y + Math.sin(yaw * radians) * distance,
+		z: args.selection.bounds.center.z + args.selection.bounds.extent.z * elevation
 	};
 	return FramingCandidate.make({
 		approvedPose: ApprovedPose.make({
 			aspectRatio: "16:9",
-			fieldOfViewDegrees: defaultFieldOfViewDegrees,
+			fieldOfViewDegrees,
 			location,
 			projection: "perspective",
-			rotation: aimAt({ location, target: selection.bounds.center })
+			rotation: aimAt({ location, target: args.selection.bounds.center })
 		}),
 		diagnostics: [
 			{
@@ -304,24 +364,41 @@ function candidateFromPreset(
 				severity: "info"
 			}
 		],
-		displayName: definition.displayName,
-		id: FramingCandidateId.make(definition.preset),
+		displayName:
+			args.group.pattern.count === 1
+				? args.group.displayName
+				: `${args.group.displayName} ${args.index}`,
+		id: generateFramingCandidateId({ groupId: args.group.id, index: args.index }),
 		recipe: {
+			...(args.overrides === undefined ? {} : { candidateOverrides: args.overrides }),
+			groupId: args.group.id,
+			groupIndex: args.index,
 			kind: "preset",
-			margin: defaultMargin,
-			preset: definition.preset,
-			subjectBounds: selection.bounds,
-			version: 1
+			margin,
+			parameters: args.parameters,
+			preset: args.group.id,
+			subjectBounds: args.selection.bounds,
+			version: 2
 		}
 	});
 }
 
 export function generateFramingCandidates(
-	selection: ReviewSelection
+	selection: ReviewSelection,
+	parameters: FramingParametersDocument = defaultFramingParameters()
 ): readonly (typeof FramingCandidate.Type)[] {
 	if (!finiteBounds(selection.bounds)) return [];
-	const generated = presetDefinitions.map((definition) =>
-		candidateFromPreset(selection, definition)
+	const generated = parameters.groups.flatMap((group) =>
+		group.enabled
+			? Array.from({ length: group.pattern.count }, (_, offset) =>
+					candidateFromGroup({
+						group,
+						index: offset + 1,
+						parameters,
+						selection
+					})
+				)
+			: []
 	);
 	if (!selection.editorView) return generated;
 	return [
@@ -346,6 +423,33 @@ export function generateFramingCandidates(
 			}
 		})
 	];
+}
+
+export function applyCandidateOverrides(
+	candidate: typeof FramingCandidate.Type,
+	overrides: FramingCandidateOverrides
+): typeof FramingCandidate.Type {
+	const recipe = candidate.recipe;
+	if (recipe.version !== 2 || !("groupId" in recipe)) return candidate;
+	const group = recipe.parameters.groups.find((item) => item.id === recipe.groupId);
+	if (group === undefined) return candidate;
+	const generated = candidateFromGroup({
+		group,
+		index: recipe.groupIndex,
+		overrides,
+		parameters: recipe.parameters,
+		selection: {
+			actorPath: "",
+			bounds: recipe.subjectBounds,
+			displayName: candidate.displayName,
+			mapPath: ""
+		}
+	});
+	return FramingCandidate.make({
+		...candidate,
+		approvedPose: generated.approvedPose,
+		recipe: generated.recipe
+	});
 }
 
 function maximumDelta(left: SubjectBounds, right: SubjectBounds): number {

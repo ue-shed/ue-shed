@@ -26,10 +26,13 @@ caps individual payloads, and retains at most one frame per camera. Scheduling a
 remain on the control plane. Durable review captures do not use this live buffer: the editor stages a
 bounded one-shot PNG, then the host validates, hashes, and promotes it into an immutable local run.
 
-Spatial authoring adds typed selection inspection, normalized subject bounds, deterministic Context,
-Facade, Cardinal, and editor-view candidate generation, transient candidate previews, bounds-drift
-diagnostics, and explicit approval with manual-adjustment provenance. The pure generation and
-approval APIs remain usable from the CLI without Workbench.
+Spatial authoring adds typed selection inspection, normalized subject bounds, modular arc/ring rig
+generation, Context/Facade/Cardinal convenience presets, partial per-candidate overrides, transient
+candidate previews, bounds-drift diagnostics, and explicit approval with recipe provenance. Counts
+are positive integers without a Workbench-owned product cap: the pure generator returns the exact
+requested set and never silently truncates it. Recipe v2 stores the parameters and group+index
+anchor used for a kept View; existing recipe v1 documents remain readable. The generation,
+session-tuning, and approval APIs remain usable from the CLI without Workbench.
 
 The durable loop supports approved perspective poses, actor-path subjects, Pure PNG captures, honest
 per-view failures, and atomic run publication. Review Sets normally live in

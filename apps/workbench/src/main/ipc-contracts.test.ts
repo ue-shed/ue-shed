@@ -197,9 +197,34 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:authoring-patch": [
 		{
 			patch: {
+				candidateOverrides: [
+					{
+						candidateId: "preset/context/1",
+						overrides: { elevation: 0.4 }
+					}
+				],
 				discardedCandidateIds: [],
+				framingParameters: {
+					fieldOfViewDegrees: 60,
+					groups: [
+						{
+							displayName: "Context",
+							distanceScale: 1.8,
+							elevation: 0.5,
+							enabled: true,
+							id: "context",
+							pattern: {
+								count: 3,
+								kind: "arc",
+								spreadDegrees: 45,
+								yawOffsetDegrees: 30
+							}
+						}
+					],
+					margin: 0.12
+				},
 				manualReason: "",
-				selectedCandidateId: "candidate-1"
+				selectedCandidateId: "preset/context/1"
 			},
 			sessionId: "session-1"
 		}

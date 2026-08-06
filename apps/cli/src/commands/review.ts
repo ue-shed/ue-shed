@@ -81,8 +81,15 @@ const reviewViewPutCommand = Command.make(
 
 const reviewFramingCandidatesCommand = Command.make(
 	"candidates",
-	{ endpoint: Argument.string("endpoint") },
-	({ endpoint }) => runReviewFraming({ _tag: "ReviewFramingCandidates", endpoint })
+	{ endpoint: Argument.string("endpoint"), parametersPath: optionalFlag("parameters") },
+	({ endpoint, parametersPath }) => {
+		const parameters = optionalValue(parametersPath);
+		return runReviewFraming({
+			_tag: "ReviewFramingCandidates",
+			endpoint,
+			...(parameters === undefined ? {} : { parametersPath: parameters })
+		});
+	}
 ).pipe(Command.withDescription("List live framing candidates."));
 
 const reviewFramingApproveCommand = Command.make(
@@ -91,16 +98,20 @@ const reviewFramingApproveCommand = Command.make(
 		reviewSetPath: Argument.string("review-set"),
 		endpoint: Argument.string("endpoint"),
 		viewId: Argument.string("view-id"),
-		candidateId: Argument.string("candidate-id")
+		candidateId: Argument.string("candidate-id"),
+		parametersPath: optionalFlag("parameters")
 	},
-	({ reviewSetPath, endpoint, viewId, candidateId }) =>
-		runReviewFraming({
+	({ reviewSetPath, endpoint, viewId, candidateId, parametersPath }) => {
+		const parameters = optionalValue(parametersPath);
+		return runReviewFraming({
 			_tag: "ReviewFramingApprove",
 			candidateId,
 			endpoint,
+			...(parameters === undefined ? {} : { parametersPath: parameters }),
 			reviewSetPath,
 			viewId
-		})
+		});
+	}
 ).pipe(Command.withDescription("Approve a live framing candidate."));
 
 const reviewAuthoringBootstrapCommand = Command.make(
@@ -127,6 +138,22 @@ const reviewAuthoringStartCommand = Command.make(
 			viewId
 		})
 ).pipe(Command.withDescription("Start Review authoring for one View."));
+
+const reviewAuthoringTuneCommand = Command.make(
+	"tune",
+	{
+		projectRoot: Argument.string("project-root"),
+		sessionId: Argument.string("session-id"),
+		patchPath: Argument.string("patch-json")
+	},
+	({ projectRoot, sessionId, patchPath }) =>
+		runReviewAuthoring({
+			_tag: "ReviewAuthoringTune",
+			patchPath,
+			projectRoot,
+			sessionId
+		})
+).pipe(Command.withDescription("Regenerate a session from framing parameters and overrides."));
 
 function makeReviewAuthoringLocalCommand(action: "show" | "discard") {
 	return Command.make(
@@ -231,6 +258,7 @@ export const reviewCommand = Command.make("review").pipe(
 			Command.withSubcommands([
 				reviewAuthoringStartCommand,
 				reviewAuthoringBootstrapCommand,
+				reviewAuthoringTuneCommand,
 				...(["show", "discard"] as const).map(makeReviewAuthoringLocalCommand),
 				...(["resume", "reframe", "approve"] as const).map(makeReviewAuthoringLiveCommand)
 			])

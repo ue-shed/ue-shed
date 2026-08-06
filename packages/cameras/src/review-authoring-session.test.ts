@@ -10,12 +10,17 @@ import {
 	reviewAuthoringSessionPath,
 	type ReviewAuthoringSessionsShape
 } from "./review-authoring-session.js";
-import { generateFramingCandidates } from "./review-framing.js";
+import {
+	defaultFramingParameters,
+	generateFramingCandidateId,
+	generateFramingCandidates
+} from "./review-framing.js";
 import { makeReviewRepositoryTestLayer } from "./review-repository.js";
 import {
 	decodeReviewSet,
 	ReviewSetId,
 	ReviewViewId,
+	FramingParameters,
 	type ReviewSet,
 	type ReviewSelectionResponse
 } from "./review-schema.js";
@@ -284,6 +289,126 @@ describe("ReviewAuthoringSessions", () => {
 			"utf8"
 		);
 		expect(afterApproval).not.toContain("pendingReviewSet");
+	});
+
+	it("regenerates tuned rigs, re-anchors overrides, and drops unmappable entries", async () => {
+		const projectRoot = await makeProjectRoot();
+		let savedReviewSet: ReviewSet | undefined;
+		const layer = sessionLayer({
+			inspectSubject: () => selection,
+			onSave: (next) => {
+				savedReviewSet = next;
+			}
+		});
+		const defaults = defaultFramingParameters();
+		const context = defaults.groups[0]!;
+		const parameters = FramingParameters.make({
+			...defaults,
+			groups: [
+				{
+					...context,
+					pattern: {
+						count: 3,
+						kind: "arc",
+						spreadDegrees: 60,
+						yawOffsetDegrees: 42
+					}
+				}
+			]
+		});
+		const created = await withSessions(layer, (sessions) =>
+			sessions.create({
+				candidates: generateFramingCandidates(selection),
+				projectRoot,
+				reviewSetPath,
+				selection,
+				sessionId: "tuned-session",
+				viewId: "structure-context"
+			})
+		);
+		const secondId = generateFramingCandidateId({ groupId: context.id, index: 2 });
+		const tuned = await withSessions(layer, (sessions) =>
+			sessions.patch({
+				patch: {
+					candidateOverrides: [
+						{
+							candidateId: secondId,
+							overrides: { elevation: 0.9, yawOffsetDegrees: 7 }
+						}
+					],
+					discardedCandidateIds: [],
+					framingParameters: parameters,
+					manualReason: "",
+					selectedCandidateId: secondId
+				},
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(tuned.candidates).toHaveLength(4);
+		expect(tuned.selectedCandidateId).toBe(secondId);
+		expect(tuned.candidates[1]?.recipe).toMatchObject({
+			candidateOverrides: { elevation: 0.9, yawOffsetDegrees: 7 },
+			groupIndex: 2,
+			version: 2
+		});
+
+		const shrunk = await withSessions(layer, (sessions) =>
+			sessions.patch({
+				patch: {
+					candidateOverrides: tuned.candidateOverrides,
+					discardedCandidateIds: [],
+					framingParameters: FramingParameters.make({
+						...parameters,
+						groups: [
+							{
+								...context,
+								pattern: {
+									count: 1,
+									kind: "arc",
+									spreadDegrees: 0,
+									yawOffsetDegrees: 42
+								}
+							}
+						]
+					}),
+					manualReason: "",
+					selectedCandidateId: secondId
+				},
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(shrunk.candidateOverrides).toEqual([]);
+		expect(shrunk.selectedCandidateId).toBeUndefined();
+		expect(shrunk.candidates).toHaveLength(2);
+
+		const reexpanded = await withSessions(layer, (sessions) =>
+			sessions.patch({
+				patch: {
+					candidateOverrides: [{ candidateId: secondId, overrides: { elevation: 0.9 } }],
+					discardedCandidateIds: [],
+					framingParameters: parameters,
+					manualReason: "",
+					selectedCandidateId: secondId
+				},
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(reexpanded.candidateOverrides).toHaveLength(1);
+		await withSessions(layer, (sessions) =>
+			sessions.approve({
+				endpoint: "http://127.0.0.1:30001",
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(savedReviewSet?.views[0]?.framingRecipe).toMatchObject({
+			candidateOverrides: { elevation: 0.9 },
+			groupIndex: 2,
+			version: 2
+		});
 	});
 
 	it("returns a typed corrupt recovery and ignores a malformed document when listing", async () => {

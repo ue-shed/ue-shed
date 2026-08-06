@@ -22,6 +22,7 @@ import {
 	ReviewRepositoryLive,
 	saveReviewSet
 } from "./review-repository.js";
+import { applyCandidateOverrides, generateFramingCandidates } from "./review-framing.js";
 import {
 	CaptureProfileId,
 	CaptureInvocation,
@@ -158,6 +159,54 @@ describe("Map Review contracts", () => {
 		await expect(
 			Effect.runPromise(loadReviewSet(path).pipe(Effect.provide(ReviewRepositoryLive)))
 		).resolves.toEqual(reviewSet);
+	});
+
+	it("round-trips a tuned recipe while keeping its approved pose authoritative", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-review-set-tuned-"));
+		temporaryDirectories.push(root);
+		const path = join(root, "sets", "tuned.json");
+		const base = fixtureReviewSet();
+		const selection = {
+			actorPath:
+				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+			bounds: {
+				center: { x: 0, y: 0, z: 250 },
+				extent: { x: 600, y: 450, z: 250 },
+				rotation: { pitch: 0, roll: 0, yaw: 15 }
+			},
+			displayName: "Review Subject",
+			mapPath: base.project.mapPath
+		};
+		const generated = generateFramingCandidates(selection)[0];
+		if (generated === undefined) throw new Error("Expected the default framing rig");
+		const tuned = applyCandidateOverrides(generated, {
+			elevation: 0.8,
+			yawOffsetDegrees: 9
+		});
+		const view = base.views[0]!;
+		const reviewSet = decodeReviewSet({
+			...base,
+			views: [
+				{
+					...view,
+					framingRecipe: tuned.recipe,
+					viewpoint: { approvedPose: tuned.approvedPose, kind: "world_fixed" }
+				}
+			]
+		});
+		await Effect.runPromise(
+			saveReviewSet({ path, reviewSet }).pipe(Effect.provide(ReviewRepositoryLive))
+		);
+		const loaded = await Effect.runPromise(
+			loadReviewSet(path).pipe(Effect.provide(ReviewRepositoryLive))
+		);
+		const loadedView = loaded.views[0];
+		if (loadedView === undefined) throw new Error("Expected the persisted tuned View");
+		expect(loadedView.framingRecipe).toMatchObject({
+			candidateOverrides: { elevation: 0.8, yawOffsetDegrees: 9 },
+			version: 2
+		});
+		expect(reviewViewApprovedPose(loadedView)).toEqual(tuned.approvedPose);
 	});
 
 	it("migrates legacy Review Sets and preserves explicit unversioned result provenance", () => {

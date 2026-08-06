@@ -46,8 +46,18 @@ export type ProvisionedCameraId = Schema.Schema.Type<typeof ProvisionedCameraId>
 export const CaptureRunId = SafeIdentifier.pipe(Schema.brand("CaptureRunId"));
 export type CaptureRunId = Schema.Schema.Type<typeof CaptureRunId>;
 
-export const FramingCandidateId = SafeIdentifier.pipe(Schema.brand("FramingCandidateId"));
+const FramingCandidateIdentifier = NonEmptyString.check(
+	Schema.isMaxLength(384),
+	Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/)
+);
+
+export const FramingCandidateId = FramingCandidateIdentifier.pipe(
+	Schema.brand("FramingCandidateId")
+);
 export type FramingCandidateId = Schema.Schema.Type<typeof FramingCandidateId>;
+
+export const FramingGroupId = SafeIdentifier.pipe(Schema.brand("FramingGroupId"));
+export type FramingGroupId = Schema.Schema.Type<typeof FramingGroupId>;
 
 export const ReviewAuthoringSessionId = SafeIdentifier.pipe(
 	Schema.brand("ReviewAuthoringSessionId")
@@ -179,13 +189,63 @@ export const FramingPreset = Schema.Literals([
 ]);
 export type FramingPreset = Schema.Schema.Type<typeof FramingPreset>;
 
+export const ArcFramingPattern = Schema.Struct({
+	count: PositiveInteger,
+	kind: Schema.Literal("arc"),
+	spreadDegrees: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+	yawOffsetDegrees: Schema.Finite
+});
+export type ArcFramingPattern = Schema.Schema.Type<typeof ArcFramingPattern>;
+
+export const RingFramingPattern = Schema.Struct({
+	count: PositiveInteger,
+	kind: Schema.Literal("ring"),
+	ringOffsetDegrees: Schema.Finite
+});
+export type RingFramingPattern = Schema.Schema.Type<typeof RingFramingPattern>;
+
+export const FramingPattern = Schema.Union([ArcFramingPattern, RingFramingPattern]);
+export type FramingPattern = Schema.Schema.Type<typeof FramingPattern>;
+
+export const FramingGroup = Schema.Struct({
+	displayName: NonEmptyString,
+	distanceScale: Schema.Finite.check(Schema.isGreaterThan(0)),
+	elevation: Schema.Finite,
+	enabled: Schema.Boolean,
+	id: FramingGroupId,
+	pattern: FramingPattern
+});
+export type FramingGroup = Schema.Schema.Type<typeof FramingGroup>;
+
+export const FramingParameters = Schema.Struct({
+	fieldOfViewDegrees: ApprovedPose.fields.fieldOfViewDegrees,
+	groups: Schema.Array(FramingGroup),
+	margin: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 0.45 }))
+});
+export type FramingParameters = Schema.Schema.Type<typeof FramingParameters>;
+
+export const FramingCandidateOverrides = Schema.Struct({
+	distanceScale: Schema.optional(Schema.Finite.check(Schema.isGreaterThan(0))),
+	elevation: Schema.optional(Schema.Finite),
+	fieldOfViewDegrees: Schema.optional(ApprovedPose.fields.fieldOfViewDegrees),
+	margin: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 0.45 }))),
+	yawOffsetDegrees: Schema.optional(Schema.Finite)
+});
+export type FramingCandidateOverrides = Schema.Schema.Type<typeof FramingCandidateOverrides>;
+
+export const FramingCandidateOverride = Schema.Struct({
+	candidateId: FramingCandidateId,
+	overrides: FramingCandidateOverrides
+});
+export type FramingCandidateOverride = Schema.Schema.Type<typeof FramingCandidateOverride>;
+
 const ManualFramingRecipe = Schema.Struct({
 	kind: Schema.Literal("manual"),
 	note: Schema.optional(NonEmptyString),
 	version: Schema.Literal(1)
 });
 
-const PresetFramingRecipe = Schema.Struct({
+export const PresetFramingRecipeV1 = Schema.Struct({
 	kind: Schema.Literal("preset"),
 	margin: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 0.45 })),
 	manualAdjustment: Schema.optional(Schema.Struct({ reason: NonEmptyString })),
@@ -193,6 +253,22 @@ const PresetFramingRecipe = Schema.Struct({
 	subjectBounds: SubjectBounds,
 	version: Schema.Literal(1)
 });
+
+export const PresetFramingRecipeV2 = Schema.Struct({
+	candidateOverrides: Schema.optional(FramingCandidateOverrides),
+	groupId: FramingGroupId,
+	groupIndex: PositiveInteger,
+	kind: Schema.Literal("preset"),
+	margin: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 0.45 })),
+	manualAdjustment: Schema.optional(Schema.Struct({ reason: NonEmptyString })),
+	parameters: FramingParameters,
+	preset: FramingGroupId,
+	subjectBounds: SubjectBounds,
+	version: Schema.Literal(2)
+});
+
+export const PresetFramingRecipe = Schema.Union([PresetFramingRecipeV1, PresetFramingRecipeV2]);
+export type PresetFramingRecipe = Schema.Schema.Type<typeof PresetFramingRecipe>;
 
 export const FramingRecipe = Schema.Union([ManualFramingRecipe, PresetFramingRecipe]);
 export type FramingRecipe = Schema.Schema.Type<typeof FramingRecipe>;
@@ -1311,6 +1387,7 @@ export type ReviewCandidateRealization = Schema.Schema.Type<typeof ReviewCandida
 
 export const ReviewAuthoringSession = Schema.Struct({
 	candidates: Schema.Array(FramingCandidate).check(Schema.isMinLength(1)),
+	candidateOverrides: Schema.optional(Schema.Array(FramingCandidateOverride)),
 	pendingReviewSet: Schema.optional(ReviewSet),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-authoring-session"),
@@ -1320,6 +1397,7 @@ export const ReviewAuthoringSession = Schema.Struct({
 	diagnostics: Schema.Array(FramingDiagnostic),
 	discardedCandidateIds: Schema.Array(FramingCandidateId),
 	draftPose: Schema.optional(ApprovedPose),
+	framingParameters: Schema.optional(FramingParameters),
 	id: ReviewAuthoringSessionId,
 	lifecycle: Schema.Literals(["active", "stale", "approved", "discarded"]),
 	manualReason: Schema.optional(Schema.String),
@@ -1342,8 +1420,10 @@ export const ReviewAuthoringSession = Schema.Struct({
 export type ReviewAuthoringSession = Schema.Schema.Type<typeof ReviewAuthoringSession>;
 
 export const ReviewAuthoringSessionPatch = Schema.Struct({
+	candidateOverrides: Schema.optional(Schema.Array(FramingCandidateOverride)),
 	discardedCandidateIds: Schema.Array(FramingCandidateId),
 	draftPose: Schema.optional(ApprovedPose),
+	framingParameters: Schema.optional(FramingParameters),
 	manualReason: Schema.String,
 	selectedCandidateId: Schema.optional(FramingCandidateId)
 });

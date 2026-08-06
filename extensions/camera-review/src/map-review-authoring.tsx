@@ -1,4 +1,9 @@
 import * as stylex from "@stylexjs/stylex";
+import {
+	defaultFramingParameters,
+	type FramingCandidateOverride,
+	type FramingParameters
+} from "@ue-shed/cameras";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { Cause, Effect, Stream } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
@@ -11,6 +16,7 @@ import type {
 	MapReviewPose
 } from "./map-review-client.js";
 import type { ObservedActor } from "@ue-shed/observatory";
+import { FramingSettings } from "./framing-settings.js";
 
 type AuthoringState =
 	| { readonly status: "idle" }
@@ -161,6 +167,7 @@ export function MapReviewAuthoring(props: {
 	const approveAction = createEffectAction();
 	const resumeAction = createEffectAction();
 	const patchAction = createEffectAction();
+	const framingPatchAction = createEffectAction();
 	const [state, setState] = createSignal<AuthoringState>({ status: "idle" });
 	const [selectedId, setSelectedId] = createSignal<CandidateId>();
 	const [discarded, setDiscarded] = createSignal<ReadonlySet<CandidateId>>(
@@ -169,6 +176,12 @@ export function MapReviewAuthoring(props: {
 	const [draftPose, setDraftPose] = createSignal<MapReviewPose>();
 	const [manualReason, setManualReason] = createSignal("");
 	const [liveFps, setLiveFps] = createSignal(5);
+	const [framingParameters, setFramingParameters] = createSignal<FramingParameters>(
+		defaultFramingParameters()
+	);
+	const [candidateOverrides, setCandidateOverrides] = createSignal<
+		readonly FramingCandidateOverride[]
+	>([]);
 	const [liveBindings, setLiveBindings] = createSignal<ReadonlyMap<string, number>>(new Map());
 	const session = createMemo(() => {
 		const current = state();
@@ -194,6 +207,8 @@ export function MapReviewAuthoring(props: {
 	});
 	const activate = (result: ReadyAuthoring) => {
 		const durable = result.session;
+		setFramingParameters(durable?.framingParameters ?? defaultFramingParameters());
+		setCandidateOverrides(durable?.candidateOverrides ?? []);
 		setDiscarded(new Set(durable?.discardedCandidateIds ?? []));
 		setSelectedId(durable?.selectedCandidateId ?? result.candidates[0]?.id);
 		setDraftPose(durable?.draftPose ?? structuredClone(result.candidates[0]?.pose));
@@ -271,6 +286,28 @@ export function MapReviewAuthoring(props: {
 			...(nextDraftPose === undefined ? {} : { draftPose: nextDraftPose }),
 			...(selectedCandidateId === undefined ? {} : { selectedCandidateId })
 		};
+	};
+	const scheduleFramingPatch = (args: {
+		readonly candidateOverrides: readonly FramingCandidateOverride[];
+		readonly parameters: FramingParameters;
+	}) => {
+		framingPatchAction.run(
+			Effect.sleep("400 millis").pipe(
+				Effect.tap(() =>
+					Effect.sync(() =>
+						persist(
+							{
+								...currentPatch(),
+								candidateOverrides: args.candidateOverrides,
+								framingParameters: args.parameters
+							},
+							{ refreshPreviews: true }
+						)
+					)
+				)
+			),
+			{ onSuccess: () => undefined }
+		);
 	};
 
 	const select = (candidate: MapReviewAuthoringCandidate) => {
@@ -403,7 +440,7 @@ export function MapReviewAuthoring(props: {
 								})
 							: props.client.previewCandidate(candidate.id)
 						).pipe(Effect.map((result) => ({ candidateId: candidate.id, result }))),
-					{ concurrency: "unbounded", unordered: true }
+					{ concurrency: 4, unordered: true }
 				)
 			),
 			{
@@ -630,6 +667,25 @@ export function MapReviewAuthoring(props: {
 			</Show>
 			<Show when={session()}>
 				<div {...stylex.props(styles.authoringBody)}>
+					<FramingSettings
+						parameters={framingParameters()}
+						candidateOverrides={candidateOverrides()}
+						selectedCandidateId={selectedId()}
+						onParametersChange={(parameters) => {
+							setFramingParameters(parameters);
+							scheduleFramingPatch({
+								candidateOverrides: candidateOverrides(),
+								parameters
+							});
+						}}
+						onCandidateOverridesChange={(overrides) => {
+							setCandidateOverrides(overrides);
+							scheduleFramingPatch({
+								candidateOverrides: overrides,
+								parameters: framingParameters()
+							});
+						}}
+					/>
 					<div
 						aria-label="Framing candidates"
 						role="region"

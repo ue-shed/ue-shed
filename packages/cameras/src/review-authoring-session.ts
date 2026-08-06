@@ -4,8 +4,11 @@ import { dirname, join } from "node:path";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { bootstrapMapReviewSet } from "./review-bootstrap.js";
 import {
+	applyCandidateOverrides,
 	approveFramingCandidate,
 	createReviewViewFromCandidate,
+	defaultFramingParameters,
+	generateFramingCandidates,
 	realizationFramingDiagnostics
 } from "./review-framing.js";
 import { ReviewAuthoring } from "./review-authoring-live.js";
@@ -15,6 +18,8 @@ import {
 	ReviewAuthoringSessionId,
 	ReviewSet,
 	type FramingCandidate,
+	type FramingCandidateOverride,
+	type FramingParameters,
 	type ReviewAuthoringSession as ReviewAuthoringSessionDocument,
 	type ReviewAuthoringSessionPatch,
 	type ReviewAuthoringSessionRecovery,
@@ -181,6 +186,26 @@ function boundsChanged(
 	);
 }
 
+function parametersFromCandidates(candidates: readonly FramingCandidate[]): FramingParameters {
+	const recipe = candidates.find((candidate) => candidate.recipe.version === 2)?.recipe;
+	return recipe !== undefined && recipe.version === 2 && "parameters" in recipe
+		? recipe.parameters
+		: defaultFramingParameters();
+}
+
+function applyOverrides(args: {
+	readonly candidates: readonly FramingCandidate[];
+	readonly overrides: readonly FramingCandidateOverride[];
+}): readonly FramingCandidate[] {
+	const byCandidate = new Map(
+		args.overrides.map((entry) => [entry.candidateId, entry.overrides] as const)
+	);
+	return args.candidates.map((candidate) => {
+		const overrides = byCandidate.get(candidate.id);
+		return overrides === undefined ? candidate : applyCandidateOverrides(candidate, overrides);
+	});
+}
+
 function staleSession(args: {
 	readonly reasons: readonly ReviewSessionStaleReason[];
 	readonly session: ReviewAuthoringSessionDocument;
@@ -324,6 +349,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			const now = new Date().toISOString();
 			const session = ReviewAuthoringSession.make({
 				candidates: [...args.candidates],
+				candidateOverrides: [],
 				...(args.pendingReviewSet === undefined
 					? {}
 					: { pendingReviewSet: args.pendingReviewSet }),
@@ -334,6 +360,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				createdAt: now,
 				diagnostics: [],
 				discardedCandidateIds: [],
+				framingParameters: parametersFromCandidates(args.candidates),
 				id,
 				lifecycle: "active",
 				realizations: [],
@@ -453,10 +480,71 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					})
 				);
 			}
-			const candidateIds = new Set(session.candidates.map((candidate) => candidate.id));
+			const parameters = args.patch.framingParameters ?? session.framingParameters;
+			const requestedOverrides =
+				args.patch.candidateOverrides ?? session.candidateOverrides ?? [];
+			const editorCandidate = session.candidates.find(
+				(candidate) =>
+					candidate.recipe.version === 1 && candidate.recipe.preset === "editor_view"
+			);
+			const regenerated =
+				args.patch.framingParameters === undefined
+					? session.candidates
+					: generateFramingCandidates(
+							{
+								actorPath: session.subject.actorPath,
+								bounds: session.subject.bounds,
+								displayName: session.subject.displayName,
+								...(editorCandidate === undefined
+									? {}
+									: { editorView: editorCandidate.approvedPose }),
+								mapPath: session.subject.mapPath
+							},
+							parameters ?? defaultFramingParameters()
+						);
+			if (regenerated.length === 0) {
+				return yield* Effect.fail(
+					new ReviewAuthoringSessionError({
+						message: "The framing definition generated no candidates.",
+						operation: "patch",
+						path: reviewAuthoringSessionPath({
+							id: session.id,
+							projectRoot: args.projectRoot
+						}),
+						recovery: "Enable at least one framing group before updating the session."
+					})
+				);
+			}
+			const candidateIds = new Set(regenerated.map((candidate) => candidate.id));
+			const retainedOverrides = requestedOverrides.filter((entry) =>
+				candidateIds.has(entry.candidateId)
+			);
+			if (args.patch.framingParameters === undefined) {
+				const invalidOverride = requestedOverrides.find(
+					(entry) => !candidateIds.has(entry.candidateId)
+				);
+				if (invalidOverride !== undefined) {
+					return yield* Effect.fail(
+						new ReviewAuthoringSessionError({
+							message: `Unknown framing candidate ${invalidOverride.candidateId}.`,
+							operation: "patch",
+							path: reviewAuthoringSessionPath({
+								id: session.id,
+								projectRoot: args.projectRoot
+							}),
+							recovery: "Reload the authoring session before applying overrides."
+						})
+					);
+				}
+			}
 			const invalid = [
-				...args.patch.discardedCandidateIds,
-				...(args.patch.selectedCandidateId === undefined
+				...args.patch.discardedCandidateIds.filter((candidateId) =>
+					args.patch.framingParameters === undefined
+						? true
+						: candidateIds.has(candidateId)
+				),
+				...(args.patch.selectedCandidateId === undefined ||
+				args.patch.framingParameters !== undefined
 					? []
 					: [args.patch.selectedCandidateId])
 			].find((candidateId) => !candidateIds.has(candidateId));
@@ -473,9 +561,34 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					})
 				);
 			}
+			const candidates = applyOverrides({
+				candidates: regenerated,
+				overrides: retainedOverrides
+			});
+			const selectedCandidateId =
+				args.patch.selectedCandidateId !== undefined &&
+				candidateIds.has(args.patch.selectedCandidateId)
+					? args.patch.selectedCandidateId
+					: undefined;
+			const discardedCandidateIds = args.patch.discardedCandidateIds.filter((candidateId) =>
+				candidateIds.has(candidateId)
+			);
 			const next = ReviewAuthoringSession.make({
 				...session,
 				...args.patch,
+				candidateOverrides: retainedOverrides,
+				candidates,
+				discardedCandidateIds,
+				...(parameters === undefined ? {} : { framingParameters: parameters }),
+				...(args.patch.framingParameters === undefined
+					? {}
+					: {
+							diagnostics: [],
+							draftPose: undefined,
+							manualReason: undefined,
+							realizations: []
+						}),
+				selectedCandidateId,
 				updatedAt: new Date().toISOString()
 			});
 			return yield* saveDocument({ projectRoot: args.projectRoot, session: next });
@@ -653,10 +766,12 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			const now = new Date().toISOString();
 			const next = ReviewAuthoringSession.make({
 				...session,
+				candidateOverrides: [],
 				candidates: [...args.candidates],
 				diagnostics: [],
 				discardedCandidateIds: [],
 				draftPose: undefined,
+				framingParameters: parametersFromCandidates(args.candidates),
 				lifecycle: "active",
 				manualReason: undefined,
 				realizations: [],

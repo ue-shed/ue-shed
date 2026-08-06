@@ -153,10 +153,14 @@ export const CliCommand = Schema.TaggedUnion({
 		viewIds: Schema.Array(Schema.String).check(Schema.isMinLength(1))
 	},
 	ReviewViewPut: { reviewSetPath: Schema.String, viewPath: Schema.String },
-	ReviewFramingCandidates: { endpoint: Schema.String },
+	ReviewFramingCandidates: {
+		endpoint: Schema.String,
+		parametersPath: Schema.optionalKey(Schema.String)
+	},
 	ReviewFramingApprove: {
 		candidateId: Schema.String,
 		endpoint: Schema.String,
+		parametersPath: Schema.optionalKey(Schema.String),
 		reviewSetPath: Schema.String,
 		viewId: Schema.String
 	},
@@ -168,6 +172,7 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	ReviewAuthoringBootstrap: { endpoint: Schema.String, ...Project },
 	ReviewAuthoringShow: { ...SessionProject },
+	ReviewAuthoringTune: { ...SessionProject, patchPath: Schema.String },
 	ReviewAuthoringResume: { ...SessionProject, endpoint: Schema.String },
 	ReviewAuthoringDiscard: { ...SessionProject },
 	ReviewAuthoringReframe: { ...SessionProject, endpoint: Schema.String },

@@ -34,6 +34,11 @@ and revision identity. Legacy Capture Runs remain readable under an explicit `le
 revision state. Consumers may ignore revisions or use them to build their own organization and
 comparison behavior.
 
+Plan 038 is complete. Framing generation now uses public arc/ring group primitives with exact
+positive counts, partial group+index overrides, and durable recipe v2 provenance. Context, Facade,
+and Cardinal are convenience presets rather than domain limits. Workbench provides progressive
+controls and a 1–24 ergonomic range while the library and CLI remain permissive.
+
 Capture contract v1.4 now realizes all three first target/viewpoint meanings: fixed actor, actor
 relative to its current transform, and fixed oriented area. Unreal resolves relative actor poses
 inside the capture operation and returns the exact effective world pose and resolved target.
@@ -82,11 +87,15 @@ isolate-target and explicit-hide Clear strategies. See the
 
 The Slice 2 tracer bullet is now implemented on that spine. The editor capability inspects exactly
 one selected actor, normalized bounds, orientation, and the active perspective viewport. The
-headless camera domain deterministically generates Context three-quarter, Facade/front, four
-Cardinal orbit candidates, and an optional current-editor-view candidate. Workbench renders real
+headless camera domain composes permissive arc and ring framing groups and ships Context
+three-quarter, Facade/front, and four-view Cardinal orbit convenience presets plus an optional
+current-editor-view candidate. Callers may tune finite camera parameters and request any positive
+group count; generation returns the exact requested set without a product camera cap. Workbench renders real
 transient previews from provisioned cameras as a contact sheet and supports discard, numeric
-pose/FOV adjustment, adjustment provenance, explicit Reframe, and Keep View persistence without
-creating an authored camera in the map. The CLI exposes the same selection, generation,
+pose/FOV adjustment, framing-rig controls, per-view overrides, adjustment provenance, explicit
+Reframe, and Keep View persistence without creating an authored camera in the map. The Workbench
+uses 1–24 as an ergonomic slider range and warns rather than changing the portable definition when
+a large rig makes preview expensive. The CLI exposes the same selection, generation,
 durable-session, and approval path. A project with no configured Review Set now starts in an honest
 first-run state: selection creates a pending map-scoped set in the authoring session, and only Keep
 View writes that portable set under `.ue-shed/review/sets`.
@@ -314,7 +323,16 @@ Initial presets are deliberately small:
 2. **Facade/front:** an authored or inferred facing direction with controlled verticals.
 3. **Cardinal orbit:** four evenly identified views around the subject.
 
-Generated candidates carry preset name, preset version, inputs, output pose, and framing diagnostics.
+These presets are convenience constructors over public framing groups. An arc distributes a
+positive count across a subject-relative yaw span; a ring distributes a positive count evenly in
+world yaw. Global FOV/margin, group distance/elevation, distribution parameters, and partial
+per-candidate overrides are portable Effect Schema values. The pure generator has no Workbench
+camera-count policy and never silently truncates a valid rig.
+
+Generated candidates carry a group+index anchor, recipe version, exact parameters, optional selected
+candidate overrides, output pose, and framing diagnostics. Existing recipe v1 documents remain
+readable; new generated candidates use recipe v2. The Approved Pose remains separately durable and
+repeat capture never regenerates it.
 Post-realization validation projects the subject into the final image and reports margin, clipping,
 near-plane, and aspect failures. Bounds provide a starting signal, not a claim that framing is good.
 
@@ -555,10 +573,11 @@ ue-shed review policies list <review-set>
 ue-shed review policies replace <review-set> <view-id> <policy-json> [--overrides <overrides-json>]
 ue-shed review policies apply <review-set> <policy-id> <view-id>...
 ue-shed review views put <review-set> <view-json>
-ue-shed review framing candidates <endpoint>
-ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id>
+ue-shed review framing candidates <endpoint> [--parameters <framing-json>]
+ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id> [--parameters <framing-json>]
 ue-shed review authoring bootstrap <project-root> <endpoint>
 ue-shed review authoring start <project-root> <review-set> <endpoint> <view-id>
+ue-shed review authoring tune <project-root> <session-id> <patch-json>
 ue-shed review authoring show|discard <project-root> <session-id>
 ue-shed review authoring resume|reframe|approve <project-root> <session-id> <endpoint>
 ue-shed review capture <project-root> <review-set> <endpoint> [--cause external_automation] [--correlation <id>]
@@ -600,6 +619,10 @@ workspace.
   primary actions.
 - Keep numeric transform and projection controls in a secondary inspector.
 - Explain preset lineage and manual offsets without forcing the author to understand schema fields.
+- Keep framing controls behind a progressive disclosure. Present 1–24 as the normal slider range,
+  accept an explicit larger count, and explain that preview may become expensive without rejecting
+  or truncating the headless rig.
+- Make per-view overrides opt-in and store only explicitly changed values.
 - Preserve selection and scroll position when previews refresh or Unreal reconnects.
 
 ### Pure and Clear inspection

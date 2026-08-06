@@ -38,3 +38,4 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [037](037-deepen-headless-project-index.md)                   | Deepen the headless Project Index with a native Catalog              | DONE — DuckDB cutover and adoption verified |
 | [038](038-adjustable-framing-knobs-and-overrides.md)          | Build modular framing rigs and per-view tuning                       | DONE — headless rigs and Workbench verified |
 | [039](039-map-review-fixture-and-recordable-flows.md)         | Build Map Review fixture gallery and recordable full flows           | DONE — UE 5.7 flows and recordings verified |
+| [040](040-durable-multi-actor-review-sets-and-history.md)     | Build durable multi-actor Review Sets and visual history             | DONE — UE 5.7 history flows verified        |

@@ -2,6 +2,7 @@ import type { AuthoringAuthority, AuthoringSessionIntent } from "@ue-shed/author
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringResult,
@@ -162,8 +163,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 			intent: MapReviewApproveCandidateIntent
 		): Promise<MapReviewApprovalResult> =>
 			ipcRenderer.invoke("map-review:approve-candidate", intent),
-		authorFromSelection: (): Promise<MapReviewAuthoringResult> =>
-			ipcRenderer.invoke("map-review:author-from-selection"),
+		authorFromSelection: (
+			intent: MapReviewAuthorFromSelectionIntent
+		): Promise<MapReviewAuthoringResult> =>
+			ipcRenderer.invoke("map-review:author-from-selection", intent),
 		authoringResume: (): Promise<MapReviewAuthoringResult> =>
 			ipcRenderer.invoke("map-review:authoring-resume"),
 		authoringPatch: (

@@ -26,6 +26,13 @@ export type ReviewSetId = Schema.Schema.Type<typeof ReviewSetId>;
 export const ReviewViewId = SafeIdentifier.pipe(Schema.brand("ReviewViewId"));
 export type ReviewViewId = Schema.Schema.Type<typeof ReviewViewId>;
 
+/** Explicitly states whether authoring adds a durable observation or revises one already known. */
+export const ReviewAuthoringDestination = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("append_view") }),
+	Schema.Struct({ kind: Schema.Literal("revise_view"), viewId: ReviewViewId })
+]);
+export type ReviewAuthoringDestination = Schema.Schema.Type<typeof ReviewAuthoringDestination>;
+
 export const ReviewViewRevisionId = SafeRevisionIdentifier.pipe(
 	Schema.brand("ReviewViewRevisionId")
 );

@@ -1,6 +1,7 @@
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringResult,
@@ -31,6 +32,7 @@ export type MapReviewWorldObservation = WorldObservationState & {
 export type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringCandidate,
@@ -78,10 +80,9 @@ export interface MapReviewClientShape {
 	readonly approveCandidate: (
 		intent: MapReviewApproveCandidateIntent
 	) => Effect.Effect<MapReviewApprovalResult, MapReviewClientError>;
-	readonly authorFromSelection: () => Effect.Effect<
-		MapReviewAuthoringResult,
-		MapReviewClientError
-	>;
+	readonly authorFromSelection: (
+		intent: MapReviewAuthorFromSelectionIntent
+	) => Effect.Effect<MapReviewAuthoringResult, MapReviewClientError>;
 	readonly authoringResume: () => Effect.Effect<MapReviewAuthoringResult, MapReviewClientError>;
 	readonly authoringPatch: (
 		intent: MapReviewAuthoringPatchIntent

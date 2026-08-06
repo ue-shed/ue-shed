@@ -17,12 +17,14 @@ import {
 	ReviewAuthoringSession,
 	ReviewAuthoringSessionId,
 	ReviewSet,
+	ReviewViewId,
 	type FramingCandidate,
 	type FramingCandidateOverride,
 	type FramingParameters,
 	type ReviewAuthoringSession as ReviewAuthoringSessionDocument,
 	type ReviewAuthoringSessionPatch,
 	type ReviewAuthoringSessionRecovery,
+	type ReviewAuthoringDestination,
 	type ReviewCandidateRealization,
 	type ReviewSelectionResponse,
 	type ReviewSubjectProjection
@@ -63,6 +65,29 @@ export function reviewAuthoringSessionPath(args: {
 	readonly projectRoot: string;
 }): string {
 	return join(sessionRoot(args.projectRoot), `${args.id}.json`);
+}
+
+/** Creates a stable, readable View id without treating a display label as unique. */
+export function nextReviewViewId(args: {
+	readonly displayName: string;
+	readonly reviewSet: ReviewSet;
+}): typeof ReviewViewId.Type {
+	const stem =
+		args.displayName
+			.normalize("NFKD")
+			.replaceAll(/[^A-Za-z0-9]+/g, "-")
+			.replaceAll(/^-+|-+$/g, "")
+			.toLowerCase()
+			.slice(0, 112) || "review-view";
+	const occupied = new Set(args.reviewSet.views.map((view) => view.id));
+	if (!occupied.has(ReviewViewId.make(stem))) return ReviewViewId.make(stem);
+	for (let suffix = 2; ; suffix += 1) {
+		const suffixText = `-${suffix}`;
+		const candidate = ReviewViewId.make(
+			`${stem.slice(0, 128 - suffixText.length)}${suffixText}`
+		);
+		if (!occupied.has(candidate)) return candidate;
+	}
 }
 
 function writeJsonAtomically(path: string, value: unknown): Effect.Effect<void, unknown> {
@@ -259,6 +284,7 @@ export interface ReviewAuthoringSessionsShape {
 	}) => Effect.Effect<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError>;
 	readonly start: (args: {
 		readonly candidates: readonly FramingCandidate[];
+		readonly destination: ReviewAuthoringDestination;
 		readonly projectRoot: string;
 		readonly reviewSetPath?: string | undefined;
 		readonly selection: Extract<ReviewSelectionResponse, { readonly status: "selected" }>;
@@ -394,6 +420,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 
 		const start = Effect.fn("ReviewAuthoringSessions.start")(function* (args: {
 			readonly candidates: readonly FramingCandidate[];
+			readonly destination: ReviewAuthoringDestination;
 			readonly projectRoot: string;
 			readonly reviewSetPath?: string | undefined;
 			readonly selection: Extract<ReviewSelectionResponse, { readonly status: "selected" }>;
@@ -410,14 +437,30 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 						})
 					)
 				);
-				const view = reviewSet.views[0];
+				const destination = args.destination;
+				const view =
+					destination.kind === "revise_view"
+						? reviewSet.views.find((candidate) => candidate.id === destination.viewId)
+						: undefined;
+				if (destination.kind === "revise_view" && view === undefined) {
+					return yield* Effect.fail(
+						new ReviewAuthoringSessionError({
+							message: `Review View ${destination.viewId} was not found.`,
+							operation: "create",
+							path: reviewSetPath,
+							recovery: "Reload the Review Set and choose an existing Review View."
+						})
+					);
+				}
 				return yield* create({
 					candidates: args.candidates,
-					...(view === undefined ? { pendingReviewSet: reviewSet } : {}),
+					...(destination.kind === "append_view" ? { pendingReviewSet: reviewSet } : {}),
 					projectRoot: args.projectRoot,
 					reviewSetPath,
 					selection: args.selection,
-					viewId: view?.id ?? "initial-view"
+					viewId:
+						view?.id ??
+						nextReviewViewId({ displayName: args.selection.displayName, reviewSet })
 				});
 			}
 
@@ -447,14 +490,30 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					})
 				);
 			}
-			const view = reviewSet.views[0];
+			const destination = args.destination;
+			const view =
+				destination.kind === "revise_view"
+					? reviewSet.views.find((candidate) => candidate.id === destination.viewId)
+					: undefined;
+			if (destination.kind === "revise_view" && view === undefined) {
+				return yield* Effect.fail(
+					new ReviewAuthoringSessionError({
+						message: `Review View ${destination.viewId} was not found.`,
+						operation: "create",
+						path: bootstrap.reviewSetPath,
+						recovery: "Reload the Review Set and choose an existing Review View."
+					})
+				);
+			}
 			return yield* create({
 				candidates: args.candidates,
-				...(view === undefined ? { pendingReviewSet: reviewSet } : {}),
+				...(destination.kind === "append_view" ? { pendingReviewSet: reviewSet } : {}),
 				projectRoot: args.projectRoot,
 				reviewSetPath: bootstrap.reviewSetPath,
 				selection: args.selection,
-				viewId: view?.id ?? bootstrap.viewId
+				viewId:
+					view?.id ??
+					nextReviewViewId({ displayName: args.selection.displayName, reviewSet })
 			});
 		});
 

@@ -9,6 +9,7 @@ import { Cause, Effect, Stream } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
 	MapReviewAuthoringCandidate,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringResult,
 	MapReviewCandidatePreviewResult,
 	MapReviewClientShape,
@@ -152,6 +153,7 @@ function poseFieldValue(
 
 export function MapReviewAuthoring(props: {
 	readonly client: MapReviewClientShape;
+	readonly destination?: MapReviewAuthorFromSelectionIntent["destination"];
 	readonly focusRequest?:
 		| {
 				readonly actor: ObservedActor;
@@ -484,12 +486,14 @@ export function MapReviewAuthoring(props: {
 		});
 	};
 	const generate = () => {
-		const durable = session()?.session;
+		const durable = state().status === "approved" ? undefined : session()?.session;
 		setState({ status: "loading" });
 		generateAction.run(
 			durable && durable.lifecycle !== "approved" && durable.lifecycle !== "discarded"
 				? props.client.authoringReframe({ sessionId: durable.id })
-				: props.client.authorFromSelection(),
+				: props.client.authorFromSelection({
+						destination: props.destination ?? { kind: "append_view" }
+					}),
 			{
 				onFailure: (cause) =>
 					setState({
@@ -630,7 +634,16 @@ export function MapReviewAuthoring(props: {
 						onClick={() => void generate()}
 						{...stylex.props(styles.generateButton)}
 					>
-						{state().status === "loading" ? "GENERATING…" : "REFRAME SELECTED ACTOR"}
+						{state().status === "loading"
+							? "GENERATING…"
+							: state().status !== "approved" &&
+								  session()?.session?.lifecycle !== undefined &&
+								  session()?.session?.lifecycle !== "approved" &&
+								  session()?.session?.lifecycle !== "discarded"
+								? "REFRAME SELECTED ACTOR"
+								: props.destination?.kind === "revise_view"
+									? "REVISE VIEW FROM SELECTED ACTOR"
+									: "ADD SELECTED ACTOR AS VIEW"}
 					</button>
 					<Show when={liveStreaming()}>
 						<label {...stylex.props(styles.fpsControl)}>

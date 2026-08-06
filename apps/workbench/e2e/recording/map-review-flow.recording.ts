@@ -19,24 +19,20 @@ const flow: "authoring-roundtrip" | "high-count-rig" =
 	process.env.UE_SHED_MAP_REVIEW_FLOW === "high-count-rig"
 		? "high-count-rig"
 		: "authoring-roundtrip";
+const recordingSize = { height: 720, width: 1280 } as const;
 
 test.skip(!enabled, "launch through pnpm record:flow:map-review with a live fixture editor");
-test.setTimeout(300_000);
+test.setTimeout(600_000);
 
 function message(cause: unknown): string {
 	return cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
 }
 
 async function startScreencast(page: Page, path: string): Promise<void> {
-	const screenshot = await page.screenshot({ type: "png" });
-	const size = {
-		height: screenshot.readUInt32BE(20) & ~1,
-		width: screenshot.readUInt32BE(16) & ~1
-	};
 	await page.screencast.start({
 		annotate: { duration: 700, fontSize: 18, position: "top-right" },
 		path,
-		size
+		size: recordingSize
 	});
 }
 
@@ -49,14 +45,23 @@ async function concatenateVideos(
 		return;
 	}
 	const inputs = segmentPaths.flatMap((path) => ["-i", path]);
-	const streams = segmentPaths.map((_, index) => `[${index}:v:0]`).join("");
+	const normalizedStreams = segmentPaths
+		.map(
+			(_, index) =>
+				`[${index}:v:0]scale=${recordingSize.width}:${recordingSize.height}:` +
+				"force_original_aspect_ratio=decrease," +
+				`pad=${recordingSize.width}:${recordingSize.height}:(ow-iw)/2:(oh-ih)/2,` +
+				`setsar=1[segment${index}]`
+		)
+		.join(";");
+	const streams = segmentPaths.map((_, index) => `[segment${index}]`).join("");
 	const result = spawnSync(
 		"ffmpeg",
 		[
 			"-y",
 			...inputs,
 			"-filter_complex",
-			`${streams}concat=n=${segmentPaths.length}:v=1:a=0[outv]`,
+			`${normalizedStreams};${streams}concat=n=${segmentPaths.length}:v=1:a=0[outv]`,
 			"-map",
 			"[outv]",
 			"-c:v",
@@ -136,6 +141,7 @@ test(`records the Map Review ${flow} flow`, async ({ browserName: _browserName }
 	};
 	const harness = await createMapReviewFlowHarness({
 		artifactRoot: testInfo.outputDir,
+		collection: flow === "authoring-roundtrip",
 		endpoint,
 		flow,
 		lifecycle

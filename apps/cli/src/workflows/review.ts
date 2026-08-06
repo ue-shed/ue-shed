@@ -11,6 +11,7 @@ type PoliciesCommand = Command<
 >;
 type AuthoringCommand = Command<
 	| "ReviewAuthoringStart"
+	| "ReviewAuthoringAppend"
 	| "ReviewAuthoringBootstrap"
 	| "ReviewAuthoringShow"
 	| "ReviewAuthoringTune"
@@ -344,23 +345,32 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 						command._tag === "ReviewAuthoringBootstrap"
 							? yield* sessions.start({
 									candidates,
+									destination: { kind: "append_view" },
 									projectRoot: command.projectRoot,
 									selection
 								})
-							: command._tag === "ReviewAuthoringStart"
-								? yield* sessions.create({
+							: command._tag === "ReviewAuthoringAppend"
+								? yield* sessions.start({
 										candidates,
+										destination: { kind: "append_view" },
 										projectRoot: command.projectRoot,
 										reviewSetPath: command.reviewSetPath,
-										selection,
-										viewId: command.viewId
+										selection
 									})
-								: yield* sessions.reframe({
-										candidates,
-										projectRoot: command.projectRoot,
-										selection,
-										sessionId: command.sessionId
-									});
+								: command._tag === "ReviewAuthoringStart"
+									? yield* sessions.create({
+											candidates,
+											projectRoot: command.projectRoot,
+											reviewSetPath: command.reviewSetPath,
+											selection,
+											viewId: command.viewId
+										})
+									: yield* sessions.reframe({
+											candidates,
+											projectRoot: command.projectRoot,
+											selection,
+											sessionId: command.sessionId
+										});
 					return yield* printJson(session);
 				});
 				return yield* program.pipe(

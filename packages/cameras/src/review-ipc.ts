@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import { ReviewCaptureBlock } from "./review-session-policy.js";
 import {
 	CaptureInvocationCause,
+	CapturedReviewViewRevision,
 	ClearCompanionResult,
 	FramingDiagnostic,
 	ReviewAuthoringSession,
@@ -21,28 +22,40 @@ const IpcPose = Schema.Struct({
 	rotation: Schema.Struct({ pitch: Schema.Number, roll: Schema.Number, yaw: Schema.Number })
 });
 
-export const MapReviewRunView = Schema.Struct({
-	capture: Schema.optional(
+export const MapReviewRunCapture = Schema.Struct({
+	artifacts: Schema.Array(
 		Schema.Struct({
-			artifacts: Schema.Array(
-				Schema.Struct({
-					bytes: Schema.Uint8Array,
-					height: Schema.Int.check(Schema.isGreaterThan(0)),
-					variant: Schema.Literals(["pure", "clear"]),
-					width: Schema.Int.check(Schema.isGreaterThan(0))
-				})
-			),
-			cause: CaptureInvocationCause,
-			clearCompanion: ClearCompanionResult,
-			viewId: Schema.String,
-			viewName: Schema.String,
-			visibility: VisibilityResult,
-			visibilityOverrides: Schema.optional(VisibilityOverrides),
-			visibilityPolicy: Schema.optional(VisibilityPolicy)
+			bytes: Schema.Uint8Array,
+			height: Schema.Int.check(Schema.isGreaterThan(0)),
+			variant: Schema.Literals(["pure", "clear"]),
+			width: Schema.Int.check(Schema.isGreaterThan(0))
 		})
 	),
+	cause: CaptureInvocationCause,
+	clearCompanion: ClearCompanionResult,
+	viewId: Schema.String,
+	viewName: Schema.String,
+	viewRevision: CapturedReviewViewRevision,
+	visibility: VisibilityResult,
+	visibilityOverrides: Schema.optional(VisibilityOverrides),
+	visibilityPolicy: Schema.optional(VisibilityPolicy)
+});
+export type MapReviewRunCapture = Schema.Schema.Type<typeof MapReviewRunCapture>;
+
+export const MapReviewRunFailure = Schema.Struct({
+	message: Schema.NonEmptyString,
+	viewId: Schema.NonEmptyString,
+	viewRevision: CapturedReviewViewRevision
+});
+export type MapReviewRunFailure = Schema.Schema.Type<typeof MapReviewRunFailure>;
+
+export const MapReviewRunView = Schema.Struct({
+	/** First capture retained for older consumers; new UI uses the complete captures collection. */
+	capture: Schema.optional(MapReviewRunCapture),
+	captures: Schema.optional(Schema.Array(MapReviewRunCapture)),
 	completedAt: Schema.String,
 	failedViews: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	failures: Schema.optional(Schema.Array(MapReviewRunFailure)),
 	id: Schema.String,
 	preview: Schema.optional(
 		Schema.Struct({
@@ -58,13 +71,17 @@ export const MapReviewRunView = Schema.Struct({
 export type MapReviewRunView = Schema.Schema.Type<typeof MapReviewRunView>;
 
 export const MapReviewCapturePlanView = Schema.Struct({
+	actorPath: Schema.optional(Schema.String),
 	captureProfileId: Schema.optional(Schema.NonEmptyString),
 	displayName: Schema.NonEmptyString,
 	id: Schema.NonEmptyString,
+	revision: Schema.optional(Schema.Struct({ id: Schema.NonEmptyString, number: Schema.Int })),
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isGreaterThan(0)),
 		width: Schema.Int.check(Schema.isGreaterThan(0))
 	}),
+	subjectLabel: Schema.optional(Schema.NonEmptyString),
+	viewpoint: Schema.optional(Schema.Literals(["world_fixed", "target_relative"])),
 	visibilityOverrides: Schema.optional(VisibilityOverrides),
 	visibilityPolicy: Schema.optional(VisibilityPolicy)
 });
@@ -219,6 +236,16 @@ export const MapReviewAuthoringResult = Schema.Union([
 	})
 ]);
 export type MapReviewAuthoringResult = Schema.Schema.Type<typeof MapReviewAuthoringResult>;
+
+export const MapReviewAuthorFromSelectionIntent = Schema.Struct({
+	destination: Schema.Union([
+		Schema.Struct({ kind: Schema.Literal("append_view") }),
+		Schema.Struct({ kind: Schema.Literal("revise_view"), viewId: Schema.NonEmptyString })
+	])
+});
+export type MapReviewAuthorFromSelectionIntent = Schema.Schema.Type<
+	typeof MapReviewAuthorFromSelectionIntent
+>;
 
 export const MapReviewAuthoringSessionIntent = Schema.Struct({ sessionId: Schema.NonEmptyString });
 export type MapReviewAuthoringSessionIntent = Schema.Schema.Type<

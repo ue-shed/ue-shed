@@ -129,23 +129,34 @@ picker should offer more than one map. It takes precedence over the single-map v
 With no `UE_SHED_REVIEW_SET`, live Map Review enters first-run authoring. Select an actor, review a
 candidate, and keep it; only then does UE Shed write a deterministic map-scoped Review Set under
 `.ue-shed/review/sets`. Set `UE_SHED_REVIEW_SET` when you want to work with an explicit existing
-set. Open **Framing** to tune the named arc/ring presets or one selected view. The count sliders show
+set. **Add selected actor as View** appends without replacing existing observations; choose an
+approved View and **Revise selected View** only when the intent is to preserve its ID and advance
+its revision. Several Views may share one actor, and Workbench groups them by subject without
+changing the flat portable Review Set. Open **Framing** to tune the named arc/ring presets or one selected view. The count sliders show
 the ordinary 1–24 range; exact larger counts remain valid and show a preview-cost hint. The headless
 equivalent is:
 
 ```powershell
 pnpm ue-shed review authoring bootstrap "C:\path\to\Project" "http://127.0.0.1:30001"
+pnpm ue-shed review authoring append "C:\path\to\Project" <review-set.json> "http://127.0.0.1:30001"
 pnpm ue-shed review authoring tune "C:\path\to\Project" <session-id> framing-patch.json
 pnpm ue-shed review authoring approve "C:\path\to\Project" <session-id> "http://127.0.0.1:30001"
 ```
+
+Capture Set arms every approved View by default and persists one immutable run result per attempted
+View. In **Visual history**, choose a View first, then move across runs to see captured, failed, or
+not-in-run states. **Compare previous run** places the selected Natural frame beside the nearest
+earlier Natural result for that View. Older revision evidence stays visible and is labeled as older framing; Natural
+and Clear remain separately labeled evidence.
 
 See [`products/map-review.md`](products/map-review.md) for the product contract.
 
 ### Exercise and record the complete Map Review flow
 
 The dedicated fixture gallery contains compact, tall, wide, asymmetric, compound, translucent, and
-occluded subjects. With its editor running, exercise all five real-Unreal scenarios—including
-persistence across a Workbench restart and the permissive 37-camera case—with:
+occluded subjects. With its editor running, exercise the real-Unreal scenarios—including a durable
+seven-View collection, two Views for the compound subject, persistence across a Workbench restart,
+two full-set runs around a restored fixture change, and the permissive 37-camera case—with:
 
 ```powershell
 $env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/MapReview/L_MapReviewFixture"
@@ -163,7 +174,7 @@ pnpm record:flow:map-review -- --flow high-count-rig
 
 Each invocation creates a new bundle under `test-results/map-review-flows` containing the combined
 Workbench video across restart, Playwright trace segments, process and renderer logs, checkpoint
-screenshots, raw 1280x720 Unreal capture, persisted authoring/Review Set JSON, and a versioned
+screenshots, both Run A/Run B 1280x720 Unreal captures, persisted authoring/Review Set JSON, and a versioned
 manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
 total and leaves the requested count intact.
 

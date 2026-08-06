@@ -139,6 +139,22 @@ const reviewAuthoringStartCommand = Command.make(
 		})
 ).pipe(Command.withDescription("Start Review authoring for one View."));
 
+const reviewAuthoringAppendCommand = Command.make(
+	"append",
+	{
+		projectRoot: Argument.string("project-root"),
+		reviewSetPath: Argument.string("review-set"),
+		endpoint: Argument.string("endpoint")
+	},
+	({ projectRoot, reviewSetPath, endpoint }) =>
+		runReviewAuthoring({
+			_tag: "ReviewAuthoringAppend",
+			endpoint,
+			projectRoot,
+			reviewSetPath
+		})
+).pipe(Command.withDescription("Append the selected actor as a new Review View."));
+
 const reviewAuthoringTuneCommand = Command.make(
 	"tune",
 	{
@@ -256,6 +272,7 @@ export const reviewCommand = Command.make("review").pipe(
 		Command.make("authoring").pipe(
 			Command.withDescription("Manage Review authoring sessions."),
 			Command.withSubcommands([
+				reviewAuthoringAppendCommand,
 				reviewAuthoringStartCommand,
 				reviewAuthoringBootstrapCommand,
 				reviewAuthoringTuneCommand,

@@ -15,7 +15,7 @@ import {
 	generateFramingCandidateId,
 	generateFramingCandidates
 } from "./review-framing.js";
-import { makeReviewRepositoryTestLayer } from "./review-repository.js";
+import { makeReviewRepositoryTestLayer, ReviewStorageError } from "./review-repository.js";
 import {
 	decodeReviewSet,
 	ReviewSetId,
@@ -97,8 +97,13 @@ async function makeProjectRoot(): Promise<string> {
 }
 
 function sessionLayer(args: {
-	readonly inspectSubject: () => typeof selection;
+	readonly inspectSubject: () => Extract<
+		ReviewSelectionResponse,
+		{ readonly status: "selected" }
+	>;
+	readonly loadSet?: () => ReviewSet;
 	readonly onSave: (reviewSet: ReviewSet) => void;
+	readonly saveFailure?: boolean;
 }) {
 	return ReviewAuthoringSessionsLive.pipe(
 		Layer.provide(
@@ -109,9 +114,19 @@ function sessionLayer(args: {
 					finalizeRun: () => Effect.die("not used"),
 					listRuns: () => Effect.die("not used"),
 					loadRun: () => Effect.die("not used"),
-					loadSet: () => Effect.succeed(reviewSet),
+					loadSet: () => Effect.succeed(args.loadSet?.() ?? reviewSet),
 					prepareRun: () => Effect.die("not used"),
-					saveSet: ({ reviewSet }) => Effect.sync(() => args.onSave(reviewSet)),
+					saveSet: ({ path, reviewSet }) =>
+						args.saveFailure
+							? Effect.fail(
+									new ReviewStorageError({
+										message: "Fixture write conflict",
+										operation: "save_set",
+										path,
+										recovery: "Retry"
+									})
+								)
+							: Effect.sync(() => args.onSave(reviewSet)),
 					storeArtifact: () => Effect.die("not used"),
 					writeRunDocument: () => Effect.die("not used")
 				}),
@@ -256,6 +271,7 @@ describe("ReviewAuthoringSessions", () => {
 		const created = await withSessions(layer, (sessions) =>
 			sessions.start({
 				candidates: generateFramingCandidates(selection),
+				destination: { kind: "append_view" },
 				projectRoot,
 				selection
 			})
@@ -289,6 +305,171 @@ describe("ReviewAuthoringSessions", () => {
 			"utf8"
 		);
 		expect(afterApproval).not.toContain("pendingReviewSet");
+	});
+
+	it("appends a selected subject without replacing an existing Review View", async () => {
+		const projectRoot = await makeProjectRoot();
+		const sameLabelSelection = { ...selection, displayName: "Structure context" };
+		let savedReviewSet: ReviewSet | undefined;
+		const layer = sessionLayer({
+			inspectSubject: () => sameLabelSelection,
+			onSave: (next) => {
+				savedReviewSet = next;
+			}
+		});
+		const created = await withSessions(layer, (sessions) =>
+			sessions.start({
+				candidates: generateFramingCandidates(sameLabelSelection),
+				destination: { kind: "append_view" },
+				projectRoot,
+				reviewSetPath,
+				selection: sameLabelSelection
+			})
+		);
+		expect(created.viewId).toBe("structure-context-2");
+		expect(created.pendingReviewSet?.views).toHaveLength(1);
+
+		await withSessions(layer, (sessions) =>
+			sessions.approve({
+				endpoint: "http://127.0.0.1:30001",
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(savedReviewSet?.views.map((view) => view.id)).toEqual([
+			"structure-context",
+			"structure-context-2"
+		]);
+	});
+
+	it("revises only the explicitly identified Review View", async () => {
+		const projectRoot = await makeProjectRoot();
+		let savedReviewSet: ReviewSet | undefined;
+		const layer = sessionLayer({
+			inspectSubject: () => selection,
+			onSave: (next) => {
+				savedReviewSet = next;
+			}
+		});
+		const created = await withSessions(layer, (sessions) =>
+			sessions.start({
+				candidates: generateFramingCandidates(selection),
+				destination: {
+					kind: "revise_view",
+					viewId: ReviewViewId.make("structure-context")
+				},
+				projectRoot,
+				reviewSetPath,
+				selection
+			})
+		);
+		expect(created.pendingReviewSet).toBeUndefined();
+		expect(created.viewId).toBe("structure-context");
+
+		await withSessions(layer, (sessions) =>
+			sessions.approve({
+				endpoint: "http://127.0.0.1:30001",
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(savedReviewSet?.views).toHaveLength(1);
+		expect(savedReviewSet?.views[0]?.id).toBe("structure-context");
+		expect(savedReviewSet?.views[0]?.revision.number).toBe(2);
+	});
+
+	it("persists ordered multi-subject and multi-View collections across fresh services", async () => {
+		const projectRoot = await makeProjectRoot();
+		let stored = reviewSet;
+		let currentSelection: Extract<ReviewSelectionResponse, { readonly status: "selected" }> = {
+			...selection,
+			actorPath:
+				"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.SecondSubject",
+			displayName: "Second Subject"
+		};
+		const makeLayer = () =>
+			sessionLayer({
+				inspectSubject: () => currentSelection,
+				loadSet: () => stored,
+				onSave: (next) => {
+					stored = next;
+				}
+			});
+		const appendCurrent = async (layer: ReturnType<typeof makeLayer>) => {
+			const created = await withSessions(layer, (sessions) =>
+				sessions.start({
+					candidates: generateFramingCandidates(currentSelection),
+					destination: { kind: "append_view" },
+					projectRoot,
+					reviewSetPath,
+					selection: currentSelection
+				})
+			);
+			await withSessions(layer, (sessions) =>
+				sessions.approve({
+					endpoint: "http://127.0.0.1:30001",
+					projectRoot,
+					sessionId: created.id
+				})
+			);
+			return created;
+		};
+
+		await appendCurrent(makeLayer());
+		currentSelection = selection;
+		await appendCurrent(makeLayer());
+		stored = await Effect.runPromise(decodeReviewSet(JSON.parse(JSON.stringify(stored))));
+		const afterRestart = await appendCurrent(makeLayer());
+
+		expect(afterRestart.viewId).toBe("review-subject-2");
+		expect(stored.views.map((view) => view.id)).toEqual([
+			"structure-context",
+			"second-subject",
+			"review-subject",
+			"review-subject-2"
+		]);
+		expect(
+			stored.views.filter(
+				(view) =>
+					view.target.kind === "actor" &&
+					view.target.subject.actorPath === selection.actorPath
+			)
+		).toHaveLength(3);
+	});
+
+	it("retains the active append session when Review Set persistence fails", async () => {
+		const projectRoot = await makeProjectRoot();
+		let saves = 0;
+		const layer = sessionLayer({
+			inspectSubject: () => selection,
+			onSave: () => (saves += 1),
+			saveFailure: true
+		});
+		const created = await withSessions(layer, (sessions) =>
+			sessions.start({
+				candidates: generateFramingCandidates(selection),
+				destination: { kind: "append_view" },
+				projectRoot,
+				reviewSetPath,
+				selection
+			})
+		);
+
+		await expect(
+			withSessions(layer, (sessions) =>
+				sessions.approve({
+					endpoint: "http://127.0.0.1:30001",
+					projectRoot,
+					sessionId: created.id
+				})
+			)
+		).rejects.toMatchObject({ operation: "approve" });
+		const retained = await withSessions(layer, (sessions) =>
+			sessions.load({ projectRoot, sessionId: created.id })
+		);
+		expect(retained.lifecycle).toBe("active");
+		expect(retained.pendingReviewSet?.views).toHaveLength(1);
+		expect(saves).toBe(0);
 	});
 
 	it("regenerates tuned rigs, re-anchors overrides, and drops unmappable entries", async () => {

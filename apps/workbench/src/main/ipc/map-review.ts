@@ -1,5 +1,6 @@
 import type {
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringSessionIntent,
@@ -47,9 +48,10 @@ export const register = Effect.gen(function* () {
 		const [actorId, bringToFront] = args as [ActorId, boolean];
 		return mapReview.focusActor(actorId, bringToFront);
 	});
-	yield* ipc.register(invokeContracts["map-review:author-from-selection"], () =>
-		mapReview.authorFromSelection()
-	);
+	yield* ipc.register(invokeContracts["map-review:author-from-selection"], (...args) => {
+		const [intent] = args as [MapReviewAuthorFromSelectionIntent];
+		return mapReview.authorFromSelection(intent);
+	});
 	yield* ipc.register(invokeContracts["map-review:authoring-resume"], () =>
 		mapReview.authoringResume(undefined)
 	);

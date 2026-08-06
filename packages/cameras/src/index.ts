@@ -13,6 +13,7 @@ export * from "./review-authoring-live.js";
 export * from "./review-authoring-session.js";
 export * from "./review-bootstrap.js";
 export * from "./review-framing.js";
+export * from "./review-history.js";
 export * from "./review-live.js";
 export * from "./provisioned-cameras-live.js";
 export * from "./review-repository.js";

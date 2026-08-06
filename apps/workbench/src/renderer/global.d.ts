@@ -15,6 +15,7 @@ import type { AuthoringAuthority, AuthoringSessionIntent } from "@ue-shed/author
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringResult,
@@ -123,7 +124,9 @@ declare global {
 				readonly approveCandidate: (
 					intent: MapReviewApproveCandidateIntent
 				) => Promise<MapReviewApprovalResult>;
-				readonly authorFromSelection: () => Promise<MapReviewAuthoringResult>;
+				readonly authorFromSelection: (
+					intent: MapReviewAuthorFromSelectionIntent
+				) => Promise<MapReviewAuthoringResult>;
 				readonly authoringResume: () => Promise<MapReviewAuthoringResult>;
 				readonly authoringPatch: (
 					intent: MapReviewAuthoringPatchIntent

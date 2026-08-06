@@ -171,6 +171,11 @@ export const CliCommand = Schema.TaggedUnion({
 		viewId: Schema.String
 	},
 	ReviewAuthoringBootstrap: { endpoint: Schema.String, ...Project },
+	ReviewAuthoringAppend: {
+		endpoint: Schema.String,
+		projectRoot: Schema.String,
+		reviewSetPath: Schema.String
+	},
 	ReviewAuthoringShow: { ...SessionProject },
 	ReviewAuthoringTune: { ...SessionProject, patchPath: Schema.String },
 	ReviewAuthoringResume: { ...SessionProject, endpoint: Schema.String },

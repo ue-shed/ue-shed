@@ -192,7 +192,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 			viewId: "view-1"
 		}
 	],
-	"map-review:author-from-selection": [],
+	"map-review:author-from-selection": [{ destination: { kind: "append_view" } }],
 	"map-review:authoring-resume": [],
 	"map-review:authoring-patch": [
 		{

@@ -45,6 +45,15 @@ function restorationSummary(clear: RunCapture["clearCompanion"]): string {
 	return clear.status === "not_requested" ? "not applicable" : clear.restoration.status;
 }
 
+function revisionSummary(
+	revision: RunCapture["viewRevision"],
+	currentRevisionId: string | undefined
+): string {
+	return revision.status === "numbered"
+		? `r${revision.number}${revision.id === currentRevisionId ? " · current" : " · older framing"}`
+		: "legacy · unversioned";
+}
+
 function captureExplanations(capture: RunCapture): ReadonlyArray<string> {
 	const limitations =
 		capture.visibility.status === "assessment_failed"
@@ -76,47 +85,15 @@ function ArtifactImage(props: { readonly artifact: RunArtifact; readonly alt: st
 	);
 }
 
-function PreviewImage(props: { readonly run: MapReviewRunView }) {
-	const [source, setSource] = createSignal<string>();
-	createEffect(() => {
-		const preview = props.run.preview;
-		if (!preview) {
-			setSource(undefined);
-			return;
-		}
-		const bytes = Uint8Array.from(preview.bytes);
-		const url = URL.createObjectURL(new Blob([bytes.buffer], { type: "image/png" }));
-		setSource(url);
-		onCleanup(() => URL.revokeObjectURL(url));
-	});
-	return (
-		<Show
-			when={source()}
-			fallback={
-				<div {...stylex.props(styles.missingPreview)}>
-					<span>NO VALID FRAME</span>
-					<small>{props.run.failedViews} failed view</small>
-				</div>
-			}
-		>
-			{(url) => (
-				<img
-					src={url()}
-					alt={`${props.run.preview?.viewName ?? "Review view"} from run ${props.run.id}`}
-					{...stylex.props(styles.previewImage)}
-				/>
-			)}
-		</Show>
-	);
-}
-
 export function MapReviewRoute(props: { readonly client: MapReviewClientShape }) {
 	const action = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [selectedRunId, setSelectedRunId] = createSignal<string>();
-	const [comparisonMode, setComparisonMode] = createSignal<"pure" | "clear" | "side_by_side">(
-		"pure"
-	);
+	const [selectedViewId, setSelectedViewId] = createSignal<string>();
+	const [authoringMode, setAuthoringMode] = createSignal<"append" | "revise">("append");
+	const [comparisonMode, setComparisonMode] = createSignal<
+		"pure" | "clear" | "side_by_side" | "previous"
+	>("pure");
 	const [focusRequest, setFocusRequest] = createSignal<{
 		readonly actor: ObservedActor;
 		readonly nonce: number;
@@ -136,16 +113,68 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 		const current = ready();
 		return current?.runs.find((run) => run.id === selectedRunId()) ?? current?.runs[0];
 	});
-	const selectedCapture = createMemo(() => selected()?.capture);
+	const selectedView = createMemo(() =>
+		ready()?.reviewSet.views.find((view) => view.id === selectedViewId())
+	);
+	const capturesForRun = (run: MapReviewRunView): ReadonlyArray<RunCapture> =>
+		run.captures ?? (run.capture === undefined ? [] : [run.capture]);
+	const selectedCapture = createMemo(() => {
+		const run = selected();
+		if (run === undefined) return undefined;
+		const viewId = selectedViewId();
+		return capturesForRun(run).find((capture) => capture.viewId === viewId);
+	});
+	const selectedFailure = createMemo(() =>
+		selected()?.failures?.find((failure) => failure.viewId === selectedViewId())
+	);
+	const subjectGroups = createMemo(() => {
+		const groups = new Map<
+			string,
+			Array<NonNullable<ReturnType<typeof ready>>["reviewSet"]["views"][number]>
+		>();
+		for (const view of ready()?.reviewSet.views ?? []) {
+			const key = view.actorPath ?? `area:${view.id}`;
+			groups.set(key, [...(groups.get(key) ?? []), view]);
+		}
+		return [...groups.entries()];
+	});
 	const pureArtifact = createMemo(() =>
 		selectedCapture()?.artifacts.find((artifact) => artifact.variant === "pure")
 	);
 	const clearArtifact = createMemo(() =>
 		selectedCapture()?.artifacts.find((artifact) => artifact.variant === "clear")
 	);
+	const previousEvidence = createMemo(() => {
+		const current = ready();
+		const run = selected();
+		if (current === undefined || run === undefined) return undefined;
+		const selectedIndex = current.runs.findIndex((candidate) => candidate.id === run.id);
+		for (const candidate of current.runs.slice(selectedIndex + 1)) {
+			const capture = capturesForRun(candidate).find(
+				(item) => item.viewId === selectedViewId()
+			);
+			const artifact = capture?.artifacts.find((item) => item.variant === "pure");
+			if (capture !== undefined && artifact !== undefined) {
+				return { artifact, capture, run: candidate };
+			}
+		}
+		return undefined;
+	});
 	const apply = (result: MapReviewResult) => {
 		setState(result);
-		if (result.status === "ready") setSelectedRunId(result.runs[0]?.id);
+		if (result.status === "ready") {
+			const nextViewId = result.reviewSet.views.some((view) => view.id === selectedViewId())
+				? selectedViewId()
+				: result.reviewSet.views[0]?.id;
+			setSelectedViewId(nextViewId);
+			setSelectedRunId(
+				result.runs.find((run) =>
+					(run.captures ?? (run.capture === undefined ? [] : [run.capture])).some(
+						(capture) => capture.viewId === nextViewId
+					)
+				)?.id ?? result.runs[0]?.id
+			);
+		}
 		setComparisonMode("pure");
 	};
 	const clientFailure = (cause: Cause.Cause<unknown>): MapReviewResult => ({
@@ -324,12 +353,104 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 								<code>{current().reviewSet.mapPath}</code>
 							</section>
 							<Show when={worldSource() === "live"}>
+								<div {...stylex.props(styles.authoringMode)}>
+									<button
+										type="button"
+										aria-pressed={authoringMode() === "append"}
+										onClick={() => setAuthoringMode("append")}
+									>
+										ADD ANOTHER VIEW
+									</button>
+									<button
+										type="button"
+										disabled={selectedView() === undefined}
+										aria-pressed={authoringMode() === "revise"}
+										onClick={() => setAuthoringMode("revise")}
+									>
+										REVISE SELECTED VIEW
+									</button>
+								</div>
 								<MapReviewAuthoring
 									client={props.client}
+									destination={
+										authoringMode() === "revise" &&
+										selectedViewId() !== undefined
+											? {
+													kind: "revise_view",
+													viewId: selectedViewId()!
+												}
+											: { kind: "append_view" }
+									}
 									focusRequest={focusRequest()}
 									onApproved={load}
 								/>
 							</Show>
+
+							<section
+								aria-label="Review views"
+								{...stylex.props(styles.viewNavigator)}
+							>
+								<div {...stylex.props(styles.historyHeading)}>
+									<span>APPROVED OBSERVATIONS</span>
+									<small>GROUPED BY SUBJECT</small>
+								</div>
+								<For each={subjectGroups()}>
+									{([subject, views]) => (
+										<div {...stylex.props(styles.subjectGroup)}>
+											<div>
+												<strong>
+													{views[0]?.subjectLabel ??
+														views[0]?.displayName}
+												</strong>
+												<code>
+													{subject.startsWith("area:")
+														? "ORIENTED AREA"
+														: subject}
+												</code>
+											</div>
+											<div {...stylex.props(styles.viewRail)}>
+												<For each={views}>
+													{(view) => (
+														<button
+															type="button"
+															aria-pressed={
+																selectedViewId() === view.id
+															}
+															onClick={() => {
+																setSelectedViewId(view.id);
+																setComparisonMode("pure");
+																setSelectedRunId(
+																	current().runs.find((run) =>
+																		capturesForRun(run).some(
+																			(capture) =>
+																				capture.viewId ===
+																				view.id
+																		)
+																	)?.id ?? current().runs[0]?.id
+																);
+															}}
+															{...stylex.props(
+																styles.viewCard,
+																selectedViewId() === view.id &&
+																	styles.viewCardActive
+															)}
+														>
+															<strong>{view.displayName}</strong>
+															<small>
+																{view.viewpoint?.replaceAll(
+																	"_",
+																	" "
+																) ?? "view"}{" "}
+																· r{view.revision?.number ?? "?"}
+															</small>
+														</button>
+													)}
+												</For>
+											</div>
+										</div>
+									)}
+								</For>
+							</section>
 							<VisibilityPolicySettings
 								client={props.client}
 								onUpdated={apply}
@@ -386,12 +507,25 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 													>
 														SIDE BY SIDE
 													</button>
+													<button
+														type="button"
+														disabled={previousEvidence() === undefined}
+														aria-pressed={
+															comparisonMode() === "previous"
+														}
+														onClick={() =>
+															setComparisonMode("previous")
+														}
+													>
+														COMPARE PREVIOUS RUN
+													</button>
 												</div>
 											</Show>
 											<div
 												{...stylex.props(
 													styles.comparisonStage,
-													comparisonMode() === "side_by_side" &&
+													(comparisonMode() === "side_by_side" ||
+														comparisonMode() === "previous") &&
 														styles.comparisonStagePaired
 												)}
 											>
@@ -399,7 +533,21 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 													when={pureArtifact()}
 													fallback={
 														<div {...stylex.props(styles.imageFrame)}>
-															<PreviewImage run={run()} />
+															<div
+																{...stylex.props(
+																	styles.missingPreview
+																)}
+															>
+																<span>
+																	{selectedFailure() === undefined
+																		? "VIEW NOT INCLUDED IN RUN"
+																		: "VIEW CAPTURE FAILED"}
+																</span>
+																<small>
+																	{selectedFailure()?.message ??
+																		"No result was recorded for this View."}
+																</small>
+															</div>
 															<div
 																{...stylex.props(
 																	styles.imageChrome
@@ -436,7 +584,8 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 												</Show>
 												<Show
 													when={
-														comparisonMode() !== "pure"
+														comparisonMode() === "clear" ||
+														comparisonMode() === "side_by_side"
 															? clearArtifact()
 															: undefined
 													}
@@ -462,6 +611,30 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 																	CLEAR / MODIFIED VISIBILITY
 																</span>
 																<code>MATCHED FRAMING</code>
+															</div>
+														</div>
+													)}
+												</Show>
+												<Show
+													when={
+														comparisonMode() === "previous"
+															? previousEvidence()
+															: undefined
+													}
+												>
+													{(previous) => (
+														<div {...stylex.props(styles.imageFrame)}>
+															<ArtifactImage
+																artifact={previous().artifact}
+																alt={`Previous run capture of ${previous().capture.viewName}`}
+															/>
+															<div
+																{...stylex.props(
+																	styles.imageChrome
+																)}
+															>
+																<span>PREVIOUS RUN / NATURAL</span>
+																<code>{previous().run.id}</code>
 															</div>
 														</div>
 													)}
@@ -514,6 +687,24 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 																		)}
 																	</dd>
 																</div>
+															</Show>
+															<Show
+																when={
+																	selectedCapture()?.viewRevision
+																}
+															>
+																{(revision) => (
+																	<div>
+																		<dt>View revision</dt>
+																		<dd>
+																			{revisionSummary(
+																				revision(),
+																				selectedView()
+																					?.revision?.id
+																			)}
+																		</dd>
+																	</div>
+																)}
 															</Show>
 															<Show
 																when={
@@ -587,7 +778,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 											<button
 												type="button"
 												aria-pressed={selected()?.id === run.id}
-												onClick={() => setSelectedRunId(run.id)}
+												onClick={() => {
+													setSelectedRunId(run.id);
+													setComparisonMode("pure");
+												}}
 												{...stylex.props(
 													styles.runCard,
 													selected()?.id === run.id &&
@@ -603,6 +797,20 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 													{new Date(run.completedAt).toLocaleTimeString()}
 												</strong>
 												<small>{run.status.replaceAll("_", " ")}</small>
+												<small>
+													{capturesForRun(run).some(
+														(capture) =>
+															capture.viewId === selectedViewId()
+													)
+														? "captured"
+														: run.failures?.some(
+																	(failure) =>
+																		failure.viewId ===
+																		selectedViewId()
+															  )
+															? "view failed"
+															: "not in run"}
+												</small>
 											</button>
 										)}
 									</For>
@@ -681,6 +889,11 @@ const styles = stylex.create({
 	},
 	workspace: { paddingTop: 14 },
 	setupWorkspace: { paddingTop: 8 },
+	authoringMode: {
+		display: "flex",
+		gap: 6,
+		margin: "12px 0 6px"
+	},
 	offlineReviewNote: {
 		border: "1px solid #304042",
 		backgroundColor: "#111a1b",
@@ -753,6 +966,36 @@ const styles = stylex.create({
 		padding: "14px 16px",
 		color: "#8c958f",
 		fontSize: 13
+	},
+	viewNavigator: {
+		marginTop: 12,
+		border: "1px solid #343a36",
+		backgroundColor: "#111412"
+	},
+	subjectGroup: {
+		display: "grid",
+		gridTemplateColumns: "minmax(180px, .55fr) 1.45fr",
+		gap: 12,
+		padding: 12,
+		borderBottom: "1px solid #2b302d"
+	},
+	viewRail: { display: "flex", gap: 7, overflowX: "auto" },
+	viewCard: {
+		minWidth: 170,
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: 5,
+		border: "1px solid #343a36",
+		backgroundColor: { default: "#151916", ":hover": "#202620" },
+		color: "#9aa49d",
+		padding: 10,
+		cursor: "pointer"
+	},
+	viewCardActive: {
+		borderColor: "#b9f227",
+		boxShadow: "inset 0 -2px #b9f227",
+		color: "#edf1eb"
 	},
 	history: { marginTop: 12, border: "1px solid #343a36", backgroundColor: "#111412" },
 	historyHeading: {

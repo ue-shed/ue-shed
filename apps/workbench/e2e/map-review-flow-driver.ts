@@ -16,6 +16,7 @@ import {
 import { _electron as electron } from "playwright";
 import { Effect, Schema } from "effect";
 import type {
+	MapReviewFlowAttachment,
 	MapReviewFlowCheckpoint,
 	MapReviewFlowCleanup
 } from "../src/main/map-review-flow-contract.js";
@@ -164,11 +165,13 @@ async function readOnlyJson(path: string): Promise<unknown> {
 
 export async function createMapReviewFlowHarness(args: {
 	readonly artifactRoot: string;
+	readonly collection?: boolean;
 	readonly endpoint: string;
 	readonly flow?: "authoring-roundtrip" | "high-count-rig";
 	readonly lifecycle?: MapReviewFlowLifecycle;
 }): Promise<MapReviewFlowHarness> {
 	const flow = args.flow ?? "authoring-roundtrip";
+	const collection = args.collection ?? false;
 	const contextCameraCount = flow === "high-count-rig" ? 31 : 5;
 	const fixtureContract = Schema.decodeUnknownSync(FixtureContract)(
 		await readOnlyJson(fixtureContractPath)
@@ -225,6 +228,9 @@ export async function createMapReviewFlowHarness(args: {
 	let cleaned = false;
 	let sessionPath: string | undefined;
 	let runPath: string | undefined;
+	let firstRunPath: string | undefined;
+	const createdSessionPaths = new Set<string>();
+	const createdRunPaths = new Set<string>();
 
 	const currentWorkbench = (): WorkbenchPage => {
 		if (workbench === undefined) throw new Error("Workbench is not running.");
@@ -258,6 +264,53 @@ export async function createMapReviewFlowHarness(args: {
 		if (!closed) closingApplication.process().kill();
 		application = undefined;
 		workbench = undefined;
+	};
+	const selectActor = async (actorPath: string) => {
+		await remoteCall({
+			endpoint: args.endpoint,
+			functionName: "SelectNothing",
+			objectPath: editorActorSubsystem
+		});
+		await remoteCall({
+			endpoint: args.endpoint,
+			functionName: "SetActorSelectionState",
+			objectPath: editorActorSubsystem,
+			parameters: { Actor: actorPath, bShouldBeSelected: true }
+		});
+	};
+	const captureCurrentSet = async (): Promise<string> => {
+		const page = currentWorkbench().page;
+		const saved = Schema.decodeUnknownSync(ReviewSet)(await readOnlyJson(reviewSetPath));
+		await page.getByRole("button", { name: "CAPTURE SET" }).click();
+		const dialog = page.getByRole("dialog", { name: "Capture review set" });
+		await dialog.getByRole("button", { name: /REVIEW CAPTURE PLAN/ }).click();
+		await dialog
+			.getByRole("button", {
+				name: `CAPTURE ${saved.views.length} ${saved.views.length === 1 ? "VIEW" : "VIEWS"}`
+			})
+			.click();
+		const completed = dialog.getByRole("region", { name: "Capture complete" });
+		await expect(completed).toBeVisible({ timeout: 180_000 });
+		const runId = (await completed.locator("code").textContent())?.trim();
+		if (!runId) throw new Error("The completed capture omitted its run ID.");
+		const path = join(configuredProjectRoot, ".ue-shed", "review", "runs", runId, "run.json");
+		await expect
+			.poll(async () => {
+				try {
+					await readFile(path);
+					return true;
+				} catch {
+					return false;
+				}
+			})
+			.toBe(true);
+		const run = Schema.decodeUnknownSync(CaptureRun)(await readOnlyJson(path));
+		expect(run.results).toHaveLength(saved.views.length);
+		if (run.status !== "completed")
+			throw new Error(`Capture run failed: ${JSON.stringify(run)}`);
+		createdRunPaths.add(path);
+		await dialog.getByRole("button", { name: "DONE" }).click();
+		return path;
 	};
 	await launch();
 
@@ -296,23 +349,13 @@ export async function createMapReviewFlowHarness(args: {
 				await expect(page.getByRole("button", { exact: true, name: "STOP" })).toBeVisible({
 					timeout: 30_000
 				});
-				await remoteCall({
-					endpoint: args.endpoint,
-					functionName: "SelectNothing",
-					objectPath: editorActorSubsystem
-				});
-				await remoteCall({
-					endpoint: args.endpoint,
-					functionName: "SetActorSelectionState",
-					objectPath: editorActorSubsystem,
-					parameters: { Actor: compoundSubject, bShouldBeSelected: true }
-				});
+				await selectActor(compoundSubject);
 				return {};
 			}),
 		generateRig: () =>
 			step("generateRig", async () => {
 				const page = currentWorkbench().page;
-				await page.getByRole("button", { name: "REFRAME SELECTED ACTOR" }).click();
+				await page.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" }).click();
 				const candidates = page.getByRole("region", { name: "Framing candidates" });
 				await expect(candidates.getByRole("button", { name: /^Select / })).toHaveCount(7, {
 					timeout: 60_000
@@ -326,6 +369,7 @@ export async function createMapReviewFlowHarness(args: {
 				if (sessionFile === undefined)
 					throw new Error("No authoring session was persisted.");
 				sessionPath = join(authoringRoot, sessionFile);
+				createdSessionPaths.add(sessionPath);
 				const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
 					await readOnlyJson(sessionPath)
 				);
@@ -366,13 +410,16 @@ export async function createMapReviewFlowHarness(args: {
 					.fill("49");
 				if (sessionPath === undefined) throw new Error("The session path is unavailable.");
 				await expect
-					.poll(async () => {
-						if (sessionPath === undefined) return undefined;
-						const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
-							await readOnlyJson(sessionPath)
-						);
-						return session.candidateOverrides?.[0]?.overrides.fieldOfViewDegrees;
-					})
+					.poll(
+						async () => {
+							if (sessionPath === undefined) return undefined;
+							const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
+								await readOnlyJson(sessionPath)
+							);
+							return session.candidateOverrides?.[0]?.overrides.fieldOfViewDegrees;
+						},
+						{ timeout: 30_000 }
+					)
 					.toBe(49);
 				const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
 					await readOnlyJson(sessionPath)
@@ -414,10 +461,47 @@ export async function createMapReviewFlowHarness(args: {
 					.fill("Plan 39 recorded authoring round trip");
 				await page.getByRole("button", { name: "KEEP VIEW" }).click();
 				await expect(page.getByText("APPROVED + SAVED")).toBeVisible({ timeout: 60_000 });
-				const saved = Schema.decodeUnknownSync(ReviewSet)(
-					await readOnlyJson(reviewSetPath)
-				);
+				let saved = Schema.decodeUnknownSync(ReviewSet)(await readOnlyJson(reviewSetPath));
 				expect(saved.views).toHaveLength(1);
+				if (collection) {
+					const additionalSubjects = [
+						"compact",
+						"tall",
+						"wide",
+						"asymmetric",
+						"partial",
+						"compound"
+					] as const;
+					for (const [index, key] of additionalSubjects.entries()) {
+						const actorPath = fixtureContract.mapReviewGallery.subjects[key];
+						if (actorPath === undefined)
+							throw new Error(`Missing gallery subject ${key}.`);
+						await selectActor(actorPath);
+						await page
+							.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" })
+							.click();
+						await expect(page.getByRole("button", { name: "KEEP VIEW" })).toBeEnabled({
+							timeout: 60_000
+						});
+						await page.getByRole("button", { name: "KEEP VIEW" }).click();
+						await expect
+							.poll(async () => {
+								const current = Schema.decodeUnknownSync(ReviewSet)(
+									await readOnlyJson(reviewSetPath)
+								);
+								return current.views.length;
+							})
+							.toBe(index + 2);
+						saved = Schema.decodeUnknownSync(ReviewSet)(
+							await readOnlyJson(reviewSetPath)
+						);
+						expect(saved.views).toHaveLength(index + 2);
+					}
+					const newFiles = (await readdir(authoringRoot)).filter(
+						(name) => name.endsWith(".json") && !initialAuthoringFiles.has(name)
+					);
+					for (const file of newFiles) createdSessionPaths.add(join(authoringRoot, file));
+				}
 				return {
 					identity: {
 						viewId: saved.views[0]!.id,
@@ -458,7 +542,7 @@ export async function createMapReviewFlowHarness(args: {
 				await current.page.getByRole("tab", { name: "LIVE WORLD" }).click();
 				const status = current.page.getByRole("region", { name: "Review set status" });
 				await expect(status).toContainText("Map Review Flow Gallery", { timeout: 60_000 });
-				await expect(status).toContainText("1");
+				await expect(status).toContainText(collection ? "7" : "1");
 				const stop = current.page.getByRole("button", { exact: true, name: "STOP" });
 				if (await stop.isVisible()) {
 					await stop.click();
@@ -478,41 +562,45 @@ export async function createMapReviewFlowHarness(args: {
 			}),
 		captureView: () =>
 			step("captureView", async () => {
-				const page = currentWorkbench().page;
-				await page.getByRole("button", { name: "CAPTURE SET" }).click();
-				const dialog = page.getByRole("dialog", { name: "Capture review set" });
-				await dialog.getByRole("button", { name: /REVIEW CAPTURE PLAN/ }).click();
-				await dialog.getByRole("button", { name: "CAPTURE 1 VIEW" }).click();
-				const completed = dialog.getByRole("region", { name: "Capture complete" });
-				await expect(completed).toBeVisible({ timeout: 120_000 });
-				const runId = (await completed.locator("code").textContent())?.trim();
-				if (!runId) throw new Error("The completed capture omitted its run ID.");
-				runPath = join(
-					configuredProjectRoot,
-					".ue-shed",
-					"review",
-					"runs",
-					runId,
-					"run.json"
-				);
-				await expect
-					.poll(async () => {
-						try {
-							await readFile(runPath!);
-							return true;
-						} catch {
-							return false;
-						}
-					})
-					.toBe(true);
-				const run = Schema.decodeUnknownSync(CaptureRun)(await readOnlyJson(runPath));
-				if (run.status !== "completed") {
-					const persistedRoot = join(args.artifactRoot, "persisted");
-					await mkdir(persistedRoot, { recursive: true });
-					await copyFile(runPath, join(persistedRoot, "failed-capture-run.json"));
-					throw new Error(`Capture run failed: ${JSON.stringify(run)}`);
+				firstRunPath = await captureCurrentSet();
+				if (collection) {
+					const changedScale = {
+						x: compoundTransform.scale.x * 1.15,
+						y: compoundTransform.scale.y,
+						z: compoundTransform.scale.z
+					};
+					try {
+						await remoteCall({
+							endpoint: args.endpoint,
+							functionName: "SetActorScale3D",
+							objectPath: compoundSubject,
+							parameters: {
+								NewScale3D: {
+									X: changedScale.x,
+									Y: changedScale.y,
+									Z: changedScale.z
+								}
+							}
+						});
+						runPath = await captureCurrentSet();
+					} finally {
+						await remoteCall({
+							endpoint: args.endpoint,
+							functionName: "SetActorScale3D",
+							objectPath: compoundSubject,
+							parameters: {
+								NewScale3D: {
+									X: compoundTransform.scale.x,
+									Y: compoundTransform.scale.y,
+									Z: compoundTransform.scale.z
+								}
+							}
+						});
+					}
+				} else {
+					runPath = firstRunPath;
 				}
-				await dialog.getByRole("button", { name: "DONE" }).click();
+				const run = Schema.decodeUnknownSync(CaptureRun)(await readOnlyJson(runPath));
 				return { identity: { invocationId: run.invocation.id, runId: run.id } };
 			}),
 		inspectEvidence: () =>
@@ -528,7 +616,7 @@ export async function createMapReviewFlowHarness(args: {
 				const source = join(dirname(runPath), artifact.relativePath);
 				const capturesRoot = join(args.artifactRoot, "captures");
 				await mkdir(capturesRoot, { recursive: true });
-				const destination = join(capturesRoot, "approved-natural.png");
+				const destination = join(capturesRoot, "run-b-natural.png");
 				await copyFile(source, destination);
 				const dimensions = pngDimensions(await readFile(destination));
 				expect(dimensions).toEqual({ height: 720, width: 1280 });
@@ -537,15 +625,55 @@ export async function createMapReviewFlowHarness(args: {
 				});
 				const image = selected.getByRole("img", { name: /Natural capture/ });
 				await expect(image).toHaveJSProperty("naturalWidth", 1280);
+				if (collection) {
+					await currentWorkbench()
+						.page.getByRole("button", { name: "COMPARE PREVIOUS RUN" })
+						.click();
+					await expect(
+						selected.getByRole("img", { name: /Previous run capture/ })
+					).toHaveJSProperty("naturalWidth", 1280);
+				}
+				const attachments: MapReviewFlowAttachment[] = [
+					{
+						height: dimensions.height,
+						kind: "raw-capture",
+						path: "captures/run-b-natural.png",
+						width: dimensions.width
+					}
+				];
+				if (collection && firstRunPath !== undefined) {
+					const first = Schema.decodeUnknownSync(CaptureRun)(
+						await readOnlyJson(firstRunPath)
+					);
+					const firstResult = first.results.find(
+						(candidate) => candidate.status === "captured"
+					);
+					const firstArtifact =
+						firstResult?.status === "captured"
+							? firstResult.artifacts.find(
+									(candidate) => candidate.variant === "pure"
+								)
+							: undefined;
+					if (firstArtifact === undefined)
+						throw new Error("Run A omitted Natural evidence.");
+					const firstDestination = join(capturesRoot, "run-a-natural.png");
+					await copyFile(
+						join(dirname(firstRunPath), firstArtifact.relativePath),
+						firstDestination
+					);
+					const firstDimensions = pngDimensions(await readFile(firstDestination));
+					attachments.unshift({
+						height: firstDimensions.height,
+						kind: "raw-capture",
+						path: "captures/run-a-natural.png",
+						width: firstDimensions.width
+					});
+					await expect(
+						currentWorkbench().page.getByRole("region", { name: "Capture history" })
+					).toContainText("captured");
+				}
 				return {
-					attachments: [
-						{
-							height: dimensions.height,
-							kind: "raw-capture",
-							path: "captures/approved-natural.png",
-							width: dimensions.width
-						}
-					],
+					attachments: [...attachments],
 					identity: { artifactId: artifact.id }
 				};
 			}),
@@ -592,12 +720,14 @@ export async function createMapReviewFlowHarness(args: {
 						functionName: "SelectNothing",
 						objectPath: editorActorSubsystem
 					});
-					if (sessionPath !== undefined) {
-						await rm(sessionPath, { force: true });
-					}
-					if (runPath !== undefined) {
-						await rm(dirname(runPath), { force: true, recursive: true });
-					}
+					await Promise.all(
+						[...createdSessionPaths].map((path) => rm(path, { force: true }))
+					);
+					await Promise.all(
+						[...createdRunPaths].map((path) =>
+							rm(dirname(path), { force: true, recursive: true })
+						)
+					);
 					await rm(tempProjectRoot, { force: true, recursive: true });
 					const cameraCount = status.cameras?.length ?? 0;
 					const mapDirty = dirtyMaps.some((entry) => String(entry).includes(galleryMap));

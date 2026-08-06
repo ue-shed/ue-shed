@@ -354,10 +354,10 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 				operation: "mapReview.approveCandidate"
 			})
 	),
-	authorFromSelection: Effect.fn("MapReviewClient.authorFromSelection")(() =>
+	authorFromSelection: Effect.fn("MapReviewClient.authorFromSelection")((intent) =>
 		request({
 			decode: decodeMapReviewAuthoringResult,
-			invoke: () => window.ueShed.mapReview.authorFromSelection(),
+			invoke: () => window.ueShed.mapReview.authorFromSelection(intent),
 			operation: "mapReview.authorFromSelection"
 		})
 	),

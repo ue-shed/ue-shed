@@ -24,6 +24,7 @@ import { recordObservatoryIpcReplacements } from "@ue-shed/observability";
 import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringResult,
@@ -225,7 +226,9 @@ export interface WorkbenchMapReviewShape {
 	readonly approveCandidate: (
 		intent: MapReviewApproveCandidateIntent
 	) => Effect.Effect<MapReviewApprovalResult>;
-	readonly authorFromSelection: () => Effect.Effect<MapReviewAuthoringResult>;
+	readonly authorFromSelection: (
+		intent: MapReviewAuthorFromSelectionIntent
+	) => Effect.Effect<MapReviewAuthoringResult>;
 	readonly authoringPatch: (
 		intent: MapReviewAuthoringPatchIntent
 	) => Effect.Effect<MapReviewAuthoringResult>;
@@ -948,48 +951,69 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			reviewSet: ReviewSet
 		) {
 			const run = yield* repository.loadRun(summary.path);
-			const captured = run.results.find((result) => result.status === "captured");
-			if (!captured) return summary satisfies MapReviewRunView;
-			const pureArtifact = captured.artifacts.find((artifact) => artifact.variant === "pure");
-			if (!pureArtifact) return summary satisfies MapReviewRunView;
-			const view = reviewSet.views.find((candidate) => candidate.id === captured.viewId);
-			const artifacts = yield* Effect.forEach(
-				captured.artifacts,
-				(artifact) =>
-					localFiles.readFileWithin(dirname(summary.path), artifact.relativePath).pipe(
-						Effect.map((bytes) => ({
-							bytes,
-							height: artifact.height,
-							variant: artifact.variant,
-							width: artifact.width
-						}))
-					),
+			const captures = yield* Effect.forEach(
+				run.results.filter((result) => result.status === "captured"),
+				(captured) =>
+					Effect.gen(function* () {
+						const view = reviewSet.views.find(
+							(candidate) => candidate.id === captured.viewId
+						);
+						const artifacts = yield* Effect.forEach(
+							captured.artifacts,
+							(artifact) =>
+								localFiles
+									.readFileWithin(dirname(summary.path), artifact.relativePath)
+									.pipe(
+										Effect.map((bytes) => ({
+											bytes,
+											height: artifact.height,
+											variant: artifact.variant,
+											width: artifact.width
+										}))
+									),
+							{ concurrency: 2 }
+						);
+						return {
+							artifacts,
+							cause: run.invocation.cause,
+							clearCompanion: captured.clearCompanion,
+							viewId: captured.viewId,
+							viewName: view?.displayName ?? captured.viewId,
+							viewRevision: captured.viewRevision,
+							visibility: captured.visibility,
+							...(captured.visibilityOverrides === undefined
+								? {}
+								: { visibilityOverrides: captured.visibilityOverrides }),
+							...(captured.visibilityPolicy === undefined
+								? {}
+								: { visibilityPolicy: captured.visibilityPolicy })
+						};
+					}),
 				{ concurrency: 2 }
 			);
-			const pure = artifacts.find((artifact) => artifact.variant === "pure");
-			if (pure === undefined) return summary satisfies MapReviewRunView;
+			const firstCapture = captures[0];
+			const pure = firstCapture?.artifacts.find((artifact) => artifact.variant === "pure");
 			return {
 				...summary,
-				capture: {
-					artifacts,
-					cause: run.invocation.cause,
-					clearCompanion: captured.clearCompanion,
-					viewId: captured.viewId,
-					viewName: view?.displayName ?? captured.viewId,
-					visibility: captured.visibility,
-					...(captured.visibilityOverrides === undefined
-						? {}
-						: { visibilityOverrides: captured.visibilityOverrides }),
-					...(captured.visibilityPolicy === undefined
-						? {}
-						: { visibilityPolicy: captured.visibilityPolicy })
-				},
-				preview: {
-					bytes: pure.bytes,
-					height: pure.height,
-					viewName: view?.displayName ?? captured.viewId,
-					width: pure.width
-				}
+				...(firstCapture === undefined ? {} : { capture: firstCapture }),
+				captures,
+				failures: run.results
+					.filter((result) => result.status === "failed")
+					.map((result) => ({
+						message: result.message,
+						viewId: result.viewId,
+						viewRevision: result.viewRevision
+					})),
+				...(pure === undefined || firstCapture === undefined
+					? {}
+					: {
+							preview: {
+								bytes: pure.bytes,
+								height: pure.height,
+								viewName: firstCapture.viewName,
+								width: pure.width
+							}
+						})
 			} satisfies MapReviewRunView;
 		});
 
@@ -1010,10 +1034,19 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					);
 					return profile
 						? Effect.succeed({
+								...(view.target.kind === "actor"
+									? { actorPath: view.target.subject.actorPath }
+									: {}),
 								captureProfileId: profile.id,
 								displayName: view.displayName,
 								id: view.id,
+								revision: view.revision,
 								resolution: profile.resolution,
+								subjectLabel:
+									view.target.kind === "actor"
+										? (view.target.subject.diagnosticLabel ?? view.displayName)
+										: view.displayName,
+								viewpoint: view.viewpoint.kind,
 								...(view.visibilityOverrides === undefined
 									? {}
 									: { visibilityOverrides: view.visibilityOverrides }),
@@ -1025,7 +1058,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								)
 							);
 				});
-				const summaries = yield* repository.listRuns(projectRoot);
+				const summaries = (yield* repository.listRuns(projectRoot)).filter(
+					(summary) => summary.reviewSetId === reviewSet.id
+				);
 				const runs = yield* Effect.forEach(
 					summaries,
 					(summary) => buildRunView(summary, reviewSet),
@@ -1154,7 +1189,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		});
 
 		const authorFromSelection = Effect.fn("Workbench.WorkbenchMapReview.authorFromSelection")(
-			function* () {
+			function* (intent: MapReviewAuthorFromSelectionIntent) {
 				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
 					return mapReviewAuthoringFailure({
@@ -1177,6 +1212,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						const candidates = generateFramingCandidates(selection);
 						const session = yield* authoringSessions.start({
 							candidates,
+							destination:
+								intent.destination.kind === "append_view"
+									? intent.destination
+									: {
+											kind: "revise_view",
+											viewId: ReviewViewId.make(intent.destination.viewId)
+										},
 							projectRoot,
 							...(configuration.review.status === "configured"
 								? { reviewSetPath: configuration.review.reviewSetPath }

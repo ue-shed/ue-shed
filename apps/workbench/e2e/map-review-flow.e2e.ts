@@ -13,7 +13,7 @@ test.skip(
 	!enabled,
 	"run pnpm test:flow:map-review with a live fixture editor on the Map Review gallery"
 );
-test.setTimeout(300_000);
+test.setTimeout(600_000);
 
 async function runFlow(
 	flow: "authoring-roundtrip" | "high-count-rig",
@@ -22,6 +22,7 @@ async function runFlow(
 	if (endpoint === undefined) throw new Error("The live Map Review endpoint is unavailable.");
 	const harness = await createMapReviewFlowHarness({
 		artifactRoot: testInfo.outputDir,
+		collection: flow === "authoring-roundtrip",
 		endpoint,
 		flow
 	});

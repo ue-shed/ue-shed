@@ -347,10 +347,15 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 			viewCount: 1,
 			views: [
 				{
+					actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
 					captureProfileId: "profile-1",
 					displayName: "Front view",
 					id: "view-1",
-					resolution: { height: 1080, width: 1920 }
+					resolution: { height: 1080, width: 1920 },
+					revision: { id: "view-1-r1", number: 1, status: "numbered" },
+					subjectLabel: "Front view",
+					viewpoint: "world_fixed",
+					visibilityPolicy: policyReviewSet.visibilityPolicies[0]
 				}
 			]
 		});
@@ -439,7 +444,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 									startedAt: "2026-01-01T00:00:00.000Z",
 									status: "completed" as const
 								} as never),
-							loadSet: () => Effect.succeed(fixtureReviewSet),
+							loadSet: () => Effect.succeed(policyReviewSet),
 							prepareRun: () => Effect.die("not used"),
 							saveSet: () => Effect.die("not used"),
 							storeArtifact: () => Effect.die("not used"),
@@ -509,7 +514,9 @@ it.effect("round-trips immutable policy replacement through the headless service
 it.effect("reports authoring failure when the selection map does not match the review set", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
-		const result = yield* service.authorFromSelection();
+		const result = yield* service.authorFromSelection({
+			destination: { kind: "append_view" }
+		});
 		expect(result.status).toBe("failed");
 		if (result.status === "failed") {
 			expect(result.error.message).toContain("different map");
@@ -563,7 +570,9 @@ it.effect("reports authoring failure when the selection map does not match the r
 it.effect("generates framing candidates for a matching selection", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
-		const result = yield* service.authorFromSelection();
+		const result = yield* service.authorFromSelection({
+			destination: { kind: "append_view" }
+		});
 		expect(result.status).toBe("ready");
 		if (result.status !== "ready") return;
 		expect(result.candidates.length).toBeGreaterThan(0);

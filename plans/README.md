@@ -25,6 +25,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 040 completed and is archived under
+  [`archive/040-durable-multi-actor-review-sets-and-history.md`](archive/040-durable-multi-actor-review-sets-and-history.md)
+  after explicit append/revise authoring, durable multi-subject collections, View-oriented history,
+  two-run UE 5.7 comparison flows, and joined recordings passed the trusted and portable gates.
 - Plan 039 completed and is archived under
   [`archive/039-map-review-fixture-and-recordable-flows.md`](archive/039-map-review-fixture-and-recordable-flows.md)
   after the dedicated UE 5.7 gallery, restart/load E2E, 37-camera soft-limit flow, varied framing,

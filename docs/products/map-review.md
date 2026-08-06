@@ -40,8 +40,9 @@ and Cardinal are convenience presets rather than domain limits. Workbench provid
 controls and a 1–24 ergonomic range while the library and CLI remain permissive.
 
 The maintained fixture evidence includes a dedicated Map Review gallery with varied geometry and
-occlusion bays. `pnpm test:flow:map-review` exercises full authoring persistence, restart/load,
-capture, a 37-candidate rig, bounds-change recovery, framing variation, and explicit Clear
+occlusion bays. `pnpm test:flow:map-review` exercises a seven-View multi-subject collection, two
+Views for one subject, full authoring persistence, restart/load, two captures around a restored
+fixture change, a 37-candidate rig, bounds-change recovery, framing variation, and explicit Clear
 restoration against UE 5.7. The authoring and high-count journeys can record those same asserted
 actions with `pnpm record:flow:map-review`; video, traces, logs, checkpoint screenshots, raw Unreal
 images, and durable JSON are described by a versioned relative-path manifest.
@@ -56,8 +57,10 @@ narrow numeric/current-selection area operation produces portable oriented bound
 an actor.
 
 Every new View Result retains the View revision identity used for capture. An optional pure helper
-can create a revised View definition, but UE Shed does not prescribe history grouping, timeline
-storage, baseline policy, or comparison presentation.
+can create a revised View definition. Workbench now projects the immutable runs into a View-oriented
+timeline: users choose the durable observation first, then navigate its captured, failed, missing,
+current-revision, and older-framing evidence. This projection does not rewrite runs or introduce a
+durable actor-group entity; baseline promotion remains separate policy.
 
 The first render-truthful visibility-assessment capability is implemented. For v1.3 actor requests,
 `automatic` resolves to a bounded depth comparison and records method/version, subject pixel count,
@@ -106,6 +109,12 @@ a large rig makes preview expensive. The CLI exposes the same selection, generat
 durable-session, and approval path. A project with no configured Review Set now starts in an honest
 first-run state: selection creates a pending map-scoped set in the authoring session, and only Keep
 View writes that portable set under `.ue-shed/review/sets`.
+
+Existing sets use explicit authoring destinations. Append allocates a readable collision-free View
+ID and adds the selected subject at the end of the ordered set. Revise requires an identified View,
+preserves that View ID, and advances its revision only through an approved definition change.
+Selection by itself never chooses between those mutations. The CLI exposes append directly, and
+Workbench presents actor grouping only as a navigation projection over ordered Views.
 
 The Live World Scout composition is also implemented as the primary Workbench entry into that flow.
 The separately enabled Observatory capability negotiates a catalog over Remote Control, then streams
@@ -583,6 +592,7 @@ ue-shed review views put <review-set> <view-json>
 ue-shed review framing candidates <endpoint> [--parameters <framing-json>]
 ue-shed review framing approve <review-set> <endpoint> <view-id> <candidate-id> [--parameters <framing-json>]
 ue-shed review authoring bootstrap <project-root> <endpoint>
+ue-shed review authoring append <project-root> <review-set> <endpoint>
 ue-shed review authoring start <project-root> <review-set> <endpoint> <view-id>
 ue-shed review authoring tune <project-root> <session-id> <patch-json>
 ue-shed review authoring show|discard <project-root> <session-id>

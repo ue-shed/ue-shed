@@ -18,6 +18,7 @@ import {
 import {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
+	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringResult,
@@ -531,7 +532,7 @@ export const invokeContracts = {
 	}),
 	"map-review:author-from-selection": invoke({
 		channel: "map-review:author-from-selection",
-		args: EmptyArgs,
+		args: Schema.Tuple([MapReviewAuthorFromSelectionIntent]),
 		result: MapReviewAuthoringResult
 	}),
 	"map-review:authoring-resume": invoke({

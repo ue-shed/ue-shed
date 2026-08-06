@@ -243,7 +243,9 @@ describe("MapReviewRoute", () => {
 		};
 
 		renderRoute(client);
-		expect(await screen.findByRole("button", { name: "REFRAME SELECTED ACTOR" })).toBeDefined();
+		expect(
+			await screen.findByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" })
+		).toBeDefined();
 		expect(screen.getByText("Select an actor, then reframe")).toBeDefined();
 	});
 
@@ -298,7 +300,7 @@ describe("MapReviewRoute", () => {
 		await user.click(screen.getByRole("button", { name: "CAPTURE SET" }));
 		expect(screen.getByRole("dialog", { name: "Capture review set" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "REVIEW CAPTURE PLAN →" }));
-		expect(screen.getByText("Structure context")).toBeDefined();
+		expect(screen.getAllByText("Structure context").length).toBeGreaterThan(0);
 		await user.click(screen.getByRole("button", { name: "CAPTURE 1 VIEW" }));
 		expect(await screen.findByText("Capture finished")).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "DONE" }));
@@ -396,6 +398,131 @@ describe("MapReviewRoute", () => {
 		expect(screen.getByAltText(/Clear capture with modified visibility/)).toBeDefined();
 	});
 
+	it("groups several Views by subject and walks one View across run revisions", async () => {
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: () => "blob:review-history"
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: () => undefined
+		});
+		const capture = (viewId: string, viewName: string, revision: number) => ({
+			artifacts: [
+				{
+					bytes: new Uint8Array([revision]),
+					height: 720,
+					variant: "pure" as const,
+					width: 1280
+				}
+			],
+			cause: { type: "manual" as const },
+			clearCompanion: { status: "not_requested" as const },
+			viewId,
+			viewName,
+			viewRevision: {
+				id: `${viewId}-r${revision}`,
+				number: revision,
+				status: "numbered" as const
+			},
+			visibility: {
+				reason: "Not assessed in component test",
+				status: "not_assessed" as const
+			}
+		});
+		const history = {
+			...empty,
+			reviewSet: {
+				...empty.reviewSet,
+				viewCount: 2,
+				views: [
+					{
+						actorPath: "/Game/Fixture.Subject",
+						displayName: "Structure context",
+						id: "structure-context",
+						resolution: { height: 720, width: 1280 },
+						revision: { id: "structure-context-r2", number: 2 },
+						subjectLabel: "Fixture subject",
+						viewpoint: "world_fixed"
+					},
+					{
+						actorPath: "/Game/Fixture.Subject",
+						displayName: "Detail angle",
+						id: "detail-angle",
+						resolution: { height: 720, width: 1280 },
+						revision: { id: "detail-angle-r1", number: 1 },
+						subjectLabel: "Fixture subject",
+						viewpoint: "target_relative"
+					}
+				]
+			},
+			runs: [
+				{
+					captures: [
+						capture("structure-context", "Structure context", 2),
+						capture("detail-angle", "Detail angle", 1)
+					],
+					completedAt: "2026-07-16T08:00:00.000Z",
+					failedViews: 0,
+					failures: [],
+					id: "run-new",
+					status: "completed",
+					successfulViews: 2
+				},
+				{
+					captures: [capture("structure-context", "Structure context", 1)],
+					completedAt: "2026-07-15T08:00:00.000Z",
+					failedViews: 0,
+					failures: [],
+					id: "run-old",
+					status: "completed",
+					successfulViews: 1
+				}
+			],
+			status: "ready"
+		} as unknown as MapReviewResult;
+		let authoringIntent: Parameters<MapReviewClientShape["authorFromSelection"]>[0] | undefined;
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: (intent) =>
+				Effect.sync(() => {
+					authoringIntent = intent;
+					return {
+						error: {
+							message: "Stopped after intent",
+							recovery: "Component assertion only"
+						},
+						status: "failed" as const
+					};
+				}),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(history),
+			previewCandidate: () => Effect.die("not used")
+		};
+		const user = userEvent.setup();
+		renderRoute(client);
+		const views = await screen.findByRole("region", { name: "Review views" });
+		expect(views.textContent).toContain("Fixture subject");
+		expect(views.textContent).toContain("Structure context");
+		expect(views.textContent).toContain("Detail angle");
+		expect(screen.getByText("r2 · current")).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "COMPARE PREVIOUS RUN" }));
+		expect(screen.getByAltText("Previous run capture of Structure context")).toBeDefined();
+		expect(screen.getByText("PREVIOUS RUN / NATURAL")).toBeDefined();
+
+		await user.click(screen.getByRole("button", { name: /Detail angle/ }));
+		const timeline = screen.getByRole("region", { name: "Capture history" });
+		expect(timeline.textContent).toContain("captured");
+		expect(timeline.textContent).toContain("not in run");
+		await user.click(screen.getByRole("button", { name: "REVISE SELECTED VIEW" }));
+		await user.click(screen.getByRole("button", { name: "REVISE VIEW FROM SELECTED ACTOR" }));
+		expect(authoringIntent).toEqual({
+			destination: { kind: "revise_view", viewId: "detail-angle" }
+		});
+	});
+
 	it("generates, adjusts, and approves a framing candidate through the public client", async () => {
 		const pose = {
 			aspectRatio: "16:9" as const,
@@ -405,6 +532,7 @@ describe("MapReviewRoute", () => {
 			rotation: { pitch: -15, roll: 0, yaw: 135 }
 		};
 		let approved: Parameters<MapReviewClientShape["approveCandidate"]>[0] | undefined;
+		let authoringIntent: Parameters<MapReviewClientShape["authorFromSelection"]>[0] | undefined;
 		const client: MapReviewClientShape = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
@@ -413,34 +541,37 @@ describe("MapReviewRoute", () => {
 					approved = intent;
 					return { candidateId: intent.candidateId, status: "approved" };
 				}),
-			authorFromSelection: () =>
-				Effect.succeed({
-					candidates: [
-						{
-							diagnostics: [
-								{
-									code: "bounds_snapshot",
-									message: "Generated from bounds",
-									severity: "info"
+			authorFromSelection: (intent) =>
+				Effect.sync(() => {
+					authoringIntent = intent;
+					return {
+						candidates: [
+							{
+								diagnostics: [
+									{
+										code: "bounds_snapshot",
+										message: "Generated from bounds",
+										severity: "info"
+									}
+								],
+								displayName: "Context three-quarter",
+								id: "context-three-quarter",
+								pose,
+								preset: "context_three_quarter",
+								preview: {
+									message: "Preview omitted in component test",
+									status: "failed"
 								}
-							],
-							displayName: "Context three-quarter",
-							id: "context-three-quarter",
-							pose,
-							preset: "context_three_quarter",
-							preview: {
-								message: "Preview omitted in component test",
-								status: "failed"
 							}
-						}
-					],
-					selection: {
-						actorPath: "/Game/Fixture.Subject",
-						displayName: "Review Subject",
-						mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
-					},
-					status: "ready",
-					viewId: "structure-context"
+						],
+						selection: {
+							actorPath: "/Game/Fixture.Subject",
+							displayName: "Review Subject",
+							mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+						},
+						status: "ready",
+						viewId: "structure-context"
+					};
 				}),
 			capture: () => Effect.die("not used"),
 			load: () => Effect.succeed(empty),
@@ -453,7 +584,7 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		await screen.findByText("No captures yet. Use Capture Set when you want PNG evidence.");
-		await user.click(screen.getByRole("button", { name: "REFRAME SELECTED ACTOR" }));
+		await user.click(screen.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" }));
 		expect(await screen.findByText("Review Subject")).toBeDefined();
 		const z = screen.getByRole("spinbutton", { name: "Z" });
 		await user.clear(z);
@@ -464,6 +595,7 @@ describe("MapReviewRoute", () => {
 		);
 		await user.click(screen.getByRole("button", { name: "KEEP VIEW" }));
 		expect(await screen.findByText("APPROVED + SAVED")).toBeDefined();
+		expect(authoringIntent).toEqual({ destination: { kind: "append_view" } });
 		expect(approved).toMatchObject({
 			candidateId: "context-three-quarter",
 			candidatePose: pose,

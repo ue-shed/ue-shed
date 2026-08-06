@@ -24,6 +24,8 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 			const cacheRoot = yield* Effect.promise(() =>
 				mkdtemp(join(tmpdir(), "ue-shed-project-index-ts-"))
 			);
+			const queryWorkerPids: number[] = [];
+			let observeQueryWorkers = false;
 			yield* Effect.addFinalizer(() =>
 				Effect.promise(() => rm(cacheRoot, { recursive: true, force: true }))
 			);
@@ -31,6 +33,11 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 			const layer = projectIndexProcessLayerWithConfig({
 				cacheRoot,
 				executable: executable!,
+				protocolObserver: (event) => {
+					if (observeQueryWorkers && event.kind === "worker_started") {
+						queryWorkerPids.push(event.pid);
+					}
+				},
 				timeoutMs: 120_000
 			});
 
@@ -50,16 +57,22 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 				);
 				expect(warm.changedPackages).toBe(0);
 				expect(warm.packageCount).toBe(cold.packageCount);
+				observeQueryWorkers = true;
+				const queryMaps = (limit: number) =>
+					queryProjectIndex(
+						ProjectIndexQuery.cases.Maps.make({
+							expectedGeneration: warm.generation,
+							limit,
+							projectId: warm.projectId
+						})
+					);
 
-				const maps = yield* queryProjectIndex(
-					ProjectIndexQuery.cases.Maps.make({
-						expectedGeneration: warm.generation,
-						limit: 16,
-						projectId: warm.projectId
-					})
-				);
+				const [maps, repeatedMaps] = yield* Effect.all([queryMaps(16), queryMaps(8)], {
+					concurrency: "unbounded"
+				});
 				expect(maps.items.length).toBeLessThanOrEqual(16);
 				expect(maps.generation).toBe(warm.generation);
+				expect(repeatedMaps.generation).toBe(warm.generation);
 
 				const stale = yield* Effect.exit(
 					queryProjectIndex(
@@ -71,7 +84,23 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 					)
 				);
 				expect(Exit.isFailure(stale)).toBe(true);
+
+				const recovered = yield* queryProjectIndex(
+					ProjectIndexQuery.cases.Maps.make({
+						expectedGeneration: warm.generation,
+						limit: 4,
+						projectId: warm.projectId
+					})
+				);
+				expect(recovered.generation).toBe(warm.generation);
 			}).pipe(Effect.provide(layer));
+
+			expect(new Set(queryWorkerPids).size).toBe(1);
+			expect(queryWorkerPids.length).toBe(4);
+			const sessionPid = queryWorkerPids[0];
+			if (sessionPid !== undefined) {
+				expect(() => process.kill(sessionPid, 0)).toThrow();
+			}
 		}).pipe(Effect.scoped)
 	);
 });

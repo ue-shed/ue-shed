@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import {
 	SavedAssetManifestEntry,
 	SavedAssetScan,
@@ -37,7 +38,7 @@ import {
 	assetReaderTerminalState
 } from "./asset-reader.js";
 
-type ProtocolEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
+export type ProtocolEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
 
 function sameProtocolContract(
 	left: UAssetIoRequest["contract"],
@@ -608,6 +609,201 @@ export async function* runUassetProtocolEvents(options: {
 			telemetry.terminalState = "failed";
 		}
 		await Effect.runPromise(recordProtocolTelemetry("project_index", telemetry));
+	}
+}
+
+/** A scoped, query-only native protocol worker. Calls must be serialized by its owner. */
+export class UassetProtocolSession {
+	private child: ReturnType<typeof spawn> | undefined;
+	private closePromise:
+		| Promise<{ readonly code: number | null; readonly signal: string | null }>
+		| undefined;
+	private disposed = false;
+	private iterator: AsyncIterator<string> | undefined;
+	private processError: Error | undefined;
+	private running = false;
+	private stderr = "";
+
+	constructor(
+		private readonly configuration: Pick<
+			AssetReaderConfiguration,
+			"executable" | "protocolObserver"
+		>
+	) {}
+
+	private start(): ReturnType<typeof spawn> {
+		if (this.disposed) {
+			throw new ProtocolStreamFailure("process", "Protocol session is closed");
+		}
+		if (this.child !== undefined) return this.child;
+
+		const child = spawn(this.configuration.executable, ["protocol-session"], {
+			windowsHide: true
+		});
+		if (child.stdin === null || child.stdout === null) {
+			child.kill();
+			throw new ProtocolStreamFailure("process", "Protocol session did not expose pipes");
+		}
+		child.stdin.setDefaultEncoding("utf8");
+		child.stdout.setEncoding("utf8");
+		const lines = createInterface({ crlfDelay: Infinity, input: child.stdout });
+		this.iterator = lines[Symbol.asyncIterator]();
+		this.stderr = "";
+		this.processError = undefined;
+		if (child.stderr !== null) {
+			child.stderr.setEncoding("utf8");
+			child.stderr.on("data", (chunk: string) => {
+				if (this.stderr.length < MAX_CAPTURED_STDERR_BYTES) {
+					this.stderr += chunk.slice(0, MAX_CAPTURED_STDERR_BYTES - this.stderr.length);
+				}
+			});
+		}
+		this.closePromise = new Promise((resolvePromise) => {
+			child.once("error", (cause) => {
+				this.processError = cause;
+			});
+			child.once("close", (code, signal) => resolvePromise({ code, signal }));
+		});
+		this.child = child;
+		return child;
+	}
+
+	private async nextLine(
+		deadline: number,
+		signal: AbortSignal | undefined
+	): Promise<IteratorResult<string>> {
+		if (signal?.aborted) {
+			throw new ProtocolStreamFailure("process", "Protocol aborted");
+		}
+		const iterator = this.iterator;
+		if (iterator === undefined) {
+			throw new ProtocolStreamFailure("process", "Protocol session output is unavailable");
+		}
+		const remaining = Math.max(0, deadline - nowMs());
+		return await new Promise<IteratorResult<string>>((resolvePromise, rejectPromise) => {
+			let settled = false;
+			const settle = (result: () => void) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", onAbort);
+				result();
+			};
+			const onAbort = () =>
+				settle(() =>
+					rejectPromise(new ProtocolStreamFailure("process", "Protocol aborted"))
+				);
+			const timer = setTimeout(
+				() =>
+					settle(() =>
+						rejectPromise(
+							new ProtocolStreamFailure("timeout", "Protocol session timed out")
+						)
+					),
+				remaining
+			);
+			signal?.addEventListener("abort", onAbort, { once: true });
+			iterator.next().then(
+				(value) => settle(() => resolvePromise(value)),
+				(cause: unknown) => settle(() => rejectPromise(cause))
+			);
+		});
+	}
+
+	private async terminate(): Promise<void> {
+		const child = this.child;
+		const closePromise = this.closePromise;
+		if (child === undefined) return;
+		if (child.exitCode === null && child.signalCode === null && !child.killed) child.kill();
+		if (closePromise !== undefined) await closePromise;
+		this.child = undefined;
+		this.closePromise = undefined;
+		this.iterator = undefined;
+	}
+
+	async *events(options: {
+		readonly request: UAssetIoRequest;
+		readonly signal: AbortSignal | undefined;
+		readonly timeoutMs: number;
+		readonly onEvent?: (event: ProtocolEvent) => void;
+	}): AsyncGenerator<ProtocolEvent> {
+		if (this.running) {
+			throw new ProtocolStreamFailure("process", "Concurrent protocol session request");
+		}
+		this.running = true;
+		const telemetry = makeProtocolTelemetry(false, this.configuration.protocolObserver);
+		let terminal = false;
+		try {
+			const child = this.start();
+			telemetry.startedAt = nowMs();
+			if (child.pid !== undefined) {
+				telemetry.workerPid = child.pid;
+				notifyProtocolObserver(telemetry, { kind: "worker_started", pid: child.pid });
+			}
+			const validator = new ProtocolStreamValidator(
+				options.request.contract,
+				options.request.requestId
+			);
+			const outputBudget = new ProtocolOutputBudget(
+				options.request.limits.maximumOutputBytes ?? MAX_PROTOCOL_OUTPUT_BYTES
+			);
+			const stdin = child.stdin;
+			if (stdin === null) {
+				throw new ProtocolStreamFailure("process", "Protocol session input is unavailable");
+			}
+			await new Promise<void>((resolvePromise, rejectPromise) => {
+				stdin.write(`${JSON.stringify(options.request)}\n`, (cause) => {
+					if (cause === null || cause === undefined) resolvePromise();
+					else rejectPromise(cause);
+				});
+			});
+			const deadline = nowMs() + options.timeoutMs;
+			while (!terminal) {
+				const next = await this.nextLine(deadline, options.signal);
+				if (next.done) {
+					const closed = await this.closePromise;
+					throw new ProtocolStreamFailure(
+						"process",
+						this.processError?.message ||
+							this.stderr.trim() ||
+							`Protocol session exited ${closed?.code ?? closed?.signal ?? "unknown"}`,
+						closed?.code ?? undefined,
+						this.stderr.trim() || undefined
+					);
+				}
+				const chunk = `${next.value}\n`;
+				observeProtocolChunk(chunk, telemetry);
+				outputBudget.observe(chunk);
+				const event = validator.pushLine(next.value);
+				observeProtocolEvent(event, telemetry);
+				options.onEvent?.(event);
+				terminal = isProtocolTerminal(event);
+				if (terminal) validator.finish();
+				yield event;
+			}
+		} finally {
+			if (!terminal) {
+				telemetry.cancelled = options.signal?.aborted ?? false;
+				await this.terminate();
+			}
+			if (telemetry.terminalState === undefined && !telemetry.cancelled) {
+				telemetry.terminalState = "failed";
+			}
+			await Effect.runPromise(recordProtocolTelemetry("project_index", telemetry));
+			this.running = false;
+		}
+	}
+
+	async close(): Promise<void> {
+		this.disposed = true;
+		const child = this.child;
+		if (child?.stdin !== null && child?.stdin !== undefined && !child.stdin.destroyed) {
+			child.stdin.end();
+		}
+		if (this.closePromise !== undefined) await this.closePromise;
+		this.child = undefined;
+		this.closePromise = undefined;
+		this.iterator = undefined;
 	}
 }
 

@@ -52,12 +52,11 @@ TypeScript supplies a configurable cache root. Rust canonicalizes project identi
 manages the Catalog files beneath that root, and returns an opaque Catalog reference. The DuckDB
 schema and snapshot manifest are private Implementation, not a second cross-language Interface.
 
-DuckDB 1.5.5 is selected as the target canonical production Catalog. SQLite remains the measured interim
-Adapter until the natural DuckDB Adapter passes conformance, recovery, release, and equal-workload
-regression gates; it is not a second runtime cache or a permanent user-selectable backend. The
-in-memory Adapter continues to exercise the same Rust refresh coordinator in tests. During the
-cutover, three Adapters make the Catalog Seam real; after cutover, delete the SQLite Adapter unless
-a separately recorded release rollback requirement justifies retaining it.
+DuckDB 1.5.5 is the canonical production Catalog. The measured interim SQLite adapter was removed
+after DuckDB passed conformance, recovery, release, equal-workload regression, and bounded-memory
+gates; there is no second runtime cache or user-selectable backend. The in-memory adapter continues
+to exercise the same Rust refresh coordinator in tests. The completed three-adapter cutover proved
+the Catalog seam without retaining a permanent storage-engine choice.
 
 The selection is based on the completed equal-workload comparison, not the engine category alone.
 The natural columnar DuckDB probe improved representative cold mean from SQLite's 25.72 seconds to
@@ -983,8 +982,9 @@ set-build the replacement from observed prior rows plus staged replacements; war
 new logical Generation over the same physical snapshot. Read connections are read-only, capped at
 four threads, and answer each route with one set-oriented bounded query.
 
-The unchanged shared Catalog conformance suite passes against memory, SQLite, and DuckDB. Additional
-DuckDB tests prove empty first publication, reopen, warm physical-snapshot reuse, corrupt-manifest
+The unchanged shared Catalog conformance suite passed against memory, SQLite, and DuckDB during
+cutover and continues to run against the retained memory and DuckDB adapters. Additional DuckDB
+tests prove empty first publication, reopen, warm physical-snapshot reuse, corrupt-manifest
 quarantine, and a reader retaining the previous snapshot while the next Generation publishes. The
 complete locked Rust license graph is recorded, a locked offline native build passes, and two full
 repository checks pass with isolated release/adoption builds taking approximately 2 minutes 20
@@ -992,12 +992,10 @@ seconds to relink the bundled engine.
 
 The production factory now opens only DuckDB. Writable snapshots use the measured 32,768-row-group
 layout through a private attach bootstrap, while every committed query connection remains read-only
-with external access and extension autoload disabled. A storage-boundary check proves the former
-SQLite module is compiled only for tests and `rusqlite` is only a development dependency, making its
-eventual retirement a mechanical deletion. Workbench now renders a ready committed Generation and
-its maps before starting a scoped background refresh; a genuinely absent Catalog still refreshes
-synchronously. Persistent native query sessions, cold-ingestion memory follow-up, and the last
-release/package evidence remain open before the retirement commit.
+with external access and extension autoload disabled. Workbench now renders a ready committed
+Generation and its maps before starting a scoped background refresh; a genuinely absent Catalog
+still refreshes synchronously. Persistent native query sessions and bounded cold-ingestion memory
+are now proven.
 
 **Representative cutover rerun (2026-08-06):** the first three-sample production run exposed an
 invalid query regression rather than a storage-engine regression. The Adapter used correlated
@@ -1020,6 +1018,51 @@ SQLite's roughly 579 MB and the earlier columnar probe's 514–523 MB, so cold i
 an explicit follow-up rather than being hidden by the wall-time win. Persistent query sessions also
 remain justified: the list-native correction removes pathological SQL work, while the existing 17
 process/connection launches still account for most of the remaining 2.5–2.8-second query phase.
+
+**Persistent query-session confirmation (2026-08-06):** the scoped TypeScript Project Index Layer
+now lazily owns one query-only native worker, serializes requests through an Effect semaphore, and
+closes the worker with the Layer scope. The native session accepts one bounded NDJSON query request
+at a time and retains one read-only DuckDB connection for the requested immutable Generation;
+changing cache root, project identity, or expected Generation reopens the snapshot. Unit and real
+process tests prove connection reuse, independent request framing, concurrent-call serialization,
+typed-failure isolation, one PID across four logical queries, and worker shutdown at scope exit.
+
+One release-build confirmation on the same 185,676-package representative workload reduced the 17
+bounded pages from the corrected cutover's 2.63 / 2.52 seconds to 1.83 / 1.77 seconds cold/warm
+(approximately 30% faster). Total cold/warm wall time was 18.78 / 6.66 seconds, and warm peak Rust
+RSS was 142 MB. This is a single confirmation sample rather than a replacement p50/p95 distribution;
+the structured evidence is retained at
+`test-results/project-index-arif-mbresearch-duckdb-persistent-session.json`. The remaining query
+phase is attributed to bounded DuckDB execution, result serialization, and TypeScript decoding,
+not per-page worker or connection startup.
+
+**Bounded writer-memory result (2026-08-06):** the private DuckDB snapshot writer now has a 384 MB
+memory limit, does not preserve irrelevant insertion order before the explicit path sort, and may
+spill only into a snapshot-scoped temporary directory that is removed after commit or rollback.
+The 1,024-row Arrow ingestion bound is unchanged. Adapter tests inspect the effective settings and
+prove rollback cleanup. A 256 MB probe is retained as negative evidence: it limited peak Rust RSS
+to 399–434 MB but could not pin the final ordered snapshot's next 256 KiB block after using its
+244.1 MiB effective limit, so both attempted cold publications failed explicitly and advanced no
+Generation.
+
+Three successful 384 MB samples on the same 185,676-package corpus completed cold in 18.83–18.95
+seconds (18.94 p50, 18.95 p95), with all 17 bounded pages and 580.7–607.1 MB peak Rust RSS. This is
+32–35% below the former 894–899 MB production DuckDB peak and close to the 578.7–579.6 MB SQLite
+baseline while preserving DuckDB's latency and storage advantages. Warm samples completed in
+6.49–6.57 seconds (6.56 p50, 6.57 p95), used 126.5–152.8 MB peak Rust RSS, read zero headers, and
+wrote zero evidence rows. Evidence is retained at
+`test-results/project-index-arif-mbresearch-duckdb-bounded-memory-384mb-distribution.json`; the
+failed 256 MB boundary probe remains at
+`test-results/project-index-arif-mbresearch-duckdb-bounded-memory.json`.
+
+**SQLite retirement (2026-08-06):** after the successful soak and bounded-memory distribution, the
+2,391-line interim adapter, migrations, journal/recovery tests, `rusqlite` and `libsqlite3-sys` lock
+entries, and the one-off SQLite-to-DuckDB research conversion driver were deleted. Historical
+measurements and comparison prose remain as decision evidence, but no SQLite implementation or
+client dependency ships or compiles. The storage architecture gate now recognizes DuckDB as the
+sole native Catalog adapter and rejects any reintroduced `rusqlite` dependency. Existing disposable
+`catalogs-v1` files are intentionally left untouched on user machines; runtime code neither reads
+nor writes them.
 
 1. Add the exact DuckDB 1.5.5 Rust client with only bundled and Arrow-Appender capabilities required
    by the Catalog. Disable runtime extension autoload/installation and record the complete locked
@@ -1113,7 +1156,7 @@ pnpm check
 - [x] Failed project selection remains visible with message, recovery, and retry.
 - [x] Project Index is a headless public module in `@ue-shed/unreal-assets`.
 - [x] TypeScript owns cache-root/policy and never reads or writes a database directly.
-- [x] Rust owns the private Catalog behind storage-neutral memory/SQLite adapters.
+- [x] Rust owns the private Catalog behind storage-neutral memory/DuckDB adapters.
 - [x] Refresh performs one traversal and decodes headers only for changed/new packages.
 - [x] An exact warm no-op reads zero package headers and rewrites zero package evidence rows.
 - [x] A committed Generation is atomic and stale queries are explicit.
@@ -1127,9 +1170,9 @@ pnpm check
 - [x] Storage costs are attributed and DuckDB is selected from equal-workload measured evidence.
 - [x] The natural DuckDB Adapter uses nested Arrow batches and immutable snapshot publication.
 - [ ] Ordinary startup serves the last committed Generation before background refresh.
-- [ ] Bounded query sessions reuse one native process/connection while route loading remains lazy.
-- [ ] DuckDB passes dependency, license, offline, Windows package, size, recovery, and conformance gates.
-- [ ] The production factory uses DuckDB and the interim SQLite Adapter/dependency are removed.
+- [x] Bounded query sessions reuse one native process/connection while route loading remains lazy.
+- [x] DuckDB passes dependency, license, offline, Windows package, size, recovery, and conformance gates.
+- [x] The production factory uses DuckDB and the interim SQLite Adapter/dependency are removed.
 - [x] `pnpm check` passes immediately before handoff.
 
 ## STOP conditions

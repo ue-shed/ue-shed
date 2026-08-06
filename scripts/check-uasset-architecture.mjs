@@ -105,11 +105,9 @@ async function typescriptFiles(directory) {
  * Coordinator, seam, in-memory adapter, scanner, protocol, and conformance code must stay
  * storage-neutral so the same conformance suite runs unchanged against every adapter.
  */
-const CATALOG_STORAGE_ADAPTERS = new Set(
-	["catalog_duckdb.rs", "catalog_sqlite.rs"].map((file) =>
-		join("crates", "uasset-io", "src", "direct_executor", file)
-	)
-);
+const CATALOG_STORAGE_ADAPTERS = new Set([
+	join("crates", "uasset-io", "src", "direct_executor", "catalog_duckdb.rs")
+]);
 
 async function checkCatalogStorageBoundary(failures) {
 	const forbidden = [
@@ -155,26 +153,8 @@ async function checkCatalogStorageBoundary(failures) {
 		join(repositoryRoot, "crates", "uasset-io", "Cargo.toml"),
 		"utf8"
 	);
-	const directExecutor = await readFile(
-		join(repositoryRoot, "crates", "uasset-io", "src", "direct_executor.rs"),
-		"utf8"
-	);
-	if (!/#\[cfg\(test\)\][\s\S]*?mod catalog_sqlite;/.test(directExecutor)) {
-		failures.push("the retired SQLite Catalog adapter must remain test-only until deletion");
-	}
-	const productionManifest = ioManifest.split(/^\[dev-dependencies\]$/m)[0] ?? ioManifest;
-	if (/^rusqlite\s*=/m.test(productionManifest)) {
-		failures.push("rusqlite must not remain a uasset-io production dependency after cutover");
-	}
-	const rusqlite = ioManifest.match(/^rusqlite = \{([^}]*)\}$/m)?.[1] ?? "";
-	if (!/version = "=\d+\.\d+\.\d+"/.test(rusqlite)) {
-		failures.push("uasset-io must pin an exact rusqlite version");
-	}
-	if (!/default-features = false/.test(rusqlite)) {
-		failures.push("uasset-io must disable rusqlite default features");
-	}
-	if (/buildtime_bindgen|\bfunctions\b|\bserde_json\b/.test(rusqlite)) {
-		failures.push("uasset-io must not enable broad or build-time rusqlite features");
+	if (/^rusqlite\s*=/m.test(ioManifest)) {
+		failures.push("uasset-io must not retain the retired rusqlite dependency");
 	}
 	const duckdb = ioManifest.match(/^duckdb = \{([^}]*)\}$/m)?.[1] ?? "";
 	if (!/version = "=\d+\.\d+\.\d+"/.test(duckdb)) {

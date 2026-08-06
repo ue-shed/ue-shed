@@ -10,8 +10,7 @@ const forbiddenFormulaPackages = ["hyperformula", "peculiar-sheets-ironcalc", "@
  * Transitive Rust dependency licenses, recorded from `cargo info <crate>@<version>`.
  *
  * `pnpm why` cannot see the Cargo graph, so every crate in Cargo.lock needs an entry here before it
- * can ship. The SQLite amalgamation vendored inside `libsqlite3-sys` is public domain; the crate
- * wrapping it is MIT.
+ * can ship.
  */
 function licensed(license, names) {
 	return Object.fromEntries(names.split(/\s+/).map((name) => [name, license]));
@@ -41,7 +40,7 @@ export const rustDependencyLicenses = Object.assign(
 	licensed("ISC", "rustls-webpki untrusted"),
 	licensed(
 		"MIT",
-		"atoi bytes cfg_aliases comfy-table crossterm crossterm_winapi crunchy duckdb libduckdb-sys libm libsqlite3-sys nix redox_syscall rusqlite simd-adler32 slab strum strum_macros uasset-inspection uasset-io uasset-parser zip zmij"
+		"atoi bytes cfg_aliases comfy-table crossterm crossterm_winapi crunchy duckdb libduckdb-sys libm nix redox_syscall simd-adler32 slab strum strum_macros uasset-inspection uasset-io uasset-parser zip zmij"
 	),
 	licensed(
 		"MIT OR Apache-2.0",

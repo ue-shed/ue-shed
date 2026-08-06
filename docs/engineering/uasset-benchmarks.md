@@ -32,13 +32,13 @@ pnpm benchmark:project-index -- --project <unreal-project-root> --output test-re
 ```
 
 This records `project_index.cold_build` and `project_index.warm_noop` without embedding the supplied
-project path or asset identities in the evidence. Cold builds the SQLite Catalog, executes the same
+project path or asset identities in the evidence. Cold builds the DuckDB Catalog, executes the same
 bounded map/class/prefix/suffix/name workload used by Workbench domains, folds candidate headers,
 and performs targeted Enhanced Input decode. Warm reuses the Catalog and rewrites zero evidence,
 but still enumerates and stats Content to prove the Generation is current. Filesystem caches are not
 dropped, so "cold" means an absent application Catalog rather than an artificial cold disk.
 
-Evidence schema v4 separates enumeration, comparison, header processing, direct SQLite evidence
+Evidence schema v4 separates enumeration, comparison, header processing, direct Catalog evidence
 writes, commit/index publication, bounded queries, TypeScript folding, and targeted decode.
 `headerProcessingExcludingEvidenceWritesMs` subtracts measured Catalog-write time from the
 coordinator's header phase; it is an attribution aid, not a claim that all remaining time is parser

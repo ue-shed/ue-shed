@@ -313,31 +313,6 @@ pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogE
     Ok(value.to_owned())
 }
 
-/// Exclusive upper bound for every string starting with `prefix`, in UTF-8 byte order.
-///
-/// `None` means the prefix matches every value, so no upper bound applies.
-#[cfg(test)]
-pub(crate) fn prefix_upper_bound(prefix: &str) -> Option<String> {
-    let mut characters: Vec<char> = prefix.chars().collect();
-    while let Some(last) = characters.pop() {
-        let mut next = u32::from(last).saturating_add(1);
-        // Skip the UTF-16 surrogate range, which is not a valid scalar value.
-        if (0xD800..=0xDFFF).contains(&next) {
-            next = 0xE000;
-        }
-        if let Some(incremented) = char::from_u32(next) {
-            characters.push(incremented);
-            return Some(characters.into_iter().collect());
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-pub(crate) fn reverse_characters(value: &str) -> String {
-    value.chars().rev().collect()
-}
-
 /// Every query item is keyed by its project-relative path, which is also the page cursor.
 pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {

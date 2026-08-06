@@ -12,10 +12,10 @@ pub mod protocol_result;
 
 pub fn run(arguments: impl Iterator<Item = std::ffi::OsString>) -> u8 {
     let arguments: Vec<_> = arguments.collect();
-    if arguments.first().and_then(|value| value.to_str()) == Some("protocol") {
-        protocol_adapter::run()
-    } else {
-        legacy::run(arguments)
+    match arguments.first().and_then(|value| value.to_str()) {
+        Some("protocol") => protocol_adapter::run(),
+        Some("protocol-session") => protocol_adapter::run_session(),
+        _ => legacy::run(arguments),
     }
 }
 pub use protocol_result::{ResultFrame, SavedAssetInspection};

@@ -4,7 +4,7 @@
 //! `legacy`; every protocol operation is executed by the native direct executors and serialized
 //! only at this process-output boundary.
 
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -47,8 +47,57 @@ pub fn run() -> u8 {
             return EXIT_MALFORMED;
         }
     };
+    execute_request(&request, None)
+}
+
+pub fn run_session() -> u8 {
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
+    let mut query_session = direct_executor::ProjectIndexQuerySession::default();
+
+    loop {
+        let mut request_bytes = Vec::new();
+        let read = {
+            let mut bounded = (&mut input).take((MAX_REQUEST_BYTES + 2) as u64);
+            bounded.read_until(b'\n', &mut request_bytes)
+        };
+        let read = match read {
+            Ok(read) => read,
+            Err(error) => {
+                eprintln!("uasset protocol-session: could not read request: {error}");
+                return EXIT_MALFORMED;
+            }
+        };
+        if read == 0 {
+            return EXIT_SUCCESS;
+        }
+        while matches!(request_bytes.last(), Some(b'\n' | b'\r')) {
+            request_bytes.pop();
+        }
+        if request_bytes.len() > MAX_REQUEST_BYTES {
+            eprintln!("uasset protocol-session: request exceeds 4 MiB");
+            return EXIT_MALFORMED;
+        }
+        let request = match decode_request_frame(&request_bytes, MAX_REQUEST_BYTES) {
+            Ok(request) => request,
+            Err(error) => {
+                eprintln!("uasset protocol-session: {error}");
+                return EXIT_MALFORMED;
+            }
+        };
+        let exit = execute_request(&request, Some(&mut query_session));
+        if exit != EXIT_SUCCESS {
+            return exit;
+        }
+    }
+}
+
+fn execute_request(
+    request: &Request,
+    query_session: Option<&mut direct_executor::ProjectIndexQuerySession>,
+) -> u8 {
     let cancellation = CancellationToken::new();
-    let mut emitter = Emitter::new(&request, cancellation.clone());
+    let mut emitter = Emitter::new(request, cancellation.clone());
     if let Err(error) = emitter.emit(
         "accepted",
         json!({ "operation": operation_kind(&request.operation) }),
@@ -56,7 +105,7 @@ pub fn run() -> u8 {
         eprintln!("uasset protocol: {error}");
         return EXIT_INTERNAL;
     }
-    let result = execute_direct(&request, &mut emitter, &cancellation);
+    let result = execute_direct(request, &mut emitter, &cancellation, query_session);
     let terminal = match result {
         Ok(partial) => emitter.emit(
             "completed",
@@ -239,7 +288,16 @@ fn execute_direct(
     request: &Request,
     emitter: &mut Emitter,
     cancellation: &CancellationToken,
+    query_session: Option<&mut direct_executor::ProjectIndexQuerySession>,
 ) -> Result<bool, Failure> {
+    if query_session.is_some() && !matches!(&request.operation, Operation::ProjectIndexQuery { .. })
+    {
+        return Err(Failure::new(
+            "unsupported_session_operation",
+            "protocol-session accepts only project index query operations",
+            false,
+        ));
+    }
     match &request.operation {
         Operation::Inspect { asset_path } => {
             let (inspection, partial) =
@@ -376,11 +434,15 @@ fn execute_direct(
             project_root,
         } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, true),
         Operation::ProjectIndexQuery { cache_root, query } => {
-            let catalog = direct_executor::open_catalog_for_project_id(
-                cache_root,
-                direct_executor::query_project_id(query),
-            )?;
-            let page = direct_executor::project_index_query_protocol(&catalog, query)?;
+            let page = if let Some(session) = query_session {
+                session.query(cache_root, query)?
+            } else {
+                let catalog = direct_executor::open_catalog_for_project_id(
+                    cache_root,
+                    direct_executor::query_project_id(query),
+                )?;
+                direct_executor::project_index_query_protocol(&catalog, query)?
+            };
             emit_typed_result(emitter, &ResultFrame::ProjectIndexPage { page })?;
             Ok(false)
         }

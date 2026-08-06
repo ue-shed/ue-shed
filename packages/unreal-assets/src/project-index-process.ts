@@ -1,5 +1,5 @@
 import type { UAssetIoOperation, UAssetIoProjectIndexQuery } from "@ue-shed/protocol";
-import { Effect, Layer, Metric, Stream } from "effect";
+import { Effect, Layer, Metric, Scope, Semaphore, Stream } from "effect";
 import type { AssetReaderConfiguration, AssetReaderProtocolObservation } from "./asset-reader.js";
 import { DEFAULT_CATALOG_TIMEOUT_MS, MAX_PROTOCOL_OUTPUT_BYTES } from "./asset-reader.js";
 import {
@@ -28,6 +28,7 @@ import {
 } from "./project-index-protocol.js";
 import {
 	ProtocolStreamFailure,
+	UassetProtocolSession,
 	makeProtocolRequest,
 	runUassetProtocolEvents
 } from "./protocol-transport.js";
@@ -352,6 +353,7 @@ async function collectStatus(
 
 async function collectQuery(
 	configuration: ProjectIndexProcessConfiguration,
+	session: UassetProtocolSession,
 	cacheRoot: ProjectIndexCacheRoot,
 	request: ProjectIndexQuery,
 	signal: AbortSignal | undefined
@@ -368,8 +370,7 @@ async function collectQuery(
 	let sawAccepted = false;
 	let page: ProjectIndexPage | undefined;
 	try {
-		for await (const event of runUassetProtocolEvents({
-			configuration,
+		for await (const event of session.events({
 			request: protocolRequest,
 			signal,
 			timeoutMs: configuration.timeoutMs
@@ -433,28 +434,42 @@ function refreshStream(
 function makeProcessService(
 	configuration: ProjectIndexProcessConfiguration,
 	cacheRoot: ProjectIndexCacheRoot
-): ProjectIndexShape {
-	const refresh = (target: ProjectIndexTarget) =>
-		refreshStream(configuration, cacheRoot, target, "refresh");
-	const rebuild = (target: ProjectIndexTarget) =>
-		refreshStream(configuration, cacheRoot, target, "rebuild");
+): Effect.Effect<ProjectIndexShape, never, Scope.Scope> {
+	return Effect.gen(function* () {
+		const mutex = yield* Semaphore.make(1);
+		const session = yield* Effect.acquireRelease(
+			Effect.sync(() => new UassetProtocolSession(configuration)),
+			(session) => Effect.promise(() => session.close())
+		);
+		const refresh = (target: ProjectIndexTarget) =>
+			refreshStream(configuration, cacheRoot, target, "refresh");
+		const rebuild = (target: ProjectIndexTarget) =>
+			refreshStream(configuration, cacheRoot, target, "rebuild");
 
-	const query = Effect.fn("ProjectIndexProcess.query")(function* (request: ProjectIndexQuery) {
-		const page = yield* Effect.tryPromise({
-			try: (signal) => collectQuery(configuration, cacheRoot, request, signal),
-			catch: (cause) => mapStreamFailure(cause, true)
-		}).pipe(Effect.withSpan("unreal_assets.project_index_query"));
-		return yield* decodeProjectIndexPage(page);
+		const query = Effect.fn("ProjectIndexProcess.query")(function* (
+			request: ProjectIndexQuery
+		) {
+			const page = yield* mutex.withPermits(1)(
+				Effect.tryPromise({
+					try: (signal) =>
+						collectQuery(configuration, session, cacheRoot, request, signal),
+					catch: (cause) => mapStreamFailure(cause, true)
+				}).pipe(Effect.withSpan("unreal_assets.project_index_query"))
+			);
+			return yield* decodeProjectIndexPage(page);
+		});
+
+		const status = Effect.fn("ProjectIndexProcess.status")(function* (
+			target: ProjectIndexTarget
+		) {
+			return yield* Effect.tryPromise({
+				try: (signal) => collectStatus(configuration, cacheRoot, target, signal),
+				catch: (cause) => mapStreamFailure(cause, true)
+			}).pipe(Effect.withSpan("unreal_assets.project_index_status"));
+		});
+
+		return { query, rebuild, refresh, status };
 	});
-
-	const status = Effect.fn("ProjectIndexProcess.status")(function* (target: ProjectIndexTarget) {
-		return yield* Effect.tryPromise({
-			try: (signal) => collectStatus(configuration, cacheRoot, target, signal),
-			catch: (cause) => mapStreamFailure(cause, true)
-		}).pipe(Effect.withSpan("unreal_assets.project_index_status"));
-	});
-
-	return { query, rebuild, refresh, status };
 }
 
 /**
@@ -465,9 +480,9 @@ export function projectIndexProcessLayer(
 	configuration: ProjectIndexProcessConfiguration & { readonly cacheRoot: string }
 ): Layer.Layer<ProjectIndex> {
 	const cacheRoot = CacheRootSchema.make(configuration.cacheRoot);
-	return Layer.succeed(
+	return Layer.effect(
 		ProjectIndex,
-		ProjectIndex.of(makeProcessService(configuration, cacheRoot))
+		makeProcessService(configuration, cacheRoot).pipe(Effect.map(ProjectIndex.of))
 	);
 }
 
@@ -479,7 +494,7 @@ export function projectIndexProcessLayerFromConfig(
 		ProjectIndex,
 		Effect.gen(function* () {
 			const { cacheRoot } = yield* ProjectIndexConfig;
-			return ProjectIndex.of(makeProcessService(configuration, cacheRoot));
+			return ProjectIndex.of(yield* makeProcessService(configuration, cacheRoot));
 		})
 	);
 }

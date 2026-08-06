@@ -4,6 +4,9 @@
 //! manifest maps the logical Project Index Generation to that file. Refreshes write a new file
 //! beside the committed snapshot and never mutate data visible to readers.
 
+#[cfg(test)]
+use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
@@ -36,6 +39,7 @@ const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 const STREAM_BATCH: usize = 1_024;
 const QUERY_THREADS: i64 = 4;
+const WRITER_MEMORY_LIMIT: &str = "384MB";
 const SNAPSHOT_ROW_GROUP_SIZE: u64 = 32_768;
 const MAX_QUARANTINE_SLOTS: u32 = 64;
 
@@ -154,6 +158,12 @@ struct Staging {
     physical_snapshot: String,
     snapshot_path: PathBuf,
     staged_count: u64,
+    temporary_directory: PathBuf,
+}
+
+struct QueryConnection {
+    connection: Connection,
+    physical_snapshot: String,
 }
 
 /// Disposable DuckDB Catalog for one canonical project identity.
@@ -164,6 +174,9 @@ pub(crate) struct DuckdbCatalog {
     staging: Option<Staging>,
     quarantined_from: Option<PathBuf>,
     writes: CatalogWriteCounts,
+    query_connection: RefCell<Option<QueryConnection>>,
+    #[cfg(test)]
+    query_connection_opens: Cell<u64>,
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
 }
@@ -210,6 +223,9 @@ impl DuckdbCatalog {
                 staging: None,
                 quarantined_from: None,
                 writes: CatalogWriteCounts::default(),
+                query_connection: RefCell::new(None),
+                #[cfg(test)]
+                query_connection_opens: Cell::new(0),
                 #[cfg(test)]
                 cleanup_root: None,
             }),
@@ -225,6 +241,9 @@ impl DuckdbCatalog {
                     staging: None,
                     quarantined_from,
                     writes: CatalogWriteCounts::default(),
+                    query_connection: RefCell::new(None),
+                    #[cfg(test)]
+                    query_connection_opens: Cell::new(0),
                     #[cfg(test)]
                     cleanup_root: None,
                 })
@@ -363,11 +382,16 @@ impl Catalog for DuckdbCatalog {
             .unwrap_or(Generation::new(1));
         let physical_snapshot = snapshot_file_name(generation);
         let snapshot_path = self.directory.join(&physical_snapshot);
+        let temporary_directory = snapshot_path.with_extension("duckdb.tmp");
         if snapshot_path.exists() {
             fs::remove_file(&snapshot_path)
                 .map_err(io_unavailable("remove an abandoned unpublished snapshot"))?;
         }
-        let connection = open_writable_snapshot(&snapshot_path)?;
+        if temporary_directory.exists() {
+            fs::remove_dir_all(&temporary_directory)
+                .map_err(io_unavailable("remove abandoned DuckDB spill files"))?;
+        }
+        let connection = open_writable_snapshot(&snapshot_path, &temporary_directory)?;
         connection
             .execute_batch(STAGING_SCHEMA)
             .map_err(storage_error("create DuckDB staging tables"))?;
@@ -380,6 +404,7 @@ impl Catalog for DuckdbCatalog {
             physical_snapshot,
             snapshot_path,
             staged_count: 0,
+            temporary_directory,
         });
         Ok(StagingToken { generation })
     }
@@ -443,6 +468,7 @@ impl Catalog for DuckdbCatalog {
         if warm_noop {
             drop(staging.connection);
             let _ = fs::remove_file(&staging.snapshot_path);
+            let _ = fs::remove_dir_all(&staging.temporary_directory);
             let Some(current) = self.manifest.as_ref() else {
                 return Err(CatalogError::Corrupt {
                     message: "an empty first refresh cannot publish without a snapshot".to_owned(),
@@ -487,6 +513,7 @@ impl Catalog for DuckdbCatalog {
             .map_err(storage_error("count committed DuckDB evidence rows"))?;
         self.writes.removed_evidence_rows = summary.removed_packages;
         drop(staging.connection);
+        let _ = fs::remove_dir_all(&staging.temporary_directory);
 
         verify_snapshot(&staging.snapshot_path)?;
         let previous_snapshot = self
@@ -512,7 +539,9 @@ impl Catalog for DuckdbCatalog {
         match self.staging.take() {
             Some(staging) if staging.generation == token.generation => {
                 let path = staging.snapshot_path.clone();
+                let temporary_directory = staging.temporary_directory.clone();
                 drop(staging.connection);
+                let _ = fs::remove_dir_all(temporary_directory);
                 remove_if_exists(&path)
             }
             Some(staging) => {
@@ -534,6 +563,7 @@ impl Catalog for DuckdbCatalog {
             .map_err(io_unavailable("recreate the project Catalog directory"))?;
         self.manifest = None;
         self.writes = CatalogWriteCounts::default();
+        self.query_connection.take();
         Ok(())
     }
 
@@ -548,10 +578,27 @@ impl Catalog for DuckdbCatalog {
             });
         }
         let after = parse_page_cursor(request.cursor.as_deref())?;
-        let connection = open_connection(
-            &self.directory.join(&manifest.physical_snapshot),
-            AccessMode::ReadOnly,
-        )?;
+        let mut cached_connection = self.query_connection.borrow_mut();
+        if cached_connection
+            .as_ref()
+            .is_none_or(|cached| cached.physical_snapshot != manifest.physical_snapshot)
+        {
+            let connection = open_connection(
+                &self.directory.join(&manifest.physical_snapshot),
+                AccessMode::ReadOnly,
+            )?;
+            *cached_connection = Some(QueryConnection {
+                connection,
+                physical_snapshot: manifest.physical_snapshot.clone(),
+            });
+            #[cfg(test)]
+            self.query_connection_opens
+                .set(self.query_connection_opens.get() + 1);
+        }
+        let connection = &cached_connection
+            .as_ref()
+            .expect("query connection was initialized")
+            .connection;
         let (predicate, mut arguments) = query_predicate(&request.kind);
         let mut sql = match request.kind {
             QueryKind::Maps => format!(
@@ -660,9 +707,15 @@ fn open_connection(path: &Path, access_mode: AccessMode) -> Result<Connection, C
 /// DuckDB applies row-group sizing when a database is attached, not when it is opened directly.
 /// This bootstrap connection never executes caller-provided SQL or paths; external access remains
 /// disabled on every committed read connection.
-fn open_writable_snapshot(path: &Path) -> Result<Connection, CatalogError> {
+fn open_writable_snapshot(
+    path: &Path,
+    temporary_directory: &Path,
+) -> Result<Connection, CatalogError> {
     let config = Config::default()
         .threads(QUERY_THREADS)
+        .and_then(|config| config.max_memory(WRITER_MEMORY_LIMIT))
+        .and_then(|config| config.with("preserve_insertion_order", "false"))
+        .and_then(|config| config.with("temp_directory", temporary_directory.to_string_lossy()))
         .and_then(|config| config.enable_autoload_extension(false))
         .and_then(|config| config.enable_external_access(true))
         .map_err(storage_error("configure the DuckDB snapshot writer"))?;
@@ -1182,7 +1235,39 @@ mod tests {
         ));
         fs::create_dir_all(&root).expect("create test directory");
         let path = root.join("row-groups.duckdb");
-        let connection = open_writable_snapshot(&path).expect("open snapshot writer");
+        let temporary_directory = root.join("writer.tmp");
+        let connection =
+            open_writable_snapshot(&path, &temporary_directory).expect("open snapshot writer");
+        let maximum_memory: String = connection
+            .query_row("SELECT current_setting('max_memory')", [], |row| row.get(0))
+            .expect("inspect writer memory limit");
+        let preserves_insertion_order: bool = connection
+            .query_row(
+                "SELECT current_setting('preserve_insertion_order')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("inspect insertion-order policy");
+        let configured_temporary_directory: String = connection
+            .query_row("SELECT current_setting('temp_directory')", [], |row| {
+                row.get(0)
+            })
+            .expect("inspect spill directory");
+        let (maximum_memory_mib, unit) = maximum_memory
+            .split_once(' ')
+            .expect("memory limit contains a unit");
+        assert_eq!(unit, "MiB");
+        assert!(
+            maximum_memory_mib
+                .parse::<f64>()
+                .expect("memory limit is numeric")
+                <= 384.0
+        );
+        assert!(!preserves_insertion_order);
+        assert_eq!(
+            PathBuf::from(configured_temporary_directory),
+            temporary_directory
+        );
         connection
             .execute_batch(
                 "CREATE TABLE probe AS SELECT range AS id FROM range(70000); CHECKPOINT;",
@@ -1198,6 +1283,62 @@ mod tests {
         assert!(largest_row_group <= SNAPSHOT_ROW_GROUP_SIZE);
         drop(connection);
         fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn discarded_refresh_removes_snapshot_scoped_spill_files() {
+        let mut catalog = duckdb_catalog();
+        let token = catalog.begin_refresh().expect("begin refresh");
+        let temporary_directory = catalog
+            .staging
+            .as_ref()
+            .expect("staging state")
+            .temporary_directory
+            .clone();
+        fs::create_dir_all(&temporary_directory).expect("create simulated spill directory");
+        fs::write(temporary_directory.join("spill.tmp"), b"spill")
+            .expect("create simulated spill file");
+
+        catalog.discard_refresh(token).expect("discard refresh");
+
+        assert!(!temporary_directory.exists());
+    }
+
+    #[test]
+    fn bounded_queries_reuse_one_read_only_connection() {
+        use crate::cancellation::CancellationToken;
+        use crate::direct_executor::catalog_conformance::{FIXTURE_PROJECT_ROOT, refresh_fixture};
+        use crate::direct_executor::project_index::refresh;
+
+        let mut catalog = duckdb_catalog();
+        let summary = refresh(
+            &mut catalog,
+            &refresh_fixture(),
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .expect("refresh")
+        .into_iter()
+        .find_map(|event| match event {
+            crate::direct_executor::project_index::RefreshEvent::Completed { summary } => {
+                Some(summary)
+            }
+            _ => None,
+        })
+        .expect("completed summary");
+        let request = QueryRequest {
+            project_id: fixture_project_id(),
+            expected_generation: summary.generation,
+            kind: QueryKind::Maps,
+            limit: 16,
+            cursor: None,
+        };
+
+        catalog.query(&request).expect("first page");
+        catalog.query(&request).expect("second page");
+
+        assert_eq!(catalog.query_connection_opens.get(), 1);
     }
 
     #[test]

@@ -124,6 +124,6 @@ storage-neutral Catalog seam, or Plan 033's authority over domain-specific persi
 snapshot filenames, manifests, checkpoints, and DuckDB configuration remain private to the Rust
 adapter.
 
-The production factory now selects DuckDB. The former adapter and client are test-only cutover
-oracles, cannot be reached from a production build, and are removed after the short conformance soak
-rather than retained as a user-selectable backend.
+The production factory selects DuckDB. The former SQLite adapter, migrations, tests, research
+conversion driver, and client dependency were removed after the conformance soak rather than
+retained as a user-selectable backend.

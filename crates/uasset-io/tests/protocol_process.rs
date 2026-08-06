@@ -40,6 +40,29 @@ fn base_request(operation: Value) -> Value {
     })
 }
 
+fn write_session_request(writer: &mut impl Write, request: &Value) {
+    serde_json::to_writer(&mut *writer, request).expect("session request serializes");
+    writer.write_all(b"\n").expect("session request writes");
+    writer.flush().expect("session request flushes");
+}
+
+fn read_session_events(reader: &mut impl BufRead) -> Vec<Value> {
+    let mut events = Vec::new();
+    loop {
+        let mut line = String::new();
+        assert!(reader.read_line(&mut line).expect("session output reads") > 0);
+        let event: Value = serde_json::from_str(&line).expect("session line is JSON");
+        let terminal = matches!(
+            event["kind"].as_str(),
+            Some("completed" | "failed" | "rejected")
+        );
+        events.push(event);
+        if terminal {
+            return events;
+        }
+    }
+}
+
 #[test]
 fn protocol_process_emits_a_typed_inspection_stream() {
     let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -586,7 +609,7 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
             "projectId": project_id
         }
     }));
-    let (success, query_events, stderr) = run_request(query_request);
+    let (success, query_events, stderr) = run_request(query_request.clone());
     assert!(success, "query failed: {stderr}");
     assert_valid_events(&query_events);
     assert_eq!(query_events[1]["result"]["kind"], "project_index_page");
@@ -608,7 +631,7 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
             "projectId": project_id
         }
     }));
-    let (success, stale_events, stderr) = run_request(stale_request);
+    let (success, stale_events, stderr) = run_request(stale_request.clone());
     assert!(
         success,
         "stale query should frame a typed failure: {stderr}"
@@ -620,6 +643,37 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
     assert_eq!(
         stale_events.last().unwrap()["actualGeneration"],
         warm_summary["result"]["summary"]["generation"]
+    );
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
+        .arg("protocol-session")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("uasset protocol session starts");
+    let mut stdin = child.stdin.take().expect("session stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("session stdout"));
+
+    for (request_id, request, terminal) in [
+        ("session-query-one", &query_request, "completed"),
+        ("session-stale", &stale_request, "failed"),
+        ("session-query-two", &query_request, "completed"),
+    ] {
+        let mut request = request.clone();
+        request["requestId"] = Value::String(request_id.to_owned());
+        write_session_request(&mut stdin, &request);
+        let events = read_session_events(&mut stdout);
+        assert_valid_events(&events);
+        assert!(events.iter().all(|event| event["requestId"] == request_id));
+        assert_eq!(events.last().unwrap()["kind"], terminal);
+    }
+    drop(stdin);
+    let output = child.wait_with_output().expect("protocol session exits");
+    assert!(
+        output.status.success(),
+        "protocol session failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
     let _ = std::fs::remove_dir_all(&cache_root);

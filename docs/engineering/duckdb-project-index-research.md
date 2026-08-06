@@ -1,7 +1,7 @@
 # DuckDB Project Index research
 
-Status: design and benchmark evidence, 2026-08-06. DuckDB is not yet the production Catalog
-Implementation.
+Status: accepted design and benchmark evidence, 2026-08-06. DuckDB is the production Catalog
+implementation.
 
 For the complete visual comparison with the pre-SQLite JSON baseline and both DuckDB Adapter
 shapes, open [Project Index: four eras, one workload](project-index-storage-comparison.html).
@@ -47,11 +47,11 @@ These are reasons to deepen the Adapter, not to weaken the Catalog Interface.
 
 ## Measured model experiments
 
-The reproducible exploratory driver is
-[`scripts/benchmark-duckdb-project-index.py`](../../scripts/benchmark-duckdb-project-index.py). It
-uses an existing disposable SQLite Catalog only as source data and writes aggregate evidence without
-project paths, project identities, package paths, class values, or serialized-name values. The
-retained ignored result is `test-results/project-index-duckdb-model-research.json`.
+The exploratory conversion driver used an existing disposable SQLite Catalog only as source data
+and wrote aggregate evidence without project paths, project identities, package paths, class values,
+or serialized-name values. That one-off driver was retired with the SQLite adapter after production
+cutover. The retained ignored result is
+`test-results/project-index-duckdb-model-research.json`.
 
 The representative snapshot contains 185,676 packages, 631,258 class values, and 7,724,306
 serialized-name values. All query measurements fetch the same 13,878 items over 17 bounded pages.
@@ -158,9 +158,9 @@ the best measured CPU setting and has lower resource contention than spawning ma
   `EXPLAIN ANALYZE` result and an end-to-end improvement. CTAS already records statistics, and the
   current evidence does not identify these as bottlenecks.
 
-## Next implementation experiment
+## Implemented production gate
 
-The next Adapter spike should be bounded to these variables:
+The production adapter was bounded to these variables:
 
 1. Rust DuckDB 1.5.5 with `bundled` and Arrow Appender support.
 2. Direct nested Arrow batches of 1,024 path-ordered packages.
@@ -171,9 +171,9 @@ The next Adapter spike should be bounded to these variables:
    corruption/quarantine, binary/package size, peak RSS, locked offline build, and full license
    graph gates.
 
-Select DuckDB only if that natural Implementation passes the shared Catalog conformance suite and
-improves the same end-to-end benchmark. The current measurements establish Leverage and justify the
-experiment; they do not waive the release and recovery gates.
+The natural implementation passed the shared Catalog conformance, release, recovery, representative
+performance, and bounded-memory gates. Production therefore selects DuckDB without retaining a
+runtime storage-engine choice.
 
 ## Primary references
 

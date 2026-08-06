@@ -32,6 +32,44 @@ pub(crate) struct ProjectIndexRefreshOutput {
     pub(crate) rebuild: bool,
 }
 
+#[derive(Default)]
+pub(crate) struct ProjectIndexQuerySession {
+    active: Option<ActiveQueryCatalog>,
+}
+
+struct ActiveQueryCatalog {
+    cache_root: String,
+    expected_generation: u64,
+    project_id: String,
+    catalog: DuckdbCatalog,
+}
+
+impl ProjectIndexQuerySession {
+    pub(crate) fn query(
+        &mut self,
+        cache_root: &str,
+        query: &ProtocolQuery,
+    ) -> Result<ProjectIndexPage, Failure> {
+        let project_id = query_project_id(query);
+        let expected_generation = query_expected_generation(query);
+        let requires_open = self.active.as_ref().is_none_or(|active| {
+            active.cache_root != cache_root
+                || active.project_id != project_id
+                || active.expected_generation != expected_generation
+        });
+        if requires_open {
+            self.active = Some(ActiveQueryCatalog {
+                cache_root: cache_root.to_owned(),
+                expected_generation,
+                project_id: project_id.to_owned(),
+                catalog: open_catalog_for_project_id(cache_root, project_id)?,
+            });
+        }
+        let active = self.active.as_ref().expect("query Catalog was initialized");
+        query_catalog(&active.catalog, query)
+    }
+}
+
 /// Aggregate refresh phase timings for benchmark attribution. These values are intentionally
 /// path-free and describe the coordinator's observable phases rather than Catalog internals.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -114,6 +152,31 @@ pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
     }
 }
 
+fn query_expected_generation(query: &ProtocolQuery) -> u64 {
+    match query {
+        ProtocolQuery::Maps {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::ExactClasses {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::ClassPrefixes {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::ClassNameSuffixes {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::SerializedNames {
+            expected_generation,
+            ..
+        } => *expected_generation,
+    }
+}
+
 pub(crate) fn status(catalog: &DuckdbCatalog) -> ProjectIndexStatusPayload {
     match project_index::status(catalog) {
         CatalogStatus::Absent => ProjectIndexStatusPayload::Absent,
@@ -124,6 +187,13 @@ pub(crate) fn status(catalog: &DuckdbCatalog) -> ProjectIndexStatusPayload {
 }
 
 pub(crate) fn query(
+    catalog: &DuckdbCatalog,
+    query: &ProtocolQuery,
+) -> Result<ProjectIndexPage, Failure> {
+    query_catalog(catalog, query)
+}
+
+fn query_catalog(
     catalog: &DuckdbCatalog,
     query: &ProtocolQuery,
 ) -> Result<ProjectIndexPage, Failure> {

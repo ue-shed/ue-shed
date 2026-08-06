@@ -41,7 +41,13 @@ const approvedRuntimeExits = new Set([
 	// The compact-corpus benchmark is likewise an opt-in Node entrypoint over the production reader.
 	"apps/workbench/scripts/benchmark-compact-text.ts",
 	// Same pattern for the actor transform feed's per-socket decode-and-publish fork.
-	"packages/observatory/src/actor-feed.ts"
+	"packages/observatory/src/actor-feed.ts",
+	// The Project Index process adapter owns the async-generator child-process bridge and its
+	// short-lived metrics exit; the public ProjectIndex service remains Effect-shaped.
+	"packages/unreal-assets/src/project-index-process.ts",
+	// The shared protocol transport closes the Project Index async-generator telemetry boundary;
+	// callers still receive only Effect and Stream operations.
+	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedPromiseAdapters = new Set([
 	// The CLI plugin installer owns filesystem/archive promises behind an Effect boundary.
@@ -69,6 +75,9 @@ const approvedPromiseAdapters = new Set([
 	"packages/observatory/scripts/benchmark.ts",
 	"packages/observatory/src/actor-feed.ts",
 	"packages/unreal-assets/src/protocol-transport.ts",
+	// The Project Index adapter bridges the native async-generator protocol stream once at the
+	// process seam; callers consume only Effect and Stream operations.
+	"packages/unreal-assets/src/project-index-process.ts",
 	"packages/unreal-assets/src/scan-target.ts",
 	// The generated browser declaration is a foreign WebAssembly adapter surface.
 	"packages/uasset-inspection-wasm/src/browser.d.ts"

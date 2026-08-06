@@ -3,12 +3,13 @@
 //! This adapter exercises the same refresh coordinator as production without naming SQL, journals,
 //! or migrations.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::catalog::{
-    Catalog, CatalogError, CatalogStatus, EntryKind, Generation, HeaderEvidence,
-    PROJECT_INDEX_MAX_PAGE_SIZE, PackageSignature, ProjectId, QueryItem, QueryKind, QueryPage,
-    QueryRequest, RefreshSummary, StagedPackage, StagingToken, class_name,
+    Catalog, CatalogError, CatalogSnapshotEntry, CatalogStatus, EntryKind, Generation,
+    HeaderEvidence, PackageSignature, ProjectId, QueryItem, QueryKind, QueryPage, QueryRequest,
+    RefreshSummary, StagedPackage, StagingToken, class_name, item_path, parse_page_cursor,
+    validate_page_limit,
 };
 use super::project_index::CatalogSnapshot;
 
@@ -28,6 +29,7 @@ struct CommittedState {
 #[derive(Debug)]
 struct StagingState {
     token: Generation,
+    observed: BTreeSet<String>,
     rows: BTreeMap<String, CommittedRow>,
 }
 
@@ -42,13 +44,6 @@ pub struct MemoryCatalog {
 impl MemoryCatalog {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub(crate) fn snapshot_committed_paths(&self) -> Vec<String> {
-        self.committed
-            .as_ref()
-            .map(|state| state.rows.keys().cloned().collect())
-            .unwrap_or_default()
     }
 
     fn require_project(&self, project_id: &ProjectId) -> Result<(), CatalogError> {
@@ -107,9 +102,30 @@ impl Catalog for MemoryCatalog {
             .unwrap_or(Generation::new(1));
         self.staging = Some(StagingState {
             token: generation,
+            observed: BTreeSet::new(),
             rows: BTreeMap::new(),
         });
         Ok(StagingToken { generation })
+    }
+
+    fn observe_unchanged(
+        &mut self,
+        token: &StagingToken,
+        relative_path: &str,
+    ) -> Result<(), CatalogError> {
+        let staging = self
+            .staging
+            .as_mut()
+            .ok_or_else(|| CatalogError::Unavailable {
+                message: "no Project Index refresh is in progress".to_owned(),
+            })?;
+        if staging.token != token.generation {
+            return Err(CatalogError::InvalidRequest {
+                message: "staging token does not match the active refresh".to_owned(),
+            });
+        }
+        staging.observed.insert(relative_path.to_owned());
+        Ok(())
     }
 
     fn stage_observed(
@@ -128,6 +144,9 @@ impl Catalog for MemoryCatalog {
                 message: "staging token does not match the active refresh".to_owned(),
             });
         }
+        staging
+            .observed
+            .insert(entry.signature.relative_path.clone());
         staging.rows.insert(
             entry.signature.relative_path.clone(),
             CommittedRow {
@@ -161,11 +180,18 @@ impl Catalog for MemoryCatalog {
                 message: "refresh summary generation does not match the staging token".to_owned(),
             });
         }
+        let mut rows = self
+            .committed
+            .as_ref()
+            .map(|state| state.rows.clone())
+            .unwrap_or_default();
+        rows.retain(|path, _| staging.observed.contains(path));
+        rows.extend(staging.rows);
         self.ensure_project(summary.project_id.clone());
         self.committed = Some(CommittedState {
             generation: token.generation,
             summary,
-            rows: staging.rows,
+            rows,
         });
         Ok(token.generation)
     }
@@ -191,13 +217,7 @@ impl Catalog for MemoryCatalog {
 
     fn query(&self, request: &QueryRequest) -> Result<QueryPage, CatalogError> {
         self.require_project(&request.project_id)?;
-        if request.limit == 0 || request.limit > PROJECT_INDEX_MAX_PAGE_SIZE {
-            return Err(CatalogError::InvalidRequest {
-                message: format!(
-                    "Project Index query limit must be between 1 and {PROJECT_INDEX_MAX_PAGE_SIZE}"
-                ),
-            });
-        }
+        validate_page_limit(request.limit)?;
         let Some(state) = &self.committed else {
             return Err(CatalogError::InvalidRequest {
                 message: "No committed Project Index generation matches that project identity."
@@ -210,15 +230,17 @@ impl Catalog for MemoryCatalog {
                 actual: state.generation,
             });
         }
+        let after = parse_page_cursor(request.cursor.as_deref())?;
         let items = collect_items(&state.rows, &request.kind);
-        let offset = parse_cursor(request.cursor.as_deref())?;
-        let end = (offset + request.limit).min(items.len());
-        let page_items = items[offset..end].to_vec();
-        let next_cursor = if end < items.len() {
-            Some(end.to_string())
-        } else {
-            None
-        };
+        let mut page_items: Vec<QueryItem> = items
+            .into_iter()
+            .filter(|item| item_path(item) > after.as_str())
+            .collect();
+        let has_more = page_items.len() > request.limit;
+        page_items.truncate(request.limit);
+        let next_cursor = has_more
+            .then(|| page_items.last().map(|item| item_path(item).to_owned()))
+            .flatten();
         Ok(QueryPage {
             project_id: request.project_id.clone(),
             generation: state.generation,
@@ -229,22 +251,23 @@ impl Catalog for MemoryCatalog {
 }
 
 impl CatalogSnapshot for MemoryCatalog {
-    fn committed_relative_paths(&self) -> Vec<String> {
-        self.snapshot_committed_paths()
-    }
-}
-
-fn parse_cursor(cursor: Option<&str>) -> Result<usize, CatalogError> {
-    match cursor {
-        None => Ok(0),
-        Some(value) if value.chars().all(|ch| ch.is_ascii_digit()) => value
-            .parse::<usize>()
-            .map_err(|_| CatalogError::InvalidRequest {
-                message: "Project Index cursor is not a stable page offset.".to_owned(),
-            }),
-        Some(_) => Err(CatalogError::InvalidRequest {
-            message: "Project Index cursor is not a stable page offset.".to_owned(),
-        }),
+    fn committed_entries(&self) -> Vec<CatalogSnapshotEntry> {
+        self.committed
+            .as_ref()
+            .map(|state| {
+                state
+                    .rows
+                    .values()
+                    .map(|row| CatalogSnapshotEntry {
+                        signature: row.signature.clone(),
+                        header_profile_version: row
+                            .header
+                            .as_ref()
+                            .map(|header| header.profile_version),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 

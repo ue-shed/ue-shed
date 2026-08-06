@@ -22,12 +22,36 @@ export const BenchmarkDistribution = Schema.Struct({
 export interface BenchmarkDistribution extends Schema.Schema.Type<typeof BenchmarkDistribution> {}
 
 export const BenchmarkIndexObservation = Schema.Struct({
-	cacheHits: NonNegativeInt,
+	changedPackages: NonNegativeInt,
 	emittedHeaders: NonNegativeInt,
+	generation: PositiveInt,
 	inputCandidates: NonNegativeInt,
-	inventoryFiles: NonNegativeInt,
-	packageFiles: NonNegativeInt,
-	sidecarFiles: NonNegativeInt
+	mapCount: NonNegativeInt,
+	packageCount: NonNegativeInt,
+	queryPages: PositiveInt,
+	removedPackages: NonNegativeInt
+});
+
+export const BenchmarkNativeRefreshTiming = Schema.Struct({
+	committingMs: NonNegativeNumber,
+	comparingMs: NonNegativeNumber,
+	committedEvidenceRows: NonNegativeInt,
+	durationMs: NonNegativeNumber,
+	enumeratingMs: NonNegativeNumber,
+	evidenceWriteMs: NonNegativeNumber,
+	headerReads: NonNegativeInt,
+	headerProcessingExcludingEvidenceWritesMs: NonNegativeNumber,
+	removedEvidenceRows: NonNegativeInt,
+	readingHeadersMs: NonNegativeNumber,
+	stagedEvidenceRows: NonNegativeInt
+});
+
+export const BenchmarkPhaseTiming = Schema.Struct({
+	foldingMs: NonNegativeNumber,
+	inputDecodeMs: Schema.optionalKey(NonNegativeNumber),
+	native: BenchmarkNativeRefreshTiming,
+	queryMs: NonNegativeNumber,
+	refreshMs: NonNegativeNumber
 });
 
 export const BenchmarkScenarioSample = Schema.Struct({
@@ -39,7 +63,8 @@ export const BenchmarkScenarioSample = Schema.Struct({
 	largestProtocolFrameBytes: NonNegativeInt,
 	nodePeakRssBytes: PositiveInt,
 	protocolBytes: NonNegativeInt,
-	rustPeakRssBytes: Schema.NullOr(PositiveInt)
+	rustPeakRssBytes: Schema.NullOr(PositiveInt),
+	timings: Schema.optionalKey(BenchmarkPhaseTiming)
 });
 export interface BenchmarkScenarioSample extends Schema.Schema.Type<
 	typeof BenchmarkScenarioSample
@@ -55,7 +80,7 @@ export const BenchmarkScenario = Schema.Struct({
 export interface BenchmarkScenario extends Schema.Schema.Type<typeof BenchmarkScenario> {}
 
 export const ProjectIndexBenchmarkEvidence = Schema.Struct({
-	schemaVersion: Schema.Literal(2),
+	schemaVersion: Schema.Literal(4),
 	generatedAt: UtcTimestamp,
 	configuration: Schema.Struct({
 		mutationScenarios: Schema.Literals(["not_requested", "disposable_project"]),
@@ -143,6 +168,12 @@ function assertScenario(name: string, scenario: BenchmarkScenario, runs: number)
 		}
 		if (sample.failureKind !== undefined && sample.index !== undefined) {
 			throw new Error(`${name} has a failed sample containing index evidence.`);
+		}
+		if (sample.failureKind === undefined && sample.timings === undefined) {
+			throw new Error(`${name} has a successful sample without phase timing evidence.`);
+		}
+		if (sample.failureKind !== undefined && sample.timings !== undefined) {
+			throw new Error(`${name} has a failed sample containing phase timing evidence.`);
 		}
 	}
 }

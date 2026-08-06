@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
 use std::time::UNIX_EPOCH;
 
 use uasset_parser::PackageSummary;
@@ -13,7 +15,7 @@ use super::catalog::{
     EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_CLASSES,
     PROJECT_INDEX_MAX_NAMES, PackageSignature, project_relative_path,
 };
-use super::project_index::{CoordinatorError, ProjectScanner};
+use super::project_index::{CoordinatorError, HeaderEvidenceSink, ProjectScanner};
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
 
@@ -23,6 +25,9 @@ pub(crate) const SIDECAR_EXTENSIONS: &[&str] = &["uexp", "ubulk", "uptnl"];
 const HEADER_PROBE_BYTES: usize = 4 * 1024;
 const MAX_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
+const HEADER_WORKERS: usize = 4;
+/// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush.
+const HEADER_RESULT_BUFFER: usize = 1_024;
 
 #[derive(Clone)]
 pub(crate) struct FileSignature {
@@ -107,6 +112,76 @@ impl ProjectScanner for FilesystemProjectScanner {
             serialized_names,
             failure_code: None,
         })
+    }
+
+    fn stream_header_evidence(
+        &self,
+        project_root: &str,
+        signatures: &[PackageSignature],
+        cancellation: &CancellationToken,
+        on_header: &mut HeaderEvidenceSink<'_>,
+    ) -> Result<(), CoordinatorError> {
+        if signatures.is_empty() {
+            return Ok(());
+        }
+        let worker_count = HEADER_WORKERS.min(signatures.len());
+        let lane_capacity = (HEADER_RESULT_BUFFER / worker_count).max(1);
+        let mut senders = Vec::with_capacity(worker_count);
+        let mut receivers = Vec::with_capacity(worker_count);
+        for _ in 0..worker_count {
+            let (sender, receiver) = sync_channel(lane_capacity);
+            senders.push(sender);
+            receivers.push(receiver);
+        }
+        let stop = AtomicBool::new(false);
+        let mut callback_error = None;
+        std::thread::scope(|scope| {
+            for (worker, sender) in senders.into_iter().enumerate() {
+                let cancellation = cancellation.clone();
+                let stop = &stop;
+                scope.spawn(move || {
+                    for index in (worker..signatures.len()).step_by(worker_count) {
+                        if stop.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let signature = &signatures[index];
+                        let result =
+                            self.read_header_evidence(project_root, signature, &cancellation);
+                        if sender.send((index, result)).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            for index in 0..signatures.len() {
+                let receiver = &receivers[index % worker_count];
+                let received = receiver.recv();
+                match received {
+                    Ok((received_index, result)) => {
+                        debug_assert_eq!(received_index, index);
+                        if callback_error.is_none()
+                            && let Err(error) = on_header(&signatures[index], result)
+                        {
+                            stop.store(true, Ordering::Relaxed);
+                            callback_error = Some(error);
+                        }
+                    }
+                    Err(_) if callback_error.is_some() => break,
+                    Err(_) => {
+                        stop.store(true, Ordering::Relaxed);
+                        callback_error = Some(CoordinatorError::Unavailable {
+                            message: "a Project Index header worker stopped unexpectedly"
+                                .to_owned(),
+                        });
+                        break;
+                    }
+                }
+            }
+        });
+        match callback_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     fn reread_signature(
@@ -209,6 +284,7 @@ fn discovery_failure(path: &Path, error: std::io::Error) -> Failure {
         code: "discovery".to_owned(),
         message: format!("could not enumerate {}: {error}", path.display()),
         retry_safe: true,
+        ..Default::default()
     }
 }
 
@@ -315,6 +391,7 @@ fn header_failure(code: &'static str) -> Failure {
         code: code.to_owned(),
         message: format!("could not inspect package header ({code})"),
         retry_safe: matches!(code, "asset_io"),
+        ..Default::default()
     }
 }
 
@@ -335,7 +412,7 @@ mod tests {
 
     use super::{FilesystemProjectScanner, ProjectScanner};
     use crate::cancellation::CancellationToken;
-    use crate::direct_executor::catalog::EntryKind;
+    use crate::direct_executor::catalog::{EntryKind, PackageSignature};
 
     #[test]
     fn filesystem_scanner_enumerates_content_packages_and_sidecars() {
@@ -362,5 +439,37 @@ mod tests {
         assert_eq!(entries[0].kind, EntryKind::Package);
         assert_eq!(entries[1].relative_path, "content/data/dt_items.uexp");
         assert_eq!(entries[1].kind, EntryKind::Sidecar);
+    }
+
+    #[test]
+    fn parallel_header_stream_preserves_signature_order() {
+        let scanner = FilesystemProjectScanner;
+        let signatures = (0..32)
+            .map(|index| PackageSignature {
+                relative_path: format!("Content/Missing/A_{index:02}.uasset"),
+                kind: EntryKind::Package,
+                size: 1,
+                modified_nanos: 1,
+            })
+            .collect::<Vec<_>>();
+        let mut observed = Vec::new();
+        scanner
+            .stream_header_evidence(
+                "C:/Missing",
+                &signatures,
+                &CancellationToken::new(),
+                &mut |signature, _| {
+                    observed.push(signature.relative_path.clone());
+                    Ok(())
+                },
+            )
+            .expect("stream headers");
+        assert_eq!(
+            observed,
+            signatures
+                .iter()
+                .map(|signature| signature.relative_path.clone())
+                .collect::<Vec<_>>()
+        );
     }
 }

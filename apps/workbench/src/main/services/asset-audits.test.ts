@@ -71,7 +71,10 @@ const selectedProject = makeWorkbenchProjectTestLayer({
 	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
 	inputAtlas: () => Effect.die("not used"),
-	index: () => Effect.succeed(projectIndex),
+	candidates: (kind) => {
+		expect(kind).toBe("texture");
+		return Effect.succeed(projectIndex);
+	},
 	savedTables: () => Effect.die("savedTables is not used"),
 	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
 });

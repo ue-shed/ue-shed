@@ -177,13 +177,14 @@ export class ProtocolStreamValidator {
 
 type ProtocolFailureKind = "contract" | "discovery" | "process" | "resource_limit" | "timeout";
 
-class ProtocolStreamFailure extends Error {
+export class ProtocolStreamFailure extends Error {
 	readonly _tag = "ProtocolStreamFailure";
 
 	constructor(
 		readonly kind: ProtocolFailureKind,
 		message: string,
-		readonly exitCode?: number
+		readonly exitCode?: number,
+		readonly stderr?: string
 	) {
 		super(message);
 	}
@@ -403,7 +404,7 @@ function observeProtocolChunk(chunk: string, telemetry: ProtocolTelemetry): void
 }
 
 function recordProtocolTelemetry(
-	operation: AssetReaderError["operation"],
+	operation: string,
 	telemetry: ProtocolTelemetry
 ): Effect.Effect<void> {
 	const at = nowMs();
@@ -451,11 +452,15 @@ let protocolRequestCounter = 0;
 
 export function makeProtocolRequest(
 	operation: UAssetIoOperation,
-	limits: UAssetIoRequest["limits"]
+	limits: UAssetIoRequest["limits"],
+	options?: { readonly contractMinor?: number }
 ): UAssetIoRequest {
 	protocolRequestCounter += 1;
 	return {
-		contract: { name: "uasset-io", version: { major: 1, minor: 0 } },
+		contract: {
+			name: "uasset-io",
+			version: { major: 1, minor: options?.contractMinor ?? 0 }
+		},
 		limits,
 		operation,
 		requestId: `unreal-assets-${process.pid}-${protocolRequestCounter}`
@@ -570,9 +575,45 @@ function mapProtocolFailure(
 	});
 }
 
+export async function* runUassetProtocolEvents(options: {
+	readonly configuration: Pick<AssetReaderConfiguration, "executable" | "protocolObserver">;
+	readonly request: UAssetIoRequest;
+	readonly signal: AbortSignal | undefined;
+	readonly telemetry?: ProtocolTelemetry;
+	readonly timeoutMs: number;
+	readonly onEvent?: (event: ProtocolEvent) => void;
+}): AsyncGenerator<ProtocolEvent> {
+	const telemetry =
+		options.telemetry ?? makeProtocolTelemetry(false, options.configuration.protocolObserver);
+	try {
+		yield* protocolEvents({
+			configuration: {
+				catalogTimeoutMs: options.timeoutMs,
+				executable: options.configuration.executable,
+				...(options.configuration.protocolObserver === undefined
+					? {}
+					: { protocolObserver: options.configuration.protocolObserver }),
+				timeoutMs: options.timeoutMs
+			},
+			operation: options.request.operation.kind,
+			path: "project-index",
+			request: options.request,
+			signal: options.signal,
+			telemetry,
+			timeoutMs: options.timeoutMs,
+			...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
+		});
+	} finally {
+		if (telemetry.terminalState === undefined && !telemetry.cancelled) {
+			telemetry.terminalState = "failed";
+		}
+		await Effect.runPromise(recordProtocolTelemetry("project_index", telemetry));
+	}
+}
+
 async function* protocolEvents(options: {
 	readonly configuration: AssetReaderConfiguration;
-	readonly operation: AssetReaderError["operation"];
+	readonly operation: string;
 	readonly path: string;
 	readonly request: UAssetIoRequest;
 	readonly signal: AbortSignal | undefined;
@@ -664,7 +705,8 @@ async function* protocolEvents(options: {
 				"process",
 				stderr.trim() ||
 					`Protocol worker exited ${closedResult.code ?? closedResult.signal ?? "unknown"}`,
-				closedResult.code ?? undefined
+				closedResult.code ?? undefined,
+				stderr.trim() || undefined
 			);
 		}
 	} finally {

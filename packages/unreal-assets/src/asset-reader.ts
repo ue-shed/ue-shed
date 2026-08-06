@@ -236,6 +236,8 @@ export type AssetReaderProtocolObservation =
 
 export interface AssetReaderShape {
 	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
+	/** Returns the native worker settings needed by sibling headless adapters. */
+	readonly configuration: () => Effect.Effect<AssetReaderConfiguration>;
 	readonly discoverAssets: (
 		projectRoot: string
 	) => Effect.Effect<readonly string[], AssetReaderError>;
@@ -275,6 +277,7 @@ export interface AssetReaderShape {
 /** Optional members a test layer may omit; `makeAssetReaderTestLayer` supplies the defaults. */
 type AssetReaderTestDefaults =
 	| "catalogProgress"
+	| "configuration"
 	| "extractProjectText"
 	| "extractProjectTextures"
 	| "readSavedWorld"
@@ -480,6 +483,16 @@ function makeAssetReader(
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
 	);
+	const getConfiguration = Effect.fn("AssetReader.configuration")(() =>
+		Effect.succeed({
+			catalogTimeoutMs: configuration.catalogTimeoutMs,
+			executable: configuration.executable,
+			...(configuration.protocolObserver === undefined
+				? {}
+				: { protocolObserver: configuration.protocolObserver }),
+			timeoutMs: configuration.timeoutMs
+		})
+	);
 	const scanProgress = Effect.fn("AssetReader.scanProgress")(() =>
 		Effect.sync(() => scanStore.current)
 	);
@@ -615,6 +628,7 @@ function makeAssetReader(
 	const source = Effect.fn("AssetReader.source")(() => Effect.succeed(configuration.source));
 	return AssetReader.of({
 		catalogProgress,
+		configuration: getConfiguration,
 		discoverAssets,
 		discoverTables,
 		extractProjectText,
@@ -682,6 +696,14 @@ export function makeAssetReaderTestLayer(service: AssetReaderTestShape): Layer.L
 		AssetReader.of({
 			catalogProgress:
 				service.catalogProgress ?? (() => Effect.succeed(idleCatalogProgress())),
+			configuration:
+				service.configuration ??
+				(() =>
+					Effect.succeed({
+						catalogTimeoutMs: DEFAULT_CATALOG_TIMEOUT_MS,
+						executable: "uasset",
+						timeoutMs: DEFAULT_TIMEOUT_MS
+					})),
 			extractProjectText:
 				service.extractProjectText ??
 				((options) =>

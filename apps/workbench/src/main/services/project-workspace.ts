@@ -1,27 +1,32 @@
 import {
 	ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
 	ENHANCED_INPUT_CLASS_PREFIX,
-	EnhancedInputRunResult,
 	scanEnhancedInputFromProjectIndex,
 	type EnhancedInputRunResult as EnhancedInputRunResultValue
 } from "@ue-shed/enhanced-input";
 import { TEXTURE_CLASS } from "@ue-shed/asset-audits";
 import { STRING_TABLE_CLASS, TEXT_PROPERTY_NAME } from "@ue-shed/game-text";
-import { SavedWorldMap, type SavedWorldMap as SavedWorldMapValue } from "@ue-shed/protocol";
+import type { SavedWorldMap as SavedWorldMapValue } from "@ue-shed/protocol";
 import {
 	AssetReader,
+	PROJECT_INDEX_MAX_PAGE_SIZE,
+	ProjectIndex,
+	ProjectIndexQuery,
+	ProjectIndexSummary,
 	SAVED_TABLE_SCAN_CLASSES,
-	SavedTableCatalog,
+	getProjectIndexStatus,
+	queryProjectIndex,
+	refreshProjectIndex,
 	savedTableCatalogFromScan,
+	type ProjectIndexCursor,
+	type ProjectIndexError,
+	type ProjectIndexItem,
+	type ProjectIndexMap,
 	type SavedAssetScan,
-	type SavedAssetManifestEntry,
 	type SavedTableCatalog as SavedTableCatalogValue
 } from "@ue-shed/unreal-assets";
-import { Cache, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema } from "effect";
-import { createHash } from "node:crypto";
-import { join, relative } from "node:path";
-import { ElectronApp } from "../adapters/electron-app.js";
-import { ProjectInventoryCache } from "../adapters/project-inventory-cache.js";
+import { Cache, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema, Stream } from "effect";
+import { join } from "node:path";
 import {
 	WorkbenchProjectSummary,
 	type WorkbenchProjectFailure,
@@ -31,39 +36,17 @@ import {
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { savedMapLabel, WorkbenchConfiguration } from "../workbench-config.js";
 
-interface ProjectInventory {
-	/** The current header projection, retained so dependent tools can decode candidates only. */
-	readonly index: SavedAssetScan;
-	readonly inputAtlas: EnhancedInputRunResultValue;
-	readonly manifestHash: string;
-	readonly manifest: readonly SavedAssetManifestEntry[];
+interface ProjectSummaryInventory {
+	readonly indexSummary: ProjectIndexSummary | undefined;
 	readonly maps: readonly SavedWorldMapValue[];
 	readonly project: WorkbenchProjectSummary;
-	/**
-	 * Saved DataTables projected from the global header index. No separate table scan is permitted.
-	 */
-	readonly tables: SavedTableCatalogValue;
 }
 
-const PersistentProjectInventory = Schema.Struct({
-	inputAtlas: EnhancedInputRunResult,
-	manifest: Schema.Array(
-		Schema.Struct({
-			kind: Schema.Literals(["package", "sidecar"]),
-			modifiedMs: Schema.Number,
-			path: Schema.String,
-			size: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-		})
-	),
-	manifestHash: Schema.String,
-	maps: Schema.Array(SavedWorldMap),
-	project: WorkbenchProjectSummary,
-	tables: SavedTableCatalog,
-	version: Schema.Literal(3)
-});
-interface PersistentProjectInventory extends Schema.Schema.Type<
-	typeof PersistentProjectInventory
-> {}
+export type WorkbenchProjectCandidateKind =
+	| "enhanced_input"
+	| "game_text"
+	| "saved_tables"
+	| "texture";
 
 export class WorkbenchProjectUnavailable extends Schema.TaggedErrorClass<WorkbenchProjectUnavailable>()(
 	"WorkbenchProjectUnavailable",
@@ -74,11 +57,13 @@ export class WorkbenchProjectUnavailable extends Schema.TaggedErrorClass<Workben
 ) {}
 
 export interface WorkbenchProjectShape {
+	/** Fold only one domain's bounded Project Index pages into explicit package candidates. */
+	readonly candidates: (
+		kind: WorkbenchProjectCandidateKind
+	) => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
 	readonly choose: () => Effect.Effect<WorkbenchProjectState>;
 	readonly current: () => Effect.Effect<WorkbenchProjectState>;
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
-	/** The current global header index. Consumers must not re-enumerate the project. */
-	readonly index: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
 	readonly savedProject: () => Effect.Effect<
 		{ readonly maps: readonly SavedWorldMapValue[]; readonly projectRoot: string },
@@ -100,101 +85,15 @@ function projectName(projectRoot: string): string {
 	return trimmed.split(/[/\\]/).at(-1) || projectRoot;
 }
 
-function projectManifestHash(
-	projectRoot: string,
-	manifest: readonly SavedAssetManifestEntry[]
-): string {
-	const hash = createHash("sha256").update(projectRoot).update("\u0000");
-	for (const entry of manifest) {
-		hash.update(entry.path)
-			.update("\u0000")
-			.update(String(entry.size))
-			.update("\u0000")
-			.update(String(entry.modifiedMs))
-			.update("\u0000");
-	}
-	return hash.digest("hex");
-}
-
-function mapsFromManifest(
-	projectRoot: string,
-	manifest: readonly SavedAssetManifestEntry[]
-): readonly SavedWorldMapValue[] {
-	return manifest
-		.filter((entry) => entry.kind === "package" && entry.path.toLowerCase().endsWith(".umap"))
-		.map((entry) => relative(projectRoot, entry.path).replaceAll("\\", "/"))
-		.sort((left, right) => left.localeCompare(right))
-		.map((mapPath) => ({ label: savedMapLabel(mapPath), mapPath }));
-}
-
-function headerProjection(index: SavedAssetScan): SavedAssetScan {
-	return { assets: index.assets, failures: index.failures, summary: index.summary };
-}
-
-function fromPersistentInventory(
-	entry: PersistentProjectInventory,
-	index: SavedAssetScan
-): ProjectInventory {
-	return {
-		index: headerProjection(index),
-		inputAtlas: entry.inputAtlas,
-		manifest: entry.manifest,
-		manifestHash: entry.manifestHash,
-		maps: entry.maps,
-		project: entry.project,
-		tables: entry.tables
-	};
-}
-
-function toPersistentInventory(inventory: ProjectInventory): PersistentProjectInventory {
-	return {
-		inputAtlas: inventory.inputAtlas,
-		manifest: [...inventory.manifest],
-		manifestHash: inventory.manifestHash,
-		maps: [...inventory.maps],
-		project: inventory.project,
-		tables: inventory.tables,
-		version: 3
-	};
-}
-
-function mapProjectFailure(message: string): WorkbenchProjectFailure {
+function mapProjectFailure(
+	message: string,
+	recovery = "Choose a valid Unreal project directory, then let its package inventory finish."
+): WorkbenchProjectFailure {
 	return {
 		message,
-		recovery: "Choose a valid Unreal project directory, then let its package inventory finish."
+		recovery
 	};
 }
-
-function unavailableFromState(state: WorkbenchProjectState): WorkbenchProjectUnavailable {
-	if (state.status === "failed") {
-		return new WorkbenchProjectUnavailable({
-			message: state.error.message,
-			recovery: state.error.recovery
-		});
-	}
-	return new WorkbenchProjectUnavailable({
-		message: "No Workbench project is selected.",
-		recovery: "Choose a project from the Workbench header, then retry."
-	});
-}
-
-/**
- * Locates the reader's project-index header cache, one file per project root.
- *
- * The derived inventory is separately persisted. This cache reuses unchanged package headers while
- * one native scan refreshes the complete project signature inventory.
- */
-const projectIndexCacheLocator = Effect.gen(function* () {
-	const app = yield* Effect.serviceOption(ElectronApp);
-	if (Option.isNone(app)) return undefined;
-	const userData = yield* app.value
-		.getPath("userData")
-		.pipe(Effect.catch(() => Effect.succeed(undefined)));
-	if (userData === undefined) return undefined;
-	const directory = join(userData, "project-indexes-v1");
-	return (projectRoot: string) =>
-		join(directory, `${createHash("sha256").update(projectRoot).digest("hex")}.json`);
-});
 
 export const WorkbenchProjectLive = Layer.effect(
 	WorkbenchProject,
@@ -202,171 +101,407 @@ export const WorkbenchProjectLive = Layer.effect(
 		const configuration = yield* WorkbenchConfiguration;
 		const dialog = yield* ElectronDialog;
 		const assetReader = yield* AssetReader;
-		const projectInventoryCache = yield* Effect.serviceOption(ProjectInventoryCache);
-		const projectIndexCachePath = yield* projectIndexCacheLocator;
+		const projectIndexImplementation = yield* ProjectIndex;
+		const layerScope = yield* Effect.scope;
 		const selectedRoot = yield* Ref.make<Option.Option<string>>(
 			configuration.project.status === "configured"
 				? Option.some(configuration.project.projectRoot)
 				: Option.none()
 		);
-		const selectedInventory = yield* Ref.make<Option.Option<ProjectInventory>>(Option.none());
+		const selectedSummary = yield* Ref.make<Option.Option<ProjectSummaryInventory>>(
+			Option.none()
+		);
+		const projectIndexProgress = yield* Ref.make<WorkbenchTaskProgress>({
+			completed: 0,
+			phase: "idle",
+			stage: "project_index",
+			total: 0
+		});
 
-		const readPersistentInventory = Effect.fn(
-			"Workbench.WorkbenchProject.readPersistentInventory"
-		)(function* (projectRoot: string) {
-			if (Option.isNone(projectInventoryCache)) return undefined;
-			const cached = yield* projectInventoryCache.value
-				.read(projectRoot)
-				.pipe(
-					Effect.catch((error) =>
-						Effect.logWarning(
-							`Could not read the project inventory cache for ${projectRoot}: ${error.message}`
-						).pipe(Effect.as(undefined))
+		const projectIndexItems = Effect.fn("Workbench.WorkbenchProject.projectIndexItems")(
+			function* (
+				summary: ProjectIndexSummary,
+				makeRequest: (cursor: ProjectIndexCursor | undefined) => ProjectIndexQuery
+			) {
+				const items = yield* Stream.paginate<
+					ProjectIndexCursor | undefined,
+					ProjectIndexItem,
+					WorkbenchProjectUnavailable | ProjectIndexError
+				>(undefined, (cursor) =>
+					queryProjectIndex(makeRequest(cursor)).pipe(
+						Effect.provideService(ProjectIndex, projectIndexImplementation),
+						Effect.flatMap((page) => {
+							if (
+								page.generation !== summary.generation ||
+								page.projectId !== summary.projectId
+							) {
+								return Effect.fail(
+									new WorkbenchProjectUnavailable({
+										message:
+											"Project Index returned a page from a different generation.",
+										recovery:
+											"Refresh the Project Index, then retry the project summary."
+									})
+								);
+							}
+							return Effect.succeed([
+								page.items,
+								page.nextCursor === undefined
+									? Option.none<ProjectIndexCursor | undefined>()
+									: Option.some<ProjectIndexCursor | undefined>(page.nextCursor)
+							] as const);
+						})
+					)
+				).pipe(
+					Stream.runCollect,
+					Effect.mapError((error) =>
+						error instanceof WorkbenchProjectUnavailable
+							? error
+							: new WorkbenchProjectUnavailable({
+									message: error.message,
+									recovery: error.recovery
+								})
 					)
 				);
-			if (cached === undefined) return undefined;
-			return yield* Schema.decodeUnknownEffect(PersistentProjectInventory)(cached).pipe(
-				Effect.catch(() => Effect.succeed(undefined))
-			);
-		});
-
-		const writePersistentInventory = Effect.fn(
-			"Workbench.WorkbenchProject.writePersistentInventory"
-		)(function* (inventory: ProjectInventory) {
-			if (Option.isNone(projectInventoryCache)) return;
-			yield* projectInventoryCache.value
-				.write(inventory.project.projectRoot, toPersistentInventory(inventory))
-				.pipe(
-					Effect.catch((error) =>
-						Effect.logWarning(
-							`Could not write the project inventory cache for ${inventory.project.projectRoot}: ${error.message}`
-						)
-					)
-				);
-		});
-
-		const buildInventory = Effect.fn("Workbench.WorkbenchProject.buildInventory")(function* (
-			projectRoot: string,
-			index: SavedAssetScan,
-			manifest: readonly SavedAssetManifestEntry[],
-			manifestHash: string
-		) {
-			const inputAtlas = yield* scanEnhancedInputFromProjectIndex(index, {
-				projectRoot
-			}).pipe(
-				Effect.map((report) => ({ projectRoot, report, status: "completed" as const })),
-				Effect.catch((error) =>
-					Effect.succeed({
-						error: {
-							code: error.code,
-							message: error.message,
-							recovery: error.recovery,
-							retrySafe: error.retrySafe
-						},
-						status: "failed" as const
-					})
-				)
-			);
-			const tables = savedTableCatalogFromScan(index);
-			const maps = mapsFromManifest(projectRoot, manifest);
-			return {
-				index: headerProjection(index),
-				inputAtlas,
-				manifest,
-				manifestHash,
-				maps,
-				project: {
-					inputAtlas: inputAtlas.status === "completed" ? "ready" : "failed",
-					mapCount: maps.length,
-					packageCount: manifest.filter((entry) => entry.kind === "package").length,
-					projectName: projectName(projectRoot),
-					projectRoot
-				},
-				tables
-			} satisfies ProjectInventory;
-		});
-
-		const loadRootUncached = Effect.fn("Workbench.WorkbenchProject.loadRootUncached")(
-			function* (projectRoot: string) {
-				const index = yield* assetReader.scanProject({
-					classes: [...SAVED_TABLE_SCAN_CLASSES, STRING_TABLE_CLASS, TEXTURE_CLASS],
-					classNameSuffixes: ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
-					classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
-					...(projectIndexCachePath === undefined
-						? {}
-						: { cachePath: projectIndexCachePath(projectRoot) }),
-					depth: "header",
-					inventory: true,
-					names: [TEXT_PROPERTY_NAME],
-					projectRoot
-				});
-				if (
-					index.inventory === undefined ||
-					index.summary.inventoryComplete !== true ||
-					index.inventory.length !== index.summary.inventoryFiles
-				) {
-					return yield* new WorkbenchProjectUnavailable({
-						message: "Project index did not produce a complete signature inventory.",
-						recovery:
-							"Retry after checking that every saved package and sidecar is readable."
-					});
-				}
-				const manifest = [...index.inventory].sort((left, right) =>
-					left.path.localeCompare(right.path)
-				);
-				const manifestHash = projectManifestHash(projectRoot, manifest);
-				const active = yield* Ref.get(selectedInventory);
-				if (
-					Option.isSome(active) &&
-					active.value.manifestHash === manifestHash &&
-					active.value.project.projectRoot === projectRoot
-				) {
-					return active.value;
-				}
-				const persisted = yield* readPersistentInventory(projectRoot);
-				if (
-					persisted?.manifestHash === manifestHash &&
-					persisted.project.projectRoot === projectRoot
-				) {
-					const inventory = fromPersistentInventory(persisted, index);
-					yield* Ref.set(selectedInventory, Option.some(inventory));
-					return inventory;
-				}
-				const inventory = yield* buildInventory(projectRoot, index, manifest, manifestHash);
-				yield* Ref.set(selectedInventory, Option.some(inventory));
-				yield* writePersistentInventory(inventory);
-				return inventory;
+				return Array.from(items);
 			}
 		);
 
-		// A built inventory is reused for a short window. Routine callers resolve the selected
-		// project far more often than a project changes on disk -- every catalog table open does
-		// it once -- and revalidating means re-walking and re-stat'ing the whole `Content` tree,
-		// which costs seconds on a real project. Failures are never cached, so a retry always
-		// rescans, and `choose` invalidates explicitly so re-selecting a project re-indexes it.
-		const inventoryLoads = yield* Cache.makeWith(loadRootUncached, {
+		const mapsFromProjectIndex = Effect.fn("Workbench.WorkbenchProject.mapsFromProjectIndex")(
+			function* (summary: ProjectIndexSummary) {
+				const maps = yield* projectIndexItems(summary, (cursor) =>
+					ProjectIndexQuery.cases.Maps.make({
+						expectedGeneration: summary.generation,
+						limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+						projectId: summary.projectId,
+						...(cursor === undefined ? {} : { cursor })
+					})
+				);
+				const paths = maps
+					.filter((item): item is ProjectIndexMap => item.kind === "map")
+					.map((map) => map.mapPath)
+					.sort((left, right) => left.localeCompare(right));
+				if (paths.length !== summary.mapCount) {
+					return yield* new WorkbenchProjectUnavailable({
+						message: "Project Index returned an incomplete map page set.",
+						recovery: "Refresh the Project Index, then retry the project summary."
+					});
+				}
+				return paths.map((mapPath) => ({ label: savedMapLabel(mapPath), mapPath }));
+			}
+		);
+
+		const headerIndexFromProjectIndex = Effect.fn(
+			"Workbench.WorkbenchProject.headerIndexFromProjectIndex"
+		)(function* (
+			projectRoot: string,
+			summary: ProjectIndexSummary,
+			kind: WorkbenchProjectCandidateKind
+		) {
+			const byKind: Record<
+				WorkbenchProjectCandidateKind,
+				readonly ((cursor: ProjectIndexCursor | undefined) => ProjectIndexQuery)[]
+			> = {
+				enhanced_input: [
+					(cursor) =>
+						ProjectIndexQuery.cases.ClassPrefixes.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [ENHANCED_INPUT_CLASS_PREFIX],
+							...(cursor === undefined ? {} : { cursor })
+						}),
+					(cursor) =>
+						ProjectIndexQuery.cases.ClassNameSuffixes.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES],
+							...(cursor === undefined ? {} : { cursor })
+						})
+				],
+				game_text: [
+					(cursor) =>
+						ProjectIndexQuery.cases.ExactClasses.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [STRING_TABLE_CLASS],
+							...(cursor === undefined ? {} : { cursor })
+						}),
+					(cursor) =>
+						ProjectIndexQuery.cases.SerializedNames.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [TEXT_PROPERTY_NAME],
+							...(cursor === undefined ? {} : { cursor })
+						})
+				],
+				saved_tables: [
+					(cursor) =>
+						ProjectIndexQuery.cases.ExactClasses.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [...SAVED_TABLE_SCAN_CLASSES],
+							...(cursor === undefined ? {} : { cursor })
+						})
+				],
+				texture: [
+					(cursor) =>
+						ProjectIndexQuery.cases.ExactClasses.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [TEXTURE_CLASS],
+							...(cursor === undefined ? {} : { cursor })
+						})
+				]
+			};
+			const factories: readonly ((
+				cursor: ProjectIndexCursor | undefined
+			) => ProjectIndexQuery)[] = byKind[kind];
+			const pages = yield* Effect.forEach(factories, (makeRequest) =>
+				projectIndexItems(summary, makeRequest)
+			);
+			const headers = new Map<
+				string,
+				{
+					readonly classes: Set<string>;
+					readonly packageName: string;
+					readonly serializedNames: Set<string>;
+				}
+			>();
+			for (const page of pages) {
+				for (const item of page) {
+					if (item.kind !== "header") continue;
+					const current = headers.get(item.packagePath) ?? {
+						classes: new Set<string>(),
+						packageName: item.packageName,
+						serializedNames: new Set<string>()
+					};
+					for (const classPath of item.classes) current.classes.add(classPath);
+					for (const name of item.serializedNames) current.serializedNames.add(name);
+					headers.set(item.packagePath, current);
+				}
+			}
+			const assets = [...headers.entries()]
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([packagePath, header]) => ({
+					depth: "header" as const,
+					fileBytes: 0,
+					header: {
+						exports: [...header.classes].sort().map((classPath) => ({
+							class_name: classPath.slice(classPath.lastIndexOf(".") + 1),
+							class_path: classPath,
+							object_path: header.packageName
+						})),
+						matched_names: [...header.serializedNames].sort(),
+						package: { name: header.packageName },
+						path: packagePath,
+						schema_version: 8 as const
+					}
+				}));
+			return {
+				assets,
+				failures: [],
+				summary: {
+					cacheHits: 0,
+					depth: "header",
+					diagnostics: [],
+					emittedAssets: assets.length,
+					failedAssets: 0,
+					partialAssets: 0,
+					projectRoot,
+					roots: [join(projectRoot, "Content")],
+					scannedAssets: summary.packageCount,
+					schema_version: 8,
+					skippedAssets: Math.max(0, summary.packageCount - assets.length)
+				}
+			} satisfies SavedAssetScan;
+		});
+
+		const refreshSummary = Effect.fn("Workbench.WorkbenchProject.refreshSummary")(function* (
+			projectRoot: string
+		) {
+			const summary = yield* refreshProjectIndex({ projectRoot }).pipe(
+				Stream.provideService(ProjectIndex, projectIndexImplementation),
+				Stream.tap((event) =>
+					Ref.update(projectIndexProgress, (previous): WorkbenchTaskProgress => {
+						if (event._tag === "Started") {
+							return {
+								completed: 0,
+								phase: "enumerating",
+								stage: "project_index",
+								total: 0
+							};
+						}
+						if (event._tag === "Progress") {
+							return {
+								completed: event.completedPackages,
+								phase: event.phase === "enumerating" ? "enumerating" : "scanning",
+								stage: "project_index",
+								total: event.totalPackages ?? previous.total
+							};
+						}
+						return {
+							completed: event.summary.packageCount,
+							phase: "ready",
+							stage: "project_index",
+							total: event.summary.packageCount
+						};
+					})
+				),
+				Stream.runFold(
+					() => Option.none<ProjectIndexSummary>(),
+					(current, event) =>
+						event._tag === "Completed" ? Option.some(event.summary) : current
+				),
+				Effect.onExit((exit) =>
+					Ref.update(
+						projectIndexProgress,
+						(previous): WorkbenchTaskProgress => ({
+							...previous,
+							phase: Exit.isSuccess(exit) ? "ready" : "failed"
+						})
+					)
+				),
+				Effect.mapError(
+					(error) =>
+						new WorkbenchProjectUnavailable({
+							message: error.message,
+							recovery: error.recovery
+						})
+				)
+			);
+			if (Option.isNone(summary)) {
+				return yield* new WorkbenchProjectUnavailable({
+					message: "Project Index refresh ended without a summary.",
+					recovery: "Retry the refresh. If it keeps failing, rebuild the Project Index."
+				});
+			}
+			if (summary.value.completeness !== "complete") {
+				return yield* new WorkbenchProjectUnavailable({
+					message: "Project Index refresh completed with incomplete package coverage.",
+					recovery:
+						"Retry after resolving the Project Index diagnostics, then refresh again."
+				});
+			}
+			return summary.value;
+		});
+
+		const inventoryFromSummary = Effect.fn("Workbench.WorkbenchProject.inventoryFromSummary")(
+			function* (projectRoot: string, summary: ProjectIndexSummary) {
+				const maps = yield* mapsFromProjectIndex(summary);
+				const project = {
+					inputAtlas: "deferred" as const,
+					mapCount: summary.mapCount,
+					packageCount: summary.packageCount,
+					projectName: projectName(projectRoot),
+					projectRoot
+				} satisfies WorkbenchProjectSummary;
+				const result = {
+					indexSummary: summary,
+					maps,
+					project
+				} satisfies ProjectSummaryInventory;
+				yield* Ref.set(selectedSummary, Option.some(result));
+				return result;
+			}
+		);
+
+		const loadSummaryUncached = Effect.fn("Workbench.WorkbenchProject.loadSummaryUncached")(
+			function* (projectRoot: string) {
+				const status = yield* getProjectIndexStatus({ projectRoot }).pipe(
+					Effect.provideService(ProjectIndex, projectIndexImplementation),
+					Effect.mapError(
+						(error) =>
+							new WorkbenchProjectUnavailable({
+								message: error.message,
+								recovery: error.recovery
+							})
+					)
+				);
+				if (status.status === "absent") {
+					return yield* inventoryFromSummary(
+						projectRoot,
+						yield* refreshSummary(projectRoot)
+					);
+				}
+
+				const committed = yield* inventoryFromSummary(projectRoot, status.summary);
+				yield* Ref.set(projectIndexProgress, {
+					completed: status.summary.packageCount,
+					phase: "ready",
+					stage: "project_index",
+					total: status.summary.packageCount
+				});
+				yield* refreshSummary(projectRoot).pipe(
+					Effect.flatMap((summary) => inventoryFromSummary(projectRoot, summary)),
+					Effect.catch(() => Effect.void),
+					Effect.forkIn(layerScope)
+				);
+				return committed;
+			}
+		);
+
+		const summaryLoads = yield* Cache.makeWith(loadSummaryUncached, {
 			capacity: 4,
 			timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero)
 		});
 
-		const loadRoot = Effect.fn("Workbench.WorkbenchProject.loadRoot")(function* (
+		const loadSummary = Effect.fn("Workbench.WorkbenchProject.loadSummary")(function* (
 			projectRoot: string
 		) {
-			return yield* Cache.get(inventoryLoads, projectRoot);
+			return yield* Cache.get(summaryLoads, projectRoot);
+		});
+
+		const inputAtlasFromProjectIndex = Effect.fn(
+			"Workbench.WorkbenchProject.inputAtlasFromProjectIndex"
+		)(function* (projectRoot: string) {
+			const summary = yield* loadSummary(projectRoot);
+			if (summary.indexSummary === undefined) {
+				return yield* new WorkbenchProjectUnavailable({
+					message: "Project Index summary is unavailable.",
+					recovery: "Refresh the Project Index, then retry Input Atlas."
+				});
+			}
+			const index = yield* headerIndexFromProjectIndex(
+				projectRoot,
+				summary.indexSummary,
+				"enhanced_input"
+			);
+			const report = yield* scanEnhancedInputFromProjectIndex(index, { projectRoot }).pipe(
+				Effect.provideService(AssetReader, assetReader),
+				Effect.mapError(
+					(error) =>
+						new WorkbenchProjectUnavailable({
+							message: error.message,
+							recovery: error.recovery
+						})
+				)
+			);
+			return { projectRoot, report, status: "completed" as const };
+		});
+
+		const inputAtlasLoads = yield* Cache.makeWith(inputAtlasFromProjectIndex, {
+			capacity: 4,
+			timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero)
 		});
 
 		const current = Effect.fn("Workbench.WorkbenchProject.current")(function* () {
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) return { status: "not_configured" as const };
-			return yield* loadRoot(root.value).pipe(
+			return yield* loadSummary(root.value).pipe(
 				Effect.map((inventory) => ({
 					project: inventory.project,
 					status: "ready" as const
 				})),
 				Effect.catch((error) =>
-					Ref.set(selectedInventory, Option.none()).pipe(
+					Ref.set(selectedSummary, Option.none()).pipe(
 						Effect.as({
-							error: mapProjectFailure(error.message),
+							error: mapProjectFailure(error.message, error.recovery),
 							status: "failed" as const
 						})
 					)
@@ -374,14 +509,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 		});
 		const progress = Effect.fn("Workbench.WorkbenchProject.progress")(function* () {
-			const currentProgress = yield* assetReader.scanProgress();
-			return {
-				cacheHits: currentProgress.cacheHits,
-				completed: currentProgress.processedAssets,
-				phase: currentProgress.phase,
-				stage: "project_index" as const,
-				total: currentProgress.totalAssets
-			};
+			return yield* Ref.get(projectIndexProgress);
 		});
 
 		const choose: WorkbenchProjectShape["choose"] = () =>
@@ -392,8 +520,9 @@ export const WorkbenchProjectLive = Layer.effect(
 				if (choice.status === "cancelled") return { status: "cancelled" as const };
 				// Choosing a project is an explicit operator request to index it, so it always
 				// revalidates against disk rather than answering from the reuse window.
-				yield* Cache.invalidate(inventoryLoads, choice.path);
-				const inventory = yield* loadRoot(choice.path);
+				yield* Cache.invalidate(summaryLoads, choice.path);
+				yield* Ref.set(selectedSummary, Option.none());
+				const inventory = yield* loadSummary(choice.path);
 				yield* Ref.set(selectedRoot, Option.some(choice.path));
 				return { project: inventory.project, status: "ready" as const };
 			}).pipe(
@@ -406,18 +535,29 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 
 		const selected = Effect.fn("Workbench.WorkbenchProject.selected")(function* () {
-			const cached = yield* Ref.get(selectedInventory);
-			if (Option.isSome(cached)) return cached.value;
-			const state = yield* current();
-			if (state.status !== "ready") return yield* Effect.fail(unavailableFromState(state));
-			const inventory = yield* Ref.get(selectedInventory);
-			if (Option.isNone(inventory)) return yield* Effect.fail(unavailableFromState(state));
-			return inventory.value;
+			const root = yield* Ref.get(selectedRoot);
+			if (Option.isNone(root))
+				return yield* new WorkbenchProjectUnavailable({
+					message: "No Workbench project is selected.",
+					recovery: "Choose a project from the Workbench header, then retry."
+				});
+			return yield* loadSummary(root.value);
 		});
 
 		const inputAtlas = Effect.fn("Workbench.WorkbenchProject.inputAtlas")(function* () {
-			return yield* selected().pipe(
-				Effect.map((inventory) => inventory.inputAtlas),
+			const root = yield* Ref.get(selectedRoot);
+			if (Option.isNone(root)) {
+				return {
+					error: {
+						code: "invalid_project" as const,
+						message: "No Workbench project is selected.",
+						recovery: "Choose a project from the Workbench header, then retry.",
+						retrySafe: true
+					},
+					status: "failed" as const
+				};
+			}
+			return yield* Cache.get(inputAtlasLoads, root.value).pipe(
 				Effect.catch((error) =>
 					Effect.succeed({
 						error: {
@@ -432,24 +572,68 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 		});
 
-		const projectIndex = Effect.fn("Workbench.WorkbenchProject.index")(function* () {
-			return (yield* selected()).index;
+		const candidates = Effect.fn("Workbench.WorkbenchProject.candidates")(function* (
+			kind: WorkbenchProjectCandidateKind
+		) {
+			const summary = yield* selected();
+			if (summary.indexSummary === undefined) {
+				return yield* new WorkbenchProjectUnavailable({
+					message: "Project Index summary is unavailable.",
+					recovery: "Refresh the Project Index, then retry the feature."
+				});
+			}
+			return yield* headerIndexFromProjectIndex(
+				summary.project.projectRoot,
+				summary.indexSummary,
+				kind
+			);
 		});
 
 		const savedProject = Effect.fn("Workbench.WorkbenchProject.savedProject")(function* () {
-			const inventory = yield* selected();
-			return { maps: inventory.maps, projectRoot: inventory.project.projectRoot };
+			const cached = yield* Ref.get(selectedSummary);
+			if (Option.isSome(cached)) {
+				return { maps: cached.value.maps, projectRoot: cached.value.project.projectRoot };
+			}
+			const root = yield* Ref.get(selectedRoot);
+			if (Option.isNone(root)) {
+				return yield* new WorkbenchProjectUnavailable({
+					message: "No Workbench project is selected.",
+					recovery: "Choose a project from the Workbench header, then retry."
+				});
+			}
+			const summary = yield* loadSummary(root.value);
+			return { maps: summary.maps, projectRoot: summary.project.projectRoot };
 		});
 
 		const savedTables = Effect.fn("Workbench.WorkbenchProject.savedTables")(function* () {
-			return (yield* selected()).tables;
+			const summary = yield* selected();
+			const index = yield* candidates("saved_tables");
+			const paths = index.assets.map((entry) => entry.header.path);
+			const headers = yield* assetReader
+				.scanProject({
+					classes: [...SAVED_TABLE_SCAN_CLASSES],
+					depth: "header",
+					paths,
+					projectRoot: summary.project.projectRoot
+				})
+				.pipe(
+					Effect.mapError(
+						(error) =>
+							new WorkbenchProjectUnavailable({
+								message: error.message,
+								recovery:
+									"Retry after checking that the saved-asset worker can read the candidate tables."
+							})
+					)
+				);
+			return savedTableCatalogFromScan(headers);
 		});
 
 		return WorkbenchProject.of({
+			candidates,
 			choose,
 			current,
 			inputAtlas,
-			index: projectIndex,
 			progress,
 			savedProject,
 			savedTables
@@ -457,8 +641,8 @@ export const WorkbenchProjectLive = Layer.effect(
 	})
 );
 
-export type WorkbenchProjectTestShape = Omit<WorkbenchProjectShape, "index" | "progress"> &
-	Partial<Pick<WorkbenchProjectShape, "index" | "progress">>;
+export type WorkbenchProjectTestShape = Omit<WorkbenchProjectShape, "candidates" | "progress"> &
+	Partial<Pick<WorkbenchProjectShape, "candidates" | "progress">>;
 
 export function makeWorkbenchProjectTestLayer(
 	service: WorkbenchProjectTestShape
@@ -467,7 +651,9 @@ export function makeWorkbenchProjectTestLayer(
 		WorkbenchProject,
 		WorkbenchProject.of({
 			...service,
-			index: service.index ?? (() => Effect.die("project index is not used by this test")),
+			candidates:
+				service.candidates ??
+				(() => Effect.die("project candidates are not used by this test")),
 			progress:
 				service.progress ??
 				(() =>

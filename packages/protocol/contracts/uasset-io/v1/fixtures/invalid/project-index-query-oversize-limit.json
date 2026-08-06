@@ -7,7 +7,7 @@
 		"query": {
 			"expectedGeneration": 1,
 			"kind": "maps",
-			"limit": 257,
+			"limit": 1025,
 			"projectId": "fixture-project"
 		}
 	},

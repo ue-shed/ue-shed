@@ -16,17 +16,20 @@ import { AuthoringClientLive } from "@ue-shed/host";
 import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
 import { ObservatoryLive } from "@ue-shed/observatory";
-import { AssetReaderLive } from "@ue-shed/unreal-assets";
+import {
+	AssetReader,
+	AssetReaderLive,
+	projectIndexProcessLayerFromReader
+} from "@ue-shed/unreal-assets";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Effect, Layer } from "effect";
 import { join } from "node:path";
-import { electronAppLayer, type ElectronAppHost } from "./adapters/electron-app.js";
+import { electronAppLayer, ElectronApp, type ElectronAppHost } from "./adapters/electron-app.js";
 import { ElectronDialogLive } from "./adapters/electron-dialog.js";
 import { electronIpcLayer, type ElectronIpcHost } from "./adapters/electron-ipc.js";
 import { workbenchWindowLayer, type WorkbenchWindowOptions } from "./adapters/electron-window.js";
 import { fixtureProcessLayer } from "./adapters/fixture-process.js";
 import { LocalFilesLive } from "./adapters/local-files.js";
-import { ProjectInventoryCacheLive } from "./adapters/project-inventory-cache.js";
 import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
 import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
@@ -81,11 +84,22 @@ function baseLayer(hosts: WorkbenchHosts) {
 	).pipe(Layer.provideMerge(WorkbenchConfigurationLive));
 }
 
+/** Builds the headless Project Index from the same native worker settings as AssetReader. */
+const projectIndexLive = Layer.unwrap(
+	Effect.gen(function* () {
+		const app = yield* ElectronApp;
+		const reader = yield* AssetReader;
+		const configuration = yield* reader.configuration();
+		const cacheRoot = join(yield* app.getPath("userData"), "project-catalogs-v1");
+		return projectIndexProcessLayerFromReader({ ...configuration, cacheRoot });
+	})
+);
+
 /** Domain catalog and audit services that only need the base infrastructure. */
 function domainCatalogLayer(hosts: WorkbenchHosts) {
 	const project = WorkbenchProjectLive.pipe(
 		Layer.provide(
-			Layer.mergeAll(ElectronDialogLive, EnhancedInputServiceLive, ProjectInventoryCacheLive)
+			Layer.mergeAll(ElectronDialogLive, EnhancedInputServiceLive, projectIndexLive)
 		)
 	);
 	return Layer.mergeAll(

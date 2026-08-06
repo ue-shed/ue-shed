@@ -6362,7 +6362,7 @@
 					},
 					"allOf": [
 						{
-							"maxItems": 256
+							"maxItems": 1024
 						}
 					]
 				},

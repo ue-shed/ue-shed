@@ -592,7 +592,7 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
     }
 }
 
-const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 256;
+const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 1024;
 
 fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), ProtocolError> {
     let (project_id, expected_generation, limit, cursor, values) = match query {

@@ -1,5 +1,6 @@
 export * from "./project-index.js";
 export * from "./project-index-memory.js";
+export * from "./project-index-process.js";
 export {
 	decodeProjectIndexWirePage,
 	decodeProjectIndexWireSummary,
@@ -40,6 +41,7 @@ export type {
 } from "./asset-reader.js";
 export {
 	ProtocolOutputBudget,
+	ProtocolStreamFailure,
 	ProtocolStreamValidator,
 	protocolCacheOutcome
 } from "./protocol-transport.js";

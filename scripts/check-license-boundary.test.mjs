@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateLicenseBoundary } from "./check-license-boundary.mjs";
+import {
+	rustDependencyLicenses,
+	validateLicenseBoundary,
+	validateRustDependencyLicenses
+} from "./check-license-boundary.mjs";
 
 const validInput = {
 	rootManifest: { license: "MIT" },
@@ -50,4 +54,32 @@ test("rejects license, version, and packed-core dependency drift", () => {
 		"peculiar-sheets: expected MIT metadata, received GPL-3.0-only",
 		"peculiar-sheets: production dependency hyperformula violates the formula-free core boundary"
 	]);
+});
+
+const lockedNames = (names) => names.map((name) => `[[package]]\nname = "${name}"\n`).join("\n");
+
+test("accepts a recorded permissive Rust dependency graph", () => {
+	const lockfile = lockedNames(Object.keys(rustDependencyLicenses));
+	assert.deepEqual(validateRustDependencyLicenses({ lockfile }), []);
+});
+
+test("rejects an unrecorded Rust dependency and a copyleft license", () => {
+	const failures = validateRustDependencyLicenses({
+		lockfile: lockedNames(["rusqlite", "diesel", "sled"]),
+		licenses: { rusqlite: "MIT", sled: "AGPL-3.0-only" }
+	});
+	assert.deepEqual(failures, [
+		"Cargo.lock: diesel has no recorded Rust dependency license",
+		"Cargo.lock: sled license AGPL-3.0-only is not an accepted permissive license"
+	]);
+});
+
+test("rejects a recorded Rust dependency that is no longer linked", () => {
+	assert.deepEqual(
+		validateRustDependencyLicenses({
+			lockfile: lockedNames(["rusqlite"]),
+			licenses: { rusqlite: "MIT", "libsqlite3-sys": "MIT" }
+		}),
+		["Cargo.lock: libsqlite3-sys is recorded but no longer a Rust dependency"]
+	);
 });

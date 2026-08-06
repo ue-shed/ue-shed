@@ -107,7 +107,11 @@ pub enum ProjectIndexItem {
 pub struct ProjectIndexPage {
     pub generation: u64,
     pub items: Vec<ProjectIndexItem>,
-    #[serde(rename = "nextCursor")]
+    #[serde(
+        default,
+        rename = "nextCursor",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub next_cursor: Option<String>,
     #[serde(rename = "projectId")]
     pub project_id: String,

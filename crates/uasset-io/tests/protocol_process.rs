@@ -482,6 +482,149 @@ fn invalid_request_fails_before_starting_work() {
     assert!(stderr.contains("unsupported contract major"));
 }
 
+fn project_index_request(operation: Value) -> Value {
+    serde_json::json!({
+        "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 1 } },
+        "limits": { "concurrency": 1, "maximumOutputBytes": 1_048_576, "timeoutMs": 120_000 },
+        "operation": operation,
+        "requestId": "project-index-process-test"
+    })
+}
+
+#[test]
+fn project_index_refresh_emits_bounded_summary_without_inventory() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let cache_root = std::env::temp_dir().join(format!(
+        "ue-shed-project-index-protocol-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&cache_root);
+    std::fs::create_dir_all(&cache_root).expect("cache root creates");
+
+    let status_request = project_index_request(serde_json::json!({
+        "kind": "project_index_status",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    let (success, events, stderr) = run_request(status_request);
+    assert!(success, "status failed: {stderr}");
+    assert_valid_events(&events);
+    assert_eq!(events[0]["kind"], "accepted");
+    assert_eq!(events[1]["result"]["kind"], "project_index_status");
+    assert_eq!(events[1]["result"]["status"]["status"], "absent");
+    assert_eq!(events.last().unwrap()["kind"], "completed");
+
+    let refresh_request = project_index_request(serde_json::json!({
+        "kind": "project_index_refresh",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    let (success, events, stderr) = run_request(refresh_request);
+    assert!(success, "refresh failed: {stderr}");
+    assert_valid_events(&events);
+    assert!(
+        events.iter().all(|event| {
+            event.get("result").and_then(|result| result.get("kind"))
+                != Some(&serde_json::json!("scan_inventory"))
+        }),
+        "Project Index refresh must not emit scan_inventory frames"
+    );
+    let summary = events
+        .iter()
+        .find(|event| {
+            event.get("result").and_then(|result| result.get("kind"))
+                == Some(&serde_json::json!("project_index_summary"))
+        })
+        .expect("refresh emits a summary");
+    let generation = summary["result"]["summary"]["generation"]
+        .as_u64()
+        .expect("generation");
+    let project_id = summary["result"]["summary"]["projectId"]
+        .as_str()
+        .expect("projectId")
+        .to_owned();
+    let package_count = summary["result"]["summary"]["packageCount"]
+        .as_u64()
+        .expect("packageCount");
+    assert!(generation >= 1);
+    assert!(package_count > 0);
+    assert!(events.iter().any(|event| {
+        event.get("kind") == Some(&serde_json::json!("diagnostic"))
+            && event.get("code") == Some(&serde_json::json!("project_index_metrics"))
+    }));
+    assert_eq!(events.last().unwrap()["kind"], "completed");
+
+    let warm_request = project_index_request(serde_json::json!({
+        "kind": "project_index_refresh",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    let (success, warm_events, stderr) = run_request(warm_request);
+    assert!(success, "warm refresh failed: {stderr}");
+    assert_valid_events(&warm_events);
+    let warm_summary = warm_events
+        .iter()
+        .find(|event| {
+            event.get("result").and_then(|result| result.get("kind"))
+                == Some(&serde_json::json!("project_index_summary"))
+        })
+        .expect("warm refresh emits a summary");
+    assert_eq!(warm_summary["result"]["summary"]["changedPackages"], 0);
+    assert_eq!(
+        warm_summary["result"]["summary"]["packageCount"],
+        package_count
+    );
+
+    let query_request = project_index_request(serde_json::json!({
+        "kind": "project_index_query",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "query": {
+            "kind": "maps",
+            "expectedGeneration": warm_summary["result"]["summary"]["generation"],
+            "limit": 16,
+            "projectId": project_id
+        }
+    }));
+    let (success, query_events, stderr) = run_request(query_request);
+    assert!(success, "query failed: {stderr}");
+    assert_valid_events(&query_events);
+    assert_eq!(query_events[1]["result"]["kind"], "project_index_page");
+    assert!(
+        query_events[1]["result"]["page"]["items"]
+            .as_array()
+            .expect("items")
+            .len()
+            <= 16
+    );
+
+    let stale_request = project_index_request(serde_json::json!({
+        "kind": "project_index_query",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "query": {
+            "kind": "maps",
+            "expectedGeneration": 1,
+            "limit": 8,
+            "projectId": project_id
+        }
+    }));
+    let (success, stale_events, stderr) = run_request(stale_request);
+    assert!(
+        success,
+        "stale query should frame a typed failure: {stderr}"
+    );
+    assert_valid_events(&stale_events);
+    assert_eq!(stale_events.last().unwrap()["kind"], "failed");
+    assert_eq!(stale_events.last().unwrap()["code"], "stale_generation");
+    assert_eq!(stale_events.last().unwrap()["expectedGeneration"], 1);
+    assert_eq!(
+        stale_events.last().unwrap()["actualGeneration"],
+        warm_summary["result"]["summary"]["generation"]
+    );
+
+    let _ = std::fs::remove_dir_all(&cache_root);
+}
+
 fn decoded_sequence(event: &Event) -> u64 {
     match event {
         Event::Accepted { fields, .. }

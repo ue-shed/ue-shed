@@ -46,7 +46,7 @@ missing-capability diagnostics visible rather than guessing.
 
 The committed generic fixture is the fastest way to see the product. For the full showcase, install
 Unreal Engine 5.7 and Visual Studio 2022 with the Unreal Engine C++ workload, alongside Node.js
-22.14 or newer, pnpm 11, and Rust 1.85 or newer.
+22.14 or newer, pnpm 11, and Rust 1.88 or newer.
 
 ```powershell
 pnpm install
@@ -70,11 +70,19 @@ Everything the Workbench does is intended to have a headless boundary. Start wit
 pnpm install
 pnpm ue-shed --help
 pnpm ue-shed authoring inspect fixtures\unreal-project\Content\Fixture\Authoring\DT_Scalars.uasset
+pnpm ue-shed project-index refresh <project-root> <cache-root>
+pnpm ue-shed project-index maps <project-root> <cache-root> --limit 100
 ```
 
 From a source checkout, the CLI incrementally builds and uses the in-repository Rust reader. Set
 `UE_SHED_UASSET_EXECUTABLE` only when you deliberately want to test a different compatible reader
 build.
+
+The Project Index Catalog is disposable derived data stored beneath the explicit `cache-root`.
+`status`, `refresh`, `rebuild`, `maps`, and bounded `query` commands use the same headless module as
+Workbench. Queries never rescan the project: run `refresh` explicitly, then use the returned
+committed Generation through the CLI's status-bound page request. A stale cursor or Generation is a
+typed failure; `rebuild` is the recovery operation for an incompatible or damaged Catalog.
 
 To add a maintained Data Authoring interface to a Solid/Vite host, follow the
 [adoption guide](extensions/data-authoring/ADOPTING.md) and its

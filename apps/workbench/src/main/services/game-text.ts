@@ -109,7 +109,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 				if (current.status === "failed") {
 					return unavailableProject(current.error.message, current.error.recovery);
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("game_text").pipe(
 					Effect.flatMap((index) => runScan(current.project.projectRoot, index)),
 					Effect.catch((error) =>
 						Effect.succeed(unavailableProject(error.message, error.recovery))
@@ -125,7 +125,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 			if (choice.status === "failed") {
 				return unavailableProject(choice.error.message, choice.error.recovery);
 			}
-			return yield* project.index().pipe(
+			return yield* project.candidates("game_text").pipe(
 				Effect.flatMap((index) => runScan(choice.project.projectRoot, index)),
 				Effect.catch((error) =>
 					Effect.succeed(unavailableProject(error.message, error.recovery))
@@ -142,7 +142,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 				if (current.status === "failed") {
 					return unavailableQueryProject(current.error.message, current.error.recovery);
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("game_text").pipe(
 					Effect.flatMap((index) => runRefresh(current.project.projectRoot, index)),
 					Effect.catch((error) =>
 						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
@@ -160,7 +160,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 				if (choice.status === "failed") {
 					return unavailableQueryProject(choice.error.message, choice.error.recovery);
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("game_text").pipe(
 					Effect.flatMap((index) => runRefresh(choice.project.projectRoot, index)),
 					Effect.catch((error) =>
 						Effect.succeed(unavailableQueryProject(error.message, error.recovery))

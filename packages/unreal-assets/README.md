@@ -48,6 +48,29 @@ limit (100,000 by default in the native reader); exceeding it returns `AssetRead
 
 ## Scanning a whole project
 
+For routine project opening and repeated candidate queries, prefer the headless `ProjectIndex` over
+a whole-project scan. Its refresh operation performs one Content traversal and publishes a committed
+Generation to a disposable Catalog; maps and header-evidence queries return stable pages capped at
+1,024 items. Callers configure the cache root, but never depend on SQLite tables or filenames.
+
+```ts
+const events = refreshProjectIndex({ projectRoot });
+const page =
+	yield *
+	queryProjectIndex(
+		ProjectIndexQuery.cases.ExactClasses.make({
+			expectedGeneration,
+			limit: 100,
+			projectId,
+			values: ["/Script/Engine.Texture2D"]
+		})
+	);
+```
+
+Queries do not silently refresh. If the expected Generation is stale, refresh and restart paging;
+if the disposable Catalog is corrupt or incompatible, use `rebuildProjectIndex`. `scanSavedProject`
+remains the explicit compatibility API for callers that genuinely need a generic scan.
+
 `scanSavedProject` invokes `uasset scan <project-root>` once and streams newline-delimited results
 back, so a project-wide scan costs one process instead of one per package. Prefer it over
 `discoverSavedAssets` plus `readSavedAsset` per path.

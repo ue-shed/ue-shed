@@ -3,6 +3,11 @@ import { Schema } from "effect";
 
 const Project = { projectRoot: Schema.String };
 const Reader = { reader: Schema.optionalKey(Schema.String) };
+const ProjectIndexTarget = {
+	cacheRoot: Schema.String,
+	projectRoot: Schema.String,
+	...Reader
+};
 const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const EditorPlayAction = Schema.Literals([
@@ -98,6 +103,26 @@ export const CliCommand = Schema.TaggedUnion({
 	TextScan: { ...Project, ...Reader },
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
 	InputInspect: { path: Schema.String, ...Reader },
+	ProjectIndexStatus: ProjectIndexTarget,
+	ProjectIndexRefresh: ProjectIndexTarget,
+	ProjectIndexRebuild: ProjectIndexTarget,
+	ProjectIndexMaps: {
+		...ProjectIndexTarget,
+		cursor: Schema.optionalKey(Schema.String),
+		limit: PositiveInt
+	},
+	ProjectIndexQuery: {
+		...ProjectIndexTarget,
+		cursor: Schema.optionalKey(Schema.String),
+		kind: Schema.Literals([
+			"exact-class",
+			"class-prefix",
+			"class-name-suffix",
+			"serialized-name"
+		]),
+		limit: PositiveInt,
+		values: Schema.Array(Schema.String).check(Schema.isMinLength(1))
+	},
 	MapHistory: {
 		actorClass: Schema.optionalKey(Schema.String),
 		actorGuid: Schema.optionalKey(Schema.String),

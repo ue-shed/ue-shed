@@ -139,7 +139,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				if (current.status === "failed") {
 					return unavailableProject(current.error.message, current.error.recovery);
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("texture").pipe(
 					Effect.flatMap((index) =>
 						runScan(current.project.projectRoot, ruleFile, index)
 					),
@@ -175,7 +175,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					if (ruleChoice.status === "cancelled") return { status: "cancelled" as const };
 					ruleFile = ruleChoice.path;
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("texture").pipe(
 					Effect.flatMap((index) =>
 						runScan(projectChoice.project.projectRoot, ruleFile, index)
 					),
@@ -199,7 +199,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				if (current.status === "failed") {
 					return unavailableQueryProject(current.error.message, current.error.recovery);
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("texture").pipe(
 					Effect.flatMap((index) =>
 						runRefresh(current.project.projectRoot, ruleFile, index)
 					),
@@ -235,7 +235,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					if (ruleChoice.status === "cancelled") return { status: "cancelled" as const };
 					ruleFile = ruleChoice.path;
 				}
-				return yield* project.index().pipe(
+				return yield* project.candidates("texture").pipe(
 					Effect.flatMap((index) =>
 						runRefresh(projectChoice.project.projectRoot, ruleFile, index)
 					),

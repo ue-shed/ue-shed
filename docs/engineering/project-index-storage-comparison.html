@@ -1,0 +1,1751 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="A measured comparison of UE Shed's legacy JSON, SQLite, relational DuckDB, and columnar DuckDB Project Index designs."
+		/>
+		<title>Project Index — Four Eras, One Workload</title>
+		<style>
+			:root {
+				--paper: #eee9dc;
+				--paper-deep: #ded6c4;
+				--ink: #151714;
+				--muted: #5c5e56;
+				--rule: #282b25;
+				--ghost: rgba(21, 23, 20, 0.09);
+				--legacy: #77796f;
+				--sqlite: #e05b38;
+				--duck-bad: #a73434;
+				--duck-good: #257660;
+				--future: #c8f13a;
+				--display: Georgia, "Times New Roman", serif;
+				--body: Bahnschrift, "Aptos Narrow", "Segoe UI", sans-serif;
+				--mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			html {
+				scroll-behavior: smooth;
+			}
+
+			body {
+				margin: 0;
+				background:
+					linear-gradient(
+						90deg,
+						transparent 0 49.85%,
+						rgba(21, 23, 20, 0.035) 50%,
+						transparent 50.15%
+					),
+					repeating-linear-gradient(
+						0deg,
+						transparent 0 31px,
+						rgba(21, 23, 20, 0.025) 32px
+					),
+					var(--paper);
+				color: var(--ink);
+				font-family: var(--body);
+				font-size: 17px;
+				line-height: 1.55;
+			}
+
+			a {
+				color: inherit;
+				text-decoration-thickness: 1px;
+				text-underline-offset: 0.2em;
+			}
+
+			button {
+				font: inherit;
+			}
+
+			.shell {
+				width: min(1440px, calc(100% - 48px));
+				margin: 0 auto;
+			}
+
+			.masthead {
+				min-height: 92vh;
+				display: grid;
+				grid-template-rows: auto 1fr auto;
+				padding: 28px 0 36px;
+				border-bottom: 4px solid var(--ink);
+			}
+
+			.kicker-row,
+			.footer-row {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 20px;
+				font-family: var(--mono);
+				font-size: 12px;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+			}
+
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.brand::before {
+				content: "";
+				width: 12px;
+				height: 12px;
+				background: var(--future);
+				border: 1px solid var(--ink);
+				box-shadow: 3px 3px 0 var(--ink);
+			}
+
+			.hero-grid {
+				display: grid;
+				grid-template-columns: minmax(0, 1.45fr) minmax(310px, 0.55fr);
+				align-items: center;
+				gap: clamp(40px, 8vw, 140px);
+				padding: 80px 0 64px;
+			}
+
+			h1 {
+				max-width: 950px;
+				margin: 0;
+				font-family: var(--display);
+				font-size: clamp(64px, 9.8vw, 154px);
+				font-weight: 400;
+				letter-spacing: -0.065em;
+				line-height: 0.82;
+			}
+
+			h1 em {
+				display: block;
+				margin-left: 0.55em;
+				color: var(--duck-good);
+				font-weight: 700;
+			}
+
+			.hero-note {
+				position: relative;
+				padding: 26px 24px 24px;
+				border: 2px solid var(--ink);
+				background: var(--future);
+				box-shadow: 9px 9px 0 var(--ink);
+				transform: rotate(1.2deg);
+			}
+
+			.hero-note::before {
+				content: "THE SHORT VERSION";
+				position: absolute;
+				top: -13px;
+				left: 18px;
+				padding: 3px 8px;
+				background: var(--ink);
+				color: var(--paper);
+				font-family: var(--mono);
+				font-size: 11px;
+				letter-spacing: 0.08em;
+			}
+
+			.hero-note strong {
+				display: block;
+				margin-bottom: 10px;
+				font-family: var(--display);
+				font-size: 34px;
+				line-height: 1;
+			}
+
+			.hero-note p {
+				margin: 0;
+				font-size: 16px;
+				line-height: 1.45;
+			}
+
+			.hero-stat {
+				display: flex;
+				align-items: baseline;
+				gap: 12px;
+			}
+
+			.hero-stat b {
+				font-family: var(--display);
+				font-size: clamp(42px, 6vw, 78px);
+				font-weight: 400;
+				line-height: 0.8;
+			}
+
+			.hero-stat span {
+				max-width: 290px;
+				color: var(--muted);
+				font-size: 13px;
+				line-height: 1.3;
+			}
+
+			section {
+				padding: 104px 0;
+				border-bottom: 1px solid var(--rule);
+			}
+
+			.section-head {
+				display: grid;
+				grid-template-columns: 100px minmax(0, 1fr) minmax(260px, 0.55fr);
+				gap: 28px;
+				align-items: start;
+				margin-bottom: 64px;
+			}
+
+			.section-no {
+				font-family: var(--mono);
+				font-size: 13px;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+			}
+
+			h2 {
+				margin: 0;
+				font-family: var(--display);
+				font-size: clamp(48px, 6vw, 92px);
+				font-weight: 400;
+				letter-spacing: -0.05em;
+				line-height: 0.95;
+			}
+
+			.section-intro {
+				margin: 7px 0 0;
+				color: var(--muted);
+				font-size: 15px;
+			}
+
+			.warning {
+				margin: 0 0 56px 100px;
+				padding: 20px 24px;
+				border-left: 8px solid var(--sqlite);
+				background: rgba(224, 91, 56, 0.09);
+				font-size: 15px;
+			}
+
+			.warning strong {
+				font-family: var(--mono);
+				font-size: 12px;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+			}
+
+			.eras {
+				position: relative;
+				display: grid;
+				grid-template-columns: repeat(4, minmax(0, 1fr));
+				gap: 18px;
+			}
+
+			.eras::before {
+				content: "";
+				position: absolute;
+				top: 34px;
+				left: 5%;
+				right: 5%;
+				height: 2px;
+				background: var(--ink);
+			}
+
+			.era {
+				position: relative;
+				padding-top: 72px;
+			}
+
+			.era-dot {
+				position: absolute;
+				top: 20px;
+				left: 22px;
+				z-index: 1;
+				width: 29px;
+				height: 29px;
+				border: 3px solid var(--ink);
+				border-radius: 50%;
+				background: var(--era-color);
+				box-shadow: 4px 4px 0 var(--ink);
+			}
+
+			.era-card {
+				min-height: 410px;
+				padding: 24px;
+				border: 1px solid var(--ink);
+				background: rgba(238, 233, 220, 0.86);
+				box-shadow: 5px 5px 0 var(--era-color);
+			}
+
+			.era-index {
+				font-family: var(--mono);
+				font-size: 11px;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+			}
+
+			.era h3 {
+				min-height: 77px;
+				margin: 14px 0 18px;
+				font-family: var(--display);
+				font-size: 30px;
+				font-weight: 400;
+				line-height: 1.05;
+			}
+
+			.era p {
+				margin: 0 0 22px;
+				color: var(--muted);
+				font-size: 14px;
+			}
+
+			.era dl {
+				display: grid;
+				grid-template-columns: 1fr auto;
+				gap: 7px 12px;
+				margin: 0;
+				padding-top: 16px;
+				border-top: 1px solid var(--ink);
+				font-size: 13px;
+			}
+
+			.era dt {
+				color: var(--muted);
+			}
+
+			.era dd {
+				margin: 0;
+				font-family: var(--mono);
+				font-weight: 700;
+			}
+
+			.dashboard {
+				display: grid;
+				grid-template-columns: 280px minmax(0, 1fr);
+				gap: 48px;
+				align-items: start;
+			}
+
+			.metric-nav {
+				position: sticky;
+				top: 24px;
+				display: grid;
+				gap: 8px;
+			}
+
+			.metric-button {
+				display: grid;
+				grid-template-columns: 32px 1fr;
+				gap: 10px;
+				align-items: center;
+				padding: 13px 14px;
+				border: 1px solid var(--ink);
+				background: transparent;
+				color: var(--ink);
+				text-align: left;
+				cursor: pointer;
+				transition:
+					transform 140ms ease,
+					background 140ms ease,
+					color 140ms ease;
+			}
+
+			.metric-button:hover {
+				transform: translateX(5px);
+			}
+
+			.metric-button[aria-selected="true"] {
+				background: var(--ink);
+				color: var(--paper);
+			}
+
+			.metric-button b {
+				font-family: var(--mono);
+				font-size: 11px;
+			}
+
+			.metric-button span {
+				font-size: 14px;
+				font-weight: 700;
+			}
+
+			.chart-panel {
+				padding: 36px;
+				border: 2px solid var(--ink);
+				background: rgba(238, 233, 220, 0.9);
+				box-shadow: 11px 11px 0 var(--paper-deep);
+			}
+
+			.chart-title-row {
+				display: flex;
+				align-items: end;
+				justify-content: space-between;
+				gap: 30px;
+				margin-bottom: 42px;
+			}
+
+			.chart-title {
+				margin: 0;
+				font-family: var(--display);
+				font-size: clamp(34px, 4vw, 62px);
+				font-weight: 400;
+				letter-spacing: -0.04em;
+				line-height: 1;
+			}
+
+			.chart-unit {
+				font-family: var(--mono);
+				font-size: 11px;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+			}
+
+			.chart {
+				display: grid;
+				gap: 22px;
+			}
+
+			.bar-row {
+				display: grid;
+				grid-template-columns: minmax(130px, 0.32fr) minmax(0, 1fr) 100px;
+				gap: 18px;
+				align-items: center;
+			}
+
+			.bar-label {
+				font-size: 13px;
+				font-weight: 700;
+				line-height: 1.15;
+			}
+
+			.bar-track {
+				position: relative;
+				height: 34px;
+				border-left: 1px solid var(--ink);
+				background: repeating-linear-gradient(
+					90deg,
+					var(--ghost) 0 1px,
+					transparent 1px 20%
+				);
+			}
+
+			.bar {
+				height: 100%;
+				width: var(--bar-width);
+				min-width: 3px;
+				background: var(--bar-color);
+				border: 1px solid var(--ink);
+				transform-origin: left;
+				animation: grow 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+			}
+
+			.bar-value {
+				font-family: var(--mono);
+				font-size: 14px;
+				font-weight: 700;
+				text-align: right;
+			}
+
+			.chart-caption {
+				margin: 38px 0 0;
+				padding-top: 20px;
+				border-top: 1px solid var(--ink);
+				color: var(--muted);
+				font-size: 14px;
+			}
+
+			@keyframes grow {
+				from {
+					transform: scaleX(0);
+				}
+			}
+
+			.phase-grid {
+				display: grid;
+				gap: 42px;
+			}
+
+			.phase-row {
+				display: grid;
+				grid-template-columns: 220px minmax(0, 1fr);
+				gap: 28px;
+				align-items: start;
+			}
+
+			.phase-name h3 {
+				margin: 0;
+				font-family: var(--display);
+				font-size: 30px;
+				font-weight: 400;
+				line-height: 1;
+			}
+
+			.phase-name p {
+				margin: 8px 0 0;
+				color: var(--muted);
+				font-family: var(--mono);
+				font-size: 11px;
+			}
+
+			.phase-stack {
+				display: flex;
+				height: 58px;
+				border: 1px solid var(--ink);
+				background: var(--ghost);
+				overflow: hidden;
+			}
+
+			.phase {
+				position: relative;
+				width: var(--phase-width);
+				min-width: 2px;
+				border-right: 1px solid var(--paper);
+				background: var(--phase-color);
+			}
+
+			.phase:hover::after,
+			.phase:focus-visible::after {
+				content: attr(data-label);
+				position: absolute;
+				left: 50%;
+				bottom: calc(100% + 8px);
+				z-index: 3;
+				width: max-content;
+				padding: 5px 7px;
+				background: var(--ink);
+				color: var(--paper);
+				font-family: var(--mono);
+				font-size: 11px;
+				transform: translateX(-50%);
+			}
+
+			.phase-total {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				margin-top: 10px;
+				font-family: var(--mono);
+				font-size: 11px;
+			}
+
+			.legend {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 14px 24px;
+				margin: 48px 0 0 248px;
+				font-size: 12px;
+			}
+
+			.legend span {
+				display: inline-flex;
+				align-items: center;
+				gap: 7px;
+			}
+
+			.legend i {
+				width: 12px;
+				height: 12px;
+				border: 1px solid var(--ink);
+			}
+
+			.verdict-grid {
+				display: grid;
+				grid-template-columns: repeat(2, minmax(0, 1fr));
+				gap: 20px;
+			}
+
+			.verdict {
+				min-height: 330px;
+				padding: 30px;
+				border: 1px solid var(--ink);
+				background: rgba(238, 233, 220, 0.82);
+			}
+
+			.verdict:nth-child(2) {
+				background: var(--ink);
+				color: var(--paper);
+			}
+
+			.verdict .eyebrow {
+				font-family: var(--mono);
+				font-size: 11px;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+			}
+
+			.verdict h3 {
+				margin: 18px 0;
+				font-family: var(--display);
+				font-size: clamp(34px, 4vw, 56px);
+				font-weight: 400;
+				letter-spacing: -0.04em;
+				line-height: 0.95;
+			}
+
+			.verdict p {
+				max-width: 650px;
+				margin: 0;
+				font-size: 15px;
+				opacity: 0.82;
+			}
+
+			.architecture {
+				display: grid;
+				grid-template-columns: minmax(0, 0.9fr) 90px minmax(0, 1.1fr);
+				gap: 24px;
+				align-items: stretch;
+			}
+
+			.arch-column {
+				padding: 32px;
+				border: 2px solid var(--ink);
+				background: rgba(238, 233, 220, 0.88);
+			}
+
+			.arch-column.good {
+				background: var(--future);
+				box-shadow: 8px 8px 0 var(--ink);
+			}
+
+			.arch-column h3 {
+				margin: 0 0 26px;
+				font-family: var(--display);
+				font-size: 38px;
+				font-weight: 400;
+				line-height: 1;
+			}
+
+			.flow {
+				display: grid;
+				gap: 8px;
+			}
+
+			.flow-step {
+				padding: 12px 14px;
+				border: 1px solid currentColor;
+				font-family: var(--mono);
+				font-size: 12px;
+				font-weight: 700;
+			}
+
+			.flow-arrow {
+				text-align: center;
+				font-family: var(--mono);
+				font-size: 18px;
+			}
+
+			.arch-vs {
+				display: grid;
+				place-items: center;
+				font-family: var(--display);
+				font-size: 34px;
+				font-style: italic;
+			}
+
+			.research-strip {
+				margin-top: 64px;
+				padding: 42px;
+				background: var(--duck-good);
+				color: #f4f0e4;
+			}
+
+			.research-strip h3 {
+				margin: 0 0 28px;
+				font-family: var(--display);
+				font-size: clamp(42px, 5vw, 72px);
+				font-weight: 400;
+				letter-spacing: -0.04em;
+				line-height: 0.95;
+			}
+
+			.research-metrics {
+				display: grid;
+				grid-template-columns: repeat(4, 1fr);
+				gap: 1px;
+				background: rgba(255, 255, 255, 0.35);
+				border: 1px solid rgba(255, 255, 255, 0.35);
+			}
+
+			.research-metric {
+				padding: 24px;
+				background: var(--duck-good);
+			}
+
+			.research-metric b {
+				display: block;
+				font-family: var(--display);
+				font-size: clamp(34px, 4vw, 58px);
+				font-weight: 400;
+				line-height: 1;
+			}
+
+			.research-metric span {
+				display: block;
+				margin-top: 9px;
+				font-size: 12px;
+				opacity: 0.78;
+			}
+
+			.matrix-wrap {
+				overflow-x: auto;
+				border: 1px solid var(--ink);
+			}
+
+			table {
+				width: 100%;
+				min-width: 980px;
+				border-collapse: collapse;
+				background: rgba(238, 233, 220, 0.88);
+				font-size: 14px;
+			}
+
+			th,
+			td {
+				padding: 15px 17px;
+				border-right: 1px solid var(--ink);
+				border-bottom: 1px solid var(--ink);
+				text-align: left;
+				vertical-align: top;
+			}
+
+			th:last-child,
+			td:last-child {
+				border-right: 0;
+			}
+
+			tr:last-child td {
+				border-bottom: 0;
+			}
+
+			th {
+				background: var(--ink);
+				color: var(--paper);
+				font-family: var(--mono);
+				font-size: 11px;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+			}
+
+			td:first-child {
+				font-weight: 700;
+			}
+
+			.good-cell {
+				background: rgba(37, 118, 96, 0.14);
+			}
+
+			.bad-cell {
+				background: rgba(167, 52, 52, 0.12);
+			}
+
+			.na {
+				color: var(--muted);
+				font-style: italic;
+			}
+
+			.method-grid {
+				display: grid;
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+				gap: 24px;
+			}
+
+			.method-card {
+				padding-top: 18px;
+				border-top: 4px solid var(--ink);
+			}
+
+			.method-card b {
+				display: block;
+				margin-bottom: 12px;
+				font-family: var(--mono);
+				font-size: 12px;
+				letter-spacing: 0.07em;
+				text-transform: uppercase;
+			}
+
+			.method-card p,
+			.method-card ul {
+				margin: 0;
+				color: var(--muted);
+				font-size: 14px;
+			}
+
+			.method-card ul {
+				padding-left: 19px;
+			}
+
+			.sources {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 12px 34px;
+				margin-top: 56px;
+				padding-top: 30px;
+				border-top: 1px solid var(--ink);
+				font-size: 13px;
+			}
+
+			.page-footer {
+				padding: 42px 0 60px;
+			}
+
+			.print-button {
+				padding: 9px 12px;
+				border: 1px solid var(--ink);
+				background: transparent;
+				cursor: pointer;
+			}
+
+			.print-button:hover {
+				background: var(--ink);
+				color: var(--paper);
+			}
+
+			.reveal {
+				animation: reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+			}
+
+			@keyframes reveal {
+				from {
+					opacity: 0;
+					transform: translateY(18px);
+				}
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				*,
+				*::before,
+				*::after {
+					scroll-behavior: auto !important;
+					animation-duration: 0.01ms !important;
+					animation-iteration-count: 1 !important;
+					transition-duration: 0.01ms !important;
+				}
+			}
+
+			@media (max-width: 1050px) {
+				.hero-grid,
+				.section-head,
+				.dashboard,
+				.architecture {
+					grid-template-columns: 1fr;
+				}
+
+				.hero-note {
+					width: 100%;
+					max-width: 520px;
+				}
+
+				.section-head {
+					gap: 12px;
+				}
+
+				.eras {
+					grid-template-columns: repeat(2, minmax(0, 1fr));
+				}
+
+				.eras::before,
+				.arch-vs {
+					display: none;
+				}
+
+				.metric-nav {
+					position: static;
+					grid-template-columns: repeat(4, 1fr);
+				}
+
+				.legend,
+				.warning {
+					margin-left: 0;
+				}
+			}
+
+			@media (max-width: 700px) {
+				.shell {
+					width: min(100% - 28px, 1440px);
+				}
+
+				.masthead {
+					min-height: auto;
+				}
+
+				.kicker-row,
+				.footer-row {
+					align-items: flex-start;
+					flex-direction: column;
+				}
+
+				.hero-grid {
+					padding: 72px 0;
+				}
+
+				.hero-note {
+					max-width: 100%;
+					transform: rotate(0.4deg);
+				}
+
+				.hero-stat {
+					align-items: flex-start;
+					flex-direction: column;
+				}
+
+				h1 {
+					font-size: clamp(54px, 20vw, 94px);
+				}
+
+				section {
+					padding: 72px 0;
+				}
+
+				.eras,
+				.verdict-grid,
+				.research-metrics,
+				.method-grid,
+				.sources {
+					grid-template-columns: 1fr;
+				}
+
+				.era {
+					padding-top: 18px;
+				}
+
+				.era-dot {
+					display: none;
+				}
+
+				.era-card,
+				.era h3 {
+					min-height: 0;
+				}
+
+				.metric-nav {
+					grid-template-columns: 1fr 1fr;
+				}
+
+				.chart-panel {
+					padding: 22px 16px;
+				}
+
+				.bar-row {
+					grid-template-columns: 104px minmax(0, 1fr) 74px;
+					gap: 10px;
+				}
+
+				.phase-row {
+					grid-template-columns: 1fr;
+					gap: 12px;
+				}
+
+				.research-strip {
+					padding: 28px 20px;
+				}
+			}
+
+			@media print {
+				body {
+					background: white;
+					font-size: 12px;
+				}
+
+				.shell {
+					width: 100%;
+				}
+
+				.masthead {
+					min-height: 0;
+				}
+
+				.hero-grid {
+					padding: 40px 0;
+				}
+
+				section {
+					padding: 42px 0;
+					break-inside: avoid;
+				}
+
+				.metric-nav,
+				.print-button {
+					display: none;
+				}
+
+				.dashboard {
+					grid-template-columns: 1fr;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header class="masthead shell">
+			<div class="kicker-row">
+				<div class="brand">UE Shed / Engineering report 037</div>
+				<div>Measured 05–06 Aug 2026</div>
+			</div>
+			<div class="hero-grid">
+				<h1 class="reveal">Four eras.<em>One index.</em></h1>
+				<aside class="hero-note reveal" style="animation-delay: 120ms">
+					<strong>The engine wasn't the whole answer.</strong>
+					<p>
+						SQLite got fast when we batched it. DuckDB got catastrophically slow when we
+						made it behave like SQLite—and decisively faster when we let it be columnar.
+					</p>
+				</aside>
+			</div>
+			<div class="footer-row">
+				<div class="hero-stat">
+					<b>185,676</b
+					><span>saved packages in the equal-workload storage comparison</span>
+				</div>
+				<div>AMD Ryzen 9 7950X / Windows / 3 timed samples</div>
+			</div>
+		</header>
+
+		<main>
+			<section>
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">01 / HISTORY</div>
+						<h2>The path here matters.</h2>
+						<p class="section-intro">
+							Four measured eras, each answering a different architectural question.
+							The first is a legacy ceiling; the latter three perform the bounded
+							Project Index workload.
+						</p>
+					</div>
+					<div class="warning">
+						<strong>Comparability warning.</strong> The pre-SQLite JSON result is real
+						and useful, but it does less downstream work: 734 emitted headers versus
+						13,878 bounded query items in the later workload. Treat it as an
+						architectural baseline, not a fair winner.
+					</div>
+					<div class="eras">
+						<article class="era" style="--era-color: var(--legacy)">
+							<div class="era-dot"></div>
+							<div class="era-card">
+								<div class="era-index">ERA 00 / LEGACY</div>
+								<h3>Whole-index JSON cache</h3>
+								<p>
+									Fast enough, shallow by design. Every refresh enumerated and
+									transmitted the full inventory into TypeScript—about 72 MB over
+									the protocol.
+								</p>
+								<dl>
+									<dt>Cold mean</dt>
+									<dd>10.63 s</dd>
+									<dt>Warm mean</dt>
+									<dd>5.97 s</dd>
+									<dt>Cache</dt>
+									<dd>57.9 MB</dd>
+									<dt>Bounded queries</dt>
+									<dd>No</dd>
+								</dl>
+							</div>
+						</article>
+
+						<article class="era" style="--era-color: var(--sqlite)">
+							<div class="era-dot"></div>
+							<div class="era-card">
+								<div class="era-index">ERA 01 / DEEP MODULE</div>
+								<h3>Batched, indexed SQLite</h3>
+								<p>
+									The correct headless Interface, changed-only reads, atomic
+									Generations, bounded pages, and a storage implementation tuned
+									for small updates.
+								</p>
+								<dl>
+									<dt>Cold mean</dt>
+									<dd>25.72 s</dd>
+									<dt>Warm mean</dt>
+									<dd>7.57 s</dd>
+									<dt>Catalog</dt>
+									<dd>647.3 MB</dd>
+									<dt>One change</dt>
+									<dd>19.3 ms</dd>
+								</dl>
+							</div>
+						</article>
+
+						<article class="era" style="--era-color: var(--duck-bad)">
+							<div class="era-dot"></div>
+							<div class="era-card">
+								<div class="era-index">ERA 02 / WRONG ABSTRACTION</div>
+								<h3>Relational, indexed DuckDB</h3>
+								<p>
+									A columnar OLAP engine forced through SQLite's normalized
+									tables, five secondary indexes, and N+1 hydration. It failed
+									exactly as the engine docs predict.
+								</p>
+								<dl>
+									<dt>Cold mean</dt>
+									<dd>68.64 s</dd>
+									<dt>Warm mean</dt>
+									<dd>27.65 s</dd>
+									<dt>Catalog</dt>
+									<dd>~1.01 GB</dd>
+									<dt>Verdict</dt>
+									<dd>Reject</dd>
+								</dl>
+							</div>
+						</article>
+
+						<article class="era" style="--era-color: var(--duck-good)">
+							<div class="era-dot"></div>
+							<div class="era-card">
+								<div class="era-index">ERA 03 / NATURAL SHAPE</div>
+								<h3>Bulk, unindexed DuckDB</h3>
+								<p>
+									Set-oriented publication, no ART indexes, immutable-snapshot
+									behavior, and one vectorized query per page. Same public Catalog
+									Interface; deeper Adapter.
+								</p>
+								<dl>
+									<dt>Cold mean</dt>
+									<dd>21.63 s</dd>
+									<dt>Warm mean</dt>
+									<dd>7.75 s</dd>
+									<dt>Catalog</dt>
+									<dd>~182.8 MB</dd>
+									<dt>Cold vs SQLite</dt>
+									<dd>−15.9%</dd>
+								</dl>
+							</div>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section id="leaderboard">
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">02 / NUMBERS</div>
+						<h2>Change the metric. Change the story.</h2>
+						<p class="section-intro">
+							Use the controls to compare wall time, disk, and Rust memory. Lower is
+							better in every view. Values are arithmetic means unless marked
+							otherwise.
+						</p>
+					</div>
+					<div class="dashboard">
+						<div class="metric-nav" role="tablist" aria-label="Comparison metric">
+							<button
+								class="metric-button"
+								role="tab"
+								aria-selected="true"
+								data-metric="cold"
+							>
+								<b>01</b><span>Cold start</span>
+							</button>
+							<button
+								class="metric-button"
+								role="tab"
+								aria-selected="false"
+								data-metric="warm"
+							>
+								<b>02</b><span>Warm no-op</span>
+							</button>
+							<button
+								class="metric-button"
+								role="tab"
+								aria-selected="false"
+								data-metric="disk"
+							>
+								<b>03</b><span>Catalog bytes</span>
+							</button>
+							<button
+								class="metric-button"
+								role="tab"
+								aria-selected="false"
+								data-metric="rss"
+							>
+								<b>04</b><span>Cold Rust RSS</span>
+							</button>
+						</div>
+						<div class="chart-panel" aria-live="polite">
+							<div class="chart-title-row">
+								<h3 class="chart-title" id="chart-title">Cold end-to-end mean</h3>
+								<div class="chart-unit" id="chart-unit">
+									seconds / lower is better
+								</div>
+							</div>
+							<div class="chart" id="metric-chart"></div>
+							<p class="chart-caption" id="chart-caption"></p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">03 / ATTRIBUTION</div>
+						<h2>Publication was the lever.</h2>
+						<p class="section-intro">
+							Mean cold-phase timing for the equal-workload storage implementations.
+							Header workers overlap evidence writes, so segments explain dominant
+							work but are not additive to total wall time.
+						</p>
+					</div>
+
+					<div class="phase-grid">
+						<div class="phase-row">
+							<div class="phase-name">
+								<h3>SQLite</h3>
+								<p>25.72 s end to end</p>
+							</div>
+							<div>
+								<div class="phase-stack">
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 17.1%; --phase-color: #77796f"
+										data-label="Enumerate 4.40 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 35.2%; --phase-color: #d5a83e"
+										data-label="Headers + writes 9.04 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 39.8%; --phase-color: var(--sqlite)"
+										data-label="Publish + indexes 10.22 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 6.6%; --phase-color: #5196ad"
+										data-label="Queries 1.69 s"
+									></div>
+								</div>
+								<div class="phase-total">
+									<span>Evidence writes inside header phase: 4.73 s</span
+									><b>10.22 s publication</b>
+								</div>
+							</div>
+						</div>
+
+						<div class="phase-row">
+							<div class="phase-name">
+								<h3>DuckDB, relational</h3>
+								<p>68.64 s end to end</p>
+							</div>
+							<div>
+								<div class="phase-stack">
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 6.9%; --phase-color: #77796f"
+										data-label="Enumerate 4.71 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 20.3%; --phase-color: #d5a83e"
+										data-label="Headers + writes 13.91 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 39.2%; --phase-color: var(--duck-bad)"
+										data-label="Publish + indexes 26.90 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 33%; --phase-color: #5196ad"
+										data-label="N+1 queries 22.68 s"
+									></div>
+								</div>
+								<div class="phase-total">
+									<span>Five ART indexes: +12.67 s in isolated probe</span
+									><b>49.58 s publication + query</b>
+								</div>
+							</div>
+						</div>
+
+						<div class="phase-row">
+							<div class="phase-name">
+								<h3>DuckDB, columnar</h3>
+								<p>21.63 s end to end</p>
+							</div>
+							<div>
+								<div class="phase-stack">
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 21%; --phase-color: #77796f"
+										data-label="Enumerate 4.55 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 47.3%; --phase-color: #d5a83e"
+										data-label="Headers + writes 10.24 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="
+											--phase-width: 16.9%;
+											--phase-color: var(--duck-good);
+										"
+										data-label="Bulk publication 3.66 s"
+									></div>
+									<div
+										tabindex="0"
+										class="phase"
+										style="--phase-width: 12.9%; --phase-color: #5196ad"
+										data-label="Queries 2.79 s"
+									></div>
+								</div>
+								<div class="phase-total">
+									<span>Evidence writes inside header phase: 5.79 s</span
+									><b>3.66 s publication</b>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="legend">
+						<span><i style="background: #77796f"></i>enumeration</span>
+						<span><i style="background: #d5a83e"></i>headers + overlapped writes</span>
+						<span><i style="background: var(--duck-good)"></i>publication</span>
+						<span><i style="background: #5196ad"></i>bounded queries</span>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">04 / DIAGNOSIS</div>
+						<h2>Same engine. Opposite result.</h2>
+						<p class="section-intro">
+							DuckDB did not become fast through a pragma. The private implementation
+							changed from row-oriented mutation to bulk analytical publication.
+						</p>
+					</div>
+
+					<div class="architecture">
+						<div class="arch-column">
+							<h3>DuckDB wearing a SQLite costume</h3>
+							<div class="flow">
+								<div class="flow-step">185,676 package rows</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">631,258 class child rows</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">7,724,306 name child rows</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Build five ART indexes</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Query, then hydrate N+1</div>
+							</div>
+						</div>
+						<div class="arch-vs">versus</div>
+						<div class="arch-column good">
+							<h3>DuckDB as a columnar snapshot engine</h3>
+							<div class="flow">
+								<div class="flow-step">Bounded scanner batches</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Unindexed staging vectors</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Bulk CTAS publication</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">One set-oriented query per page</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Skip replacement on warm no-op</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="verdict-grid" style="margin-top: 72px">
+						<article class="verdict">
+							<div class="eyebrow">What SQLite proved</div>
+							<h3>Batching rescued the row store.</h3>
+							<p>
+								Four header workers, a bounded 1,024-result window, and 1,024-entry
+								SQLite batches cut cold mean from 35.39 seconds to 25.72 seconds.
+								Small mutations remained exceptional: 19.3 ms for one changed
+								package and 18.7 ms for one deletion.
+							</p>
+						</article>
+						<article class="verdict">
+							<div class="eyebrow">What DuckDB proved</div>
+							<h3>OLAP wins only when the Adapter speaks OLAP.</h3>
+							<p>
+								Removing indexes and N+1 hydration turned the same engine from a
+								68.64-second failure into a 21.63-second result. The public Catalog
+								Interface did not change. Implementation Depth did the work.
+							</p>
+						</article>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">05 / NEXT SHAPE</div>
+						<h2>The best DuckDB design has not run end to end yet.</h2>
+						<p class="section-intro">
+							Follow-up model research tested the next private schema and publication
+							mechanics. These are directional subsystem results—not a fifth
+							cold-start result.
+						</p>
+					</div>
+
+					<div class="research-strip">
+						<h3>One package row. Nested evidence. Immutable files.</h3>
+						<div class="research-metrics">
+							<div class="research-metric">
+								<b>38–41 MB</b
+								><span>nested snapshot, down from 59 MB normalized DuckDB</span>
+							</div>
+							<div class="research-metric">
+								<b>0.54–0.82 s</b
+								><span>17 bounded pages in one reused connection</span>
+							</div>
+							<div class="research-metric">
+								<b>622 ms</b><span>complete immutable generation copy</span>
+							</div>
+							<div class="research-metric">
+								<b>4 threads</b
+								><span>matched or beat 8, 16, and 32 on this workload</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="architecture" style="margin-top: 64px">
+						<div class="arch-column">
+							<h3>Current columnar probe</h3>
+							<div class="flow">
+								<div class="flow-step">Normalized staging tables</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Millions of child values</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">CTAS into one mutable DB file</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Process + connection per page</div>
+							</div>
+						</div>
+						<div class="arch-vs">next</div>
+						<div class="arch-column good">
+							<h3>Bounded adoption experiment</h3>
+							<div class="flow">
+								<div class="flow-step">Arrow RecordBatch, 1,024 packages</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">classes[] + names[] on the package row</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Path-ordered immutable snapshot</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Atomic Generation manifest</div>
+								<div class="flow-arrow">↓</div>
+								<div class="flow-step">Persistent bounded query session</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">06 / TRADEOFFS</div>
+						<h2>There is no free engine.</h2>
+						<p class="section-intro">
+							The runtime result favors native-shaped DuckDB for cold startup. The
+							release and mutation story still gives SQLite real advantages.
+						</p>
+					</div>
+					<div class="matrix-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Dimension</th>
+									<th>Pre-SQLite JSON</th>
+									<th>Batched SQLite</th>
+									<th>Relational DuckDB</th>
+									<th>Columnar DuckDB</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>Cold mean</td>
+									<td>10.63 s <span class="na">less work</span></td>
+									<td>25.72 s</td>
+									<td class="bad-cell">68.64 s</td>
+									<td class="good-cell">21.63 s</td>
+								</tr>
+								<tr>
+									<td>Warm mean</td>
+									<td>5.97 s <span class="na">whole inventory</span></td>
+									<td class="good-cell">7.57 s</td>
+									<td class="bad-cell">27.65 s</td>
+									<td>7.75 s</td>
+								</tr>
+								<tr>
+									<td>Cache / Catalog</td>
+									<td>57.9 MB</td>
+									<td>647.3 MB</td>
+									<td class="bad-cell">~1.01 GB</td>
+									<td class="good-cell">~182.8 MB active</td>
+								</tr>
+								<tr>
+									<td>Cold Rust RSS</td>
+									<td>344 MiB mean</td>
+									<td>552 MiB</td>
+									<td class="bad-cell">1,064 MiB</td>
+									<td class="good-cell">496 MiB</td>
+								</tr>
+								<tr>
+									<td>Bounded queries</td>
+									<td class="bad-cell">No</td>
+									<td class="good-cell">Yes</td>
+									<td>Yes, but N+1</td>
+									<td class="good-cell">Yes, set-oriented</td>
+								</tr>
+								<tr>
+									<td>Small mutation</td>
+									<td>Rewrites JSON</td>
+									<td class="good-cell">~19 ms measured</td>
+									<td class="bad-cell">Wrong model</td>
+									<td>Immutable copy proposed</td>
+								</tr>
+								<tr>
+									<td>Atomic generation</td>
+									<td class="bad-cell">Shallow cache swap</td>
+									<td class="good-cell">Transaction + WAL</td>
+									<td>Transaction</td>
+									<td class="good-cell">Snapshot + manifest next</td>
+								</tr>
+								<tr>
+									<td>Query/process locality</td>
+									<td class="bad-cell">Whole transfer</td>
+									<td>Indexed page workers</td>
+									<td class="bad-cell">Repeated hydration</td>
+									<td>Persistent session proposed</td>
+								</tr>
+								<tr>
+									<td>Windows EXE</td>
+									<td>~3.65 MB historical</td>
+									<td>5.64 MB</td>
+									<td>31.51 MB</td>
+									<td>31.51 MB</td>
+								</tr>
+								<tr>
+									<td>Decision</td>
+									<td>Retire architecture</td>
+									<td>Production baseline</td>
+									<td class="bad-cell">Reject implementation</td>
+									<td class="good-cell">Adoption warranted</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<div class="shell">
+					<div class="section-head">
+						<div class="section-no">07 / METHOD</div>
+						<h2>What these numbers do—and do not—prove.</h2>
+						<p class="section-intro">
+							The report separates measured facts from architectural inference. Every
+							production selection still depends on conformance, recovery, packaging,
+							and license gates.
+						</p>
+					</div>
+					<div class="method-grid">
+						<div class="method-card">
+							<b>Equal-workload lane</b>
+							<p>
+								SQLite and both DuckDB adapters used the same coordinator,
+								185,676-package project, 17 bounded pages, three cold samples, three
+								timed warm samples, and one warmup.
+							</p>
+						</div>
+						<div class="method-card">
+							<b>Legacy lane</b>
+							<p>
+								The clean-worktree pre-SQLite result used the same project and
+								machine class but a different contract: complete inventory transfer,
+								734 emitted headers, and targeted Input decode. It is intentionally
+								labeled non-equivalent.
+							</p>
+						</div>
+						<div class="method-card">
+							<b>Model-research lane</b>
+							<p>
+								Nested lists, row groups, ordering, threads, checkpoints, and
+								immutable copying were tested against representative Catalog
+								evidence. They are subsystem measurements, not projected cold
+								starts.
+							</p>
+						</div>
+						<div class="method-card">
+							<b>Cold means cache-cold</b>
+							<p>
+								The Catalog or legacy header cache was removed before each cold
+								sample. Filesystem caches were not forcibly purged, so this is not a
+								cold-disk benchmark.
+							</p>
+						</div>
+						<div class="method-card">
+							<b>Privacy</b>
+							<p>
+								Retained result JSON contains aggregate durations, counts, sizes,
+								and resource peaks. It contains no project paths, package paths,
+								asset identities, class values, or serialized-name values.
+							</p>
+						</div>
+						<div class="method-card">
+							<b>Still gated</b>
+							<ul>
+								<li>11 shared Catalog scenarios passed for the columnar probe.</li>
+								<li>Direct Rust Arrow/List ingestion is not yet measured.</li>
+								<li>DuckDB adds ~25.9 MB to the EXE and ~140 locked packages.</li>
+								<li>License and offline release gates remain.</li>
+							</ul>
+						</div>
+					</div>
+
+					<div class="sources">
+						<a href="https://duckdb.org/docs/current/clients/rust"
+							>DuckDB Rust client and Appender</a
+						>
+						<a href="https://docs.rs/duckdb/latest/duckdb/struct.Appender.html"
+							>Rust Arrow RecordBatch Appender</a
+						>
+						<a href="https://duckdb.org/docs/current/connect/concurrency.html"
+							>DuckDB concurrency model</a
+						>
+						<a href="https://duckdb.org/docs/current/guides/performance/indexing"
+							>ART indexes and zonemaps</a
+						>
+						<a
+							href="https://duckdb.org/docs/current/guides/performance/how_to_tune_workloads"
+							>Row groups, threads, and connection reuse</a
+						>
+						<a href="duckdb-project-index-research.md">Full DuckDB research notes</a>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer class="page-footer shell">
+			<div class="footer-row">
+				<div>UE Shed / Headless-first Unreal tooling</div>
+				<button class="print-button" type="button" onclick="window.print()">
+					Print / save PDF
+				</button>
+			</div>
+		</footer>
+
+		<script>
+			const approaches = [
+				{
+					name: "Pre-SQLite JSON",
+					color: "#77796f",
+					cold: 10.634,
+					warm: 5.967,
+					disk: 57.889,
+					rss: 360.823
+				},
+				{
+					name: "Batched SQLite",
+					color: "#e05b38",
+					cold: 25.716,
+					warm: 7.567,
+					disk: 647.307,
+					rss: 579.173
+				},
+				{
+					name: "Relational DuckDB",
+					color: "#a73434",
+					cold: 68.641,
+					warm: 27.651,
+					disk: 1010.0,
+					rss: 1115.894
+				},
+				{
+					name: "Columnar DuckDB",
+					color: "#257660",
+					cold: 21.628,
+					warm: 7.75,
+					disk: 182.814,
+					rss: 520.151
+				}
+			];
+
+			const metrics = {
+				cold: {
+					title: "Cold end-to-end mean",
+					unit: "seconds / lower is better",
+					format: (value) => `${value.toFixed(2)} s`,
+					caption:
+						"The legacy bar is context, not an equal-workload win. Among bounded Catalog implementations, native-shaped DuckDB leads SQLite by 15.9%."
+				},
+				warm: {
+					title: "Warm no-op mean",
+					unit: "seconds / lower is better",
+					format: (value) => `${value.toFixed(2)} s`,
+					caption:
+						"Warm startup is dominated by project enumeration and process/query overhead. SQLite remains 184 ms faster than the columnar DuckDB probe."
+				},
+				disk: {
+					title: "Persistent cache footprint",
+					unit: "decimal MB / lower is better",
+					format: (value) => `${value.toFixed(value >= 100 ? 0 : 1)} MB`,
+					caption:
+						"The first DuckDB design was larger than SQLite because ART indexes duplicated data. Removing them cut the active Catalog by roughly 72%. Nested-list research reaches 38–41 MB."
+				},
+				rss: {
+					title: "Cold Rust peak RSS",
+					unit: "decimal MB / lower is better",
+					format: (value) => `${value.toFixed(0)} MB`,
+					caption:
+						"The relational DuckDB probe crossed 1.1 GB. The columnar version used less memory than optimized SQLite despite its larger executable."
+				}
+			};
+
+			const chart = document.querySelector("#metric-chart");
+			const title = document.querySelector("#chart-title");
+			const unit = document.querySelector("#chart-unit");
+			const caption = document.querySelector("#chart-caption");
+
+			function renderMetric(metricName) {
+				const metric = metrics[metricName];
+				const maximum = Math.max(...approaches.map((approach) => approach[metricName]));
+				title.textContent = metric.title;
+				unit.textContent = metric.unit;
+				caption.textContent = metric.caption;
+				chart.replaceChildren(
+					...approaches.map((approach) => {
+						const row = document.createElement("div");
+						row.className = "bar-row";
+						row.innerHTML = `<div class="bar-label">${approach.name}</div><div class="bar-track"><div class="bar" style="--bar-width: ${(approach[metricName] / maximum) * 100}%; --bar-color: ${approach.color}"></div></div><div class="bar-value">${metric.format(approach[metricName])}</div>`;
+						return row;
+					})
+				);
+			}
+
+			document.querySelectorAll(".metric-button").forEach((button) => {
+				button.addEventListener("click", () => {
+					document
+						.querySelectorAll(".metric-button")
+						.forEach((candidate) => candidate.setAttribute("aria-selected", "false"));
+					button.setAttribute("aria-selected", "true");
+					renderMetric(button.dataset.metric);
+				});
+			});
+
+			renderMetric("cold");
+		</script>
+	</body>
+</html>

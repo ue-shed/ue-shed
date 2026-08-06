@@ -32,11 +32,18 @@ pnpm benchmark:project-index -- --project <unreal-project-root> --output test-re
 ```
 
 This records `project_index.cold_build` and `project_index.warm_noop` without embedding the supplied
-project path or asset identities in the evidence. Cold performs the shared header inventory plus
-the targeted Enhanced Input decode with an empty native header cache; warm repeats only the cached
-index refresh. Both states still enumerate and stat the selected roots, because that is how the
-inventory validates persisted Workbench projections. Filesystem caches are not dropped, so "cold"
-means the application cache, not an artificial cold disk.
+project path or asset identities in the evidence. Cold builds the SQLite Catalog, executes the same
+bounded map/class/prefix/suffix/name workload used by Workbench domains, folds candidate headers,
+and performs targeted Enhanced Input decode. Warm reuses the Catalog and rewrites zero evidence,
+but still enumerates and stats Content to prove the Generation is current. Filesystem caches are not
+dropped, so "cold" means an absent application Catalog rather than an artificial cold disk.
+
+Evidence schema v4 separates enumeration, comparison, header processing, direct SQLite evidence
+writes, commit/index publication, bounded queries, TypeScript folding, and targeted decode.
+`headerProcessingExcludingEvidenceWritesMs` subtracts measured Catalog-write time from the
+coordinator's header phase; it is an attribution aid, not a claim that all remaining time is parser
+CPU. Use the storage split and commit timing together before deciding whether another Catalog
+adapter deserves a controlled comparison.
 
 The command builds `@ue-shed/unreal-assets` and the locked release `uasset-io` reader before
 measurement, then records `readerBuild: "performed"`; setup time is excluded from every sample. Use

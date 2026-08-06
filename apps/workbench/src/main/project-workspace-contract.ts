@@ -1,7 +1,8 @@
 import { Schema } from "effect";
 
 export const WorkbenchProjectSummary = Schema.Struct({
-	inputAtlas: Schema.Literals(["ready", "failed"]),
+	/** The Project Index can expose summary/maps before the Input Atlas projection is loaded. */
+	inputAtlas: Schema.Literals(["deferred", "ready", "failed"]),
 	mapCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	packageCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	projectName: Schema.NonEmptyString,

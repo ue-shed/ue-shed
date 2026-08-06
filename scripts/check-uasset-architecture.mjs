@@ -74,6 +74,7 @@ async function main() {
 	}
 
 	await checkProjectIndexTypeScriptBoundary(failures);
+	await checkCatalogStorageBoundary(failures);
 
 	if (failures.length > 0) {
 		throw new Error(
@@ -96,6 +97,95 @@ async function typescriptFiles(directory) {
 		}
 	}
 	return files;
+}
+
+/**
+ * Catalog adapters are the only places that may know how the Catalog is stored.
+ *
+ * Coordinator, seam, in-memory adapter, scanner, protocol, and conformance code must stay
+ * storage-neutral so the same conformance suite runs unchanged against every adapter.
+ */
+const CATALOG_STORAGE_ADAPTERS = new Set(
+	["catalog_duckdb.rs", "catalog_sqlite.rs"].map((file) =>
+		join("crates", "uasset-io", "src", "direct_executor", file)
+	)
+);
+
+async function checkCatalogStorageBoundary(failures) {
+	const forbidden = [
+		{ label: "a SQLite crate", pattern: /\brusqlite\b/ },
+		{ label: "SQLite vocabulary", pattern: /\bsqlite\b/i },
+		{ label: "a DuckDB crate", pattern: /\bduckdb\b/ },
+		{ label: "a SQL pragma", pattern: /\bPRAGMA\b/ },
+		{ label: "SQL data definition", pattern: /\bCREATE (?:TABLE|INDEX)\b/i },
+		{ label: "a SQL statement", pattern: /\b(?:SELECT|INSERT INTO|DELETE FROM|UPDATE) \b/ },
+		{
+			label: "a journal or migration detail",
+			pattern: /\b(?:journal_mode|user_version|-wal)\b/
+		}
+	];
+	const adaptersFound = new Set();
+	for (const path of await rustFiles(join("crates", "uasset-io", "src"))) {
+		if (CATALOG_STORAGE_ADAPTERS.has(path)) {
+			adaptersFound.add(path);
+			continue;
+		}
+		const source = await readFile(join(repositoryRoot, path), "utf8");
+		for (const rule of forbidden) {
+			if (rule.pattern.test(source)) {
+				failures.push(`${path} leaks ${rule.label} outside a Catalog storage adapter`);
+			}
+		}
+	}
+	for (const adapter of CATALOG_STORAGE_ADAPTERS) {
+		if (!adaptersFound.has(adapter)) {
+			failures.push(`${adapter} is missing; every selected Catalog adapter must exist`);
+		}
+	}
+	for (const crate of ["uasset-parser", "uasset-inspection", "uasset-inspection-wasm"]) {
+		const manifest = await readFile(
+			join(repositoryRoot, "crates", crate, "Cargo.toml"),
+			"utf8"
+		);
+		if (/\b(?:rusqlite|sqlite|duckdb)\b/i.test(manifest)) {
+			failures.push(`crates/${crate} must stay free of a native Catalog dependency`);
+		}
+	}
+	const ioManifest = await readFile(
+		join(repositoryRoot, "crates", "uasset-io", "Cargo.toml"),
+		"utf8"
+	);
+	const directExecutor = await readFile(
+		join(repositoryRoot, "crates", "uasset-io", "src", "direct_executor.rs"),
+		"utf8"
+	);
+	if (!/#\[cfg\(test\)\][\s\S]*?mod catalog_sqlite;/.test(directExecutor)) {
+		failures.push("the retired SQLite Catalog adapter must remain test-only until deletion");
+	}
+	const productionManifest = ioManifest.split(/^\[dev-dependencies\]$/m)[0] ?? ioManifest;
+	if (/^rusqlite\s*=/m.test(productionManifest)) {
+		failures.push("rusqlite must not remain a uasset-io production dependency after cutover");
+	}
+	const rusqlite = ioManifest.match(/^rusqlite = \{([^}]*)\}$/m)?.[1] ?? "";
+	if (!/version = "=\d+\.\d+\.\d+"/.test(rusqlite)) {
+		failures.push("uasset-io must pin an exact rusqlite version");
+	}
+	if (!/default-features = false/.test(rusqlite)) {
+		failures.push("uasset-io must disable rusqlite default features");
+	}
+	if (/buildtime_bindgen|\bfunctions\b|\bserde_json\b/.test(rusqlite)) {
+		failures.push("uasset-io must not enable broad or build-time rusqlite features");
+	}
+	const duckdb = ioManifest.match(/^duckdb = \{([^}]*)\}$/m)?.[1] ?? "";
+	if (!/version = "=\d+\.\d+\.\d+"/.test(duckdb)) {
+		failures.push("uasset-io must pin an exact duckdb-rs version");
+	}
+	if (!/default-features = false/.test(duckdb)) {
+		failures.push("uasset-io must disable duckdb default features");
+	}
+	if (!/features\s*=\s*\[\s*"appender-arrow"\s*,\s*"bundled"\s*\]/.test(duckdb)) {
+		failures.push("uasset-io must enable only DuckDB's Arrow appender and bundled engine");
+	}
 }
 
 async function checkProjectIndexTypeScriptBoundary(failures) {

@@ -62,14 +62,20 @@ pub fn run() -> u8 {
             "completed",
             json!({ "outcome": if partial { "partial" } else { "complete" } }),
         ),
-        Err(error) => emitter.emit(
-            "failed",
-            json!({
+        Err(error) => {
+            let mut fields = json!({
                 "code": error.code,
                 "message": error.message,
                 "retrySafe": error.retry_safe,
-            }),
-        ),
+            });
+            if let Some(expected) = error.expected_generation {
+                fields["expectedGeneration"] = Value::from(expected);
+            }
+            if let Some(actual) = error.actual_generation {
+                fields["actualGeneration"] = Value::from(actual);
+            }
+            emitter.emit("failed", fields)
+        }
     };
     if let Err(error) = terminal {
         eprintln!("uasset protocol: {error}");
@@ -179,14 +185,15 @@ impl Emitter {
             code: "contract".to_owned(),
             message: format!("could not serialize typed result: {error}"),
             retry_safe: false,
+            ..Default::default()
         })?;
         if let Some(inspection) = value.get_mut("inspection") {
             *inspection = normalize_inspection(inspection.take());
         }
-        if let Some(entry) = value.get_mut("entry") {
-            if let Some(inspection) = entry.get_mut("inspection") {
-                *inspection = normalize_inspection(inspection.take());
-            }
+        if let Some(entry) = value.get_mut("entry")
+            && let Some(inspection) = entry.get_mut("inspection")
+        {
+            *inspection = normalize_inspection(inspection.take());
         }
         if let Some(summary) = value.get_mut("summary").and_then(Value::as_object_mut) {
             for key in ["inventoryComplete", "inventoryFiles"] {
@@ -351,15 +358,32 @@ fn execute_direct(
             )?;
             Ok(partial)
         }
-        Operation::ProjectIndexStatus { .. }
-        | Operation::ProjectIndexRefresh { .. }
-        | Operation::ProjectIndexRebuild { .. }
-        | Operation::ProjectIndexQuery { .. } => Err(Failure {
-            code: "unavailable".to_owned(),
-            message: "Project Index Catalog execution is not wired in this worker build yet."
-                .to_owned(),
-            retry_safe: true,
-        }),
+        Operation::ProjectIndexStatus {
+            cache_root,
+            project_root,
+        } => {
+            let catalog = direct_executor::open_catalog(cache_root, project_root)?;
+            let status = direct_executor::project_index_status_protocol(&catalog);
+            emit_typed_result(emitter, &ResultFrame::ProjectIndexStatus { status })?;
+            Ok(false)
+        }
+        Operation::ProjectIndexRefresh {
+            cache_root,
+            project_root,
+        } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, false),
+        Operation::ProjectIndexRebuild {
+            cache_root,
+            project_root,
+        } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, true),
+        Operation::ProjectIndexQuery { cache_root, query } => {
+            let catalog = direct_executor::open_catalog_for_project_id(
+                cache_root,
+                direct_executor::query_project_id(query),
+            )?;
+            let page = direct_executor::project_index_query_protocol(&catalog, query)?;
+            emit_typed_result(emitter, &ResultFrame::ProjectIndexPage { page })?;
+            Ok(false)
+        }
     }
 }
 
@@ -384,11 +408,11 @@ fn execute_saved_world(
     loop {
         match progress_receiver.recv_timeout(Duration::from_millis(25)) {
             Ok((completed, total)) => {
-                if emission_error.is_none() {
-                    if let Err(error) = emit_progress(emitter, completed, "reading", Some(total)) {
-                        cancellation.cancel();
-                        emission_error = Some(error);
-                    }
+                if emission_error.is_none()
+                    && let Err(error) = emit_progress(emitter, completed, "reading", Some(total))
+                {
+                    cancellation.cancel();
+                    emission_error = Some(error);
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) if !worker.is_finished() => {}
@@ -400,22 +424,163 @@ fn execute_saved_world(
         }
     }
     while let Ok((completed, total)) = progress_receiver.try_recv() {
-        if emission_error.is_none() {
-            if let Err(error) = emit_progress(emitter, completed, "reading", Some(total)) {
-                cancellation.cancel();
-                emission_error = Some(error);
-            }
+        if emission_error.is_none()
+            && let Err(error) = emit_progress(emitter, completed, "reading", Some(total))
+        {
+            cancellation.cancel();
+            emission_error = Some(error);
         }
     }
     let result = worker.join().map_err(|_| Failure {
         code: "process".to_owned(),
         message: "saved-world worker thread panicked".to_owned(),
         retry_safe: false,
+        ..Default::default()
     })?;
     if let Some(error) = emission_error {
         return Err(error);
     }
     result
+}
+
+fn execute_project_index_refresh(
+    emitter: &mut Emitter,
+    cancellation: &CancellationToken,
+    cache_root: &str,
+    project_root: &str,
+    rebuild: bool,
+) -> Result<bool, Failure> {
+    let mut catalog = direct_executor::open_catalog(cache_root, project_root)?;
+    if direct_executor::catalog_was_quarantined(&catalog) {
+        emitter
+            .emit(
+                "diagnostic",
+                json!({
+                    "code": "catalog_quarantined",
+                    "message": "A corrupt or incompatible Catalog was quarantined and replaced before refresh.",
+                    "severity": "warning"
+                }),
+            )
+            .map_err(emission_failure)?;
+    }
+    let (progress_sender, progress_receiver) = mpsc::channel::<direct_executor::RefreshProgress>();
+    let worker_project_root = project_root.to_owned();
+    let worker_cancellation = cancellation.clone();
+    let worker = thread::spawn(move || {
+        direct_executor::project_index_refresh_protocol(
+            &mut catalog,
+            &worker_project_root,
+            rebuild,
+            &worker_cancellation,
+            |progress| {
+                let _ = progress_sender.send(progress);
+            },
+        )
+    });
+    let mut emission_error = None;
+    loop {
+        match progress_receiver.recv_timeout(Duration::from_millis(25)) {
+            Ok(progress) => {
+                if emission_error.is_none()
+                    && let Err(error) = emit_progress(
+                        emitter,
+                        progress.completed_packages,
+                        direct_executor::progress_phase(progress.phase),
+                        progress.total_packages,
+                    )
+                {
+                    cancellation.cancel();
+                    emission_error = Some(error);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) if !worker.is_finished() => {}
+            Err(mpsc::RecvTimeoutError::Timeout) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if worker.is_finished() {
+                    break;
+                }
+            }
+        }
+    }
+    while let Ok(progress) = progress_receiver.try_recv() {
+        if emission_error.is_none()
+            && let Err(error) = emit_progress(
+                emitter,
+                progress.completed_packages,
+                direct_executor::progress_phase(progress.phase),
+                progress.total_packages,
+            )
+        {
+            cancellation.cancel();
+            emission_error = Some(error);
+        }
+    }
+    let result = worker.join().map_err(|_| Failure {
+        code: "process".to_owned(),
+        message: "Project Index refresh worker thread panicked".to_owned(),
+        retry_safe: false,
+        ..Default::default()
+    })?;
+    if let Some(error) = emission_error {
+        return Err(error);
+    }
+    let output = result?;
+    emit_project_index_telemetry(emitter, &output)?;
+    for diagnostic in &output.diagnostics {
+        emitter
+            .emit(
+                "diagnostic",
+                json!({
+                    "code": diagnostic.code,
+                    "message": diagnostic.message,
+                    "severity": "warning"
+                }),
+            )
+            .map_err(emission_failure)?;
+    }
+    let partial =
+        output.summary.completeness == crate::protocol_result::ProjectIndexCompleteness::Partial;
+    emit_typed_result(
+        emitter,
+        &ResultFrame::ProjectIndexSummary {
+            summary: output.summary,
+        },
+    )?;
+    Ok(partial)
+}
+
+fn emit_project_index_telemetry(
+    emitter: &mut Emitter,
+    output: &direct_executor::ProjectIndexRefreshOutput,
+) -> Result<(), Failure> {
+    // Aggregate Catalog evidence only: no paths, package names, or asset identities.
+    emitter
+        .emit(
+            "diagnostic",
+            json!({
+                "code": "project_index_metrics",
+                "message": format!(
+					"rebuild={} generation={} packages={} maps={} changed={} removed={} staged_rows={} committed_rows={} removed_rows={} evidence_write_ms={} storage_bytes={} duration_ms={} enumerating_ms={} comparing_ms={} reading_headers_ms={} committing_ms={}",
+                    output.rebuild,
+                    output.summary.generation,
+                    output.summary.package_count,
+                    output.summary.map_count,
+                    output.summary.changed_packages,
+                    output.summary.removed_packages,
+                    output.write_counts.staged_evidence_rows,
+                    output.write_counts.committed_evidence_rows,
+					output.write_counts.removed_evidence_rows,
+					output.write_counts.evidence_write_ms,
+                    output.storage_bytes,
+                    output.duration_ms,
+                    output.phase_timings.enumerating_ms,
+                    output.phase_timings.comparing_ms,
+                    output.phase_timings.reading_headers_ms,
+                    output.phase_timings.committing_ms
+                ),
+                "severity": "info"
+            }),
+        )
+        .map_err(emission_failure)
 }
 
 fn emit_progress(
@@ -457,6 +622,7 @@ fn emission_failure(message: String) -> Failure {
         .to_owned(),
         message,
         retry_safe: false,
+        ..Default::default()
     }
 }
 
@@ -465,6 +631,7 @@ fn cancellation_failure(stage: &'static str) -> Failure {
         code: "cancelled".to_owned(),
         message: format!("operation cancelled during {stage}"),
         retry_safe: true,
+        ..Default::default()
     }
 }
 

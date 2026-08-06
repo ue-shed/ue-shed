@@ -62,6 +62,7 @@
 			"packages/unreal-assets/src/scan-target.ts",
 			"packages/unreal-assets/src/project-index.ts",
 			"packages/unreal-assets/src/project-index-memory.ts",
+			"packages/unreal-assets/src/project-index-process.ts",
 			"packages/unreal-assets/src/project-index-protocol.ts",
 			"packages/unreal-connection/package.json",
 			"packages/unreal-connection/tsconfig.json",

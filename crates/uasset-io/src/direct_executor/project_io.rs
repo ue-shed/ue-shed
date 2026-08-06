@@ -121,6 +121,7 @@ pub(crate) fn scan_with_cancellation(
             code: "unsupported".to_owned(),
             message: "direct executor expected a scan operation".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     };
     if cache_path.is_some() && *depth == ScanDepth::Full {
@@ -128,6 +129,7 @@ pub(crate) fn scan_with_cancellation(
             code: "invalid_request".to_owned(),
             message: "scan cache requires header depth".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     }
     checkpoint(cancellation, "discovery")?;
@@ -544,6 +546,7 @@ fn projection(
                 code: "unsupported".to_owned(),
                 message: "direct executor expected a compact extraction operation".to_owned(),
                 retry_safe: false,
+                ..Default::default()
             });
         }
     };
@@ -1330,6 +1333,7 @@ fn resolve_roots(
             project_root.display()
         ),
         retry_safe: true,
+        ..Default::default()
     })?;
     let mut roots = Vec::with_capacity(requested.len());
     for requested in requested {
@@ -1344,12 +1348,14 @@ fn resolve_roots(
             code: "discovery".to_owned(),
             message: format!("--path {} is not readable: {error}", joined.display()),
             retry_safe: true,
+            ..Default::default()
         })?;
         if !canonical.starts_with(&canonical_project_root) {
             return Err(Failure {
                 code: "invalid_request".to_owned(),
                 message: format!("--path {} is outside the project root", joined.display()),
                 retry_safe: false,
+                ..Default::default()
             });
         }
         if canonical.is_file() && !scanner::is_package_path(&canonical) {
@@ -1357,6 +1363,7 @@ fn resolve_roots(
                 code: "invalid_request".to_owned(),
                 message: format!("--path {} is not a .uasset or .umap file", joined.display()),
                 retry_safe: false,
+                ..Default::default()
             });
         }
         roots.push(joined);
@@ -1373,6 +1380,7 @@ fn enforce_maximum_assets(request: &Request, count: usize) -> Result<(), Failure
             code: "resource_limit".to_owned(),
             message: format!("Scan found {count} packages, above the limit of {maximum_assets}."),
             retry_safe: false,
+            ..Default::default()
         });
     }
     Ok(())
@@ -1460,6 +1468,7 @@ where
             code: "unsupported".to_owned(),
             message: "direct executor expected a saved-world operation".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     };
     checkpoint(cancellation, "discovery")?;
@@ -1493,6 +1502,7 @@ where
                 maximum_assets
             ),
             retry_safe: false,
+            ..Default::default()
         });
     }
     let total_packages = package_paths.len() as u64;
@@ -1648,6 +1658,7 @@ fn resolve_saved_world_roots(
             project_root.display()
         ),
         retry_safe: true,
+        ..Default::default()
     })?;
     let content_root = project_root.join("Content");
     let map_candidate = if requested_map_path.is_absolute() {
@@ -1662,6 +1673,7 @@ fn resolve_saved_world_roots(
             map_candidate.display()
         ),
         retry_safe: true,
+        ..Default::default()
     })?;
     checkpoint(cancellation, "discovery")?;
     if !map_path.starts_with(&content_root) {
@@ -1672,12 +1684,14 @@ fn resolve_saved_world_roots(
                 map_candidate.display()
             ),
             retry_safe: false,
+            ..Default::default()
         });
     }
     let relative_map_path = map_path.strip_prefix(&content_root).map_err(|_| Failure {
         code: "invalid_request".to_owned(),
         message: "saved-world could not make the map path relative to Content".to_owned(),
         retry_safe: false,
+        ..Default::default()
     })?;
     let external_actor_relative = external_actor_relative_path(relative_map_path)?;
     let external_actor_root = content_root
@@ -1716,6 +1730,7 @@ fn external_actor_relative_path(relative_map_path: &Path) -> Result<PathBuf, Fai
                 relative_map_path.display()
             ),
             retry_safe: false,
+            ..Default::default()
         });
     }
     let path = relative_map_path.with_extension("");
@@ -1724,6 +1739,7 @@ fn external_actor_relative_path(relative_map_path: &Path) -> Result<PathBuf, Fai
             code: "invalid_request".to_owned(),
             message: "saved-world map must be a relative path beneath Content".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     }
     Ok(path)

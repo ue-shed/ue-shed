@@ -9,17 +9,37 @@ function sample(durationMs: number) {
 		cacheBytes: 128,
 		durationMs,
 		index: {
-			cacheHits: 1,
+			changedPackages: 1,
 			emittedHeaders: 1,
+			generation: 1,
 			inputCandidates: 0,
-			inventoryFiles: 1,
-			packageFiles: 1,
-			sidecarFiles: 0
+			mapCount: 0,
+			packageCount: 1,
+			queryPages: 5,
+			removedPackages: 0
 		},
 		largestProtocolFrameBytes: 64,
 		nodePeakRssBytes: 1024,
 		protocolBytes: 256,
-		rustPeakRssBytes: null
+		rustPeakRssBytes: null,
+		timings: {
+			foldingMs: 1,
+			native: {
+				committingMs: 1,
+				comparingMs: 2,
+				committedEvidenceRows: 1,
+				durationMs: 5,
+				enumeratingMs: 1,
+				evidenceWriteMs: 1,
+				headerReads: 1,
+				headerProcessingExcludingEvidenceWritesMs: 0,
+				removedEvidenceRows: 0,
+				readingHeadersMs: 1,
+				stagedEvidenceRows: 1
+			},
+			queryMs: 3,
+			refreshMs: 6
+		}
 	};
 }
 
@@ -36,7 +56,7 @@ function scenario() {
 
 function evidence() {
 	return {
-		schemaVersion: 2 as const,
+		schemaVersion: 4 as const,
 		generatedAt: "2026-08-04T00:00:00.000Z",
 		configuration: {
 			mutationScenarios: "not_requested" as const,

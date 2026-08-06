@@ -7,7 +7,8 @@ use std::fmt;
 
 /// Versioned set of package-header probes shared by current Project Index consumers.
 pub const INDEX_PROFILE_VERSION: u32 = 1;
-pub const PROJECT_INDEX_MAX_PAGE_SIZE: usize = 256;
+/// Bounded page size shared by Rust, TypeScript, and the language-neutral protocol contract.
+pub const PROJECT_INDEX_MAX_PAGE_SIZE: usize = 1024;
 pub const PROJECT_INDEX_MAX_DIAGNOSTICS: usize = 64;
 pub const PROJECT_INDEX_MAX_CLASSES: usize = 64;
 pub const PROJECT_INDEX_MAX_NAMES: usize = 64;
@@ -71,12 +72,6 @@ pub struct HeaderEvidence {
     pub failure_code: Option<String>,
 }
 
-impl HeaderEvidence {
-    pub fn matches_profile(&self) -> bool {
-        self.profile_version == INDEX_PROFILE_VERSION
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatalogDiagnostic {
     pub code: String,
@@ -112,6 +107,15 @@ pub enum CatalogStatus {
 pub struct StagedPackage {
     pub signature: PackageSignature,
     pub header: Option<HeaderEvidence>,
+}
+
+/// Compact committed metadata used to compare one filesystem enumeration with the Catalog.
+///
+/// Refresh must not hydrate classes or serialized names merely to decide whether a package changed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatalogSnapshotEntry {
+    pub signature: PackageSignature,
+    pub header_profile_version: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -199,8 +203,10 @@ pub struct StagingToken {
 pub trait Catalog {
     fn status(&self) -> CatalogStatus;
 
+    #[allow(dead_code)]
     fn committed_generation(&self) -> Option<Generation>;
 
+    #[allow(dead_code)]
     fn lookup_committed(
         &self,
         relative_path: &str,
@@ -208,6 +214,14 @@ pub trait Catalog {
 
     fn begin_refresh(&mut self) -> Result<StagingToken, CatalogError>;
 
+    /// Mark an exact signature/profile match as observed without reading or rewriting its evidence.
+    fn observe_unchanged(
+        &mut self,
+        token: &StagingToken,
+        relative_path: &str,
+    ) -> Result<(), CatalogError>;
+
+    /// Stage evidence for a new or changed entry.
     fn stage_observed(
         &mut self,
         token: &StagingToken,
@@ -261,4 +275,73 @@ pub(crate) fn class_name(class_path: &str) -> &str {
         .rsplit_once('.')
         .map(|(_, name)| name)
         .unwrap_or(class_path)
+}
+
+/// Maximum cursor length accepted from a caller, independent of any storage adapter.
+const MAX_CURSOR_BYTES: usize = 1024;
+
+/// Reject a page limit outside the bounded query contract.
+///
+/// Both Catalog adapters share this rule so a bounded page never depends on storage details.
+pub(crate) fn validate_page_limit(limit: usize) -> Result<(), CatalogError> {
+    if limit == 0 || limit > PROJECT_INDEX_MAX_PAGE_SIZE {
+        return Err(CatalogError::InvalidRequest {
+            message: format!(
+                "Project Index query limit must be between 1 and {PROJECT_INDEX_MAX_PAGE_SIZE}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Decode a stable page cursor into the exclusive project-relative path it resumes after.
+///
+/// Cursors are opaque to callers: they carry the last path a page returned, so a page stays stable
+/// inside one immutable Generation without exposing storage offsets.
+pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogError> {
+    let Some(value) = cursor else {
+        return Ok(String::new());
+    };
+    let usable = !value.is_empty()
+        && value.len() <= MAX_CURSOR_BYTES
+        && !value.chars().any(char::is_control);
+    if !usable {
+        return Err(CatalogError::InvalidRequest {
+            message: "Project Index cursor is not a stable page cursor.".to_owned(),
+        });
+    }
+    Ok(value.to_owned())
+}
+
+/// Exclusive upper bound for every string starting with `prefix`, in UTF-8 byte order.
+///
+/// `None` means the prefix matches every value, so no upper bound applies.
+#[cfg(test)]
+pub(crate) fn prefix_upper_bound(prefix: &str) -> Option<String> {
+    let mut characters: Vec<char> = prefix.chars().collect();
+    while let Some(last) = characters.pop() {
+        let mut next = u32::from(last).saturating_add(1);
+        // Skip the UTF-16 surrogate range, which is not a valid scalar value.
+        if (0xD800..=0xDFFF).contains(&next) {
+            next = 0xE000;
+        }
+        if let Some(incremented) = char::from_u32(next) {
+            characters.push(incremented);
+            return Some(characters.into_iter().collect());
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+pub(crate) fn reverse_characters(value: &str) -> String {
+    value.chars().rev().collect()
+}
+
+/// Every query item is keyed by its project-relative path, which is also the page cursor.
+pub(crate) fn item_path(item: &QueryItem) -> &str {
+    match item {
+        QueryItem::Map { map_path, .. } => map_path.as_str(),
+        QueryItem::Header { package_path, .. } => package_path.as_str(),
+    }
 }

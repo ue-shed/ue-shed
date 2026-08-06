@@ -92,11 +92,11 @@ CLI consume that same module and receive no privileged index access.
 
 `uasset-io` owns refresh coordination, canonical project identity, signatures, changed/deleted
 detection, atomic Generations, and the storage-neutral Catalog seam. The production Catalog adapter
-owns its private SQLite schema, migrations, transactions, locking, integrity checks, quarantine,
-and files beneath the TypeScript-supplied cache root. An in-memory adapter exercises the same
-coordinator in conformance tests.
+owns its private storage schema, immutable publication, integrity checks, quarantine, and files
+beneath the TypeScript-supplied cache root. An in-memory adapter exercises the same coordinator in
+conformance tests.
 
-SQL, table and column names, migrations, SQLite paths, journal details, and locking behavior do not
+SQL, table and column names, migrations, storage paths, journal details, and locking behavior do not
 cross the TypeScript seam. The Catalog persists only project identity, package/sidecar signatures,
 compact header evidence, bounded package failures, and generation metadata. Domain corpora,
 complete inspections, generic property graphs, reports, source-control state, and presentation
@@ -107,3 +107,23 @@ The workspace must update build, package, release, benchmark, and installation s
 uasset executable will no longer be owned by the parser crate. A persistent worker, request
 multiplexing, dynamic operation registries, and bidirectional cancel frames remain deferred until
 measurements justify them.
+
+## Amendment: DuckDB is the canonical Project Index Catalog
+
+Accepted for Plan 037 on 2026-08-06.
+
+DuckDB 1.5.5 replaces SQLite as the selected canonical production Catalog implementation. The
+selection follows the equal-workload measurements and natural columnar-model research recorded in
+the Project Index plan and engineering report: one path-ordered row per package, nested header
+evidence, bounded Arrow ingestion, immutable generation-specific snapshots, and an atomically
+published logical-Generation manifest.
+
+This amendment changes only the private storage implementation named by the earlier Project Index
+amendment. It does not change the public Project Index interface, the `uasset-io` protocol, the
+storage-neutral Catalog seam, or Plan 033's authority over domain-specific persistence. SQL,
+snapshot filenames, manifests, checkpoints, and DuckDB configuration remain private to the Rust
+adapter.
+
+The production factory now selects DuckDB. The former adapter and client are test-only cutover
+oracles, cannot be reached from a production build, and are removed after the short conformance soak
+rather than retained as a user-selectable backend.

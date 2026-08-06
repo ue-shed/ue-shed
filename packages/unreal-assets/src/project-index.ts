@@ -1,6 +1,6 @@
 import { Config, Context, Effect, Layer, Option, Schema, Stream } from "effect";
 
-export const PROJECT_INDEX_MAX_PAGE_SIZE = 256;
+export const PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
 export const PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
 export const PROJECT_INDEX_CACHE_ROOT_ENV = "UE_SHED_PROJECT_INDEX_CACHE_ROOT";
 
@@ -12,7 +12,7 @@ const BoundedMessage = Schema.NonEmptyString.check(Schema.isMaxLength(4_096));
 const QueryValue = Schema.NonEmptyString.check(Schema.isMaxLength(1_024));
 const QueryValues = Schema.Array(QueryValue).check(Schema.isMinLength(1), Schema.isMaxLength(64));
 
-export const ProjectIdentity = BoundedIdentifier.pipe(Schema.brand("ProjectIdentity"));
+export const ProjectIdentity = BoundedPath.pipe(Schema.brand("ProjectIdentity"));
 export type ProjectIdentity = typeof ProjectIdentity.Type;
 
 export const ProjectIndexGeneration = PositiveInt.pipe(Schema.brand("ProjectIndexGeneration"));

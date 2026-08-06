@@ -24,6 +24,7 @@ it.effect("renders generated help through the Effect CLI command tree", () =>
 			"UE Shed — External tools for Unreal Engine development."
 		);
 		expect(yield* Ref.get(output)).toContain("authoring");
+		expect(yield* Ref.get(output)).toContain("project-index");
 		expect(yield* Ref.get(errors)).toBe("");
 		expect(yield* Ref.get(exitCode)).toBe(0);
 	})

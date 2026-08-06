@@ -50,7 +50,7 @@ const UAssetIoScanFilters = Schema.Struct({
 });
 
 /** Enforced below every Project Index caller; mirrored in `@ue-shed/unreal-assets`. */
-export const UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE = 256;
+export const UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
 export const UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
 
 const ProjectIndexPageLimit = Schema.Int.check(

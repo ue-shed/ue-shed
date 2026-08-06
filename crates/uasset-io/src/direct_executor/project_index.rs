@@ -9,14 +9,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::cancellation::CancellationToken;
 
 use super::catalog::{
-    Catalog, CatalogDiagnostic, CatalogError, CatalogStatus, Completeness, EntryKind,
-    HeaderEvidence, INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_CLASSES,
+    Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, Completeness,
+    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_CLASSES,
     PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES, PackageSignature, QueryPage,
     QueryRequest, RefreshSummary, StagedPackage, project_id_from_root,
 };
 use super::{Failure, checkpoint};
 
 const MAX_SIGNATURE_REVALIDATION_ATTEMPTS: usize = 3;
+const PROGRESS_PACKAGE_INTERVAL: u64 = 1_024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefreshPhase {
@@ -40,6 +41,12 @@ pub enum RefreshEvent {
     Completed { summary: RefreshSummary },
 }
 
+pub type HeaderEvidenceSink<'a> = dyn FnMut(
+        &PackageSignature,
+        Result<HeaderEvidence, CoordinatorError>,
+    ) -> Result<(), CoordinatorError>
+    + 'a;
+
 /// Filesystem/header probing boundary used by the coordinator.
 pub trait ProjectScanner {
     fn enumerate(
@@ -55,6 +62,24 @@ pub trait ProjectScanner {
         cancellation: &CancellationToken,
     ) -> Result<HeaderEvidence, CoordinatorError>;
 
+    /// Stream independent package headers in signature order. The default preserves deterministic
+    /// test scanners; filesystem adapters may read ahead with bounded parallelism.
+    fn stream_header_evidence(
+        &self,
+        project_root: &str,
+        signatures: &[PackageSignature],
+        cancellation: &CancellationToken,
+        on_header: &mut HeaderEvidenceSink<'_>,
+    ) -> Result<(), CoordinatorError> {
+        for signature in signatures {
+            on_header(
+                signature,
+                self.read_header_evidence(project_root, signature, cancellation),
+            )?;
+        }
+        Ok(())
+    }
+
     fn reread_signature(
         &self,
         project_root: &str,
@@ -66,7 +91,15 @@ pub trait ProjectScanner {
 
 /// Snapshot helper used by the coordinator to compute deletions without exposing SQL.
 pub trait CatalogSnapshot: Catalog {
-    fn committed_relative_paths(&self) -> Vec<String>;
+    fn committed_entries(&self) -> Vec<CatalogSnapshotEntry>;
+
+    #[allow(dead_code)]
+    fn committed_relative_paths(&self) -> Vec<String> {
+        self.committed_entries()
+            .into_iter()
+            .map(|entry| entry.signature.relative_path)
+            .collect()
+    }
 }
 
 #[derive(Debug)]
@@ -170,14 +203,10 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
 ) -> Result<Vec<RefreshEvent>, CoordinatorError> {
     let project_id = project_id_from_root(project_root);
     let mut events = vec![RefreshEvent::Started { rebuild }];
-    let prior_paths: BTreeSet<String> = catalog.committed_relative_paths().into_iter().collect();
-    let prior_packages: BTreeMap<String, PackageSignature> = prior_paths
-        .iter()
-        .filter_map(|path| {
-            catalog
-                .lookup_committed(path)
-                .map(|(signature, _)| (path.clone(), signature))
-        })
+    let prior_entries: BTreeMap<String, CatalogSnapshotEntry> = catalog
+        .committed_entries()
+        .into_iter()
+        .map(|entry| (entry.signature.relative_path.clone(), entry))
         .collect();
     let mut token = Some(catalog.begin_refresh()?);
     let result = (|| {
@@ -203,60 +232,43 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
         let mut map_count = 0_u64;
         let mut diagnostics = Vec::new();
         let mut completed_packages = 0_u64;
+        let mut changed_entries = Vec::new();
+        let observed: BTreeSet<_> = enumerated
+            .iter()
+            .map(|signature| signature.relative_path.clone())
+            .collect();
 
+        emit_progress(
+            &mut events,
+            on_progress,
+            RefreshPhase::Comparing,
+            0,
+            Some(total_packages),
+        );
         for signature in &enumerated {
             checkpoint(cancellation, "read")?;
             if signature.kind == EntryKind::Package {
                 completed_packages += 1;
             }
-            emit_progress(
-                &mut events,
-                on_progress,
-                RefreshPhase::Comparing,
-                completed_packages,
-                Some(total_packages),
-            );
+            let prior = prior_entries.get(&signature.relative_path);
+            let can_reuse = prior.is_some_and(|prior| {
+                prior.signature == *signature
+                    && (signature.kind == EntryKind::Sidecar
+                        || prior.header_profile_version == Some(INDEX_PROFILE_VERSION))
+            });
 
-            let prior = catalog.lookup_committed(&signature.relative_path);
-            let can_reuse = matches!(
-                &prior,
-                Some((prior_signature, Some(header)))
-                    if prior_signature == signature && header.matches_profile()
-            );
-
-            let staged = if signature.kind == EntryKind::Sidecar {
-                StagedPackage {
-                    signature: signature.clone(),
-                    header: None,
-                }
-            } else if can_reuse {
-                StagedPackage {
-                    signature: signature.clone(),
-                    header: prior.and_then(|(_, header)| header),
-                }
+            if can_reuse {
+                catalog.observe_unchanged(staging, &signature.relative_path)?;
             } else {
-                emit_progress(
-                    &mut events,
-                    on_progress,
-                    RefreshPhase::ReadingHeaders,
-                    completed_packages,
-                    Some(total_packages),
-                );
-                let staged = stage_with_revalidation(
-                    scanner,
-                    project_root,
-                    signature,
-                    cancellation,
-                    &mut diagnostics,
-                )?;
-                changed_packages += 1;
-                staged
-            };
+                if signature.kind == EntryKind::Package {
+                    changed_packages += 1;
+                }
+                changed_entries.push(signature.clone());
+            }
 
-            if staged.signature.kind == EntryKind::Package {
+            if signature.kind == EntryKind::Package {
                 package_count += 1;
-                if staged
-                    .signature
+                if signature
                     .relative_path
                     .to_ascii_lowercase()
                     .ends_with(".umap")
@@ -264,19 +276,75 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                     map_count += 1;
                 }
             }
-            catalog.stage_observed(staging, staged)?;
+            if should_emit_package_progress(completed_packages, total_packages) {
+                emit_progress(
+                    &mut events,
+                    on_progress,
+                    RefreshPhase::Comparing,
+                    completed_packages,
+                    Some(total_packages),
+                );
+            }
         }
 
-        let observed: BTreeSet<_> = enumerated
-            .iter()
-            .map(|signature| signature.relative_path.clone())
-            .collect();
-        let removed_packages = prior_packages
-            .iter()
-            .filter(|(path, signature)| {
-                signature.kind == EntryKind::Package && !observed.contains(*path)
+        let removed_packages = prior_entries
+            .values()
+            .filter(|entry| {
+                entry.signature.kind == EntryKind::Package
+                    && !observed.contains(&entry.signature.relative_path)
             })
             .count() as u64;
+
+        emit_progress(
+            &mut events,
+            on_progress,
+            RefreshPhase::ReadingHeaders,
+            0,
+            Some(changed_packages),
+        );
+        let mut completed_headers = 0_u64;
+        let mut changed_package_entries = Vec::with_capacity(changed_packages as usize);
+        for signature in changed_entries {
+            if signature.kind == EntryKind::Sidecar {
+                catalog.stage_observed(
+                    staging,
+                    StagedPackage {
+                        signature,
+                        header: None,
+                    },
+                )?;
+            } else {
+                changed_package_entries.push(signature);
+            }
+        }
+        scanner.stream_header_evidence(
+            project_root,
+            &changed_package_entries,
+            cancellation,
+            &mut |signature, header_result| {
+                checkpoint(cancellation, "inspection")?;
+                let staged = stage_with_initial_header(
+                    scanner,
+                    project_root,
+                    signature,
+                    header_result,
+                    cancellation,
+                    &mut diagnostics,
+                )?;
+                completed_headers += 1;
+                if should_emit_package_progress(completed_headers, changed_packages) {
+                    emit_progress(
+                        &mut events,
+                        on_progress,
+                        RefreshPhase::ReadingHeaders,
+                        completed_headers,
+                        Some(changed_packages),
+                    );
+                }
+                catalog.stage_observed(staging, staged)?;
+                Ok(())
+            },
+        )?;
 
         if diagnostics.len() > PROJECT_INDEX_MAX_DIAGNOSTICS {
             diagnostics.truncate(PROJECT_INDEX_MAX_DIAGNOSTICS);
@@ -319,17 +387,22 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
     }
 }
 
-fn stage_with_revalidation<S: ProjectScanner>(
+fn stage_with_initial_header<S: ProjectScanner>(
     scanner: &S,
     project_root: &str,
     signature: &PackageSignature,
+    first: Result<HeaderEvidence, CoordinatorError>,
     cancellation: &CancellationToken,
     diagnostics: &mut Vec<CatalogDiagnostic>,
 ) -> Result<StagedPackage, CoordinatorError> {
     let mut current = signature.clone();
+    let mut next_header = Some(first);
     for _ in 0..MAX_SIGNATURE_REVALIDATION_ATTEMPTS {
         checkpoint(cancellation, "inspection")?;
-        let header = match scanner.read_header_evidence(project_root, &current, cancellation) {
+        let result = next_header
+            .take()
+            .unwrap_or_else(|| scanner.read_header_evidence(project_root, &current, cancellation));
+        let header = match result {
             Ok(mut evidence) => {
                 evidence.profile_version = INDEX_PROFILE_VERSION;
                 evidence.classes.truncate(PROJECT_INDEX_MAX_CLASSES);
@@ -444,446 +517,28 @@ fn emit_progress(
     events.push(RefreshEvent::Progress(progress));
 }
 
-/// Test-only helpers kept next to the coordinator so conformance stays adapter-neutral.
+fn should_emit_package_progress(completed: u64, total: u64) -> bool {
+    completed > 0 && (completed == total || completed.is_multiple_of(PROGRESS_PACKAGE_INTERVAL))
+}
+
+/// The coordinator is proven through the adapter-neutral Catalog conformance suite. Every storage
+/// adapter runs the same suite unchanged, so coordinator tests never name a storage implementation.
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    use super::*;
-    use crate::direct_executor::catalog::{
-        CatalogError, CatalogStatus, EntryKind, Generation, HeaderEvidence, INDEX_PROFILE_VERSION,
-        PackageSignature, ProjectId, QueryKind, QueryRequest,
-    };
+    use super::{PROGRESS_PACKAGE_INTERVAL, should_emit_package_progress};
+    use crate::direct_executor::catalog_conformance::catalog_conformance_tests;
     use crate::direct_executor::catalog_memory::MemoryCatalog;
 
-    #[derive(Default)]
-    struct FakeScanner {
-        entries: Vec<PackageSignature>,
-        headers: BTreeMap<String, HeaderEvidence>,
-        reread: BTreeMap<String, PackageSignature>,
-        header_reads: std::cell::Cell<u64>,
-        fail_after_header: BTreeSet<String>,
-        unstable: BTreeSet<String>,
-    }
-
-    impl ProjectScanner for FakeScanner {
-        fn enumerate(
-            &self,
-            _project_root: &str,
-            cancellation: &CancellationToken,
-        ) -> Result<Vec<PackageSignature>, CoordinatorError> {
-            checkpoint(cancellation, "discovery")?;
-            Ok(self.entries.clone())
-        }
-
-        fn read_header_evidence(
-            &self,
-            _project_root: &str,
-            signature: &PackageSignature,
-            cancellation: &CancellationToken,
-        ) -> Result<HeaderEvidence, CoordinatorError> {
-            checkpoint(cancellation, "inspection")?;
-            self.header_reads.set(self.header_reads.get() + 1);
-            if self.fail_after_header.contains(&signature.relative_path) {
-                return Err(CoordinatorError::Unavailable {
-                    message: "injected header failure".to_owned(),
-                });
-            }
-            self.headers
-                .get(&signature.relative_path)
-                .cloned()
-                .ok_or_else(|| CoordinatorError::Unavailable {
-                    message: format!("missing header fixture for {}", signature.relative_path),
-                })
-        }
-
-        fn reread_signature(
-            &self,
-            _project_root: &str,
-            relative_path: &str,
-            kind: EntryKind,
-            cancellation: &CancellationToken,
-        ) -> Result<Option<PackageSignature>, CoordinatorError> {
-            checkpoint(cancellation, "read")?;
-            if self.unstable.contains(relative_path) {
-                let mut next = self
-                    .reread
-                    .get(relative_path)
-                    .cloned()
-                    .or_else(|| {
-                        self.entries
-                            .iter()
-                            .find(|entry| entry.relative_path == relative_path)
-                            .cloned()
-                    })
-                    .unwrap_or(PackageSignature {
-                        relative_path: relative_path.to_owned(),
-                        kind,
-                        size: 1,
-                        modified_nanos: 1,
-                    });
-                // Keep changing after every header read so revalidation cannot settle.
-                next.modified_nanos = next
-                    .modified_nanos
-                    .saturating_add(self.header_reads.get().max(1));
-                return Ok(Some(next));
-            }
-            Ok(self.reread.get(relative_path).cloned().or_else(|| {
-                self.entries
-                    .iter()
-                    .find(|entry| entry.relative_path == relative_path)
-                    .cloned()
-            }))
-        }
-    }
-
-    fn package(path: &str, size: u64, modified_nanos: u64) -> PackageSignature {
-        PackageSignature {
-            relative_path: path.to_owned(),
-            kind: EntryKind::Package,
-            size,
-            modified_nanos,
-        }
-    }
-
-    fn sidecar(path: &str, size: u64, modified_nanos: u64) -> PackageSignature {
-        PackageSignature {
-            relative_path: path.to_owned(),
-            kind: EntryKind::Sidecar,
-            size,
-            modified_nanos,
-        }
-    }
-
-    fn header(package_name: &str, classes: &[&str], names: &[&str]) -> HeaderEvidence {
-        HeaderEvidence {
-            profile_version: INDEX_PROFILE_VERSION,
-            package_name: package_name.to_owned(),
-            classes: classes.iter().map(|value| (*value).to_owned()).collect(),
-            serialized_names: names.iter().map(|value| (*value).to_owned()).collect(),
-            failure_code: None,
-        }
-    }
-
-    fn completed_summary(events: &[RefreshEvent]) -> RefreshSummary {
-        events
-            .iter()
-            .find_map(|event| match event {
-                RefreshEvent::Completed { summary } => Some(summary.clone()),
-                _ => None,
-            })
-            .expect("refresh completed")
-    }
+    catalog_conformance_tests!(memory_adapter, MemoryCatalog::new);
 
     #[test]
-    fn cold_refresh_then_warm_noop_reads_zero_headers() {
-        let mut catalog = MemoryCatalog::new();
-        let scanner = FakeScanner {
-            entries: vec![
-                package("Content/Maps/L_Fixture.umap", 10, 100),
-                package("Content/Data/DT_Items.uasset", 20, 200),
-                sidecar("Content/Data/DT_Items.uexp", 5, 200),
-            ],
-            headers: BTreeMap::from([
-                (
-                    "Content/Maps/L_Fixture.umap".to_owned(),
-                    header("/Game/Maps/L_Fixture", &[], &[]),
-                ),
-                (
-                    "Content/Data/DT_Items.uasset".to_owned(),
-                    header(
-                        "/Game/Data/DT_Items",
-                        &["/Script/Engine.DataTable"],
-                        &["TextProperty"],
-                    ),
-                ),
-            ]),
-            ..FakeScanner::default()
-        };
-
-        let cold = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("cold refresh");
-        let cold_summary = completed_summary(&cold);
-        assert_eq!(cold_summary.generation, Generation::new(1));
-        assert_eq!(cold_summary.package_count, 2);
-        assert_eq!(cold_summary.map_count, 1);
-        assert_eq!(cold_summary.changed_packages, 2);
-        assert_eq!(scanner.header_reads.get(), 2);
-
-        let warm = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("warm refresh");
-        let warm_summary = completed_summary(&warm);
-        assert_eq!(warm_summary.generation, Generation::new(2));
-        assert_eq!(warm_summary.changed_packages, 0);
-        assert_eq!(warm_summary.removed_packages, 0);
-        assert_eq!(scanner.header_reads.get(), 2);
-    }
-
-    #[test]
-    fn rebuild_clears_generation_before_cold_refresh() {
-        let mut catalog = MemoryCatalog::new();
-        let scanner = FakeScanner {
-            entries: vec![package("Content/A.uasset", 10, 1)],
-            headers: BTreeMap::from([(
-                "Content/A.uasset".to_owned(),
-                header("/Game/A", &["/Script/Engine.DataTable"], &[]),
-            )]),
-            ..FakeScanner::default()
-        };
-        let first = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("initial refresh");
-        assert_eq!(completed_summary(&first).generation, Generation::new(1));
-        let warm = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("warm refresh");
-        assert_eq!(completed_summary(&warm).generation, Generation::new(2));
-
-        let rebuilt = rebuild(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("rebuild");
-        assert_eq!(completed_summary(&rebuilt).generation, Generation::new(1));
-    }
-
-    #[test]
-    fn changed_deleted_renamed_and_sidecar_updates_are_detected() {
-        let mut catalog = MemoryCatalog::new();
-        let mut scanner = FakeScanner {
-            entries: vec![
-                package("Content/A.uasset", 10, 1),
-                package("Content/B.uasset", 10, 1),
-                sidecar("Content/A.uexp", 2, 1),
-            ],
-            headers: BTreeMap::from([
-                (
-                    "Content/A.uasset".to_owned(),
-                    header("/Game/A", &["/Script/Engine.DataTable"], &[]),
-                ),
-                (
-                    "Content/B.uasset".to_owned(),
-                    header("/Game/B", &["/Script/Engine.Texture2D"], &[]),
-                ),
-            ]),
-            ..FakeScanner::default()
-        };
-        refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("initial refresh");
-
-        scanner.entries = vec![
-            package("Content/A.uasset", 11, 2), // changed
-            package("Content/C.uasset", 10, 1), // rename B -> C
-            sidecar("Content/A.uexp", 3, 2),    // sidecar-only change
-        ];
-        scanner.headers.insert(
-            "Content/A.uasset".to_owned(),
-            header("/Game/A", &["/Script/Engine.DataTable"], &["RowStruct"]),
-        );
-        scanner.headers.insert(
-            "Content/C.uasset".to_owned(),
-            header("/Game/C", &["/Script/Engine.Texture2D"], &[]),
-        );
-
-        let events = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("delta refresh");
-        let summary = completed_summary(&events);
-        assert_eq!(summary.changed_packages, 2);
-        assert_eq!(summary.removed_packages, 1);
-        assert_eq!(summary.package_count, 2);
-        assert_eq!(scanner.header_reads.get(), 4); // 2 cold + A + C
-
-        let page = query(
-            &catalog,
-            &QueryRequest {
-                project_id: ProjectId::new("c:/fixture"),
-                expected_generation: summary.generation,
-                kind: QueryKind::ExactClasses {
-                    values: vec!["/Script/Engine.DataTable".to_owned()],
-                },
-                limit: 10,
-                cursor: None,
-            },
-        )
-        .expect("query");
-        assert_eq!(page.items.len(), 1);
-    }
-
-    #[test]
-    fn cancellation_discards_staging_and_keeps_prior_generation() {
-        let mut catalog = MemoryCatalog::new();
-        let scanner = FakeScanner {
-            entries: vec![package("Content/A.uasset", 10, 1)],
-            headers: BTreeMap::from([(
-                "Content/A.uasset".to_owned(),
-                header("/Game/A", &["/Script/Engine.DataTable"], &[]),
-            )]),
-            ..FakeScanner::default()
-        };
-        let first = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect("first refresh");
-        let generation = completed_summary(&first).generation;
-
-        let cancellation = CancellationToken::new();
-        cancellation.cancel();
-        let error = refresh(&mut catalog, &scanner, "C:/Fixture", &cancellation, |_| {})
-            .expect_err("cancelled refresh");
-        assert!(matches!(error, CoordinatorError::Cancelled { .. }));
-        assert_eq!(catalog.committed_generation(), Some(generation));
-        assert!(
-            query(
-                &catalog,
-                &QueryRequest {
-                    project_id: ProjectId::new("c:/fixture"),
-                    expected_generation: generation,
-                    kind: QueryKind::Maps,
-                    limit: 10,
-                    cursor: None,
-                },
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn stale_generation_queries_fail_explicitly_and_ordering_is_stable() {
-        let mut catalog = MemoryCatalog::new();
-        let scanner = FakeScanner {
-            entries: vec![
-                package("Content/B.uasset", 10, 1),
-                package("Content/A.uasset", 10, 1),
-            ],
-            headers: BTreeMap::from([
-                (
-                    "Content/A.uasset".to_owned(),
-                    header("/Game/A", &["/Script/Engine.DataTable"], &[]),
-                ),
-                (
-                    "Content/B.uasset".to_owned(),
-                    header("/Game/B", &["/Script/Engine.DataTable"], &[]),
-                ),
-            ]),
-            ..FakeScanner::default()
-        };
-        let summary = completed_summary(
-            &refresh(
-                &mut catalog,
-                &scanner,
-                "C:/Fixture",
-                &CancellationToken::new(),
-                |_| {},
-            )
-            .expect("refresh"),
-        );
-        let page = query(
-            &catalog,
-            &QueryRequest {
-                project_id: ProjectId::new("c:/fixture"),
-                expected_generation: summary.generation,
-                kind: QueryKind::ExactClasses {
-                    values: vec!["/Script/Engine.DataTable".to_owned()],
-                },
-                limit: 10,
-                cursor: None,
-            },
-        )
-        .expect("page");
-        let paths = page
-            .items
-            .iter()
-            .map(|item| match item {
-                crate::direct_executor::catalog::QueryItem::Header { package_path, .. } => {
-                    package_path.as_str()
-                }
-                _ => "",
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            paths,
-            vec!["Content/A.uasset", "Content/B.uasset"] // BTreeMap path order
-        );
-
-        let stale = query(
-            &catalog,
-            &QueryRequest {
-                project_id: ProjectId::new("c:/fixture"),
-                expected_generation: Generation::new(99),
-                kind: QueryKind::Maps,
-                limit: 10,
-                cursor: None,
-            },
-        )
-        .expect_err("stale");
-        assert!(matches!(
-            stale,
-            CoordinatorError::Catalog(CatalogError::StaleGeneration { .. })
+    fn package_progress_is_bounded_by_fixed_intervals() {
+        assert!(!should_emit_package_progress(0, 10_000));
+        assert!(!should_emit_package_progress(1, 10_000));
+        assert!(should_emit_package_progress(
+            PROGRESS_PACKAGE_INTERVAL,
+            10_000
         ));
-    }
-
-    #[test]
-    fn signature_revalidation_rejects_unstable_packages() {
-        let mut catalog = MemoryCatalog::new();
-        let scanner = FakeScanner {
-            entries: vec![package("Content/A.uasset", 10, 1)],
-            headers: BTreeMap::from([(
-                "Content/A.uasset".to_owned(),
-                header("/Game/A", &["/Script/Engine.DataTable"], &[]),
-            )]),
-            unstable: BTreeSet::from(["Content/A.uasset".to_owned()]),
-            ..FakeScanner::default()
-        };
-        let error = refresh(
-            &mut catalog,
-            &scanner,
-            "C:/Fixture",
-            &CancellationToken::new(),
-            |_| {},
-        )
-        .expect_err("unstable signature");
-        assert!(matches!(error, CoordinatorError::Unavailable { .. }));
-        assert!(matches!(catalog.status(), CatalogStatus::Absent));
+        assert!(should_emit_package_progress(10_000, 10_000));
     }
 }

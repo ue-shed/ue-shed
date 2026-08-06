@@ -11,7 +11,7 @@ request a separately enabled editor only when needed.
 
 ## Open the Workbench
 
-Requirements are Node.js 22.14 or newer, pnpm 11, and Rust 1.85 or newer. Live actions additionally
+Requirements are Node.js 22.14 or newer, pnpm 11, and Rust 1.88 or newer. Live actions additionally
 require Unreal Engine 5.7 and Visual Studio 2022 with the Unreal Engine C++ workload. The initial
 Workbench and saved-package demos do not require Unreal or Visual Studio. From the repository root:
 

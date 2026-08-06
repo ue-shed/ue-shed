@@ -4,14 +4,20 @@
 //! schedules bounded work, and returns protocol result types. Serialization is deliberately left
 //! to `protocol_adapter`, which is the only process-output seam.
 
-#[allow(dead_code)]
 mod catalog;
+#[cfg(test)]
+mod catalog_conformance;
 #[allow(dead_code)]
+mod catalog_duckdb;
+#[cfg(test)]
 mod catalog_memory;
+// The retired adapter is retained only as a cutover oracle. Production code cannot instantiate it.
+#[cfg(test)]
 #[allow(dead_code)]
+mod catalog_sqlite;
 mod project_index;
+mod project_index_io;
 mod project_io;
-#[allow(dead_code)]
 mod scanner;
 
 use std::fs;
@@ -28,29 +34,50 @@ use crate::protocol_result::{
     SavedAssetScanDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary, SavedPropertyValue,
 };
 
+pub(crate) use project_index::RefreshProgress;
+pub(crate) use project_index_io::{
+    ProjectIndexRefreshOutput, catalog_was_quarantined, open_catalog, open_catalog_for_project_id,
+    progress_phase, query as project_index_query_protocol, query_project_id,
+    refresh as project_index_refresh_protocol, status as project_index_status_protocol,
+};
 pub(crate) use project_io::{
     extract_text, extract_text_with_cancellation, extract_texture,
     extract_texture_with_cancellation, saved_world, saved_world_with_cancellation_and_progress,
     scan, scan_with_cancellation,
 };
 
-// Step 5 Catalog/coordinator surface. Protocol wiring lands in Step 7.
-#[allow(unused_imports)]
-pub(crate) use catalog_memory::MemoryCatalog;
-#[allow(unused_imports)]
-pub(crate) use project_index::{
-    CatalogSnapshot, ProjectScanner, RefreshEvent, query as project_index_query,
-    rebuild as project_index_rebuild, refresh as project_index_refresh,
-    status as project_index_status,
-};
-#[allow(unused_imports)]
-pub(crate) use scanner::FilesystemProjectScanner;
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Failure {
     pub(crate) code: String,
     pub(crate) message: String,
     pub(crate) retry_safe: bool,
+    pub(crate) actual_generation: Option<u64>,
+    pub(crate) expected_generation: Option<u64>,
+}
+
+impl Failure {
+    pub(crate) fn new(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        retry_safe: bool,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            retry_safe,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn stale_generation(message: impl Into<String>, expected: u64, actual: u64) -> Self {
+        Self {
+            code: "stale_generation".to_owned(),
+            message: message.into(),
+            retry_safe: true,
+            actual_generation: Some(actual),
+            expected_generation: Some(expected),
+        }
+    }
 }
 
 pub(crate) fn checkpoint(
@@ -61,6 +88,7 @@ pub(crate) fn checkpoint(
         code: "cancelled".to_owned(),
         message: format!("operation cancelled during {stage}"),
         retry_safe: true,
+        ..Default::default()
     })
 }
 
@@ -104,6 +132,7 @@ pub(crate) fn inspect_with_cancellation(
             code: "io".to_owned(),
             message: "protocol inspection does not support stdin asset input".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     }
     checkpoint(cancellation, "read")?;
@@ -111,6 +140,7 @@ pub(crate) fn inspect_with_cancellation(
         code: "io".to_owned(),
         message: format!("could not read asset {path}: {error}"),
         retry_safe: true,
+        ..Default::default()
     })?;
     checkpoint(cancellation, "read")?;
     let (inspection, partial) = inspect_bytes_with_cancellation(path, &bytes, cancellation)?;
@@ -129,6 +159,7 @@ pub(crate) fn inspect_bytes_with_cancellation(
             code: "contract".to_owned(),
             message,
             retry_safe: false,
+            ..Default::default()
         })?;
     checkpoint(cancellation, "inspection")?;
     Ok((inspection, partial))
@@ -151,6 +182,7 @@ pub(crate) fn inspect_generic_bytes_with_cancellation(
         code: error.kind.to_owned(),
         message: error.message,
         retry_safe: false,
+        ..Default::default()
     })?;
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
@@ -168,6 +200,7 @@ pub(crate) fn authoring_with_cancellation(
         code: "io".to_owned(),
         message: format!("could not read asset {path}: {error}"),
         retry_safe: true,
+        ..Default::default()
     })?;
     checkpoint(cancellation, "read")?;
     authoring_bytes_with_cancellation(path, &bytes, cancellation)
@@ -222,6 +255,7 @@ pub(crate) fn authoring_bytes_with_cancellation(
             code: "unsupported".to_owned(),
             message: "package contains no supported DataTable export".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     };
     if tables.next().is_some() {
@@ -229,6 +263,7 @@ pub(crate) fn authoring_bytes_with_cancellation(
             code: "unsupported".to_owned(),
             message: "package contains more than one DataTable export".to_owned(),
             retry_safe: false,
+            ..Default::default()
         });
     }
 

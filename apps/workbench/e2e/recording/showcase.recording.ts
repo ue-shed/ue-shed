@@ -637,20 +637,28 @@ test(`records the ${journey} Workbench journey`, async ({
 						).toBeVisible();
 						await page!
 							.getByRole("searchbox", { name: "Search corpus" })
-							.fill("Continue");
+							.fill("Hold to skip");
 						await expect(
 							page!.getByRole("region", { name: "Text units" })
-						).toContainText("Continue");
+						).toContainText("Hold to skip");
 						await expect(
 							page!.getByRole("complementary", { name: "Text focus" })
-						).toContainText("Game · Prompt Continue");
+						).toContainText("2 uses");
+						await page!.getByRole("searchbox", { name: "Search corpus" }).fill("");
+						await expect(
+							page!.getByRole("region", { name: "Text units" })
+						).toContainText("Showing 32 of 32 matches");
+						await page!
+							.getByRole("region", { name: "Text units" })
+							.locator('[aria-current="true"]')
+							.scrollIntoViewIfNeeded();
 					},
 					description:
-						"Search player-facing language and see its authored context before opening Unreal details.",
+						"One saved line stays connected to its stable Unreal identity and every authored use.",
 					page,
 					slug: "04-game-text",
 					testInfo,
-					title: "Search the saved game text corpus"
+					title: "Investigate a shared source line"
 				})
 			);
 		}

@@ -4,6 +4,8 @@ import type {
 	TextCorpusQueryRunResult,
 	TextCorpusQuerySummary,
 	TextCorpusSearchPage,
+	TextReviewLens,
+	TextReviewSignal,
 	TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
@@ -16,7 +18,6 @@ import type { GameTextClientShape } from "./game-text-client.js";
 import {
 	identityLabel,
 	primaryContext,
-	sourceLength,
 	sourceText,
 	textContext,
 	type CapabilityFilter
@@ -64,6 +65,59 @@ const filters: readonly { readonly value: CapabilityFilter; readonly label: stri
 	{ value: "source_editable", label: "Supported sources" },
 	{ value: "read_only", label: "Evidence only" }
 ];
+
+const reviewLenses: readonly {
+	readonly count: (summary: TextCorpusQuerySummary) => number;
+	readonly detail: string;
+	readonly label: string;
+	readonly value: TextReviewLens;
+}[] = [
+	{
+		count: (summary) => summary.review.all,
+		detail: "Entire saved corpus",
+		label: "All lines",
+		value: "all"
+	},
+	{
+		count: (summary) => summary.review.shared,
+		detail: "Identity used in 2+ places",
+		label: "Shared",
+		value: "shared"
+	},
+	{
+		count: (summary) => summary.review.duplicateSource,
+		detail: "Same words, different IDs",
+		label: "Duplicate source",
+		value: "duplicate_source"
+	},
+	{
+		count: (summary) => summary.review.long,
+		detail: "40+ source characters",
+		label: "Long lines",
+		value: "long"
+	},
+	{
+		count: (summary) => summary.review.unresolved,
+		detail: "No stable namespace and key",
+		label: "Unresolved ID",
+		value: "unresolved"
+	},
+	{
+		count: (summary) => summary.review.conflicting,
+		detail: "One ID, multiple source values",
+		label: "Source conflicts",
+		value: "conflicting"
+	}
+];
+
+function signalLabel(signal: TextReviewSignal): string {
+	if (signal === "duplicate_source") return "Duplicate source";
+	if (signal === "evidence_only") return "Evidence only";
+	if (signal === "unresolved") return "Unresolved ID";
+	if (signal === "conflicting") return "Source conflict";
+	if (signal === "shared") return "Shared";
+	return "40+ chars";
+}
 
 function sourceKind(unit: TextUnitSearchResult): string {
 	if (unit.locationKinds.length > 1) return "Multiple sources";
@@ -173,6 +227,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const [page, setPage] = createSignal<TextCorpusSearchPage>({ total: 0, units: [] });
 	const [query, setQuery] = createSignal("");
 	const [capability, setCapability] = createSignal<CapabilityFilter>("all");
+	const [lens, setLens] = createSignal<TextReviewLens>("all");
 	const [selectedId, setSelectedId] = createSignal<TextUnitSearchResult["id"]>();
 	const [focus, setFocus] = createSignal<TextCorpusFocus>();
 	const [locateFeedback, setLocateFeedback] = createSignal<LocateFeedback>({ status: "idle" });
@@ -211,6 +266,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 		options: {
 			readonly capability?: CapabilityFilter;
 			readonly cursor?: TextUnitSearchResult["id"];
+			readonly lens?: TextReviewLens;
 			readonly query?: string;
 		} = {}
 	) => {
@@ -219,6 +275,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 			props.client.search({
 				capability: options.capability ?? capability(),
 				...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+				lens: options.lens ?? lens(),
 				pageSize: 50,
 				query: options.query ?? query()
 			}),
@@ -290,9 +347,9 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
 						Game text / Corpus
 					</nav>
-					<h1 {...stylex.props(styles.title)}>Language evidence</h1>
+					<h1 {...stylex.props(styles.title)}>Game text workbench</h1>
 					<p {...stylex.props(styles.subtitle)}>
-						Search saved player-facing text without flattening Unreal identity.
+						Review source, identity, authored context, and every known use.
 					</p>
 				</div>
 				<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
@@ -330,6 +387,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 								page={page}
 								query={query}
 								capability={capability}
+								lens={lens}
 								selectedId={selectedId}
 								focus={focus}
 								locateFeedback={locateFeedback}
@@ -340,6 +398,10 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 								onCapability={(value) => {
 									setCapability(value);
 									requestPage({ capability: value });
+								}}
+								onLens={(value) => {
+									setLens(value);
+									requestPage({ lens: value });
 								}}
 								onNextPage={(cursor) => requestPage({ cursor })}
 								onLocate={locateAsset}
@@ -361,11 +423,13 @@ function TextCorpusWorkspace(props: {
 	readonly page: Accessor<TextCorpusSearchPage>;
 	readonly query: Accessor<string>;
 	readonly capability: Accessor<CapabilityFilter>;
+	readonly lens: Accessor<TextReviewLens>;
 	readonly selectedId: Accessor<TextUnitSearchResult["id"] | undefined>;
 	readonly focus: Accessor<TextCorpusFocus | undefined>;
 	readonly locateFeedback: Accessor<LocateFeedback>;
 	readonly onQuery: (value: string) => void;
 	readonly onCapability: (value: CapabilityFilter) => void;
+	readonly onLens: (value: TextReviewLens) => void;
 	readonly onLocate: (objectPath: string) => void;
 	readonly onNextPage: (cursor: TextUnitSearchResult["id"]) => void;
 	readonly onSelect: (id: TextUnitSearchResult["id"]) => void;
@@ -401,47 +465,6 @@ function TextCorpusWorkspace(props: {
 	const coverage = props.summary.coverage;
 	return (
 		<div {...stylex.props(styles.workspace)}>
-			<section aria-label="Corpus coverage" {...stylex.props(styles.coverage)}>
-				<div {...stylex.props(styles.corpusStatus)}>
-					<span
-						{...stylex.props(
-							styles.coverageState,
-							props.summary.status === "complete" ? styles.complete : styles.partial
-						)}
-					>
-						{props.summary.status === "partial" ? "Qualified" : "Complete"}
-					</span>
-					<strong {...stylex.props(styles.corpusName)}>Saved corpus</strong>
-					<small {...stylex.props(styles.corpusDetail)}>Identity-preserving scan</small>
-				</div>
-				<CorpusMetric
-					label="Text units"
-					value={coverage.textUnits}
-					detail="Indexed identities"
-				/>
-				<CorpusMetric
-					label="Occurrences"
-					value={coverage.textOccurrences}
-					detail={`${coverage.resolvedOccurrences} resolved`}
-				/>
-				<CorpusMetric
-					label="Packages read"
-					value={coverage.inspectedPackages}
-					detail={`of ${coverage.discoveredPackages} discovered`}
-				/>
-				<div
-					{...stylex.props(
-						styles.gapMetric,
-						coverage.unsupportedTextProperties > 0 && styles.gapMetricWarning
-					)}
-				>
-					<small {...stylex.props(styles.metricLabel)}>Coverage gaps</small>
-					<strong {...stylex.props(styles.gapValue)}>
-						{coverage.unsupportedTextProperties}
-					</strong>
-					<span {...stylex.props(styles.metricDetail)}>Unsupported text properties</span>
-				</div>
-			</section>
 			<section aria-label="Search game text" {...stylex.props(styles.tools)}>
 				<div {...stylex.props(styles.searchField)}>
 					<span aria-hidden="true" {...stylex.props(styles.searchGlyph)}>
@@ -452,7 +475,7 @@ function TextCorpusWorkspace(props: {
 						type="search"
 						value={props.query()}
 						onInput={(event) => props.onQuery(event.currentTarget.value)}
-						placeholder="Search source text…"
+						placeholder="Search exact source wording…"
 						aria-label="Search corpus"
 						{...stylex.props(styles.searchInput)}
 					/>
@@ -477,15 +500,90 @@ function TextCorpusWorkspace(props: {
 				</div>
 			</section>
 			<div {...stylex.props(styles.grid)}>
+				<aside aria-label="Review lenses" {...stylex.props(styles.reviewRail)}>
+					<section aria-label="Corpus coverage" {...stylex.props(styles.railSection)}>
+						<header {...stylex.props(styles.railHeader)}>
+							<span>Saved corpus</span>
+							<strong
+								{...stylex.props(
+									styles.coverageState,
+									props.summary.status === "complete"
+										? styles.complete
+										: styles.partial
+								)}
+							>
+								{props.summary.status === "partial" ? "PARTIAL" : "COMPLETE"}
+							</strong>
+						</header>
+						<div {...stylex.props(styles.railMetrics)}>
+							<CorpusMetric
+								label="Units"
+								value={coverage.textUnits}
+								detail="identities"
+							/>
+							<CorpusMetric
+								label="Uses"
+								value={coverage.textOccurrences}
+								detail={`${coverage.inspectedPackages} packages`}
+							/>
+						</div>
+						<Show when={coverage.unsupportedTextProperties > 0}>
+							<p {...stylex.props(styles.coverageWarning)}>
+								<b>{coverage.unsupportedTextProperties}</b> unsupported text
+								properties remain visible as coverage gaps.
+							</p>
+						</Show>
+					</section>
+					<section {...stylex.props(styles.railSection)}>
+						<header {...stylex.props(styles.railLabel)}>Review queue</header>
+						<div
+							role="group"
+							aria-label="Text review lens"
+							{...stylex.props(styles.lensList)}
+						>
+							<For each={reviewLenses}>
+								{(item) => (
+									<button
+										type="button"
+										aria-pressed={props.lens() === item.value}
+										onClick={() => props.onLens(item.value)}
+										{...stylex.props(
+											styles.lensButton,
+											props.lens() === item.value && styles.lensActive
+										)}
+									>
+										<span {...stylex.props(styles.lensCopy)}>
+											<strong>{item.label}</strong>
+											<small>{item.detail}</small>
+										</span>
+										<b {...stylex.props(styles.lensCount)}>
+											{item.count(props.summary)}
+										</b>
+									</button>
+								)}
+							</For>
+						</div>
+					</section>
+					<section {...stylex.props(styles.sourceBreakdown)}>
+						<header {...stylex.props(styles.railLabel)}>Source evidence</header>
+						<span {...stylex.props(styles.sourceRow)}>
+							String Tables <b>{props.summary.sources.stringTable}</b>
+						</span>
+						<span {...stylex.props(styles.sourceRow)}>
+							DataTables <b>{props.summary.sources.dataTable}</b>
+						</span>
+						<span {...stylex.props(styles.sourceRow)}>
+							Asset properties <b>{props.summary.sources.assetProperty}</b>
+						</span>
+					</section>
+				</aside>
 				<section aria-label="Text units" {...stylex.props(styles.results)}>
 					<header {...stylex.props(styles.resultsHeader)}>
-						<span>Text</span>
-						<span>Unreal identity</span>
-						<span>Authored context</span>
-						<span>Primary source</span>
-						<span>Chars</span>
-						<span>Uses</span>
-						<span>Actions</span>
+						<span {...stylex.props(styles.resultsTitle)}>
+							<strong>Source lines</strong>
+							<small>Unreal identity · Authored context · Primary source</small>
+						</span>
+						<b>{props.page().total}</b>
 					</header>
 					<Show
 						when={props.page().units.length > 0}
@@ -528,15 +626,19 @@ function TextCorpusWorkspace(props: {
 											props.selectedId() === unit.id && styles.resultActive
 										)}
 									>
-										<strong title={text} {...stylex.props(styles.resultText)}>
-											{text}
-										</strong>
-										<code
-											title={identity}
-											{...stylex.props(styles.resultIdentity)}
-										>
-											{identity}
-										</code>
+										<div {...stylex.props(styles.resultLead)}>
+											<strong
+												title={text}
+												{...stylex.props(styles.resultText)}
+											>
+												{text}
+											</strong>
+											<span {...stylex.props(styles.rowCounts)}>
+												{unit.wordCount}w · {unit.characterCount}c ·{" "}
+												{unit.occurrenceCount}{" "}
+												{unit.occurrenceCount === 1 ? "use" : "uses"}
+											</span>
+										</div>
 										<span
 											title={
 												context
@@ -549,35 +651,49 @@ function TextCorpusWorkspace(props: {
 												{context?.title ?? "Context unavailable"}
 											</strong>
 											<small>
+												{" "}
 												· {context?.detail ?? "No decoded source location"}
 												{preview.additional > 0
 													? ` · +${preview.additional}`
 													: ""}
 											</small>
 										</span>
-										<span {...stylex.props(styles.resultSource)}>
-											<strong>{sourceKind(unit)}</strong>
-											<small
-												{...stylex.props(
-													styles.sourceAuthority,
-													preview.context?.editCapability ===
-														"source_editable"
-														? styles.sourceSupported
-														: styles.sourceEvidence
-												)}
+										<div {...stylex.props(styles.resultEvidence)}>
+											<code
+												title={identity}
+												{...stylex.props(styles.resultIdentity)}
 											>
-												{preview.context?.editCapability ===
-												"source_editable"
-													? "supported"
-													: "evidence"}
-											</small>
-										</span>
-										<span {...stylex.props(styles.lengthCount)}>
-											{sourceLength(unit)}
-										</span>
-										<span {...stylex.props(styles.occurrenceCount)}>
-											{unit.occurrenceCount}
-										</span>
+												{identity}
+											</code>
+											<span {...stylex.props(styles.resultSource)}>
+												{sourceKind(unit)}
+												<small
+													{...stylex.props(
+														styles.sourceAuthority,
+														preview.context?.editCapability ===
+															"source_editable"
+															? styles.sourceSupported
+															: styles.sourceEvidence
+													)}
+												>
+													{preview.context?.editCapability ===
+													"source_editable"
+														? "supported"
+														: "evidence"}
+												</small>
+											</span>
+										</div>
+										<Show when={unit.reviewSignals.length > 0}>
+											<div {...stylex.props(styles.signalRow)}>
+												<For each={unit.reviewSignals}>
+													{(signal) => (
+														<span {...stylex.props(styles.signal)}>
+															{signalLabel(signal)}
+														</span>
+													)}
+												</For>
+											</div>
+										</Show>
 										<span {...stylex.props(styles.rowActions)}>
 											<button
 												type="button"
@@ -706,21 +822,35 @@ function FocusPanel(props: {
 				{(result) => (
 					<>
 						<header {...stylex.props(styles.focusHeader)}>
-							<small {...stylex.props(styles.focusEyebrow)}>Selected text</small>
+							<small {...stylex.props(styles.focusEyebrow)}>
+								Source under review
+							</small>
 							<blockquote {...stylex.props(styles.focusQuote)}>
 								“{sourceText(result().unit)}”
 							</blockquote>
 							<div {...stylex.props(styles.focusMeta)}>
-								<span>{sourceLength(result().unit)} characters</span>
+								<span>{result().unit.wordCount} words</span>
+								<span>{result().unit.characterCount} characters</span>
 								<span>
 									{result().totalOccurrences}{" "}
 									{result().totalOccurrences === 1 ? "use" : "uses"}
 								</span>
 							</div>
-							<details {...stylex.props(styles.identityDetails)}>
-								<summary>Unreal identity</summary>
-								<strong>{identityLabel(result().unit)}</strong>
-							</details>
+							<div {...stylex.props(styles.focusIdentity)}>
+								<small>Unreal identity</small>
+								<code>{identityLabel(result().unit)}</code>
+							</div>
+							<Show when={result().unit.reviewSignals.length > 0}>
+								<div {...stylex.props(styles.focusSignals)}>
+									<For each={result().unit.reviewSignals}>
+										{(signal) => (
+											<span {...stylex.props(styles.signal)}>
+												{signalLabel(signal)}
+											</span>
+										)}
+									</For>
+								</div>
+							</Show>
 						</header>
 						<section
 							aria-label="Text occurrences"
@@ -772,6 +902,7 @@ const styles = stylex.create({
 		minHeight: "calc(100vh - 52px)",
 		padding: "16px 22px 22px",
 		color: tokens.colorText,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
 		backgroundColor: "#100f0e",
 		backgroundImage: "none"
 	},
@@ -789,20 +920,20 @@ const styles = stylex.create({
 	},
 	title: {
 		margin: "3px 0 0",
-		fontFamily: tokens.fontBody,
-		fontSize: 17,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 19,
 		fontWeight: 600,
 		letterSpacing: 0
 	},
-	subtitle: { margin: "2px 0 0", color: tokens.colorTextMuted, fontSize: 9 },
+	subtitle: { margin: "2px 0 0", color: tokens.colorTextMuted, fontSize: 10 },
 	button: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: "6px 10px",
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 10,
 		letterSpacing: 0,
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
@@ -825,7 +956,7 @@ const styles = stylex.create({
 		border: `1px solid ${tokens.colorDanger}`,
 		color: "#e39b86"
 	},
-	workspace: { display: "flex", flexDirection: "column", gap: 10 },
+	workspace: { display: "flex", flexDirection: "column", gap: 8 },
 	coverage: {
 		display: "grid",
 		gridTemplateColumns: "minmax(175px, 1.2fr) repeat(4, minmax(110px, .7fr))",
@@ -897,8 +1028,8 @@ const styles = stylex.create({
 		color: tokens.colorText,
 		padding: "7px 9px",
 		outline: "none",
-		fontFamily: tokens.fontBody,
-		fontSize: 10,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 11,
 		"::placeholder": { color: tokens.colorTextFaint }
 	},
 	matchCount: {
@@ -909,7 +1040,7 @@ const styles = stylex.create({
 		padding: "0 12px",
 		borderLeft: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 9
+		fontSize: 10
 	},
 	filters: { display: "flex", borderLeft: `1px solid ${tokens.colorBorder}` },
 	filterButton: {
@@ -919,8 +1050,8 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		padding: "7px 9px",
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 8,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 9,
 		letterSpacing: 0,
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
@@ -931,55 +1062,126 @@ const styles = stylex.create({
 		backgroundColor: "#352019",
 		boxShadow: "inset 0 -2px #e87655"
 	},
-	grid: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 380px", gap: 8 },
+	grid: {
+		display: "grid",
+		gridTemplateColumns: "206px minmax(360px, 440px) minmax(420px, 1fr)",
+		gap: 8
+	},
+	reviewRail: {
+		display: "flex",
+		flexDirection: "column",
+		height: "calc(100vh - 178px)",
+		minHeight: 500,
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: "#121110",
+		overflow: "auto"
+	},
+	railSection: { borderBottom: `1px solid ${tokens.colorBorder}` },
+	railHeader: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		padding: "8px 9px",
+		fontSize: 10
+	},
+	railLabel: {
+		padding: "7px 9px 5px",
+		color: tokens.colorTextFaint,
+		fontSize: 9,
+		letterSpacing: ".04em"
+	},
+	railMetrics: {
+		display: "grid",
+		gridTemplateColumns: "1fr 1fr",
+		borderTop: `1px solid ${tokens.colorBorder}`
+	},
+	coverageWarning: {
+		margin: 0,
+		padding: "7px 9px",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		color: "#d9a18d",
+		fontSize: 9,
+		lineHeight: 1.45
+	},
+	lensList: { display: "flex", flexDirection: "column" },
+	lensButton: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 8,
+		width: "100%",
+		border: 0,
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
+		color: tokens.colorTextMuted,
+		padding: "7px 9px",
+		textAlign: "left",
+		cursor: "pointer",
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 9,
+		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
+	},
+	lensActive: { color: "#f2d2c6", backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
+	lensCopy: { display: "flex", minWidth: 0, flexDirection: "column", gap: 1 },
+	lensCount: { flexShrink: 0, color: tokens.colorText, fontVariantNumeric: "tabular-nums" },
+	sourceBreakdown: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		paddingBottom: 9,
+		fontSize: 9,
+		color: tokens.colorTextMuted
+	},
+	sourceRow: { display: "flex", justifyContent: "space-between", padding: "0 9px" },
 	results: {
 		display: "flex",
 		flexDirection: "column",
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: "#121110",
-		height: "calc(100vh - 275px)",
-		minHeight: 430,
+		height: "calc(100vh - 178px)",
+		minHeight: 500,
 		overflow: "auto"
 	},
 	resultsHeader: {
 		position: "sticky",
 		top: 0,
 		zIndex: 2,
-		display: "grid",
-		gridTemplateColumns:
-			"minmax(190px, 1.25fr) minmax(145px, .75fr) minmax(190px, 1fr) minmax(125px, .65fr) 42px 36px 162px",
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
 		gap: 10,
-		padding: "5px 8px",
+		padding: "7px 9px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: "#191715f5",
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 9,
 		letterSpacing: ".03em"
 	},
+	resultsTitle: { display: "flex", flexDirection: "column", gap: 2 },
 	resultRow: {
 		width: "100%",
-		display: "grid",
-		gridTemplateColumns:
-			"minmax(190px, 1.25fr) minmax(145px, .75fr) minmax(190px, 1fr) minmax(125px, .65fr) 42px 36px 162px",
-		alignItems: "center",
-		gap: 10,
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "stretch",
+		gap: 5,
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: { default: "transparent", ":hover": "#201c19" },
 		color: tokens.colorText,
-		minHeight: 40,
-		padding: "5px 8px",
+		minHeight: 86,
+		padding: "8px 9px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontFamily: tokens.fontBody
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif'
 	},
 	resultActive: { backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
+	resultLead: { display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 },
 	resultText: {
 		display: "block",
 		overflow: "hidden",
 		minWidth: 0,
 		color: tokens.colorTextStrong,
-		fontSize: 10,
+		fontSize: 13,
 		fontWeight: 600,
 		lineHeight: 1.25,
 		textOverflow: "ellipsis",
@@ -991,18 +1193,26 @@ const styles = stylex.create({
 		minWidth: 0,
 		color: "#bbb2a9",
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
+		fontSize: 9,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
+	rowCounts: { flexShrink: 0, color: tokens.colorTextFaint, fontSize: 9, whiteSpace: "nowrap" },
 	resultContext: {
 		display: "block",
 		overflow: "hidden",
 		minWidth: 0,
 		color: "#d3cbc3",
-		fontSize: 8,
+		fontSize: 10,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
+	},
+	resultEvidence: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 8,
+		minWidth: 0
 	},
 	resultSource: {
 		display: "flex",
@@ -1010,13 +1220,15 @@ const styles = stylex.create({
 		overflow: "hidden",
 		gap: 5,
 		minWidth: 0,
-		fontSize: 8,
+		fontSize: 9,
 		whiteSpace: "nowrap"
 	},
-	sourceAuthority: { padding: "1px 4px", fontSize: 7, fontWeight: 500 },
+	sourceAuthority: { padding: "1px 4px", fontSize: 8, fontWeight: 500 },
 	sourceSupported: { color: "#9fca8a", backgroundColor: "#1b281a" },
 	sourceEvidence: { color: "#b7aea5", backgroundColor: "#24201d" },
-	rowActions: { display: "flex", justifyContent: "flex-end", gap: 3, whiteSpace: "nowrap" },
+	signalRow: { display: "flex", flexWrap: "wrap", gap: 3, color: "#d4a18e", fontSize: 8 },
+	signal: { padding: "1px 4px", backgroundColor: "#30201a", border: "1px solid #533025" },
+	rowActions: { display: "flex", justifyContent: "flex-start", gap: 3, whiteSpace: "nowrap" },
 	rowAction: {
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: { default: "#181614", ":hover": "#302a25" },
@@ -1024,8 +1236,8 @@ const styles = stylex.create({
 		minWidth: 0,
 		padding: "4px 6px",
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 8,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 9,
 		lineHeight: 1,
 		opacity: { default: 1, ":disabled": 0.55 },
 		":active": { transform: "scale(.97)" },
@@ -1042,8 +1254,8 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		padding: 12,
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 10,
 		letterSpacing: ".08em"
 	},
 	resultsFooter: {
@@ -1056,18 +1268,18 @@ const styles = stylex.create({
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: "#171513f5",
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 9,
 		letterSpacing: 0
 	},
 	focus: {
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: "#151311",
-		height: "calc(100vh - 275px)",
-		minHeight: 430,
+		height: "calc(100vh - 178px)",
+		minHeight: 500,
 		overflow: "auto",
 		scrollbarColor: `${tokens.colorBorderStrong} ${tokens.colorSurfaceInset}`
 	},
-	focusEmpty: { padding: 24, color: tokens.colorTextMuted, fontSize: 10, lineHeight: 1.6 },
+	focusEmpty: { padding: 24, color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.6 },
 	focusHeader: {
 		display: "flex",
 		flexDirection: "column",
@@ -1077,17 +1289,27 @@ const styles = stylex.create({
 	},
 	focusEyebrow: {
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 9,
 		letterSpacing: ".03em"
 	},
 	focusQuote: {
 		margin: "3px 0 2px",
-		fontFamily: tokens.fontBody,
-		fontSize: 15,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 20,
 		fontWeight: 600,
 		lineHeight: 1.3
 	},
-	focusMeta: { display: "flex", gap: 6, color: "#c19382", fontSize: 8 },
+	focusMeta: { display: "flex", gap: 8, color: "#c19382", fontSize: 9 },
+	focusIdentity: {
+		display: "grid",
+		gridTemplateColumns: "90px minmax(0, 1fr)",
+		gap: 8,
+		padding: "6px 0",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextMuted,
+		fontSize: 9
+	},
+	focusSignals: { display: "flex", flexWrap: "wrap", gap: 4, color: "#e0a58f", fontSize: 9 },
 	identityDetails: {
 		color: tokens.colorTextMuted,
 		fontSize: 8,
@@ -1101,7 +1323,7 @@ const styles = stylex.create({
 		padding: "6px 8px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 8,
+		fontSize: 9,
 		letterSpacing: ".03em"
 	},
 	occurrence: {
@@ -1110,7 +1332,7 @@ const styles = stylex.create({
 		gap: 4,
 		padding: "7px 8px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 9
+		fontSize: 10
 	},
 	occurrenceHeader: {
 		display: "flex",
@@ -1131,7 +1353,7 @@ const styles = stylex.create({
 		minWidth: 0,
 		color: tokens.colorTextMuted
 	},
-	authority: { flexShrink: 0, padding: "2px 5px", fontSize: 7, letterSpacing: 0 },
+	authority: { flexShrink: 0, padding: "2px 5px", fontSize: 8, letterSpacing: 0 },
 	editable: { color: "#9fca8a", backgroundColor: "#1b281a" },
 	readOnly: { color: "#b7aea5", backgroundColor: "#24201d" },
 	locateButton: {
@@ -1140,8 +1362,8 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		padding: "3px 6px",
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 8,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 9,
 		opacity: { default: 1, ":disabled": 0.55 },
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
@@ -1152,7 +1374,7 @@ const styles = stylex.create({
 		borderLeft: "2px solid #754132",
 		backgroundColor: "#241915",
 		color: "#efaa91",
-		fontSize: 8,
+		fontSize: 9,
 		lineHeight: 1.45
 	},
 	objectPath: {

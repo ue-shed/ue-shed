@@ -64,4 +64,34 @@ describe("text corpus query context", () => {
 		);
 		expect(page.units[0]?.remainingContextCount).toBe(1);
 	});
+
+	it("classifies review work once for summary, search, and focus", () => {
+		const duplicate: TextCorpus = {
+			...corpus,
+			units: [
+				...corpus.units,
+				{
+					...corpus.units[0]!,
+					id: makeTextUnitId("unreal:UI:ContinueAlternate"),
+					identity: { key: "ContinueAlternate", namespace: "UI", status: "resolved" },
+					occurrences: [occurrence(5)]
+				}
+			]
+		};
+		const query = textCorpusQuery(duplicate);
+
+		expect(query.summary().review).toMatchObject({
+			all: 2,
+			duplicateSource: 2,
+			shared: 1
+		});
+		expect(
+			query.search({ capability: "all", lens: "duplicate_source", pageSize: 50, query: "" })
+				.units
+		).toHaveLength(2);
+		expect(
+			query.search({ capability: "all", lens: "shared", pageSize: 50, query: "" }).units[0]
+				?.reviewSignals
+		).toContain("shared");
+	});
 });

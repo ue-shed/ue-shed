@@ -127,6 +127,26 @@ const TextQueryPageSize = Schema.Int.pipe(
 export const TextCapabilityFilter = Schema.Literals(["all", "source_editable", "read_only"]);
 export type TextCapabilityFilter = Schema.Schema.Type<typeof TextCapabilityFilter>;
 
+export const TextReviewLens = Schema.Literals([
+	"all",
+	"shared",
+	"duplicate_source",
+	"long",
+	"unresolved",
+	"conflicting"
+]);
+export type TextReviewLens = Schema.Schema.Type<typeof TextReviewLens>;
+
+export const TextReviewSignal = Schema.Literals([
+	"shared",
+	"duplicate_source",
+	"long",
+	"unresolved",
+	"conflicting",
+	"evidence_only"
+]);
+export type TextReviewSignal = Schema.Schema.Type<typeof TextReviewSignal>;
+
 /** A bounded authored/gathered location preview carried by corpus search results. */
 export const TextUnitContext = Schema.Struct({
 	editCapability: TextOccurrence.fields.editCapability,
@@ -142,8 +162,11 @@ export const TextUnitSearchResult = Schema.Struct({
 	locationKinds: Schema.Array(
 		Schema.Literals(["data_table_cell", "string_table_entry", "asset_property"])
 	),
+	characterCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	occurrenceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-	remainingContextCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	remainingContextCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	reviewSignals: Schema.Array(TextReviewSignal),
+	wordCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 export type TextUnitSearchResult = Schema.Schema.Type<typeof TextUnitSearchResult>;
 
@@ -151,7 +174,21 @@ export const TextCorpusQuerySummary = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	status: Schema.Literals(["complete", "partial"]),
 	coverage: TextCorpus.fields.coverage,
-	diagnosticCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	diagnosticCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	review: Schema.Struct({
+		all: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		shared: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		duplicateSource: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		long: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		unresolved: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		conflicting: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	}),
+	sources: Schema.Struct({
+		assetProperty: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		dataTable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		mixed: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		stringTable: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	})
 });
 export type TextCorpusQuerySummary = Schema.Schema.Type<typeof TextCorpusQuerySummary>;
 
@@ -167,6 +204,7 @@ export const decodeTextCorpusQueryRunResult = Schema.decodeUnknownEffect(TextCor
 export const TextCorpusSearchRequest = Schema.Struct({
 	capability: TextCapabilityFilter,
 	cursor: Schema.optional(TextUnitId),
+	lens: Schema.optional(TextReviewLens),
 	pageSize: TextQueryPageSize,
 	query: Schema.String.pipe(Schema.check(Schema.isMaxLength(512)))
 });

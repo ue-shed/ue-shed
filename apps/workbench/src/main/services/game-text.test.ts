@@ -140,7 +140,16 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 			summary: {
 				coverage: emptyCorpus.coverage,
 				diagnosticCount: 0,
+				review: {
+					all: 0,
+					conflicting: 0,
+					duplicateSource: 0,
+					long: 0,
+					shared: 0,
+					unresolved: 0
+				},
 				schemaVersion: 1,
+				sources: { assetProperty: 0, dataTable: 0, mixed: 0, stringTable: 0 },
 				status: "complete"
 			}
 		});

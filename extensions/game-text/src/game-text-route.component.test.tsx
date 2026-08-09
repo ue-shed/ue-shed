@@ -77,7 +77,16 @@ const corpus: TextCorpus = {
 const summary = {
 	coverage: corpus.coverage,
 	diagnosticCount: 0,
+	review: {
+		all: 2,
+		conflicting: 0,
+		duplicateSource: 0,
+		long: 0,
+		shared: 0,
+		unresolved: 0
+	},
 	schemaVersion: 1,
+	sources: { assetProperty: 0, dataTable: 1, mixed: 0, stringTable: 1 },
 	status: "complete"
 } as const;
 
@@ -89,13 +98,23 @@ function resultFor(unit: TextCorpus["units"][number]) {
 		location: occurrence.location
 	}));
 	return {
+		characterCount:
+			unit.source.status === "consistent"
+				? unit.source.value.length
+				: unit.source.values.join(" ").length,
 		contexts,
 		id: unit.id,
 		identity: unit.identity,
 		locationKinds: [...new Set(unit.occurrences.map((occurrence) => occurrence.location.kind))],
 		occurrenceCount: unit.occurrences.length,
 		remainingContextCount: Math.max(0, unit.occurrences.length - contexts.length),
-		source: unit.source
+		reviewSignals: unit.occurrences.every(
+			(occurrence) => occurrence.editCapability === "read_only"
+		)
+			? (["evidence_only"] as const)
+			: [],
+		source: unit.source,
+		wordCount: unit.source.status === "consistent" ? unit.source.value.split(/\s+/u).length : 0
 	};
 }
 
@@ -235,8 +254,8 @@ describe("GameTextRoute interactions", () => {
 		renderRoute();
 		const results = await screen.findByRole("region", { name: "Text units" });
 
-		expect(within(results).getByText("Unreal identity")).toBeDefined();
-		expect(within(results).getByText("Primary source")).toBeDefined();
+		expect(within(results).getByText(/Unreal identity/)).toBeDefined();
+		expect(within(results).getByText(/Primary source/)).toBeDefined();
 		expect(within(results).getByText("UI · Continue")).toBeDefined();
 
 		const copyText = within(results).getByRole("button", {

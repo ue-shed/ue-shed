@@ -4,6 +4,7 @@ import {
 	decodeMapReviewCandidatePreviewResult,
 	decodeMapReviewCaptureResult,
 	decodeMapReviewResult,
+	decodeMapReviewSetLibraryResult,
 	type MapReviewApprovalResult,
 	type MapReviewAuthoringPatchIntent,
 	type MapReviewAuthoringPreviewIntent,
@@ -13,7 +14,9 @@ import {
 	type MapReviewCaptureResult,
 	type MapReviewApplyVisibilityPolicyIntent,
 	type MapReviewReplaceVisibilityPolicyIntent,
-	type MapReviewResult
+	type MapReviewResult,
+	type MapReviewSetCreateIntent,
+	type MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
 import {
 	MapReviewClient,
@@ -231,6 +234,14 @@ export function reconcileSparseTransformChanges(
 }
 
 export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
+	createReviewSet: Effect.fn("MapReviewClient.createReviewSet")(
+		(intent: MapReviewSetCreateIntent) =>
+			request({
+				decode: decodeMapReviewResult,
+				invoke: () => window.ueShed.mapReview.createReviewSet(intent),
+				operation: "mapReview.createReviewSet"
+			})
+	),
 	applyVisibilityPolicy: Effect.fn("MapReviewClient.applyVisibilityPolicy")(
 		(intent: MapReviewApplyVisibilityPolicyIntent) =>
 			request({
@@ -426,6 +437,13 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 				operation: "mapReview.load"
 			})
 	),
+	reviewSetLibrary: Effect.fn("MapReviewClient.reviewSetLibrary")(() =>
+		request({
+			decode: decodeMapReviewSetLibraryResult,
+			invoke: () => window.ueShed.mapReview.reviewSets(),
+			operation: "mapReview.reviewSetLibrary"
+		})
+	),
 	previewCandidate: Effect.fn("MapReviewClient.previewCandidate")(
 		(candidateId): Effect.Effect<MapReviewCandidatePreviewResult, MapReviewClientError> =>
 			request({
@@ -440,6 +458,14 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 				decode: decodeMapReviewResult,
 				invoke: () => window.ueShed.mapReview.replaceVisibilityPolicy(intent),
 				operation: "mapReview.replaceVisibilityPolicy"
+			})
+	),
+	selectReviewSet: Effect.fn("MapReviewClient.selectReviewSet")(
+		(intent: MapReviewSetSelectIntent) =>
+			request({
+				decode: decodeMapReviewResult,
+				invoke: () => window.ueShed.mapReview.selectReviewSet(intent),
+				operation: "mapReview.selectReviewSet"
 			})
 	)
 });

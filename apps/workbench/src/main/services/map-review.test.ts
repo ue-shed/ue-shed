@@ -343,6 +343,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 		if (result.status !== "ready") return;
 		expect(result.reviewSet).toEqual({
 			displayName: "Fixture Review Set",
+			id: "review-set-1",
 			mapPath: "/Game/Maps/Fixture",
 			viewCount: 1,
 			views: [
@@ -458,6 +459,103 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 		)
 	)
 );
+
+it.effect("lists, switches, and creates project Review Sets without changing the map", () => {
+	const lightingPath = "C:/FixtureProject/.ue-shed/review/sets/lighting.json";
+	const lightingSet = Effect.runSync(
+		decodeReviewSet({
+			...fixtureReviewSet,
+			displayName: "Lighting review",
+			id: "lighting-review",
+			views: []
+		})
+	);
+	const stored = new Map<string, ReviewSet>([
+		[reviewSetPath, policyReviewSet],
+		[lightingPath, lightingSet]
+	]);
+
+	return Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const library = yield* service.reviewSetLibrary();
+		expect(library).toEqual({
+			activeReviewSetId: "review-set-1",
+			sets: [
+				{
+					displayName: "Fixture Review Set",
+					id: "review-set-1",
+					mapPath: "/Game/Maps/Fixture",
+					viewCount: 1
+				},
+				{
+					displayName: "Lighting review",
+					id: "lighting-review",
+					mapPath: "/Game/Maps/Fixture",
+					viewCount: 0
+				}
+			],
+			status: "ready"
+		});
+
+		const selected = yield* service.selectReviewSet({ reviewSetId: "lighting-review" });
+		expect(selected.status).toBe("ready");
+		if (selected.status !== "ready") return;
+		expect(selected.reviewSet.id).toBe("lighting-review");
+
+		const created = yield* service.createReviewSet({ displayName: "Facade pass" });
+		expect(created.status).toBe("ready");
+		if (created.status !== "ready") return;
+		expect(created.reviewSet.displayName).toBe("Facade pass");
+		expect(created.reviewSet.id).toMatch(/^facade-pass-/);
+		expect(created.reviewSet.mapPath).toBe("/Game/Maps/Fixture");
+		expect(created.reviewSet.views).toEqual([]);
+		expect([...stored.values()].find((set) => set.id === created.reviewSet.id)?.views).toEqual(
+			[]
+		);
+	}).pipe(
+		Effect.provide(
+			WorkbenchMapReviewTestLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeWorkbenchConfigurationLayer(configuredReview),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.succeed([]),
+							listSets: () =>
+								Effect.sync(() =>
+									[...stored.entries()].map(([path, reviewSet]) => ({
+										displayName: reviewSet.displayName,
+										id: reviewSet.id,
+										mapPath: reviewSet.project.mapPath,
+										path,
+										viewCount: reviewSet.views.length
+									}))
+								),
+							loadRun: () => Effect.die("not used"),
+							loadSet: (path) =>
+								Effect.sync(() => {
+									const reviewSet = stored.get(path);
+									if (reviewSet === undefined)
+										throw new Error(`Unknown set ${path}`);
+									return reviewSet;
+								}),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: ({ path, reviewSet }) =>
+								Effect.sync(() => void stored.set(path, reviewSet)),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer(dyingAuthoring)
+					)
+				)
+			)
+		)
+	);
+});
 
 it.effect("round-trips immutable policy replacement through the headless service", () => {
 	let stored = policyReviewSet;

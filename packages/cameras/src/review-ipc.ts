@@ -91,6 +91,7 @@ const MapReviewReadyResult = Schema.Struct({
 	status: Schema.Literal("ready"),
 	reviewSet: Schema.Struct({
 		displayName: Schema.String,
+		id: Schema.NonEmptyString,
 		mapPath: Schema.String,
 		viewCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 		views: Schema.Array(MapReviewCapturePlanView)
@@ -106,6 +107,33 @@ export const MapReviewResult = Schema.Union([
 	MapReviewReadyResult
 ]);
 export type MapReviewResult = Schema.Schema.Type<typeof MapReviewResult>;
+
+export const MapReviewSetSummary = Schema.Struct({
+	displayName: Schema.NonEmptyString,
+	id: Schema.NonEmptyString,
+	mapPath: Schema.NonEmptyString,
+	viewCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+});
+export type MapReviewSetSummary = Schema.Schema.Type<typeof MapReviewSetSummary>;
+
+export const MapReviewSetLibraryResult = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({ status: Schema.Literal("failed"), error: IpcFailure }),
+	Schema.Struct({
+		activeReviewSetId: Schema.optional(Schema.NonEmptyString),
+		sets: Schema.Array(MapReviewSetSummary),
+		status: Schema.Literal("ready")
+	})
+]);
+export type MapReviewSetLibraryResult = Schema.Schema.Type<typeof MapReviewSetLibraryResult>;
+
+export const MapReviewSetCreateIntent = Schema.Struct({
+	displayName: Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(80)))
+});
+export type MapReviewSetCreateIntent = Schema.Schema.Type<typeof MapReviewSetCreateIntent>;
+
+export const MapReviewSetSelectIntent = Schema.Struct({ reviewSetId: Schema.NonEmptyString });
+export type MapReviewSetSelectIntent = Schema.Schema.Type<typeof MapReviewSetSelectIntent>;
 
 export const MapReviewCaptureIntent = Schema.Struct({
 	viewIds: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(1))
@@ -287,6 +315,8 @@ export const MapReviewApprovalResult = Schema.Union([
 export type MapReviewApprovalResult = Schema.Schema.Type<typeof MapReviewApprovalResult>;
 
 export const decodeMapReviewResult = Schema.decodeUnknownEffect(MapReviewResult);
+export const decodeMapReviewSetLibraryResult =
+	Schema.decodeUnknownEffect(MapReviewSetLibraryResult);
 export const decodeMapReviewCaptureResult = Schema.decodeUnknownEffect(MapReviewCaptureResult);
 export const decodeMapReviewReplaceVisibilityPolicyIntent = Schema.decodeUnknownEffect(
 	MapReviewReplaceVisibilityPolicyIntent

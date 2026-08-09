@@ -15,8 +15,9 @@ import { Context, Effect, Layer, Schema } from "effect";
 import {
 	decodeCaptureRun,
 	decodeReviewSet,
-	type CaptureRun,
-	type ReviewSet
+	ReviewSet,
+	ReviewSetId,
+	type CaptureRun
 } from "./review-schema.js";
 
 export const DEFAULT_REVIEW_ROOT = ".ue-shed/review";
@@ -30,9 +31,11 @@ export class ReviewStorageError extends Schema.TaggedErrorClass<ReviewStorageErr
 	{
 		message: Schema.String,
 		operation: Schema.Literals([
+			"create_set",
 			"discard_staging",
 			"finalize_run",
 			"list_runs",
+			"list_sets",
 			"load_run",
 			"load_set",
 			"prepare_run",
@@ -135,6 +138,147 @@ function saveReviewSetWithNode(args: {
 				recovery: "Check that the Review Set directory is writable."
 			})
 	}).pipe(Effect.withSpan("camera.review.set.save", { attributes: { path: args.path } }));
+}
+
+export interface ReviewSetSummary {
+	readonly displayName: string;
+	readonly id: ReviewSet["id"];
+	readonly mapPath: string;
+	readonly path: string;
+	readonly viewCount: number;
+}
+
+export function reviewSetsRoot(projectRoot: string): string {
+	return resolve(projectRoot, DEFAULT_REVIEW_ROOT, "sets");
+}
+
+function summarizeReviewSet(path: string, reviewSet: ReviewSet): ReviewSetSummary {
+	return {
+		displayName: reviewSet.displayName,
+		id: reviewSet.id,
+		mapPath: reviewSet.project.mapPath,
+		path,
+		viewCount: reviewSet.views.length
+	};
+}
+
+function listReviewSetsWithNode(
+	projectRoot: string
+): Effect.Effect<readonly ReviewSetSummary[], ReviewStorageError> {
+	const root = reviewSetsRoot(projectRoot);
+	return Effect.tryPromise({
+		try: async () => {
+			await mkdir(root, { recursive: true });
+			const files = (await readdir(root, { withFileTypes: true })).filter(
+				(entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json")
+			);
+			return Promise.all(
+				files.map(async (entry) => {
+					const path = join(root, entry.name);
+					return { input: JSON.parse(await readFile(path, "utf8")) as unknown, path };
+				})
+			);
+		},
+		catch: (cause) =>
+			new ReviewStorageError({
+				message: String(cause),
+				operation: "list_sets",
+				path: root,
+				recovery: "Check the project Review Set directory and repair malformed documents."
+			})
+	}).pipe(
+		Effect.flatMap((entries) =>
+			Effect.forEach(entries, ({ input, path }) =>
+				decodeReviewSet(input).pipe(
+					Effect.map((reviewSet) => summarizeReviewSet(path, reviewSet)),
+					Effect.mapError(
+						(cause) =>
+							new ReviewStorageError({
+								message: String(cause),
+								operation: "list_sets",
+								path,
+								recovery: "Validate or repair the malformed Review Set document."
+							})
+					)
+				)
+			)
+		),
+		Effect.flatMap((sets) => {
+			const ids = new Set<string>();
+			const duplicate = sets.find((reviewSet) => {
+				if (ids.has(reviewSet.id)) return true;
+				ids.add(reviewSet.id);
+				return false;
+			});
+			return duplicate === undefined
+				? Effect.succeed(sets)
+				: Effect.fail(
+						new ReviewStorageError({
+							message: `Review Set ID ${duplicate.id} is used by more than one document.`,
+							operation: "list_sets",
+							path: root,
+							recovery:
+								"Give every Review Set a unique ID, then reopen the set library."
+						})
+					);
+		}),
+		Effect.map((sets) =>
+			sets.toSorted(
+				(left, right) =>
+					left.mapPath.localeCompare(right.mapPath) ||
+					left.displayName.localeCompare(right.displayName)
+			)
+		),
+		Effect.withSpan("camera.review.sets.list", { attributes: { root } })
+	);
+}
+
+function reviewSetSlug(displayName: string): string {
+	return (
+		displayName
+			.trim()
+			.toLowerCase()
+			.replaceAll(/[^a-z0-9]+/g, "-")
+			.replaceAll(/^-+|-+$/g, "")
+			.slice(0, 72) || "review-set"
+	);
+}
+
+export function createReviewSetFromTemplate(args: {
+	readonly displayName: string;
+	readonly projectRoot: string;
+	readonly templatePath: string;
+}): Effect.Effect<ReviewSetSummary, ReviewStorageError, ReviewRepository> {
+	return Effect.gen(function* () {
+		const repository = yield* ReviewRepository;
+		const template = yield* repository.loadSet(args.templatePath);
+		const displayName = args.displayName.trim();
+		if (displayName.length === 0) {
+			return yield* Effect.fail(
+				new ReviewStorageError({
+					message: "A Review Set display name is required.",
+					operation: "create_set",
+					path: reviewSetsRoot(args.projectRoot),
+					recovery: "Enter a name for the new Review Set."
+				})
+			);
+		}
+		const id = ReviewSetId.make(`${reviewSetSlug(displayName)}-${randomUUID()}`);
+		const path = join(reviewSetsRoot(args.projectRoot), `${id}.json`);
+		const reviewSet = ReviewSet.make({
+			...template,
+			description: `Created from ${template.displayName} capture and visibility settings.`,
+			displayName,
+			id,
+			views: []
+		});
+		yield* repository.saveSet({ path, reviewSet });
+		return summarizeReviewSet(path, reviewSet);
+	}).pipe(
+		Effect.withSpan("camera.review.set.create", {
+			attributes: { projectRoot: args.projectRoot, templatePath: args.templatePath }
+		})
+	);
 }
 
 export function captureRunsRoot(projectRoot: string): string {
@@ -267,6 +411,9 @@ export interface ReviewRepositoryShape {
 	readonly listRuns: (
 		projectRoot: string
 	) => Effect.Effect<readonly CaptureRunSummary[], ReviewStorageError>;
+	readonly listSets: (
+		projectRoot: string
+	) => Effect.Effect<readonly ReviewSetSummary[], ReviewStorageError>;
 	readonly loadRun: (path: string) => Effect.Effect<CaptureRun, ReviewStorageError>;
 	readonly loadSet: (path: string) => Effect.Effect<ReviewSet, ReviewStorageError>;
 	readonly prepareRun: (args: {
@@ -385,6 +532,7 @@ const makeReviewRepository = (): ReviewRepositoryShape => {
 		findSet: Effect.fn("ReviewRepository.findSet")(findReviewSetWithNode),
 		finalizeRun,
 		listRuns: Effect.fn("ReviewRepository.listRuns")(listCaptureRunsWithNode),
+		listSets: Effect.fn("ReviewRepository.listSets")(listReviewSetsWithNode),
 		loadRun: Effect.fn("ReviewRepository.loadRun")(loadCaptureRunWithNode),
 		loadSet: Effect.fn("ReviewRepository.loadSet")(loadReviewSetWithNode),
 		prepareRun,
@@ -397,9 +545,16 @@ const makeReviewRepository = (): ReviewRepositoryShape => {
 export const ReviewRepositoryLive = Layer.sync(ReviewRepository, makeReviewRepository);
 
 export function makeReviewRepositoryTestLayer(
-	service: ReviewRepositoryShape
+	service: Omit<ReviewRepositoryShape, "listSets"> &
+		Partial<Pick<ReviewRepositoryShape, "listSets">>
 ): Layer.Layer<ReviewRepository> {
-	return Layer.succeed(ReviewRepository, ReviewRepository.of(service));
+	return Layer.succeed(
+		ReviewRepository,
+		ReviewRepository.of({
+			...service,
+			listSets: service.listSets ?? (() => Effect.die("Review Set listing not stubbed"))
+		})
+	);
 }
 
 export function loadReviewSet(
@@ -431,4 +586,10 @@ export function listCaptureRuns(
 	projectRoot: string
 ): Effect.Effect<readonly CaptureRunSummary[], ReviewStorageError, ReviewRepository> {
 	return Effect.flatMap(ReviewRepository, (repository) => repository.listRuns(projectRoot));
+}
+
+export function listReviewSets(
+	projectRoot: string
+): Effect.Effect<readonly ReviewSetSummary[], ReviewStorageError, ReviewRepository> {
+	return Effect.flatMap(ReviewRepository, (repository) => repository.listSets(projectRoot));
 }

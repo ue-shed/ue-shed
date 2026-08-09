@@ -25,6 +25,7 @@ import { MapReviewRoute } from "./map-review-route.js";
 const empty = {
 	reviewSet: {
 		displayName: "Fixture Structure",
+		id: "fixture-review-set",
 		mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
 		viewCount: 1,
 		views: [
@@ -62,6 +63,7 @@ const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 
 const offlineScout = {
+	createReviewSet: () => Effect.die("not used"),
 	connectWorld: () =>
 		Effect.succeed({
 			message: "Offline",
@@ -69,13 +71,35 @@ const offlineScout = {
 			status: "unavailable" as const
 		}),
 	focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
+	reviewSetLibrary: () =>
+		Effect.succeed({
+			activeReviewSetId: "fixture-review-set",
+			sets: [
+				{
+					displayName: "Fixture Structure",
+					id: "fixture-review-set",
+					mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+					viewCount: 1
+				}
+			],
+			status: "ready" as const
+		}),
+	selectReviewSet: () => Effect.die("not used"),
 	worldObservations: () =>
 		Stream.make({
 			message: "Offline",
 			recovery: "Open Unreal",
 			status: "unavailable" as const
 		})
-} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+} satisfies Pick<
+	MapReviewClientShape,
+	| "connectWorld"
+	| "createReviewSet"
+	| "focusActor"
+	| "reviewSetLibrary"
+	| "selectReviewSet"
+	| "worldObservations"
+>;
 
 const unavailableDurableAuthoring = {
 	authoringResume: () =>
@@ -231,7 +255,8 @@ describe("MapReviewRoute", () => {
 		expect(patches[0]?.patch.framingParameters?.groups[0]?.pattern.count).toBe(3);
 	});
 
-	it("offers first-run authoring when a configured project has no Review Set", async () => {
+	it("offers first-run authoring and can reopen a discovered Review Set", async () => {
+		let selectedReviewSetId: string | undefined;
 		const client: MapReviewClientShape = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
@@ -239,7 +264,24 @@ describe("MapReviewRoute", () => {
 			authorFromSelection: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
 			load: () => Effect.succeed({ status: "setup_required" }),
-			previewCandidate: () => Effect.die("not used")
+			previewCandidate: () => Effect.die("not used"),
+			reviewSetLibrary: () =>
+				Effect.succeed({
+					sets: [
+						{
+							displayName: "Fixture Structure",
+							id: "fixture-review-set",
+							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+							viewCount: 1
+						}
+					],
+					status: "ready"
+				}),
+			selectReviewSet: ({ reviewSetId }) =>
+				Effect.sync(() => {
+					selectedReviewSetId = reviewSetId;
+					return empty;
+				})
 		};
 
 		renderRoute(client);
@@ -247,6 +289,112 @@ describe("MapReviewRoute", () => {
 			await screen.findByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" })
 		).toBeDefined();
 		expect(screen.getByText("Select an actor, then reframe")).toBeDefined();
+
+		const user = userEvent.setup();
+		await user.click(screen.getByRole("button", { name: "REVIEW SETS" }));
+		await user.click(await screen.findByRole("button", { name: "OPEN SET" }));
+		expect(selectedReviewSetId).toBe("fixture-review-set");
+		expect(await screen.findByText("Fixture Structure")).toBeDefined();
+	});
+
+	it("switches between saved Review Sets by stable identity", async () => {
+		const lighting = {
+			...empty,
+			reviewSet: {
+				...empty.reviewSet,
+				displayName: "Lighting review",
+				id: "lighting-review",
+				viewCount: 0,
+				views: []
+			}
+		} satisfies MapReviewResult;
+		let selectedReviewSetId: string | undefined;
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(empty),
+			previewCandidate: () => Effect.die("not used"),
+			reviewSetLibrary: () =>
+				Effect.succeed({
+					activeReviewSetId: "fixture-review-set",
+					sets: [
+						{
+							displayName: "Fixture Structure",
+							id: "fixture-review-set",
+							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+							viewCount: 1
+						},
+						{
+							displayName: "Lighting review",
+							id: "lighting-review",
+							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+							viewCount: 0
+						}
+					],
+					status: "ready"
+				}),
+			selectReviewSet: ({ reviewSetId }) =>
+				Effect.sync(() => {
+					selectedReviewSetId = reviewSetId;
+					return lighting;
+				})
+		};
+
+		const user = userEvent.setup();
+		renderRoute(client);
+		await screen.findByText("Fixture Structure");
+		await user.click(screen.getByRole("button", { name: "REVIEW SETS" }));
+		expect(await screen.findByRole("dialog", { name: "Review Set library" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "OPEN SET" }));
+
+		expect(selectedReviewSetId).toBe("lighting-review");
+		expect(await screen.findByText("Lighting review")).toBeDefined();
+		expect(screen.queryByRole("dialog", { name: "Review Set library" })).toBeNull();
+	});
+
+	it("creates and opens an empty sibling Review Set", async () => {
+		const created = {
+			...empty,
+			reviewSet: {
+				...empty.reviewSet,
+				displayName: "Facade pass",
+				id: "facade-pass",
+				viewCount: 0,
+				views: []
+			}
+		} satisfies MapReviewResult;
+		let createdName: string | undefined;
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			capture: () => Effect.die("not used"),
+			createReviewSet: ({ displayName }) =>
+				Effect.sync(() => {
+					createdName = displayName;
+					return created;
+				}),
+			load: () => Effect.succeed(empty),
+			previewCandidate: () => Effect.die("not used")
+		};
+
+		const user = userEvent.setup();
+		renderRoute(client);
+		await screen.findByText("Fixture Structure");
+		await user.click(screen.getByRole("button", { name: "REVIEW SETS" }));
+		await user.type(
+			await screen.findByRole("textbox", { name: "New Review Set name" }),
+			"Facade pass"
+		);
+		await user.click(screen.getByRole("button", { name: "CREATE + OPEN" }));
+
+		expect(createdName).toBe("Facade pass");
+		expect(await screen.findByText("Facade pass")).toBeDefined();
+		expect(screen.queryByRole("dialog", { name: "Review Set library" })).toBeNull();
 	});
 
 	it("establishes the first durable capture and exposes it in history", async () => {

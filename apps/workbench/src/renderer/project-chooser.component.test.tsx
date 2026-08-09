@@ -45,6 +45,7 @@ function renderChooser(args: {
 			<ProjectChooser
 				client={{
 					chooseProject: args.choose,
+					launchProject: (mode) => Effect.succeed({ mode, status: "launched" }),
 					project: () => Effect.succeed(args.current),
 					projectProgress: () => Effect.succeed(progress)
 				}}
@@ -132,5 +133,42 @@ describe("ProjectChooser", () => {
 		const button = await screen.findByRole("button", { name: "Fixture" });
 		expect(button.getAttribute("title")).toBe("C:/Projects/Fixture");
 		expect(onChosen).toHaveBeenCalledOnce();
+	});
+
+	it("keeps project selection offline and offers explicit launch modes", async () => {
+		renderChooser({ choose: () => Effect.succeed(ready), current: ready });
+
+		expect(await screen.findByText("OFFLINE")).toBeDefined();
+		await userEvent.setup().click(screen.getByText("LAUNCH ▾"));
+		expect(screen.getByRole("button", { name: /WITH UE SHED/ })).toBeDefined();
+		expect(screen.getByRole("button", { name: /NORMALLY/ })).toBeDefined();
+	});
+
+	it("launches the full plugin experience without changing the selected project", async () => {
+		const launchProject = vi.fn((mode: "ue_shed" | "normal") =>
+			Effect.succeed({ mode, status: "launched" as const })
+		);
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<ProjectChooser
+					client={{
+						chooseProject: () => Effect.succeed(ready),
+						launchProject,
+						project: () => Effect.succeed(ready),
+						projectProgress: () => Effect.succeed(progress)
+					}}
+					onChosen={() => undefined}
+				/>
+			</EffectRuntimeProvider>
+		));
+
+		await userEvent.setup().click(await screen.findByText("LAUNCH ▾"));
+		await userEvent.setup().click(screen.getByRole("button", { name: /WITH UE SHED/ }));
+
+		await waitFor(() => expect(launchProject).toHaveBeenCalledWith("ue_shed"));
+		expect((await screen.findByRole("status")).textContent).toContain(
+			"all five UE Shed plugins"
+		);
+		expect(screen.getByRole("button", { name: "Fixture" })).toBeDefined();
 	});
 });

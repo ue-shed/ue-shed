@@ -17,6 +17,9 @@ import type {
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
 import {
+	ProjectLaunchResult,
+	type ProjectLaunchMode,
+	type ProjectLaunchResult as ProjectLaunchResultValue,
 	WorkbenchProjectState,
 	type WorkbenchProjectState as WorkbenchProjectStateValue,
 	WorkbenchTaskProgress,
@@ -35,6 +38,35 @@ export class WorkbenchRendererError extends Schema.TaggedErrorClass<WorkbenchRen
 const ShowcaseContextSchema = Schema.Struct({
 	fixtureConfigured: Schema.Boolean,
 	health: RuntimeHealth,
+	project: Schema.Union([
+		Schema.Struct({ status: Schema.Literal("not_configured") }),
+		Schema.Struct({
+			message: Schema.NonEmptyString,
+			recovery: Schema.NonEmptyString,
+			status: Schema.Literal("failed")
+		}),
+		Schema.Struct({
+			candidates: Schema.Union([
+				Schema.Struct({
+					dataTablePackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+					enhancedInputPackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+					gameTextPackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+					status: Schema.Literal("ready"),
+					texturePackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+				}),
+				Schema.Struct({
+					message: Schema.NonEmptyString,
+					recovery: Schema.NonEmptyString,
+					status: Schema.Literal("failed")
+				})
+			]),
+			mapCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+			packageCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+			projectName: Schema.NonEmptyString,
+			projectRoot: Schema.NonEmptyString,
+			status: Schema.Literal("ready")
+		})
+	]),
 	projectRoot: Schema.optionalKey(Schema.String),
 	reader: Schema.Literals(["configured", "path"]),
 	ruleFile: Schema.optionalKey(Schema.String)
@@ -85,6 +117,7 @@ const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResult
 const decodeWorkbenchCameraMetrics = Schema.decodeUnknownEffect(WorkbenchCameraMetricsSchema);
 const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
 const decodeWorkbenchProjectState = Schema.decodeUnknownEffect(WorkbenchProjectState);
+const decodeProjectLaunchResult = Schema.decodeUnknownEffect(ProjectLaunchResult);
 const decodeWorkbenchTaskProgress = Schema.decodeUnknownEffect(WorkbenchTaskProgress);
 
 const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
@@ -124,6 +157,9 @@ export interface WorkbenchRendererClient {
 	readonly getMetrics: () => Effect.Effect<WorkbenchCameraMetrics, WorkbenchRendererError>;
 	readonly getStatus: () => Effect.Effect<CameraStatus, WorkbenchRendererError>;
 	readonly launchFixture: () => Effect.Effect<FixtureLaunchResult, WorkbenchRendererError>;
+	readonly launchProject: (
+		mode: ProjectLaunchMode
+	) => Effect.Effect<ProjectLaunchResultValue, WorkbenchRendererError>;
 	readonly chooseProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly project: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly projectProgress: () => Effect.Effect<
@@ -201,6 +237,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			decode: decodeFixtureLaunchResult,
 			invoke: () => window.ueShed.fixture.launch(),
 			operation: "fixture.launch"
+		})
+	),
+	launchProject: Effect.fn("WorkbenchRenderer.launchProject")((mode) =>
+		request({
+			decode: decodeProjectLaunchResult,
+			invoke: () => window.ueShed.project.launch(mode),
+			operation: `project.launch.${mode}`
 		})
 	),
 	project: Effect.fn("WorkbenchRenderer.project")(() =>

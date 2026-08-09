@@ -3,8 +3,11 @@ import type {
 	TextureAuditRecordResult,
 	TextureAuditSearchRequest,
 	TextureAuditSearchResult,
+	TexturePreviewBatchRequest,
+	TexturePreviewBatchResult,
 	TexturePreviewResult
 } from "@ue-shed/asset-audits/browser";
+import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Context, type Effect, Schema } from "effect";
 
@@ -28,6 +31,9 @@ export class TextureAuditClientError extends Schema.TaggedErrorClass<TextureAudi
 ) {}
 
 export interface TextureAuditClientShape {
+	readonly locateAsset: (
+		objectPath: string
+	) => Effect.Effect<EditorAssetLocateResult, TextureAuditClientError>;
 	readonly loadConfiguredProject: () => Effect.Effect<
 		TextureAuditQueryRunResult,
 		TextureAuditClientError
@@ -46,6 +52,12 @@ export interface TextureAuditClientShape {
 	readonly loadPreview: (
 		objectPath: string
 	) => Effect.Effect<TexturePreviewResult, TextureAuditClientError>;
+	readonly loadOfflinePreview: (
+		objectPath: string
+	) => Effect.Effect<TexturePreviewResult, TextureAuditClientError>;
+	readonly loadOfflinePreviews: (
+		request: TexturePreviewBatchRequest
+	) => Effect.Effect<TexturePreviewBatchResult, TextureAuditClientError>;
 	readonly launchUnreal: () => Effect.Effect<TextureAuditLaunchResult, TextureAuditClientError>;
 }
 

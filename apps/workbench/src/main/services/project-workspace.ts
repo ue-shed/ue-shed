@@ -155,7 +155,8 @@ export const WorkbenchProjectLive = Layer.effect(
 				).pipe(
 					Stream.runCollect,
 					Effect.mapError((error) =>
-						error instanceof WorkbenchProjectUnavailable
+						error instanceof WorkbenchProjectUnavailable ||
+						error._tag === "ProjectIndexStaleGeneration"
 							? error
 							: new WorkbenchProjectUnavailable({
 									message: error.message,
@@ -411,6 +412,42 @@ export const WorkbenchProjectLive = Layer.effect(
 			}
 		);
 
+		const recoverInventory = Effect.fn("Workbench.WorkbenchProject.recoverInventory")(
+			function* (projectRoot: string, summary: ProjectIndexSummary) {
+				return yield* inventoryFromSummary(projectRoot, summary).pipe(
+					Effect.catchTag("ProjectIndexStaleGeneration", () =>
+						getProjectIndexStatus({ projectRoot }).pipe(
+							Effect.provideService(ProjectIndex, projectIndexImplementation),
+							Effect.mapError(
+								(error) =>
+									new WorkbenchProjectUnavailable({
+										message: error.message,
+										recovery: error.recovery
+									})
+							),
+							Effect.flatMap((status) =>
+								status.status === "ready"
+									? inventoryFromSummary(projectRoot, status.summary)
+									: refreshSummary(projectRoot).pipe(
+											Effect.flatMap((latest) =>
+												inventoryFromSummary(projectRoot, latest)
+											)
+										)
+							)
+						)
+					),
+					Effect.mapError((error) =>
+						error instanceof WorkbenchProjectUnavailable
+							? error
+							: new WorkbenchProjectUnavailable({
+									message: error.message,
+									recovery: error.recovery
+								})
+					)
+				);
+			}
+		);
+
 		const loadSummaryUncached = Effect.fn("Workbench.WorkbenchProject.loadSummaryUncached")(
 			function* (projectRoot: string) {
 				const status = yield* getProjectIndexStatus({ projectRoot }).pipe(
@@ -424,13 +461,10 @@ export const WorkbenchProjectLive = Layer.effect(
 					)
 				);
 				if (status.status === "absent") {
-					return yield* inventoryFromSummary(
-						projectRoot,
-						yield* refreshSummary(projectRoot)
-					);
+					return yield* recoverInventory(projectRoot, yield* refreshSummary(projectRoot));
 				}
 
-				const committed = yield* inventoryFromSummary(projectRoot, status.summary);
+				const committed = yield* recoverInventory(projectRoot, status.summary);
 				yield* Ref.set(projectIndexProgress, {
 					completed: status.summary.packageCount,
 					phase: "ready",
@@ -438,7 +472,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					total: status.summary.packageCount
 				});
 				yield* refreshSummary(projectRoot).pipe(
-					Effect.flatMap((summary) => inventoryFromSummary(projectRoot, summary)),
+					Effect.flatMap((summary) => recoverInventory(projectRoot, summary)),
 					Effect.catch(() => Effect.void),
 					Effect.forkIn(layerScope)
 				);
@@ -457,10 +491,20 @@ export const WorkbenchProjectLive = Layer.effect(
 			return yield* Cache.get(summaryLoads, projectRoot);
 		});
 
+		const currentInventory = Effect.fn("Workbench.WorkbenchProject.currentInventory")(
+			function* (projectRoot: string) {
+				const cached = yield* Ref.get(selectedSummary);
+				if (Option.isSome(cached) && cached.value.project.projectRoot === projectRoot) {
+					return cached.value;
+				}
+				return yield* loadSummary(projectRoot);
+			}
+		);
+
 		const inputAtlasFromProjectIndex = Effect.fn(
 			"Workbench.WorkbenchProject.inputAtlasFromProjectIndex"
 		)(function* (projectRoot: string) {
-			const summary = yield* loadSummary(projectRoot);
+			const summary = yield* currentInventory(projectRoot);
 			if (summary.indexSummary === undefined) {
 				return yield* new WorkbenchProjectUnavailable({
 					message: "Project Index summary is unavailable.",
@@ -493,7 +537,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		const current = Effect.fn("Workbench.WorkbenchProject.current")(function* () {
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) return { status: "not_configured" as const };
-			return yield* loadSummary(root.value).pipe(
+			return yield* currentInventory(root.value).pipe(
 				Effect.map((inventory) => ({
 					project: inventory.project,
 					status: "ready" as const
@@ -541,7 +585,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					message: "No Workbench project is selected.",
 					recovery: "Choose a project from the Workbench header, then retry."
 				});
-			return yield* loadSummary(root.value);
+			return yield* currentInventory(root.value);
 		});
 
 		const inputAtlas = Effect.fn("Workbench.WorkbenchProject.inputAtlas")(function* () {
@@ -586,6 +630,52 @@ export const WorkbenchProjectLive = Layer.effect(
 				summary.project.projectRoot,
 				summary.indexSummary,
 				kind
+			).pipe(
+				Effect.catchTag("ProjectIndexStaleGeneration", () =>
+					getProjectIndexStatus({ projectRoot: summary.project.projectRoot }).pipe(
+						Effect.provideService(ProjectIndex, projectIndexImplementation),
+						Effect.mapError(
+							(error) =>
+								new WorkbenchProjectUnavailable({
+									message: error.message,
+									recovery: error.recovery
+								})
+						),
+						Effect.flatMap((status) =>
+							status.status === "ready"
+								? recoverInventory(summary.project.projectRoot, status.summary)
+								: refreshSummary(summary.project.projectRoot).pipe(
+										Effect.flatMap((latest) =>
+											recoverInventory(summary.project.projectRoot, latest)
+										)
+									)
+						),
+						Effect.flatMap((latest) => {
+							if (latest.indexSummary === undefined) {
+								return Effect.fail(
+									new WorkbenchProjectUnavailable({
+										message: "Project Index summary is unavailable.",
+										recovery:
+											"Refresh the Project Index, then retry the feature."
+									})
+								);
+							}
+							return headerIndexFromProjectIndex(
+								latest.project.projectRoot,
+								latest.indexSummary,
+								kind
+							);
+						})
+					)
+				),
+				Effect.mapError((error) =>
+					error instanceof WorkbenchProjectUnavailable
+						? error
+						: new WorkbenchProjectUnavailable({
+								message: error.message,
+								recovery: error.recovery
+							})
+				)
 			);
 		});
 

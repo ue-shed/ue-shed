@@ -42,6 +42,8 @@ export interface WorkbenchConfigurationShape {
 	readonly savedWorldMaps?: SavedWorldMapsConfiguration;
 	readonly sourceCheckout: ConfiguredPath;
 	readonly textureAuditRules: ConfiguredPath;
+	/** Optional engine root used by headless saved-asset operations. */
+	readonly unrealEngineRoot?: ConfiguredPath;
 }
 
 export class WorkbenchConfiguration extends Context.Service<
@@ -92,6 +94,9 @@ const textureAuditRulesConfig = Config.option(
 const authoringAssetConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_AUTHORING_ASSET")
 );
+const unrealEngineRootConfig = Config.option(
+	Config.schema(NonEmptyConfigString, "UE_SHED_UNREAL_ENGINE_ROOT")
+);
 
 function configuredPath(path: Option.Option<string>): ConfiguredPath {
 	return Option.match(path, {
@@ -134,6 +139,7 @@ export function makeWorkbenchConfiguration(input: {
 	readonly savedWorldMap?: Option.Option<string>;
 	readonly savedWorldMaps?: Option.Option<string>;
 	readonly textureAuditRules: Option.Option<string>;
+	readonly unrealEngineRoot?: Option.Option<string>;
 }): WorkbenchConfigurationShape {
 	const project: ProjectConfiguration = Option.match(input.projectRoot, {
 		onNone: () => ({ status: "not_configured" as const }),
@@ -178,7 +184,8 @@ export function makeWorkbenchConfiguration(input: {
 			input.savedWorldMap ?? Option.none()
 		),
 		sourceCheckout: configuredPath(input.repositoryRoot),
-		textureAuditRules: configuredPath(input.textureAuditRules)
+		textureAuditRules: configuredPath(input.textureAuditRules),
+		unrealEngineRoot: configuredPath(input.unrealEngineRoot ?? Option.none())
 	};
 }
 
@@ -196,7 +203,8 @@ export const WorkbenchConfigurationLive = Layer.effect(
 				reviewSet: yield* reviewSetConfig,
 				savedWorldMap: yield* savedWorldMapConfig,
 				savedWorldMaps: yield* savedWorldMapsConfig,
-				textureAuditRules: yield* textureAuditRulesConfig
+				textureAuditRules: yield* textureAuditRulesConfig,
+				unrealEngineRoot: yield* unrealEngineRootConfig
 			})
 		);
 	})

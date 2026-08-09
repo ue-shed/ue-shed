@@ -82,6 +82,186 @@
 			"compression": "TC_Default",
 			"sRGB": true,
 			"mipGeneration": "TMGS_FromTextureGroup"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_UI_128.T_Audit_UI_128",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 128,
+				"height": 128,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_UI",
+			"compression": "TC_EditorIcon",
+			"sRGB": true,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_UI_256x128.T_Audit_UI_256x128",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 256,
+				"height": 128,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_UI",
+			"compression": "TC_EditorIcon",
+			"sRGB": true,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_UI_512.T_Audit_UI_512",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 512,
+				"height": 512,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_UI",
+			"compression": "TC_EditorIcon",
+			"sRGB": true,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_UI_2048x1024.T_Audit_UI_2048x1024",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 2048,
+				"height": 1024,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_UI",
+			"compression": "TC_EditorIcon",
+			"sRGB": true,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_Effects_128x256.T_Audit_Effects_128x256",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 128,
+				"height": 256,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_Effects",
+			"compression": "TC_Default",
+			"sRGB": false,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_Effects_256.T_Audit_Effects_256",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 256,
+				"height": 256,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_Effects",
+			"compression": "TC_Default",
+			"sRGB": false,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_Effects_512.T_Audit_Effects_512",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 512,
+				"height": 512,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_Effects",
+			"compression": "TC_Default",
+			"sRGB": false,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_Effects_1024x512.T_Audit_Effects_1024x512",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 1024,
+				"height": 512,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_Effects",
+			"compression": "TC_Default",
+			"sRGB": false,
+			"mipGeneration": "TMGS_NoMipmaps"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_World_128.T_Audit_World_128",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 128,
+				"height": 128,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_World",
+			"compression": "TC_Default",
+			"sRGB": true,
+			"mipGeneration": "TMGS_FromTextureGroup"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_World_512.T_Audit_World_512",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 512,
+				"height": 512,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_World",
+			"compression": "TC_Default",
+			"sRGB": true,
+			"mipGeneration": "TMGS_FromTextureGroup"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_World_1024.T_Audit_World_1024",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 1024,
+				"height": 1024,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_World",
+			"compression": "TC_Default",
+			"sRGB": true,
+			"mipGeneration": "TMGS_FromTextureGroup"
+		},
+		{
+			"objectPath": "/Game/Fixture/Audits/Textures/T_Audit_World_2048x1024.T_Audit_World_2048x1024",
+			"classPath": "/Script/Engine.Texture2D",
+			"source": {
+				"width": 2048,
+				"height": 1024,
+				"slices": 1,
+				"mips": 1,
+				"format": "TSF_BGRA8"
+			},
+			"textureGroup": "TEXTUREGROUP_World",
+			"compression": "TC_Default",
+			"sRGB": true,
+			"mipGeneration": "TMGS_FromTextureGroup"
 		}
 	]
 }

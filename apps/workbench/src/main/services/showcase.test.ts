@@ -5,6 +5,7 @@ import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
+import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { Showcase, ShowcaseLive } from "./showcase.js";
 
 const stubReader = (source: "configured" | "path"): AssetReaderTestShape => ({
@@ -16,6 +17,51 @@ const stubReader = (source: "configured" | "path"): AssetReaderTestShape => ({
 	source: () => Effect.succeed(source)
 });
 
+const emptyCandidates = {
+	assets: [],
+	failures: [],
+	summary: {
+		cacheHits: 0,
+		depth: "header" as const,
+		diagnostics: [],
+		emittedAssets: 0,
+		failedAssets: 0,
+		partialAssets: 0,
+		projectRoot: "C:/FixtureProject",
+		roots: ["C:/FixtureProject/Content"],
+		scannedAssets: 12,
+		schema_version: 8 as const,
+		skippedAssets: 12
+	}
+};
+
+const readyProject = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.die("not used"),
+	current: () =>
+		Effect.succeed({
+			project: {
+				inputAtlas: "deferred" as const,
+				mapCount: 3,
+				packageCount: 12,
+				projectName: "FixtureProject",
+				projectRoot: "C:/FixtureProject"
+			},
+			status: "ready" as const
+		}),
+	inputAtlas: () => Effect.die("not used"),
+	savedProject: () => Effect.die("not used"),
+	savedTables: () => Effect.die("not used"),
+	candidates: () => Effect.succeed(emptyCandidates)
+});
+
+const unconfiguredProject = makeWorkbenchProjectTestLayer({
+	choose: () => Effect.die("not used"),
+	current: () => Effect.succeed({ status: "not_configured" as const }),
+	inputAtlas: () => Effect.die("not used"),
+	savedProject: () => Effect.die("not used"),
+	savedTables: () => Effect.die("not used")
+});
+
 it.effect("reports fixture configured when project and rules exist", () =>
 	Effect.gen(function* () {
 		const showcase = yield* Showcase;
@@ -23,6 +69,20 @@ it.effect("reports fixture configured when project and rules exist", () =>
 		expect(context).toEqual({
 			fixtureConfigured: true,
 			health: aggregateHealth(defaultHealthInput),
+			project: {
+				candidates: {
+					dataTablePackages: 0,
+					enhancedInputPackages: 0,
+					gameTextPackages: 0,
+					status: "ready",
+					texturePackages: 0
+				},
+				mapCount: 3,
+				packageCount: 12,
+				projectName: "FixtureProject",
+				projectRoot: "C:/FixtureProject",
+				status: "ready"
+			},
 			projectRoot: "C:/FixtureProject",
 			reader: "configured",
 			ruleFile: "C:/rules.json"
@@ -42,6 +102,7 @@ it.effect("reports fixture configured when project and rules exist", () =>
 							textureAuditRules: { status: "configured", path: "C:/rules.json" }
 						}),
 						makeAssetReaderTestLayer(stubReader("configured")),
+						readyProject,
 						runtimeHealthLayer(),
 						makeLocalFilesTestLayer(
 							new Map([
@@ -63,6 +124,7 @@ it.effect("reports fixture not configured when nothing is set", () =>
 		expect(context).toEqual({
 			fixtureConfigured: false,
 			health: aggregateHealth(defaultHealthInput),
+			project: { status: "not_configured" },
 			reader: "path"
 		});
 	}).pipe(
@@ -80,6 +142,7 @@ it.effect("reports fixture not configured when nothing is set", () =>
 							textureAuditRules: { status: "not_configured" }
 						}),
 						makeAssetReaderTestLayer(stubReader("path")),
+						unconfiguredProject,
 						runtimeHealthLayer(),
 						makeLocalFilesTestLayer()
 					)
@@ -109,6 +172,7 @@ it.effect("reports fixture not configured when configured paths are missing on d
 							textureAuditRules: { status: "configured", path: "C:/rules.json" }
 						}),
 						makeAssetReaderTestLayer(stubReader("configured")),
+						readyProject,
 						runtimeHealthLayer(),
 						makeLocalFilesTestLayer()
 					)

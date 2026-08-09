@@ -13,6 +13,8 @@ import {
 	TextureAuditRunResult,
 	TextureAuditSearchRequest,
 	TextureAuditSearchResult,
+	TexturePreviewBatchRequest,
+	TexturePreviewBatchResult,
 	TexturePreviewResult
 } from "@ue-shed/asset-audits";
 import {
@@ -56,6 +58,7 @@ import {
 	EditorPlaySessionCommand,
 	EditorPlaySessionCommandResponse,
 	EditorPlaySessionStateResponse,
+	EditorAssetLocateResult,
 	SavedWorld,
 	SavedWorldChoice,
 	SavedWorldMap
@@ -67,7 +70,12 @@ import {
 } from "@ue-shed/extension-content-observatory/client";
 import { ProjectRelativeMapPath } from "@ue-shed/map-history/contract";
 import { Schema, SchemaGetter } from "effect";
-import { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
+import {
+	ProjectLaunchMode,
+	ProjectLaunchResult,
+	WorkbenchProjectState,
+	WorkbenchTaskProgress
+} from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
 
@@ -99,9 +107,44 @@ export type PresentationBudgetMbPerSecond = Schema.Schema.Type<
 	typeof PresentationBudgetMbPerSecond
 >;
 
+export const ShowcaseCandidateEvidence = Schema.Union([
+	Schema.Struct({
+		dataTablePackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		enhancedInputPackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		gameTextPackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		status: Schema.Literal("ready"),
+		texturePackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	}),
+	Schema.Struct({
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		status: Schema.Literal("failed")
+	})
+]);
+export type ShowcaseCandidateEvidence = Schema.Schema.Type<typeof ShowcaseCandidateEvidence>;
+
+export const ShowcaseProjectEvidence = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		status: Schema.Literal("failed")
+	}),
+	Schema.Struct({
+		candidates: ShowcaseCandidateEvidence,
+		mapCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		packageCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		projectName: Schema.NonEmptyString,
+		projectRoot: Schema.NonEmptyString,
+		status: Schema.Literal("ready")
+	})
+]);
+export type ShowcaseProjectEvidence = Schema.Schema.Type<typeof ShowcaseProjectEvidence>;
+
 export const ShowcaseContext = Schema.Struct({
 	fixtureConfigured: Schema.Boolean,
 	health: RuntimeHealth,
+	project: ShowcaseProjectEvidence,
 	projectRoot: Schema.optionalKey(Schema.String),
 	reader: Schema.Literals(["configured", "path"]),
 	ruleFile: Schema.optionalKey(Schema.String)
@@ -285,6 +328,11 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: WorkbenchTaskProgress
 	}),
+	"project:launch": invoke({
+		channel: "project:launch",
+		args: Schema.Tuple([ProjectLaunchMode]),
+		result: ProjectLaunchResult
+	}),
 	"asset-audits:textures:configured-scan": invoke({
 		channel: "asset-audits:textures:configured-scan",
 		args: EmptyArgs,
@@ -325,6 +373,16 @@ export const invokeContracts = {
 		args: Schema.Tuple([GameObjectPath]),
 		result: TexturePreviewResult
 	}),
+	"asset-audits:textures:preview-offline": invoke({
+		channel: "asset-audits:textures:preview-offline",
+		args: Schema.Tuple([GameObjectPath]),
+		result: TexturePreviewResult
+	}),
+	"asset-audits:textures:preview-offline-batch": invoke({
+		channel: "asset-audits:textures:preview-offline-batch",
+		args: Schema.Tuple([TexturePreviewBatchRequest]),
+		result: TexturePreviewBatchResult
+	}),
 	"game-text:configured-scan": invoke({
 		channel: "game-text:configured-scan",
 		args: EmptyArgs,
@@ -359,6 +417,11 @@ export const invokeContracts = {
 		channel: "game-text:focus",
 		args: Schema.Tuple([TextCorpusFocusRequest]),
 		result: TextCorpusFocusResult
+	}),
+	"asset-navigation:locate": invoke({
+		channel: "asset-navigation:locate",
+		args: Schema.Tuple([GameObjectPath]),
+		result: EditorAssetLocateResult
 	}),
 	"input-atlas:configured-scan": invoke({
 		channel: "input-atlas:configured-scan",

@@ -15,6 +15,7 @@
 	"dependencies": {
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/asset-audits": "workspace:*",
+		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/ui": "workspace:*",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",

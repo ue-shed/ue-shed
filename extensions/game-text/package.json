@@ -15,7 +15,9 @@
 	"dependencies": {
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/game-text": "workspace:*",
+		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/ui": "workspace:*",
+		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",
 		"solid-js": "catalog:"
 	}

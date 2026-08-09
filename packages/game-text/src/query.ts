@@ -16,13 +16,19 @@ function normalizedTerms(query: string): readonly string[] {
 }
 
 function searchResult(unit: TextUnit): TextUnitSearchResult {
+	const contexts = unit.occurrences.slice(0, 3).map((occurrence) => ({
+		editCapability: occurrence.editCapability,
+		location: occurrence.location
+	}));
 	return {
+		contexts,
 		id: unit.id,
 		identity: unit.identity,
 		locationKinds: [
 			...new Set(unit.occurrences.map((occurrence) => occurrence.location.kind))
 		].sort(),
 		occurrenceCount: unit.occurrences.length,
+		remainingContextCount: Math.max(0, unit.occurrences.length - contexts.length),
 		source: unit.source
 	};
 }

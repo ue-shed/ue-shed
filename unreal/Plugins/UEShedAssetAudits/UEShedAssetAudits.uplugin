@@ -15,6 +15,11 @@
 			"Name": "UEShedAssetAudits",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "UEShedAssetAuditsEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }

@@ -1,5 +1,10 @@
 import { it } from "@effect/vitest";
-import { makeTextureAuditTestLayer, TextureAuditScanError } from "@ue-shed/asset-audits";
+import {
+	AuditRuleId,
+	makeTextureAuditTestLayer,
+	TextureAuditScanError,
+	TextureObjectPath
+} from "@ue-shed/asset-audits";
 import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClientError
@@ -11,6 +16,7 @@ import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchAssetAudits, WorkbenchAssetAuditsLive } from "./asset-audits.js";
+import { makeOfflineTexturePreviewTestLayer } from "./offline-texture-preview.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const emptyReport = {
@@ -30,6 +36,30 @@ const emptyReport = {
 	status: "complete" as const
 };
 
+const textureObjectPath = TextureObjectPath.make("/Game/Texture.Texture");
+const warningTextureObjectPath = TextureObjectPath.make("/Game/Warning.Warning");
+const textureRecord = {
+	compression: { reason: "not_serialized" as const, status: "unavailable" as const },
+	dimensions: {
+		source: "serialized" as const,
+		status: "available" as const,
+		value: { height: 64, width: 64 }
+	},
+	filePath: "Content/Texture.uasset",
+	mipGeneration: { reason: "not_serialized" as const, status: "unavailable" as const },
+	objectPath: textureObjectPath,
+	packageFileBytes: { source: "file" as const, status: "available" as const, value: 128 },
+	sourceFormat: { reason: "not_serialized" as const, status: "unavailable" as const },
+	sourceMips: { reason: "not_serialized" as const, status: "unavailable" as const },
+	sRGB: { reason: "not_serialized" as const, status: "unavailable" as const },
+	textureGroup: { reason: "not_serialized" as const, status: "unavailable" as const }
+};
+const warningTextureRecord = {
+	...textureRecord,
+	filePath: "Content/Warning.uasset",
+	objectPath: warningTextureObjectPath
+};
+
 const configuration = makeWorkbenchConfigurationLayer({
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
@@ -42,6 +72,9 @@ const configuration = makeWorkbenchConfigurationLayer({
 
 const dialogLayer = (openDialog: Parameters<typeof makeWorkbenchWindowTestLayer>[0]) =>
 	makeElectronDialogTestLayer.pipe(Layer.provide(makeWorkbenchWindowTestLayer(openDialog)));
+const offlinePreviewLayer = makeOfflineTexturePreviewTestLayer({
+	preview: () => Effect.die("offline preview is not used")
+});
 
 const projectSummary = {
 	inputAtlas: "ready" as const,
@@ -107,6 +140,7 @@ it.effect("returns not_configured when project or rules are absent", () =>
 						}),
 						makeTextureAuditTestLayer({ scan: () => Effect.die("not used") }),
 						dialogLayer({}),
+						offlinePreviewLayer,
 						unselectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
@@ -132,6 +166,7 @@ it.effect("scans the configured project and rules", () =>
 							scanFromProjectIndex: () => Effect.succeed(emptyReport)
 						}),
 						dialogLayer({}),
+						offlinePreviewLayer,
 						selectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
@@ -175,6 +210,7 @@ it.effect("keeps refreshed audit data in main and serves bounded query results",
 							scanFromProjectIndex: () => Effect.succeed(emptyReport)
 						}),
 						dialogLayer({}),
+						offlinePreviewLayer,
 						selectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
@@ -216,6 +252,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 								)
 						}),
 						dialogLayer({}),
+						offlinePreviewLayer,
 						selectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
@@ -238,6 +275,7 @@ it.effect("cancels choose-and-scan when global project selection is cancelled", 
 						configuration,
 						makeTextureAuditTestLayer({ scan: () => Effect.die("not used") }),
 						dialogLayer({}),
+						offlinePreviewLayer,
 						unselectedProject,
 						makeRemoteControlClientTestLayer(() => Effect.die("not used"))
 					)
@@ -264,6 +302,7 @@ it.effect("reports live preview unavailable when Remote Control fails", () =>
 						configuration,
 						makeTextureAuditTestLayer({ scan: () => Effect.die("not used") }),
 						dialogLayer({}),
+						offlinePreviewLayer,
 						selectedProject,
 						makeRemoteControlClientTestLayer(() =>
 							Effect.fail(
@@ -282,3 +321,73 @@ it.effect("reports live preview unavailable when Remote Control fails", () =>
 		)
 	)
 );
+
+it.effect("prioritizes the selected texture and audit findings in one saved-preview batch", () => {
+	const requests: Array<string> = [];
+	return Effect.gen(function* () {
+		const service = yield* WorkbenchAssetAudits;
+		yield* service.configuredRefresh();
+		const result = yield* service.previewOffline(textureObjectPath);
+		expect(result.status).toBe("available");
+		if (result.status === "available") expect(result.authority).toBe("saved_asset");
+		expect(requests).toEqual([
+			"C:/FixtureProject|Content/Texture.uasset|/Game/Texture.Texture",
+			"C:/FixtureProject|Content/Warning.uasset|/Game/Warning.Warning"
+		]);
+	}).pipe(
+		Effect.provide(
+			WorkbenchAssetAuditsLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						configuration,
+						makeTextureAuditTestLayer({
+							scan: () => Effect.die("full project scan is not used"),
+							scanFromProjectIndex: () =>
+								Effect.succeed({
+									...emptyReport,
+									coverage: { ...emptyReport.coverage, textureAssets: 2 },
+									findings: [
+										{
+											actual: [],
+											expected: [],
+											explanation: "Warning texture should be prefetched.",
+											objectPath: warningTextureObjectPath,
+											ruleId: AuditRuleId.make("warning-texture"),
+											severity: "warning" as const
+										}
+									],
+									records: [textureRecord, warningTextureRecord]
+								})
+						}),
+						dialogLayer({}),
+						makeOfflineTexturePreviewTestLayer({
+							preview: (input) =>
+								Effect.sync(() => {
+									requests.push(
+										`${input.projectRoot}|${input.packageFile}|${input.objectPath}`
+									);
+									return {
+										authority: "saved_asset" as const,
+										contract: {
+											name: "texture-preview" as const,
+											version: { major: 1 as const, minor: 0 as const }
+										},
+										dataBase64: "iVBORw0KGgo=",
+										height: 1,
+										mimeType: "image/png" as const,
+										objectPath: TextureObjectPath.make(input.objectPath),
+										status: "available" as const,
+										width: 1
+									};
+								})
+						}),
+						selectedProject,
+						makeRemoteControlClientTestLayer(() =>
+							Effect.die("live preview is not used")
+						)
+					)
+				)
+			)
+		)
+	);
+});

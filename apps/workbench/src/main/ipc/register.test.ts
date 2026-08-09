@@ -11,6 +11,7 @@ import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
 import { invokeChannelNames } from "../ipc-contracts.js";
 import { makeWorkbenchAssetAuditsTestLayer } from "../services/asset-audits.js";
+import { makeWorkbenchAssetNavigationTestLayer } from "../services/asset-navigation.js";
 import { makeWorkbenchAuthoringTestLayer } from "../services/authoring.js";
 import { makeCameraPresentationTestLayer } from "../services/camera-presentation.js";
 import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-observatory.js";
@@ -18,6 +19,7 @@ import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
+import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
@@ -91,6 +93,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 				Effect.as({
 					fixtureConfigured: false,
 					health: aggregateHealth(defaultHealthInput),
+					project: { status: "not_configured" as const },
 					reader: "configured" as const
 				})
 			)
@@ -115,6 +118,53 @@ function buildRegistrationLayer(recorder: Recorder) {
 					retrySafe: true,
 					status: "unavailable"
 				} as TexturePreviewResult)
+			),
+		previewOffline: (objectPath) =>
+			recorder.record(`assetAudits.previewOffline:${objectPath}`).pipe(
+				Effect.as({
+					contract: { name: "texture-preview", version: { major: 1, minor: 0 } },
+					message: "unavailable",
+					objectPath,
+					reason: "offline_unavailable",
+					retrySafe: true,
+					status: "unavailable"
+				} as TexturePreviewResult)
+			),
+		previewOfflineBatch: (request) =>
+			recorder
+				.record(`assetAudits.previewOfflineBatch:${request.objectPaths.join(",")}`)
+				.pipe(
+					Effect.as({
+						cached: 0,
+						generated: request.objectPaths.length,
+						previews: request.objectPaths.map(
+							(objectPath) =>
+								({
+									contract: {
+										name: "texture-preview",
+										version: { major: 1, minor: 0 }
+									},
+									message: "unavailable",
+									objectPath,
+									reason: "offline_unavailable",
+									retrySafe: true,
+									status: "unavailable"
+								}) as TexturePreviewResult
+						)
+					})
+				)
+	});
+	const assetNavigation = makeWorkbenchAssetNavigationTestLayer({
+		locate: (objectPath) =>
+			recorder.record(`assetNavigation.locate:${objectPath}`).pipe(
+				Effect.as({
+					contract: {
+						name: "unreal-editor-asset-navigation" as const,
+						version: { major: 1 as const, minor: 0 as const }
+					},
+					objectPath,
+					status: "located" as const
+				})
 			)
 	});
 
@@ -319,6 +369,12 @@ function buildRegistrationLayer(recorder: Recorder) {
 				.record(`fixtureLauncher.launch:${mode}`)
 				.pipe(Effect.as({ status: "ready" as const }))
 	});
+	const projectLauncher = makeProjectLauncherTestLayer({
+		launch: (mode) =>
+			recorder
+				.record(`projectLauncher.launch:${mode}`)
+				.pipe(Effect.as({ mode, status: "launched" as const }))
+	});
 
 	const cameraPresentation = makeCameraPresentationTestLayer({
 		configure: (config) =>
@@ -390,6 +446,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 	return Layer.mergeAll(
 		showcase,
 		assetAudits,
+		assetNavigation,
 		gameText,
 		contentObservatory,
 		inputAtlas,
@@ -397,6 +454,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		authoring,
 		mapReview,
 		fixtureLauncher,
+		projectLauncher,
 		cameraPresentation,
 		editorSession,
 		configuration
@@ -426,13 +484,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 70 contract channels", () =>
+it.effect("registers exactly the 74 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(70);
+		expect(result).toHaveLength(74);
 	})
 );
 
@@ -451,10 +509,39 @@ it.effect("dispatches fixture:launch and fixture:launch-review to FixtureLaunche
 	})
 );
 
+it.effect("dispatches project:launch with the selected explicit mode", () =>
+	Effect.gen(function* () {
+		const { recorder, result } = yield* runRegistered((ipc) =>
+			ipc.invoke("project:launch", "ue_shed")
+		);
+		expect(result).toEqual({ mode: "ue_shed", status: "launched" });
+		expect(yield* recorder.calls()).toEqual(["projectLauncher.launch:ue_shed"]);
+	})
+);
+
 it.effect("dispatches showcase:context to Showcase.context", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("showcase:context"));
 		expect(yield* recorder.calls()).toEqual(["showcase.context"]);
+	})
+);
+
+it.effect("dispatches generic asset navigation with a decoded object path", () =>
+	Effect.gen(function* () {
+		const { recorder, result } = yield* runRegistered((ipc) =>
+			ipc.invoke("asset-navigation:locate", "/Game/Textures/T_Rock.T_Rock")
+		);
+		expect(result).toEqual({
+			contract: {
+				name: "unreal-editor-asset-navigation",
+				version: { major: 1, minor: 0 }
+			},
+			objectPath: "/Game/Textures/T_Rock.T_Rock",
+			status: "located"
+		});
+		expect(yield* recorder.calls()).toEqual([
+			"assetNavigation.locate:/Game/Textures/T_Rock.T_Rock"
+		]);
 	})
 );
 
@@ -464,11 +551,17 @@ it.effect("dispatches asset-audits channels to WorkbenchAssetAudits with decoded
 			Effect.gen(function* () {
 				yield* ipc.invoke("asset-audits:textures:configured-scan");
 				yield* ipc.invoke("asset-audits:textures:preview", "/Game/Textures/T_Rock");
+				yield* ipc.invoke("asset-audits:textures:preview-offline", "/Game/Textures/T_Rock");
+				yield* ipc.invoke("asset-audits:textures:preview-offline-batch", {
+					objectPaths: ["/Game/Textures/T_Rock", "/Game/Textures/T_Moss"]
+				});
 			})
 		);
 		expect(yield* recorder.calls()).toEqual([
 			"assetAudits.configuredScan",
-			"assetAudits.preview:/Game/Textures/T_Rock"
+			"assetAudits.preview:/Game/Textures/T_Rock",
+			"assetAudits.previewOffline:/Game/Textures/T_Rock",
+			"assetAudits.previewOfflineBatch:/Game/Textures/T_Rock,/Game/Textures/T_Moss"
 		]);
 	})
 );

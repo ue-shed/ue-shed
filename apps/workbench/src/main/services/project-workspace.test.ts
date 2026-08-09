@@ -6,6 +6,7 @@ import {
 	ProjectIndexPage,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndexRefreshEvent,
+	ProjectIndexStaleGeneration,
 	ProjectIdentity,
 	ProjectIndexGeneration,
 	ProjectIndexSummary,
@@ -207,6 +208,102 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 				expect.objectContaining({ objectPath: "/Game/Tables/DT_Test.DT_Test" })
 			]);
 			expect((yield* service.progress()).phase).toBe("ready");
+		}).pipe(
+			Effect.provide(WorkbenchProjectLive),
+			Effect.provide(Layer.mergeAll(configuredProject, dialog, assetReader, projectIndex))
+		);
+	})
+);
+
+it.effect("recovers a candidate query when the committed generation changes", () =>
+	Effect.gen(function* () {
+		const projectId = ProjectIdentity.make(projectRoot);
+		const firstGeneration = ProjectIndexGeneration.make(1);
+		const latestGeneration = ProjectIndexGeneration.make(2);
+		const makeSummary = (generation: ProjectIndexGeneration) =>
+			ProjectIndexSummary.make({
+				changedPackages: 0,
+				completeness: "complete",
+				diagnostics: [],
+				generation,
+				mapCount: 1,
+				packageCount: 2,
+				projectId,
+				removedPackages: 0
+			});
+		const firstSummary = makeSummary(firstGeneration);
+		const latestSummary = makeSummary(latestGeneration);
+		const generations: number[] = [];
+		let statusCalls = 0;
+		const projectIndex = makeProjectIndexTestLayer({
+			rebuild: () => Stream.empty,
+			refresh: () => Stream.empty,
+			query: (request) => {
+				generations.push(request.expectedGeneration);
+				if (request._tag === "Maps") {
+					return Effect.succeed(
+						ProjectIndexPage.make({
+							generation: request.expectedGeneration,
+							items: [
+								ProjectIndexMap.make({
+									kind: "map",
+									mapPath: "Content/Maps/L_Playground.umap",
+									packageName: "/Game/Maps/L_Playground"
+								})
+							],
+							projectId
+						})
+					);
+				}
+				if (request.expectedGeneration === firstGeneration) {
+					return Effect.fail(
+						new ProjectIndexStaleGeneration({
+							actualGeneration: latestGeneration,
+							expectedGeneration: firstGeneration,
+							message:
+								"The Project Index generation changed since this query started.",
+							recovery: "Retry against the current generation.",
+							retrySafe: true
+						})
+					);
+				}
+				return Effect.succeed(
+					ProjectIndexPage.make({
+						generation: latestGeneration,
+						items: [
+							{
+								classes: ["/Script/Engine.DataTable"],
+								kind: "header",
+								packageName: "/Game/Tables/DT_Test",
+								packagePath: "Content/Tables/DT_Test.uasset",
+								serializedNames: []
+							}
+						],
+						projectId
+					})
+				);
+			},
+			status: () =>
+				Effect.sync(() => ({
+					status: "ready" as const,
+					summary: statusCalls++ === 0 ? firstSummary : latestSummary
+				}))
+		});
+		const assetReader = makeAssetReaderTestLayer({
+			discoverAssets: () => Effect.die("not used"),
+			discoverTables: () => Effect.die("not used"),
+			readAsset: () => Effect.die("not used"),
+			readTable: () => Effect.die("not used"),
+			scanProject: () => Effect.die("not used"),
+			source: () => Effect.succeed("configured" as const)
+		});
+
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchProject;
+			expect((yield* service.current()).status).toBe("ready");
+			const candidates = yield* service.candidates("saved_tables");
+			expect(candidates.assets).toHaveLength(1);
+			expect(generations).toEqual([1, 1, 2, 2]);
 		}).pipe(
 			Effect.provide(WorkbenchProjectLive),
 			Effect.provide(Layer.mergeAll(configuredProject, dialog, assetReader, projectIndex))

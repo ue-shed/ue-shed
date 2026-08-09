@@ -2,13 +2,17 @@ import {
 	decodeTextureAuditQueryRunResult,
 	decodeTextureAuditRecordResult,
 	decodeTextureAuditSearchResult,
+	decodeTexturePreviewBatchResult,
 	type TextureAuditQueryRunResult,
 	type TextureAuditRecordResult,
 	type TextureAuditSearchRequest,
 	type TextureAuditSearchResult,
+	type TexturePreviewBatchRequest,
+	type TexturePreviewBatchResult,
 	decodeTexturePreviewResult,
 	type TexturePreviewResult
 } from "@ue-shed/asset-audits/browser";
+import { decodeEditorAssetLocateResult, type EditorAssetLocateResult } from "@ue-shed/protocol";
 import {
 	TextureAuditClient,
 	TextureAuditClientError,
@@ -39,6 +43,14 @@ function request<A>(args: {
 }
 
 export const assetAuditsClient: TextureAuditClientShape = TextureAuditClient.of({
+	locateAsset: Effect.fn("TextureAuditClient.locateAsset")(
+		(objectPath: string): Effect.Effect<EditorAssetLocateResult, TextureAuditClientError> =>
+			request({
+				decode: decodeEditorAssetLocateResult,
+				invoke: () => window.ueShed.assetNavigation.locate(objectPath),
+				operation: "assetNavigation.locate"
+			})
+	),
 	loadConfiguredProject: Effect.fn("TextureAuditClient.loadConfiguredProject")(
 		(): Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError> =>
 			request({
@@ -86,6 +98,24 @@ export const assetAuditsClient: TextureAuditClientShape = TextureAuditClient.of(
 				decode: decodeTexturePreviewResult,
 				invoke: () => window.ueShed.assetAudits.preview(objectPath),
 				operation: "assetAudits.preview"
+			})
+	),
+	loadOfflinePreview: Effect.fn("TextureAuditClient.loadOfflinePreview")(
+		(objectPath): Effect.Effect<TexturePreviewResult, TextureAuditClientError> =>
+			request({
+				decode: decodeTexturePreviewResult,
+				invoke: () => window.ueShed.assetAudits.previewOffline(objectPath),
+				operation: "assetAudits.previewOffline"
+			})
+	),
+	loadOfflinePreviews: Effect.fn("TextureAuditClient.loadOfflinePreviews")(
+		(
+			input: TexturePreviewBatchRequest
+		): Effect.Effect<TexturePreviewBatchResult, TextureAuditClientError> =>
+			request({
+				decode: decodeTexturePreviewBatchResult,
+				invoke: () => window.ueShed.assetAudits.previewOfflineBatch(input),
+				operation: "assetAudits.previewOfflineBatch"
 			})
 	),
 	launchUnreal: Effect.fn("TextureAuditClient.launchUnreal")(

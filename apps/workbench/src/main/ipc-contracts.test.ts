@@ -112,6 +112,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
+	"project:launch": ["ue_shed"],
 	"asset-audits:textures:configured-scan": [],
 	"asset-audits:textures:choose-and-scan": [],
 	"asset-audits:textures:configured-refresh": [],
@@ -120,6 +121,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"asset-audits:textures:search": [{ findingsOnly: false, pageSize: 100, query: "" }],
 	"asset-audits:textures:record": ["/Game/Textures/Example"],
 	"asset-audits:textures:preview": ["/Game/Textures/Example"],
+	"asset-audits:textures:preview-offline": ["/Game/Textures/Example"],
+	"asset-audits:textures:preview-offline-batch": [{ objectPaths: ["/Game/Textures/Example"] }],
 	"game-text:configured-scan": [],
 	"game-text:choose-and-scan": [],
 	"game-text:configured-refresh": [],
@@ -127,6 +130,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"game-text:progress": [],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
+	"asset-navigation:locate": ["/Game/Text/ST_Game.ST_Game"],
 	"input-atlas:configured-scan": [],
 	"input-atlas:choose-and-scan": [],
 	"authoring:configured-table": [],
@@ -263,6 +267,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"showcase:context": {
 		fixtureConfigured: false,
 		health: aggregateHealth(defaultHealthInput),
+		project: { status: "not_configured" },
 		reader: "path"
 	},
 	"project:current": { status: "not_configured" },
@@ -274,6 +279,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		stage: "project_index",
 		total: 0
 	},
+	"project:launch": { mode: "ue_shed", status: "launched" },
 	"asset-audits:textures:configured-scan": { status: "not_configured" },
 	"asset-audits:textures:choose-and-scan": { status: "cancelled" },
 	"asset-audits:textures:configured-refresh": { status: "not_configured" },
@@ -294,6 +300,28 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		message: "Object path must be a /Game/ path.",
 		retrySafe: false
 	},
+	"asset-audits:textures:preview-offline": {
+		contract: { name: "texture-preview", version: { major: 1, minor: 0 } },
+		status: "unavailable",
+		objectPath: "/Game/Textures/Example",
+		reason: "offline_unavailable",
+		message: "Offline preview is unavailable.",
+		retrySafe: false
+	},
+	"asset-audits:textures:preview-offline-batch": {
+		cached: 0,
+		generated: 1,
+		previews: [
+			{
+				contract: { name: "texture-preview", version: { major: 1, minor: 0 } },
+				status: "unavailable",
+				objectPath: "/Game/Textures/Example",
+				reason: "offline_unavailable",
+				message: "Offline preview is unavailable.",
+				retrySafe: false
+			}
+		]
+	},
 	"game-text:configured-scan": { status: "not_configured" },
 	"game-text:choose-and-scan": { status: "cancelled" },
 	"game-text:configured-refresh": { status: "not_configured" },
@@ -306,6 +334,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
+	"asset-navigation:locate": {
+		contract: { name: "unreal-editor-asset-navigation", version: { major: 1, minor: 0 } },
+		objectPath: "/Game/Text/ST_Game.ST_Game",
+		status: "located"
+	},
 	"input-atlas:configured-scan": { status: "not_configured" },
 	"input-atlas:choose-and-scan": { status: "cancelled" },
 	"authoring:configured-table": { status: "not_configured" },
@@ -419,6 +452,10 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 
 const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
+	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
+	"asset-audits:textures:preview-offline-batch": [
+		{ objectPaths: Array.from({ length: 101 }, () => "/Game/Textures/TooMany") }
+	],
 	"authoring:open-catalog-table": ["", "automatic"],
 	"authoring:session:begin": [42],
 	"authoring:session:open": [""],
@@ -447,9 +484,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 70 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(70);
-	expect(new Set(invokeChannelNames).size).toBe(70);
+it("registers exactly 74 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(74);
+	expect(new Set(invokeChannelNames).size).toBe(74);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

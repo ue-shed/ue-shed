@@ -6,6 +6,15 @@ public class UEShedCoreEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine" });
-		PrivateDependencyModuleNames.AddRange(new[] { "Json", "LevelEditor", "UnrealEd" });
+		PrivateDependencyModuleNames.AddRange(new[]
+		{
+			"AssetRegistry",
+			"ContentBrowser",
+			"Json",
+			"LevelEditor",
+			"Slate",
+			"SlateCore",
+			"UnrealEd"
+		});
 	}
 }

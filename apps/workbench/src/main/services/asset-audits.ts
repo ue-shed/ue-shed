@@ -1,22 +1,27 @@
 import {
+	MAX_TEXTURE_PREVIEW_BATCH_SIZE,
 	readLiveTexturePreview,
 	textureAuditQuery,
 	TextureAudit,
+	TextureObjectPath,
 	type TextureAuditQuery,
 	type TextureAuditQueryRunResult,
 	type TextureAuditRecordResult,
 	type TextureAuditSearchRequest,
 	type TextureAuditSearchResult,
 	type TextureAuditRunResult,
+	type TexturePreviewBatchRequest,
+	type TexturePreviewBatchResult,
 	type TexturePreviewResult
 } from "@ue-shed/asset-audits";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Ref } from "effect";
+import { Context, Effect, Layer, Ref, Schema } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import type { WorkbenchWindowError } from "../adapters/electron-window.js";
 import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
+import { OfflineTexturePreview } from "./offline-texture-preview.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchAssetAuditsShape {
@@ -29,6 +34,10 @@ export interface WorkbenchAssetAuditsShape {
 	readonly configuredScan: () => Effect.Effect<TextureAuditRunResult>;
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
 	readonly preview: (objectPath: string) => Effect.Effect<TexturePreviewResult>;
+	readonly previewOffline: (objectPath: string) => Effect.Effect<TexturePreviewResult>;
+	readonly previewOfflineBatch: (
+		request: TexturePreviewBatchRequest
+	) => Effect.Effect<TexturePreviewBatchResult>;
 	readonly record: (objectPath: string) => Effect.Effect<TextureAuditRecordResult>;
 	readonly search: (
 		request: TextureAuditSearchRequest
@@ -40,13 +49,18 @@ export class WorkbenchAssetAudits extends Context.Service<
 	WorkbenchAssetAuditsShape
 >()("@ue-shed/workbench/WorkbenchAssetAudits") {}
 
-function unavailablePreview(objectPath: string, message: string): TexturePreviewResult {
+function unavailablePreview(
+	objectPath: string,
+	reason: Extract<TexturePreviewResult, { status: "unavailable" }>["reason"],
+	message: string,
+	retrySafe = true
+): TexturePreviewResult {
 	return {
 		contract: { name: "texture-preview", version: { major: 1, minor: 0 } },
 		message,
 		objectPath,
-		reason: "not_connected",
-		retrySafe: true,
+		reason,
+		retrySafe,
 		status: "unavailable"
 	};
 }
@@ -71,6 +85,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const configuration = yield* WorkbenchConfiguration;
 		const dialog = yield* ElectronDialog;
 		const project = yield* WorkbenchProject;
+		const offlinePreview = yield* OfflineTexturePreview;
 		const textureAudit = yield* TextureAudit;
 		const remoteControl = yield* RemoteControlClient;
 		const queryModel = yield* Ref.make<TextureAuditQuery | undefined>(undefined);
@@ -281,12 +296,130 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					Effect.succeed(
 						unavailablePreview(
 							objectPath,
+							"not_connected",
 							`Live Unreal preview unavailable: ${error.message}`
 						)
 					)
 				)
 			);
 		});
+
+		const previewOfflineBatch = Effect.fn("Workbench.WorkbenchAssetAudits.previewOfflineBatch")(
+			function* (request: TexturePreviewBatchRequest) {
+				const currentProject = yield* project.current();
+				if (currentProject.status !== "ready") {
+					return {
+						cached: 0,
+						generated: 0,
+						previews: request.objectPaths.map((objectPath) =>
+							unavailablePreview(
+								objectPath,
+								"offline_unavailable",
+								"Choose an Unreal project before generating saved previews.",
+								false
+							)
+						)
+					};
+				}
+				const model = yield* Ref.get(queryModel);
+				const findingPaths =
+					model
+						?.search({
+							findingsOnly: true,
+							pageSize: MAX_TEXTURE_PREVIEW_BATCH_SIZE,
+							query: ""
+						})
+						.records.map((record) => record.objectPath) ?? [];
+				const seenPaths = new Set<string>();
+				const selectedPath = request.objectPaths[0];
+				const prioritizedPaths = [
+					...(selectedPath === undefined ? [] : [selectedPath]),
+					...findingPaths,
+					...request.objectPaths
+				]
+					.filter((objectPath) => {
+						if (seenPaths.has(objectPath)) return false;
+						seenPaths.add(objectPath);
+						return true;
+					})
+					.slice(0, MAX_TEXTURE_PREVIEW_BATCH_SIZE);
+				const inputs = prioritizedPaths.flatMap((objectPath) => {
+					const texture = model?.record(objectPath)?.record;
+					return texture
+						? [
+								{
+									objectPath,
+									packageFile: texture.filePath,
+									projectRoot: currentProject.project.projectRoot
+								}
+							]
+						: [];
+				});
+				if (inputs.length === 0) {
+					return {
+						cached: 0,
+						generated: 0,
+						previews: prioritizedPaths.map((objectPath) =>
+							unavailablePreview(
+								objectPath,
+								"offline_unavailable",
+								"Rescan the texture audit before generating saved previews.",
+								true
+							)
+						)
+					};
+				}
+				const batch = yield* offlinePreview.previewBatch(inputs).pipe(
+					Effect.catch((error) =>
+						Effect.succeed({
+							cached: 0,
+							generated: 0,
+							previews: inputs.map((input) =>
+								unavailablePreview(
+									input.objectPath,
+									"offline_unavailable",
+									error.message,
+									error.retrySafe
+								)
+							)
+						})
+					)
+				);
+				const byPath = new Map(batch.previews.map((result) => [result.objectPath, result]));
+				return {
+					cached: batch.cached,
+					generated: batch.generated,
+					previews: prioritizedPaths.map(
+						(objectPath) =>
+							byPath.get(objectPath) ??
+							unavailablePreview(
+								objectPath,
+								"offline_unavailable",
+								"Rescan the texture audit before generating this saved preview.",
+								true
+							)
+					)
+				};
+			}
+		);
+
+		const previewOffline = Effect.fn("Workbench.WorkbenchAssetAudits.previewOffline")(
+			function* (objectPath: string) {
+				const decodedPath = yield* Schema.decodeUnknownEffect(TextureObjectPath)(
+					objectPath
+				).pipe(Effect.orDie);
+				const batch = yield* previewOfflineBatch({ objectPaths: [decodedPath] });
+				return (
+					batch.previews[0] ??
+					unavailablePreview(
+						objectPath,
+						"offline_unavailable",
+						"Saved preview generation returned no result.",
+						true
+					)
+				);
+			}
+		);
 
 		return WorkbenchAssetAudits.of({
 			chooseAndRefresh,
@@ -295,6 +428,8 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 			configuredScan,
 			progress,
 			preview,
+			previewOffline,
+			previewOfflineBatch,
 			record,
 			search
 		});
@@ -318,6 +453,28 @@ export function makeWorkbenchAssetAuditsTestLayer(
 					total: 0
 				}),
 			record: () => Effect.succeed({ status: "not_ready" }),
+			previewOffline: (objectPath) =>
+				Effect.succeed(
+					unavailablePreview(
+						objectPath,
+						"offline_unavailable",
+						"Saved preview is not configured in this test.",
+						false
+					)
+				),
+			previewOfflineBatch: (request) =>
+				Effect.succeed({
+					cached: 0,
+					generated: 0,
+					previews: request.objectPaths.map((objectPath) =>
+						unavailablePreview(
+							objectPath,
+							"offline_unavailable",
+							"Saved preview is not configured in this test.",
+							false
+						)
+					)
+				}),
 			search: () => Effect.succeed({ status: "not_ready" }),
 			...service
 		})

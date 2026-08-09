@@ -553,18 +553,26 @@ test(`records the ${journey} Workbench journey`, async ({
 			await startTracing();
 			chapters.push(
 				await recordChapter({
-					action: () => workbench.expectShowcaseReady(),
+					action: async () => {
+						await workbench.expectShowcaseReady();
+						await page!.getByText("LAUNCH ▾", { exact: true }).click();
+						await expect(
+							page!.getByRole("button", { name: /WITH UE SHED/ })
+						).toBeVisible();
+						await expect(page!.getByRole("button", { name: /NORMALLY/ })).toBeVisible();
+					},
 					description:
-						"The committed fixture and saved-asset reader are ready without Unreal.",
+						"The project is usable offline; both editor launch modes remain explicit and leave the project descriptor unchanged.",
 					page,
-					slug: "01-showcase-ready",
+					slug: "01-offline-project-launch-options",
 					testInfo,
-					title: "Showcase is ready"
+					title: "Offline first, full editor on demand"
 				})
 			);
 			chapters.push(
 				await recordChapter({
 					action: async () => {
+						await page!.getByText("LAUNCH ▾", { exact: true }).click();
 						await workbench.openRoute("Data Authoring");
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })
@@ -588,14 +596,36 @@ test(`records the ${journey} Workbench journey`, async ({
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toBeVisible();
 						await expect(
-							page!.getByRole("region", { name: "Scan coverage" })
-						).toContainText("Textures");
+							page!.getByRole("complementary", {
+								name: "Audit scope and distributions"
+							})
+						).toContainText(/textures/i);
+						await expect(
+							page!.getByRole("article", { name: "Texture investigation" })
+						).toContainText("Compared with");
+						await page!
+							.getByRole("button", { name: /Generate \d+ saved previews/ })
+							.click();
+						await expect(page!.getByLabel("Preview authority")).toHaveText(
+							"Saved asset",
+							{
+								timeout: 90_000
+							}
+						);
+						await page!
+							.getByRole("region", { name: "Texture records" })
+							.getByRole("button", { name: /T_Audit_UI_2048x1024/ })
+							.click();
+						await expect(page!.getByLabel("Preview authority")).toHaveText(
+							"Saved asset"
+						);
 					},
-					description: "Inspect whole-corpus rules and serialized texture evidence.",
+					description:
+						"Move from a rule finding to peer evidence, while filling the bounded saved-preview cache in one headless Unreal launch.",
 					page,
 					slug: "03-texture-audit",
 					testInfo,
-					title: "Review texture evidence"
+					title: "Investigate a texture outlier"
 				})
 			);
 			chapters.push(
@@ -611,8 +641,12 @@ test(`records the ${journey} Workbench journey`, async ({
 						await expect(
 							page!.getByRole("region", { name: "Text units" })
 						).toContainText("Continue");
+						await expect(
+							page!.getByRole("complementary", { name: "Text focus" })
+						).toContainText("Game · Prompt Continue");
 					},
-					description: "Search player-facing language while preserving Unreal identity.",
+					description:
+						"Search player-facing language and see its authored context before opening Unreal details.",
 					page,
 					slug: "04-game-text",
 					testInfo,

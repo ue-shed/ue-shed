@@ -46,8 +46,12 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedCoreEditor")))
 	{
 		Root->SetStringField(
+			TEXT("assetNavigationObjectPath"),
+			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary"));
+		Root->SetStringField(
 			TEXT("playSessionObjectPath"),
 			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary"));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedAssetAudits")))

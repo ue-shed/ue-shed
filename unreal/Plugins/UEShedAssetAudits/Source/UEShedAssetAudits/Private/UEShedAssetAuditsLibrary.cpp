@@ -5,6 +5,7 @@
 #include "ImageCore.h"
 #include "ImageUtils.h"
 #include "Misc/Base64.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
@@ -49,22 +50,23 @@ FString Unavailable(
 }
 }
 
-void UUEShedAssetAuditsLibrary::GetTexturePreview(
-	const FString& TextureObjectPath, int32 MaxDimension, FString& ResultJson)
+FString UUEShedAssetAuditsLibrary::BuildTexturePreviewJson(
+	const FString& TextureObjectPath, int32 MaxDimension, const FString& Authority)
 {
+	FString ResultJson;
 #if WITH_EDITORONLY_DATA
 	if (TextureObjectPath.IsEmpty())
 	{
 		ResultJson = Unavailable(
 			TextureObjectPath, TEXT("invalid_request"), TEXT("Texture object path is required"), false);
-		return;
+		return ResultJson;
 	}
 	if (MaxDimension < MinPreviewDimension || MaxDimension > MaxPreviewDimension)
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("invalid_request"),
 			FString::Printf(TEXT("MaxDimension must be between %d and %d"),
 				MinPreviewDimension, MaxPreviewDimension), false);
-		return;
+		return ResultJson;
 	}
 
 	UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *TextureObjectPath);
@@ -72,20 +74,20 @@ void UUEShedAssetAuditsLibrary::GetTexturePreview(
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("texture_not_found"),
 			TEXT("Unreal could not load the requested Texture2D"), true);
-		return;
+		return ResultJson;
 	}
 	const int64 SourcePixels = Texture->Source.GetTotalTopMipPixelCount();
 	if (SourcePixels <= 0)
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("source_unavailable"),
 			TEXT("The texture has no editor source pixels"), false);
-		return;
+		return ResultJson;
 	}
 	if (SourcePixels > MaxSourcePixels)
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("source_too_large"),
 			TEXT("The texture source exceeds the bounded preview pixel limit"), false);
-		return;
+		return ResultJson;
 	}
 
 	FImage SourceImage;
@@ -93,7 +95,7 @@ void UUEShedAssetAuditsLibrary::GetTexturePreview(
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("decode_failed"),
 			TEXT("Unreal could not decode the texture source image"), true);
-		return;
+		return ResultJson;
 	}
 	const double Scale = FMath::Min(1.0,
 		static_cast<double>(MaxDimension) / FMath::Max(SourceImage.SizeX, SourceImage.SizeY));
@@ -108,19 +110,19 @@ void UUEShedAssetAuditsLibrary::GetTexturePreview(
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("encode_failed"),
 			TEXT("Unreal could not encode the bounded texture preview"), true);
-		return;
+		return ResultJson;
 	}
 	if (Encoded.Num() > MaxEncodedBytes)
 	{
 		ResultJson = Unavailable(TextureObjectPath, TEXT("preview_too_large"),
 			TEXT("The encoded texture preview exceeds four MiB"), false);
-		return;
+		return ResultJson;
 	}
 
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetObjectField(TEXT("contract"), Contract());
 	Result->SetStringField(TEXT("status"), TEXT("available"));
-	Result->SetStringField(TEXT("authority"), TEXT("live_editor"));
+	Result->SetStringField(TEXT("authority"), Authority);
 	Result->SetStringField(TEXT("objectPath"), TextureObjectPath);
 	Result->SetStringField(TEXT("mimeType"), TEXT("image/png"));
 	Result->SetNumberField(TEXT("width"), PreviewWidth);
@@ -131,4 +133,11 @@ void UUEShedAssetAuditsLibrary::GetTexturePreview(
 	ResultJson = Unavailable(TextureObjectPath, TEXT("editor_data_unavailable"),
 		TEXT("Texture previews require an Unreal editor build"), false);
 #endif
+	return ResultJson;
+}
+
+void UUEShedAssetAuditsLibrary::GetTexturePreview(
+	const FString& TextureObjectPath, int32 MaxDimension, FString& ResultJson)
+{
+	ResultJson = BuildTexturePreviewJson(TextureObjectPath, MaxDimension, TEXT("live_editor"));
 }

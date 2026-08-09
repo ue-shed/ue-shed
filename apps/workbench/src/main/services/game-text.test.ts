@@ -7,6 +7,8 @@ import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchGameText, WorkbenchGameTextLive } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
+const gameTextLive = WorkbenchGameTextLive;
+
 const emptyCorpus = {
 	coverage: {
 		discoveredPackages: 0,
@@ -85,7 +87,7 @@ it.effect("returns not_configured without a project root", () =>
 		expect(result).toEqual({ status: "not_configured" });
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			gameTextLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						makeWorkbenchConfigurationLayer({
@@ -113,7 +115,7 @@ it.effect("scans the configured project", () =>
 		expect(result).toEqual({ corpus: emptyCorpus, status: "completed" });
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			gameTextLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
@@ -151,7 +153,7 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 		});
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			gameTextLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
@@ -182,7 +184,7 @@ it.effect("translates a typed scan failure into the failed result variant", () =
 		});
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			gameTextLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
@@ -213,7 +215,7 @@ it.effect("uses the globally selected project when scanning", () =>
 		expect(result).toEqual({ corpus: emptyCorpus, status: "completed" });
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			gameTextLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,
@@ -236,7 +238,7 @@ it.effect("cancels choose-and-scan when global project selection is cancelled", 
 		expect(result).toEqual({ status: "cancelled" });
 	}).pipe(
 		Effect.provide(
-			WorkbenchGameTextLive.pipe(
+			gameTextLive.pipe(
 				Layer.provide(
 					Layer.mergeAll(
 						configuration,

@@ -55,6 +55,6 @@ describe("game text presentation", () => {
 		const unit = corpus.units[0]!;
 		expect(sourceText(unit)).toBe("Continue");
 		expect(identityLabel(unit)).toBe("UI · Continue");
-		expect(occurrenceContext(unit.occurrences[0]!)).toBe("String Table · PromptContinue");
+		expect(occurrenceContext(unit.occurrences[0]!)).toBe("Game · Prompt Continue");
 	});
 });

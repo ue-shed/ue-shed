@@ -184,7 +184,7 @@ bool LoadTextureDefinitions(TArray<FFixtureTextureDefinition>& Definitions)
 		}
 		Definitions.Add(MoveTemp(Definition));
 	}
-	return Definitions.Num() == 5;
+	return Definitions.Num() == 17;
 }
 
 TArray<FFixtureTableDefinition> GetTableDefinitions()

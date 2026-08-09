@@ -127,14 +127,23 @@ const TextQueryPageSize = Schema.Int.pipe(
 export const TextCapabilityFilter = Schema.Literals(["all", "source_editable", "read_only"]);
 export type TextCapabilityFilter = Schema.Schema.Type<typeof TextCapabilityFilter>;
 
+/** A bounded authored/gathered location preview carried by corpus search results. */
+export const TextUnitContext = Schema.Struct({
+	editCapability: TextOccurrence.fields.editCapability,
+	location: TextLocation
+});
+export interface TextUnitContext extends Schema.Schema.Type<typeof TextUnitContext> {}
+
 export const TextUnitSearchResult = Schema.Struct({
+	contexts: Schema.Array(TextUnitContext).check(Schema.isMaxLength(3)),
 	id: TextUnitId,
 	source: TextUnit.fields.source,
 	identity: TextIdentity,
 	locationKinds: Schema.Array(
 		Schema.Literals(["data_table_cell", "string_table_entry", "asset_property"])
 	),
-	occurrenceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	occurrenceCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	remainingContextCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 export type TextUnitSearchResult = Schema.Schema.Type<typeof TextUnitSearchResult>;
 

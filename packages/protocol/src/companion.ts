@@ -2,6 +2,7 @@ import { Schema } from "effect";
 
 export const CompanionCapabilityManifest = Schema.Struct({
 	assetAuditsObjectPath: Schema.optional(Schema.String),
+	assetNavigationObjectPath: Schema.optional(Schema.String),
 	authoringObjectPath: Schema.optional(Schema.String),
 	camerasObjectPath: Schema.optional(Schema.String),
 	playSessionObjectPath: Schema.optional(Schema.String),

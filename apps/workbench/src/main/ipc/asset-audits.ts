@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { TextureAuditSearchRequest } from "@ue-shed/asset-audits";
+import type { TextureAuditSearchRequest, TexturePreviewBatchRequest } from "@ue-shed/asset-audits";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import type { GameObjectPath } from "../ipc-contracts.js";
 import { invokeContracts } from "../ipc-contracts.js";
@@ -34,4 +34,15 @@ export const register = Effect.gen(function* () {
 		const [objectPath] = args as [GameObjectPath];
 		return audits.preview(objectPath);
 	});
+	yield* ipc.register(invokeContracts["asset-audits:textures:preview-offline"], (...args) => {
+		const [objectPath] = args as [GameObjectPath];
+		return audits.previewOffline(objectPath);
+	});
+	yield* ipc.register(
+		invokeContracts["asset-audits:textures:preview-offline-batch"],
+		(...args) => {
+			const [request] = args as [TexturePreviewBatchRequest];
+			return audits.previewOfflineBatch(request);
+		}
+	);
 }).pipe(Effect.withSpan("Workbench.Ipc.registerAssetAudits"));

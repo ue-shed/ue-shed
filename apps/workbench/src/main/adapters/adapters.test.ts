@@ -26,6 +26,22 @@ import {
 	makeFixtureProcessTestLayer
 } from "./fixture-process.js";
 import { LocalFiles, LocalFilesLive, makeLocalFilesTestLayer } from "./local-files.js";
+import {
+	offlineTexturePreviewHostLayer,
+	OfflineTexturePreviewHost
+} from "./offline-texture-preview-host.js";
+
+it.effect("OfflineTexturePreviewHost returns nonzero commandlet exits for output validation", () =>
+	Effect.gen(function* () {
+		const host = yield* OfflineTexturePreviewHost;
+		const result = yield* host.runCommandlet({
+			args: ["-e", "process.stderr.write('project plugin error'); process.exit(7)"],
+			cwd: process.cwd(),
+			executable: process.execPath
+		});
+		expect(result).toEqual({ exitCode: 7, stderr: "project plugin error" });
+	}).pipe(Effect.provide(offlineTexturePreviewHostLayer(process.env)))
+);
 
 it.effect("ElectronApp test layer records readiness and quit", () =>
 	Effect.gen(function* () {
@@ -117,6 +133,7 @@ it.effect("ElectronIpc removes handlers when the scope closes", () =>
 					Effect.succeed({
 						fixtureConfigured: false,
 						health: aggregateHealth(defaultHealthInput),
+						project: { status: "not_configured" as const },
 						reader: "path" as const
 					})
 				);

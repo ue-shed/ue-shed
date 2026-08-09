@@ -97,6 +97,9 @@ const approvedResourceAdapters = new Set([
 	"apps/cli/src/signal.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",
 	"apps/workbench/src/main/adapters/fixture-process.ts",
+	// Offline texture preview owns the hidden Unreal commandlet and its listeners inside
+	// Effect.acquireRelease; the domain service only receives a typed Effect adapter.
+	"apps/workbench/src/main/adapters/offline-texture-preview-host.ts",
 	"apps/workbench/src/main/main.ts",
 	"apps/workbench/src/main/preload.ts",
 	// The opt-in benchmark owns bounded RSS sampling timers around each native worker.

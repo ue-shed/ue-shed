@@ -26,6 +26,7 @@ export const Evidence = <S extends Schema.Top>(value: S) =>
 		})
 	]);
 
+const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 
 export const Dimensions = Schema.Struct({ width: PositiveInt, height: PositiveInt });
@@ -33,7 +34,7 @@ export type Dimensions = Schema.Schema.Type<typeof Dimensions>;
 
 export const StringEvidence = Evidence(Schema.String);
 export const BooleanEvidence = Evidence(Schema.Boolean);
-export const NumberEvidence = Evidence(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)));
+export const NumberEvidence = Evidence(NonNegativeInt);
 export const DimensionsEvidence = Evidence(Dimensions);
 
 export const TextureRecord = Schema.Struct({
@@ -65,14 +66,15 @@ export const TexturePreviewUnavailableReason = Schema.Literals([
 	"decode_failed",
 	"encode_failed",
 	"preview_too_large",
-	"editor_data_unavailable"
+	"editor_data_unavailable",
+	"offline_unavailable"
 ]);
 
 export const TexturePreviewResult = Schema.Union([
 	Schema.Struct({
 		contract: TexturePreviewContract,
 		status: Schema.Literal("available"),
-		authority: Schema.Literal("live_editor"),
+		authority: Schema.Literals(["live_editor", "saved_asset"]),
 		objectPath: TextureObjectPath,
 		mimeType: Schema.Literal("image/png"),
 		width: PositiveInt.check(Schema.isLessThanOrEqualTo(512)),
@@ -90,6 +92,27 @@ export const TexturePreviewResult = Schema.Union([
 ]);
 export type TexturePreviewResult = Schema.Schema.Type<typeof TexturePreviewResult>;
 export const decodeTexturePreviewResult = Schema.decodeUnknownEffect(TexturePreviewResult);
+
+export const MAX_TEXTURE_PREVIEW_BATCH_SIZE = 100;
+export const TexturePreviewBatchRequest = Schema.Struct({
+	objectPaths: Schema.Array(TextureObjectPath).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_TEXTURE_PREVIEW_BATCH_SIZE)
+	)
+});
+export type TexturePreviewBatchRequest = Schema.Schema.Type<typeof TexturePreviewBatchRequest>;
+
+export const TexturePreviewBatchResult = Schema.Struct({
+	cached: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	generated: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	previews: Schema.Array(TexturePreviewResult).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(MAX_TEXTURE_PREVIEW_BATCH_SIZE)
+	)
+});
+export type TexturePreviewBatchResult = Schema.Schema.Type<typeof TexturePreviewBatchResult>;
+export const decodeTexturePreviewBatchResult =
+	Schema.decodeUnknownEffect(TexturePreviewBatchResult);
 
 export const DimensionsPowerOfTwoRule = Schema.Struct({
 	id: AuditRuleId,
@@ -252,7 +275,44 @@ export const TextureAuditSearchResult = Schema.Union([
 export type TextureAuditSearchResult = Schema.Schema.Type<typeof TextureAuditSearchResult>;
 export const decodeTextureAuditSearchResult = Schema.decodeUnknownEffect(TextureAuditSearchResult);
 
+export const TextureMetricComparison = Schema.Union([
+	Schema.Struct({
+		availableCount: PositiveInt,
+		maximum: NonNegativeInt,
+		median: NonNegativeInt,
+		minimum: NonNegativeInt,
+		percentile: Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
+		selected: NonNegativeInt,
+		status: Schema.Literal("available")
+	}),
+	Schema.Struct({
+		availableCount: NonNegativeInt,
+		status: Schema.Literal("unavailable")
+	})
+]);
+export type TextureMetricComparison = Schema.Schema.Type<typeof TextureMetricComparison>;
+
+export const TextureAuditComparison = Schema.Struct({
+	findingCount: NonNegativeInt,
+	kind: Schema.Literals(["texture_group", "folder", "project"]),
+	label: Schema.String,
+	maximumDimension: TextureMetricComparison,
+	memberCount: PositiveInt,
+	packageFileBytes: TextureMetricComparison,
+	peers: Schema.Array(
+		Schema.Struct({
+			dimensions: TextureRecord.fields.dimensions,
+			findingCount: NonNegativeInt,
+			objectPath: TextureRecord.fields.objectPath,
+			textureGroup: TextureRecord.fields.textureGroup
+		})
+	).check(Schema.isMaxLength(5))
+});
+export type TextureAuditComparison = Schema.Schema.Type<typeof TextureAuditComparison>;
+
 export const TextureAuditRecord = Schema.Struct({
+	comparisons: Schema.Array(TextureAuditComparison),
+	defaultComparison: Schema.Literals(["texture_group", "folder", "project"]),
 	findings: Schema.Array(TextureAuditFinding),
 	record: TextureRecord
 });

@@ -4,6 +4,7 @@ import { Context, Effect, Layer } from "effect";
 import { LocalFiles } from "../adapters/local-files.js";
 import type { ShowcaseContext } from "../ipc-contracts.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
+import { WorkbenchProject } from "./project-workspace.js";
 
 export interface ShowcaseShape {
 	readonly context: () => Effect.Effect<ShowcaseContext>;
@@ -20,10 +21,60 @@ export const ShowcaseLive = Layer.effect(
 		const assetReader = yield* AssetReader;
 		const localFiles = yield* LocalFiles;
 		const health = yield* RuntimeHealthService;
+		const project = yield* WorkbenchProject;
+
+		const projectEvidence = Effect.fn("Workbench.Showcase.projectEvidence")(function* () {
+			const current = yield* project.current();
+			if (current.status === "not_configured" || current.status === "cancelled") {
+				return { status: "not_configured" as const };
+			}
+			if (current.status === "failed") {
+				return {
+					message: current.error.message,
+					recovery: current.error.recovery,
+					status: "failed" as const
+				};
+			}
+
+			const candidates = yield* Effect.all(
+				[
+					project.candidates("saved_tables"),
+					project.candidates("enhanced_input"),
+					project.candidates("game_text"),
+					project.candidates("texture")
+				] as const,
+				{ concurrency: 2 }
+			).pipe(
+				Effect.map(([dataTables, enhancedInput, gameText, textures]) => ({
+					dataTablePackages: dataTables.assets.length,
+					enhancedInputPackages: enhancedInput.assets.length,
+					gameTextPackages: gameText.assets.length,
+					status: "ready" as const,
+					texturePackages: textures.assets.length
+				})),
+				Effect.catch((error) =>
+					Effect.succeed({
+						message: error.message,
+						recovery: error.recovery,
+						status: "failed" as const
+					})
+				)
+			);
+			return {
+				candidates,
+				mapCount: current.project.mapCount,
+				packageCount: current.project.packageCount,
+				projectName: current.project.projectName,
+				projectRoot: current.project.projectRoot,
+				status: "ready" as const
+			};
+		});
 
 		const context = Effect.fn("Workbench.Showcase.context")(function* () {
-			const runtimeHealth = yield* health.snapshot();
-			const reader = yield* assetReader.source();
+			const [runtimeHealth, reader, evidence] = yield* Effect.all(
+				[health.snapshot(), assetReader.source(), projectEvidence()] as const,
+				{ concurrency: 3 }
+			);
 			const projectRoot =
 				configuration.project.status === "configured"
 					? configuration.project.projectRoot
@@ -39,6 +90,7 @@ export const ShowcaseLive = Layer.effect(
 					projectRoot && ruleFile && projectExists && ruleFileExists
 				),
 				health: runtimeHealth,
+				project: evidence,
 				...(projectRoot ? { projectRoot } : {}),
 				reader,
 				...(ruleFile ? { ruleFile } : {})

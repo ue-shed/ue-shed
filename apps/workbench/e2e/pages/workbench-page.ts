@@ -4,6 +4,7 @@ export type WorkbenchRoute =
 	| "Showcase"
 	| "Data Authoring"
 	| "Game Text"
+	| "Input Atlas"
 	| "Map Review"
 	| "Texture Audit"
 	| "Camera Lab"
@@ -21,11 +22,23 @@ export class WorkbenchPage {
 		await expect(this.page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(
 			"Showcase / Workbench"
 		);
-		const readiness = this.page.getByRole("region", { name: "Showcase readiness" });
-		await expect(readiness).toContainText("Fixture preset");
-		await expect(readiness).toContainText("committed corpus");
-		await expect(readiness).toContainText("Saved-asset reader");
-		await expect(readiness).toContainText("explicit path");
+		const project = this.page.getByRole("region", { name: "Current project" });
+		await expect(project).toContainText("unreal-project");
+		await expect(project).toContainText("Packages");
+		await expect(project).toContainText("Saved maps");
+		const workflows = this.page.getByRole("region", { name: "Workbench workflows" });
+		for (const name of [
+			"Data Authoring",
+			"Input Atlas",
+			"Game Text",
+			"Texture Audit",
+			"Map Review",
+			"World Log",
+			"Camera Lab"
+		]) {
+			await expect(workflows.getByRole("link", { name })).toBeVisible();
+		}
+		await expect(workflows).toContainText("packages indexed");
 	}
 
 	async openRoute(route: WorkbenchRoute): Promise<void> {

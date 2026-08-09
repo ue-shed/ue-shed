@@ -5,6 +5,7 @@ import type {
 	TextCorpusSearchRequest,
 	TextCorpusSearchResult
 } from "@ue-shed/game-text/browser";
+import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import type { TaskProgress } from "@ue-shed/ui/task-progress";
 import { Context, type Effect, Schema } from "effect";
 
@@ -29,6 +30,9 @@ export interface GameTextClientShape {
 		TextCorpusQueryRunResult,
 		GameTextClientError
 	>;
+	readonly locateAsset: (
+		objectPath: string
+	) => Effect.Effect<EditorAssetLocateResult, GameTextClientError>;
 	readonly progress: () => Effect.Effect<TaskProgress, GameTextClientError>;
 	readonly search: (
 		request: TextCorpusSearchRequest

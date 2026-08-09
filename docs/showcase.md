@@ -4,10 +4,12 @@ The showcase is the shortest path from a fresh clone to UE Shed's implemented pr
 uses the committed generic fixture as its default project and keeps live Unreal an optional
 capability.
 
-Workbench currently surfaces Data Authoring, Texture Asset Audit, Game Text, Map Review, and
-Camera Load Lab. Saved-package demos open without Unreal; Map Review starts with a saved World
-Partition map when one is configured, while live texture preview, Live World, and Camera Load Lab
-request a separately enabled editor only when needed.
+Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
+Game Text, Texture Audit, Map Review, World Log, and Camera Lab. The catalog groups them by what
+they actually require: a saved project, Perforce on demand, or a running Unreal session. Each entry
+shows evidence from the selected project before it is opened, including indexed candidate-package
+and map counts. Saved-package workflows open without Unreal; live texture preview, Live World, and
+Camera Lab request a separately enabled editor only when needed.
 
 ## Open the Workbench
 
@@ -35,8 +37,17 @@ $env:UE_SHED_UASSET_EXECUTABLE = "C:\path\to\uasset.exe"
 pnpm showcase
 ```
 
-The readiness strip reports whether the fixture preset, reader, and live Unreal endpoint are
-available. A missing live endpoint does not prevent the saved-asset demos from opening.
+The current-project strip reports the selected project, indexed package and map counts, and the
+actual live camera-pipe state. Choosing a project is always offline and never starts Unreal. Once a
+project is selected, the compact **Launch** menu offers two explicit process actions:
+
+- **With UE Shed** incrementally builds and loads Core, Authoring, Cameras, Observatory, and Asset
+  Audits through Unreal's `-PLUGIN` argument. It also enables Remote Control for that process.
+- **Normally** opens the selected project without UE Shed plugin injection.
+
+Neither action edits the selected `.uproject`. The disposable build host defaults to
+`out/workbench-plugin-host/<engine>`; set `UE_SHED_PLUGIN_HOST_ROOT` when that cache should live on
+another drive. A missing live endpoint does not prevent the saved-asset workflows from opening.
 
 ## Demo 1: DataTable authoring
 
@@ -75,15 +86,28 @@ pnpm ue-shed authoring join fixtures\unreal-project /Game/Fixture/Authoring/DT_L
 Choose **Open audit**. The route immediately scans the committed texture corpus using
 `FixtureSource/Audits/texture-rules.json`; use **Rescan** to repeat it. It demonstrates whole-corpus
 distributions, per-asset serialized evidence, findings, and partial-package diagnostics without
-launching Unreal. Selecting a texture requests an optional bounded live preview. Choose **Launch
-Unreal for preview** to build and start the fixture only when that visual evidence is wanted. Preview
-authority is labeled separately because an editor can contain unsaved state.
+launching Unreal. Selecting a texture requests the optional bounded live preview first. When no
+editor is connected, choose **Generate saved previews** to prioritize the selected texture, then
+all finding assets in the audit, then the rest of the current page, up to 100 unique textures. Use
+**Locate in Unreal** in the selected asset header to synchronize a connected editor's Content
+Browser to that texture; offline, missing-plugin, and not-found results remain visible in place.
+One hidden `UnrealEditor-Cmd` process writes every cache miss as an individual saved-source PNG and exits;
+existing cache entries skip the launch work. Choose **Launch Unreal for preview** only when the live
+resource or unsaved editor state is wanted. Saved and live preview authority remain visibly distinct.
 
 ## Demo 3: Game Text
 
 Choose **Game Text** from the nav. Workbench searches player-facing language across saved
 DataTables, String Tables, and supported asset properties without flattening Unreal identity.
-Occurrence evidence and coverage gaps stay inspectable from the same corpus.
+Every result is a dense writing worklist row: source text, Unreal identity, decoded authored
+context, primary source authority, character count, and usage count stay visible together. A
+single-use identity exposes `Locate` immediately; a shared identity exposes `Show uses`, then a
+precise `Locate in Unreal` action for each occurrence. Locate synchronizes the Content Browser to
+the owning asset when a capable editor is connected, and reports offline, missing-plugin, and
+not-found states without pretending navigation happened. `Copy text` and `Copy ID` remain immediate
+row actions. Selecting a line expands every known context while raw Unreal object paths and package
+files remain behind technical disclosures. Occurrence evidence and coverage gaps stay inspectable
+from the same corpus.
 
 ```powershell
 pnpm ue-shed text scan fixtures\unreal-project
@@ -93,11 +117,10 @@ pnpm ue-shed text search fixtures\unreal-project "Fixture"
 ## Demo 4: Map Review
 
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
-at the project root, then add the UE Shed plugin directory to that project's `.uproject` and enable
-`RemoteControl`, `UEShedCore`, and `UEShedCameras`. The generic fixture's
-[`UEShedFixture.uproject`](../fixtures/unreal-project/UEShedFixture.uproject) shows the required
-`AdditionalPluginDirectories` and plugin entries. Enable `UEShedObservatory` as well when using the
-live World Scout canvas.
+at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
+that editor process without editing the project descriptor. The generic fixture's
+[`UEShedFixture.uproject`](../fixtures/unreal-project/UEShedFixture.uproject) remains the reference
+for projects that deliberately want persistent plugin entries instead.
 
 Launch the editor with rendering available (not `-NullRHI`) and configure the project and Remote
 Control endpoint:

@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { register as registerAssetAudits } from "./asset-audits.js";
+import { register as registerAssetNavigation } from "./asset-navigation.js";
 import { register as registerAuthoring } from "./authoring.js";
 import { register as registerCameras } from "./cameras.js";
 import { register as registerContentObservatory } from "./content-observatory.js";
@@ -21,6 +22,7 @@ export const register = Effect.all(
 		registerShowcase,
 		registerProjectWorkspace,
 		registerAssetAudits,
+		registerAssetNavigation,
 		registerGameText,
 		registerInputAtlas,
 		registerAuthoring,

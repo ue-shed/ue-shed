@@ -485,7 +485,7 @@ describe("generic Unreal fixture contract", () => {
 	it("declares a portable, reproducible texture audit corpus", () => {
 		const audit = contract.textureAudit;
 		expect(audit.contentRoot).toBe("/Game/Fixture/Audits/Textures");
-		expect(audit.textures).toHaveLength(5);
+		expect(audit.textures).toHaveLength(17);
 		const source = readJson(resolve(fixtureRoot, audit.source));
 		expect(Array.isArray(source)).toBe(true);
 		expect(source).toEqual(
@@ -509,7 +509,11 @@ describe("generic Unreal fixture contract", () => {
 			);
 		}
 		const findings = audit.textures.flatMap((texture) => texture.expectedFindingIds);
-		expect(findings.sort()).toEqual(["dimensions.power_of_two", "dimensions.ui_max_512"]);
+		expect(findings.sort()).toEqual([
+			"dimensions.power_of_two",
+			"dimensions.ui_max_512",
+			"dimensions.ui_max_512"
+		]);
 		const rules = readJson(resolve(fixtureRoot, audit.rules));
 		expect(rules).toEqual(
 			expect.objectContaining({

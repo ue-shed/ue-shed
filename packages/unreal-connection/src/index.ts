@@ -4,12 +4,14 @@ import {
 	decodeAuthoringTableList,
 	decodeAuthoringTableSnapshot,
 	decodeCompanionCapabilityManifest,
+	decodeEditorAssetLocateResult,
 	type AuthoringApplyRequest,
 	type AuthoringApplyResult,
 	type AuthoringSaveRequest,
 	type AuthoringSaveResult,
 	type AuthoringTableSnapshot,
-	type CompanionCapabilityManifest
+	type CompanionCapabilityManifest,
+	type EditorAssetLocateResult
 } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import {
@@ -21,6 +23,7 @@ import {
 export * from "./remote-control-client.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
+const assetNavigationCapability = "editor.asset-navigation.v1";
 const requiredCapabilities = [
 	"authoring.snapshot.v2",
 	"authoring.table-list.v1",
@@ -110,6 +113,56 @@ function decodeResult<A>(
 				)
 			)
 		)
+	);
+}
+
+export function locateUnrealAsset(options: {
+	readonly bringToFront: boolean;
+	readonly endpoint: string;
+	readonly objectPath: string;
+}): Effect.Effect<
+	EditorAssetLocateResult,
+	UnrealConnectionError | UnrealCapabilityError,
+	RemoteControlClient
+> {
+	const endpoint = normalizedEndpoint(options.endpoint);
+	return Effect.gen(function* () {
+		const client = yield* RemoteControlClient;
+		const manifest = yield* decodeResult(
+			remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}),
+			endpoint,
+			"capability manifest",
+			decodeCompanionCapabilityManifest
+		);
+		if (!manifest.capabilities.includes(assetNavigationCapability)) {
+			return yield* Effect.fail(
+				new UnrealCapabilityError({
+					capability: assetNavigationCapability,
+					message: `Connected editor does not advertise ${assetNavigationCapability}`
+				})
+			);
+		}
+		if (!manifest.assetNavigationObjectPath) {
+			return yield* Effect.fail(
+				new UnrealCapabilityError({
+					capability: "editor.asset-navigation.endpoint.v1",
+					message: "Connected editor advertises asset navigation without an object path"
+				})
+			);
+		}
+		return yield* decodeResult(
+			remoteCall(client, endpoint, manifest.assetNavigationObjectPath, "LocateAsset", {
+				BringToFront: options.bringToFront,
+				ObjectPath: options.objectPath
+			}),
+			endpoint,
+			"asset location",
+			decodeEditorAssetLocateResult
+		);
+	}).pipe(
+		Effect.withSpan("unreal.asset_navigation.locate", {
+			attributes: { "unreal.endpoint": endpoint }
+		})
 	);
 }
 

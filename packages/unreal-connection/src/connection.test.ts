@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	connectUnrealAuthoring,
+	locateUnrealAsset,
 	makeRemoteControlClient,
 	RemoteControlClientLive,
 	UnrealCapabilityError,
@@ -18,6 +19,87 @@ let server: Server | undefined;
 afterEach(async () => {
 	if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
 	server = undefined;
+});
+
+describe("Remote Control asset navigation adapter", () => {
+	it("negotiates capability and locates a saved asset in Unreal", async () => {
+		const calls: Array<{
+			readonly functionName: string;
+			readonly objectPath: string;
+			readonly parameters: Readonly<Record<string, unknown>>;
+		}> = [];
+		const endpoint = await listen((request, response) => {
+			let body = "";
+			request.setEncoding("utf8");
+			request.on("data", (chunk: string) => (body += chunk));
+			request.on("end", () => {
+				const call = JSON.parse(body) as (typeof calls)[number];
+				calls.push(call);
+				response.setHeader("content-type", "application/json");
+				response.end(
+					call.functionName === "GetCapabilityManifest"
+						? resultJson({
+								assetNavigationObjectPath:
+									"/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary",
+								capabilities: ["editor.asset-navigation.v1"],
+								producerKind: "unreal_editor",
+								schemaVersion: 1
+							})
+						: resultJson({
+								contract: {
+									name: "unreal-editor-asset-navigation",
+									version: { major: 1, minor: 0 }
+								},
+								objectPath: "/Game/Text/ST_Game.ST_Game",
+								status: "located"
+							})
+				);
+			});
+		});
+
+		const result = await runRemoteControl(
+			locateUnrealAsset({
+				bringToFront: true,
+				endpoint,
+				objectPath: "/Game/Text/ST_Game.ST_Game"
+			})
+		);
+
+		expect(result.status).toBe("located");
+		expect(calls).toHaveLength(2);
+		expect(calls[1]).toEqual({
+			functionName: "LocateAsset",
+			generateTransaction: false,
+			objectPath: "/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary",
+			parameters: {
+				BringToFront: true,
+				ObjectPath: "/Game/Text/ST_Game.ST_Game"
+			}
+		});
+	});
+
+	it("rejects an editor without the navigation capability", async () => {
+		const endpoint = await listen((_request, response) => {
+			response.setHeader("content-type", "application/json");
+			response.end(
+				resultJson({ capabilities: [], producerKind: "unreal_editor", schemaVersion: 1 })
+			);
+		});
+
+		const error = await runRemoteControl(
+			Effect.flip(
+				locateUnrealAsset({
+					bringToFront: true,
+					endpoint,
+					objectPath: "/Game/Text/ST_Game.ST_Game"
+				})
+			)
+		);
+		expect(error).toBeInstanceOf(UnrealCapabilityError);
+		if (error instanceof UnrealCapabilityError) {
+			expect(error.capability).toBe("editor.asset-navigation.v1");
+		}
+	});
 });
 
 async function listen(

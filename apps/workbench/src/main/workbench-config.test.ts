@@ -19,6 +19,7 @@ it.effect("defaults the remote control endpoint when unset", () =>
 		expect(configuration.authoringAsset).toEqual({ status: "not_configured" });
 		expect(configuration.sourceCheckout).toEqual({ status: "not_configured" });
 		expect(configuration.expectedProject).toEqual({ status: "not_configured" });
+		expect(configuration.unrealEngineRoot).toEqual({ status: "not_configured" });
 	}).pipe(Effect.provide(workbenchConfigurationFromUnknown({})))
 );
 
@@ -103,7 +104,8 @@ it.effect("loads a complete configured Workbench session", () =>
 				maps: [{ label: "Fixture", mapPath: "Content/Maps/Fixture.umap" }]
 			},
 			sourceCheckout: { status: "configured", path: "C:/repo" },
-			textureAuditRules: { status: "configured", path: "C:/rules.json" }
+			textureAuditRules: { status: "configured", path: "C:/rules.json" },
+			unrealEngineRoot: { status: "configured", path: "C:/Unreal/UE_5.7" }
 		});
 	}).pipe(
 		Effect.provide(
@@ -116,7 +118,8 @@ it.effect("loads a complete configured Workbench session", () =>
 				UE_SHED_REPOSITORY_ROOT: "C:/repo",
 				UE_SHED_REVIEW_SET: "C:/custom/review-set.json",
 				UE_SHED_SAVED_WORLD_MAP: "Content/Maps/Fixture.umap",
-				UE_SHED_TEXTURE_AUDIT_RULES: "C:/rules.json"
+				UE_SHED_TEXTURE_AUDIT_RULES: "C:/rules.json",
+				UE_SHED_UNREAL_ENGINE_ROOT: "C:/Unreal/UE_5.7"
 			})
 		)
 	)

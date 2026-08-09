@@ -38,3 +38,17 @@ export const WorkbenchProjectState = Schema.Union([
 	Schema.Struct({ project: WorkbenchProjectSummary, status: Schema.Literal("ready") })
 ]);
 export type WorkbenchProjectState = Schema.Schema.Type<typeof WorkbenchProjectState>;
+
+/** Explicit editor launch behavior for the currently selected offline project. */
+export const ProjectLaunchMode = Schema.Literals(["ue_shed", "normal"]);
+export type ProjectLaunchMode = Schema.Schema.Type<typeof ProjectLaunchMode>;
+
+export const ProjectLaunchResult = Schema.Union([
+	Schema.Struct({ mode: ProjectLaunchMode, status: Schema.Literal("launched") }),
+	Schema.Struct({
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		status: Schema.Literal("failed")
+	})
+]);
+export type ProjectLaunchResult = Schema.Schema.Type<typeof ProjectLaunchResult>;

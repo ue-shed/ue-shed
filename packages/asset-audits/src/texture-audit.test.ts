@@ -125,8 +125,102 @@ it("indexes compact records once and returns stable bounded audit pages", () => 
 	expect(page.total).toBe(1);
 	expect(page.records.map((record) => record.objectPath)).toEqual([first]);
 	expect(query.record(first)?.findings).toHaveLength(1);
+	expect(query.record(first)?.defaultComparison).toBe("project");
+	expect(query.record(first)?.comparisons).toEqual([
+		expect.objectContaining({
+			kind: "texture_group",
+			maximumDimension: expect.objectContaining({
+				median: 256,
+				percentile: 100,
+				selected: 256,
+				status: "available"
+			}),
+			memberCount: 2,
+			peers: [expect.objectContaining({ objectPath: second })]
+		}),
+		expect.objectContaining({ kind: "folder", memberCount: 2 }),
+		expect.objectContaining({ kind: "project", memberCount: 2 })
+	]);
 	expect(query.summary().findingCount).toBe(1);
 });
+
+it("compares a selected texture with bounded project, folder, and texture-group cohorts", () => {
+	const selectedPath = TextureObjectPath.make("/Game/UI/T_2048.T_2048");
+	const paths = [
+		TextureObjectPath.make("/Game/UI/T_128.T_128"),
+		TextureObjectPath.make("/Game/UI/T_512.T_512"),
+		TextureObjectPath.make("/Game/UI/T_1024.T_1024"),
+		selectedPath,
+		TextureObjectPath.make("/Game/World/T_World.T_World")
+	];
+	const dimensions = [128, 512, 1024, 2048, 256];
+	const report: TextureAuditReport = {
+		coverage: {
+			discoveredPackages: paths.length,
+			failedPackages: 0,
+			inspectedPackages: paths.length,
+			partialPackages: 0,
+			textureAssets: paths.length
+		},
+		diagnostics: [],
+		distributions: { compression: [], maximumDimension: [], sRGB: [], textureGroup: [] },
+		findings: [
+			{
+				actual: [{ label: "Largest axis", value: "2048px" }],
+				expected: [{ label: "Maximum axis", value: "512px" }],
+				explanation: "UI texture exceeds its source limit.",
+				objectPath: selectedPath,
+				ruleId: AuditRuleId.make("ui-max"),
+				severity: "warning"
+			}
+		],
+		records: paths.map((objectPath, index) => {
+			const dimension = dimensions[index];
+			if (dimension === undefined) throw new Error("Missing test texture dimension");
+			return {
+				compression: available(index === 4 ? "TC_Default" : "TC_EditorIcon"),
+				dimensions: available({ height: dimension, width: dimension }),
+				filePath: `Content/${shortNameForTest(objectPath)}.uasset`,
+				mipGeneration: available(index === 4 ? "TMGS_FromTextureGroup" : "TMGS_NoMipmaps"),
+				objectPath,
+				packageFileBytes: available(dimension * 10),
+				sRGB: available(true),
+				sourceFormat: available("TSF_BGRA8"),
+				sourceMips: available(1),
+				textureGroup: available(index === 4 ? "TEXTUREGROUP_World" : "TEXTUREGROUP_UI")
+			};
+		}),
+		ruleSetName: "test",
+		schemaVersion: 1,
+		status: "complete"
+	};
+
+	const selected = textureAuditQuery(report).record(selectedPath);
+	expect(selected?.defaultComparison).toBe("texture_group");
+	expect(selected?.comparisons.find((comparison) => comparison.kind === "texture_group")).toEqual(
+		expect.objectContaining({
+			findingCount: 1,
+			label: "UI",
+			maximumDimension: expect.objectContaining({
+				median: 768,
+				percentile: 100,
+				selected: 2048
+			}),
+			memberCount: 4
+		})
+	);
+	expect(
+		selected?.comparisons.find((comparison) => comparison.kind === "folder")?.memberCount
+	).toBe(4);
+	expect(
+		selected?.comparisons.find((comparison) => comparison.kind === "project")?.memberCount
+	).toBe(5);
+	expect(selected?.comparisons.every((comparison) => comparison.peers.length <= 5)).toBe(true);
+});
+
+function shortNameForTest(objectPath: string): string {
+	return objectPath.slice(objectPath.lastIndexOf("/") + 1).split(".")[0] ?? objectPath;
+}
 
 it.effect("does not scan Content when the shared index has no texture candidates", () =>
 	Effect.gen(function* () {

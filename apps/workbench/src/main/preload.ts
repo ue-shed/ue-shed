@@ -36,7 +36,12 @@ import type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
-import type { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
+import type {
+	ProjectLaunchMode,
+	ProjectLaunchResult,
+	WorkbenchProjectState,
+	WorkbenchTaskProgress
+} from "./project-workspace-contract.js";
 
 export type {
 	FixtureLaunchResult,
@@ -45,9 +50,18 @@ export type {
 	ShowcaseContext,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
-export type { WorkbenchProjectState, WorkbenchTaskProgress } from "./project-workspace-contract.js";
+export type {
+	ProjectLaunchMode,
+	ProjectLaunchResult,
+	WorkbenchProjectState,
+	WorkbenchTaskProgress
+} from "./project-workspace-contract.js";
 
 contextBridge.exposeInMainWorld("ueShed", {
+	assetNavigation: {
+		locate: (objectPath: string): Promise<unknown> =>
+			ipcRenderer.invoke("asset-navigation:locate", objectPath)
+	},
 	editorSession: {
 		status: (): Promise<EditorPlaySessionStateResponse> =>
 			ipcRenderer.invoke("editor-session:status"),
@@ -60,6 +74,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
 		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current"),
+		launch: (mode: ProjectLaunchMode): Promise<ProjectLaunchResult> =>
+			ipcRenderer.invoke("project:launch", mode),
 		progress: (): Promise<WorkbenchTaskProgress> => ipcRenderer.invoke("project:progress")
 	},
 	assetAudits: {
@@ -77,7 +93,11 @@ contextBridge.exposeInMainWorld("ueShed", {
 		record: (objectPath: string): Promise<unknown> =>
 			ipcRenderer.invoke("asset-audits:textures:record", objectPath),
 		preview: (objectPath: string): Promise<unknown> =>
-			ipcRenderer.invoke("asset-audits:textures:preview", objectPath)
+			ipcRenderer.invoke("asset-audits:textures:preview", objectPath),
+		previewOffline: (objectPath: string): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:preview-offline", objectPath),
+		previewOfflineBatch: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("asset-audits:textures:preview-offline-batch", request)
 	},
 	gameText: {
 		loadConfiguredProject: (): Promise<unknown> =>

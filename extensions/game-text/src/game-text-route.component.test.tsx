@@ -84,11 +84,17 @@ const summary = {
 const completed = { status: "completed", summary } satisfies TextCorpusQueryRunResult;
 
 function resultFor(unit: TextCorpus["units"][number]) {
+	const contexts = unit.occurrences.slice(0, 3).map((occurrence) => ({
+		editCapability: occurrence.editCapability,
+		location: occurrence.location
+	}));
 	return {
+		contexts,
 		id: unit.id,
 		identity: unit.identity,
 		locationKinds: [...new Set(unit.occurrences.map((occurrence) => occurrence.location.kind))],
 		occurrenceCount: unit.occurrences.length,
+		remainingContextCount: Math.max(0, unit.occurrences.length - contexts.length),
 		source: unit.source
 	};
 }
@@ -138,7 +144,16 @@ function makeClient(): GameTextClientShape {
 					}
 				: { status: "not_found" };
 			return Effect.succeed(result as TextCorpusFocusResult);
-		}
+		},
+		locateAsset: (objectPath) =>
+			Effect.succeed({
+				contract: {
+					name: "unreal-editor-asset-navigation",
+					version: { major: 1, minor: 0 }
+				},
+				objectPath,
+				status: "located"
+			})
 	};
 }
 
@@ -166,16 +181,33 @@ describe("GameTextRoute interactions", () => {
 		expect(screen.getByRole("complementary", { name: "Text focus" }).textContent).toContain(
 			"Continue"
 		);
-		await user.click(within(results).getByRole("button", { name: /Quit game\?/ }));
+		expect(
+			within(results).getByRole("button", {
+				name: "Locate the asset using Continue in Unreal"
+			})
+		).toBeDefined();
+		await user.click(
+			within(results).getByRole("button", {
+				name: "Locate the asset using Quit game? in Unreal"
+			})
+		);
 		expect(focus.textContent).toContain("Quit game?");
+		expect(focus.textContent).toContain("Menu · Quit");
+		expect(focus.textContent).toContain("Prompt field");
 
 		await user.type(screen.getByRole("searchbox", { name: "Search corpus" }), "Continue");
 		await waitFor(() => {
 			const currentResults = screen.getByRole("region", { name: "Text units" });
 			expect(
-				within(currentResults).queryByRole("button", { name: /Quit game\?/ })
+				within(currentResults).queryByRole("button", {
+					name: /Locate the asset using Quit game\?/
+				})
 			).toBeNull();
-			expect(within(currentResults).getByRole("button", { name: /Continue/ })).toBeDefined();
+			expect(
+				within(currentResults).getByRole("button", {
+					name: /Locate the asset using Continue/
+				})
+			).toBeDefined();
 		});
 		expect(screen.getByRole("complementary", { name: "Text focus" }).textContent).toContain(
 			"Continue"
@@ -198,30 +230,84 @@ describe("GameTextRoute interactions", () => {
 		});
 	});
 
+	it("packs identity and useful copy actions into each result", async () => {
+		const user = userEvent.setup();
+		renderRoute();
+		const results = await screen.findByRole("region", { name: "Text units" });
+
+		expect(within(results).getByText("Unreal identity")).toBeDefined();
+		expect(within(results).getByText("Primary source")).toBeDefined();
+		expect(within(results).getByText("UI · Continue")).toBeDefined();
+
+		const copyText = within(results).getByRole("button", {
+			name: "Copy source text Continue"
+		});
+		await user.click(copyText);
+		await waitFor(() => expect(copyText.textContent).toBe("Copied"));
+		expect(await navigator.clipboard.readText()).toBe("Continue");
+
+		const copyIdentity = within(results).getByRole("button", {
+			name: "Copy Unreal identity UI · Continue"
+		});
+		await user.click(copyIdentity);
+		await waitFor(() => expect(copyIdentity.textContent).toBe("Copied"));
+		expect(await navigator.clipboard.readText()).toBe("UI · Continue");
+	});
+
+	it("locates a single-use text asset through the live editor capability", async () => {
+		const user = userEvent.setup();
+		renderRoute();
+		const results = await screen.findByRole("region", { name: "Text units" });
+		const locate = within(results).getByRole("button", {
+			name: "Locate the asset using Continue in Unreal"
+		});
+
+		await user.click(locate);
+
+		await waitFor(() => expect(locate.textContent).toBe("Located"));
+		expect(
+			within(screen.getByRole("complementary", { name: "Text focus" })).getByRole("button", {
+				name: "Located"
+			})
+		).toBeDefined();
+	});
+
 	it("switches between editable and read-only authority filters", async () => {
 		const user = userEvent.setup();
 		renderRoute();
 		await screen.findByRole("region", { name: "Text units" });
-		const readOnly = screen.getByRole("button", { name: "Read only" });
+		const readOnly = screen.getByRole("button", { name: "Evidence only" });
 
 		await user.click(readOnly);
 		expect(readOnly.getAttribute("aria-pressed")).toBe("true");
 		await waitFor(() => {
 			const currentResults = screen.getByRole("region", { name: "Text units" });
 			expect(
-				within(currentResults).getByRole("button", { name: /Quit game\?/ })
+				within(currentResults).getByRole("button", {
+					name: /Locate the asset using Quit game\?/
+				})
 			).toBeDefined();
-			expect(within(currentResults).queryByRole("button", { name: /Continue/ })).toBeNull();
+			expect(
+				within(currentResults).queryByRole("button", {
+					name: /Locate the asset using Continue/
+				})
+			).toBeNull();
 		});
 
-		const editable = screen.getByRole("button", { name: "Source editable" });
+		const editable = screen.getByRole("button", { name: "Supported sources" });
 		await user.click(editable);
 		expect(editable.getAttribute("aria-pressed")).toBe("true");
 		await waitFor(() => {
 			const currentResults = screen.getByRole("region", { name: "Text units" });
-			expect(within(currentResults).getByRole("button", { name: /Continue/ })).toBeDefined();
 			expect(
-				within(currentResults).queryByRole("button", { name: /Quit game\?/ })
+				within(currentResults).getByRole("button", {
+					name: /Locate the asset using Continue/
+				})
+			).toBeDefined();
+			expect(
+				within(currentResults).queryByRole("button", {
+					name: /Locate the asset using Quit game\?/
+				})
 			).toBeNull();
 		});
 	});

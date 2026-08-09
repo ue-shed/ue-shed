@@ -36,10 +36,14 @@ import type {
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
 import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
+import type { ProjectLaunchMode, ProjectLaunchResult } from "../main/project-workspace-contract.js";
 
 declare global {
 	interface Window {
 		readonly ueShed: {
+			readonly assetNavigation: {
+				readonly locate: (objectPath: string) => Promise<unknown>;
+			};
 			readonly editorSession: {
 				readonly status: () => Promise<EditorPlaySessionStateResponse>;
 				readonly execute: (
@@ -52,6 +56,7 @@ declare global {
 			readonly project: {
 				readonly choose: () => Promise<WorkbenchProjectState>;
 				readonly current: () => Promise<WorkbenchProjectState>;
+				readonly launch: (mode: ProjectLaunchMode) => Promise<ProjectLaunchResult>;
 				readonly progress: () => Promise<unknown>;
 			};
 			readonly assetAudits: {
@@ -63,6 +68,8 @@ declare global {
 				readonly search: (request: unknown) => Promise<unknown>;
 				readonly record: (objectPath: string) => Promise<unknown>;
 				readonly preview: (objectPath: string) => Promise<unknown>;
+				readonly previewOffline: (objectPath: string) => Promise<unknown>;
+				readonly previewOfflineBatch: (request: unknown) => Promise<unknown>;
 			};
 			readonly gameText: {
 				readonly loadConfiguredProject: () => Promise<unknown>;

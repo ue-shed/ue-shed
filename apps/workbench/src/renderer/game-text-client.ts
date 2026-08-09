@@ -7,6 +7,7 @@ import {
 	type TextCorpusSearchRequest,
 	type TextCorpusSearchResult
 } from "@ue-shed/game-text/browser";
+import { decodeEditorAssetLocateResult } from "@ue-shed/protocol";
 import {
 	GameTextClient,
 	GameTextClientError,
@@ -51,6 +52,13 @@ export const gameTextClient: GameTextClientShape = GameTextClient.of({
 			"gameText.progress",
 			() => window.ueShed.gameText.progress(),
 			Schema.decodeUnknownEffect(WorkbenchTaskProgress)
+		)
+	),
+	locateAsset: Effect.fn("GameTextClient.locateAsset")((objectPath: string) =>
+		invokeRequest(
+			"gameText.locateAsset",
+			() => window.ueShed.assetNavigation.locate(objectPath),
+			decodeEditorAssetLocateResult
 		)
 	),
 	search: Effect.fn("GameTextClient.search")(

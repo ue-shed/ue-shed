@@ -32,10 +32,12 @@ import type {
 } from "@ue-shed/extension-camera-review/client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
+	CameraStatusResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	FixtureLaunchResult,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
 import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
@@ -48,6 +50,8 @@ declare global {
 				readonly locate: (objectPath: string) => Promise<unknown>;
 			};
 			readonly editorSession: {
+				readonly settings: () => Promise<UnrealConnectionSettings>;
+				readonly setPort: (port: number) => Promise<UnrealConnectionSettings>;
 				readonly status: () => Promise<EditorPlaySessionStateResponse>;
 				readonly execute: (
 					command: EditorPlaySessionCommand
@@ -181,7 +185,7 @@ declare global {
 			};
 			readonly configure: (config: CameraScheduleConfig) => Promise<CameraStatus>;
 			readonly getMetrics: () => Promise<WorkbenchCameraMetrics>;
-			readonly getStatus: () => Promise<CameraStatus>;
+			readonly getStatus: () => Promise<CameraStatusResult>;
 			readonly onFrame: (listener: (frame: RendererCameraFrame) => void) => () => void;
 			readonly onWorldObservation: (
 				listener: (event: RendererWorldObservationEvent) => void

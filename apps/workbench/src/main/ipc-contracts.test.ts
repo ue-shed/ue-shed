@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
+	CameraStatusResult,
 	cameraFrameEvent,
 	worldObservationEvent,
 	CandidateId,
@@ -14,6 +15,7 @@ import {
 	invokeChannelNames,
 	invokeContracts,
 	PresentationBudgetMbPerSecond,
+	RemoteControlPort,
 	SessionId,
 	type InvokeChannel
 } from "./ipc-contracts.js";
@@ -90,6 +92,14 @@ const cameraStatus = {
 	}
 };
 
+it.effect("represents a stopped game world as unavailable camera status", () =>
+	Schema.decodeUnknownEffect(CameraStatusResult)({
+		message: "Camera streaming is unavailable in the current editor state.",
+		recovery: "Start a Play or Simulate session before opening Camera Lab streaming.",
+		status: "unavailable"
+	}).pipe(Effect.asVoid)
+);
+
 const approveIntent = {
 	candidateId: "candidate-1",
 	candidatePose: {
@@ -104,6 +114,8 @@ const approveIntent = {
 };
 
 const validArgsByChannel: Record<InvokeChannel, unknown> = {
+	"editor-session:settings": [],
+	"editor-session:set-port": [31001],
 	"editor-session:status": [],
 	"editor-session:execute": ["start_play"],
 	"fixture:launch": [],
@@ -251,6 +263,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 };
 
 const validResultByChannel: Record<InvokeChannel, unknown> = {
+	"editor-session:settings": { port: 30001 },
+	"editor-session:set-port": { port: 31001 },
 	"editor-session:status": {
 		contract: { name: "unreal-editor-play-session", version: { major: 1, minor: 0 } },
 		state: { status: "stopped" }
@@ -361,7 +375,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"authoring:session:save": sessionFailure,
 	"camera:metrics": undefined,
 	"camera:presentation-budget": 80,
-	"camera:status": cameraStatus,
+	"camera:status": { camera: cameraStatus, status: "ready" },
 	"camera:configure": cameraStatus,
 	"content-observatory:status": { status: "not_configured" },
 	"content-observatory:targets": {
@@ -468,6 +482,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 };
 
 const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
+	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline-batch": [
@@ -503,9 +518,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 77 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(77);
-	expect(new Set(invokeChannelNames).size).toBe(77);
+it("registers exactly 79 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(79);
+	expect(new Set(invokeChannelNames).size).toBe(79);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });
@@ -593,6 +608,18 @@ it.effect("constrains game object paths, session ids, and candidate ids", () =>
 		expect(yield* Schema.decodeUnknownEffect(SessionId)("session-1")).toBe("session-1");
 		const emptySession = yield* Schema.decodeUnknownEffect(SessionId)("").pipe(Effect.exit);
 		expect(Exit.isFailure(emptySession)).toBe(true);
+	})
+);
+
+it.effect("accepts only valid Remote Control ports", () =>
+	Effect.gen(function* () {
+		expect(yield* Schema.decodeUnknownEffect(RemoteControlPort)(30001)).toBe(30001);
+		for (const value of [0, 65_536, 30001.5, "30001"]) {
+			const result = yield* Schema.decodeUnknownEffect(RemoteControlPort)(value).pipe(
+				Effect.exit
+			);
+			expect(Exit.isFailure(result)).toBe(true);
+		}
 	})
 );
 

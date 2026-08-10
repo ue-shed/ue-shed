@@ -25,9 +25,11 @@ pnpm showcase
 `showcase` incrementally builds the in-repo `uasset` reader and Workbench, configures the fixture
 project, offline map, and texture-audit rules, and opens the catalog. It does not build or launch
 Unreal up front. Texture Audit, Live World in Map Review, and Camera Load Lab each expose a launch
-or connect action when their optional live capability is needed. If an editor is already serving Remote Control on the usual
-local ports, `showcase` attaches to it. Otherwise it reserves the next free HTTP/WebSocket pair so a
-later in-app fixture launch can claim that endpoint.
+or connect action when their optional live capability is needed. If an editor is already serving
+Remote Control on the usual local ports, `showcase` attaches to it. Otherwise it reserves the next
+free HTTP/WebSocket pair so a later in-app fixture launch can claim that endpoint. The monitored
+HTTP port is shown beside the editor status in the Workbench header; click it to enter another port.
+The change takes effect immediately and is remembered on that device.
 
 The source-checkout flow uses `target/debug/uasset.exe` (`target/debug/uasset` on other platforms).
 To exercise another compatible reader build instead, override it before launching:
@@ -122,8 +124,9 @@ that editor process without editing the project descriptor. The generic fixture'
 [`UEShedFixture.uproject`](../fixtures/unreal-project/UEShedFixture.uproject) remains the reference
 for projects that deliberately want persistent plugin entries instead.
 
-Launch the editor with rendering available (not `-NullRHI`) and configure the project and Remote
-Control endpoint:
+Launch the editor with rendering available (not `-NullRHI`), choose its project in Workbench, and
+click the `:port` control beside the editor status if Remote Control is not using the displayed
+port. Environment configuration remains available for scripted launches:
 
 ```powershell
 $env:UE_SHED_PROJECT_ROOT = "C:\path\to\Project"
@@ -157,9 +160,12 @@ keeps the active map, Capture Profiles, and Visibility Policies. Switching back 
 Views—and therefore the same approved cameras and angles. **Add selected actor as View** appends without replacing existing observations; choose an
 approved View and **Revise selected View** only when the intent is to preserve its ID and advance
 its revision. Several Views may share one actor, and Workbench groups them by subject without
-changing the flat portable Review Set. Open **Framing** to tune the named arc/ring presets or one selected view. The count sliders show
-the ordinary 1–24 range; exact larger counts remain valid and show a preview-cost hint. The headless
-equivalent is:
+changing the flat portable Review Set. Select a preview to expose its per-view distance, elevation,
+yaw, FOV, and margin offsets. **View presets + rig** expands the named arc/ring generators that
+rebuild the full contact sheet; exact final-pose fields update only the selected preview. Framing
+warnings remain visible but do not prevent **Keep View**; a stale subject/session still requires an
+explicit reframe. The count sliders show the ordinary 1–24 range; exact larger counts remain valid
+and show a preview-cost hint. The headless equivalent is:
 
 ```powershell
 pnpm ue-shed review authoring bootstrap "C:\path\to\Project" "http://127.0.0.1:30001"

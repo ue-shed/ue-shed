@@ -1337,6 +1337,58 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								status: "failed" as const
 							};
 						}
+						if (
+							intent.reviewSetMode === "selection_map" &&
+							intent.destination.kind === "revise_view"
+						) {
+							return mapReviewAuthoringFailure({
+								message:
+									"A Review View can only be revised in its existing Review Set.",
+								recovery: "Open that Review Set, then revise the View again."
+							});
+						}
+						const reviewSetPath =
+							intent.reviewSetMode === "selection_map"
+								? undefined
+								: yield* selectedReviewSetPath();
+						if (reviewSetPath !== undefined) {
+							const reviewSet = yield* repository.loadSet(reviewSetPath);
+							if (reviewSet.project.mapPath !== selection.mapPath) {
+								const matchingSets = (yield* availableReviewSets(
+									projectRoot
+								)).filter((candidate) => candidate.mapPath === selection.mapPath);
+								const matchingReviewSet =
+									matchingSets.length === 1 ? matchingSets[0] : undefined;
+								return {
+									...(matchingReviewSet === undefined
+										? {}
+										: {
+												matchingReviewSet: {
+													displayName: matchingReviewSet.displayName,
+													id: matchingReviewSet.id,
+													mapPath: matchingReviewSet.mapPath,
+													viewCount: matchingReviewSet.viewCount
+												}
+											}),
+									recovery:
+										intent.destination.kind === "revise_view"
+											? "Open the Review Set that owns this map, then choose a View to revise."
+											: "Open a Review Set for the selected map, or start its first map-scoped set.",
+									reviewSet: {
+										displayName: reviewSet.displayName,
+										id: reviewSet.id,
+										mapPath: reviewSet.project.mapPath,
+										viewCount: reviewSet.views.length
+									},
+									selection: {
+										actorPath: selection.actorPath,
+										displayName: selection.displayName,
+										mapPath: selection.mapPath
+									},
+									status: "map_mismatch" as const
+								};
+							}
+						}
 						const candidates = generateFramingCandidates(selection);
 						const session = yield* authoringSessions.start({
 							candidates,
@@ -1348,9 +1400,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 											viewId: ReviewViewId.make(intent.destination.viewId)
 										},
 							projectRoot,
-							...(configuration.review.status === "configured"
-								? { reviewSetPath: configuration.review.reviewSetPath }
-								: {}),
+							...(reviewSetPath === undefined ? {} : { reviewSetPath }),
 							selection
 						});
 						return authoringResult(session);
@@ -1371,6 +1421,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				}
 				const projectRoot = reviewProject.projectRoot;
 				return yield* Effect.gen(function* () {
+					const reviewSetPath = yield* selectedReviewSetPath();
 					const session = intent
 						? yield* authoringSessions.load({
 								projectRoot,
@@ -1383,6 +1434,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						return mapReviewAuthoringFailure({
 							message: "There is no active Map Review authoring session to resume.",
 							recovery: "Select an actor and use Reframe selected actor to start one."
+						});
+					}
+					if (reviewSetPath !== undefined && session.reviewSet.path !== reviewSetPath) {
+						return mapReviewAuthoringFailure({
+							message: "There is no active authoring session for this Review Set.",
+							recovery: "Select an actor to start authoring a View in this set."
 						});
 					}
 					return yield* runExclusive(
@@ -1520,13 +1577,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						recovery: "Use Reframe selected actor to regenerate reviewable candidates."
 					});
 				}
-				const candidate = session.candidates.find((item) => item.id === intent.candidateId);
+				const previewCandidates = session.candidates.map((item) =>
+					item.id === session.selectedCandidateId && session.draftPose !== undefined
+						? { ...item, approvedPose: session.draftPose }
+						: item
+				);
+				const candidate = previewCandidates.find((item) => item.id === intent.candidateId);
 				if (!candidate) {
 					return mapReviewAuthoringFailure({
 						message: `Candidate ${intent.candidateId} is no longer available.`
 					});
 				}
-				const poseFingerprint = livePreviewPoseFingerprint(session.candidates);
+				const poseFingerprint = livePreviewPoseFingerprint(previewCandidates);
 
 				const nowMs = yield* Clock.currentTimeMillis;
 				const cachedPlay = yield* Ref.get(playActiveCache);
@@ -1581,7 +1643,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									const fps = yield* Ref.get(livePreviewFps);
 									const next = yield* ensureProvisionedCameras(
 										configuration.remoteControlEndpoint,
-										session.candidates.map((item) => ({
+										previewCandidates.map((item) => ({
 											correlation: {
 												candidateId: item.id,
 												type: "framing_candidate" as const
@@ -1768,12 +1830,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const previewCandidate = Effect.fn("Workbench.WorkbenchMapReview.previewCandidate")(
 			function* (candidateId: string) {
-				if (configuration.review.status !== "configured") {
+				const reviewSetPath = yield* selectedReviewSetPath();
+				if (reviewSetPath === undefined) {
 					return mapReviewAuthoringFailure({
-						message: "No review project is configured."
+						message: "No Review Set is open.",
+						recovery: "Choose a Review Set before previewing a framing candidate."
 					});
 				}
-				const { reviewSetPath } = configuration.review;
 				return yield* runExclusive(
 					Effect.gen(function* () {
 						const reviewSet = yield* repository.loadSet(reviewSetPath);
@@ -1828,12 +1891,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const approveCandidate = Effect.fn("Workbench.WorkbenchMapReview.approveCandidate")(
 			function* (intent: MapReviewApproveCandidateIntent) {
-				if (configuration.review.status !== "configured") {
+				const reviewSetPath = yield* selectedReviewSetPath();
+				if (reviewSetPath === undefined) {
 					return mapReviewAuthoringFailure({
-						message: "No review project is configured."
+						message: "No Review Set is open.",
+						recovery: "Choose a Review Set before keeping a framing candidate."
 					});
 				}
-				const { reviewSetPath } = configuration.review;
 				return yield* Effect.gen(function* () {
 					const reviewSet = yield* repository.loadSet(reviewSetPath);
 					const selection = yield* authoring.inspectSelection(

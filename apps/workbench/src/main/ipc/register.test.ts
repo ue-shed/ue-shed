@@ -22,6 +22,7 @@ import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
 import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
+import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { register } from "./register.js";
 
@@ -457,6 +458,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		projectLauncher,
 		cameraPresentation,
 		editorSession,
+		makeWorkbenchUnrealConnectionLayer("http://127.0.0.1:30001"),
 		configuration
 	);
 }
@@ -484,13 +486,25 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 77 contract channels", () =>
+it.effect("registers exactly the 79 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(77);
+		expect(result).toHaveLength(79);
+	})
+);
+
+it.effect("changes the Remote Control monitor port through editor-session settings", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				expect(yield* ipc.invoke("editor-session:settings")).toEqual({ port: 30001 });
+				return yield* ipc.invoke("editor-session:set-port", 31001);
+			})
+		);
+		expect(result).toEqual({ port: 31001 });
 	})
 );
 

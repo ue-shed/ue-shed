@@ -190,37 +190,42 @@ const assetReaderTestLayer = makeAssetReaderTestLayer({
 	source: () => Effect.succeed("configured" as const)
 });
 
-const baseMapReviewDeps = Layer.mergeAll(
-	assetReaderTestLayer,
-	makeCameraFeedTestLayer(),
-	makeWorkbenchWindowTestLayer(),
-	clearOnlyRemoteControl,
-	makeReviewAuthoringSessionsTestLayer(dyingAuthoringSessions),
-	Layer.succeed(
-		Observatory,
-		Observatory.of({
-			focus: () => Effect.die("not used"),
-			observe: () => Stream.die("not used"),
-			setObservationCadence: () => Effect.die("not used"),
-			snapshot: () => Effect.die("not used")
+const makeMapReviewDeps = (
+	authoringSessions: ReviewAuthoringSessionsShape = dyingAuthoringSessions
+) =>
+	Layer.mergeAll(
+		assetReaderTestLayer,
+		makeCameraFeedTestLayer(),
+		makeWorkbenchWindowTestLayer(),
+		clearOnlyRemoteControl,
+		makeReviewAuthoringSessionsTestLayer(authoringSessions),
+		Layer.succeed(
+			Observatory,
+			Observatory.of({
+				focus: () => Effect.die("not used"),
+				observe: () => Stream.die("not used"),
+				setObservationCadence: () => Effect.die("not used"),
+				snapshot: () => Effect.die("not used")
+			})
+		),
+		makeEditorPlaySessionTestLayer({
+			execute: () => Effect.die("not used"),
+			pause: () => Effect.die("not used"),
+			resume: () => Effect.die("not used"),
+			start: () => Effect.die("not used"),
+			status: () =>
+				Effect.succeed({
+					contract: {
+						name: "unreal-editor-play-session",
+						version: { major: 1, minor: 0 }
+					},
+					state: { status: "stopped" }
+				}),
+			stop: () => Effect.die("not used")
 		})
-	),
-	makeEditorPlaySessionTestLayer({
-		execute: () => Effect.die("not used"),
-		pause: () => Effect.die("not used"),
-		resume: () => Effect.die("not used"),
-		start: () => Effect.die("not used"),
-		status: () =>
-			Effect.succeed({
-				contract: {
-					name: "unreal-editor-play-session",
-					version: { major: 1, minor: 0 }
-				},
-				state: { status: "stopped" }
-			}),
-		stop: () => Effect.die("not used")
-	})
-);
+	);
+
+const baseMapReviewDeps = makeMapReviewDeps();
 
 const WorkbenchMapReviewTestLive = MapReviewLiveWithDialog.pipe(Layer.provide(baseMapReviewDeps));
 
@@ -609,15 +614,17 @@ it.effect("round-trips immutable policy replacement through the headless service
 	);
 });
 
-it.effect("reports authoring failure when the selection map does not match the review set", () =>
+it.effect("reports an actionable map mismatch before starting authoring", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
 		const result = yield* service.authorFromSelection({
 			destination: { kind: "append_view" }
 		});
-		expect(result.status).toBe("failed");
-		if (result.status === "failed") {
-			expect(result.error.message).toContain("different map");
+		expect(result.status).toBe("map_mismatch");
+		if (result.status === "map_mismatch") {
+			expect(result.reviewSet.mapPath).toBe("/Game/Maps/Fixture");
+			expect(result.selection.mapPath).toBe("/Game/Maps/Other");
+			expect(result.recovery).toContain("selected map");
 		}
 	}).pipe(
 		Effect.provide(
@@ -630,6 +637,7 @@ it.effect("reports authoring failure when the selection map does not match the r
 							discardStaging: () => Effect.die("not used"),
 							findSet: () => Effect.die("not used"),
 							finalizeRun: () => Effect.die("not used"),
+							listSets: () => Effect.succeed([]),
 							listRuns: () => Effect.die("not used"),
 							loadRun: () => Effect.die("not used"),
 							loadSet: () => Effect.succeed(fixtureReviewSet),
@@ -664,6 +672,94 @@ it.effect("reports authoring failure when the selection map does not match the r
 		)
 	)
 );
+
+it.effect("does not carry the startup Review Set into a newly selected project", () => {
+	let startArgs: Parameters<ReviewAuthoringSessionsShape["start"]>[0] | undefined;
+	const selectedProjectRoot = "D:/Games/Hex";
+	const selectedProjectLayer = makeWorkbenchProjectTestLayer({
+		choose: () => Effect.die("not used"),
+		current: () =>
+			Effect.succeed({
+				project: { ...mapReviewProject.project, projectRoot: selectedProjectRoot },
+				status: "ready" as const
+			}),
+		inputAtlas: () => Effect.die("not used"),
+		savedTables: () => Effect.die("not used"),
+		savedProject: () => Effect.die("not used")
+	});
+	const sessions: ReviewAuthoringSessionsShape = {
+		...dyingAuthoringSessions,
+		start: (args) => {
+			startArgs = args;
+			return dyingAuthoringSessions.create({
+				candidates: args.candidates,
+				projectRoot: args.projectRoot,
+				reviewSetPath: `${selectedProjectRoot}/.ue-shed/review/sets/hex.json`,
+				selection: args.selection,
+				viewId: "hex-subject"
+			});
+		}
+	};
+	const live = WorkbenchMapReviewLive.pipe(
+		Layer.provide(selectedProjectLayer),
+		Layer.provide(makeMapReviewDeps(sessions))
+	);
+
+	return Effect.gen(function* () {
+		const service = yield* WorkbenchMapReview;
+		const result = yield* service.authorFromSelection({
+			destination: { kind: "append_view" }
+		});
+
+		expect(result.status).toBe("ready");
+		expect(startArgs?.projectRoot).toBe(selectedProjectRoot);
+		expect(startArgs?.reviewSetPath).toBeUndefined();
+		expect(startArgs?.selection.mapPath).toBe("/Game/Hex/L_Hex");
+	}).pipe(
+		Effect.provide(
+			live.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						makeWorkbenchConfigurationLayer(configuredReview),
+						makeLocalFilesTestLayer(),
+						makeReviewRepositoryTestLayer({
+							discardStaging: () => Effect.die("not used"),
+							findSet: () => Effect.die("not used"),
+							finalizeRun: () => Effect.die("not used"),
+							listRuns: () => Effect.die("not used"),
+							loadRun: () => Effect.die("not used"),
+							loadSet: () => Effect.die("not used"),
+							prepareRun: () => Effect.die("not used"),
+							saveSet: () => Effect.die("not used"),
+							storeArtifact: () => Effect.die("not used"),
+							writeRunDocument: () => Effect.die("not used")
+						}),
+						makeReviewCaptureTestLayer(dyingCapture),
+						makeReviewAuthoringTestLayer({
+							...dyingAuthoring,
+							inspectSelection: () =>
+								Effect.succeed({
+									actorPath: "/Game/Hex/L_Hex.L_Hex:PersistentLevel.Subject",
+									bounds: {
+										center: { x: 0, y: 0, z: 0 },
+										extent: { x: 100, y: 100, z: 100 },
+										rotation: { pitch: 0, roll: 0, yaw: 0 }
+									},
+									contract: {
+										name: "ue-shed-review-selection" as const,
+										version: { major: 1, minor: 0 }
+									},
+									displayName: "Hex Subject",
+									mapPath: "/Game/Hex/L_Hex",
+									status: "selected" as const
+								})
+						})
+					)
+				)
+			)
+		)
+	);
+});
 
 it.effect("generates framing candidates for a matching selection", () =>
 	Effect.gen(function* () {
@@ -1642,6 +1738,13 @@ const livePreviewSession = {
 	createdAt: "2026-07-20T00:00:00.000Z",
 	diagnostics: [],
 	discardedCandidateIds: [],
+	draftPose: {
+		aspectRatio: "16:9" as const,
+		fieldOfViewDegrees: 55,
+		location: { x: 40, y: 50, z: 60 },
+		projection: "perspective" as const,
+		rotation: { pitch: -8, roll: 0, yaw: 90 }
+	},
 	id: "session-live",
 	lifecycle: "active" as const,
 	pendingReviewSet: {
@@ -1654,6 +1757,7 @@ const livePreviewSession = {
 		mapPath: fixtureReviewSet.project.mapPath,
 		path: reviewSetPath
 	},
+	selectedCandidateId: "facade_front",
 	subject: {
 		actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
 		bounds: {
@@ -1668,7 +1772,7 @@ const livePreviewSession = {
 	viewId: "initial-view"
 };
 
-it.effect("streams live BGRA authoring previews while PIE is running", () =>
+it.effect("streams the selected draft pose while PIE is running", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
 		const result = yield* service.previewAuthoringCandidate({
@@ -1718,6 +1822,18 @@ it.effect("streams live BGRA authoring previews while PIE is running", () =>
 						makeWorkbenchWindowTestLayer(),
 						makeRemoteControlClientTestLayer((request) => {
 							if (request.functionName === "EnsureProvisionedCameras") {
+								const provisioned = JSON.parse(
+									String(request.parameters.RequestJson)
+								) as {
+									cameras: Array<{
+										fieldOfViewDegrees: number;
+										location: unknown;
+									}>;
+								};
+								expect(provisioned.cameras[0]).toMatchObject({
+									fieldOfViewDegrees: 55,
+									location: { x: 40, y: 50, z: 60 }
+								});
 								return Effect.succeed({
 									cameras: [
 										{

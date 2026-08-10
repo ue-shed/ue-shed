@@ -16,12 +16,14 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
-export const PUBLIC_VERSION = "0.1.0-rc.4";
 export const WASM_PACKAGE_NAME = "@ue-shed/uasset-inspection-wasm";
+export const GAME_TEXT_PACKAGE_NAME = "@ue-shed/game-text";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Plan 025 shipped the parser slice; Plans 030 and 031 add the headless Map Review and Observatory
- * closures without making a UI package public. Plan 036 adds the bytes-only WASM inspection surface.
+ * closures without making a UI package public. Plan 036 adds the bytes-only WASM inspection
+ * surface. Game Text adds the first package-mode existing-host feature bundle without publishing
+ * its Workbench presentation.
  */
 export const PUBLIC_PACKAGES = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
@@ -32,10 +34,17 @@ export const PUBLIC_PACKAGES = [
 	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },
 	{ name: "@ue-shed/unreal-assets", directory: "packages/unreal-assets" },
-	{ name: "@ue-shed/uasset", directory: "packages/uasset" }
+	{ name: "@ue-shed/uasset", directory: "packages/uasset" },
+	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" }
 ];
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Legacy source/plugin candidates still have one release identity. npm packages are independently
+// versioned by Changesets; the launcher version remains the candidate identity until the post-1.0
+// hosted lane is redesigned around Changesets' release plan.
+export const PUBLIC_VERSION = JSON.parse(
+	await readFile(join(repositoryRoot, "packages/uasset/package.json"), "utf8")
+).version;
 const localProtocolPattern = /(?:workspace|catalog|file|link|portal):/;
 const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
 const exactEffectVersion = "4.0.0-beta.98";
@@ -204,11 +213,17 @@ export function validateWasmPackageManifest({ manifest, files }) {
 	return failures;
 }
 
-export function validatePackedManifest({ manifest, manifestRaw, expectedName, files }) {
+export function validatePackedManifest({
+	manifest,
+	manifestRaw,
+	expectedName,
+	expectedVersion,
+	files
+}) {
 	const failures = [];
 	if (manifest.name !== expectedName) failures.push(`expected package name ${expectedName}`);
-	if (manifest.version !== PUBLIC_VERSION) {
-		failures.push(`expected exact version ${PUBLIC_VERSION}, received ${manifest.version}`);
+	if (manifest.version !== expectedVersion) {
+		failures.push(`expected exact version ${expectedVersion}, received ${manifest.version}`);
 	}
 	if (manifest.private === true) failures.push("package must not be private");
 	if (manifest.license !== "MIT") failures.push("package license must be MIT");
@@ -233,6 +248,11 @@ export function validatePackedManifest({ manifest, manifestRaw, expectedName, fi
 	}
 	if (expectedName === WASM_PACKAGE_NAME) {
 		failures.push(...validateWasmPackageManifest({ manifest, files }));
+	}
+	if (expectedName === GAME_TEXT_PACKAGE_NAME) {
+		for (const requiredFile of ["package/ADOPTING.md", "package/adoption.manifest.json"]) {
+			if (!files.includes(requiredFile)) failures.push(`archive is missing ${requiredFile}`);
+		}
 	}
 	const bins =
 		typeof manifest.bin === "string" ? { [manifest.name]: manifest.bin } : manifest.bin;
@@ -262,6 +282,24 @@ function requireExactDependency(manifest, name, expected, failures) {
 	}
 }
 
+function requireExactPeerDependency(manifest, name, expected, failures) {
+	const actual = manifest?.peerDependencies?.[name];
+	if (actual !== expected) {
+		failures.push(`${manifest?.name ?? "package"} must peer-pin ${name} ${expected}`);
+	}
+}
+
+function requireExactInternalDependency(manifest, targetName, byName, failures) {
+	const target = byName.get(targetName);
+	if (target === undefined) {
+		failures.push(
+			`${manifest?.name ?? "package"} references missing public package ${targetName}`
+		);
+		return;
+	}
+	requireExactDependency(manifest, targetName, target.version, failures);
+}
+
 function validateExactPackageGraph(manifests) {
 	const byName = new Map(manifests.map((entry) => [entry.manifest.name, entry.manifest]));
 	const failures = [];
@@ -274,31 +312,39 @@ function validateExactPackageGraph(manifests) {
 	const unrealAssets = byName.get("@ue-shed/unreal-assets");
 	const launcher = byName.get("@ue-shed/uasset");
 	const platform = byName.get("@ue-shed/uasset-win32-x64");
+	const gameText = byName.get(GAME_TEXT_PACKAGE_NAME);
 	requireExactDependency(protocol, "effect", exactEffectVersion, failures);
 	requireExactDependency(observability, "effect", exactEffectVersion, failures);
 	requireExactDependency(observability, "@effect/opentelemetry", exactEffectVersion, failures);
-	requireExactDependency(unrealConnection, "@ue-shed/protocol", PUBLIC_VERSION, failures);
+	requireExactInternalDependency(unrealConnection, "@ue-shed/protocol", byName, failures);
 	requireExactDependency(unrealConnection, "effect", exactEffectVersion, failures);
 	requireExactDependency(unrealConnection, "unreal-rc", exactUnrealRcVersion, failures);
-	requireExactDependency(cameras, "@ue-shed/protocol", PUBLIC_VERSION, failures);
-	requireExactDependency(cameras, "@ue-shed/unreal-connection", PUBLIC_VERSION, failures);
+	requireExactInternalDependency(cameras, "@ue-shed/observability", byName, failures);
+	requireExactInternalDependency(cameras, "@ue-shed/protocol", byName, failures);
+	requireExactInternalDependency(cameras, "@ue-shed/unreal-connection", byName, failures);
 	requireExactDependency(cameras, "effect", exactEffectVersion, failures);
-	requireExactDependency(observatory, "@ue-shed/observability", PUBLIC_VERSION, failures);
-	requireExactDependency(observatory, "@ue-shed/unreal-connection", PUBLIC_VERSION, failures);
+	requireExactInternalDependency(observatory, "@ue-shed/observability", byName, failures);
+	requireExactInternalDependency(observatory, "@ue-shed/unreal-connection", byName, failures);
 	requireExactDependency(observatory, "effect", exactEffectVersion, failures);
-	requireExactDependency(unrealAssets, "@ue-shed/protocol", PUBLIC_VERSION, failures);
+	requireExactInternalDependency(unrealAssets, "@ue-shed/protocol", byName, failures);
 	requireExactDependency(unrealAssets, "effect", exactEffectVersion, failures);
+	requireExactInternalDependency(gameText, "@ue-shed/unreal-assets", byName, failures);
+	requireExactPeerDependency(gameText, "effect", exactEffectVersion, failures);
+	for (const dependencyField of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+		if (gameText?.[dependencyField]?.["@ue-shed/uasset"] !== undefined) {
+			failures.push(
+				`${GAME_TEXT_PACKAGE_NAME} must select its native reader through host configuration, not ${dependencyField}`
+			);
+		}
+	}
 	if (wasm?.license !== "MIT") {
 		failures.push(`${WASM_PACKAGE_NAME} must retain MIT license metadata`);
-	}
-	if (wasm?.version !== PUBLIC_VERSION) {
-		failures.push(`${WASM_PACKAGE_NAME} must pin version ${PUBLIC_VERSION}`);
 	}
 	const platformVersion =
 		launcher?.optionalDependencies?.["@ue-shed/uasset-win32-x64"] ??
 		launcher?.dependencies?.["@ue-shed/uasset-win32-x64"];
-	if (platformVersion !== PUBLIC_VERSION) {
-		failures.push(`@ue-shed/uasset must pin its Windows package ${PUBLIC_VERSION}`);
+	if (platformVersion !== platform?.version) {
+		failures.push(`@ue-shed/uasset must pin its Windows package ${platform?.version}`);
 	}
 	if (JSON.stringify(platform?.os) !== JSON.stringify(["win32"])) {
 		failures.push("@ue-shed/uasset-win32-x64 must declare os [win32]");
@@ -314,6 +360,9 @@ function validateExactPackageGraph(manifests) {
 	}
 	if (observatory?.exports?.["./presentation"] === undefined) {
 		failures.push("@ue-shed/observatory must export ./presentation");
+	}
+	if (gameText?.exports?.["./browser"] === undefined) {
+		failures.push(`${GAME_TEXT_PACKAGE_NAME} must export ./browser`);
 	}
 	if (failures.length > 0)
 		throw new Error(`Invalid public package graph:\n- ${failures.join("\n- ")}`);
@@ -333,9 +382,13 @@ export async function packPublicPackages({ output, build = true }) {
 		run(executable("pnpm"), ["--filter", WASM_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
+		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 	}
 	const packed = [];
 	for (const workspacePackage of PUBLIC_PACKAGES) {
+		const workspaceManifest = JSON.parse(
+			await readFile(join(repositoryRoot, workspacePackage.directory, "package.json"), "utf8")
+		);
 		const path = await packWorkspacePackage(workspacePackage, outputDirectory);
 		const filename = basename(path);
 		const manifestRaw = readPackedFile(path, "package/package.json");
@@ -345,6 +398,7 @@ export async function packPublicPackages({ output, build = true }) {
 			manifest,
 			manifestRaw,
 			expectedName: workspacePackage.name,
+			expectedVersion: workspaceManifest.version,
 			files
 		});
 		if (failures.length > 0) {
@@ -375,7 +429,7 @@ export async function packPublicPackages({ output, build = true }) {
 				version: PUBLIC_VERSION,
 				packages: packed.map(({ name, filename, sha256, bytes, manifest }) => ({
 					name,
-					version: PUBLIC_VERSION,
+					version: manifest.version,
 					license: manifest.license,
 					filename,
 					sha256,

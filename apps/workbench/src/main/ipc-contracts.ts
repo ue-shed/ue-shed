@@ -82,6 +82,29 @@ import {
 
 const EmptyArgs = Schema.Tuple([]);
 
+export const RemoteControlPort = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(1),
+	Schema.isLessThanOrEqualTo(65_535)
+);
+export type RemoteControlPort = Schema.Schema.Type<typeof RemoteControlPort>;
+
+export const CameraStatusResult = Schema.Union([
+	Schema.Struct({ camera: CameraStatus, status: Schema.Literal("ready") }),
+	Schema.Struct({
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		status: Schema.Literal("unavailable")
+	})
+]);
+export type CameraStatusResult = Schema.Schema.Type<typeof CameraStatusResult>;
+
+export const UnrealConnectionSettings = Schema.Struct({
+	port: RemoteControlPort
+});
+export interface UnrealConnectionSettings extends Schema.Schema.Type<
+	typeof UnrealConnectionSettings
+> {}
+
 /** `/Game/` object paths accepted by preview and catalog-table IPC. */
 export const GameObjectPath = Schema.String.check(
 	Schema.isMinLength(1),
@@ -291,6 +314,16 @@ const invoke = <
 });
 
 export const invokeContracts = {
+	"editor-session:settings": invoke({
+		channel: "editor-session:settings",
+		args: EmptyArgs,
+		result: UnrealConnectionSettings
+	}),
+	"editor-session:set-port": invoke({
+		channel: "editor-session:set-port",
+		args: Schema.Tuple([RemoteControlPort]),
+		result: UnrealConnectionSettings
+	}),
 	"editor-session:status": invoke({
 		channel: "editor-session:status",
 		args: EmptyArgs,
@@ -524,7 +557,7 @@ export const invokeContracts = {
 	"camera:status": invoke({
 		channel: "camera:status",
 		args: EmptyArgs,
-		result: CameraStatus
+		result: CameraStatusResult
 	}),
 	"camera:configure": invoke({
 		channel: "camera:configure",

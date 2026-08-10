@@ -13,11 +13,13 @@ import {
 	collectVisibleIndices,
 	contentBounds,
 	createWorldScoutPaintGate,
+	focusViewportOnActor,
 	hitTestVisibleActors,
 	nearestVisibleActor,
 	panViewportBy,
 	paintWorldScout,
 	projectVisibleActors,
+	representativeContentBounds,
 	stabilizeViewport,
 	worldScoutMarkerRadius,
 	zoomViewportAt
@@ -135,6 +137,76 @@ describe("world scout canvas store", () => {
 		});
 		expect(nudged.size).toBe(first.size);
 		expect(nudged.centerX).toBe(first.centerX);
+	});
+
+	it("fits the densest 95 percent of actor centers without removing the full bounds", () => {
+		const clustered = Array.from({ length: 100 }, (_, index) => ({
+			...actorA,
+			displayName: `Cluster ${index}`,
+			id: ActorId.make(`cluster-${index}`),
+			location: { x: index * 10, y: (index % 10) * 10, z: 0 },
+			path: `/Game/Fixture.Cluster_${index}`
+		}));
+		const globalEnvironment = {
+			...actorA,
+			bounds: {
+				center: { x: 0, y: 0, z: 0 },
+				extent: { x: 9_000_000_000, y: 9_000_000_000, z: 9_000_000_000 }
+			},
+			displayName: "Global Sky",
+			id: ActorId.make("global-sky"),
+			path: "/Game/Fixture.GlobalSky"
+		};
+		const store = new WorldScoutRetainedStore();
+		store.installSnapshot(
+			snapshot([
+				...clustered,
+				globalEnvironment,
+				{
+					...actorA,
+					displayName: "Far East",
+					id: ActorId.make("far-east"),
+					location: { x: 1_000_000_000, y: 0, z: 0 },
+					path: "/Game/Fixture.FarEast"
+				},
+				{
+					...actorA,
+					displayName: "Far North",
+					id: ActorId.make("far-north"),
+					location: { x: 0, y: 1_000_000_000, z: 0 },
+					path: "/Game/Fixture.FarNorth"
+				}
+			])
+		);
+		collectVisibleIndices(store, "", new Set(), store.visibleIndices);
+
+		const full = contentBounds(store, store.visibleIndices);
+		const representative = representativeContentBounds(store, store.visibleIndices);
+
+		expect(full!.maxX - full!.minX).toBeGreaterThan(10_000_000_000);
+		expect(representative).toEqual({ minX: 0, maxX: 950, minY: 0, maxY: 90 });
+	});
+
+	it("focuses a selected actor with context and never backs out of a closer view", () => {
+		const focused = focusViewportOnActor({
+			actorExtent: 20_000,
+			centerX: 471_425,
+			centerY: -35_344,
+			currentSize: 2_700_000,
+			fullFitSize: 38_640_310_938,
+			usefulFitSize: 2_700_000
+		});
+		expect(focused).toEqual({ centerX: 471_425, centerY: -35_344, size: 337_500 });
+
+		const alreadyCloser = focusViewportOnActor({
+			actorExtent: 20_000,
+			centerX: 471_425,
+			centerY: -35_344,
+			currentSize: 100_000,
+			fullFitSize: 38_640_310_938,
+			usefulFitSize: 2_700_000
+		});
+		expect(alreadyCloser.size).toBe(100_000);
 	});
 
 	it("hit-tests the nearest projected actor within the pick radius", () => {

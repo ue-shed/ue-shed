@@ -274,6 +274,51 @@ describe("WorldScout", () => {
 		expect(await screen.findByText("FOCUSED RUNTIME ACTOR")).toBeDefined();
 	});
 
+	it("zooms into an actor selected from the outliner", async () => {
+		const distant: ObservedActor = {
+			...observed,
+			displayName: "Distant marker",
+			id: ActorId.make("/Game/Fixture.Map:PersistentLevel.Distant"),
+			location: { x: 10_120, y: -80, z: 30 },
+			path: "/Game/Fixture.Map:PersistentLevel.Distant"
+		};
+		const snapshot = {
+			actors: [observed, distant],
+			capturedAt: new Date().toISOString(),
+			mapPath: "/Game/Fixture/Observatory",
+			sequence: 6,
+			worldKind: "editor" as const,
+			worldSeconds: 14
+		};
+		const paint = syncPaintScheduler();
+		const client = {
+			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
+			worldObservations: () => Stream.make(fallbackObservation(snapshot))
+		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<WorldScout
+					client={client}
+					onActorFocused={() => undefined}
+					paintScheduler={paint}
+				/>
+			</EffectRuntimeProvider>
+		));
+		paint.flush();
+		const zoom = (await screen.findByRole("slider", {
+			name: "Map zoom"
+		})) as HTMLInputElement;
+		const initialZoom = Number(zoom.value);
+		const user = userEvent.setup();
+		await user.click(screen.getByRole("button", { name: /Orbit 07/ }));
+		paint.flush();
+
+		expect(Number(zoom.value)).toBeGreaterThan(initialZoom);
+		expect(await screen.findByRole("heading", { name: "Orbit 07" })).toBeDefined();
+	});
+
 	it("reports explicit focus unavailable when Go To and Follow cannot focus", async () => {
 		const focusCalls: Array<{ actorId: string; bringToFront: boolean }> = [];
 		const snapshot = {

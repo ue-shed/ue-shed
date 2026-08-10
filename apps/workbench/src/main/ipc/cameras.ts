@@ -16,7 +16,17 @@ export const register = Effect.gen(function* () {
 		return presentation.setPresentationBudget(megabytesPerSecond);
 	});
 	yield* ipc.register(invokeContracts["camera:status"], () =>
-		presentation.status().pipe(Effect.orDie)
+		presentation.status().pipe(
+			Effect.match({
+				onFailure: () => ({
+					message: "Camera streaming is unavailable in the current editor state.",
+					recovery:
+						"Start a Play or Simulate session before opening Camera Lab streaming.",
+					status: "unavailable" as const
+				}),
+				onSuccess: (camera) => ({ camera, status: "ready" as const })
+			})
+		)
 	);
 	yield* ipc.register(invokeContracts["camera:configure"], (...args) => {
 		const [config] = args as [CameraScheduleConfig];

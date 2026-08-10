@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, openSync, closeSync, readSync, rmSync } from "node:fs";
+import {
+	closeSync,
+	copyFileSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readSync,
+	rmSync
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +15,9 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "..", "..");
 const defaultSource = resolve(repositoryRoot, "target", "release", "uasset.exe");
 const defaultDestination = resolve(packageRoot, "bin", "uasset.exe");
+const packageVersion = JSON.parse(
+	readFileSync(resolve(packageRoot, "package.json"), "utf8")
+).version;
 
 function readPeMagic(path) {
 	const descriptor = openSync(path, "r");
@@ -30,8 +41,10 @@ export function assemble(options = {}) {
 			encoding: "utf8",
 			windowsHide: true
 		}).trim();
-		if (version !== "uasset 0.1.0-rc.4") {
-			throw new Error(`Expected uasset 0.1.0-rc.4, received ${JSON.stringify(version)}`);
+		if (version !== `uasset ${packageVersion}`) {
+			throw new Error(
+				`Expected uasset ${packageVersion}, received ${JSON.stringify(version)}`
+			);
 		}
 	}
 	mkdirSync(dirname(destination), { recursive: true });

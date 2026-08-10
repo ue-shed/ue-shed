@@ -15,6 +15,26 @@ const savedWorldMaps = [
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].join(";");
 
+export function unrealRemoteControlLaunchArguments(pluginIds, httpPort) {
+	if (!Number.isInteger(httpPort) || httpPort < 1 || httpPort >= 65_535) {
+		throw new Error("The Remote Control HTTP port must leave room for the WebSocket port.");
+	}
+	const enabledPlugins = [...new Set([...pluginIds, "RemoteControl"])];
+	if (enabledPlugins.some((pluginId) => !/^[A-Za-z0-9_]+$/.test(pluginId))) {
+		throw new Error(
+			"Unreal plugin identifiers may contain only letters, numbers, and underscores."
+		);
+	}
+	return [
+		`-EnablePlugins=${enabledPlugins.join(",")}`,
+		"-RCWebControlEnable",
+		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${httpPort}`,
+		`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${httpPort + 1}`,
+		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
+		"-NoLiveCoding"
+	];
+}
+
 async function portAvailable(port) {
 	return new Promise((resolveAvailable) => {
 		const server = createServer();

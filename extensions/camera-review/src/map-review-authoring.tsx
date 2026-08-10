@@ -24,6 +24,7 @@ type AuthoringState =
 	| { readonly status: "loading" }
 	| { readonly status: "saving"; readonly session: ReadyAuthoring }
 	| { readonly status: "ready"; readonly session: ReadyAuthoring }
+	| { readonly status: "map_mismatch"; readonly mismatch: MapMismatch }
 	| { readonly status: "failed"; readonly message: string; readonly recovery: string }
 	| {
 			readonly status: "approved";
@@ -32,8 +33,12 @@ type AuthoringState =
 	  };
 
 type ReadyAuthoring = Extract<MapReviewAuthoringResult, { status: "ready" }>;
+type MapMismatch = Extract<MapReviewAuthoringResult, { status: "map_mismatch" }>;
 type CandidateId = MapReviewAuthoringCandidate["id"];
 type AuthoringPatch = Parameters<MapReviewClientShape["authoringPatch"]>[0]["patch"];
+type PreviewRefresh =
+	| { readonly kind: "all" }
+	| { readonly candidateId: CandidateId; readonly kind: "candidate" };
 
 function clampPreviewFps(fps: number): number {
 	return Math.min(10, Math.max(1, Math.round(fps)));
@@ -161,13 +166,16 @@ export function MapReviewAuthoring(props: {
 		  }
 		| undefined;
 	readonly onApproved: () => void;
+	readonly onChooseReviewSet?: (() => void) | undefined;
 }) {
 	const generateAction = createEffectAction();
 	const previewSubscription = createEffectSubscription();
+	const selectedPreviewAction = createEffectAction();
 	const liveFrameSubscription = createEffectSubscription();
 	const fpsAction = createEffectAction();
 	const approveAction = createEffectAction();
 	const resumeAction = createEffectAction();
+	const reviewSetAction = createEffectAction();
 	const patchAction = createEffectAction();
 	const framingPatchAction = createEffectAction();
 	const [state, setState] = createSignal<AuthoringState>({ status: "idle" });
@@ -202,10 +210,7 @@ export function MapReviewAuthoring(props: {
 	const liveStreaming = createMemo(() => liveBindings().size > 0);
 	const authoringBlocked = createMemo(() => {
 		const durable = session()?.session;
-		if (durable && durable.lifecycle !== "active") return true;
-		return (
-			selected()?.diagnostics.some((diagnostic) => diagnostic.severity === "warning") ?? false
-		);
+		return durable !== undefined && durable.lifecycle !== "active";
 	});
 	const activate = (result: ReadyAuthoring) => {
 		const durable = result.session;
@@ -221,7 +226,7 @@ export function MapReviewAuthoring(props: {
 	};
 	const persist = (
 		patch: AuthoringPatch,
-		options: { readonly refreshPreviews?: boolean } = {}
+		options: { readonly refreshPreviews?: PreviewRefresh } = {}
 	) => {
 		const durable = session()?.session;
 		if (!durable || durable.lifecycle !== "active") return;
@@ -229,16 +234,19 @@ export function MapReviewAuthoring(props: {
 			onFailure: () => undefined,
 			onSuccess: (result) => {
 				if (result.status !== "ready") return;
-				if (options.refreshPreviews) {
-					activate(result);
-					return;
-				}
 				const durableSession = result.session;
-				setDiscarded(new Set(durableSession?.discardedCandidateIds ?? []));
-				setSelectedId(durableSession?.selectedCandidateId ?? result.candidates[0]?.id);
-				setDraftPose(
-					durableSession?.draftPose ?? structuredClone(result.candidates[0]?.pose)
+				setFramingParameters(
+					durableSession?.framingParameters ?? defaultFramingParameters()
 				);
+				setCandidateOverrides(durableSession?.candidateOverrides ?? []);
+				setDiscarded(new Set(durableSession?.discardedCandidateIds ?? []));
+				const nextSelectedId =
+					durableSession?.selectedCandidateId ?? result.candidates[0]?.id;
+				const nextSelected = result.candidates.find(
+					(candidate) => candidate.id === nextSelectedId
+				);
+				setSelectedId(nextSelectedId);
+				setDraftPose(durableSession?.draftPose ?? structuredClone(nextSelected?.pose));
 				setManualReason(durableSession?.manualReason ?? "");
 				setState((current) => {
 					if (
@@ -248,23 +256,34 @@ export function MapReviewAuthoring(props: {
 					) {
 						return { session: result, status: "ready" };
 					}
-					const previousPreviews = new Map(
-						current.session.candidates.map((candidate) => [
-							candidate.id,
-							candidate.preview
-						])
+					const previousCandidates = new Map(
+						current.session.candidates.map((candidate) => [candidate.id, candidate])
 					);
 					return {
 						session: {
 							...result,
-							candidates: result.candidates.map((candidate) => ({
-								...candidate,
-								preview: previousPreviews.get(candidate.id) ?? candidate.preview
-							}))
+							candidates: result.candidates.map((candidate) => {
+								const previous = previousCandidates.get(candidate.id);
+								if (previous === undefined) return candidate;
+								if (
+									options.refreshPreviews === undefined ||
+									(options.refreshPreviews.kind === "candidate" &&
+										options.refreshPreviews.candidateId !== candidate.id)
+								) {
+									return previous;
+								}
+								return { ...candidate, preview: previous.preview };
+							})
 						},
 						status: "ready"
 					};
 				});
+				if (options.refreshPreviews?.kind === "all") {
+					setLiveBindings(new Map());
+					hydratePreviews(result);
+				} else if (options.refreshPreviews?.kind === "candidate") {
+					hydratePreview(result, options.refreshPreviews.candidateId);
+				}
 			}
 		});
 	};
@@ -290,8 +309,10 @@ export function MapReviewAuthoring(props: {
 		};
 	};
 	const scheduleFramingPatch = (args: {
-		readonly candidateOverrides: readonly FramingCandidateOverride[];
-		readonly parameters: FramingParameters;
+		readonly patch:
+			| { readonly candidateOverrides: readonly FramingCandidateOverride[] }
+			| { readonly framingParameters: FramingParameters };
+		readonly refreshPreviews: PreviewRefresh;
 	}) => {
 		framingPatchAction.run(
 			Effect.sleep("400 millis").pipe(
@@ -300,10 +321,9 @@ export function MapReviewAuthoring(props: {
 						persist(
 							{
 								...currentPatch(),
-								candidateOverrides: args.candidateOverrides,
-								framingParameters: args.parameters
+								...args.patch
 							},
-							{ refreshPreviews: true }
+							{ refreshPreviews: args.refreshPreviews }
 						)
 					)
 				)
@@ -453,6 +473,24 @@ export function MapReviewAuthoring(props: {
 			}
 		);
 	};
+	const hydratePreview = (initial: ReadyAuthoring, candidateId: CandidateId) => {
+		const candidate = initial.candidates.find((item) => item.id === candidateId);
+		if (candidate === undefined) return;
+		selectedPreviewAction.run(
+			(initial.session
+				? props.client.previewAuthoringCandidate({
+						candidateId: candidate.id,
+						sessionId: initial.session.id
+					})
+				: props.client.previewCandidate(candidate.id)
+			).pipe(Effect.map((result) => ({ candidateId: candidate.id, result }))),
+			{
+				onFailure: () => undefined,
+				onSuccess: ({ candidateId: refreshedId, result }) =>
+					applyPreviewResult(refreshedId as CandidateId, result)
+			}
+		);
+	};
 	createEffect(() => {
 		const bindings = liveBindings();
 		const fps = liveFps();
@@ -485,14 +523,18 @@ export function MapReviewAuthoring(props: {
 			onSuccess: (applied) => setLiveFps(applied)
 		});
 	};
-	const generate = () => {
+	const generate = (reviewSetMode?: MapReviewAuthorFromSelectionIntent["reviewSetMode"]) => {
 		const durable = state().status === "approved" ? undefined : session()?.session;
 		setState({ status: "loading" });
 		generateAction.run(
-			durable && durable.lifecycle !== "approved" && durable.lifecycle !== "discarded"
+			reviewSetMode === undefined &&
+				durable &&
+				durable.lifecycle !== "approved" &&
+				durable.lifecycle !== "discarded"
 				? props.client.authoringReframe({ sessionId: durable.id })
 				: props.client.authorFromSelection({
-						destination: props.destination ?? { kind: "append_view" }
+						destination: props.destination ?? { kind: "append_view" },
+						...(reviewSetMode === undefined ? {} : { reviewSetMode })
 					}),
 			{
 				onFailure: (cause) =>
@@ -511,10 +553,39 @@ export function MapReviewAuthoring(props: {
 						});
 						return;
 					}
+					if (result.status === "map_mismatch") {
+						setState({ mismatch: result, status: "map_mismatch" });
+						return;
+					}
 					activate(result);
 				}
 			}
 		);
+	};
+	const openMatchingReviewSet = (mismatch: MapMismatch) => {
+		const matching = mismatch.matchingReviewSet;
+		if (matching === undefined) return;
+		setState({ status: "loading" });
+		reviewSetAction.run(props.client.selectReviewSet({ reviewSetId: matching.id }), {
+			onFailure: (cause) =>
+				setState({
+					message: Cause.pretty(cause),
+					recovery: "Open the Review Set library and try again.",
+					status: "failed"
+				}),
+			onSuccess: (result) => {
+				if (result.status === "failed") {
+					setState({
+						message: result.error.message,
+						recovery: result.error.recovery,
+						status: "failed"
+					});
+					return;
+				}
+				setState({ status: "idle" });
+				props.onApproved();
+			}
+		});
 	};
 	onMount(() => {
 		resumeAction.run(props.client.authoringResume(), {
@@ -554,7 +625,12 @@ export function MapReviewAuthoring(props: {
 				? { ...current, fieldOfViewDegrees: parsed }
 				: { ...current, [section]: { ...current[section], [field]: parsed } };
 		setDraftPose(next);
-		persist(currentPatch({ draftPose: next }));
+		const candidateId = selected()?.id;
+		persist(currentPatch({ draftPose: next }), {
+			...(candidateId === undefined
+				? {}
+				: { refreshPreviews: { candidateId, kind: "candidate" } })
+		});
 	};
 	const approve = () => {
 		const activeSession = session();
@@ -678,75 +754,176 @@ export function MapReviewAuthoring(props: {
 					);
 				})()}
 			</Show>
+			<Show when={state().status === "map_mismatch"}>
+				{(() => {
+					const current = state();
+					if (current.status !== "map_mismatch") return null;
+					const mismatch = current.mismatch;
+					return (
+						<div role="alert" {...stylex.props(styles.mapMismatch)}>
+							<div {...stylex.props(styles.mapMismatchHeading)}>
+								<strong>REVIEW SET IS FOR ANOTHER MAP</strong>
+								<span>{mismatch.recovery}</span>
+							</div>
+							<div {...stylex.props(styles.mapMismatchComparison)}>
+								<div {...stylex.props(styles.mapMismatchSide)}>
+									<span {...stylex.props(styles.mapMismatchLabel)}>
+										OPEN REVIEW SET
+									</span>
+									<strong {...stylex.props(styles.mapMismatchName)}>
+										{mismatch.reviewSet.displayName}
+									</strong>
+									<code {...stylex.props(styles.mapMismatchPath)}>
+										{mismatch.reviewSet.mapPath}
+									</code>
+								</div>
+								<div {...stylex.props(styles.mapMismatchSide)}>
+									<span {...stylex.props(styles.mapMismatchLabel)}>
+										SELECTED ACTOR
+									</span>
+									<strong {...stylex.props(styles.mapMismatchName)}>
+										{mismatch.selection.displayName}
+									</strong>
+									<code {...stylex.props(styles.mapMismatchPath)}>
+										{mismatch.selection.mapPath}
+									</code>
+								</div>
+							</div>
+							<Show when={mismatch.matchingReviewSet}>
+								{(matching) => (
+									<span {...stylex.props(styles.matchingSetHint)}>
+										{matching().displayName} already covers this map.
+									</span>
+								)}
+							</Show>
+							<div {...stylex.props(styles.mapMismatchActions)}>
+								<Show when={mismatch.matchingReviewSet}>
+									{(matching) => (
+										<button
+											type="button"
+											onClick={() => void openMatchingReviewSet(mismatch)}
+											{...stylex.props(styles.mapMismatchPrimaryButton)}
+										>
+											OPEN {matching().displayName.toUpperCase()}
+										</button>
+									)}
+								</Show>
+								<Show when={props.onChooseReviewSet !== undefined}>
+									<button
+										type="button"
+										onClick={() => props.onChooseReviewSet?.()}
+										{...stylex.props(styles.mapMismatchButton)}
+									>
+										CHOOSE REVIEW SET
+									</button>
+								</Show>
+								<Show
+									when={
+										(props.destination?.kind ?? "append_view") === "append_view"
+									}
+								>
+									<button
+										type="button"
+										onClick={() => void generate("selection_map")}
+										{...stylex.props(styles.mapMismatchButton)}
+									>
+										START SET FOR SELECTED MAP
+									</button>
+								</Show>
+							</div>
+						</div>
+					);
+				})()}
+			</Show>
 			<Show when={session()}>
 				<div {...stylex.props(styles.authoringBody)}>
-					<FramingSettings
-						parameters={framingParameters()}
-						candidateOverrides={candidateOverrides()}
-						selectedCandidateId={selectedId()}
-						onParametersChange={(parameters) => {
-							setFramingParameters(parameters);
-							scheduleFramingPatch({
-								candidateOverrides: candidateOverrides(),
-								parameters
-							});
-						}}
-						onCandidateOverridesChange={(overrides) => {
-							setCandidateOverrides(overrides);
-							scheduleFramingPatch({
-								candidateOverrides: overrides,
-								parameters: framingParameters()
-							});
-						}}
-					/>
 					<div
 						aria-label="Framing candidates"
 						role="region"
 						{...stylex.props(styles.contactSheet)}
 					>
-						<For each={candidates()}>
-							{(candidate, index) => (
-								<article
-									{...stylex.props(
-										styles.candidateCard,
-										selected()?.id === candidate.id && styles.candidateSelected
-									)}
-								>
-									<button
-										type="button"
-										aria-label={`Select ${candidate.displayName}`}
-										onClick={() => select(candidate)}
-										{...stylex.props(styles.candidateSelect)}
-									>
-										<CandidateImage candidate={candidate} />
-										<div {...stylex.props(styles.candidateMeta)}>
-											<span {...stylex.props(styles.candidateIndex)}>
-												{String(index() + 1).padStart(2, "0")}
-											</span>
-											<div {...stylex.props(styles.candidateCopy)}>
-												<strong>{candidate.displayName}</strong>
-												<small>
-													{candidate.preset.replaceAll("_", " ")}
-												</small>
-											</div>
-										</div>
-									</button>
-									<button
-										type="button"
-										onClick={() => discard(candidate.id)}
-										{...stylex.props(styles.discardButton)}
-									>
-										DISCARD
-									</button>
-								</article>
-							)}
+						<For each={candidates().map((candidate) => candidate.id)}>
+							{(candidateId, index) => {
+								const candidate = createMemo(() =>
+									candidates().find((item) => item.id === candidateId)
+								);
+								return (
+									<Show when={candidate()}>
+										{(item) => (
+											<article
+												{...stylex.props(
+													styles.candidateCard,
+													selected()?.id === candidateId &&
+														styles.candidateSelected
+												)}
+											>
+												<button
+													type="button"
+													aria-label={`Select ${item().displayName}`}
+													onClick={() => select(item())}
+													{...stylex.props(styles.candidateSelect)}
+												>
+													<CandidateImage candidate={item()} />
+													<div {...stylex.props(styles.candidateMeta)}>
+														<span
+															{...stylex.props(styles.candidateIndex)}
+														>
+															{String(index() + 1).padStart(2, "0")}
+														</span>
+														<div
+															{...stylex.props(styles.candidateCopy)}
+														>
+															<strong>{item().displayName}</strong>
+															<small>
+																{item().preset.replaceAll("_", " ")}
+															</small>
+														</div>
+													</div>
+												</button>
+												<button
+													type="button"
+													onClick={() => discard(candidateId)}
+													{...stylex.props(styles.discardButton)}
+												>
+													DISCARD
+												</button>
+											</article>
+										)}
+									</Show>
+								);
+							}}
 						</For>
 					</div>
+					<FramingSettings
+						parameters={framingParameters()}
+						candidateOverrides={candidateOverrides()}
+						selectedCandidate={selected()}
+						onParametersChange={(parameters) => {
+							setFramingParameters(parameters);
+							scheduleFramingPatch({
+								patch: { framingParameters: parameters },
+								refreshPreviews: { kind: "all" }
+							});
+						}}
+						onCandidateOverridesChange={(overrides) => {
+							setCandidateOverrides(overrides);
+							const candidateId = selected()?.id;
+							if (candidateId === undefined) return;
+							scheduleFramingPatch({
+								patch: { candidateOverrides: overrides },
+								refreshPreviews: { candidateId, kind: "candidate" }
+							});
+						}}
+					/>
 					<Show when={selected()}>
 						{(candidate) => (
 							<div {...stylex.props(styles.approvalBench)}>
 								<div>
-									<p>APPROVED POSE / {candidate().displayName.toUpperCase()}</p>
+									<p>FINAL POSE / {candidate().displayName.toUpperCase()}</p>
+									<small {...stylex.props(styles.poseHint)}>
+										Use offsets above for relative tuning, or edit exact
+										world-space values here. Only this selected preview updates.
+									</small>
 									<div {...stylex.props(styles.poseGrid)}>
 										<For
 											each={
@@ -817,7 +994,7 @@ export function MapReviewAuthoring(props: {
 									<Show when={authoringBlocked()}>
 										<small {...stylex.props(styles.reframeNotice)}>
 											Reframe before keeping this view. The persisted subject
-											or the framing evidence needs attention.
+											no longer matches the live actor.
 										</small>
 									</Show>
 									<button
@@ -914,6 +1091,68 @@ const styles = stylex.create({
 		padding: "10px 12px",
 		color: "#e9967b"
 	},
+	mapMismatch: {
+		display: "grid",
+		gap: 12,
+		padding: "14px 16px",
+		borderTop: "1px solid #5d382e",
+		borderBottom: "1px solid #5d382e",
+		backgroundColor: "#17100d",
+		color: "#e9967b"
+	},
+	mapMismatchHeading: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 4,
+		fontSize: 11
+	},
+	mapMismatchComparison: {
+		display: "grid",
+		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+		gap: 10
+	},
+	mapMismatchSide: {
+		display: "grid",
+		gap: 4,
+		minWidth: 0,
+		padding: 10,
+		border: "1px solid #382924",
+		backgroundColor: "#0e0b09"
+	},
+	mapMismatchLabel: { color: "#92766d", fontSize: 8, letterSpacing: ".1em" },
+	mapMismatchName: { color: "#e6d5cf", fontSize: 11 },
+	mapMismatchPath: {
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		color: "#b68d80",
+		fontSize: 9
+	},
+	matchingSetHint: { color: "#b9f227", fontSize: 10 },
+	mapMismatchActions: {
+		display: "flex",
+		gap: 8
+	},
+	mapMismatchButton: {
+		border: "1px solid #8b5b4c",
+		backgroundColor: { default: "transparent", ":hover": "#2c1913" },
+		color: "#efb29e",
+		padding: "8px 11px",
+		fontSize: 9,
+		fontWeight: 800,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
+	mapMismatchPrimaryButton: {
+		border: "1px solid #b9f227",
+		backgroundColor: { default: "#b9f227", ":hover": "#cdfc53" },
+		color: "#10130c",
+		padding: "8px 11px",
+		fontSize: 9,
+		fontWeight: 900,
+		letterSpacing: ".08em",
+		cursor: "pointer"
+	},
 	authoringBody: { padding: 10 },
 	contactSheet: {
 		display: "grid",
@@ -979,6 +1218,7 @@ const styles = stylex.create({
 		backgroundColor: "#171b18"
 	},
 	poseGrid: { display: "grid", gridTemplateColumns: "repeat(6, minmax(70px, 1fr))", gap: 7 },
+	poseHint: { display: "block", marginBottom: 10, color: "#89948c", lineHeight: 1.45 },
 	poseField: { display: "grid", gap: 4, color: "#a9b2ab", fontSize: 8 },
 	poseInput: {
 		width: "100%",

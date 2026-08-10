@@ -14,6 +14,7 @@ import type {
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
 import {
@@ -119,14 +120,41 @@ const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
 const decodeWorkbenchProjectState = Schema.decodeUnknownEffect(WorkbenchProjectState);
 const decodeProjectLaunchResult = Schema.decodeUnknownEffect(ProjectLaunchResult);
 const decodeWorkbenchTaskProgress = Schema.decodeUnknownEffect(WorkbenchTaskProgress);
+const decodeUnrealConnectionSettings = Schema.decodeUnknownEffect(
+	Schema.Struct({
+		port: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(65_535))
+	})
+);
+const decodeCameraStatusResult = Schema.decodeUnknownEffect(
+	Schema.Union([
+		Schema.Struct({ camera: CameraStatus, status: Schema.Literal("ready") }),
+		Schema.Struct({
+			message: Schema.NonEmptyString,
+			recovery: Schema.NonEmptyString,
+			status: Schema.Literal("unavailable")
+		})
+	])
+);
 
 const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
 	(): Effect.Effect<CameraStatus, WorkbenchRendererError> =>
 		request({
-			decode: decodeCameraStatus,
+			decode: decodeCameraStatusResult,
 			invoke: () => window.ueShed.getStatus(),
 			operation: "camera.getStatus"
-		})
+		}).pipe(
+			Effect.flatMap((result) =>
+				result.status === "ready"
+					? Effect.succeed(result.camera)
+					: Effect.fail(
+							new WorkbenchRendererError({
+								cause: result.message,
+								operation: "camera.getStatus",
+								recovery: result.recovery
+							})
+						)
+			)
+		)
 );
 
 const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
@@ -139,6 +167,13 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 );
 
 export interface WorkbenchRendererClient {
+	readonly unrealConnectionSettings: () => Effect.Effect<
+		UnrealConnectionSettings,
+		WorkbenchRendererError
+	>;
+	readonly setUnrealConnectionPort: (
+		port: number
+	) => Effect.Effect<UnrealConnectionSettings, WorkbenchRendererError>;
 	readonly editorSessionStatus: () => Effect.Effect<
 		EditorPlaySessionStateResponse,
 		WorkbenchRendererError
@@ -205,6 +240,20 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			})
 		),
 		Schedule.spaced("750 millis")
+	),
+	unrealConnectionSettings: Effect.fn("WorkbenchRenderer.unrealConnectionSettings")(() =>
+		request({
+			decode: decodeUnrealConnectionSettings,
+			invoke: () => window.ueShed.editorSession.settings(),
+			operation: "editorSession.settings"
+		})
+	),
+	setUnrealConnectionPort: Effect.fn("WorkbenchRenderer.setUnrealConnectionPort")((port) =>
+		request({
+			decode: decodeUnrealConnectionSettings,
+			invoke: () => window.ueShed.editorSession.setPort(port),
+			operation: "editorSession.setPort"
+		})
 	),
 	showcaseContext: Effect.fn("WorkbenchRenderer.showcaseContext")(() =>
 		request({

@@ -533,6 +533,39 @@ describe("ReviewAuthoringSessions", () => {
 			groupIndex: 2,
 			version: 2
 		});
+		const retuned = await withSessions(layer, (sessions) =>
+			sessions.patch({
+				patch: {
+					candidateOverrides: [
+						{ candidateId: secondId, overrides: { yawOffsetDegrees: 11 } }
+					],
+					discardedCandidateIds: [],
+					manualReason: "",
+					selectedCandidateId: secondId
+				},
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(retuned.candidates[1]?.recipe).toMatchObject({
+			candidateOverrides: { yawOffsetDegrees: 11 }
+		});
+		const reset = await withSessions(layer, (sessions) =>
+			sessions.patch({
+				patch: {
+					candidateOverrides: [],
+					discardedCandidateIds: [],
+					manualReason: "",
+					selectedCandidateId: secondId
+				},
+				projectRoot,
+				sessionId: created.id
+			})
+		);
+		expect(reset.candidates[1]?.recipe).not.toHaveProperty("candidateOverrides");
+		expect(reset.candidates[1]?.approvedPose).toEqual(
+			generateFramingCandidates(selection, parameters)[1]?.approvedPose
+		);
 
 		const shrunk = await withSessions(layer, (sessions) =>
 			sessions.patch({

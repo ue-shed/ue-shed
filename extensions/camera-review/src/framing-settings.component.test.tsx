@@ -21,13 +21,17 @@ describe("FramingSettings", () => {
 			<FramingSettings
 				parameters={parameters()}
 				candidateOverrides={overrides()}
-				selectedCandidateId="preset/context_three_quarter/1"
+				selectedCandidate={{
+					displayName: "Context three-quarter",
+					id: "preset/context_three_quarter/1",
+					preset: "context_three_quarter"
+				}}
 				onParametersChange={setParameters}
 				onCandidateOverridesChange={setOverrides}
 			/>
 		));
 		const user = userEvent.setup();
-		await user.click(screen.getByText("FRAMING"));
+		await user.click(screen.getByText("VIEW PRESETS + RIG"));
 		const exact = screen.getByRole("spinbutton", {
 			name: "Context three-quarter exact camera count"
 		});
@@ -43,15 +47,17 @@ describe("FramingSettings", () => {
 			<FramingSettings
 				parameters={parameters()}
 				candidateOverrides={overrides()}
-				selectedCandidateId="preset/context_three_quarter/1"
+				selectedCandidate={{
+					displayName: "Context three-quarter",
+					id: "preset/context_three_quarter/1",
+					preset: "context_three_quarter"
+				}}
 				onParametersChange={setParameters}
 				onCandidateOverridesChange={setOverrides}
 			/>
 		));
 		const user = userEvent.setup();
-		await user.click(screen.getByText("FRAMING"));
-		await user.click(screen.getByRole("checkbox", { name: "Per-view override" }));
-		const yaw = screen.getByRole("spinbutton", { name: "YAW DELTA" });
+		const yaw = screen.getByRole("spinbutton", { name: "YAW OFFSET" });
 		fireEvent.input(yaw, { target: { value: "12" } });
 		expect(overrides()).toEqual([
 			{

@@ -240,7 +240,7 @@ describe("MapReviewRoute", () => {
 		};
 		renderRoute(client);
 		await screen.findByText("Review Subject");
-		await userEvent.setup().click(screen.getByText("FRAMING"));
+		await userEvent.setup().click(screen.getByText("VIEW PRESETS + RIG"));
 		const count = screen.getByRole("spinbutton", {
 			name: "Context three-quarter exact camera count"
 		});
@@ -671,6 +671,65 @@ describe("MapReviewRoute", () => {
 		});
 	});
 
+	it("explains map mismatches and can start authoring from the selected map", async () => {
+		const intents: Array<Parameters<MapReviewClientShape["authorFromSelection"]>[0]> = [];
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: (intent) =>
+				Effect.sync(() => {
+					intents.push(intent);
+					if (intent.reviewSetMode === "selection_map") {
+						return {
+							error: {
+								message: "Stopped after recovery intent",
+								recovery: "Component assertion only"
+							},
+							status: "failed" as const
+						};
+					}
+					return {
+						recovery: "Open a Review Set for the selected map, or start its first set.",
+						reviewSet: {
+							displayName: "Fixture Structure",
+							id: "fixture-review-set",
+							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+							viewCount: 1
+						},
+						selection: {
+							actorPath: "/Game/Hex/L_Hex.L_Hex:PersistentLevel.Subject",
+							displayName: "Hex Subject",
+							mapPath: "/Game/Hex/L_Hex"
+						},
+						status: "map_mismatch" as const
+					};
+				}),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(empty),
+			previewCandidate: () => Effect.die("not used")
+		};
+		const user = userEvent.setup();
+		renderRoute(client);
+
+		await user.click(await screen.findByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toContain("REVIEW SET IS FOR ANOTHER MAP");
+		expect(alert.textContent).toContain("/Game/Fixture/Cameras/L_CameraLoad");
+		expect(alert.textContent).toContain("/Game/Hex/L_Hex");
+
+		await user.click(screen.getByRole("button", { name: "START SET FOR SELECTED MAP" }));
+		await waitFor(() =>
+			expect(intents).toEqual([
+				{ destination: { kind: "append_view" } },
+				{
+					destination: { kind: "append_view" },
+					reviewSetMode: "selection_map"
+				}
+			])
+		);
+	});
+
 	it("generates, adjusts, and approves a framing candidate through the public client", async () => {
 		const pose = {
 			aspectRatio: "16:9" as const,
@@ -697,9 +756,10 @@ describe("MapReviewRoute", () => {
 							{
 								diagnostics: [
 									{
-										code: "bounds_snapshot",
-										message: "Generated from bounds",
-										severity: "info"
+										code: "subject_margin_below_requested",
+										message:
+											"The subject margin is below the requested target.",
+										severity: "warning"
 									}
 								],
 								displayName: "Context three-quarter",
@@ -741,7 +801,9 @@ describe("MapReviewRoute", () => {
 			screen.getByRole("textbox", { name: "MANUAL ADJUSTMENT NOTE" }),
 			"Lift above foreground"
 		);
-		await user.click(screen.getByRole("button", { name: "KEEP VIEW" }));
+		const keepView = screen.getByRole("button", { name: "KEEP VIEW" });
+		expect((keepView as HTMLButtonElement).disabled).toBe(false);
+		await user.click(keepView);
 		expect(await screen.findByText("APPROVED + SAVED")).toBeDefined();
 		expect(authoringIntent).toEqual({ destination: { kind: "append_view" } });
 		expect(approved).toMatchObject({
@@ -886,6 +948,15 @@ describe("MapReviewRoute", () => {
 	});
 
 	it("keeps cached tile previews when selecting another candidate", async () => {
+		let objectUrlCount = 0;
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: () => `blob:authoring-preview-${++objectUrlCount}`
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: () => undefined
+		});
 		const poseA = {
 			aspectRatio: "16:9" as const,
 			fieldOfViewDegrees: 60,
@@ -975,6 +1046,7 @@ describe("MapReviewRoute", () => {
 			readonly candidateId: string;
 			readonly sessionId: string;
 		}> = [];
+		const patches: Array<Parameters<MapReviewClientShape["authoringPatch"]>[0]["patch"]> = [];
 		let patchCount = 0;
 		const client: MapReviewClientShape = {
 			...offlineScout,
@@ -985,6 +1057,7 @@ describe("MapReviewRoute", () => {
 			authoringPatch: (intent) =>
 				Effect.sync(() => {
 					patchCount += 1;
+					patches.push(intent.patch);
 					const session = ready.session;
 					if (!session) throw new Error("expected durable authoring session");
 					return {
@@ -1015,8 +1088,19 @@ describe("MapReviewRoute", () => {
 		await screen.findByText("Review Subject");
 		await waitFor(() => expect(previewCalls.length).toBe(2));
 		const afterHydrate = previewCalls.length;
+		const objectUrlsAfterHydrate = objectUrlCount;
 		await user.click(screen.getByRole("button", { name: "Select Facade front" }));
 		await waitFor(() => expect(patchCount).toBe(1));
 		expect(previewCalls.length).toBe(afterHydrate);
+		expect(objectUrlCount).toBe(objectUrlsAfterHydrate);
+
+		fireEvent.input(screen.getByRole("spinbutton", { name: "YAW OFFSET" }), {
+			target: { value: "12" }
+		});
+		await waitFor(() => expect(patchCount).toBe(2));
+		await waitFor(() => expect(previewCalls.length).toBe(afterHydrate + 1));
+		expect(previewCalls.at(-1)?.candidateId).toBe("facade-front");
+		expect(patches.at(-1)?.candidateOverrides).toBeDefined();
+		expect(patches.at(-1)?.framingParameters).toBeUndefined();
 	});
 });

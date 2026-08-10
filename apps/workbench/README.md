@@ -11,7 +11,9 @@ Workbench opens on a showcase catalog for the implemented proving slices: DataTa
 Texture Asset Audit, Game Text, Map Review, Camera Load Lab, and the Perforce-first **World Log**.
 The catalog exposes each slice's runtime mode and readiness instead of assuming Unreal is running.
 Camera Load Lab can drive and observe up to 32 camera sources while presenting eight tiles at once
-behind an independent display-byte budget.
+behind an independent display-byte budget. The editor status in the header shows the Remote Control
+port Workbench is monitoring; its adjacent port control changes that target immediately and saves
+the choice on the device.
 
 World Log is a map-scoped historical view. It requires `UE_SHED_PROJECT_ROOT` and normal Perforce
 configuration only when the user starts a bounded history query. Opening Workbench, opening the

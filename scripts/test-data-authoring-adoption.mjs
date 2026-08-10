@@ -89,7 +89,7 @@ function terminateProcessTree(pid) {
 	}
 }
 
-async function verifyFunctionalHost() {
+async function verifyFunctionalHost(remoteControlEndpoint) {
 	const port = await availablePort();
 	const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 	const reader = join(
@@ -109,6 +109,7 @@ async function verifyFunctionalHost() {
 			NPM_TOKEN: "",
 			UE_SHED_HOST_PORT: String(port),
 			UE_SHED_PROJECT_ROOT: fixtureRoot,
+			UE_SHED_REMOTE_CONTROL_ENDPOINT: remoteControlEndpoint,
 			UE_SHED_UASSET_EXECUTABLE: reader
 		},
 		shell: false,
@@ -236,10 +237,14 @@ const divergentCss = await readFile(cssPath, "utf8");
 if (digest(divergentCss) === digest(initialCss))
 	fail("theme divergence did not change production CSS");
 
-const functionalHost = await verifyFunctionalHost();
+// This gate verifies the copied host against the saved fixture project. Keep a developer's live
+// editor from contributing tables from an unrelated project through the default endpoint.
+const isolatedRemoteControlEndpoint = `http://127.0.0.1:${await availablePort()}`;
+const functionalHost = await verifyFunctionalHost(isolatedRemoteControlEndpoint);
 runPnpm([
 	"verify:host",
 	"--",
+	`--endpoint=${isolatedRemoteControlEndpoint}`,
 	`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
 	`--reader=${join(
 		targetRoot,

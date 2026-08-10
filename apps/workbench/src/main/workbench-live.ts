@@ -45,6 +45,7 @@ import { OfflineTexturePreviewLive } from "./services/offline-texture-preview.js
 import { ProjectLauncherLive } from "./services/project-launcher.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
 import { ShowcaseLive } from "./services/showcase.js";
+import { WorkbenchUnrealConnectionLive } from "./services/unreal-connection.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
 
 export interface WorkbenchHosts {
@@ -85,7 +86,8 @@ function baseLayer(hosts: WorkbenchHosts) {
 		cameraFeedLayer(),
 		LocalFilesLive,
 		offlineTexturePreviewHostLayer(hosts.environment),
-		fixtureProcessLayer(hosts.environment)
+		fixtureProcessLayer(hosts.environment),
+		WorkbenchUnrealConnectionLive
 	).pipe(Layer.provideMerge(WorkbenchConfigurationLive));
 }
 

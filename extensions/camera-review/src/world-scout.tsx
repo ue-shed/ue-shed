@@ -21,18 +21,19 @@ import {
 	clampViewportSize,
 	createWorldScoutPaintGate,
 	fitViewportSize,
+	focusViewportOnActor,
 	formatCoordinate,
 	hitTestVisibleActors,
 	nearestVisibleActor,
 	paintWorldScout,
 	panViewportBy,
 	projectVisibleActors,
+	representativeContentBounds,
 	resizeCanvasForDisplay,
 	resizeViewportToSize,
 	stabilizeViewport,
 	viewportSizeLimits,
 	WorldScoutRetainedStore,
-	worldScoutMinViewportSize,
 	zoomViewportAt,
 	type WorldScoutPaintGate
 } from "./world-scout-canvas.js";
@@ -102,6 +103,8 @@ export function WorldScout(props: {
 	let cssWidth = 0;
 	let cssHeight = 0;
 	let viewLocked = false;
+	let representativeBoundsDirty = true;
+	let representativeBounds: ReturnType<typeof representativeContentBounds>;
 	let lastFollowRequestMs = Number.NEGATIVE_INFINITY;
 	let resizeObserver: ResizeObserver | undefined;
 	let pointerDrag:
@@ -256,10 +259,18 @@ export function WorldScout(props: {
 			if (key !== undefined && visibleKeys.has(key)) store.visibleIndices.push(index);
 		}
 		const bounds = contentBounds(store, store.visibleIndices);
+		if (representativeBoundsDirty) {
+			representativeBounds = representativeContentBounds(store, store.visibleIndices);
+			representativeBoundsDirty = false;
+		}
 		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
 		const fit = fitViewportSize(bounds, aspect);
 		if (!viewLocked) {
-			store.viewport = stabilizeViewport(store.viewport, bounds, aspect);
+			store.viewport = stabilizeViewport(
+				store.viewport,
+				representativeBounds ?? bounds,
+				aspect
+			);
 		} else if (store.viewport === undefined) {
 			store.viewport = stabilizeViewport(undefined, bounds, aspect);
 		} else if (store.viewport.size > fit) {
@@ -321,6 +332,7 @@ export function WorldScout(props: {
 				store.installCatalog(current.sample);
 				lastCatalogIdentity = identity;
 				viewLocked = false;
+				representativeBoundsDirty = true;
 				lastPaintActorsChanged = store.count;
 				setCatalogRevision((value) => value + 1);
 			} else {
@@ -339,6 +351,7 @@ export function WorldScout(props: {
 		} else if (current.status === "polling_fallback") {
 			lastCatalogIdentity = undefined;
 			store.installSnapshot(current.snapshot);
+			representativeBoundsDirty = true;
 			lastPaintActorsChanged = store.count;
 			lastPaintSequence = String(current.snapshot.sequence);
 			setCatalogRevision((value) => value + 1);
@@ -346,6 +359,7 @@ export function WorldScout(props: {
 		} else if (current.status === "unavailable" && current.sample !== undefined) {
 			lastCatalogIdentity = `${current.sample.catalog.sessionId}:${current.sample.catalog.revision}`;
 			store.installCatalog(current.sample);
+			representativeBoundsDirty = true;
 			lastPaintActorsChanged = store.count;
 			lastPaintSequence = current.sample.lastSequence.toString();
 			setCatalogRevision((value) => value + 1);
@@ -423,6 +437,11 @@ export function WorldScout(props: {
 
 	createEffect(() => {
 		actorFilters();
+		representativeBoundsDirty = true;
+		requestPaint();
+	});
+
+	createEffect(() => {
 		selectedStreamIndex();
 		requestPaint();
 	});
@@ -452,7 +471,7 @@ export function WorldScout(props: {
 		setLiveRegion(
 			`${meta.displayName}, ${meta.className}, X ${formatCoordinate(store.locationX[streamIndex] ?? 0)}, Y ${formatCoordinate(store.locationY[streamIndex] ?? 0)}, Z ${formatCoordinate(store.locationZ[streamIndex] ?? 0)}`
 		);
-		requestPaint();
+		focusActorOnMap(meta.instanceKey);
 	};
 	const focusActorOnMap = (key: string) => {
 		const index = store.findByInstanceKey(key);
@@ -460,16 +479,22 @@ export function WorldScout(props: {
 		prepareVisibleProjection();
 		const aspect = cssWidth > 0 && cssHeight > 0 ? cssWidth / cssHeight : 2;
 		const fit = fitViewportSize(contentBounds(store, store.visibleIndices), aspect);
+		const usefulFit = fitViewportSize(
+			representativeBounds ?? contentBounds(store, store.visibleIndices),
+			aspect
+		);
 		const actorExtent = Math.max(
 			store.boundExtentX[index] ?? 0,
-			store.boundExtentY[index] ?? 0,
-			worldScoutMinViewportSize
+			store.boundExtentY[index] ?? 0
 		);
-		store.viewport = {
+		store.viewport = focusViewportOnActor({
+			actorExtent,
 			centerX: store.locationX[index] ?? 0,
 			centerY: store.locationY[index] ?? 0,
-			size: clampViewportSize(Math.max(fit / 6, actorExtent * 8), fit)
-		};
+			currentSize: store.viewport?.size,
+			fullFitSize: fit,
+			usefulFitSize: usefulFit
+		});
 		viewLocked = true;
 		requestPaint();
 	};
@@ -556,6 +581,7 @@ export function WorldScout(props: {
 	};
 	const resetView = () => {
 		viewLocked = false;
+		representativeBoundsDirty = true;
 		store.viewport = undefined;
 		requestPaint();
 	};

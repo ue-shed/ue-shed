@@ -364,11 +364,11 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			if (reviewSet.project.mapPath !== args.selection.mapPath) {
 				return yield* Effect.fail(
 					new ReviewAuthoringSessionError({
-						message:
-							"The selected subject belongs to a different map than the Review Set.",
+						message: `Review Set map ${reviewSet.project.mapPath} does not match selected subject map ${args.selection.mapPath}.`,
 						operation: "create",
 						path: args.reviewSetPath,
-						recovery: "Open the Review Set map and select one subject actor."
+						recovery:
+							"Open a Review Set for the selected map, or start a map-scoped set from that subject."
 					})
 				);
 			}
@@ -546,21 +546,23 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				(candidate) =>
 					candidate.recipe.version === 1 && candidate.recipe.preset === "editor_view"
 			);
-			const regenerated =
-				args.patch.framingParameters === undefined
-					? session.candidates
-					: generateFramingCandidates(
-							{
-								actorPath: session.subject.actorPath,
-								bounds: session.subject.bounds,
-								displayName: session.subject.displayName,
-								...(editorCandidate === undefined
-									? {}
-									: { editorView: editorCandidate.approvedPose }),
-								mapPath: session.subject.mapPath
-							},
-							parameters ?? defaultFramingParameters()
-						);
+			const framingChanged =
+				args.patch.framingParameters !== undefined ||
+				args.patch.candidateOverrides !== undefined;
+			const regenerated = !framingChanged
+				? session.candidates
+				: generateFramingCandidates(
+						{
+							actorPath: session.subject.actorPath,
+							bounds: session.subject.bounds,
+							displayName: session.subject.displayName,
+							...(editorCandidate === undefined
+								? {}
+								: { editorView: editorCandidate.approvedPose }),
+							mapPath: session.subject.mapPath
+						},
+						parameters ?? defaultFramingParameters()
+					);
 			if (regenerated.length === 0) {
 				return yield* Effect.fail(
 					new ReviewAuthoringSessionError({
@@ -639,7 +641,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				candidates,
 				discardedCandidateIds,
 				...(parameters === undefined ? {} : { framingParameters: parameters }),
-				...(args.patch.framingParameters === undefined
+				...(!framingChanged
 					? {}
 					: {
 							diagnostics: [],

@@ -33,10 +33,12 @@ import type {
 import type { SavedWorld } from "@ue-shed/protocol";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+	CameraStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
 import type {
@@ -47,10 +49,12 @@ import type {
 } from "./project-workspace-contract.js";
 
 export type {
+	CameraStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
 export type {
@@ -66,6 +70,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("asset-navigation:locate", objectPath)
 	},
 	editorSession: {
+		settings: (): Promise<UnrealConnectionSettings> =>
+			ipcRenderer.invoke("editor-session:settings"),
+		setPort: (port: number): Promise<UnrealConnectionSettings> =>
+			ipcRenderer.invoke("editor-session:set-port", port),
 		status: (): Promise<EditorPlaySessionStateResponse> =>
 			ipcRenderer.invoke("editor-session:status"),
 		execute: (command: EditorPlaySessionCommand): Promise<EditorPlaySessionCommandResponse> =>
@@ -241,7 +249,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),
 	getMetrics: (): Promise<WorkbenchCameraMetrics> => ipcRenderer.invoke("camera:metrics"),
-	getStatus: (): Promise<CameraStatus> => ipcRenderer.invoke("camera:status"),
+	getStatus: (): Promise<CameraStatusResult> => ipcRenderer.invoke("camera:status"),
 	setPresentationBudget: (megabytesPerSecond: number): Promise<number> =>
 		ipcRenderer.invoke("camera:presentation-budget", megabytesPerSecond),
 	onFrame: (listener: (frame: RendererCameraFrame) => void) => {

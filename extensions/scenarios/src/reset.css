@@ -1,0 +1,68 @@
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	min-width: 1180px;
+	min-height: 100%;
+	margin: 0;
+}
+
+button,
+input {
+	font: inherit;
+}
+
+button:focus-visible {
+	outline: 2px solid #b7e26d;
+	outline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+p {
+	margin: 0;
+}
+
+h2 {
+	margin-top: 7px;
+	font-family: Georgia, serif;
+	font-size: 20px;
+	font-weight: 400;
+}
+
+h3 {
+	color: #727d75;
+	font-size: 8px;
+	font-weight: 600;
+	letter-spacing: 0.13em;
+}
+
+p {
+	margin-top: 6px;
+	color: #768078;
+	font-size: 9px;
+	line-height: 1.55;
+}
+
+small {
+	display: block;
+	color: #69736c;
+	font-size: 8px;
+	line-height: 1.4;
+}
+
+code {
+	overflow-wrap: anywhere;
+	color: #93a08f;
+	font-family: inherit;
+	font-size: 8px;
+}
+
+header > span,
+header > small {
+	letter-spacing: 0.1em;
+}

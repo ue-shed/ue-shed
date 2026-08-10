@@ -25,8 +25,25 @@ it.effect("renders generated help through the Effect CLI command tree", () =>
 		);
 		expect(yield* Ref.get(output)).toContain("authoring");
 		expect(yield* Ref.get(output)).toContain("project-index");
+		expect(yield* Ref.get(output)).toContain("scenarios");
 		expect(yield* Ref.get(errors)).toBe("");
 		expect(yield* Ref.get(exitCode)).toBe(0);
+	})
+);
+
+it.effect("validates the public scenarios command before contacting Unreal", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+
+		yield* runCli(["scenarios", "run", "http://editor", "--evidence-limit", "0"]).pipe(
+			Effect.provide(runtimeLayer(output, errors, exitCode))
+		);
+
+		expect(yield* Ref.get(output)).toBe("");
+		expect(yield* Ref.get(errors)).toContain("--evidence-limit requires a positive integer");
+		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
 );
 

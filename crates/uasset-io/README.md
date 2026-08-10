@@ -18,8 +18,9 @@ continue to use the one-request `protocol` command.
 Every protocol operation runs through the typed Rust executor: inspection, authoring, header/full
 scans, filters, cache, inventory, text/texture extraction, and saved-world inspection. The
 protocol adapter serializes typed result frames directly at the stdout boundary, without an
-intermediate dynamic JSON tree. Human commands are thin diagnostic adapters over the same
-executors.
+intermediate dynamic JSON tree. Typed inspection projects from the parser's decoded model directly
+into the protocol model instead of constructing and recursively adapting the separate generic
+inspection DTO. Human commands are thin diagnostic adapters over the same executors.
 
 ```sh
 cargo test -p uasset-io

@@ -17,6 +17,7 @@ use crate::direct_executor;
 use crate::protocol::{
     Contract, Operation, Request, ResultFrame, decode_event, decode_request_frame,
 };
+#[cfg(test)]
 use crate::protocol_result::{
     InspectionStatus, SavedAsset, SavedAssetDecodeError, SavedAssetDecodeErrorKind,
     SavedAssetInspection, SavedBone, SavedCurveKey, SavedCurveRow, SavedEnumEntry,
@@ -703,6 +704,7 @@ fn emit_typed_result(emitter: &mut Emitter, result: &ResultFrame) -> Result<(), 
 /// The generic projection contains parser-facing package tables and a flattened asset shape. The
 /// protocol intentionally exposes only the stable saved-asset variants, so this conversion is
 /// explicit and drops fields that are not part of that contract. No JSON round-trip is involved.
+#[cfg(test)]
 pub(crate) fn adapt_inspection(
     output: uasset_inspection::generic::InspectOutput,
 ) -> Result<SavedAssetInspection, String> {
@@ -748,6 +750,7 @@ pub(crate) fn adapt_inspection(
     })
 }
 
+#[cfg(test)]
 fn adapt_decode_error(
     error: uasset_inspection::generic::DecodeErrorOutput,
 ) -> Result<SavedAssetDecodeError, String> {
@@ -767,6 +770,7 @@ fn adapt_decode_error(
     })
 }
 
+#[cfg(test)]
 fn adapt_asset(asset: uasset_inspection::generic::AssetOutput) -> Result<SavedAsset, String> {
     match asset.kind {
         "StringTable" => Ok(SavedAsset::StringTable {
@@ -940,6 +944,7 @@ fn adapt_asset(asset: uasset_inspection::generic::AssetOutput) -> Result<SavedAs
     }
 }
 
+#[cfg(test)]
 fn adapt_property(
     property: uasset_inspection::generic::PropertyOutput,
 ) -> Result<SavedProperty, String> {
@@ -950,6 +955,7 @@ fn adapt_property(
     })
 }
 
+#[cfg(test)]
 fn adapt_property_value(
     value: uasset_inspection::generic::PropertyValueOutput,
 ) -> Result<SavedPropertyValue, String> {
@@ -1052,6 +1058,7 @@ fn adapt_property_value(
     })
 }
 
+#[cfg(test)]
 fn adapt_text_history(history: &'static str) -> Result<TextHistory, String> {
     match history {
         "none" => Ok(TextHistory::None),
@@ -1060,18 +1067,22 @@ fn adapt_text_history(history: &'static str) -> Result<TextHistory, String> {
     }
 }
 
+#[cfg(test)]
 fn required_string(value: Option<String>, field: &str) -> Result<String, String> {
     value.ok_or_else(|| format!("inspection is missing {field}"))
 }
 
+#[cfg(test)]
 fn required_u32(value: Option<u32>, field: &str) -> Result<u32, String> {
     value.ok_or_else(|| format!("inspection is missing {field}"))
 }
 
+#[cfg(test)]
 fn finite_f64(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
+#[cfg(test)]
 fn f32_to_wire(value: f32) -> Option<f64> {
     // The compatibility JSON path formats f32 values before the protocol decoder sees them.
     // Preserve that decimal boundary while keeping the inspection model typed internally.

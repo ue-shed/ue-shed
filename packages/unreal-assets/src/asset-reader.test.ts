@@ -11,6 +11,7 @@ import {
 	readSavedWorld,
 	type SavedWorld
 } from "./index.js";
+import { validateProtocolEvent } from "./protocol-transport.js";
 import { ProtocolLineDecoder } from "./protocol-transport.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
@@ -202,5 +203,38 @@ describe("AssetReader protocol boundary validation", () => {
 		expect(() => afterTerminal.pushLine(JSON.stringify(acceptedEvent(2)))).toThrow(
 			"after its terminal event"
 		);
+	});
+
+	it("retains exact schema validation on the large-frame type-side path", () => {
+		const malformedJson = new ProtocolStreamValidator(protocolContract, "protocol-test");
+		expect(() => malformedJson.pushLine("{")).toThrow("Invalid protocol event");
+
+		const unknownField = new ProtocolStreamValidator(protocolContract, "protocol-test");
+		expect(() =>
+			unknownField.pushLine(JSON.stringify({ ...acceptedEvent(), unexpected: true }))
+		).toThrow("Invalid protocol event");
+
+		const invalidNestedContract = new ProtocolStreamValidator(
+			protocolContract,
+			"protocol-test"
+		);
+		expect(() =>
+			invalidNestedContract.pushLine(
+				JSON.stringify({
+					...acceptedEvent(),
+					contract: { name: "uasset-io", version: { major: -1, minor: 0 } }
+				})
+			)
+		).toThrow("Invalid protocol event");
+	});
+
+	it("validates small and large frames through their measured paths", () => {
+		const event = acceptedEvent();
+		expect(validateProtocolEvent(event, 1)).toEqual(event);
+		expect(validateProtocolEvent(event, Number.MAX_SAFE_INTEGER)).toEqual(event);
+
+		const unknown = { ...event, unexpected: true };
+		expect(() => validateProtocolEvent(unknown, 1)).toThrow();
+		expect(() => validateProtocolEvent(unknown, Number.MAX_SAFE_INTEGER)).toThrow();
 	});
 });

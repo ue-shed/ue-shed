@@ -40,6 +40,25 @@ import {
 
 export type ProtocolEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
 
+const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
+const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
+const validateProtocolEventType = Schema.decodeUnknownExit(
+	Schema.toType(UAssetIoEvent),
+	exactProtocolParseOptions
+);
+const decodeProtocolEvent = Schema.decodeUnknownSync(UAssetIoEvent, exactProtocolParseOptions);
+
+/** @internal Validate one exact wire event through the measured large-frame type-side path. */
+export function validateProtocolEvent(input: unknown, frameCharacters: number): ProtocolEvent {
+	if (frameCharacters < TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS) {
+		return decodeProtocolEvent(input);
+	}
+	const validation = validateProtocolEventType(input);
+	if (Exit.isSuccess(validation)) return validation.value;
+	// Preserve the decoder's detailed issue tree on the exceptional invalid-input path.
+	return decodeProtocolEvent(input);
+}
+
 function sameProtocolContract(
 	left: UAssetIoRequest["contract"],
 	right: UAssetIoRequest["contract"]
@@ -95,7 +114,7 @@ export class ProtocolStreamValidator {
 		}
 		let event: ProtocolEvent;
 		try {
-			event = Schema.decodeUnknownSync(UAssetIoEvent)(JSON.parse(line) as unknown);
+			event = validateProtocolEvent(JSON.parse(line) as unknown, line.length);
 		} catch (cause) {
 			throw new ProtocolStreamFailure("contract", `Invalid protocol event: ${String(cause)}`);
 		}

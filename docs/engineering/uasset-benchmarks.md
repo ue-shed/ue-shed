@@ -393,3 +393,34 @@ while preserving all 65 package results. That comparison uses
 `test-results/uasset-parser-perf-protocol.json`. Tiny repeated assets benefit mostly from session
 reuse: an isolated same-process TypeScript measurement took `IMC_Fixture` from 24.631 ms fresh to
 0.589 ms warm. Treat the sub-millisecond result as startup amortization, not parser throughput.
+
+### Direct typed projection and exact large-frame validation sample (2026-08-10)
+
+The typed inspection executor previously built the generic owned inspection tree and then walked it
+again to construct the protocol-specific tree. It now projects the protocol result directly from
+the parser's decoded model. A six-real-fixture regression test compares the new projection exactly
+with the previous adapter, including `DT_LargeScalars` and all 16,527 exports in `L_CameraLoad`.
+
+The first 12-run, 3-warmup matrix measured the isolated native change:
+
+| Typed protocol lane        |    Previous | Direct projection | Improvement |
+| -------------------------- | ----------: | ----------------: | ----------: |
+| Large table, fresh         |   59.101 ms |         57.851 ms |        2.1% |
+| Large table, session       |   36.404 ms |         31.758 ms |       12.8% |
+| Large level, fresh         |  144.717 ms |        134.435 ms |        7.1% |
+| Large level, session       |  118.183 ms |        111.068 ms |        6.0% |
+| Full TypeScript asset scan | 2474.713 ms |       1877.356 ms |       24.1% |
+
+The Node boundary remained dominated by Effect Schema validation. A focused same-process profile
+separated `JSON.parse` from schema work. For the 4.46 MB table result, normal encoded-side decoding
+was faster than exact type-side validation (98.079 versus 117.870 ms). For the 14.97 MB level result,
+the type-side path was substantially faster (632.154 versus 360.466 ms). Both paths use
+`onExcessProperty: "error"`; the distinction changes traversal cost, not validation policy.
+
+The reader therefore keeps normal decoding below an 8 MiB character threshold and uses exact
+type-side validation above it. Misclassification changes only performance. The final rebuilt-package
+matrix measured the full TypeScript scan at 1568.307 ms p50, a further 16.5% improvement over direct
+projection alone and 36.6% cumulatively over the previous pushed state. The ignored evidence files
+are `test-results/uasset-parser-perf-direct-projection.json`,
+`test-results/uasset-parser-perf-exact-validation-built.json`, and
+`test-results/uasset-parser-perf-hybrid-validation.json`.

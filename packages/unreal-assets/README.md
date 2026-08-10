@@ -124,8 +124,9 @@ own DataTable authoring policy, live editor state, mutation, or Save.
 the shared runtime contract. `readSavedTable` and `readSavedAsset` share one lazily started native
 protocol session for the lifetime of their `AssetReader` layer. Calls are serialized through that
 bounded worker; interruption terminates it, and closing the layer closes the process. Project scans
-remain explicit batched operations in fresh workers. The executable keeps the human `authoring`
-command for compatibility.
+remain explicit batched operations in fresh workers. Protocol validation rejects excess fields on
+every frame; measured large frames use the schema's exact type-side parser, while smaller frames use
+the normal decoder. The executable keeps the human `authoring` command for compatibility.
 Callers can pass an explicit executable, set
 `UE_SHED_UASSET_EXECUTABLE`, or provide `uasset` on `PATH`. The UE Shed source-checkout launchers
 incrementally build `crates/uasset-io` and configure its executable automatically; this package

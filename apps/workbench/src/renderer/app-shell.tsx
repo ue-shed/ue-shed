@@ -8,6 +8,7 @@ import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
+import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
 import type { ShowcaseContext } from "../main/preload.js";
@@ -30,6 +31,7 @@ const routes = [
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
 	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
+	{ href: "#/scenarios", label: "Scenarios", route: "#/scenarios" },
 	{ href: "#/camera-lab", label: "Camera Lab", route: "#/camera-lab" }
 ] as const;
 
@@ -41,6 +43,15 @@ const workflowGroups = [
 		label: "Saved project",
 		requirement: "UNREAL CAN STAY CLOSED",
 		workflows: [
+			{
+				action: "OPEN STUDIO",
+				description:
+					"Edit player actions, waits, overrides, and run results on one timeline.",
+				evidence: "scenarios",
+				href: "#/scenarios",
+				title: "Scenario Studio",
+				tone: "lime"
+			},
 			{
 				action: "OPEN TABLES",
 				description:
@@ -156,6 +167,13 @@ function workflowEvidence(
 			detail: `${camera.config.activeCameraCount} scheduled · ${camera.config.resolution} · ${camera.config.pipelineMode.replaceAll("_", " ")}`,
 			label: camera.stats.pipeConnected ? "Camera pipe connected" : "Unreal is offline",
 			ready: camera.stats.pipeConnected
+		};
+	}
+	if (workflow.evidence === "scenarios") {
+		return {
+			detail: "Example draft and two saved runs work offline",
+			label: "Movement Gym · 2 saved runs",
+			ready: true
 		};
 	}
 	if (context === undefined) {
@@ -291,6 +309,9 @@ export function AppShell() {
 					</Match>
 					<Match when={route() === "#/content-observatory"}>
 						<ContentObservatoryRoute client={contentObservatoryClient} />
+					</Match>
+					<Match when={route() === "#/scenarios"}>
+						<ScenarioStudioRoute />
 					</Match>
 					<Match when={route() === "#/camera-lab"}>
 						<CameraLab />
@@ -628,6 +649,7 @@ const styles = stylex.create({
 	violet: { borderLeftColor: "#9d8cc7" },
 	steel: { borderLeftColor: "#758991" },
 	cyan: { borderLeftColor: "#5eb8c7" },
+	lime: { borderLeftColor: "#b7e26d" },
 	workflowIdentity: { minWidth: 0 },
 	rowTitle: { margin: 0, fontFamily: "Georgia, serif", fontSize: 19, fontWeight: 400 },
 	rowDescription: {

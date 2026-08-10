@@ -1,0 +1,31 @@
+{
+	"name": "@ue-shed/extension-scenarios",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"scripts": {
+		"build": "vite build",
+		"dev": "vite build && vite preview --host 0.0.0.0",
+		"preview": "vite preview --host 0.0.0.0",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@stylexjs/stylex": "catalog:",
+		"@ue-shed/scenarios": "workspace:*",
+		"@ue-shed/ui": "workspace:*",
+		"@ue-shed/ui-theme": "workspace:*",
+		"effect": "catalog:",
+		"solid-js": "catalog:"
+	},
+	"devDependencies": {
+		"@stylexjs/rollup-plugin": "catalog:",
+		"vite": "^8.1.4",
+		"vite-plugin-solid": "catalog:"
+	}
+}

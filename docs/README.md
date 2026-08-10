@@ -32,13 +32,14 @@ there; do not invent a second status source in docs.
 
 ## Products
 
-| Document                                                  | Domain                             |
-| --------------------------------------------------------- | ---------------------------------- |
-| [data-authoring.md](products/data-authoring.md)           | DataTable authoring product        |
-| [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract |
-| [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates          |
-| [map-review.md](products/map-review.md)                   | Map Review product                 |
-| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history  |
+| Document                                                  | Domain                               |
+| --------------------------------------------------------- | ------------------------------------ |
+| [data-authoring.md](products/data-authoring.md)           | DataTable authoring product          |
+| [hosting-grill.md](products/hosting-grill.md)             | Hosting / authoring grill contract   |
+| [hosting-conformance.md](products/hosting-conformance.md) | Hosting conformance gates            |
+| [map-review.md](products/map-review.md)                   | Map Review product                   |
+| [map-history.md](products/map-history.md)                 | Perforce-backed saved map history    |
+| [game-text.md](products/game-text.md)                     | Saved text corpus and quality review |
 
 ## Decisions
 

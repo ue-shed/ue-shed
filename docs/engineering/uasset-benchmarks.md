@@ -147,6 +147,12 @@ The harness reports:
   source-checkout Cargo launcher.
 - `native.inspect.level`: release `uasset inspect` over `L_CameraLoad.umap`, the largest package in
   the fixture at 16,525 exports. Paired with `unreal.commandlet.level` below.
+- `native.protocol.inspect.{table,level}.fresh`: one fresh typed `uasset protocol` inspection over
+  `DT_LargeScalars` or `L_CameraLoad`. The timer includes native startup, read, projection,
+  serialization, and pipe transfer; structural validation runs after the timer.
+- `native.protocol.inspect.{table,level}.session`: the same typed request through one warmed
+  `uasset protocol-session`. It isolates per-request work after process startup while retaining the
+  complete protocol output and validation.
 - `typescript.input.project`: the same application scanning every package in the fixture project.
   The result records fixture package count and bytes.
 - `unreal.commandlet.verify`: an optional fresh `UnrealEditor-Cmd` process running the fixture's
@@ -355,3 +361,35 @@ of 354.450 ms, the final 95.408 ms is a cumulative 73.1% improvement.
 
 [WASM decode boundary](../research/wasm-decode-boundary.md) records the earlier native-derived
 reasoning and the first measured WASM result.
+
+### Typed protocol and client framing sample (2026-08-10)
+
+The next pass followed the public Node-to-Rust path rather than the human JSON command. Typed result
+events previously serialized a `ResultFrame` into a dynamic `serde_json::Value`, normalized that
+tree, wrapped and cloned it into another event tree, and only then serialized bytes. Result models
+now omit absent optional keys themselves and serialize once through a borrowed event wrapper.
+
+The Node reader had a separate scaling defect: while waiting for the newline terminating one large
+result frame, it repeatedly concatenated each stdout chunk onto the complete partial string. The
+incremental framer now retains chunks separately and joins them once when the newline arrives. A
+scoped `AssetReader` also reuses one lazily started, serialized native session for individual asset
+and table reads; cancellation tears down the worker and layer release closes it. Whole-project work
+continues to use the existing batched operations.
+
+The raw protocol matrix used 12 timed requests and 3 warmups. Validation ran outside the timed
+interval in both fresh and session lanes. “Before” is the same direct protocol workload before the
+borrowed event serializer; the complete final harness output is the ignored
+`test-results/uasset-parser-perf-protocol.json`.
+
+| Typed protocol lane | Before fresh | After fresh | Warm session | Fresh improvement | Session vs fresh |
+| ------------------- | -----------: | ----------: | -----------: | ----------------: | ---------------: |
+| `DT_LargeScalars`   |   235.173 ms |   59.101 ms |    36.404 ms |             74.9% |            38.4% |
+| `L_CameraLoad`      |   581.590 ms |  144.717 ms |   118.183 ms |             75.1% |            18.3% |
+
+Together, direct event serialization and linear client framing reduced the full TypeScript
+asset-scan p50 from 3217.984 ms in the preceding 12-run matrix to 2474.713 ms, a 23.1% improvement,
+while preserving all 65 package results. That comparison uses
+`test-results/uasset-parser-perf-streaming.json` and
+`test-results/uasset-parser-perf-protocol.json`. Tiny repeated assets benefit mostly from session
+reuse: an isolated same-process TypeScript measurement took `IMC_Fixture` from 24.631 ms fresh to
+0.589 ms warm. Treat the sub-millisecond result as startup amortization, not parser throughput.

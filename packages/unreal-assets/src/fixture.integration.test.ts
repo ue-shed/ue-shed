@@ -26,6 +26,32 @@ const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
 
 describe.skipIf(!executable)("batched project scan", () => {
+	it("reuses one scoped worker and serializes concurrent single-package reads", async () => {
+		const assetPath = join(fixtureRoot, "Content/Fixture/Input/IMC_Fixture.uasset");
+		const workerPids: number[] = [];
+		const layer = assetReaderLayer({
+			executable: executable!,
+			protocolObserver: (event) => {
+				if (event.kind === "worker_started") workerPids.push(event.pid);
+			}
+		});
+		const [first, second, third] = await Effect.runPromise(
+			Effect.gen(function* () {
+				const first = yield* readSavedAsset({ assetPath });
+				const [second, third] = yield* Effect.all(
+					[readSavedAsset({ assetPath }), readSavedAsset({ assetPath })],
+					{ concurrency: "unbounded" }
+				);
+				return [first, second, third] as const;
+			}).pipe(Effect.provide(layer))
+		);
+
+		expect(second).toEqual(first);
+		expect(third).toEqual(first);
+		expect(workerPids).toHaveLength(3);
+		expect(new Set(workerPids)).toHaveProperty("size", 1);
+	});
+
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
 		// 62 `.uasset` packages (including six World Partition external actors and the 25-asset

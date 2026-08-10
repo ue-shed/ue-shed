@@ -4,19 +4,19 @@
 //! access, scheduling, and inspection belong to the IO and inspection crates introduced later in
 //! the migration.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::protocol_result::ProjectIndexStatusPayload;
 pub use crate::protocol_result::{ResultFrame, SavedAssetInspection};
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
     pub name: String,
     pub version: ContractVersion,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ContractVersion {
     pub major: u32,

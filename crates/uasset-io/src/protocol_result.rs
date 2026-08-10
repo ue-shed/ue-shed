@@ -188,12 +188,14 @@ pub enum SavedAsset {
         class_path: String,
         #[serde(default)]
         properties: Vec<SavedProperty>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         tail_bytes: Option<u64>,
     },
     #[serde(rename = "DataAsset")]
     DataAsset {
         object_path: String,
         class_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         object_guid: Option<String>,
         #[serde(default)]
         properties: Vec<SavedProperty>,
@@ -202,6 +204,7 @@ pub enum SavedAsset {
     PrimaryDataAsset {
         object_path: String,
         class_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         object_guid: Option<String>,
         #[serde(default)]
         properties: Vec<SavedProperty>,
@@ -219,6 +222,7 @@ pub enum SavedAsset {
     Skeleton {
         object_path: String,
         class_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         object_guid: Option<String>,
         #[serde(default)]
         properties: Vec<SavedProperty>,
@@ -245,7 +249,9 @@ pub enum SavedAsset {
     #[serde(rename = "DataTable")]
     DataTable {
         object_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         row_struct: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         parent_tables: Option<Vec<String>>,
         row_count: u64,
         rows: Vec<SavedTableRow>,
@@ -253,7 +259,9 @@ pub enum SavedAsset {
     #[serde(rename = "CompositeDataTable")]
     CompositeDataTable {
         object_path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         row_struct: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         parent_tables: Option<Vec<String>>,
         row_count: u64,
         rows: Vec<SavedTableRow>,
@@ -414,6 +422,7 @@ pub struct SavedProperty {
 #[serde(deny_unknown_fields)]
 pub struct SavedAssetDecodeError {
     pub object_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub class_path: Option<String>,
     pub kind: SavedAssetDecodeErrorKind,
     pub message: String,
@@ -492,9 +501,9 @@ pub struct SavedAssetScanSummary {
     pub emitted_assets: u64,
     #[serde(rename = "failedAssets")]
     pub failed_assets: u64,
-    #[serde(rename = "inventoryComplete")]
+    #[serde(rename = "inventoryComplete", skip_serializing_if = "Option::is_none")]
     pub inventory_complete: Option<bool>,
-    #[serde(rename = "inventoryFiles")]
+    #[serde(rename = "inventoryFiles", skip_serializing_if = "Option::is_none")]
     pub inventory_files: Option<u64>,
     #[serde(rename = "partialAssets")]
     pub partial_assets: u64,

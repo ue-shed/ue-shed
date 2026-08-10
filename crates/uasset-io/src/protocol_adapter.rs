@@ -9,6 +9,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::cancellation::CancellationToken;
@@ -144,6 +145,16 @@ struct Emitter {
     cancellation: CancellationToken,
 }
 
+#[derive(Serialize)]
+struct ResultEvent<'a> {
+    contract: &'a Contract,
+    kind: &'static str,
+    #[serde(rename = "requestId")]
+    request_id: &'a str,
+    sequence: u64,
+    result: &'a ResultFrame,
+}
+
 impl Emitter {
     fn new(request: &Request, cancellation: CancellationToken) -> Self {
         Self {
@@ -161,15 +172,6 @@ impl Emitter {
 
     fn emit(&mut self, kind: &str, fields: Value) -> Result<(), String> {
         self.emit_internal(kind, fields, true)
-    }
-
-    /// Emits a value that was already constructed from a Rust protocol type.
-    ///
-    /// The compatibility path validates every translated JSON result by decoding it again. A
-    /// direct executor has already crossed that type boundary, so decoding the same large result
-    /// a second time only adds work before the required wire serialization.
-    fn emit_unvalidated(&mut self, kind: &str, fields: Value) -> Result<(), String> {
-        self.emit_internal(kind, fields, false)
     }
 
     fn emit_internal(&mut self, kind: &str, fields: Value, validate: bool) -> Result<(), String> {
@@ -194,6 +196,10 @@ impl Emitter {
             decode_event(&bytes)
                 .map_err(|error| format!("internal protocol event failed validation: {error}"))?;
         }
+        self.write_frame(&bytes)
+    }
+
+    fn write_frame(&mut self, bytes: &[u8]) -> Result<(), String> {
         let frame_bytes = bytes
             .len()
             .checked_add(1)
@@ -210,7 +216,7 @@ impl Emitter {
         }
         let mut stdout = io::stdout().lock();
         let result = stdout
-            .write_all(&bytes)
+            .write_all(bytes)
             .and_then(|()| stdout.write_all(b"\n"))
             .and_then(|()| stdout.flush())
             .map_err(|error| format!("could not write protocol event: {error}"));
@@ -230,35 +236,20 @@ impl Emitter {
         self.cancellation
             .checkpoint("event emission")
             .map_err(cancellation_failure)?;
-        let mut value = serde_json::to_value(result).map_err(|error| Failure {
+        let event = ResultEvent {
+            contract: &self.contract,
+            kind: "result",
+            request_id: &self.request_id,
+            sequence: self.sequence,
+            result,
+        };
+        let bytes = serde_json::to_vec(&event).map_err(|error| Failure {
             code: "contract".to_owned(),
             message: format!("could not serialize typed result: {error}"),
             retry_safe: false,
             ..Default::default()
         })?;
-        if let Some(inspection) = value.get_mut("inspection") {
-            *inspection = normalize_inspection(inspection.take());
-        }
-        if let Some(entry) = value.get_mut("entry")
-            && let Some(inspection) = entry.get_mut("inspection")
-        {
-            *inspection = normalize_inspection(inspection.take());
-        }
-        if let Some(summary) = value.get_mut("summary").and_then(Value::as_object_mut) {
-            for key in ["inventoryComplete", "inventoryFiles"] {
-                if summary.get(key).is_some_and(Value::is_null) {
-                    summary.remove(key);
-                }
-            }
-        }
-        self.cancellation
-            .checkpoint("event emission")
-            .map_err(cancellation_failure)?;
-        self.cancellation
-            .checkpoint("event emission")
-            .map_err(cancellation_failure)?;
-        self.emit_unvalidated("result", json!({ "result": value }))
-            .map_err(emission_failure)
+        self.write_frame(&bytes).map_err(emission_failure)
     }
 }
 
@@ -290,11 +281,17 @@ fn execute_direct(
     cancellation: &CancellationToken,
     query_session: Option<&mut direct_executor::ProjectIndexQuerySession>,
 ) -> Result<bool, Failure> {
-    if query_session.is_some() && !matches!(&request.operation, Operation::ProjectIndexQuery { .. })
+    if query_session.is_some()
+        && !matches!(
+            &request.operation,
+            Operation::Inspect { .. }
+                | Operation::Authoring { .. }
+                | Operation::ProjectIndexQuery { .. }
+        )
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts only project index query operations",
+            "protocol-session accepts inspect, authoring, and project index query operations",
             false,
         ));
     }
@@ -1087,123 +1084,6 @@ fn f32_to_wire(value: f32) -> Option<f64> {
             .parse()
             .expect("a finite f32 must have a valid f64 representation"),
     )
-}
-
-pub(crate) fn normalize_inspection(mut value: Value) -> Value {
-    let Some(root) = value.as_object_mut() else {
-        return value;
-    };
-    if let Some(package) = root.get_mut("package").and_then(Value::as_object_mut) {
-        retain(
-            package,
-            &[
-                "name",
-                "version",
-                "package_flags",
-                "summary_size",
-                "total_header_size",
-            ],
-        );
-    }
-    if let Some(assets) = root.get_mut("assets").and_then(Value::as_array_mut) {
-        for asset in assets {
-            normalize_asset(asset);
-        }
-    }
-    if let Some(errors) = root.get_mut("decode_errors").and_then(Value::as_array_mut) {
-        for error in errors {
-            if let Some(object) = error.as_object_mut()
-                && object.get("class_path").is_some_and(Value::is_null)
-            {
-                object.remove("class_path");
-            }
-        }
-    }
-    value
-}
-
-fn normalize_asset(value: &mut Value) {
-    let Some(object) = value.as_object_mut() else {
-        return;
-    };
-    let kind = object
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let keys: &[&str] = match kind {
-        "StringTable" => &[
-            "kind",
-            "object_path",
-            "string_table_namespace",
-            "string_table_entries",
-        ],
-        "UObject" => &[
-            "kind",
-            "object_path",
-            "class_path",
-            "properties",
-            "tail_bytes",
-        ],
-        "DataAsset" | "PrimaryDataAsset" => &[
-            "kind",
-            "object_path",
-            "class_path",
-            "object_guid",
-            "properties",
-        ],
-        "CurveTable" => &[
-            "kind",
-            "object_path",
-            "class_path",
-            "properties",
-            "row_count",
-            "curve_rows",
-        ],
-        "Skeleton" => &[
-            "kind",
-            "object_path",
-            "class_path",
-            "object_guid",
-            "properties",
-            "bones",
-        ],
-        "Enum" => &[
-            "kind",
-            "object_path",
-            "class_path",
-            "enum_cpp_form",
-            "enum_entries",
-            "row_count",
-        ],
-        "Struct" => &[
-            "kind",
-            "object_path",
-            "class_path",
-            "struct_flags",
-            "struct_fields",
-            "properties",
-            "row_count",
-        ],
-        "DataTable" | "CompositeDataTable" => &[
-            "kind",
-            "object_path",
-            "row_struct",
-            "parent_tables",
-            "row_count",
-            "rows",
-        ],
-        _ => &[],
-    };
-    retain(object, keys);
-    for key in ["object_guid", "tail_bytes", "row_struct", "parent_tables"] {
-        if object.get(key).is_some_and(Value::is_null) {
-            object.remove(key);
-        }
-    }
-}
-
-fn retain(object: &mut serde_json::Map<String, Value>, keys: &[&str]) {
-    object.retain(|key, _| keys.iter().any(|candidate| *candidate == key));
 }
 
 #[cfg(test)]

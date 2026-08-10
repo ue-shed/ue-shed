@@ -197,7 +197,7 @@ interface ProtocolTelemetry {
 	acceptedAt: number | undefined;
 	discoveryStartedAt: number | undefined;
 	discoveryDurationMs: number | undefined;
-	framePending: string;
+	framePendingBytes: number;
 	readBytes: number;
 	inspectedFiles: number;
 	cacheRequested: boolean;
@@ -239,7 +239,7 @@ function makeProtocolTelemetry(
 		cancelled: false,
 		discoveryDurationMs: undefined,
 		discoveryStartedAt: undefined,
-		framePending: "",
+		framePendingBytes: 0,
 		inspectedFiles: 0,
 		largestFrameBytes: 0,
 		observer,
@@ -393,14 +393,47 @@ function observeProtocolEvent(event: ProtocolEvent, telemetry: ProtocolTelemetry
 
 function observeProtocolChunk(chunk: string, telemetry: ProtocolTelemetry): void {
 	telemetry.outputBytes += Buffer.byteLength(chunk, "utf8");
-	telemetry.framePending += chunk;
-	const lines = telemetry.framePending.split(/\r?\n/);
-	telemetry.framePending = lines.pop() ?? "";
-	for (const line of lines) {
+	const segments = chunk.split("\n");
+	for (let index = 0; index < segments.length - 1; index += 1) {
+		telemetry.framePendingBytes += Buffer.byteLength(segments[index] ?? "", "utf8") + 1;
 		telemetry.largestFrameBytes = Math.max(
 			telemetry.largestFrameBytes,
-			Buffer.byteLength(line, "utf8") + 1
+			telemetry.framePendingBytes
 		);
+		telemetry.framePendingBytes = 0;
+	}
+	telemetry.framePendingBytes += Buffer.byteLength(segments.at(-1) ?? "", "utf8");
+}
+
+/** @internal Incremental NDJSON framing without repeatedly copying a growing partial line. */
+export class ProtocolLineDecoder {
+	private parts: string[] = [];
+
+	push(chunk: string): readonly string[] {
+		const lines: string[] = [];
+		let start = 0;
+		for (
+			let newline = chunk.indexOf("\n");
+			newline >= 0;
+			newline = chunk.indexOf("\n", start)
+		) {
+			this.parts.push(chunk.slice(start, newline));
+			const line = this.parts.join("");
+			lines.push(line.endsWith("\r") ? line.slice(0, -1) : line);
+			this.parts = [];
+			start = newline + 1;
+		}
+		if (start < chunk.length) this.parts.push(chunk.slice(start));
+		return lines;
+	}
+
+	finish(): void {
+		if (this.parts.length > 0) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Protocol output ended with an incomplete JSON line"
+			);
+		}
 	}
 }
 
@@ -612,7 +645,7 @@ export async function* runUassetProtocolEvents(options: {
 	}
 }
 
-/** A scoped, query-only native protocol worker. Calls must be serialized by its owner. */
+/** A scoped native protocol worker. Calls must be serialized by its owner. */
 export class UassetProtocolSession {
 	private child: ReturnType<typeof spawn> | undefined;
 	private closePromise:
@@ -724,6 +757,7 @@ export class UassetProtocolSession {
 	async *events(options: {
 		readonly request: UAssetIoRequest;
 		readonly signal: AbortSignal | undefined;
+		readonly telemetryOperation?: string;
 		readonly timeoutMs: number;
 		readonly onEvent?: (event: ProtocolEvent) => void;
 	}): AsyncGenerator<ProtocolEvent> {
@@ -789,7 +823,12 @@ export class UassetProtocolSession {
 			if (telemetry.terminalState === undefined && !telemetry.cancelled) {
 				telemetry.terminalState = "failed";
 			}
-			await Effect.runPromise(recordProtocolTelemetry("project_index", telemetry));
+			await Effect.runPromise(
+				recordProtocolTelemetry(
+					options.telemetryOperation ?? options.request.operation.kind,
+					telemetry
+				)
+			);
 			this.running = false;
 		}
 	}
@@ -865,7 +904,7 @@ async function* protocolEvents(options: {
 		child.stdin.setDefaultEncoding("utf8");
 		child.stdin.end(`${JSON.stringify(options.request)}\n`);
 		child.stdout.setEncoding("utf8");
-		let pending = "";
+		const lines = new ProtocolLineDecoder();
 		const outputBudget = new ProtocolOutputBudget(
 			options.request.limits.maximumOutputBytes ?? MAX_PROTOCOL_OUTPUT_BYTES
 		);
@@ -876,22 +915,14 @@ async function* protocolEvents(options: {
 		for await (const chunk of child.stdout as AsyncIterable<string>) {
 			observeProtocolChunk(chunk, options.telemetry);
 			outputBudget.observe(chunk);
-			pending += chunk;
-			const lines = pending.split(/\r?\n/);
-			pending = lines.pop() ?? "";
-			for (const line of lines) {
+			for (const line of lines.push(chunk)) {
 				const decoded = validator.pushLine(line);
 				observeProtocolEvent(decoded, options.telemetry);
 				options.onEvent?.(decoded);
 				yield decoded;
 			}
 		}
-		if (pending.length > 0) {
-			throw new ProtocolStreamFailure(
-				"contract",
-				"Protocol output ended with an incomplete JSON line"
-			);
-		}
+		lines.finish();
 		validator.finish();
 		const closedResult = await closePromise;
 		if (processError !== undefined)
@@ -1052,17 +1083,29 @@ async function collectProtocolSingle<A>(options: {
 	readonly telemetry: ProtocolTelemetry;
 	readonly onEvent?: (event: ProtocolEvent) => void;
 }): Promise<A> {
+	return collectProtocolSingleEvents({
+		events: protocolEvents({
+			configuration: options.configuration,
+			operation: options.operation,
+			path: options.path,
+			request: options.request,
+			signal: options.signal,
+			telemetry: options.telemetry,
+			timeoutMs: options.configuration.timeoutMs,
+			...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
+		}),
+		expected: options.expected,
+		select: options.select
+	});
+}
+
+async function collectProtocolSingleEvents<A>(options: {
+	readonly events: AsyncIterable<ProtocolEvent>;
+	readonly expected: UAssetIoResult["kind"];
+	readonly select: (result: UAssetIoResult) => A | undefined;
+}): Promise<A> {
 	let selected: A | undefined;
-	for await (const event of protocolEvents({
-		configuration: options.configuration,
-		operation: options.operation,
-		path: options.path,
-		request: options.request,
-		signal: options.signal,
-		telemetry: options.telemetry,
-		timeoutMs: options.configuration.timeoutMs,
-		...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
-	})) {
+	for await (const event of options.events) {
 		if (event.kind === "failed" || event.kind === "rejected") {
 			throw protocolFailureFromEvent(event);
 		}
@@ -1077,6 +1120,39 @@ async function collectProtocolSingle<A>(options: {
 		);
 	}
 	return selected;
+}
+
+export function invokeProtocolSessionSingle<A>(options: {
+	readonly configuration: AssetReaderConfiguration;
+	readonly operation: AssetReaderError["operation"];
+	readonly path: string;
+	readonly request: UAssetIoRequest;
+	readonly expected: UAssetIoResult["kind"];
+	readonly select: (result: UAssetIoResult) => A | undefined;
+	readonly session: UassetProtocolSession;
+	readonly onEvent?: (event: ProtocolEvent) => void;
+}): Effect.Effect<A, AssetReaderError> {
+	return Effect.tryPromise({
+		try: (signal) =>
+			collectProtocolSingleEvents({
+				events: options.session.events({
+					request: options.request,
+					signal,
+					timeoutMs: options.configuration.timeoutMs,
+					...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
+				}),
+				expected: options.expected,
+				select: options.select
+			}),
+		catch: (cause) => mapProtocolFailure(cause, options.operation, options.path)
+	}).pipe(
+		Effect.withSpan(`unreal_assets.protocol_${options.operation}`, {
+			attributes: { "unreal.asset_path": options.path }
+		}),
+		Effect.withSpan("unreal_assets.protocol_session", {
+			attributes: { "unreal.operation": options.operation, "unreal.path": options.path }
+		})
+	);
 }
 
 export function invokeProtocolSingle<A>(options: {

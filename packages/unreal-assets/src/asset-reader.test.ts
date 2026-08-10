@@ -11,6 +11,7 @@ import {
 	readSavedWorld,
 	type SavedWorld
 } from "./index.js";
+import { ProtocolLineDecoder } from "./protocol-transport.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
@@ -135,6 +136,20 @@ function completedEvent(sequence = 1, contract: TestProtocolContract = protocolC
 }
 
 describe("AssetReader protocol boundary validation", () => {
+	it("frames chunked NDJSON without retaining one growing concatenated string", () => {
+		const decoder = new ProtocolLineDecoder();
+		expect(decoder.push('{"kind":"res')).toEqual([]);
+		expect(decoder.push('ult"}\n{"kind":"completed"}\r\n')).toEqual([
+			'{"kind":"result"}',
+			'{"kind":"completed"}'
+		]);
+		expect(() => decoder.finish()).not.toThrow();
+
+		const incomplete = new ProtocolLineDecoder();
+		incomplete.push("{}");
+		expect(() => incomplete.finish()).toThrow("incomplete JSON line");
+	});
+
 	it("uses a cumulative byte budget for chunks and partial lines", () => {
 		const budget = new ProtocolOutputBudget(5);
 		budget.observe("{}\n");

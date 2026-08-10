@@ -373,6 +373,7 @@ async function collectQuery(
 		for await (const event of session.events({
 			request: protocolRequest,
 			signal,
+			telemetryOperation: "project_index",
 			timeoutMs: configuration.timeoutMs
 		})) {
 			if (event.kind === "accepted") {

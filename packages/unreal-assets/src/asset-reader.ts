@@ -14,7 +14,18 @@ import {
 	SavedWorldProgress,
 	type AuthoringTableSnapshot
 } from "@ue-shed/protocol";
-import { Config, Context, Duration, Effect, Layer, Metric, Option, Schema, Stream } from "effect";
+import {
+	Config,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Metric,
+	Option,
+	Schema,
+	Semaphore,
+	Stream
+} from "effect";
 
 export const MAX_PROTOCOL_OUTPUT_BYTES = 1024 * 1024 * 1024;
 export const MAX_CAPTURED_STDERR_BYTES = 64 * 1024 * 1024;
@@ -439,7 +450,9 @@ export function savedTableCatalogFromScan(scan: SavedAssetScan): SavedTableCatal
 // Import after shared AssetReader constants/types so the protocol transport can load them without a
 // circular initialization failure. Call-time use of these helpers is intentional.
 import {
+	UassetProtocolSession,
 	invokeProtocolScan,
+	invokeProtocolSessionSingle,
 	invokeProtocolSingle,
 	makeProtocolRequest,
 	protocolProjectionStream,
@@ -478,7 +491,8 @@ function makeAssetReader(
 	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" },
 	progress: CatalogProgressStore,
 	scanStore: ScanProgressStore,
-	savedWorldStore: SavedWorldProgressStore
+	savedWorldStore: SavedWorldProgressStore,
+	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle
 ): AssetReaderShape {
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
@@ -533,7 +547,7 @@ function makeAssetReader(
 		return yield* discoverSavedAssetsWith(configuration, projectRoot);
 	});
 	const readAsset = Effect.fn("AssetReader.readAsset")(function* (assetPath: string) {
-		return yield* invokeProtocolSingle({
+		return yield* invokeSingle({
 			configuration,
 			operation: "inspect",
 			path: assetPath,
@@ -549,7 +563,7 @@ function makeAssetReader(
 		});
 	});
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
-		return yield* invokeProtocolSingle({
+		return yield* invokeSingle({
 			configuration,
 			operation: "authoring",
 			path: assetPath,
@@ -643,24 +657,46 @@ function makeAssetReader(
 	});
 }
 
+function makeScopedAssetReader(
+	configuration: AssetReaderConfiguration & { readonly source: "configured" | "path" }
+) {
+	return Effect.gen(function* () {
+		const mutex = yield* Semaphore.make(1);
+		const session = yield* Effect.acquireRelease(
+			Effect.sync(() => new UassetProtocolSession(configuration)),
+			(session) => Effect.promise(() => session.close())
+		);
+		const invokeSingle: typeof invokeProtocolSingle = (options) =>
+			mutex.withPermits(1)(
+				invokeProtocolSessionSingle({
+					...options,
+					session
+				})
+			);
+		return makeAssetReader(
+			configuration,
+			{ current: idleCatalogProgress() },
+			{ current: idleScanProgress() },
+			{ current: idleSavedWorldProgress() },
+			invokeSingle
+		);
+	});
+}
+
 export function assetReaderLayer(
 	configuration: Partial<AssetReaderConfiguration> = {}
 ): Layer.Layer<AssetReader> {
-	return Layer.sync(AssetReader, () =>
-		makeAssetReader(
-			{
-				catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
-				executable: configuration.executable ?? "uasset",
-				...(configuration.protocolObserver === undefined
-					? {}
-					: { protocolObserver: configuration.protocolObserver }),
-				source: configuration.executable === undefined ? "path" : "configured",
-				timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
-			},
-			{ current: idleCatalogProgress() },
-			{ current: idleScanProgress() },
-			{ current: idleSavedWorldProgress() }
-		)
+	return Layer.effect(
+		AssetReader,
+		makeScopedAssetReader({
+			catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
+			executable: configuration.executable ?? "uasset",
+			...(configuration.protocolObserver === undefined
+				? {}
+				: { protocolObserver: configuration.protocolObserver }),
+			source: configuration.executable === undefined ? "path" : "configured",
+			timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
+		})
 	);
 }
 
@@ -676,17 +712,12 @@ export const AssetReaderLive = Layer.effect(
 	AssetReader,
 	Effect.gen(function* () {
 		const executable = yield* readerExecutable;
-		return makeAssetReader(
-			{
-				catalogTimeoutMs: Duration.toMillis(yield* readerCatalogTimeout),
-				executable: Option.getOrElse(executable, () => "uasset"),
-				source: Option.isSome(executable) ? "configured" : "path",
-				timeoutMs: Duration.toMillis(yield* readerTimeout)
-			},
-			{ current: idleCatalogProgress() },
-			{ current: idleScanProgress() },
-			{ current: idleSavedWorldProgress() }
-		);
+		return yield* makeScopedAssetReader({
+			catalogTimeoutMs: Duration.toMillis(yield* readerCatalogTimeout),
+			executable: Option.getOrElse(executable, () => "uasset"),
+			source: Option.isSome(executable) ? "configured" : "path",
+			timeoutMs: Duration.toMillis(yield* readerTimeout)
+		});
 	})
 );
 

@@ -1,6 +1,6 @@
 //! Classic Unreal package summary parsing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, IoHash, Reader, Span};
@@ -63,13 +63,13 @@ impl PackageError {
     fn new(
         kind: PackageErrorKind,
         offset: Option<u64>,
-        path: impl Into<String>,
+        path: impl fmt::Display,
         detail: impl Into<String>,
     ) -> Self {
         Self {
             kind,
             offset,
-            path: path.into(),
+            path: path.to_string(),
             detail: detail.into(),
             source: None,
         }
@@ -262,6 +262,11 @@ impl ObjectPath {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
 }
 
 impl fmt::Display for ObjectPath {
@@ -345,42 +350,21 @@ impl Package {
         let mut imports = read_import_map(&mut reader, &summary, &names)?;
         let mut exports = read_export_map(&mut reader, &summary, &names, file_len)?;
 
-        for index in 0..imports.len() {
-            let object_path = resolve_index_path(
-                PackageIndex::Import(u32::try_from(index).expect("import index fits in u32")),
-                &summary.package_name,
-                &names,
-                &imports,
-                &exports,
-                "Imports",
-            )?;
-            let class_path = resolve_import_class_path(&imports[index], &names)?;
-            imports[index].object_path = normalize_object_path(object_path);
-            imports[index].class_path = class_path;
+        let resolved_paths =
+            resolve_package_paths(&summary.package_name, &names, &imports, &exports)?;
+
+        for (import, object_path) in imports.iter_mut().zip(resolved_paths.imports) {
+            import.object_path = normalize_object_path(object_path);
+            import.class_path = resolve_import_class_path(import, &names)?;
         }
 
-        for index in 0..exports.len() {
-            let object_path = resolve_index_path(
-                PackageIndex::Export(u32::try_from(index).expect("export index fits in u32")),
-                &summary.package_name,
-                &names,
-                &imports,
-                &exports,
-                "Exports",
-            )?;
-            let class_path = match exports[index].class_index {
-                PackageIndex::Null => None,
-                class_index => Some(normalize_object_path(resolve_index_path(
-                    class_index,
-                    &summary.package_name,
-                    &names,
-                    &imports,
-                    &exports,
-                    "Exports.ClassIndex",
-                )?)),
-            };
-            exports[index].object_path = normalize_object_path(object_path);
-            exports[index].class_path = class_path;
+        for ((export, object_path), class_path) in exports
+            .iter_mut()
+            .zip(resolved_paths.exports)
+            .zip(resolved_paths.export_classes)
+        {
+            export.object_path = normalize_object_path(object_path);
+            export.class_path = class_path;
         }
 
         Ok(Self {
@@ -437,16 +421,23 @@ impl Package {
 
     #[must_use]
     pub fn resolve_index(&self, index: PackageIndex) -> Option<ObjectPath> {
-        resolve_index_path(
-            index,
-            &self.summary.package_name,
-            &self.names,
-            &self.imports,
-            &self.exports,
-            "PackageIndex",
-        )
-        .ok()
-        .map(normalize_object_path)
+        self.resolve_index_str(index).map(ObjectPath::new)
+    }
+
+    /// Borrows a package index's path after package parsing has resolved the import and export maps.
+    #[must_use]
+    pub fn resolve_index_str(&self, index: PackageIndex) -> Option<&str> {
+        match index {
+            PackageIndex::Null => Some(self.summary.package_name.as_str()),
+            PackageIndex::Import(index) => self
+                .imports
+                .get(usize::try_from(index).ok()?)
+                .map(|import| import.object_path.as_str()),
+            PackageIndex::Export(index) => self
+                .exports
+                .get(usize::try_from(index).ok()?)
+                .map(|export| export.object_path.as_str()),
+        }
     }
 
     pub fn export_reader<'a>(
@@ -460,6 +451,55 @@ impl Package {
             export.object_path.as_str(),
         )?)
     }
+}
+
+struct ResolvedPackagePaths {
+    imports: Vec<ObjectPath>,
+    exports: Vec<ObjectPath>,
+    export_classes: Vec<Option<ObjectPath>>,
+}
+
+fn resolve_package_paths(
+    package_name: &str,
+    names: &[String],
+    imports: &[Import],
+    exports: &[Export],
+) -> Result<ResolvedPackagePaths, PackageError> {
+    let mut resolver = IndexPathResolver::new(package_name, names, imports, exports);
+    for index in 0..imports.len() {
+        resolver.ensure_resolved(
+            PackageIndex::Import(u32::try_from(index).expect("import index fits in u32")),
+            "Imports",
+        )?;
+    }
+
+    let mut export_class_paths = Vec::with_capacity(exports.len());
+    for (index, export) in exports.iter().enumerate() {
+        resolver.ensure_resolved(
+            PackageIndex::Export(u32::try_from(index).expect("export index fits in u32")),
+            "Exports",
+        )?;
+        let class_path = match export.class_index {
+            PackageIndex::Null => None,
+            class_index => {
+                resolver.ensure_resolved(class_index, "Exports.ClassIndex")?;
+                Some(normalize_object_path(
+                    resolver
+                        .resolved_path(class_index)
+                        .expect("non-null class index was resolved")
+                        .clone(),
+                ))
+            }
+        };
+        export_class_paths.push(class_path);
+    }
+
+    let (import_object_paths, export_object_paths) = resolver.into_paths();
+    Ok(ResolvedPackagePaths {
+        imports: import_object_paths,
+        exports: export_object_paths,
+        export_classes: export_class_paths,
+    })
 }
 
 impl PackageSummary {
@@ -1092,6 +1132,23 @@ fn read_name_map(
     Ok(names)
 }
 
+struct IndexedPath<'a> {
+    collection: &'a str,
+    index: usize,
+}
+
+impl<'a> IndexedPath<'a> {
+    const fn new(collection: &'a str, index: usize) -> Self {
+        Self { collection, index }
+    }
+}
+
+impl fmt::Display for IndexedPath<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}[{}]", self.collection, self.index)
+    }
+}
+
 fn read_import_map(
     reader: &mut Reader<'_>,
     summary: &PackageSummary,
@@ -1110,14 +1167,14 @@ fn read_import_map(
     let mut imports = Vec::with_capacity(capacity);
 
     for index in 0..count {
-        let path = format!("Imports[{index}]");
-        let class_package = reader.read_name_ref(&format!("{path}.ClassPackage"))?;
-        validate_name_ref(names, class_package, &format!("{path}.ClassPackage"))?;
-        let class_name = reader.read_name_ref(&format!("{path}.ClassName"))?;
-        validate_name_ref(names, class_name, &format!("{path}.ClassName"))?;
-        let outer_index = PackageIndex::parse(reader.read_i32(&format!("{path}.OuterIndex"))?);
-        let object_name = reader.read_name_ref(&format!("{path}.ObjectName"))?;
-        validate_name_ref(names, object_name, &format!("{path}.ObjectName"))?;
+        let path = IndexedPath::new("Imports", index);
+        let class_package = reader.read_name_ref(&format_args!("{path}.ClassPackage"))?;
+        validate_name_ref(names, class_package, &format_args!("{path}.ClassPackage"))?;
+        let class_name = reader.read_name_ref(&format_args!("{path}.ClassName"))?;
+        validate_name_ref(names, class_name, &format_args!("{path}.ClassName"))?;
+        let outer_index = PackageIndex::parse(reader.read_i32(&format_args!("{path}.OuterIndex"))?);
+        let object_name = reader.read_name_ref(&format_args!("{path}.ObjectName"))?;
+        validate_name_ref(names, object_name, &format_args!("{path}.ObjectName"))?;
         let package_name = (!summary
             .versions
             .package_flags
@@ -1126,15 +1183,15 @@ fn read_import_map(
                 .versions
                 .is_at_least_ue4(UE4_NON_OUTER_PACKAGE_IMPORT))
         .then(|| {
-            let name = reader.read_name_ref(&format!("{path}.PackageName"))?;
-            validate_name_ref(names, name, &format!("{path}.PackageName"))?;
+            let name = reader.read_name_ref(&format_args!("{path}.PackageName"))?;
+            validate_name_ref(names, name, &format_args!("{path}.PackageName"))?;
             Ok::<crate::archive::NameRef, PackageError>(name)
         })
         .transpose()?;
         let import_optional = summary
             .versions
             .is_at_least_ue5(UE5_OPTIONAL_RESOURCES)
-            .then(|| read_archive_bool(reader, &format!("{path}.bImportOptional")))
+            .then(|| read_archive_bool(reader, &format_args!("{path}.bImportOptional")))
             .transpose()?;
 
         imports.push(Import {
@@ -1170,58 +1227,63 @@ fn read_export_map(
     let mut exports = Vec::with_capacity(capacity);
 
     for index in 0..count {
-        let path = format!("Exports[{index}]");
-        let class_index = PackageIndex::parse(reader.read_i32(&format!("{path}.ClassIndex"))?);
-        let super_index = PackageIndex::parse(reader.read_i32(&format!("{path}.SuperIndex"))?);
+        let path = IndexedPath::new("Exports", index);
+        let class_index = PackageIndex::parse(reader.read_i32(&format_args!("{path}.ClassIndex"))?);
+        let super_index = PackageIndex::parse(reader.read_i32(&format_args!("{path}.SuperIndex"))?);
         let template_index = summary
             .versions
             .is_at_least_ue4(UE4_TEMPLATE_INDEX_IN_COOKED_EXPORTS)
             .then(|| {
                 Ok::<PackageIndex, PackageError>(PackageIndex::parse(
-                    reader.read_i32(&format!("{path}.TemplateIndex"))?,
+                    reader.read_i32(&format_args!("{path}.TemplateIndex"))?,
                 ))
             })
             .transpose()?;
-        let outer_index = PackageIndex::parse(reader.read_i32(&format!("{path}.OuterIndex"))?);
-        let object_name = reader.read_name_ref(&format!("{path}.ObjectName"))?;
-        validate_name_ref(names, object_name, &format!("{path}.ObjectName"))?;
-        let object_flags = reader.read_u32(&format!("{path}.ObjectFlags"))?;
+        let outer_index = PackageIndex::parse(reader.read_i32(&format_args!("{path}.OuterIndex"))?);
+        let object_name = reader.read_name_ref(&format_args!("{path}.ObjectName"))?;
+        validate_name_ref(names, object_name, &format_args!("{path}.ObjectName"))?;
+        let object_flags = reader.read_u32(&format_args!("{path}.ObjectFlags"))?;
         let (serial_size, serial_offset) = read_export_serial_location(reader, summary, &path)?;
-        let forced_export = read_archive_bool(reader, &format!("{path}.bForcedExport"))?;
-        let not_for_client = read_archive_bool(reader, &format!("{path}.bNotForClient"))?;
-        let not_for_server = read_archive_bool(reader, &format!("{path}.bNotForServer"))?;
+        let forced_export = read_archive_bool(reader, &format_args!("{path}.bForcedExport"))?;
+        let not_for_client = read_archive_bool(reader, &format_args!("{path}.bNotForClient"))?;
+        let not_for_server = read_archive_bool(reader, &format_args!("{path}.bNotForServer"))?;
         if !summary
             .versions
             .is_at_least_ue5(UE5_REMOVE_OBJECT_EXPORT_PACKAGE_GUID)
         {
-            reader.read_guid(&format!("{path}.PackageGuid"))?;
+            reader.read_guid(&format_args!("{path}.PackageGuid"))?;
         }
         let inherited_instance = summary
             .versions
             .is_at_least_ue5(UE5_TRACK_OBJECT_EXPORT_IS_INHERITED)
-            .then(|| read_archive_bool(reader, &format!("{path}.bIsInheritedInstance")))
+            .then(|| read_archive_bool(reader, &format_args!("{path}.bIsInheritedInstance")))
             .transpose()?;
-        let package_flags = reader.read_u32(&format!("{path}.PackageFlags"))?;
+        let package_flags = reader.read_u32(&format_args!("{path}.PackageFlags"))?;
         let not_always_loaded_for_editor_game = summary
             .versions
             .is_at_least_ue4(UE4_LOAD_FOR_EDITOR_GAME)
-            .then(|| read_archive_bool(reader, &format!("{path}.bNotAlwaysLoadedForEditorGame")))
+            .then(|| {
+                read_archive_bool(
+                    reader,
+                    &format_args!("{path}.bNotAlwaysLoadedForEditorGame"),
+                )
+            })
             .transpose()?;
         let is_asset = summary
             .versions
             .is_at_least_ue4(UE4_COOKED_ASSETS_IN_EDITOR_SUPPORT)
-            .then(|| read_archive_bool(reader, &format!("{path}.bIsAsset")))
+            .then(|| read_archive_bool(reader, &format_args!("{path}.bIsAsset")))
             .transpose()?;
         let generate_public_hash = summary
             .versions
             .is_at_least_ue5(UE5_OPTIONAL_RESOURCES)
-            .then(|| read_archive_bool(reader, &format!("{path}.bGeneratePublicHash")))
+            .then(|| read_archive_bool(reader, &format_args!("{path}.bGeneratePublicHash")))
             .transpose()?;
         if summary
             .versions
             .is_at_least_ue4(UE4_PRELOAD_DEPENDENCIES_IN_COOKED_EXPORTS)
         {
-            reader.skip(20, &format!("{path}.PreloadDependencies"))?;
+            reader.skip(20, &format_args!("{path}.PreloadDependencies"))?;
         }
         let (script_serialization_start_offset, script_serialization_end_offset) = if summary
             .versions
@@ -1230,11 +1292,11 @@ fn read_export_map(
             (
                 Some(read_non_negative_u64(
                     reader,
-                    &format!("{path}.ScriptSerializationStartOffset"),
+                    &format_args!("{path}.ScriptSerializationStartOffset"),
                 )?),
                 Some(read_non_negative_u64(
                     reader,
-                    &format!("{path}.ScriptSerializationEndOffset"),
+                    &format_args!("{path}.ScriptSerializationEndOffset"),
                 )?),
             )
         } else {
@@ -1277,23 +1339,26 @@ fn read_export_map(
 fn read_export_serial_location(
     reader: &mut Reader<'_>,
     summary: &PackageSummary,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<(u64, FileOffset), PackageError> {
     if summary
         .versions
         .is_at_least_ue4(UE4_64BIT_EXPORTMAP_SERIALSIZES)
     {
-        let serial_size = read_non_negative_u64(reader, &format!("{path}.SerialSize"))?;
-        let serial_offset = read_non_negative_u64(reader, &format!("{path}.SerialOffset"))?;
+        let serial_size = read_non_negative_u64(reader, &format_args!("{path}.SerialSize"))?;
+        let serial_offset = read_non_negative_u64(reader, &format_args!("{path}.SerialOffset"))?;
         Ok((serial_size, FileOffset(serial_offset)))
     } else {
-        let serial_size = read_non_negative_u32(reader, &format!("{path}.SerialSize"))?;
-        let serial_offset = read_non_negative_u32(reader, &format!("{path}.SerialOffset"))?;
+        let serial_size = read_non_negative_u32(reader, &format_args!("{path}.SerialSize"))?;
+        let serial_offset = read_non_negative_u32(reader, &format_args!("{path}.SerialOffset"))?;
         Ok((u64::from(serial_size), FileOffset(u64::from(serial_offset))))
     }
 }
 
-fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, PackageError> {
+fn read_archive_bool(
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<bool, PackageError> {
     let offset = reader.tell();
     match reader.read_u32(path)? {
         0 => Ok(false),
@@ -1310,7 +1375,7 @@ fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, Packag
 fn validate_name_ref(
     names: &[String],
     name: crate::archive::NameRef,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<(), PackageError> {
     if usize::try_from(name.index().get())
         .ok()
@@ -1361,23 +1426,13 @@ fn normalize_object_path(path: ObjectPath) -> ObjectPath {
     }
 }
 
-fn resolve_index_path(
-    index: PackageIndex,
-    package_name: &str,
-    names: &[String],
-    imports: &[Import],
-    exports: &[Export],
-    path: &str,
-) -> Result<ObjectPath, PackageError> {
-    IndexPathResolver {
-        package_name,
-        names,
-        imports,
-        exports,
-        path,
-        seen: BTreeSet::new(),
-    }
-    .resolve(index, 0)
+enum PathResolution {
+    Unresolved,
+    Resolving,
+    Resolved {
+        path: ObjectPath,
+        outer_depth: usize,
+    },
 }
 
 struct IndexPathResolver<'a> {
@@ -1385,111 +1440,206 @@ struct IndexPathResolver<'a> {
     names: &'a [String],
     imports: &'a [Import],
     exports: &'a [Export],
-    path: &'a str,
-    seen: BTreeSet<PackageIndex>,
+    import_paths: Vec<PathResolution>,
+    export_paths: Vec<PathResolution>,
 }
 
-impl IndexPathResolver<'_> {
-    fn resolve(&mut self, index: PackageIndex, depth: usize) -> Result<ObjectPath, PackageError> {
-        if depth > MAX_OBJECT_PATH_DEPTH {
-            return Err(PackageError::new(
-                PackageErrorKind::MalformedData,
-                None,
-                self.path,
-                format!("package index outer chain exceeds depth limit {MAX_OBJECT_PATH_DEPTH}"),
-            ));
-        }
-        match index {
-            PackageIndex::Null => Ok(ObjectPath(self.package_name.to_owned())),
-            PackageIndex::Import(import_index) => self.resolve_import(index, import_index, depth),
-            PackageIndex::Export(export_index) => self.resolve_export(index, export_index, depth),
+impl<'a> IndexPathResolver<'a> {
+    fn new(
+        package_name: &'a str,
+        names: &'a [String],
+        imports: &'a [Import],
+        exports: &'a [Export],
+    ) -> Self {
+        Self {
+            package_name,
+            names,
+            imports,
+            exports,
+            import_paths: (0..imports.len())
+                .map(|_| PathResolution::Unresolved)
+                .collect(),
+            export_paths: (0..exports.len())
+                .map(|_| PathResolution::Unresolved)
+                .collect(),
         }
     }
 
-    fn resolve_import(
-        &mut self,
-        index: PackageIndex,
-        import_index: u32,
-        depth: usize,
-    ) -> Result<ObjectPath, PackageError> {
-        if !self.seen.insert(index) {
+    fn ensure_resolved(&mut self, index: PackageIndex, path: &str) -> Result<(), PackageError> {
+        match index {
+            PackageIndex::Null => Ok(()),
+            PackageIndex::Import(import_index) => self.resolve_import(import_index, path),
+            PackageIndex::Export(export_index) => self.resolve_export(export_index, path),
+        }
+    }
+
+    fn resolve_import(&mut self, import_index: u32, path: &str) -> Result<(), PackageError> {
+        let slot = usize::try_from(import_index).expect("u32 fits in usize");
+        let Some(state) = self.import_paths.get(slot) else {
             return Err(PackageError::new(
                 PackageErrorKind::MalformedData,
                 None,
-                self.path,
-                format!("package index outer chain contains a cycle at import {import_index}"),
+                path,
+                format!("import index {import_index} is outside import map"),
             ));
+        };
+        match state {
+            PathResolution::Resolved { .. } => return Ok(()),
+            PathResolution::Resolving => {
+                return Err(PackageError::new(
+                    PackageErrorKind::MalformedData,
+                    None,
+                    path,
+                    format!("package index outer chain contains a cycle at import {import_index}"),
+                ));
+            }
+            PathResolution::Unresolved => {}
         }
-        let import = self
-            .imports
-            .get(usize::try_from(import_index).expect("u32 fits in usize"))
-            .ok_or_else(|| {
+        self.import_paths[slot] = PathResolution::Resolving;
+        let (object_name_ref, outer_index, package_name_ref) = {
+            let import = self.imports.get(slot).ok_or_else(|| {
                 PackageError::new(
                     PackageErrorKind::MalformedData,
                     None,
-                    self.path,
+                    path,
                     format!("import index {import_index} is outside import map"),
                 )
             })?;
-        let object_name = resolve_name_ref(self.names, import.object_name)?;
-        match import.outer_index {
+            (import.object_name, import.outer_index, import.package_name)
+        };
+        let object_name = resolve_name_ref(self.names, object_name_ref)?;
+        let (resolved, outer_depth) = match outer_index {
             PackageIndex::Null => {
                 if object_name == "None" {
-                    return Ok(ObjectPath(String::new()));
-                }
-                if let Some(package_name_ref) = import.package_name {
+                    (ObjectPath(String::new()), 0)
+                } else if let Some(package_name_ref) = package_name_ref {
                     let package = resolve_name_ref(self.names, package_name_ref)?;
-                    Ok(ObjectPath(format!("/{package}.{object_name}")))
+                    (ObjectPath(format!("/{package}.{object_name}")), 0)
                 } else if object_name.starts_with('/') {
-                    Ok(ObjectPath(object_name))
+                    (ObjectPath(object_name), 0)
                 } else {
-                    Ok(ObjectPath(format!("/{object_name}")))
+                    (ObjectPath(format!("/{object_name}")), 0)
                 }
             }
             outer => {
-                let outer = self.resolve(outer, depth + 1)?;
+                self.ensure_resolved(outer, path)?;
+                let (outer, outer_depth) = self
+                    .resolved(outer)
+                    .expect("non-null import outer was resolved");
+                let depth = outer_depth + 1;
+                self.validate_outer_depth(depth, path)?;
                 if outer.as_str().is_empty() || outer.as_str() == "/None" {
-                    Ok(ObjectPath(object_name))
+                    (ObjectPath(object_name), depth)
                 } else {
-                    Ok(ObjectPath(format!("{outer}.{object_name}")))
+                    (ObjectPath(format!("{outer}.{object_name}")), depth)
                 }
             }
-        }
+        };
+        self.import_paths[slot] = PathResolution::Resolved {
+            path: resolved,
+            outer_depth,
+        };
+        Ok(())
     }
 
-    fn resolve_export(
-        &mut self,
-        index: PackageIndex,
-        export_index: u32,
-        depth: usize,
-    ) -> Result<ObjectPath, PackageError> {
-        if !self.seen.insert(index) {
+    fn resolve_export(&mut self, export_index: u32, path: &str) -> Result<(), PackageError> {
+        let slot = usize::try_from(export_index).expect("u32 fits in usize");
+        let Some(state) = self.export_paths.get(slot) else {
             return Err(PackageError::new(
                 PackageErrorKind::MalformedData,
                 None,
-                self.path,
-                format!("package index outer chain contains a cycle at export {export_index}"),
+                path,
+                format!("export index {export_index} is outside export map"),
             ));
+        };
+        match state {
+            PathResolution::Resolved { .. } => return Ok(()),
+            PathResolution::Resolving => {
+                return Err(PackageError::new(
+                    PackageErrorKind::MalformedData,
+                    None,
+                    path,
+                    format!("package index outer chain contains a cycle at export {export_index}"),
+                ));
+            }
+            PathResolution::Unresolved => {}
         }
-        let export = self
-            .exports
-            .get(usize::try_from(export_index).expect("u32 fits in usize"))
-            .ok_or_else(|| {
+        self.export_paths[slot] = PathResolution::Resolving;
+        let (object_name_ref, outer_index) = {
+            let export = self.exports.get(slot).ok_or_else(|| {
                 PackageError::new(
                     PackageErrorKind::MalformedData,
                     None,
-                    self.path,
+                    path,
                     format!("export index {export_index} is outside export map"),
                 )
             })?;
-        let object_name = resolve_name_ref(self.names, export.object_name)?;
-        match export.outer_index {
-            PackageIndex::Null => Ok(ObjectPath(format!("{}.{object_name}", self.package_name))),
+            (export.object_name, export.outer_index)
+        };
+        let object_name = resolve_name_ref(self.names, object_name_ref)?;
+        let (resolved, outer_depth) = match outer_index {
+            PackageIndex::Null => (
+                ObjectPath(format!("{}.{object_name}", self.package_name)),
+                0,
+            ),
             outer => {
-                let outer = self.resolve(outer, depth + 1)?;
-                Ok(ObjectPath(format!("{outer}.{object_name}")))
+                self.ensure_resolved(outer, path)?;
+                let (outer, outer_depth) = self
+                    .resolved(outer)
+                    .expect("non-null export outer was resolved");
+                let depth = outer_depth + 1;
+                self.validate_outer_depth(depth, path)?;
+                (ObjectPath(format!("{outer}.{object_name}")), depth)
             }
+        };
+        self.export_paths[slot] = PathResolution::Resolved {
+            path: resolved,
+            outer_depth,
+        };
+        Ok(())
+    }
+
+    fn validate_outer_depth(&self, depth: usize, path: &str) -> Result<(), PackageError> {
+        if depth <= MAX_OBJECT_PATH_DEPTH {
+            return Ok(());
         }
+        Err(PackageError::new(
+            PackageErrorKind::MalformedData,
+            None,
+            path,
+            format!("package index outer chain exceeds depth limit {MAX_OBJECT_PATH_DEPTH}"),
+        ))
+    }
+
+    fn resolved(&self, index: PackageIndex) -> Option<(&ObjectPath, usize)> {
+        let state = match index {
+            PackageIndex::Null => return None,
+            PackageIndex::Import(index) => self.import_paths.get(index as usize)?,
+            PackageIndex::Export(index) => self.export_paths.get(index as usize)?,
+        };
+        match state {
+            PathResolution::Resolved { path, outer_depth } => Some((path, *outer_depth)),
+            PathResolution::Unresolved | PathResolution::Resolving => None,
+        }
+    }
+
+    fn resolved_path(&self, index: PackageIndex) -> Option<&ObjectPath> {
+        self.resolved(index).map(|(path, _)| path)
+    }
+
+    fn into_paths(self) -> (Vec<ObjectPath>, Vec<ObjectPath>) {
+        let finish = |states: Vec<PathResolution>| {
+            states
+                .into_iter()
+                .map(|state| match state {
+                    PathResolution::Resolved { path, .. } => path,
+                    PathResolution::Unresolved | PathResolution::Resolving => {
+                        unreachable!("all package paths were resolved before collection")
+                    }
+                })
+                .collect()
+        };
+        (finish(self.import_paths), finish(self.export_paths))
     }
 }
 
@@ -1497,7 +1647,7 @@ fn validate_export_span(
     serial_offset: FileOffset,
     serial_size: u64,
     file_len: u64,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<(), PackageError> {
     let end = serial_offset
         .get()
@@ -1506,7 +1656,7 @@ fn validate_export_span(
             PackageError::new(
                 PackageErrorKind::MalformedData,
                 Some(serial_offset.get()),
-                format!("{path}.SerialOffset"),
+                format_args!("{path}.SerialOffset"),
                 format!(
                     "serial size {serial_size} overflows offset {}",
                     serial_offset.get()
@@ -1517,7 +1667,7 @@ fn validate_export_span(
         return Err(PackageError::new(
             PackageErrorKind::MalformedData,
             Some(serial_offset.get()),
-            format!("{path}.SerialOffset"),
+            format_args!("{path}.SerialOffset"),
             format!("export span ends at {end}, outside file length {file_len}"),
         ));
     }
@@ -1580,7 +1730,10 @@ fn read_optional_offset(
     }
 }
 
-fn read_non_negative_u32(reader: &mut Reader<'_>, path: &str) -> Result<u32, PackageError> {
+fn read_non_negative_u32(
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<u32, PackageError> {
     let offset = reader.tell();
     let value = reader.read_i32(path)?;
     u32::try_from(value).map_err(|_| {
@@ -1604,7 +1757,10 @@ fn checked_non_negative_i32(value: i32, path: &str) -> Result<u32, PackageError>
     })
 }
 
-fn read_non_negative_u64(reader: &mut Reader<'_>, path: &str) -> Result<u64, PackageError> {
+fn read_non_negative_u64(
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<u64, PackageError> {
     let offset = reader.tell();
     let value = reader.read_i64(path)?;
     u64::try_from(value).map_err(|_| {
@@ -2042,18 +2198,50 @@ mod tests {
         import.outer_index = PackageIndex::Import(0);
         let imports = vec![import];
 
-        let error = resolve_index_path(
-            PackageIndex::Import(0),
-            "/Game/Test/Test",
-            &names,
-            &imports,
-            &[],
-            "Imports",
-        )
-        .expect_err("self-referential import outer should be rejected");
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
+        let error = resolver
+            .ensure_resolved(PackageIndex::Import(0), "Imports")
+            .expect_err("self-referential import outer should be rejected");
 
         assert_eq!(error.kind(), PackageErrorKind::MalformedData);
         assert!(error.detail().contains("cycle"));
+    }
+
+    #[test]
+    fn rejects_deep_cached_package_index_outer_chain() {
+        let names = vec!["None".into(), "Node".into()];
+        let mut imports = Vec::with_capacity(MAX_OBJECT_PATH_DEPTH + 2);
+        for index in 0..=MAX_OBJECT_PATH_DEPTH + 1 {
+            let mut import = test_import("/Node", "/Script/CoreUObject.Object", 1, None);
+            if index > 0 {
+                import.outer_index = PackageIndex::Import(
+                    u32::try_from(index - 1).expect("test import index fits in u32"),
+                );
+            }
+            imports.push(import);
+        }
+
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
+        for index in 0..=MAX_OBJECT_PATH_DEPTH {
+            resolver
+                .ensure_resolved(
+                    PackageIndex::Import(u32::try_from(index).expect("test index fits in u32")),
+                    "Imports",
+                )
+                .expect("chains through the depth limit should be accepted");
+        }
+        let error = resolver
+            .ensure_resolved(
+                PackageIndex::Import(
+                    u32::try_from(MAX_OBJECT_PATH_DEPTH + 1)
+                        .expect("test import index fits in u32"),
+                ),
+                "Imports",
+            )
+            .expect_err("a cached chain past the depth limit should be rejected");
+
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert!(error.detail().contains("depth limit"));
     }
 
     #[test]

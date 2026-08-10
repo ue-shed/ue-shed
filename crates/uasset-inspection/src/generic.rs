@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
@@ -7,28 +7,26 @@ use uasset_parser::asset::{
     DATA_ASSET_CLASS, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
     USERDEFINEDSTRUCT_CLASS,
 };
-use uasset_parser::package::{PackageError, PackageErrorKind, PackageIndex, TableLocation};
+use uasset_parser::package::{
+    ObjectPath, PackageError, PackageErrorKind, PackageIndex, TableLocation,
+};
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageSummary};
 
+mod json;
+
+pub use json::{
+    InspectionJsonError, InspectionJsonStatus, inspect_bytes_json, write_inspection_json,
+};
+
 pub const SCHEMA_VERSION: u8 = 8;
 
-/// Shares the native inspection projection with the separately packaged WASM adapter.
-///
-/// The host supplies bounded package bytes and a display path. Filesystem discovery, scanning,
-/// subprocess management, and caching intentionally remain native host responsibilities.
-pub fn inspect_bytes_json(path: &str, bytes: &[u8]) -> String {
-    serde_json::to_string(&inspect_bytes_value(path, bytes)).unwrap_or_else(|error| {
-        serde_json::json!({
-            "schema_version": SCHEMA_VERSION,
-            "status": "error",
-            "path": path,
-            "kind": "internal",
-            "message": error.to_string()
-        })
-        .to_string()
-    })
+fn serialize_f32_as_f64<S>(value: &f32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_f64(f64::from(*value))
 }
 
 /// Decodes one package into the typed generic inspection projection.
@@ -172,79 +170,85 @@ fn asset_error_kind_name(kind: AssetErrorKind) -> &'static str {
 
 fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetOutput {
     match decoded {
-        DecodedAsset::DataTable(datatable) => AssetOutput {
-            tail_bytes: 0,
-            bones: Vec::new(),
-            kind: match datatable.kind {
-                uasset_parser::asset::DataTableKind::Plain => "DataTable",
-                uasset_parser::asset::DataTableKind::Composite => "CompositeDataTable",
-            },
-            object_path: datatable.object_path.to_string(),
-            class_path: None,
-            object_guid: None,
-            row_struct: datatable.row_struct.map(|path| path.to_string()),
-            parent_tables: datatable
-                .parent_tables
-                .iter()
-                .map(|path| path.to_string())
-                .collect(),
-            string_table_namespace: None,
-            string_table_entries: Vec::new(),
-            enum_cpp_form: None,
-            enum_entries: Vec::new(),
-            struct_flags: None,
-            struct_fields: Vec::new(),
-            properties: Vec::new(),
-            row_count: datatable.rows.len(),
-            curve_rows: Vec::new(),
-            rows: datatable
-                .rows
-                .iter()
-                .map(|row| RowOutput {
-                    name: resolve_name_or_placeholder(package, row.name),
-                    properties: property_outputs(package, &row.properties),
-                })
-                .collect(),
-        },
-        DecodedAsset::CurveTable(curve_table) => AssetOutput {
-            tail_bytes: 0,
-            bones: Vec::new(),
-            kind: "CurveTable",
-            object_path: curve_table.object_path.to_string(),
-            class_path: Some(uasset_parser::asset::CURVETABLE_CLASS.to_owned()),
-            object_guid: None,
-            row_struct: None,
-            parent_tables: Vec::new(),
-            string_table_namespace: None,
-            string_table_entries: Vec::new(),
-            enum_cpp_form: None,
-            enum_entries: Vec::new(),
-            struct_flags: None,
-            struct_fields: Vec::new(),
-            properties: property_outputs(package, &curve_table.properties),
-            row_count: curve_table.rows.len(),
-            curve_rows: curve_table
-                .rows
-                .iter()
-                .map(|row| CurveRowOutput {
-                    name: resolve_name_or_placeholder(package, row.name),
-                    keys: row
-                        .keys
-                        .iter()
-                        .map(|key| CurveKeyOutput {
-                            time: key.time(),
-                            value: key.value(),
-                        })
-                        .collect(),
-                })
-                .collect(),
-            rows: Vec::new(),
-        },
+        DecodedAsset::DataTable(datatable) => {
+            let row_count = datatable.rows.len();
+            AssetOutput {
+                tail_bytes: 0,
+                bones: Vec::new(),
+                kind: match datatable.kind {
+                    uasset_parser::asset::DataTableKind::Plain => "DataTable",
+                    uasset_parser::asset::DataTableKind::Composite => "CompositeDataTable",
+                },
+                object_path: datatable.object_path.into_string(),
+                class_path: None,
+                object_guid: None,
+                row_struct: datatable.row_struct.map(ObjectPath::into_string),
+                parent_tables: datatable
+                    .parent_tables
+                    .into_iter()
+                    .map(ObjectPath::into_string)
+                    .collect(),
+                string_table_namespace: None,
+                string_table_entries: Vec::new(),
+                enum_cpp_form: None,
+                enum_entries: Vec::new(),
+                struct_flags: None,
+                struct_fields: Vec::new(),
+                properties: Vec::new(),
+                row_count,
+                curve_rows: Vec::new(),
+                rows: datatable
+                    .rows
+                    .into_iter()
+                    .map(|row| RowOutput {
+                        name: resolve_name_or_placeholder(package, row.name),
+                        properties: property_outputs(package, row.properties),
+                    })
+                    .collect(),
+            }
+        }
+        DecodedAsset::CurveTable(curve_table) => {
+            let row_count = curve_table.rows.len();
+            AssetOutput {
+                tail_bytes: 0,
+                bones: Vec::new(),
+                kind: "CurveTable",
+                object_path: curve_table.object_path.into_string(),
+                class_path: Some(uasset_parser::asset::CURVETABLE_CLASS.to_owned()),
+                object_guid: None,
+                row_struct: None,
+                parent_tables: Vec::new(),
+                string_table_namespace: None,
+                string_table_entries: Vec::new(),
+                enum_cpp_form: None,
+                enum_entries: Vec::new(),
+                struct_flags: None,
+                struct_fields: Vec::new(),
+                properties: property_outputs(package, curve_table.properties),
+                row_count,
+                curve_rows: curve_table
+                    .rows
+                    .into_iter()
+                    .map(|row| CurveRowOutput {
+                        name: resolve_name_or_placeholder(package, row.name),
+                        keys: row
+                            .keys
+                            .into_iter()
+                            .map(|key| CurveKeyOutput {
+                                time: key.time(),
+                                value: key.value(),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+                rows: Vec::new(),
+            }
+        }
         DecodedAsset::StringTable(string_table) => AssetOutput {
             tail_bytes: 0,
             bones: Vec::new(),
             kind: "StringTable",
-            object_path: string_table.object_path.to_string(),
+            object_path: string_table.object_path.into_string(),
             class_path: Some(uasset_parser::asset::STRINGTABLE_CLASS.to_owned()),
             object_guid: None,
             row_struct: None,
@@ -267,30 +271,33 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             curve_rows: Vec::new(),
             rows: Vec::new(),
         },
-        DecodedAsset::DataAsset(data_asset) => AssetOutput {
-            tail_bytes: 0,
-            bones: Vec::new(),
-            kind: data_asset_kind(data_asset.class_path.as_str()),
-            object_path: data_asset.object_path.to_string(),
-            class_path: Some(data_asset.class_path.to_string()),
-            object_guid: data_asset.object_guid.map(|guid| guid.to_string()),
-            row_struct: None,
-            parent_tables: Vec::new(),
-            string_table_namespace: None,
-            string_table_entries: Vec::new(),
-            enum_cpp_form: None,
-            enum_entries: Vec::new(),
-            struct_flags: None,
-            struct_fields: Vec::new(),
-            properties: property_outputs(package, &data_asset.properties),
-            row_count: 0,
-            curve_rows: Vec::new(),
-            rows: Vec::new(),
-        },
+        DecodedAsset::DataAsset(data_asset) => {
+            let kind = data_asset_kind(data_asset.class_path.as_str());
+            AssetOutput {
+                tail_bytes: 0,
+                bones: Vec::new(),
+                kind,
+                object_path: data_asset.object_path.into_string(),
+                class_path: Some(data_asset.class_path.into_string()),
+                object_guid: data_asset.object_guid.map(|guid| guid.to_string()),
+                row_struct: None,
+                parent_tables: Vec::new(),
+                string_table_namespace: None,
+                string_table_entries: Vec::new(),
+                enum_cpp_form: None,
+                enum_entries: Vec::new(),
+                struct_flags: None,
+                struct_fields: Vec::new(),
+                properties: property_outputs(package, data_asset.properties),
+                row_count: 0,
+                curve_rows: Vec::new(),
+                rows: Vec::new(),
+            }
+        }
         DecodedAsset::UObject(object) => AssetOutput {
             kind: "UObject",
-            object_path: object.object_path.to_string(),
-            class_path: Some(object.class_path.to_string()),
+            object_path: object.object_path.into_string(),
+            class_path: Some(object.class_path.into_string()),
             object_guid: object.object_guid.map(|guid| guid.to_string()),
             row_struct: None,
             parent_tables: Vec::new(),
@@ -300,7 +307,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             enum_entries: Vec::new(),
             struct_flags: None,
             struct_fields: Vec::new(),
-            properties: property_outputs(package, &object.properties),
+            properties: property_outputs(package, object.properties),
             tail_bytes: object.tail.len(),
             bones: Vec::new(),
             row_count: 0,
@@ -309,7 +316,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
         },
         DecodedAsset::Skeleton(skeleton) => AssetOutput {
             kind: "Skeleton",
-            object_path: skeleton.object_path.to_string(),
+            object_path: skeleton.object_path.into_string(),
             class_path: Some(SKELETON_CLASS.to_owned()),
             object_guid: skeleton.object_guid.map(|guid| guid.to_string()),
             row_struct: None,
@@ -320,11 +327,11 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             enum_entries: Vec::new(),
             struct_flags: None,
             struct_fields: Vec::new(),
-            properties: property_outputs(package, &skeleton.properties),
+            properties: property_outputs(package, skeleton.properties),
             tail_bytes: 0,
             bones: skeleton
                 .bones
-                .iter()
+                .into_iter()
                 .map(|bone| BoneOutput {
                     name: resolve_name_or_placeholder(package, bone.name),
                     parent_index: bone.parent_index,
@@ -334,63 +341,69 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             curve_rows: Vec::new(),
             rows: Vec::new(),
         },
-        DecodedAsset::Enum(decoded_enum) => AssetOutput {
-            tail_bytes: 0,
-            bones: Vec::new(),
-            kind: "Enum",
-            object_path: decoded_enum.object_path.to_string(),
-            class_path: Some(USERDEFINEDENUM_CLASS.to_owned()),
-            object_guid: None,
-            row_struct: None,
-            parent_tables: Vec::new(),
-            string_table_namespace: None,
-            string_table_entries: Vec::new(),
-            enum_cpp_form: Some(enum_cpp_form_name(decoded_enum.cpp_form)),
-            enum_entries: decoded_enum
-                .entries
-                .iter()
-                .map(|entry| EnumEntryOutput {
-                    name: resolve_name_or_placeholder(package, entry.name),
-                    value: entry.value,
-                    display_name: entry.display_name.clone(),
-                })
-                .collect(),
-            struct_flags: None,
-            struct_fields: Vec::new(),
-            properties: Vec::new(),
-            row_count: decoded_enum.entries.len(),
-            curve_rows: Vec::new(),
-            rows: Vec::new(),
-        },
-        DecodedAsset::Struct(decoded_struct) => AssetOutput {
-            tail_bytes: 0,
-            bones: Vec::new(),
-            kind: "Struct",
-            object_path: decoded_struct.object_path.to_string(),
-            class_path: Some(USERDEFINEDSTRUCT_CLASS.to_owned()),
-            object_guid: None,
-            row_struct: None,
-            parent_tables: Vec::new(),
-            string_table_namespace: None,
-            string_table_entries: Vec::new(),
-            enum_cpp_form: None,
-            enum_entries: Vec::new(),
-            struct_flags: Some(decoded_struct.struct_flags),
-            struct_fields: decoded_struct
-                .fields
-                .iter()
-                .map(|field| StructFieldOutput {
-                    name: resolve_name_or_placeholder(package, field.name),
-                    type_name: resolve_name_or_placeholder(package, field.type_name),
-                    referenced_path: field.referenced_path.as_ref().map(ToString::to_string),
-                    display_name: field.display_name.clone(),
-                })
-                .collect(),
-            properties: property_outputs(package, &decoded_struct.default_values),
-            row_count: decoded_struct.fields.len(),
-            curve_rows: Vec::new(),
-            rows: Vec::new(),
-        },
+        DecodedAsset::Enum(decoded_enum) => {
+            let row_count = decoded_enum.entries.len();
+            AssetOutput {
+                tail_bytes: 0,
+                bones: Vec::new(),
+                kind: "Enum",
+                object_path: decoded_enum.object_path.into_string(),
+                class_path: Some(USERDEFINEDENUM_CLASS.to_owned()),
+                object_guid: None,
+                row_struct: None,
+                parent_tables: Vec::new(),
+                string_table_namespace: None,
+                string_table_entries: Vec::new(),
+                enum_cpp_form: Some(enum_cpp_form_name(decoded_enum.cpp_form)),
+                enum_entries: decoded_enum
+                    .entries
+                    .into_iter()
+                    .map(|entry| EnumEntryOutput {
+                        name: resolve_name_or_placeholder(package, entry.name),
+                        value: entry.value,
+                        display_name: entry.display_name,
+                    })
+                    .collect(),
+                struct_flags: None,
+                struct_fields: Vec::new(),
+                properties: Vec::new(),
+                row_count,
+                curve_rows: Vec::new(),
+                rows: Vec::new(),
+            }
+        }
+        DecodedAsset::Struct(decoded_struct) => {
+            let row_count = decoded_struct.fields.len();
+            AssetOutput {
+                tail_bytes: 0,
+                bones: Vec::new(),
+                kind: "Struct",
+                object_path: decoded_struct.object_path.into_string(),
+                class_path: Some(USERDEFINEDSTRUCT_CLASS.to_owned()),
+                object_guid: None,
+                row_struct: None,
+                parent_tables: Vec::new(),
+                string_table_namespace: None,
+                string_table_entries: Vec::new(),
+                enum_cpp_form: None,
+                enum_entries: Vec::new(),
+                struct_flags: Some(decoded_struct.struct_flags),
+                struct_fields: decoded_struct
+                    .fields
+                    .into_iter()
+                    .map(|field| StructFieldOutput {
+                        name: resolve_name_or_placeholder(package, field.name),
+                        type_name: resolve_name_or_placeholder(package, field.type_name),
+                        referenced_path: field.referenced_path.map(ObjectPath::into_string),
+                        display_name: field.display_name,
+                    })
+                    .collect(),
+                properties: property_outputs(package, decoded_struct.default_values),
+                row_count,
+                curve_rows: Vec::new(),
+                rows: Vec::new(),
+            }
+        }
     }
 }
 
@@ -404,11 +417,11 @@ fn enum_cpp_form_name(cpp_form: EnumCppForm) -> &'static str {
 
 fn property_outputs(
     package: &Package,
-    stream: &uasset_parser::property::PropertyStream,
+    stream: uasset_parser::property::PropertyStream,
 ) -> Vec<PropertyOutput> {
     stream
         .records
-        .iter()
+        .into_iter()
         .map(|record| PropertyOutput::from_record(record, package))
         .collect()
 }
@@ -535,7 +548,9 @@ pub struct CurveRowOutput {
 
 #[derive(Serialize)]
 pub struct CurveKeyOutput {
+    #[serde(serialize_with = "serialize_f32_as_f64")]
     pub time: f32,
+    #[serde(serialize_with = "serialize_f32_as_f64")]
     pub value: f32,
 }
 
@@ -555,12 +570,12 @@ pub struct PropertyOutput {
 }
 
 impl PropertyOutput {
-    fn from_record(record: &PropertyRecord, package: &Package) -> Self {
+    fn from_record(record: PropertyRecord, package: &Package) -> Self {
         // `value_output` is the single `PropertyValue -> PropertyValueOutput`
         // seam, so a new value kind is added in exactly one place. Only the
         // top-level `Raw` size is record-specific: nested raw values inside
         // arrays/maps/structs have no owning payload span and report 0.
-        let mut value = value_output(package, &record.value);
+        let mut value = value_output(package, record.value);
         if let PropertyValueOutput::Raw { size, .. } = &mut value {
             *size = record.payload.len();
         }
@@ -591,6 +606,7 @@ pub enum PropertyValueOutput {
         value: u64,
     },
     Float {
+        #[serde(serialize_with = "serialize_f32_as_f64")]
         value: f32,
     },
     Double {
@@ -634,9 +650,13 @@ pub enum PropertyValueOutput {
         a: u8,
     },
     LinearColor {
+        #[serde(serialize_with = "serialize_f32_as_f64")]
         r: f32,
+        #[serde(serialize_with = "serialize_f32_as_f64")]
         g: f32,
+        #[serde(serialize_with = "serialize_f32_as_f64")]
         b: f32,
+        #[serde(serialize_with = "serialize_f32_as_f64")]
         a: f32,
     },
     DataTableRowHandle {
@@ -670,22 +690,20 @@ pub enum PropertyValueOutput {
     },
 }
 
-fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput {
+fn value_output(package: &Package, value: PropertyValue) -> PropertyValueOutput {
     match value {
-        PropertyValue::Bool(value) => PropertyValueOutput::Bool { value: *value },
-        PropertyValue::Int(value) => PropertyValueOutput::Int { value: *value },
-        PropertyValue::UInt(value) => PropertyValueOutput::Uint { value: *value },
-        PropertyValue::Float(value) => PropertyValueOutput::Float { value: *value },
-        PropertyValue::Double(value) => PropertyValueOutput::Double { value: *value },
+        PropertyValue::Bool(value) => PropertyValueOutput::Bool { value },
+        PropertyValue::Int(value) => PropertyValueOutput::Int { value },
+        PropertyValue::UInt(value) => PropertyValueOutput::Uint { value },
+        PropertyValue::Float(value) => PropertyValueOutput::Float { value },
+        PropertyValue::Double(value) => PropertyValueOutput::Double { value },
         PropertyValue::Name(name) => PropertyValueOutput::Name {
-            value: resolve_name_or_placeholder(package, *name),
+            value: resolve_name_or_placeholder(package, name),
         },
         PropertyValue::Enum(name) => PropertyValueOutput::Enum {
-            value: resolve_name_or_placeholder(package, *name),
+            value: resolve_name_or_placeholder(package, name),
         },
-        PropertyValue::String(value) => PropertyValueOutput::String {
-            value: value.clone(),
-        },
+        PropertyValue::String(value) => PropertyValueOutput::String { value },
         PropertyValue::Text(text) => text_value_output(text),
         PropertyValue::Vector(vector) => PropertyValueOutput::Vector {
             x: vector.x,
@@ -718,41 +736,35 @@ fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput
             row_name: resolve_name_or_placeholder(package, handle.row_name),
         },
         PropertyValue::ObjectRef(index) => PropertyValueOutput::ObjectRef {
-            value: resolve_object_ref(package, *index),
+            value: resolve_object_ref(package, index),
         },
         PropertyValue::Guid(guid) => PropertyValueOutput::Guid {
             value: guid.to_string(),
         },
-        PropertyValue::SoftObjectPath(path) => PropertyValueOutput::SoftObjectPath {
-            value: path.clone(),
-        },
+        PropertyValue::SoftObjectPath(path) => PropertyValueOutput::SoftObjectPath { value: path },
         PropertyValue::Array(values) => PropertyValueOutput::Array {
             values: values
-                .iter()
+                .into_iter()
                 .map(|value| value_output(package, value))
                 .collect(),
         },
         PropertyValue::Set(values) => PropertyValueOutput::Set {
             values: values
-                .iter()
+                .into_iter()
                 .map(|value| value_output(package, value))
                 .collect(),
         },
         PropertyValue::Map(entries) => PropertyValueOutput::Map {
             entries: entries
-                .iter()
+                .into_iter()
                 .map(|entry| MapEntryOutput {
-                    key: value_output(package, &entry.key),
-                    value: value_output(package, &entry.value),
+                    key: value_output(package, entry.key),
+                    value: value_output(package, entry.value),
                 })
                 .collect(),
         },
         PropertyValue::Struct(stream) => PropertyValueOutput::Struct {
-            properties: stream
-                .records
-                .iter()
-                .map(|record| PropertyOutput::from_record(record, package))
-                .collect(),
+            properties: property_outputs(package, stream),
         },
         PropertyValue::Raw { reason } => PropertyValueOutput::Raw {
             reason: render_raw_reason(reason),
@@ -761,21 +773,21 @@ fn value_output(package: &Package, value: &PropertyValue) -> PropertyValueOutput
     }
 }
 
-fn text_value_output(text: &uasset_parser::property::TextValue) -> PropertyValueOutput {
+fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueOutput {
     use uasset_parser::property::TextHistory;
 
-    match &text.history {
+    match text.history {
         TextHistory::None => PropertyValueOutput::Text {
-            value: text.source.clone(),
+            value: text.source,
             history: "none",
             namespace: None,
             key: None,
         },
         TextHistory::Base { namespace, key } => PropertyValueOutput::Text {
-            value: text.source.clone(),
+            value: text.source,
             history: "base",
-            namespace: Some(namespace.clone()),
-            key: Some(key.clone()),
+            namespace: Some(namespace),
+            key: Some(key),
         },
     }
 }
@@ -790,14 +802,14 @@ fn resolve_object_ref(package: &Package, index: PackageIndex) -> Option<String> 
     if index == PackageIndex::Null {
         None
     } else {
-        package.resolve_index(index).map(|path| path.to_string())
+        package.resolve_index_str(index).map(str::to_owned)
     }
 }
 
-fn render_raw_reason(reason: &RawReason) -> String {
+fn render_raw_reason(reason: RawReason) -> String {
     match reason {
         RawReason::UnsupportedType => "unsupported type".to_owned(),
-        RawReason::DecoderRejected(detail) => detail.clone(),
+        RawReason::DecoderRejected(detail) => detail,
     }
 }
 

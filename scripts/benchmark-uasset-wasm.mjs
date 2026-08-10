@@ -9,8 +9,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const wasmPackage = join(
 	repositoryRoot,
-	"target",
-	"uasset-inspection-wasm-node",
+	"packages",
+	"uasset-inspection-wasm",
+	"dist",
+	"wasm",
+	"node",
 	"uasset_inspection_wasm.js"
 );
 const nativeExecutable = join(
@@ -109,8 +112,11 @@ const result = {
 	wasmModuleBytes: statSync(
 		join(
 			repositoryRoot,
-			"target",
-			"uasset-inspection-wasm-node",
+			"packages",
+			"uasset-inspection-wasm",
+			"dist",
+			"wasm",
+			"node",
 			"uasset_inspection_wasm_bg.wasm"
 		)
 	).size,

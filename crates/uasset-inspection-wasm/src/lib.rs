@@ -3,14 +3,14 @@
 use std::io::{self, Write};
 
 use serde::Serialize;
-use uasset_inspection::generic::inspect_bytes_value;
+use uasset_inspection::generic::{InspectionJsonError, write_inspection_json};
 use uasset_inspection::projection::{
     TEXTURE2D_CLASS, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
     project_texture_asset,
 };
 use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
-use uasset_parser::{Package, PackageError, PackageErrorKind};
+use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
 use wasm_bindgen::prelude::*;
 
 /// Maximum package size accepted by the public WASM boundary.
@@ -37,7 +37,19 @@ pub fn inspect(path: &str, bytes: &[u8]) -> String {
     if let Some(error) = export_limit_error(8, path, bytes) {
         return error;
     }
-    serialize_bounded_generic(path, &inspect_bytes_value(path, bytes))
+    let mut writer = CappedWriter::new(MAX_OUTPUT_BYTES);
+    match write_inspection_json(path, bytes, &mut writer) {
+        Ok(_) => writer.finish(),
+        Err(_) if writer.exceeded() => serialize_generic_error(
+            path,
+            "resource_limit",
+            "serialized inspection exceeds the WASM limit",
+        ),
+        Err(InspectionJsonError::Inspection(error)) => serialize_bounded_generic(path, &*error),
+        Err(InspectionJsonError::Serialization(message)) => {
+            serialize_generic_error(path, "internal", message)
+        }
+    }
 }
 
 /// Parses one package and emits the compact, portable Game Text projection.
@@ -385,6 +397,10 @@ impl CappedWriter {
     fn finish(self) -> String {
         String::from_utf8(self.bytes).expect("serde_json writes valid UTF-8")
     }
+
+    fn exceeded(&self) -> bool {
+        self.exceeded
+    }
 }
 
 impl Write for CappedWriter {
@@ -433,12 +449,12 @@ fn input_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<Str
 }
 
 fn export_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<String> {
-    let package = Package::parse(bytes).ok()?;
-    (package.exports.len() > MAX_EXPORTS).then(|| {
+    let summary = PackageSummary::parse(bytes).ok()?;
+    let export_count = usize::try_from(summary.exports.count).expect("u32 fits in usize");
+    (export_count > MAX_EXPORTS).then(|| {
         let message = format!(
             "export count {} exceeds the WASM limit of {}",
-            package.exports.len(),
-            MAX_EXPORTS
+            export_count, MAX_EXPORTS
         );
         if schema_version == 8 {
             serialize_generic_error(path, "resource_limit", message)

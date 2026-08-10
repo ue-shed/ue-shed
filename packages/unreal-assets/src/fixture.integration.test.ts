@@ -54,14 +54,14 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
-		// 62 `.uasset` packages (including six World Partition external actors and the 25-asset
-		// Enhanced Input surface) plus the three maps. Levels use the same classic package
+		// 64 `.uasset` packages (including six World Partition external actors, two animation
+		// fixtures, and the 25-asset Enhanced Input surface) plus the three maps. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(65);
-		expect(scan.summary.emittedAssets).toBe(65);
+		expect(scan.summary.scannedAssets).toBe(67);
+		expect(scan.summary.emittedAssets).toBe(67);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(65);
+		expect(scan.assets).toHaveLength(67);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -76,15 +76,37 @@ describe.skipIf(!executable)("batched project scan", () => {
 		expect(entry && isFullScanEntry(entry) ? entry.inspection : undefined).toEqual(direct);
 	});
 
+	it("reads the UE 5.7 animation fixture without an undecoded AnimSequence tail", async () => {
+		const assetPath = join(fixtureRoot, "Content/Fixture/Animation/A_FixtureMotion.uasset");
+		const inspection = await runReader(readSavedAsset({ assetPath }));
+		const sequence = inspection.assets.find(
+			(asset) =>
+				asset.kind === "UObject" && asset.class_path === "/Script/Engine.AnimSequence"
+		);
+
+		expect(inspection.status).toBe("ok");
+		expect(sequence).toBeDefined();
+		if (sequence?.kind === "UObject") {
+			expect(sequence.tail_bytes).toBeUndefined();
+			expect(sequence.properties).toContainEqual(
+				expect.objectContaining({
+					name: "DataModelInterface",
+					value_kind: "object_ref",
+					value: expect.stringMatching(/AnimationSequencerDataModel$/u)
+				})
+			);
+		}
+	});
+
 	it("decodes only packages a header filter selects", async () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(65);
+		expect(scan.summary.scannedAssets).toBe(67);
 		expect(scan.summary.emittedAssets).toBe(17);
 		// The levels, saved World Partition actor packages, and every Enhanced Input asset carry
 		// no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(48);
+		expect(scan.summary.skippedAssets).toBe(50);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -208,7 +230,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(65);
+		expect(scan.summary.scannedAssets).toBe(67);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);

@@ -24,6 +24,7 @@ const fixtures = [
 	"Content/Fixture/Authoring/DT_LargeScalars.uasset",
 	"Content/Fixture/Input/IMC_Fixture.uasset",
 	"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset",
+	"Content/Fixture/Animation/A_FixtureMotion.uasset",
 	"Content/Fixture/Text/ST_Game.uasset",
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].map((path) => join(fixtureRoot, path));

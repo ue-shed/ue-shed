@@ -31,7 +31,7 @@ function run(command, args, cwd = repositoryRoot) {
 	if (result.status !== 0) fail(`${command} ${args.join(" ")} exited ${result.status ?? 1}`);
 }
 
-function runPnpm(args) {
+function runPnpm(args, environment = {}) {
 	const pnpmScript = process.env.npm_execpath;
 	const scriptIsJavaScript = pnpmScript ? /\.(?:c|m)?js$/i.test(pnpmScript) : false;
 	const command = scriptIsJavaScript
@@ -40,7 +40,13 @@ function runPnpm(args) {
 	const prefix = scriptIsJavaScript && pnpmScript ? [pnpmScript] : [];
 	const result = spawnSync(command, [...prefix, ...args], {
 		cwd: targetRoot,
-		env: { ...process.env, CI: "1", NODE_AUTH_TOKEN: "", NPM_TOKEN: "" },
+		env: {
+			...process.env,
+			...environment,
+			CI: "1",
+			NODE_AUTH_TOKEN: "",
+			NPM_TOKEN: ""
+		},
 		shell: process.platform === "win32" && (!pnpmScript || /\.(?:cmd|bat)$/i.test(pnpmScript)),
 		stdio: "inherit",
 		windowsHide: true
@@ -91,6 +97,10 @@ function terminateProcessTree(pid) {
 
 async function verifyFunctionalHost() {
 	const port = await availablePort();
+	let unavailableRemoteControlPort = await availablePort();
+	while (unavailableRemoteControlPort === port) {
+		unavailableRemoteControlPort = await availablePort();
+	}
 	const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 	const reader = join(
 		targetRoot,
@@ -109,6 +119,9 @@ async function verifyFunctionalHost() {
 			NPM_TOKEN: "",
 			UE_SHED_HOST_PORT: String(port),
 			UE_SHED_PROJECT_ROOT: fixtureRoot,
+			// Keep this saved-package conformance check isolated from any developer-owned editor
+			// that happens to be listening on the default Remote Control endpoint.
+			UE_SHED_REMOTE_CONTROL_ENDPOINT: `http://127.0.0.1:${unavailableRemoteControlPort}`,
 			UE_SHED_UASSET_EXECUTABLE: reader
 		},
 		shell: false,
@@ -237,18 +250,24 @@ if (digest(divergentCss) === digest(initialCss))
 	fail("theme divergence did not change production CSS");
 
 const functionalHost = await verifyFunctionalHost();
-runPnpm([
-	"verify:host",
-	"--",
-	`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
-	`--reader=${join(
-		targetRoot,
-		"target",
-		"release",
-		process.platform === "win32" ? "uasset.exe" : "uasset"
-	)}`,
-	"--expected-table-count=12"
-]);
+runPnpm(
+	[
+		"verify:host",
+		"--",
+		`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
+		`--reader=${join(
+			targetRoot,
+			"target",
+			"release",
+			process.platform === "win32" ? "uasset.exe" : "uasset"
+		)}`,
+		"--expected-table-count=12"
+	],
+	{
+		// This verifier starts a second host, so isolate it from an ambient editor too.
+		UE_SHED_REMOTE_CONTROL_ENDPOINT: `http://127.0.0.1:${await availablePort()}`
+	}
+);
 
 console.log(
 	`Data Authoring adoption conformance passed: ${declaredEntries.length} declared entries, ` +

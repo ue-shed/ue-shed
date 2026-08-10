@@ -7,7 +7,8 @@
 use serde::Serialize;
 
 use uasset_parser::asset::{
-    CURVETABLE_CLASS, DecodedAsset, DecodedUObject, SKELETON_CLASS, USERDEFINEDSTRUCT_CLASS,
+    ANIM_SEQUENCE_CLASS, CURVETABLE_CLASS, DecodedAsset, DecodedUObject, SKELETON_CLASS,
+    USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::Package;
 use uasset_parser::property::{
@@ -144,6 +145,18 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             &|property_path| TextLocation::AssetProperty {
                 object_path: object.object_path.to_string(),
                 class_path: object.class_path.to_string(),
+                property_path: property_path.to_owned(),
+            },
+            TextEditCapability::ReadOnly,
+            &mut output,
+        ),
+        DecodedAsset::AnimSequence(sequence) => visit_text_stream(
+            package,
+            &sequence.properties,
+            "",
+            &|property_path| TextLocation::AssetProperty {
+                object_path: sequence.object_path.to_string(),
+                class_path: ANIM_SEQUENCE_CLASS.to_owned(),
                 property_path: property_path.to_owned(),
             },
             TextEditCapability::ReadOnly,

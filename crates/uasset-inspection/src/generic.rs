@@ -1,11 +1,11 @@
 use serde::{Serialize, Serializer};
 use serde_json::Value;
 use uasset_parser::asset::{
-    AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
+    ANIM_SEQUENCE_CLASS, DATA_ASSET_CLASS, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS,
+    USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::asset::{
-    DATA_ASSET_CLASS, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
-    USERDEFINEDSTRUCT_CLASS,
+    AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
 };
 use uasset_parser::package::{
     ObjectPath, PackageError, PackageErrorKind, PackageIndex, TableLocation,
@@ -309,6 +309,26 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             struct_fields: Vec::new(),
             properties: property_outputs(package, object.properties),
             tail_bytes: object.tail.len(),
+            bones: Vec::new(),
+            row_count: 0,
+            curve_rows: Vec::new(),
+            rows: Vec::new(),
+        },
+        DecodedAsset::AnimSequence(sequence) => AssetOutput {
+            kind: "UObject",
+            object_path: sequence.object_path.into_string(),
+            class_path: Some(ANIM_SEQUENCE_CLASS.to_owned()),
+            object_guid: sequence.object_guid.map(|guid| guid.to_string()),
+            row_struct: None,
+            parent_tables: Vec::new(),
+            string_table_namespace: None,
+            string_table_entries: Vec::new(),
+            enum_cpp_form: None,
+            enum_entries: Vec::new(),
+            struct_flags: None,
+            struct_fields: Vec::new(),
+            properties: property_outputs(package, sequence.properties),
+            tail_bytes: 0,
             bones: Vec::new(),
             row_count: 0,
             curve_rows: Vec::new(),

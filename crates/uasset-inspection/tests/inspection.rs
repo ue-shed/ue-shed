@@ -29,6 +29,12 @@ const PARITY_FIXTURES: &[(&str, &[u8])] = &[
         ),
     ),
     (
+        "Content/Fixture/Animation/A_FixtureMotion.uasset",
+        include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Animation/A_FixtureMotion.uasset"
+        ),
+    ),
+    (
         "Content/Fixture/Text/ST_Game.uasset",
         include_bytes!("../../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset"),
     ),
@@ -65,6 +71,43 @@ fn typed_inspection_exposes_decoded_values_before_serialization() {
         inspection.assets[0].string_table_entries[0].key,
         "PromptContinue"
     );
+}
+
+#[test]
+fn real_anim_sequence_consumes_its_native_trailer() {
+    const ANIMATION: &[u8] = include_bytes!(
+        "../../../fixtures/unreal-project/Content/Fixture/Animation/A_FixtureMotion.uasset"
+    );
+    let inspection = inspect_bytes(
+        "Content/Fixture/Animation/A_FixtureMotion.uasset",
+        ANIMATION,
+    )
+    .expect("animation fixture inspection succeeds");
+    let sequence = inspection
+        .assets
+        .iter()
+        .find(|asset| asset.class_path.as_deref() == Some("/Script/Engine.AnimSequence"))
+        .expect("AnimSequence export");
+
+    assert_eq!(inspection.status, "ok");
+    assert_eq!(sequence.kind, "UObject");
+    assert_eq!(sequence.tail_bytes, 0);
+    assert!(sequence.properties.iter().any(|property| {
+        property.name == "SequenceLength"
+            && matches!(
+                &property.value,
+                uasset_inspection::generic::PropertyValueOutput::Float { value }
+                    if *value == 2.0
+            )
+    }));
+    assert!(sequence.properties.iter().any(|property| {
+        property.name == "DataModelInterface"
+            && matches!(
+                &property.value,
+                uasset_inspection::generic::PropertyValueOutput::ObjectRef { value: Some(value) }
+                    if value.ends_with(".AnimationSequencerDataModel")
+            )
+    }));
 }
 
 #[test]

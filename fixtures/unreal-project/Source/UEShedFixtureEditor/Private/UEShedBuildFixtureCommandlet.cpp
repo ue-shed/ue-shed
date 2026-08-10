@@ -2,6 +2,9 @@
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Algo/AnyOf.h"
+#include "Animation/AnimData/IAnimationDataController.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/Skeleton.h"
 #include "Engine/CompositeDataTable.h"
 #include "Engine/DataTable.h"
 #include "Components/DirectionalLightComponent.h"
@@ -19,6 +22,7 @@
 #include "Factories/WorldFactory.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "ReferenceSkeleton.h"
 #include "HAL/FileManager.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
@@ -463,6 +467,105 @@ bool VerifyAuditTextures()
 	UE_LOG(LogTemp, Display, TEXT("Texture fixture verification checked %d assets"),
 		Definitions.Num());
 	return bSucceeded;
+}
+
+bool GenerateAnimationFixtures()
+{
+	constexpr const TCHAR* SkeletonPackageName = TEXT("/Game/Fixture/Animation/SK_Fixture");
+	constexpr const TCHAR* SkeletonAssetName = TEXT("SK_Fixture");
+	UPackage* SkeletonPackage = FindOrCreatePackage(SkeletonPackageName);
+	if (SkeletonPackage == nullptr) return false;
+	USkeleton* Skeleton = FindObject<USkeleton>(SkeletonPackage, SkeletonAssetName);
+	const bool bSkeletonCreated = Skeleton == nullptr;
+	if (bSkeletonCreated)
+	{
+		Skeleton = NewObject<USkeleton>(SkeletonPackage, SkeletonAssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+		FReferenceSkeletonModifier Modifier(Skeleton);
+		Modifier.Add(FMeshBoneInfo(TEXT("root"), TEXT("root"), INDEX_NONE), FTransform::Identity);
+		Modifier.Add(FMeshBoneInfo(TEXT("hand"), TEXT("hand"), 0),
+			FTransform(FQuat::Identity, FVector(0.0, 0.0, 50.0)));
+		FAssetRegistryModule::AssetCreated(Skeleton);
+	}
+	SkeletonPackage->MarkPackageDirty();
+	if (!SaveAsset(SkeletonPackage, Skeleton)) return false;
+
+	constexpr const TCHAR* SequencePackageName = TEXT("/Game/Fixture/Animation/A_FixtureMotion");
+	constexpr const TCHAR* SequenceAssetName = TEXT("A_FixtureMotion");
+	UPackage* SequencePackage = FindOrCreatePackage(SequencePackageName);
+	if (SequencePackage == nullptr) return false;
+	UAnimSequence* Sequence = FindObject<UAnimSequence>(SequencePackage, SequenceAssetName);
+	const bool bSequenceCreated = Sequence == nullptr;
+	if (bSequenceCreated)
+	{
+		Sequence = NewObject<UAnimSequence>(SequencePackage, SequenceAssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+		FAssetRegistryModule::AssetCreated(Sequence);
+	}
+
+	Sequence->SetSkeleton(Skeleton);
+	Sequence->RateScale = 1.25f;
+	Sequence->bLoop = true;
+	Sequence->bEnableRootMotion = true;
+	Sequence->RootMotionRootLock = ERootMotionRootLock::AnimFirstFrame;
+	Sequence->bForceRootLock = true;
+	Sequence->bUseNormalizedRootMotionScale = false;
+
+	IAnimationDataController& Controller = Sequence->GetController();
+	Controller.InitializeModel();
+	Controller.OpenBracket(NSLOCTEXT("UEShedFixture", "BuildAnimation", "Build animation fixture"),
+		false);
+	Controller.ResetModel(false);
+	Controller.SetFrameRate(FFrameRate(30, 1), false);
+	Controller.SetNumberOfFrames(FFrameNumber(60), false);
+
+	TArray<FVector3f> RootPositions;
+	TArray<FQuat4f> RootRotations;
+	TArray<FVector3f> RootScales;
+	RootPositions.Reserve(61);
+	RootRotations.Reserve(61);
+	RootScales.Reserve(61);
+	for (int32 Key = 0; Key <= 60; ++Key)
+	{
+		RootPositions.Add(FVector3f(static_cast<float>(Key) * 2.0f, 0.0f, 0.0f));
+		RootRotations.Add(FQuat4f::Identity);
+		RootScales.Add(FVector3f::OneVector);
+	}
+	Controller.AddBoneCurve(TEXT("root"), false);
+	Controller.SetBoneTrackKeys(TEXT("root"), RootPositions, RootRotations, RootScales, false);
+
+	Controller.AddBoneCurve(TEXT("hand"), false);
+	Controller.SetBoneTrackKeys(TEXT("hand"),
+		{ FVector3f(0.0f, 0.0f, 50.0f), FVector3f(0.0f, 10.0f, 50.0f) },
+		{ FQuat4f::Identity, FQuat4f(FVector3f::UpVector, FMath::DegreesToRadians(30.0f)) },
+		{ FVector3f::OneVector, FVector3f::OneVector }, false);
+	Controller.NotifyPopulated();
+	Controller.CloseBracket(false);
+
+	SequencePackage->MarkPackageDirty();
+	if (!SaveAsset(SequencePackage, Sequence)) return false;
+	UE_LOG(LogTemp, Display, TEXT("Generated %s and %s"), SkeletonPackageName,
+		SequencePackageName);
+	return true;
+}
+
+bool VerifyAnimationFixtures()
+{
+	const USkeleton* Skeleton = LoadObject<USkeleton>(
+		nullptr, TEXT("/Game/Fixture/Animation/SK_Fixture.SK_Fixture"));
+	const UAnimSequence* Sequence = LoadObject<UAnimSequence>(
+		nullptr, TEXT("/Game/Fixture/Animation/A_FixtureMotion.A_FixtureMotion"));
+	return Skeleton != nullptr
+		&& Skeleton->GetReferenceSkeleton().GetNum() == 2
+		&& Sequence != nullptr
+		&& Sequence->GetSkeleton() == Skeleton
+		&& Sequence->GetDataModel()->GetFrameRate() == FFrameRate(30, 1)
+		&& Sequence->GetDataModel()->GetNumberOfFrames() == 60
+		&& Sequence->GetDataModel()->GetNumBoneTracks() == 2
+		&& FMath::IsNearlyEqual(Sequence->GetPlayLength(), 2.0f)
+		&& FMath::IsNearlyEqual(Sequence->RateScale, 1.25f)
+		&& Sequence->bLoop
+		&& Sequence->bEnableRootMotion;
 }
 
 bool GenerateTable(const FFixtureTableDefinition& Definition)
@@ -2767,6 +2870,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateMapReviewGallery() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
+		Succeeded = GenerateAnimationFixtures() && Succeeded;
 		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
 	}
 	else
@@ -2781,6 +2885,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyCameraMap() && Succeeded;
 		Succeeded = VerifyMapReviewGallery() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
+		Succeeded = VerifyAnimationFixtures() && Succeeded;
 		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;
 	}
 

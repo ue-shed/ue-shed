@@ -9,6 +9,7 @@ public class UEShedFixtureEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"AnimationDataController",
 				"AssetRegistry",
 				"Core",
 				"CoreUObject",

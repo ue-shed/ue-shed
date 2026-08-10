@@ -1,11 +1,29 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.5.0",
+	"fixtureVersion": "1.6.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
 	},
 	"contentRoot": "/Game/Fixture/Authoring",
+	"animation": {
+		"contentRoot": "/Game/Fixture/Animation",
+		"skeleton": {
+			"assetPath": "/Game/Fixture/Animation/SK_Fixture.SK_Fixture",
+			"bones": ["root", "hand"]
+		},
+		"sequence": {
+			"assetPath": "/Game/Fixture/Animation/A_FixtureMotion.A_FixtureMotion",
+			"durationSeconds": 2,
+			"frameRate": { "numerator": 30, "denominator": 1 },
+			"frames": 60,
+			"tracks": ["root", "hand"],
+			"rateScale": 1.25,
+			"loop": true,
+			"rootMotion": true,
+			"rootMotionRootLock": "AnimFirstFrame"
+		}
+	},
 	"gameText": {
 		"contentRoot": "/Game/Fixture/Text",
 		"stringTable": {

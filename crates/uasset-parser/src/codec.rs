@@ -229,7 +229,7 @@ fn decode_typed_value(
             let path = path.to_string();
             decode_text_value(payload, &path).map(|text| text.map(PropertyValue::Text))
         }
-        "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" => {
+        "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
                 payload.read_i32(&format_args!("{path}.ObjectRef"))?,
             ))))
@@ -666,7 +666,7 @@ fn fixed_serialized_size(type_name: &str, type_tree: &PropertyTypeName) -> Optio
         }),
         "Int16Property" | "UInt16Property" => Some(2),
         "IntProperty" | "Int32Property" | "UInt32Property" | "FloatProperty" | "ObjectProperty"
-        | "ClassProperty" | "WeakObjectProperty" => Some(4),
+        | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => Some(4),
         "Int64Property" | "UInt64Property" | "DoubleProperty" | "NameProperty" | "EnumProperty" => {
             Some(8)
         }
@@ -1203,7 +1203,7 @@ mod tests {
             PropertyValue::String("hello".into())
         );
 
-        for type_name in ["ObjectProperty", "ClassProperty"] {
+        for type_name in ["ObjectProperty", "ClassProperty", "InterfaceProperty"] {
             assert_eq!(
                 decode_record(
                     vec![type_name.into()],

@@ -11,7 +11,10 @@ import type {
 	MapReviewApplyVisibilityPolicyIntent,
 	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
-	MapReviewResult
+	MapReviewResult,
+	MapReviewSetCreateIntent,
+	MapReviewSetLibraryResult,
+	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
 import type {
 	ActorId,
@@ -48,7 +51,11 @@ export type {
 	MapReviewCandidatePreviewResult,
 	MapReviewPose,
 	MapReviewResult,
-	MapReviewRunView
+	MapReviewRunView,
+	MapReviewSetCreateIntent,
+	MapReviewSetLibraryResult,
+	MapReviewSetSelectIntent,
+	MapReviewSetSummary
 } from "@ue-shed/cameras/review-contracts";
 
 export class MapReviewClientError extends Schema.TaggedErrorClass<MapReviewClientError>()(
@@ -107,6 +114,13 @@ export interface MapReviewClientShape {
 	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
 	readonly replaceVisibilityPolicy?: (
 		intent: MapReviewReplaceVisibilityPolicyIntent
+	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
+	readonly reviewSetLibrary: () => Effect.Effect<MapReviewSetLibraryResult, MapReviewClientError>;
+	readonly createReviewSet: (
+		intent: MapReviewSetCreateIntent
+	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
+	readonly selectReviewSet: (
+		intent: MapReviewSetSelectIntent
 	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
 	readonly load: () => Effect.Effect<MapReviewResult, MapReviewClientError>;
 	readonly previewCandidate: (

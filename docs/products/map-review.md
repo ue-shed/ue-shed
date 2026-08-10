@@ -25,6 +25,12 @@ separately enabled Unreal editor capability, promoted atomically into an immutab
 rediscovered after an editor restart, and opened in the Workbench reference reviewer. The CLI uses
 the same repository and orchestration services.
 
+Workbench exposes a project Review Set library in both first-run and ready states. It discovers
+portable sets under `.ue-shed/review/sets`, includes an explicitly configured set, and switches by
+stable Review Set ID without modifying the Unreal map. Authors can also create an empty sibling set:
+the new definition inherits the active set's map, Capture Profiles, and Visibility Policies, but no
+Views. Opening the earlier set restores its approved cameras and angles for another capture.
+
 Plan 032 is complete. It established the compatibility foundation for visibility policy and caller
 provenance, then closed public service, CLI, Workbench dogfood, recovery, and UE 5.7 evidence.
 Review Set v1.0 actor/world-pose definitions migrate in memory to v1.1, preserving IDs, Approved
@@ -158,12 +164,14 @@ The first credible release must let a level designer, environment artist, or rev
 2. Generate several useful candidate views from purpose-specific framing presets.
 3. Preview the real capture result, keep useful candidates, and refine their approved poses.
 4. Save the definitions outside the map in a partitioned, source-control-friendly Review Set.
-5. Capture ordinary **Pure** images and explicitly altered **Clear** companions where requested.
-6. See subject-resolution, readiness, visibility, environment, and capture failures honestly.
-7. Repeat the capture in a fresh process without dirtying the map.
-8. Review the new run against an explicit earlier run or accepted baseline.
-9. Record a human decision without allowing an image-difference score to decide correctness.
-10. Perform validation and capture through the same public services from the CLI.
+5. Move between multiple project Review Sets and create a fresh collection without losing prior
+   camera definitions.
+6. Capture ordinary **Pure** images and explicitly altered **Clear** companions where requested.
+7. See subject-resolution, readiness, visibility, environment, and capture failures honestly.
+8. Repeat the capture in a fresh process without dirtying the map.
+9. Review the new run against an explicit earlier run or accepted baseline.
+10. Record a human decision without allowing an image-difference score to decide correctness.
+11. Perform validation and capture through the same public services from the CLI.
 
 ## Product boundary
 

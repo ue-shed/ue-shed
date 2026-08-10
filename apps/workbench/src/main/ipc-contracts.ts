@@ -30,7 +30,10 @@ import {
 	MapReviewApplyVisibilityPolicyIntent,
 	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
-	MapReviewResult
+	MapReviewResult,
+	MapReviewSetCreateIntent,
+	MapReviewSetLibraryResult,
+	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import {
@@ -551,6 +554,21 @@ export const invokeContracts = {
 	"map-review:load": invoke({
 		channel: "map-review:load",
 		args: EmptyArgs,
+		result: MapReviewResult
+	}),
+	"map-review:review-sets": invoke({
+		channel: "map-review:review-sets",
+		args: EmptyArgs,
+		result: MapReviewSetLibraryResult
+	}),
+	"map-review:create-review-set": invoke({
+		channel: "map-review:create-review-set",
+		args: Schema.Tuple([MapReviewSetCreateIntent]),
+		result: MapReviewResult
+	}),
+	"map-review:select-review-set": invoke({
+		channel: "map-review:select-review-set",
+		args: Schema.Tuple([MapReviewSetSelectIntent]),
 		result: MapReviewResult
 	}),
 	"map-review:world-snapshot": invoke({

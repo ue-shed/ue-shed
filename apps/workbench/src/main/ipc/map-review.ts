@@ -6,7 +6,9 @@ import type {
 	MapReviewAuthoringSessionIntent,
 	MapReviewCaptureIntent,
 	MapReviewApplyVisibilityPolicyIntent,
-	MapReviewReplaceVisibilityPolicyIntent
+	MapReviewReplaceVisibilityPolicyIntent,
+	MapReviewSetCreateIntent,
+	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
 import type { ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
 import { Effect } from "effect";
@@ -19,6 +21,17 @@ export const register = Effect.gen(function* () {
 	const mapReview = yield* WorkbenchMapReview;
 
 	yield* ipc.register(invokeContracts["map-review:load"], () => mapReview.load());
+	yield* ipc.register(invokeContracts["map-review:review-sets"], () =>
+		mapReview.reviewSetLibrary()
+	);
+	yield* ipc.register(invokeContracts["map-review:create-review-set"], (...args) => {
+		const [intent] = args as [MapReviewSetCreateIntent];
+		return mapReview.createReviewSet(intent);
+	});
+	yield* ipc.register(invokeContracts["map-review:select-review-set"], (...args) => {
+		const [intent] = args as [MapReviewSetSelectIntent];
+		return mapReview.selectReviewSet(intent);
+	});
 	yield* ipc.register(invokeContracts["map-review:capture"], (...args) => {
 		const [intent] = args as [MapReviewCaptureIntent];
 		return mapReview.capture(intent);

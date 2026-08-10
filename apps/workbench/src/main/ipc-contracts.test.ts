@@ -177,6 +177,9 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	],
 	"content-observatory:cancel": [],
 	"map-review:load": [],
+	"map-review:review-sets": [],
+	"map-review:create-review-set": [{ displayName: "Lighting review" }],
+	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
 	"map-review:world-snapshot": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
 	"map-review:saved-world-maps": [],
@@ -379,6 +382,20 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"content-observatory:start": { status: "not_configured" },
 	"content-observatory:cancel": { status: "not_configured" },
 	"map-review:load": { status: "not_configured" },
+	"map-review:review-sets": {
+		activeReviewSetId: "fixture-review-set",
+		sets: [
+			{
+				displayName: "Fixture Review Set",
+				id: "fixture-review-set",
+				mapPath: "/Game/Maps/Fixture",
+				viewCount: 1
+			}
+		],
+		status: "ready"
+	},
+	"map-review:create-review-set": { status: "not_configured" },
+	"map-review:select-review-set": { status: "not_configured" },
 	"map-review:world-snapshot": {
 		message: "offline",
 		recovery: "open Unreal",
@@ -478,15 +495,17 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:preview-authoring-candidate": [{ candidateId: "", sessionId: "" }],
 	"map-review:approve-authoring": [{ sessionId: "" }],
 	"map-review:capture": [{ viewIds: [] }],
+	"map-review:create-review-set": [{ displayName: "" }],
+	"map-review:select-review-set": [{ reviewSetId: "" }],
 	"map-review:approve-candidate": [{ candidateId: "only" }],
 	"map-review:set-live-preview-fps": ["fast"],
 	"map-review:subscribe-world-observations": [0],
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 74 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(74);
-	expect(new Set(invokeChannelNames).size).toBe(74);
+it("registers exactly 77 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(77);
+	expect(new Set(invokeChannelNames).size).toBe(77);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

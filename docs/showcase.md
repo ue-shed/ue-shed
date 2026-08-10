@@ -152,7 +152,9 @@ picker should offer more than one map. It takes precedence over the single-map v
 With no `UE_SHED_REVIEW_SET`, live Map Review enters first-run authoring. Select an actor, review a
 candidate, and keep it; only then does UE Shed write a deterministic map-scoped Review Set under
 `.ue-shed/review/sets`. Set `UE_SHED_REVIEW_SET` when you want to work with an explicit existing
-set. **Add selected actor as View** appends without replacing existing observations; choose an
+set. Use **Review Sets** to reopen any set in the project or create and open an empty sibling that
+keeps the active map, Capture Profiles, and Visibility Policies. Switching back restores the saved
+Views—and therefore the same approved cameras and angles. **Add selected actor as View** appends without replacing existing observations; choose an
 approved View and **Revise selected View** only when the intent is to preserve its ID and advance
 its revision. Several Views may share one actor, and Workbench groups them by subject without
 changing the flat portable Review Set. Open **Framing** to tune the named arc/ring presets or one selected view. The count sliders show

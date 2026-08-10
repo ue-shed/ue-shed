@@ -484,13 +484,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 74 contract channels", () =>
+it.effect("registers exactly the 77 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(74);
+		expect(result).toHaveLength(77);
 	})
 );
 

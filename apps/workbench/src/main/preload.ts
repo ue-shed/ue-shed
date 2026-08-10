@@ -12,7 +12,10 @@ import type {
 	MapReviewApplyVisibilityPolicyIntent,
 	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
-	MapReviewResult
+	MapReviewResult,
+	MapReviewSetCreateIntent,
+	MapReviewSetLibraryResult,
+	MapReviewSetSelectIntent
 } from "@ue-shed/extension-camera-review/client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
@@ -164,6 +167,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("fixture:launch-review")
 	},
 	mapReview: {
+		createReviewSet: (intent: MapReviewSetCreateIntent): Promise<MapReviewResult> =>
+			ipcRenderer.invoke("map-review:create-review-set", intent),
 		applyVisibilityPolicy: (
 			intent: MapReviewApplyVisibilityPolicyIntent
 		): Promise<MapReviewResult> =>
@@ -214,12 +219,16 @@ contextBridge.exposeInMainWorld("ueShed", {
 		capture: (intent: MapReviewCaptureIntent): Promise<MapReviewCaptureResult> =>
 			ipcRenderer.invoke("map-review:capture", intent),
 		load: (): Promise<MapReviewResult> => ipcRenderer.invoke("map-review:load"),
+		reviewSets: (): Promise<MapReviewSetLibraryResult> =>
+			ipcRenderer.invoke("map-review:review-sets"),
 		replaceVisibilityPolicy: (
 			intent: MapReviewReplaceVisibilityPolicyIntent
 		): Promise<MapReviewResult> =>
 			ipcRenderer.invoke("map-review:replace-visibility-policy", intent),
 		setLivePreviewFps: (fps: number): Promise<number> =>
 			ipcRenderer.invoke("map-review:set-live-preview-fps", fps),
+		selectReviewSet: (intent: MapReviewSetSelectIntent): Promise<MapReviewResult> =>
+			ipcRenderer.invoke("map-review:select-review-set", intent),
 		subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate): Promise<void> =>
 			ipcRenderer.invoke("map-review:subscribe-world-observations", cadenceHz),
 		setWorldObservationRate: (

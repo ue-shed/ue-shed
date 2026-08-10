@@ -20,6 +20,7 @@ import type {
 } from "./map-review-client.js";
 import { MapReviewAuthoring } from "./map-review-authoring.js";
 import { CaptureWorkflow } from "./capture-workflow.js";
+import { ReviewSetLibrary } from "./review-set-library.js";
 import { SavedWorldScout } from "./saved-world-scout.js";
 import { WorldScout } from "./world-scout.js";
 import { VisibilityPolicySettings } from "./visibility-policy-settings.js";
@@ -99,6 +100,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 		readonly nonce: number;
 	}>();
 	const [captureOpen, setCaptureOpen] = createSignal(false);
+	const [setLibraryOpen, setSetLibraryOpen] = createSignal(false);
 	const [worldSource, setWorldSource] = createSignal<"saved" | "live">(
 		props.client.readSavedWorld === undefined || props.client.savedWorldMaps === undefined
 			? "live"
@@ -193,6 +195,14 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 
 	return (
 		<main {...stylex.props(styles.page)}>
+			<Show when={setLibraryOpen()}>
+				<ReviewSetLibrary
+					canCreate={ready() !== undefined}
+					client={props.client}
+					onChanged={apply}
+					onClose={() => setSetLibraryOpen(false)}
+				/>
+			</Show>
 			<Show when={captureOpen() && ready()}>
 				{(current) => (
 					<CaptureWorkflow
@@ -243,14 +253,26 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 						</button>
 					</div>
 				</div>
-				<button
-					type="button"
-					disabled={ready() === undefined || worldSource() !== "live"}
-					onClick={() => setCaptureOpen(true)}
-					{...stylex.props(styles.captureButton)}
-				>
-					CAPTURE SET
-				</button>
+				<div {...stylex.props(styles.headerActions)}>
+					<button
+						type="button"
+						disabled={
+							state().status === "loading" || state().status === "not_configured"
+						}
+						onClick={() => setSetLibraryOpen(true)}
+						{...stylex.props(styles.libraryButton)}
+					>
+						REVIEW SETS
+					</button>
+					<button
+						type="button"
+						disabled={ready() === undefined || worldSource() !== "live"}
+						onClick={() => setCaptureOpen(true)}
+						{...stylex.props(styles.captureButton)}
+					>
+						CAPTURE SET
+					</button>
+				</div>
 			</header>
 			<Show
 				when={worldSource() === "saved"}
@@ -844,6 +866,7 @@ const styles = stylex.create({
 		paddingBottom: 16,
 		borderBottom: "1px solid #343936"
 	},
+	headerActions: { display: "flex", alignItems: "center", gap: 8 },
 	eyebrow: { margin: 0, color: "#b9f227", fontSize: 9, letterSpacing: ".19em" },
 	sourceTabs: { display: "flex", gap: 6, marginTop: 9 },
 	sourceButton: {
@@ -857,6 +880,16 @@ const styles = stylex.create({
 		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
 	sourceButtonActive: { borderColor: "#61d5df", backgroundColor: "#173033", color: "#b9f2f5" },
+	libraryButton: {
+		border: "1px solid #4b554e",
+		backgroundColor: { default: "#161a17", ":hover": "#222a24", ":disabled": "#121512" },
+		color: { default: "#c6cec8", ":disabled": "#59615b" },
+		padding: "11px 13px",
+		fontWeight: 800,
+		fontSize: 9,
+		letterSpacing: ".12em",
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	},
 	captureButton: {
 		border: "1px solid #b9f227",
 		backgroundColor: { default: "#b9f227", ":hover": "#d0ff4f", ":disabled": "#5d6d35" },

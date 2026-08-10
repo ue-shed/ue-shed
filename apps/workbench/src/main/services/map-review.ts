@@ -4,6 +4,7 @@ import {
 	CameraFeed,
 	clearProvisionedCameras,
 	configureCameras,
+	createReviewSetFromTemplate,
 	ensureProvisionedCameras,
 	generateFramingCandidates,
 	ReviewAuthoring,
@@ -35,7 +36,10 @@ import type {
 	MapReviewApplyVisibilityPolicyIntent,
 	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewResult,
-	MapReviewRunView
+	MapReviewRunView,
+	MapReviewSetCreateIntent,
+	MapReviewSetLibraryResult,
+	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
 import {
 	Observatory,
@@ -251,6 +255,9 @@ export interface WorkbenchMapReviewShape {
 	readonly replaceVisibilityPolicy: (
 		intent: MapReviewReplaceVisibilityPolicyIntent
 	) => Effect.Effect<MapReviewResult>;
+	readonly reviewSetLibrary: () => Effect.Effect<MapReviewSetLibraryResult>;
+	readonly createReviewSet: (intent: MapReviewSetCreateIntent) => Effect.Effect<MapReviewResult>;
+	readonly selectReviewSet: (intent: MapReviewSetSelectIntent) => Effect.Effect<MapReviewResult>;
 	readonly load: () => Effect.Effect<MapReviewResult>;
 	readonly previewCandidate: (
 		candidateId: string
@@ -346,7 +353,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const layerScope = yield* Effect.scope;
 		const coordinator = yield* makeUnrealOperationCoordinator;
 		const lastWorldSnapshot = yield* Ref.make<Option.Option<WorldScoutResult>>(Option.none());
-		const activeReviewSetPath = yield* Ref.make<Option.Option<string>>(Option.none());
+		const activeReviewSetPath = yield* Ref.make<
+			Option.Option<{ readonly path: string; readonly projectRoot: string }>
+		>(Option.none());
 		const provisionedCameraBindings = yield* Ref.make<
 			Option.Option<{
 				readonly bindings: ReadonlyArray<{
@@ -808,12 +817,20 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.selectedReviewSetPath"
 		)(function* () {
 			const reviewProject = yield* resolveReviewProject();
+			const active = yield* Ref.get(activeReviewSetPath);
+			if (
+				reviewProject !== undefined &&
+				Option.isSome(active) &&
+				active.value.projectRoot === reviewProject.projectRoot
+			) {
+				return active.value.path;
+			}
 			if (
 				configuration.review.status === "configured" &&
 				reviewProject?.projectRoot === configuration.review.projectRoot
 			)
 				return configuration.review.reviewSetPath;
-			return yield* Ref.get(activeReviewSetPath).pipe(Effect.map(Option.getOrUndefined));
+			return undefined;
 		});
 
 		const worldSnapshot = Effect.fn("Workbench.WorkbenchMapReview.worldSnapshot")(function* () {
@@ -1017,6 +1034,66 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			} satisfies MapReviewRunView;
 		});
 
+		const availableReviewSets = Effect.fn("Workbench.WorkbenchMapReview.availableReviewSets")(
+			function* (projectRoot: string) {
+				const discovered = [...(yield* repository.listSets(projectRoot))];
+				const configuredPath =
+					configuration.review.status === "configured" &&
+					configuration.review.projectRoot === projectRoot
+						? configuration.review.reviewSetPath
+						: undefined;
+				if (
+					configuredPath !== undefined &&
+					!discovered.some((reviewSet) => reviewSet.path === configuredPath)
+				) {
+					const reviewSet = yield* repository.loadSet(configuredPath);
+					discovered.push({
+						displayName: reviewSet.displayName,
+						id: reviewSet.id,
+						mapPath: reviewSet.project.mapPath,
+						path: configuredPath,
+						viewCount: reviewSet.views.length
+					});
+				}
+				const ids = new Set<string>();
+				const duplicate = discovered.find((reviewSet) => {
+					if (ids.has(reviewSet.id)) return true;
+					ids.add(reviewSet.id);
+					return false;
+				});
+				if (duplicate !== undefined) {
+					return yield* Effect.fail({
+						message: `Review Set ID ${duplicate.id} is used by more than one document.`,
+						recovery: "Give every Review Set a unique ID, then reopen the set library."
+					});
+				}
+				return discovered.toSorted(
+					(left, right) =>
+						left.mapPath.localeCompare(right.mapPath) ||
+						left.displayName.localeCompare(right.displayName)
+				);
+			}
+		);
+
+		const reviewSetLibrary = Effect.fn("Workbench.WorkbenchMapReview.reviewSetLibrary")(
+			function* () {
+				const reviewProject = yield* resolveReviewProject();
+				if (reviewProject === undefined) return { status: "not_configured" as const };
+				return yield* Effect.gen(function* () {
+					const sets = yield* availableReviewSets(reviewProject.projectRoot);
+					const selectedPath = yield* selectedReviewSetPath();
+					const activeReviewSetId = sets.find(
+						(reviewSet) => reviewSet.path === selectedPath
+					)?.id;
+					return {
+						...(activeReviewSetId === undefined ? {} : { activeReviewSetId }),
+						sets: sets.map(({ path: _path, ...reviewSet }) => reviewSet),
+						status: "ready" as const
+					};
+				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+			}
+		);
+
 		const load = Effect.fn("Workbench.WorkbenchMapReview.load")(function* () {
 			const reviewProject = yield* resolveReviewProject();
 			if (reviewProject === undefined) return { status: "not_configured" as const };
@@ -1069,6 +1146,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				return {
 					reviewSet: {
 						displayName: reviewSet.displayName,
+						id: reviewSet.id,
 						mapPath: reviewSet.project.mapPath,
 						viewCount: reviewSet.views.length,
 						views
@@ -1078,6 +1156,56 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				};
 			}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
 		});
+
+		const selectReviewSet = Effect.fn("Workbench.WorkbenchMapReview.selectReviewSet")(
+			function* (intent: MapReviewSetSelectIntent) {
+				const reviewProject = yield* resolveReviewProject();
+				if (reviewProject === undefined) return { status: "not_configured" as const };
+				return yield* Effect.gen(function* () {
+					const sets = yield* availableReviewSets(reviewProject.projectRoot);
+					const selected = sets.find((reviewSet) => reviewSet.id === intent.reviewSetId);
+					if (selected === undefined) {
+						return mapReviewFailure({
+							message: `Review Set ${intent.reviewSetId} was not found.`,
+							recovery: "Reopen the Review Set library and choose an available set."
+						});
+					}
+					yield* invalidateProvisionedCameras();
+					yield* Ref.set(
+						activeReviewSetPath,
+						Option.some({ path: selected.path, projectRoot: reviewProject.projectRoot })
+					);
+					return yield* load();
+				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+			}
+		);
+
+		const createReviewSet = Effect.fn("Workbench.WorkbenchMapReview.createReviewSet")(
+			function* (intent: MapReviewSetCreateIntent) {
+				const reviewProject = yield* resolveReviewProject();
+				if (reviewProject === undefined) return { status: "not_configured" as const };
+				const templatePath = yield* selectedReviewSetPath();
+				if (templatePath === undefined) {
+					return mapReviewFailure({
+						message: "Open a Review Set before creating another one.",
+						recovery: "Choose an existing set or keep the first View for this map."
+					});
+				}
+				return yield* Effect.gen(function* () {
+					const created = yield* createReviewSetFromTemplate({
+						displayName: intent.displayName,
+						projectRoot: reviewProject.projectRoot,
+						templatePath
+					}).pipe(Effect.provideService(ReviewRepository, repository));
+					yield* invalidateProvisionedCameras();
+					yield* Ref.set(
+						activeReviewSetPath,
+						Option.some({ path: created.path, projectRoot: reviewProject.projectRoot })
+					);
+					return yield* load();
+				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+			}
+		);
 
 		const replaceVisibilityPolicy = Effect.fn(
 			"Workbench.WorkbenchMapReview.replaceVisibilityPolicy"
@@ -1605,7 +1733,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									) {
 										yield* Ref.set(
 											activeReviewSetPath,
-											Option.some(result.session.reviewSet.path)
+											Option.some({
+												path: result.session.reviewSet.path,
+												projectRoot
+											})
 										);
 										const candidateId =
 											result.session.selectedCandidateId ??
@@ -1773,14 +1904,17 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			authorFromSelection,
 			capture: captureAndReload,
 			chooseProjectAndMaps,
+			createReviewSet,
 			discardAuthoring,
 			focusActor,
 			load,
 			previewAuthoringCandidate,
 			previewCandidate,
 			replaceVisibilityPolicy,
+			reviewSetLibrary,
 			savedWorldMaps,
 			savedWorld,
+			selectReviewSet,
 			setLivePreviewFps,
 			setWorldObservationRate,
 			subscribeWorldObservations,
@@ -1799,6 +1933,9 @@ export function makeWorkbenchMapReviewTestLayer(
 		| "chooseProjectAndMaps"
 		| "applyVisibilityPolicy"
 		| "replaceVisibilityPolicy"
+		| "reviewSetLibrary"
+		| "createReviewSet"
+		| "selectReviewSet"
 	> &
 		Partial<
 			Pick<
@@ -1808,6 +1945,9 @@ export function makeWorkbenchMapReviewTestLayer(
 				| "chooseProjectAndMaps"
 				| "applyVisibilityPolicy"
 				| "replaceVisibilityPolicy"
+				| "reviewSetLibrary"
+				| "createReviewSet"
+				| "selectReviewSet"
 			>
 		>
 ): Layer.Layer<WorkbenchMapReview> {
@@ -1822,9 +1962,15 @@ export function makeWorkbenchMapReviewTestLayer(
 				service.savedWorldMaps ?? (() => Effect.die("saved world maps reader not stubbed")),
 			chooseProjectAndMaps:
 				service.chooseProjectAndMaps ?? (() => Effect.die("project chooser not stubbed")),
+			createReviewSet:
+				service.createReviewSet ?? (() => Effect.die("Review Set creation not stubbed")),
 			replaceVisibilityPolicy:
 				service.replaceVisibilityPolicy ??
 				(() => Effect.die("visibility policy replacement not stubbed")),
+			reviewSetLibrary:
+				service.reviewSetLibrary ?? (() => Effect.die("Review Set library not stubbed")),
+			selectReviewSet:
+				service.selectReviewSet ?? (() => Effect.die("Review Set selection not stubbed")),
 			...service
 		})
 	);

@@ -25,7 +25,10 @@ import type {
 	MapReviewApplyVisibilityPolicyIntent,
 	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
-	MapReviewResult
+	MapReviewResult,
+	MapReviewSetCreateIntent,
+	MapReviewSetLibraryResult,
+	MapReviewSetSelectIntent
 } from "@ue-shed/extension-camera-review/client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
@@ -115,6 +118,9 @@ declare global {
 				readonly launchReview: () => Promise<FixtureLaunchResult>;
 			};
 			readonly mapReview: {
+				readonly createReviewSet: (
+					intent: MapReviewSetCreateIntent
+				) => Promise<MapReviewResult>;
 				readonly applyVisibilityPolicy: (
 					intent: MapReviewApplyVisibilityPolicyIntent
 				) => Promise<MapReviewResult>;
@@ -157,10 +163,14 @@ declare global {
 					intent: MapReviewCaptureIntent
 				) => Promise<MapReviewCaptureResult>;
 				readonly load: () => Promise<MapReviewResult>;
+				readonly reviewSets: () => Promise<MapReviewSetLibraryResult>;
 				readonly replaceVisibilityPolicy: (
 					intent: MapReviewReplaceVisibilityPolicyIntent
 				) => Promise<MapReviewResult>;
 				readonly setLivePreviewFps: (fps: number) => Promise<number>;
+				readonly selectReviewSet: (
+					intent: MapReviewSetSelectIntent
+				) => Promise<MapReviewResult>;
 				readonly subscribeWorldObservations: (
 					cadenceHz: WorldScoutRefreshRate
 				) => Promise<void>;

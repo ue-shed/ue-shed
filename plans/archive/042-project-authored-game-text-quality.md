@@ -16,7 +16,7 @@
 
 ## Status
 
-- **State**: IN PROGRESS — product contract and draft-PR bootstrap
+- **State**: DONE — typed rules, pure evaluation, CLI review, and portable gates verified
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM — adds a project-authored rules boundary and CLI workflow over confidential text
@@ -142,6 +142,22 @@ existing scan/search/focus behavior remains compatible.
 | Query/host     | bounded pages and focus if presentation is added; unchanged legacy lenses     |
 | Security       | no authored text, paths, identities, terms, or rule contents in telemetry     |
 | Repository     | `pnpm check`                                                                  |
+
+## Completion evidence
+
+- Added version-1 branded Effect Schemas, typed structural/semantic failures, and browser-safe
+  exports for authored roles, character budgets, terminology rules, findings, and reports.
+- Added a pure deterministic evaluator over `TextCorpus`; it preserves corpus status, coverage, and
+  diagnostics and scopes every finding to matched occurrence evidence.
+- Added `ue-shed text review <project-root> --rules <file>` through `TextCorpusService`, with safe
+  boundary errors and no second scanner or persistence path.
+- Added a generic rule fixture plus domain, command, workflow, and real saved-corpus CLI tests. The
+  tests prove invalid scopes cannot broaden, failures stay typed/actionable, affected occurrences
+  remain precise, and partial/unsupported coverage remains visible.
+- Verified with focused Vitest runs, the real reader-backed Game Text CLI E2E,
+  `pnpm run check:precommit`, and `pnpm check` on 2026-08-11. Three unrelated CLI E2E cases timed
+  out once under native-build load and then passed together in isolation before the final full
+  green run.
 
 Focused commands:
 

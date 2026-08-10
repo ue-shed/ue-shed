@@ -1,6 +1,6 @@
 # Plan 043: Explain saved Unreal configuration provenance
 
-**Status**: IN PROGRESS — product contract and implementation plan bootstrapped
+**Status**: COMPLETE — headless slice, CLI, fixture, and standalone extension verified
 
 **Priority**: P2
 
@@ -50,6 +50,10 @@ Important implementation conclusions:
 4. Missing files are normally skipped by Unreal, but Config Explorer must retain them as coverage.
 5. Full runtime equality would require user/private, generated destination, command-line, dynamic
    plugin/hotfix, cooked, environment, and live authorities that this product must not read or infer.
+6. UnrealBuildTool's `ConfigHierarchySection` is not a runtime merge oracle: it clears all values on
+   plain set and removes all matching values, while Runtime/Core's `FConfigFile::ProcessCommand`
+   replaces the first value and removes one stable match. This slice intentionally follows the
+   runtime implementation while using UBT only to corroborate hierarchy locations.
 
 If later source inspection contradicts any of these conclusions, stop and update the contract before
 changing behavior.
@@ -210,14 +214,37 @@ Stop implementation and document the finding if:
 
 ## Completion checklist
 
-- [ ] Phase 0 bootstrap is the only content in the first commit and draft PR.
-- [ ] Public Effect service and browser-safe schemas exist without Workbench dependency.
-- [ ] Required explain command works for explicit project/platform fixture input.
-- [ ] Cross-platform comparison returns independently resolved evidence.
-- [ ] Earned scalar/array/clear semantics and provenance are tested.
-- [ ] Missing, unreadable, unsupported, and incomplete-discovery states are distinct.
-- [ ] User-private, live, command-line, Device Profile, and cooked authorities remain excluded.
-- [ ] Generic fixture and practical Unreal conformance evidence are recorded.
-- [ ] Host-neutral extension renders supplied results without filesystem authority.
+- [x] Phase 0 bootstrap is the only content in the first commit and draft PR.
+- [x] Public Effect service and browser-safe schemas exist without Workbench dependency.
+- [x] Required explain command works for explicit project/platform fixture input.
+- [x] Cross-platform comparison returns independently resolved evidence.
+- [x] Earned scalar/array/clear semantics and provenance are tested.
+- [x] Missing, unreadable, unsupported, and incomplete-discovery states are distinct.
+- [x] User-private, live, command-line, Device Profile, and cooked authorities remain excluded.
+- [x] Generic fixture and practical Unreal conformance evidence are recorded.
+- [x] Host-neutral extension renders supplied results without filesystem authority.
 - [ ] Focused checks and both required final `pnpm check` runs pass.
 - [ ] Plan/PR verification is current, all commits are pushed, and the PR is ready for review.
+
+## Completion evidence
+
+- The bootstrap-only commit is `621a60c`; implementation remained in later commits.
+- UE 5.7 Runtime/Core source was rechecked for static layer order, expansion-major platform-parent
+  traversal, data-driven `IniParent`, config redirects, line parsing, and the six earned operations.
+- The generic fixture resolves `Entries` to `["PlatformA"]` on PlatformA and to
+  `["PlatformB", "PlatformB"]` on PlatformB. It also exercises scalar replacement, unique/duplicate
+  addition, stable removal, clear, explicit empty, unsupported keyed arrays, relevant redirects,
+  missing files, ambiguity, and privacy-safe provenance.
+- A stock `-dumpconfig` run was not used as a conformance oracle because it includes generated,
+  private, command-line, dynamic, and runtime state excluded by this contract. There is no stock
+  commandlet that isolates this synthetic source-only hierarchy and synthetic platforms. The
+  practical conformance evidence is therefore the Runtime/Core source-derived golden fixture and
+  source-located operation tests, rather than a misleading stronger runtime claim.
+- Focused package/extension coverage: 22 tests passed; the CLI process fixture test passed through
+  the headless executable entrypoint. `pnpm run check:precommit` passed.
+- The first successful full `pnpm check` run passed 127 test files and 703 tests, with 9 files and 27
+  tests skipped behind documented integration gates. It used `CARGO_INCREMENTAL=0`,
+  `CARGO_PROFILE_DEV_DEBUG=0`, and `CARGO_PROFILE_TEST_DEBUG=0` to fit native DuckDB artifacts on the
+  available drive; test and gate coverage were unchanged.
+- Workbench IPC/preload composition remains deliberately deferred. The core, CLI, fixture, and
+  standalone extension have no dependency on the parallel Workbench IPC work.

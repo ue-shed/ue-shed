@@ -112,6 +112,11 @@ parser:
 Key and section matching follows Unreal's case-insensitive config identity. Values remain saved
 strings; Config Explorer does not perform runtime macro expansion or property-type coercion.
 
+UnrealBuildTool's `ConfigHierarchySection` is useful corroboration for layer enumeration, but it is
+not the merge oracle for this product: its build-tool projection intentionally collapses some
+runtime distinctions (including plain-set and removal behavior). The table above follows the
+Runtime/Core config cache that loads a running Unreal process.
+
 `@` keyed-array metadata, `*` per-object keyed-array metadata, config remaps, and parser forms that
 the slice cannot reproduce truthfully are reported as unsupported syntax/semantics. They are never
 treated as ordinary keys or ignored while returning complete coverage. Quoted values and ordinary

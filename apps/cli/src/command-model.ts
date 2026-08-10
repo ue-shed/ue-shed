@@ -22,6 +22,23 @@ const EditorPlayAction = Schema.Literals([
 export const CliCommand = Schema.TaggedUnion({
 	Version: {},
 	Doctor: {},
+	ConfigExplain: {
+		project: Schema.String,
+		section: Schema.String,
+		key: Schema.String,
+		platform: Schema.String,
+		engineRoot: Schema.optionalKey(Schema.String),
+		family: Schema.optionalKey(Schema.String)
+	},
+	ConfigCompare: {
+		project: Schema.String,
+		section: Schema.String,
+		key: Schema.String,
+		leftPlatform: Schema.String,
+		rightPlatform: Schema.String,
+		engineRoot: Schema.optionalKey(Schema.String),
+		family: Schema.optionalKey(Schema.String)
+	},
 	EditorPlaySession: {
 		action: EditorPlayAction,
 		endpoint: Schema.String

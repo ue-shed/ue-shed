@@ -223,8 +223,8 @@ Stop implementation and document the finding if:
 - [x] User-private, live, command-line, Device Profile, and cooked authorities remain excluded.
 - [x] Generic fixture and practical Unreal conformance evidence are recorded.
 - [x] Host-neutral extension renders supplied results without filesystem authority.
-- [ ] Focused checks and both required final `pnpm check` runs pass.
-- [ ] Plan/PR verification is current, all commits are pushed, and the PR is ready for review.
+- [x] Focused checks and both required final `pnpm check` runs pass.
+- [x] Plan/PR verification is current, all commits are pushed, and the PR is ready for review.
 
 ## Completion evidence
 
@@ -242,8 +242,8 @@ Stop implementation and document the finding if:
   source-located operation tests, rather than a misleading stronger runtime claim.
 - Focused package/extension coverage: 22 tests passed; the CLI process fixture test passed through
   the headless executable entrypoint. `pnpm run check:precommit` passed.
-- The first successful full `pnpm check` run passed 127 test files and 703 tests, with 9 files and 27
-  tests skipped behind documented integration gates. It used `CARGO_INCREMENTAL=0`,
+- Both final full `pnpm check` runs passed 127 test files and 703 tests, with 9 files and 27 tests
+  skipped behind documented integration gates. They used `CARGO_INCREMENTAL=0`,
   `CARGO_PROFILE_DEV_DEBUG=0`, and `CARGO_PROFILE_TEST_DEBUG=0` to fit native DuckDB artifacts on the
   available drive; test and gate coverage were unchanged.
 - Workbench IPC/preload composition remains deliberately deferred. The core, CLI, fixture, and

@@ -1,0 +1,11 @@
+{
+	"_tag": "Active",
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"gameTimeMs": 4100,
+	"pieSessionId": "pie-session-1",
+	"runId": "run-live-1",
+	"state": "waiting"
+}

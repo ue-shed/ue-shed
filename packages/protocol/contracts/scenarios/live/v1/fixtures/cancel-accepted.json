@@ -1,0 +1,8 @@
+{
+	"_tag": "Accepted",
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"runId": "run-live-1"
+}

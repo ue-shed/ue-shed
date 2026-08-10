@@ -1,0 +1,54 @@
+{
+	"_tag": "Terminal",
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"result": {
+		"schemaVersion": 1,
+		"id": "run-live-1",
+		"scenarioId": "scenario_movement-gym_014",
+		"label": "Movement Gym live run",
+		"status": "completed_with_divergence",
+		"recordedAt": "2026-08-11T00:00:00.000Z",
+		"durationMs": 9216,
+		"engineVersion": "5.7",
+		"world": "L_MovementGym:PersistentLevel",
+		"evidence": [
+			{
+				"id": "evidence_cache_open",
+				"markerId": "marker_cache_state",
+				"atMs": 5580,
+				"type": "world_state",
+				"label": "Cache state",
+				"summary": "The fixture state provider returned no cache observation.",
+				"status": "missing"
+			}
+		],
+		"divergences": [
+			{
+				"id": "divergence_wait_timing",
+				"atMs": 4100,
+				"severity": "warning",
+				"source": "timing",
+				"expected": "landing_ready within 1250 ms",
+				"observed": "landing_ready after 1310 ms",
+				"explanation": "The blocking condition exceeded its expected game-time tolerance."
+			}
+		],
+		"pieSessionId": "pie-session-1",
+		"lifecycle": [
+			{ "state": "accepted", "atGameTimeMs": 0 },
+			{ "state": "isolating", "atGameTimeMs": 0 },
+			{ "state": "running", "atGameTimeMs": 0 },
+			{ "state": "waiting", "atGameTimeMs": 4100 },
+			{ "state": "running", "atGameTimeMs": 4100 },
+			{ "state": "terminal", "atGameTimeMs": 9216 }
+		],
+		"inputIsolation": {
+			"established": true,
+			"restored": true,
+			"method": "slate_input_preprocessor"
+		}
+	}
+}

@@ -435,9 +435,9 @@ mod tests {
         fs::remove_dir_all(&project_root).expect("remove temporary project");
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].relative_path, "content/data/dt_items.uasset");
+        assert_eq!(entries[0].relative_path, "Content/Data/DT_Items.uasset");
         assert_eq!(entries[0].kind, EntryKind::Package);
-        assert_eq!(entries[1].relative_path, "content/data/dt_items.uexp");
+        assert_eq!(entries[1].relative_path, "Content/Data/DT_Items.uexp");
         assert_eq!(entries[1].kind, EntryKind::Sidecar);
     }
 

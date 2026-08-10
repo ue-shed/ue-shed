@@ -616,9 +616,11 @@ describe("ContentObservatoryRoute", () => {
 		pointMap.focus();
 		await user.keyboard("{ArrowRight}");
 		await user.keyboard("{ArrowRight}");
-		expect(await screen.findByText("3 map actor changes")).toBeDefined();
 		expect(screen.getByRole("heading", { name: "Key lamp" })).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: "Changelists" }));
+		expect(await screen.findByText("3 map actor changes")).toBeDefined();
 		expect(screen.getByRole("button", { name: "Select changelist 11" })).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: "World state" }));
 
 		const actorSearch = screen.getByRole("textbox", { name: "Find World Log actor" });
 		await user.clear(actorSearch);
@@ -641,16 +643,18 @@ describe("ContentObservatoryRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		const user = userEvent.setup();
+		await user.click(screen.getByRole("tab", { name: "Changelists" }));
 		await user.click(
 			screen.getByRole("button", { name: /added\s*key lamp\s*new saved actor/i })
 		);
 
 		expect(await screen.findByText("3 map actor changes")).toBeDefined();
-		expect(screen.getByRole("heading", { name: "Key lamp" })).toBeDefined();
 		const evidence = screen.getByRole("complementary", {
 			name: "Selected changelist evidence"
 		});
 		expect(within(evidence).getByRole("heading", { name: "CL 10" })).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: "World state" }));
+		expect(screen.getByRole("heading", { name: "Key lamp" })).toBeDefined();
 		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
 	});
 
@@ -667,7 +671,9 @@ describe("ContentObservatoryRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		const user = userEvent.setup();
+		await user.click(screen.getByRole("tab", { name: "Changelists" }));
 		await user.click(screen.getByRole("button", { name: "Select changelist 10" }));
+		await user.click(screen.getByRole("tab", { name: "World state" }));
 		const pointMap = await screen.findByRole("application", {
 			name: "Top-down saved actor points map"
 		});
@@ -676,6 +682,7 @@ describe("ContentObservatoryRoute", () => {
 		await user.keyboard("{ArrowRight}");
 
 		expect(screen.getByText("CL 10 DIFF OVERLAY")).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: "Changelists" }));
 		expect(screen.getByRole("button", { name: "Select changelist 11" })).toBeDefined();
 	});
 
@@ -703,6 +710,11 @@ describe("ContentObservatoryRoute", () => {
 		expect(within(inspector).getByText("added in range")).toBeDefined();
 		await user.click(within(inspector).getByRole("button", { name: /CL 10.*key lamp/i }));
 
+		const evidence = await screen.findByRole("complementary", {
+			name: "Selected changelist evidence"
+		});
+		expect(within(evidence).getByRole("heading", { name: "CL 10" })).toBeDefined();
+		await user.click(screen.getByRole("tab", { name: "World state" }));
 		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
 	});
 

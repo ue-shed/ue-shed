@@ -5,33 +5,34 @@ export const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
 		boxSizing: "border-box",
-		padding: "34px 40px 56px",
-		backgroundColor: "#0b0f10",
-		backgroundImage:
-			"linear-gradient(90deg, #ffffff05 1px, transparent 1px), linear-gradient(#ffffff04 1px, transparent 1px), radial-gradient(circle at 88% 0%, #ecb85a1a, transparent 30%)",
-		backgroundSize: "40px 40px, 40px 40px, auto",
-		color: tokens.colorText
+		padding: "14px 22px 24px",
+		backgroundColor: "#100f0e",
+		backgroundImage: "none",
+		color: tokens.colorText,
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif'
 	},
 	header: {
 		display: "flex",
-		alignItems: "end",
+		alignItems: "center",
 		justifyContent: "space-between",
-		paddingBottom: 20,
-		borderBottom: "1px solid #384145"
+		paddingBottom: 8,
+		borderBottom: "1px solid #2e3432"
 	},
 	breadcrumb: {
 		color: "#9aa7a7",
 		fontSize: 9,
-		letterSpacing: ".17em",
+		letterSpacing: ".04em",
 		textTransform: "uppercase"
 	},
+	title: { margin: "2px 0 0", fontSize: 19, fontWeight: 650, letterSpacing: 0 },
+	headerSubtitle: { margin: "2px 0 0", color: "#85908c", fontSize: 10 },
 	headerSignal: {
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
 		color: "#d7b469",
 		fontSize: 9,
-		letterSpacing: ".13em"
+		letterSpacing: ".06em"
 	},
 	sectionKicker: {
 		display: "block",
@@ -43,12 +44,13 @@ export const styles = stylex.create({
 	},
 	queryPanel: {
 		display: "grid",
-		gridTemplateColumns: "1.35fr minmax(250px, 1fr)",
-		gap: 18,
-		marginTop: 20,
-		padding: 18,
-		border: "1px solid #3d4648",
-		backgroundColor: "#111719"
+		gridTemplateColumns: "minmax(280px, 1fr) auto minmax(430px, auto)",
+		alignItems: "end",
+		gap: 10,
+		marginTop: 8,
+		padding: "8px 9px",
+		border: "1px solid #323936",
+		backgroundColor: "#151412"
 	},
 	queryLead: {
 		gridRow: "span 2",
@@ -96,7 +98,7 @@ export const styles = stylex.create({
 		display: "flex",
 		alignItems: "center",
 		gap: 5,
-		marginTop: -8,
+		marginTop: 0,
 		color: "#839092",
 		fontSize: 9,
 		letterSpacing: ".1em"
@@ -120,8 +122,8 @@ export const styles = stylex.create({
 		gridColumn: "1 / -1",
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) auto",
-		gap: "12px 18px",
-		padding: "13px 14px",
+		gap: "8px 12px",
+		padding: "9px 10px",
 		border: "1px solid #405053",
 		backgroundColor: "#0d1516",
 		color: "#98a8a8",
@@ -239,7 +241,8 @@ export const styles = stylex.create({
 	rangeControls: {
 		display: "flex",
 		alignItems: "center",
-		gap: 6,
+		justifyContent: "flex-end",
+		gap: 5,
 		color: "#839092",
 		fontSize: 9,
 		letterSpacing: ".1em"
@@ -254,11 +257,11 @@ export const styles = stylex.create({
 	},
 	rangeButtonActive: { borderColor: "#73c7d0", backgroundColor: "#153034", color: "#b7edf0" },
 	runButton: {
-		marginLeft: "auto",
+		marginLeft: 8,
 		border: "1px solid #e1b85e",
 		backgroundColor: { default: "#e1b85e", ":hover": "#f1d282", ":disabled": "#5d5131" },
 		color: "#16130c",
-		padding: "9px 12px",
+		padding: "8px 11px",
 		fontWeight: 900,
 		fontSize: 9,
 		letterSpacing: ".12em",
@@ -390,6 +393,42 @@ export const styles = stylex.create({
 		fontSize: 11
 	},
 	worldLogTargetLoadingCopy: { margin: 0, color: "#86a9ac", fontSize: 10 },
+	investigationBar: {
+		display: "flex",
+		alignItems: "stretch",
+		justifyContent: "space-between",
+		gap: 12,
+		marginTop: 8,
+		border: "1px solid #323936",
+		backgroundColor: "#151412"
+	},
+	lensTabs: { display: "flex" },
+	lensTab: {
+		border: 0,
+		borderRight: "1px solid #323936",
+		backgroundColor: { default: "transparent", ":hover": "#22201d" },
+		color: "#929b97",
+		padding: "8px 12px",
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 10,
+		fontWeight: 600,
+		cursor: "pointer"
+	},
+	lensTabActive: {
+		color: "#f1ded3",
+		backgroundColor: "#2c201b",
+		boxShadow: "inset 0 -2px #e87655"
+	},
+	investigationFacts: {
+		display: "flex",
+		alignItems: "center",
+		gap: 14,
+		padding: "0 10px",
+		color: "#7f8985",
+		fontSize: 9,
+		whiteSpace: "nowrap"
+	},
+	investigationWarning: { color: "#e0a06e" },
 	actorAtlasPath: {
 		display: "block",
 		maxWidth: "min(70vw, 720px)",
@@ -400,7 +439,7 @@ export const styles = stylex.create({
 		fontSize: 9
 	},
 	actorAtlas: {
-		marginTop: 14,
+		marginTop: 8,
 		border: "1px solid #3c4749",
 		backgroundColor: "#0f1516",
 		boxShadow: "inset 3px 0 #73c7d0"
@@ -410,7 +449,7 @@ export const styles = stylex.create({
 		alignItems: "end",
 		justifyContent: "space-between",
 		gap: 18,
-		padding: "17px 18px 14px",
+		padding: "10px 12px 9px",
 		borderBottom: "1px solid #344043"
 	},
 	snapshotSummary: {
@@ -427,7 +466,7 @@ export const styles = stylex.create({
 		display: "flex",
 		gap: 5,
 		overflowX: "auto",
-		padding: "10px 14px",
+		padding: "6px 9px",
 		borderBottom: "1px solid #2e3a3c",
 		backgroundColor: "#0d1415"
 	},
@@ -475,8 +514,8 @@ export const styles = stylex.create({
 			"@media (max-width: 720px)": "1fr"
 		},
 		gridTemplateRows: {
-			default: "520px",
-			"@media (max-width: 1020px)": "520px auto",
+			default: "500px",
+			"@media (max-width: 1020px)": "500px auto",
 			"@media (max-width: 720px)": "420px auto auto"
 		},
 		minWidth: 0
@@ -749,7 +788,7 @@ export const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) minmax(280px, 340px)",
 		gap: 14,
-		marginTop: 14,
+		marginTop: 8,
 		"@media (max-width: 900px)": { gridTemplateColumns: "1fr" }
 	},
 	timeline: { border: "1px solid #3c4749", backgroundColor: "#101617" },

@@ -288,23 +288,26 @@ test(`records the ${journey} Workbench journey`, async ({
 			const targetExplorer = targetPanel.getByRole("region", {
 				name: "Fast History actor explorer"
 			});
-			const timeline = page.getByRole("region", { name: "History timeline" });
+			const investigation = page.getByRole("region", {
+				name: "World Log investigation lenses"
+			});
 			const coverage = page.getByRole("region", { name: "Fast History coverage" });
 			chapters.push(
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("World Log");
 						await expect(
-							page!.getByRole("heading", { name: "WORLD LOG" })
+							page!.getByRole("heading", { name: "World Log" })
 						).toBeVisible();
-						await page!
-							.getByRole("combobox", { name: "Saved map" })
-							.selectOption("Content/Fixture/History/L_MapHistoryWorld.umap");
+						const savedMap = page!.getByRole("combobox", { name: "Saved map" });
+						const fixtureMapPath = await savedMap
+							.locator("option")
+							.filter({ hasText: /map\s*history\s*world/i })
+							.getAttribute("value");
+						expect(fixtureMapPath).toBeTruthy();
+						await savedMap.selectOption(fixtureMapPath!);
 						await page!.getByRole("button", { name: "FAST HISTORY" }).click();
 						await expect(queryPanel).toContainText("FAST HISTORY TARGET");
-						await targetPanel
-							.getByRole("button", { name: "LOAD CURRENT ACTORS" })
-							.click();
 						const actorTargets = targetPanel.getByRole("list", {
 							name: "Current actor targets"
 						});
@@ -357,7 +360,7 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await page!.getByRole("button", { name: /READ FAST HISTORY/ }).click();
-						await expect(timeline).toContainText("map actor changes", {
+						await expect(investigation).toContainText("submitted CLs", {
 							timeout: 120_000
 						});
 						await expect(coverage).toBeVisible();
@@ -389,23 +392,37 @@ test(`records the ${journey} Workbench journey`, async ({
 			const evidence = page.getByRole("complementary", {
 				name: "Selected changelist evidence"
 			});
+			const worldStateLens = page.getByRole("tab", { name: "World state" });
+			const changelistLens = page.getByRole("tab", { name: "Changelists" });
 			chapters.push(
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("World Log");
 						await expect(
-							page!.getByRole("heading", { name: "WORLD LOG" })
+							page!.getByRole("heading", { name: "World Log" })
 						).toBeVisible();
-						await page!
-							.getByRole("combobox", { name: "Saved map" })
-							.selectOption("Content/Fixture/History/L_MapHistoryWorld.umap");
+						const savedMap = page!.getByRole("combobox", { name: "Saved map" });
+						const fixtureMapPath = await savedMap
+							.locator("option")
+							.filter({ hasText: /map\s*history\s*world/i })
+							.getAttribute("value");
+						expect(fixtureMapPath).toBeTruthy();
+						await savedMap.selectOption(fixtureMapPath!);
 						await page!.getByRole("button", { name: /READ DEEP HISTORY/ }).click();
-						await expect(timeline).toContainText("map actor changes", {
+						await expect(
+							page!.getByRole("region", { name: "World Log investigation lenses" })
+						).toContainText("submitted CLs", {
 							timeout: 120_000
 						});
+						await expect(worldStateLens).toHaveAttribute("aria-selected", "true");
+						await expect(
+							page!.getByRole("application", {
+								name: "Top-down saved actor points map"
+							})
+						).toBeVisible();
 					},
 					description:
-						"A bounded Deep History scan reconstructs the World Partition fixture from Perforce.",
+						"A bounded scan opens directly into the reconstructed saved world, with coverage and evidence counts in view.",
 					page,
 					slug: "01-world-log-scan",
 					testInfo,
@@ -464,12 +481,10 @@ test(`records the ${journey} Workbench journey`, async ({
 						});
 						await expect(selectedActor).toContainText("East Marker");
 						await expect(selectedActor).toContainText("MOVEMENT TRAIL");
-						await selectedActor.scrollIntoViewIfNeeded();
 					},
 					description:
 						"Selecting a row selects the same actor on the point map and inspector, then focuses the map on it.",
 					page,
-					resetScroll: false,
 					slug: "03-moved-actor",
 					testInfo,
 					title: "Inspect a moved actor"
@@ -479,6 +494,8 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await outliner.getByRole("button", { name: /East Marker/i }).click();
+						await changelistLens.click();
+						await expect(changelistLens).toHaveAttribute("aria-selected", "true");
 						await timeline
 							.getByRole("toolbar", { name: "Change View Filter" })
 							.getByRole("button", { name: "LABEL CHANGED" })
@@ -490,12 +507,10 @@ test(`records the ${journey} Workbench journey`, async ({
 							.last();
 						await labelChange.click();
 						await expect(evidence).toContainText("actor label changed");
-						await evidence.scrollIntoViewIfNeeded();
 					},
 					description:
-						"The selected label change keeps its semantic transition and package revision together.",
+						"The changelist lens keeps the selected actor, semantic transition, and package revision together.",
 					page,
-					resetScroll: false,
 					slug: "04-label-change",
 					testInfo,
 					title: "Inspect a label change"
@@ -504,22 +519,25 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
+						await worldStateLens.click();
 						await outliner.getByRole("button", { name: /South Marker/i }).click();
-						await page!.getByRole("button", { name: "Show state after CL 4" }).click();
+						const selectedActor = page!.getByRole("complementary", {
+							name: "Selected saved actor"
+						});
+						await selectedActor
+							.getByRole("button", { name: /new saved actor/i })
+							.click();
+						await worldStateLens.click();
+						await expect(selectedActor).toContainText("AT FRAME");
 						await expect(
-							page!.getByRole("heading", { name: "AFTER CL 4 point map" })
+							page!.getByRole("heading", { name: /AFTER CL \d+ point map/ })
 						).toBeVisible();
-						await expect(
-							page!.getByRole("complementary", { name: "Selected saved actor" })
-						).toContainText("AT FRAME");
 						await page!
 							.getByRole("navigation", { name: "Saved state scrubber" })
 							.getByRole("button", { name: /Show state after CL/ })
 							.last()
 							.click();
-						await expect(
-							page!.getByRole("complementary", { name: "Selected saved actor" })
-						).toContainText("NOT PRESENT");
+						await expect(selectedActor).toContainText("NOT PRESENT");
 					},
 					description:
 						"The scrubber shows an actor before its removal and confirms that it is absent later.",
@@ -532,17 +550,16 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
+						await changelistLens.click();
 						await timeline
 							.getByRole("button", { name: /Select changelist/ })
 							.last()
 							.click();
 						await expect(evidence).toContainText("UNCLASSIFIED PACKAGE EVIDENCE");
-						await evidence.scrollIntoViewIfNeeded();
 					},
 					description:
 						"The final changelist retains package edits that cannot be safely explained as actor changes.",
 					page,
-					resetScroll: false,
 					slug: "06-unclassified-evidence",
 					testInfo,
 					title: "Keep unclassified evidence visible"

@@ -101,14 +101,6 @@ export function WorldLogQueryForm(props: {
 
 	return (
 		<section aria-label="Map history query" {...stylex.props(styles.queryPanel)}>
-			<div {...stylex.props(styles.queryLead)}>
-				<span {...stylex.props(styles.sectionKicker)}>TARGET / BOUNDED RANGE</span>
-				<strong>Read a saved world, not a source-control browser.</strong>
-				<p>
-					Every result is one map scope reconstructed at submitted changelists.
-					Unexplained package edits remain visible below.
-				</p>
-			</div>
 			<SavedMapPicker
 				maps={props.maps}
 				mapPath={props.mapPath}
@@ -146,14 +138,8 @@ export function WorldLogQueryForm(props: {
 				<section aria-label="Fast History target" {...stylex.props(styles.fastTargetPanel)}>
 					<div>
 						<span {...stylex.props(styles.sectionKicker)}>FAST HISTORY TARGET</span>
-						<strong>
-							Choose one current actor or actor class before reading its history.
-						</strong>
-						<p>
-							The current actor list loads as soon as a map is selected. It reads
-							local saved files and does not scan Perforce until you press READ FAST
-							HISTORY.
-						</p>
+						<strong>Target one current actor or class.</strong>
+						<p>The list is local. Perforce is read only when you run Fast History.</p>
 					</div>
 					<button
 						type="button"
@@ -168,8 +154,8 @@ export function WorldLogQueryForm(props: {
 						{props.targetLoading
 							? "LOADING ACTORS…"
 							: props.targetActors.length > 0
-								? "REFRESH CURRENT ACTORS"
-								: "LOAD CURRENT ACTORS"}
+								? "REFRESH ACTORS"
+								: "LOAD ACTORS"}
 					</button>
 					<div
 						role="group"
@@ -207,6 +193,7 @@ export function WorldLogQueryForm(props: {
 							ariaLabel="Fast History actor explorer"
 							classMode={props.fastTargetKind === "actor_class" ? "target" : "filter"}
 							classOptions={classTargets()}
+							density="compact"
 							disabled={props.disabled || props.targetLoading}
 							filters={targetFilters()}
 							itemListLabel={

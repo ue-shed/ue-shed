@@ -257,14 +257,23 @@ pub fn project_id_from_root(project_root: &str) -> ProjectId {
 }
 
 pub fn project_relative_path(project_root: &str, absolute_path: &str) -> String {
-    let root = project_id_from_root(project_root).as_str().to_owned();
+    let mut root = project_root.replace('\\', "/");
+    while root.len() > 3 && root.ends_with('/') {
+        root.pop();
+    }
     let path = absolute_path.replace('\\', "/");
-    let path = if cfg!(windows) {
-        path.to_ascii_lowercase()
-    } else {
-        path
-    };
-    path.strip_prefix(&root)
+    let prefix = path.get(..root.len());
+    let root_matches = prefix.is_some_and(|prefix| {
+        if cfg!(windows) {
+            prefix.eq_ignore_ascii_case(&root)
+        } else {
+            prefix == root
+        }
+    });
+    let suffix = root_matches
+        .then(|| &path[root.len()..])
+        .filter(|suffix| root.ends_with('/') || suffix.starts_with('/'));
+    suffix
         .map(|suffix| suffix.trim_start_matches('/').to_owned())
         .filter(|suffix| !suffix.is_empty())
         .unwrap_or_else(|| absolute_path.replace('\\', "/"))
@@ -318,5 +327,37 @@ pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {
         QueryItem::Map { map_path, .. } => map_path.as_str(),
         QueryItem::Header { package_path, .. } => package_path.as_str(),
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::project_relative_path;
+
+    #[test]
+    fn project_relative_path_preserves_asset_path_casing() {
+        let root = if cfg!(windows) {
+            "C:/Project"
+        } else {
+            "/Project"
+        };
+        let absolute = format!("{root}/Content/Fixture/L_SavedWorld.umap");
+
+        assert_eq!(
+            project_relative_path(root, &absolute),
+            "Content/Fixture/L_SavedWorld.umap"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_relative_path_matches_windows_root_without_lowercasing_the_suffix() {
+        assert_eq!(
+            project_relative_path(
+                "c:\\users\\developer\\project",
+                "C:\\Users\\Developer\\Project\\Content\\Maps\\L_World.umap"
+            ),
+            "Content/Maps/L_World.umap"
+        );
     }
 }

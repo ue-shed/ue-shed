@@ -40,6 +40,7 @@ export function ActorExplorer(props: {
 	readonly classMode?: "filter" | "target";
 	readonly classSelection?: "multiple" | "single";
 	readonly classOptions?: ReadonlyArray<ActorExplorerClassOption>;
+	readonly density?: "comfortable" | "compact";
 	readonly disabled?: boolean;
 	readonly emptyLabel?: string;
 	readonly extraControls?: JSX.Element;
@@ -59,6 +60,7 @@ export function ActorExplorer(props: {
 	readonly title?: string;
 }) {
 	const rowRefs = new Map<string, HTMLButtonElement>();
+	let listRef: HTMLUListElement | undefined;
 	const [classMenuOpen, setClassMenuOpen] = createSignal(false);
 	const [collapsedClasses, setCollapsedClasses] = createSignal<ReadonlySet<string>>(new Set());
 	const classOptions = createMemo(() => {
@@ -126,7 +128,12 @@ export function ActorExplorer(props: {
 		const key = props.selectedKey;
 		if (key === undefined) return;
 		const row = rowRefs.get(key);
-		if (typeof row?.scrollIntoView === "function") row.scrollIntoView({ block: "nearest" });
+		if (row === undefined || listRef === undefined) return;
+		const rowBounds = row.getBoundingClientRect();
+		const listBounds = listRef.getBoundingClientRect();
+		if (rowBounds.top < listBounds.top) listRef.scrollTop -= listBounds.top - rowBounds.top;
+		else if (rowBounds.bottom > listBounds.bottom)
+			listRef.scrollTop += rowBounds.bottom - listBounds.bottom;
 	});
 	createEffect(() => {
 		const selectedKey = props.selectedKey;
@@ -186,9 +193,17 @@ export function ActorExplorer(props: {
 		<section
 			aria-label={props.ariaLabel ?? "Actor explorer"}
 			role={props.role}
-			{...stylex.props(styles.explorer)}
+			{...stylex.props(
+				styles.explorer,
+				props.density === "compact" && styles.explorerCompact
+			)}
 		>
-			<div {...stylex.props(styles.header)}>
+			<div
+				{...stylex.props(
+					styles.header,
+					props.density === "compact" && styles.headerCompact
+				)}
+			>
 				<div>
 					<span {...stylex.props(styles.kicker)}>{props.label ?? "ACTOR EXPLORER"}</span>
 					<Show when={props.title}>
@@ -199,7 +214,12 @@ export function ActorExplorer(props: {
 					{visibleItems().length} / {props.items.length}
 				</span>
 			</div>
-			<label {...stylex.props(styles.search)}>
+			<label
+				{...stylex.props(
+					styles.search,
+					props.density === "compact" && styles.searchCompact
+				)}
+			>
 				<span>FIND ACTOR OR CLASS</span>
 				<input
 					aria-label={props.queryAriaLabel ?? "Find actor or class"}
@@ -211,7 +231,12 @@ export function ActorExplorer(props: {
 				/>
 			</label>
 			<Show when={classOptions().length > 0}>
-				<div {...stylex.props(styles.classToolbar)}>
+				<div
+					{...stylex.props(
+						styles.classToolbar,
+						props.density === "compact" && styles.classToolbarCompact
+					)}
+				>
 					<span {...stylex.props(styles.classToolbarLabel)}>CLASS FILTER</span>
 					<button
 						type="button"
@@ -233,7 +258,10 @@ export function ActorExplorer(props: {
 					<div
 						id="actor-class-filters"
 						aria-label="Actor class filters"
-						{...stylex.props(styles.classFilters)}
+						{...stylex.props(
+							styles.classFilters,
+							props.density === "compact" && styles.classFiltersCompact
+						)}
 					>
 						<Show
 							when={props.classMode !== "target" && props.classSelection !== "single"}
@@ -286,7 +314,13 @@ export function ActorExplorer(props: {
 				</Show>
 			</Show>
 			<Show when={props.extraControls}>{props.extraControls}</Show>
-			<ul aria-label={props.itemListLabel ?? "Actors"} {...stylex.props(styles.list)}>
+			<ul
+				ref={(element) => {
+					listRef = element;
+				}}
+				aria-label={props.itemListLabel ?? "Actors"}
+				{...stylex.props(styles.list)}
+			>
 				<For each={actorGroups()}>
 					{(group) => (
 						<li {...stylex.props(styles.classGroup)}>
@@ -294,7 +328,10 @@ export function ActorExplorer(props: {
 								type="button"
 								aria-expanded={!collapsedClasses().has(group.classPath)}
 								onClick={() => toggleClassGroup(group.classPath)}
-								{...stylex.props(styles.classGroupHeader)}
+								{...stylex.props(
+									styles.classGroupHeader,
+									props.density === "compact" && styles.classGroupHeaderCompact
+								)}
 							>
 								<span {...stylex.props(styles.classGroupDisclosure)}>
 									{collapsedClasses().has(group.classPath) ? "▸" : "▾"}
@@ -323,6 +360,8 @@ export function ActorExplorer(props: {
 													}}
 													{...stylex.props(
 														styles.row,
+														props.density === "compact" &&
+															styles.rowCompact,
 														props.selectedKey === item.key &&
 															styles.rowSelected
 													)}
@@ -386,6 +425,7 @@ const styles = stylex.create({
 		backgroundColor: "#0d1415",
 		color: "#dce6e4"
 	},
+	explorerCompact: { maxHeight: 330 },
 	header: {
 		display: "flex",
 		alignItems: "baseline",
@@ -394,6 +434,7 @@ const styles = stylex.create({
 		padding: "12px 13px 9px",
 		borderBottom: "1px solid #293638"
 	},
+	headerCompact: { padding: "8px 10px 6px" },
 	kicker: {
 		display: "block",
 		color: "#d7b469",
@@ -412,6 +453,7 @@ const styles = stylex.create({
 		fontWeight: 800,
 		letterSpacing: ".09em"
 	},
+	searchCompact: { padding: "6px 10px 5px" },
 	searchInput: {
 		width: "100%",
 		boxSizing: "border-box",
@@ -433,6 +475,7 @@ const styles = stylex.create({
 		padding: "0 13px 9px",
 		borderBottom: "1px solid #293638"
 	},
+	classFiltersCompact: { maxHeight: 92, padding: "0 10px 6px" },
 	classToolbar: {
 		display: "flex",
 		alignItems: "center",
@@ -445,6 +488,7 @@ const styles = stylex.create({
 		fontWeight: 800,
 		letterSpacing: ".1em"
 	},
+	classToolbarCompact: { padding: "5px 10px" },
 	classToolbarLabel: { whiteSpace: "nowrap" },
 	classSummary: {
 		minWidth: 0,
@@ -507,6 +551,7 @@ const styles = stylex.create({
 		letterSpacing: ".06em",
 		cursor: "pointer"
 	},
+	classGroupHeaderCompact: { padding: "4px 8px" },
 	classGroupDisclosure: { color: "#d7b469", fontSize: 10 },
 	classGroupLabel: {
 		minWidth: 0,
@@ -545,6 +590,7 @@ const styles = stylex.create({
 		textAlign: "left",
 		cursor: "pointer"
 	},
+	rowCompact: { padding: "4px 8px 4px 18px" },
 	rowSelected: { backgroundColor: "#26383b", color: "#f2fbf7", boxShadow: "inset 2px 0 #e1b85e" },
 	rowGlyph: { flex: "0 0 auto", color: "#66888b", fontSize: 10 },
 	rowCopy: { display: "grid", gap: 2, minWidth: 0, flex: "1 1 auto" },

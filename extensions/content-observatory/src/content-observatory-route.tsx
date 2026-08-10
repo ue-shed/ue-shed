@@ -43,6 +43,7 @@ import { WorldLogTimeline, type WorldLogChangeFilter } from "./world-log-timelin
 
 type ViewState = { readonly status: "loading" } | ContentObservatoryState;
 type StateUpdateSource = "mutation" | "poll";
+type WorldLogLens = "world" | "changelists";
 
 const decodeHistoryRequest = Schema.decodeUnknownEffect(ContentObservatoryHistoryRequest);
 const defaultWorldLogScanLimits: WorldLogScanLimits = {
@@ -110,6 +111,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 	const [targetError, setTargetError] = createSignal<string | undefined>(undefined);
 	const [rangeDays, setRangeDays] = createSignal(7);
 	const [filter, setFilter] = createSignal<WorldLogChangeFilter>("all");
+	const [lens, setLens] = createSignal<WorldLogLens>("world");
 	const [limits, setLimits] = createSignal<WorldLogScanLimits>(defaultWorldLogScanLimits);
 	const [frameRevision, setFrameRevision] = createSignal<number | undefined>(undefined);
 	const [selection, setSelection] = createSignal<WorldLogSelection>(noWorldLogSelection);
@@ -149,6 +151,17 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 					history: complete.history,
 					revisionIndex: frameRevision()
 				});
+	});
+	const historyCounts = createMemo(() => {
+		const complete = completeState();
+		if (complete === undefined) return undefined;
+		return complete.history.revisions.reduce(
+			(counts, revision) => ({
+				semantic: counts.semantic + revision.changes.length,
+				unclassified: counts.unclassified + revision.unclassifiedPackageChanges.length
+			}),
+			{ semantic: 0, unclassified: 0 }
+		);
 	});
 	const fastCoverageNotice = createMemo(() => {
 		const complete = completeState();
@@ -229,6 +242,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 			);
 		}
 		if (next.status === "complete") {
+			setLens("world");
 			setSelection(noWorldLogSelection);
 			const completedRangeDays = rangeLengthDays(next.history.query.range);
 			if (completedRangeDays !== undefined) setRangeDays(completedRangeDays);
@@ -243,6 +257,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		if (event.type === "frame_selected") setFrameRevision(event.revisionIndex);
 		if (event.type === "actor_event_selected" || event.type === "changelist_selected") {
 			setFrameRevision(event.revision);
+			setLens("changelists");
 		}
 		setSelection((current) => reduceWorldLogEvent(current, event));
 	};
@@ -360,11 +375,14 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
 						Content Observatory / Saved actor history
 					</nav>
-					<h1>WORLD LOG</h1>
+					<h1 {...stylex.props(styles.title)}>World Log</h1>
+					<p {...stylex.props(styles.headerSubtitle)}>
+						Saved actor history reconstructed at submitted changelists.
+					</p>
 				</div>
 				<div {...stylex.props(styles.headerSignal)}>
 					<span />
-					MAP-SCOPED / PERFORCE
+					PERFORCE · MAP SCOPED
 				</div>
 			</header>
 
@@ -430,14 +448,109 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 									</p>
 								</section>
 							</Show>
-							<Show when={sceneView()}>
+							<Show when={completeState()}>
+								{(complete) => (
+									<section
+										aria-label="World Log investigation lenses"
+										{...stylex.props(styles.investigationBar)}
+									>
+										<div
+											role="tablist"
+											aria-label="Investigation lens"
+											{...stylex.props(styles.lensTabs)}
+										>
+											<button
+												type="button"
+												role="tab"
+												id="world-log-world-tab"
+												aria-controls="world-log-world-panel"
+												aria-selected={lens() === "world"}
+												onClick={() => setLens("world")}
+												{...stylex.props(
+													styles.lensTab,
+													lens() === "world" && styles.lensTabActive
+												)}
+											>
+												World state
+											</button>
+											<button
+												type="button"
+												role="tab"
+												id="world-log-changelists-tab"
+												aria-controls="world-log-changelists-panel"
+												aria-selected={lens() === "changelists"}
+												onClick={() => setLens("changelists")}
+												{...stylex.props(
+													styles.lensTab,
+													lens() === "changelists" && styles.lensTabActive
+												)}
+											>
+												Changelists
+											</button>
+										</div>
+										<div {...stylex.props(styles.investigationFacts)}>
+											<span>
+												<b>{complete().history.revisions.length}</b>{" "}
+												submitted CLs
+											</span>
+											<span>
+												<b>{historyCounts()?.semantic ?? 0}</b> actor
+												changes
+											</span>
+											<span
+												{...stylex.props(
+													(historyCounts()?.unclassified ?? 0) > 0 &&
+														styles.investigationWarning
+												)}
+											>
+												<b>{historyCounts()?.unclassified ?? 0}</b>{" "}
+												unclassified
+											</span>
+											<span>{complete().history.completeness} coverage</span>
+										</div>
+									</section>
+								)}
+							</Show>
+							<Show when={fastCoverageNotice()}>
+								{(notice) => (
+									<section
+										aria-label="Fast History coverage"
+										{...stylex.props(styles.fastCoverageNotice)}
+									>
+										<span {...stylex.props(styles.sectionKicker)}>
+											FAST HISTORY / TARGETED
+										</span>
+										<strong>{notice().headline}</strong>
+										<p>{notice().detail}</p>
+									</section>
+								)}
+							</Show>
+							<Show when={resultIsStale()}>
+								<section
+									aria-label="Stale World Log result"
+									{...stylex.props(styles.staleResult)}
+								>
+									<span {...stylex.props(styles.sectionKicker)}>
+										QUERY CHANGED
+									</span>
+									This retained result describes its completed map and time range.
+									Read history again to update it for the current query.
+								</section>
+							</Show>
+							<Show when={lens() === "world" ? sceneView() : undefined}>
 								{(view) => (
-									<WorldLogScene
-										onEvent={dispatchWorldLogEvent}
-										selectedActorKey={selectedActorKey()}
-										selectedChangelist={selectedChangelist()}
-										view={view()}
-									/>
+									<div
+										id="world-log-world-panel"
+										role="tabpanel"
+										aria-labelledby="world-log-world-tab"
+									>
+										<WorldLogScene
+											onEvent={dispatchWorldLogEvent}
+											selectedActorKey={selectedActorKey()}
+											selectedChangelist={selectedChangelist()}
+											view={view()}
+										/>
+									</div>
 								)}
 							</Show>
 							<Show when={runningState()}>
@@ -511,55 +624,34 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 										}
 									>
 										<>
-											<Show when={fastCoverageNotice()}>
-												{(notice) => (
-													<section
-														aria-label="Fast History coverage"
-														{...stylex.props(styles.fastCoverageNotice)}
-													>
-														<span
-															{...stylex.props(styles.sectionKicker)}
-														>
-															FAST HISTORY / TARGETED
-														</span>
-														<strong>{notice().headline}</strong>
-														<p>{notice().detail}</p>
-													</section>
-												)}
-											</Show>
-											<Show when={resultIsStale()}>
-												<section
-													aria-label="Stale World Log result"
-													{...stylex.props(styles.staleResult)}
+											<Show when={lens() === "changelists"}>
+												<div
+													id="world-log-changelists-panel"
+													role="tabpanel"
+													aria-labelledby="world-log-changelists-tab"
 												>
-													<span {...stylex.props(styles.sectionKicker)}>
-														QUERY CHANGED
-													</span>
-													This retained result describes its completed map
-													and time range. Read history again to update it
-													for the current query.
-												</section>
+													<WorldLogTimeline
+														actorKey={selectedActorKey()}
+														filter={filter()}
+														history={complete().history}
+														onSelect={(input) =>
+															dispatchWorldLogEvent({
+																...input,
+																type: "actor_event_selected"
+															})
+														}
+														onSelectChangelist={(revision) =>
+															dispatchWorldLogEvent({
+																revision,
+																type: "changelist_selected"
+															})
+														}
+														selectedChangelist={selectedChangelist()}
+														selected={selectedChange()}
+														setFilter={setFilter}
+													/>
+												</div>
 											</Show>
-											<WorldLogTimeline
-												actorKey={selectedActorKey()}
-												filter={filter()}
-												history={complete().history}
-												onSelect={(input) =>
-													dispatchWorldLogEvent({
-														...input,
-														type: "actor_event_selected"
-													})
-												}
-												onSelectChangelist={(revision) =>
-													dispatchWorldLogEvent({
-														revision,
-														type: "changelist_selected"
-													})
-												}
-												selectedChangelist={selectedChangelist()}
-												selected={selectedChange()}
-												setFilter={setFilter}
-											/>
 										</>
 									</Show>
 								)}

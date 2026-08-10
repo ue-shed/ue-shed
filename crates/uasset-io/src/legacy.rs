@@ -10,6 +10,7 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
+use uasset_inspection::generic::write_inspection_json;
 
 use crate::direct_executor;
 use crate::protocol::{
@@ -446,23 +447,41 @@ fn inspect(options: &InspectOptions) -> u8 {
             return emit_failure(options.format, &input_name, "io", error.to_string(), true);
         }
     };
+    if options.format == OutputFormat::Json {
+        return inspect_json(&input_name, &bytes);
+    }
     let (inspection, partial) = match direct_executor::inspect_generic_bytes(&input_name, &bytes) {
         Ok(output) => output,
         Err(error) => return emit_direct_failure(options.format, &input_name, error),
     };
-    let result = if options.format == OutputFormat::Json {
-        let value = match serde_json::to_value(&inspection) {
-            Ok(value) => value,
-            Err(error) => {
-                eprintln!("uasset: failed to serialize inspection output: {error}");
-                return EXIT_INTERNAL;
-            }
-        };
-        write_json_value_line(&value)
-    } else {
-        write_stdout(render_inspection_text(&inspection).as_bytes())
-    };
+    let result = write_stdout(render_inspection_text(&inspection).as_bytes());
     if result == EXIT_SUCCESS && partial {
+        EXIT_PARTIAL
+    } else {
+        result
+    }
+}
+
+fn inspect_json(path: &str, bytes: &[u8]) -> u8 {
+    const MAX_INITIAL_CAPACITY: usize = 32 * 1024 * 1024;
+
+    let capacity = bytes.len().saturating_mul(2).min(MAX_INITIAL_CAPACITY);
+    let mut output = Vec::with_capacity(capacity);
+    let status = match write_inspection_json(path, bytes, &mut output) {
+        Ok(status) => status,
+        Err(error) => {
+            return emit_failure(
+                OutputFormat::Json,
+                path,
+                error.kind(),
+                error.message().to_owned(),
+                false,
+            );
+        }
+    };
+    output.push(b'\n');
+    let result = write_stdout(&output);
+    if result == EXIT_SUCCESS && status.is_partial() {
         EXIT_PARTIAL
     } else {
         result

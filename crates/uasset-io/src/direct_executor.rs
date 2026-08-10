@@ -11,6 +11,7 @@ mod catalog_conformance;
 mod catalog_duckdb;
 #[cfg(test)]
 mod catalog_memory;
+mod inspection;
 mod project_index;
 mod project_index_io;
 mod project_io;
@@ -149,17 +150,7 @@ pub(crate) fn inspect_bytes_with_cancellation(
     bytes: &[u8],
     cancellation: &CancellationToken,
 ) -> Result<(SavedAssetInspection, bool), Failure> {
-    let (output, partial) = inspect_generic_bytes_with_cancellation(path, bytes, cancellation)?;
-    checkpoint(cancellation, "inspection")?;
-    let inspection =
-        crate::protocol_adapter::adapt_inspection(output).map_err(|message| Failure {
-            code: "contract".to_owned(),
-            message,
-            retry_safe: false,
-            ..Default::default()
-        })?;
-    checkpoint(cancellation, "inspection")?;
-    Ok((inspection, partial))
+    inspection::inspect_bytes(path, bytes, cancellation)
 }
 
 pub(crate) fn inspect_generic_bytes(

@@ -19,6 +19,7 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
+import { createInterface } from "node:readline";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchmarkScript = fileURLToPath(import.meta.url);
@@ -34,6 +35,13 @@ const benchmarkAuthoringAsset = join(
 	"Fixture",
 	"Authoring",
 	"DT_Scalars.uasset"
+);
+const benchmarkLargeTable = join(
+	fixtureRoot,
+	"Content",
+	"Fixture",
+	"Authoring",
+	"DT_LargeScalars.uasset"
 );
 const benchmarkTextureRules = join(fixtureRoot, "FixtureSource", "Audits", "texture-rules.json");
 const releaseExecutable = join(
@@ -151,7 +159,8 @@ function invoke(command, arguments_, options) {
 		encoding: "utf8",
 		env: options.environment ?? process.env,
 		maxBuffer: maxOutputBytes,
-		stdio: ["ignore", "pipe", "pipe"],
+		...(options.input === undefined ? {} : { input: options.input }),
+		stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
 		windowsHide: true
 	});
 	const elapsedMs = performance.now() - started;
@@ -160,6 +169,123 @@ function invoke(command, arguments_, options) {
 	}
 	if (options.validate !== undefined) options.validate(result.stdout);
 	return { elapsedMs, stdout: result.stdout };
+}
+
+function protocolInspectionRequest(assetPath, requestId) {
+	return `${JSON.stringify({
+		contract: { name: "uasset-io", version: { major: 1, minor: 0 } },
+		limits: { concurrency: 1, maximumOutputBytes: 1024 * 1024 * 1024 },
+		operation: { assetPath, kind: "inspect" },
+		requestId
+	})}\n`;
+}
+
+function validateProtocolInspectionFrames(frames) {
+	const decoded = frames.map((frame) => parseJsonOutput("Native inspection protocol", frame));
+	if (
+		decoded[0]?.kind !== "accepted" ||
+		!decoded.some((event) => event?.kind === "result" && event?.result?.kind === "inspect") ||
+		decoded.at(-1)?.kind !== "completed"
+	) {
+		throw new Error("Native inspection protocol returned an unexpected event stream.");
+	}
+}
+
+function validateProtocolInspection(output) {
+	validateProtocolInspectionFrames(output.trim().split(/\r?\n/));
+}
+
+function observeProtocolInspection(output) {
+	return { outputBytes: Buffer.byteLength(output, "utf8") };
+}
+
+async function measureProtocolSessionScenario(options) {
+	const child = spawn(releaseExecutable, ["protocol-session"], {
+		stdio: ["pipe", "pipe", "pipe"],
+		windowsHide: true
+	});
+	if (child.stdin === null || child.stdout === null || child.stderr === null) {
+		child.kill();
+		throw new Error("Native protocol session did not expose pipes.");
+	}
+	child.stdin.setDefaultEncoding("utf8");
+	child.stdout.setEncoding("utf8");
+	child.stderr.setEncoding("utf8");
+	let stderr = "";
+	child.stderr.on("data", (chunk) => {
+		if (stderr.length < maxOutputBytes)
+			stderr += chunk.slice(0, maxOutputBytes - stderr.length);
+	});
+	let processError;
+	const close = new Promise((resolveClose) => {
+		child.once("error", (error) => {
+			processError = error;
+		});
+		child.once("close", (code, signal) => resolveClose({ code, signal }));
+	});
+	const lines = createInterface({ crlfDelay: Infinity, input: child.stdout });
+	const iterator = lines[Symbol.asyncIterator]();
+	const invokeSession = async (index) => {
+		const input = protocolInspectionRequest(options.assetPath, `benchmark-session-${index}`);
+		const started = performance.now();
+		await new Promise((resolveWrite, rejectWrite) => {
+			child.stdin.write(input, (error) =>
+				error === null || error === undefined ? resolveWrite() : rejectWrite(error)
+			);
+		});
+		const frames = [];
+		while (true) {
+			const next = await iterator.next();
+			if (next.done) throw new Error(stderr.trim() || "Native protocol session ended early.");
+			frames.push(next.value);
+			if (
+				next.value.includes('"kind":"completed"') ||
+				next.value.includes('"kind":"failed"') ||
+				next.value.includes('"kind":"rejected"')
+			) {
+				break;
+			}
+		}
+		const elapsedMs = performance.now() - started;
+		validateProtocolInspectionFrames(frames);
+		return {
+			elapsedMs,
+			outputBytes: frames.reduce(
+				(total, frame) => total + Buffer.byteLength(frame, "utf8") + 1,
+				0
+			)
+		};
+	};
+	try {
+		for (let index = 0; index < options.warmups; index += 1) await invokeSession(index);
+		const samples = [];
+		let outputBytes = 0;
+		for (let index = 0; index < options.runs; index += 1) {
+			const sample = await invokeSession(options.warmups + index);
+			samples.push(sample.elapsedMs);
+			outputBytes = sample.outputBytes;
+		}
+		return {
+			command: [releaseExecutable, "protocol-session"],
+			distribution: distribution(samples),
+			id: options.id,
+			notes: options.notes,
+			observed: { outputBytes },
+			runs: options.runs,
+			warmups: options.warmups,
+			workload: relative(repositoryRoot, options.assetPath)
+		};
+	} finally {
+		child.stdin.end();
+		const closed = await close;
+		if (processError !== undefined) throw processError;
+		if (closed.code !== 0) {
+			throw new Error(
+				stderr.trim() ||
+					`Native protocol session exited ${closed.code ?? closed.signal ?? "unknown"}.`
+			);
+		}
+	}
 }
 
 function processWorkingSetBytes(pid) {
@@ -437,6 +563,14 @@ function validateAssetScanReport(output) {
 	}
 }
 
+function observeAssetScanReport(output) {
+	const decoded = parseJsonOutput("TypeScript assets scan", output);
+	return {
+		emittedAssets: decoded.summary.emittedAssets,
+		scannedAssets: decoded.summary.scannedAssets
+	};
+}
+
 function validateEnhancedInputReport(output) {
 	const decoded = parseJsonOutput("TypeScript input projection", output);
 	if (
@@ -626,7 +760,7 @@ function writeResult(path, result) {
 	writeFileSync(path, `${JSON.stringify(result, null, "\t")}\n`, "utf8");
 }
 
-function main() {
+async function main() {
 	const parsed = parseArguments(process.argv.slice(2));
 	if (parsed.help) {
 		process.stdout.write(usage);
@@ -666,6 +800,35 @@ function main() {
 			workload: relative(repositoryRoot, benchmarkAsset)
 		})
 	);
+	for (const [label, assetPath] of [
+		["table", benchmarkLargeTable],
+		["level", benchmarkLevel]
+	]) {
+		const input = protocolInspectionRequest(assetPath, `benchmark-fresh-${label}`);
+		scenarios.push(
+			measureScenario({
+				arguments: ["protocol"],
+				command: releaseExecutable,
+				id: `native.protocol.inspect.${label}.fresh`,
+				input,
+				notes: "Fresh typed protocol process; validation runs outside the timed interval.",
+				observe: observeProtocolInspection,
+				runs: options.nativeRuns,
+				validate: validateProtocolInspection,
+				warmups: options.warmups,
+				workload: relative(repositoryRoot, assetPath)
+			})
+		);
+		scenarios.push(
+			await measureProtocolSessionScenario({
+				assetPath,
+				id: `native.protocol.inspect.${label}.session`,
+				notes: "Warm typed protocol session; process startup and validation are excluded.",
+				runs: options.nativeRuns,
+				warmups: options.warmups
+			})
+		);
+	}
 	for (const concurrency of [1, 4]) {
 		scenarios.push(
 			measureScenario({
@@ -947,6 +1110,7 @@ function main() {
 			id: "typescript.assets.scan",
 			memory: true,
 			notes: "Source TypeScript assets scan with the full report and release reader.",
+			observe: observeAssetScanReport,
 			runs: options.nativeRuns,
 			validate: validateAssetScanReport,
 			warmups: options.warmups,
@@ -1072,12 +1236,10 @@ if (process.argv[2] === "--memory-helper") {
 		process.exitCode = 1;
 	}
 } else {
-	try {
-		main();
-	} catch (error) {
+	main().catch((error) => {
 		process.stderr.write(
 			`UAsset benchmark failed: ${error instanceof Error ? error.message : String(error)}\n`
 		);
 		process.exitCode = 1;
-	}
+	});
 }

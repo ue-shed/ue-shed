@@ -25,6 +25,21 @@ Measure the long-lived Node WASM binding against a fresh native process:
 pnpm benchmark:uasset:wasm
 ```
 
+Measure parser and inspection work in process, with file reads excluded:
+
+```powershell
+cargo run --locked --release -p uasset-parser --example benchmark_parser -- `
+  <package> [runs] [warmups]
+cargo run --locked --release -p uasset-inspection --example benchmark_inspection -- `
+  <package> [runs] [warmups]
+```
+
+`benchmark_parser` reports header parsing, parse-once export decoding, and their combined cost.
+`benchmark_inspection` reports typed inspection, direct decode-plus-JSON, and serialization of one
+prebuilt typed result to both a string and a sink. Both examples read the package before warmups and
+retain every timed sample, so they expose parser, projection, and output-buffer changes that a
+fresh-process CLI lane can hide.
+
 Measure Workbench's shared project-index path against a specific project:
 
 ```powershell
@@ -132,6 +147,12 @@ The harness reports:
   source-checkout Cargo launcher.
 - `native.inspect.level`: release `uasset inspect` over `L_CameraLoad.umap`, the largest package in
   the fixture at 16,525 exports. Paired with `unreal.commandlet.level` below.
+- `native.protocol.inspect.{table,level}.fresh`: one fresh typed `uasset protocol` inspection over
+  `DT_LargeScalars` or `L_CameraLoad`. The timer includes native startup, read, projection,
+  serialization, and pipe transfer; structural validation runs after the timer.
+- `native.protocol.inspect.{table,level}.session`: the same typed request through one warmed
+  `uasset protocol-session`. It isolates per-request work after process startup while retaining the
+  complete protocol output and validation.
 - `typescript.input.project`: the same application scanning every package in the fixture project.
   The result records fixture package count and bytes.
 - `unreal.commandlet.verify`: an optional fresh `UnrealEditor-Cmd` process running the fixture's
@@ -269,5 +290,137 @@ over real fixtures and malformed input. `pnpm benchmark:uasset:wasm` then measur
 boundary without pretending its fresh-process native comparison is decode-only. A future browser
 scenario or parse-once decode-many Rust export should be added as a separately labeled lane.
 
+### Package-path and projection optimization sample (2026-08-10)
+
+A same-machine before/after experiment targeted work that scales with import, export, and projected
+property counts. Package parsing now resolves each import and export path once, retaining cycle and
+outer-depth validation; success-path table reads no longer allocate formatted error breadcrumbs.
+Inspection consumes decoded values instead of cloning their nested strings and collections, borrows
+already-resolved object paths, and serializes typed output directly rather than constructing an
+intermediate `serde_json::Value` tree.
+
+The in-process samples used the 10,008,192-byte `L_CameraLoad` level with 16,527 decoded exports and
+the 2,402,007-byte `DT_LargeScalars` table. File reads were excluded. Results are p50 on an AMD Ryzen
+9 7950X, Windows 11, and Rust 1.94.0:
+
+| In-process lane                    |    Before |     After | Improvement |
+| ---------------------------------- | --------: | --------: | ----------: |
+| Level `Package::parse`             | 44.270 ms |  7.444 ms |       83.2% |
+| Level parse plus all-export decode | 74.212 ms | 37.214 ms |       49.9% |
+| Level parse-once all-export decode | 29.981 ms | 28.705 ms |        4.3% |
+| Large-table typed inspection       | 61.705 ms | 20.886 ms |       66.2% |
+| Large-table inspection plus JSON   | 80.719 ms | 27.438 ms |       66.0% |
+
+The process-level harness used 12 timed runs and 3 warmups over the same 65-package, 12,700,622-byte
+fixture. Builds were excluded. Its ignored evidence files are
+`test-results/uasset-parser-perf-baseline.json` and
+`test-results/uasset-parser-perf-final.json`:
+
+| Process-level lane        |     Before |      After | Improvement |
+| ------------------------- | ---------: | ---------: | ----------: |
+| Single-worker header scan | 124.967 ms |  68.252 ms |       45.4% |
+| Four-worker header scan   | 121.658 ms |  65.161 ms |       46.4% |
+| Text projection scan      |  83.946 ms |  35.572 ms |       57.6% |
+| Texture projection scan   |  80.400 ms |  35.087 ms |       56.4% |
+| Saved-world inspection    | 184.082 ms |  97.244 ms |       47.2% |
+| Full project scan         | 459.984 ms | 344.800 ms |       25.0% |
+| Large-level inspection    | 354.450 ms | 135.081 ms |       61.9% |
+
+Native/WASM parity over six real fixtures, compact projections, typed failures, resource limits,
+and Unreal-backed fixture conformance remained green. These numbers establish a useful local
+before/after result, not a portable regression budget.
+
+### Fused inspection JSON sample (2026-08-10)
+
+A follow-up targeted the remaining owned-projection boundary. JSON-only inspection now retains the
+parsed package but decodes, serializes, and drops one export at a time. Borrowed serializer views
+resolve names and references directly from the package, so the JSON path does not build either the
+owned generic DTO tree or an intermediate JSON value tree. The typed `inspect_bytes` API remains
+unchanged for protocol and Rust consumers. Callers supply the writer: native inspection serializes
+into an atomic output buffer, while WASM uses the same path with its existing hard byte ceiling.
+
+The direct JSON object emits `status` after `assets`, because partial status is only known after all
+exports have been decoded. JSON object order is not part of the schema; a six-real-fixture regression
+test compares the direct JSON structurally with the typed projection, including nested values and
+resolved references.
+
+Same-machine p50 results isolate this follow-up from the package-path optimization above:
+
+| JSON inspection lane                              |     Before |     After | Improvement |
+| ------------------------------------------------- | ---------: | --------: | ----------: |
+| In-process `L_CameraLoad`                         |  97.876 ms | 57.156 ms |       41.6% |
+| In-process `DT_LargeScalars`                      |  27.438 ms | 19.047 ms |       30.6% |
+| Fresh-process native `L_CameraLoad`               | 135.081 ms | 95.408 ms |       29.4% |
+| Long-lived WASM large-table legacy counterfactual |  50.565 ms | 29.184 ms |       42.3% |
+
+The WASM comparison ran both implementations from one temporary experimental export in the same
+module and process; that export was removed after measurement. The native process matrix used 12
+timed runs and 3 warmups. Its ignored evidence is
+`test-results/uasset-parser-perf-streaming.json`. Against the original pre-optimization level result
+of 354.450 ms, the final 95.408 ms is a cumulative 73.1% improvement.
+
 [WASM decode boundary](../research/wasm-decode-boundary.md) records the earlier native-derived
 reasoning and the first measured WASM result.
+
+### Typed protocol and client framing sample (2026-08-10)
+
+The next pass followed the public Node-to-Rust path rather than the human JSON command. Typed result
+events previously serialized a `ResultFrame` into a dynamic `serde_json::Value`, normalized that
+tree, wrapped and cloned it into another event tree, and only then serialized bytes. Result models
+now omit absent optional keys themselves and serialize once through a borrowed event wrapper.
+
+The Node reader had a separate scaling defect: while waiting for the newline terminating one large
+result frame, it repeatedly concatenated each stdout chunk onto the complete partial string. The
+incremental framer now retains chunks separately and joins them once when the newline arrives. A
+scoped `AssetReader` also reuses one lazily started, serialized native session for individual asset
+and table reads; cancellation tears down the worker and layer release closes it. Whole-project work
+continues to use the existing batched operations.
+
+The raw protocol matrix used 12 timed requests and 3 warmups. Validation ran outside the timed
+interval in both fresh and session lanes. “Before” is the same direct protocol workload before the
+borrowed event serializer; the complete final harness output is the ignored
+`test-results/uasset-parser-perf-protocol.json`.
+
+| Typed protocol lane | Before fresh | After fresh | Warm session | Fresh improvement | Session vs fresh |
+| ------------------- | -----------: | ----------: | -----------: | ----------------: | ---------------: |
+| `DT_LargeScalars`   |   235.173 ms |   59.101 ms |    36.404 ms |             74.9% |            38.4% |
+| `L_CameraLoad`      |   581.590 ms |  144.717 ms |   118.183 ms |             75.1% |            18.3% |
+
+Together, direct event serialization and linear client framing reduced the full TypeScript
+asset-scan p50 from 3217.984 ms in the preceding 12-run matrix to 2474.713 ms, a 23.1% improvement,
+while preserving all 65 package results. That comparison uses
+`test-results/uasset-parser-perf-streaming.json` and
+`test-results/uasset-parser-perf-protocol.json`. Tiny repeated assets benefit mostly from session
+reuse: an isolated same-process TypeScript measurement took `IMC_Fixture` from 24.631 ms fresh to
+0.589 ms warm. Treat the sub-millisecond result as startup amortization, not parser throughput.
+
+### Direct typed projection and exact large-frame validation sample (2026-08-10)
+
+The typed inspection executor previously built the generic owned inspection tree and then walked it
+again to construct the protocol-specific tree. It now projects the protocol result directly from
+the parser's decoded model. A six-real-fixture regression test compares the new projection exactly
+with the previous adapter, including `DT_LargeScalars` and all 16,527 exports in `L_CameraLoad`.
+
+The first 12-run, 3-warmup matrix measured the isolated native change:
+
+| Typed protocol lane        |    Previous | Direct projection | Improvement |
+| -------------------------- | ----------: | ----------------: | ----------: |
+| Large table, fresh         |   59.101 ms |         57.851 ms |        2.1% |
+| Large table, session       |   36.404 ms |         31.758 ms |       12.8% |
+| Large level, fresh         |  144.717 ms |        134.435 ms |        7.1% |
+| Large level, session       |  118.183 ms |        111.068 ms |        6.0% |
+| Full TypeScript asset scan | 2474.713 ms |       1877.356 ms |       24.1% |
+
+The Node boundary remained dominated by Effect Schema validation. A focused same-process profile
+separated `JSON.parse` from schema work. For the 4.46 MB table result, normal encoded-side decoding
+was faster than exact type-side validation (98.079 versus 117.870 ms). For the 14.97 MB level result,
+the type-side path was substantially faster (632.154 versus 360.466 ms). Both paths use
+`onExcessProperty: "error"`; the distinction changes traversal cost, not validation policy.
+
+The reader therefore keeps normal decoding below an 8 MiB character threshold and uses exact
+type-side validation above it. Misclassification changes only performance. The final rebuilt-package
+matrix measured the full TypeScript scan at 1568.307 ms p50, a further 16.5% improvement over direct
+projection alone and 36.6% cumulatively over the previous pushed state. The ignored evidence files
+are `test-results/uasset-parser-perf-direct-projection.json`,
+`test-results/uasset-parser-perf-exact-validation-built.json`, and
+`test-results/uasset-parser-perf-hybrid-validation.json`.

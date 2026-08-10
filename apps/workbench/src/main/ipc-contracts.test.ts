@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
+import { movementGymRuns, movementGymScenario } from "@ue-shed/scenarios";
 import { Effect, Exit, Result, Schema } from "effect";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -118,6 +119,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"editor-session:set-port": [31001],
 	"editor-session:status": [],
 	"editor-session:execute": ["start_play"],
+	"scenario:run": [movementGymScenario],
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
@@ -275,6 +277,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		outcome: "accepted",
 		state: { mode: "play", sessionId: "session-1", status: "starting" }
 	},
+	"scenario:run": movementGymRuns[1]!,
 	"fixture:launch": { status: "ready" },
 	"fixture:launch-review": {
 		status: "failed",
@@ -518,9 +521,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 79 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(79);
-	expect(new Set(invokeChannelNames).size).toBe(79);
+it("registers exactly 80 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(80);
+	expect(new Set(invokeChannelNames).size).toBe(80);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

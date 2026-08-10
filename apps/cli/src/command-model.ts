@@ -26,6 +26,10 @@ export const CliCommand = Schema.TaggedUnion({
 		action: EditorPlayAction,
 		endpoint: Schema.String
 	},
+	ScenarioRun: {
+		endpoint: Schema.String,
+		evidenceLimit: Schema.optionalKey(PositiveInt)
+	},
 	AuditTextures: { ...Project, ruleFile: Schema.String, ...Reader },
 	AuthoringTables: { ...Project, ...Reader },
 	AuthoringRelationships: { ...Project, ...Reader },

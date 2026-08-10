@@ -19,6 +19,7 @@
 		"@ue-shed/observability": "workspace:*",
 		"@ue-shed/plugin-bundles": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
+		"@ue-shed/scenarios": "workspace:*",
 		"@ue-shed/unreal-assets": "workspace:*",
 		"@ue-shed/unreal-connection": "workspace:*",
 		"effect": "catalog:"

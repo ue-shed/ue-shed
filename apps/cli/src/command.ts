@@ -16,6 +16,7 @@ import { mapCommand } from "./commands/map.js";
 import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
 import { reviewCommand } from "./commands/review.js";
+import { scenarioCommand } from "./commands/scenario.js";
 
 export const CliCommand = CliCommandSchema;
 export type CliCommand = CliCommandType;
@@ -28,6 +29,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		versionCommand,
 		doctorCommand,
 		editorCommand,
+		scenarioCommand,
 		auditCommand,
 		authoringCommand,
 		assetsCommand,

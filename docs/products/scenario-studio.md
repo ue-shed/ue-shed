@@ -13,9 +13,9 @@ truthful execution, not a claim that the broader recording/timeline vision is sh
 
 ## Delivery status
 
-The Scenario Studio timeline prototype is portable but preview-only. Plan 041 is implementing the
-first live PIE execution slice described here. Until its acceptance gates pass, the capability is
-not release-ready.
+The Scenario Studio timeline remains useful as a portable preview. Plan 041 adds the first live PIE
+execution slice described here. Until its real Unreal and repository acceptance gates pass, the
+capability remains draft rather than release-ready.
 
 ## Supported live slice
 
@@ -37,8 +37,8 @@ The supported injection layer is `pre_evaluation`.
 
 UE 5.7's `InjectInputForAction` accepts a raw action value, then Enhanced Input processes mapping
 events and applies action modifiers and triggers. That is not direct evaluated-action injection. The
-prototype's `injectAt: "evaluated_action"` Movement Gym track is outside this live contract and must
-be migrated before execution.
+prototype's original `injectAt: "evaluated_action"` wording was outside this live contract; the
+portable Movement Gym document now uses the verified `pre_evaluation` boundary.
 
 The fixture explicitly registers:
 
@@ -110,10 +110,12 @@ orchestration, typed errors, and result interpretation. The Unreal capability ow
 selection, input isolation, Enhanced Input injection, world conditions, probes, and bounded evidence.
 The existing editor play-session and Remote Control services remain shared public dependencies.
 
-The headless CLI executes the same service and prints schema-validated JSON. Scenario Studio depends
-on a host-neutral client interface for that runner. Workbench main may provide the interface through
-validated IPC, while another trusted host may provide it directly. Renderer components never receive
-raw process, filesystem, Remote Control, or Unreal authority.
+The headless `ue-shed scenarios run <endpoint>` command executes the same service and prints
+schema-validated JSON. A valid failed or cancelled run remains structured stdout and sets exit code
+1; setup/contract failures remain typed CLI failures. Scenario Studio depends on a host-neutral
+client interface for that runner. Workbench main may provide the interface through validated IPC,
+while another trusted host may provide it directly. Renderer components never receive raw process,
+filesystem, Remote Control, or Unreal authority.
 
 ```text
 CLI ───────────────┐

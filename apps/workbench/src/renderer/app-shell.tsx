@@ -20,6 +20,7 @@ import { mapReviewClient } from "./map-review-client.js";
 import { contentObservatoryClient } from "./content-observatory-client.js";
 import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
+import { scenarioStudioClient } from "./scenario-studio-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
 
@@ -311,7 +312,7 @@ export function AppShell() {
 						<ContentObservatoryRoute client={contentObservatoryClient} />
 					</Match>
 					<Match when={route() === "#/scenarios"}>
-						<ScenarioStudioRoute />
+						<ScenarioStudioRoute client={scenarioStudioClient} />
 					</Match>
 					<Match when={route() === "#/camera-lab"}>
 						<CameraLab />

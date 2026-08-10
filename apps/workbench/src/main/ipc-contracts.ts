@@ -45,6 +45,7 @@ import {
 	TextCorpusSearchResult
 } from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
+import { ScenarioDocument, ScenarioRun } from "@ue-shed/scenarios";
 import {
 	ActorId,
 	WorldActorCatalog,
@@ -333,6 +334,11 @@ export const invokeContracts = {
 		channel: "editor-session:execute",
 		args: Schema.Tuple([EditorPlaySessionCommand]),
 		result: EditorPlaySessionCommandResponse
+	}),
+	"scenario:run": invoke({
+		channel: "scenario:run",
+		args: Schema.Tuple([ScenarioDocument]),
+		result: ScenarioRun
 	}),
 	"fixture:launch": invoke({
 		channel: "fixture:launch",

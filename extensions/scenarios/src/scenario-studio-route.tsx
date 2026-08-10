@@ -17,10 +17,16 @@ import {
 } from "@ue-shed/scenarios";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Effect, Schedule } from "effect";
+import { Cause, Effect, Option, Schedule } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js";
+import type { ScenarioStudioClient } from "./client.js";
 
 type TransportState = "paused" | "playing" | "recording";
+type LiveRunState = "preview" | "executing" | "completed" | "unavailable";
+
+export interface ScenarioStudioRouteProps {
+	readonly client?: ScenarioStudioClient;
+}
 
 interface DragState {
 	readonly clipId: ScenarioElementId;
@@ -56,7 +62,7 @@ function clipLeft(clip: ScenarioClip, durationMs: number): string {
 function trackCaption(track: ScenarioTrack): string {
 	switch (track.kind) {
 		case "semantic_actions":
-			return "recorded action → replayed action";
+			return "pre-evaluation action values";
 		case "raw_input":
 			return "raw gamepad input";
 		case "world_conditions":
@@ -101,7 +107,7 @@ function clipDetail(clip: ScenarioClip): string {
 function sourceLayer(clip: ScenarioClip): string {
 	switch (clip.kind) {
 		case "semantic_action":
-			return "recorded action";
+			return "pre-evaluation action";
 		case "raw_input":
 			return "raw input";
 		case "world_condition":
@@ -147,8 +153,9 @@ function firstMovementGymRun(): ScenarioRun {
 	return run;
 }
 
-export function ScenarioStudioRoute() {
+export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 	const playbackAction = createEffectAction();
+	const liveRunAction = createEffectAction();
 	const [document, setDocument] = createSignal<ScenarioDocument>(movementGymScenario);
 	const [activeRun, setActiveRun] = createSignal<ScenarioRun>(firstMovementGymRun());
 	const [selectedId, setSelectedId] = createSignal<ScenarioElementId>(
@@ -156,6 +163,8 @@ export function ScenarioStudioRoute() {
 	);
 	const [playheadMs, setPlayheadMs] = createSignal(3370);
 	const [transport, setTransport] = createSignal<TransportState>("paused");
+	const [liveRunState, setLiveRunState] = createSignal<LiveRunState>("preview");
+	const [liveRunFailure, setLiveRunFailure] = createSignal<string>();
 	const [seekPlan, setSeekPlan] = createSignal<ScenarioSeekPlan>(
 		planScenarioSeek({ document: movementGymScenario, targetMs: 3370 })
 	);
@@ -207,6 +216,28 @@ export function ScenarioStudioRoute() {
 		stopPlayback();
 		setPlayheadMs(0);
 		setSeekPlan(planScenarioSeek({ document: document(), targetMs: 0 }));
+	};
+	const runLive = () => {
+		if (props.client === undefined || liveRunState() === "executing") return;
+		stopPlayback();
+		setLiveRunFailure(undefined);
+		setLiveRunState("executing");
+		liveRunAction.run(props.client.run(document()), {
+			onFailure: (cause) => {
+				const error = Cause.findErrorOption(cause);
+				setLiveRunFailure(
+					Option.isSome(error)
+						? `${error.value.message} ${error.value.recovery}`
+						: Cause.pretty(cause)
+				);
+				setLiveRunState("unavailable");
+			},
+			onSuccess: (run) => {
+				setActiveRun(run);
+				setPlayheadMs(run.durationMs);
+				setLiveRunState("completed");
+			}
+		});
 	};
 	const selectClip = (clip: ScenarioClip) => {
 		setSelectedId(clip.id);
@@ -314,11 +345,40 @@ export function ScenarioStudioRoute() {
 						/ {formatTime(document().durationMs)}
 					</span>
 				</div>
+				<button
+					disabled={props.client === undefined || liveRunState() === "executing"}
+					onClick={runLive}
+					{...stylex.props(styles.liveRunButton)}
+				>
+					{liveRunState() === "executing" ? "RUNNING…" : "RUN IN UNREAL"}
+				</button>
 				<div {...stylex.props(styles.runtimeStatus)}>
 					<span {...stylex.props(styles.offlineDot)} />
 					<div>
-						<strong>PREVIEW ONLY</strong>
-						<small>Unreal not connected</small>
+						<strong>
+							{liveRunState() === "completed"
+								? activeRun().status === "completed_with_divergence"
+									? "DIVERGENCE"
+									: activeRun().status === "cancelled"
+										? "CANCELLED"
+										: activeRun().status === "failed"
+											? "RUN FAILED"
+											: "LIVE RESULT"
+								: liveRunState() === "executing"
+									? "STARTING / ISOLATING"
+									: liveRunState() === "unavailable"
+										? "RUN FAILED"
+										: "PREVIEW ONLY"}
+						</strong>
+						<small>
+							{liveRunState() === "unavailable"
+								? liveRunFailure()
+								: props.client === undefined
+									? "Unreal client not provided"
+									: liveRunState() === "completed"
+										? (activeRun().failure?.message ?? "Structured PIE result")
+										: "Waiting for a structured PIE result"}
+						</small>
 					</div>
 				</div>
 			</header>
@@ -385,8 +445,21 @@ export function ScenarioStudioRoute() {
 						<div {...stylex.props(styles.isolationFact)}>
 							<span {...stylex.props(styles.lockMark)}>◆</span>
 							<div>
-								<strong>PLAYER INPUT OFF</strong>
-								<small>The timeline controls input</small>
+								<strong>
+									{liveRunState() === "completed" &&
+									activeRun().inputIsolation?.established &&
+									activeRun().inputIsolation?.restored
+										? "ISOLATION VERIFIED"
+										: liveRunState() === "executing"
+											? "ISOLATION REQUIRED"
+											: "LIVE INPUT NOT BLOCKED"}
+								</strong>
+								<small>
+									{liveRunState() === "completed" &&
+									activeRun().inputIsolation?.restored
+										? "Slate blocker was restored"
+										: "Runs start only after Slate verification"}
+								</small>
 							</div>
 						</div>
 					</div>
@@ -816,6 +889,18 @@ const styles = stylex.create({
 		color: "#0d120b",
 		cursor: "pointer",
 		fontSize: 13
+	},
+	liveRunButton: {
+		border: "1px solid #5c8d79",
+		backgroundColor: "#18352b",
+		color: "#bde7d5",
+		fontFamily: tokens.fontBody,
+		fontSize: 10,
+		fontWeight: 700,
+		letterSpacing: "0.08em",
+		padding: "9px 12px",
+		cursor: "pointer",
+		":disabled": { cursor: "default", opacity: 0.45 }
 	},
 	playing: { backgroundColor: "#e7d77d" },
 	timecode: { marginLeft: 14, color: "#f1f3ee", fontSize: 14, fontWeight: 700 },

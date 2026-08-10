@@ -6,6 +6,12 @@ import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import type { TextCorpusRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import {
+	makeScenarioRunnerTestLayer,
+	movementGymRuns,
+	movementGymScenario,
+	type ScenarioRunnerShape
+} from "@ue-shed/scenarios";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
@@ -434,6 +440,10 @@ function buildRegistrationLayer(recorder: Recorder) {
 			),
 		stop: () => Effect.die("not used")
 	});
+	const scenarioRunner: ScenarioRunnerShape = {
+		cancel: () => Effect.die("not used"),
+		run: () => recorder.record("scenarioRunner.run").pipe(Effect.as(movementGymRuns[1]!))
+	};
 	const configuration = makeWorkbenchConfigurationLayer({
 		authoringAsset: { status: "not_configured" },
 		expectedProject: { status: "not_configured" },
@@ -458,6 +468,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		projectLauncher,
 		cameraPresentation,
 		editorSession,
+		makeScenarioRunnerTestLayer(scenarioRunner),
 		makeWorkbenchUnrealConnectionLayer("http://127.0.0.1:30001"),
 		configuration
 	);
@@ -486,13 +497,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 79 contract channels", () =>
+it.effect("registers exactly the 80 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(79);
+		expect(result).toHaveLength(80);
 	})
 );
 
@@ -505,6 +516,16 @@ it.effect("changes the Remote Control monitor port through editor-session settin
 			})
 		);
 		expect(result).toEqual({ port: 31001 });
+	})
+);
+
+it.effect("routes Scenario Studio through the public scenario runner", () =>
+	Effect.gen(function* () {
+		const { recorder, result } = yield* runRegistered((ipc) =>
+			ipc.invoke("scenario:run", movementGymScenario)
+		);
+		expect(result).toEqual(movementGymRuns[1]);
+		expect(yield* recorder.calls()).toContain("scenarioRunner.run");
 	})
 );
 

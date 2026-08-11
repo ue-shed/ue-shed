@@ -16,6 +16,7 @@ export const limits = runtime.limits;
 export const inspect = runtime.inspect;
 export const extractText = runtime.extractText;
 export const extractTextures = runtime.extractTextures;
+export const extractLevelSequences = runtime.extractLevelSequences;
 export const version = runtime.version;
 
 export {

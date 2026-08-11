@@ -58,6 +58,10 @@ export async function extractTextures(path, bytes) {
 	return (await createBrowserRuntime()).extractTextures(path, bytes);
 }
 
+export async function extractLevelSequences(path, bytes) {
+	return (await createBrowserRuntime()).extractLevelSequences(path, bytes);
+}
+
 export async function version() {
 	return (await createBrowserRuntime()).version();
 }

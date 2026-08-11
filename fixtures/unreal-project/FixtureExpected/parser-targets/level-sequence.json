@@ -1,0 +1,85 @@
+{
+	"contract": {
+		"name": "ue-shed-unreal-asset-evidence",
+		"version": {
+			"major": 1,
+			"minor": 0
+		}
+	},
+	"assetType": "level_sequence",
+	"objectPath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+	"classPath": "/Script/LevelSequence.LevelSequence",
+	"timeline": {
+		"tickResolution": {
+			"numerator": 24000,
+			"denominator": 1
+		},
+		"displayRate": {
+			"numerator": 24,
+			"denominator": 1
+		},
+		"playbackStart": 0,
+		"playbackEnd": 120000
+	},
+	"bindings": [
+		{
+			"name": "Localized dialogue",
+			"possessedObjectClass": "/Script/UEShedFixture.UEShedFixtureTextAsset",
+			"tracks": [
+				{
+					"objectPath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline:MovieScene_0.MovieSceneTextTrack_0",
+					"classPath": "/Script/MovieSceneTracks.MovieSceneTextTrack",
+					"propertyPath": "SharedPrimary",
+					"sections": [
+						{
+							"objectPath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline:MovieScene_0.MovieSceneTextTrack_0.MovieSceneTextSection_0",
+							"start": 0,
+							"end": 120000,
+							"keys": [
+								{
+									"frame": 0,
+									"text": {
+										"kind": "text",
+										"displayString": "We made it.",
+										"sourceString": "We made it.",
+										"identity": {
+											"kind": "localized",
+											"namespace": "Fixture.Cutscene",
+											"key": "Opening"
+										}
+									}
+								},
+								{
+									"frame": 48000,
+									"text": {
+										"kind": "text",
+										"displayString": "Something is wrong.",
+										"sourceString": "Something is wrong.",
+										"identity": {
+											"kind": "localized",
+											"namespace": "Fixture.Cutscene",
+											"key": "Warning"
+										}
+									}
+								},
+								{
+									"frame": 96000,
+									"text": {
+										"kind": "text",
+										"displayString": "Run!",
+										"sourceString": "Run!",
+										"identity": {
+											"kind": "localized",
+											"namespace": "Fixture.Cutscene",
+											"key": "Exit"
+										}
+									}
+								}
+							]
+						}
+					]
+				}
+			]
+		}
+	]
+}

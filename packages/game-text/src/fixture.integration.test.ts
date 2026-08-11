@@ -19,14 +19,14 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toMatchObject({
 			// The maps, World Partition external actors, and animation fixtures carry no text.
-			// Every InputAction and InputMappingContext carries one FText description, so the
-			// Enhanced Input surface contributes a text unit each.
-			discoveredPackages: 67,
-			inspectedPackages: 67,
+			// Every InputAction and InputMappingContext carries one FText description, while the
+			// LevelSequence contributes three localized timeline keys.
+			discoveredPackages: 68,
+			inspectedPackages: 68,
 			failedPackages: 0,
-			textUnits: 33,
-			textOccurrences: 34,
-			resolvedOccurrences: 34,
+			textUnits: 36,
+			textOccurrences: 37,
+			resolvedOccurrences: 37,
 			unsupportedTextProperties: 1
 		});
 		const holdMatches = searchTextCorpus(corpus, "Hold to skip");

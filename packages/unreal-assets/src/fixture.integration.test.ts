@@ -54,14 +54,14 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
-		// 64 `.uasset` packages (including six World Partition external actors, two animation
-		// fixtures, and the 25-asset Enhanced Input surface) plus the three maps. Levels use the same classic package
+		// 65 `.uasset` packages (including six World Partition external actors, two animation
+		// fixtures, one Level Sequence, and the 25-asset Enhanced Input surface) plus the three maps. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(67);
-		expect(scan.summary.emittedAssets).toBe(67);
+		expect(scan.summary.scannedAssets).toBe(68);
+		expect(scan.summary.emittedAssets).toBe(68);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(67);
+		expect(scan.assets).toHaveLength(68);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -102,11 +102,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(67);
+		expect(scan.summary.scannedAssets).toBe(68);
 		expect(scan.summary.emittedAssets).toBe(17);
-		// The levels, saved World Partition actor packages, and every Enhanced Input asset carry
-		// no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(50);
+		// The levels, LevelSequence, saved World Partition actor packages, and every Enhanced Input
+		// asset carry no Texture2D export, so they are ruled out before any decode.
+		expect(scan.summary.skippedAssets).toBe(51);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -128,8 +128,9 @@ describe.skipIf(!executable)("batched project scan", () => {
 				projectRoot: fixtureRoot
 			})
 		);
-		// Every InputAction and InputMappingContext names TextProperty for its description.
-		expect(scan.summary.emittedAssets).toBe(28);
+		// Every InputAction and InputMappingContext names TextProperty for its description, and the
+		// LevelSequence names it for its localized timeline channel.
+		expect(scan.summary.emittedAssets).toBe(29);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -230,7 +231,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(67);
+		expect(scan.summary.scannedAssets).toBe(68);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);

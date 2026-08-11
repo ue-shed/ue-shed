@@ -18,4 +18,8 @@ export declare function extractTextures(
 	path: string,
 	bytes: Uint8Array
 ): Promise<import("./types.js").TextureResult>;
+export declare function extractLevelSequences(
+	path: string,
+	bytes: Uint8Array
+): Promise<import("./types.js").LevelSequenceResult>;
 export declare function version(): Promise<string>;

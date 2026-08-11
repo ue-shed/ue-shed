@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.6.0",
+	"fixtureVersion": "1.7.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
@@ -23,6 +23,14 @@
 			"rootMotion": true,
 			"rootMotionRootLock": "AnimFirstFrame"
 		}
+	},
+	"levelSequence": {
+		"assetPath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+		"tickResolution": { "numerator": 24000, "denominator": 1 },
+		"displayRate": { "numerator": 24, "denominator": 1 },
+		"playbackRange": { "start": 0, "end": 120000 },
+		"textKeyFrames": [0, 48000, 96000],
+		"textKeys": ["Opening", "Warning", "Exit"]
 	},
 	"gameText": {
 		"contentRoot": "/Game/Fixture/Text",

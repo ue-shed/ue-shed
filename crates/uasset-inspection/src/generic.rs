@@ -755,6 +755,10 @@ fn value_output(package: &Package, value: PropertyValue) -> PropertyValueOutput 
             table_object_path: resolve_object_ref(package, handle.table),
             row_name: resolve_name_or_placeholder(package, handle.row_name),
         },
+        PropertyValue::FrameRange(_) => PropertyValueOutput::Raw {
+            reason: "decoded native frame range; omitted from generic schema v8".to_owned(),
+            size: 0,
+        },
         PropertyValue::ObjectRef(index) => PropertyValueOutput::ObjectRef {
             value: resolve_object_ref(package, index),
         },

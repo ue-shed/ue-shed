@@ -1008,6 +1008,11 @@ enum PropertyValueView<'a> {
         reason: RawReasonView<'a>,
         size: u64,
     },
+    #[serde(rename = "raw")]
+    OmittedNative {
+        reason: &'static str,
+        size: u64,
+    },
 }
 
 impl<'a> PropertyValueView<'a> {
@@ -1068,6 +1073,10 @@ impl<'a> PropertyValueView<'a> {
             PropertyValue::DataTableRowHandle(value) => Self::DataTableRowHandle {
                 table_object_path: ObjectReferenceView::new(package, value.table),
                 row_name: NameView::new(package, value.row_name),
+            },
+            PropertyValue::FrameRange(_) => Self::OmittedNative {
+                reason: "decoded native frame range; omitted from generic schema v8",
+                size: raw_size,
             },
             PropertyValue::ObjectRef(value) => Self::ObjectRef {
                 value: ObjectReferenceView::new(package, *value),

@@ -25,6 +25,7 @@ const fixtures = [
 	"Content/Fixture/Input/IMC_Fixture.uasset",
 	"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset",
 	"Content/Fixture/Animation/A_FixtureMotion.uasset",
+	"Content/Fixture/Sequences/LS_TextTimeline.uasset",
 	"Content/Fixture/Text/ST_Game.uasset",
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].map((path) => join(fixtureRoot, path));
@@ -89,6 +90,26 @@ for (const { path: fixture, kind } of projectionFixtures) {
 		`${displayPath} ${kind} projection must match native`
 	);
 }
+
+const levelSequenceFixture = join(fixtureRoot, "Content/Fixture/Sequences/LS_TextTimeline.uasset");
+const levelSequencePath = relative(repositoryRoot, levelSequenceFixture).replaceAll("\\", "/");
+const levelSequence = runtime.extractLevelSequences(
+	levelSequencePath,
+	readFileSync(levelSequenceFixture)
+);
+assert.equal(levelSequence.status, "complete");
+assert.equal(levelSequence.sequences.length, 1);
+assert.deepEqual(
+	levelSequence.sequences[0].bindings[0].tracks[0].sections[0].text_keys.map((key) => [
+		key.frame,
+		key.source
+	]),
+	[
+		[0, "We made it."],
+		[48000, "Something is wrong."],
+		[96000, "Run!"]
+	]
+);
 
 const unsupported = runtime.inspect("BigEndian.uasset", Uint8Array.from([0x9e, 0x2a, 0x83, 0xc1]));
 assert.equal(unsupported.schema_version, 8);

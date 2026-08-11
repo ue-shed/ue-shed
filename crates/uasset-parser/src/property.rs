@@ -85,6 +85,26 @@ pub struct IntPointValue {
     pub y: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RangeBoundKind {
+    Exclusive,
+    Inclusive,
+    Open,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameRangeBound {
+    pub kind: RangeBoundKind,
+    pub value: i32,
+}
+
+/// Native `FMovieSceneFrameRange` value used by sequence and section boundaries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameRangeValue {
+    pub lower: FrameRangeBound,
+    pub upper: FrameRangeBound,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RotatorValue {
     pub pitch: f64,
@@ -139,6 +159,7 @@ pub enum PropertyValue {
     Color(ColorValue),
     LinearColor(LinearColorValue),
     DataTableRowHandle(DataTableRowHandleValue),
+    FrameRange(FrameRangeValue),
     ObjectRef(PackageIndex),
     Guid(Guid),
     SoftObjectPath(String),

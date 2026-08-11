@@ -40,6 +40,14 @@ type FixtureContract = {
 	readonly fixtureVersion: string;
 	readonly engine: { readonly major: number; readonly minor: number };
 	readonly contentRoot: string;
+	readonly levelSequence: {
+		readonly assetPath: string;
+		readonly tickResolution: { readonly numerator: number; readonly denominator: number };
+		readonly displayRate: { readonly numerator: number; readonly denominator: number };
+		readonly playbackRange: { readonly start: number; readonly end: number };
+		readonly textKeyFrames: readonly number[];
+		readonly textKeys: readonly string[];
+	};
 	readonly gameText: {
 		readonly contentRoot: string;
 		readonly stringTable: {
@@ -155,6 +163,7 @@ type TextureContract = {
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 const parserTargetFiles = [
 	"FixtureExpected/parser-targets/enhanced-input.json",
+	"FixtureExpected/parser-targets/level-sequence.json",
 	"FixtureExpected/parser-targets/string-table.json",
 	"FixtureExpected/parser-targets/text-data-asset.json",
 	"FixtureExpected/parser-targets/texture2d.json"
@@ -179,6 +188,7 @@ function readContract(): FixtureContract {
 		!isRecord(value.mapReview) ||
 		!isRecord(value.offlineWorld) ||
 		!isRecord(value.gameText) ||
+		!isRecord(value.levelSequence) ||
 		!isRecord(value.enhancedInput) ||
 		!isRecord(value.textureAudit) ||
 		typeof value.engine.major !== "number" ||
@@ -335,6 +345,18 @@ describe("generic Unreal fixture contract", () => {
 			expect(assetPath.startsWith(`${contract.gameText.contentRoot}/`)).toBe(true);
 			expect(existsSync(generatedAssetPath(assetPath)), assetPath).toBe(true);
 		}
+	});
+
+	it("declares a timed localized-text Level Sequence", () => {
+		expect(contract.levelSequence).toEqual({
+			assetPath: "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+			tickResolution: { numerator: 24000, denominator: 1 },
+			displayRate: { numerator: 24, denominator: 1 },
+			playbackRange: { start: 0, end: 120000 },
+			textKeyFrames: [0, 48000, 96000],
+			textKeys: ["Opening", "Warning", "Exit"]
+		});
+		expect(existsSync(generatedAssetPath(contract.levelSequence.assetPath))).toBe(true);
 	});
 
 	it("declares the original Enhanced Input fixture unchanged", () => {
@@ -584,6 +606,7 @@ describe("generic Unreal fixture contract", () => {
 		const targets = parserTargetFiles.map((path) => readJson(resolve(fixtureRoot, path)));
 		expect(targets.map((target) => (isRecord(target) ? target.assetType : undefined))).toEqual([
 			"enhanced_input",
+			"level_sequence",
 			"string_table",
 			"text_data_asset",
 			"texture2d"
@@ -599,10 +622,14 @@ describe("generic Unreal fixture contract", () => {
 			);
 		}
 		const enhancedInput = targets[0];
-		const stringTable = targets[1];
-		const textAsset = targets[2];
-		const textures = targets[3];
+		const levelSequence = targets[1];
+		const stringTable = targets[2];
+		const textAsset = targets[3];
+		const textures = targets[4];
 		expect(isRecord(enhancedInput) && Array.isArray(enhancedInput.actions)).toBe(true);
+		expect(isRecord(levelSequence) && levelSequence.objectPath).toBe(
+			contract.levelSequence.assetPath
+		);
 		expect(isRecord(stringTable) && stringTable.objectPath).toBe(
 			contract.gameText.stringTable.assetPath
 		);

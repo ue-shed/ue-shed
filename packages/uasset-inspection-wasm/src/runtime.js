@@ -6,12 +6,14 @@
 /** @typedef {import("./types.d.ts").InspectionResult} InspectionResult */
 /** @typedef {import("./types.d.ts").TextResult} TextResult */
 /** @typedef {import("./types.d.ts").TextureResult} TextureResult */
+/** @typedef {import("./types.d.ts").LevelSequenceResult} LevelSequenceResult */
 
 /**
  * @typedef WasmBinding
  * @property {(path: string, bytes: Uint8Array) => string} inspect
  * @property {(path: string, bytes: Uint8Array) => string} extract_text
  * @property {(path: string, bytes: Uint8Array) => string} extract_textures
+ * @property {(path: string, bytes: Uint8Array) => string} extract_level_sequences
  * @property {() => string} version
  */
 
@@ -169,6 +171,7 @@ export function createRuntime(binding, options = undefined) {
 		typeof binding.inspect !== "function" ||
 		typeof binding.extract_text !== "function" ||
 		typeof binding.extract_textures !== "function" ||
+		typeof binding.extract_level_sequences !== "function" ||
 		typeof binding.version !== "function"
 	) {
 		throw new WasmProtocolError("initialization", "the generated binding is missing an export");
@@ -203,6 +206,19 @@ export function createRuntime(binding, options = undefined) {
 					decodeResult(
 						"extractTextures",
 						binding.extract_textures(path, input),
+						1,
+						limits.maxOutputBytes
+					)
+				)
+			);
+		},
+		extractLevelSequences(/** @type {string} */ path, /** @type {Uint8Array} */ bytes) {
+			const input = assertInputBytes(bytes, limits.maxInputBytes);
+			return /** @type {LevelSequenceResult} */ (
+				/** @type {unknown} */ (
+					decodeResult(
+						"extractLevelSequences",
+						binding.extract_level_sequences(path, input),
 						1,
 						limits.maxOutputBytes
 					)

@@ -7,7 +7,7 @@ processes, maintain caches, or write assets.
 The first public contract is deliberately small:
 
 - generic inspection returns schema 8;
-- `extractText` and `extractTextures` return compact projection schema 1;
+- `extractText`, `extractTextures`, and `extractLevelSequences` return compact projection schema 1;
 - malformed, unsupported, partial, and resource-limited packages are represented as typed result
   values;
 - cooked, unversioned, IoStore/Zen, swapped-endian, and native bulk-data decoding remain outside
@@ -31,17 +31,21 @@ import {
 	createNodeRuntime,
 	inspect,
 	extractText,
-	extractTextures
+	extractTextures,
+	extractLevelSequences
 } from "@ue-shed/uasset-inspection-wasm/node";
 
 const runtime = createNodeRuntime();
 const bytes = new Uint8Array(await readFile("Content/Fixture/Example.uasset"));
 const inspection = runtime.inspect("Content/Fixture/Example.uasset", bytes);
 const text = runtime.extractText("Content/Fixture/Example.uasset", bytes);
+const sequences = runtime.extractLevelSequences("Content/Fixture/Example.uasset", bytes);
 
 // The root Node entry exposes the same operations when a configured runtime is not needed.
 const sameInspection = inspect("Content/Fixture/Example.uasset", bytes);
 void extractTextures;
+void extractLevelSequences;
+void sequences;
 void sameInspection;
 ```
 

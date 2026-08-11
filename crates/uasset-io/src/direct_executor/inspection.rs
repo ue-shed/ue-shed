@@ -344,6 +344,10 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
             table_object_path: resolve_object(package, value.table),
             row_name: resolve_name(package, value.row_name),
         },
+        PropertyValue::FrameRange(_) => SavedPropertyValue::Raw {
+            reason: "decoded native frame range; omitted from generic schema v8".to_owned(),
+            size: 0,
+        },
         PropertyValue::ObjectRef(value) => SavedPropertyValue::ObjectRef {
             value: resolve_object(package, value),
         },

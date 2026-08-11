@@ -4,6 +4,7 @@ use std::io::{self, Write};
 
 use serde::Serialize;
 use uasset_inspection::generic::{InspectionJsonError, write_inspection_json};
+use uasset_inspection::level_sequence::{LevelSequenceProjection, project_level_sequence};
 use uasset_inspection::projection::{
     TEXTURE2D_CLASS, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
     project_texture_asset,
@@ -182,6 +183,65 @@ pub fn extract_textures(path: &str, bytes: &[u8]) -> String {
     }
 }
 
+/// Parses one package and emits the compact, portable Level Sequence projection.
+#[wasm_bindgen]
+pub fn extract_level_sequences(path: &str, bytes: &[u8]) -> String {
+    if let Some(error) = input_limit_error(1, path, bytes) {
+        return error;
+    }
+    match Package::parse(bytes) {
+        Ok(package) => {
+            if let Some(error) = projection_export_limit(path, package.exports.len()) {
+                return error;
+            }
+            let schemas = EmptySchemas;
+            let context = AssetDecodeContext {
+                source: bytes,
+                package: &package,
+                schemas: &schemas,
+            };
+            let mut assets = Vec::new();
+            let mut diagnostics = Vec::new();
+            for export in &package.exports {
+                match decode_export(export, &context) {
+                    Ok(Some(asset)) => assets.push(asset),
+                    Ok(None) => {}
+                    Err(error) => diagnostics.push(ProjectionDiagnostic {
+                        object_path: export.object_path.to_string(),
+                        class_path: export.class_path.as_ref().map(ToString::to_string),
+                        code: asset_error_kind_name(error.kind()),
+                        message: error.message().to_owned(),
+                    }),
+                }
+            }
+            let sequences: Vec<_> = project_level_sequence(&package, &assets)
+                .into_iter()
+                .collect();
+            let item_count = sequences
+                .iter()
+                .map(level_sequence_item_count)
+                .sum::<usize>();
+            if item_count > MAX_PROJECTION_ITEMS {
+                return serialize_projection_limit_error(
+                    path,
+                    "Level Sequence projection item count exceeds the WASM limit",
+                );
+            }
+            serialize_bounded_projection(
+                path,
+                &LevelSequenceProjectionOutput {
+                    schema_version: 1,
+                    status: projection_status(&diagnostics),
+                    path,
+                    sequences,
+                    diagnostics,
+                },
+            )
+        }
+        Err(error) => serialize_projection_error(path, &error),
+    }
+}
+
 /// Returns the parser/binding package version.
 #[wasm_bindgen]
 pub fn version() -> String {
@@ -229,6 +289,36 @@ struct TextureProjectionOutput<'a> {
     path: &'a str,
     records: Vec<TextureRecord>,
     diagnostics: Vec<ProjectionDiagnostic>,
+}
+
+#[derive(Serialize)]
+struct LevelSequenceProjectionOutput<'a> {
+    schema_version: u32,
+    status: &'static str,
+    path: &'a str,
+    sequences: Vec<LevelSequenceProjection>,
+    diagnostics: Vec<ProjectionDiagnostic>,
+}
+
+fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
+    let binding_tracks = sequence.bindings.iter().flat_map(|binding| &binding.tracks);
+    let tracks = binding_tracks.chain(&sequence.root_tracks);
+    1_usize
+        .saturating_add(sequence.bindings.len())
+        .saturating_add(sequence.coverage_gaps.len())
+        .saturating_add(
+            tracks
+                .map(|track| {
+                    1_usize.saturating_add(
+                        track
+                            .sections
+                            .iter()
+                            .map(|section| 1_usize.saturating_add(section.text_keys.len()))
+                            .sum::<usize>(),
+                    )
+                })
+                .sum::<usize>(),
+        )
 }
 
 #[derive(Serialize)]

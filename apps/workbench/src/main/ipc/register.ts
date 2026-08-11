@@ -4,6 +4,7 @@ import { register as registerAssetNavigation } from "./asset-navigation.js";
 import { register as registerAuthoring } from "./authoring.js";
 import { register as registerCameras } from "./cameras.js";
 import { register as registerContentObservatory } from "./content-observatory.js";
+import { register as registerConfigExplorer } from "./config-explorer.js";
 import { register as registerEditorSession } from "./editor-session.js";
 import { register as registerFixture } from "./fixture.js";
 import { register as registerGameText } from "./game-text.js";
@@ -28,6 +29,7 @@ export const register = Effect.all(
 		registerAuthoring,
 		registerCameras,
 		registerContentObservatory,
+		registerConfigExplorer,
 		registerEditorSession,
 		registerMapReview
 	],

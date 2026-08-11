@@ -33,6 +33,8 @@ import type {
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraStatusResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	FixtureLaunchResult,
@@ -46,6 +48,11 @@ import type { ProjectLaunchMode, ProjectLaunchResult } from "../main/project-wor
 declare global {
 	interface Window {
 		readonly ueShed: {
+			readonly configExplorer: {
+				readonly query: (
+					request: ConfigExplorerQuery
+				) => Promise<ConfigExplorerQueryResult>;
+			};
 			readonly assetNavigation: {
 				readonly locate: (objectPath: string) => Promise<unknown>;
 			};

@@ -144,6 +144,17 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
+	"config-explorer:query": [
+		{
+			family: "Game",
+			key: "Entries",
+			leftPlatform: "PlatformA",
+			mode: "compare",
+			rightPlatform: "PlatformB",
+			section: "Fixture.Settings",
+			source: "sample_fixture"
+		}
+	],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -314,6 +325,15 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		health: aggregateHealth(defaultHealthInput),
 		project: { status: "not_configured" },
 		reader: "path"
+	},
+	"config-explorer:query": {
+		error: {
+			code: "sample_unavailable",
+			message: "Fixture unavailable.",
+			recovery: "Launch through pnpm showcase.",
+			retrySafe: false
+		},
+		status: "failed"
 	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
@@ -551,9 +571,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 82 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(84);
-	expect(new Set(invokeChannelNames).size).toBe(84);
+it("registers exactly 85 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(85);
+	expect(new Set(invokeChannelNames).size).toBe(85);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

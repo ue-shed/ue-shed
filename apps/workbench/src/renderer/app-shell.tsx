@@ -8,6 +8,7 @@ import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
+import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
@@ -28,6 +29,7 @@ const routes = [
 	{ href: "#/authoring", label: "Data Authoring", route: "#/authoring" },
 	{ href: "#/game-text", label: "Game Text", route: "#/game-text" },
 	{ href: "#/input-atlas", label: "Input Atlas", route: "#/input-atlas" },
+	{ href: "#/config-explorer", label: "Config", route: "#/config-explorer" },
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
 	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
@@ -43,6 +45,15 @@ const workflowGroups = [
 		label: "Saved project",
 		requirement: "UNREAL CAN STAY CLOSED",
 		workflows: [
+			{
+				action: "OPEN EXPLORER",
+				description:
+					"Explain one saved .ini value through every source line and platform layer.",
+				evidence: "config",
+				href: "#/config-explorer",
+				title: "Config Explorer",
+				tone: "orange"
+			},
 			{
 				action: "OPEN STUDIO",
 				description:
@@ -176,6 +187,13 @@ function workflowEvidence(
 			ready: true
 		};
 	}
+	if (workflow.evidence === "config") {
+		return {
+			detail: "PlatformA ⇄ PlatformB · all six earned merge operations",
+			label: "Committed text fixture ready",
+			ready: true
+		};
+	}
 	if (context === undefined) {
 		return {
 			detail: "Reading Project Index",
@@ -303,6 +321,9 @@ export function AppShell() {
 					</Match>
 					<Match when={route() === "#/input-atlas"}>
 						<InputAtlasRoute client={inputAtlasClient} />
+					</Match>
+					<Match when={route() === "#/config-explorer"}>
+						<ConfigExplorerShowcase client={workbenchRendererClient} />
 					</Match>
 					<Match when={route() === "#/map-review"}>
 						<MapReviewRoute client={mapReviewClient} />
@@ -646,6 +667,7 @@ const styles = stylex.create({
 	amber: { borderLeftColor: "#d98f53" },
 	blue: { borderLeftColor: "#70a9b2" },
 	coral: { borderLeftColor: "#e76b49" },
+	orange: { borderLeftColor: "#d4552d" },
 	violet: { borderLeftColor: "#9d8cc7" },
 	steel: { borderLeftColor: "#758991" },
 	cyan: { borderLeftColor: "#5eb8c7" },

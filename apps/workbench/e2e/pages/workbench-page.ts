@@ -8,6 +8,7 @@ export type WorkbenchRoute =
 	| "Map Review"
 	| "Texture Audit"
 	| "Camera Lab"
+	| "Config"
 	| "World Log";
 
 export class WorkbenchPage {
@@ -28,6 +29,7 @@ export class WorkbenchPage {
 		await expect(project).toContainText("Saved maps");
 		const workflows = this.page.getByRole("region", { name: "Workbench workflows" });
 		for (const name of [
+			"Config Explorer",
 			"Data Authoring",
 			"Input Atlas",
 			"Game Text",

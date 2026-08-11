@@ -13,8 +13,8 @@
 - **Depends on**: the Scenario Studio prototype in `e5a5c51` and editor play-session capability.
 - **Category**: Interactive scenarios product vertical
 - **Planned at**: commit `9c2cdce`, 2026-08-11.
-- **Status**: IN PROGRESS — implementation, real UE 5.7 PIE journey, and repository gates pass;
-  final PR evidence/ready transition remains
+- **Status**: COMPLETE — implementation, real UE 5.7 PIE journey, repository gates, and PR evidence
+  pass; PR #10 is ready for review
 
 ## Outcome
 
@@ -169,7 +169,7 @@ the draft PR, then mark it ready only after portable and real UE 5.7 gates pass.
 - [x] Scenario Studio uses the public client contract and has no Workbench-only authority.
 - [x] Pure, service, protocol, CLI, fixture, restart, and real UE 5.7 gates pass.
 - [x] `pnpm check` passes after substantive edits and immediately before handoff.
-- [ ] The PR contains evidence and is ready for review.
+- [x] The PR contains evidence and is ready for review.
 
 ## STOP conditions
 

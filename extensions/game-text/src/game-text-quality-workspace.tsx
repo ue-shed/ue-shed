@@ -35,6 +35,7 @@ function actual(focus: TextQualityFocus): string {
 
 export function GameTextQualityWorkspace(props: {
 	readonly client: GameTextClientShape;
+	readonly onReplaceRules: () => void;
 	readonly summary: TextQualityQuerySummary;
 }) {
 	const searchAction = createEffectAction();
@@ -92,9 +93,19 @@ export function GameTextQualityWorkspace(props: {
 		<div {...stylex.props(styles.workspace)}>
 			<section aria-label="Quality summary" {...stylex.props(styles.summaryStrip)}>
 				<div {...stylex.props(styles.summaryLead)}>
-					<small>PROJECT-AUTHORED REVIEW</small>
+					<span {...stylex.props(styles.summaryLeadHeader)}>
+						<small>PROJECT-AUTHORED REVIEW</small>
+						<button
+							type="button"
+							onClick={props.onReplaceRules}
+							{...stylex.props(styles.replaceRules)}
+						>
+							Replace quality rules
+						</button>
+					</span>
 					<strong {...stylex.props(styles.summaryValue)}>
-						{props.summary.findingCount.toLocaleString()} findings
+						{props.summary.findingCount.toLocaleString()}{" "}
+						{props.summary.findingCount === 1 ? "finding" : "findings"}
 					</strong>
 					<span>Rule document v{props.summary.ruleDocumentVersion}</span>
 				</div>
@@ -120,7 +131,7 @@ export function GameTextQualityWorkspace(props: {
 					<span>{props.summary.rules.length} rules</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Corpus coverage</small>
+					<small>Saved text coverage</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.status === "complete" ? "Complete" : "Partial"}
 					</strong>
@@ -179,7 +190,11 @@ export function GameTextQualityWorkspace(props: {
 						</For>
 					</section>
 					<section {...stylex.props(styles.coverage)}>
-						<strong>{props.summary.status.toUpperCase()} CORPUS</strong>
+						<strong>
+							{props.summary.status === "complete"
+								? "ALL TEXT CHECKED"
+								: "PARTIAL COVERAGE"}
+						</strong>
 						<span>{coverage().textOccurrences} known occurrences</span>
 						<Show
 							when={
@@ -346,6 +361,21 @@ const styles = stylex.create({
 		borderRight: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
 		fontSize: 9
+	},
+	summaryLeadHeader: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 8
+	},
+	replaceRules: {
+		border: "1px solid #884a36",
+		backgroundColor: { default: "#382019", ":hover": "#4a291f" },
+		color: "#ffd0bf",
+		padding: "3px 6px",
+		cursor: "pointer",
+		fontSize: 8,
+		whiteSpace: "nowrap"
 	},
 	metric: {
 		display: "flex",

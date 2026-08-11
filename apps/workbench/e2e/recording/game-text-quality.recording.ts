@@ -9,9 +9,13 @@ import { WorkbenchPage } from "../pages/workbench-page.js";
 const require = createRequire(import.meta.url);
 const electronExecutable: unknown = require("electron");
 const workbenchRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const ruleFile = resolve(
+const initialRuleFile = resolve(
 	workbenchRoot,
 	"../../fixtures/unreal-project/FixtureSource/Text/quality-rules.json"
+);
+const replacementRuleFile = resolve(
+	workbenchRoot,
+	"../../fixtures/unreal-project/FixtureSource/Text/quality-rules-relaxed.json"
 );
 
 if (typeof electronExecutable !== "string") {
@@ -42,18 +46,27 @@ test("records the real Game Text quality workflow", async ({
 	const workbench = new WorkbenchPage(page);
 	let recording = false;
 	try {
-		await application.evaluate(({ dialog }, selectedRuleFile) => {
-			const original = dialog.showOpenDialog.bind(dialog);
-			Object.defineProperty(dialog, "showOpenDialog", {
-				configurable: true,
-				value: (...args: Parameters<typeof dialog.showOpenDialog>) => {
-					const options = args.at(-1);
-					return options?.title === "Choose Game Text quality rules"
-						? Promise.resolve({ canceled: false, filePaths: [selectedRuleFile] })
-						: original(...args);
-				}
-			});
-		}, ruleFile);
+		await application.evaluate(
+			({ dialog }, selectedRuleFiles) => {
+				const original = dialog.showOpenDialog.bind(dialog);
+				let qualityRuleSelection = 0;
+				Object.defineProperty(dialog, "showOpenDialog", {
+					configurable: true,
+					value: (...args: Parameters<typeof dialog.showOpenDialog>) => {
+						const options = args.at(-1);
+						if (options?.title !== "Choose Game Text quality rules")
+							return original(...args);
+						const selectedRuleFile =
+							selectedRuleFiles[
+								Math.min(qualityRuleSelection, selectedRuleFiles.length - 1)
+							];
+						qualityRuleSelection += 1;
+						return Promise.resolve({ canceled: false, filePaths: [selectedRuleFile] });
+					}
+				});
+			},
+			[initialRuleFile, replacementRuleFile]
+		);
 
 		await workbench.expectShowcaseReady();
 		await workbench.openRoute("Game Text");
@@ -88,7 +101,10 @@ test("records the real Game Text quality workflow", async ({
 		});
 		recording = true;
 
-		await page.waitForTimeout(1_400);
+		await page.waitForTimeout(1_000);
+		await page.getByRole("tab", { name: "Quality review" }).click();
+		await expect(page.getByRole("region", { name: "Quality rules setup" })).toBeVisible();
+		await page.waitForTimeout(1_200);
 		await page.getByRole("button", { name: "Load quality rules" }).click();
 		await expect(page.getByRole("region", { name: "Quality findings" })).toBeVisible();
 		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
@@ -110,8 +126,15 @@ test("records the real Game Text quality workflow", async ({
 			page.getByRole("complementary", { name: "Quality finding detail" })
 		).toContainText("EXPECTED");
 		await page.waitForTimeout(1_700);
-		await page.getByRole("tab", { name: "Corpus browser" }).click();
+		await page.getByRole("button", { name: "Replace quality rules" }).click();
+		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
+			"1 finding"
+		);
+		await expect(page.getByText("Budgets", { exact: true }).locator("..")).toContainText("0");
+		await page.waitForTimeout(1_900);
+		await page.getByRole("tab", { name: "Text browser" }).click();
 		await expect(page.getByRole("region", { name: "Text units" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "Replace quality rules" })).toHaveCount(0);
 		await page.waitForTimeout(1_200);
 		await page.getByRole("tab", { name: /Quality review/ }).click();
 		await page.waitForTimeout(1_400);

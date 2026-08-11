@@ -218,7 +218,7 @@ describe("GameTextRoute interactions", () => {
 		expect(focus.textContent).toContain("Menu · Quit");
 		expect(focus.textContent).toContain("Prompt field");
 
-		await user.type(screen.getByRole("searchbox", { name: "Search corpus" }), "Continue");
+		await user.type(screen.getByRole("searchbox", { name: "Search game text" }), "Continue");
 		await waitFor(() => {
 			const currentResults = screen.getByRole("region", { name: "Text units" });
 			expect(
@@ -241,7 +241,7 @@ describe("GameTextRoute interactions", () => {
 		const user = userEvent.setup();
 		renderRoute();
 		const input = (await screen.findByRole("searchbox", {
-			name: "Search corpus"
+			name: "Search game text"
 		})) as HTMLInputElement;
 
 		await user.click(input);
@@ -455,16 +455,22 @@ describe("GameTextRoute interactions", () => {
 		renderRoute(qualityClient);
 		await screen.findByRole("region", { name: "Text units" });
 
+		expect(screen.queryByRole("button", { name: "Load quality rules" })).toBeNull();
+		await user.click(screen.getByRole("tab", { name: "Quality review" }));
+		expect(screen.getByRole("region", { name: "Quality rules setup" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Load quality rules" }));
 		const findings = await screen.findByRole("region", { name: "Quality findings" });
 		expect(within(findings).getByText("58 characters")).toBeDefined();
-		expect(screen.getByText("PARTIAL CORPUS")).toBeDefined();
+		expect(screen.getByText("PARTIAL COVERAGE")).toBeDefined();
 		expect(screen.getByText(/2 unsupported properties/)).toBeDefined();
+		expect(screen.getByRole("button", { name: "Replace quality rules" })).toBeDefined();
 		expect(
 			screen.getByRole("complementary", { name: "Quality finding detail" }).textContent
 		).toContain("Shorten the prompt while keeping the action clear.");
 
 		await user.click(screen.getByRole("button", { name: /Terminology/ }));
 		await waitFor(() => expect(within(findings).getByText("“old” at 10–13")).toBeDefined());
+		await user.click(screen.getByRole("tab", { name: "Text browser" }));
+		expect(screen.queryByRole("button", { name: "Replace quality rules" })).toBeNull();
 	});
 });

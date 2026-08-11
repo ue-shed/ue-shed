@@ -77,7 +77,7 @@ const reviewLenses: readonly {
 }[] = [
 	{
 		count: (summary) => summary.review.all,
-		detail: "Entire saved corpus",
+		detail: "All saved game text",
 		label: "All lines",
 		value: "all"
 	},
@@ -369,13 +369,13 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 			<TaskProgressModal
 				open={state().status === "loading"}
 				progress={progress()}
-				title="Building the game-text corpus"
+				title="Loading saved game text"
 				detail="Workbench is decoding the packages selected by the project index and preserving every text identity and occurrence."
 			/>
 			<header {...stylex.props(styles.header)}>
 				<div>
 					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-						Game text / {mode() === "quality" ? "Quality review" : "Corpus"}
+						Game text / {mode() === "quality" ? "Quality review" : "Text browser"}
 					</nav>
 					<h1 {...stylex.props(styles.title)}>Game text workbench</h1>
 					<p {...stylex.props(styles.subtitle)}>
@@ -383,15 +383,6 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 					</p>
 				</div>
 				<span {...stylex.props(styles.headerActions)}>
-					<Show when={state().status === "ready"}>
-						<button
-							type="button"
-							onClick={loadQualityRules}
-							{...stylex.props(styles.qualityButton)}
-						>
-							{qualitySummary() ? "Replace quality rules" : "Load quality rules"}
-						</button>
-					</Show>
 					<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
 						Rescan
 					</button>
@@ -399,7 +390,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 			</header>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.empty)}>Reading the saved language corpus…</div>
+					<div {...stylex.props(styles.empty)}>Reading saved game text…</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
 					<div {...stylex.props(styles.empty)}>
@@ -439,13 +430,12 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 											mode() === "corpus" && styles.modeTabActive
 										)}
 									>
-										Corpus browser
+										Text browser
 									</button>
 									<button
 										type="button"
 										role="tab"
 										aria-selected={mode() === "quality"}
-										disabled={qualitySummary() === undefined}
 										onClick={() => setMode("quality")}
 										{...stylex.props(
 											styles.modeTab,
@@ -458,7 +448,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 										</Show>
 									</button>
 								</div>
-								<Show when={qualityFailure()}>
+								<Show when={mode() === "quality" ? qualityFailure() : undefined}>
 									{(error) => (
 										<div role="alert" {...stylex.props(styles.qualityError)}>
 											<strong>{error().message}</strong>
@@ -467,7 +457,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 									)}
 								</Show>
 								<Show
-									when={mode() === "quality" ? qualitySummary() : undefined}
+									when={mode() === "quality"}
 									fallback={
 										<TextCorpusWorkspace
 											summary={currentSummary()}
@@ -499,12 +489,44 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 										/>
 									}
 								>
-									{(quality) => (
-										<GameTextQualityWorkspace
-											client={props.client}
-											summary={quality()}
-										/>
-									)}
+									<Show
+										when={qualitySummary()}
+										fallback={
+											<section
+												aria-label="Quality rules setup"
+												{...stylex.props(styles.qualitySetup)}
+											>
+												<small
+													{...stylex.props(styles.qualitySetupEyebrow)}
+												>
+													PROJECT-AUTHORED QUALITY
+												</small>
+												<h2 {...stylex.props(styles.qualitySetupTitle)}>
+													Review text against your rules
+												</h2>
+												<p {...stylex.props(styles.qualitySetupCopy)}>
+													Load a rule file to check character limits and
+													terminology across the saved text already shown
+													in Workbench.
+												</p>
+												<button
+													type="button"
+													onClick={loadQualityRules}
+													{...stylex.props(styles.qualityButton)}
+												>
+													Load quality rules
+												</button>
+											</section>
+										}
+									>
+										{(quality) => (
+											<GameTextQualityWorkspace
+												client={props.client}
+												onReplaceRules={loadQualityRules}
+												summary={quality()}
+											/>
+										)}
+									</Show>
 								</Show>
 							</>
 						)}
@@ -573,7 +595,7 @@ function TextCorpusWorkspace(props: {
 						value={props.query()}
 						onInput={(event) => props.onQuery(event.currentTarget.value)}
 						placeholder="Search exact source wording…"
-						aria-label="Search corpus"
+						aria-label="Search game text"
 						{...stylex.props(styles.searchInput)}
 					/>
 				</div>
@@ -598,9 +620,9 @@ function TextCorpusWorkspace(props: {
 			</section>
 			<div {...stylex.props(styles.grid)}>
 				<aside aria-label="Review lenses" {...stylex.props(styles.reviewRail)}>
-					<section aria-label="Corpus coverage" {...stylex.props(styles.railSection)}>
+					<section aria-label="Saved text coverage" {...stylex.props(styles.railSection)}>
 						<header {...stylex.props(styles.railHeader)}>
-							<span>Saved corpus</span>
+							<span>Saved text</span>
 							<strong
 								{...stylex.props(
 									styles.coverageState,
@@ -874,7 +896,7 @@ function TextCorpusWorkspace(props: {
 						<span>
 							Showing {props.page().units.length} of {props.page().total} matches
 						</span>
-						<span>{coverage.textUnits} units in corpus</span>
+						<span>{coverage.textUnits} text entries</span>
 					</footer>
 				</section>
 				<FocusPanel
@@ -1046,6 +1068,30 @@ const styles = stylex.create({
 		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
 		fontSize: 10
 	},
+	qualitySetup: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: 10,
+		maxWidth: 560,
+		minHeight: 280,
+		margin: "48px auto 0",
+		padding: "28px 30px",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: "#151311",
+		boxShadow: "inset 3px 0 #e87655",
+		color: tokens.colorTextMuted,
+		fontSize: 10,
+		lineHeight: 1.5
+	},
+	qualitySetupEyebrow: { color: "#e87655", fontSize: 8, letterSpacing: ".08em" },
+	qualitySetupTitle: {
+		margin: "4px 0 0",
+		color: tokens.colorTextStrong,
+		fontSize: 19,
+		fontWeight: 600
+	},
+	qualitySetupCopy: { maxWidth: 430, margin: 0 },
 	modeTabs: {
 		display: "flex",
 		alignItems: "stretch",

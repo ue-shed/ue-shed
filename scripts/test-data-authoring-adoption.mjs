@@ -14,6 +14,7 @@ const materializer = join(
 	"materialize.mjs"
 );
 const targetRoot = join(repositoryRoot, "test-results", "data-authoring-adoption");
+const cargoTargetDirectory = process.env.CARGO_TARGET_DIR ?? join(targetRoot, "target");
 
 function fail(message) {
 	throw new Error(`Data Authoring adoption conformance failed: ${message}`);
@@ -95,16 +96,11 @@ function terminateProcessTree(pid) {
 	}
 }
 
-async function verifyFunctionalHost() {
+async function verifyFunctionalHost(remoteControlEndpoint) {
 	const port = await availablePort();
-	let unavailableRemoteControlPort = await availablePort();
-	while (unavailableRemoteControlPort === port) {
-		unavailableRemoteControlPort = await availablePort();
-	}
 	const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 	const reader = join(
-		targetRoot,
-		"target",
+		cargoTargetDirectory,
 		"release",
 		process.platform === "win32" ? "uasset.exe" : "uasset"
 	);
@@ -119,9 +115,7 @@ async function verifyFunctionalHost() {
 			NPM_TOKEN: "",
 			UE_SHED_HOST_PORT: String(port),
 			UE_SHED_PROJECT_ROOT: fixtureRoot,
-			// Keep this saved-package conformance check isolated from any developer-owned editor
-			// that happens to be listening on the default Remote Control endpoint.
-			UE_SHED_REMOTE_CONTROL_ENDPOINT: `http://127.0.0.1:${unavailableRemoteControlPort}`,
+			UE_SHED_REMOTE_CONTROL_ENDPOINT: remoteControlEndpoint,
 			UE_SHED_UASSET_EXECUTABLE: reader
 		},
 		shell: false,
@@ -249,25 +243,22 @@ const divergentCss = await readFile(cssPath, "utf8");
 if (digest(divergentCss) === digest(initialCss))
 	fail("theme divergence did not change production CSS");
 
-const functionalHost = await verifyFunctionalHost();
-runPnpm(
-	[
-		"verify:host",
-		"--",
-		`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
-		`--reader=${join(
-			targetRoot,
-			"target",
-			"release",
-			process.platform === "win32" ? "uasset.exe" : "uasset"
-		)}`,
-		"--expected-table-count=12"
-	],
-	{
-		// This verifier starts a second host, so isolate it from an ambient editor too.
-		UE_SHED_REMOTE_CONTROL_ENDPOINT: `http://127.0.0.1:${await availablePort()}`
-	}
-);
+// This gate verifies the copied host against the saved fixture project. Keep a developer's live
+// editor from contributing tables from an unrelated project through the default endpoint.
+const isolatedRemoteControlEndpoint = `http://127.0.0.1:${await availablePort()}`;
+const functionalHost = await verifyFunctionalHost(isolatedRemoteControlEndpoint);
+runPnpm([
+	"verify:host",
+	"--",
+	`--endpoint=${isolatedRemoteControlEndpoint}`,
+	`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
+	`--reader=${join(
+		cargoTargetDirectory,
+		"release",
+		process.platform === "win32" ? "uasset.exe" : "uasset"
+	)}`,
+	"--expected-table-count=12"
+]);
 
 console.log(
 	`Data Authoring adoption conformance passed: ${declaredEntries.length} declared entries, ` +

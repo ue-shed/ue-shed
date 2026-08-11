@@ -1,0 +1,9 @@
+{
+	"_tag": "Prepared",
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"mapPath": "/Game/Fixture/Scenarios/L_MovementGym",
+	"scenarioId": "scenario_movement-gym_014"
+}

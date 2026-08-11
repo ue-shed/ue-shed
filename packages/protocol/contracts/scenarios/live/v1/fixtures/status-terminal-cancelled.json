@@ -1,0 +1,33 @@
+{
+	"_tag": "Terminal",
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"result": {
+		"schemaVersion": 1,
+		"id": "run-live-cancelled",
+		"scenarioId": "scenario_movement-gym_014",
+		"label": "Movement Gym live run",
+		"status": "cancelled",
+		"recordedAt": "2026-08-11T00:00:00.000Z",
+		"durationMs": 2100,
+		"engineVersion": "5.7",
+		"world": "L_MovementGym:PersistentLevel",
+		"evidence": [],
+		"divergences": [],
+		"pieSessionId": "pie-session-1",
+		"lifecycle": [
+			{ "state": "accepted", "atGameTimeMs": 0 },
+			{ "state": "isolating", "atGameTimeMs": 0 },
+			{ "state": "running", "atGameTimeMs": 0 },
+			{ "state": "cancelling", "atGameTimeMs": 2100 },
+			{ "state": "terminal", "atGameTimeMs": 2100 }
+		],
+		"inputIsolation": {
+			"established": true,
+			"restored": true,
+			"method": "slate_input_preprocessor"
+		}
+	}
+}

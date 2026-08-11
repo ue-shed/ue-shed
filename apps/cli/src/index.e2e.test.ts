@@ -5,14 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
+import { decodeTextQualityReport as decodeTextQualityReportEffect } from "@ue-shed/game-text";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 const decodeAuthoringTableSnapshot = (input: unknown) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
+const decodeTextQualityReport = (input: unknown) =>
+	Effect.runSync(decodeTextQualityReportEffect(input));
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliScript = join(repositoryRoot, "scripts", "ue-shed.mjs");
+const cliIndex = join(repositoryRoot, "apps", "cli", "src", "index.ts");
 const scalarAsset = join(
 	repositoryRoot,
 	"fixtures",
@@ -24,6 +28,20 @@ const scalarAsset = join(
 );
 const scalarTable = "/Game/Fixture/Authoring/DT_Scalars.DT_Scalars";
 const fixtureProject = join(repositoryRoot, "fixtures", "unreal-project");
+const configFixture = join(
+	repositoryRoot,
+	"packages",
+	"config-explorer",
+	"fixtures",
+	"config-source"
+);
+const fixtureTextQualityRules = join(
+	repositoryRoot,
+	"packages",
+	"game-text",
+	"fixtures",
+	"quality-rules.v1.json"
+);
 const fixtureReviewSet = join(
 	fixtureProject,
 	".ue-shed",
@@ -56,6 +74,21 @@ function runCli(args: readonly string[]): CliResult {
 
 function runSuccessfulCli(args: readonly string[]): string {
 	const result = runCli(args);
+	if (result.status !== 0) {
+		throw new Error(`CLI exited with ${result.status} for ${args.join(" ")}\n${result.stderr}`);
+	}
+	return result.stdout;
+}
+
+function runSuccessfulHeadlessCli(args: readonly string[]): string {
+	const result = spawnSync(process.execPath, ["--import", "tsx", cliIndex, ...args], {
+		cwd: repositoryRoot,
+		encoding: "utf8",
+		env: process.env,
+		timeout: 30_000,
+		windowsHide: true
+	});
+	if (result.error) throw result.error;
 	if (result.status !== 0) {
 		throw new Error(`CLI exited with ${result.status} for ${args.join(" ")}\n${result.stderr}`);
 	}
@@ -103,6 +136,47 @@ describe("ue-shed CLI process", () => {
 		expect(invalid.stderr).toContain('ue-shed: Unknown subcommand "not-a-command"');
 	}, 20_000);
 
+	it("explains and compares saved config provenance through the executable boundary", () => {
+		const explanation = parseRecord(
+			runSuccessfulHeadlessCli([
+				"config",
+				"explain",
+				configFixture,
+				"Fixture.Settings",
+				"Entries",
+				"--platform",
+				"PlatformA",
+				"--engine-root",
+				configFixture,
+				"--family",
+				"Game"
+			])
+		);
+		expect(explanation.status).toBe("complete");
+		expect(explanation.effectiveValue).toEqual({ kind: "array", values: ["PlatformA"] });
+		expect(JSON.stringify(explanation)).not.toContain(configFixture);
+
+		const comparison = parseRecord(
+			runSuccessfulHeadlessCli([
+				"config",
+				"compare",
+				configFixture,
+				"Fixture.Settings",
+				"Entries",
+				"--left-platform",
+				"PlatformA",
+				"--right-platform",
+				"PlatformB",
+				"--engine-root",
+				configFixture,
+				"--family",
+				"Game"
+			])
+		);
+		expect(comparison.status).toBe("different");
+		expect(comparison.valueChanged).toBe(true);
+	}, 30_000);
+
 	it("inspects a real saved fixture asset through the native reader", () => {
 		const inspection = parseRecord(runSuccessfulCli(["authoring", "inspect", scalarAsset]));
 		const snapshot = decodeAuthoringTableSnapshot(inspection.snapshot);
@@ -128,6 +202,20 @@ describe("ue-shed CLI process", () => {
 			})
 		]);
 	});
+
+	it("reviews the real saved text corpus with project-authored rules", () => {
+		const output: unknown = JSON.parse(
+			runSuccessfulCli(["text", "review", fixtureProject, "--rules", fixtureTextQualityRules])
+		);
+		const report = decodeTextQualityReport(output);
+
+		expect(report.schemaVersion).toBe(1);
+		expect(report.ruleDocumentVersion).toBe(1);
+		expect(report.status).toBe("partial");
+		expect(report.coverage.unsupportedTextProperties).toBe(1);
+		expect(report.findings.length).toBeGreaterThan(0);
+		expect(report.findings.every((finding) => finding.role === "ui.prompt")).toBe(true);
+	}, 30_000);
 
 	it("resolves fixture row references through the public headless command", () => {
 		const report = parseRecord(

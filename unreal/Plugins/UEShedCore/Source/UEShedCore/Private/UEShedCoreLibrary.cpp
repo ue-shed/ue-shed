@@ -54,6 +54,21 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
 	}
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedScenariosEditor")))
+	{
+		Root->SetStringField(TEXT("scenariosObjectPath"),
+			TEXT("/Script/UEShedScenariosEditor.Default__UEShedScenarioLibrary"));
+		const TSharedRef<FJsonObject> Limits = MakeShared<FJsonObject>();
+		Limits->SetNumberField(TEXT("maxActions"), 8);
+		Limits->SetNumberField(TEXT("maxDurationMs"), 30000);
+		Limits->SetNumberField(TEXT("maxEvidence"), 8);
+		Limits->SetNumberField(TEXT("maxKeyframes"), 32);
+		Root->SetObjectField(TEXT("scenarioLimits"), Limits);
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("scenarios.execute.pie.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("scenarios.evidence.world-state.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("scenarios.input-isolation.slate.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("scenarios.input.pre-evaluation.v1")));
+	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedAssetAudits")))
 	{
 		Root->SetStringField(TEXT("assetAuditsObjectPath"),

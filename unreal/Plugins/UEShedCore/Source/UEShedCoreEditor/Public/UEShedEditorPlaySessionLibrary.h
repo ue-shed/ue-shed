@@ -9,6 +9,8 @@ class UESHEDCOREEDITOR_API UUEShedEditorPlaySessionLibrary : public UBlueprintFu
 	GENERATED_BODY()
 
 public:
+	static bool GetActiveSessionId(FString& SessionId);
+
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Editor Session")
 	static void GetPlaySessionState(FString& ResultJson);
 

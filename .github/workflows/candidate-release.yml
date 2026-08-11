@@ -16,11 +16,15 @@ on:
                 required: true
                 default: false
                 type: boolean
-            bootstrap:
-                description: One-time first publish for the new WASM package using protected NPM_BOOTSTRAP_TOKEN
+            bootstrap_package:
+                description: One-time first publish for one new package using protected NPM_BOOTSTRAP_TOKEN
                 required: true
-                default: false
-                type: boolean
+                default: none
+                type: choice
+                options:
+                    - none
+                    - "@ue-shed/uasset-inspection-wasm"
+                    - "@ue-shed/game-text"
 
 permissions:
     contents: read
@@ -60,7 +64,7 @@ jobs:
               run: pnpm install --frozen-lockfile
 
             - name: Require bootstrap to be explicitly paired with publication
-              if: inputs.bootstrap && !inputs.publish
+              if: inputs.bootstrap_package != 'none' && !inputs.publish
               shell: pwsh
               run: throw "The bootstrap path cannot run without publish=true."
 
@@ -141,6 +145,7 @@ jobs:
                     "release/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
                     "release/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
+                    "release/npm/ue-shed-game-text-$CANDIDATE_VERSION.tgz"
                   )
                   for package in "${packages[@]}"; do
                     npm publish "$package" --dry-run --access public --tag next
@@ -176,7 +181,7 @@ jobs:
 
     publish:
         name: Publish npm candidate
-        if: inputs.publish && !inputs.bootstrap
+        if: inputs.publish && inputs.bootstrap_package == 'none'
         needs:
             - candidate
             - provenance
@@ -254,7 +259,7 @@ jobs:
 
     bootstrap:
         name: Bootstrap new npm package with short-lived token
-        if: inputs.publish && inputs.bootstrap
+        if: inputs.publish && inputs.bootstrap_package != 'none'
         needs:
             - candidate
             - provenance
@@ -312,9 +317,10 @@ jobs:
                     }
                   '
 
-            - name: Bootstrap only the new WASM package with provenance
+            - name: Bootstrap only the selected new package with provenance
               shell: bash
               env:
+                  BOOTSTRAP_PACKAGE: ${{ inputs.bootstrap_package }}
                   CANDIDATE_VERSION: ${{ inputs.version }}
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
               run: |
@@ -322,16 +328,18 @@ jobs:
                     --manifest candidate/npm/packages-manifest.json \
                     --version "$CANDIDATE_VERSION" \
                     --tag next \
-                    --only @ue-shed/uasset-inspection-wasm \
+                    --only "$BOOTSTRAP_PACKAGE" \
                     --provenance
 
             - name: Record required trusted-publisher handoff
               shell: bash
+              env:
+                  BOOTSTRAP_PACKAGE: ${{ inputs.bootstrap_package }}
               run: |
-                  cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-                  # WASM bootstrap published — manual handoff required
+                  cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+                  # Package bootstrap published — manual handoff required
 
-                  :warning: The one-time `@ue-shed/uasset-inspection-wasm` bootstrap publish completed with a short-lived token.
+                  :warning: The one-time \`$BOOTSTRAP_PACKAGE\` bootstrap publish completed with a short-lived token.
 
                   The green job is **not** the steady-state release postcondition. Before any later candidate publication:
 
@@ -340,6 +348,6 @@ jobs:
                   - [ ] Revoke/delete `NPM_BOOTSTRAP_TOKEN` at npm and remove the `npm-bootstrap-release` environment secret.
                   - [ ] Confirm the normal publish job has no token authentication and uses OIDC only.
 
-                  Do not rerun `bootstrap=true`; the published version is immutable and this token path is one-time.
+                  Do not bootstrap this package version again; the published version is immutable and this token path is one-time.
                   EOF
-                  echo "::warning::WASM bootstrap published. Configure npm trusted publishing, verify OIDC, and revoke/remove NPM_BOOTSTRAP_TOKEN before any normal publication." >&2
+                  echo "::warning::$BOOTSTRAP_PACKAGE bootstrap published. Configure npm trusted publishing, verify OIDC, and revoke/remove NPM_BOOTSTRAP_TOKEN before any normal publication." >&2

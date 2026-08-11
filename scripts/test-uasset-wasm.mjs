@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -12,9 +12,11 @@ const packageNodeEntry = join(
 	"dist",
 	"node.js"
 );
+const cargoTargetDirectory = process.env.CARGO_TARGET_DIR
+	? resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
+	: join(repositoryRoot, "target");
 const nativeExecutable = join(
-	repositoryRoot,
-	"target",
+	cargoTargetDirectory,
 	"release",
 	process.platform === "win32" ? "uasset.exe" : "uasset"
 );

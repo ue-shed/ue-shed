@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+	GAME_TEXT_PACKAGE_NAME,
 	packPublicPackages,
 	PUBLIC_PACKAGES,
-	PUBLIC_VERSION,
 	WASM_PACKAGE_NAME
 } from "./pack-public-packages.mjs";
 
@@ -78,7 +78,7 @@ try {
 			packageDirectory
 		)
 	);
-	assert.equal(wasmBuildInfo.packageVersion, PUBLIC_VERSION);
+	assert.equal(wasmBuildInfo.packageVersion, wasmEntry.manifest.version);
 	assert.deepEqual(wasmBuildInfo.targets, ["nodejs", "web"]);
 	assert.equal(typeof wasmBuildInfo.optimizer?.enabled, "boolean");
 	assert.equal(typeof wasmBuildInfo.tools?.wasmOpt, "string");
@@ -90,6 +90,33 @@ try {
 		assert.equal(typeof wasmBuildInfo.optimizer.reason, "string");
 		assert.match(wasmBuildInfo.tools.wasmOpt, /disabled|no[ -]?opt/iu);
 	}
+	const gameTextEntry = packed.find((entry) => entry.name === GAME_TEXT_PACKAGE_NAME);
+	assert.ok(gameTextEntry, "the public package graph must contain Game Text");
+	const gameTextFiles = run("tar", ["-tzf", basename(gameTextEntry.path)], packageDirectory)
+		.split(/\r?\n/u)
+		.filter(Boolean);
+	assert.ok(gameTextFiles.includes("package/ADOPTING.md"));
+	assert.ok(gameTextFiles.includes("package/adoption.manifest.json"));
+	const gameTextAdoption = JSON.parse(
+		run(
+			"tar",
+			["-xOf", basename(gameTextEntry.path), "package/adoption.manifest.json"],
+			packageDirectory
+		)
+	);
+	assert.equal(gameTextAdoption.feature, "game-text");
+	assert.equal(gameTextAdoption.release.versionSource, "package.json");
+	assert.equal(gameTextAdoption.release.nativeBinaryBundled, false);
+	assert.equal(gameTextAdoption.release.uiBundled, false);
+	assert.equal(
+		gameTextAdoption.packageGraph.dependencies["@ue-shed/unreal-assets"],
+		"package.json#dependencies"
+	);
+	assert.deepEqual(gameTextAdoption.capabilities.required, [
+		"saved-project",
+		"saved-asset-reader"
+	]);
+	assert.ok(gameTextAdoption.capabilities.notRequired.includes("ue-shed-unreal-plugin"));
 	const packageChecksums = await readFile(join(packageDirectory, "SHA256SUMS"), "utf8");
 	const checksumRows = packageChecksums
 		.trim()
@@ -110,7 +137,6 @@ try {
 		await readFile(join(packageDirectory, "packages-manifest.json"), "utf8")
 	);
 	assert.equal(packagesManifest.schemaVersion, 1);
-	assert.equal(packagesManifest.version, PUBLIC_VERSION);
 	assert.deepEqual(
 		packagesManifest.packages.map(({ name }) => name),
 		PUBLIC_PACKAGES.map(({ name }) => name)
@@ -121,7 +147,7 @@ try {
 			packedEntry,
 			`packages manifest contains an unknown package ${packageEntry.name}`
 		);
-		assert.equal(packageEntry.version, PUBLIC_VERSION);
+		assert.equal(packageEntry.version, packedEntry.manifest.version);
 		assert.equal(packageEntry.license, "MIT");
 		assert.equal(packageEntry.filename, packedEntry.filename);
 		assert.equal(packageEntry.sha256, packedEntry.sha256);
@@ -242,7 +268,9 @@ try {
 	const version = run(executable("pnpm"), ["exec", "uasset", "--version"], consumerDirectory, {
 		env: consumerEnvironment
 	});
-	if (version !== `uasset ${PUBLIC_VERSION}`) {
+	const uassetVersion = packed.find((entry) => entry.name === "@ue-shed/uasset")?.manifest
+		.version;
+	if (version !== `uasset ${uassetVersion}`) {
 		throw new Error(`Packed CLI returned ${JSON.stringify(version)}.`);
 	}
 	const fixtureDirectory = join(consumerDirectory, "fixture");
@@ -270,6 +298,55 @@ try {
 	if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== "DataTable") {
 		throw new Error("Packed CLI did not produce the stable DataTable inspection contract.");
 	}
+	const gameTextProject = join(consumerDirectory, "game-text-project");
+	const gameTextContent = join(gameTextProject, "Content", "Fixture", "Text");
+	await mkdir(dirname(gameTextContent), { recursive: true });
+	await cp(
+		join(repositoryRoot, "fixtures", "unreal-project", "Content", "Fixture", "Text"),
+		gameTextContent,
+		{ recursive: true }
+	);
+	const gameTextConsumerScript = join(consumerDirectory, "verify-game-text.mjs");
+	await writeFile(
+		gameTextConsumerScript,
+		`${[
+			"import { resolve } from 'node:path';",
+			"import { Effect } from 'effect';",
+			"import { resolveUassetExecutable } from '@ue-shed/uasset';",
+			"import { assetReaderLayer } from '@ue-shed/unreal-assets';",
+			"import { scanTextCorpus } from '@ue-shed/game-text';",
+			"import { textCorpusQuery } from '@ue-shed/game-text/browser';",
+			"const corpus = await Effect.runPromise(",
+			"  scanTextCorpus({ projectRoot: resolve('./game-text-project') }).pipe(",
+			"    Effect.provide(assetReaderLayer({ executable: resolveUassetExecutable() }))",
+			"  )",
+			");",
+			"if (corpus.coverage.discoveredPackages !== 2 || corpus.coverage.textUnits < 1) {",
+			"  throw new Error('packed Game Text scan did not account for the fixture');",
+			"}",
+			"const query = textCorpusQuery(corpus);",
+			"const summary = query.summary();",
+			"if (summary.coverage.textUnits !== corpus.coverage.textUnits) {",
+			"  throw new Error('packed Game Text summary lost corpus coverage');",
+			"}",
+			"const page = query.search({ capability: 'all', pageSize: 50, query: '' });",
+			"if (page.total < 1 || page.units.length < 1) {",
+			"  throw new Error('packed Game Text search returned no fixture text');",
+			"}",
+			"const focus = query.focus({ id: page.units[0].id, pageSize: 50 });",
+			"if (focus === undefined || focus.totalOccurrences < 1) {",
+			"  throw new Error('packed Game Text focus returned no occurrence evidence');",
+			"}",
+			"console.log('game-text-packed-ok');"
+		].join("\n")}\n`,
+		"utf8"
+	);
+	const gameTextStatus = run(process.execPath, [gameTextConsumerScript], consumerDirectory, {
+		env: consumerEnvironment
+	});
+	if (gameTextStatus !== "game-text-packed-ok") {
+		throw new Error(`Game Text packed consumer returned ${JSON.stringify(gameTextStatus)}.`);
+	}
 	const wasmConsumerScript = join(consumerDirectory, "verify-wasm.mjs");
 	await writeFile(
 		wasmConsumerScript,
@@ -296,7 +373,7 @@ try {
 			"  return typeof output === 'string' ? JSON.parse(output) : output;",
 			"};",
 			"const version = String(await api.version()).replace(/^uasset\\s+/u, '');",
-			`if (version !== '${PUBLIC_VERSION}') throw new Error('unexpected WASM version ' + version);`,
+			`if (version !== '${wasmEntry.manifest.version}') throw new Error('unexpected WASM version ' + version);`,
 			"const inspection = await decode(api.inspect);",
 			"if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== 'DataTable') throw new Error('WASM inspection contract failed');",
 			"const repeated = await decode(api.inspect);",

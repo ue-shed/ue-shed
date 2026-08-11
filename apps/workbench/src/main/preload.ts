@@ -31,12 +31,22 @@ import type {
 	WorldScoutResult
 } from "@ue-shed/observatory";
 import type { SavedWorld } from "@ue-shed/protocol";
+import type {
+	ScenarioDocument,
+	ScenarioRun,
+	ScenarioRunHandle,
+	ScenarioRunnerStatus
+} from "@ue-shed/scenarios";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+	CameraStatusResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
 import type {
@@ -47,10 +57,14 @@ import type {
 } from "./project-workspace-contract.js";
 
 export type {
+	CameraStatusResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "./ipc-contracts.js";
 export type {
@@ -66,13 +80,29 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("asset-navigation:locate", objectPath)
 	},
 	editorSession: {
+		settings: (): Promise<UnrealConnectionSettings> =>
+			ipcRenderer.invoke("editor-session:settings"),
+		setPort: (port: number): Promise<UnrealConnectionSettings> =>
+			ipcRenderer.invoke("editor-session:set-port", port),
 		status: (): Promise<EditorPlaySessionStateResponse> =>
 			ipcRenderer.invoke("editor-session:status"),
 		execute: (command: EditorPlaySessionCommand): Promise<EditorPlaySessionCommandResponse> =>
 			ipcRenderer.invoke("editor-session:execute", command)
 	},
+	scenarios: {
+		cancel: (handle: ScenarioRunHandle): Promise<ScenarioRun> =>
+			ipcRenderer.invoke("scenario:cancel", handle),
+		start: (document: ScenarioDocument, endpoint: string): Promise<ScenarioRunHandle> =>
+			ipcRenderer.invoke("scenario:start", document, endpoint),
+		status: (handle: ScenarioRunHandle): Promise<ScenarioRunnerStatus> =>
+			ipcRenderer.invoke("scenario:status", handle)
+	},
 	showcase: {
 		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context")
+	},
+	configExplorer: {
+		query: (request: ConfigExplorerQuery): Promise<ConfigExplorerQueryResult> =>
+			ipcRenderer.invoke("config-explorer:query", request)
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
@@ -115,7 +145,17 @@ contextBridge.exposeInMainWorld("ueShed", {
 		search: (request: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:search", request),
 		focus: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:focus", request)
+			ipcRenderer.invoke("game-text:focus", request),
+		chooseQualityRules: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:choose-rules"),
+		previewQualityRules: (document: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:preview-rules", document),
+		saveQualityRules: (document: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:save-rules", document),
+		qualitySearch: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:search", request),
+		qualityFocus: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:focus", request)
 	},
 	inputAtlas: {
 		loadConfiguredProject: (): Promise<unknown> =>
@@ -241,7 +281,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),
 	getMetrics: (): Promise<WorkbenchCameraMetrics> => ipcRenderer.invoke("camera:metrics"),
-	getStatus: (): Promise<CameraStatus> => ipcRenderer.invoke("camera:status"),
+	getStatus: (): Promise<CameraStatusResult> => ipcRenderer.invoke("camera:status"),
 	setPresentationBudget: (megabytesPerSecond: number): Promise<number> =>
 		ipcRenderer.invoke("camera:presentation-budget", megabytesPerSecond),
 	onFrame: (listener: (frame: RendererCameraFrame) => void) => {

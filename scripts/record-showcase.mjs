@@ -5,7 +5,13 @@ import { dirname, join, resolve } from "node:path";
 import { createWorkbenchEnvironment, repositoryRoot, runPnpm } from "./workbench-tools.mjs";
 import { startPerforceMapHistoryFixture } from "./test-perforce-map-history.mjs";
 
-const supportedJourneys = ["saved-workflows", "map-review", "world-log", "world-log-fast"];
+const supportedJourneys = [
+	"saved-workflows",
+	"config-explorer",
+	"map-review",
+	"world-log",
+	"world-log-fast"
+];
 const argumentsAfterCommand = process.argv.slice(2);
 const requestedJourney = argumentsAfterCommand.find((argument) => !argument.startsWith("--"));
 const journey = requestedJourney ?? "saved-workflows";

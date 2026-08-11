@@ -35,6 +35,11 @@ import {
 	MapReviewSetLibraryResult,
 	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
+import {
+	ConfigComparison,
+	ConfigExplanation,
+	ConfigExplorerPublicError
+} from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import {
 	TextCorpusFocusRequest,
@@ -42,9 +47,22 @@ import {
 	TextCorpusQueryRunResult,
 	TextCorpusRunResult,
 	TextCorpusSearchRequest,
-	TextCorpusSearchResult
+	TextCorpusSearchResult,
+	TextQualityFocusRequest,
+	TextQualityFocusResult,
+	TextQualityQueryRunResult,
+	TextQualityRuleDocument,
+	TextQualityRuleUpdateResult,
+	TextQualitySearchRequest,
+	TextQualitySearchResult
 } from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
+import {
+	ScenarioDocument,
+	ScenarioRun,
+	ScenarioRunHandle,
+	ScenarioStatusResponse
+} from "@ue-shed/scenarios";
 import {
 	ActorId,
 	WorldActorCatalog,
@@ -81,6 +99,29 @@ import {
 } from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
+
+export const RemoteControlPort = Schema.Int.check(
+	Schema.isGreaterThanOrEqualTo(1),
+	Schema.isLessThanOrEqualTo(65_535)
+);
+export type RemoteControlPort = Schema.Schema.Type<typeof RemoteControlPort>;
+
+export const CameraStatusResult = Schema.Union([
+	Schema.Struct({ camera: CameraStatus, status: Schema.Literal("ready") }),
+	Schema.Struct({
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		status: Schema.Literal("unavailable")
+	})
+]);
+export type CameraStatusResult = Schema.Schema.Type<typeof CameraStatusResult>;
+
+export const UnrealConnectionSettings = Schema.Struct({
+	port: RemoteControlPort
+});
+export interface UnrealConnectionSettings extends Schema.Schema.Type<
+	typeof UnrealConnectionSettings
+> {}
 
 /** `/Game/` object paths accepted by preview and catalog-table IPC. */
 export const GameObjectPath = Schema.String.check(
@@ -153,6 +194,60 @@ export const ShowcaseContext = Schema.Struct({
 	ruleFile: Schema.optionalKey(Schema.String)
 });
 export interface ShowcaseContext extends Schema.Schema.Type<typeof ShowcaseContext> {}
+
+const ConfigExplorerQueryFields = {
+	family: Schema.optionalKey(Schema.NonEmptyString),
+	key: Schema.NonEmptyString,
+	section: Schema.NonEmptyString,
+	source: Schema.Literals(["selected_project", "sample_fixture"])
+};
+
+export const ConfigExplorerQuery = Schema.Union([
+	Schema.Struct({
+		...ConfigExplorerQueryFields,
+		mode: Schema.Literal("explain"),
+		platform: Schema.NonEmptyString
+	}),
+	Schema.Struct({
+		...ConfigExplorerQueryFields,
+		leftPlatform: Schema.NonEmptyString,
+		mode: Schema.Literal("compare"),
+		rightPlatform: Schema.NonEmptyString
+	})
+]);
+export type ConfigExplorerQuery = typeof ConfigExplorerQuery.Type;
+
+const ConfigExplorerWorkbenchError = Schema.Union([
+	ConfigExplorerPublicError,
+	Schema.Struct({
+		code: Schema.Literals(["project_unavailable", "sample_unavailable"]),
+		message: Schema.String,
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean
+	})
+]);
+
+export const ConfigExplorerQueryResult = Schema.Union([
+	Schema.Struct({
+		evidence: ConfigExplanation,
+		mode: Schema.Literal("explain"),
+		projectName: Schema.NonEmptyString,
+		source: ConfigExplorerQueryFields.source,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({
+		evidence: ConfigComparison,
+		mode: Schema.Literal("compare"),
+		projectName: Schema.NonEmptyString,
+		source: ConfigExplorerQueryFields.source,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({
+		error: ConfigExplorerWorkbenchError,
+		status: Schema.Literal("failed")
+	})
+]);
+export type ConfigExplorerQueryResult = typeof ConfigExplorerQueryResult.Type;
 
 export const FixtureLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
@@ -291,6 +386,16 @@ const invoke = <
 });
 
 export const invokeContracts = {
+	"editor-session:settings": invoke({
+		channel: "editor-session:settings",
+		args: EmptyArgs,
+		result: UnrealConnectionSettings
+	}),
+	"editor-session:set-port": invoke({
+		channel: "editor-session:set-port",
+		args: Schema.Tuple([RemoteControlPort]),
+		result: UnrealConnectionSettings
+	}),
 	"editor-session:status": invoke({
 		channel: "editor-session:status",
 		args: EmptyArgs,
@@ -300,6 +405,21 @@ export const invokeContracts = {
 		channel: "editor-session:execute",
 		args: Schema.Tuple([EditorPlaySessionCommand]),
 		result: EditorPlaySessionCommandResponse
+	}),
+	"scenario:start": invoke({
+		channel: "scenario:start",
+		args: Schema.Tuple([ScenarioDocument, Schema.NonEmptyString]),
+		result: ScenarioRunHandle
+	}),
+	"scenario:status": invoke({
+		channel: "scenario:status",
+		args: Schema.Tuple([ScenarioRunHandle]),
+		result: ScenarioStatusResponse
+	}),
+	"scenario:cancel": invoke({
+		channel: "scenario:cancel",
+		args: Schema.Tuple([ScenarioRunHandle]),
+		result: ScenarioRun
 	}),
 	"fixture:launch": invoke({
 		channel: "fixture:launch",
@@ -315,6 +435,11 @@ export const invokeContracts = {
 		channel: "showcase:context",
 		args: EmptyArgs,
 		result: ShowcaseContext
+	}),
+	"config-explorer:query": invoke({
+		channel: "config-explorer:query",
+		args: Schema.Tuple([ConfigExplorerQuery]),
+		result: ConfigExplorerQueryResult
 	}),
 	"project:current": invoke({
 		channel: "project:current",
@@ -421,6 +546,31 @@ export const invokeContracts = {
 		args: Schema.Tuple([TextCorpusFocusRequest]),
 		result: TextCorpusFocusResult
 	}),
+	"game-text:quality:choose-rules": invoke({
+		channel: "game-text:quality:choose-rules",
+		args: EmptyArgs,
+		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:preview-rules": invoke({
+		channel: "game-text:quality:preview-rules",
+		args: Schema.Tuple([TextQualityRuleDocument]),
+		result: TextQualityRuleUpdateResult
+	}),
+	"game-text:quality:save-rules": invoke({
+		channel: "game-text:quality:save-rules",
+		args: Schema.Tuple([TextQualityRuleDocument]),
+		result: TextQualityRuleUpdateResult
+	}),
+	"game-text:quality:search": invoke({
+		channel: "game-text:quality:search",
+		args: Schema.Tuple([TextQualitySearchRequest]),
+		result: TextQualitySearchResult
+	}),
+	"game-text:quality:focus": invoke({
+		channel: "game-text:quality:focus",
+		args: Schema.Tuple([TextQualityFocusRequest]),
+		result: TextQualityFocusResult
+	}),
 	"asset-navigation:locate": invoke({
 		channel: "asset-navigation:locate",
 		args: Schema.Tuple([GameObjectPath]),
@@ -524,7 +674,7 @@ export const invokeContracts = {
 	"camera:status": invoke({
 		channel: "camera:status",
 		args: EmptyArgs,
-		result: CameraStatus
+		result: CameraStatusResult
 	}),
 	"camera:configure": invoke({
 		channel: "camera:configure",

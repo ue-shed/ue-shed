@@ -65,6 +65,33 @@ The Data Authoring slice is the reference implementation:
 [`adoption.manifest.json`](../../extensions/data-authoring/adoption.manifest.json), and
 `pnpm test:adoption:data-authoring`.
 
+### Package-mode existing-host adoption
+
+A headless feature adopted into an established host should not use the standalone source-copying
+materializer merely to resemble Data Authoring. Its equivalent deterministic process is an exact
+package closure plus a machine-readable host-integration manifest:
+
+1. Publish a built domain package with no Workbench or presentation dependency.
+2. State normal dependencies, host-owned peers, and separately selected runtime providers
+   independently. Do not hide a native executable inside an unrelated JavaScript package.
+3. Give the adopter agent a short guide naming required host Seams, forbidden imports, capability
+   tiers, and the functional journey the target must prove.
+4. Keep project selection, runtime composition, transport Adapters, presentation, and navigation
+   owned by the adopting host.
+5. Test the packed tarball from a clean consumer, including one real domain journey and native
+   provider resolution when applicable.
+6. Require the adopting repository to record exact versions and prove the journey through its real
+   transport and packaged runtime.
+
+Game Text is the reference package-mode bundle:
+[`packages/game-text/ADOPTING.md`](../../packages/game-text/ADOPTING.md) and
+[`adoption.manifest.json`](../../packages/game-text/adoption.manifest.json). Its release conformance
+is part of `pnpm test:release:packages`.
+
+Package adoption metadata does not select or version a release. A consumer-facing package change
+must include a Changeset created with `pnpm changeset`; Changesets owns package selection, internal
+dependency propagation, changelogs, and publication order.
+
 ## Design checklist
 
 Before declaring a new workflow agent-ready, answer these questions in its product document or

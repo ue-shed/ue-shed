@@ -319,6 +319,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 								client={props.client}
 								focusRequest={focusRequest()}
 								onApproved={load}
+								onChooseReviewSet={() => setSetLibraryOpen(true)}
 							/>
 						</Show>
 					</div>
@@ -392,20 +393,23 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 										REVISE SELECTED VIEW
 									</button>
 								</div>
-								<MapReviewAuthoring
-									client={props.client}
-									destination={
-										authoringMode() === "revise" &&
-										selectedViewId() !== undefined
-											? {
-													kind: "revise_view",
-													viewId: selectedViewId()!
-												}
-											: { kind: "append_view" }
-									}
-									focusRequest={focusRequest()}
-									onApproved={load}
-								/>
+								<Show when={current().reviewSet.id} keyed>
+									<MapReviewAuthoring
+										client={props.client}
+										destination={
+											authoringMode() === "revise" &&
+											selectedViewId() !== undefined
+												? {
+														kind: "revise_view",
+														viewId: selectedViewId()!
+													}
+												: { kind: "append_view" }
+										}
+										focusRequest={focusRequest()}
+										onApproved={load}
+										onChooseReviewSet={() => setSetLibraryOpen(true)}
+									/>
+								</Show>
 							</Show>
 
 							<section

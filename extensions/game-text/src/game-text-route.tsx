@@ -201,7 +201,7 @@ function CorpusWorkspace(props: {
 	const coverage = props.corpus.coverage;
 	return (
 		<div {...stylex.props(styles.workspace)}>
-			<section aria-label="Corpus coverage" {...stylex.props(styles.coverage)}>
+			<section aria-label="Saved text coverage" {...stylex.props(styles.coverage)}>
 				<div
 					{...stylex.props(
 						styles.coverageLead,
@@ -241,7 +241,7 @@ function CorpusWorkspace(props: {
 					value={props.query}
 					onInput={(event) => props.onQuery(event.currentTarget.value)}
 					placeholder="Search source text, namespace, key, table, row, asset, or property…"
-					aria-label="Search corpus"
+					aria-label="Search game text"
 					{...stylex.props(styles.searchInput)}
 				/>
 				<span {...stylex.props(styles.matchCount)}>

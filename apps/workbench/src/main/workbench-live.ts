@@ -1,4 +1,5 @@
 import { TextureAuditLive } from "@ue-shed/asset-audits";
+import { ConfigExplorerNodeLive } from "@ue-shed/config-explorer";
 import {
 	ReviewAuthoringLive,
 	ReviewAuthoringSessionsLive,
@@ -22,6 +23,7 @@ import {
 	projectIndexProcessLayerFromReader
 } from "@ue-shed/unreal-assets";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
+import { ScenarioRunnerLive } from "@ue-shed/scenarios";
 import { Effect, Layer } from "effect";
 import { join } from "node:path";
 import { electronAppLayer, ElectronApp, type ElectronAppHost } from "./adapters/electron-app.js";
@@ -37,6 +39,7 @@ import { WorkbenchAssetNavigationLive } from "./services/asset-navigation.js";
 import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
 import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
+import { WorkbenchConfigExplorerLive } from "./services/config-explorer.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
@@ -45,6 +48,7 @@ import { OfflineTexturePreviewLive } from "./services/offline-texture-preview.js
 import { ProjectLauncherLive } from "./services/project-launcher.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
 import { ShowcaseLive } from "./services/showcase.js";
+import { WorkbenchUnrealConnectionLive } from "./services/unreal-connection.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
 
 export interface WorkbenchHosts {
@@ -69,6 +73,11 @@ const windowOptions: WorkbenchWindowOptions = {
  * infrastructure services that have no Workbench-internal dependencies.
  */
 function baseLayer(hosts: WorkbenchHosts) {
+	const remoteControl = RemoteControlClientLive;
+	const editorPlaySession = EditorPlaySessionLive.pipe(Layer.provide(remoteControl));
+	const scenarioRunner = ScenarioRunnerLive.pipe(
+		Layer.provide(Layer.merge(remoteControl, editorPlaySession))
+	);
 	return Layer.mergeAll(
 		runtimeObservabilityLayer({
 			serviceName: "ue-shed-workbench",
@@ -78,14 +87,16 @@ function baseLayer(hosts: WorkbenchHosts) {
 		electronIpcLayer(hosts.ipc),
 		workbenchWindowLayer(windowOptions),
 		AssetReaderLive,
-		RemoteControlClientLive,
-		EditorPlaySessionLive.pipe(Layer.provide(RemoteControlClientLive)),
+		remoteControl,
+		editorPlaySession,
+		scenarioRunner,
 		ReviewRepositoryLive,
 		ReviewIdGeneratorLive,
 		cameraFeedLayer(),
 		LocalFilesLive,
 		offlineTexturePreviewHostLayer(hosts.environment),
-		fixtureProcessLayer(hosts.environment)
+		fixtureProcessLayer(hosts.environment),
+		WorkbenchUnrealConnectionLive
 	).pipe(Layer.provideMerge(WorkbenchConfigurationLive));
 }
 
@@ -152,6 +163,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		authoringClient,
 		mapReview,
 		contentObservatory,
+		WorkbenchConfigExplorerLive.pipe(Layer.provide(ConfigExplorerNodeLive)),
 		CameraPresentationLive
 	).pipe(Layer.provideMerge(reviewAndFixtureLayer(hosts)));
 }

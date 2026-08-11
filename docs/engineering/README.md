@@ -19,20 +19,20 @@ UE Shed code should be functional, typed, observable, and well tested.
 
 ## Guides
 
-| Guide                                                                 | Use it for                                 |
-| --------------------------------------------------------------------- | ------------------------------------------ |
-| [Functional design](functional-design.md)                             | Logic, state, services, and concurrency    |
-| [Types and errors](types-and-errors.md)                               | Schemas, IDs, APIs, and failures           |
-| [Effect](effect.md)                                                   | Services, resources, streams, and retries  |
-| [SolidJS](solidjs.md)                                                 | First-party UI code                        |
-| [StyleX](stylex.md)                                                   | Styles, themes, and UI packages            |
-| [Observability](observability.md)                                     | Telemetry, health, and diagnostics         |
-| [Testing](testing.md)                                                 | Test scope and test types                  |
-| [UAsset benchmarks](uasset-benchmarks.md)                             | Parser, CLI, WASM, and Unreal measurements |
-| [Project Index storage report](project-index-storage-comparison.html) | Visual comparison of four measured eras    |
-| [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence        |
-| [Releases](releases.md)                                               | CI trust lanes, candidates, and publishing |
-| [Agent adoption](agent-adoption.md)                                   | Agent-operated workflows and copied slices |
+| Guide                                                                 | Use it for                                  |
+| --------------------------------------------------------------------- | ------------------------------------------- |
+| [Functional design](functional-design.md)                             | Logic, state, services, and concurrency     |
+| [Types and errors](types-and-errors.md)                               | Schemas, IDs, APIs, and failures            |
+| [Effect](effect.md)                                                   | Services, resources, streams, and retries   |
+| [SolidJS](solidjs.md)                                                 | First-party UI code                         |
+| [StyleX](stylex.md)                                                   | Styles, themes, and UI packages             |
+| [Observability](observability.md)                                     | Telemetry, health, and diagnostics          |
+| [Testing](testing.md)                                                 | Test scope and test types                   |
+| [UAsset benchmarks](uasset-benchmarks.md)                             | Parser, CLI, WASM, and Unreal measurements  |
+| [Project Index storage report](project-index-storage-comparison.html) | Visual comparison of four measured eras     |
+| [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence         |
+| [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan |
+| [Agent adoption](agent-adoption.md)                                   | Agent-operated workflows and copied slices  |
 
 ## Stack
 

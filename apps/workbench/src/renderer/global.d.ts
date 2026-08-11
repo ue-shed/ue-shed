@@ -32,26 +32,51 @@ import type {
 } from "@ue-shed/extension-camera-review/client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
+	CameraStatusResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	FixtureLaunchResult,
 	ShowcaseContext,
+	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
 import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
 import type { ProjectLaunchMode, ProjectLaunchResult } from "../main/project-workspace-contract.js";
+import type {
+	ScenarioDocument,
+	ScenarioRun,
+	ScenarioRunHandle,
+	ScenarioRunnerStatus
+} from "@ue-shed/scenarios";
 
 declare global {
 	interface Window {
 		readonly ueShed: {
+			readonly configExplorer: {
+				readonly query: (
+					request: ConfigExplorerQuery
+				) => Promise<ConfigExplorerQueryResult>;
+			};
 			readonly assetNavigation: {
 				readonly locate: (objectPath: string) => Promise<unknown>;
 			};
 			readonly editorSession: {
+				readonly settings: () => Promise<UnrealConnectionSettings>;
+				readonly setPort: (port: number) => Promise<UnrealConnectionSettings>;
 				readonly status: () => Promise<EditorPlaySessionStateResponse>;
 				readonly execute: (
 					command: EditorPlaySessionCommand
 				) => Promise<EditorPlaySessionCommandResponse>;
+			};
+			readonly scenarios: {
+				readonly cancel: (handle: ScenarioRunHandle) => Promise<ScenarioRun>;
+				readonly start: (
+					document: ScenarioDocument,
+					endpoint: string
+				) => Promise<ScenarioRunHandle>;
+				readonly status: (handle: ScenarioRunHandle) => Promise<ScenarioRunnerStatus>;
 			};
 			readonly showcase: {
 				readonly context: () => Promise<ShowcaseContext>;
@@ -82,6 +107,11 @@ declare global {
 				readonly progress: () => Promise<unknown>;
 				readonly search: (request: unknown) => Promise<unknown>;
 				readonly focus: (request: unknown) => Promise<unknown>;
+				readonly chooseQualityRules: () => Promise<unknown>;
+				readonly previewQualityRules: (document: unknown) => Promise<unknown>;
+				readonly saveQualityRules: (document: unknown) => Promise<unknown>;
+				readonly qualitySearch: (request: unknown) => Promise<unknown>;
+				readonly qualityFocus: (request: unknown) => Promise<unknown>;
 			};
 			readonly inputAtlas: {
 				readonly loadConfiguredProject: () => Promise<unknown>;
@@ -181,7 +211,7 @@ declare global {
 			};
 			readonly configure: (config: CameraScheduleConfig) => Promise<CameraStatus>;
 			readonly getMetrics: () => Promise<WorkbenchCameraMetrics>;
-			readonly getStatus: () => Promise<CameraStatus>;
+			readonly getStatus: () => Promise<CameraStatusResult>;
 			readonly onFrame: (listener: (frame: RendererCameraFrame) => void) => () => void;
 			readonly onWorldObservation: (
 				listener: (event: RendererWorldObservationEvent) => void

@@ -2,10 +2,20 @@ import {
 	decodeTextCorpusFocusResult,
 	decodeTextCorpusQueryRunResult,
 	decodeTextCorpusSearchResult,
+	decodeTextQualityFocusResult,
+	decodeTextQualityQueryRunResult,
+	decodeTextQualityRuleUpdateResult,
+	decodeTextQualitySearchResult,
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
 	type TextCorpusSearchRequest,
-	type TextCorpusSearchResult
+	type TextCorpusSearchResult,
+	type TextQualityFocusRequest,
+	type TextQualityFocusResult,
+	type TextQualityRuleDocument,
+	type TextQualityRuleUpdateResult,
+	type TextQualitySearchRequest,
+	type TextQualitySearchResult
 } from "@ue-shed/game-text/browser";
 import { decodeEditorAssetLocateResult } from "@ue-shed/protocol";
 import {
@@ -79,6 +89,53 @@ export const gameTextClient: GameTextClientShape = GameTextClient.of({
 				"gameText.focus",
 				() => window.ueShed.gameText.focus(input),
 				decodeTextCorpusFocusResult
+			)
+	),
+	chooseQualityRules: Effect.fn("GameTextClient.chooseQualityRules")(() =>
+		invokeRequest(
+			"gameText.chooseQualityRules",
+			() => window.ueShed.gameText.chooseQualityRules(),
+			decodeTextQualityQueryRunResult
+		)
+	),
+	previewQualityRules: Effect.fn("GameTextClient.previewQualityRules")(
+		(
+			document: TextQualityRuleDocument
+		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.previewQualityRules",
+				() => window.ueShed.gameText.previewQualityRules(document),
+				decodeTextQualityRuleUpdateResult
+			)
+	),
+	saveQualityRules: Effect.fn("GameTextClient.saveQualityRules")(
+		(
+			document: TextQualityRuleDocument
+		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.saveQualityRules",
+				() => window.ueShed.gameText.saveQualityRules(document),
+				decodeTextQualityRuleUpdateResult
+			)
+	),
+	qualitySearch: Effect.fn("GameTextClient.qualitySearch")(
+		(
+			input: TextQualitySearchRequest
+		): Effect.Effect<TextQualitySearchResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.qualitySearch",
+				() => window.ueShed.gameText.qualitySearch(input),
+				decodeTextQualitySearchResult
+			)
+	),
+	qualityFocus: Effect.fn("GameTextClient.qualityFocus")(
+		(
+			input: TextQualityFocusRequest
+		): Effect.Effect<TextQualityFocusResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.qualityFocus",
+				() => window.ueShed.gameText.qualityFocus(input),
+				decodeTextQualityFocusResult
 			)
 	)
 });

@@ -9,6 +9,7 @@ import { WorkbenchPage } from "../pages/workbench-page.js";
 
 const RecordingJourney = Schema.Literals([
 	"saved-workflows",
+	"config-explorer",
 	"map-review",
 	"world-log",
 	"world-log-fast"
@@ -565,6 +566,144 @@ test(`records the ${journey} Workbench journey`, async ({
 					title: "Keep unclassified evidence visible"
 				})
 			);
+		} else if (journey === "config-explorer") {
+			await startScreencast();
+			await startTracing();
+			const evidence = page.getByRole("region", { name: "Config Explorer evidence" });
+
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.expectShowcaseReady();
+						await workbench.openRoute("Config");
+						await expect(
+							page!.getByRole("navigation", { name: "Breadcrumb" })
+						).toContainText("CONFIG EXPLORER");
+						await page!.getByLabel("Config key").fill("Entries");
+						await page!.getByRole("button", { name: /^COMPARE/ }).click();
+						await expect(
+							evidence.getByText("VALUE DIVERGES", { exact: true })
+						).toBeVisible();
+						await expect(
+							page!.getByRole("region", { name: "Platform config comparison" })
+						).toContainText("PlatformA");
+					},
+					description:
+						"Enter a family, section, key, and two platforms, then execute a real headless comparison over the saved hierarchy.",
+					page,
+					slug: "01-platform-comparison",
+					testInfo,
+					title: "Build and run a config query"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						const contributions = page!.getByRole("list", {
+							name: "PlatformA ordered contributions"
+						});
+						await expect(contributions).toContainText("clear");
+						await contributions.scrollIntoViewIfNeeded();
+					},
+					description:
+						"Trace every source line in order, including no-ops, removals, clearing, and the effects that still survive.",
+					page,
+					resetScroll: false,
+					slug: "02-platform-a-lineage",
+					testInfo,
+					title: "Read the ordered contribution ledger"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Last writer/ }).click();
+						await expect(page!.getByLabel("Config key")).toHaveValue("Mode");
+						await expect(
+							page!.getByRole("region", {
+								name: "PlatformA effective saved value"
+							})
+						).toContainText("PlatformA");
+					},
+					description:
+						"One-click examples execute the same editable query and show scalar replacement with the prior saved value.",
+					page,
+					slug: "03-scalar-replacement",
+					testInfo,
+					title: "Investigate another key"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Empty vs missing/ }).click();
+						await expect(
+							page!.getByRole("region", {
+								name: "PlatformA effective saved value"
+							})
+						).toContainText("[ explicit empty ]");
+					},
+					description:
+						"An initialized-empty array remains distinct from a key that never existed or was later cleared.",
+					page,
+					slug: "04-explicit-empty",
+					testInfo,
+					title: "Distinguish explicit empty from missing"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Coverage gap/ }).click();
+						await expect(
+							evidence.getByText("partial coverage", { exact: true })
+						).toBeVisible();
+						await expect(
+							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
+						).toContainText("unsupported");
+					},
+					description:
+						"Unsupported syntax becomes a typed partial-coverage result instead of a confident but incomplete answer.",
+					page,
+					slug: "05-unsupported-syntax",
+					testInfo,
+					title: "Surface coverage limits"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						const selectedProject = page!.getByRole("button", {
+							name: "Selected project"
+						});
+						await selectedProject.click();
+						await expect(selectedProject).toHaveAttribute("aria-pressed", "true");
+						await page!.getByLabel("Config family").fill("Engine");
+						await page!
+							.getByLabel("Config section")
+							.fill("/Script/EngineSettings.GameMapsSettings");
+						await page!.getByLabel("Config key").fill("GameDefaultMap");
+						await page!
+							.getByRole("combobox", { name: "Platform", exact: true })
+							.fill("Windows");
+						await page!.getByRole("button", { name: /^TRACE VALUE/ }).click();
+						const selectedValue = page!.getByRole("region", {
+							name: "Windows effective saved value"
+						});
+						await expect(selectedValue).toContainText(
+							"/Game/Fixture/Cameras/L_CameraLoad"
+						);
+						await selectedValue.scrollIntoViewIfNeeded();
+					},
+					description:
+						"Switch from the portable sample to the globally selected Workbench project, keeping engine discovery and filesystem reads in the trusted main process.",
+					page,
+					resetScroll: false,
+					slug: "06-selected-project",
+					testInfo,
+					title: "Target the selected Unreal project"
+				})
+			);
 		} else {
 			await startScreencast();
 			await startTracing();
@@ -653,7 +792,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toBeVisible();
 						await page!
-							.getByRole("searchbox", { name: "Search corpus" })
+							.getByRole("searchbox", { name: "Search game text" })
 							.fill("Hold to skip");
 						await expect(
 							page!.getByRole("region", { name: "Text units" })
@@ -661,7 +800,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						await expect(
 							page!.getByRole("complementary", { name: "Text focus" })
 						).toContainText("2 uses");
-						await page!.getByRole("searchbox", { name: "Search corpus" }).fill("");
+						await page!.getByRole("searchbox", { name: "Search game text" }).fill("");
 						await expect(
 							page!.getByRole("region", { name: "Text units" })
 						).toContainText("Showing 32 of 32 matches");
@@ -676,6 +815,58 @@ test(`records the ${journey} Workbench journey`, async ({
 					slug: "04-game-text",
 					testInfo,
 					title: "Investigate a shared source line"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.openRoute("Config");
+						await expect(
+							page!.getByRole("navigation", { name: "Breadcrumb" })
+						).toContainText("Config Explorer");
+						await expect(page!.getByRole("status")).toContainText("VALUE DIVERGES");
+						await expect(
+							page!.getByRole("region", { name: "Platform config comparison" })
+						).toContainText("PlatformA");
+					},
+					description:
+						"The same saved key resolves independently across two platforms, with every source layer retained as evidence.",
+					page,
+					slug: "05-config-platform-comparison",
+					testInfo,
+					title: "Compare saved config across platforms"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Platform A/ }).click();
+						await expect(
+							page!.getByRole("list", { name: "PlatformA ordered contributions" })
+						).not.toBeEmpty();
+					},
+					description:
+						"The ordered ledger exposes operation, source line, concrete effect, and whether each contribution survives.",
+					page,
+					slug: "06-config-contribution-ledger",
+					testInfo,
+					title: "Trace the winning value"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Unsupported/ }).click();
+						await expect(
+							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
+						).toContainText("unsupported");
+					},
+					description:
+						"Unsupported syntax remains a visible partial-coverage exception instead of being silently ignored.",
+					page,
+					slug: "07-config-coverage-boundary",
+					testInfo,
+					title: "Keep uncertainty visible"
 				})
 			);
 		}

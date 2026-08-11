@@ -195,12 +195,13 @@ if (
 		"launch-authoring",
 		"map-history",
 		"save",
+		"scenario",
 		"verify",
 		"snapshot"
 	]).has(action)
 ) {
 	throw new Error(
-		"Usage: node scripts/unreal-fixture.mjs <apply|build|conformance|evidence|generate|launch|launch-authoring|map-history|save|verify|snapshot> [input] [output]"
+		"Usage: node scripts/unreal-fixture.mjs <apply|build|conformance|evidence|generate|launch|launch-authoring|map-history|save|scenario|verify|snapshot> [input] [output]"
 	);
 }
 
@@ -214,6 +215,10 @@ if (action === "launch-authoring") {
 }
 if (action === "generate" || action === "verify" || action === "conformance") {
 	runCommandlet(tools);
+}
+if (action === "scenario") {
+	runCommandlet(tools, ["-ScenarioOnly"]);
+	runCommandlet(tools, ["-ScenarioOnly", "-VerifyOnly"]);
 }
 if (action === "map-history") {
 	runCommandlet(tools, [

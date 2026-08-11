@@ -1,0 +1,68 @@
+{
+	"schemaVersion": 1,
+	"feature": "game-text",
+	"mode": "existing-host-package",
+	"description": "Headless saved-package Game Text corpus, coverage, search, and focus",
+	"release": {
+		"package": "@ue-shed/game-text",
+		"versionSource": "package.json",
+		"exactVersionRequired": true,
+		"nativeBinaryBundled": false,
+		"uiBundled": false
+	},
+	"entrypoints": {
+		"host": "@ue-shed/game-text",
+		"browser": "@ue-shed/game-text/browser"
+	},
+	"packageGraph": {
+		"dependencies": {
+			"@ue-shed/unreal-assets": "package.json#dependencies"
+		},
+		"peerDependencies": {
+			"effect": "4.0.0-beta.98"
+		},
+		"runtimeProviders": [
+			{
+				"capability": "saved-asset-reader",
+				"defaultPackage": "@ue-shed/uasset",
+				"versionPolicy": "save-exact compatible release",
+				"alternative": "Explicit compatible executable supplied to assetReaderLayer"
+			}
+		]
+	},
+	"hostIntegration": {
+		"ownership": "consumer",
+		"requiredSeams": [
+			"explicit-project-root-or-project-index",
+			"process-scoped-asset-reader",
+			"trusted-host-text-corpus-runtime",
+			"schema-validated-transport-adapter",
+			"bounded-search-and-focus-client"
+		],
+		"forbiddenImports": [
+			"apps/workbench",
+			"extensions/game-text",
+			"@ue-shed/workbench",
+			"@ue-shed/extension-game-text"
+		],
+		"browserAuthoritiesForbidden": [
+			"filesystem",
+			"process",
+			"electron",
+			"unreal",
+			"native-reader"
+		]
+	},
+	"capabilities": {
+		"required": ["saved-project", "saved-asset-reader"],
+		"optional": ["locate-occurrence-in-unreal"],
+		"notRequired": ["perforce", "running-unreal-editor", "ue-shed-unreal-plugin"]
+	},
+	"conformance": {
+		"sourceCommand": "pnpm test:release:packages",
+		"journey": ["scan", "coverage", "search", "focus", "offline-unreal"],
+		"targetMustVerifyPackagedRuntime": true,
+		"targetMustUseRealHostTransport": true,
+		"targetMustRecordAdoptionReceipt": true
+	}
+}

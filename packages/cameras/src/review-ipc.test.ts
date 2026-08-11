@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
-import { MapReviewCaptureIntent, MapReviewCaptureJobState } from "./review-ipc.js";
+import {
+	MapReviewAuthorFromSelectionIntent,
+	MapReviewAuthoringResult,
+	MapReviewCaptureIntent,
+	MapReviewCaptureJobState
+} from "./review-ipc.js";
 
 describe("Map Review capture workflow contracts", () => {
 	it("requires at least one selected Review View", () => {
@@ -24,6 +29,37 @@ describe("Map Review capture workflow contracts", () => {
 			successfulViews: 2,
 			viewIds: ["view-1", "view-2"]
 		});
+		expect(result._tag).toBe("Success");
+	});
+});
+
+describe("Map Review authoring contracts", () => {
+	it("preserves both map identities in a recoverable mismatch", () => {
+		const result = Schema.decodeUnknownResult(MapReviewAuthoringResult)({
+			recovery: "Choose a set for the selected map.",
+			reviewSet: {
+				displayName: "Fixture Set",
+				id: "fixture-set",
+				mapPath: "/Game/Fixture/L_Fixture",
+				viewCount: 2
+			},
+			selection: {
+				actorPath: "/Game/Hex/L_Hex.L_Hex:PersistentLevel.Subject",
+				displayName: "Subject",
+				mapPath: "/Game/Hex/L_Hex"
+			},
+			status: "map_mismatch"
+		});
+
+		expect(result._tag).toBe("Success");
+	});
+
+	it("allows append authoring to start from the selected actor's map", () => {
+		const result = Schema.decodeUnknownResult(MapReviewAuthorFromSelectionIntent)({
+			destination: { kind: "append_view" },
+			reviewSetMode: "selection_map"
+		});
+
 		expect(result._tag).toBe("Success");
 	});
 });

@@ -1,7 +1,16 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync
+} from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { unrealRemoteControlLaunchArguments } from "./workbench-tools.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pluginRoot = join(repositoryRoot, "unreal", "Plugins");
@@ -10,7 +19,8 @@ const pluginIds = Object.freeze([
 	"UEShedAuthoring",
 	"UEShedCameras",
 	"UEShedObservatory",
-	"UEShedAssetAudits"
+	"UEShedAssetAudits",
+	"UEShedScenarios"
 ]);
 
 function option(name) {
@@ -117,6 +127,48 @@ function pluginDescriptors() {
 	});
 }
 
+function stagePluginRuntime(hostRoot) {
+	const binariesRoot = join(hostRoot, "Binaries", "Win64");
+	const moduleManifest = JSON.parse(
+		readFileSync(join(binariesRoot, "UnrealEditor.modules"), "utf8")
+	);
+	const runtimePluginRoot = join(hostRoot, "RuntimePlugins");
+	return pluginDescriptors().map((descriptor) => {
+		const pluginId = basename(descriptor, ".uplugin");
+		const plugin = JSON.parse(readFileSync(descriptor, "utf8"));
+		const stagedPluginRoot = join(runtimePluginRoot, pluginId);
+		const stagedBinariesRoot = join(stagedPluginRoot, "Binaries", "Win64");
+		mkdirSync(stagedBinariesRoot, { recursive: true });
+		copyFileSync(descriptor, join(stagedPluginRoot, `${pluginId}.uplugin`));
+		const configRoot = join(dirname(descriptor), "Config");
+		if (existsSync(configRoot)) {
+			cpSync(configRoot, join(stagedPluginRoot, "Config"), { force: true, recursive: true });
+		}
+		const stagedModules = Object.fromEntries(
+			plugin.Modules.map(({ Name: moduleName }) => {
+				const binaryName = moduleManifest.Modules[moduleName];
+				if (!binaryName) {
+					throw new Error(`The disposable build did not produce module ${moduleName}.`);
+				}
+				copyFileSync(join(binariesRoot, binaryName), join(stagedBinariesRoot, binaryName));
+				const symbolsName = binaryName.replace(/\.dll$/i, ".pdb");
+				if (existsSync(join(binariesRoot, symbolsName))) {
+					copyFileSync(
+						join(binariesRoot, symbolsName),
+						join(stagedBinariesRoot, symbolsName)
+					);
+				}
+				return [moduleName, binaryName];
+			})
+		);
+		writeFileSync(
+			join(stagedBinariesRoot, "UnrealEditor.modules"),
+			`${JSON.stringify({ BuildId: moduleManifest.BuildId, Modules: stagedModules }, null, "\t")}\n`
+		);
+		return join(stagedPluginRoot, `${pluginId}.uplugin`);
+	});
+}
+
 function preparePlugins(engineRoot, projectPath, engineTools) {
 	const version = engineVersion(engineRoot);
 	if (!version) throw new Error(`Could not read the Unreal version under ${engineRoot}.`);
@@ -149,9 +201,10 @@ function preparePlugins(engineRoot, projectPath, engineTools) {
 		"-NoHotReload",
 		"-WaitMutex"
 	]);
+	return stagePluginRuntime(hostRoot);
 }
 
-function launch(projectRoot, projectPath, engineTools, mode) {
+function launch(projectRoot, projectPath, engineTools, mode, preparedPluginDescriptors) {
 	const args = [projectPath];
 	if (mode === "ue_shed") {
 		const endpoint = new URL(
@@ -159,13 +212,8 @@ function launch(projectRoot, projectPath, engineTools, mode) {
 		);
 		const port = endpoint.port || (endpoint.protocol === "https:" ? "443" : "80");
 		args.push(
-			...pluginDescriptors().map((descriptor) => `-PLUGIN=${descriptor}`),
-			"-EnablePlugin=RemoteControl",
-			"-RCWebControlEnable",
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${port}`,
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${Number(port) + 1}`,
-			"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
-			"-NoLiveCoding"
+			...preparedPluginDescriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
+			...unrealRemoteControlLaunchArguments(pluginIds, Number(port))
 		);
 	}
 	const child = spawn(engineTools.editor, args, {
@@ -194,7 +242,10 @@ const root = resolve(selectedRoot);
 const selectedProject = projectFile(root);
 const engineRoot = discoverEngineRoot(selectedProject);
 const engineTools = tools(engineRoot);
+let preparedPluginDescriptors;
 if (action === "prepare" || mode === "ue_shed") {
-	preparePlugins(engineRoot, selectedProject, engineTools);
+	preparedPluginDescriptors = preparePlugins(engineRoot, selectedProject, engineTools);
 }
-if (action === "launch") launch(root, selectedProject, engineTools, mode);
+if (action === "launch") {
+	launch(root, selectedProject, engineTools, mode, preparedPluginDescriptors);
+}

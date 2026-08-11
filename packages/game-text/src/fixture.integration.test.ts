@@ -19,11 +19,10 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toMatchObject({
 			// The maps, World Partition external actors, animation fixture, and nested-only timeline
-			// carry no text of their own.
-			// Every InputAction and InputMappingContext carries one FText description, while the
-			// LevelSequence contributes three localized timeline keys.
-			discoveredPackages: 69,
-			inspectedPackages: 69,
+			// carry no text of their own. Every InputAction and InputMappingContext carries one FText
+			// description, while the text timeline contributes three localized keys.
+			discoveredPackages: 70,
+			inspectedPackages: 70,
 			failedPackages: 0,
 			textUnits: 36,
 			textOccurrences: 37,

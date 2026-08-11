@@ -1,6 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkbenchEnvironment, resolveRemoteControlEndpoint } from "./workbench-tools.mjs";
+import {
+	createWorkbenchEnvironment,
+	resolveRemoteControlEndpoint,
+	unrealRemoteControlLaunchArguments
+} from "./workbench-tools.mjs";
+
+test("enables every discovered plugin with Unreal's plural plugin switch", () => {
+	assert.deepEqual(unrealRemoteControlLaunchArguments(["UEShedCore", "UEShedCameras"], 30_001), [
+		"-EnablePlugins=UEShedCore,UEShedCameras,RemoteControl",
+		"-RCWebControlEnable",
+		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=30001",
+		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=30002",
+		"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
+		"-NoLiveCoding"
+	]);
+});
 
 test("honors an explicit Remote Control endpoint", async () => {
 	const endpoint = await resolveRemoteControlEndpoint({

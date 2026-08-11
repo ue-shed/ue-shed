@@ -32,6 +32,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "UEShedScenarios",
+			"Enabled": true
+		},
+		{
 			"Name": "UEShedAuthoring",
 			"Enabled": true
 		},

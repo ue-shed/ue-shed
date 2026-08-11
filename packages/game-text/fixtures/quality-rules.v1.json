@@ -1,0 +1,60 @@
+{
+	"schemaVersion": 1,
+	"roles": [
+		{
+			"id": "ui.prompt",
+			"description": "Generic fixture prompts and labels",
+			"scopes": [
+				{
+					"matchers": [
+						{ "kind": "location_kind", "value": "data_table_cell" },
+						{
+							"kind": "object_path",
+							"operator": "prefix",
+							"value": "/Game/Fixture/Text/"
+						},
+						{
+							"kind": "property_path",
+							"operator": "exact",
+							"value": "Label"
+						}
+					]
+				},
+				{
+					"matchers": [
+						{ "kind": "location_kind", "value": "string_table_entry" },
+						{
+							"kind": "string_table_entry",
+							"operator": "prefix",
+							"value": "Prompt"
+						}
+					]
+				}
+			]
+		}
+	],
+	"rules": [
+		{
+			"kind": "character_budget",
+			"id": "ui.prompt.characters",
+			"role": "ui.prompt",
+			"maximumCharacters": 10,
+			"recovery": "Shorten the prompt or revise the project-authored budget."
+		},
+		{
+			"kind": "terminology",
+			"id": "ui.prompt.terms",
+			"role": "ui.prompt",
+			"caseSensitive": false,
+			"terms": [
+				{ "kind": "forbidden", "term": "old" },
+				{
+					"kind": "preferred",
+					"term": "select",
+					"alternatives": ["press", "click"]
+				}
+			],
+			"recovery": "Use the preferred project terminology and review the affected context."
+		}
+	]
+}

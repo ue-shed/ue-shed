@@ -5,11 +5,11 @@ uses the committed generic fixture as its default project and keeps live Unreal 
 capability.
 
 Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
-Game Text, Texture Audit, Map Review, World Log, and Camera Lab. The catalog groups them by what
-they actually require: a saved project, Perforce on demand, or a running Unreal session. Each entry
-shows evidence from the selected project before it is opened, including indexed candidate-package
-and map counts. Saved-package workflows open without Unreal; live texture preview, Live World, and
-Camera Lab request a separately enabled editor only when needed.
+Game Text, Texture Audit, Config Explorer, Map Review, World Log, and Camera Lab. The catalog groups
+them by what they actually require: a saved project, Perforce on demand, or a running Unreal
+session. Each entry shows evidence from the selected project before it is opened, including indexed
+candidate-package and map counts. Saved-source workflows open without Unreal; live texture preview,
+Live World, and Camera Lab request a separately enabled editor only when needed.
 
 ## Open the Workbench
 
@@ -25,9 +25,11 @@ pnpm showcase
 `showcase` incrementally builds the in-repo `uasset` reader and Workbench, configures the fixture
 project, offline map, and texture-audit rules, and opens the catalog. It does not build or launch
 Unreal up front. Texture Audit, Live World in Map Review, and Camera Load Lab each expose a launch
-or connect action when their optional live capability is needed. If an editor is already serving Remote Control on the usual
-local ports, `showcase` attaches to it. Otherwise it reserves the next free HTTP/WebSocket pair so a
-later in-app fixture launch can claim that endpoint.
+or connect action when their optional live capability is needed. If an editor is already serving
+Remote Control on the usual local ports, `showcase` attaches to it. Otherwise it reserves the next
+free HTTP/WebSocket pair so a later in-app fixture launch can claim that endpoint. The monitored
+HTTP port is shown beside the editor status in the Workbench header; click it to enter another port.
+The change takes effect immediately and is remembered on that device.
 
 The source-checkout flow uses `target/debug/uasset.exe` (`target/debug/uasset` on other platforms).
 To exercise another compatible reader build instead, override it before launching:
@@ -114,7 +116,30 @@ pnpm ue-shed text scan fixtures\unreal-project
 pnpm ue-shed text search fixtures\unreal-project "Fixture"
 ```
 
-## Demo 4: Map Review
+## Demo 4: Config Explorer
+
+Choose **Config** from the nav or **Config Explorer** from the saved-project workflows. This route
+is an editable investigation workspace. Choose the selected Workbench project or the portable sample
+fixture, enter a config family (or leave it blank for ambiguity recovery), section, key, and
+platform, then ask **Why this value?** or **What changes by platform?** A trusted Workbench
+main-process service owns engine discovery and filesystem reads, then sends only schema-validated,
+privacy-safe evidence to the host-neutral extension.
+
+The portable platform-divergence sample runs immediately; the examples are real resolver queries,
+not canned answers. Try **Last writer**, **Empty vs missing**, or **Coverage gap**, then edit any
+field yourself. Switch to **Selected project** to query the project chosen in the global Workbench
+header. Every submitted query uses the public headless resolver and keeps missing layers, source
+locations, prior effects, surviving/superseded contributions, typed recovery, and the “saved source,
+no runtime authority” boundary visible.
+
+The headless equivalents remain the product authority:
+
+```powershell
+pnpm ue-shed config explain packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
+pnpm ue-shed config compare packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --platform PlatformB --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
+```
+
+## Demo 5: Map Review
 
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
 at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
@@ -122,8 +147,9 @@ that editor process without editing the project descriptor. The generic fixture'
 [`UEShedFixture.uproject`](../fixtures/unreal-project/UEShedFixture.uproject) remains the reference
 for projects that deliberately want persistent plugin entries instead.
 
-Launch the editor with rendering available (not `-NullRHI`) and configure the project and Remote
-Control endpoint:
+Launch the editor with rendering available (not `-NullRHI`), choose its project in Workbench, and
+click the `:port` control beside the editor status if Remote Control is not using the displayed
+port. Environment configuration remains available for scripted launches:
 
 ```powershell
 $env:UE_SHED_PROJECT_ROOT = "C:\path\to\Project"
@@ -157,9 +183,12 @@ keeps the active map, Capture Profiles, and Visibility Policies. Switching back 
 Views—and therefore the same approved cameras and angles. **Add selected actor as View** appends without replacing existing observations; choose an
 approved View and **Revise selected View** only when the intent is to preserve its ID and advance
 its revision. Several Views may share one actor, and Workbench groups them by subject without
-changing the flat portable Review Set. Open **Framing** to tune the named arc/ring presets or one selected view. The count sliders show
-the ordinary 1–24 range; exact larger counts remain valid and show a preview-cost hint. The headless
-equivalent is:
+changing the flat portable Review Set. Select a preview to expose its per-view distance, elevation,
+yaw, FOV, and margin offsets. **View presets + rig** expands the named arc/ring generators that
+rebuild the full contact sheet; exact final-pose fields update only the selected preview. Framing
+warnings remain visible but do not prevent **Keep View**; a stale subject/session still requires an
+explicit reframe. The count sliders show the ordinary 1–24 range; exact larger counts remain valid
+and show a preview-cost hint. The headless equivalent is:
 
 ```powershell
 pnpm ue-shed review authoring bootstrap "C:\path\to\Project" "http://127.0.0.1:30001"
@@ -203,7 +232,51 @@ screenshots, both Run A/Run B 1280x720 Unreal captures, persisted authoring/Revi
 manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
 total and leaves the requested count intact.
 
-## Demo 5: World Log
+## Demo 5: Scenario Studio
+
+Scenario Studio's shortest live proof runs the portable Movement Gym document through the same
+public runner used by the CLI. Launch the fixture in editor mode so the separately enabled scenario
+capability can own PIE lifecycle and input isolation. Do not use the `fixture:launch` game-mode path
+for this demo; scenario execution is deliberately editor-only.
+
+In one PowerShell terminal:
+
+```powershell
+$env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/Scenarios/L_MovementGym"
+$env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
+pnpm fixture:launch-authoring
+```
+
+In another terminal, use the same endpoint and open Workbench:
+
+```powershell
+$env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
+pnpm showcase
+```
+
+Open **Scenario Studio**. Its demo guide is visible by default in Workbench and can be hidden from
+the header. First read the green **LIVE SLICE** lanes: Move, Jump, and Interact are injected as
+`pre_evaluation` action values; `LandingReady` blocks scenario time; `Cache opened` is the bounded
+world-state probe. The raw-device, intervention, and broad capture lanes remain visibly
+**PREVIEW ONLY** and are not presented as executed behavior.
+
+Choose **Run in Unreal** and keep Workbench beside Unreal. Follow Connect → Isolate → Run → Wait →
+Result while the producer-reported game time advances. The result desk renders the returned evidence
+by its real type: this slice shows a structured world-state receipt, isolation restoration, and any
+divergence or missing evidence. It never substitutes a camera frame for a world-state observation.
+
+Repeat the exact endpoint through the public headless client shown in the guide:
+
+```powershell
+pnpm ue-shed scenarios run http://127.0.0.1:30001
+```
+
+For the recovery beat, start a second Workbench run and choose **Cancel run**. The UI should show a
+structured cancelled result and restored input. Disabling `UEShedScenarios` demonstrates the typed
+capability-missing path, but requires rebuilding or relaunching the fixture and is better kept as an
+optional extended demo.
+
+## Demo 6: World Log
 
 World Log is a saved-map history investigation workspace. It runs against Perforce but does not
 need Unreal. Start its self-contained fixture with:
@@ -218,7 +291,7 @@ History World**, and run the scan. Try the changelist lens, choose an actor from
 map, then use the time control to see the actor move, appear, or disappear. The temporary server,
 client workspace, credentials, and configuration are removed when Workbench closes.
 
-## Demo 6: Camera Load Lab
+## Demo 7: Camera Load Lab
 
 Camera Load Lab is the live camera data-plane slice. Open it and choose **Launch Camera Fixture**.
 Workbench then discovers Unreal Engine 5.7, incrementally builds the fixture editor target, launches
@@ -252,13 +325,20 @@ pnpm showcase:record
 ```
 
 The command builds Workbench, opens it through Playwright, and records Data Authoring, Texture Audit,
-and Game Text. Every invocation writes a new timestamped review bundle under
+Game Text, and Config Explorer. Every invocation writes a new timestamped review bundle under
 `test-results/showcase`; earlier recordings are never replaced. A successful bundle contains
 `demo.webm`, chapter screenshots, `trace.zip`, `workbench.log`, and a versioned `run.json` manifest.
 During local iteration, pass `--no-build` to reuse the existing Workbench build:
 
 ```powershell
 pnpm showcase:record --no-build
+```
+
+To record a focused Config Explorer journey that exercises every evidence preset through the real
+Workbench route:
+
+```powershell
+pnpm showcase:record config-explorer
 ```
 
 To showcase Map Review by creating fresh evidence and comparing it with the prior Capture Run:

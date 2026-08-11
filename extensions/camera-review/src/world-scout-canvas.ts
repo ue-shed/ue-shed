@@ -31,6 +31,7 @@ export type WorldScoutBounds = PointMapBounds;
 export type WorldScoutViewport = PointMapViewport;
 export const worldScoutPickRadiusFraction = 0.06;
 export const worldScoutMinViewportSize = pointMapMinViewportSize;
+export const worldScoutDefaultActorCoverage = 0.95;
 export const fitViewportSize = pointMapFitViewportSize;
 export const viewportSizeLimits = pointMapViewportSizeLimits;
 export const clampViewportSize = pointMapClampViewportSize;
@@ -407,6 +408,85 @@ export function contentBounds(
 	}
 	if (!Number.isFinite(minX)) return undefined;
 	return { maxX, maxY, minX, minY };
+}
+
+function shortestCoveredInterval(
+	values: ReadonlyArray<number>,
+	coverage: number
+): { readonly min: number; readonly max: number } | undefined {
+	if (values.length === 0) return undefined;
+	const sorted = [...values].sort((left, right) => left - right);
+	const count = Math.max(1, Math.min(sorted.length, Math.ceil(sorted.length * coverage)));
+	let bestStart = 0;
+	let bestSpan = Number.POSITIVE_INFINITY;
+	for (let start = 0; start <= sorted.length - count; start += 1) {
+		const min = sorted[start];
+		const max = sorted[start + count - 1];
+		if (min === undefined || max === undefined) continue;
+		const span = max - min;
+		if (span < bestSpan) {
+			bestStart = start;
+			bestSpan = span;
+		}
+	}
+	return {
+		min: sorted[bestStart] ?? 0,
+		max: sorted[bestStart + count - 1] ?? 0
+	};
+}
+
+/**
+ * A useful initial window based on the densest interval containing most actor centers on each
+ * axis. Full actor bounds remain authoritative for the slider's zoom-out ceiling; this view only
+ * chooses a legible default when global sky, ocean, or weather actors report enormous bounds.
+ */
+export function representativeContentBounds(
+	store: WorldScoutRetainedStore,
+	visibleIndices: ReadonlyArray<number>,
+	coverage = worldScoutDefaultActorCoverage
+): WorldScoutBounds | undefined {
+	const clampedCoverage = Math.min(1, Math.max(0, coverage));
+	const xs: number[] = [];
+	const ys: number[] = [];
+	for (const index of visibleIndices) {
+		const x = store.locationX[index];
+		const y = store.locationY[index];
+		if (x === undefined || y === undefined || !Number.isFinite(x) || !Number.isFinite(y)) {
+			continue;
+		}
+		xs.push(x);
+		ys.push(y);
+	}
+	const x = shortestCoveredInterval(xs, clampedCoverage);
+	const y = shortestCoveredInterval(ys, clampedCoverage);
+	if (x === undefined || y === undefined) return undefined;
+	return { minX: x.min, maxX: x.max, minY: y.min, maxY: y.max };
+}
+
+/** Recenter on a selected point with useful context, without backing out of a closer manual view. */
+export function focusViewportOnActor(args: {
+	readonly actorExtent: number;
+	readonly centerX: number;
+	readonly centerY: number;
+	readonly currentSize: number | undefined;
+	readonly fullFitSize: number;
+	readonly usefulFitSize: number;
+}): WorldScoutViewport {
+	const fullFitSize = Math.max(1, args.fullFitSize);
+	const usefulFitSize = Math.max(1, Math.min(args.usefulFitSize, fullFitSize));
+	const minimumContext = usefulFitSize / 8;
+	const boundedExtentContext = Math.min(Math.max(0, args.actorExtent) * 8, usefulFitSize / 2);
+	const desiredSize = Math.max(
+		Math.min(worldScoutMinViewportSize, fullFitSize),
+		minimumContext,
+		boundedExtentContext
+	);
+	const currentSize = Math.max(1, Math.min(args.currentSize ?? fullFitSize, fullFitSize));
+	return {
+		centerX: args.centerX,
+		centerY: args.centerY,
+		size: Math.min(currentSize, desiredSize)
+	};
 }
 
 /**

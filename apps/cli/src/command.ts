@@ -10,12 +10,14 @@ import {
 import { assetsCommand, inputCommand, textCommand } from "./commands/asset.js";
 import { auditCommand } from "./commands/audit.js";
 import { authoringCommand } from "./commands/authoring.js";
+import { configCommand } from "./commands/config.js";
 import { doctorCommand, versionCommand } from "./commands/core.js";
 import { editorCommand } from "./commands/editor.js";
 import { mapCommand } from "./commands/map.js";
 import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
 import { reviewCommand } from "./commands/review.js";
+import { scenarioCommand } from "./commands/scenario.js";
 
 export const CliCommand = CliCommandSchema;
 export type CliCommand = CliCommandType;
@@ -27,7 +29,9 @@ export const cliCommand = Command.make("ue-shed").pipe(
 	Command.withSubcommands([
 		versionCommand,
 		doctorCommand,
+		configCommand,
 		editorCommand,
+		scenarioCommand,
 		auditCommand,
 		authoringCommand,
 		assetsCommand,

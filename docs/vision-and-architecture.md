@@ -220,9 +220,10 @@ The suite is therefore separately enabled:
 | `UEShedScenarios`   | Scenario discovery, parameterization, execution, and results                      |
 
 Saved-package authoring, `UEShedCore`, `UEShedAuthoring`, `UEShedObservatory`, and `UEShedCameras`
-are already exercised by shipped workflows. `UEShedScenarios` remains a roadmap boundary until a
-scenario slice earns it. Features expose their actual authority and capabilities rather than hiding
-missing behavior.
+are already exercised by shipped workflows. `UEShedScenarios` now exposes one separately enabled,
+bounded Movement Gym PIE slice; broader discovery, recording, and parameterization remain roadmap
+boundaries. Features expose their actual authority and capabilities rather than hiding missing
+behavior.
 
 ## Generic fixture policy
 

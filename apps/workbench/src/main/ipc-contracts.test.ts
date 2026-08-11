@@ -1,11 +1,18 @@
 import { it } from "@effect/vitest";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
+import {
+	movementGymRuns,
+	movementGymScenario,
+	ScenarioRunHandle,
+	scenarioWireContract
+} from "@ue-shed/scenarios";
 import { Effect, Exit, Result, Schema } from "effect";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import {
+	CameraStatusResult,
 	cameraFrameEvent,
 	worldObservationEvent,
 	CandidateId,
@@ -14,6 +21,7 @@ import {
 	invokeChannelNames,
 	invokeContracts,
 	PresentationBudgetMbPerSecond,
+	RemoteControlPort,
 	SessionId,
 	type InvokeChannel
 } from "./ipc-contracts.js";
@@ -39,6 +47,15 @@ const sessionFailure = {
 		retrySafe: false
 	}
 };
+
+const scenarioHandle = ScenarioRunHandle.make({
+	endpoint: "http://127.0.0.1:30001",
+	evidenceLimit: 8,
+	objectPath: "/Script/Fixture.Scenarios",
+	pieSessionId: "pie-session-1",
+	runId: "run-live-1",
+	scenarioId: movementGymScenario.id
+});
 
 const cameraStatus = {
 	cameras: [],
@@ -90,6 +107,37 @@ const cameraStatus = {
 	}
 };
 
+const qualityRuleDocument = {
+	roles: [
+		{
+			id: "menu.prompt",
+			scopes: [
+				{
+					matchers: [{ kind: "location_kind", value: "string_table_entry" }]
+				}
+			]
+		}
+	],
+	rules: [
+		{
+			id: "menu.prompt.characters",
+			kind: "character_budget",
+			maximumCharacters: 32,
+			recovery: "Shorten the prompt.",
+			role: "menu.prompt"
+		}
+	],
+	schemaVersion: 1
+};
+
+it.effect("represents a stopped game world as unavailable camera status", () =>
+	Schema.decodeUnknownEffect(CameraStatusResult)({
+		message: "Camera streaming is unavailable in the current editor state.",
+		recovery: "Start a Play or Simulate session before opening Camera Lab streaming.",
+		status: "unavailable"
+	}).pipe(Effect.asVoid)
+);
+
 const approveIntent = {
 	candidateId: "candidate-1",
 	candidatePose: {
@@ -104,11 +152,27 @@ const approveIntent = {
 };
 
 const validArgsByChannel: Record<InvokeChannel, unknown> = {
+	"editor-session:settings": [],
+	"editor-session:set-port": [31001],
 	"editor-session:status": [],
 	"editor-session:execute": ["start_play"],
+	"scenario:start": [movementGymScenario, scenarioHandle.endpoint],
+	"scenario:status": [scenarioHandle],
+	"scenario:cancel": [scenarioHandle],
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
+	"config-explorer:query": [
+		{
+			family: "Game",
+			key: "Entries",
+			leftPlatform: "PlatformA",
+			mode: "compare",
+			rightPlatform: "PlatformB",
+			section: "Fixture.Settings",
+			source: "sample_fixture"
+		}
+	],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -130,6 +194,11 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"game-text:progress": [],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
+	"game-text:quality:choose-rules": [],
+	"game-text:quality:preview-rules": [qualityRuleDocument],
+	"game-text:quality:save-rules": [qualityRuleDocument],
+	"game-text:quality:search": [{ filter: "all", pageSize: 50 }],
+	"game-text:quality:focus": [{ id: "quality-finding:1", pageSize: 50 }],
 	"asset-navigation:locate": ["/Game/Text/ST_Game.ST_Game"],
 	"input-atlas:configured-scan": [],
 	"input-atlas:choose-and-scan": [],
@@ -251,6 +320,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 };
 
 const validResultByChannel: Record<InvokeChannel, unknown> = {
+	"editor-session:settings": { port: 30001 },
+	"editor-session:set-port": { port: 31001 },
 	"editor-session:status": {
 		contract: { name: "unreal-editor-play-session", version: { major: 1, minor: 0 } },
 		state: { status: "stopped" }
@@ -261,6 +332,13 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		outcome: "accepted",
 		state: { mode: "play", sessionId: "session-1", status: "starting" }
 	},
+	"scenario:start": scenarioHandle,
+	"scenario:status": {
+		_tag: "Terminal",
+		contract: scenarioWireContract,
+		result: movementGymRuns[1]!
+	},
+	"scenario:cancel": movementGymRuns[1]!,
 	"fixture:launch": { status: "ready" },
 	"fixture:launch-review": {
 		status: "failed",
@@ -272,6 +350,15 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		health: aggregateHealth(defaultHealthInput),
 		project: { status: "not_configured" },
 		reader: "path"
+	},
+	"config-explorer:query": {
+		error: {
+			code: "sample_unavailable",
+			message: "Fixture unavailable.",
+			recovery: "Launch through pnpm showcase.",
+			retrySafe: false
+		},
+		status: "failed"
 	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
@@ -337,6 +424,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
+	"game-text:quality:choose-rules": { status: "not_ready" },
+	"game-text:quality:preview-rules": { status: "not_ready" },
+	"game-text:quality:save-rules": { status: "not_ready" },
+	"game-text:quality:search": { status: "not_ready" },
+	"game-text:quality:focus": { status: "not_ready" },
 	"asset-navigation:locate": {
 		contract: { name: "unreal-editor-asset-navigation", version: { major: 1, minor: 0 } },
 		objectPath: "/Game/Text/ST_Game.ST_Game",
@@ -361,7 +453,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"authoring:session:save": sessionFailure,
 	"camera:metrics": undefined,
 	"camera:presentation-budget": 80,
-	"camera:status": cameraStatus,
+	"camera:status": { camera: cameraStatus, status: "ready" },
 	"camera:configure": cameraStatus,
 	"content-observatory:status": { status: "not_configured" },
 	"content-observatory:targets": {
@@ -468,6 +560,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 };
 
 const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
+	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline-batch": [
@@ -503,9 +596,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 77 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(77);
-	expect(new Set(invokeChannelNames).size).toBe(77);
+it("registers exactly 88 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(88);
+	expect(new Set(invokeChannelNames).size).toBe(88);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });
@@ -593,6 +686,18 @@ it.effect("constrains game object paths, session ids, and candidate ids", () =>
 		expect(yield* Schema.decodeUnknownEffect(SessionId)("session-1")).toBe("session-1");
 		const emptySession = yield* Schema.decodeUnknownEffect(SessionId)("").pipe(Effect.exit);
 		expect(Exit.isFailure(emptySession)).toBe(true);
+	})
+);
+
+it.effect("accepts only valid Remote Control ports", () =>
+	Effect.gen(function* () {
+		expect(yield* Schema.decodeUnknownEffect(RemoteControlPort)(30001)).toBe(30001);
+		for (const value of [0, 65_536, 30001.5, "30001"]) {
+			const result = yield* Schema.decodeUnknownEffect(RemoteControlPort)(value).pipe(
+				Effect.exit
+			);
+			expect(Exit.isFailure(result)).toBe(true);
+		}
 	})
 );
 

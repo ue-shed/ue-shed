@@ -1,6 +1,6 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.8.0",
+	"fixtureVersion": "1.9.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
@@ -560,6 +560,34 @@
 			"SpaceBar",
 			"W"
 		]
+	},
+	"scenarioStudio": {
+		"map": "/Game/Fixture/Scenarios/L_MovementGym",
+		"relativeMapPath": "Content/Fixture/Scenarios/L_MovementGym.umap",
+		"timePolicy": "game_time",
+		"inputLayer": "pre_evaluation",
+		"actions": [
+			{
+				"id": "Move",
+				"publicPath": "/Game/Fixture/Input/IA_Move",
+				"objectPath": "/Game/Fixture/Input/IA_Move.IA_Move",
+				"valueType": "axis2d"
+			},
+			{
+				"id": "Jump",
+				"publicPath": "/Game/Fixture/Input/IA_Jump",
+				"objectPath": "/Game/Fixture/Input/IA_Jump.IA_Jump",
+				"valueType": "boolean"
+			},
+			{
+				"id": "Interact",
+				"publicPath": "/Game/Fixture/Input/IA_Interact",
+				"objectPath": "/Game/Fixture/Input/IA_Interact.IA_Interact",
+				"valueType": "boolean"
+			}
+		],
+		"conditions": ["landing_ready", "cache_open"],
+		"maxEvidence": 8
 	},
 	"cameraLoad": {
 		"map": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad",

@@ -5,7 +5,7 @@ focus operations. The first implemented slice powers Map Review's Live World Sco
 Remote Control calls and a local binary transform stream.
 
 ```sh
-npm install @ue-shed/observatory@0.1.0-rc.4 @ue-shed/unreal-connection@0.1.0-rc.4
+npm install --save-exact @ue-shed/observatory @ue-shed/unreal-connection
 ```
 
 Install the matching `UEShedObservatory` plugin from the same release manifest. The package is

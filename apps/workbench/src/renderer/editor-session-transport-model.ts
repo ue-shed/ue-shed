@@ -14,6 +14,11 @@ export interface TransportAction {
 	readonly primary?: boolean;
 }
 
+export function parseRemoteControlPort(value: string): number | undefined {
+	const port = Number(value);
+	return Number.isInteger(port) && port >= 1 && port <= 65_535 ? port : undefined;
+}
+
 export function editorSessionTransportActions(
 	state: EditorSessionTransportState
 ): ReadonlyArray<TransportAction> {

@@ -8,6 +8,7 @@ import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
+import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
@@ -20,6 +21,7 @@ import { mapReviewClient } from "./map-review-client.js";
 import { contentObservatoryClient } from "./content-observatory-client.js";
 import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
+import { scenarioStudioClient } from "./scenario-studio-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
 
@@ -28,6 +30,7 @@ const routes = [
 	{ href: "#/authoring", label: "Data Authoring", route: "#/authoring" },
 	{ href: "#/game-text", label: "Game Text", route: "#/game-text" },
 	{ href: "#/input-atlas", label: "Input Atlas", route: "#/input-atlas" },
+	{ href: "#/config-explorer", label: "Config", route: "#/config-explorer" },
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
 	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
@@ -44,9 +47,18 @@ const workflowGroups = [
 		requirement: "UNREAL CAN STAY CLOSED",
 		workflows: [
 			{
+				action: "OPEN EXPLORER",
+				description:
+					"Explain one saved .ini value through every source line and platform layer.",
+				evidence: "config",
+				href: "#/config-explorer",
+				title: "Config Explorer",
+				tone: "orange"
+			},
+			{
 				action: "OPEN STUDIO",
 				description:
-					"Edit player actions, waits, overrides, and run results on one timeline.",
+					"Edit the portable timeline offline, then run Movement Gym against PIE with live status and cancellation.",
 				evidence: "scenarios",
 				href: "#/scenarios",
 				title: "Scenario Studio",
@@ -171,8 +183,15 @@ function workflowEvidence(
 	}
 	if (workflow.evidence === "scenarios") {
 		return {
-			detail: "Example draft and two saved runs work offline",
-			label: "Movement Gym · 2 saved runs",
+			detail: "Portable draft + live PIE run console when UEShedScenarios is enabled",
+			label: "Movement Gym · preview or execute",
+			ready: true
+		};
+	}
+	if (workflow.evidence === "config") {
+		return {
+			detail: "PlatformA ⇄ PlatformB · all six earned merge operations",
+			label: "Committed text fixture ready",
 			ready: true
 		};
 	}
@@ -304,6 +323,9 @@ export function AppShell() {
 					<Match when={route() === "#/input-atlas"}>
 						<InputAtlasRoute client={inputAtlasClient} />
 					</Match>
+					<Match when={route() === "#/config-explorer"}>
+						<ConfigExplorerShowcase client={workbenchRendererClient} />
+					</Match>
 					<Match when={route() === "#/map-review"}>
 						<MapReviewRoute client={mapReviewClient} />
 					</Match>
@@ -311,7 +333,7 @@ export function AppShell() {
 						<ContentObservatoryRoute client={contentObservatoryClient} />
 					</Match>
 					<Match when={route() === "#/scenarios"}>
-						<ScenarioStudioRoute />
+						<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
 					</Match>
 					<Match when={route() === "#/camera-lab"}>
 						<CameraLab />
@@ -646,6 +668,7 @@ const styles = stylex.create({
 	amber: { borderLeftColor: "#d98f53" },
 	blue: { borderLeftColor: "#70a9b2" },
 	coral: { borderLeftColor: "#e76b49" },
+	orange: { borderLeftColor: "#d4552d" },
 	violet: { borderLeftColor: "#9d8cc7" },
 	steel: { borderLeftColor: "#758991" },
 	cyan: { borderLeftColor: "#5eb8c7" },

@@ -1,208 +1,175 @@
 # Release evidence and downstream handoff
 
 UE Shed separates portable checks, trusted Unreal evidence, candidate construction, and publication.
-No workflow merges code or updates a downstream repository. Candidate publication always requires
-an exact protected tag and explicit human approval.
+No release process merges code or updates a downstream repository. Publication always requires an
+exact reviewed version, an exact source commit, and explicit human approval.
 
-GitHub accepts manual dispatches and schedules only after a workflow exists on the default branch.
-Plan 024 remains in progress until the workflows complete their first protected hosted and trusted
-runs from the canonical repository.
+## Policy through and after 1.0
 
-## Trust lanes
+**Through and including `1.0.0`, releases are built and published from the trusted local Windows
+development machine.** GitHub-hosted builders, the self-hosted Trusted Unreal runner, protected
+environments, OIDC publication, and hosted provenance are a post-1.0 plan. They are not prerequisites
+for any `0.x` release or for `1.0.0` itself.
 
-The `Portable` workflow runs `pnpm check` on an ephemeral Blacksmith Ubuntu runner. It receives only
-read access to repository contents, persists no checkout credential, and caches only rebuildable
-dependencies. Configure the repository's required checks so `pnpm check` is required on protected
-integration branches. Macroscope remains advisory: install its GitHub App for this repository and
-trigger an on-demand review with `@macroscope-app review`; do not make its neutral check result a
-release substitute.
+Starting with the first release after `1.0.0`, UE Shed intends to move publication to the GitHub
+trust lanes described at the end of this document. That migration is not complete merely because
+workflow files exist. The hosted lane becomes authoritative only after its runners, npm trusted
+publishers, protected environments, and recovery procedure have all been exercised successfully.
 
-The `Trusted Unreal` workflow is independent and has no `pull_request` trigger. Register a dedicated
-Windows runner under a non-administrator local account with the labels `self-hosted`, `Windows`,
-`X64`, and `ue57`, then place it in the `trusted-unreal` runner group. Restrict that group to the
-`trusted-unreal.yml` workflow. Protect the `trusted-unreal` environment with required reviewers and
-allow only trusted refs. The runner must contain Unreal Engine 5.7 and Visual Studio's Unreal C++
-workload, but no npm token, SSH key, cloud credential, or source-control credential.
+Until then:
 
-Before dispatch, make sure no unrelated Unreal Editor process is running. The workflow launches the
-generic fixture, runs `pnpm check:unreal`, records the engine and runner identity, uploads plugin
-binaries and logs, and stops only editor processes that appeared during the run. Scheduled runs use
-the default branch's checked-in workflow and the same protected environment.
+- `pnpm check` on the trusted local machine is the portable release gate;
+- `pnpm check:unreal` on that machine supplies trusted Unreal evidence when a release touches Unreal
+  behavior or plugin artifacts;
+- local candidate manifests, checksums, and packed-consumer tests are the release evidence;
+- npm publication uses interactive 2FA or a short-lived granular write token configured outside the
+  repository;
+- local releases do not claim npm OIDC provenance.
 
-## Dry-run a candidate
+## Pre-1.0 local release lane
 
-Use an exact prerelease version and, when available, the exact successful Trusted Unreal run ID:
+Public npm packages are independently versioned with Changesets. Package selection belongs in a
+small Markdown changeset committed with the implementation, not in a release-time feature list or
+custom bundle command.
 
-1. Dispatch `Candidate Release` on the reviewed protected ref.
-2. Enter a version such as `0.1.0-rc.1` and leave `publish` disabled.
-3. Enter the numeric Unreal run ID to bind its evidence into the candidate. Omitting it is allowed
-   only for a portable dry run and is represented as `null` in the manifest. Any publication input
-   without that exact successful run is rejected.
-4. Download `ue-shed-<version>` and verify `SHA256SUMS`.
-5. Inspect `candidate-manifest.json`: the source commit, ref, pnpm version, lockfile digest, evidence
-   run, and every artifact digest must be exact. The candidate's `plugins/plugins.manifest.json`
-   must bind the plugin graph and source archive to the exact `npm/packages-manifest.json` digest.
-6. Verify GitHub's provenance attestation with `gh attestation verify` before promoting an artifact.
-
-The candidate always contains immutable source and checksummed plugin-source artifacts. Its npm allowlist is
-exactly `@ue-shed/protocol`, `@ue-shed/observability`, `@ue-shed/unreal-connection`,
-`@ue-shed/cameras`, `@ue-shed/observatory`, `@ue-shed/uasset-inspection-wasm`,
-`@ue-shed/uasset-win32-x64`, `@ue-shed/unreal-assets`, and `@ue-shed/uasset`; candidate
-construction fails if another workspace becomes public accidentally. Observatory is a headless Node
-host surface: it pins Observability and Unreal Connection, and its USOT v1 wire contract remains in
-Protocol. The Windows candidate job builds the native parser and WASM package, validates packed
-manifests, MIT license metadata, checksums, the generated WASM `dist/build-info.json` optimizer
-evidence, and provenance subjects, installs the tarballs into a clean offline consumer, loads the
-WASM package, and dry-runs all nine publications.
-
-For a local artifact-only dry run:
+When a public package changes, run:
 
 ```powershell
-$commit = git rev-parse HEAD
-$branch = git branch --show-current
-node scripts/create-release-candidate.mjs --version 0.1.0-rc.1 --commit $commit `
-  --ref "refs/heads/$branch" --output out/candidate
+pnpm changeset
 ```
 
-Use a clean checkout of the exact requested commit and a new empty output directory for every run.
-The script rejects commit/worktree drift and will not overwrite an existing candidate.
+Select the directly affected public packages and the SemVer impact. Do not select private
+applications, extensions, examples, or tooling. Exact internal workspace dependencies are handled
+by Changesets: if a dependency moves out of range, the affected public dependent receives the
+required patch release. The native launcher, Windows artifact, and WASM package form one fixed
+version group because they share the Rust release line.
 
-To build only the portable plugin bundle locally, use an empty output directory and then verify the
-generated manifest before extraction:
+Preview the accumulated release at any time:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.4 --output out/plugins
+pnpm release:status
+```
+
+To prepare a release, start from a clean checkout and consume the committed changesets:
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm release:version
+pnpm check
+pnpm check:unreal
+```
+
+`release:version` updates package manifests, exact internal dependency pins, changelogs, the
+lockfile, and the Rust/native version metadata. Review those changes and commit them as the release
+commit. `pnpm check:unreal` is required when the release changes Unreal-facing behavior, native
+saved-asset evidence, or plugin artifacts. For a portable-only release, record why it was omitted.
+
+The normal package gate builds and packs every public package, validates metadata and checksums,
+installs the tarballs into a clean offline consumer, and exercises the saved-project Game Text
+journey. The protected public-package allowlist remains a conformance boundary; it prevents an
+accidentally non-private workspace from being published, but it does not select the release.
+
+Authenticate to npm outside the repository, then publish from the clean committed release:
+
+```powershell
+npm whoami
+pnpm release
+git push --tags
+```
+
+`pnpm release` reruns the complete gate and delegates dependency-ordered publication and package
+tag creation to Changesets. A new public package uses the same command. Before 1.0, use interactive
+2FA or the narrowest short-lived granular write token and revoke it after verification. Never put a
+token in a command, tracked `.npmrc`, release manifest, or log. Local releases do not claim hosted
+OIDC provenance.
+
+Verify the published package versions and `latest` dist-tags before announcing the release. Never
+unpublish or rebuild an immutable version as recovery. See Changesets' [CLI
+guide](https://changesets.dev/guide/cli), npm's [access-token
+guidance](https://docs.npmjs.com/about-access-tokens/), and [two-factor authentication
+requirements](https://docs.npmjs.com/about-two-factor-authentication/).
+
+The pending initial Changeset promotes the existing public packages from `0.1.0-rc.4` to `0.1.0`
+and adds `@ue-shed/game-text`. Later World Log, Texture Audit, or other public features follow the
+same flow and release only themselves plus genuinely affected dependencies.
+
+## Local plugin artifacts
+
+Build a portable plugin bundle into an empty directory, verify its manifest, and inspect the exact
+selection before installation:
+
+```powershell
+node scripts/plugin-bundle.mjs bundle --version <version> --output out/plugins
 pnpm ue-shed plugins verify out/plugins/plugins.manifest.json
 pnpm ue-shed plugins list out/plugins/plugins.manifest.json
 pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.uproject `
   --manifest out/plugins/plugins.manifest.json
 ```
 
-For Plan 028's first Map Review vertical, select the exact Core+Cameras graph instead of the full
-candidate plugin set. That selection does not require Workbench, extension UI, Observatory, or
-Authoring:
+For Map Review, select only Core and Cameras:
 
 ```powershell
-pnpm release:plugins:map-review
-# or:
-node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.4 `
+node scripts/plugin-bundle.mjs bundle --version <version> `
   --output out/plugins-map-review --plugins UEShedCore,UEShedCameras
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
-pnpm ue-shed plugins install --project <project.uproject> `
-  --manifest out/plugins-map-review/plugins.manifest.json
+```
+
+For a headless Observatory host, select only Observatory:
+
+```powershell
+node scripts/plugin-bundle.mjs bundle --version <version> `
+  --output out/plugins-observatory --plugins UEShedObservatory
+pnpm ue-shed plugins verify out/plugins-observatory/plugins.manifest.json
 ```
 
 Installation is project-scoped under `Plugins/UEShed`. It refuses checksum failures, unsupported
-graphs, modified installer-owned files, and unrelated existing content at that destination.
-
-For a headless Observatory host such as Electroswag, select only `UEShedObservatory` from the exact
-same release manifest:
-
-```powershell
-pnpm release:plugins:observatory
-pnpm ue-shed plugins verify out/releases/0.1.0-rc.4/plugins-observatory/plugins.manifest.json
-pnpm ue-shed plugins install --project <project.uproject> `
-  --manifest out/releases/0.1.0-rc.4/plugins-observatory/plugins.manifest.json
-```
-
-The initial `0.1.0-rc.1` publication bootstrapped the parser packages before npm trusted publishers
-could be configured. Later Map Review candidates add `@ue-shed/unreal-connection` and
-`@ue-shed/cameras`, `@ue-shed/observability`, and `@ue-shed/observatory` to the same exact-version,
-protected OIDC path. The new `@ue-shed/uasset-inspection-wasm` package is a special first-publish
-case: npm cannot configure a trusted publisher until the package exists, and npm staged publishing
-cannot create a brand-new package. Follow the one-time bootstrap procedure below; do not improvise a
-token-based path for any other package. From a clean reviewed checkout on Windows, run `pnpm check`,
-then `pnpm release:pack` to inspect the local artifacts. Confirm the local manifest and checksums:
-
-```powershell
-Get-Content out/releases/0.1.0-rc.4/npm/packages-manifest.json
-Get-Content out/releases/0.1.0-rc.4/npm/SHA256SUMS
-```
-
-Do not treat local packing as publication: protected OIDC publication requires the exact candidate
-tag, the protected `npm-release` environment, and human approval. If publication fails after an
-earlier package succeeds, do not unpublish or rebuild that version. The protected job is retry-safe:
-for every exact `name@version`, it computes SHA-512 SRI from the candidate `.tgz` and queries npm's
-`dist.integrity`. It publishes an absent version, skips an existing version only when the registry
-integrity exactly matches, and fails closed on a mismatch or registry-query error. Rerun the same
-protected job only after resolving the account or registry issue.
-
-## One-time WASM bootstrap
-
-The npm registry requires the package to exist before `npm trust` can configure its GitHub trusted
-publisher, while staged publishing also requires an existing package. Therefore the first
-`@ue-shed/uasset-inspection-wasm` publication uses a deliberately separate, one-time path:
-
-1. Confirm the candidate has the exact protected tag, successful portable evidence, and successful
-   Trusted Unreal evidence for the same commit. The workflow refuses publication without the exact
-   run ID.
-2. Dispatch `Candidate Release` from `refs/tags/v<version>` with `publish=true` and
-   `bootstrap=true`. Approve the protected `npm-bootstrap-release` environment.
-3. Store only a narrowly scoped, short-lived `NPM_BOOTSTRAP_TOKEN` in that protected environment.
-   It is used only as `NODE_AUTH_TOKEN` for the new WASM tarball; it must not be a repository-wide
-   secret or be exposed to candidate construction, dry runs, or the normal publish job.
-4. The bootstrap job publishes only the WASM tarball with `npm publish --provenance --access public
---tag next`. It does not use staged publishing and does not publish the existing package set.
-   The later normal nine-package OIDC job queries this exact version, verifies that its registry
-   integrity matches the bootstrap tarball, and skips it instead of attempting an immutable-version
-   republish.
-5. After the package exists, configure its GitHub trusted publisher with npm's `npm trust` command
-   or package settings. The intended relationship is:
-
-    ```powershell
-    npm trust github @ue-shed/uasset-inspection-wasm --file candidate-release.yml `
-      --repo ue-shed/ue-shed --env npm-release --allow-publish --yes
-    npm trust list @ue-shed/uasset-inspection-wasm
-    ```
-
-6. Verify a protected OIDC candidate dry run, revoke/delete `NPM_BOOTSTRAP_TOKEN`, remove it from
-   `npm-bootstrap-release`, and enable npm's “require two-factor authentication and disallow
-   tokens” setting for the package. Only then is the normal OIDC publish path allowed.
-
-The bootstrap job completes successfully after the first publish, but writes a prominent
-`GITHUB_STEP_SUMMARY` handoff and workflow warning. Green status is not the steady-state release
-postcondition: a human must configure the trusted publisher, verify OIDC, revoke/delete the
-`NPM_BOOTSTRAP_TOKEN` at npm, and remove the `npm-bootstrap-release` secret before any later
-publication. Re-running with `bootstrap=true` is not a recovery strategy: the package version is
-immutable and the one-time token must not be reused. If bootstrap prerequisites are not ready, leave
-`publish=false`; the workflow fails closed.
-
-See npm's [trusted publishers](https://docs.npmjs.com/trusted-publishers/), [`npm trust`](https://docs.npmjs.com/cli/v11/commands/npm-trust/),
-[provenance](https://docs.npmjs.com/generating-provenance-statements/), and
-[staged publishing](https://docs.npmjs.com/staged-publishing/) documentation for the registry rules.
-
-## Protected npm publication
-
-Publication is deliberately narrower than candidate creation:
-
-- dispatch `Candidate Release` from the exact `v<version>` tag;
-- enable the `publish` input;
-- approve the protected `npm-release` environment;
-- configure each public package on npm with `candidate-release.yml` as its GitHub trusted publisher
-  and allow `npm publish`;
-- keep the publish job on GitHub-hosted Ubuntu, because npm trusted publishing does not accept a
-  self-hosted runner;
-- provide no `NODE_AUTH_TOKEN`: npm obtains a short-lived OIDC identity and creates provenance for a
-  public package from a public repository.
-- the steady-state job rejects any `NODE_AUTH_TOKEN` or `NPM_TOKEN` in its environment; token
-  authentication is reserved for the one-time protected bootstrap job above.
-
-The job reconciles only the previously built `.tgz` files in the exact manifest order. Before each
-package, it queries the exact registry `name@version`: an absent version is published, an existing
-version with byte-identical SHA-512 SRI is skipped, and an integrity mismatch fails closed. This also
-makes a rerun safe after a partial multi-package publication. The job still fails when the tag and
-exact version do not agree, Trusted Unreal evidence is not bound, token auth is present, the registry
-query is ambiguous or fails, or no public package artifacts exist.
+graphs, modified installer-owned files, and unrelated existing content at that destination. Game
+Text requires no Unreal plugin.
 
 ## Two-repository handshake
 
-1. Publish the exact UE Shed candidate after portable and trusted Unreal evidence are reviewed.
+1. Publish the exact UE Shed candidate locally after portable and applicable trusted Unreal evidence
+   are reviewed.
 2. Open a downstream pull request pinning that exact candidate version or artifact digest. Never use
    `latest`, a range, a branch, or an unverified workflow artifact.
 3. Run downstream portable checks and its manually approved Unreal evidence against the pin.
-4. Publish the reviewed UE Shed stable release from an exact stable tag and protected OIDC job.
+4. Publish the reviewed UE Shed stable release locally from the exact stable commit and tag.
 5. Open a second downstream pull request replacing the candidate pin with the exact stable version
    or digest, then repeat downstream verification.
 
-A future repository-dispatch integration may open either bump pull request. It must never approve,
-merge, publish, or silently change the exact selected version.
+No automation may approve, merge, publish, or silently change the selected downstream version.
+
+## Post-1.0 GitHub release plan
+
+The checked-in GitHub workflows record the intended release architecture after `1.0.0`; they are not
+the current publication authority.
+
+The planned hosted lane consists of:
+
+1. A read-only portable workflow running `pnpm check` on an ephemeral hosted runner.
+2. A separately protected Trusted Unreal workflow on a dedicated non-administrator Windows runner
+   with Unreal Engine 5.7, no npm token, and no unrelated editor process.
+3. Candidate construction on GitHub-hosted Windows from an exact protected tag.
+4. Checksummed artifact and source attestations.
+5. Publication on GitHub-hosted Ubuntu through npm trusted publishing and OIDC, with no
+   `NODE_AUTH_TOKEN` or `NPM_TOKEN` present.
+6. Protected human approval, exact registry-integrity reconciliation, and retry-safe partial-release
+   recovery.
+
+Before this lane replaces local publication, it must complete successful dry runs and one protected
+release rehearsal from the canonical repository. Every public npm package must have the exact
+workflow configured as its trusted publisher, the environments must require reviewers, and the
+published recovery procedure must be tested. A workflow file, neutral check, or unexercised runner
+does not satisfy that gate.
+
+New packages in the post-1.0 lane may require a one-time protected bootstrap because npm cannot
+configure a trusted publisher before the package exists. That future bootstrap must publish only an
+explicitly allowlisted package with a narrow short-lived token, record a manual handoff, configure
+and verify the package's trusted publisher, and revoke the token before normal OIDC publication.
+
+When the hosted lane becomes authoritative, update this document in the same reviewed change: move
+the local token lane to emergency recovery, name the proven workflows and environments, and require
+hosted provenance for normal releases. See npm's
+[trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/) and
+[provenance documentation](https://docs.npmjs.com/generating-provenance-statements/) for that future
+lane.

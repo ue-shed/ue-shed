@@ -8,6 +8,7 @@
 	"scripts": {
 		"check": "pnpm run uasset:check && pnpm run typecheck && pnpm run effect:architecture && pnpm run license:check && pnpm run test:architecture && pnpm run test:release && pnpm run test:release:packages && pnpm run test:adoption:data-authoring && pnpm run lint && pnpm run format:check && pnpm run contract:check && pnpm run test",
 		"check:precommit": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:architecture && pnpm run contract:check",
+		"changeset": "changeset",
 		"check:unreal": "pnpm run test:uasset-conformance && pnpm run test:unreal-authoring && pnpm run test:unreal-review",
 		"contract:check": "pnpm --filter @ue-shed/protocol contract:check && pnpm --filter @ue-shed/cameras contract:check",
 		"authoring:parity": "node scripts/ue-shed.mjs authoring parity",
@@ -38,7 +39,11 @@
 		"test:architecture": "node --test scripts/check-effect-architecture.test.mjs scripts/check-license-boundary.test.mjs scripts/check-map-history-boundary.test.mjs",
 		"test:release": "node --test scripts/create-release-candidate.test.mjs scripts/plugin-bundle.test.mjs",
 		"test:release:packages": "node scripts/test-public-packages.mjs",
-		"release:pack": "node scripts/pack-public-packages.mjs --output out/releases/0.1.0-rc.4/npm",
+		"release:status": "changeset status",
+		"release:version": "changeset version && node scripts/sync-native-versions.mjs && pnpm install --lockfile-only",
+		"release": "pnpm check && changeset publish",
+		"release:pack": "node scripts/pack-public-packages.mjs --output out/releases/npm",
+		"sync:native-versions": "node scripts/sync-native-versions.mjs",
 		"release:plugins": "node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.4 --output out/releases/0.1.0-rc.4/plugins",
 		"release:plugins:map-review": "node scripts/plugin-bundle.mjs bundle --version 0.1.0-rc.4 --output out/releases/0.1.0-rc.4/plugins-map-review --plugins UEShedCore,UEShedCameras",
 		"record:flow:map-review": "node scripts/record-map-review-flow.mjs",
@@ -74,6 +79,7 @@
 		"ue-shed": "node scripts/ue-shed.mjs"
 	},
 	"devDependencies": {
+		"@changesets/cli": "2.31.1",
 		"@effect/vitest": "catalog:",
 		"@solidjs/testing-library": "^0.8.10",
 		"@stylexjs/rollup-plugin": "catalog:",

@@ -250,6 +250,17 @@ export type MapReviewCandidatePreviewResult = Schema.Schema.Type<
 export const MapReviewAuthoringResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("failed"), error: IpcFailure }),
 	Schema.Struct({
+		status: Schema.Literal("map_mismatch"),
+		matchingReviewSet: Schema.optional(MapReviewSetSummary),
+		recovery: Schema.String,
+		reviewSet: MapReviewSetSummary,
+		selection: Schema.Struct({
+			actorPath: Schema.String,
+			displayName: Schema.String,
+			mapPath: Schema.String
+		})
+	}),
+	Schema.Struct({
 		status: Schema.Literal("ready"),
 		candidates: Schema.Array(MapReviewAuthoringCandidate),
 		selection: Schema.Struct({
@@ -269,7 +280,8 @@ export const MapReviewAuthorFromSelectionIntent = Schema.Struct({
 	destination: Schema.Union([
 		Schema.Struct({ kind: Schema.Literal("append_view") }),
 		Schema.Struct({ kind: Schema.Literal("revise_view"), viewId: Schema.NonEmptyString })
-	])
+	]),
+	reviewSetMode: Schema.optional(Schema.Literals(["active", "selection_map"]))
 });
 export type MapReviewAuthorFromSelectionIntent = Schema.Schema.Type<
 	typeof MapReviewAuthorFromSelectionIntent

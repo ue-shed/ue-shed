@@ -1,0 +1,44 @@
+{
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"actions": [
+		{
+			"actionId": "Move",
+			"actionPath": "/Game/Fixture/Input/IA_Move",
+			"keyframes": [
+				{ "atMs": 250, "value": { "_tag": "Axis2D", "x": 0, "y": 1 } },
+				{ "atMs": 1000, "value": { "_tag": "Axis2D", "x": 0, "y": 0 } }
+			],
+			"valueType": "Axis2D"
+		},
+		{
+			"actionId": "Jump",
+			"actionPath": "/Game/Fixture/Input/IA_Jump",
+			"keyframes": [
+				{ "atMs": 1200, "value": { "_tag": "Boolean", "value": true } },
+				{ "atMs": 1250, "value": { "_tag": "Boolean", "value": false } }
+			],
+			"valueType": "Boolean"
+		},
+		{
+			"actionId": "Interact",
+			"actionPath": "/Game/Fixture/Input/IA_Interact",
+			"keyframes": [
+				{ "atMs": 5200, "value": { "_tag": "Boolean", "value": true } },
+				{ "atMs": 5250, "value": { "_tag": "Boolean", "value": false } }
+			],
+			"valueType": "Boolean"
+		}
+	],
+	"durationMs": 9216,
+	"evidenceLimit": 3,
+	"expectedPieSessionId": "pie-session-1",
+	"injectionLayer": "pre_evaluation",
+	"liveInputPolicy": "isolated",
+	"mapPath": "/Game/Fixture/Scenarios/L_MovementGym",
+	"probe": { "atMs": 5580, "condition": "cache_open" },
+	"scenarioId": "scenario_movement-gym_014",
+	"wait": { "atMs": 4100, "condition": "landing_ready", "timeoutMs": 1250 }
+}

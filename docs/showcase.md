@@ -289,6 +289,13 @@ During local iteration, pass `--no-build` to reuse the existing Workbench build:
 pnpm showcase:record --no-build
 ```
 
+To record a focused Config Explorer journey that exercises every evidence preset through the real
+Workbench route:
+
+```powershell
+pnpm showcase:record config-explorer
+```
+
 To showcase Map Review by creating fresh evidence and comparing it with the prior Capture Run:
 
 ```powershell

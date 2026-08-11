@@ -9,6 +9,7 @@ import { WorkbenchPage } from "../pages/workbench-page.js";
 
 const RecordingJourney = Schema.Literals([
 	"saved-workflows",
+	"config-explorer",
 	"map-review",
 	"world-log",
 	"world-log-fast"
@@ -563,6 +564,142 @@ test(`records the ${journey} Workbench journey`, async ({
 					slug: "06-unclassified-evidence",
 					testInfo,
 					title: "Keep unclassified evidence visible"
+				})
+			);
+		} else if (journey === "config-explorer") {
+			await startScreencast();
+			await startTracing();
+			const evidence = page.getByRole("region", { name: "Config Explorer evidence" });
+			const effectiveValue = (platform: "PlatformA" | "PlatformB") =>
+				page!.getByRole("region", { name: `${platform} effective saved value` });
+
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.expectShowcaseReady();
+						await workbench.openRoute("Config");
+						await expect(
+							page!.getByRole("navigation", { name: "Breadcrumb" })
+						).toContainText("Config Explorer");
+						await expect(page!.getByRole("status")).toContainText("VALUE DIVERGES");
+						await expect(
+							page!.getByRole("region", { name: "Platform config comparison" })
+						).toContainText("PlatformA");
+					},
+					description:
+						"Resolve one saved key independently for PlatformA and PlatformB, then compare the effective values and coverage.",
+					page,
+					slug: "01-platform-comparison",
+					testInfo,
+					title: "Compare the same key across platforms"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Platform A/ }).click();
+						const contributions = page!.getByRole("list", {
+							name: "PlatformA ordered contributions"
+						});
+						await expect(contributions).toContainText("clear");
+						await contributions.scrollIntoViewIfNeeded();
+					},
+					description:
+						"Trace every source line in order, including no-ops, removals, clearing, and the effects that still survive.",
+					page,
+					resetScroll: false,
+					slug: "02-platform-a-lineage",
+					testInfo,
+					title: "Read the ordered contribution ledger"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Platform B/ }).click();
+						await expect(effectiveValue("PlatformB")).toContainText(
+							"PlatformB · PlatformB"
+						);
+						await effectiveValue("PlatformB").scrollIntoViewIfNeeded();
+					},
+					description:
+						"PlatformB initializes an explicit empty array, then appends the same value twice; duplicates stay visible and truthful.",
+					page,
+					resetScroll: false,
+					slug: "03-platform-b-duplicates",
+					testInfo,
+					title: "Preserve duplicate array entries"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Scalar/ }).click();
+						await expect(effectiveValue("PlatformA")).toContainText("PlatformA");
+						await expect(
+							page!.getByRole("list", { name: "PlatformA ordered contributions" })
+						).toContainText("replaced");
+					},
+					description:
+						"Plain scalar assignments replace the first saved value in place, with the prior value recorded in the evidence.",
+					page,
+					slug: "04-scalar-replacement",
+					testInfo,
+					title: "Explain scalar replacement"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Explicit empty/ }).click();
+						await expect(effectiveValue("PlatformA")).toContainText(
+							"[ explicit empty ]"
+						);
+					},
+					description:
+						"An initialized-empty array remains distinct from a key that never existed or was later cleared.",
+					page,
+					slug: "05-explicit-empty",
+					testInfo,
+					title: "Distinguish explicit empty from missing"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Unsupported/ }).click();
+						await expect(
+							evidence.getByText("partial coverage", { exact: true })
+						).toBeVisible();
+						await expect(
+							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
+						).toContainText("unsupported");
+					},
+					description:
+						"Unsupported keyed-array syntax becomes a visible partial-coverage exception instead of being silently ignored.",
+					page,
+					slug: "06-unsupported-syntax",
+					testInfo,
+					title: "Surface unsupported syntax"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Redirect/ }).click();
+						await expect(
+							evidence.getByText("partial coverage", { exact: true })
+						).toBeVisible();
+						await expect(
+							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
+						).toContainText("unsupported");
+					},
+					description:
+						"Redirect involvement is reported as identity uncertainty, keeping the saved-source claim narrower than live runtime state.",
+					page,
+					slug: "07-redirect-boundary",
+					testInfo,
+					title: "Keep redirect uncertainty visible"
 				})
 			);
 		} else {

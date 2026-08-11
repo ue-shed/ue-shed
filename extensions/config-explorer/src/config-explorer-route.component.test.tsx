@@ -66,8 +66,8 @@ describe("ConfigExplorerRoute", () => {
 		expect(screen.getByText("partial coverage")).toBeDefined();
 		expect(screen.getAllByText("unsupported").length).toBeGreaterThan(0);
 		expect(screen.getByLabelText("effect survives")).toBeDefined();
-		expect(screen.getByText(/Layer coverage ledger/)).toBeDefined();
-		expect(screen.getByText(/Authority boundary/)).toBeDefined();
+		expect(screen.getByText(/Coverage ·/)).toBeDefined();
+		expect(screen.getByText(/Excluded runtime authorities/)).toBeDefined();
 	});
 
 	it("renders independent platform ledgers side by side", () => {

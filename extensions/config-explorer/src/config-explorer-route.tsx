@@ -5,6 +5,7 @@ import type {
 	ConfigExplanation,
 	ConfigValueState
 } from "@ue-shed/config-explorer/browser";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show } from "solid-js";
 import type { ConfigExplorerSuppliedResult } from "./config-explorer-client.js";
 
@@ -24,7 +25,7 @@ function valueText(value: ConfigValueState): string {
 function effectText(contribution: ConfigContribution): string {
 	switch (contribution.effect.kind) {
 		case "added":
-			return `added at ${contribution.effect.index}`;
+			return `added at index ${contribution.effect.index}`;
 		case "replaced":
 			return `replaced “${contribution.effect.previousValue}”`;
 		case "removed":
@@ -34,10 +35,14 @@ function effectText(contribution: ConfigContribution): string {
 		case "initialized_empty":
 			return "initialized explicit empty";
 		case "duplicate":
-			return "duplicate · no change";
+			return "duplicate; no change";
 		case "no_match":
-			return "no match · no change";
+			return "no match; no change";
 	}
+}
+
+function operationText(operation: ConfigContribution["operation"]): string {
+	return operation.replaceAll("_", " ");
 }
 
 function EvidencePanel(props: { readonly result: ConfigExplanation; readonly compact?: boolean }) {
@@ -46,13 +51,18 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 	const unresolvedLayers = () => props.result.layers.filter(({ status }) => status !== "read");
 	const missingCount = () =>
 		props.result.layers.filter(({ status }) => status === "missing").length;
+	const readCount = () => props.result.layers.filter(({ status }) => status === "read").length;
+	const effectiveCount = () =>
+		props.result.contributions.filter(({ remainsEffective }) => remainsEffective).length;
 
 	return (
 		<article {...stylex.props(styles.panel, props.compact && styles.panelCompact)}>
 			<header {...stylex.props(styles.panelHeader)}>
-				<div>
-					<span {...stylex.props(styles.eyebrow)}>{props.result.family}.ini lineage</span>
+				<div {...stylex.props(styles.platformIdentity)}>
 					<h2 {...stylex.props(styles.platform)}>{props.result.platform}</h2>
+					<span {...stylex.props(styles.coordinate)}>
+						{props.result.family}.ini · [{props.result.section}] · {props.result.key}
+					</span>
 				</div>
 				<span
 					{...stylex.props(
@@ -68,25 +78,27 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 				aria-label={`${props.result.platform} effective saved value`}
 				{...stylex.props(styles.valuePlate)}
 			>
-				<span {...stylex.props(styles.valueLabel)}>effective saved-source value</span>
+				<span {...stylex.props(styles.valueLabel)}>Final saved value</span>
 				<code {...stylex.props(styles.value)}>
 					{valueText(props.result.effectiveValue)}
 				</code>
-				<span {...stylex.props(styles.coordinate)}>
-					[{props.result.section}] / {props.result.key}
-				</span>
 			</section>
 
 			<div {...stylex.props(styles.stats)}>
 				<span>
-					<b>{props.result.contributions.length}</b> contributions
+					<strong>{effectiveCount()}</strong> affecting final
 				</span>
 				<span>
-					<b>{missingCount()}</b> missing layers surfaced
+					<strong>{props.result.contributions.length}</strong> operations traced
 				</span>
 				<span>
-					<b>{exceptionalLayers().length}</b> coverage exceptions
+					<strong>{readCount()}</strong> layers read
 				</span>
+				<Show when={exceptionalLayers().length > 0}>
+					<span {...stylex.props(styles.issueStat)}>
+						<strong>{exceptionalLayers().length}</strong> coverage issues
+					</span>
+				</Show>
 			</div>
 
 			<Show when={exceptionalLayers().length > 0}>
@@ -94,6 +106,10 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 					aria-label={`${props.result.platform} coverage exceptions`}
 					{...stylex.props(styles.exceptions)}
 				>
+					<header {...stylex.props(styles.sectionHeading)}>
+						<strong>Evidence needs attention</strong>
+						<span>The answer may be incomplete</span>
+					</header>
 					<For each={exceptionalLayers()}>
 						{(layer) => (
 							<div {...stylex.props(styles.exception)}>
@@ -105,77 +121,95 @@ function EvidencePanel(props: { readonly result: ConfigExplanation; readonly com
 				</section>
 			</Show>
 
-			<details {...stylex.props(styles.ledger)}>
-				<summary>
-					Layer coverage ledger · {unresolvedLayers().length} absent or unresolved
-				</summary>
-				<div {...stylex.props(styles.ledgerBody)}>
-					<For each={unresolvedLayers()}>
-						{(layer) => (
-							<div {...stylex.props(styles.ledgerRow)}>
-								<span>{layer.status}</span>
-								<code>{layer.source.path}</code>
-							</div>
-						)}
-					</For>
-				</div>
-			</details>
-
-			<details {...stylex.props(styles.ledger)}>
-				<summary>
-					Authority boundary · {props.result.authorities.length} outside sources
-				</summary>
-				<div {...stylex.props(styles.ledgerBody)}>
-					<For each={props.result.authorities}>
-						{(authority) => (
-							<div {...stylex.props(styles.authorityRow)}>
-								<strong>{authority.authority.replaceAll("_", " ")}</strong>
-								<span>{authority.detail}</span>
-							</div>
-						)}
-					</For>
-				</div>
-			</details>
-
-			<ol
-				aria-label={`${props.result.platform} ordered contributions`}
-				{...stylex.props(styles.timeline)}
-			>
-				<For each={props.result.contributions}>
-					{(contribution) => (
-						<li {...stylex.props(styles.contribution)}>
-							<span {...stylex.props(styles.sequence)}>
-								{String(contribution.sequence + 1).padStart(2, "0")}
-							</span>
-							<div {...stylex.props(styles.contributionBody)}>
-								<div {...stylex.props(styles.contributionTop)}>
-									<code>
-										{contribution.source.path}:{contribution.location.line}
-									</code>
-									<span {...stylex.props(styles.operation)}>
-										{contribution.operation}
-									</span>
-								</div>
-								<strong>{contribution.inputValue ?? "∅"}</strong>
-								<span {...stylex.props(styles.effect)}>
-									{effectText(contribution)}
-								</span>
-							</div>
-							<span
-								aria-label={
-									contribution.remainsEffective
-										? "effect survives"
-										: "effect superseded"
-								}
+			<section {...stylex.props(styles.trace)}>
+				<header {...stylex.props(styles.traceHeader)}>
+					<div>
+						<span {...stylex.props(styles.kicker)}>WHY THIS VALUE</span>
+						<h3>Source operations, in load order</h3>
+					</div>
+					<span {...stylex.props(styles.traceLegend)}>
+						Orange rows still affect the final value
+					</span>
+				</header>
+				<ol
+					aria-label={`${props.result.platform} ordered contributions`}
+					{...stylex.props(styles.timeline)}
+				>
+					<For each={props.result.contributions}>
+						{(contribution) => (
+							<li
 								{...stylex.props(
-									styles.survival,
-									contribution.remainsEffective && styles.survivalActive
+									styles.contribution,
+									contribution.remainsEffective && styles.contributionEffective
 								)}
-							/>
-						</li>
-					)}
-				</For>
-			</ol>
+							>
+								<span {...stylex.props(styles.sequence)}>
+									{String(contribution.sequence + 1).padStart(2, "0")}
+								</span>
+								<div {...stylex.props(styles.contributionSource)}>
+									<code>{contribution.source.path}</code>
+									<span>line {contribution.location.line}</span>
+								</div>
+								<span {...stylex.props(styles.operation)}>
+									{operationText(contribution.operation)}
+								</span>
+								<div {...stylex.props(styles.contributionEffect)}>
+									<strong>{contribution.inputValue ?? "∅"}</strong>
+									<span>{effectText(contribution)}</span>
+								</div>
+								<span
+									aria-label={
+										contribution.remainsEffective
+											? "effect survives"
+											: "effect superseded"
+									}
+									{...stylex.props(
+										styles.survival,
+										contribution.remainsEffective && styles.survivalActive
+									)}
+								>
+									{contribution.remainsEffective ? "AFFECTS FINAL" : "SUPERSEDED"}
+								</span>
+							</li>
+						)}
+					</For>
+				</ol>
+			</section>
+
+			<div {...stylex.props(styles.disclosures)}>
+				<details {...stylex.props(styles.ledger)}>
+					<summary>
+						Coverage · {missingCount()} optional layers absent ·{" "}
+						{unresolvedLayers().length} unresolved total
+					</summary>
+					<div {...stylex.props(styles.ledgerBody)}>
+						<For each={unresolvedLayers()}>
+							{(layer) => (
+								<div {...stylex.props(styles.ledgerRow)}>
+									<span>{layer.status}</span>
+									<code>{layer.source.path}</code>
+								</div>
+							)}
+						</For>
+					</div>
+				</details>
+
+				<details {...stylex.props(styles.ledger)}>
+					<summary>
+						Excluded runtime authorities · {props.result.authorities.length}
+					</summary>
+					<div {...stylex.props(styles.ledgerBody)}>
+						<For each={props.result.authorities}>
+							{(authority) => (
+								<div {...stylex.props(styles.authorityRow)}>
+									<strong>{authority.authority.replaceAll("_", " ")}</strong>
+									<span>{authority.detail}</span>
+								</div>
+							)}
+						</For>
+					</div>
+				</details>
+			</div>
 		</article>
 	);
 }
@@ -187,21 +221,12 @@ function isComparison(result: ConfigExplorerSuppliedResult): result is ConfigCom
 export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSuppliedResult }) {
 	return (
 		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.masthead)}>
-				<div>
-					<span {...stylex.props(styles.serial)}>UE SHED / CONFIG EVIDENCE 001</span>
-					<h1 {...stylex.props(styles.title)}>Settings Archaeology</h1>
-					<p {...stylex.props(styles.subtitle)}>
-						A source ledger for the value Unreal saved—not the state a live process may
-						observe.
-					</p>
+			<header {...stylex.props(styles.scopeBar)}>
+				<div {...stylex.props(styles.scopeIdentity)}>
+					<strong>Saved config evidence</strong>
+					<span>Exact source lines; read-only</span>
 				</div>
-				<div {...stylex.props(styles.authority)}>
-					<span {...stylex.props(styles.authorityLamp)} />
-					SAVED SOURCE
-					<br />
-					NO RUNTIME AUTHORITY
-				</div>
+				<span {...stylex.props(styles.scopeNote)}>SAVED SOURCE · NO RUNTIME AUTHORITY</span>
 			</header>
 
 			<Show
@@ -211,14 +236,16 @@ export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSupp
 				{(comparison) => (
 					<>
 						<div role="status" {...stylex.props(styles.compareBanner)}>
-							<span>platform comparison</span>
-							<strong>
-								{comparison().valueChanged ? "VALUE DIVERGES" : "VALUES MATCH"}
-							</strong>
-							<span>
+							<div {...stylex.props(styles.compareIdentity)}>
+								<span>PLATFORM COMPARISON</span>
+								<strong>
+									{comparison().valueChanged ? "VALUE DIVERGES" : "VALUES MATCH"}
+								</strong>
+							</div>
+							<span {...stylex.props(styles.coverageComparison)}>
 								{comparison().coverageChanged
-									? "coverage differs"
-									: "coverage aligned"}
+									? "Coverage also differs"
+									: "Coverage aligned"}
 							</span>
 						</div>
 						<section
@@ -237,167 +264,206 @@ export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSupp
 
 const styles = stylex.create({
 	page: {
-		backgroundColor: "#e9e5d8",
-		backgroundImage:
-			"linear-gradient(rgba(35, 38, 35, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(35, 38, 35, .045) 1px, transparent 1px)",
-		backgroundSize: "24px 24px",
 		boxSizing: "border-box",
-		color: "#20231f",
-		fontFamily: '"Bahnschrift", "DIN Alternate", sans-serif',
-		minHeight: "100vh",
-		padding: "clamp(24px, 5vw, 72px)"
+		backgroundColor: tokens.colorCanvas,
+		color: tokens.colorText,
+		fontFamily: tokens.fontBody,
+		padding: 16
 	},
-	masthead: {
-		alignItems: "end",
-		borderBottom: "3px solid #20231f",
+	scopeBar: {
 		display: "flex",
-		gap: "32px",
+		alignItems: "center",
 		justifyContent: "space-between",
-		marginBottom: "28px",
-		paddingBottom: "22px"
+		gap: 20,
+		marginBottom: 10,
+		padding: "0 2px 10px",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		fontSize: 9,
+		letterSpacing: ".08em",
+		textTransform: "uppercase"
 	},
-	serial: { color: "#596057", fontSize: "11px", letterSpacing: "0.18em" },
-	title: {
-		fontFamily: '"Rockwell", "Roboto Slab", serif',
-		fontSize: "clamp(38px, 7vw, 80px)",
-		letterSpacing: "-0.045em",
-		lineHeight: 0.9,
-		margin: "12px 0"
-	},
-	subtitle: { fontFamily: "Georgia, serif", fontSize: "15px", margin: 0, maxWidth: "640px" },
-	authority: {
-		border: "1px solid #20231f",
-		fontSize: "10px",
-		letterSpacing: "0.14em",
-		lineHeight: 1.5,
-		padding: "10px 14px",
-		textAlign: "right"
-	},
-	authorityLamp: {
-		backgroundColor: "#d4552d",
-		borderRadius: "50%",
-		display: "inline-block",
-		height: "8px",
-		marginRight: "7px",
-		width: "8px"
-	},
+	scopeIdentity: { display: "flex", gap: 8 },
+	scopeNote: { color: tokens.colorTextFaint },
 	panel: {
-		backgroundColor: "rgba(247, 244, 233, .86)",
-		border: "1px solid #8c8b81",
-		boxShadow: "8px 8px 0 #cbc4b1",
-		padding: "clamp(18px, 3vw, 34px)"
+		minWidth: 0,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurface
 	},
-	panelCompact: { boxShadow: "5px 5px 0 #cbc4b1", minWidth: 0 },
+	panelCompact: { minWidth: 0 },
 	panelHeader: {
-		alignItems: "start",
 		display: "flex",
+		alignItems: "center",
 		justifyContent: "space-between",
-		marginBottom: "20px"
+		gap: 18,
+		padding: "14px 16px",
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	eyebrow: {
-		color: "#687067",
-		fontSize: "10px",
-		letterSpacing: "0.15em",
-		textTransform: "uppercase"
+	platformIdentity: { minWidth: 0 },
+	platform: {
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 21,
+		fontWeight: 400
 	},
-	platform: { fontFamily: '"Rockwell", serif', fontSize: "28px", margin: "4px 0 0" },
+	coordinate: {
+		display: "block",
+		marginTop: 4,
+		overflow: "hidden",
+		color: tokens.colorTextFaint,
+		fontSize: 9,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
 	coverage: {
-		border: "1px solid #39735e",
-		color: "#285743",
-		fontSize: "10px",
-		letterSpacing: "0.12em",
-		padding: "7px 9px",
+		flexShrink: 0,
+		padding: "5px 7px",
+		border: `1px solid ${tokens.colorSuccess}`,
+		color: tokens.colorSuccess,
+		fontSize: 8,
+		letterSpacing: ".08em",
 		textTransform: "uppercase"
 	},
-	coveragePartial: { borderColor: "#b54b2c", color: "#9c3e24" },
+	coveragePartial: { borderColor: tokens.colorWarningStrong, color: tokens.colorWarningStrong },
 	valuePlate: {
-		backgroundColor: "#20231f",
-		color: "#f6f0df",
 		display: "flex",
 		flexDirection: "column",
-		minHeight: "116px",
-		padding: "20px"
+		justifyContent: "center",
+		minHeight: 80,
+		padding: "14px 16px",
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	valueLabel: {
-		color: "#a9afa4",
-		fontSize: "10px",
-		letterSpacing: "0.16em",
+		color: tokens.colorTextFaint,
+		fontSize: 8,
+		letterSpacing: ".12em",
 		textTransform: "uppercase"
 	},
 	value: {
-		color: "#f3c969",
-		fontFamily: '"Cascadia Mono", monospace',
-		fontSize: "clamp(18px, 3vw, 31px)",
-		margin: "14px 0"
+		marginTop: 8,
+		color: tokens.colorWarning,
+		fontFamily: tokens.fontBody,
+		fontSize: "clamp(16px, 2vw, 23px)",
+		lineHeight: 1.3,
+		overflowWrap: "anywhere"
 	},
-	coordinate: { color: "#a9afa4", fontFamily: '"Cascadia Mono", monospace', fontSize: "11px" },
 	stats: {
-		borderBottom: "1px solid #8c8b81",
 		display: "flex",
 		flexWrap: "wrap",
-		fontSize: "11px",
-		gap: "20px",
-		padding: "14px 0"
+		gap: 16,
+		padding: "9px 16px",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextSubtle,
+		fontSize: 9
 	},
-	exceptions: { borderBottom: "1px solid #8c8b81", padding: "10px 0" },
-	exception: { display: "flex", fontSize: "10px", gap: "10px", padding: "4px 0" },
-	ledger: { borderBottom: "1px solid #8c8b81", fontSize: "11px", padding: "12px 0" },
-	ledgerBody: { display: "flex", flexDirection: "column", gap: "7px", padding: "12px 0 2px" },
-	ledgerRow: { display: "grid", gap: "10px", gridTemplateColumns: "80px minmax(0, 1fr)" },
-	authorityRow: { display: "grid", gap: "10px", gridTemplateColumns: "120px minmax(0, 1fr)" },
-	timeline: { listStyle: "none", margin: "18px 0 0", padding: 0 },
-	contribution: {
-		alignItems: "stretch",
-		borderTop: "1px solid #cfccbf",
-		display: "grid",
-		gap: "13px",
-		gridTemplateColumns: "34px minmax(0, 1fr) 10px",
-		padding: "13px 0"
+	issueStat: { color: tokens.colorWarningStrong },
+	exceptions: {
+		padding: "10px 16px",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: "#241814"
 	},
-	sequence: {
-		color: "#8a897f",
-		fontFamily: '"Cascadia Mono", monospace',
-		fontSize: "11px",
-		paddingTop: "2px"
-	},
-	contributionBody: { display: "flex", flexDirection: "column", gap: "5px", minWidth: 0 },
-	contributionTop: {
-		color: "#696c65",
+	sectionHeading: {
 		display: "flex",
-		fontSize: "10px",
-		gap: "12px",
-		justifyContent: "space-between"
+		justifyContent: "space-between",
+		gap: 16,
+		marginBottom: 7,
+		color: tokens.colorWarningStrong,
+		fontSize: 9
+	},
+	exception: {
+		display: "grid",
+		gridTemplateColumns: "90px minmax(0, 1fr)",
+		gap: 10,
+		padding: "3px 0",
+		color: tokens.colorTextMuted,
+		fontSize: 9
+	},
+	trace: { padding: "14px 16px 6px" },
+	traceHeader: {
+		display: "flex",
+		alignItems: "end",
+		justifyContent: "space-between",
+		gap: 18,
+		paddingBottom: 9
+	},
+	kicker: { color: tokens.colorWarningStrong, fontSize: 8, letterSpacing: ".13em" },
+	traceLegend: { color: tokens.colorTextFaint, fontSize: 8 },
+	timeline: { margin: 0, padding: 0, listStyle: "none" },
+	contribution: {
+		display: "grid",
+		gridTemplateColumns: "28px minmax(120px, 1fr) 84px minmax(120px, .8fr) 82px",
+		alignItems: "center",
+		gap: 9,
+		minHeight: 46,
+		padding: "5px 8px",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderLeft: "2px solid transparent",
+		color: tokens.colorTextMuted
+	},
+	contributionEffective: {
+		borderLeftColor: tokens.colorWarningStrong,
+		backgroundColor: "#d7894a0d",
+		color: tokens.colorText
+	},
+	sequence: { color: tokens.colorTextFaint, fontSize: 8 },
+	contributionSource: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 3,
+		minWidth: 0,
+		fontSize: 8
 	},
 	operation: {
-		backgroundColor: "#dad5c5",
-		letterSpacing: "0.08em",
-		padding: "2px 5px",
+		justifySelf: "start",
+		padding: "3px 5px",
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextSubtle,
+		fontSize: 7,
+		letterSpacing: ".05em",
 		textTransform: "uppercase"
 	},
-	effect: { color: "#696c65", fontFamily: "Georgia, serif", fontSize: "12px" },
-	survival: {
-		alignSelf: "center",
-		backgroundColor: "#c5c1b5",
-		borderRadius: "50%",
-		height: "8px",
-		width: "8px"
-	},
-	survivalActive: { backgroundColor: "#d4552d", boxShadow: "0 0 0 3px rgba(212, 85, 45, .16)" },
-	compareBanner: {
-		alignItems: "center",
-		backgroundColor: "#d6cfbb",
-		border: "1px solid #8c8b81",
+	contributionEffect: {
 		display: "flex",
-		fontSize: "11px",
-		justifyContent: "space-between",
-		letterSpacing: "0.1em",
-		marginBottom: "18px",
-		padding: "10px 14px",
-		textTransform: "uppercase"
+		flexDirection: "column",
+		gap: 3,
+		minWidth: 0,
+		fontSize: 8
 	},
+	survival: {
+		justifySelf: "end",
+		color: tokens.colorTextFaint,
+		fontSize: 7,
+		letterSpacing: ".05em"
+	},
+	survivalActive: { color: tokens.colorWarningStrong },
+	disclosures: { display: "grid", gridTemplateColumns: "1fr 1fr" },
+	ledger: {
+		padding: "10px 16px",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextSubtle,
+		fontSize: 8
+	},
+	ledgerBody: { display: "flex", flexDirection: "column", gap: 7, padding: "10px 0 2px" },
+	ledgerRow: { display: "grid", gap: 10, gridTemplateColumns: "74px minmax(0, 1fr)" },
+	authorityRow: { display: "grid", gap: 10, gridTemplateColumns: "120px minmax(0, 1fr)" },
+	compareBanner: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 20,
+		marginBottom: 10,
+		padding: "10px 13px",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderLeft: `3px solid ${tokens.colorWarningStrong}`,
+		backgroundColor: tokens.colorSurfaceRaised,
+		fontSize: 8,
+		letterSpacing: ".08em"
+	},
+	compareIdentity: { display: "flex", alignItems: "center", gap: 9 },
+	coverageComparison: { color: tokens.colorTextSubtle },
 	columns: {
 		display: "grid",
-		gap: "22px",
+		gap: 10,
 		gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 440px), 1fr))"
 	}
 });

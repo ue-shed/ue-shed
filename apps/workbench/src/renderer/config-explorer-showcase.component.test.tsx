@@ -79,7 +79,7 @@ function renderShowcase(args: {
 }
 
 describe("ConfigExplorerShowcase", () => {
-	it("runs an editable platform comparison and renders supplied evidence", async () => {
+	it("loads useful sample evidence immediately and reruns an edited query", async () => {
 		const requests: ConfigExplorerQuery[] = [];
 		renderShowcase({
 			query: (request) => {
@@ -88,15 +88,36 @@ describe("ConfigExplorerShowcase", () => {
 			}
 		});
 
-		await userEvent.setup().clear(screen.getByLabelText("Config key"));
-		await userEvent.setup().type(screen.getByLabelText("Config key"), "Entries");
-		await userEvent.setup().click(screen.getByRole("button", { name: /^COMPARE/ }));
-
 		expect(await screen.findByText("VALUE DIVERGES")).toBeDefined();
 		expect(requests).toEqual([
 			{
 				family: "Game",
 				key: "Entries",
+				leftPlatform: "PlatformA",
+				mode: "compare",
+				rightPlatform: "PlatformB",
+				section: "Fixture.Settings",
+				source: "sample_fixture"
+			}
+		]);
+
+		await userEvent.setup().clear(screen.getByLabelText("Config key"));
+		await userEvent.setup().type(screen.getByLabelText("Config key"), "Mode");
+		await userEvent.setup().click(screen.getByRole("button", { name: /^COMPARE/ }));
+
+		expect(requests).toEqual([
+			{
+				family: "Game",
+				key: "Entries",
+				leftPlatform: "PlatformA",
+				mode: "compare",
+				rightPlatform: "PlatformB",
+				section: "Fixture.Settings",
+				source: "sample_fixture"
+			},
+			{
+				family: "Game",
+				key: "Mode",
 				leftPlatform: "PlatformA",
 				mode: "compare",
 				rightPlatform: "PlatformB",

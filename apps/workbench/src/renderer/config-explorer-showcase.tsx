@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ConfigExplorerRoute } from "@ue-shed/extension-config-explorer";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import type { ConfigExplorerQuery, ConfigExplorerQueryResult } from "../main/preload.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 
@@ -12,22 +12,22 @@ type QuerySource = ConfigExplorerQuery["source"];
 const samples = [
 	{
 		key: "Entries",
-		label: "Array operations",
+		label: "Platform divergence",
 		mode: "compare",
-		note: "add, remove, clear, duplicates"
+		note: "array merge + clear"
 	},
-	{ key: "Mode", label: "Scalar override", mode: "explain", note: "last writer wins" },
+	{ key: "Mode", label: "Last writer", mode: "explain", note: "scalar override" },
 	{
 		key: "ExplicitEmpty",
-		label: "Explicit empty",
+		label: "Empty vs missing",
 		mode: "explain",
-		note: "empty is not missing"
+		note: "explicit array state"
 	},
 	{
 		key: "Unsupported",
-		label: "Unsupported syntax",
+		label: "Coverage gap",
 		mode: "explain",
-		note: "partial coverage"
+		note: "unsupported syntax"
 	}
 ] as const;
 
@@ -108,105 +108,96 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 		setKey(sample.key);
 		setPlatform("PlatformA");
 		setRightPlatform("PlatformB");
-		setResult(undefined);
+		run();
 	};
+
+	onMount(() => run());
 
 	return (
 		<main {...stylex.props(styles.route)}>
 			<header {...stylex.props(styles.header)}>
-				<div>
+				<div {...stylex.props(styles.titleBlock)}>
 					<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
 						WORKBENCH / CONFIG EXPLORER
 					</nav>
-					<h1 {...stylex.props(styles.title)}>Why does this setting have that value?</h1>
+					<h1 {...stylex.props(styles.title)}>Trace a config value</h1>
 					<p {...stylex.props(styles.intro)}>
-						Resolve one saved Unreal .ini key against the selected project, then inspect
-						every layer and operation that produced it. Read-only. No live CVars, Device
-						Profiles, command line, or cooked config.
+						See the final saved value, the exact .ini lines that produced it, and what
+						changes between platforms.
 					</p>
 				</div>
 				<div {...stylex.props(styles.scopeStamp)}>
-					<span>SAVED CONFIG ONLY</span>
-					<strong>UE 5.7 hierarchy semantics</strong>
-					<small>Effective value + ordered provenance</small>
+					<strong>SAVED SOURCE</strong>
+					<span>Read-only · runtime overrides excluded</span>
 				</div>
 			</header>
 
 			<section aria-label="Config query workspace" {...stylex.props(styles.workspace)}>
 				<form onSubmit={run} {...stylex.props(styles.queryPanel)}>
-					<div {...stylex.props(styles.panelHeading)}>
-						<div>
-							<span {...stylex.props(styles.step)}>01 / TARGET</span>
-							<h2>Build a query</h2>
-						</div>
-						<span {...stylex.props(styles.readOnly)}>READ ONLY</span>
+					<div {...stylex.props(styles.queryOptions)}>
+						<fieldset {...stylex.props(styles.segmentField)}>
+							<legend>Source</legend>
+							<div {...stylex.props(styles.segments)}>
+								<button
+									aria-pressed={source() === "selected_project"}
+									onClick={() => setSource("selected_project")}
+									type="button"
+									{...stylex.props(
+										styles.segment,
+										source() === "selected_project" && styles.segmentActive
+									)}
+								>
+									Selected project
+								</button>
+								<button
+									aria-pressed={source() === "sample_fixture"}
+									onClick={() => setSource("sample_fixture")}
+									type="button"
+									{...stylex.props(
+										styles.segment,
+										source() === "sample_fixture" && styles.segmentActive
+									)}
+								>
+									Sample
+								</button>
+							</div>
+						</fieldset>
+
+						<fieldset {...stylex.props(styles.segmentField)}>
+							<legend>Question</legend>
+							<div {...stylex.props(styles.segments)}>
+								<button
+									aria-pressed={mode() === "explain"}
+									onClick={() => setMode("explain")}
+									type="button"
+									{...stylex.props(
+										styles.segment,
+										mode() === "explain" && styles.segmentActive
+									)}
+								>
+									Why this value?
+								</button>
+								<button
+									aria-pressed={mode() === "compare"}
+									onClick={() => setMode("compare")}
+									type="button"
+									{...stylex.props(
+										styles.segment,
+										mode() === "compare" && styles.segmentActive
+									)}
+								>
+									What changes by platform?
+								</button>
+							</div>
+						</fieldset>
+
+						<span {...stylex.props(styles.readOnly)}>NO FILES ARE MODIFIED</span>
 					</div>
-
-					<fieldset {...stylex.props(styles.segmentField)}>
-						<legend>Configuration source</legend>
-						<div {...stylex.props(styles.segments)}>
-							<button
-								aria-pressed={source() === "selected_project"}
-								onClick={() => setSource("selected_project")}
-								type="button"
-								{...stylex.props(
-									styles.segment,
-									source() === "selected_project" && styles.segmentActive
-								)}
-							>
-								Selected project
-							</button>
-							<button
-								aria-pressed={source() === "sample_fixture"}
-								onClick={() => setSource("sample_fixture")}
-								type="button"
-								{...stylex.props(
-									styles.segment,
-									source() === "sample_fixture" && styles.segmentActive
-								)}
-							>
-								Sample fixture
-							</button>
-						</div>
-						<p>
-							{source() === "selected_project"
-								? "Uses the project chosen in the Workbench header and its discovered or explicitly configured engine."
-								: "Uses committed text files so the workflow is usable without an Unreal installation."}
-						</p>
-					</fieldset>
-
-					<fieldset {...stylex.props(styles.segmentField)}>
-						<legend>Operation</legend>
-						<div {...stylex.props(styles.segments)}>
-							<button
-								aria-pressed={mode() === "explain"}
-								onClick={() => setMode("explain")}
-								type="button"
-								{...stylex.props(
-									styles.segment,
-									mode() === "explain" && styles.segmentActive
-								)}
-							>
-								Explain
-							</button>
-							<button
-								aria-pressed={mode() === "compare"}
-								onClick={() => setMode("compare")}
-								type="button"
-								{...stylex.props(
-									styles.segment,
-									mode() === "compare" && styles.segmentActive
-								)}
-							>
-								Compare platforms
-							</button>
-						</div>
-					</fieldset>
 
 					<div {...stylex.props(styles.fieldGrid)}>
 						<label {...stylex.props(styles.field)}>
 							<span>
-								Config family <small>optional</small>
+								Family <small>optional</small>
 							</span>
 							<input
 								aria-label="Config family"
@@ -216,7 +207,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 								{...stylex.props(styles.input)}
 							/>
 						</label>
-						<label {...stylex.props(styles.field, styles.fieldWide)}>
+						<label {...stylex.props(styles.field)}>
 							<span>Section</span>
 							<input
 								aria-label="Config section"
@@ -227,7 +218,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 								{...stylex.props(styles.input)}
 							/>
 						</label>
-						<label {...stylex.props(styles.field, styles.fieldWide)}>
+						<label {...stylex.props(styles.field)}>
 							<span>Key</span>
 							<input
 								aria-label="Config key"
@@ -269,68 +260,49 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 							<option value="Android" />
 							<option value="IOS" />
 						</datalist>
+
+						<button disabled={loading()} type="submit" {...stylex.props(styles.run)}>
+							<span>
+								{loading()
+									? "TRACING…"
+									: mode() === "compare"
+										? "COMPARE"
+										: "TRACE VALUE"}
+							</span>
+							<small>
+								{mode() === "compare"
+									? `${platform()} ⇄ ${rightPlatform()}`
+									: platform()}
+							</small>
+						</button>
 					</div>
 
-					<button disabled={loading()} type="submit" {...stylex.props(styles.run)}>
-						<span>
-							{loading()
-								? "RESOLVING…"
-								: mode() === "compare"
-									? "COMPARE"
-									: "EXPLAIN"}
-						</span>
-						<small>
-							{mode() === "compare"
-								? `${platform()} ⇄ ${rightPlatform()}`
-								: platform()}
-						</small>
-					</button>
+					<div {...stylex.props(styles.samples)}>
+						<span {...stylex.props(styles.sampleHeading)}>TRY A KNOWN CASE</span>
+						<div {...stylex.props(styles.sampleList)}>
+							<For each={samples}>
+								{(sample) => (
+									<button
+										onClick={() => loadSample(sample)}
+										type="button"
+										{...stylex.props(styles.sampleButton)}
+									>
+										<strong>{sample.label}</strong>
+										<span>{sample.note}</span>
+									</button>
+								)}
+							</For>
+						</div>
+					</div>
 				</form>
-
-				<aside {...stylex.props(styles.samples)}>
-					<span {...stylex.props(styles.step)}>02 / QUICK START</span>
-					<h2>Known evidence cases</h2>
-					<p>
-						Load a query, edit any field, then run it. These are examples, not canned
-						results.
-					</p>
-					<div {...stylex.props(styles.sampleList)}>
-						<For each={samples}>
-							{(sample) => (
-								<button
-									onClick={() => loadSample(sample)}
-									type="button"
-									{...stylex.props(styles.sampleButton)}
-								>
-									<span {...stylex.props(styles.sampleMeta)}>
-										<strong {...stylex.props(styles.sampleLabel)}>
-											{sample.label}
-										</strong>
-										<small {...stylex.props(styles.sampleNote)}>
-											{sample.note}
-										</small>
-									</span>
-									<code {...stylex.props(styles.sampleCode)}>{sample.key}</code>
-								</button>
-							)}
-						</For>
-					</div>
-					<div {...stylex.props(styles.boundary)}>
-						<strong>What this can answer</strong>
-						<p>
-							Which files contributed? In what order? Which operation changed the
-							value? What survived? Which expected layers were missing or unreadable?
-						</p>
-					</div>
-				</aside>
 			</section>
 
 			<Show when={loading()}>
 				<section aria-live="polite" {...stylex.props(styles.state)}>
 					<span {...stylex.props(styles.pulse)} />
 					<div>
-						<strong>Reconstructing the saved hierarchy</strong>
-						<p>Reading layers and folding contributions in engine-defined order…</p>
+						<strong>Tracing saved config layers…</strong>
+						<p>Folding source operations in Unreal load order.</p>
 					</div>
 				</section>
 			</Show>
@@ -342,7 +314,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 						<p>Restart Workbench and verify package versions, then retry.</p>
 					</div>
 					<button onClick={() => run()} {...stylex.props(styles.retry)}>
-						RETRY QUERY
+						RETRY
 					</button>
 				</section>
 			</Show>
@@ -367,8 +339,8 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 					<section {...stylex.props(styles.resultBlock)}>
 						<header {...stylex.props(styles.resultHeader)}>
 							<div>
-								<span {...stylex.props(styles.step)}>03 / EVIDENCE</span>
-								<h2>{resolved.projectName}</h2>
+								<span {...stylex.props(styles.resultLabel)}>RESULT</span>
+								<strong>{resolved.projectName}</strong>
 							</div>
 							<div {...stylex.props(styles.queryReceipt)}>
 								<span>
@@ -404,168 +376,191 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 const styles = stylex.create({
 	route: {
 		minHeight: "calc(100vh - 52px)",
-		backgroundColor: "#0d100e",
-		backgroundImage:
-			"radial-gradient(circle at 82% -12%, #d4552d1c, transparent 28%), linear-gradient(90deg, transparent 49.9%, #ffffff06 50%, transparent 50.1%)",
+		boxSizing: "border-box",
+		backgroundColor: tokens.colorCanvas,
+		backgroundImage: "radial-gradient(circle at 86% -10%, #d4552d14, transparent 27%)",
 		color: tokens.colorText,
-		padding: "30px 36px 52px"
+		padding: "20px 24px 34px"
 	},
 	header: {
 		display: "flex",
-		alignItems: "end",
+		alignItems: "center",
 		justifyContent: "space-between",
-		gap: 36,
-		paddingBottom: 22,
-		borderBottom: "1px solid #333934"
+		gap: 30,
+		padding: "0 2px 14px",
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	eyebrow: { color: "#d4552d", fontSize: 9, letterSpacing: ".18em" },
+	titleBlock: { minWidth: 0 },
+	eyebrow: { color: tokens.colorWarningStrong, fontSize: 8, letterSpacing: ".16em" },
 	title: {
-		margin: "9px 0 7px",
-		fontFamily: "Georgia, serif",
-		fontSize: 34,
+		margin: "6px 0 3px",
+		fontFamily: tokens.fontDisplay,
+		fontSize: 26,
 		fontWeight: 400,
-		letterSpacing: "-.025em"
+		letterSpacing: "-.02em"
 	},
-	intro: { maxWidth: 740, margin: 0, color: "#929c95", fontSize: 11, lineHeight: 1.65 },
+	intro: { margin: 0, color: tokens.colorTextMuted, fontSize: 10, lineHeight: 1.5 },
 	scopeStamp: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 6,
-		minWidth: 290,
-		padding: "13px 16px",
-		border: "1px solid #474e48",
-		borderLeft: "3px solid #d4552d",
-		backgroundColor: "#151a17"
+		gap: 3,
+		flexShrink: 0,
+		padding: "8px 11px",
+		borderLeft: `2px solid ${tokens.colorWarningStrong}`,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextFaint,
+		fontSize: 8,
+		letterSpacing: ".07em"
 	},
 	workspace: {
+		marginTop: 10,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurface
+	},
+	queryPanel: { padding: 13 },
+	queryOptions: {
 		display: "grid",
-		gridTemplateColumns: "minmax(620px, 1fr) minmax(270px, 340px)",
-		gap: 1,
-		marginTop: 18,
-		marginBottom: 18,
-		backgroundColor: "#333934",
-		border: "1px solid #333934"
+		gridTemplateColumns: "minmax(250px, .8fr) minmax(330px, 1.1fr) auto",
+		alignItems: "end",
+		gap: 10,
+		paddingBottom: 11,
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	queryPanel: { padding: "20px 22px", backgroundColor: "#151a17" },
-	panelHeading: {
-		display: "flex",
-		justifyContent: "space-between",
-		alignItems: "start",
-		marginBottom: 16
-	},
-	step: { color: "#d4552d", fontSize: 9, letterSpacing: ".16em" },
-	readOnly: {
-		padding: "5px 8px",
-		border: "1px solid #486052",
-		color: "#8eb29b",
-		fontSize: 8,
-		letterSpacing: ".12em"
-	},
-	segmentField: { margin: "0 0 14px", padding: 0, border: 0 },
-	segments: { display: "flex", gap: 1, backgroundColor: "#353b36" },
+	segmentField: { minWidth: 0, margin: 0, padding: 0, border: 0, fontSize: 8 },
+	segments: { display: "flex", gap: 1, marginTop: 5, backgroundColor: tokens.colorBorder },
 	segment: {
 		flex: 1,
-		padding: "9px 11px",
+		minHeight: 30,
+		padding: "6px 9px",
 		border: 0,
-		backgroundColor: { default: "#101411", ":hover": "#202620" },
-		color: "#949d96",
+		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorTextSubtle,
 		cursor: "pointer",
-		fontSize: 10
+		fontFamily: tokens.fontBody,
+		fontSize: 8,
+		transitionProperty: "transform, background-color, color",
+		transitionDuration: tokens.motionFast,
+		transform: { default: "scale(1)", ":active": "scale(.98)" }
 	},
-	segmentActive: { backgroundColor: "#d4552d", color: "#fff8ec" },
+	segmentActive: { backgroundColor: tokens.colorWarningStrong, color: "#fff8ec" },
+	readOnly: {
+		paddingBottom: 7,
+		color: tokens.colorTextFaint,
+		fontSize: 7,
+		letterSpacing: ".1em"
+	},
 	fieldGrid: {
 		display: "grid",
-		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-		gap: 10
+		gridTemplateColumns:
+			"minmax(90px, .48fr) minmax(190px, 1.35fr) minmax(130px, .8fr) minmax(105px, .62fr) minmax(105px, .62fr) minmax(130px, .72fr)",
+		gap: 8,
+		alignItems: "end",
+		marginTop: 11
 	},
-	field: { display: "flex", flexDirection: "column", gap: 6 },
-	fieldWide: { gridColumn: "span 2" },
+	field: { display: "flex", flexDirection: "column", gap: 5, minWidth: 0, fontSize: 8 },
 	input: {
 		width: "100%",
+		height: 34,
 		boxSizing: "border-box",
-		padding: "9px 10px",
-		border: "1px solid #3b443d",
-		outline: { default: "none", ":focus": "1px solid #d4552d" },
-		backgroundColor: "#0d100e",
-		color: "#e1e5e1",
-		fontFamily: "ui-monospace, monospace",
-		fontSize: 11
+		padding: "7px 8px",
+		border: `1px solid ${tokens.colorBorderInteractive}`,
+		outline: { default: "none", ":focus": `1px solid ${tokens.colorWarningStrong}` },
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		fontFamily: tokens.fontBody,
+		fontSize: 9
 	},
 	run: {
+		gridColumn: "-2 / -1",
 		display: "flex",
-		justifyContent: "space-between",
-		width: "100%",
-		marginTop: 16,
-		padding: "12px 14px",
-		border: "1px solid #e06a43",
-		backgroundColor: { default: "#c94e28", ":hover": "#df5c34", ":disabled": "#713e2f" },
-		color: "#fff7eb",
+		flexDirection: "column",
+		justifyContent: "center",
+		alignItems: "start",
+		gap: 3,
+		height: 34,
+		padding: "5px 10px",
+		border: `1px solid ${tokens.colorWarningStrong}`,
+		backgroundColor: {
+			default: tokens.colorWarningStrong,
+			":hover": "#e08b54",
+			":disabled": "#70452d"
+		},
+		color: "#fff8ec",
 		cursor: "pointer",
-		letterSpacing: ".11em"
+		fontFamily: tokens.fontBody,
+		fontSize: 8,
+		letterSpacing: ".08em",
+		transitionProperty: "transform, background-color",
+		transitionDuration: tokens.motionFast,
+		transform: { default: "scale(1)", ":active": "scale(.98)" }
 	},
-	samples: { padding: "20px", backgroundColor: "#111512" },
-	sampleList: { display: "flex", flexDirection: "column", gap: 1, marginTop: 15 },
+	samples: { display: "flex", alignItems: "center", gap: 12, marginTop: 11 },
+	sampleHeading: {
+		flexShrink: 0,
+		color: tokens.colorTextFaint,
+		fontSize: 7,
+		letterSpacing: ".1em"
+	},
+	sampleList: { display: "flex", flexWrap: "wrap", gap: 5 },
 	sampleButton: {
 		display: "flex",
 		alignItems: "center",
-		justifyContent: "space-between",
-		padding: "11px 12px",
-		border: 0,
-		borderLeft: "2px solid transparent",
-		backgroundColor: { default: "#181d19", ":hover": "#242b25" },
-		color: "#aeb6b0",
+		gap: 7,
+		padding: "6px 8px",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
-		textAlign: "left"
-	},
-	sampleMeta: { display: "flex", flexDirection: "column", gap: 3 },
-	sampleLabel: { fontSize: 11, fontWeight: 600 },
-	sampleNote: { color: "#7f8a82", fontSize: 9 },
-	sampleCode: { color: "#d8b66d", fontSize: 9 },
-	boundary: {
-		marginTop: 18,
-		padding: 14,
-		border: "1px solid #343c36",
-		backgroundColor: "#171c18"
+		fontFamily: tokens.fontBody,
+		fontSize: 8,
+		transitionProperty: "transform, background-color",
+		transitionDuration: tokens.motionFast,
+		transform: { default: "scale(1)", ":active": "scale(.98)" }
 	},
 	state: {
 		display: "flex",
 		alignItems: "center",
-		gap: 16,
-		minHeight: 100,
-		padding: 22,
-		border: "1px solid #333934",
-		backgroundColor: "#151a17"
+		gap: 12,
+		minHeight: 54,
+		marginTop: 10,
+		padding: "10px 14px",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurface,
+		fontSize: 9
 	},
-	failure: { justifyContent: "space-between", borderLeft: "4px solid #d4552d" },
+	failure: { justifyContent: "space-between", borderLeft: `3px solid ${tokens.colorDanger}` },
 	pulse: {
-		width: 10,
-		height: 10,
+		width: 7,
+		height: 7,
 		borderRadius: "50%",
-		backgroundColor: "#f3c969",
-		boxShadow: "0 0 0 7px #f3c9691f"
+		backgroundColor: tokens.colorWarning,
+		boxShadow: "0 0 0 5px #d6a3631c"
 	},
 	retry: {
-		padding: "9px 14px",
-		border: "1px solid #d4552d",
+		padding: "7px 10px",
+		border: `1px solid ${tokens.colorWarningStrong}`,
 		backgroundColor: "transparent",
-		color: "#f3c969",
+		color: tokens.colorWarning,
 		cursor: "pointer"
 	},
-	resultBlock: { marginTop: 18 },
+	resultBlock: { marginTop: 10 },
 	resultHeader: {
 		display: "flex",
-		alignItems: "end",
+		alignItems: "center",
 		justifyContent: "space-between",
-		padding: "14px 17px",
-		border: "1px solid #4b504b",
+		gap: 18,
+		padding: "8px 12px",
+		border: `1px solid ${tokens.colorBorderStrong}`,
 		borderBottom: 0,
-		backgroundColor: "#151a17"
+		backgroundColor: tokens.colorSurfaceRaised,
+		fontSize: 9
 	},
-	queryReceipt: {
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "end",
-		gap: 4
+	resultLabel: {
+		marginRight: 9,
+		color: tokens.colorWarningStrong,
+		fontSize: 7,
+		letterSpacing: ".1em"
 	},
-	evidence: { overflow: "hidden", border: "1px solid #4b504b" }
+	queryReceipt: { display: "flex", alignItems: "center", gap: 12, color: tokens.colorTextFaint },
+	evidence: { overflow: "hidden", border: `1px solid ${tokens.colorBorderStrong}` }
 });

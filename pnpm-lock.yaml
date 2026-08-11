@@ -400,6 +400,9 @@ importers:
       '@ue-shed/config-explorer':
         specifier: workspace:*
         version: link:../../packages/config-explorer
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98

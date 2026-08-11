@@ -28,21 +28,22 @@ test("queries real saved-config provenance without renderer filesystem authority
 		path: testInfo.outputPath("config-explorer-editable-comparison.png")
 	});
 
-	await page.getByRole("button", { name: /Scalar override/ }).click();
+	await page.getByRole("button", { name: /Last writer/ }).click();
 	await expect(page.getByLabel("Config key")).toHaveValue("Mode");
-	await expect(page.getByRole("button", { name: /^EXPLAIN/ })).toBeVisible();
-	await page.getByRole("button", { name: /^EXPLAIN/ }).click();
+	await expect(page.getByRole("button", { name: /^TRACE VALUE/ })).toBeVisible();
+	await page.getByRole("button", { name: /^TRACE VALUE/ }).click();
 	await expect(
 		page.getByRole("region", { name: "PlatformA effective saved value" })
 	).toContainText("PlatformA");
 
-	await page.getByRole("button", { name: /Unsupported syntax/ }).click();
-	await page.getByRole("button", { name: /^EXPLAIN/ }).click();
+	await page.getByRole("button", { name: /Coverage gap/ }).click();
+	await page.getByRole("button", { name: /^TRACE VALUE/ }).click();
 	await expect(evidence.getByText("partial coverage", { exact: true })).toBeVisible();
 	await expect(page.getByRole("region", { name: "PlatformA coverage exceptions" })).toContainText(
 		"unsupported"
 	);
 
-	await page.getByRole("button", { name: "Selected project" }).click();
-	await expect(page.getByText(/Uses the project chosen in the Workbench header/)).toBeVisible();
+	const selectedProject = page.getByRole("button", { name: "Selected project" });
+	await selectedProject.click();
+	await expect(selectedProject).toHaveAttribute("aria-pressed", "true");
 });

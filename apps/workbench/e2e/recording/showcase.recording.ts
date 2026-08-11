@@ -617,9 +617,8 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Scalar override/ }).click();
+						await page!.getByRole("button", { name: /Last writer/ }).click();
 						await expect(page!.getByLabel("Config key")).toHaveValue("Mode");
-						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
 						await expect(
 							page!.getByRole("region", {
 								name: "PlatformA effective saved value"
@@ -627,7 +626,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						).toContainText("PlatformA");
 					},
 					description:
-						"Quick starts populate the same editable form; running it shows scalar replacement and the prior saved value.",
+						"One-click examples execute the same editable query and show scalar replacement with the prior saved value.",
 					page,
 					slug: "03-scalar-replacement",
 					testInfo,
@@ -637,8 +636,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Explicit empty/ }).click();
-						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
+						await page!.getByRole("button", { name: /Empty vs missing/ }).click();
 						await expect(
 							page!.getByRole("region", {
 								name: "PlatformA effective saved value"
@@ -656,8 +654,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Unsupported syntax/ }).click();
-						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
+						await page!.getByRole("button", { name: /Coverage gap/ }).click();
 						await expect(
 							evidence.getByText("partial coverage", { exact: true })
 						).toBeVisible();
@@ -676,10 +673,11 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: "Selected project" }).click();
-						await expect(
-							page!.getByText(/Uses the project chosen in the Workbench header/)
-						).toBeVisible();
+						const selectedProject = page!.getByRole("button", {
+							name: "Selected project"
+						});
+						await selectedProject.click();
+						await expect(selectedProject).toHaveAttribute("aria-pressed", "true");
 						await page!.getByLabel("Config family").fill("Engine");
 						await page!
 							.getByLabel("Config section")
@@ -688,7 +686,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						await page!
 							.getByRole("combobox", { name: "Platform", exact: true })
 							.fill("Windows");
-						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
+						await page!.getByRole("button", { name: /^TRACE VALUE/ }).click();
 						const selectedValue = page!.getByRole("region", {
 							name: "Windows effective saved value"
 						});

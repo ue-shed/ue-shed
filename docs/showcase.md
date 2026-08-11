@@ -121,17 +121,16 @@ pnpm ue-shed text search fixtures\unreal-project "Fixture"
 Choose **Config** from the nav or **Config Explorer** from the saved-project workflows. This route
 is an editable investigation workspace. Choose the selected Workbench project or the portable sample
 fixture, enter a config family (or leave it blank for ambiguity recovery), section, key, and
-platform, then run **Explain** or **Compare platforms**. A trusted Workbench main-process service
-owns engine discovery and filesystem reads, then sends only schema-validated, privacy-safe evidence
-to the host-neutral extension.
+platform, then ask **Why this value?** or **What changes by platform?** A trusted Workbench
+main-process service owns engine discovery and filesystem reads, then sends only schema-validated,
+privacy-safe evidence to the host-neutral extension.
 
-The sample quick starts populate the form; they are not canned answers. Run **Array operations** to
-see the same `Game.ini` key diverge between PlatformA and PlatformB, or load scalar replacement,
-explicit empty, and unsupported syntax examples before editing any field yourself. Switch to
-**Selected project** to query the project chosen in the global Workbench header. Every submitted
-query uses the public headless resolver and keeps missing layers, source locations, prior effects,
-surviving/superseded contributions, typed recovery, and the “saved source, no runtime authority”
-boundary visible.
+The portable platform-divergence sample runs immediately; the examples are real resolver queries,
+not canned answers. Try **Last writer**, **Empty vs missing**, or **Coverage gap**, then edit any
+field yourself. Switch to **Selected project** to query the project chosen in the global Workbench
+header. Every submitted query uses the public headless resolver and keeps missing layers, source
+locations, prior effects, surviving/superseded contributions, typed recovery, and the “saved source,
+no runtime authority” boundary visible.
 
 The headless equivalents remain the product authority:
 

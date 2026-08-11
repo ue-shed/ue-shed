@@ -15,6 +15,7 @@
 	"dependencies": {
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/config-explorer": "workspace:*",
+		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",
 		"solid-js": "catalog:"
 	}

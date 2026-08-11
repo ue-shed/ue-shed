@@ -5,11 +5,11 @@ uses the committed generic fixture as its default project and keeps live Unreal 
 capability.
 
 Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
-Game Text, Texture Audit, Map Review, World Log, and Camera Lab. The catalog groups them by what
-they actually require: a saved project, Perforce on demand, or a running Unreal session. Each entry
-shows evidence from the selected project before it is opened, including indexed candidate-package
-and map counts. Saved-package workflows open without Unreal; live texture preview, Live World, and
-Camera Lab request a separately enabled editor only when needed.
+Game Text, Texture Audit, Config Explorer, Map Review, World Log, and Camera Lab. The catalog groups
+them by what they actually require: a saved project, Perforce on demand, or a running Unreal
+session. Each entry shows evidence from the selected project before it is opened, including indexed
+candidate-package and map counts. Saved-source workflows open without Unreal; live texture preview,
+Live World, and Camera Lab request a separately enabled editor only when needed.
 
 ## Open the Workbench
 
@@ -116,7 +116,29 @@ pnpm ue-shed text scan fixtures\unreal-project
 pnpm ue-shed text search fixtures\unreal-project "Fixture"
 ```
 
-## Demo 4: Map Review
+## Demo 4: Config Explorer
+
+Choose **Config** from the nav or **Config Explorer** from the saved-project workflows. This route
+runs the public headless resolver against the committed generic text fixture; it is not a scripted
+presentation or a renderer-side recreation of the answer. A trusted Workbench main-process service
+owns the filesystem read, then sends only schema-validated, privacy-safe evidence to the
+host-neutral extension.
+
+Start with **Platform compare** to see the same `Game.ini` key diverge between PlatformA and
+PlatformB. The remaining presets show each part of the first vertical slice: ordered contributions,
+duplicate-preserving array behavior, scalar replacement, explicit empty distinct from missing,
+unsupported syntax as partial coverage, and redirect involvement as identity uncertainty. Every
+panel keeps missing layers, source locations, prior effects, surviving/superseded contributions,
+and the “saved source, no runtime authority” boundary visible.
+
+The headless equivalents remain the product authority:
+
+```powershell
+pnpm ue-shed config explain packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
+pnpm ue-shed config compare packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --platform PlatformB --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
+```
+
+## Demo 5: Map Review
 
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
 at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
@@ -209,7 +231,7 @@ screenshots, both Run A/Run B 1280x720 Unreal captures, persisted authoring/Revi
 manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
 total and leaves the requested count intact.
 
-## Demo 5: World Log
+## Demo 6: World Log
 
 World Log is a saved-map history investigation workspace. It runs against Perforce but does not
 need Unreal. Start its self-contained fixture with:
@@ -224,7 +246,7 @@ History World**, and run the scan. Try the changelist lens, choose an actor from
 map, then use the time control to see the actor move, appear, or disappear. The temporary server,
 client workspace, credentials, and configuration are removed when Workbench closes.
 
-## Demo 6: Camera Load Lab
+## Demo 7: Camera Load Lab
 
 Camera Load Lab is the live camera data-plane slice. Open it and choose **Launch Camera Fixture**.
 Workbench then discovers Unreal Engine 5.7, incrementally builds the fixture editor target, launches
@@ -258,7 +280,7 @@ pnpm showcase:record
 ```
 
 The command builds Workbench, opens it through Playwright, and records Data Authoring, Texture Audit,
-and Game Text. Every invocation writes a new timestamped review bundle under
+Game Text, and Config Explorer. Every invocation writes a new timestamped review bundle under
 `test-results/showcase`; earlier recordings are never replaced. A successful bundle contains
 `demo.webm`, chapter screenshots, `trace.zip`, `workbench.log`, and a versioned `run.json` manifest.
 During local iteration, pass `--no-build` to reuse the existing Workbench build:

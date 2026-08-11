@@ -154,8 +154,14 @@ remains cancellable through Effect; adapters do not hide Promise/runtime exits.
 
 `extensions/config-explorer` receives supplied browser-safe results through a small Effect client or
 component input. It can display ready, partial, ambiguous, missing, and failed evidence without raw
-filesystem, process, Unreal, Electron, or Workbench IPC authority. Workbench composition is deferred
-until its current IPC/preload changes are deliberately rebased and reviewed.
+filesystem, process, Unreal, Electron, or Workbench IPC authority.
+
+The Workbench showcase composes that extension through a trusted main-process service. The service
+runs the public resolver against the committed generic fixture, validates one browser-safe result
+bundle, and sends only that bundle through typed IPC. Preset views expose platform comparison,
+ordered PlatformA/PlatformB ledgers, scalar replacement, explicit-empty state, unsupported syntax,
+and redirect involvement. Neither the renderer nor the extension receives filesystem authority,
+absolute fixture paths, or a privileged alternative resolution path.
 
 This first standalone extension is not yet advertised as a copy-and-own adoption bundle, so it does
 not claim the adoption-manifest/materializer conformance described by the engineering guide.

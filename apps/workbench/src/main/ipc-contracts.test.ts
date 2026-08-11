@@ -121,6 +121,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
+	"config-explorer:showcase": [],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -286,6 +287,15 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		health: aggregateHealth(defaultHealthInput),
 		project: { status: "not_configured" },
 		reader: "path"
+	},
+	"config-explorer:showcase": {
+		error: {
+			code: "showcase_unavailable",
+			message: "Fixture unavailable.",
+			recovery: "Launch through pnpm showcase.",
+			retrySafe: false
+		},
+		status: "failed"
 	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
@@ -518,9 +528,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 79 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(79);
-	expect(new Set(invokeChannelNames).size).toBe(79);
+it("registers exactly 80 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(80);
+	expect(new Set(invokeChannelNames).size).toBe(80);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

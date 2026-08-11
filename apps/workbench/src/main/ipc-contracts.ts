@@ -35,6 +35,11 @@ import {
 	MapReviewSetLibraryResult,
 	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
+import {
+	ConfigComparison,
+	ConfigExplanation,
+	ConfigExplorerPublicError
+} from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import {
 	TextCorpusFocusRequest,
@@ -176,6 +181,30 @@ export const ShowcaseContext = Schema.Struct({
 	ruleFile: Schema.optionalKey(Schema.String)
 });
 export interface ShowcaseContext extends Schema.Schema.Type<typeof ShowcaseContext> {}
+
+export const ConfigExplorerShowcaseResult = Schema.Union([
+	Schema.Struct({
+		comparison: ConfigComparison,
+		explicitEmpty: ConfigExplanation,
+		redirectInvolvement: ConfigExplanation,
+		scalarReplacement: ConfigExplanation,
+		status: Schema.Literal("ready"),
+		unsupportedSyntax: ConfigExplanation
+	}),
+	Schema.Struct({
+		error: Schema.Union([
+			ConfigExplorerPublicError,
+			Schema.Struct({
+				code: Schema.Literal("showcase_unavailable"),
+				message: Schema.String,
+				recovery: Schema.String,
+				retrySafe: Schema.Boolean
+			})
+		]),
+		status: Schema.Literal("failed")
+	})
+]);
+export type ConfigExplorerShowcaseResult = typeof ConfigExplorerShowcaseResult.Type;
 
 export const FixtureLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
@@ -348,6 +377,11 @@ export const invokeContracts = {
 		channel: "showcase:context",
 		args: EmptyArgs,
 		result: ShowcaseContext
+	}),
+	"config-explorer:showcase": invoke({
+		channel: "config-explorer:showcase",
+		args: EmptyArgs,
+		result: ConfigExplorerShowcaseResult
 	}),
 	"project:current": invoke({
 		channel: "project:current",

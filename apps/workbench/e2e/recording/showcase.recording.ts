@@ -678,6 +678,58 @@ test(`records the ${journey} Workbench journey`, async ({
 					title: "Investigate a shared source line"
 				})
 			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.openRoute("Config");
+						await expect(
+							page!.getByRole("navigation", { name: "Breadcrumb" })
+						).toContainText("Config Explorer");
+						await expect(page!.getByRole("status")).toContainText("VALUE DIVERGES");
+						await expect(
+							page!.getByRole("region", { name: "Platform config comparison" })
+						).toContainText("PlatformA");
+					},
+					description:
+						"The same saved key resolves independently across two platforms, with every source layer retained as evidence.",
+					page,
+					slug: "05-config-platform-comparison",
+					testInfo,
+					title: "Compare saved config across platforms"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Platform A/ }).click();
+						await expect(
+							page!.getByRole("list", { name: "PlatformA ordered contributions" })
+						).not.toBeEmpty();
+					},
+					description:
+						"The ordered ledger exposes operation, source line, concrete effect, and whether each contribution survives.",
+					page,
+					slug: "06-config-contribution-ledger",
+					testInfo,
+					title: "Trace the winning value"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await page!.getByRole("button", { name: /Unsupported/ }).click();
+						await expect(
+							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
+						).toContainText("unsupported");
+					},
+					description:
+						"Unsupported syntax remains a visible partial-coverage exception instead of being silently ignored.",
+					page,
+					slug: "07-config-coverage-boundary",
+					testInfo,
+					title: "Keep uncertainty visible"
+				})
+			);
 		}
 	} catch (cause) {
 		failure = cause;

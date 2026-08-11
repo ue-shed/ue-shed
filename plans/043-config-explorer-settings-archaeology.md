@@ -1,6 +1,6 @@
 # Plan 043: Explain saved Unreal configuration provenance
 
-**Status**: COMPLETE — headless slice, CLI, fixture, and standalone extension verified
+**Status**: COMPLETE — headless slice, CLI, fixture, extension, and Workbench showcase verified
 
 **Priority**: P2
 
@@ -223,6 +223,7 @@ Stop implementation and document the finding if:
 - [x] User-private, live, command-line, Device Profile, and cooked authorities remain excluded.
 - [x] Generic fixture and practical Unreal conformance evidence are recorded.
 - [x] Host-neutral extension renders supplied results without filesystem authority.
+- [x] Workbench composes the resolver through typed IPC and showcases the real fixture evidence.
 - [x] Focused checks and both required final `pnpm check` runs pass.
 - [x] Plan/PR verification is current, all commits are pushed, and the PR is ready for review.
 
@@ -246,5 +247,15 @@ Stop implementation and document the finding if:
   skipped behind documented integration gates. They used `CARGO_INCREMENTAL=0`,
   `CARGO_PROFILE_DEV_DEBUG=0`, and `CARGO_PROFILE_TEST_DEBUG=0` to fit native DuckDB artifacts on the
   available drive; test and gate coverage were unchanged.
-- Workbench IPC/preload composition remains deliberately deferred. The core, CLI, fixture, and
-  standalone extension have no dependency on the parallel Workbench IPC work.
+- After rebasing around the completed IPC/preload work, Workbench gained a `#/config-explorer`
+  showcase route backed by the public resolver and committed fixture. The trusted main process owns
+  filesystem access; typed IPC supplies browser-safe evidence to the unchanged host-neutral
+  extension. Core, CLI, fixture, and extension remain independent of Workbench.
+- Workbench-focused verification passed 34 service, IPC, and component tests. A dedicated Electron
+  E2E clicked all seven evidence presets, asserted platform divergence, ordered contributions,
+  scalar replacement, explicit empty, unsupported syntax, and redirect coverage, and produced a
+  visually inspected real-Workbench comparison capture. The production Workbench build also passed.
+- The Workbench follow-up passed `pnpm check` after substantive edits and again immediately before
+  handoff. Cargo used the same debug-symbol/incremental reductions as the original slice, with this
+  worktree's ignored target directory redirected to a larger local build volume; gate coverage was
+  unchanged.

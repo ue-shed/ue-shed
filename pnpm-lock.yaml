@@ -218,6 +218,9 @@ importers:
       '@ue-shed/cameras':
         specifier: workspace:*
         version: link:../../packages/cameras
+      '@ue-shed/config-explorer':
+        specifier: workspace:*
+        version: link:../../packages/config-explorer
       '@ue-shed/engine-discovery':
         specifier: workspace:*
         version: link:../../packages/engine-discovery
@@ -230,6 +233,9 @@ importers:
       '@ue-shed/extension-camera-review':
         specifier: workspace:*
         version: link:../../extensions/camera-review
+      '@ue-shed/extension-config-explorer':
+        specifier: workspace:*
+        version: link:../../extensions/config-explorer
       '@ue-shed/extension-content-observatory':
         specifier: workspace:*
         version: link:../../extensions/content-observatory

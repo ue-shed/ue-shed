@@ -313,7 +313,11 @@ fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
                         track
                             .sections
                             .iter()
-                            .map(|section| 1_usize.saturating_add(section.text_keys.len()))
+                            .map(|section| {
+                                1_usize
+                                    .saturating_add(section.text_keys.len())
+                                    .saturating_add(usize::from(section.sequence_path.is_some()))
+                            })
                             .sum::<usize>(),
                     )
                 })

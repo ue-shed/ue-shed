@@ -37,7 +37,11 @@
 #include "MovieScene.h"
 #include "MovieSceneBinding.h"
 #include "MovieScenePossessable.h"
+#include "Sections/MovieSceneCinematicShotSection.h"
+#include "Sections/MovieSceneSubSection.h"
 #include "Sections/MovieSceneTextSection.h"
+#include "Tracks/MovieSceneCinematicShotTrack.h"
+#include "Tracks/MovieSceneSubTrack.h"
 #include "Tracks/MovieSceneTextTrack.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
@@ -627,6 +631,52 @@ bool GenerateLevelSequenceFixture()
 	return true;
 }
 
+bool GenerateNestedLevelSequenceFixture()
+{
+	constexpr const TCHAR* PackageName = TEXT("/Game/Fixture/Sequences/LS_NestedTimeline");
+	constexpr const TCHAR* AssetName = TEXT("LS_NestedTimeline");
+	ULevelSequence* ChildSequence = LoadObject<ULevelSequence>(
+		nullptr, TEXT("/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline"));
+	if (ChildSequence == nullptr) return false;
+
+	UPackage* Package = FindOrCreatePackage(PackageName);
+	if (Package == nullptr) return false;
+	ULevelSequence* Sequence = FindObject<ULevelSequence>(Package, AssetName);
+	if (Sequence == nullptr)
+	{
+		Sequence = NewObject<ULevelSequence>(Package, AssetName,
+			RF_Public | RF_Standalone | RF_Transactional);
+		Sequence->Initialize();
+		FAssetRegistryModule::AssetCreated(Sequence);
+
+		UMovieScene* MovieScene = Sequence->GetMovieScene();
+		MovieScene->SetTickResolutionDirectly(FFrameRate(24000, 1));
+		MovieScene->SetDisplayRate(FFrameRate(24, 1));
+		MovieScene->SetPlaybackRange(FFrameNumber(0), 120000);
+
+		UMovieSceneSubTrack* SubTrack = MovieScene->AddTrack<UMovieSceneSubTrack>();
+		if (SubTrack == nullptr
+			|| SubTrack->AddSequence(ChildSequence, FFrameNumber(0), 60000) == nullptr)
+		{
+			return false;
+		}
+
+		UMovieSceneCinematicShotTrack* ShotTrack =
+			MovieScene->AddTrack<UMovieSceneCinematicShotTrack>();
+		if (ShotTrack == nullptr) return false;
+		UMovieSceneCinematicShotSection* ShotSection =
+			Cast<UMovieSceneCinematicShotSection>(
+				ShotTrack->AddSequence(ChildSequence, FFrameNumber(60000), 60000));
+		if (ShotSection == nullptr) return false;
+		ShotSection->SetShotDisplayName(TEXT("Text timeline reprise"));
+	}
+
+	Package->MarkPackageDirty();
+	if (!SaveAsset(Package, Sequence)) return false;
+	UE_LOG(LogTemp, Display, TEXT("Generated %s"), PackageName);
+	return true;
+}
+
 bool VerifyLevelSequenceFixture()
 {
 	const ULevelSequence* Sequence = LoadObject<ULevelSequence>(
@@ -656,10 +706,38 @@ bool VerifyLevelSequenceFixture()
 	}
 	const TMovieSceneChannelData<const FText> ChannelData = Section->GetChannel().GetData();
 	const TArrayView<const FText> Values = ChannelData.GetValues();
-	return Values.Num() == 3
+	const bool bTextTimelineValid = Values.Num() == 3
 		&& Values[0].ToString() == TEXT("We made it.")
 		&& Values[1].ToString() == TEXT("Something is wrong.")
 		&& Values[2].ToString() == TEXT("Run!");
+	if (!bTextTimelineValid) return false;
+
+	const ULevelSequence* NestedSequence = LoadObject<ULevelSequence>(
+		nullptr, TEXT("/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline"));
+	if (NestedSequence == nullptr || NestedSequence->GetMovieScene() == nullptr) return false;
+	const TArray<UMovieSceneTrack*>& RootTracks = NestedSequence->GetMovieScene()->GetTracks();
+	if (RootTracks.Num() != 2) return false;
+	const UMovieSceneSubTrack* SubTrack = Cast<UMovieSceneSubTrack>(RootTracks[0]);
+	const UMovieSceneCinematicShotTrack* ShotTrack =
+		Cast<UMovieSceneCinematicShotTrack>(RootTracks[1]);
+	if (SubTrack == nullptr || SubTrack->GetAllSections().Num() != 1
+		|| ShotTrack == nullptr || ShotTrack->GetAllSections().Num() != 1)
+	{
+		return false;
+	}
+	const UMovieSceneSubSection* SubSection =
+		Cast<UMovieSceneSubSection>(SubTrack->GetAllSections()[0]);
+	const UMovieSceneCinematicShotSection* ShotSection =
+		Cast<UMovieSceneCinematicShotSection>(ShotTrack->GetAllSections()[0]);
+	return SubSection != nullptr
+		&& SubSection->GetSequence() == Sequence
+		&& SubSection->GetRange()
+			== TRange<FFrameNumber>(FFrameNumber(0), FFrameNumber(60000))
+		&& ShotSection != nullptr
+		&& ShotSection->GetSequence() == Sequence
+		&& ShotSection->GetRange()
+			== TRange<FFrameNumber>(FFrameNumber(60000), FFrameNumber(120000))
+		&& ShotSection->GetShotDisplayName() == TEXT("Text timeline reprise");
 }
 
 bool GenerateTable(const FFixtureTableDefinition& Definition)
@@ -1149,6 +1227,49 @@ bool WriteLevelSequenceEvidence(const FString& OutputDirectory)
 		Bindings.Add(MakeShared<FJsonValueObject>(BindingJson));
 	}
 	Root->SetArrayField(TEXT("bindings"), Bindings);
+
+	const ULevelSequence* NestedSequence = LoadObject<ULevelSequence>(
+		nullptr, TEXT("/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline"));
+	if (NestedSequence == nullptr || NestedSequence->GetMovieScene() == nullptr) return false;
+	const TSharedRef<FJsonObject> NestedTimeline = MakeShared<FJsonObject>();
+	NestedTimeline->SetStringField(TEXT("objectPath"), NestedSequence->GetPathName());
+	NestedTimeline->SetStringField(TEXT("classPath"),
+		NestedSequence->GetClass()->GetPathName());
+	TArray<TSharedPtr<FJsonValue>> RootTracks;
+	for (const UMovieSceneTrack* BaseTrack : NestedSequence->GetMovieScene()->GetTracks())
+	{
+		const UMovieSceneSubTrack* Track = Cast<UMovieSceneSubTrack>(BaseTrack);
+		if (Track == nullptr) continue;
+		const TSharedRef<FJsonObject> TrackJson = MakeShared<FJsonObject>();
+		TrackJson->SetStringField(TEXT("objectPath"), Track->GetPathName());
+		TrackJson->SetStringField(TEXT("classPath"), Track->GetClass()->GetPathName());
+		TArray<TSharedPtr<FJsonValue>> Sections;
+		for (const UMovieSceneSection* BaseSection : Track->GetAllSections())
+		{
+			const UMovieSceneSubSection* Section = Cast<UMovieSceneSubSection>(BaseSection);
+			if (Section == nullptr || Section->GetSequence() == nullptr) continue;
+			const TSharedRef<FJsonObject> SectionJson = MakeShared<FJsonObject>();
+			SectionJson->SetStringField(TEXT("objectPath"), Section->GetPathName());
+			SectionJson->SetStringField(TEXT("classPath"), Section->GetClass()->GetPathName());
+			SectionJson->SetNumberField(TEXT("start"),
+				Section->GetRange().GetLowerBoundValue().Value);
+			SectionJson->SetNumberField(TEXT("end"),
+				Section->GetRange().GetUpperBoundValue().Value);
+			SectionJson->SetStringField(TEXT("sequencePath"),
+				Section->GetSequence()->GetPathName());
+			if (const UMovieSceneCinematicShotSection* ShotSection =
+				Cast<UMovieSceneCinematicShotSection>(Section))
+			{
+				SectionJson->SetStringField(TEXT("shotDisplayName"),
+					ShotSection->GetShotDisplayName());
+			}
+			Sections.Add(MakeShared<FJsonValueObject>(SectionJson));
+		}
+		TrackJson->SetArrayField(TEXT("sections"), Sections);
+		RootTracks.Add(MakeShared<FJsonValueObject>(TrackJson));
+	}
+	NestedTimeline->SetArrayField(TEXT("rootTracks"), RootTracks);
+	Root->SetObjectField(TEXT("nestedTimeline"), NestedTimeline);
 	return WriteJsonEvidence(
 		FPaths::Combine(OutputDirectory, TEXT("parser-targets/level-sequence.json")), Root);
 }
@@ -3050,6 +3171,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateAnimationFixtures() && Succeeded;
 		Succeeded = GenerateLevelSequenceFixture() && Succeeded;
+		Succeeded = GenerateNestedLevelSequenceFixture() && Succeeded;
 		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
 	}
 	else

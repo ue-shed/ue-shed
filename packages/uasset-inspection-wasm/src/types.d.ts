@@ -260,6 +260,8 @@ export interface LevelSequenceSection {
 	readonly object_path: string;
 	readonly class_path: string;
 	readonly range: LevelSequenceFrameRange | null;
+	readonly sequence_path: string | null;
+	readonly shot_display_name: string | null;
 	readonly text_keys: readonly LevelSequenceTextKey[];
 }
 
@@ -267,7 +269,7 @@ export interface LevelSequenceTrack {
 	readonly object_path: string;
 	readonly class_path: string;
 	readonly property_path: string | null;
-	readonly content: "timed_text" | "structure_only";
+	readonly content: "timed_text" | "sub_sequence" | "cinematic_shot" | "structure_only";
 	readonly sections: readonly LevelSequenceSection[];
 }
 
@@ -279,7 +281,7 @@ export interface LevelSequenceBinding {
 }
 
 export interface LevelSequenceProjectionRecord {
-	readonly schema_version: 1;
+	readonly schema_version: 2;
 	readonly object_path: string;
 	readonly movie_scene_path: string | null;
 	readonly tick_resolution: LevelSequenceFrameRate | null;

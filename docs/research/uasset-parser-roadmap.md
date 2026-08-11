@@ -64,12 +64,14 @@ package rather than in the `AnimSequence` trailer decoder.
 
 `LevelSequence` is the next increment and is intentionally evaluator-independent. The UE 5.7
 fixture contains a five-second `MovieScene`, one object binding, a text property track, one section,
-and three localized `FMovieSceneTextChannel` keys. The generic UObject decoder already recovers the
-export graph and text values; the added native codecs recover `FFrameNumber` arrays and
-`FMovieSceneFrameRange`. A compact schema-1 projection then joins binding, track, section, range,
-and timed text while retaining unsupported track classes as structural inventory with explicit
-coverage gaps. It does not claim Sequencer evaluation, blending, runtime binding resolution, or
-complete coverage of every track and channel class.
+and three localized `FMovieSceneTextChannel` keys. A second timeline references that text sequence
+through both a normal subsequence and a named cinematic shot. The generic UObject decoder already
+recovers the export graph, object references, and text values; the added native codecs recover
+`FFrameNumber` arrays and `FMovieSceneFrameRange`. A compact schema-2 projection then joins binding,
+track, section, range, timed text, nested-sequence references, and shot names while retaining
+unsupported track classes as structural inventory with explicit coverage gaps. It does not claim
+recursive project traversal, Sequencer evaluation, blending, runtime binding resolution, or complete
+coverage of every track and channel class.
 
 Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,

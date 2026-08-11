@@ -42,9 +42,13 @@ type FixtureContract = {
 	readonly contentRoot: string;
 	readonly levelSequence: {
 		readonly assetPath: string;
+		readonly nestedAssetPath: string;
 		readonly tickResolution: { readonly numerator: number; readonly denominator: number };
 		readonly displayRate: { readonly numerator: number; readonly denominator: number };
 		readonly playbackRange: { readonly start: number; readonly end: number };
+		readonly subSequenceRange: { readonly start: number; readonly end: number };
+		readonly cinematicShotRange: { readonly start: number; readonly end: number };
+		readonly shotDisplayName: string;
 		readonly textKeyFrames: readonly number[];
 		readonly textKeys: readonly string[];
 	};
@@ -350,13 +354,18 @@ describe("generic Unreal fixture contract", () => {
 	it("declares a timed localized-text Level Sequence", () => {
 		expect(contract.levelSequence).toEqual({
 			assetPath: "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+			nestedAssetPath: "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline",
 			tickResolution: { numerator: 24000, denominator: 1 },
 			displayRate: { numerator: 24, denominator: 1 },
 			playbackRange: { start: 0, end: 120000 },
+			subSequenceRange: { start: 0, end: 60000 },
+			cinematicShotRange: { start: 60000, end: 120000 },
+			shotDisplayName: "Text timeline reprise",
 			textKeyFrames: [0, 48000, 96000],
 			textKeys: ["Opening", "Warning", "Exit"]
 		});
 		expect(existsSync(generatedAssetPath(contract.levelSequence.assetPath))).toBe(true);
+		expect(existsSync(generatedAssetPath(contract.levelSequence.nestedAssetPath))).toBe(true);
 	});
 
 	it("declares the original Enhanced Input fixture unchanged", () => {

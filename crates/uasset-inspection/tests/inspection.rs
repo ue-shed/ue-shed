@@ -41,6 +41,12 @@ const PARITY_FIXTURES: &[(&str, &[u8])] = &[
         ),
     ),
     (
+        "Content/Fixture/Sequences/LS_NestedTimeline.uasset",
+        include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Sequences/LS_NestedTimeline.uasset"
+        ),
+    ),
+    (
         "Content/Fixture/Text/ST_Game.uasset",
         include_bytes!("../../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset"),
     ),

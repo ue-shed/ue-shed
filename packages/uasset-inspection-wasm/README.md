@@ -7,7 +7,9 @@ processes, maintain caches, or write assets.
 The first public contract is deliberately small:
 
 - generic inspection returns schema 8;
-- `extractText`, `extractTextures`, and `extractLevelSequences` return compact projection schema 1;
+- `extractText`, `extractTextures`, and `extractLevelSequences` return compact schema-1 envelopes;
+  LevelSequence records currently use schema 2 and include nested-sequence and cinematic-shot
+  references;
 - malformed, unsupported, partial, and resource-limited packages are represented as typed result
   values;
 - cooked, unversioned, IoStore/Zen, swapped-endian, and native bulk-data decoding remain outside

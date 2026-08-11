@@ -77,7 +77,7 @@ fn level_sequence_projection_joins_timed_localized_text() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 1);
+    assert_eq!(projection.schema_version, 2);
     assert_eq!(
         projection.tick_resolution.expect("tick rate").numerator,
         24_000
@@ -110,6 +110,51 @@ fn level_sequence_projection_joins_timed_localized_text() {
             .map(|key| key.source.as_str())
             .collect::<Vec<_>>(),
         ["We made it.", "Something is wrong.", "Run!"]
+    );
+    assert!(projection.coverage_gaps.is_empty());
+}
+
+#[test]
+fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
+    let (_, package, assets) = decoded_assets(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/unreal-project/Content/Fixture/Sequences/LS_NestedTimeline.uasset"
+    ));
+    let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
+
+    assert_eq!(projection.schema_version, 2);
+    assert_eq!(projection.root_tracks.len(), 2);
+    let sub_sequence = projection
+        .root_tracks
+        .iter()
+        .find(|track| track.content == SequenceTrackContent::SubSequence)
+        .expect("subsequence track");
+    let sub_section = &sub_sequence.sections[0];
+    assert_eq!(sub_section.range.expect("subsequence range").lower.frame, 0);
+    assert_eq!(
+        sub_section.range.expect("subsequence range").upper.frame,
+        60_000
+    );
+    assert_eq!(
+        sub_section.sequence_path.as_deref(),
+        Some("/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline")
+    );
+
+    let shot = projection
+        .root_tracks
+        .iter()
+        .find(|track| track.content == SequenceTrackContent::CinematicShot)
+        .expect("cinematic shot track");
+    let shot_section = &shot.sections[0];
+    assert_eq!(shot_section.range.expect("shot range").lower.frame, 60_000);
+    assert_eq!(shot_section.range.expect("shot range").upper.frame, 120_000);
+    assert_eq!(
+        shot_section.sequence_path.as_deref(),
+        Some("/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline")
+    );
+    assert_eq!(
+        shot_section.shot_display_name.as_deref(),
+        Some("Text timeline reprise")
     );
     assert!(projection.coverage_gaps.is_empty());
 }

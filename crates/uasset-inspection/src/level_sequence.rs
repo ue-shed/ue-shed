@@ -13,6 +13,12 @@ use uasset_parser::property::{
 
 pub const LEVEL_SEQUENCE_CLASS: &str = "/Script/LevelSequence.LevelSequence";
 pub const MOVIE_SCENE_CLASS: &str = "/Script/MovieScene.MovieScene";
+pub const SUB_SEQUENCE_TRACK_CLASS: &str = "/Script/MovieScene.MovieSceneSubTrack";
+pub const SUB_SEQUENCE_SECTION_CLASS: &str = "/Script/MovieScene.MovieSceneSubSection";
+pub const CINEMATIC_SHOT_TRACK_CLASS: &str =
+    "/Script/MovieSceneTracks.MovieSceneCinematicShotTrack";
+pub const CINEMATIC_SHOT_SECTION_CLASS: &str =
+    "/Script/MovieSceneTracks.MovieSceneCinematicShotSection";
 pub const TEXT_TRACK_CLASS: &str = "/Script/MovieSceneTracks.MovieSceneTextTrack";
 pub const TEXT_SECTION_CLASS: &str = "/Script/MovieSceneTracks.MovieSceneTextSection";
 
@@ -76,6 +82,8 @@ pub struct SequenceTrack {
 #[serde(rename_all = "snake_case")]
 pub enum SequenceTrackContent {
     TimedText,
+    SubSequence,
+    CinematicShot,
     StructureOnly,
 }
 
@@ -84,6 +92,8 @@ pub struct SequenceSection {
     pub object_path: String,
     pub class_path: String,
     pub range: Option<SequenceFrameRange>,
+    pub sequence_path: Option<String>,
+    pub shot_display_name: Option<String>,
     pub text_keys: Vec<SequenceTextKey>,
 }
 
@@ -129,7 +139,7 @@ pub fn project_level_sequence(
     let sequence =
         objects(assets).find(|object| object.class_path.as_str() == LEVEL_SEQUENCE_CLASS)?;
     let mut projection = LevelSequenceProjection {
-        schema_version: 1,
+        schema_version: 2,
         object_path: sequence.object_path.to_string(),
         movie_scene_path: None,
         tick_resolution: None,
@@ -313,8 +323,13 @@ fn project_track(
     track: &DecodedUObject,
     gaps: &mut Vec<SequenceCoverageGap>,
 ) -> SequenceTrack {
-    let supports_text = track.class_path.as_str() == TEXT_TRACK_CLASS;
-    if !supports_text {
+    let content = match track.class_path.as_str() {
+        TEXT_TRACK_CLASS => SequenceTrackContent::TimedText,
+        SUB_SEQUENCE_TRACK_CLASS => SequenceTrackContent::SubSequence,
+        CINEMATIC_SHOT_TRACK_CLASS => SequenceTrackContent::CinematicShot,
+        _ => SequenceTrackContent::StructureOnly,
+    };
+    if content == SequenceTrackContent::StructureOnly {
         gaps.push(SequenceCoverageGap {
             object_path: track.object_path.to_string(),
             property_path: "Sections".to_owned(),
@@ -338,18 +353,14 @@ fn project_track(
                     reason: SequenceCoverageGapReason::MissingReference,
                 });
             }
-            section.map(|section| project_section(package, section, supports_text, gaps))
+            section.map(|section| project_section(package, section, content, gaps))
         })
         .collect();
     SequenceTrack {
         object_path: track.object_path.to_string(),
         class_path: track.class_path.to_string(),
         property_path,
-        content: if supports_text {
-            SequenceTrackContent::TimedText
-        } else {
-            SequenceTrackContent::StructureOnly
-        },
+        content,
         sections,
     }
 }
@@ -357,20 +368,70 @@ fn project_track(
 fn project_section(
     package: &Package,
     section: &DecodedUObject,
-    supports_text: bool,
+    content: SequenceTrackContent,
     gaps: &mut Vec<SequenceCoverageGap>,
 ) -> SequenceSection {
     let range = frame_range(package, &section.properties, "SectionRange");
-    let text_keys = if supports_text && section.class_path.as_str() == TEXT_SECTION_CLASS {
+    let text_keys = if content == SequenceTrackContent::TimedText
+        && section.class_path.as_str() == TEXT_SECTION_CLASS
+    {
         text_keys(package, section, gaps)
     } else {
         Vec::new()
+    };
+    let sequence_path = if matches!(
+        content,
+        SequenceTrackContent::SubSequence | SequenceTrackContent::CinematicShot
+    ) {
+        section_sequence_path(package, section, gaps)
+    } else {
+        None
+    };
+    let shot_display_name = if content == SequenceTrackContent::CinematicShot {
+        string(package, &section.properties, "ShotDisplayName")
+    } else {
+        None
     };
     SequenceSection {
         object_path: section.object_path.to_string(),
         class_path: section.class_path.to_string(),
         range,
+        sequence_path,
+        shot_display_name,
         text_keys,
+    }
+}
+
+fn section_sequence_path(
+    package: &Package,
+    section: &DecodedUObject,
+    gaps: &mut Vec<SequenceCoverageGap>,
+) -> Option<String> {
+    match property(package, &section.properties, "SubSequence") {
+        Some(PropertyValue::ObjectRef(index)) => resolve_object(package, *index).or_else(|| {
+            gaps.push(SequenceCoverageGap {
+                object_path: section.object_path.to_string(),
+                property_path: "SubSequence".to_owned(),
+                reason: SequenceCoverageGapReason::MissingReference,
+            });
+            None
+        }),
+        Some(_) => {
+            gaps.push(SequenceCoverageGap {
+                object_path: section.object_path.to_string(),
+                property_path: "SubSequence".to_owned(),
+                reason: SequenceCoverageGapReason::WrongValueKind,
+            });
+            None
+        }
+        None => {
+            gaps.push(SequenceCoverageGap {
+                object_path: section.object_path.to_string(),
+                property_path: "SubSequence".to_owned(),
+                reason: SequenceCoverageGapReason::MissingReference,
+            });
+            None
+        }
     }
 }
 

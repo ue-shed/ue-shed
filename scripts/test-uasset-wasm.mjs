@@ -26,6 +26,7 @@ const fixtures = [
 	"Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset",
 	"Content/Fixture/Animation/A_FixtureMotion.uasset",
 	"Content/Fixture/Sequences/LS_TextTimeline.uasset",
+	"Content/Fixture/Sequences/LS_NestedTimeline.uasset",
 	"Content/Fixture/Text/ST_Game.uasset",
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].map((path) => join(fixtureRoot, path));
@@ -108,6 +109,33 @@ assert.deepEqual(
 		[0, "We made it."],
 		[48000, "Something is wrong."],
 		[96000, "Run!"]
+	]
+);
+
+const nestedSequenceFixture = join(
+	fixtureRoot,
+	"Content/Fixture/Sequences/LS_NestedTimeline.uasset"
+);
+const nestedSequencePath = relative(repositoryRoot, nestedSequenceFixture).replaceAll("\\", "/");
+const nestedSequence = runtime.extractLevelSequences(
+	nestedSequencePath,
+	readFileSync(nestedSequenceFixture)
+);
+assert.equal(nestedSequence.status, "complete");
+assert.equal(nestedSequence.sequences[0].schema_version, 2);
+assert.deepEqual(
+	nestedSequence.sequences[0].root_tracks.map((track) => [
+		track.content,
+		track.sections[0].sequence_path,
+		track.sections[0].shot_display_name
+	]),
+	[
+		["sub_sequence", "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline", null],
+		[
+			"cinematic_shot",
+			"/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+			"Text timeline reprise"
+		]
 	]
 );
 

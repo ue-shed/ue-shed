@@ -81,5 +81,38 @@
 				}
 			]
 		}
-	]
+	],
+	"nestedTimeline": {
+		"objectPath": "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline",
+		"classPath": "/Script/LevelSequence.LevelSequence",
+		"rootTracks": [
+			{
+				"objectPath": "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline:MovieScene_0.MovieSceneSubTrack_0",
+				"classPath": "/Script/MovieScene.MovieSceneSubTrack",
+				"sections": [
+					{
+						"objectPath": "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline:MovieScene_0.MovieSceneSubTrack_0.MovieSceneSubSection_0",
+						"classPath": "/Script/MovieScene.MovieSceneSubSection",
+						"start": 0,
+						"end": 60000,
+						"sequencePath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline"
+					}
+				]
+			},
+			{
+				"objectPath": "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline:MovieScene_0.MovieSceneCinematicShotTrack_0",
+				"classPath": "/Script/MovieSceneTracks.MovieSceneCinematicShotTrack",
+				"sections": [
+					{
+						"objectPath": "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline:MovieScene_0.MovieSceneCinematicShotTrack_0.MovieSceneCinematicShotSection_0",
+						"classPath": "/Script/MovieSceneTracks.MovieSceneCinematicShotSection",
+						"start": 60000,
+						"end": 120000,
+						"sequencePath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+						"shotDisplayName": "Text timeline reprise"
+					}
+				]
+			}
+		]
+	}
 }

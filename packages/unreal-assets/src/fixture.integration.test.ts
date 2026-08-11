@@ -57,11 +57,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		// 65 `.uasset` packages (including six World Partition external actors, two animation
 		// fixtures, one Level Sequence, and the 25-asset Enhanced Input surface) plus the three maps. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(68);
-		expect(scan.summary.emittedAssets).toBe(68);
+		expect(scan.summary.scannedAssets).toBe(69);
+		expect(scan.summary.emittedAssets).toBe(69);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(68);
+		expect(scan.assets).toHaveLength(69);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -102,11 +102,11 @@ describe.skipIf(!executable)("batched project scan", () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(68);
+		expect(scan.summary.scannedAssets).toBe(69);
 		expect(scan.summary.emittedAssets).toBe(17);
-		// The levels, LevelSequence, saved World Partition actor packages, and every Enhanced Input
+		// The levels, LevelSequences, saved World Partition actor packages, and every Enhanced Input
 		// asset carry no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(51);
+		expect(scan.summary.skippedAssets).toBe(52);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -231,7 +231,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(68);
+		expect(scan.summary.scannedAssets).toBe(69);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);

@@ -182,29 +182,59 @@ export const ShowcaseContext = Schema.Struct({
 });
 export interface ShowcaseContext extends Schema.Schema.Type<typeof ShowcaseContext> {}
 
-export const ConfigExplorerShowcaseResult = Schema.Union([
+const ConfigExplorerQueryFields = {
+	family: Schema.optionalKey(Schema.NonEmptyString),
+	key: Schema.NonEmptyString,
+	section: Schema.NonEmptyString,
+	source: Schema.Literals(["selected_project", "sample_fixture"])
+};
+
+export const ConfigExplorerQuery = Schema.Union([
 	Schema.Struct({
-		comparison: ConfigComparison,
-		explicitEmpty: ConfigExplanation,
-		redirectInvolvement: ConfigExplanation,
-		scalarReplacement: ConfigExplanation,
-		status: Schema.Literal("ready"),
-		unsupportedSyntax: ConfigExplanation
+		...ConfigExplorerQueryFields,
+		mode: Schema.Literal("explain"),
+		platform: Schema.NonEmptyString
 	}),
 	Schema.Struct({
-		error: Schema.Union([
-			ConfigExplorerPublicError,
-			Schema.Struct({
-				code: Schema.Literal("showcase_unavailable"),
-				message: Schema.String,
-				recovery: Schema.String,
-				retrySafe: Schema.Boolean
-			})
-		]),
+		...ConfigExplorerQueryFields,
+		leftPlatform: Schema.NonEmptyString,
+		mode: Schema.Literal("compare"),
+		rightPlatform: Schema.NonEmptyString
+	})
+]);
+export type ConfigExplorerQuery = typeof ConfigExplorerQuery.Type;
+
+const ConfigExplorerWorkbenchError = Schema.Union([
+	ConfigExplorerPublicError,
+	Schema.Struct({
+		code: Schema.Literals(["project_unavailable", "sample_unavailable"]),
+		message: Schema.String,
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean
+	})
+]);
+
+export const ConfigExplorerQueryResult = Schema.Union([
+	Schema.Struct({
+		evidence: ConfigExplanation,
+		mode: Schema.Literal("explain"),
+		projectName: Schema.NonEmptyString,
+		source: ConfigExplorerQueryFields.source,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({
+		evidence: ConfigComparison,
+		mode: Schema.Literal("compare"),
+		projectName: Schema.NonEmptyString,
+		source: ConfigExplorerQueryFields.source,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({
+		error: ConfigExplorerWorkbenchError,
 		status: Schema.Literal("failed")
 	})
 ]);
-export type ConfigExplorerShowcaseResult = typeof ConfigExplorerShowcaseResult.Type;
+export type ConfigExplorerQueryResult = typeof ConfigExplorerQueryResult.Type;
 
 export const FixtureLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
@@ -378,10 +408,10 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: ShowcaseContext
 	}),
-	"config-explorer:showcase": invoke({
-		channel: "config-explorer:showcase",
-		args: EmptyArgs,
-		result: ConfigExplorerShowcaseResult
+	"config-explorer:query": invoke({
+		channel: "config-explorer:query",
+		args: Schema.Tuple([ConfigExplorerQuery]),
+		result: ConfigExplorerQueryResult
 	}),
 	"project:current": invoke({
 		channel: "project:current",

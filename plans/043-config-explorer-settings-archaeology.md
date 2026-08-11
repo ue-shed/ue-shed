@@ -248,13 +248,22 @@ Stop implementation and document the finding if:
   `CARGO_PROFILE_DEV_DEBUG=0`, and `CARGO_PROFILE_TEST_DEBUG=0` to fit native DuckDB artifacts on the
   available drive; test and gate coverage were unchanged.
 - After rebasing around the completed IPC/preload work, Workbench gained a `#/config-explorer`
-  showcase route backed by the public resolver and committed fixture. The trusted main process owns
-  filesystem access; typed IPC supplies browser-safe evidence to the unchanged host-neutral
-  extension. Core, CLI, fixture, and extension remain independent of Workbench.
-- Workbench-focused verification passed 34 service, IPC, and component tests. A dedicated Electron
-  E2E clicked all seven evidence presets, asserted platform divergence, ordered contributions,
-  scalar replacement, explicit empty, unsupported syntax, and redirect coverage, and produced a
-  visually inspected real-Workbench comparison capture. The production Workbench build also passed.
+  investigation route backed by the public resolver. Its schema-owned query supports an editable
+  family, section, key, explain/compare mode, and platform targets. The trusted main process reads
+  either the globally selected Workbench project or the explicit portable sample; typed IPC supplies
+  browser-safe evidence to the unchanged host-neutral extension. Resolving the selected identity
+  does not require a Project Index refresh. Core, CLI, fixture, and extension remain independent of
+  Workbench.
+- The corrective Workbench pass replaced the original preset-only fixture viewer with an executable
+  query form, selected-project engine discovery/explicit configuration, sample quick starts that
+  populate rather than bypass the form, and typed project/sample/domain recovery. Focused service,
+  IPC, component, production-build, and Electron E2E checks passed. A dedicated real-Workbench
+  recording executed array comparison, scalar and explicit-empty explanations, unsupported-syntax
+  recovery, and a selected-project `GameDefaultMap` query through the installed UE 5.7 hierarchy.
+  Both its portable comparison and selected-project evidence captures were visually inspected.
+- The corrective pass completed one full `pnpm check` after substantive edits in 329 seconds. It
+  used the same debug-symbol/incremental reductions as the original slice, with this worktree's
+  ignored target directory redirected to a larger local build volume; gate coverage was unchanged.
 - The Workbench follow-up passed `pnpm check` after substantive edits and again immediately before
   handoff. Cargo used the same debug-symbol/incremental reductions as the original slice, with this
   worktree's ignored target directory redirected to a larger local build volume; gate coverage was

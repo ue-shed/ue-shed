@@ -4,81 +4,123 @@ import { Effect, Layer } from "effect";
 import { resolve } from "node:path";
 import { expect } from "vitest";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
+import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { WorkbenchConfigExplorer, WorkbenchConfigExplorerLive } from "./config-explorer.js";
 
 const repositoryRoot = resolve(import.meta.dirname, "../../../../..");
+const fixtureRoot = resolve(repositoryRoot, "packages/config-explorer/fixtures/config-source");
 
-const configuration = makeWorkbenchConfigurationLayer({
-	authoringAsset: { status: "not_configured" },
-	expectedProject: { status: "not_configured" },
-	project: { status: "not_configured" },
-	remoteControlEndpoint: "http://127.0.0.1:30001",
-	review: { status: "not_configured" },
-	sourceCheckout: { path: repositoryRoot, status: "configured" },
-	textureAuditRules: { status: "not_configured" }
-});
+const unusedProjectOperations = {
+	choose: () => Effect.die("not used"),
+	current: () => Effect.die("not used"),
+	inputAtlas: () => Effect.die("not used"),
+	savedProject: () => Effect.die("not used"),
+	savedTables: () => Effect.die("not used")
+};
 
-const layer = WorkbenchConfigExplorerLive.pipe(
-	Layer.provide(Layer.mergeAll(ConfigExplorerNodeLive, configuration))
-);
+function configuration(options?: {
+	readonly sourceCheckout?: "configured" | "not_configured";
+	readonly unrealEngineRoot?: "configured" | "not_configured";
+}) {
+	return makeWorkbenchConfigurationLayer({
+		authoringAsset: { status: "not_configured" },
+		expectedProject: { status: "not_configured" },
+		project: { status: "not_configured" },
+		remoteControlEndpoint: "http://127.0.0.1:30001",
+		review: { status: "not_configured" },
+		sourceCheckout:
+			options?.sourceCheckout === "not_configured"
+				? { status: "not_configured" }
+				: { path: repositoryRoot, status: "configured" },
+		textureAuditRules: { status: "not_configured" },
+		unrealEngineRoot:
+			options?.unrealEngineRoot === "configured"
+				? { path: fixtureRoot, status: "configured" }
+				: { status: "not_configured" }
+	});
+}
 
-it.effect("resolves every Workbench showcase preset through the real generic fixture", () =>
+function layer(options?: {
+	readonly sourceCheckout?: "configured" | "not_configured";
+	readonly unrealEngineRoot?: "configured" | "not_configured";
+}) {
+	const project = makeWorkbenchProjectTestLayer({
+		...unusedProjectOperations,
+		selectedProject: () =>
+			Effect.succeed({ projectName: "FixtureProject", projectRoot: fixtureRoot })
+	});
+	return WorkbenchConfigExplorerLive.pipe(
+		Layer.provide(Layer.mergeAll(ConfigExplorerNodeLive, configuration(options), project))
+	);
+}
+
+it.effect("runs an editable sample comparison through the generic fixture", () =>
 	Effect.gen(function* () {
 		const explorer = yield* WorkbenchConfigExplorer;
-		const result = yield* explorer.showcase();
+		const result = yield* explorer.query({
+			family: "Game",
+			key: "Entries",
+			leftPlatform: "PlatformA",
+			mode: "compare",
+			rightPlatform: "PlatformB",
+			section: "Fixture.Settings",
+			source: "sample_fixture"
+		});
 		expect(result.status).toBe("ready");
-		if (result.status !== "ready") return;
+		if (result.status !== "ready" || result.mode !== "compare") return;
 
-		expect(result.comparison.valueChanged).toBe(true);
-		expect(result.comparison.left.effectiveValue).toEqual({
+		expect(result.projectName).toBe("UE Shed config fixture");
+		expect(result.evidence.left.effectiveValue).toEqual({
 			kind: "array",
 			values: ["PlatformA"]
 		});
-		expect(result.comparison.right.effectiveValue).toEqual({
+		expect(result.evidence.right.effectiveValue).toEqual({
 			kind: "array",
 			values: ["PlatformB", "PlatformB"]
 		});
-		expect(result.scalarReplacement.effectiveValue).toEqual({
+	}).pipe(Effect.provide(layer()))
+);
+
+it.effect("uses the selected Workbench project and explicit engine configuration", () =>
+	Effect.gen(function* () {
+		const explorer = yield* WorkbenchConfigExplorer;
+		const result = yield* explorer.query({
+			family: "Game",
+			key: "Mode",
+			mode: "explain",
+			platform: "PlatformA",
+			section: "Fixture.Settings",
+			source: "selected_project"
+		});
+		expect(result.status).toBe("ready");
+		if (result.status !== "ready" || result.mode !== "explain") return;
+		expect(result.projectName).toBe("FixtureProject");
+		expect(result.evidence.effectiveValue).toEqual({
 			kind: "scalar",
 			value: "PlatformA"
 		});
-		expect(result.explicitEmpty.effectiveValue).toEqual({ kind: "empty_array" });
-		expect(result.unsupportedSyntax.status).toBe("partial");
-		expect(result.redirectInvolvement.status).toBe("partial");
-	}).pipe(Effect.provide(layer))
+	}).pipe(Effect.provide(layer({ unrealEngineRoot: "configured" })))
 );
 
-it.effect("reports a typed unavailable state outside a configured source checkout", () =>
+it.effect("reports a typed unavailable sample outside a source checkout", () =>
 	Effect.gen(function* () {
 		const explorer = yield* WorkbenchConfigExplorer;
-		const result = yield* explorer.showcase();
+		const result = yield* explorer.query({
+			family: "Game",
+			key: "Mode",
+			mode: "explain",
+			platform: "PlatformA",
+			section: "Fixture.Settings",
+			source: "sample_fixture"
+		});
 		expect(result).toEqual({
 			error: {
-				code: "showcase_unavailable",
-				message: "The committed Config Explorer fixture is unavailable.",
+				code: "sample_unavailable",
+				message: "The committed Config Explorer sample is unavailable.",
 				recovery: "Launch Workbench through pnpm showcase from a source checkout.",
 				retrySafe: false
 			},
 			status: "failed"
 		});
-	}).pipe(
-		Effect.provide(
-			WorkbenchConfigExplorerLive.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						ConfigExplorerNodeLive,
-						makeWorkbenchConfigurationLayer({
-							authoringAsset: { status: "not_configured" },
-							expectedProject: { status: "not_configured" },
-							project: { status: "not_configured" },
-							remoteControlEndpoint: "http://127.0.0.1:30001",
-							review: { status: "not_configured" },
-							sourceCheckout: { status: "not_configured" },
-							textureAuditRules: { status: "not_configured" }
-						})
-					)
-				)
-			)
-		)
-	)
+	}).pipe(Effect.provide(layer({ sourceCheckout: "not_configured" })))
 );

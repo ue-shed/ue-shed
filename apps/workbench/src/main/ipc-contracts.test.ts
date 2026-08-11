@@ -121,7 +121,17 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
-	"config-explorer:showcase": [],
+	"config-explorer:query": [
+		{
+			family: "Game",
+			key: "Entries",
+			leftPlatform: "PlatformA",
+			mode: "compare",
+			rightPlatform: "PlatformB",
+			section: "Fixture.Settings",
+			source: "sample_fixture"
+		}
+	],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -288,9 +298,9 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		project: { status: "not_configured" },
 		reader: "path"
 	},
-	"config-explorer:showcase": {
+	"config-explorer:query": {
 		error: {
-			code: "showcase_unavailable",
+			code: "sample_unavailable",
 			message: "Fixture unavailable.",
 			recovery: "Launch through pnpm showcase.",
 			retrySafe: false

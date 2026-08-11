@@ -8,11 +8,12 @@ import {
 } from "@ue-shed/config-explorer";
 import { Context, Effect, Layer } from "effect";
 import { join } from "node:path";
-import type { ConfigExplorerShowcaseResult } from "../ipc-contracts.js";
+import type { ConfigExplorerQuery, ConfigExplorerQueryResult } from "../ipc-contracts.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
+import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchConfigExplorerShape {
-	readonly showcase: () => Effect.Effect<ConfigExplorerShowcaseResult>;
+	readonly query: (request: ConfigExplorerQuery) => Effect.Effect<ConfigExplorerQueryResult>;
 }
 
 export class WorkbenchConfigExplorer extends Context.Service<
@@ -20,7 +21,7 @@ export class WorkbenchConfigExplorer extends Context.Service<
 	WorkbenchConfigExplorerShape
 >()("@ue-shed/workbench/WorkbenchConfigExplorer") {}
 
-function publicFailure(error: ConfigExplorerError): ConfigExplorerShowcaseResult {
+function publicFailure(error: ConfigExplorerError): ConfigExplorerQueryResult {
 	return {
 		error: {
 			code: error.code,
@@ -38,71 +39,111 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
 		const explorer = yield* ConfigExplorer;
+		const project = yield* WorkbenchProject;
 
-		const showcase = Effect.fn("Workbench.WorkbenchConfigExplorer.showcase")(function* () {
-			if (configuration.sourceCheckout.status === "not_configured") {
-				return {
-					error: {
-						code: "showcase_unavailable" as const,
-						message: "The committed Config Explorer fixture is unavailable.",
-						recovery: "Launch Workbench through pnpm showcase from a source checkout.",
-						retrySafe: false
-					},
-					status: "failed" as const
+		const query: WorkbenchConfigExplorerShape["query"] = Effect.fn(
+			"Workbench.WorkbenchConfigExplorer.query"
+		)(function* (request: ConfigExplorerQuery) {
+			let target: {
+				readonly engineRoot?: string;
+				readonly projectName: string;
+				readonly projectRoot: string;
+			};
+			if (request.source === "sample_fixture") {
+				if (configuration.sourceCheckout.status !== "configured") {
+					return {
+						error: {
+							code: "sample_unavailable" as const,
+							message: "The committed Config Explorer sample is unavailable.",
+							recovery:
+								"Launch Workbench through pnpm showcase from a source checkout.",
+							retrySafe: false
+						},
+						status: "failed" as const
+					};
+				}
+				const fixtureRoot = join(
+					configuration.sourceCheckout.path,
+					"packages",
+					"config-explorer",
+					"fixtures",
+					"config-source"
+				);
+				target = {
+					engineRoot: fixtureRoot,
+					projectName: "UE Shed config fixture",
+					projectRoot: fixtureRoot
+				};
+			} else {
+				const selected = yield* project.selectedProject().pipe(
+					Effect.map((value) => ({ status: "ready" as const, value })),
+					Effect.catch((error) =>
+						Effect.succeed({
+							error: {
+								code: "project_unavailable" as const,
+								message: error.message,
+								recovery: error.recovery,
+								retrySafe: true
+							},
+							status: "failed" as const
+						})
+					)
+				);
+				if (selected.status === "failed") return selected;
+				target = {
+					...selected.value,
+					...(configuration.unrealEngineRoot?.status === "configured"
+						? { engineRoot: configuration.unrealEngineRoot.path }
+						: {})
 				};
 			}
 
-			const fixtureRoot = join(
-				configuration.sourceCheckout.path,
-				"packages",
-				"config-explorer",
-				"fixtures",
-				"config-source"
-			);
 			const common = {
-				engineRoot: fixtureRoot,
-				family: ConfigFamily.make("Game"),
-				project: join(fixtureRoot, "FixtureProject.uproject"),
-				section: ConfigSection.make("Fixture.Settings")
+				project: target.projectRoot,
+				section: ConfigSection.make(request.section),
+				key: ConfigKey.make(request.key),
+				...(request.family === undefined
+					? {}
+					: { family: ConfigFamily.make(request.family) }),
+				...(target.engineRoot === undefined ? {} : { engineRoot: target.engineRoot })
 			};
 
-			return yield* Effect.all(
-				{
-					comparison: explorer.compare({
+			if (request.mode === "explain") {
+				return yield* explorer
+					.explain({
 						...common,
-						key: ConfigKey.make("Entries"),
-						leftPlatform: ConfigPlatform.make("PlatformA"),
-						rightPlatform: ConfigPlatform.make("PlatformB")
-					}),
-					explicitEmpty: explorer.explain({
-						...common,
-						key: ConfigKey.make("ExplicitEmpty"),
-						platform: ConfigPlatform.make("PlatformA")
-					}),
-					redirectInvolvement: explorer.explain({
-						...common,
-						key: ConfigKey.make("LegacyRedirected"),
-						platform: ConfigPlatform.make("PlatformA")
-					}),
-					scalarReplacement: explorer.explain({
-						...common,
-						key: ConfigKey.make("Mode"),
-						platform: ConfigPlatform.make("PlatformA")
-					}),
-					unsupportedSyntax: explorer.explain({
-						...common,
-						key: ConfigKey.make("Unsupported"),
-						platform: ConfigPlatform.make("PlatformA")
+						platform: ConfigPlatform.make(request.platform)
 					})
-				},
-				{ concurrency: 5 }
-			).pipe(
-				Effect.map((evidence) => ({ ...evidence, status: "ready" as const })),
-				Effect.catch((error) => Effect.succeed(publicFailure(error)))
-			);
+					.pipe(
+						Effect.map((evidence) => ({
+							evidence,
+							mode: "explain" as const,
+							projectName: target.projectName,
+							source: request.source,
+							status: "ready" as const
+						})),
+						Effect.catch((error) => Effect.succeed(publicFailure(error)))
+					);
+			}
+			return yield* explorer
+				.compare({
+					...common,
+					leftPlatform: ConfigPlatform.make(request.leftPlatform),
+					rightPlatform: ConfigPlatform.make(request.rightPlatform)
+				})
+				.pipe(
+					Effect.map((evidence) => ({
+						evidence,
+						mode: "compare" as const,
+						projectName: target.projectName,
+						source: request.source,
+						status: "ready" as const
+					})),
+					Effect.catch((error) => Effect.succeed(publicFailure(error)))
+				);
 		});
 
-		return WorkbenchConfigExplorer.of({ showcase });
+		return WorkbenchConfigExplorer.of({ query });
 	})
 );
 

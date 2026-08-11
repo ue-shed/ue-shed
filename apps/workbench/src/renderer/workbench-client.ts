@@ -11,14 +11,15 @@ import {
 import { RuntimeHealth } from "@ue-shed/observability/health";
 import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
 import type {
-	ConfigExplorerShowcaseResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	ShowcaseContext,
 	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
-import { ConfigExplorerShowcaseResult as ConfigExplorerShowcaseResultSchema } from "../main/ipc-contracts.js";
+import { ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema } from "../main/ipc-contracts.js";
 import {
 	ProjectLaunchResult,
 	type ProjectLaunchMode,
@@ -116,9 +117,7 @@ function request<A>(args: {
 }
 
 const decodeShowcaseContext = Schema.decodeUnknownEffect(ShowcaseContextSchema);
-const decodeConfigExplorerShowcaseResult = Schema.decodeUnknownEffect(
-	ConfigExplorerShowcaseResultSchema
-);
+const decodeConfigExplorerQueryResult = Schema.decodeUnknownEffect(ConfigExplorerQueryResultSchema);
 const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResultSchema);
 const decodeWorkbenchCameraMetrics = Schema.decodeUnknownEffect(WorkbenchCameraMetricsSchema);
 const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
@@ -172,10 +171,9 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 );
 
 export interface WorkbenchRendererClient {
-	readonly configExplorerShowcase: () => Effect.Effect<
-		ConfigExplorerShowcaseResult,
-		WorkbenchRendererError
-	>;
+	readonly configExplorerQuery: (
+		request: ConfigExplorerQuery
+	) => Effect.Effect<ConfigExplorerQueryResult, WorkbenchRendererError>;
 	readonly unrealConnectionSettings: () => Effect.Effect<
 		UnrealConnectionSettings,
 		WorkbenchRendererError
@@ -218,11 +216,11 @@ export interface WorkbenchRendererClient {
 }
 
 export const workbenchRendererClient: WorkbenchRendererClient = {
-	configExplorerShowcase: Effect.fn("WorkbenchRenderer.configExplorerShowcase")(() =>
+	configExplorerQuery: Effect.fn("WorkbenchRenderer.configExplorerQuery")((query) =>
 		request({
-			decode: decodeConfigExplorerShowcaseResult,
-			invoke: () => window.ueShed.configExplorer.showcase(),
-			operation: "configExplorer.showcase"
+			decode: decodeConfigExplorerQueryResult,
+			invoke: () => window.ueShed.configExplorer.query(query),
+			operation: "configExplorer.query"
 		})
 	),
 	chooseProject: Effect.fn("WorkbenchRenderer.chooseProject")(() =>

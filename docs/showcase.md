@@ -119,17 +119,19 @@ pnpm ue-shed text search fixtures\unreal-project "Fixture"
 ## Demo 4: Config Explorer
 
 Choose **Config** from the nav or **Config Explorer** from the saved-project workflows. This route
-runs the public headless resolver against the committed generic text fixture; it is not a scripted
-presentation or a renderer-side recreation of the answer. A trusted Workbench main-process service
-owns the filesystem read, then sends only schema-validated, privacy-safe evidence to the
-host-neutral extension.
+is an editable investigation workspace. Choose the selected Workbench project or the portable sample
+fixture, enter a config family (or leave it blank for ambiguity recovery), section, key, and
+platform, then run **Explain** or **Compare platforms**. A trusted Workbench main-process service
+owns engine discovery and filesystem reads, then sends only schema-validated, privacy-safe evidence
+to the host-neutral extension.
 
-Start with **Platform compare** to see the same `Game.ini` key diverge between PlatformA and
-PlatformB. The remaining presets show each part of the first vertical slice: ordered contributions,
-duplicate-preserving array behavior, scalar replacement, explicit empty distinct from missing,
-unsupported syntax as partial coverage, and redirect involvement as identity uncertainty. Every
-panel keeps missing layers, source locations, prior effects, surviving/superseded contributions,
-and the “saved source, no runtime authority” boundary visible.
+The sample quick starts populate the form; they are not canned answers. Run **Array operations** to
+see the same `Game.ini` key diverge between PlatformA and PlatformB, or load scalar replacement,
+explicit empty, and unsupported syntax examples before editing any field yourself. Switch to
+**Selected project** to query the project chosen in the global Workbench header. Every submitted
+query uses the public headless resolver and keeps missing layers, source locations, prior effects,
+surviving/superseded contributions, typed recovery, and the “saved source, no runtime authority”
+boundary visible.
 
 The headless equivalents remain the product authority:
 

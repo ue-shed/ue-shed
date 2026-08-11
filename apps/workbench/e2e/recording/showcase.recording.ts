@@ -570,8 +570,6 @@ test(`records the ${journey} Workbench journey`, async ({
 			await startScreencast();
 			await startTracing();
 			const evidence = page.getByRole("region", { name: "Config Explorer evidence" });
-			const effectiveValue = (platform: "PlatformA" | "PlatformB") =>
-				page!.getByRole("region", { name: `${platform} effective saved value` });
 
 			chapters.push(
 				await recordChapter({
@@ -580,24 +578,27 @@ test(`records the ${journey} Workbench journey`, async ({
 						await workbench.openRoute("Config");
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })
-						).toContainText("Config Explorer");
-						await expect(page!.getByRole("status")).toContainText("VALUE DIVERGES");
+						).toContainText("CONFIG EXPLORER");
+						await page!.getByLabel("Config key").fill("Entries");
+						await page!.getByRole("button", { name: /^COMPARE/ }).click();
+						await expect(
+							evidence.getByText("VALUE DIVERGES", { exact: true })
+						).toBeVisible();
 						await expect(
 							page!.getByRole("region", { name: "Platform config comparison" })
 						).toContainText("PlatformA");
 					},
 					description:
-						"Resolve one saved key independently for PlatformA and PlatformB, then compare the effective values and coverage.",
+						"Enter a family, section, key, and two platforms, then execute a real headless comparison over the saved hierarchy.",
 					page,
 					slug: "01-platform-comparison",
 					testInfo,
-					title: "Compare the same key across platforms"
+					title: "Build and run a config query"
 				})
 			);
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Platform A/ }).click();
 						const contributions = page!.getByRole("list", {
 							name: "PlatformA ordered contributions"
 						});
@@ -616,50 +617,38 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Platform B/ }).click();
-						await expect(effectiveValue("PlatformB")).toContainText(
-							"PlatformB · PlatformB"
-						);
-						await effectiveValue("PlatformB").scrollIntoViewIfNeeded();
-					},
-					description:
-						"PlatformB initializes an explicit empty array, then appends the same value twice; duplicates stay visible and truthful.",
-					page,
-					resetScroll: false,
-					slug: "03-platform-b-duplicates",
-					testInfo,
-					title: "Preserve duplicate array entries"
-				})
-			);
-			chapters.push(
-				await recordChapter({
-					action: async () => {
-						await page!.getByRole("button", { name: /Scalar/ }).click();
-						await expect(effectiveValue("PlatformA")).toContainText("PlatformA");
+						await page!.getByRole("button", { name: /Scalar override/ }).click();
+						await expect(page!.getByLabel("Config key")).toHaveValue("Mode");
+						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
 						await expect(
-							page!.getByRole("list", { name: "PlatformA ordered contributions" })
-						).toContainText("replaced");
+							page!.getByRole("region", {
+								name: "PlatformA effective saved value"
+							})
+						).toContainText("PlatformA");
 					},
 					description:
-						"Plain scalar assignments replace the first saved value in place, with the prior value recorded in the evidence.",
+						"Quick starts populate the same editable form; running it shows scalar replacement and the prior saved value.",
 					page,
-					slug: "04-scalar-replacement",
+					slug: "03-scalar-replacement",
 					testInfo,
-					title: "Explain scalar replacement"
+					title: "Investigate another key"
 				})
 			);
 			chapters.push(
 				await recordChapter({
 					action: async () => {
 						await page!.getByRole("button", { name: /Explicit empty/ }).click();
-						await expect(effectiveValue("PlatformA")).toContainText(
-							"[ explicit empty ]"
-						);
+						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
+						await expect(
+							page!.getByRole("region", {
+								name: "PlatformA effective saved value"
+							})
+						).toContainText("[ explicit empty ]");
 					},
 					description:
 						"An initialized-empty array remains distinct from a key that never existed or was later cleared.",
 					page,
-					slug: "05-explicit-empty",
+					slug: "04-explicit-empty",
 					testInfo,
 					title: "Distinguish explicit empty from missing"
 				})
@@ -667,7 +656,8 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Unsupported/ }).click();
+						await page!.getByRole("button", { name: /Unsupported syntax/ }).click();
+						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
 						await expect(
 							evidence.getByText("partial coverage", { exact: true })
 						).toBeVisible();
@@ -676,30 +666,44 @@ test(`records the ${journey} Workbench journey`, async ({
 						).toContainText("unsupported");
 					},
 					description:
-						"Unsupported keyed-array syntax becomes a visible partial-coverage exception instead of being silently ignored.",
+						"Unsupported syntax becomes a typed partial-coverage result instead of a confident but incomplete answer.",
 					page,
-					slug: "06-unsupported-syntax",
+					slug: "05-unsupported-syntax",
 					testInfo,
-					title: "Surface unsupported syntax"
+					title: "Surface coverage limits"
 				})
 			);
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /Redirect/ }).click();
+						await page!.getByRole("button", { name: "Selected project" }).click();
 						await expect(
-							evidence.getByText("partial coverage", { exact: true })
+							page!.getByText(/Uses the project chosen in the Workbench header/)
 						).toBeVisible();
-						await expect(
-							page!.getByRole("region", { name: "PlatformA coverage exceptions" })
-						).toContainText("unsupported");
+						await page!.getByLabel("Config family").fill("Engine");
+						await page!
+							.getByLabel("Config section")
+							.fill("/Script/EngineSettings.GameMapsSettings");
+						await page!.getByLabel("Config key").fill("GameDefaultMap");
+						await page!
+							.getByRole("combobox", { name: "Platform", exact: true })
+							.fill("Windows");
+						await page!.getByRole("button", { name: /^EXPLAIN/ }).click();
+						const selectedValue = page!.getByRole("region", {
+							name: "Windows effective saved value"
+						});
+						await expect(selectedValue).toContainText(
+							"/Game/Fixture/Cameras/L_CameraLoad"
+						);
+						await selectedValue.scrollIntoViewIfNeeded();
 					},
 					description:
-						"Redirect involvement is reported as identity uncertainty, keeping the saved-source claim narrower than live runtime state.",
+						"Switch from the portable sample to the globally selected Workbench project, keeping engine discovery and filesystem reads in the trusted main process.",
 					page,
-					slug: "07-redirect-boundary",
+					resetScroll: false,
+					slug: "06-selected-project",
 					testInfo,
-					title: "Keep redirect uncertainty visible"
+					title: "Target the selected Unreal project"
 				})
 			);
 		} else {

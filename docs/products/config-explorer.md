@@ -156,12 +156,15 @@ remains cancellable through Effect; adapters do not hide Promise/runtime exits.
 component input. It can display ready, partial, ambiguous, missing, and failed evidence without raw
 filesystem, process, Unreal, Electron, or Workbench IPC authority.
 
-The Workbench showcase composes that extension through a trusted main-process service. The service
-runs the public resolver against the committed generic fixture, validates one browser-safe result
-bundle, and sends only that bundle through typed IPC. Preset views expose platform comparison,
-ordered PlatformA/PlatformB ledgers, scalar replacement, explicit-empty state, unsupported syntax,
-and redirect involvement. Neither the renderer nor the extension receives filesystem authority,
-absolute fixture paths, or a privileged alternative resolution path.
+The Workbench composes that extension through a trusted main-process query service. Its route accepts
+an editable family, section, key, platform, and explain/compare operation. The primary target is the
+globally selected Workbench project; the service reuses only that project's identity and does not
+require a package-index refresh. Engine discovery or the explicit Workbench engine configuration
+remains in the trusted process. A committed generic fixture is an explicit quick-start target for
+users without an Unreal installation, not a separate canned-result path. Every submit executes the
+same public resolver and returns one schema-validated browser-safe explanation or comparison.
+Neither the renderer nor the extension receives filesystem authority, absolute paths, or a
+privileged alternative resolution path.
 
 This first standalone extension is not yet advertised as a copy-and-own adoption bundle, so it does
 not claim the adoption-manifest/materializer conformance described by the engineering guide.

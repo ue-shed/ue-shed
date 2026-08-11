@@ -34,7 +34,8 @@ import type { SavedWorld } from "@ue-shed/protocol";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
 	CameraStatusResult,
-	ConfigExplorerShowcaseResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -51,7 +52,8 @@ import type {
 
 export type {
 	CameraStatusResult,
-	ConfigExplorerShowcaseResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -85,8 +87,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context")
 	},
 	configExplorer: {
-		showcase: (): Promise<ConfigExplorerShowcaseResult> =>
-			ipcRenderer.invoke("config-explorer:showcase")
+		query: (request: ConfigExplorerQuery): Promise<ConfigExplorerQueryResult> =>
+			ipcRenderer.invoke("config-explorer:query", request)
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),

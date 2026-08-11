@@ -1,17 +1,22 @@
 import { expect, test } from "./fixtures/workbench-test.js";
 
-test("showcases real saved-config provenance without renderer filesystem authority", async ({
+test("queries real saved-config provenance without renderer filesystem authority", async ({
 	workbench
 }, testInfo) => {
 	await workbench.expectShowcaseReady();
 	await workbench.openRoute("Config");
 	const page = workbench.page;
-	const evidence = page.getByRole("region", { name: "Config Explorer evidence" });
 
 	await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(
-		"Showcase / Config Explorer"
+		"CONFIG EXPLORER"
 	);
-	await expect(page.getByText("VALUE DIVERGES", { exact: true })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Config query workspace" })).toBeVisible();
+	await expect(page.getByLabel("Config section")).toHaveValue("Fixture.Settings");
+	await expect(page.getByLabel("Config key")).toHaveValue("Entries");
+
+	await page.getByRole("button", { name: /^COMPARE/ }).click();
+	const evidence = page.getByRole("region", { name: "Config Explorer evidence" });
+	await expect(evidence.getByText("VALUE DIVERGES", { exact: true })).toBeVisible();
 	await expect(page.getByRole("region", { name: "Platform config comparison" })).toContainText(
 		"PlatformA"
 	);
@@ -20,35 +25,24 @@ test("showcases real saved-config provenance without renderer filesystem authori
 	);
 	await page.screenshot({
 		fullPage: true,
-		path: testInfo.outputPath("config-explorer-platform-comparison.png")
+		path: testInfo.outputPath("config-explorer-editable-comparison.png")
 	});
 
-	await page.getByRole("button", { name: /Platform A/ }).click();
-	await expect(page.getByRole("list", { name: "PlatformA ordered contributions" })).toContainText(
-		"clear"
-	);
-
-	await page.getByRole("button", { name: /Platform B/ }).click();
-	await expect(page.getByRole("list", { name: "PlatformB ordered contributions" })).toContainText(
-		"append"
-	);
-
-	await page.getByRole("button", { name: /Scalar/ }).click();
+	await page.getByRole("button", { name: /Scalar override/ }).click();
+	await expect(page.getByLabel("Config key")).toHaveValue("Mode");
+	await expect(page.getByRole("button", { name: /^EXPLAIN/ })).toBeVisible();
+	await page.getByRole("button", { name: /^EXPLAIN/ }).click();
 	await expect(
 		page.getByRole("region", { name: "PlatformA effective saved value" })
 	).toContainText("PlatformA");
 
-	await page.getByRole("button", { name: /Explicit empty/ }).click();
-	await expect(
-		page.getByRole("region", { name: "PlatformA effective saved value" })
-	).toContainText("[ explicit empty ]");
-
-	await page.getByRole("button", { name: /Unsupported/ }).click();
+	await page.getByRole("button", { name: /Unsupported syntax/ }).click();
+	await page.getByRole("button", { name: /^EXPLAIN/ }).click();
 	await expect(evidence.getByText("partial coverage", { exact: true })).toBeVisible();
 	await expect(page.getByRole("region", { name: "PlatformA coverage exceptions" })).toContainText(
 		"unsupported"
 	);
 
-	await page.getByRole("button", { name: /Redirect/ }).click();
-	await expect(evidence.getByText("partial coverage", { exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "Selected project" }).click();
+	await expect(page.getByText(/Uses the project chosen in the Workbench header/)).toBeVisible();
 });

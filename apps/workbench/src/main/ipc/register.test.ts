@@ -208,11 +208,11 @@ function buildRegistrationLayer(recorder: Recorder) {
 				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult))
 	});
 	const configExplorer = makeWorkbenchConfigExplorerTestLayer({
-		showcase: () =>
-			recorder.record("configExplorer.showcase").pipe(
+		query: (request) =>
+			recorder.record(`configExplorer.query:${request.key}`).pipe(
 				Effect.as({
 					error: {
-						code: "showcase_unavailable" as const,
+						code: "sample_unavailable" as const,
 						message: "Fixture unavailable.",
 						recovery: "Launch through pnpm showcase.",
 						retrySafe: false
@@ -556,21 +556,28 @@ it.effect("dispatches showcase:context to Showcase.context", () =>
 	})
 );
 
-it.effect("dispatches config-explorer:showcase to WorkbenchConfigExplorer", () =>
+it.effect("dispatches config-explorer:query to WorkbenchConfigExplorer", () =>
 	Effect.gen(function* () {
 		const { recorder, result } = yield* runRegistered((ipc) =>
-			ipc.invoke("config-explorer:showcase")
+			ipc.invoke("config-explorer:query", {
+				family: "Game",
+				key: "Entries",
+				mode: "explain",
+				platform: "PlatformA",
+				section: "Fixture.Settings",
+				source: "sample_fixture"
+			})
 		);
 		expect(result).toEqual({
 			error: {
-				code: "showcase_unavailable",
+				code: "sample_unavailable",
 				message: "Fixture unavailable.",
 				recovery: "Launch through pnpm showcase.",
 				retrySafe: false
 			},
 			status: "failed"
 		});
-		expect(yield* recorder.calls()).toEqual(["configExplorer.showcase"]);
+		expect(yield* recorder.calls()).toEqual(["configExplorer.query:Entries"]);
 	})
 );
 

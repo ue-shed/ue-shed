@@ -1,9 +1,10 @@
-import { ConfigExplorerShowcaseResult } from "../main/ipc-contracts.js";
+import { ConfigExplorerQueryResult } from "../main/ipc-contracts.js";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
+import { cleanup, render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import type { ConfigExplorerQuery } from "../main/preload.js";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -11,12 +12,11 @@ const runtime = ManagedRuntime.make(Layer.empty);
 function explanation(options: {
 	readonly key: string;
 	readonly platform: "PlatformA" | "PlatformB";
-	readonly status?: "complete" | "partial";
 	readonly value: unknown;
 }) {
 	return {
 		schemaVersion: 1,
-		status: options.status ?? "complete",
+		status: "complete",
 		project: { descriptor: "FixtureProject" },
 		platform: options.platform,
 		family: "Game",
@@ -29,16 +29,13 @@ function explanation(options: {
 				order: 0,
 				layer: "ProjectDefault",
 				source: { scope: "project", path: "Config/DefaultGame.ini" },
-				status: options.status === "partial" ? "unsupported" : "read"
+				status: "read"
 			}
 		],
 		authorities: [
 			{ authority: "live_cvars", status: "excluded", detail: "Not live runtime state." }
 		],
-		diagnostics:
-			options.status === "partial"
-				? [{ code: "unsupported_operator", message: "Keyed arrays are unsupported." }]
-				: []
+		diagnostics: []
 	};
 }
 
@@ -53,9 +50,8 @@ const platformB = explanation({
 	value: { kind: "array", values: ["PlatformB", "PlatformB"] }
 });
 
-const ready = Schema.decodeUnknownSync(ConfigExplorerShowcaseResult)({
-	status: "ready",
-	comparison: {
+const ready = Schema.decodeUnknownSync(ConfigExplorerQueryResult)({
+	evidence: {
 		schemaVersion: 1,
 		status: "different",
 		left: platformA,
@@ -63,73 +59,70 @@ const ready = Schema.decodeUnknownSync(ConfigExplorerShowcaseResult)({
 		valueChanged: true,
 		coverageChanged: false
 	},
-	explicitEmpty: explanation({
-		key: "ExplicitEmpty",
-		platform: "PlatformA",
-		value: { kind: "empty_array" }
-	}),
-	redirectInvolvement: explanation({
-		key: "LegacyRedirected",
-		platform: "PlatformA",
-		status: "partial",
-		value: { kind: "missing" }
-	}),
-	scalarReplacement: explanation({
-		key: "Mode",
-		platform: "PlatformA",
-		value: { kind: "scalar", value: "PlatformA" }
-	}),
-	unsupportedSyntax: explanation({
-		key: "Unsupported",
-		platform: "PlatformA",
-		status: "partial",
-		value: { kind: "missing" }
-	})
+	mode: "compare",
+	projectName: "UE Shed config fixture",
+	source: "sample_fixture",
+	status: "ready"
 });
 
 afterEach(cleanup);
 afterAll(() => runtime.dispose());
 
-function renderShowcase(result = ready) {
+function renderShowcase(args: {
+	readonly query: (request: ConfigExplorerQuery) => Effect.Effect<ConfigExplorerQueryResult>;
+}) {
 	render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
-			<ConfigExplorerShowcase
-				client={{ configExplorerShowcase: () => Effect.succeed(result) }}
-			/>
+			<ConfigExplorerShowcase client={{ configExplorerQuery: args.query }} />
 		</EffectRuntimeProvider>
 	));
 }
 
 describe("ConfigExplorerShowcase", () => {
-	it("loads real-shaped supplied evidence and switches between showcase presets", async () => {
-		renderShowcase();
-		await screen.findByText("VALUE DIVERGES");
-		expect(screen.getByRole("heading", { name: "PlatformA" })).toBeDefined();
-		expect(screen.getByRole("heading", { name: "PlatformB" })).toBeDefined();
+	it("runs an editable platform comparison and renders supplied evidence", async () => {
+		const requests: ConfigExplorerQuery[] = [];
+		renderShowcase({
+			query: (request) => {
+				requests.push(request);
+				return Effect.succeed(ready);
+			}
+		});
 
-		await userEvent.setup().click(screen.getByRole("button", { name: /Explicit empty/ }));
-		expect(await screen.findByText("[ explicit empty ]")).toBeDefined();
+		await userEvent.setup().clear(screen.getByLabelText("Config key"));
+		await userEvent.setup().type(screen.getByLabelText("Config key"), "Entries");
+		await userEvent.setup().click(screen.getByRole("button", { name: /^COMPARE/ }));
 
-		await userEvent.setup().click(screen.getByRole("button", { name: /Unsupported/ }));
-		expect((await screen.findAllByText("partial coverage")).length).toBeGreaterThan(0);
-		expect(screen.getAllByText("unsupported").length).toBeGreaterThan(0);
+		expect(await screen.findByText("VALUE DIVERGES")).toBeDefined();
+		expect(requests).toEqual([
+			{
+				family: "Game",
+				key: "Entries",
+				leftPlatform: "PlatformA",
+				mode: "compare",
+				rightPlatform: "PlatformB",
+				section: "Fixture.Settings",
+				source: "sample_fixture"
+			}
+		]);
 	});
 
-	it("renders typed acquisition failures with recovery and retry", async () => {
-		const failed = Schema.decodeUnknownSync(ConfigExplorerShowcaseResult)({
+	it("switches to the selected project and surfaces typed recovery", async () => {
+		const failed = Schema.decodeUnknownSync(ConfigExplorerQueryResult)({
 			error: {
-				code: "showcase_unavailable",
-				message: "Fixture unavailable.",
-				recovery: "Launch through pnpm showcase.",
-				retrySafe: false
+				code: "project_unavailable",
+				message: "No Workbench project is selected.",
+				recovery: "Choose a project from the Workbench header, then retry.",
+				retrySafe: true
 			},
 			status: "failed"
 		});
-		renderShowcase(failed);
+		renderShowcase({ query: () => Effect.succeed(failed) });
+
+		await userEvent.setup().click(screen.getByRole("button", { name: "Selected project" }));
+		await userEvent.setup().click(screen.getByRole("button", { name: /^COMPARE/ }));
+
 		const alert = await screen.findByRole("alert");
-		expect(alert.textContent).toContain("Fixture unavailable");
-		expect(alert.textContent).toContain("pnpm showcase");
-		expect(screen.getByRole("button", { name: "RETRY" })).toBeDefined();
-		await waitFor(() => expect(screen.queryByText(/Reconstructing/)).toBeNull());
+		expect(alert.textContent).toContain("No Workbench project is selected");
+		expect(alert.textContent).toContain("Choose a project from the Workbench header");
 	});
 });

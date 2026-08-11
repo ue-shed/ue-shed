@@ -29,9 +29,11 @@ export function ensureUassetExecutable(environment = process.env) {
 		);
 	}
 
+	const cargoTargetDirectory = environment.CARGO_TARGET_DIR
+		? resolve(repositoryRoot, environment.CARGO_TARGET_DIR)
+		: join(repositoryRoot, "target");
 	const executable = join(
-		repositoryRoot,
-		"target",
+		cargoTargetDirectory,
 		"debug",
 		process.platform === "win32" ? "uasset.exe" : "uasset"
 	);

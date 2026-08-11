@@ -171,6 +171,18 @@ the draft PR, then mark it ready only after portable and real UE 5.7 gates pass.
 - [x] `pnpm check` passes after substantive edits and immediately before handoff.
 - [x] The PR contains evidence and is ready for review.
 
+## Demo usability follow-up
+
+- [x] Workbench opens an optional four-step Movement Gym presenter guide driven only by observed
+      client/producer state.
+- [x] Timeline lanes distinguish the executable `LIVE SLICE` from broader `PREVIEW ONLY` material.
+- [x] Live world-state and missing evidence render as structured receipts without fabricated camera
+      frames.
+- [x] The guide exposes the equivalent public CLI command, and `docs/showcase.md` contains the exact
+      editor-mode fixture walkthrough.
+- [x] External Cargo target configuration works across native tests, WASM parity, public package
+      assembly, adoption, and the final Vitest launcher; the final `pnpm check` passes.
+
 ## STOP conditions
 
 - UE 5.7 source contradicts the pre-evaluation model or the implementation would need to call it

@@ -13,9 +13,9 @@ truthful execution, not a claim that the broader recording/timeline vision is sh
 
 ## Delivery status
 
-The Scenario Studio timeline remains useful as a portable preview. Plan 041 adds the first live PIE
-execution slice described here. Until its real Unreal and repository acceptance gates pass, the
-capability remains draft rather than release-ready.
+The Scenario Studio timeline remains useful as a portable preview. Plan 041 delivers the first live
+PIE execution slice described here; its real Unreal and repository acceptance gates pass. Broader
+timeline lanes remain preview-only until a later focused product contract supports them.
 
 ## Supported live slice
 
@@ -124,6 +124,11 @@ new Unreal streaming transport. Another trusted host may provide the interface d
 components never receive raw process, filesystem, Remote Control, or Unreal authority. The Workbench
 run console exposes the selected endpoint, the latest producer state, game time, and explicit
 cancellation. It does not invent lifecycle transitions that occurred before a status read.
+
+Workbench's optional demo guide follows those same observed states and exposes the equivalent CLI
+command. Timeline lanes are labeled `LIVE SLICE` or `PREVIEW ONLY`, and the results desk renders
+world-state evidence as a structured receipt rather than substituting a camera image. Presentation
+mode adds no execution authority and does not simulate producer progress.
 
 ```text
 CLI ───────────────┐

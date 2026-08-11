@@ -312,7 +312,7 @@ export function AppShell() {
 						<ContentObservatoryRoute client={contentObservatoryClient} />
 					</Match>
 					<Match when={route() === "#/scenarios"}>
-						<ScenarioStudioRoute client={scenarioStudioClient} />
+						<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
 					</Match>
 					<Match when={route() === "#/camera-lab"}>
 						<CameraLab />

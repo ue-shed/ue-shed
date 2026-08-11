@@ -13,13 +13,13 @@ afterEach(cleanup);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 
-function renderRoute(client?: ScenarioStudioClient) {
+function renderRoute(client?: ScenarioStudioClient, showDemoGuide = false) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			{client === undefined ? (
-				<ScenarioStudioRoute />
+				<ScenarioStudioRoute showDemoGuide={showDemoGuide} />
 			) : (
-				<ScenarioStudioRoute client={client} />
+				<ScenarioStudioRoute client={client} showDemoGuide={showDemoGuide} />
 			)}
 		</EffectRuntimeProvider>
 	));
@@ -71,6 +71,24 @@ describe("ScenarioStudioRoute", () => {
 		expect(screen.getByText("2 found")).toBeDefined();
 	});
 
+	it("guides the showcase from live lanes to the same headless runner", async () => {
+		const user = userEvent.setup();
+		renderRoute(clientWith(), true);
+
+		await screen.findByDisplayValue(liveHandle.endpoint);
+		expect(screen.getByRole("region", { name: "Movement Gym demo guide" })).toBeDefined();
+		expect(screen.getAllByText("LIVE SLICE")).toHaveLength(2);
+		// Three preview-only lanes plus the current top-level PREVIEW ONLY runtime state.
+		expect(screen.getAllByText("PREVIEW ONLY")).toHaveLength(4);
+		expect(screen.getByText(`pnpm ue-shed scenarios run ${liveHandle.endpoint}`)).toBeDefined();
+
+		const input = screen.getByLabelText("Remote Control endpoint");
+		await user.clear(input);
+		await user.type(input, "http://fixture:30123");
+
+		expect(screen.getByText("pnpm ue-shed scenarios run http://fixture:30123")).toBeDefined();
+	});
+
 	it("replaces preview data with a live result through the host-neutral client", async () => {
 		const user = userEvent.setup();
 		const client = clientWith();
@@ -81,6 +99,45 @@ describe("ScenarioStudioRoute", () => {
 
 		expect(await screen.findByText("LIVE RESULT")).toBeDefined();
 		expect(screen.getByText("Structured PIE result")).toBeDefined();
+	});
+
+	it("renders live world-state evidence without inventing a camera capture", async () => {
+		const user = userEvent.setup();
+		const worldStateEvidence = movementGymRuns[0]?.evidence.find(
+			(evidence) => evidence.type === "world_state"
+		);
+		const baselineRun = movementGymRuns[1];
+		if (worldStateEvidence === undefined || baselineRun === undefined) {
+			throw new Error("Movement Gym demo runs must contain baseline world-state evidence.");
+		}
+		const result = {
+			...baselineRun,
+			evidence: [worldStateEvidence],
+			inputIsolation: {
+				established: true,
+				method: "slate_input_preprocessor" as const,
+				restored: true
+			}
+		};
+		renderRoute(
+			clientWith({
+				watch: () =>
+					Stream.make({
+						_tag: "Terminal" as const,
+						contract: scenarioWireContract,
+						result
+					})
+			}),
+			true
+		);
+
+		await screen.findByDisplayValue(liveHandle.endpoint);
+		await user.click(screen.getByRole("button", { name: "RUN IN UNREAL" }));
+
+		expect(await screen.findByText("INPUT RESTORED")).toBeDefined();
+		expect(screen.getAllByText("world state")).toHaveLength(2);
+		expect(screen.getByText(/bounded producer evidence/)).toBeDefined();
+		expect(screen.queryByText("CAPTURED · PLAYER CAMERA")).toBeNull();
 	});
 
 	it("shows capability recovery without claiming live input was blocked", async () => {

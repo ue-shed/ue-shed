@@ -3,7 +3,12 @@ import type {
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
 	TextCorpusSearchRequest,
-	TextCorpusSearchResult
+	TextCorpusSearchResult,
+	TextQualityFocusRequest,
+	TextQualityFocusResult,
+	TextQualityQueryRunResult,
+	TextQualitySearchRequest,
+	TextQualitySearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import type { TaskProgress } from "@ue-shed/ui/task-progress";
@@ -37,6 +42,16 @@ export interface GameTextClientShape {
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchResult, GameTextClientError>;
+	readonly chooseQualityRules: () => Effect.Effect<
+		TextQualityQueryRunResult,
+		GameTextClientError
+	>;
+	readonly qualityFocus: (
+		request: TextQualityFocusRequest
+	) => Effect.Effect<TextQualityFocusResult, GameTextClientError>;
+	readonly qualitySearch: (
+		request: TextQualitySearchRequest
+	) => Effect.Effect<TextQualitySearchResult, GameTextClientError>;
 }
 
 export class GameTextClient extends Context.Service<GameTextClient, GameTextClientShape>()(

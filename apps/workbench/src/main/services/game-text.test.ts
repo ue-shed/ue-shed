@@ -6,8 +6,40 @@ import { expect } from "vitest";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchGameText, WorkbenchGameTextLive } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
+import { ElectronDialog } from "../adapters/electron-dialog.js";
+import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 
-const gameTextLive = WorkbenchGameTextLive;
+const gameTextAdapters = Layer.mergeAll(
+	Layer.succeed(
+		ElectronDialog,
+		ElectronDialog.of({
+			chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
+			chooseFile: () => Effect.succeed({ status: "cancelled" }),
+			chooseFiles: () => Effect.succeed({ status: "cancelled" })
+		})
+	),
+	makeLocalFilesTestLayer()
+);
+const gameTextLive = WorkbenchGameTextLive.pipe(Layer.provide(gameTextAdapters));
+
+function qualityGameTextLive(contents: string) {
+	const path = "C:/FixtureProject/game-text-quality.json";
+	return WorkbenchGameTextLive.pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				Layer.succeed(
+					ElectronDialog,
+					ElectronDialog.of({
+						chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
+						chooseFile: () => Effect.succeed({ path, status: "selected" }),
+						chooseFiles: () => Effect.succeed({ status: "cancelled" })
+					})
+				),
+				makeLocalFilesTestLayer(new Map([[path, new TextEncoder().encode(contents)]]))
+			)
+		)
+	);
+}
 
 const emptyCorpus = {
 	coverage: {
@@ -258,4 +290,46 @@ it.effect("cancels choose-and-scan when global project selection is cancelled", 
 			)
 		)
 	)
+);
+
+it.effect(
+	"returns typed actionable rule failures without replacing the retained corpus query",
+	() =>
+		Effect.gen(function* () {
+			const service = yield* WorkbenchGameText;
+			expect(yield* service.chooseQualityRules()).toEqual({ status: "not_ready" });
+			expect((yield* service.configuredRefresh()).status).toBe("completed");
+			const reviewed = yield* service.chooseQualityRules();
+			expect(reviewed).toEqual({
+				error: {
+					code: "invalid_rules",
+					message: "The Game Text quality rule file is not valid JSON.",
+					recovery: "Correct the JSON syntax and retry with a version-1 rule document.",
+					retrySafe: true
+				},
+				status: "failed"
+			});
+			expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
+				page: { total: 0, units: [] },
+				status: "ready"
+			});
+			expect(yield* service.qualitySearch({ filter: "all", pageSize: 50 })).toEqual({
+				status: "not_ready"
+			});
+		}).pipe(
+			Effect.provide(
+				qualityGameTextLive("{secret-authored-term").pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							configuration,
+							makeTextCorpusServiceTestLayer({
+								scan: () => Effect.die("full project scan is not used"),
+								scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+							}),
+							selectedProject
+						)
+					)
+				)
+			)
+		)
 );

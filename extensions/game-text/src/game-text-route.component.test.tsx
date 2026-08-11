@@ -122,8 +122,9 @@ afterEach(cleanup);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 
-function makeClient(): GameTextClientShape {
+function makeClient(overrides: Partial<GameTextClientShape> = {}): GameTextClientShape {
 	return {
+		chooseQualityRules: () => Effect.succeed({ status: "not_ready" }),
 		chooseProjectAndScan: () => Effect.succeed(completed),
 		loadConfiguredProject: () => Effect.succeed(completed),
 		progress: () =>
@@ -172,14 +173,17 @@ function makeClient(): GameTextClientShape {
 				},
 				objectPath,
 				status: "located"
-			})
+			}),
+		qualityFocus: () => Effect.succeed({ status: "not_ready" }),
+		qualitySearch: () => Effect.succeed({ status: "not_ready" }),
+		...overrides
 	};
 }
 
-function renderRoute() {
+function renderRoute(client = makeClient()) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
-			<GameTextRoute client={makeClient()} />
+			<GameTextRoute client={client} />
 		</EffectRuntimeProvider>
 	));
 }
@@ -329,5 +333,138 @@ describe("GameTextRoute interactions", () => {
 				})
 			).toBeNull();
 		});
+	});
+
+	it("loads project-authored rules and reviews typed findings in the Workbench", async () => {
+		const user = userEvent.setup();
+		const qualitySummary = {
+			characterBudgetCount: 1,
+			coverage: {
+				...corpus.coverage,
+				partialPackages: 1,
+				unsupportedTextProperties: 2
+			},
+			diagnosticCount: 1,
+			findingCount: 2,
+			roles: [{ matchedOccurrences: 2, matchedTextUnits: 2, role: "menu.prompt" as never }],
+			ruleDocumentVersion: 1 as const,
+			rules: [
+				{ findingCount: 1, ruleId: "menu.prompt.characters" as never },
+				{ findingCount: 1, ruleId: "menu.prompt.terms" as never }
+			],
+			schemaVersion: 1 as const,
+			status: "partial" as const,
+			terminologyCount: 1
+		};
+		const budgetFinding = {
+			actual: "58 characters",
+			expectation: "Maximum 32 characters",
+			id: "quality-finding:1" as never,
+			kind: "character_budget" as const,
+			occurrenceCount: 1,
+			recovery: "Shorten the prompt while keeping the action clear.",
+			role: "menu.prompt",
+			ruleId: "menu.prompt.characters",
+			sourceExcerpt: "Press the old button to continue into the next adventure",
+			textUnitId: makeTextUnitId("unreal:UI:Continue")
+		};
+		const terminologyFinding = {
+			actual: "“old” at 10–13",
+			expectation: "Prefer “select”",
+			id: "quality-finding:2" as never,
+			kind: "terminology" as const,
+			occurrenceCount: 1,
+			recovery: "Use the preferred interaction term.",
+			role: "menu.prompt",
+			ruleId: "menu.prompt.terms",
+			sourceExcerpt: "Press the old button to continue",
+			textUnitId: makeTextUnitId("unreal:UI:Continue")
+		};
+		const qualityClient = makeClient({
+			chooseQualityRules: () =>
+				Effect.succeed({ status: "completed" as const, summary: qualitySummary }),
+			qualitySearch: (request) =>
+				Effect.succeed({
+					page: {
+						findings:
+							request.filter === "character_budget"
+								? [budgetFinding]
+								: request.filter === "terminology"
+									? [terminologyFinding]
+									: [budgetFinding, terminologyFinding],
+						total: request.filter === "all" ? 2 : 1
+					},
+					status: "ready" as const
+				}),
+			qualityFocus: (request) =>
+				Effect.succeed({
+					focus:
+						request.id === budgetFinding.id
+							? {
+									actual: {
+										characterCount: 58,
+										kind: "character_count" as const
+									},
+									affectedOccurrences: [
+										{
+											id: makeTextOccurrenceId("occurrence:continue"),
+											location: corpus.units[0]!.occurrences[0]!.location,
+											packageFile: "Content/Text/ST_Game.uasset"
+										}
+									],
+									expectation: {
+										kind: "maximum_characters" as const,
+										maximumCharacters: 32
+									},
+									id: budgetFinding.id,
+									kind: "character_budget" as const,
+									recovery: budgetFinding.recovery,
+									role: budgetFinding.role,
+									ruleId: budgetFinding.ruleId,
+									sourceExcerpt: budgetFinding.sourceExcerpt,
+									sourceTruncated: false,
+									textUnitId: budgetFinding.textUnitId,
+									totalOccurrences: 1
+								}
+							: {
+									actual: {
+										end: 13,
+										kind: "terminology_match" as const,
+										start: 10,
+										term: "old"
+									},
+									affectedOccurrences: [],
+									expectation: {
+										kind: "preferred_term" as const,
+										discouragedTerm: "old",
+										preferredTerm: "select"
+									},
+									id: terminologyFinding.id,
+									kind: "terminology" as const,
+									recovery: terminologyFinding.recovery,
+									role: terminologyFinding.role,
+									ruleId: terminologyFinding.ruleId,
+									sourceExcerpt: terminologyFinding.sourceExcerpt,
+									sourceTruncated: false,
+									textUnitId: terminologyFinding.textUnitId,
+									totalOccurrences: 1
+								},
+					status: "found" as const
+				})
+		});
+		renderRoute(qualityClient);
+		await screen.findByRole("region", { name: "Text units" });
+
+		await user.click(screen.getByRole("button", { name: "Load quality rules" }));
+		const findings = await screen.findByRole("region", { name: "Quality findings" });
+		expect(within(findings).getByText("58 characters")).toBeDefined();
+		expect(screen.getByText("PARTIAL CORPUS")).toBeDefined();
+		expect(screen.getByText(/2 unsupported properties/)).toBeDefined();
+		expect(
+			screen.getByRole("complementary", { name: "Quality finding detail" }).textContent
+		).toContain("Shorten the prompt while keeping the action clear.");
+
+		await user.click(screen.getByRole("button", { name: /Terminology/ }));
+		await waitFor(() => expect(within(findings).getByText("“old” at 10–13")).toBeDefined());
 	});
 });

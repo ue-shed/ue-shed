@@ -42,7 +42,12 @@ import {
 	TextCorpusQueryRunResult,
 	TextCorpusRunResult,
 	TextCorpusSearchRequest,
-	TextCorpusSearchResult
+	TextCorpusSearchResult,
+	TextQualityFocusRequest,
+	TextQualityFocusResult,
+	TextQualityQueryRunResult,
+	TextQualitySearchRequest,
+	TextQualitySearchResult
 } from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
 import {
@@ -453,6 +458,21 @@ export const invokeContracts = {
 		channel: "game-text:focus",
 		args: Schema.Tuple([TextCorpusFocusRequest]),
 		result: TextCorpusFocusResult
+	}),
+	"game-text:quality:choose-rules": invoke({
+		channel: "game-text:quality:choose-rules",
+		args: EmptyArgs,
+		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:search": invoke({
+		channel: "game-text:quality:search",
+		args: Schema.Tuple([TextQualitySearchRequest]),
+		result: TextQualitySearchResult
+	}),
+	"game-text:quality:focus": invoke({
+		channel: "game-text:quality:focus",
+		args: Schema.Tuple([TextQualityFocusRequest]),
+		result: TextQualityFocusResult
 	}),
 	"asset-navigation:locate": invoke({
 		channel: "asset-navigation:locate",

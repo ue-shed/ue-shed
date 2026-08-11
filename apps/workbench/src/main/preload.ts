@@ -123,7 +123,13 @@ contextBridge.exposeInMainWorld("ueShed", {
 		search: (request: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:search", request),
 		focus: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:focus", request)
+			ipcRenderer.invoke("game-text:focus", request),
+		chooseQualityRules: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:choose-rules"),
+		qualitySearch: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:search", request),
+		qualityFocus: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:focus", request)
 	},
 	inputAtlas: {
 		loadConfiguredProject: (): Promise<unknown> =>

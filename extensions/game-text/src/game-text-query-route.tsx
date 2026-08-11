@@ -6,6 +6,8 @@ import type {
 	TextCorpusSearchPage,
 	TextReviewLens,
 	TextReviewSignal,
+	TextQualityQueryRunResult,
+	TextQualityQuerySummary,
 	TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
@@ -15,6 +17,7 @@ import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect, Schedule, Stream } from "effect";
 import { For, Match, Show, Switch, createSignal, onMount, type Accessor } from "solid-js";
 import type { GameTextClientShape } from "./game-text-client.js";
+import { GameTextQualityWorkspace } from "./game-text-quality-workspace.js";
 import {
 	identityLabel,
 	primaryContext,
@@ -215,6 +218,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
 	const locateAction = createEffectAction();
+	const qualityAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [progress, setProgress] = createSignal<TaskProgress>({
@@ -231,6 +235,10 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const [selectedId, setSelectedId] = createSignal<TextUnitSearchResult["id"]>();
 	const [focus, setFocus] = createSignal<TextCorpusFocus>();
 	const [locateFeedback, setLocateFeedback] = createSignal<LocateFeedback>({ status: "idle" });
+	const [mode, setMode] = createSignal<"corpus" | "quality">("corpus");
+	const [qualitySummary, setQualitySummary] = createSignal<TextQualityQuerySummary>();
+	const [qualityFailure, setQualityFailure] =
+		createSignal<Extract<TextQualityQueryRunResult, { status: "failed" }>["error"]>();
 	let searchGeneration = 0;
 	let focusGeneration = 0;
 
@@ -317,6 +325,9 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	};
 
 	const refresh = () => {
+		setMode("corpus");
+		setQualitySummary(undefined);
+		setQualityFailure(undefined);
 		setState({ status: "loading" });
 		setProgress({ completed: 0, phase: "idle", stage: "game_text", total: 0 });
 		progressSubscription.subscribe(
@@ -329,6 +340,25 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 				setState(failure(cause));
 			},
 			onSuccess: applyRefresh
+		});
+	};
+
+	const loadQualityRules = () => {
+		setQualityFailure(undefined);
+		qualityAction.run(props.client.chooseQualityRules(), {
+			onFailure: (cause) =>
+				setQualityFailure({
+					code: "contract_failure",
+					message: String(cause),
+					recovery: "Restart Workbench and retry loading the rule document.",
+					retrySafe: true
+				}),
+			onSuccess: (result) => {
+				if (result.status === "completed") {
+					setQualitySummary(result.summary);
+					setMode("quality");
+				} else if (result.status === "failed") setQualityFailure(result.error);
+			}
 		});
 	};
 
@@ -345,16 +375,27 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 			<header {...stylex.props(styles.header)}>
 				<div>
 					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-						Game text / Corpus
+						Game text / {mode() === "quality" ? "Quality review" : "Corpus"}
 					</nav>
 					<h1 {...stylex.props(styles.title)}>Game text workbench</h1>
 					<p {...stylex.props(styles.subtitle)}>
 						Review source, identity, authored context, and every known use.
 					</p>
 				</div>
-				<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
-					Rescan
-				</button>
+				<span {...stylex.props(styles.headerActions)}>
+					<Show when={state().status === "ready"}>
+						<button
+							type="button"
+							onClick={loadQualityRules}
+							{...stylex.props(styles.qualityButton)}
+						>
+							{qualitySummary() ? "Replace quality rules" : "Load quality rules"}
+						</button>
+					</Show>
+					<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+						Rescan
+					</button>
+				</span>
 			</header>
 			<Switch>
 				<Match when={state().status === "loading"}>
@@ -382,34 +423,90 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 				<Match when={state().status === "ready"}>
 					<Show when={summary()}>
 						{(currentSummary) => (
-							<TextCorpusWorkspace
-								summary={currentSummary()}
-								page={page}
-								query={query}
-								capability={capability}
-								lens={lens}
-								selectedId={selectedId}
-								focus={focus}
-								locateFeedback={locateFeedback}
-								onQuery={(value) => {
-									setQuery(value);
-									requestPage({ query: value });
-								}}
-								onCapability={(value) => {
-									setCapability(value);
-									requestPage({ capability: value });
-								}}
-								onLens={(value) => {
-									setLens(value);
-									requestPage({ lens: value });
-								}}
-								onNextPage={(cursor) => requestPage({ cursor })}
-								onLocate={locateAsset}
-								onSelect={(id) => {
-									setSelectedId(id);
-									requestFocus(id);
-								}}
-							/>
+							<>
+								<div
+									role="tablist"
+									aria-label="Game Text view"
+									{...stylex.props(styles.modeTabs)}
+								>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={mode() === "corpus"}
+										onClick={() => setMode("corpus")}
+										{...stylex.props(
+											styles.modeTab,
+											mode() === "corpus" && styles.modeTabActive
+										)}
+									>
+										Corpus browser
+									</button>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={mode() === "quality"}
+										disabled={qualitySummary() === undefined}
+										onClick={() => setMode("quality")}
+										{...stylex.props(
+											styles.modeTab,
+											mode() === "quality" && styles.modeTabActive
+										)}
+									>
+										Quality review
+										<Show when={qualitySummary()}>
+											{(quality) => <b>{quality().findingCount}</b>}
+										</Show>
+									</button>
+								</div>
+								<Show when={qualityFailure()}>
+									{(error) => (
+										<div role="alert" {...stylex.props(styles.qualityError)}>
+											<strong>{error().message}</strong>
+											<span>{error().recovery}</span>
+										</div>
+									)}
+								</Show>
+								<Show
+									when={mode() === "quality" ? qualitySummary() : undefined}
+									fallback={
+										<TextCorpusWorkspace
+											summary={currentSummary()}
+											page={page}
+											query={query}
+											capability={capability}
+											lens={lens}
+											selectedId={selectedId}
+											focus={focus}
+											locateFeedback={locateFeedback}
+											onQuery={(value) => {
+												setQuery(value);
+												requestPage({ query: value });
+											}}
+											onCapability={(value) => {
+												setCapability(value);
+												requestPage({ capability: value });
+											}}
+											onLens={(value) => {
+												setLens(value);
+												requestPage({ lens: value });
+											}}
+											onNextPage={(cursor) => requestPage({ cursor })}
+											onLocate={locateAsset}
+											onSelect={(id) => {
+												setSelectedId(id);
+												requestFocus(id);
+											}}
+										/>
+									}
+								>
+									{(quality) => (
+										<GameTextQualityWorkspace
+											client={props.client}
+											summary={quality()}
+										/>
+									)}
+								</Show>
+							</>
 						)}
 					</Show>
 				</Match>
@@ -938,6 +1035,50 @@ const styles = stylex.create({
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
+	},
+	headerActions: { display: "flex", alignItems: "center", gap: 6 },
+	qualityButton: {
+		border: "1px solid #884a36",
+		backgroundColor: { default: "#382019", ":hover": "#4a291f" },
+		color: "#ffd0bf",
+		padding: "6px 10px",
+		cursor: "pointer",
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 10
+	},
+	modeTabs: {
+		display: "flex",
+		alignItems: "stretch",
+		marginBottom: 8,
+		borderBottom: `1px solid ${tokens.colorBorder}`
+	},
+	modeTab: {
+		display: "flex",
+		alignItems: "center",
+		gap: 7,
+		border: 0,
+		borderRight: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: "#151311", ":hover": "#211d1a" },
+		color: tokens.colorTextMuted,
+		padding: "7px 12px",
+		fontSize: 10,
+		cursor: "pointer",
+		opacity: { default: 1, ":disabled": 0.45 }
+	},
+	modeTabActive: {
+		color: "#ffd0bf",
+		backgroundColor: "#2b1d18",
+		boxShadow: "inset 0 -2px #e87655"
+	},
+	qualityError: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 3,
+		marginBottom: 8,
+		padding: "8px 10px",
+		border: `1px solid ${tokens.colorDanger}`,
+		color: "#efaa91",
+		fontSize: 9
 	},
 	empty: {
 		minHeight: 380,

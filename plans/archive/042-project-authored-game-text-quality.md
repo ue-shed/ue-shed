@@ -16,7 +16,7 @@
 
 ## Status
 
-- **State**: DONE — typed rules, pure evaluation, CLI review, and portable gates verified
+- **State**: DONE — typed rules, pure evaluation, CLI and Workbench review, and portable gates verified
 - **Priority**: P1
 - **Effort**: L
 - **Risk**: MEDIUM — adds a project-authored rules boundary and CLI workflow over confidential text
@@ -51,9 +51,9 @@ survive evaluation unchanged. No source or localization mutation is introduced.
   browsing heuristic and never becomes a configured finding or changes with a rule document.
 - Explicit review output may contain authored evidence. Telemetry, spans, metrics, and ordinary
   errors contain no source text, project paths, identities, rule contents, or terms.
-- Workbench presentation is optional for this first slice. Any integration uses only the existing
-  trusted-host `GameTextClient`/query boundary and bounded browser-safe schemas; no full report or
-  corpus crosses renderer IPC.
+- Workbench presentation uses only the existing trusted-host `GameTextClient`/query boundary and
+  bounded browser-safe schemas. Workbench main retains the corpus and report; no rule document,
+  full report, or corpus crosses renderer IPC.
 
 ## Phase 1 — Bootstrap contract and draft PR
 
@@ -158,6 +158,11 @@ existing scan/search/focus behavior remains compatible.
   `pnpm run check:precommit`, and `pnpm check` on 2026-08-11. Three unrelated CLI E2E cases timed
   out once under native-build load and then passed together in isolation before the final full
   green run.
+- Added the Workbench quality surface through bounded summary/search/focus IPC. Component, service,
+  and query tests cover typed invalid-rule recovery, partial coverage, finding filters, and focused
+  evidence. A generic fixture rule document and an actual-app Electron recording exercise budgets,
+  forbidden and preferred terminology, corpus/quality switching, and occurrence evidence without
+  presentation overlays.
 
 Focused commands:
 

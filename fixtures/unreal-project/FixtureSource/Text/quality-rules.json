@@ -1,0 +1,45 @@
+{
+	"schemaVersion": 1,
+	"roles": [
+		{
+			"id": "fixture.prompt",
+			"description": "Player-facing prompts in the generic fixture String Table",
+			"scopes": [
+				{
+					"matchers": [
+						{ "kind": "location_kind", "value": "string_table_entry" },
+						{
+							"kind": "string_table_entry",
+							"operator": "prefix",
+							"value": "Prompt"
+						}
+					]
+				}
+			]
+		}
+	],
+	"rules": [
+		{
+			"kind": "character_budget",
+			"id": "fixture.prompt.characters",
+			"role": "fixture.prompt",
+			"maximumCharacters": 10,
+			"recovery": "Shorten the prompt or revise the project-authored budget."
+		},
+		{
+			"kind": "terminology",
+			"id": "fixture.prompt.terms",
+			"role": "fixture.prompt",
+			"caseSensitive": false,
+			"terms": [
+				{ "kind": "forbidden", "term": "skip" },
+				{
+					"kind": "preferred",
+					"term": "proceed",
+					"alternatives": ["continue"]
+				}
+			],
+			"recovery": "Use the preferred project terminology and review the affected context."
+		}
+	]
+}

@@ -86,6 +86,9 @@ declare global {
 				readonly progress: () => Promise<unknown>;
 				readonly search: (request: unknown) => Promise<unknown>;
 				readonly focus: (request: unknown) => Promise<unknown>;
+				readonly chooseQualityRules: () => Promise<unknown>;
+				readonly qualitySearch: (request: unknown) => Promise<unknown>;
+				readonly qualityFocus: (request: unknown) => Promise<unknown>;
 			};
 			readonly inputAtlas: {
 				readonly loadConfiguredProject: () => Promise<unknown>;

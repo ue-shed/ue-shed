@@ -96,11 +96,19 @@ The CLI surface is `ue-shed text review <project-root> --rules <file>`, with the
 reader selection. Rule-file IO and decoding are typed boundary failures with safe recovery text.
 The evaluator itself is a pure exported function over a decoded rule document and `TextCorpus`.
 
-Browser-safe report, finding, and query schemas live in `@ue-shed/game-text/browser` when a trusted
-host presents quality results. Workbench integration, when enabled, must adapt them through the
-existing `GameTextClient` and corpus query boundary. The renderer receives bounded summaries,
-finding pages, and focused evidence only; it receives neither filesystem authority, rule-file
-authority, nor a complete corpus.
+Browser-safe report, finding, and query schemas live in `@ue-shed/game-text/browser` for trusted
+host presentation. Workbench exposes quality review through the existing `GameTextClient` and
+corpus query boundary. Its trusted main process retains the active corpus, decoded rules, and
+evaluated report; the renderer receives only a summary, bounded finding pages, and bounded focused
+occurrence evidence. Choosing a new corpus clears the retained quality review, and choosing invalid
+rules leaves both the corpus query and prior valid configuration scoped rather than broadening a
+role. The renderer receives neither filesystem authority, rule-file authority, rule contents, a
+complete report, nor a complete corpus.
+
+The Workbench quality view presents character-budget and terminology queues, authored role/rule
+summaries, actual and expected evidence, recovery guidance, `TextUnitId`, affected saved-package
+occurrences, and the unchanged complete/partial corpus coverage. Corpus browsing remains available
+beside quality review, including the independent hardcoded `long` lens.
 
 ## Agent operation and adoption
 

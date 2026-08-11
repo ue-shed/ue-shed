@@ -207,23 +207,23 @@ export type TextQualityAffectedOccurrence = Schema.Schema.Type<
 	typeof TextQualityAffectedOccurrence
 >;
 
-const CharacterBudgetActual = Schema.Struct({
+export const CharacterBudgetActual = Schema.Struct({
 	characterCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	kind: Schema.Literal("character_count"),
 	source: Schema.String
 });
-const CharacterBudgetExpectation = Schema.Struct({
+export const CharacterBudgetExpectation = Schema.Struct({
 	kind: Schema.Literal("maximum_characters"),
 	maximumCharacters: PositiveInt
 });
-const TerminologyActual = Schema.Struct({
+export const TerminologyActual = Schema.Struct({
 	end: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	kind: Schema.Literal("terminology_match"),
 	source: Schema.String,
 	start: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	term: EvidenceValue
 });
-const TerminologyExpectation = Schema.Union([
+export const TerminologyExpectation = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("forbidden_term"), term: EvidenceValue }),
 	Schema.Struct({
 		discouragedTerm: EvidenceValue,

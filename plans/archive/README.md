@@ -39,4 +39,4 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [038](038-adjustable-framing-knobs-and-overrides.md)          | Build modular framing rigs and per-view tuning                       | DONE — headless rigs and Workbench verified |
 | [039](039-map-review-fixture-and-recordable-flows.md)         | Build Map Review fixture gallery and recordable full flows           | DONE — UE 5.7 flows and recordings verified |
 | [040](040-durable-multi-actor-review-sets-and-history.md)     | Build durable multi-actor Review Sets and visual history             | DONE — UE 5.7 history flows verified        |
-| [042](042-project-authored-game-text-quality.md)              | Add project-authored Game Text quality rules                         | DONE — corpus and CLI gates verified        |
+| [042](042-project-authored-game-text-quality.md)              | Add project-authored Game Text quality rules                         | DONE — CLI and Workbench gates verified     |

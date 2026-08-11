@@ -2,10 +2,17 @@ import {
 	decodeTextCorpusFocusResult,
 	decodeTextCorpusQueryRunResult,
 	decodeTextCorpusSearchResult,
+	decodeTextQualityFocusResult,
+	decodeTextQualityQueryRunResult,
+	decodeTextQualitySearchResult,
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
 	type TextCorpusSearchRequest,
-	type TextCorpusSearchResult
+	type TextCorpusSearchResult,
+	type TextQualityFocusRequest,
+	type TextQualityFocusResult,
+	type TextQualitySearchRequest,
+	type TextQualitySearchResult
 } from "@ue-shed/game-text/browser";
 import { decodeEditorAssetLocateResult } from "@ue-shed/protocol";
 import {
@@ -79,6 +86,33 @@ export const gameTextClient: GameTextClientShape = GameTextClient.of({
 				"gameText.focus",
 				() => window.ueShed.gameText.focus(input),
 				decodeTextCorpusFocusResult
+			)
+	),
+	chooseQualityRules: Effect.fn("GameTextClient.chooseQualityRules")(() =>
+		invokeRequest(
+			"gameText.chooseQualityRules",
+			() => window.ueShed.gameText.chooseQualityRules(),
+			decodeTextQualityQueryRunResult
+		)
+	),
+	qualitySearch: Effect.fn("GameTextClient.qualitySearch")(
+		(
+			input: TextQualitySearchRequest
+		): Effect.Effect<TextQualitySearchResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.qualitySearch",
+				() => window.ueShed.gameText.qualitySearch(input),
+				decodeTextQualitySearchResult
+			)
+	),
+	qualityFocus: Effect.fn("GameTextClient.qualityFocus")(
+		(
+			input: TextQualityFocusRequest
+		): Effect.Effect<TextQualityFocusResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.qualityFocus",
+				() => window.ueShed.gameText.qualityFocus(input),
+				decodeTextQualityFocusResult
 			)
 	)
 });

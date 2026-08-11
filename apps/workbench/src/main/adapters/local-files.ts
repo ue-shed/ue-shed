@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { open } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { open, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { Context, Effect, Layer, Schema } from "effect";
 
@@ -8,7 +9,7 @@ export class LocalFilesError extends Schema.TaggedErrorClass<LocalFilesError>()(
 	{
 		causeText: Schema.String,
 		message: Schema.String,
-		operation: Schema.Literals(["exists", "readFile"]),
+		operation: Schema.Literals(["exists", "readFile", "writeFile"]),
 		path: Schema.String,
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
@@ -26,6 +27,11 @@ export interface LocalFilesShape {
 		relativePath: string,
 		options?: { readonly maxBytes?: number }
 	) => Effect.Effect<Uint8Array, LocalFilesError>;
+	readonly writeFile: (
+		path: string,
+		bytes: Uint8Array,
+		options?: { readonly maxBytes?: number }
+	) => Effect.Effect<void, LocalFilesError>;
 }
 
 export class LocalFiles extends Context.Service<LocalFiles, LocalFilesShape>()(
@@ -180,6 +186,46 @@ export const LocalFilesLive = Layer.succeed(
 						}
 						return yield* readBounded(path, options);
 					}
+				),
+				writeFile: Effect.fn("Workbench.LocalFiles.writeFile")(
+					function* (path, bytes, options) {
+						const maxBytes = options?.maxBytes ?? defaultMaxBytes;
+						if (
+							!Number.isSafeInteger(maxBytes) ||
+							maxBytes < 0 ||
+							maxBytes > maximumHostReadBytes ||
+							bytes.byteLength > maxBytes
+						) {
+							return yield* Effect.fail(
+								filesError(
+									"writeFile",
+									path,
+									`File exceeds the ${maxBytes} byte host write limit.`,
+									"Reduce the rule document before saving.",
+									false
+								)
+							);
+						}
+						const temporaryPath = `${path}.${randomUUID()}.tmp`;
+						return yield* Effect.tryPromise({
+							try: async () => {
+								try {
+									await writeFile(temporaryPath, bytes, { flag: "wx" });
+									await rename(temporaryPath, path);
+								} catch (cause) {
+									await rm(temporaryPath, { force: true }).catch(() => undefined);
+									throw cause;
+								}
+							},
+							catch: (cause) =>
+								filesError(
+									"writeFile",
+									path,
+									cause,
+									"Verify the rule file is writable and retry."
+								)
+						});
+					}
 				)
 			};
 		})()
@@ -187,7 +233,7 @@ export const LocalFilesLive = Layer.succeed(
 );
 
 export const makeLocalFilesTestLayer = (
-	files: ReadonlyMap<string, Uint8Array> = new Map()
+	files: Map<string, Uint8Array> = new Map()
 ): Layer.Layer<LocalFiles> =>
 	Layer.succeed(
 		LocalFiles,
@@ -261,6 +307,23 @@ export const makeLocalFilesTestLayer = (
 								)
 							)
 						: bytes;
+				}
+			),
+			writeFile: Effect.fn("Workbench.LocalFiles.Test.writeFile")(
+				function* (path, bytes, options) {
+					const maxBytes = options?.maxBytes ?? defaultMaxBytes;
+					if (bytes.byteLength > maxBytes) {
+						return yield* Effect.fail(
+							filesError(
+								"writeFile",
+								path,
+								`File exceeds the ${maxBytes} byte host write limit.`,
+								"Reduce the rule document before saving.",
+								false
+							)
+						);
+					}
+					files.set(path, bytes);
 				}
 			)
 		})

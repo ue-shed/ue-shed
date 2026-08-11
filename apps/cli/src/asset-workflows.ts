@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { EnhancedInputService, EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import {
 	isFullScanEntry,
@@ -42,6 +42,7 @@ function summarizeScan(scan: SavedAssetScan) {
 export type AssetsScanCommand = Extract<CliCommand, { readonly _tag: "AssetsScan" }>;
 export type TextScanCommand = Extract<CliCommand, { readonly _tag: "TextScan" }>;
 export type TextSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearch" }>;
+export type TextReviewCommand = Extract<CliCommand, { readonly _tag: "TextReview" }>;
 export type InputInspectCommand = Extract<CliCommand, { readonly _tag: "InputInspect" }>;
 
 export const runAssetsScan = Effect.fn("Cli.workflow.assets_scan")((command: AssetsScanCommand) =>
@@ -114,6 +115,54 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				matches: searchTextCorpus(corpus, command.query),
 				diagnostics: corpus.diagnostics
 			});
+		})
+	)
+);
+
+export const runTextReview = Effect.fn("Cli.workflow.text_review")((command: TextReviewCommand) =>
+	observeCliOperation(
+		command._tag,
+		Effect.gen(function* () {
+			const {
+				decodeTextQualityRuleDocumentJson,
+				evaluateTextQuality,
+				TextCorpusScanError,
+				TextCorpusService,
+				TextCorpusServiceLive
+			} = yield* Effect.promise(() => import("@ue-shed/game-text"));
+			const ruleJson = yield* Effect.tryPromise({
+				try: () => readFile(command.ruleFile, "utf8"),
+				catch: () =>
+					new CliCommandError({
+						message:
+							"Could not read the Game Text quality rule file. Confirm it exists and is readable, then retry."
+					})
+			});
+			const document = yield* decodeTextQualityRuleDocumentJson(ruleJson).pipe(
+				Effect.mapError(
+					(error) =>
+						new CliCommandError({
+							message: `${error.message} ${error.recovery}`
+						})
+				)
+			);
+			const corpus = yield* Effect.gen(function* () {
+				const service = yield* TextCorpusService;
+				return yield* service.scan({ projectRoot: command.projectRoot });
+			}).pipe(
+				Effect.provide(TextCorpusServiceLive),
+				Effect.provide(readerLayer(command.reader)),
+				Effect.mapError(
+					(error) =>
+						new CliCommandError({
+							message:
+								error instanceof TextCorpusScanError
+									? `Game Text corpus scan failed (${error.code}). ${error.recovery}`
+									: "Game Text corpus scan configuration failed. Confirm the saved-asset reader configuration and retry."
+						})
+				)
+			);
+			return yield* printJson(evaluateTextQuality(corpus, document));
 		})
 	)
 );

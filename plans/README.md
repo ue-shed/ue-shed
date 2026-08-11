@@ -25,6 +25,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 042 completed and is archived under
+  [`archive/042-project-authored-game-text-quality.md`](archive/042-project-authored-game-text-quality.md)
+  after versioned authored roles/rules, pure corpus evaluation, typed findings, safe CLI and
+  bounded Workbench review, partial-coverage retention, and portable repository gates passed.
 - Plan 040 completed and is archived under
   [`archive/040-durable-multi-actor-review-sets-and-history.md`](archive/040-durable-multi-actor-review-sets-and-history.md)
   after explicit append/revise authoring, durable multi-subject collections, View-oriented history,

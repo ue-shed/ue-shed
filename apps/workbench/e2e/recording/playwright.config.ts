@@ -9,7 +9,11 @@ export default defineConfig({
 		"../../../../test-results/showcase/unconfigured",
 	reporter: "list",
 	testDir: ".",
-	testMatch: ["showcase.recording.ts", "map-review-flow.recording.ts"],
+	testMatch: [
+		"showcase.recording.ts",
+		"map-review-flow.recording.ts",
+		"game-text-quality.recording.ts"
+	],
 	timeout: 300_000,
 	workers: 1
 });

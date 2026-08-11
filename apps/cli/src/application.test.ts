@@ -5,6 +5,7 @@ import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { CliRuntime } from "./cli-runtime.js";
+import { runTextReview } from "./asset-workflows.js";
 import { runVersion } from "./core-workflows.js";
 import { runMapHistory } from "./workflows/map.js";
 import { runPluginsList } from "./workflows/plugins.js";
@@ -150,4 +151,40 @@ it.effect("rejects Fast History path identity without both package and path", ()
 		expect(error.message).toContain("Fast History");
 		expect(yield* Ref.get(output)).toBe("");
 	})
+);
+
+it.effect(
+	"reports malformed Game Text rules before scanning and does not echo their contents",
+	() =>
+		Effect.gen(function* () {
+			const root = yield* Effect.promise(() =>
+				mkdtemp(join(tmpdir(), "ue-shed-text-rules-"))
+			);
+			const ruleFile = join(root, "rules.json");
+			yield* Effect.promise(() => writeFile(ruleFile, "{secret-project-term", "utf8"));
+			try {
+				const output = yield* Ref.make("");
+				const layer = Layer.succeed(
+					CliRuntime,
+					CliRuntime.of({
+						print: (value) => Ref.update(output, (current) => current + value),
+						printError: () => Effect.void,
+						setExitCode: () => Effect.void
+					})
+				);
+				const error = yield* runTextReview({
+					_tag: "TextReview",
+					projectRoot: "project-is-never-scanned",
+					ruleFile
+				}).pipe(Effect.provide(layer), Effect.flip);
+
+				expect(error.message).toContain("not valid JSON");
+				expect(error.message).toContain("Correct the JSON syntax");
+				expect(error.message).not.toContain("secret-project-term");
+				expect(error.message).not.toContain(ruleFile);
+				expect(yield* Ref.get(output)).toBe("");
+			} finally {
+				yield* Effect.promise(() => rm(root, { force: true, recursive: true }));
+			}
+		})
 );

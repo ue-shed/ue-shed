@@ -5,11 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
+import { decodeTextQualityReport as decodeTextQualityReportEffect } from "@ue-shed/game-text";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 const decodeAuthoringTableSnapshot = (input: unknown) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
+const decodeTextQualityReport = (input: unknown) =>
+	Effect.runSync(decodeTextQualityReportEffect(input));
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliScript = join(repositoryRoot, "scripts", "ue-shed.mjs");
@@ -31,6 +34,13 @@ const configFixture = join(
 	"config-explorer",
 	"fixtures",
 	"config-source"
+);
+const fixtureTextQualityRules = join(
+	repositoryRoot,
+	"packages",
+	"game-text",
+	"fixtures",
+	"quality-rules.v1.json"
 );
 const fixtureReviewSet = join(
 	fixtureProject,
@@ -192,6 +202,20 @@ describe("ue-shed CLI process", () => {
 			})
 		]);
 	});
+
+	it("reviews the real saved text corpus with project-authored rules", () => {
+		const output: unknown = JSON.parse(
+			runSuccessfulCli(["text", "review", fixtureProject, "--rules", fixtureTextQualityRules])
+		);
+		const report = decodeTextQualityReport(output);
+
+		expect(report.schemaVersion).toBe(1);
+		expect(report.ruleDocumentVersion).toBe(1);
+		expect(report.status).toBe("partial");
+		expect(report.coverage.unsupportedTextProperties).toBe(1);
+		expect(report.findings.length).toBeGreaterThan(0);
+		expect(report.findings.every((finding) => finding.role === "ui.prompt")).toBe(true);
+	}, 30_000);
 
 	it("resolves fixture row references through the public headless command", () => {
 		const report = parseRecord(

@@ -792,7 +792,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toBeVisible();
 						await page!
-							.getByRole("searchbox", { name: "Search corpus" })
+							.getByRole("searchbox", { name: "Search game text" })
 							.fill("Hold to skip");
 						await expect(
 							page!.getByRole("region", { name: "Text units" })
@@ -800,7 +800,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						await expect(
 							page!.getByRole("complementary", { name: "Text focus" })
 						).toContainText("2 uses");
-						await page!.getByRole("searchbox", { name: "Search corpus" }).fill("");
+						await page!.getByRole("searchbox", { name: "Search game text" }).fill("");
 						await expect(
 							page!.getByRole("region", { name: "Text units" })
 						).toContainText("Showing 32 of 32 matches");

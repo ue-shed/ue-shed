@@ -119,6 +119,7 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	TextScan: { ...Project, ...Reader },
 	TextSearch: { ...Project, query: Schema.String, ...Reader },
+	TextReview: { ...Project, ruleFile: Schema.String, ...Reader },
 	InputInspect: { path: Schema.String, ...Reader },
 	ProjectIndexStatus: ProjectIndexTarget,
 	ProjectIndexRefresh: ProjectIndexTarget,

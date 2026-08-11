@@ -1,6 +1,12 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Option } from "effect";
-import { runAssetsScan, runInputInspect, runTextScan, runTextSearch } from "../asset-workflows.js";
+import {
+	runAssetsScan,
+	runInputInspect,
+	runTextReview,
+	runTextScan,
+	runTextSearch
+} from "../asset-workflows.js";
 
 const optionalFlag = (name: string) => Flag.string(name).pipe(Flag.optional);
 
@@ -88,9 +94,27 @@ const textSearchCommand = Command.make(
 	}
 ).pipe(Command.withDescription("Search the saved player-facing text corpus."));
 
+const textReviewCommand = Command.make(
+	"review",
+	{
+		projectRoot: Argument.string("project-root"),
+		reader: readerFlag,
+		rules: Flag.string("rules")
+	},
+	({ projectRoot, reader, rules }) =>
+		runTextReview({
+			_tag: "TextReview",
+			projectRoot,
+			ruleFile: rules,
+			...readerFields(reader)
+		})
+).pipe(
+	Command.withDescription("Review the saved text corpus with project-authored quality rules.")
+);
+
 export const textCommand = Command.make("text").pipe(
-	Command.withDescription("Inspect and search saved player-facing text."),
-	Command.withSubcommands([textScanCommand, textSearchCommand])
+	Command.withDescription("Inspect, search, and review saved player-facing text."),
+	Command.withSubcommands([textScanCommand, textSearchCommand, textReviewCommand])
 );
 
 const inputInspectCommand = Command.make(

@@ -140,3 +140,19 @@ it.effect("validates repeated filter inputs through the declarative parser", () 
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
 );
+
+it.effect("requires an explicit rule file for Game Text review", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+
+		yield* runCli(["text", "review", "project"]).pipe(
+			Effect.provide(runtimeLayer(output, errors, exitCode))
+		);
+
+		expect(yield* Ref.get(output)).toBe("");
+		expect(yield* Ref.get(errors)).toContain("--rules");
+		expect(yield* Ref.get(exitCode)).toBe(2);
+	})
+);

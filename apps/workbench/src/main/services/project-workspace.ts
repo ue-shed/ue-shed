@@ -65,6 +65,11 @@ export interface WorkbenchProjectShape {
 	readonly current: () => Effect.Effect<WorkbenchProjectState>;
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
+	/** Selected identity only; config queries must not require a package-index refresh. */
+	readonly selectedProject: () => Effect.Effect<
+		{ readonly projectName: string; readonly projectRoot: string },
+		WorkbenchProjectUnavailable
+	>;
 	readonly savedProject: () => Effect.Effect<
 		{ readonly maps: readonly SavedWorldMapValue[]; readonly projectRoot: string },
 		WorkbenchProjectUnavailable
@@ -588,6 +593,19 @@ export const WorkbenchProjectLive = Layer.effect(
 			return yield* currentInventory(root.value);
 		});
 
+		const selectedProject = Effect.fn("Workbench.WorkbenchProject.selectedProject")(
+			function* () {
+				const root = yield* Ref.get(selectedRoot);
+				if (Option.isNone(root)) {
+					return yield* new WorkbenchProjectUnavailable({
+						message: "No Workbench project is selected.",
+						recovery: "Choose a project from the Workbench header, then retry."
+					});
+				}
+				return { projectName: projectName(root.value), projectRoot: root.value };
+			}
+		);
+
 		const inputAtlas = Effect.fn("Workbench.WorkbenchProject.inputAtlas")(function* () {
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) {
@@ -725,14 +743,18 @@ export const WorkbenchProjectLive = Layer.effect(
 			current,
 			inputAtlas,
 			progress,
+			selectedProject,
 			savedProject,
 			savedTables
 		});
 	})
 );
 
-export type WorkbenchProjectTestShape = Omit<WorkbenchProjectShape, "candidates" | "progress"> &
-	Partial<Pick<WorkbenchProjectShape, "candidates" | "progress">>;
+export type WorkbenchProjectTestShape = Omit<
+	WorkbenchProjectShape,
+	"candidates" | "progress" | "selectedProject"
+> &
+	Partial<Pick<WorkbenchProjectShape, "candidates" | "progress" | "selectedProject">>;
 
 export function makeWorkbenchProjectTestLayer(
 	service: WorkbenchProjectTestShape
@@ -752,7 +774,10 @@ export function makeWorkbenchProjectTestLayer(
 						phase: "idle",
 						stage: "project_index",
 						total: 0
-					}))
+					})),
+			selectedProject:
+				service.selectedProject ??
+				(() => Effect.die("selected project identity is not used by this test"))
 		})
 	);
 }

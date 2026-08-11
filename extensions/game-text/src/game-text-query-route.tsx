@@ -6,6 +6,9 @@ import type {
 	TextCorpusSearchPage,
 	TextReviewLens,
 	TextReviewSignal,
+	TextQualityQueryRunResult,
+	TextQualityQuerySummary,
+	TextQualityRuleDocument,
 	TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
@@ -15,6 +18,7 @@ import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect, Schedule, Stream } from "effect";
 import { For, Match, Show, Switch, createSignal, onMount, type Accessor } from "solid-js";
 import type { GameTextClientShape } from "./game-text-client.js";
+import { GameTextQualityWorkspace } from "./game-text-quality-workspace.js";
 import {
 	identityLabel,
 	primaryContext,
@@ -74,7 +78,7 @@ const reviewLenses: readonly {
 }[] = [
 	{
 		count: (summary) => summary.review.all,
-		detail: "Entire saved corpus",
+		detail: "All saved game text",
 		label: "All lines",
 		value: "all"
 	},
@@ -215,6 +219,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
 	const locateAction = createEffectAction();
+	const qualityAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [progress, setProgress] = createSignal<TaskProgress>({
@@ -231,6 +236,11 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const [selectedId, setSelectedId] = createSignal<TextUnitSearchResult["id"]>();
 	const [focus, setFocus] = createSignal<TextCorpusFocus>();
 	const [locateFeedback, setLocateFeedback] = createSignal<LocateFeedback>({ status: "idle" });
+	const [mode, setMode] = createSignal<"corpus" | "quality">("corpus");
+	const [qualitySummary, setQualitySummary] = createSignal<TextQualityQuerySummary>();
+	const [qualityDocument, setQualityDocument] = createSignal<TextQualityRuleDocument>();
+	const [qualityFailure, setQualityFailure] =
+		createSignal<Extract<TextQualityQueryRunResult, { status: "failed" }>["error"]>();
 	let searchGeneration = 0;
 	let focusGeneration = 0;
 
@@ -317,6 +327,10 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	};
 
 	const refresh = () => {
+		setMode("corpus");
+		setQualitySummary(undefined);
+		setQualityDocument(undefined);
+		setQualityFailure(undefined);
 		setState({ status: "loading" });
 		setProgress({ completed: 0, phase: "idle", stage: "game_text", total: 0 });
 		progressSubscription.subscribe(
@@ -332,6 +346,26 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 		});
 	};
 
+	const loadQualityRules = () => {
+		setQualityFailure(undefined);
+		qualityAction.run(props.client.chooseQualityRules(), {
+			onFailure: (cause) =>
+				setQualityFailure({
+					code: "contract_failure",
+					message: String(cause),
+					recovery: "Restart Workbench and retry loading the rule document.",
+					retrySafe: true
+				}),
+			onSuccess: (result) => {
+				if (result.status === "completed") {
+					setQualitySummary(result.summary);
+					setQualityDocument(result.document);
+					setMode("quality");
+				} else if (result.status === "failed") setQualityFailure(result.error);
+			}
+		});
+	};
+
 	onMount(refresh);
 
 	return (
@@ -339,26 +373,28 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 			<TaskProgressModal
 				open={state().status === "loading"}
 				progress={progress()}
-				title="Building the game-text corpus"
+				title="Loading saved game text"
 				detail="Workbench is decoding the packages selected by the project index and preserving every text identity and occurrence."
 			/>
 			<header {...stylex.props(styles.header)}>
 				<div>
 					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-						Game text / Corpus
+						Game text / {mode() === "quality" ? "Quality review" : "Text browser"}
 					</nav>
 					<h1 {...stylex.props(styles.title)}>Game text workbench</h1>
 					<p {...stylex.props(styles.subtitle)}>
 						Review source, identity, authored context, and every known use.
 					</p>
 				</div>
-				<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
-					Rescan
-				</button>
+				<span {...stylex.props(styles.headerActions)}>
+					<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+						Rescan
+					</button>
+				</span>
 			</header>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.empty)}>Reading the saved language corpus…</div>
+					<div {...stylex.props(styles.empty)}>Reading saved game text…</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
 					<div {...stylex.props(styles.empty)}>
@@ -382,34 +418,129 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 				<Match when={state().status === "ready"}>
 					<Show when={summary()}>
 						{(currentSummary) => (
-							<TextCorpusWorkspace
-								summary={currentSummary()}
-								page={page}
-								query={query}
-								capability={capability}
-								lens={lens}
-								selectedId={selectedId}
-								focus={focus}
-								locateFeedback={locateFeedback}
-								onQuery={(value) => {
-									setQuery(value);
-									requestPage({ query: value });
-								}}
-								onCapability={(value) => {
-									setCapability(value);
-									requestPage({ capability: value });
-								}}
-								onLens={(value) => {
-									setLens(value);
-									requestPage({ lens: value });
-								}}
-								onNextPage={(cursor) => requestPage({ cursor })}
-								onLocate={locateAsset}
-								onSelect={(id) => {
-									setSelectedId(id);
-									requestFocus(id);
-								}}
-							/>
+							<>
+								<div
+									role="tablist"
+									aria-label="Game Text view"
+									{...stylex.props(styles.modeTabs)}
+								>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={mode() === "corpus"}
+										onClick={() => setMode("corpus")}
+										{...stylex.props(
+											styles.modeTab,
+											mode() === "corpus" && styles.modeTabActive
+										)}
+									>
+										Text browser
+									</button>
+									<button
+										type="button"
+										role="tab"
+										aria-selected={mode() === "quality"}
+										onClick={() => setMode("quality")}
+										{...stylex.props(
+											styles.modeTab,
+											mode() === "quality" && styles.modeTabActive
+										)}
+									>
+										Quality review
+										<Show when={qualitySummary()}>
+											{(quality) => <b>{quality().findingCount}</b>}
+										</Show>
+									</button>
+								</div>
+								<Show when={mode() === "quality" ? qualityFailure() : undefined}>
+									{(error) => (
+										<div role="alert" {...stylex.props(styles.qualityError)}>
+											<strong>{error().message}</strong>
+											<span>{error().recovery}</span>
+										</div>
+									)}
+								</Show>
+								<Show
+									when={mode() === "quality"}
+									fallback={
+										<TextCorpusWorkspace
+											summary={currentSummary()}
+											page={page}
+											query={query}
+											capability={capability}
+											lens={lens}
+											selectedId={selectedId}
+											focus={focus}
+											locateFeedback={locateFeedback}
+											onQuery={(value) => {
+												setQuery(value);
+												requestPage({ query: value });
+											}}
+											onCapability={(value) => {
+												setCapability(value);
+												requestPage({ capability: value });
+											}}
+											onLens={(value) => {
+												setLens(value);
+												requestPage({ lens: value });
+											}}
+											onNextPage={(cursor) => requestPage({ cursor })}
+											onLocate={locateAsset}
+											onSelect={(id) => {
+												setSelectedId(id);
+												requestFocus(id);
+											}}
+										/>
+									}
+								>
+									<Show
+										when={qualitySummary()}
+										fallback={
+											<section
+												aria-label="Quality rules setup"
+												{...stylex.props(styles.qualitySetup)}
+											>
+												<small
+													{...stylex.props(styles.qualitySetupEyebrow)}
+												>
+													PROJECT-AUTHORED QUALITY
+												</small>
+												<h2 {...stylex.props(styles.qualitySetupTitle)}>
+													Review text against your rules
+												</h2>
+												<p {...stylex.props(styles.qualitySetupCopy)}>
+													Load a rule file to check character limits and
+													terminology across the saved text already shown
+													in Workbench.
+												</p>
+												<button
+													type="button"
+													onClick={loadQualityRules}
+													{...stylex.props(styles.qualityButton)}
+												>
+													Load quality rules
+												</button>
+											</section>
+										}
+									>
+										{(quality) => (
+											<Show when={qualityDocument()}>
+												{(document) => (
+													<GameTextQualityWorkspace
+														client={props.client}
+														document={document()}
+														onReplaceRules={loadQualityRules}
+														onReviewed={(result) =>
+															setQualitySummary(result.summary)
+														}
+														summary={quality()}
+													/>
+												)}
+											</Show>
+										)}
+									</Show>
+								</Show>
+							</>
 						)}
 					</Show>
 				</Match>
@@ -476,7 +607,7 @@ function TextCorpusWorkspace(props: {
 						value={props.query()}
 						onInput={(event) => props.onQuery(event.currentTarget.value)}
 						placeholder="Search exact source wording…"
-						aria-label="Search corpus"
+						aria-label="Search game text"
 						{...stylex.props(styles.searchInput)}
 					/>
 				</div>
@@ -501,9 +632,9 @@ function TextCorpusWorkspace(props: {
 			</section>
 			<div {...stylex.props(styles.grid)}>
 				<aside aria-label="Review lenses" {...stylex.props(styles.reviewRail)}>
-					<section aria-label="Corpus coverage" {...stylex.props(styles.railSection)}>
+					<section aria-label="Saved text coverage" {...stylex.props(styles.railSection)}>
 						<header {...stylex.props(styles.railHeader)}>
-							<span>Saved corpus</span>
+							<span>Saved text</span>
 							<strong
 								{...stylex.props(
 									styles.coverageState,
@@ -777,7 +908,7 @@ function TextCorpusWorkspace(props: {
 						<span>
 							Showing {props.page().units.length} of {props.page().total} matches
 						</span>
-						<span>{coverage.textUnits} units in corpus</span>
+						<span>{coverage.textUnits} text entries</span>
 					</footer>
 				</section>
 				<FocusPanel
@@ -938,6 +1069,74 @@ const styles = stylex.create({
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
+	},
+	headerActions: { display: "flex", alignItems: "center", gap: 6 },
+	qualityButton: {
+		border: "1px solid #884a36",
+		backgroundColor: { default: "#382019", ":hover": "#4a291f" },
+		color: "#ffd0bf",
+		padding: "6px 10px",
+		cursor: "pointer",
+		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
+		fontSize: 10
+	},
+	qualitySetup: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: 10,
+		maxWidth: 560,
+		minHeight: 280,
+		margin: "48px auto 0",
+		padding: "28px 30px",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: "#151311",
+		boxShadow: "inset 3px 0 #e87655",
+		color: tokens.colorTextMuted,
+		fontSize: 10,
+		lineHeight: 1.5
+	},
+	qualitySetupEyebrow: { color: "#e87655", fontSize: 8, letterSpacing: ".08em" },
+	qualitySetupTitle: {
+		margin: "4px 0 0",
+		color: tokens.colorTextStrong,
+		fontSize: 19,
+		fontWeight: 600
+	},
+	qualitySetupCopy: { maxWidth: 430, margin: 0 },
+	modeTabs: {
+		display: "flex",
+		alignItems: "stretch",
+		marginBottom: 8,
+		borderBottom: `1px solid ${tokens.colorBorder}`
+	},
+	modeTab: {
+		display: "flex",
+		alignItems: "center",
+		gap: 7,
+		border: 0,
+		borderRight: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: "#151311", ":hover": "#211d1a" },
+		color: tokens.colorTextMuted,
+		padding: "7px 12px",
+		fontSize: 10,
+		cursor: "pointer",
+		opacity: { default: 1, ":disabled": 0.45 }
+	},
+	modeTabActive: {
+		color: "#ffd0bf",
+		backgroundColor: "#2b1d18",
+		boxShadow: "inset 0 -2px #e87655"
+	},
+	qualityError: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 3,
+		marginBottom: 8,
+		padding: "8px 10px",
+		border: `1px solid ${tokens.colorDanger}`,
+		color: "#efaa91",
+		fontSize: 9
 	},
 	empty: {
 		minHeight: 380,

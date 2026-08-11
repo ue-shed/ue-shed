@@ -19,6 +19,7 @@ the status row when done.
 | [033](033-compact-project-corpora-before-persistence.md) | Compact project corpora before persistence                      | P1       | XL     | ADR 0004, project index   | IN PROGRESS                      |
 | [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History           | IN PROGRESS — Phase 7            |
 | [041](041-execute-one-live-pie-scenario.md)              | Execute one live PIE scenario                                   | P1       | XL     | Scenario Studio prototype | IN PROGRESS — contract bootstrap |
+| [043](043-config-explorer-settings-archaeology.md)       | Explain saved Unreal configuration provenance                   | P2       | XL     | engine discovery, CLI     | DONE                             |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -26,6 +27,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 042 completed and is archived under
+  [`archive/042-project-authored-game-text-quality.md`](archive/042-project-authored-game-text-quality.md)
+  after versioned authored roles/rules, pure corpus evaluation, typed findings, safe CLI and
+  bounded Workbench review, partial-coverage retention, and portable repository gates passed.
 - Plan 040 completed and is archived under
   [`archive/040-durable-multi-actor-review-sets-and-history.md`](archive/040-durable-multi-actor-review-sets-and-history.md)
   after explicit append/revise authoring, durable multi-subject collections, View-oriented history,

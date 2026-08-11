@@ -5,11 +5,11 @@ uses the committed generic fixture as its default project and keeps live Unreal 
 capability.
 
 Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
-Game Text, Texture Audit, Map Review, World Log, and Camera Lab. The catalog groups them by what
-they actually require: a saved project, Perforce on demand, or a running Unreal session. Each entry
-shows evidence from the selected project before it is opened, including indexed candidate-package
-and map counts. Saved-package workflows open without Unreal; live texture preview, Live World, and
-Camera Lab request a separately enabled editor only when needed.
+Game Text, Texture Audit, Config Explorer, Map Review, World Log, and Camera Lab. The catalog groups
+them by what they actually require: a saved project, Perforce on demand, or a running Unreal
+session. Each entry shows evidence from the selected project before it is opened, including indexed
+candidate-package and map counts. Saved-source workflows open without Unreal; live texture preview,
+Live World, and Camera Lab request a separately enabled editor only when needed.
 
 ## Open the Workbench
 
@@ -116,7 +116,30 @@ pnpm ue-shed text scan fixtures\unreal-project
 pnpm ue-shed text search fixtures\unreal-project "Fixture"
 ```
 
-## Demo 4: Map Review
+## Demo 4: Config Explorer
+
+Choose **Config** from the nav or **Config Explorer** from the saved-project workflows. This route
+is an editable investigation workspace. Choose the selected Workbench project or the portable sample
+fixture, enter a config family (or leave it blank for ambiguity recovery), section, key, and
+platform, then ask **Why this value?** or **What changes by platform?** A trusted Workbench
+main-process service owns engine discovery and filesystem reads, then sends only schema-validated,
+privacy-safe evidence to the host-neutral extension.
+
+The portable platform-divergence sample runs immediately; the examples are real resolver queries,
+not canned answers. Try **Last writer**, **Empty vs missing**, or **Coverage gap**, then edit any
+field yourself. Switch to **Selected project** to query the project chosen in the global Workbench
+header. Every submitted query uses the public headless resolver and keeps missing layers, source
+locations, prior effects, surviving/superseded contributions, typed recovery, and the “saved source,
+no runtime authority” boundary visible.
+
+The headless equivalents remain the product authority:
+
+```powershell
+pnpm ue-shed config explain packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
+pnpm ue-shed config compare packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --platform PlatformB --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
+```
+
+## Demo 5: Map Review
 
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
 at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
@@ -302,13 +325,20 @@ pnpm showcase:record
 ```
 
 The command builds Workbench, opens it through Playwright, and records Data Authoring, Texture Audit,
-and Game Text. Every invocation writes a new timestamped review bundle under
+Game Text, and Config Explorer. Every invocation writes a new timestamped review bundle under
 `test-results/showcase`; earlier recordings are never replaced. A successful bundle contains
 `demo.webm`, chapter screenshots, `trace.zip`, `workbench.log`, and a versioned `run.json` manifest.
 During local iteration, pass `--no-build` to reuse the existing Workbench build:
 
 ```powershell
 pnpm showcase:record --no-build
+```
+
+To record a focused Config Explorer journey that exercises every evidence preset through the real
+Workbench route:
+
+```powershell
+pnpm showcase:record config-explorer
 ```
 
 To showcase Map Review by creating fresh evidence and comparing it with the prior Capture Run:

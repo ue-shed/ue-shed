@@ -107,6 +107,29 @@ const cameraStatus = {
 	}
 };
 
+const qualityRuleDocument = {
+	roles: [
+		{
+			id: "menu.prompt",
+			scopes: [
+				{
+					matchers: [{ kind: "location_kind", value: "string_table_entry" }]
+				}
+			]
+		}
+	],
+	rules: [
+		{
+			id: "menu.prompt.characters",
+			kind: "character_budget",
+			maximumCharacters: 32,
+			recovery: "Shorten the prompt.",
+			role: "menu.prompt"
+		}
+	],
+	schemaVersion: 1
+};
+
 it.effect("represents a stopped game world as unavailable camera status", () =>
 	Schema.decodeUnknownEffect(CameraStatusResult)({
 		message: "Camera streaming is unavailable in the current editor state.",
@@ -139,6 +162,17 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
+	"config-explorer:query": [
+		{
+			family: "Game",
+			key: "Entries",
+			leftPlatform: "PlatformA",
+			mode: "compare",
+			rightPlatform: "PlatformB",
+			section: "Fixture.Settings",
+			source: "sample_fixture"
+		}
+	],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -160,6 +194,11 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"game-text:progress": [],
 	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
 	"game-text:focus": [{ id: "unreal:UI:Example", pageSize: 50 }],
+	"game-text:quality:choose-rules": [],
+	"game-text:quality:preview-rules": [qualityRuleDocument],
+	"game-text:quality:save-rules": [qualityRuleDocument],
+	"game-text:quality:search": [{ filter: "all", pageSize: 50 }],
+	"game-text:quality:focus": [{ id: "quality-finding:1", pageSize: 50 }],
 	"asset-navigation:locate": ["/Game/Text/ST_Game.ST_Game"],
 	"input-atlas:configured-scan": [],
 	"input-atlas:choose-and-scan": [],
@@ -312,6 +351,15 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		project: { status: "not_configured" },
 		reader: "path"
 	},
+	"config-explorer:query": {
+		error: {
+			code: "sample_unavailable",
+			message: "Fixture unavailable.",
+			recovery: "Launch through pnpm showcase.",
+			retrySafe: false
+		},
+		status: "failed"
+	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
 	"project:progress": {
@@ -376,6 +424,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"game-text:search": { status: "not_ready" },
 	"game-text:focus": { status: "not_ready" },
+	"game-text:quality:choose-rules": { status: "not_ready" },
+	"game-text:quality:preview-rules": { status: "not_ready" },
+	"game-text:quality:save-rules": { status: "not_ready" },
+	"game-text:quality:search": { status: "not_ready" },
+	"game-text:quality:focus": { status: "not_ready" },
 	"asset-navigation:locate": {
 		contract: { name: "unreal-editor-asset-navigation", version: { major: 1, minor: 0 } },
 		objectPath: "/Game/Text/ST_Game.ST_Game",
@@ -543,9 +596,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 82 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(82);
-	expect(new Set(invokeChannelNames).size).toBe(82);
+it("registers exactly 88 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(88);
+	expect(new Set(invokeChannelNames).size).toBe(88);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

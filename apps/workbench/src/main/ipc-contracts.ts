@@ -35,6 +35,11 @@ import {
 	MapReviewSetLibraryResult,
 	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
+import {
+	ConfigComparison,
+	ConfigExplanation,
+	ConfigExplorerPublicError
+} from "@ue-shed/config-explorer/browser";
 import { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import {
 	TextCorpusFocusRequest,
@@ -42,7 +47,14 @@ import {
 	TextCorpusQueryRunResult,
 	TextCorpusRunResult,
 	TextCorpusSearchRequest,
-	TextCorpusSearchResult
+	TextCorpusSearchResult,
+	TextQualityFocusRequest,
+	TextQualityFocusResult,
+	TextQualityQueryRunResult,
+	TextQualityRuleDocument,
+	TextQualityRuleUpdateResult,
+	TextQualitySearchRequest,
+	TextQualitySearchResult
 } from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
 import {
@@ -182,6 +194,60 @@ export const ShowcaseContext = Schema.Struct({
 	ruleFile: Schema.optionalKey(Schema.String)
 });
 export interface ShowcaseContext extends Schema.Schema.Type<typeof ShowcaseContext> {}
+
+const ConfigExplorerQueryFields = {
+	family: Schema.optionalKey(Schema.NonEmptyString),
+	key: Schema.NonEmptyString,
+	section: Schema.NonEmptyString,
+	source: Schema.Literals(["selected_project", "sample_fixture"])
+};
+
+export const ConfigExplorerQuery = Schema.Union([
+	Schema.Struct({
+		...ConfigExplorerQueryFields,
+		mode: Schema.Literal("explain"),
+		platform: Schema.NonEmptyString
+	}),
+	Schema.Struct({
+		...ConfigExplorerQueryFields,
+		leftPlatform: Schema.NonEmptyString,
+		mode: Schema.Literal("compare"),
+		rightPlatform: Schema.NonEmptyString
+	})
+]);
+export type ConfigExplorerQuery = typeof ConfigExplorerQuery.Type;
+
+const ConfigExplorerWorkbenchError = Schema.Union([
+	ConfigExplorerPublicError,
+	Schema.Struct({
+		code: Schema.Literals(["project_unavailable", "sample_unavailable"]),
+		message: Schema.String,
+		recovery: Schema.String,
+		retrySafe: Schema.Boolean
+	})
+]);
+
+export const ConfigExplorerQueryResult = Schema.Union([
+	Schema.Struct({
+		evidence: ConfigExplanation,
+		mode: Schema.Literal("explain"),
+		projectName: Schema.NonEmptyString,
+		source: ConfigExplorerQueryFields.source,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({
+		evidence: ConfigComparison,
+		mode: Schema.Literal("compare"),
+		projectName: Schema.NonEmptyString,
+		source: ConfigExplorerQueryFields.source,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({
+		error: ConfigExplorerWorkbenchError,
+		status: Schema.Literal("failed")
+	})
+]);
+export type ConfigExplorerQueryResult = typeof ConfigExplorerQueryResult.Type;
 
 export const FixtureLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
@@ -370,6 +436,11 @@ export const invokeContracts = {
 		args: EmptyArgs,
 		result: ShowcaseContext
 	}),
+	"config-explorer:query": invoke({
+		channel: "config-explorer:query",
+		args: Schema.Tuple([ConfigExplorerQuery]),
+		result: ConfigExplorerQueryResult
+	}),
 	"project:current": invoke({
 		channel: "project:current",
 		args: EmptyArgs,
@@ -474,6 +545,31 @@ export const invokeContracts = {
 		channel: "game-text:focus",
 		args: Schema.Tuple([TextCorpusFocusRequest]),
 		result: TextCorpusFocusResult
+	}),
+	"game-text:quality:choose-rules": invoke({
+		channel: "game-text:quality:choose-rules",
+		args: EmptyArgs,
+		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:preview-rules": invoke({
+		channel: "game-text:quality:preview-rules",
+		args: Schema.Tuple([TextQualityRuleDocument]),
+		result: TextQualityRuleUpdateResult
+	}),
+	"game-text:quality:save-rules": invoke({
+		channel: "game-text:quality:save-rules",
+		args: Schema.Tuple([TextQualityRuleDocument]),
+		result: TextQualityRuleUpdateResult
+	}),
+	"game-text:quality:search": invoke({
+		channel: "game-text:quality:search",
+		args: Schema.Tuple([TextQualitySearchRequest]),
+		result: TextQualitySearchResult
+	}),
+	"game-text:quality:focus": invoke({
+		channel: "game-text:quality:focus",
+		args: Schema.Tuple([TextQualityFocusRequest]),
+		result: TextQualityFocusResult
 	}),
 	"asset-navigation:locate": invoke({
 		channel: "asset-navigation:locate",

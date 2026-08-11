@@ -11,12 +11,15 @@ import {
 import { RuntimeHealth } from "@ue-shed/observability/health";
 import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
 import type {
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	ShowcaseContext,
 	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
+import { ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema } from "../main/ipc-contracts.js";
 import {
 	ProjectLaunchResult,
 	type ProjectLaunchMode,
@@ -114,6 +117,7 @@ function request<A>(args: {
 }
 
 const decodeShowcaseContext = Schema.decodeUnknownEffect(ShowcaseContextSchema);
+const decodeConfigExplorerQueryResult = Schema.decodeUnknownEffect(ConfigExplorerQueryResultSchema);
 const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResultSchema);
 const decodeWorkbenchCameraMetrics = Schema.decodeUnknownEffect(WorkbenchCameraMetricsSchema);
 const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
@@ -167,6 +171,9 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 );
 
 export interface WorkbenchRendererClient {
+	readonly configExplorerQuery: (
+		request: ConfigExplorerQuery
+	) => Effect.Effect<ConfigExplorerQueryResult, WorkbenchRendererError>;
 	readonly unrealConnectionSettings: () => Effect.Effect<
 		UnrealConnectionSettings,
 		WorkbenchRendererError
@@ -209,6 +216,13 @@ export interface WorkbenchRendererClient {
 }
 
 export const workbenchRendererClient: WorkbenchRendererClient = {
+	configExplorerQuery: Effect.fn("WorkbenchRenderer.configExplorerQuery")((query) =>
+		request({
+			decode: decodeConfigExplorerQueryResult,
+			invoke: () => window.ueShed.configExplorer.query(query),
+			operation: "configExplorer.query"
+		})
+	),
 	chooseProject: Effect.fn("WorkbenchRenderer.chooseProject")(() =>
 		request({
 			decode: decodeWorkbenchProjectState,

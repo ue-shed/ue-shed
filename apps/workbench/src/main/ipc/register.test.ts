@@ -23,6 +23,7 @@ import { makeWorkbenchAssetNavigationTestLayer } from "../services/asset-navigat
 import { makeWorkbenchAuthoringTestLayer } from "../services/authoring.js";
 import { makeCameraPresentationTestLayer } from "../services/camera-presentation.js";
 import { makeWorkbenchContentObservatoryTestLayer } from "../services/content-observatory.js";
+import { makeWorkbenchConfigExplorerTestLayer } from "../services/config-explorer.js";
 import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
@@ -213,6 +214,20 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record("inputAtlas.configuredScan")
 				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult))
+	});
+	const configExplorer = makeWorkbenchConfigExplorerTestLayer({
+		query: (request) =>
+			recorder.record(`configExplorer.query:${request.key}`).pipe(
+				Effect.as({
+					error: {
+						code: "sample_unavailable" as const,
+						message: "Fixture unavailable.",
+						recovery: "Launch through pnpm showcase.",
+						retrySafe: false
+					},
+					status: "failed" as const
+				})
+			)
 	});
 
 	const project = makeWorkbenchProjectTestLayer({
@@ -487,6 +502,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		assetNavigation,
 		gameText,
 		contentObservatory,
+		configExplorer,
 		inputAtlas,
 		project,
 		authoring,
@@ -524,13 +540,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 82 contract channels", () =>
+it.effect("registers exactly the 88 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(82);
+		expect(result).toHaveLength(88);
 	})
 );
 
@@ -598,6 +614,31 @@ it.effect("dispatches showcase:context to Showcase.context", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) => ipc.invoke("showcase:context"));
 		expect(yield* recorder.calls()).toEqual(["showcase.context"]);
+	})
+);
+
+it.effect("dispatches config-explorer:query to WorkbenchConfigExplorer", () =>
+	Effect.gen(function* () {
+		const { recorder, result } = yield* runRegistered((ipc) =>
+			ipc.invoke("config-explorer:query", {
+				family: "Game",
+				key: "Entries",
+				mode: "explain",
+				platform: "PlatformA",
+				section: "Fixture.Settings",
+				source: "sample_fixture"
+			})
+		);
+		expect(result).toEqual({
+			error: {
+				code: "sample_unavailable",
+				message: "Fixture unavailable.",
+				recovery: "Launch through pnpm showcase.",
+				retrySafe: false
+			},
+			status: "failed"
+		});
+		expect(yield* recorder.calls()).toEqual(["configExplorer.query:Entries"]);
 	})
 );
 

@@ -40,6 +40,8 @@ import type {
 import { contextBridge, ipcRenderer } from "electron";
 import type {
 	CameraStatusResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -56,6 +58,8 @@ import type {
 
 export type {
 	CameraStatusResult,
+	ConfigExplorerQuery,
+	ConfigExplorerQueryResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -95,6 +99,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 	},
 	showcase: {
 		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context")
+	},
+	configExplorer: {
+		query: (request: ConfigExplorerQuery): Promise<ConfigExplorerQueryResult> =>
+			ipcRenderer.invoke("config-explorer:query", request)
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
@@ -137,7 +145,17 @@ contextBridge.exposeInMainWorld("ueShed", {
 		search: (request: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:search", request),
 		focus: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:focus", request)
+			ipcRenderer.invoke("game-text:focus", request),
+		chooseQualityRules: (): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:choose-rules"),
+		previewQualityRules: (document: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:preview-rules", document),
+		saveQualityRules: (document: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:save-rules", document),
+		qualitySearch: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:search", request),
+		qualityFocus: (request: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:focus", request)
 	},
 	inputAtlas: {
 		loadConfiguredProject: (): Promise<unknown> =>

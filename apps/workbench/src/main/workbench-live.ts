@@ -1,4 +1,5 @@
 import { TextureAuditLive } from "@ue-shed/asset-audits";
+import { ConfigExplorerNodeLive } from "@ue-shed/config-explorer";
 import {
 	ReviewAuthoringLive,
 	ReviewAuthoringSessionsLive,
@@ -38,6 +39,7 @@ import { WorkbenchAssetNavigationLive } from "./services/asset-navigation.js";
 import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
 import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
+import { WorkbenchConfigExplorerLive } from "./services/config-explorer.js";
 import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launcher.js";
 import { WorkbenchGameTextLive } from "./services/game-text.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
@@ -161,6 +163,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		authoringClient,
 		mapReview,
 		contentObservatory,
+		WorkbenchConfigExplorerLive.pipe(Layer.provide(ConfigExplorerNodeLive)),
 		CameraPresentationLive
 	).pipe(Layer.provideMerge(reviewAndFixtureLayer(hosts)));
 }

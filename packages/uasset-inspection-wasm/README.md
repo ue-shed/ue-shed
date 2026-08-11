@@ -8,12 +8,20 @@ The first public contract is deliberately small:
 
 - generic inspection returns schema 8;
 - `extractText`, `extractTextures`, and `extractLevelSequences` return compact schema-1 envelopes;
-  LevelSequence records currently use schema 2 and include nested-sequence and cinematic-shot
-  references;
+  LevelSequence records use schema 3 and include nested-sequence and cinematic-shot semantics plus
+  a recursive inventory of every decoded object, soft-object, and DataTable-row reference in the
+  package;
 - malformed, unsupported, partial, and resource-limited packages are represented as typed result
   values;
 - cooked, unversioned, IoStore/Zen, swapped-endian, and native bulk-data decoding remain outside
   the parser boundary.
+
+Level Sequence reference inventory walks structs, arrays, sets, and map keys and values. Every
+reference records its owning object/class, precise property path, target, kind, and whether the
+target is internal to the package or external. `reference_coverage_gaps` identifies raw property
+values, native object tails, or unresolved package indices that could conceal or prevent resolving
+a reference; an empty list means the inventory is complete for the saved package's decoded property
+surface. It does not recursively load referenced packages or evaluate Sequencer bindings.
 
 The default input and serialized-output limit is 64 MiB. The Rust adapter also bounds package
 exports and compact projection records. JavaScript rejects an oversized `Uint8Array` before

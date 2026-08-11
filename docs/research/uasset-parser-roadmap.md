@@ -67,11 +67,15 @@ fixture contains a five-second `MovieScene`, one object binding, a text property
 and three localized `FMovieSceneTextChannel` keys. A second timeline references that text sequence
 through both a normal subsequence and a named cinematic shot. The generic UObject decoder already
 recovers the export graph, object references, and text values; the added native codecs recover
-`FFrameNumber` arrays and `FMovieSceneFrameRange`. A compact schema-2 projection then joins binding,
-track, section, range, timed text, nested-sequence references, and shot names while retaining
-unsupported track classes as structural inventory with explicit coverage gaps. It does not claim
-recursive project traversal, Sequencer evaluation, blending, runtime binding resolution, or complete
-coverage of every track and channel class.
+`FFrameNumber` arrays, `FMovieSceneFrameRange`, and the metadata `FDateTime`. A compact schema-3
+projection joins binding, track, section, range, timed text, nested-sequence references, and shot
+names while retaining unsupported track classes as structural inventory with explicit coverage
+gaps. Independently of that semantic track support, it recursively inventories every decoded
+object, soft-object, and DataTable-row reference across structs and containers in the package. Raw
+values, native object tails, and unresolved package indices become reference-specific coverage gaps
+instead of a false completeness claim. It does not recursively load referenced packages, evaluate
+Sequencer, blend channels, resolve runtime bindings, or claim semantic coverage of every track and
+channel class.
 
 Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,

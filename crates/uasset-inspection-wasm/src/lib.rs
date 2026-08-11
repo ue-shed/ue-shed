@@ -305,6 +305,8 @@ fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
     let tracks = binding_tracks.chain(&sequence.root_tracks);
     1_usize
         .saturating_add(sequence.bindings.len())
+        .saturating_add(sequence.references.len())
+        .saturating_add(sequence.reference_coverage_gaps.len())
         .saturating_add(sequence.coverage_gaps.len())
         .saturating_add(
             tracks

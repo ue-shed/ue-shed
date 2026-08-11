@@ -397,6 +397,11 @@ fn decode_binary_or_native_value(
                     payload, &path,
                 )?)));
             }
+            Some("DateTime") => {
+                return Ok(Some(PropertyValue::DateTime(decode_date_time_value(
+                    payload, &path,
+                )?)));
+            }
             Some("MovieSceneFrameRange") => {
                 return Ok(Some(PropertyValue::FrameRange(decode_frame_range_value(
                     payload, &path,
@@ -407,6 +412,20 @@ fn decode_binary_or_native_value(
     }
 
     Ok(None)
+}
+
+fn decode_date_time_value(payload: &mut Reader<'_>, path: &str) -> Result<i64, PropertyError> {
+    if payload.remaining() != 8 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!("unsupported FDateTime payload size {}", payload.remaining()),
+        ));
+    }
+    payload
+        .read_i64(&format!("{path}.Ticks"))
+        .map_err(PropertyError::from)
 }
 
 fn decode_int_point_value(
@@ -2145,6 +2164,24 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn decodes_date_time_from_native_ticks() {
+        let names = vec!["StructProperty".into(), "DateTime".into()];
+        let ticks = 638_853_408_000_000_000_i64;
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &ticks.to_le_bytes(),
+        );
+
+        assert_eq!(value, PropertyValue::DateTime(ticks));
     }
 
     #[test]

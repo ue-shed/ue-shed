@@ -159,6 +159,8 @@ pub enum PropertyValue {
     Color(ColorValue),
     LinearColor(LinearColorValue),
     DataTableRowHandle(DataTableRowHandleValue),
+    /// UE `FDateTime` ticks (100 ns intervals since 0001-01-01).
+    DateTime(i64),
     FrameRange(FrameRangeValue),
     ObjectRef(PackageIndex),
     Guid(Guid),
@@ -167,7 +169,9 @@ pub enum PropertyValue {
     Set(Vec<PropertyValue>),
     Map(Vec<MapEntry>),
     Struct(PropertyStream),
-    Raw { reason: RawReason },
+    Raw {
+        reason: RawReason,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

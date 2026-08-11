@@ -1074,6 +1074,10 @@ impl<'a> PropertyValueView<'a> {
                 table_object_path: ObjectReferenceView::new(package, value.table),
                 row_name: NameView::new(package, value.row_name),
             },
+            PropertyValue::DateTime(_) => Self::OmittedNative {
+                reason: "decoded native date time; omitted from generic schema v8",
+                size: raw_size,
+            },
             PropertyValue::FrameRange(_) => Self::OmittedNative {
                 reason: "decoded native frame range; omitted from generic schema v8",
                 size: raw_size,

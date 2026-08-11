@@ -32,7 +32,53 @@ pub struct LevelSequenceProjection {
     pub playback_range: Option<SequenceFrameRange>,
     pub bindings: Vec<SequenceBinding>,
     pub root_tracks: Vec<SequenceTrack>,
+    /// Every decoded path-bearing property value in this asset package.
+    pub references: Vec<SequenceReference>,
+    /// Places where undecoded evidence prevents a complete reference inventory.
+    pub reference_coverage_gaps: Vec<SequenceReferenceCoverageGap>,
     pub coverage_gaps: Vec<SequenceCoverageGap>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SequenceReference {
+    pub owner_path: String,
+    pub owner_class_path: String,
+    pub property_path: String,
+    pub kind: SequenceReferenceKind,
+    pub target_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_row: Option<String>,
+    pub scope: SequenceReferenceScope,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SequenceReferenceKind {
+    Object,
+    SoftObject,
+    DataTableRowHandle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SequenceReferenceScope {
+    Internal,
+    External,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SequenceReferenceCoverageGap {
+    pub owner_path: String,
+    pub property_path: String,
+    pub reason: SequenceReferenceCoverageGapReason,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SequenceReferenceCoverageGapReason {
+    RawPropertyValue,
+    NativeObjectTail,
+    UnresolvedObjectReference,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -138,8 +184,9 @@ pub fn project_level_sequence(
 ) -> Option<LevelSequenceProjection> {
     let sequence =
         objects(assets).find(|object| object.class_path.as_str() == LEVEL_SEQUENCE_CLASS)?;
+    let (references, reference_coverage_gaps) = inventory_references(package, assets);
     let mut projection = LevelSequenceProjection {
-        schema_version: 2,
+        schema_version: 3,
         object_path: sequence.object_path.to_string(),
         movie_scene_path: None,
         tick_resolution: None,
@@ -147,6 +194,8 @@ pub fn project_level_sequence(
         playback_range: None,
         bindings: Vec::new(),
         root_tracks: Vec::new(),
+        references,
+        reference_coverage_gaps,
         coverage_gaps: Vec::new(),
     };
 
@@ -224,6 +273,191 @@ pub fn project_level_sequence(
         &mut projection.coverage_gaps,
     );
     Some(projection)
+}
+
+fn inventory_references(
+    package: &Package,
+    assets: &[DecodedAsset],
+) -> (Vec<SequenceReference>, Vec<SequenceReferenceCoverageGap>) {
+    let mut references = Vec::new();
+    let mut gaps = Vec::new();
+    for object in objects(assets) {
+        inventory_property_stream(
+            package,
+            object,
+            &object.properties,
+            "",
+            &mut references,
+            &mut gaps,
+        );
+        if !object.tail.is_empty() {
+            gaps.push(SequenceReferenceCoverageGap {
+                owner_path: object.object_path.to_string(),
+                property_path: "$native_tail".to_owned(),
+                reason: SequenceReferenceCoverageGapReason::NativeObjectTail,
+            });
+        }
+    }
+    (references, gaps)
+}
+
+fn inventory_property_stream(
+    package: &Package,
+    owner: &DecodedUObject,
+    stream: &PropertyStream,
+    parent_path: &str,
+    references: &mut Vec<SequenceReference>,
+    gaps: &mut Vec<SequenceReferenceCoverageGap>,
+) {
+    for record in &stream.records {
+        let name = package
+            .resolve_name(record.name)
+            .unwrap_or_else(|| "<unresolved_name>".to_owned());
+        let path = join_property_path(parent_path, &name);
+        inventory_property_value(package, owner, &path, &record.value, references, gaps);
+    }
+}
+
+fn inventory_property_value(
+    package: &Package,
+    owner: &DecodedUObject,
+    property_path: &str,
+    value: &PropertyValue,
+    references: &mut Vec<SequenceReference>,
+    gaps: &mut Vec<SequenceReferenceCoverageGap>,
+) {
+    match value {
+        PropertyValue::ObjectRef(index) => inventory_index_reference(
+            package,
+            owner,
+            property_path,
+            *index,
+            SequenceReferenceKind::Object,
+            None,
+            references,
+            gaps,
+        ),
+        PropertyValue::SoftObjectPath(target_path) if !target_path.is_empty() => {
+            references.push(SequenceReference {
+                owner_path: owner.object_path.to_string(),
+                owner_class_path: owner.class_path.to_string(),
+                property_path: property_path.to_owned(),
+                kind: SequenceReferenceKind::SoftObject,
+                target_path: target_path.clone(),
+                target_row: None,
+                scope: soft_reference_scope(package, target_path),
+            });
+        }
+        PropertyValue::DataTableRowHandle(handle) => inventory_index_reference(
+            package,
+            owner,
+            property_path,
+            handle.table,
+            SequenceReferenceKind::DataTableRowHandle,
+            package.resolve_name(handle.row_name),
+            references,
+            gaps,
+        ),
+        PropertyValue::Array(values) | PropertyValue::Set(values) => {
+            for (index, value) in values.iter().enumerate() {
+                inventory_property_value(
+                    package,
+                    owner,
+                    &format!("{property_path}[{index}]"),
+                    value,
+                    references,
+                    gaps,
+                );
+            }
+        }
+        PropertyValue::Map(entries) => {
+            for (index, entry) in entries.iter().enumerate() {
+                inventory_property_value(
+                    package,
+                    owner,
+                    &format!("{property_path}[{index}].key"),
+                    &entry.key,
+                    references,
+                    gaps,
+                );
+                inventory_property_value(
+                    package,
+                    owner,
+                    &format!("{property_path}[{index}].value"),
+                    &entry.value,
+                    references,
+                    gaps,
+                );
+            }
+        }
+        PropertyValue::Struct(stream) => {
+            inventory_property_stream(package, owner, stream, property_path, references, gaps)
+        }
+        PropertyValue::Raw { .. } => gaps.push(SequenceReferenceCoverageGap {
+            owner_path: owner.object_path.to_string(),
+            property_path: property_path.to_owned(),
+            reason: SequenceReferenceCoverageGapReason::RawPropertyValue,
+        }),
+        _ => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn inventory_index_reference(
+    package: &Package,
+    owner: &DecodedUObject,
+    property_path: &str,
+    index: PackageIndex,
+    kind: SequenceReferenceKind,
+    target_row: Option<String>,
+    references: &mut Vec<SequenceReference>,
+    gaps: &mut Vec<SequenceReferenceCoverageGap>,
+) {
+    if index == PackageIndex::Null {
+        return;
+    }
+    let Some(target_path) = package.resolve_index_str(index) else {
+        gaps.push(SequenceReferenceCoverageGap {
+            owner_path: owner.object_path.to_string(),
+            property_path: property_path.to_owned(),
+            reason: SequenceReferenceCoverageGapReason::UnresolvedObjectReference,
+        });
+        return;
+    };
+    references.push(SequenceReference {
+        owner_path: owner.object_path.to_string(),
+        owner_class_path: owner.class_path.to_string(),
+        property_path: property_path.to_owned(),
+        kind,
+        target_path: target_path.to_owned(),
+        target_row,
+        scope: match index {
+            PackageIndex::Export(_) => SequenceReferenceScope::Internal,
+            PackageIndex::Import(_) => SequenceReferenceScope::External,
+            PackageIndex::Null => unreachable!("null references return before resolution"),
+        },
+    });
+}
+
+fn soft_reference_scope(package: &Package, target_path: &str) -> SequenceReferenceScope {
+    let package_name = package.summary.package_name.as_str();
+    if target_path == package_name
+        || target_path
+            .strip_prefix(package_name)
+            .is_some_and(|suffix| suffix.starts_with('.') || suffix.starts_with(':'))
+    {
+        SequenceReferenceScope::Internal
+    } else {
+        SequenceReferenceScope::External
+    }
+}
+
+fn join_property_path(parent: &str, name: &str) -> String {
+    if parent.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{parent}.{name}")
+    }
 }
 
 #[derive(Clone)]
@@ -656,4 +890,112 @@ fn gap(
         property_path: property_path.to_owned(),
         reason,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use uasset_parser::asset::{AssetDecodeContext, decode_export};
+    use uasset_parser::property::{DataTableRowHandleValue, MapEntry, RawReason};
+    use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
+
+    use super::*;
+
+    struct EmptySchemas;
+
+    impl SchemaProvider for EmptySchemas {
+        fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
+            None
+        }
+
+        fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
+            None
+        }
+    }
+
+    #[test]
+    fn inventories_references_recursively_through_every_container_kind() {
+        let bytes = fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/unreal-project/Content/Fixture/Sequences/LS_TextTimeline.uasset"
+        ))
+        .expect("fixture package");
+        let package = Package::parse(&bytes).expect("fixture parses");
+        let schemas = EmptySchemas;
+        let context = AssetDecodeContext {
+            source: &bytes,
+            package: &package,
+            schemas: &schemas,
+        };
+        let assets: Vec<_> = package
+            .exports
+            .iter()
+            .filter_map(|export| decode_export(export, &context).ok().flatten())
+            .collect();
+        let owner = objects(&assets).next().expect("decoded sequence object");
+        let mut nested_record = owner.properties.records[0].clone();
+        nested_record.value = PropertyValue::DataTableRowHandle(DataTableRowHandleValue {
+            table: PackageIndex::Import(0),
+            row_name: nested_record.name,
+        });
+        let synthetic = PropertyValue::Array(vec![
+            PropertyValue::Map(vec![MapEntry {
+                key: PropertyValue::SoftObjectPath("/Game/Other/DA_Config.DA_Config".to_owned()),
+                value: PropertyValue::Struct(PropertyStream {
+                    class_extensions: None,
+                    records: vec![nested_record],
+                    terminator: Default::default(),
+                }),
+            }]),
+            PropertyValue::Set(vec![PropertyValue::ObjectRef(PackageIndex::Export(0))]),
+        ]);
+        let mut references = Vec::new();
+        let mut gaps = Vec::new();
+
+        inventory_property_value(
+            &package,
+            owner,
+            "Synthetic",
+            &synthetic,
+            &mut references,
+            &mut gaps,
+        );
+
+        assert_eq!(references.len(), 3);
+        assert_eq!(references[0].property_path, "Synthetic[0][0].key");
+        assert_eq!(references[0].kind, SequenceReferenceKind::SoftObject);
+        assert_eq!(references[0].scope, SequenceReferenceScope::External);
+        assert_eq!(
+            references[1].property_path,
+            "Synthetic[0][0].value.MovieScene"
+        );
+        assert_eq!(
+            references[1].kind,
+            SequenceReferenceKind::DataTableRowHandle
+        );
+        assert_eq!(references[1].target_row.as_deref(), Some("MovieScene"));
+        assert_eq!(references[2].property_path, "Synthetic[1][0]");
+        assert_eq!(references[2].scope, SequenceReferenceScope::Internal);
+        assert!(gaps.is_empty());
+
+        inventory_property_value(
+            &package,
+            owner,
+            "Opaque",
+            &PropertyValue::Raw {
+                reason: RawReason::UnsupportedType,
+            },
+            &mut references,
+            &mut gaps,
+        );
+        assert_eq!(
+            gaps,
+            [SequenceReferenceCoverageGap {
+                owner_path: owner.object_path.to_string(),
+                property_path: "Opaque".to_owned(),
+                reason: SequenceReferenceCoverageGapReason::RawPropertyValue,
+            }]
+        );
+    }
 }

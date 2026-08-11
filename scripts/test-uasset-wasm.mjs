@@ -100,6 +100,17 @@ const levelSequence = runtime.extractLevelSequences(
 );
 assert.equal(levelSequence.status, "complete");
 assert.equal(levelSequence.sequences.length, 1);
+assert.equal(levelSequence.sequences[0].schema_version, 3);
+assert.equal(levelSequence.sequences[0].reference_coverage_gaps.length, 0);
+assert.ok(
+	levelSequence.sequences[0].references.some(
+		(reference) =>
+			reference.kind === "soft_object" &&
+			reference.property_path === "Possessables[0].PossessedObjectClass" &&
+			reference.target_path === "/Script/UEShedFixture.UEShedFixtureTextAsset" &&
+			reference.scope === "external"
+	)
+);
 assert.deepEqual(
 	levelSequence.sequences[0].bindings[0].tracks[0].sections[0].text_keys.map((key) => [
 		key.frame,
@@ -122,7 +133,17 @@ const nestedSequence = runtime.extractLevelSequences(
 	readFileSync(nestedSequenceFixture)
 );
 assert.equal(nestedSequence.status, "complete");
-assert.equal(nestedSequence.sequences[0].schema_version, 2);
+assert.equal(nestedSequence.sequences[0].schema_version, 3);
+assert.equal(
+	nestedSequence.sequences[0].references.filter(
+		(reference) =>
+			reference.kind === "object" &&
+			reference.property_path === "SubSequence" &&
+			reference.target_path === "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline" &&
+			reference.scope === "external"
+	).length,
+	2
+);
 assert.deepEqual(
 	nestedSequence.sequences[0].root_tracks.map((track) => [
 		track.content,

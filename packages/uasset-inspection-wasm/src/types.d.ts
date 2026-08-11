@@ -280,8 +280,18 @@ export interface LevelSequenceBinding {
 	readonly tracks: readonly LevelSequenceTrack[];
 }
 
+export interface LevelSequenceReference {
+	readonly owner_path: string;
+	readonly owner_class_path: string;
+	readonly property_path: string;
+	readonly kind: "object" | "soft_object" | "data_table_row_handle";
+	readonly target_path: string;
+	readonly target_row?: string;
+	readonly scope: "internal" | "external";
+}
+
 export interface LevelSequenceProjectionRecord {
-	readonly schema_version: 2;
+	readonly schema_version: 3;
 	readonly object_path: string;
 	readonly movie_scene_path: string | null;
 	readonly tick_resolution: LevelSequenceFrameRate | null;
@@ -289,6 +299,15 @@ export interface LevelSequenceProjectionRecord {
 	readonly playback_range: LevelSequenceFrameRange | null;
 	readonly bindings: readonly LevelSequenceBinding[];
 	readonly root_tracks: readonly LevelSequenceTrack[];
+	readonly references: readonly LevelSequenceReference[];
+	readonly reference_coverage_gaps: readonly {
+		readonly owner_path: string;
+		readonly property_path: string;
+		readonly reason:
+			| "raw_property_value"
+			| "native_object_tail"
+			| "unresolved_object_reference";
+	}[];
 	readonly coverage_gaps: readonly {
 		readonly object_path: string;
 		readonly property_path: string;

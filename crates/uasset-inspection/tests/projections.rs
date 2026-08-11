@@ -1,6 +1,8 @@
 use std::fs;
 
-use uasset_inspection::level_sequence::{SequenceTrackContent, project_level_sequence};
+use uasset_inspection::level_sequence::{
+    SequenceReferenceKind, SequenceReferenceScope, SequenceTrackContent, project_level_sequence,
+};
 use uasset_inspection::projection::{project_text_asset, project_texture_asset};
 use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
 use uasset_parser::package::Package;
@@ -77,7 +79,7 @@ fn level_sequence_projection_joins_timed_localized_text() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 2);
+    assert_eq!(projection.schema_version, 3);
     assert_eq!(
         projection.tick_resolution.expect("tick rate").numerator,
         24_000
@@ -111,6 +113,26 @@ fn level_sequence_projection_joins_timed_localized_text() {
             .collect::<Vec<_>>(),
         ["We made it.", "Something is wrong.", "Run!"]
     );
+    assert!(
+        projection.references.iter().any(|reference| {
+            reference.kind == SequenceReferenceKind::SoftObject
+                && reference.scope == SequenceReferenceScope::External
+                && reference.property_path == "Possessables[0].PossessedObjectClass"
+                && reference.target_path == "/Script/UEShedFixture.UEShedFixtureTextAsset"
+        }),
+        "references: {:#?}",
+        projection.references
+    );
+    assert!(projection.references.iter().any(|reference| {
+        reference.kind == SequenceReferenceKind::Object
+            && reference.scope == SequenceReferenceScope::Internal
+            && reference.property_path == "MovieScene"
+    }));
+    assert!(
+        projection.reference_coverage_gaps.is_empty(),
+        "reference gaps: {:#?}",
+        projection.reference_coverage_gaps
+    );
     assert!(projection.coverage_gaps.is_empty());
 }
 
@@ -122,7 +144,7 @@ fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
     ));
     let projection = project_level_sequence(&package, &assets).expect("LevelSequence projection");
 
-    assert_eq!(projection.schema_version, 2);
+    assert_eq!(projection.schema_version, 3);
     assert_eq!(projection.root_tracks.len(), 2);
     let sub_sequence = projection
         .root_tracks
@@ -155,6 +177,23 @@ fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
     assert_eq!(
         shot_section.shot_display_name.as_deref(),
         Some("Text timeline reprise")
+    );
+    let nested_references = projection
+        .references
+        .iter()
+        .filter(|reference| {
+            reference.kind == SequenceReferenceKind::Object
+                && reference.scope == SequenceReferenceScope::External
+                && reference.property_path == "SubSequence"
+                && reference.target_path
+                    == "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline"
+        })
+        .count();
+    assert_eq!(nested_references, 2);
+    assert!(
+        projection.reference_coverage_gaps.is_empty(),
+        "reference gaps: {:#?}",
+        projection.reference_coverage_gaps
     );
     assert!(projection.coverage_gaps.is_empty());
 }

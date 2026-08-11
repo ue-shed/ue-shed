@@ -12,8 +12,10 @@ pub mod saved_world;
 pub use level_sequence::{
     LEVEL_SEQUENCE_CLASS, LevelSequenceProjection, SequenceBinding, SequenceCoverageGap,
     SequenceCoverageGapReason, SequenceFrameBound, SequenceFrameBoundKind, SequenceFrameRange,
-    SequenceFrameRate, SequenceSection, SequenceTextIdentity, SequenceTextKey, SequenceTrack,
-    SequenceTrackContent, project_level_sequence,
+    SequenceFrameRate, SequenceReference, SequenceReferenceCoverageGap,
+    SequenceReferenceCoverageGapReason, SequenceReferenceKind, SequenceReferenceScope,
+    SequenceSection, SequenceTextIdentity, SequenceTextKey, SequenceTrack, SequenceTrackContent,
+    project_level_sequence,
 };
 pub use projection::{
     Evidence, EvidenceSource, EvidenceUnavailableReason, TEXTURE2D_CLASS, TextAssetProjection,

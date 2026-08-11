@@ -18,6 +18,12 @@ class falls through to the generic UObject tagged-property decoder. The class co
 top of `asset.rs` are dispatch targets, not a supported-type allowlist: level packages can decode
 thousands of exports across many classes without level-specific parser code.
 
+`AnimSequence` has a narrow UE 5.7 uncooked-editor decoder. It preserves the tagged properties and
+consumes the native trailer containing the object GUID, skeleton GUID, strip flags, empty deprecated
+raw-track array, and compressed-data presence flag. UE 5.7 source tracks remain in the separately
+exported animation data model and are still available through generic inspection. Cooked compressed
+streams and legacy inline raw tracks are rejected explicitly rather than partially interpreted.
+
 The boundary is native serialization, not asset type. Classes with a custom `UObject::Serialize`
 append binary after their tagged properties; the parser preserves that data as `tail_bytes` rather
 than pretending to decode it. A non-zero `tail_bytes` therefore means "undecoded native payload",

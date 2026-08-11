@@ -32,7 +32,7 @@ function run(command, args, cwd = repositoryRoot) {
 	if (result.status !== 0) fail(`${command} ${args.join(" ")} exited ${result.status ?? 1}`);
 }
 
-function runPnpm(args) {
+function runPnpm(args, environment = {}) {
 	const pnpmScript = process.env.npm_execpath;
 	const scriptIsJavaScript = pnpmScript ? /\.(?:c|m)?js$/i.test(pnpmScript) : false;
 	const command = scriptIsJavaScript
@@ -41,7 +41,13 @@ function runPnpm(args) {
 	const prefix = scriptIsJavaScript && pnpmScript ? [pnpmScript] : [];
 	const result = spawnSync(command, [...prefix, ...args], {
 		cwd: targetRoot,
-		env: { ...process.env, CI: "1", NODE_AUTH_TOKEN: "", NPM_TOKEN: "" },
+		env: {
+			...process.env,
+			...environment,
+			CI: "1",
+			NODE_AUTH_TOKEN: "",
+			NPM_TOKEN: ""
+		},
 		shell: process.platform === "win32" && (!pnpmScript || /\.(?:cmd|bat)$/i.test(pnpmScript)),
 		stdio: "inherit",
 		windowsHide: true

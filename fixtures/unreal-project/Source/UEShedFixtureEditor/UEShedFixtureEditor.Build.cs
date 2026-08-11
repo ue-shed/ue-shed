@@ -9,6 +9,7 @@ public class UEShedFixtureEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"AnimationDataController",
 				"AssetRegistry",
 				"Core",
 				"CoreUObject",
@@ -16,6 +17,9 @@ public class UEShedFixtureEditor : ModuleRules
 				"EnhancedInput",
 				"InputCore",
 				"Json",
+				"LevelSequence",
+				"MovieScene",
+				"MovieSceneTracks",
 				"UEShedAuthoring",
 				"UEShedCameras",
 				"UEShedFixture",

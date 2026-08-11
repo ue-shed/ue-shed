@@ -85,6 +85,26 @@ pub struct IntPointValue {
     pub y: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RangeBoundKind {
+    Exclusive,
+    Inclusive,
+    Open,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameRangeBound {
+    pub kind: RangeBoundKind,
+    pub value: i32,
+}
+
+/// Native `FMovieSceneFrameRange` value used by sequence and section boundaries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FrameRangeValue {
+    pub lower: FrameRangeBound,
+    pub upper: FrameRangeBound,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RotatorValue {
     pub pitch: f64,
@@ -139,6 +159,9 @@ pub enum PropertyValue {
     Color(ColorValue),
     LinearColor(LinearColorValue),
     DataTableRowHandle(DataTableRowHandleValue),
+    /// UE `FDateTime` ticks (100 ns intervals since 0001-01-01).
+    DateTime(i64),
+    FrameRange(FrameRangeValue),
     ObjectRef(PackageIndex),
     Guid(Guid),
     SoftObjectPath(String),
@@ -146,7 +169,9 @@ pub enum PropertyValue {
     Set(Vec<PropertyValue>),
     Map(Vec<MapEntry>),
     Struct(PropertyStream),
-    Raw { reason: RawReason },
+    Raw {
+        reason: RawReason,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

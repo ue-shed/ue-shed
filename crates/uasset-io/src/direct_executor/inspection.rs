@@ -2,9 +2,9 @@ use uasset_inspection::generic::SCHEMA_VERSION;
 use uasset_parser::Package;
 use uasset_parser::archive::NameRef;
 use uasset_parser::asset::{
-    AssetDecodeContext, AssetErrorKind, DATA_ASSET_CLASS, DecodedAsset, EnumCppForm,
-    PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
-    decode_export,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetErrorKind, DATA_ASSET_CLASS, DecodedAsset,
+    EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    USERDEFINEDSTRUCT_CLASS, decode_export,
 };
 use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
 use uasset_parser::property::{
@@ -202,6 +202,12 @@ fn saved_asset(package: &Package, decoded: DecodedAsset) -> SavedAsset {
             properties: saved_properties(package, object.properties),
             tail_bytes: (!object.tail.is_empty()).then_some(object.tail.len()),
         },
+        DecodedAsset::AnimSequence(sequence) => SavedAsset::UObject {
+            object_path: sequence.object_path.into_string(),
+            class_path: ANIM_SEQUENCE_CLASS.to_owned(),
+            properties: saved_properties(package, sequence.properties),
+            tail_bytes: None,
+        },
         DecodedAsset::Skeleton(skeleton) => SavedAsset::Skeleton {
             object_path: skeleton.object_path.into_string(),
             class_path: SKELETON_CLASS.to_owned(),
@@ -337,6 +343,14 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
         PropertyValue::DataTableRowHandle(value) => SavedPropertyValue::DataTableRowHandle {
             table_object_path: resolve_object(package, value.table),
             row_name: resolve_name(package, value.row_name),
+        },
+        PropertyValue::DateTime(_) => SavedPropertyValue::Raw {
+            reason: "decoded native date time; omitted from generic schema v8".to_owned(),
+            size: 0,
+        },
+        PropertyValue::FrameRange(_) => SavedPropertyValue::Raw {
+            reason: "decoded native frame range; omitted from generic schema v8".to_owned(),
+            size: 0,
         },
         PropertyValue::ObjectRef(value) => SavedPropertyValue::ObjectRef {
             value: resolve_object(package, value),

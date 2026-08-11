@@ -3,23 +3,23 @@
 This catalog tracks the next improvements to the read-only classic-package parser and its
 TypeScript process boundary. Priorities are ordered by impact divided by implementation effort.
 
-| Priority | Work                                                              | Impact | Effort       | Status   |
-| -------- | ----------------------------------------------------------------- | ------ | ------------ | -------- |
-| 1        | Preserve UE5 `FVector` double precision                           | High   | Small        | Complete |
-| 2        | Preserve structured parser diagnostics in TypeScript              | Medium | Small        | Complete |
-| 3        | Add value-level real-fixture conformance tests                    | High   | Medium       | Complete |
-| 4        | Define a language-neutral inspection schema                       | High   | Medium       | Planned  |
-| 5        | Add a minimal batched catalog operation                           | High   | Medium       | Complete |
-| 6        | Bound file and stdin input before allocation                      | Medium | Small/medium | Planned  |
-| 7        | Expand property and native-struct codecs from a capability matrix | High   | Large        | Planned  |
-| 8        | Add fuzz targets and a malformed-package regression corpus        | High   | Medium/large | Planned  |
-| 9        | Keep capability and compatibility documentation current           | Low    | Small        | Complete |
-| 10       | Add bounded header-only package metadata parsing                  | High   | Medium       | Complete |
-| 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete |
-| 12       | Require a portable `wasm32-unknown-unknown` library build         | High   | Small        | Complete |
-| 13       | Add a reproducible native/CLI/Unreal benchmark harness            | High   | Medium       | Complete |
-| 14       | Resolve decode-path names by borrow instead of per-property alloc | High   | Small        | Complete |
-| 15       | Decide the WASM table-read boundary and value representation      | High   | Medium/large | Planned  |
+| Priority | Work                                                              | Impact | Effort       | Status                      |
+| -------- | ----------------------------------------------------------------- | ------ | ------------ | --------------------------- |
+| 1        | Preserve UE5 `FVector` double precision                           | High   | Small        | Complete                    |
+| 2        | Preserve structured parser diagnostics in TypeScript              | Medium | Small        | Complete                    |
+| 3        | Add value-level real-fixture conformance tests                    | High   | Medium       | Complete                    |
+| 4        | Define a language-neutral inspection schema                       | High   | Medium       | Planned                     |
+| 5        | Add a minimal batched catalog operation                           | High   | Medium       | Complete                    |
+| 6        | Bound file and stdin input before allocation                      | Medium | Small/medium | Planned                     |
+| 7        | Expand property and native-struct codecs from a capability matrix | High   | Large        | In progress — LevelSequence |
+| 8        | Add fuzz targets and a malformed-package regression corpus        | High   | Medium/large | Planned                     |
+| 9        | Keep capability and compatibility documentation current           | Low    | Small        | Complete                    |
+| 10       | Add bounded header-only package metadata parsing                  | High   | Medium       | Complete                    |
+| 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete                    |
+| 12       | Require a portable `wasm32-unknown-unknown` library build         | High   | Small        | Complete                    |
+| 13       | Add a reproducible native/CLI/Unreal benchmark harness            | High   | Medium       | Complete                    |
+| 14       | Resolve decode-path names by borrow instead of per-property alloc | High   | Small        | Complete                    |
+| 15       | Decide the WASM table-read boundary and value representation      | High   | Medium/large | Planned                     |
 
 ## Dependency order
 
@@ -53,6 +53,29 @@ What levels do _not_ get is class-specific native serialization. Classes with a 
 `tail_bytes` rather than decoding it: `UModel` is the clearest case in the fixture level, where BSP
 `Bounds`, `Vectors`, `Points`, and `Nodes` are native. That is a genuine boundary, distinct from the
 tagged-property coverage above, and it is why `tail_bytes` is non-zero on almost every level export.
+
+`AnimSequence` is the first animation-specific increment under item 7. A UE 5.7-generated fixture
+pairs a two-bone `Skeleton` with an uncooked sequence containing two seconds of source motion, two
+tracks, and root-motion settings. The parser consumes the sequence's small native trailer and keeps
+the package at `status: ok`; it deliberately does not decode cooked compressed tracks or legacy
+inline raw tracks. UE 5.7's authoritative source motion lives in separately exported animation-data
+model objects, so track/curve summaries belong in a narrow animation projection over the decoded
+package rather than in the `AnimSequence` trailer decoder.
+
+`LevelSequence` is the next increment and is intentionally evaluator-independent. The UE 5.7
+fixture contains a five-second `MovieScene`, one object binding, a text property track, one section,
+and three localized `FMovieSceneTextChannel` keys. A second timeline references that text sequence
+through both a normal subsequence and a named cinematic shot. The generic UObject decoder already
+recovers the export graph, object references, and text values; the added native codecs recover
+`FFrameNumber` arrays, `FMovieSceneFrameRange`, and the metadata `FDateTime`. A compact schema-3
+projection joins binding, track, section, range, timed text, nested-sequence references, and shot
+names while retaining unsupported track classes as structural inventory with explicit coverage
+gaps. Independently of that semantic track support, it recursively inventories every decoded
+object, soft-object, and DataTable-row reference across structs and containers in the package. Raw
+values, native object tails, and unresolved package indices become reference-specific coverage gaps
+instead of a false completeness claim. It does not recursively load referenced packages, evaluate
+Sequencer, blend channels, resolve runtime bindings, or claim semantic coverage of every track and
+channel class.
 
 Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,

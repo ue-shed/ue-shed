@@ -5,9 +5,18 @@
 //! IO and the WebAssembly adapter.
 
 pub mod generic;
+pub mod level_sequence;
 pub mod projection;
 pub mod saved_world;
 
+pub use level_sequence::{
+    LEVEL_SEQUENCE_CLASS, LevelSequenceProjection, SequenceBinding, SequenceCoverageGap,
+    SequenceCoverageGapReason, SequenceFrameBound, SequenceFrameBoundKind, SequenceFrameRange,
+    SequenceFrameRate, SequenceReference, SequenceReferenceCoverageGap,
+    SequenceReferenceCoverageGapReason, SequenceReferenceKind, SequenceReferenceScope,
+    SequenceSection, SequenceTextIdentity, SequenceTextKey, SequenceTrack, SequenceTrackContent,
+    project_level_sequence,
+};
 pub use projection::{
     Evidence, EvidenceSource, EvidenceUnavailableReason, TEXTURE2D_CLASS, TextAssetProjection,
     TextCoverageGap, TextCoverageGapReason, TextEditCapability, TextIdentity, TextIdentityReason,

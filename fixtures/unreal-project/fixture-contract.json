@@ -1,11 +1,41 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.6.0",
+	"fixtureVersion": "1.9.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
 	},
 	"contentRoot": "/Game/Fixture/Authoring",
+	"animation": {
+		"contentRoot": "/Game/Fixture/Animation",
+		"skeleton": {
+			"assetPath": "/Game/Fixture/Animation/SK_Fixture.SK_Fixture",
+			"bones": ["root", "hand"]
+		},
+		"sequence": {
+			"assetPath": "/Game/Fixture/Animation/A_FixtureMotion.A_FixtureMotion",
+			"durationSeconds": 2,
+			"frameRate": { "numerator": 30, "denominator": 1 },
+			"frames": 60,
+			"tracks": ["root", "hand"],
+			"rateScale": 1.25,
+			"loop": true,
+			"rootMotion": true,
+			"rootMotionRootLock": "AnimFirstFrame"
+		}
+	},
+	"levelSequence": {
+		"assetPath": "/Game/Fixture/Sequences/LS_TextTimeline.LS_TextTimeline",
+		"nestedAssetPath": "/Game/Fixture/Sequences/LS_NestedTimeline.LS_NestedTimeline",
+		"tickResolution": { "numerator": 24000, "denominator": 1 },
+		"displayRate": { "numerator": 24, "denominator": 1 },
+		"playbackRange": { "start": 0, "end": 120000 },
+		"subSequenceRange": { "start": 0, "end": 60000 },
+		"cinematicShotRange": { "start": 60000, "end": 120000 },
+		"shotDisplayName": "Text timeline reprise",
+		"textKeyFrames": [0, 48000, 96000],
+		"textKeys": ["Opening", "Warning", "Exit"]
+	},
 	"gameText": {
 		"contentRoot": "/Game/Fixture/Text",
 		"stringTable": {

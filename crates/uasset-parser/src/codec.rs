@@ -5,9 +5,10 @@ use std::fmt;
 use crate::archive::Reader;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
-    ColorValue, DataTableRowHandleValue, IntPointValue, LinearColorValue, MapEntry, PropertyError,
-    PropertyRecord, PropertyStream, PropertyTagFlags, PropertyTypeName, PropertyValue, RawReason,
-    RotatorValue, TextHistory, TextValue, VectorValue, read_tagged_property_stream,
+    ColorValue, DataTableRowHandleValue, FrameRangeBound, FrameRangeValue, IntPointValue,
+    LinearColorValue, MapEntry, PropertyError, PropertyRecord, PropertyStream, PropertyTagFlags,
+    PropertyTypeName, PropertyValue, RangeBoundKind, RawReason, RotatorValue, TextHistory,
+    TextValue, VectorValue, read_tagged_property_stream,
 };
 
 /// UE `INDEX_NONE` marks a full container replace in map property payloads.
@@ -116,6 +117,34 @@ fn decode_property_record(
             &path,
         ) {
             Ok(Some(value)) => value,
+            Ok(None)
+                if matches!(
+                    type_name.as_ref(),
+                    "ArrayProperty" | "SetProperty" | "MapProperty"
+                ) =>
+            {
+                match decode_typed_value(
+                    source,
+                    TypeSpec {
+                        name: type_name.as_ref(),
+                        tree: &record.type_name,
+                    },
+                    record.flags,
+                    &mut payload,
+                    context,
+                    &path,
+                    depth,
+                ) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => {
+                        record.value = PropertyValue::Raw {
+                            reason: RawReason::UnsupportedType,
+                        };
+                        return Ok(());
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
             Ok(None) => {
                 record.value = PropertyValue::Raw {
                     reason: RawReason::UnsupportedType,
@@ -229,7 +258,7 @@ fn decode_typed_value(
             let path = path.to_string();
             decode_text_value(payload, &path).map(|text| text.map(PropertyValue::Text))
         }
-        "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" => {
+        "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
                 payload.read_i32(&format_args!("{path}.ObjectRef"))?,
             ))))
@@ -368,11 +397,35 @@ fn decode_binary_or_native_value(
                     payload, &path,
                 )?)));
             }
+            Some("DateTime") => {
+                return Ok(Some(PropertyValue::DateTime(decode_date_time_value(
+                    payload, &path,
+                )?)));
+            }
+            Some("MovieSceneFrameRange") => {
+                return Ok(Some(PropertyValue::FrameRange(decode_frame_range_value(
+                    payload, &path,
+                )?)));
+            }
             _ => {}
         }
     }
 
     Ok(None)
+}
+
+fn decode_date_time_value(payload: &mut Reader<'_>, path: &str) -> Result<i64, PropertyError> {
+    if payload.remaining() != 8 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!("unsupported FDateTime payload size {}", payload.remaining()),
+        ));
+    }
+    payload
+        .read_i64(&format!("{path}.Ticks"))
+        .map_err(PropertyError::from)
 }
 
 fn decode_int_point_value(
@@ -598,6 +651,17 @@ fn decode_container_element(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_spec.name == "FrameNumber"
+        || (type_spec.name == "StructProperty"
+            && resolve_struct_type_name(context.package, type_spec.tree).as_deref()
+                == Some("FrameNumber"))
+    {
+        let mut element_payload = payload.take_bounded(4, path)?;
+        return Ok(Some(PropertyValue::Int(i64::from(
+            element_payload.read_i32(&format!("{path}.Value"))?,
+        ))));
+    }
+
     if type_spec.name == "SoftObjectProperty" && !context.package.soft_object_paths.is_empty() {
         let mut element_payload = payload.take_bounded(4, path)?;
         return decode_typed_value(
@@ -666,7 +730,7 @@ fn fixed_serialized_size(type_name: &str, type_tree: &PropertyTypeName) -> Optio
         }),
         "Int16Property" | "UInt16Property" => Some(2),
         "IntProperty" | "Int32Property" | "UInt32Property" | "FloatProperty" | "ObjectProperty"
-        | "ClassProperty" | "WeakObjectProperty" => Some(4),
+        | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => Some(4),
         "Int64Property" | "UInt64Property" | "DoubleProperty" | "NameProperty" | "EnumProperty" => {
             Some(8)
         }
@@ -917,6 +981,50 @@ fn decode_guid_value(
         ));
     }
     payload.read_guid(path).map_err(PropertyError::from)
+}
+
+fn decode_frame_range_value(
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<FrameRangeValue, PropertyError> {
+    if payload.remaining() != 10 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!(
+                "unsupported FMovieSceneFrameRange payload size {}",
+                payload.remaining()
+            ),
+        ));
+    }
+
+    Ok(FrameRangeValue {
+        lower: decode_frame_range_bound(payload, &format!("{path}.LowerBound"))?,
+        upper: decode_frame_range_bound(payload, &format!("{path}.UpperBound"))?,
+    })
+}
+
+fn decode_frame_range_bound(
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<FrameRangeBound, PropertyError> {
+    let offset = payload.tell();
+    let kind = match payload.read_u8(&format!("{path}.Type"))? {
+        0 => RangeBoundKind::Exclusive,
+        1 => RangeBoundKind::Inclusive,
+        2 => RangeBoundKind::Open,
+        value => {
+            return Err(PropertyError::new(
+                crate::property::PropertyErrorKind::MalformedData,
+                Some(offset),
+                path,
+                format!("invalid range-bound type {value}"),
+            ));
+        }
+    };
+    let value = payload.read_i32(&format!("{path}.Value"))?;
+    Ok(FrameRangeBound { kind, value })
 }
 
 /// `FColor` serializes its channels in `B, G, R, A` byte order.
@@ -1203,7 +1311,7 @@ mod tests {
             PropertyValue::String("hello".into())
         );
 
-        for type_name in ["ObjectProperty", "ClassProperty"] {
+        for type_name in ["ObjectProperty", "ClassProperty", "InterfaceProperty"] {
             assert_eq!(
                 decode_record(
                     vec![type_name.into()],
@@ -1315,6 +1423,43 @@ mod tests {
             panic!("expected array, got {value:?}");
         };
         assert_eq!(values.len(), 2);
+    }
+
+    #[test]
+    fn decodes_native_frame_number_array_payload() {
+        let names = vec![
+            "ArrayProperty".into(),
+            "StructProperty".into(),
+            "FrameNumber".into(),
+        ];
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 3);
+        for frame in [0, 48_000, 96_000] {
+            push_i32(&mut payload, frame);
+        }
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(2, 0),
+                    parameters: Vec::new(),
+                }],
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+
+        assert_eq!(
+            value,
+            PropertyValue::Array(vec![
+                PropertyValue::Int(0),
+                PropertyValue::Int(48_000),
+                PropertyValue::Int(96_000),
+            ])
+        );
     }
 
     #[test]
@@ -1984,6 +2129,59 @@ mod tests {
             value,
             PropertyValue::IntPoint(IntPointValue { x: -12, y: 34 })
         );
+    }
+
+    #[test]
+    fn decodes_movie_scene_frame_range_from_native_layout() {
+        let names = vec!["StructProperty".into(), "MovieSceneFrameRange".into()];
+        let mut payload = Vec::new();
+        payload.push(1); // inclusive lower bound
+        push_i32(&mut payload, 0);
+        payload.push(0); // exclusive upper bound
+        push_i32(&mut payload, 120_000);
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+
+        assert_eq!(
+            value,
+            PropertyValue::FrameRange(FrameRangeValue {
+                lower: FrameRangeBound {
+                    kind: RangeBoundKind::Inclusive,
+                    value: 0,
+                },
+                upper: FrameRangeBound {
+                    kind: RangeBoundKind::Exclusive,
+                    value: 120_000,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_date_time_from_native_ticks() {
+        let names = vec!["StructProperty".into(), "DateTime".into()];
+        let ticks = 638_853_408_000_000_000_i64;
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: Vec::new(),
+            }],
+            PropertyTagFlags(0x08),
+            &ticks.to_le_bytes(),
+        );
+
+        assert_eq!(value, PropertyValue::DateTime(ticks));
     }
 
     #[test]

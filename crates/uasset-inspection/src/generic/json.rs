@@ -5,7 +5,7 @@ use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};
 use uasset_parser::archive::{Guid, NameRef};
 use uasset_parser::asset::{
-    AssetDecodeContext, DecodedAsset, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, DecodedAsset, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
     USERDEFINEDSTRUCT_CLASS, decode_export,
 };
 use uasset_parser::package::{ObjectPath, Package, PackageIndex, TableLocation};
@@ -434,6 +434,35 @@ impl Serialize for AssetView<'_> {
                 },
                 properties: PropertiesView::new(package, &object.properties),
                 tail_bytes: object.tail.len(),
+                bones: BonesView {
+                    package,
+                    bones: &[],
+                },
+                row_count: 0,
+                curve_rows: CurveRowsView { package, rows: &[] },
+                rows: RowsView { package, rows: &[] },
+            },
+            DecodedAsset::AnimSequence(sequence) => AssetFields {
+                kind: "UObject",
+                object_path: sequence.object_path.as_str(),
+                class_path: Some(ANIM_SEQUENCE_CLASS),
+                object_guid: sequence.object_guid.as_ref().map(GuidView),
+                row_struct: None,
+                parent_tables: ObjectPathsView(&[]),
+                string_table_namespace: None,
+                string_table_entries: StringTableEntriesView(&[]),
+                enum_cpp_form: None,
+                enum_entries: EnumEntriesView {
+                    package,
+                    entries: &[],
+                },
+                struct_flags: None,
+                struct_fields: StructFieldsView {
+                    package,
+                    fields: &[],
+                },
+                properties: PropertiesView::new(package, &sequence.properties),
+                tail_bytes: 0,
                 bones: BonesView {
                     package,
                     bones: &[],
@@ -979,6 +1008,11 @@ enum PropertyValueView<'a> {
         reason: RawReasonView<'a>,
         size: u64,
     },
+    #[serde(rename = "raw")]
+    OmittedNative {
+        reason: &'static str,
+        size: u64,
+    },
 }
 
 impl<'a> PropertyValueView<'a> {
@@ -1039,6 +1073,14 @@ impl<'a> PropertyValueView<'a> {
             PropertyValue::DataTableRowHandle(value) => Self::DataTableRowHandle {
                 table_object_path: ObjectReferenceView::new(package, value.table),
                 row_name: NameView::new(package, value.row_name),
+            },
+            PropertyValue::DateTime(_) => Self::OmittedNative {
+                reason: "decoded native date time; omitted from generic schema v8",
+                size: raw_size,
+            },
+            PropertyValue::FrameRange(_) => Self::OmittedNative {
+                reason: "decoded native frame range; omitted from generic schema v8",
+                size: raw_size,
             },
             PropertyValue::ObjectRef(value) => Self::ObjectRef {
                 value: ObjectReferenceView::new(package, *value),

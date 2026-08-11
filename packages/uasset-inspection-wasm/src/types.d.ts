@@ -238,6 +238,97 @@ export interface ProjectionError {
 export type TextResult = TextProjection | ProjectionError;
 export type TextureResult = TextureProjection | ProjectionError;
 
+export interface LevelSequenceFrameRate {
+	readonly numerator: number;
+	readonly denominator: number;
+}
+
+export interface LevelSequenceFrameRange {
+	readonly lower: { readonly kind: "exclusive" | "inclusive" | "open"; readonly frame: number };
+	readonly upper: { readonly kind: "exclusive" | "inclusive" | "open"; readonly frame: number };
+}
+
+export interface LevelSequenceTextKey {
+	readonly frame: number;
+	readonly source: string;
+	readonly identity:
+		| { readonly status: "resolved"; readonly namespace: string; readonly key: string }
+		| { readonly status: "unresolved" };
+}
+
+export interface LevelSequenceSection {
+	readonly object_path: string;
+	readonly class_path: string;
+	readonly range: LevelSequenceFrameRange | null;
+	readonly sequence_path: string | null;
+	readonly shot_display_name: string | null;
+	readonly text_keys: readonly LevelSequenceTextKey[];
+}
+
+export interface LevelSequenceTrack {
+	readonly object_path: string;
+	readonly class_path: string;
+	readonly property_path: string | null;
+	readonly content: "timed_text" | "sub_sequence" | "cinematic_shot" | "structure_only";
+	readonly sections: readonly LevelSequenceSection[];
+}
+
+export interface LevelSequenceBinding {
+	readonly id: string;
+	readonly name: string | null;
+	readonly possessed_object_class: string | null;
+	readonly tracks: readonly LevelSequenceTrack[];
+}
+
+export interface LevelSequenceReference {
+	readonly owner_path: string;
+	readonly owner_class_path: string;
+	readonly property_path: string;
+	readonly kind: "object" | "soft_object" | "data_table_row_handle";
+	readonly target_path: string;
+	readonly target_row?: string;
+	readonly scope: "internal" | "external";
+}
+
+export interface LevelSequenceProjectionRecord {
+	readonly schema_version: 3;
+	readonly object_path: string;
+	readonly movie_scene_path: string | null;
+	readonly tick_resolution: LevelSequenceFrameRate | null;
+	readonly display_rate: LevelSequenceFrameRate | null;
+	readonly playback_range: LevelSequenceFrameRange | null;
+	readonly bindings: readonly LevelSequenceBinding[];
+	readonly root_tracks: readonly LevelSequenceTrack[];
+	readonly references: readonly LevelSequenceReference[];
+	readonly reference_coverage_gaps: readonly {
+		readonly owner_path: string;
+		readonly property_path: string;
+		readonly reason:
+			| "raw_property_value"
+			| "native_object_tail"
+			| "unresolved_object_reference";
+	}[];
+	readonly coverage_gaps: readonly {
+		readonly object_path: string;
+		readonly property_path: string;
+		readonly reason:
+			| "missing_reference"
+			| "wrong_value_kind"
+			| "mismatched_channel_lengths"
+			| "unsupported_track_content";
+	}[];
+}
+
+export interface LevelSequenceProjection {
+	readonly schema_version: 1;
+	readonly status: "complete" | "partial";
+	readonly path: string;
+	readonly sequences: readonly LevelSequenceProjectionRecord[];
+	readonly diagnostics: readonly ProjectionDiagnostic[];
+}
+
+export type LevelSequenceResult = LevelSequenceProjection | ProjectionError;
+
 export interface RuntimeLimits {
 	readonly maxInputBytes: number;
 	readonly maxOutputBytes: number;
@@ -261,6 +352,7 @@ export interface WasmRuntime {
 	readonly inspect: (path: string, bytes: Uint8Array) => InspectionResult;
 	readonly extractText: (path: string, bytes: Uint8Array) => TextResult;
 	readonly extractTextures: (path: string, bytes: Uint8Array) => TextureResult;
+	readonly extractLevelSequences: (path: string, bytes: Uint8Array) => LevelSequenceResult;
 	readonly version: () => string;
 }
 

@@ -85,7 +85,14 @@ function engineTools(engineRoot) {
 }
 
 function build(tools) {
-	run(tools.build, ["UEShedFixtureEditor", "Win64", "Development", projectFile, "-WaitMutex"]);
+	run(tools.build, [
+		"UEShedFixtureEditor",
+		"Win64",
+		"Development",
+		projectFile,
+		"-WaitMutex",
+		"-NoHotReloadFromIDE"
+	]);
 }
 
 function runCommandlet(tools, extraArgs = []) {

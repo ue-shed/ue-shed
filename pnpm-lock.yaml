@@ -156,6 +156,9 @@ importers:
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@ue-shed/scenarios':
+        specifier: workspace:*
+        version: link:../../packages/scenarios
       '@ue-shed/unreal-assets':
         specifier: workspace:*
         version: link:../../packages/unreal-assets
@@ -777,9 +780,22 @@ importers:
 
   packages/scenarios:
     dependencies:
+      '@ue-shed/engine-discovery':
+        specifier: workspace:*
+        version: link:../engine-discovery
+      '@ue-shed/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@ue-shed/unreal-connection':
+        specifier: workspace:*
+        version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
 
   packages/uasset:
     optionalDependencies:

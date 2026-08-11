@@ -13,7 +13,10 @@ import { fileURLToPath } from "node:url";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "..", "..");
-const defaultSource = resolve(repositoryRoot, "target", "release", "uasset.exe");
+const cargoTargetDirectory = process.env.CARGO_TARGET_DIR
+	? resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
+	: resolve(repositoryRoot, "target");
+const defaultSource = resolve(cargoTargetDirectory, "release", "uasset.exe");
 const defaultDestination = resolve(packageRoot, "bin", "uasset.exe");
 const packageVersion = JSON.parse(
 	readFileSync(resolve(packageRoot, "package.json"), "utf8")

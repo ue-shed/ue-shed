@@ -57,7 +57,7 @@ export const movementGymScenario: ScenarioDocument = {
 			id: elementId("track_intent"),
 			label: "Player actions",
 			observedAt: "evaluated_action",
-			injectAt: "evaluated_action",
+			injectAt: "pre_evaluation",
 			clips: [
 				{
 					kind: "semantic_action",

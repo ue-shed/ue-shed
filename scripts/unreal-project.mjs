@@ -19,7 +19,8 @@ const pluginIds = Object.freeze([
 	"UEShedAuthoring",
 	"UEShedCameras",
 	"UEShedObservatory",
-	"UEShedAssetAudits"
+	"UEShedAssetAudits",
+	"UEShedScenarios"
 ]);
 
 function option(name) {

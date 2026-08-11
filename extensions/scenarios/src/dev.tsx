@@ -21,7 +21,7 @@ const mountPreview = () =>
 						<span {...stylex.props(styles.navItem)}>Scenario Studio</span>
 						<span {...stylex.props(styles.previewLabel)}>STANDALONE PROTOTYPE</span>
 					</nav>
-					<ScenarioStudioRoute />
+					<ScenarioStudioRoute showDemoGuide />
 				</div>
 			</EffectRuntimeProvider>
 		),

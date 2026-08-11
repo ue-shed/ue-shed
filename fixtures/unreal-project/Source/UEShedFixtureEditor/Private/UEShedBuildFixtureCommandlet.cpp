@@ -17,6 +17,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Factories/WorldFactory.h"
+#include "GameFramework/PlayerStart.h"
+#include "GameFramework/WorldSettings.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "HAL/FileManager.h"
@@ -48,6 +50,7 @@
 #include "UEShedFixtureTypes.h"
 #include "UEShedFixtureMover.h"
 #include "UEShedCameraSource.h"
+#include "UEShedMovementGym.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(UEShedBuildFixtureCommandlet)
 
@@ -2620,6 +2623,138 @@ bool VerifyMapReviewGallery()
 	UWorld* World = Package == nullptr ? nullptr : UWorld::FindWorldInPackage(Package);
 	return VerifyMapReviewGalleryWorld(World, true);
 }
+
+constexpr TCHAR MovementGymPackageName[] =
+	TEXT("/Game/Fixture/Scenarios/L_MovementGym");
+constexpr TCHAR MovementGymAssetName[] = TEXT("L_MovementGym");
+
+bool VerifyMovementGymWorld(UWorld* World, const bool bLog)
+{
+	if (World == nullptr || World->IsPartitionedWorld()) return false;
+	if (World->GetWorldSettings()->DefaultGameMode != AUEShedMovementGymGameMode::StaticClass())
+	{
+		if (bLog) UE_LOG(LogTemp, Error, TEXT("Movement Gym has the wrong game mode"));
+		return false;
+	}
+	int32 TaggedActors = 0;
+	int32 Starts = 0;
+	int32 Providers = 0;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor == nullptr || !Actor->ActorHasTag(TEXT("UEShedScenarioFixture"))) continue;
+		++TaggedActors;
+		if (Actor->IsA<APlayerStart>()) ++Starts;
+		if (Actor->IsA<AUEShedMovementGymState>()) ++Providers;
+	}
+	const bool bValid = TaggedActors == 5 && Starts == 1 && Providers == 1;
+	if (bLog && bValid) UE_LOG(LogTemp, Display,
+		TEXT("Movement Gym fixture has %d actors, %d starts, and %d providers"),
+		TaggedActors, Starts, Providers);
+	if (bLog && !bValid) UE_LOG(LogTemp, Error,
+		TEXT("Movement Gym fixture has %d actors, %d starts, and %d providers"),
+		TaggedActors, Starts, Providers);
+	return bValid;
+}
+
+bool GenerateMovementGym()
+{
+	UPackage* Package = FindOrCreatePackage(MovementGymPackageName);
+	if (Package == nullptr) return false;
+	UWorld* World = UWorld::FindWorldInPackage(Package);
+	const bool bCreatedWorld = World == nullptr;
+	if (World == nullptr)
+	{
+		UWorldFactory* Factory = NewObject<UWorldFactory>();
+		Factory->WorldType = EWorldType::Editor;
+		Factory->bCreateWorldPartition = false;
+		World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package,
+			MovementGymAssetName, RF_Public | RF_Standalone, nullptr, GWarn));
+	}
+	if (World == nullptr || World->IsPartitionedWorld()) return false;
+	if (!bCreatedWorld && VerifyMovementGymWorld(World, false))
+	{
+		UE_LOG(LogTemp, Display, TEXT("Movement Gym fixture already matches its contract"));
+		return true;
+	}
+	TArray<AActor*> Existing;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor != nullptr && Actor->ActorHasTag(TEXT("UEShedScenarioFixture")))
+		{
+			Existing.Add(Actor);
+		}
+	}
+	for (AActor* Actor : Existing)
+	{
+		World->EditorDestroyActor(Actor, true);
+	}
+	World->GetWorldSettings()->DefaultGameMode = AUEShedMovementGymGameMode::StaticClass();
+
+	auto AddBlock = [&](const TCHAR* Name, const TCHAR* Label, const FVector& Location,
+		const FVector& Scale, const FLinearColor& Color) -> AStaticMeshActor*
+	{
+		FActorSpawnParameters Spawn;
+		Spawn.Name = Name;
+		Spawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+		Spawn.bCreateActorPackage = false;
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
+			Location, FRotator::ZeroRotator, Spawn);
+		if (Actor == nullptr) return nullptr;
+		Actor->Tags.Add(TEXT("UEShedScenarioFixture"));
+		Actor->SetActorLabel(Label);
+		Actor->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr,
+			TEXT("/Engine/BasicShapes/Cube.Cube")));
+		Actor->SetActorScale3D(Scale);
+		ApplySolidColor(Actor->GetStaticMeshComponent(), Color);
+		return Actor;
+	};
+
+	AStaticMeshActor* Floor = AddBlock(TEXT("MovementGymFloor"), TEXT("Movement Gym Floor"),
+		FVector(1500, 0, -50), FVector(40, 14, 1),
+		FLinearColor(0.12f, 0.16f, 0.22f, 1.0f));
+	AStaticMeshActor* NearMarker = AddBlock(TEXT("MovementGymNearMarker"), TEXT("Near Bridge Marker"),
+		FVector(750, -500, 75), FVector(0.35f, 0.35f, 1.5f),
+		FLinearColor(0.92f, 0.46f, 0.18f, 1.0f));
+	AStaticMeshActor* Cache = AddBlock(TEXT("MovementGymCache"), TEXT("Scenario Cache"),
+		FVector(1450, 350, 50), FVector(0.8f, 0.8f, 1.0f),
+		FLinearColor(0.20f, 0.70f, 0.48f, 1.0f));
+	FActorSpawnParameters StartSpawn;
+	StartSpawn.Name = TEXT("MovementGymPlayerStart");
+	StartSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	StartSpawn.bCreateActorPackage = false;
+	APlayerStart* Start = World->SpawnActor<APlayerStart>(
+		FVector(0, 0, 100), FRotator::ZeroRotator, StartSpawn);
+	FActorSpawnParameters StateSpawn;
+	StateSpawn.Name = TEXT("MovementGymState");
+	StateSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	StateSpawn.bCreateActorPackage = false;
+	AUEShedMovementGymState* State = World->SpawnActor<AUEShedMovementGymState>(
+		FVector(1450, 350, 100), FRotator::ZeroRotator, StateSpawn);
+	if (Floor == nullptr || NearMarker == nullptr || Cache == nullptr
+		|| Start == nullptr || State == nullptr)
+	{
+		if (bCreatedWorld) World->CleanupWorld();
+		return false;
+	}
+	Start->Tags.Add(TEXT("UEShedScenarioFixture"));
+	Start->PlayerStartTag = TEXT("Scenario");
+	Start->SetActorLabel(TEXT("Scenario Player Start"));
+	State->Tags.Add(TEXT("UEShedScenarioFixture"));
+	State->SetActorLabel(TEXT("Movement Gym State"));
+
+	Package->MarkPackageDirty();
+	const bool bSaved = VerifyMovementGymWorld(World, true) && SaveAsset(Package, World);
+	if (bCreatedWorld) World->CleanupWorld();
+	if (bSaved) UE_LOG(LogTemp, Display, TEXT("Generated %s"), MovementGymPackageName);
+	return bSaved;
+}
+
+bool VerifyMovementGym()
+{
+	UPackage* Package = LoadPackage(nullptr, MovementGymPackageName, LOAD_None);
+	UWorld* World = Package == nullptr ? nullptr : UWorld::FindWorldInPackage(Package);
+	return VerifyMovementGymWorld(World, true);
+}
 }
 
 UUEShedBuildFixtureCommandlet::UUEShedBuildFixtureCommandlet()
@@ -2753,6 +2888,10 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	}
 
 	const bool VerifyOnly = FParse::Param(*Params, TEXT("VerifyOnly"));
+	if (FParse::Param(*Params, TEXT("ScenarioOnly")))
+	{
+		return (VerifyOnly ? VerifyMovementGym() : GenerateMovementGym()) ? 0 : 1;
+	}
 
 	bool Succeeded = true;
 	if (!VerifyOnly)
@@ -2768,6 +2907,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateMapReviewGallery() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
 		Succeeded = GenerateEnhancedInputFixtures() && Succeeded;
+		Succeeded = GenerateMovementGym() && Succeeded;
 	}
 	else
 	{
@@ -2782,6 +2922,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyMapReviewGallery() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
 		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;
+		Succeeded = VerifyMovementGym() && Succeeded;
 	}
 
 	UE_LOG(LogTemp, Display, TEXT("UE Shed fixture %s %s"),

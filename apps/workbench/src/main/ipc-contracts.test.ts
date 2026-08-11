@@ -1,5 +1,11 @@
 import { it } from "@effect/vitest";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
+import {
+	movementGymRuns,
+	movementGymScenario,
+	ScenarioRunHandle,
+	scenarioWireContract
+} from "@ue-shed/scenarios";
 import { Effect, Exit, Result, Schema } from "effect";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,6 +47,15 @@ const sessionFailure = {
 		retrySafe: false
 	}
 };
+
+const scenarioHandle = ScenarioRunHandle.make({
+	endpoint: "http://127.0.0.1:30001",
+	evidenceLimit: 8,
+	objectPath: "/Script/Fixture.Scenarios",
+	pieSessionId: "pie-session-1",
+	runId: "run-live-1",
+	scenarioId: movementGymScenario.id
+});
 
 const cameraStatus = {
 	cameras: [],
@@ -141,6 +156,9 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"editor-session:set-port": [31001],
 	"editor-session:status": [],
 	"editor-session:execute": ["start_play"],
+	"scenario:start": [movementGymScenario, scenarioHandle.endpoint],
+	"scenario:status": [scenarioHandle],
+	"scenario:cancel": [scenarioHandle],
 	"fixture:launch": [],
 	"fixture:launch-review": [],
 	"showcase:context": [],
@@ -314,6 +332,13 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		outcome: "accepted",
 		state: { mode: "play", sessionId: "session-1", status: "starting" }
 	},
+	"scenario:start": scenarioHandle,
+	"scenario:status": {
+		_tag: "Terminal",
+		contract: scenarioWireContract,
+		result: movementGymRuns[1]!
+	},
+	"scenario:cancel": movementGymRuns[1]!,
 	"fixture:launch": { status: "ready" },
 	"fixture:launch-review": {
 		status: "failed",
@@ -571,9 +596,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 85 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(85);
-	expect(new Set(invokeChannelNames).size).toBe(85);
+it("registers exactly 88 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(88);
+	expect(new Set(invokeChannelNames).size).toBe(88);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

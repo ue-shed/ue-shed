@@ -204,6 +204,14 @@ void UUEShedEditorPlaySessionLibrary::GetPlaySessionState(FString& ResultJson)
 	SerializeState(ResultJson);
 }
 
+bool UUEShedEditorPlaySessionLibrary::GetActiveSessionId(FString& SessionId)
+{
+	const FPlaySessionSnapshot State = Snapshot();
+	if (State.Status == TEXT("stopped") || State.Status == TEXT("stopping")) return false;
+	SessionId = State.SessionId;
+	return !SessionId.IsEmpty();
+}
+
 void UUEShedEditorPlaySessionLibrary::StartPlaySession(FString& ResultJson)
 {
 	Start(false, ResultJson);

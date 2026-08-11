@@ -23,6 +23,7 @@ import {
 	projectIndexProcessLayerFromReader
 } from "@ue-shed/unreal-assets";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
+import { ScenarioRunnerLive } from "@ue-shed/scenarios";
 import { Effect, Layer } from "effect";
 import { join } from "node:path";
 import { electronAppLayer, ElectronApp, type ElectronAppHost } from "./adapters/electron-app.js";
@@ -72,6 +73,11 @@ const windowOptions: WorkbenchWindowOptions = {
  * infrastructure services that have no Workbench-internal dependencies.
  */
 function baseLayer(hosts: WorkbenchHosts) {
+	const remoteControl = RemoteControlClientLive;
+	const editorPlaySession = EditorPlaySessionLive.pipe(Layer.provide(remoteControl));
+	const scenarioRunner = ScenarioRunnerLive.pipe(
+		Layer.provide(Layer.merge(remoteControl, editorPlaySession))
+	);
 	return Layer.mergeAll(
 		runtimeObservabilityLayer({
 			serviceName: "ue-shed-workbench",
@@ -81,8 +87,9 @@ function baseLayer(hosts: WorkbenchHosts) {
 		electronIpcLayer(hosts.ipc),
 		workbenchWindowLayer(windowOptions),
 		AssetReaderLive,
-		RemoteControlClientLive,
-		EditorPlaySessionLive.pipe(Layer.provide(RemoteControlClientLive)),
+		remoteControl,
+		editorPlaySession,
+		scenarioRunner,
 		ReviewRepositoryLive,
 		ReviewIdGeneratorLive,
 		cameraFeedLayer(),

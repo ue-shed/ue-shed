@@ -81,6 +81,20 @@ type FixtureContract = {
 		/** Keys more than one context claims, which is what the Input Atlas exists to surface. */
 		readonly contestedKeys: readonly string[];
 	};
+	readonly scenarioStudio: {
+		readonly map: string;
+		readonly relativeMapPath: string;
+		readonly timePolicy: "game_time";
+		readonly inputLayer: "pre_evaluation";
+		readonly actions: readonly {
+			readonly id: "Move" | "Jump" | "Interact";
+			readonly publicPath: string;
+			readonly objectPath: string;
+			readonly valueType: "boolean" | "axis2d";
+		}[];
+		readonly conditions: readonly string[];
+		readonly maxEvidence: number;
+	};
 	readonly cameraLoad: {
 		readonly map: string;
 		readonly movingActors: number;
@@ -180,6 +194,7 @@ function readContract(): FixtureContract {
 		!isRecord(value.offlineWorld) ||
 		!isRecord(value.gameText) ||
 		!isRecord(value.enhancedInput) ||
+		!isRecord(value.scenarioStudio) ||
 		!isRecord(value.textureAudit) ||
 		typeof value.engine.major !== "number" ||
 		typeof value.engine.minor !== "number" ||
@@ -189,6 +204,8 @@ function readContract(): FixtureContract {
 		!Array.isArray(value.offlineWorld.labels) ||
 		!Array.isArray(value.enhancedInput.mappingContexts) ||
 		!Array.isArray(value.enhancedInput.contestedKeys) ||
+		!Array.isArray(value.scenarioStudio.actions) ||
+		!Array.isArray(value.scenarioStudio.conditions) ||
 		!Array.isArray(value.textureAudit.textures)
 	) {
 		throw new Error("fixture-contract.json does not match the fixture contract envelope");
@@ -228,6 +245,38 @@ describe("generic Unreal fixture contract", () => {
 		expect(contract.fixtureVersion).toMatch(/^\d+\.\d+\.\d+$/);
 		expect(contract.engine).toEqual({ major: 5, minor: 7 });
 		expect(contract.contentRoot).toBe("/Game/Fixture/Authoring");
+	});
+
+	it("declares one portable live Scenario Studio fixture", () => {
+		expect(contract.scenarioStudio).toEqual({
+			map: "/Game/Fixture/Scenarios/L_MovementGym",
+			relativeMapPath: "Content/Fixture/Scenarios/L_MovementGym.umap",
+			timePolicy: "game_time",
+			inputLayer: "pre_evaluation",
+			actions: [
+				{
+					id: "Move",
+					publicPath: "/Game/Fixture/Input/IA_Move",
+					objectPath: "/Game/Fixture/Input/IA_Move.IA_Move",
+					valueType: "axis2d"
+				},
+				{
+					id: "Jump",
+					publicPath: "/Game/Fixture/Input/IA_Jump",
+					objectPath: "/Game/Fixture/Input/IA_Jump.IA_Jump",
+					valueType: "boolean"
+				},
+				{
+					id: "Interact",
+					publicPath: "/Game/Fixture/Input/IA_Interact",
+					objectPath: "/Game/Fixture/Input/IA_Interact.IA_Interact",
+					valueType: "boolean"
+				}
+			],
+			conditions: ["landing_ready", "cache_open"],
+			maxEvidence: 8
+		});
+		expect(existsSync(join(fixtureRoot, contract.scenarioStudio.relativeMapPath))).toBe(true);
 	});
 
 	it("keeps table identities and row identities unique", () => {
@@ -628,6 +677,7 @@ describe("fixture project", () => {
 			"EnhancedInput",
 			"RemoteControl",
 			"UEShedCore",
+			"UEShedScenarios",
 			"UEShedAuthoring",
 			"UEShedCameras",
 			"UEShedObservatory",

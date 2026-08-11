@@ -21,6 +21,7 @@ import { mapReviewClient } from "./map-review-client.js";
 import { contentObservatoryClient } from "./content-observatory-client.js";
 import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
+import { scenarioStudioClient } from "./scenario-studio-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
 
@@ -57,7 +58,7 @@ const workflowGroups = [
 			{
 				action: "OPEN STUDIO",
 				description:
-					"Edit player actions, waits, overrides, and run results on one timeline.",
+					"Edit the portable timeline offline, then run Movement Gym against PIE with live status and cancellation.",
 				evidence: "scenarios",
 				href: "#/scenarios",
 				title: "Scenario Studio",
@@ -182,8 +183,8 @@ function workflowEvidence(
 	}
 	if (workflow.evidence === "scenarios") {
 		return {
-			detail: "Example draft and two saved runs work offline",
-			label: "Movement Gym · 2 saved runs",
+			detail: "Portable draft + live PIE run console when UEShedScenarios is enabled",
+			label: "Movement Gym · preview or execute",
 			ready: true
 		};
 	}
@@ -332,7 +333,7 @@ export function AppShell() {
 						<ContentObservatoryRoute client={contentObservatoryClient} />
 					</Match>
 					<Match when={route() === "#/scenarios"}>
-						<ScenarioStudioRoute />
+						<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
 					</Match>
 					<Match when={route() === "#/camera-lab"}>
 						<CameraLab />

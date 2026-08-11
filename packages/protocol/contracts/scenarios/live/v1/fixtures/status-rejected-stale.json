@@ -1,0 +1,10 @@
+{
+	"_tag": "Rejected",
+	"code": "stale_session",
+	"contract": {
+		"name": "ue-shed-scenario-execution",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"message": "The PIE session changed while the run was active.",
+	"recovery": "Start a fresh run against the current PIE session."
+}

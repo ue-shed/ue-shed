@@ -6,6 +6,14 @@ import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import type { TextCorpusRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import {
+	makeScenarioRunnerTestLayer,
+	movementGymRuns,
+	movementGymScenario,
+	ScenarioRunHandle,
+	scenarioWireContract,
+	type ScenarioRunnerShape
+} from "@ue-shed/scenarios";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
@@ -449,6 +457,35 @@ function buildRegistrationLayer(recorder: Recorder) {
 			),
 		stop: () => Effect.die("not used")
 	});
+	const scenarioHandle = ScenarioRunHandle.make({
+		endpoint: "http://127.0.0.1:30001",
+		evidenceLimit: 8,
+		objectPath: "/Script/Fixture.Scenarios",
+		pieSessionId: "pie-session-1",
+		runId: "run-live-1",
+		scenarioId: movementGymScenario.id
+	});
+	const scenarioRunner: ScenarioRunnerShape = {
+		cancel: () => Effect.die("not used"),
+		cancelHandle: () =>
+			recorder.record("scenarioRunner.cancel").pipe(
+				Effect.as({
+					_tag: "Accepted" as const,
+					contract: scenarioWireContract,
+					runId: scenarioHandle.runId
+				})
+			),
+		run: () => Effect.die("not used"),
+		start: () => recorder.record("scenarioRunner.start").pipe(Effect.as(scenarioHandle)),
+		status: () =>
+			recorder.record("scenarioRunner.status").pipe(
+				Effect.as({
+					_tag: "Terminal" as const,
+					contract: scenarioWireContract,
+					result: movementGymRuns[1]!
+				})
+			)
+	};
 	const configuration = makeWorkbenchConfigurationLayer({
 		authoringAsset: { status: "not_configured" },
 		expectedProject: { status: "not_configured" },
@@ -474,6 +511,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		projectLauncher,
 		cameraPresentation,
 		editorSession,
+		makeScenarioRunnerTestLayer(scenarioRunner),
 		makeWorkbenchUnrealConnectionLayer("http://127.0.0.1:30001"),
 		configuration
 	);
@@ -502,13 +540,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 85 contract channels", () =>
+it.effect("registers exactly the 88 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(85);
+		expect(result).toHaveLength(88);
 	})
 );
 
@@ -521,6 +559,29 @@ it.effect("changes the Remote Control monitor port through editor-session settin
 			})
 		);
 		expect(result).toEqual({ port: 31001 });
+	})
+);
+
+it.effect("routes Scenario Studio through the public scenario runner", () =>
+	Effect.gen(function* () {
+		const { recorder, result } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				const handle = yield* ipc.invoke(
+					"scenario:start",
+					movementGymScenario,
+					"http://127.0.0.1:30001"
+				);
+				yield* ipc.invoke("scenario:status", handle);
+				return yield* ipc.invoke("scenario:cancel", handle);
+			})
+		);
+		expect(result).toEqual(movementGymRuns[1]);
+		expect(yield* recorder.calls()).toEqual([
+			"scenarioRunner.start",
+			"scenarioRunner.status",
+			"scenarioRunner.cancel",
+			"scenarioRunner.status"
+		]);
 	})
 );
 

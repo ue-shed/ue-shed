@@ -232,6 +232,50 @@ screenshots, both Run A/Run B 1280x720 Unreal captures, persisted authoring/Revi
 manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
 total and leaves the requested count intact.
 
+## Demo 5: Scenario Studio
+
+Scenario Studio's shortest live proof runs the portable Movement Gym document through the same
+public runner used by the CLI. Launch the fixture in editor mode so the separately enabled scenario
+capability can own PIE lifecycle and input isolation. Do not use the `fixture:launch` game-mode path
+for this demo; scenario execution is deliberately editor-only.
+
+In one PowerShell terminal:
+
+```powershell
+$env:UE_SHED_FIXTURE_AUTHORING_MAP = "/Game/Fixture/Scenarios/L_MovementGym"
+$env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
+pnpm fixture:launch-authoring
+```
+
+In another terminal, use the same endpoint and open Workbench:
+
+```powershell
+$env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
+pnpm showcase
+```
+
+Open **Scenario Studio**. Its demo guide is visible by default in Workbench and can be hidden from
+the header. First read the green **LIVE SLICE** lanes: Move, Jump, and Interact are injected as
+`pre_evaluation` action values; `LandingReady` blocks scenario time; `Cache opened` is the bounded
+world-state probe. The raw-device, intervention, and broad capture lanes remain visibly
+**PREVIEW ONLY** and are not presented as executed behavior.
+
+Choose **Run in Unreal** and keep Workbench beside Unreal. Follow Connect → Isolate → Run → Wait →
+Result while the producer-reported game time advances. The result desk renders the returned evidence
+by its real type: this slice shows a structured world-state receipt, isolation restoration, and any
+divergence or missing evidence. It never substitutes a camera frame for a world-state observation.
+
+Repeat the exact endpoint through the public headless client shown in the guide:
+
+```powershell
+pnpm ue-shed scenarios run http://127.0.0.1:30001
+```
+
+For the recovery beat, start a second Workbench run and choose **Cancel run**. The UI should show a
+structured cancelled result and restored input. Disabling `UEShedScenarios` demonstrates the typed
+capability-missing path, but requires rebuilding or relaunching the fixture and is better kept as an
+optional extended demo.
+
 ## Demo 6: World Log
 
 World Log is a saved-map history investigation workspace. It runs against Perforce but does not

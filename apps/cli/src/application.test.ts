@@ -9,6 +9,8 @@ import { runTextReview } from "./asset-workflows.js";
 import { runVersion } from "./core-workflows.js";
 import { runMapHistory } from "./workflows/map.js";
 import { runPluginsList } from "./workflows/plugins.js";
+import { executeScenarioCommand } from "./workflows/scenario.js";
+import { movementGymRuns } from "@ue-shed/scenarios";
 
 it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 	Effect.gen(function* () {
@@ -102,6 +104,68 @@ it.effect("executes the public plugin list command through the CLI runtime", () 
 		} finally {
 			yield* Effect.promise(() => rm(root, { force: true, recursive: true }));
 		}
+	})
+);
+
+it.effect("prints the public scenario runner result as structured JSON", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const layer = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (value) => Ref.update(output, (current) => current + value),
+				printError: () => Effect.void,
+				setExitCode: () => Effect.void
+			})
+		);
+		const runner = {
+			cancel: () => Effect.die("unexpected cancellation"),
+			run: () => Effect.succeed(movementGymRuns[1]!)
+		};
+		yield* executeScenarioCommand(
+			{ _tag: "ScenarioRun", endpoint: "http://editor", evidenceLimit: 2 },
+			runner
+		).pipe(Effect.provide(layer));
+
+		const printed = JSON.parse(yield* Ref.get(output)) as { status: string };
+		expect(printed.status).toBe("completed");
+	})
+);
+
+it.effect("keeps a failed scenario structured while setting a non-zero outcome", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		const layer = Layer.succeed(
+			CliRuntime,
+			CliRuntime.of({
+				print: (value) => Ref.update(output, (current) => current + value),
+				printError: () => Effect.void,
+				setExitCode: (code) => Ref.set(exitCode, code)
+			})
+		);
+		const failedRun = {
+			...movementGymRuns[1]!,
+			status: "failed" as const,
+			failure: {
+				atState: "running",
+				code: "probe_missing",
+				message: "The required cache state was unavailable.",
+				recovery: "Verify the Movement Gym fixture and retry."
+			}
+		};
+		const runner = {
+			cancel: () => Effect.die("unexpected cancellation"),
+			run: () => Effect.succeed(failedRun)
+		};
+
+		yield* executeScenarioCommand(
+			{ _tag: "ScenarioRun", endpoint: "http://editor" },
+			runner
+		).pipe(Effect.provide(layer));
+
+		expect((JSON.parse(yield* Ref.get(output)) as { status: string }).status).toBe("failed");
+		expect(yield* Ref.get(exitCode)).toBe(1);
 	})
 );
 

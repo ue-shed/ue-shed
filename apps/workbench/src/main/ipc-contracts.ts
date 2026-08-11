@@ -58,6 +58,12 @@ import {
 } from "@ue-shed/game-text";
 import { RuntimeHealth } from "@ue-shed/observability";
 import {
+	ScenarioDocument,
+	ScenarioRun,
+	ScenarioRunHandle,
+	ScenarioStatusResponse
+} from "@ue-shed/scenarios";
+import {
 	ActorId,
 	WorldActorCatalog,
 	WorldActorSnapshot,
@@ -399,6 +405,21 @@ export const invokeContracts = {
 		channel: "editor-session:execute",
 		args: Schema.Tuple([EditorPlaySessionCommand]),
 		result: EditorPlaySessionCommandResponse
+	}),
+	"scenario:start": invoke({
+		channel: "scenario:start",
+		args: Schema.Tuple([ScenarioDocument, Schema.NonEmptyString]),
+		result: ScenarioRunHandle
+	}),
+	"scenario:status": invoke({
+		channel: "scenario:status",
+		args: Schema.Tuple([ScenarioRunHandle]),
+		result: ScenarioStatusResponse
+	}),
+	"scenario:cancel": invoke({
+		channel: "scenario:cancel",
+		args: Schema.Tuple([ScenarioRunHandle]),
+		result: ScenarioRun
 	}),
 	"fixture:launch": invoke({
 		channel: "fixture:launch",

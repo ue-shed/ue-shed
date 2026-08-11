@@ -31,6 +31,12 @@ import type {
 	WorldScoutResult
 } from "@ue-shed/observatory";
 import type { SavedWorld } from "@ue-shed/protocol";
+import type {
+	ScenarioDocument,
+	ScenarioRun,
+	ScenarioRunHandle,
+	ScenarioRunnerStatus
+} from "@ue-shed/scenarios";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
 	CameraStatusResult,
@@ -82,6 +88,14 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("editor-session:status"),
 		execute: (command: EditorPlaySessionCommand): Promise<EditorPlaySessionCommandResponse> =>
 			ipcRenderer.invoke("editor-session:execute", command)
+	},
+	scenarios: {
+		cancel: (handle: ScenarioRunHandle): Promise<ScenarioRun> =>
+			ipcRenderer.invoke("scenario:cancel", handle),
+		start: (document: ScenarioDocument, endpoint: string): Promise<ScenarioRunHandle> =>
+			ipcRenderer.invoke("scenario:start", document, endpoint),
+		status: (handle: ScenarioRunHandle): Promise<ScenarioRunnerStatus> =>
+			ipcRenderer.invoke("scenario:status", handle)
 	},
 	showcase: {
 		context: (): Promise<ShowcaseContext> => ipcRenderer.invoke("showcase:context")

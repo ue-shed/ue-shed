@@ -44,6 +44,12 @@ import type {
 } from "../main/preload.js";
 import type { WorkbenchProjectState } from "../main/project-workspace-contract.js";
 import type { ProjectLaunchMode, ProjectLaunchResult } from "../main/project-workspace-contract.js";
+import type {
+	ScenarioDocument,
+	ScenarioRun,
+	ScenarioRunHandle,
+	ScenarioRunnerStatus
+} from "@ue-shed/scenarios";
 
 declare global {
 	interface Window {
@@ -63,6 +69,14 @@ declare global {
 				readonly execute: (
 					command: EditorPlaySessionCommand
 				) => Promise<EditorPlaySessionCommandResponse>;
+			};
+			readonly scenarios: {
+				readonly cancel: (handle: ScenarioRunHandle) => Promise<ScenarioRun>;
+				readonly start: (
+					document: ScenarioDocument,
+					endpoint: string
+				) => Promise<ScenarioRunHandle>;
+				readonly status: (handle: ScenarioRunHandle) => Promise<ScenarioRunnerStatus>;
 			};
 			readonly showcase: {
 				readonly context: () => Promise<ShowcaseContext>;

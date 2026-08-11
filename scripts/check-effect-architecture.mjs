@@ -178,6 +178,7 @@ const rendererTransportFiles = new Set([
 	"apps/workbench/src/renderer/global.d.ts",
 	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
+	"apps/workbench/src/renderer/scenario-studio-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts"
 ]);
 

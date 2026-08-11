@@ -242,6 +242,7 @@ export const ScenarioRun = Schema.Struct({
 		"running",
 		"completed",
 		"completed_with_divergence",
+		"cancelled",
 		"failed"
 	]),
 	recordedAt: Schema.String,
@@ -249,7 +250,38 @@ export const ScenarioRun = Schema.Struct({
 	engineVersion: Schema.String,
 	world: Schema.String,
 	evidence: Schema.Array(ScenarioEvidence),
-	divergences: Schema.Array(ScenarioDivergence)
+	divergences: Schema.Array(ScenarioDivergence),
+	pieSessionId: Schema.optionalKey(Schema.String),
+	lifecycle: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				state: Schema.Literals([
+					"accepted",
+					"isolating",
+					"running",
+					"waiting",
+					"cancelling",
+					"terminal"
+				]),
+				atGameTimeMs: TimelineTimeMs
+			})
+		)
+	),
+	inputIsolation: Schema.optionalKey(
+		Schema.Struct({
+			established: Schema.Boolean,
+			restored: Schema.Boolean,
+			method: Schema.Literal("slate_input_preprocessor")
+		})
+	),
+	failure: Schema.optionalKey(
+		Schema.Struct({
+			code: Schema.String,
+			message: Schema.String,
+			recovery: Schema.String,
+			atState: Schema.String
+		})
+	)
 });
 export type ScenarioRun = Schema.Schema.Type<typeof ScenarioRun>;
 

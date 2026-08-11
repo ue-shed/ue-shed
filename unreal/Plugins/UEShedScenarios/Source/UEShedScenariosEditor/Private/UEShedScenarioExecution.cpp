@@ -268,7 +268,7 @@ void FUEShedScenarioExecution::Prepare(const FString& ScenarioId, const FString&
 		return;
 	}
 	UWorld* CurrentWorld = GEditor->PlayWorld != nullptr
-		? GEditor->PlayWorld : GEditor->GetEditorWorldContext().World();
+		? GEditor->PlayWorld.Get() : GEditor->GetEditorWorldContext().World();
 	const FString CurrentMap = CurrentWorld == nullptr ? FString()
 		: UWorld::RemovePIEPrefix(CurrentWorld->GetOutermost()->GetName());
 	if (GEditor->PlayWorld != nullptr && CurrentMap != MapPath)

@@ -112,10 +112,18 @@ The existing editor play-session and Remote Control services remain shared publi
 
 The headless `ue-shed scenarios run <endpoint>` command executes the same service and prints
 schema-validated JSON. A valid failed or cancelled run remains structured stdout and sets exit code
-1; setup/contract failures remain typed CLI failures. Scenario Studio depends on a host-neutral
-client interface for that runner. Workbench main may provide the interface through validated IPC,
-while another trusted host may provide it directly. Renderer components never receive raw process,
-filesystem, Remote Control, or Unreal authority.
+1; setup/contract failures remain typed CLI failures. The public runner also exposes one-shot
+`start`, `status`, and `cancel` operations around a validated run handle. Optional interactive clients
+use those operations to observe producer-reported lifecycle and game time without taking ownership
+of execution.
+
+Scenario Studio depends on a host-neutral client interface for that runner. Workbench main provides
+the one-shot operations through validated IPC; its renderer polls low-volume control-plane status as
+an Effect stream and stops at the terminal result. This is a client-side observation adapter, not a
+new Unreal streaming transport. Another trusted host may provide the interface directly. Renderer
+components never receive raw process, filesystem, Remote Control, or Unreal authority. The Workbench
+run console exposes the selected endpoint, the latest producer state, game time, and explicit
+cancellation. It does not invent lifecycle transitions that occurred before a status read.
 
 ```text
 CLI ───────────────┐

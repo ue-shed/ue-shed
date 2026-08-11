@@ -47,7 +47,7 @@ const workflowGroups = [
 			{
 				action: "OPEN STUDIO",
 				description:
-					"Edit player actions, waits, overrides, and run results on one timeline.",
+					"Edit the portable timeline offline, then run Movement Gym against PIE with live status and cancellation.",
 				evidence: "scenarios",
 				href: "#/scenarios",
 				title: "Scenario Studio",
@@ -172,8 +172,8 @@ function workflowEvidence(
 	}
 	if (workflow.evidence === "scenarios") {
 		return {
-			detail: "Example draft and two saved runs work offline",
-			label: "Movement Gym · 2 saved runs",
+			detail: "Portable draft + live PIE run console when UEShedScenarios is enabled",
+			label: "Movement Gym · preview or execute",
 			ready: true
 		};
 	}

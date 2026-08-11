@@ -18,11 +18,12 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toMatchObject({
-			// The maps and World Partition external actors carry no text. Every InputAction and
+			// The maps, including Movement Gym, and World Partition external actors carry no text.
+			// Every InputAction and
 			// InputMappingContext carries one FText description, so the Enhanced Input surface
 			// contributes a text unit each.
-			discoveredPackages: 65,
-			inspectedPackages: 65,
+			discoveredPackages: 66,
+			inspectedPackages: 66,
 			failedPackages: 0,
 			textUnits: 33,
 			textOccurrences: 34,

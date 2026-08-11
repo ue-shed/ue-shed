@@ -113,6 +113,44 @@ it.effect("returns a schema-validated terminal ScenarioRun through the public se
 	})
 );
 
+it.effect("exposes one-shot start and status operations for optional clients", () =>
+	Effect.gen(function* () {
+		const layer = runnerLayer((request) => {
+			if (request.functionName === "GetCapabilityManifest") return Effect.succeed(manifest);
+			if (request.functionName === "PrepareScenarioWorld") return Effect.succeed(prepared);
+			if (request.functionName === "StartScenarioRun") {
+				return Effect.succeed({
+					_tag: "Accepted",
+					contract: scenarioWireContract,
+					pieSessionId: "pie-session-1",
+					runId: "run-controlled-1",
+					state: "accepted"
+				});
+			}
+			if (request.functionName === "GetScenarioRunStatus") {
+				return Effect.succeed({
+					_tag: "Active",
+					contract: scenarioWireContract,
+					gameTimeMs: 4100,
+					pieSessionId: "pie-session-1",
+					runId: "run-controlled-1",
+					state: "waiting"
+				});
+			}
+			return Effect.die(`unexpected call ${request.functionName}`);
+		});
+
+		return yield* Effect.gen(function* () {
+			const runner = yield* ScenarioRunner;
+			const handle = yield* runner.start({ endpoint: "http://editor/" });
+			expect(handle.endpoint).toBe("http://editor");
+			expect(handle.runId).toBe("run-controlled-1");
+			const status = yield* runner.status(handle);
+			expect(status).toMatchObject({ _tag: "Active", gameTimeMs: 4100, state: "waiting" });
+		}).pipe(Effect.provide(layer));
+	})
+);
+
 it.effect("fails before starting PIE when the scenario capability is absent", () =>
 	Effect.gen(function* () {
 		const runner = yield* ScenarioRunner;

@@ -2639,12 +2639,12 @@ bool VerifyMovementGymWorld(UWorld* World, const bool bLog)
 	int32 TaggedActors = 0;
 	int32 Starts = 0;
 	int32 Providers = 0;
-	for (TActorIterator<AActor> It(World); It; ++It)
+	for (AActor* Actor : World->PersistentLevel->Actors)
 	{
-		if (!It->ActorHasTag(TEXT("UEShedScenarioFixture"))) continue;
+		if (Actor == nullptr || !Actor->ActorHasTag(TEXT("UEShedScenarioFixture"))) continue;
 		++TaggedActors;
-		if (It->IsA<APlayerStart>()) ++Starts;
-		if (It->IsA<AUEShedMovementGymState>()) ++Providers;
+		if (Actor->IsA<APlayerStart>()) ++Starts;
+		if (Actor->IsA<AUEShedMovementGymState>()) ++Providers;
 	}
 	const bool bValid = TaggedActors == 5 && Starts == 1 && Providers == 1;
 	if (bLog && bValid) UE_LOG(LogTemp, Display,
@@ -2661,21 +2661,44 @@ bool GenerateMovementGym()
 	UPackage* Package = FindOrCreatePackage(MovementGymPackageName);
 	if (Package == nullptr) return false;
 	UWorld* World = UWorld::FindWorldInPackage(Package);
-	if (World != nullptr) return VerifyMovementGymWorld(World, true);
-
-	UWorldFactory* Factory = NewObject<UWorldFactory>();
-	Factory->WorldType = EWorldType::Editor;
-	Factory->bCreateWorldPartition = false;
-	World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package,
-		MovementGymAssetName, RF_Public | RF_Standalone, nullptr, GWarn));
+	const bool bCreatedWorld = World == nullptr;
+	if (World == nullptr)
+	{
+		UWorldFactory* Factory = NewObject<UWorldFactory>();
+		Factory->WorldType = EWorldType::Editor;
+		Factory->bCreateWorldPartition = false;
+		World = Cast<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package,
+			MovementGymAssetName, RF_Public | RF_Standalone, nullptr, GWarn));
+	}
 	if (World == nullptr || World->IsPartitionedWorld()) return false;
+	if (!bCreatedWorld && VerifyMovementGymWorld(World, false))
+	{
+		UE_LOG(LogTemp, Display, TEXT("Movement Gym fixture already matches its contract"));
+		return true;
+	}
+	TArray<AActor*> Existing;
+	for (AActor* Actor : World->PersistentLevel->Actors)
+	{
+		if (Actor != nullptr && Actor->ActorHasTag(TEXT("UEShedScenarioFixture")))
+		{
+			Existing.Add(Actor);
+		}
+	}
+	for (AActor* Actor : Existing)
+	{
+		World->EditorDestroyActor(Actor, true);
+	}
 	World->GetWorldSettings()->DefaultGameMode = AUEShedMovementGymGameMode::StaticClass();
 
-	auto AddBlock = [&](const TCHAR* Label, const FVector& Location,
+	auto AddBlock = [&](const TCHAR* Name, const TCHAR* Label, const FVector& Location,
 		const FVector& Scale, const FLinearColor& Color) -> AStaticMeshActor*
 	{
+		FActorSpawnParameters Spawn;
+		Spawn.Name = Name;
+		Spawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+		Spawn.bCreateActorPackage = false;
 		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(
-			Location, FRotator::ZeroRotator);
+			Location, FRotator::ZeroRotator, Spawn);
 		if (Actor == nullptr) return nullptr;
 		Actor->Tags.Add(TEXT("UEShedScenarioFixture"));
 		Actor->SetActorLabel(Label);
@@ -2686,23 +2709,31 @@ bool GenerateMovementGym()
 		return Actor;
 	};
 
-	AStaticMeshActor* Floor = AddBlock(TEXT("Movement Gym Floor"),
+	AStaticMeshActor* Floor = AddBlock(TEXT("MovementGymFloor"), TEXT("Movement Gym Floor"),
 		FVector(1500, 0, -50), FVector(40, 14, 1),
 		FLinearColor(0.12f, 0.16f, 0.22f, 1.0f));
-	AStaticMeshActor* NearMarker = AddBlock(TEXT("Near Bridge Marker"),
+	AStaticMeshActor* NearMarker = AddBlock(TEXT("MovementGymNearMarker"), TEXT("Near Bridge Marker"),
 		FVector(750, -500, 75), FVector(0.35f, 0.35f, 1.5f),
 		FLinearColor(0.92f, 0.46f, 0.18f, 1.0f));
-	AStaticMeshActor* Cache = AddBlock(TEXT("Scenario Cache"),
+	AStaticMeshActor* Cache = AddBlock(TEXT("MovementGymCache"), TEXT("Scenario Cache"),
 		FVector(1450, 350, 50), FVector(0.8f, 0.8f, 1.0f),
 		FLinearColor(0.20f, 0.70f, 0.48f, 1.0f));
+	FActorSpawnParameters StartSpawn;
+	StartSpawn.Name = TEXT("MovementGymPlayerStart");
+	StartSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	StartSpawn.bCreateActorPackage = false;
 	APlayerStart* Start = World->SpawnActor<APlayerStart>(
-		FVector(0, 0, 100), FRotator::ZeroRotator);
+		FVector(0, 0, 100), FRotator::ZeroRotator, StartSpawn);
+	FActorSpawnParameters StateSpawn;
+	StateSpawn.Name = TEXT("MovementGymState");
+	StateSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+	StateSpawn.bCreateActorPackage = false;
 	AUEShedMovementGymState* State = World->SpawnActor<AUEShedMovementGymState>(
-		FVector(1450, 350, 100), FRotator::ZeroRotator);
+		FVector(1450, 350, 100), FRotator::ZeroRotator, StateSpawn);
 	if (Floor == nullptr || NearMarker == nullptr || Cache == nullptr
 		|| Start == nullptr || State == nullptr)
 	{
-		World->CleanupWorld();
+		if (bCreatedWorld) World->CleanupWorld();
 		return false;
 	}
 	Start->Tags.Add(TEXT("UEShedScenarioFixture"));
@@ -2713,7 +2744,7 @@ bool GenerateMovementGym()
 
 	Package->MarkPackageDirty();
 	const bool bSaved = VerifyMovementGymWorld(World, true) && SaveAsset(Package, World);
-	World->CleanupWorld();
+	if (bCreatedWorld) World->CleanupWorld();
 	if (bSaved) UE_LOG(LogTemp, Display, TEXT("Generated %s"), MovementGymPackageName);
 	return bSaved;
 }

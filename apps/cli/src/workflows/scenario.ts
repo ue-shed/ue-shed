@@ -6,7 +6,10 @@ import type { CliCommand } from "../command-model.js";
 
 type ScenarioRunCommand = Extract<CliCommand, { readonly _tag: "ScenarioRun" }>;
 
-export function executeScenarioCommand(command: ScenarioRunCommand, runner: ScenarioRunnerShape) {
+export function executeScenarioCommand(
+	command: ScenarioRunCommand,
+	runner: Pick<ScenarioRunnerShape, "run">
+) {
 	return Effect.gen(function* () {
 		const result = yield* runner.run({
 			endpoint: command.endpoint,

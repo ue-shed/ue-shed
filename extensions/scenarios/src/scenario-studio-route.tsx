@@ -12,17 +12,37 @@ import {
 	type ScenarioDocument,
 	type ScenarioElementId,
 	type ScenarioRun,
+	type ScenarioRunHandle,
 	type ScenarioSeekPlan,
+	type ScenarioRunnerStatus,
 	type ScenarioTrack
 } from "@ue-shed/scenarios";
-import { createEffectAction } from "@ue-shed/ui";
+import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Option, Schedule } from "effect";
-import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js";
+import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
 import type { ScenarioStudioClient } from "./client.js";
 
 type TransportState = "paused" | "playing" | "recording";
-type LiveRunState = "preview" | "executing" | "completed" | "unavailable";
+type LiveRunState =
+	| { readonly status: "preview" }
+	| { readonly status: "connecting" }
+	| {
+			readonly status: "active";
+			readonly handle: ScenarioRunHandle;
+			readonly producerState: Extract<
+				ScenarioRunnerStatus,
+				{ readonly _tag: "Active" }
+			>["state"];
+			readonly gameTimeMs: number;
+	  }
+	| {
+			readonly status: "cancelling";
+			readonly handle: ScenarioRunHandle;
+			readonly gameTimeMs: number;
+	  }
+	| { readonly status: "terminal"; readonly run: ScenarioRun }
+	| { readonly status: "unavailable"; readonly message: string };
 
 export interface ScenarioStudioRouteProps {
 	readonly client?: ScenarioStudioClient;
@@ -155,7 +175,10 @@ function firstMovementGymRun(): ScenarioRun {
 
 export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 	const playbackAction = createEffectAction();
+	const settingsAction = createEffectAction();
 	const liveRunAction = createEffectAction();
+	const cancelRunAction = createEffectAction();
+	const liveStatusSubscription = createEffectSubscription();
 	const [document, setDocument] = createSignal<ScenarioDocument>(movementGymScenario);
 	const [activeRun, setActiveRun] = createSignal<ScenarioRun>(firstMovementGymRun());
 	const [selectedId, setSelectedId] = createSignal<ScenarioElementId>(
@@ -163,8 +186,8 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 	);
 	const [playheadMs, setPlayheadMs] = createSignal(3370);
 	const [transport, setTransport] = createSignal<TransportState>("paused");
-	const [liveRunState, setLiveRunState] = createSignal<LiveRunState>("preview");
-	const [liveRunFailure, setLiveRunFailure] = createSignal<string>();
+	const [liveRunState, setLiveRunState] = createSignal<LiveRunState>({ status: "preview" });
+	const [endpoint, setEndpoint] = createSignal("");
 	const [seekPlan, setSeekPlan] = createSignal<ScenarioSeekPlan>(
 		planScenarioSeek({ document: movementGymScenario, targetMs: 3370 })
 	);
@@ -193,6 +216,50 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 					Math.abs(left.atMs - playheadMs()) - Math.abs(right.atMs - playheadMs())
 			)[0]
 	);
+	const liveBusy = createMemo(() =>
+		["connecting", "active", "cancelling"].includes(liveRunState().status)
+	);
+	const liveGameTimeMs = createMemo(() => {
+		const state = liveRunState();
+		return state.status === "active" || state.status === "cancelling"
+			? state.gameTimeMs
+			: undefined;
+	});
+	const liveProducerState = createMemo(() => {
+		const state = liveRunState();
+		return state.status === "active" ? state.producerState : undefined;
+	});
+	const liveFailureMessage = createMemo(() => {
+		const state = liveRunState();
+		return state.status === "unavailable" ? state.message : undefined;
+	});
+	const formatClientFailure = (cause: Cause.Cause<unknown>): string => {
+		const error = Cause.findErrorOption(cause);
+		if (Option.isSome(error) && typeof error.value === "object" && error.value !== null) {
+			const value = error.value as {
+				readonly message?: unknown;
+				readonly recovery?: unknown;
+			};
+			if (typeof value.message === "string") {
+				return `${value.message}${typeof value.recovery === "string" ? ` ${value.recovery}` : ""}`;
+			}
+		}
+		return Cause.pretty(cause);
+	};
+	const acceptTerminalRun = (run: ScenarioRun) => {
+		setActiveRun(run);
+		setPlayheadMs(run.durationMs);
+		setLiveRunState({ run, status: "terminal" });
+	};
+
+	onMount(() => {
+		if (props.client === undefined) return;
+		settingsAction.run(props.client.settings(), {
+			onFailure: (cause) =>
+				setLiveRunState({ message: formatClientFailure(cause), status: "unavailable" }),
+			onSuccess: (settings) => setEndpoint(settings.endpoint)
+		});
+	});
 
 	const stopPlayback = () => {
 		playbackAction.cancel();
@@ -218,25 +285,58 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 		setSeekPlan(planScenarioSeek({ document: document(), targetMs: 0 }));
 	};
 	const runLive = () => {
-		if (props.client === undefined || liveRunState() === "executing") return;
+		if (props.client === undefined || liveBusy() || endpoint().trim() === "") return;
 		stopPlayback();
-		setLiveRunFailure(undefined);
-		setLiveRunState("executing");
-		liveRunAction.run(props.client.run(document()), {
-			onFailure: (cause) => {
-				const error = Cause.findErrorOption(cause);
-				setLiveRunFailure(
-					Option.isSome(error)
-						? `${error.value.message} ${error.value.recovery}`
-						: Cause.pretty(cause)
-				);
-				setLiveRunState("unavailable");
-			},
-			onSuccess: (run) => {
-				setActiveRun(run);
-				setPlayheadMs(run.durationMs);
-				setLiveRunState("completed");
+		setLiveRunState({ status: "connecting" });
+		liveRunAction.run(
+			props.client.start({ document: document(), endpoint: endpoint().trim() }),
+			{
+				onFailure: (cause) => {
+					setLiveRunState({ message: formatClientFailure(cause), status: "unavailable" });
+				},
+				onSuccess: (handle) => {
+					setLiveRunState({
+						gameTimeMs: 0,
+						handle,
+						producerState: "accepted",
+						status: "active"
+					});
+					liveStatusSubscription.subscribe(props.client!.watch(handle), {
+						onFailure: (cause) =>
+							setLiveRunState({
+								message: formatClientFailure(cause),
+								status: "unavailable"
+							}),
+						onValue: (value) => {
+							if (value._tag === "Terminal") {
+								acceptTerminalRun(value.result);
+								return;
+							}
+							setLiveRunState({
+								gameTimeMs: value.gameTimeMs,
+								handle,
+								producerState: value.state,
+								status: "active"
+							});
+						}
+					});
+				}
 			}
+		);
+	};
+	const cancelLive = () => {
+		const state = liveRunState();
+		if (props.client === undefined || state.status !== "active") return;
+		liveStatusSubscription.cancel();
+		setLiveRunState({
+			gameTimeMs: state.gameTimeMs,
+			handle: state.handle,
+			status: "cancelling"
+		});
+		cancelRunAction.run(props.client.cancel(state.handle), {
+			onFailure: (cause) =>
+				setLiveRunState({ message: formatClientFailure(cause), status: "unavailable" }),
+			onSuccess: acceptTerminalRun
 		});
 	};
 	const selectClip = (clip: ScenarioClip) => {
@@ -345,18 +445,17 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 						/ {formatTime(document().durationMs)}
 					</span>
 				</div>
-				<button
-					disabled={props.client === undefined || liveRunState() === "executing"}
-					onClick={runLive}
-					{...stylex.props(styles.liveRunButton)}
-				>
-					{liveRunState() === "executing" ? "RUNNING…" : "RUN IN UNREAL"}
-				</button>
 				<div {...stylex.props(styles.runtimeStatus)}>
-					<span {...stylex.props(styles.offlineDot)} />
+					<span
+						{...stylex.props(
+							styles.offlineDot,
+							liveBusy() && styles.liveDot,
+							liveRunState().status === "terminal" && styles.terminalDot
+						)}
+					/>
 					<div>
 						<strong>
-							{liveRunState() === "completed"
+							{liveRunState().status === "terminal"
 								? activeRun().status === "completed_with_divergence"
 									? "DIVERGENCE"
 									: activeRun().status === "cancelled"
@@ -364,24 +463,97 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 										: activeRun().status === "failed"
 											? "RUN FAILED"
 											: "LIVE RESULT"
-								: liveRunState() === "executing"
-									? "STARTING / ISOLATING"
-									: liveRunState() === "unavailable"
-										? "RUN FAILED"
-										: "PREVIEW ONLY"}
+								: liveRunState().status === "connecting"
+									? "NEGOTIATING / PREPARING PIE"
+									: liveRunState().status === "active"
+										? liveProducerState()?.toUpperCase()
+										: liveRunState().status === "cancelling"
+											? "CANCELLING"
+											: liveRunState().status === "unavailable"
+												? "RUN FAILED"
+												: "PREVIEW ONLY"}
 						</strong>
 						<small>
-							{liveRunState() === "unavailable"
-								? liveRunFailure()
+							{liveRunState().status === "unavailable"
+								? liveFailureMessage()
 								: props.client === undefined
 									? "Unreal client not provided"
-									: liveRunState() === "completed"
+									: liveRunState().status === "terminal"
 										? (activeRun().failure?.message ?? "Structured PIE result")
-										: "Waiting for a structured PIE result"}
+										: liveGameTimeMs() === undefined
+											? "Ready for a structured PIE result"
+											: `${formatTime(liveGameTimeMs()!)} game time`}
 						</small>
 					</div>
 				</div>
 			</header>
+
+			<section aria-label="Live execution controls" {...stylex.props(styles.runConsole)}>
+				<label {...stylex.props(styles.endpointField)}>
+					<span>REMOTE CONTROL ENDPOINT</span>
+					<input
+						aria-label="Remote Control endpoint"
+						disabled={liveBusy()}
+						onInput={(event) => setEndpoint(event.currentTarget.value)}
+						placeholder="http://127.0.0.1:30010"
+						spellcheck={false}
+						value={endpoint()}
+						{...stylex.props(styles.endpointInput)}
+					/>
+				</label>
+				<div aria-label="Live run lifecycle" {...stylex.props(styles.lifecycle)}>
+					<For each={["CONNECT", "ISOLATE", "RUN", "WAIT", "RESULT"]}>
+						{(phase) => (
+							<span
+								{...stylex.props(
+									styles.lifecyclePhase,
+									((phase === "CONNECT" &&
+										liveRunState().status === "connecting") ||
+										(phase === "ISOLATE" &&
+											liveRunState().status === "active" &&
+											["accepted", "isolating"].includes(
+												liveProducerState() ?? "accepted"
+											)) ||
+										(phase === "RUN" &&
+											((liveRunState().status === "active" &&
+												liveProducerState() === "running") ||
+												liveRunState().status === "cancelling")) ||
+										(phase === "WAIT" &&
+											liveRunState().status === "active" &&
+											liveProducerState() === "waiting") ||
+										(phase === "RESULT" &&
+											liveRunState().status === "terminal")) &&
+										styles.lifecycleCurrent
+								)}
+							>
+								<i {...stylex.props(styles.phaseDot)} /> {phase}
+							</span>
+						)}
+					</For>
+				</div>
+				<div {...stylex.props(styles.runActions)}>
+					<Show when={liveRunState().status === "active"}>
+						<button onClick={cancelLive} {...stylex.props(styles.cancelRunButton)}>
+							CANCEL RUN
+						</button>
+					</Show>
+					<button
+						disabled={
+							props.client === undefined || liveBusy() || endpoint().trim() === ""
+						}
+						onClick={runLive}
+						{...stylex.props(styles.liveRunButton)}
+					>
+						{liveRunState().status === "connecting"
+							? "STARTING…"
+							: liveRunState().status === "cancelling"
+								? "CANCELLING…"
+								: liveRunState().status === "active"
+									? "RUNNING"
+									: "RUN IN UNREAL"}
+					</button>
+				</div>
+			</section>
 
 			<section {...stylex.props(styles.workspace)}>
 				<aside aria-label="Scenario takes" {...stylex.props(styles.takeRail)}>
@@ -446,19 +618,25 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 							<span {...stylex.props(styles.lockMark)}>◆</span>
 							<div>
 								<strong>
-									{liveRunState() === "completed" &&
+									{liveRunState().status === "terminal" &&
 									activeRun().inputIsolation?.established &&
 									activeRun().inputIsolation?.restored
 										? "ISOLATION VERIFIED"
-										: liveRunState() === "executing"
-											? "ISOLATION REQUIRED"
-											: "LIVE INPUT NOT BLOCKED"}
+										: liveRunState().status === "active" ||
+											  liveRunState().status === "cancelling"
+											? "ISOLATION ACTIVE"
+											: liveRunState().status === "connecting"
+												? "ISOLATION REQUIRED"
+												: "LIVE INPUT NOT BLOCKED"}
 								</strong>
 								<small>
-									{liveRunState() === "completed" &&
+									{liveRunState().status === "terminal" &&
 									activeRun().inputIsolation?.restored
 										? "Slate blocker was restored"
-										: "Runs start only after Slate verification"}
+										: liveRunState().status === "active" ||
+											  liveRunState().status === "cancelling"
+											? "Producer verified the Slate blocker"
+											: "Runs start only after Slate verification"}
 								</small>
 							</div>
 						</div>
@@ -839,7 +1017,7 @@ const styles = stylex.create({
 	commandBar: {
 		height: 70,
 		display: "grid",
-		gridTemplateColumns: "minmax(320px, 1fr) auto minmax(270px, 1fr)",
+		gridTemplateColumns: "minmax(320px, 1fr) auto minmax(300px, 1fr)",
 		alignItems: "center",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: "#0e1110e8",
@@ -900,7 +1078,22 @@ const styles = stylex.create({
 		letterSpacing: "0.08em",
 		padding: "9px 12px",
 		cursor: "pointer",
+		transition: "background-color 120ms, transform 80ms",
+		":active": { transform: "scale(.97)" },
 		":disabled": { cursor: "default", opacity: 0.45 }
+	},
+	cancelRunButton: {
+		border: "1px solid #70483f",
+		backgroundColor: { default: "#251714", ":hover": "#33201b" },
+		color: "#e2a997",
+		fontFamily: tokens.fontBody,
+		fontSize: 9,
+		fontWeight: 700,
+		letterSpacing: ".08em",
+		padding: "9px 11px",
+		cursor: "pointer",
+		transition: "background-color 120ms, transform 80ms",
+		":active": { transform: "scale(.97)" }
 	},
 	playing: { backgroundColor: "#e7d77d" },
 	timecode: { marginLeft: 14, color: "#f1f3ee", fontSize: 14, fontWeight: 700 },
@@ -914,7 +1107,52 @@ const styles = stylex.create({
 		color: "#aab1ac"
 	},
 	offlineDot: { width: 7, height: 7, borderRadius: "50%", backgroundColor: "#d7894a" },
+	liveDot: { backgroundColor: "#b7e26d", boxShadow: "0 0 10px #b7e26d66" },
+	terminalDot: { backgroundColor: "#7fc8aa" },
 	runtimeStatusStrong: {},
+	runConsole: {
+		height: 58,
+		display: "grid",
+		gridTemplateColumns: "minmax(250px, 360px) minmax(360px, 1fr) auto",
+		alignItems: "center",
+		gap: 20,
+		padding: "0 18px",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: "#0b0e0d"
+	},
+	endpointField: {
+		display: "grid",
+		gridTemplateColumns: "auto 1fr",
+		alignItems: "center",
+		gap: 10,
+		color: "#667069",
+		fontSize: 7,
+		letterSpacing: ".12em"
+	},
+	endpointInput: {
+		width: "100%",
+		minWidth: 0,
+		padding: "7px 9px",
+		border: "1px solid #303833",
+		backgroundColor: "#111613",
+		color: "#d5dcd6",
+		fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+		fontSize: 9,
+		outline: { default: "none", ":focus": "1px solid #71994d" },
+		":disabled": { color: "#758078", opacity: 0.72 }
+	},
+	lifecycle: { display: "flex", alignItems: "center", justifyContent: "center", gap: 18 },
+	lifecyclePhase: {
+		display: "flex",
+		alignItems: "center",
+		gap: 6,
+		color: "#4f5852",
+		fontSize: 7,
+		letterSpacing: ".11em"
+	},
+	lifecycleCurrent: { color: "#c9ef91" },
+	phaseDot: { width: 5, height: 5, borderRadius: "50%", backgroundColor: "currentColor" },
+	runActions: { display: "flex", alignItems: "center", gap: 8 },
 	workspace: {
 		display: "grid",
 		gridTemplateColumns: "196px minmax(680px, 1fr) 268px",

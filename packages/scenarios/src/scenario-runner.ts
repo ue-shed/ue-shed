@@ -49,12 +49,33 @@ export interface RunScenarioOptions {
 	readonly evidenceLimit?: number;
 }
 
+export const ScenarioRunHandle = Schema.Struct({
+	endpoint: Schema.NonEmptyString,
+	evidenceLimit: Schema.Int.check(Schema.isGreaterThan(0)),
+	objectPath: Schema.NonEmptyString,
+	pieSessionId: Schema.NonEmptyString,
+	runId: Schema.NonEmptyString,
+	scenarioId: Schema.NonEmptyString
+});
+export type ScenarioRunHandle = typeof ScenarioRunHandle.Type;
+
+export type ScenarioRunnerStatus = Exclude<ScenarioStatusResponse, { readonly _tag: "Rejected" }>;
+
 export interface ScenarioRunnerShape {
 	readonly cancel: (
 		endpoint: string,
 		runId: string
 	) => Effect.Effect<ScenarioCancelResponse, ScenarioRunnerError>;
+	readonly cancelHandle: (
+		handle: ScenarioRunHandle
+	) => Effect.Effect<ScenarioCancelResponse, ScenarioRunnerError>;
 	readonly run: (options: RunScenarioOptions) => Effect.Effect<ScenarioRun, ScenarioRunnerError>;
+	readonly start: (
+		options: RunScenarioOptions
+	) => Effect.Effect<ScenarioRunHandle, ScenarioRunnerError>;
+	readonly status: (
+		handle: ScenarioRunHandle
+	) => Effect.Effect<ScenarioRunnerStatus, ScenarioRunnerError>;
 }
 
 export class ScenarioRunner extends Context.Service<ScenarioRunner, ScenarioRunnerShape>()(
@@ -321,17 +342,16 @@ export const ScenarioRunnerLive = Layer.effect(
 			);
 		});
 
-		const cancel = Effect.fn("ScenarioRunner.cancel")(function* (
-			configuredEndpoint: string,
+		const cancelTarget = Effect.fn("ScenarioRunner.cancelTarget")(function* (
+			endpoint: string,
+			objectPath: string,
 			runId: string
 		) {
-			const endpoint = endpointOf(configuredEndpoint);
-			const target = yield* negotiate(endpoint);
 			const operation = "scenario.cancel";
 			const value = yield* call({
 				endpoint,
 				functionName: "CancelScenarioRun",
-				objectPath: target.objectPath,
+				objectPath,
 				operation,
 				parameters: { RunId: runId }
 			});
@@ -340,7 +360,22 @@ export const ScenarioRunnerLive = Layer.effect(
 			);
 		});
 
-		const run = Effect.fn("ScenarioRunner.run")(function* (options: RunScenarioOptions) {
+		const cancel = Effect.fn("ScenarioRunner.cancel")(function* (
+			configuredEndpoint: string,
+			runId: string
+		) {
+			const endpoint = endpointOf(configuredEndpoint);
+			const target = yield* negotiate(endpoint);
+			return yield* cancelTarget(endpoint, target.objectPath, runId);
+		});
+
+		const cancelHandle = Effect.fn("ScenarioRunner.cancelHandle")(function* (
+			handle: ScenarioRunHandle
+		) {
+			return yield* cancelTarget(handle.endpoint, handle.objectPath, handle.runId);
+		});
+
+		const start = Effect.fn("ScenarioRunner.start")(function* (options: RunScenarioOptions) {
 			const endpoint = endpointOf(options.endpoint);
 			const document = options.document ?? movementGymScenario;
 			const target = yield* negotiate(endpoint);
@@ -392,50 +427,65 @@ export const ScenarioRunnerLive = Layer.effect(
 			}
 			const runId = started.runId;
 			if (started.pieSessionId !== pieSessionId) {
-				yield* cancel(endpoint, runId).pipe(Effect.ignore);
+				yield* cancelTarget(endpoint, target.objectPath, runId).pipe(Effect.ignore);
 				return yield* Effect.fail(staleBindingError(endpoint, startOperation));
 			}
-			const pollOperation = "scenario.status";
-			const poll = call({
+			return ScenarioRunHandle.make({
 				endpoint,
-				functionName: "GetScenarioRunStatus",
+				evidenceLimit,
 				objectPath: target.objectPath,
+				pieSessionId,
+				runId,
+				scenarioId: document.id
+			});
+		});
+
+		const status = Effect.fn("ScenarioRunner.status")(function* (handle: ScenarioRunHandle) {
+			const pollOperation = "scenario.status";
+			const value = yield* call({
+				endpoint: handle.endpoint,
+				functionName: "GetScenarioRunStatus",
+				objectPath: handle.objectPath,
 				operation: pollOperation,
-				parameters: { RunId: runId }
-			}).pipe(
-				Effect.flatMap((value) =>
-					decodeScenarioStatusResponse(value).pipe(
-						Effect.mapError((cause) => contractError(endpoint, pollOperation, cause))
-					)
-				),
-				Effect.flatMap(
-					(response): Effect.Effect<ScenarioRun, ScenarioRunnerError | PollPending> => {
-						if (response._tag === "Terminal") {
-							if (
-								response.result.pieSessionId !== pieSessionId ||
-								response.result.scenarioId !== document.id
-							) {
-								return Effect.fail(staleBindingError(endpoint, pollOperation));
-							}
-							if (response.result.evidence.length > evidenceLimit) {
-								return Effect.fail(
-									contractError(
-										endpoint,
-										pollOperation,
-										"producer exceeded the negotiated evidence limit"
-									)
-								);
-							}
-							return Effect.succeed(response.result);
-						}
-						if (response._tag === "Rejected") {
-							return Effect.fail(rejectedError(endpoint, pollOperation, response));
-						}
-						if (response.runId !== runId || response.pieSessionId !== pieSessionId) {
-							return Effect.fail(staleBindingError(endpoint, pollOperation));
-						}
-						return Effect.fail(new PollPending({ operation: pollOperation }));
-					}
+				parameters: { RunId: handle.runId }
+			});
+			const response = yield* decodeScenarioStatusResponse(value).pipe(
+				Effect.mapError((cause) => contractError(handle.endpoint, pollOperation, cause))
+			);
+			if (response._tag === "Rejected") {
+				return yield* Effect.fail(rejectedError(handle.endpoint, pollOperation, response));
+			}
+			if (response._tag === "Terminal") {
+				if (
+					response.result.pieSessionId !== handle.pieSessionId ||
+					response.result.scenarioId !== handle.scenarioId
+				) {
+					return yield* Effect.fail(staleBindingError(handle.endpoint, pollOperation));
+				}
+				if (response.result.evidence.length > handle.evidenceLimit) {
+					return yield* Effect.fail(
+						contractError(
+							handle.endpoint,
+							pollOperation,
+							"producer exceeded the negotiated evidence limit"
+						)
+					);
+				}
+				return response;
+			}
+			if (response.runId !== handle.runId || response.pieSessionId !== handle.pieSessionId) {
+				return yield* Effect.fail(staleBindingError(handle.endpoint, pollOperation));
+			}
+			return response;
+		});
+
+		const run = Effect.fn("ScenarioRunner.run")(function* (options: RunScenarioOptions) {
+			const handle = yield* start(options);
+			const poll = status(handle).pipe(
+				Effect.flatMap((response) =>
+					response._tag === "Terminal"
+						? Effect.succeed(response.result)
+						: Effect.fail(new PollPending({ operation: "scenario.status" }))
 				)
 			);
 
@@ -450,7 +500,7 @@ export const ScenarioRunnerLive = Layer.effect(
 					error instanceof PollPending
 						? new ScenarioRunnerError({
 								code: "poll_timeout",
-								endpoint,
+								endpoint: handle.endpoint,
 								message:
 									"The scenario did not return a terminal result before the deadline.",
 								operation: error.operation,
@@ -460,11 +510,11 @@ export const ScenarioRunnerLive = Layer.effect(
 							})
 						: error
 				),
-				Effect.onInterrupt(() => cancel(endpoint, runId).pipe(Effect.ignore))
+				Effect.onInterrupt(() => cancelHandle(handle).pipe(Effect.ignore))
 			);
 		});
 
-		return ScenarioRunner.of({ cancel, run });
+		return ScenarioRunner.of({ cancel, cancelHandle, run, start, status });
 	})
 );
 

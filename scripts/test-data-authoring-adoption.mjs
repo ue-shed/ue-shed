@@ -14,6 +14,7 @@ const materializer = join(
 	"materialize.mjs"
 );
 const targetRoot = join(repositoryRoot, "test-results", "data-authoring-adoption");
+const cargoTargetDirectory = process.env.CARGO_TARGET_DIR ?? join(targetRoot, "target");
 
 function fail(message) {
 	throw new Error(`Data Authoring adoption conformance failed: ${message}`);
@@ -93,8 +94,7 @@ async function verifyFunctionalHost(remoteControlEndpoint) {
 	const port = await availablePort();
 	const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 	const reader = join(
-		targetRoot,
-		"target",
+		cargoTargetDirectory,
 		"release",
 		process.platform === "win32" ? "uasset.exe" : "uasset"
 	);
@@ -247,8 +247,7 @@ runPnpm([
 	`--endpoint=${isolatedRemoteControlEndpoint}`,
 	`--project=${join(repositoryRoot, "fixtures", "unreal-project")}`,
 	`--reader=${join(
-		targetRoot,
-		"target",
+		cargoTargetDirectory,
 		"release",
 		process.platform === "win32" ? "uasset.exe" : "uasset"
 	)}`,

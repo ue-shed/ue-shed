@@ -13,7 +13,8 @@
 - **Depends on**: the Scenario Studio prototype in `e5a5c51` and editor play-session capability.
 - **Category**: Interactive scenarios product vertical
 - **Planned at**: commit `9c2cdce`, 2026-08-11.
-- **Status**: IN PROGRESS — contract bootstrap
+- **Status**: IN PROGRESS — implementation, real UE 5.7 PIE journey, and repository gates pass;
+  final PR evidence/ready transition remains
 
 ## Outcome
 
@@ -157,17 +158,17 @@ the draft PR, then mark it ready only after portable and real UE 5.7 gates pass.
 
 ## Done criteria
 
-- [ ] `UEShedScenarios` is separately enabled and advertises only implemented capabilities/limits.
-- [ ] Movement Gym is a deterministic generic fixture with exactly three registered actions.
-- [ ] Every executed input clip is truthfully labeled `pre_evaluation`.
-- [ ] A run is refused unless live-device isolation is installed, verified, and later restored.
-- [ ] Clips run in game time with one blocking wait and one world-state probe.
-- [ ] Evidence is bounded and missing evidence remains explicit.
-- [ ] Lifecycle, cancellation, failure, stale session, capability missing, and divergence are typed.
-- [ ] `ScenarioRunner` is public and Effect-native; the CLI runs the same service headlessly.
-- [ ] Scenario Studio uses the public client contract and has no Workbench-only authority.
-- [ ] Pure, service, protocol, CLI, fixture, restart, and real UE 5.7 gates pass.
-- [ ] `pnpm check` passes after substantive edits and immediately before handoff.
+- [x] `UEShedScenarios` is separately enabled and advertises only implemented capabilities/limits.
+- [x] Movement Gym is a deterministic generic fixture with exactly three registered actions.
+- [x] Every executed input clip is truthfully labeled `pre_evaluation`.
+- [x] A run is refused unless live-device isolation is installed, verified, and later restored.
+- [x] Clips run in game time with one blocking wait and one world-state probe.
+- [x] Evidence is bounded and missing evidence remains explicit.
+- [x] Lifecycle, cancellation, failure, stale session, capability missing, and divergence are typed.
+- [x] `ScenarioRunner` is public and Effect-native; the CLI runs the same service headlessly.
+- [x] Scenario Studio uses the public client contract and has no Workbench-only authority.
+- [x] Pure, service, protocol, CLI, fixture, restart, and real UE 5.7 gates pass.
+- [x] `pnpm check` passes after substantive edits and immediately before handoff.
 - [ ] The PR contains evidence and is ready for review.
 
 ## STOP conditions

@@ -1,33 +1,58 @@
 {
 	"name": "@ue-shed/map-history",
-	"version": "0.0.0",
-	"private": true,
+	"version": "0.1.0",
+	"description": "Headless Perforce-backed history and playback for saved Unreal Engine maps.",
+	"homepage": "https://github.com/ue-shed/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/ue-shed/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ue-shed/ue-shed.git",
+		"directory": "packages/map-history"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"type": "module",
+	"sideEffects": false,
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
-			"types": "./src/index.ts",
-			"default": "./src/index.ts"
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
 		},
 		"./contract": {
-			"types": "./src/schema.ts",
-			"default": "./src/schema.ts"
+			"types": "./dist/schema.d.ts",
+			"import": "./dist/schema.js"
 		},
 		"./playback": {
-			"types": "./src/playback.ts",
-			"default": "./src/playback.ts"
+			"types": "./dist/playback.d.ts",
+			"import": "./dist/playback.js"
 		}
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/observability": "workspace:*",
-		"@ue-shed/protocol": "workspace:*",
-		"@ue-shed/unreal-assets": "workspace:*",
+		"@ue-shed/protocol": "workspace:0.1.0",
+		"@ue-shed/unreal-assets": "workspace:0.1.0",
 		"effect": "catalog:",
 		"p4client-ts": "0.7.1"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:"
+	},
+	"engines": {
+		"node": ">=22.14.0"
 	}
 }

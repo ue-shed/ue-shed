@@ -18,12 +18,13 @@ import { tmpdir } from "node:os";
 
 export const WASM_PACKAGE_NAME = "@ue-shed/uasset-inspection-wasm";
 export const GAME_TEXT_PACKAGE_NAME = "@ue-shed/game-text";
+export const MAP_HISTORY_PACKAGE_NAME = "@ue-shed/map-history";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Plan 025 shipped the parser slice; Plans 030 and 031 add the headless Map Review and Observatory
  * closures without making a UI package public. Plan 036 adds the bytes-only WASM inspection
- * surface. Game Text adds the first package-mode existing-host feature bundle without publishing
- * its Workbench presentation.
+ * surface. Game Text and World Log's Map History boundary add headless existing-host features
+ * without publishing their Workbench presentation.
  */
 export const PUBLIC_PACKAGES = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
@@ -34,6 +35,7 @@ export const PUBLIC_PACKAGES = [
 	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
 	{ name: "@ue-shed/uasset-win32-x64", directory: "packages/uasset-win32-x64" },
 	{ name: "@ue-shed/unreal-assets", directory: "packages/unreal-assets" },
+	{ name: MAP_HISTORY_PACKAGE_NAME, directory: "packages/map-history" },
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" },
 	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" }
 ];
@@ -313,6 +315,7 @@ function validateExactPackageGraph(manifests) {
 	const launcher = byName.get("@ue-shed/uasset");
 	const platform = byName.get("@ue-shed/uasset-win32-x64");
 	const gameText = byName.get(GAME_TEXT_PACKAGE_NAME);
+	const mapHistory = byName.get(MAP_HISTORY_PACKAGE_NAME);
 	requireExactDependency(protocol, "effect", exactEffectVersion, failures);
 	requireExactDependency(observability, "effect", exactEffectVersion, failures);
 	requireExactDependency(observability, "@effect/opentelemetry", exactEffectVersion, failures);
@@ -330,6 +333,10 @@ function validateExactPackageGraph(manifests) {
 	requireExactDependency(unrealAssets, "effect", exactEffectVersion, failures);
 	requireExactInternalDependency(gameText, "@ue-shed/unreal-assets", byName, failures);
 	requireExactPeerDependency(gameText, "effect", exactEffectVersion, failures);
+	requireExactInternalDependency(mapHistory, "@ue-shed/protocol", byName, failures);
+	requireExactInternalDependency(mapHistory, "@ue-shed/unreal-assets", byName, failures);
+	requireExactDependency(mapHistory, "effect", exactEffectVersion, failures);
+	requireExactDependency(mapHistory, "p4client-ts", "0.7.1", failures);
 	for (const dependencyField of ["dependencies", "optionalDependencies", "peerDependencies"]) {
 		if (gameText?.[dependencyField]?.["@ue-shed/uasset"] !== undefined) {
 			failures.push(
@@ -364,6 +371,11 @@ function validateExactPackageGraph(manifests) {
 	if (gameText?.exports?.["./browser"] === undefined) {
 		failures.push(`${GAME_TEXT_PACKAGE_NAME} must export ./browser`);
 	}
+	for (const entrypoint of ["./contract", "./playback"]) {
+		if (mapHistory?.exports?.[entrypoint] === undefined) {
+			failures.push(`${MAP_HISTORY_PACKAGE_NAME} must export ${entrypoint}`);
+		}
+	}
 	if (failures.length > 0)
 		throw new Error(`Invalid public package graph:\n- ${failures.join("\n- ")}`);
 }
@@ -381,6 +393,7 @@ export async function packPublicPackages({ output, build = true }) {
 		run(executable("pnpm"), ["--filter", "@ue-shed/observatory", "build"]);
 		run(executable("pnpm"), ["--filter", WASM_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
+		run(executable("pnpm"), ["--filter", MAP_HISTORY_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
 		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 	}

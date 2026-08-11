@@ -12,7 +12,7 @@ import {
 	validateRunId,
 	validateWasmBuildInfo
 } from "./create-release-candidate.mjs";
-import { PUBLIC_PACKAGES } from "./pack-public-packages.mjs";
+import { PUBLIC_PACKAGES, PUBLIC_VERSION } from "./pack-public-packages.mjs";
 import {
 	parseRegistryIntegrity,
 	publicationDecision,
@@ -31,8 +31,8 @@ test("accepts generated WASM build evidence for optimized and no-opt builds", ()
 	const buildInfo = {
 		schemaVersion: 1,
 		cargoLocked: true,
-		packageVersion: "0.1.0-rc.4",
-		crateVersion: "0.1.0-rc.4",
+		packageVersion: PUBLIC_VERSION,
+		crateVersion: PUBLIC_VERSION,
 		targets: ["nodejs", "web"],
 		tools: {
 			rustc: "rustc 1.94.0",
@@ -77,8 +77,8 @@ test("rejects WASM evidence that hides optimizer state", () => {
 			validateWasmBuildInfo({
 				schemaVersion: 1,
 				cargoLocked: true,
-				packageVersion: "0.1.0-rc.4",
-				crateVersion: "0.1.0-rc.4",
+				packageVersion: PUBLIC_VERSION,
+				crateVersion: PUBLIC_VERSION,
 				targets: ["nodejs", "web"],
 				tools: {
 					rustc: "rustc",

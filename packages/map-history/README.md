@@ -14,6 +14,18 @@ SavedWorld projection, and returns explicit targeted-coverage metadata.
 The first implementation is intentionally Perforce-specific. A source-neutral revision abstraction
 is deferred until another real producer exists.
 
+Install the headless package with its exact compatible release dependencies:
+
+```powershell
+npm install --save-exact @ue-shed/map-history @ue-shed/protocol @ue-shed/unreal-assets effect@4.0.0-beta.98 p4client-ts@0.7.1
+```
+
+The root export owns Perforce acquisition and therefore requires a configured `p4` executable and
+workspace. Browser or renderer consumers should use `@ue-shed/map-history/contract` and
+`@ue-shed/map-history/playback`; those entrypoints perform no Perforce or filesystem operations.
+World Log presentation remains private to the maintained extension and is not bundled with this
+headless package.
+
 Conventional map history follows a bounded linear chain of direct Perforce moves, including when a
 stale local source path still exists after the depot map moved. Copy, branch, merge, and ambiguous
 integration graphs are not treated as map identity.

@@ -89,9 +89,10 @@ guide](https://changesets.dev/guide/cli), npm's [access-token
 guidance](https://docs.npmjs.com/about-access-tokens/), and [two-factor authentication
 requirements](https://docs.npmjs.com/about-two-factor-authentication/).
 
-The pending initial Changeset promotes the existing public packages from `0.1.0-rc.4` to `0.1.0`
-and adds `@ue-shed/game-text`. Later World Log, Texture Audit, or other public features follow the
-same flow and release only themselves plus genuinely affected dependencies.
+The initial stable `0.1.0` release promotes the existing public packages from `0.1.0-rc.4` and adds
+`@ue-shed/game-text` plus World Log's headless `@ue-shed/map-history` boundary. Later Texture Audit
+or other public features follow the same flow and release only themselves plus genuinely affected
+dependencies.
 
 ## Local plugin artifacts
 

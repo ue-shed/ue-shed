@@ -10,6 +10,9 @@ const packageDist =
 	process.argv[2] === undefined
 		? join(repositoryRoot, "packages", "uasset-inspection-wasm", "dist")
 		: resolve(process.argv[2]);
+const expectedVersion = JSON.parse(
+	readFileSync(join(repositoryRoot, "packages", "uasset-inspection-wasm", "package.json"), "utf8")
+).version;
 const fixture = join(
 	repositoryRoot,
 	"fixtures",
@@ -118,7 +121,7 @@ try {
 		};
 	}, origin);
 
-	assert.match(result.version, /^0\.1\.0-rc\.4$/);
+	assert.equal(result.version, expectedVersion);
 	assert.equal(result.inspection.schema_version, 8);
 	assert.equal(result.inspection.status, "ok");
 	assert.deepEqual(result.repeated, result.inspection);

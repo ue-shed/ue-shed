@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const checkOnly = process.argv.includes("--check");
 const nativePackagePaths = [
 	"packages/uasset/package.json",
 	"packages/uasset-inspection-wasm/package.json",
@@ -21,7 +22,7 @@ const cargoLocks = [
 	},
 	{
 		path: "crates/uasset-inspection-wasm/Cargo.lock",
-		crates: ["uasset-parser", "uasset-inspection", "uasset-io", "uasset-inspection-wasm"]
+		crates: ["uasset-parser", "uasset-inspection", "uasset-inspection-wasm"]
 	}
 ];
 
@@ -34,6 +35,9 @@ async function replace(path, transform) {
 	const before = await readFile(absolutePath, "utf8");
 	const after = transform(before);
 	if (after === before) return;
+	if (checkOnly) {
+		throw new Error(`${path} is not synchronized with the fixed native npm package group.`);
+	}
 	await writeFile(absolutePath, after, "utf8");
 }
 

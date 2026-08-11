@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/observatory",
-	"version": "0.1.0-rc.4",
+	"version": "0.1.0",
 	"description": "Headless bounded Unreal actor observation, transform streaming, and focus APIs.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -40,8 +40,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/observability": "workspace:0.1.0-rc.4",
-		"@ue-shed/unreal-connection": "workspace:0.1.0-rc.4",
+		"@ue-shed/observability": "workspace:0.1.0",
+		"@ue-shed/unreal-connection": "workspace:0.1.0",
 		"effect": "catalog:"
 	},
 	"engines": {

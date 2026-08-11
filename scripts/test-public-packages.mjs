@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
 	GAME_TEXT_PACKAGE_NAME,
+	MAP_HISTORY_PACKAGE_NAME,
 	packPublicPackages,
 	PUBLIC_PACKAGES,
 	WASM_PACKAGE_NAME
@@ -346,6 +347,45 @@ try {
 	});
 	if (gameTextStatus !== "game-text-packed-ok") {
 		throw new Error(`Game Text packed consumer returned ${JSON.stringify(gameTextStatus)}.`);
+	}
+	const mapHistoryConsumerScript = join(consumerDirectory, "verify-map-history.mjs");
+	await writeFile(
+		mapHistoryConsumerScript,
+		`${[
+			"import * as mapHistory from '@ue-shed/map-history';",
+			"import { MapHistoryQuery } from '@ue-shed/map-history/contract';",
+			"import { mapHistoryPlaybackFrameAt } from '@ue-shed/map-history/playback';",
+			"if (typeof mapHistory.readPerforceMapHistory !== 'function') throw new Error('missing Map History service');",
+			"if (MapHistoryQuery === undefined) throw new Error('missing Map History contract');",
+			"const frame = mapHistoryPlaybackFrameAt({",
+			"  history: {",
+			"    baseline: { status: 'map_not_yet_created' },",
+			"    completeness: 'complete',",
+			"    diagnostics: [],",
+			"    mapDepotPath: '//fixture/Content/Maps/World.umap',",
+			"    query: {",
+			"      limits: { maxChangelists: 1, maxFilesPerChangelist: 1, maxMaterializedBytes: 1, maxMaterializedFiles: 1 },",
+			"      mapPath: 'Content/Maps/World.umap',",
+			"      projectRoot: '.',",
+			"      range: { since: '2026-01-01T00:00:00.000Z', until: '2026-01-02T00:00:00.000Z' }",
+			"    },",
+			"    revisions: [],",
+			"    schemaVersion: 1",
+			"  },",
+			"  revisionIndex: undefined",
+			"});",
+			"if (frame.kind !== 'range_start' || frame.actors.length !== 0) throw new Error('Map History playback failed');",
+			"console.log('world-log-packed-ok');"
+		].join("\n")}\n`,
+		"utf8"
+	);
+	const mapHistoryStatus = run(process.execPath, [mapHistoryConsumerScript], consumerDirectory, {
+		env: consumerEnvironment
+	});
+	if (mapHistoryStatus !== "world-log-packed-ok") {
+		throw new Error(
+			`${MAP_HISTORY_PACKAGE_NAME} packed consumer returned ${JSON.stringify(mapHistoryStatus)}.`
+		);
 	}
 	const wasmConsumerScript = join(consumerDirectory, "verify-wasm.mjs");
 	await writeFile(

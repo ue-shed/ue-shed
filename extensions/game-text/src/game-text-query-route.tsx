@@ -8,6 +8,7 @@ import type {
 	TextReviewSignal,
 	TextQualityQueryRunResult,
 	TextQualityQuerySummary,
+	TextQualityRuleDocument,
 	TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
@@ -237,6 +238,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const [locateFeedback, setLocateFeedback] = createSignal<LocateFeedback>({ status: "idle" });
 	const [mode, setMode] = createSignal<"corpus" | "quality">("corpus");
 	const [qualitySummary, setQualitySummary] = createSignal<TextQualityQuerySummary>();
+	const [qualityDocument, setQualityDocument] = createSignal<TextQualityRuleDocument>();
 	const [qualityFailure, setQualityFailure] =
 		createSignal<Extract<TextQualityQueryRunResult, { status: "failed" }>["error"]>();
 	let searchGeneration = 0;
@@ -327,6 +329,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 	const refresh = () => {
 		setMode("corpus");
 		setQualitySummary(undefined);
+		setQualityDocument(undefined);
 		setQualityFailure(undefined);
 		setState({ status: "loading" });
 		setProgress({ completed: 0, phase: "idle", stage: "game_text", total: 0 });
@@ -356,6 +359,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 			onSuccess: (result) => {
 				if (result.status === "completed") {
 					setQualitySummary(result.summary);
+					setQualityDocument(result.document);
 					setMode("quality");
 				} else if (result.status === "failed") setQualityFailure(result.error);
 			}
@@ -520,11 +524,19 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 										}
 									>
 										{(quality) => (
-											<GameTextQualityWorkspace
-												client={props.client}
-												onReplaceRules={loadQualityRules}
-												summary={quality()}
-											/>
+											<Show when={qualityDocument()}>
+												{(document) => (
+													<GameTextQualityWorkspace
+														client={props.client}
+														document={document()}
+														onReplaceRules={loadQualityRules}
+														onReviewed={(result) =>
+															setQualitySummary(result.summary)
+														}
+														summary={quality()}
+													/>
+												)}
+											</Show>
 										)}
 									</Show>
 								</Show>

@@ -6,10 +6,12 @@ UE Shed makes player-facing text in saved Unreal packages searchable and reviewa
 requiring a running editor. The product preserves Unreal text identity, authored occurrence
 evidence, and parser coverage instead of presenting strings as an unexplained flat list.
 
-The shipped product is read-only. It discovers text through the shared saved-project index and
+Saved game text is read-only. UE Shed discovers it through the shared saved-project index and
 compact text extraction path, builds one `TextCorpus`, and exposes scan, search, focus, and quality
 review through public package and CLI surfaces. Workbench is a bounded client of the same query
-model; it is not a second corpus or policy authority.
+model; it is not a second corpus or policy authority. Project-authored quality rule documents are
+the one editable artifact in this slice: users may inspect, preview, and save them without changing
+game text or localization resources.
 
 ## Shipped read-only corpus
 
@@ -96,26 +98,36 @@ The CLI surface is `ue-shed text review <project-root> --rules <file>`, with the
 reader selection. Rule-file IO and decoding are typed boundary failures with safe recovery text.
 The evaluator itself is a pure exported function over a decoded rule document and `TextCorpus`.
 
-Browser-safe report, finding, and query schemas live in `@ue-shed/game-text/browser` for trusted
-host presentation. Workbench exposes quality review through the existing `GameTextClient` and
-corpus query boundary. Its trusted main process retains the active corpus, decoded rules, and
-evaluated report; the renderer receives only a summary, bounded finding pages, and bounded focused
-occurrence evidence. Choosing a new corpus clears the retained quality review, and choosing invalid
-rules leaves both the corpus query and prior valid configuration scoped rather than broadening a
-role. The renderer receives neither filesystem authority, rule-file authority, rule contents, a
-complete report, nor a complete corpus.
+Browser-safe rule, report, finding, and query schemas live in `@ue-shed/game-text/browser` for
+trusted host presentation. Workbench exposes quality review through the existing `GameTextClient`
+and corpus query boundary. Its trusted main process retains the active corpus, decoded rules,
+evaluated report, and rule-file path; the renderer receives the bounded decoded rule document, a
+summary, bounded finding pages, and bounded focused occurrence evidence. It never receives
+filesystem authority, the rule-file path, a complete report, or a complete corpus.
+
+The renderer may submit a rule draft for preview or save through schema-validated IPC. The trusted
+main process performs semantic validation and evaluation against its retained corpus. A valid
+preview replaces the active decoded rules and report but does not write a file. Save atomically
+overwrites only the explicitly loaded rule document after the same validation succeeds. Invalid
+drafts produce typed recovery guidance and leave the prior valid rules and report intact, so a bad
+scope cannot broaden a role to the whole project. Choosing a new corpus clears the retained rule
+file and quality review.
 
 The Workbench quality view presents character-budget and terminology queues, authored role/rule
 summaries, actual and expected evidence, recovery guidance, `TextUnitId`, affected saved-package
-occurrences, and the unchanged complete/partial corpus coverage. Corpus browsing remains available
+occurrences, and the unchanged complete/partial corpus coverage. Its rule editor exposes rule IDs,
+assigned roles, role scopes, character limits, terminology entries, case sensitivity, and recovery
+guidance, with explicit Preview changes and Save rules actions. Text browsing remains available
 beside quality review, including the independent hardcoded `long` lens.
 
 ## Agent operation and adoption
 
-Quality review is a small read-only agent operation, so it requires no durable mutation proposal.
+Headless quality review is a read-only agent operation, so it requires no durable mutation proposal.
 An agent supplies the project root and rule file explicitly, receives schema-versioned JSON, and can
 distinguish invalid rules, scan failure, partial coverage, and completed evaluation without parsing
-human prose. No ambient Workbench selection is required.
+human prose. No ambient Workbench selection is required. Workbench rule-file Save is an explicit
+user action against the already selected rule document; it does not grant agents or the renderer
+ambient filesystem mutation authority.
 
 Package-mode adopters continue to follow `packages/game-text/ADOPTING.md` and its manifest. A host
 may expose quality review only by keeping corpus and rule-file authority in its trusted process and
@@ -132,6 +144,8 @@ The first quality slice must prove:
 - complete and partial corpus coverage and diagnostics survive unchanged in reports;
 - the CLI uses the existing `TextCorpusService` scan and emits the public report schema;
 - browser imports remain free of Node, filesystem, process, Electron, and Workbench dependencies;
+- invalid Workbench drafts leave the prior valid rules and report active;
+- Workbench preview and atomic Save evaluate through the trusted host without mutating game text;
 - ordinary telemetry contains no source, path, identity, or rule contents; and
 - `pnpm check` passes.
 
@@ -139,10 +153,11 @@ The first quality slice must prove:
 
 - another filesystem enumeration, scanner, corpus, or persistence adapter;
 - direct package, source-text, localization, PO, manifest, archive, or compiled-resource mutation;
-- translation editing, Apply, Save, PO import/export, or localization compilation;
+- translation editing, source/localization Apply or Save, PO import/export, or localization
+  compilation;
 - rendered-width estimation or engine-specific font/layout simulation;
 - built-in studio terminology, roles, paths, cultures, or budgets;
-- full-corpus renderer IPC or UI-owned rule evaluation; and
+- full-corpus renderer IPC, renderer filesystem authority, or UI-owned rule evaluation; and
 - telemetry containing authored text or rule evidence.
 
 The broader localization and authoring direction remains in

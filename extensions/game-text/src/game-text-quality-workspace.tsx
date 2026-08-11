@@ -4,12 +4,15 @@ import type {
 	TextQualityFindingSummary,
 	TextQualityFocus,
 	TextQualityQuerySummary,
+	TextQualityRuleDocument,
+	TextQualityRuleUpdateResult,
 	TextQualitySearchPage
 } from "@ue-shed/game-text/browser";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createEffect, createSignal, on } from "solid-js";
 import type { GameTextClientShape } from "./game-text-client.js";
+import { GameTextRuleEditor } from "./game-text-rule-editor.js";
 import { textContext } from "./game-text-view.js";
 
 const filters: readonly { readonly label: string; readonly value: TextQualityFilter }[] = [
@@ -35,6 +38,10 @@ function actual(focus: TextQualityFocus): string {
 
 export function GameTextQualityWorkspace(props: {
 	readonly client: GameTextClientShape;
+	readonly document: TextQualityRuleDocument;
+	readonly onReviewed: (
+		result: Extract<TextQualityRuleUpdateResult, { status: "completed" }>
+	) => void;
 	readonly onReplaceRules: () => void;
 	readonly summary: TextQualityQuerySummary;
 }) {
@@ -45,6 +52,7 @@ export function GameTextQualityWorkspace(props: {
 	const [selectedId, setSelectedId] = createSignal<TextQualityFindingSummary["id"]>();
 	const [focus, setFocus] = createSignal<TextQualityFocus>();
 	const [failure, setFailure] = createSignal<string>();
+	const [surface, setSurface] = createSignal<"findings" | "rules">("findings");
 	let searchGeneration = 0;
 	let focusGeneration = 0;
 
@@ -83,7 +91,7 @@ export function GameTextQualityWorkspace(props: {
 
 	createEffect(
 		on(
-			() => props.summary.findingCount,
+			() => props.summary,
 			() => requestPage()
 		)
 	);
@@ -138,6 +146,30 @@ export function GameTextQualityWorkspace(props: {
 					<span>{coverage().inspectedPackages} inspected packages</span>
 				</div>
 			</section>
+			<div
+				role="tablist"
+				aria-label="Quality review workspace"
+				{...stylex.props(styles.tabs)}
+			>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={surface() === "findings"}
+					onClick={() => setSurface("findings")}
+					{...stylex.props(styles.tab, surface() === "findings" && styles.tabActive)}
+				>
+					Findings <b>{props.summary.findingCount}</b>
+				</button>
+				<button
+					type="button"
+					role="tab"
+					aria-selected={surface() === "rules"}
+					onClick={() => setSurface("rules")}
+					{...stylex.props(styles.tab, surface() === "rules" && styles.tabActive)}
+				>
+					Edit rules <b>{props.document.rules.length}</b>
+				</button>
+			</div>
 			<Show when={failure()}>
 				{(message) => (
 					<p role="alert" {...stylex.props(styles.error)}>
@@ -145,202 +177,226 @@ export function GameTextQualityWorkspace(props: {
 					</p>
 				)}
 			</Show>
-			<div {...stylex.props(styles.grid)}>
-				<aside aria-label="Quality filters" {...stylex.props(styles.rail)}>
-					<header {...stylex.props(styles.railHeader)}>
-						<span>Finding queue</span>
-						<b>{props.summary.findingCount}</b>
-					</header>
-					<div role="group" aria-label="Finding type">
-						<For each={filters}>
-							{(item) => (
-								<button
-									type="button"
-									aria-pressed={filter() === item.value}
-									onClick={() => {
-										setFilter(item.value);
-										requestPage(item.value);
-									}}
-									{...stylex.props(
-										styles.filter,
-										filter() === item.value && styles.filterActive
-									)}
-								>
-									<span>{item.label}</span>
-									<b>
-										{item.value === "all"
-											? props.summary.findingCount
-											: item.value === "character_budget"
-												? props.summary.characterBudgetCount
-												: props.summary.terminologyCount}
-									</b>
-								</button>
-							)}
-						</For>
-					</div>
-					<section {...stylex.props(styles.railSection)}>
-						<header>Role matches</header>
-						<For each={props.summary.roles}>
-							{(role) => (
-								<span {...stylex.props(styles.roleRow)}>
-									<code>{role.role}</code>
-									<b>{role.matchedTextUnits}</b>
-								</span>
-							)}
-						</For>
-					</section>
-					<section {...stylex.props(styles.coverage)}>
-						<strong>
-							{props.summary.status === "complete"
-								? "ALL TEXT CHECKED"
-								: "PARTIAL COVERAGE"}
-						</strong>
-						<span>{coverage().textOccurrences} known occurrences</span>
+			<Show
+				when={surface() === "findings"}
+				fallback={
+					<GameTextRuleEditor
+						client={props.client}
+						document={props.document}
+						onReviewed={props.onReviewed}
+						summary={props.summary}
+					/>
+				}
+			>
+				<div {...stylex.props(styles.grid)}>
+					<aside aria-label="Quality filters" {...stylex.props(styles.rail)}>
+						<header {...stylex.props(styles.railHeader)}>
+							<span>Finding queue</span>
+							<b>{props.summary.findingCount}</b>
+						</header>
+						<div role="group" aria-label="Finding type">
+							<For each={filters}>
+								{(item) => (
+									<button
+										type="button"
+										aria-pressed={filter() === item.value}
+										onClick={() => {
+											setFilter(item.value);
+											requestPage(item.value);
+										}}
+										{...stylex.props(
+											styles.filter,
+											filter() === item.value && styles.filterActive
+										)}
+									>
+										<span>{item.label}</span>
+										<b>
+											{item.value === "all"
+												? props.summary.findingCount
+												: item.value === "character_budget"
+													? props.summary.characterBudgetCount
+													: props.summary.terminologyCount}
+										</b>
+									</button>
+								)}
+							</For>
+						</div>
+						<section {...stylex.props(styles.railSection)}>
+							<header>Role matches</header>
+							<For each={props.summary.roles}>
+								{(role) => (
+									<span {...stylex.props(styles.roleRow)}>
+										<code>{role.role}</code>
+										<b>{role.matchedTextUnits}</b>
+									</span>
+								)}
+							</For>
+						</section>
+						<section {...stylex.props(styles.coverage)}>
+							<strong>
+								{props.summary.status === "complete"
+									? "ALL TEXT CHECKED"
+									: "PARTIAL COVERAGE"}
+							</strong>
+							<span>{coverage().textOccurrences} known occurrences</span>
+							<Show
+								when={
+									coverage().unsupportedTextProperties > 0 ||
+									coverage().failedPackages > 0 ||
+									coverage().partialPackages > 0
+								}
+							>
+								<p>
+									{coverage().unsupportedTextProperties} unsupported properties ·{" "}
+									{coverage().partialPackages} partial ·{" "}
+									{coverage().failedPackages} failed
+								</p>
+							</Show>
+						</section>
+					</aside>
+					<section aria-label="Quality findings" {...stylex.props(styles.findings)}>
+						<header {...stylex.props(styles.listHeader)}>
+							<span>Explainable findings</span>
+							<b>{page().total}</b>
+						</header>
 						<Show
-							when={
-								coverage().unsupportedTextProperties > 0 ||
-								coverage().failedPackages > 0 ||
-								coverage().partialPackages > 0
+							when={page().findings.length > 0}
+							fallback={
+								<p {...stylex.props(styles.empty)}>No findings for this filter.</p>
 							}
 						>
-							<p>
-								{coverage().unsupportedTextProperties} unsupported properties ·{" "}
-								{coverage().partialPackages} partial · {coverage().failedPackages}{" "}
-								failed
-							</p>
+							<For each={page().findings}>
+								{(finding) => (
+									<button
+										type="button"
+										onClick={() => {
+											setSelectedId(finding.id);
+											requestFocus(finding.id);
+										}}
+										aria-current={
+											selectedId() === finding.id ? "true" : undefined
+										}
+										{...stylex.props(
+											styles.finding,
+											selectedId() === finding.id && styles.findingActive
+										)}
+									>
+										<span {...stylex.props(styles.findingMeta)}>
+											<b {...stylex.props(styles.kind)}>
+												{finding.kind === "character_budget"
+													? "BUDGET"
+													: "TERM"}
+											</b>
+											<code>{finding.role}</code>
+											<span>{finding.ruleId}</span>
+										</span>
+										<strong {...stylex.props(styles.source)}>
+											{finding.sourceExcerpt}
+										</strong>
+										<span {...stylex.props(styles.actual)}>
+											{finding.actual}
+										</span>
+										<span {...stylex.props(styles.expected)}>
+											{finding.expectation}
+										</span>
+									</button>
+								)}
+							</For>
 						</Show>
 					</section>
-				</aside>
-				<section aria-label="Quality findings" {...stylex.props(styles.findings)}>
-					<header {...stylex.props(styles.listHeader)}>
-						<span>Explainable findings</span>
-						<b>{page().total}</b>
-					</header>
-					<Show
-						when={page().findings.length > 0}
-						fallback={
-							<p {...stylex.props(styles.empty)}>No findings for this filter.</p>
-						}
-					>
-						<For each={page().findings}>
+					<aside aria-label="Quality finding detail" {...stylex.props(styles.detail)}>
+						<Show
+							when={focus()}
+							fallback={
+								<p {...stylex.props(styles.empty)}>
+									Select a finding to inspect its evidence.
+								</p>
+							}
+						>
 							{(finding) => (
-								<button
-									type="button"
-									onClick={() => {
-										setSelectedId(finding.id);
-										requestFocus(finding.id);
-									}}
-									aria-current={selectedId() === finding.id ? "true" : undefined}
-									{...stylex.props(
-										styles.finding,
-										selectedId() === finding.id && styles.findingActive
-									)}
-								>
-									<span {...stylex.props(styles.findingMeta)}>
-										<b {...stylex.props(styles.kind)}>
-											{finding.kind === "character_budget"
-												? "BUDGET"
-												: "TERM"}
-										</b>
-										<code>{finding.role}</code>
-										<span>{finding.ruleId}</span>
-									</span>
-									<strong {...stylex.props(styles.source)}>
-										{finding.sourceExcerpt}
-									</strong>
-									<span {...stylex.props(styles.actual)}>{finding.actual}</span>
-									<span {...stylex.props(styles.expected)}>
-										{finding.expectation}
-									</span>
-								</button>
-							)}
-						</For>
-					</Show>
-				</section>
-				<aside aria-label="Quality finding detail" {...stylex.props(styles.detail)}>
-					<Show
-						when={focus()}
-						fallback={
-							<p {...stylex.props(styles.empty)}>
-								Select a finding to inspect its evidence.
-							</p>
-						}
-					>
-						{(finding) => (
-							<>
-								<header {...stylex.props(styles.detailHeader)}>
-									<span {...stylex.props(styles.detailEyebrow)}>
-										{finding().kind === "character_budget"
-											? "CHARACTER BUDGET"
-											: "TERMINOLOGY"}
-									</span>
-									<blockquote {...stylex.props(styles.detailQuote)}>
-										“{finding().sourceExcerpt}”
-									</blockquote>
-									<code {...stylex.props(styles.detailId)}>
-										{finding().textUnitId}
-									</code>
-								</header>
-								<section {...stylex.props(styles.explanation)}>
-									<div {...stylex.props(styles.explanationCell)}>
-										<small {...stylex.props(styles.explanationLabel)}>
-											ACTUAL
-										</small>
-										<strong {...stylex.props(styles.explanationValue)}>
-											{actual(finding())}
-										</strong>
-									</div>
-									<div {...stylex.props(styles.explanationCell)}>
-										<small {...stylex.props(styles.explanationLabel)}>
-											EXPECTED
-										</small>
-										<strong {...stylex.props(styles.explanationValue)}>
-											{expectation(finding())}
-										</strong>
-									</div>
-									<div {...stylex.props(styles.explanationCell)}>
-										<small {...stylex.props(styles.explanationLabel)}>
-											RECOVERY
-										</small>
-										<strong {...stylex.props(styles.explanationValue)}>
-											{finding().recovery}
-										</strong>
-									</div>
-								</section>
-								<section {...stylex.props(styles.evidence)}>
-									<header {...stylex.props(styles.evidenceHeader)}>
-										<span>Affected occurrences</span>
-										<b>{finding().totalOccurrences}</b>
+								<>
+									<header {...stylex.props(styles.detailHeader)}>
+										<span {...stylex.props(styles.detailEyebrow)}>
+											{finding().kind === "character_budget"
+												? "CHARACTER BUDGET"
+												: "TERMINOLOGY"}
+										</span>
+										<blockquote {...stylex.props(styles.detailQuote)}>
+											“{finding().sourceExcerpt}”
+										</blockquote>
+										<code {...stylex.props(styles.detailId)}>
+											{finding().textUnitId}
+										</code>
 									</header>
-									<For each={finding().affectedOccurrences}>
-										{(occurrence) => {
-											const context = textContext(occurrence.location);
-											return (
-												<article {...stylex.props(styles.evidenceRow)}>
-													<strong {...stylex.props(styles.evidenceTitle)}>
-														{context.title}
-													</strong>
-													<span {...stylex.props(styles.evidenceDetail)}>
-														{context.detail}
-													</span>
-													<code {...stylex.props(styles.evidencePath)}>
-														{occurrence.location.objectPath}
-													</code>
-													<small
-														{...stylex.props(styles.evidencePackage)}
-													>
-														{occurrence.packageFile}
-													</small>
-												</article>
-											);
-										}}
-									</For>
-								</section>
-							</>
-						)}
-					</Show>
-				</aside>
-			</div>
+									<section {...stylex.props(styles.explanation)}>
+										<div {...stylex.props(styles.explanationCell)}>
+											<small {...stylex.props(styles.explanationLabel)}>
+												ACTUAL
+											</small>
+											<strong {...stylex.props(styles.explanationValue)}>
+												{actual(finding())}
+											</strong>
+										</div>
+										<div {...stylex.props(styles.explanationCell)}>
+											<small {...stylex.props(styles.explanationLabel)}>
+												EXPECTED
+											</small>
+											<strong {...stylex.props(styles.explanationValue)}>
+												{expectation(finding())}
+											</strong>
+										</div>
+										<div {...stylex.props(styles.explanationCell)}>
+											<small {...stylex.props(styles.explanationLabel)}>
+												RECOVERY
+											</small>
+											<strong {...stylex.props(styles.explanationValue)}>
+												{finding().recovery}
+											</strong>
+										</div>
+									</section>
+									<section {...stylex.props(styles.evidence)}>
+										<header {...stylex.props(styles.evidenceHeader)}>
+											<span>Affected occurrences</span>
+											<b>{finding().totalOccurrences}</b>
+										</header>
+										<For each={finding().affectedOccurrences}>
+											{(occurrence) => {
+												const context = textContext(occurrence.location);
+												return (
+													<article {...stylex.props(styles.evidenceRow)}>
+														<strong
+															{...stylex.props(styles.evidenceTitle)}
+														>
+															{context.title}
+														</strong>
+														<span
+															{...stylex.props(styles.evidenceDetail)}
+														>
+															{context.detail}
+														</span>
+														<code
+															{...stylex.props(styles.evidencePath)}
+														>
+															{occurrence.location.objectPath}
+														</code>
+														<small
+															{...stylex.props(
+																styles.evidencePackage
+															)}
+														>
+															{occurrence.packageFile}
+														</small>
+													</article>
+												);
+											}}
+										</For>
+									</section>
+								</>
+							)}
+						</Show>
+					</aside>
+				</div>
+			</Show>
 		</div>
 	);
 }
@@ -388,6 +444,25 @@ const styles = stylex.create({
 	},
 	summaryValue: { color: tokens.colorTextStrong, fontSize: 14, lineHeight: 1.2 },
 	metricValue: { color: tokens.colorTextStrong, fontSize: 13, lineHeight: 1.2 },
+	tabs: {
+		display: "flex",
+		border: `1px solid ${tokens.colorBorder}`,
+		borderTop: 0,
+		backgroundColor: "#121110"
+	},
+	tab: {
+		display: "flex",
+		alignItems: "center",
+		gap: 7,
+		padding: "6px 10px",
+		border: 0,
+		borderRight: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
+		color: tokens.colorTextMuted,
+		fontSize: 9,
+		cursor: "pointer"
+	},
+	tabActive: { color: "#ffd0bf", backgroundColor: "#2b1d18" },
 	grid: {
 		display: "grid",
 		gridTemplateColumns: "206px minmax(390px, 470px) minmax(440px, 1fr)",

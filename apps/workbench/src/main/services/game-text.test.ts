@@ -1,5 +1,11 @@
 import { it } from "@effect/vitest";
-import { makeTextCorpusServiceTestLayer, TextCorpusScanError } from "@ue-shed/game-text";
+import {
+	makeTextCorpusServiceTestLayer,
+	TextCorpusScanError,
+	TextQualityRuleId,
+	TextQualityRuleDocument,
+	TextRoleId
+} from "@ue-shed/game-text";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
@@ -22,8 +28,10 @@ const gameTextAdapters = Layer.mergeAll(
 );
 const gameTextLive = WorkbenchGameTextLive.pipe(Layer.provide(gameTextAdapters));
 
-function qualityGameTextLive(contents: string) {
-	const path = "C:/FixtureProject/game-text-quality.json";
+const qualityRulesPath = "C:/FixtureProject/game-text-quality.json";
+
+function qualityGameTextLive(contents: string, files = new Map<string, Uint8Array>()) {
+	files.set(qualityRulesPath, new TextEncoder().encode(contents));
 	return WorkbenchGameTextLive.pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -31,11 +39,12 @@ function qualityGameTextLive(contents: string) {
 					ElectronDialog,
 					ElectronDialog.of({
 						chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
-						chooseFile: () => Effect.succeed({ path, status: "selected" }),
+						chooseFile: () =>
+							Effect.succeed({ path: qualityRulesPath, status: "selected" }),
 						chooseFiles: () => Effect.succeed({ status: "cancelled" })
 					})
 				),
-				makeLocalFilesTestLayer(new Map([[path, new TextEncoder().encode(contents)]]))
+				makeLocalFilesTestLayer(files)
 			)
 		)
 	);
@@ -139,6 +148,27 @@ it.effect("returns not_configured without a project root", () =>
 		)
 	)
 );
+
+const qualityRoleId = TextRoleId.make("menu.prompt");
+const qualityRuleId = TextQualityRuleId.make("menu.prompt.characters");
+const validQualityDocument = TextQualityRuleDocument.make({
+	roles: [
+		{
+			id: qualityRoleId,
+			scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
+		}
+	],
+	rules: [
+		{
+			id: qualityRuleId,
+			kind: "character_budget",
+			maximumCharacters: 32,
+			recovery: "Shorten the prompt.",
+			role: qualityRoleId
+		}
+	],
+	schemaVersion: 1
+});
 
 it.effect("scans the configured project", () =>
 	Effect.gen(function* () {
@@ -332,4 +362,83 @@ it.effect(
 				)
 			)
 		)
+);
+
+it.effect(
+	"previews validated rule edits, rejects invalid drafts, and saves the active file",
+	() => {
+		const files = new Map<string, Uint8Array>();
+		const revisedDocument = TextQualityRuleDocument.make({
+			roles: [
+				{
+					id: qualityRoleId,
+					scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
+				}
+			],
+			rules: [
+				{
+					id: qualityRuleId,
+					kind: "character_budget",
+					maximumCharacters: 64,
+					recovery: "Shorten the prompt.",
+					role: qualityRoleId
+				}
+			],
+			schemaVersion: 1
+		});
+		const invalidDocument = TextQualityRuleDocument.make({
+			roles: [
+				{
+					id: qualityRoleId,
+					scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
+				},
+				{
+					id: qualityRoleId,
+					scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
+				}
+			],
+			rules: revisedDocument.rules,
+			schemaVersion: 1
+		});
+		return Effect.gen(function* () {
+			const service = yield* WorkbenchGameText;
+			expect((yield* service.configuredRefresh()).status).toBe("completed");
+			const loaded = yield* service.chooseQualityRules();
+			expect(loaded.status).toBe("completed");
+			if (loaded.status !== "completed") return;
+			expect(loaded.document).toEqual(validQualityDocument);
+
+			const previewed = yield* service.previewQualityRules(revisedDocument);
+			expect(previewed.status).toBe("completed");
+			const invalid = yield* service.previewQualityRules(invalidDocument);
+			expect(invalid).toMatchObject({
+				error: { code: "invalid_rules" },
+				status: "failed"
+			});
+			expect((yield* service.qualitySearch({ filter: "all", pageSize: 50 })).status).toBe(
+				"ready"
+			);
+
+			const saved = yield* service.saveQualityRules(revisedDocument);
+			expect(saved.status).toBe("completed");
+			const persisted = files.get(qualityRulesPath);
+			expect(persisted).toBeDefined();
+			expect(new TextDecoder().decode(persisted)).toContain('"maximumCharacters": 64');
+		}).pipe(
+			Effect.provide(
+				qualityGameTextLive(JSON.stringify(validQualityDocument), files).pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							configuration,
+							makeTextCorpusServiceTestLayer({
+								scan: () => Effect.die("full project scan is not used"),
+								scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+							}),
+							selectedProject
+						)
+					)
+				)
+			)
+		);
+	}
 );

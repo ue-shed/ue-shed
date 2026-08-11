@@ -7,6 +7,8 @@ import type {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
+	TextQualityRuleDocument,
+	TextQualityRuleUpdateResult,
 	TextQualitySearchRequest,
 	TextQualitySearchResult
 } from "@ue-shed/game-text/browser";
@@ -52,6 +54,12 @@ export interface GameTextClientShape {
 	readonly qualitySearch: (
 		request: TextQualitySearchRequest
 	) => Effect.Effect<TextQualitySearchResult, GameTextClientError>;
+	readonly previewQualityRules: (
+		document: TextQualityRuleDocument
+	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
+	readonly saveQualityRules: (
+		document: TextQualityRuleDocument
+	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
 }
 
 export class GameTextClient extends Context.Service<GameTextClient, GameTextClientShape>()(

@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdir, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -9,13 +9,9 @@ import { WorkbenchPage } from "../pages/workbench-page.js";
 const require = createRequire(import.meta.url);
 const electronExecutable: unknown = require("electron");
 const workbenchRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const initialRuleFile = resolve(
+const sourceRuleFile = resolve(
 	workbenchRoot,
 	"../../fixtures/unreal-project/FixtureSource/Text/quality-rules.json"
-);
-const replacementRuleFile = resolve(
-	workbenchRoot,
-	"../../fixtures/unreal-project/FixtureSource/Text/quality-rules-relaxed.json"
 );
 
 if (typeof electronExecutable !== "string") {
@@ -34,6 +30,8 @@ test("records the real Game Text quality workflow", async ({
 		throw new Error("Set UE_SHED_UASSET_EXECUTABLE before recording the Workbench");
 	}
 	await mkdir(testInfo.outputDir, { recursive: true });
+	const editableRuleFile = testInfo.outputPath("editable-quality-rules.json");
+	await copyFile(sourceRuleFile, editableRuleFile);
 	const environment = { ...process.env };
 	delete environment.ELECTRON_RUN_AS_NODE;
 	const application = await electron.launch({
@@ -46,27 +44,18 @@ test("records the real Game Text quality workflow", async ({
 	const workbench = new WorkbenchPage(page);
 	let recording = false;
 	try {
-		await application.evaluate(
-			({ dialog }, selectedRuleFiles) => {
-				const original = dialog.showOpenDialog.bind(dialog);
-				let qualityRuleSelection = 0;
-				Object.defineProperty(dialog, "showOpenDialog", {
-					configurable: true,
-					value: (...args: Parameters<typeof dialog.showOpenDialog>) => {
-						const options = args.at(-1);
-						if (options?.title !== "Choose Game Text quality rules")
-							return original(...args);
-						const selectedRuleFile =
-							selectedRuleFiles[
-								Math.min(qualityRuleSelection, selectedRuleFiles.length - 1)
-							];
-						qualityRuleSelection += 1;
-						return Promise.resolve({ canceled: false, filePaths: [selectedRuleFile] });
-					}
-				});
-			},
-			[initialRuleFile, replacementRuleFile]
-		);
+		await application.evaluate(({ dialog }, selectedRuleFile) => {
+			const original = dialog.showOpenDialog.bind(dialog);
+			Object.defineProperty(dialog, "showOpenDialog", {
+				configurable: true,
+				value: (...args: Parameters<typeof dialog.showOpenDialog>) => {
+					const options = args.at(-1);
+					if (options?.title !== "Choose Game Text quality rules")
+						return original(...args);
+					return Promise.resolve({ canceled: false, filePaths: [selectedRuleFile] });
+				}
+			});
+		}, editableRuleFile);
 
 		await workbench.expectShowcaseReady();
 		await workbench.openRoute("Game Text");
@@ -111,33 +100,50 @@ test("records the real Game Text quality workflow", async ({
 			"3 findings"
 		);
 		await page.waitForTimeout(1_700);
-		await page.getByRole("button", { name: /Character budgets/ }).click();
-		await expect(page.getByRole("region", { name: "Quality findings" })).toContainText(
-			"BUDGET"
-		);
-		await page.waitForTimeout(1_500);
-		await page.getByRole("button", { name: /^Terminology/ }).click();
-		await expect(page.getByRole("region", { name: "Quality findings" })).toContainText("TERM");
-		await page.waitForTimeout(1_500);
-		await page.getByRole("button", { name: /^All findings/ }).click();
-		const findings = page.getByRole("region", { name: "Quality findings" });
-		await findings.getByRole("button").last().click();
+		await page.getByRole("tab", { name: /Edit rules/ }).click();
 		await expect(
-			page.getByRole("complementary", { name: "Quality finding detail" })
-		).toContainText("EXPECTED");
-		await page.waitForTimeout(1_700);
-		await page.getByRole("button", { name: "Replace quality rules" }).click();
+			page.getByRole("complementary", { name: "Quality role scopes" })
+		).toContainText("String Table key starts with Prompt");
+		await page.waitForTimeout(1_300);
+		const maximumCharacters = page.getByRole("spinbutton", {
+			name: "Maximum characters for fixture.prompt.characters"
+		});
+		await maximumCharacters.fill("20");
+		await page.waitForTimeout(900);
+		await page.getByRole("button", { name: "Preview changes" }).click();
+		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
+			"2 findings"
+		);
+		await expect(page.getByText("Budgets", { exact: true }).locator("..")).toContainText("0");
+		await page.waitForTimeout(1_200);
+		await page.getByRole("button", { name: "Save rules" }).click();
+		await expect(
+			page.getByRole("region", { name: "Selected quality rule" }).getByRole("status")
+		).toContainText("Rule file saved.");
+		await page.waitForTimeout(1_300);
+
+		await page.getByRole("button", { name: /fixture\.prompt\.terms/ }).click();
+		const forbiddenTerm = page.getByRole("textbox", { name: "Forbidden term 1" });
+		await forbiddenTerm.fill("pause");
+		await page.waitForTimeout(900);
+		await page.getByRole("button", { name: "Preview changes" }).click();
 		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
 			"1 finding"
 		);
-		await expect(page.getByText("Budgets", { exact: true }).locator("..")).toContainText("0");
-		await page.waitForTimeout(1_900);
-		await page.getByRole("tab", { name: "Text browser" }).click();
-		await expect(page.getByRole("region", { name: "Text units" })).toBeVisible();
-		await expect(page.getByRole("button", { name: "Replace quality rules" })).toHaveCount(0);
 		await page.waitForTimeout(1_200);
-		await page.getByRole("tab", { name: /Quality review/ }).click();
-		await page.waitForTimeout(1_400);
+		await page.getByRole("button", { name: "Save rules" }).click();
+		await expect(
+			page.getByRole("region", { name: "Selected quality rule" }).getByRole("status")
+		).toContainText("Rule file saved.");
+		await page.waitForTimeout(1_300);
+
+		await page.getByRole("tab", { name: /Findings/ }).click();
+		const findings = page.getByRole("region", { name: "Quality findings" });
+		await expect(findings).toContainText("TERM");
+		await expect(
+			page.getByRole("complementary", { name: "Quality finding detail" })
+		).toContainText("EXPECTED");
+		await page.waitForTimeout(1_500);
 		await page.screenshot({ path: testInfo.outputPath("final.png") });
 	} finally {
 		if (recording) await page.screencast.stop().catch(() => undefined);
@@ -145,4 +151,7 @@ test("records the real Game Text quality workflow", async ({
 	}
 	const video = await stat(testInfo.outputPath("game-text-quality-demo.webm"));
 	expect(video.size).toBeGreaterThan(0);
+	const savedRules = await readFile(editableRuleFile, "utf8");
+	expect(savedRules).toContain('"maximumCharacters": 20');
+	expect(savedRules).toContain('"term": "pause"');
 });

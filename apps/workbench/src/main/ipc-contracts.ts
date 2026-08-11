@@ -46,6 +46,8 @@ import {
 	TextQualityFocusRequest,
 	TextQualityFocusResult,
 	TextQualityQueryRunResult,
+	TextQualityRuleDocument,
+	TextQualityRuleUpdateResult,
 	TextQualitySearchRequest,
 	TextQualitySearchResult
 } from "@ue-shed/game-text";
@@ -463,6 +465,16 @@ export const invokeContracts = {
 		channel: "game-text:quality:choose-rules",
 		args: EmptyArgs,
 		result: TextQualityQueryRunResult
+	}),
+	"game-text:quality:preview-rules": invoke({
+		channel: "game-text:quality:preview-rules",
+		args: Schema.Tuple([TextQualityRuleDocument]),
+		result: TextQualityRuleUpdateResult
+	}),
+	"game-text:quality:save-rules": invoke({
+		channel: "game-text:quality:save-rules",
+		args: Schema.Tuple([TextQualityRuleDocument]),
+		result: TextQualityRuleUpdateResult
 	}),
 	"game-text:quality:search": invoke({
 		channel: "game-text:quality:search",

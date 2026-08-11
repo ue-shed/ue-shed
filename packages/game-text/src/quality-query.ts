@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import {
 	TextQualityAffectedOccurrence,
+	TextQualityRuleDocument,
 	TextQualityRoleSummary,
 	TextQualityRuleSummary,
 	type TextQualityFinding,
@@ -36,7 +37,11 @@ export const TextQualityQuerySummary = Schema.Struct({
 export type TextQualityQuerySummary = Schema.Schema.Type<typeof TextQualityQuerySummary>;
 
 export const TextQualityQueryRunResult = Schema.Union([
-	Schema.Struct({ status: Schema.Literal("completed"), summary: TextQualityQuerySummary }),
+	Schema.Struct({
+		document: TextQualityRuleDocument,
+		status: Schema.Literal("completed"),
+		summary: TextQualityQuerySummary
+	}),
 	Schema.Struct({ status: Schema.Literal("cancelled") }),
 	Schema.Struct({ status: Schema.Literal("not_ready") }),
 	Schema.Struct({
@@ -52,6 +57,28 @@ export const TextQualityQueryRunResult = Schema.Union([
 export type TextQualityQueryRunResult = Schema.Schema.Type<typeof TextQualityQueryRunResult>;
 export const decodeTextQualityQueryRunResult =
 	Schema.decodeUnknownEffect(TextQualityQueryRunResult);
+
+export const TextQualityRuleUpdateResult = Schema.Union([
+	Schema.Struct({
+		document: TextQualityRuleDocument,
+		status: Schema.Literal("completed"),
+		summary: TextQualityQuerySummary
+	}),
+	Schema.Struct({ status: Schema.Literal("not_ready") }),
+	Schema.Struct({
+		status: Schema.Literal("failed"),
+		error: Schema.Struct({
+			code: Schema.Literals(["invalid_rules", "write_failed", "contract_failure"]),
+			message: Schema.String,
+			recovery: Schema.String,
+			retrySafe: Schema.Boolean
+		})
+	})
+]);
+export type TextQualityRuleUpdateResult = Schema.Schema.Type<typeof TextQualityRuleUpdateResult>;
+export const decodeTextQualityRuleUpdateResult = Schema.decodeUnknownEffect(
+	TextQualityRuleUpdateResult
+);
 
 export const TextQualityFindingSummary = Schema.Struct({
 	actual: Schema.String.check(Schema.isMaxLength(512)),

@@ -126,6 +126,10 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("game-text:focus", request),
 		chooseQualityRules: (): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:quality:choose-rules"),
+		previewQualityRules: (document: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:preview-rules", document),
+		saveQualityRules: (document: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("game-text:quality:save-rules", document),
 		qualitySearch: (request: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("game-text:quality:search", request),
 		qualityFocus: (request: unknown): Promise<unknown> =>

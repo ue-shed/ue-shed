@@ -492,7 +492,7 @@ it.effect("registers exactly the 82 contract channels", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(82);
+		expect(result).toHaveLength(84);
 	})
 );
 

@@ -4,6 +4,7 @@ import {
 	decodeTextCorpusSearchResult,
 	decodeTextQualityFocusResult,
 	decodeTextQualityQueryRunResult,
+	decodeTextQualityRuleUpdateResult,
 	decodeTextQualitySearchResult,
 	type TextCorpusFocusRequest,
 	type TextCorpusFocusResult,
@@ -11,6 +12,8 @@ import {
 	type TextCorpusSearchResult,
 	type TextQualityFocusRequest,
 	type TextQualityFocusResult,
+	type TextQualityRuleDocument,
+	type TextQualityRuleUpdateResult,
 	type TextQualitySearchRequest,
 	type TextQualitySearchResult
 } from "@ue-shed/game-text/browser";
@@ -94,6 +97,26 @@ export const gameTextClient: GameTextClientShape = GameTextClient.of({
 			() => window.ueShed.gameText.chooseQualityRules(),
 			decodeTextQualityQueryRunResult
 		)
+	),
+	previewQualityRules: Effect.fn("GameTextClient.previewQualityRules")(
+		(
+			document: TextQualityRuleDocument
+		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.previewQualityRules",
+				() => window.ueShed.gameText.previewQualityRules(document),
+				decodeTextQualityRuleUpdateResult
+			)
+	),
+	saveQualityRules: Effect.fn("GameTextClient.saveQualityRules")(
+		(
+			document: TextQualityRuleDocument
+		): Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError> =>
+			invokeRequest(
+				"gameText.saveQualityRules",
+				() => window.ueShed.gameText.saveQualityRules(document),
+				decodeTextQualityRuleUpdateResult
+			)
 	),
 	qualitySearch: Effect.fn("GameTextClient.qualitySearch")(
 		(

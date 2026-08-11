@@ -1,5 +1,6 @@
 import {
 	decodeTextQualityRuleDocumentJson,
+	decodeTextQualityRuleDocument,
 	evaluateTextQuality,
 	textCorpusQuery,
 	textQualityQuery,
@@ -16,6 +17,8 @@ import {
 	type TextQualityFocusResult,
 	type TextQualityQuery,
 	type TextQualityQueryRunResult,
+	type TextQualityRuleDocument,
+	type TextQualityRuleUpdateResult,
 	type TextQualitySearchRequest,
 	type TextQualitySearchResult
 } from "@ue-shed/game-text";
@@ -35,6 +38,12 @@ export interface WorkbenchGameTextShape {
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
 	readonly chooseQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
+	readonly previewQualityRules: (
+		document: TextQualityRuleDocument
+	) => Effect.Effect<TextQualityRuleUpdateResult>;
+	readonly saveQualityRules: (
+		document: TextQualityRuleDocument
+	) => Effect.Effect<TextQualityRuleUpdateResult>;
 	readonly qualityFocus: (
 		request: TextQualityFocusRequest
 	) => Effect.Effect<TextQualityFocusResult>;
@@ -71,6 +80,8 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const retainedCorpus = yield* Ref.make<TextCorpus | undefined>(undefined);
 		const queryModel = yield* Ref.make<TextCorpusQuery | undefined>(undefined);
 		const qualityModel = yield* Ref.make<TextQualityQuery | undefined>(undefined);
+		const qualityDocument = yield* Ref.make<TextQualityRuleDocument | undefined>(undefined);
+		const qualityRulePath = yield* Ref.make<string | undefined>(undefined);
 		const progress = Effect.fn("Workbench.WorkbenchGameText.progress")(function* () {
 			const projectProgress = yield* project.progress();
 			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
@@ -109,7 +120,9 @@ export const WorkbenchGameTextLive = Layer.effect(
 					return Effect.all([
 						Ref.set(retainedCorpus, corpus),
 						Ref.set(queryModel, next),
-						Ref.set(qualityModel, undefined)
+						Ref.set(qualityModel, undefined),
+						Ref.set(qualityDocument, undefined),
+						Ref.set(qualityRulePath, undefined)
 					]).pipe(Effect.as({ summary: next.summary(), status: "completed" as const }));
 				}),
 				Effect.catch((error) =>
@@ -218,6 +231,49 @@ export const WorkbenchGameTextLive = Layer.effect(
 				)
 		);
 
+		const prepareQualityRules = Effect.fn("Workbench.WorkbenchGameText.prepareQualityRules")(
+			function* (input: TextQualityRuleDocument) {
+				const corpus = yield* Ref.get(retainedCorpus);
+				if (corpus === undefined) return { status: "not_ready" as const };
+				const document = yield* decodeTextQualityRuleDocument(input).pipe(
+					Effect.match({
+						onFailure: (error) => ({ error, status: "failed" as const }),
+						onSuccess: (value) => ({ status: "ready" as const, value })
+					})
+				);
+				if (document.status === "failed") {
+					return {
+						error: {
+							code: "invalid_rules" as const,
+							message: document.error.message,
+							recovery: document.error.recovery,
+							retrySafe: true
+						},
+						status: "failed" as const
+					};
+				}
+				const model = textQualityQuery(evaluateTextQuality(corpus, document.value));
+				return { document: document.value, model, status: "ready" as const };
+			}
+		);
+
+		const publishQualityRules = Effect.fn("Workbench.WorkbenchGameText.publishQualityRules")(
+			function* (prepared: {
+				readonly document: TextQualityRuleDocument;
+				readonly model: TextQualityQuery;
+			}) {
+				yield* Effect.all([
+					Ref.set(qualityDocument, prepared.document),
+					Ref.set(qualityModel, prepared.model)
+				]);
+				return {
+					document: prepared.document,
+					status: "completed" as const,
+					summary: prepared.model.summary()
+				};
+			}
+		);
+
 		const chooseQualityRules = Effect.fn("Workbench.WorkbenchGameText.chooseQualityRules")(
 			function* () {
 				const corpus = yield* Ref.get(retainedCorpus);
@@ -265,9 +321,46 @@ export const WorkbenchGameTextLive = Layer.effect(
 						status: "failed" as const
 					};
 				}
-				const next = textQualityQuery(evaluateTextQuality(corpus, document.value));
-				yield* Ref.set(qualityModel, next);
-				return { status: "completed" as const, summary: next.summary() };
+				const prepared = yield* prepareQualityRules(document.value);
+				if (prepared.status !== "ready") return prepared;
+				yield* Ref.set(qualityRulePath, choice.path);
+				return yield* publishQualityRules(prepared);
+			}
+		);
+
+		const previewQualityRules = Effect.fn("Workbench.WorkbenchGameText.previewQualityRules")(
+			function* (document: TextQualityRuleDocument) {
+				const prepared = yield* prepareQualityRules(document);
+				return prepared.status === "ready"
+					? yield* publishQualityRules(prepared)
+					: prepared;
+			}
+		);
+
+		const saveQualityRules = Effect.fn("Workbench.WorkbenchGameText.saveQualityRules")(
+			function* (document: TextQualityRuleDocument) {
+				const path = yield* Ref.get(qualityRulePath);
+				if (path === undefined) return { status: "not_ready" as const };
+				const prepared = yield* prepareQualityRules(document);
+				if (prepared.status !== "ready") return prepared;
+				const bytes = new TextEncoder().encode(
+					`${JSON.stringify(prepared.document, null, "\t")}\n`
+				);
+				const write = yield* files.writeFile(path, bytes, { maxBytes: 1_048_576 }).pipe(
+					Effect.match({
+						onFailure: (error) => ({
+							error: {
+								code: "write_failed" as const,
+								message: error.message,
+								recovery: error.recovery,
+								retrySafe: error.retrySafe
+							},
+							status: "failed" as const
+						}),
+						onSuccess: () => ({ status: "ready" as const })
+					})
+				);
+				return write.status === "ready" ? yield* publishQualityRules(prepared) : write;
 			}
 		);
 
@@ -305,7 +398,9 @@ export const WorkbenchGameTextLive = Layer.effect(
 			search,
 			chooseQualityRules,
 			qualityFocus,
-			qualitySearch
+			qualitySearch,
+			previewQualityRules,
+			saveQualityRules
 		});
 	})
 );
@@ -331,6 +426,8 @@ export function makeWorkbenchGameTextTestLayer(
 			search: () => Effect.succeed({ status: "not_ready" }),
 			qualityFocus: () => Effect.succeed({ status: "not_ready" }),
 			qualitySearch: () => Effect.succeed({ status: "not_ready" }),
+			previewQualityRules: () => Effect.succeed({ status: "not_ready" }),
+			saveQualityRules: () => Effect.succeed({ status: "not_ready" }),
 			...service
 		})
 	);

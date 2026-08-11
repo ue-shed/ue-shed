@@ -87,6 +87,8 @@ declare global {
 				readonly search: (request: unknown) => Promise<unknown>;
 				readonly focus: (request: unknown) => Promise<unknown>;
 				readonly chooseQualityRules: () => Promise<unknown>;
+				readonly previewQualityRules: (document: unknown) => Promise<unknown>;
+				readonly saveQualityRules: (document: unknown) => Promise<unknown>;
 				readonly qualitySearch: (request: unknown) => Promise<unknown>;
 				readonly qualityFocus: (request: unknown) => Promise<unknown>;
 			};

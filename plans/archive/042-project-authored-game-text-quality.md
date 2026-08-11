@@ -55,6 +55,17 @@ survive evaluation unchanged. No source or localization mutation is introduced.
   bounded browser-safe schemas. Workbench main retains the corpus and report; no rule document,
   full report, or corpus crosses renderer IPC.
 
+### Authorized Workbench rule-authoring follow-up (2026-08-11)
+
+After the read-only quality slice shipped, the user explicitly expanded the Workbench showcase to
+make the selected quality rule document visible and editable. This supersedes only the earlier
+prohibition on sending a rule document to the renderer and the unqualified Save exclusion. The
+bounded, schema-validated version-1 rule document may cross IPC for editing; its path and filesystem
+authority remain in Workbench main. Preview and Save validate and evaluate in main against the
+retained corpus, invalid drafts preserve the prior valid configuration, and Save atomically
+overwrites only the explicitly loaded rule file. Saved game text and localization resources remain
+read-only. Complete corpora and unbounded reports still never cross renderer IPC.
+
 ## Phase 1 — Bootstrap contract and draft PR
 
 1. Add the focused Game Text product contract covering the shipped read-only corpus and this quality
@@ -114,7 +125,8 @@ decodable report, and distinguishes rule decoding failure from scan failure.
 1. Add browser-safe finding summary/page/focus query helpers only where needed for host presentation.
 2. If Workbench presentation is included, retain the corpus and evaluated findings in Workbench main
    and extend the existing client/IPC query seam with enforced page limits.
-3. Never send the rule document, complete corpus, or unbounded report to the renderer.
+3. Never send a complete corpus or unbounded report to the renderer. Under the authorized follow-up,
+   only the bounded, schema-validated version-1 rule document may cross for rule authoring.
 4. Keep the existing `long` lens counts and behavior unchanged; configured budgets appear under an
    explicit quality surface only.
 
@@ -163,6 +175,10 @@ existing scan/search/focus behavior remains compatible.
   evidence. A generic fixture rule document and an actual-app Electron recording exercise budgets,
   forbidden and preferred terminology, corpus/quality switching, and occurrence evidence without
   presentation overlays.
+- Added the authorized Workbench rule editor follow-up. It displays rule IDs, roles and scopes,
+  supports structured character-budget and terminology edits, previews through main, and atomically
+  saves only the loaded rule file. The actual-app recording edits, previews, and saves rules while
+  saved game text remains read-only.
 
 Focused commands:
 
@@ -181,7 +197,8 @@ Stop and report rather than weakening the contract if:
 - empty or invalid role configuration can match the whole corpus;
 - findings lose rule, role, unit, occurrence, actual, expectation, or recovery evidence;
 - partial/unsupported corpus coverage is dropped or upgraded to complete;
-- a complete corpus, rule document, or unbounded report must cross renderer IPC;
+- a complete corpus, unbounded report, or rule file path/authority must cross renderer IPC;
+- a rule draft can bypass bounded schema validation or be evaluated only in the renderer;
 - Workbench or its renderer becomes the evaluator or rules authority;
 - telemetry requires source text, project paths, identities, terms, or rule contents;
 - project-specific roles, paths, terminology, cultures, or budgets enter product defaults; or
@@ -189,7 +206,8 @@ Stop and report rather than weakening the contract if:
 
 ## Out of scope
 
-- localization PO import/export, translation editing, Apply, Save, or source mutation;
+- localization PO import/export, translation editing, source/localization Apply or Save, or source
+  mutation (the authorized follow-up permits Save only for the selected quality rule document);
 - rendered font/layout measurement;
 - persistence or background watching;
 - a generic asset/property rule engine;

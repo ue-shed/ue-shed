@@ -287,6 +287,11 @@ it.effect("LocalFiles reads bounded host files and reports absence", () =>
 		expect(Array.from(yield* files.readFile(path))).toEqual([1, 2, 3, 4]);
 		const tooLarge = yield* files.readFile(path, { maxBytes: 2 }).pipe(Effect.exit);
 		expect(Exit.isFailure(tooLarge)).toBe(true);
+		const writtenPath = join(directory, "written.bin");
+		yield* files.writeFile(writtenPath, new Uint8Array([5, 6, 7]), { maxBytes: 3 });
+		expect(Array.from(yield* files.readFile(writtenPath))).toEqual([5, 6, 7]);
+		yield* files.writeFile(writtenPath, new Uint8Array([8, 9]), { maxBytes: 3 });
+		expect(Array.from(yield* files.readFile(writtenPath))).toEqual([8, 9]);
 	}).pipe(Effect.provide(LocalFilesLive))
 );
 

@@ -5,6 +5,9 @@ import { userEvent } from "@testing-library/user-event";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
+	TextQualityRuleId,
+	TextQualityRuleDocument,
+	TextRoleId,
 	type TextCorpus,
 	type TextCorpusFocusResult,
 	type TextCorpusQueryRunResult,
@@ -176,6 +179,8 @@ function makeClient(overrides: Partial<GameTextClientShape> = {}): GameTextClien
 			}),
 		qualityFocus: () => Effect.succeed({ status: "not_ready" }),
 		qualitySearch: () => Effect.succeed({ status: "not_ready" }),
+		previewQualityRules: () => Effect.succeed({ status: "not_ready" }),
+		saveQualityRules: () => Effect.succeed({ status: "not_ready" }),
 		...overrides
 	};
 }
@@ -356,6 +361,45 @@ describe("GameTextRoute interactions", () => {
 			status: "partial" as const,
 			terminologyCount: 1
 		};
+		const roleId = TextRoleId.make("menu.prompt");
+		const budgetRuleId = TextQualityRuleId.make("menu.prompt.characters");
+		const terminologyRuleId = TextQualityRuleId.make("menu.prompt.terms");
+		const qualityDocument = TextQualityRuleDocument.make({
+			roles: [
+				{
+					description: "Player-facing menu prompts",
+					id: roleId,
+					scopes: [
+						{
+							matchers: [
+								{ kind: "location_kind", value: "string_table_entry" },
+								{ kind: "string_table_entry", operator: "prefix", value: "Prompt" }
+							]
+						}
+					]
+				}
+			],
+			rules: [
+				{
+					id: budgetRuleId,
+					kind: "character_budget",
+					maximumCharacters: 32,
+					recovery: "Shorten the prompt while keeping the action clear.",
+					role: roleId
+				},
+				{
+					caseSensitive: false,
+					id: terminologyRuleId,
+					kind: "terminology",
+					recovery: "Use the preferred interaction term.",
+					role: roleId,
+					terms: [{ kind: "preferred", term: "select", alternatives: ["old"] }]
+				}
+			],
+			schemaVersion: 1
+		});
+		let previewedMaximum = 0;
+		let savedMaximum = 0;
 		const budgetFinding = {
 			actual: "58 characters",
 			expectation: "Maximum 32 characters",
@@ -382,7 +426,33 @@ describe("GameTextRoute interactions", () => {
 		};
 		const qualityClient = makeClient({
 			chooseQualityRules: () =>
-				Effect.succeed({ status: "completed" as const, summary: qualitySummary }),
+				Effect.succeed({
+					document: qualityDocument,
+					status: "completed" as const,
+					summary: qualitySummary
+				}),
+			previewQualityRules: (document) => {
+				const rule = document.rules.find(
+					(candidate) => candidate.kind === "character_budget"
+				);
+				previewedMaximum = rule?.kind === "character_budget" ? rule.maximumCharacters : 0;
+				return Effect.succeed({
+					document,
+					status: "completed" as const,
+					summary: { ...qualitySummary, characterBudgetCount: 0, findingCount: 1 }
+				});
+			},
+			saveQualityRules: (document) => {
+				const rule = document.rules.find(
+					(candidate) => candidate.kind === "character_budget"
+				);
+				savedMaximum = rule?.kind === "character_budget" ? rule.maximumCharacters : 0;
+				return Effect.succeed({
+					document,
+					status: "completed" as const,
+					summary: { ...qualitySummary, characterBudgetCount: 0, findingCount: 1 }
+				});
+			},
 			qualitySearch: (request) =>
 				Effect.succeed({
 					page: {
@@ -470,6 +540,20 @@ describe("GameTextRoute interactions", () => {
 
 		await user.click(screen.getByRole("button", { name: /Terminology/ }));
 		await waitFor(() => expect(within(findings).getByText("“old” at 10–13")).toBeDefined());
+
+		await user.click(screen.getByRole("tab", { name: /Edit rules/ }));
+		expect(screen.getByText("String Table key starts with Prompt")).toBeDefined();
+		const maximum = screen.getByRole("spinbutton", {
+			name: "Maximum characters for menu.prompt.characters"
+		});
+		await user.clear(maximum);
+		await user.type(maximum, "64");
+		await user.click(screen.getByRole("button", { name: "Preview changes" }));
+		await waitFor(() => expect(previewedMaximum).toBe(64));
+		expect(screen.getByText(/Changes are not saved yet/)).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Save rules" }));
+		await waitFor(() => expect(savedMaximum).toBe(64));
+		expect(screen.getByText("Rule file saved.")).toBeDefined();
 		await user.click(screen.getByRole("tab", { name: "Text browser" }));
 		expect(screen.queryByRole("button", { name: "Replace quality rules" })).toBeNull();
 	});

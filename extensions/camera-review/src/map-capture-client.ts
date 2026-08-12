@@ -3,7 +3,7 @@ import {
 	MapTilePyramidManifest,
 	type MapCapturePlan as MapCapturePlanValue
 } from "@ue-shed/cameras/map-tiles";
-import { EditorWorldOpenResponse } from "@ue-shed/protocol";
+import { EditorWorldOpenResponse, SavedWorldMap } from "@ue-shed/protocol";
 import { type Effect, Schema } from "effect";
 
 const MapCaptureRunSummary = Schema.Struct({
@@ -43,6 +43,7 @@ export const MapCaptureSelectionResult = Schema.Union([
 	WorkbenchFailure,
 	Schema.Struct({
 		grid: MapCaptureGridView,
+		maps: Schema.Array(SavedWorldMap),
 		plan: MapCapturePlan,
 		planPath: Schema.String,
 		projectRoot: Schema.String,

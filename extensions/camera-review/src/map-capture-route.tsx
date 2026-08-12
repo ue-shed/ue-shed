@@ -3,7 +3,7 @@ import {
 	MapCapturePlan,
 	type MapCapturePlan as MapCapturePlanValue
 } from "@ue-shed/cameras/map-tiles";
-import { createEffectAction } from "@ue-shed/ui";
+import { SavedMapPicker, createEffectAction, type SavedMapPickerOption } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { For, Show, createMemo, createSignal } from "solid-js";
@@ -21,6 +21,21 @@ function causeMessage(cause: Cause.Cause<unknown>): string {
 	return Cause.pretty(cause);
 }
 
+function editorMapPath(savedMapPath: string): string | undefined {
+	const normalized = savedMapPath.replaceAll("\\", "/");
+	const lower = normalized.toLocaleLowerCase();
+	const contentMarker = lower.lastIndexOf("/content/");
+	const contentStart = lower.startsWith("content/")
+		? "content/".length
+		: contentMarker < 0
+			? undefined
+			: contentMarker + "/content/".length;
+	if (contentStart === undefined || !lower.endsWith(".umap")) return undefined;
+	const relativePackage = normalized.slice(contentStart, -".umap".length);
+	const packagePath = `/Game/${relativePackage}`;
+	return /^\/Game\/[A-Za-z0-9_./-]+$/.test(packagePath) ? packagePath : undefined;
+}
+
 export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape }) {
 	const chooseAction = createEffectAction();
 	const openAction = createEffectAction();
@@ -35,6 +50,15 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 	const previewUrls = createMemo(
 		() =>
 			new Map(capture()?.previewTiles.map((tile) => [tile.relativePath, tile.dataUrl]) ?? [])
+	);
+	const mapOptions = createMemo<ReadonlyArray<SavedMapPickerOption>>(() =>
+		(selection()?.maps ?? []).flatMap((map) => {
+			const mapPath = editorMapPath(map.mapPath);
+			return mapPath === undefined ? [] : [{ label: map.label, mapPath }];
+		})
+	);
+	const validTargetMap = createMemo(() =>
+		/^\/Game\/[A-Za-z0-9_./-]+$/.test(plan()?.project.mapPath ?? "")
 	);
 
 	function choosePlan() {
@@ -72,6 +96,29 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		);
 	}
 
+	function updateMapPath(mapPath: string) {
+		setPlan((current) =>
+			current === undefined
+				? current
+				: MapCapturePlan.make({
+						...current,
+						project: { ...current.project, mapPath }
+					})
+		);
+		setCapture(undefined);
+		setNotice(
+			/^\/Game\/[A-Za-z0-9_./-]+$/.test(mapPath)
+				? {
+						tone: "info",
+						text: "Target map changed for this capture. The source plan file remains unchanged."
+					}
+				: {
+						tone: "error",
+						text: "Enter an Unreal map package path beginning with /Game/."
+					}
+		);
+	}
+
 	function setLodPolicy(mode: "natural" | "per_level_distance_scale") {
 		updateRender((render) => {
 			if (mode === "natural") {
@@ -99,7 +146,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 
 	function openMap() {
 		const current = plan();
-		if (current === undefined) return;
+		if (current === undefined || !validTargetMap()) return;
 		setNotice({ tone: "info", text: `Asking Unreal to open ${current.project.mapPath}…` });
 		openAction.run(props.client.openMap(current), {
 			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
@@ -126,7 +173,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 
 	function runCapture(openMapFirst: boolean) {
 		const current = plan();
-		if (current === undefined) return;
+		if (current === undefined || !validTargetMap()) return;
 		setNotice({
 			tone: "info",
 			text: openMapFirst
@@ -186,6 +233,15 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 								<section {...stylex.props(styles.panel)}>
 									<p {...stylex.props(styles.sectionLabel)}>TARGET</p>
 									<h2 {...stylex.props(styles.planName)}>{current().id}</h2>
+									<SavedMapPicker
+										allowCustomPath
+										ariaLabel="Map capture target map"
+										customPathPlaceholder="/Game/Maps/L_MyMap"
+										label="TARGET MAP"
+										maps={mapOptions()}
+										mapPath={current().project.mapPath}
+										onMapPathChange={updateMapPath}
+									/>
 									<code {...stylex.props(styles.mapPath)}>
 										{current().project.mapPath}
 									</code>
@@ -298,6 +354,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 									<button
 										type="button"
 										onClick={openMap}
+										disabled={!validTargetMap()}
 										{...stylex.props(styles.secondaryButton)}
 									>
 										OPEN TARGET MAP
@@ -305,6 +362,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 									<button
 										type="button"
 										onClick={() => runCapture(true)}
+										disabled={!validTargetMap()}
 										{...stylex.props(styles.captureButton)}
 									>
 										OPEN + CAPTURE
@@ -414,6 +472,7 @@ const styles = stylex.create({
 	mapPath: {
 		display: "block",
 		overflow: "hidden",
+		marginTop: 8,
 		color: "#9cb893",
 		fontSize: 9,
 		textOverflow: "ellipsis"
@@ -500,7 +559,9 @@ const styles = stylex.create({
 		color: "#aeb9af",
 		padding: 12,
 		fontSize: 9,
-		letterSpacing: ".08em"
+		letterSpacing: ".08em",
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		opacity: { default: 1, ":disabled": 0.5 }
 	},
 	captureButton: {
 		border: "1px solid #b7e26d",
@@ -509,7 +570,9 @@ const styles = stylex.create({
 		padding: 12,
 		fontSize: 9,
 		fontWeight: 800,
-		letterSpacing: ".08em"
+		letterSpacing: ".08em",
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		opacity: { default: 1, ":disabled": 0.5 }
 	},
 	stage: {
 		minWidth: 0,

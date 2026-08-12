@@ -58,6 +58,13 @@ describe("MapCaptureRoute", () => {
 						],
 						snappedBounds: { maxX: 1024, maxY: 1024, minX: 0, minY: 0 }
 					},
+					maps: [
+						{
+							label: "Camera Load",
+							mapPath: "Content/Fixture/Cameras/L_CameraLoad.umap"
+						},
+						{ label: "Lighting Lab", mapPath: "Content/Maps/L_Lighting.umap" }
+					],
 					plan,
 					planPath: "C:/Fixture/map-capture.json",
 					projectRoot: "C:/Fixture",
@@ -76,6 +83,9 @@ describe("MapCaptureRoute", () => {
 		const user = userEvent.setup();
 		await user.click(screen.getByRole("button", { name: "CHOOSE PLAN" }));
 		expect(await screen.findByText("fixture-overview")).toBeDefined();
+		await user.click(screen.getByRole("combobox", { name: "Map capture target map" }));
+		await user.type(screen.getByRole("searchbox", { name: "Search saved maps" }), "lighting");
+		await user.click(screen.getByRole("option", { name: /Lighting Lab/ }));
 		await user.click(screen.getByRole("checkbox", { name: "Fog" }));
 		await user.click(screen.getByRole("checkbox", { name: "Volumetric fog" }));
 		await user.selectOptions(
@@ -89,6 +99,7 @@ describe("MapCaptureRoute", () => {
 
 		await waitFor(() => expect(captured).toBeDefined());
 		expect(captured?.openMap).toBe(true);
+		expect(captured?.plan.project.mapPath).toBe("/Game/Maps/L_Lighting");
 		expect(captured?.plan.capture.render).toEqual({
 			effects: { fog: false, volumetricFog: false },
 			lodDistanceScaleByZoom: [4, 1.5],

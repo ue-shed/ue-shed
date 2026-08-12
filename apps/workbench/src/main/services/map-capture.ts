@@ -111,7 +111,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					title: "Choose a UE Shed Map Capture Plan"
 				});
 				if (choice.status === "cancelled") return { status: "cancelled" as const };
-				const selectedProject = yield* project.selectedProject();
+				const selectedProject = yield* project.savedProject();
 				const plan = yield* repository.loadPlan(choice.path);
 				const inspection = yield* inspectMapCapturePlan(plan);
 				const runs = yield* repository.listRuns({
@@ -123,6 +123,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 						levels: inspection.grid.levels,
 						snappedBounds: inspection.grid.snappedBounds
 					},
+					maps: selectedProject.maps,
 					plan,
 					planPath: choice.path,
 					projectRoot: selectedProject.projectRoot,

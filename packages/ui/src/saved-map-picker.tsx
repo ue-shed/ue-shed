@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js";
 
 export interface SavedMapPickerOption {
 	readonly label: string;
@@ -7,7 +7,7 @@ export interface SavedMapPickerOption {
 }
 
 /**
- * The shared saved-map control used by offline Map Review and World Log acquisition.
+ * The shared searchable saved-map control used by Map Capture, offline Map Review, and World Log.
  *
  * The component deliberately knows nothing about project configuration or file IO. Hosts own
  * the map inventory and decide what selecting an option should load or invalidate.
@@ -16,56 +16,255 @@ export function SavedMapPicker(props: {
 	readonly ariaLabel?: string;
 	readonly disabled?: boolean;
 	readonly allowCustomPath?: boolean;
+	readonly customPathPlaceholder?: string;
 	readonly label?: string;
 	readonly mapPath: string;
 	readonly maps: ReadonlyArray<SavedMapPickerOption>;
 	readonly onMapPathChange: (mapPath: string) => void;
 }) {
+	const pickerId = createUniqueId();
+	const listboxId = `${pickerId}-options`;
+	const [activeIndex, setActiveIndex] = createSignal(0);
 	const [customOpen, setCustomOpen] = createSignal(false);
-	const knownMap = createMemo(() => props.maps.some((map) => map.mapPath === props.mapPath));
+	const [open, setOpen] = createSignal(false);
+	const [query, setQuery] = createSignal("");
+	let customPathInput: HTMLInputElement | undefined;
+	let searchInput: HTMLInputElement | undefined;
+	let trigger: HTMLButtonElement | undefined;
+
+	const knownMap = createMemo(() => props.maps.find((map) => map.mapPath === props.mapPath));
 	const customSelected = createMemo(
-		() => props.allowCustomPath === true && (customOpen() || !knownMap())
+		() => props.allowCustomPath === true && (customOpen() || knownMap() === undefined)
 	);
+	const filteredMaps = createMemo(() => {
+		const normalized = query().trim().toLocaleLowerCase();
+		if (normalized.length === 0) return props.maps;
+		return props.maps.filter(
+			(map) =>
+				map.label.toLocaleLowerCase().includes(normalized) ||
+				map.mapPath.toLocaleLowerCase().includes(normalized)
+		);
+	});
+	const optionCount = createMemo(
+		() => filteredMaps().length + (props.allowCustomPath === true ? 1 : 0)
+	);
+	const activeOptionId = createMemo(() =>
+		open() && optionCount() > 0 ? `${pickerId}-option-${activeIndex()}` : undefined
+	);
+
+	function closePicker(restoreFocus = false) {
+		setOpen(false);
+		setQuery("");
+		setActiveIndex(0);
+		if (restoreFocus) queueMicrotask(() => trigger?.focus());
+	}
+
+	function openPicker() {
+		if (props.disabled || (props.maps.length === 0 && !props.allowCustomPath)) return;
+		setOpen(true);
+		setQuery("");
+		setActiveIndex(0);
+		queueMicrotask(() => searchInput?.focus());
+	}
+
+	function selectMap(map: SavedMapPickerOption) {
+		setCustomOpen(false);
+		props.onMapPathChange(map.mapPath);
+		closePicker(true);
+	}
+
+	function selectCustomPath() {
+		setCustomOpen(true);
+		closePicker();
+		queueMicrotask(() => customPathInput?.focus());
+	}
+
+	function selectActiveOption() {
+		const map = filteredMaps()[activeIndex()];
+		if (map !== undefined) {
+			selectMap(map);
+			return;
+		}
+		if (props.allowCustomPath && activeIndex() === filteredMaps().length) {
+			selectCustomPath();
+		}
+	}
+
+	function moveActiveOption(direction: -1 | 1) {
+		const count = optionCount();
+		if (count === 0) return;
+		setActiveIndex((current) => (current + direction + count) % count);
+		queueMicrotask(() => {
+			const option = document.getElementById(`${pickerId}-option-${activeIndex()}`);
+			option?.scrollIntoView?.({ block: "nearest" });
+		});
+	}
+
+	function handleSearchKeyDown(event: KeyboardEvent) {
+		switch (event.key) {
+			case "ArrowDown":
+				event.preventDefault();
+				moveActiveOption(1);
+				break;
+			case "ArrowUp":
+				event.preventDefault();
+				moveActiveOption(-1);
+				break;
+			case "Enter":
+				event.preventDefault();
+				selectActiveOption();
+				break;
+			case "Escape":
+				event.preventDefault();
+				closePicker(true);
+				break;
+		}
+	}
+
 	return (
 		<div {...stylex.props(styles.picker)}>
-			<label>
+			<label for={pickerId}>
 				<span {...stylex.props(styles.label)}>{props.label ?? "SAVED MAP"}</span>
-				<select
-					aria-label={props.ariaLabel ?? "Saved map"}
-					disabled={props.disabled || (props.maps.length === 0 && !props.allowCustomPath)}
-					value={customSelected() ? "__custom__" : props.mapPath}
-					onChange={(event) => {
-						if (event.currentTarget.value === "__custom__") {
-							setCustomOpen(true);
-							return;
-						}
-						setCustomOpen(false);
-						props.onMapPathChange(event.currentTarget.value);
-					}}
-					{...stylex.props(styles.select)}
-				>
-					<For each={props.maps}>
-						{(map) => (
-							<option value={map.mapPath} selected={map.mapPath === props.mapPath}>
-								{map.label}
-							</option>
-						)}
-					</For>
-					{props.allowCustomPath ? (
-						<option value="__custom__">CUSTOM MAP PATH…</option>
-					) : null}
-					{props.maps.length === 0 ? <option value="">NO SAVED MAPS</option> : null}
-				</select>
 			</label>
+			<button
+				ref={(element) => {
+					trigger = element;
+				}}
+				id={pickerId}
+				type="button"
+				role="combobox"
+				aria-label={props.ariaLabel ?? "Saved map"}
+				aria-controls={listboxId}
+				aria-expanded={open()}
+				aria-haspopup="listbox"
+				disabled={props.disabled || (props.maps.length === 0 && !props.allowCustomPath)}
+				onClick={() => (open() ? closePicker() : openPicker())}
+				onKeyDown={(event) => {
+					if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+						event.preventDefault();
+						openPicker();
+					}
+				}}
+				{...stylex.props(styles.trigger, open() && styles.triggerOpen)}
+			>
+				<span {...stylex.props(styles.triggerText)}>
+					<strong {...stylex.props(styles.triggerPrimary)}>
+						{customSelected()
+							? "CUSTOM MAP PATH"
+							: (knownMap()?.label ??
+								(props.maps.length === 0 ? "NO SAVED MAPS" : "SELECT MAP"))}
+					</strong>
+					<small {...stylex.props(styles.triggerSecondary)}>
+						{customSelected()
+							? props.mapPath || "Enter an explicit path below"
+							: (knownMap()?.mapPath ??
+								`${props.maps.length.toLocaleString()} maps available`)}
+					</small>
+				</span>
+				<span
+					aria-hidden="true"
+					{...stylex.props(styles.chevron, open() && styles.chevronOpen)}
+				>
+					⌄
+				</span>
+			</button>
+
+			<Show when={open()}>
+				<div
+					aria-hidden="true"
+					onPointerDown={() => closePicker()}
+					{...stylex.props(styles.backdrop)}
+				/>
+				<div {...stylex.props(styles.dropdown)}>
+					<div {...stylex.props(styles.searchShell)}>
+						<span aria-hidden="true" {...stylex.props(styles.searchIcon)}>
+							⌕
+						</span>
+						<input
+							ref={(element) => {
+								searchInput = element;
+							}}
+							type="search"
+							role="searchbox"
+							aria-label="Search saved maps"
+							aria-activedescendant={activeOptionId()}
+							aria-controls={listboxId}
+							value={query()}
+							onInput={(event) => {
+								setQuery(event.currentTarget.value);
+								setActiveIndex(0);
+							}}
+							onKeyDown={handleSearchKeyDown}
+							placeholder={`Search ${props.maps.length.toLocaleString()} maps by name or path`}
+							{...stylex.props(styles.searchInput)}
+						/>
+					</div>
+					<div id={listboxId} role="listbox" {...stylex.props(styles.options)}>
+						<For each={filteredMaps()}>
+							{(map, index) => (
+								<div
+									id={`${pickerId}-option-${index()}`}
+									role="option"
+									aria-selected={map.mapPath === props.mapPath}
+									onMouseEnter={() => setActiveIndex(index())}
+									onClick={() => selectMap(map)}
+									{...stylex.props(
+										styles.option,
+										activeIndex() === index() && styles.optionActive,
+										map.mapPath === props.mapPath && styles.optionSelected
+									)}
+								>
+									<span {...stylex.props(styles.optionLabel)}>{map.label}</span>
+									<code
+										{...stylex.props(
+											styles.optionPath,
+											map.mapPath === props.mapPath &&
+												styles.optionPathSelected
+										)}
+									>
+										{map.mapPath}
+									</code>
+								</div>
+							)}
+						</For>
+						<Show when={filteredMaps().length === 0}>
+							<p {...stylex.props(styles.empty)}>NO SAVED MAPS MATCH “{query()}”</p>
+						</Show>
+						<Show when={props.allowCustomPath}>
+							<div
+								id={`${pickerId}-option-${filteredMaps().length}`}
+								role="option"
+								aria-selected={customSelected()}
+								onMouseEnter={() => setActiveIndex(filteredMaps().length)}
+								onClick={selectCustomPath}
+								{...stylex.props(
+									styles.option,
+									styles.customOption,
+									activeIndex() === filteredMaps().length && styles.optionActive
+								)}
+							>
+								<span {...stylex.props(styles.optionLabel)}>CUSTOM MAP PATH…</span>
+								<code {...stylex.props(styles.optionPath)}>
+									Enter a path not present in the project inventory
+								</code>
+							</div>
+						</Show>
+					</div>
+				</div>
+			</Show>
+
 			<Show when={customSelected()}>
 				<label {...stylex.props(styles.customPath)}>
 					<span>MAP PATH</span>
 					<input
+						ref={(element) => {
+							customPathInput = element;
+						}}
 						aria-label="Custom map path"
 						disabled={props.disabled}
 						value={props.mapPath}
 						onInput={(event) => props.onMapPathChange(event.currentTarget.value)}
-						placeholder="Content/Maps/L_MyMap.umap"
+						placeholder={props.customPathPlaceholder ?? "Content/Maps/L_MyMap.umap"}
 						{...stylex.props(styles.customInput)}
 					/>
 				</label>
@@ -76,27 +275,129 @@ export function SavedMapPicker(props: {
 
 const styles = stylex.create({
 	picker: {
+		position: "relative",
 		display: "grid",
 		gap: 5,
-		minWidth: 180,
+		minWidth: 220,
 		color: "#9aa8a8",
 		fontSize: 8,
 		fontWeight: 800,
 		letterSpacing: ".12em"
 	},
 	label: { display: "block" },
-	select: {
-		minWidth: 180,
+	backdrop: {
+		position: "fixed",
+		inset: 0,
+		zIndex: 39,
+		backgroundColor: "transparent"
+	},
+	trigger: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 12,
+		width: "100%",
+		minWidth: 220,
 		boxSizing: "border-box",
 		border: "1px solid #445155",
 		backgroundColor: "#0a0e0f",
 		color: "#e2e8e4",
-		padding: "9px 10px",
+		padding: "8px 10px",
 		fontFamily: "monospace",
-		fontSize: 11,
-		outline: { default: "none", ":focus": "1px solid #73c7d0" },
+		textAlign: "left",
+		outline: { default: "none", ":focus-visible": "1px solid #73c7d0" },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.55 }
+	},
+	triggerOpen: { borderColor: "#73c7d0", boxShadow: "0 0 0 1px #73c7d033" },
+	triggerText: {
+		display: "grid",
+		minWidth: 0,
+		gap: 3,
+		letterSpacing: 0
+	},
+	triggerPrimary: {
+		overflow: "hidden",
+		fontSize: 10,
+		fontWeight: 700,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	triggerSecondary: {
+		overflow: "hidden",
+		color: "#718083",
+		fontSize: 8,
+		fontWeight: 400,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	chevron: { color: "#73c7d0", fontSize: 14, transform: "translateY(-1px)" },
+	chevronOpen: { transform: "rotate(180deg) translateY(-1px)" },
+	dropdown: {
+		position: "absolute",
+		top: "calc(100% + 5px)",
+		left: 0,
+		zIndex: 40,
+		width: "max(100%, 340px)",
+		maxWidth: "calc(100vw - 40px)",
+		boxSizing: "border-box",
+		border: "1px solid #445155",
+		backgroundColor: "#0a0e0f",
+		boxShadow: "0 18px 44px #00000088"
+	},
+	searchShell: {
+		display: "flex",
+		alignItems: "center",
+		gap: 7,
+		padding: 8,
+		borderBottom: "1px solid #2b3639",
+		backgroundColor: "#101719"
+	},
+	searchIcon: { color: "#73c7d0", fontSize: 14, fontWeight: 400 },
+	searchInput: {
+		width: "100%",
+		minWidth: 0,
+		boxSizing: "border-box",
+		border: 0,
+		backgroundColor: "transparent",
+		color: "#e2e8e4",
+		padding: "5px 2px",
+		fontFamily: "monospace",
+		fontSize: 10,
+		outline: "none",
+		letterSpacing: 0
+	},
+	options: { maxHeight: 276, overflowY: "auto", padding: 5 },
+	option: {
+		display: "grid",
+		gap: 4,
+		padding: "8px 9px",
+		borderLeft: "2px solid transparent",
+		color: "#d9e1df",
+		cursor: "pointer",
+		letterSpacing: 0
+	},
+	optionLabel: { fontSize: 10, fontWeight: 700 },
+	optionPath: {
+		overflow: "hidden",
+		color: "#718083",
+		fontFamily: "monospace",
+		fontSize: 8,
+		fontWeight: 400,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	optionPathSelected: { color: "#80aeb2" },
+	optionActive: { backgroundColor: "#172326", borderLeftColor: "#73c7d0" },
+	optionSelected: { color: "#a8e3e8" },
+	customOption: { marginTop: 4, borderTop: "1px solid #2b3639" },
+	empty: {
+		margin: 0,
+		padding: "13px 9px",
+		color: "#718083",
+		fontSize: 8,
+		fontWeight: 700,
+		letterSpacing: ".08em"
 	},
 	customPath: { display: "grid", gap: 5, color: "#879294", fontSize: 8, letterSpacing: ".1em" },
 	customInput: {

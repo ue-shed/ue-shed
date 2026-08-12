@@ -799,7 +799,8 @@ describe("ContentObservatoryRoute", () => {
 		expect(screen.queryByLabelText("Stale World Log result")).toBeNull();
 
 		const mapPicker = screen.getByRole("combobox", { name: "Saved map" });
-		await user.selectOptions(mapPicker, "__custom__");
+		await user.click(mapPicker);
+		await user.click(screen.getByRole("option", { name: /CUSTOM MAP PATH/ }));
 		await user.clear(screen.getByRole("textbox", { name: "Custom map path" }));
 		await user.type(
 			screen.getByRole("textbox", { name: "Custom map path" }),

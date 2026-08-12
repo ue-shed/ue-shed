@@ -86,17 +86,13 @@ describe("SavedWorldScout", () => {
 		const user = userEvent.setup();
 		renderScout();
 
-		const picker = (await screen.findByRole("combobox", {
-			name: "Saved map"
-		})) as HTMLSelectElement;
-		await user.selectOptions(picker, "Content/Demo/DemoArena.umap");
+		const picker = await screen.findByRole("combobox", { name: "Saved map" });
+		await user.click(picker);
+		await user.type(screen.getByRole("searchbox", { name: "Search saved maps" }), "arena");
+		await user.click(screen.getByRole("option", { name: /Demo Arena/ }));
 
 		await screen.findByText("/Game/Demo/DemoArena");
-		await waitFor(() =>
-			expect(
-				(screen.getByRole("combobox", { name: "Saved map" }) as HTMLSelectElement).value
-			).toBe("Content/Demo/DemoArena.umap")
-		);
+		await waitFor(() => expect(picker.textContent).toContain("Content/Demo/DemoArena.umap"));
 	});
 
 	it("filters saved actors and classes through one bounded explorer", async () => {

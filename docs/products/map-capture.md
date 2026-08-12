@@ -61,10 +61,12 @@ The pure selection model:
 - recommends a bounded cache size and leaves eviction implementation to the host;
 - aligns every level from manifest bounds, preventing drift or spatial swimming.
 
-The Workbench `#/map-capture` route is the reference host for choosing a portable plan, inspecting
-its grid, editing fog and LOD policy, opening the target map, running capture, and exploring the
-published pyramid. Its host-neutral Solid component owns no filesystem, editor-control, capture,
-storage, or selection policy; those remain public services usable by libraries and the CLI.
+The Workbench `#/map-capture` route is the reference host for choosing a portable plan, searching
+the selected project's saved-map inventory to override its target, inspecting its grid, editing fog
+and LOD policy, opening the target map, running capture, and exploring the published pyramid. The
+override is session-local and does not rewrite the portable plan. Its host-neutral Solid component
+owns no filesystem, editor-control, capture, storage, or selection policy; those remain public
+services usable by libraries and the CLI.
 
 ## Project adapter and runtime seam
 

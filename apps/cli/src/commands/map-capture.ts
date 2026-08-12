@@ -43,16 +43,19 @@ const mapCaptureRunCommand = Command.make(
 		planPath: Argument.string("plan"),
 		endpoint: Argument.string("endpoint"),
 		correlationId: optionalFlag("correlation"),
+		openMap: Flag.boolean("open-map").pipe(Flag.optional),
 		levels: levelsFlag,
 		tilesPath: optionalFlag("tiles")
 	},
-	({ projectRoot, planPath, endpoint, correlationId, levels, tilesPath }) => {
+	({ projectRoot, planPath, endpoint, correlationId, openMap, levels, tilesPath }) => {
 		const correlation = optionalValue(correlationId);
+		const shouldOpenMap = optionalValue(openMap);
 		const tiles = optionalValue(tilesPath);
 		return runMapCaptureRun({
 			_tag: "MapCaptureRun",
 			...(correlation === undefined ? {} : { correlationId: correlation }),
 			endpoint,
+			...(shouldOpenMap === undefined ? {} : { openMap: shouldOpenMap }),
 			...(levels.length === 0 ? {} : { levels }),
 			planPath,
 			projectRoot,
@@ -61,7 +64,7 @@ const mapCaptureRunCommand = Command.make(
 	}
 ).pipe(
 	Command.withDescription(
-		"Capture all tiles, repeated --level subsets, or an explicit --tiles JSON array."
+		"Capture all tiles, repeated --level subsets, or explicit tiles; --open-map safely switches first."
 	)
 );
 

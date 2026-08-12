@@ -62,8 +62,12 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetStringField(
 			TEXT("playSessionObjectPath"),
 			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary"));
+		Root->SetStringField(
+			TEXT("worldControlObjectPath"),
+			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWorldControlLibrary"));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedScenariosEditor")))
 	{

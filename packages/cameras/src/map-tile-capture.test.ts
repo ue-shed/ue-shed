@@ -47,7 +47,14 @@ async function fixtureProject(levelCount: number): Promise<{
 			capture: {
 				dataLayers: { mode: "unchanged" },
 				orientation: { pitch: -90, roll: 0, yaw: 0 },
-				render: { lodPolicy: "natural", profile: "full_fidelity" },
+				render: {
+					effects: { fog: false, volumetricFog: false },
+					lodDistanceScaleByZoom: Array.from({ length: levelCount }, (_value, zoom) =>
+						Math.max(1, 4 / 2 ** zoom)
+					),
+					lodPolicy: "per_level_distance_scale",
+					profile: "full_fidelity"
+				},
 				z: 1000
 			},
 			contract: {

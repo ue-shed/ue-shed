@@ -279,9 +279,12 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 	const TSharedPtr<FJsonObject>* DataLayers;
 	const TSharedPtr<FJsonObject>* Orientation;
 	const TSharedPtr<FJsonObject>* Render;
+	const TSharedPtr<FJsonObject>* Effects;
 	FString DataLayerMode;
 	FString LodPolicy;
 	FString RenderProfile;
+	bool bFog = true;
+	bool bVolumetricFog = true;
 	double CaptureZ;
 	double Pitch;
 	double Yaw;
@@ -294,6 +297,9 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		|| !(*Orientation)->TryGetNumberField(TEXT("yaw"), Yaw)
 		|| !(*Orientation)->TryGetNumberField(TEXT("roll"), Roll)
 		|| !(*CapturePolicy)->TryGetObjectField(TEXT("render"), Render)
+		|| !(*Render)->TryGetObjectField(TEXT("effects"), Effects)
+		|| !(*Effects)->TryGetBoolField(TEXT("fog"), bFog)
+		|| !(*Effects)->TryGetBoolField(TEXT("volumetricFog"), bVolumetricFog)
 		|| !(*Render)->TryGetStringField(TEXT("lodPolicy"), LodPolicy)
 		|| !(*Render)->TryGetStringField(TEXT("profile"), RenderProfile)
 		|| !(*CapturePolicy)->TryGetNumberField(TEXT("z"), CaptureZ)
@@ -320,12 +326,27 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			false);
 		return;
 	}
-	if (LodPolicy != TEXT("natural"))
+	const TArray<TSharedPtr<FJsonValue>>* LodDistanceScales = nullptr;
+	if (LodPolicy == TEXT("per_level_distance_scale"))
+	{
+		if (!(*Render)->TryGetArrayField(TEXT("lodDistanceScaleByZoom"), LodDistanceScales)
+			|| LodDistanceScales->IsEmpty()
+			|| LodDistanceScales->Num() > 24)
+		{
+			Fail(
+				TEXT("invalid_request"),
+				TEXT("Per-level LOD policy requires one to 24 distance scales."),
+				TEXT("Provide one finite 0.1-100 scale for every captured pyramid zoom."),
+				false);
+			return;
+		}
+	}
+	else if (LodPolicy != TEXT("natural"))
 	{
 		Fail(
 			TEXT("invalid_request"),
 			TEXT("Explicit LOD intervention is not supported by map tile capture v1."),
-			TEXT("Use natural LOD selection or install a project render-policy adapter."),
+			TEXT("Use natural or per-level distance-scale LOD selection."),
 			false);
 		return;
 	}
@@ -386,6 +407,7 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		double MinY = 0.0;
 		double MaxX = 0.0;
 		double MaxY = 0.0;
+		double LodDistanceScale = 1.0;
 		bool bValid = TileValue.IsValid()
 			&& TileValue->TryGetObject(Tile)
 			&& (*Tile)->TryGetObjectField(TEXT("key"), Key)
@@ -403,6 +425,15 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			&& (*Bounds)->TryGetNumberField(TEXT("minY"), MinY)
 			&& (*Bounds)->TryGetNumberField(TEXT("maxX"), MaxX)
 			&& (*Bounds)->TryGetNumberField(TEXT("maxY"), MaxY);
+		if (bValid && LodPolicy == TEXT("per_level_distance_scale"))
+		{
+			bValid = LodDistanceScales != nullptr
+				&& LodDistanceScales->IsValidIndex(Zoom)
+				&& (*LodDistanceScales)[Zoom]->TryGetNumber(LodDistanceScale)
+				&& FMath::IsFinite(LodDistanceScale)
+				&& LodDistanceScale >= 0.1
+				&& LodDistanceScale <= 100.0;
+		}
 		if (!bValid)
 		{
 			MapTileTopFailure(
@@ -468,6 +499,10 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			continue;
 		}
 		Capture->ConfigureOrthographic(static_cast<float>(OrthoWidth));
+		Capture->ConfigureRenderPolicy(
+			bFog,
+			bVolumetricFog,
+			static_cast<float>(LodDistanceScale));
 		if (RenderProfile == TEXT("observation"))
 		{
 			USceneCaptureComponent2D* Component = Capture->Component();

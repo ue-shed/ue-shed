@@ -19,9 +19,13 @@ world-units-per-pixel and doubles both axes, so the four child bounds exactly pa
 Orientation v1 numbers rows from max-X to min-X and columns from min-Y to max-Y.
 
 Orthographic detail comes from `OrthoWidth`, fixed tile pixels, and world-units-per-pixel. Capture Z
-is independently configurable to keep the camera above geometry. Natural Unreal LOD response to
-`OrthoWidth` is recorded as render policy; explicit Nanite/HLOD/foliage intervention is never
-inferred from camera height.
+is independently configurable to keep the camera above geometry; it never implies a detail level.
+Plans can retain Unreal's natural LOD response or set a scene-capture LOD distance scale for each
+zoom level. The scoped distance factor changes only the transient capture component. Explicit
+Nanite, HLOD, or foliage intervention is not inferred from camera height.
+
+Fog and volumetric fog are independent plan settings applied to the transient scene capture's show
+flags. They do not mutate the editor viewport, world actors, global console variables, or saved map.
 
 Each tile renders `gutterPixels` beyond all four edges at the level's world-units-per-pixel, then is
 cropped to the fixed tile size before PNG encoding. This lets geometry and post processing sample
@@ -35,10 +39,12 @@ accepts an expected map, capture policy, operation/correlation identity, and til
 output directory, UObject pointer, or console-variable bag. Output is contained beneath
 `Saved/UEShed/MapTileStaging`.
 
-The v1 capability requires the expected editor map to be open and rejects explicit Data Layer or
-fixed-LOD policies until a scoped UE 5.7 adapter proves restoration. A headless project launcher may
-open the configured map explicitly before connecting. Interactive hosts must refuse switching when
-dirty work could be lost. Remote Control itself does not receive hidden map-switch authority.
+The capture capability requires the expected editor map to be open and continues to reject explicit
+Data Layer and forced fixed-LOD policies. The separate `editor.world-control.v1` capability can open
+an explicit `/Game/` map before capture. It refuses active PIE, missing maps, and dirty world
+packages; it never saves, discards, or silently resolves editor state. The CLI exposes this as
+`ue-shed editor world open`, while `ue-shed map-capture run --open-map` composes the same public map
+control and capture workflows.
 
 The host validates every staged path, hashes each PNG, writes a neutral manifest, and atomically
 renames a staging run only when every requested tile is present and valid. Partial, failed, and
@@ -55,8 +61,10 @@ The pure selection model:
 - recommends a bounded cache size and leaves eviction implementation to the host;
 - aligns every level from manifest bounds, preventing drift or spatial swimming.
 
-A host-neutral Solid reference component may demonstrate pan, zoom, progressive replacement,
-loading/error states, and diagnostics, but it owns no capture, storage, or selection policy.
+The Workbench `#/map-capture` route is the reference host for choosing a portable plan, inspecting
+its grid, editing fog and LOD policy, opening the target map, running capture, and exploring the
+published pyramid. Its host-neutral Solid component owns no filesystem, editor-control, capture,
+storage, or selection policy; those remain public services usable by libraries and the CLI.
 
 ## Project adapter and runtime seam
 
@@ -70,6 +78,7 @@ build and never names a studio registry, map, path, or asset type.
 
 - Plan: `ue-shed-map-capture-plan` 1.0.
 - Editor request/response: `ue-shed-map-tile-capture` 1.0.
+- Editor map control: `ue-shed-editor-world-control` 1.0.
 - Published manifest: `ue-shed-map-tile-pyramid` 1.0.
 - Language-neutral authority: `packages/protocol/contracts/cameras/map-tile/v1`.
 - Portable parity: `pnpm --filter @ue-shed/cameras contract:check`.

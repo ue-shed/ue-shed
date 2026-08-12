@@ -1,6 +1,7 @@
 import { TextureAuditLive } from "@ue-shed/asset-audits";
 import { ConfigExplorerNodeLive } from "@ue-shed/config-explorer";
 import {
+	MapCaptureRepositoryLive,
 	ReviewAuthoringLive,
 	ReviewAuthoringSessionsLive,
 	ReviewCaptureLive,
@@ -12,7 +13,7 @@ import {
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
-import { EditorPlaySessionLive } from "@ue-shed/engine-discovery";
+import { EditorPlaySessionLive, EditorWorldControlLive } from "@ue-shed/engine-discovery";
 import { AuthoringClientLive } from "@ue-shed/host";
 import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
@@ -44,6 +45,7 @@ import { FixtureHealthLive, FixtureLauncherLive } from "./services/fixture-launc
 import { WorkbenchGameTextLive } from "./services/game-text.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
+import { WorkbenchMapCaptureLive } from "./services/map-capture.js";
 import { OfflineTexturePreviewLive } from "./services/offline-texture-preview.js";
 import { ProjectLauncherLive } from "./services/project-launcher.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
@@ -75,6 +77,7 @@ const windowOptions: WorkbenchWindowOptions = {
 function baseLayer(hosts: WorkbenchHosts) {
 	const remoteControl = RemoteControlClientLive;
 	const editorPlaySession = EditorPlaySessionLive.pipe(Layer.provide(remoteControl));
+	const editorWorldControl = EditorWorldControlLive.pipe(Layer.provide(remoteControl));
 	const scenarioRunner = ScenarioRunnerLive.pipe(
 		Layer.provide(Layer.merge(remoteControl, editorPlaySession))
 	);
@@ -91,12 +94,14 @@ function baseLayer(hosts: WorkbenchHosts) {
 		editorPlaySession,
 		scenarioRunner,
 		ReviewRepositoryLive,
+		MapCaptureRepositoryLive,
 		ReviewIdGeneratorLive,
 		cameraFeedLayer(),
 		LocalFilesLive,
 		offlineTexturePreviewHostLayer(hosts.environment),
 		fixtureProcessLayer(hosts.environment),
-		WorkbenchUnrealConnectionLive
+		WorkbenchUnrealConnectionLive,
+		editorWorldControl
 	).pipe(Layer.provideMerge(WorkbenchConfigurationLive));
 }
 
@@ -162,6 +167,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		authoring,
 		authoringClient,
 		mapReview,
+		WorkbenchMapCaptureLive,
 		contentObservatory,
 		WorkbenchConfigExplorerLive.pipe(Layer.provide(ConfigExplorerNodeLive)),
 		CameraPresentationLive

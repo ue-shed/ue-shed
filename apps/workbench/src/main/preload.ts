@@ -278,6 +278,13 @@ contextBridge.exposeInMainWorld("ueShed", {
 		unsubscribeWorldObservations: (): Promise<void> =>
 			ipcRenderer.invoke("map-review:unsubscribe-world-observations")
 	},
+	mapCapture: {
+		choosePlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:choose-plan"),
+		openMap: (plan: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("map-capture:open-map", plan),
+		capture: (intent: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("map-capture:capture", intent)
+	},
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),
 	getMetrics: (): Promise<WorkbenchCameraMetrics> => ipcRenderer.invoke("camera:metrics"),

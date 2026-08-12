@@ -1,0 +1,16 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/editor-world/v1/request.schema.json",
+	"title": "UE Shed editor world open request v1.0",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["contract", "operationId", "targetMapPath"],
+	"properties": {
+		"contract": { "$ref": "response.schema.json#/$defs/contract" },
+		"operationId": {
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
+		"targetMapPath": { "$ref": "response.schema.json#/$defs/gameMapPath" }
+	}
+}

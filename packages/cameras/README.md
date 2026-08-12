@@ -50,19 +50,28 @@ bounded orthographic editor capture, and immutable hashed manifests without chan
 `CaptureProfile` or perspective wire contract. Its language-neutral v1 contracts live under
 `packages/protocol/contracts/cameras/map-tile/v1`. Completed runs live under
 `.ue-shed/map-capture/runs`; Unreal staging is accepted only from
-`Saved/UEShed/MapTileStaging`.
+`Saved/UEShed/MapTileStaging`. Plans independently control fog and volumetric fog and can retain
+natural Unreal LOD behavior or provide one scene-capture LOD distance scale per zoom level. Capture
+Z is placement only and never selects an LOD.
 
 ```sh
 ue-shed map-capture plan validate <project-root> <plan.json>
 ue-shed map-capture inspect <project-root> <plan.json>
 ue-shed map-capture run <project-root> <plan.json> <endpoint>
+ue-shed map-capture run <project-root> <plan.json> <endpoint> --open-map
 ue-shed map-capture run <project-root> <plan.json> <endpoint> --level 2 --level 3
 ue-shed map-capture run <project-root> <plan.json> <endpoint> --tiles tile-keys.json
 ue-shed map-capture runs <project-root> <plan-id>
 ```
 
 Level/tile subsets are recovery or test attempts and are quarantined as partial; only an exhaustive
-all-level run can be atomically published as complete.
+all-level run can be atomically published as complete. Map switching is a separate Core capability:
+
+```sh
+ue-shed editor world open <endpoint> /Game/Maps/Target
+```
+
+It refuses active PIE, missing maps, and dirty world packages instead of saving or discarding work.
 
 ## License
 

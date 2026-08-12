@@ -5,11 +5,12 @@ uses the committed generic fixture as its default project and keeps live Unreal 
 capability.
 
 Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
-Game Text, Texture Audit, Config Explorer, Map Review, World Log, and Camera Lab. The catalog groups
-them by what they actually require: a saved project, Perforce on demand, or a running Unreal
-session. Each entry shows evidence from the selected project before it is opened, including indexed
-candidate-package and map counts. Saved-source workflows open without Unreal; live texture preview,
-Live World, and Camera Lab request a separately enabled editor only when needed.
+Game Text, Texture Audit, Config Explorer, Map Review, Map Capture, World Log, and Camera Lab. The
+catalog groups them by what they actually require: a saved project, Perforce on demand, or a running
+Unreal session. Each entry shows evidence from the selected project before it is opened, including
+indexed candidate-package and map counts. Saved-source workflows open without Unreal; live texture
+preview, Live World, Map Capture, and Camera Lab request a separately enabled editor only when
+needed.
 
 ## Open the Workbench
 
@@ -232,7 +233,33 @@ screenshots, both Run A/Run B 1280x720 Unreal captures, persisted authoring/Revi
 manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
 total and leaves the requested count intact.
 
-## Demo 5: Scenario Studio
+## Demo 6: Map Capture
+
+Open **Map Capture** from the home or nav, then choose a portable Map Capture Plan. The route shows
+the snapped grid, level and tile counts, map target, and capture policy before it touches Unreal.
+Use the fixture contract plan for a compact starting point:
+
+```text
+packages/protocol/contracts/cameras/map-tile/v1/fixtures/plan-valid.json
+```
+
+Fog and volumetric fog can be disabled independently. LOD can follow Unreal naturally or use one
+scene-capture distance scale per zoom level; capture height remains a separate camera-placement
+setting. **Open Target Map** performs an explicit editor operation and refuses active PIE or dirty
+world packages. **Open + Capture** composes that operation with the public headless capture workflow,
+then displays the immutable pyramid through the same progressive tile viewer used by extensions.
+No player pawn, input event, viewport focus, saved capture actor, or map modification is involved.
+
+The same flow remains scriptable:
+
+```powershell
+pnpm ue-shed map-capture run fixtures\unreal-project packages\protocol\contracts\cameras\map-tile\v1\fixtures\plan-valid.json http://127.0.0.1:30001 --open-map
+```
+
+Use `pnpm ue-shed editor world open <endpoint> <map-path>` when map control is needed without a
+capture.
+
+## Demo 7: Scenario Studio
 
 Scenario Studio's shortest live proof runs the portable Movement Gym document through the same
 public runner used by the CLI. Launch the fixture in editor mode so the separately enabled scenario
@@ -276,7 +303,7 @@ structured cancelled result and restored input. Disabling `UEShedScenarios` demo
 capability-missing path, but requires rebuilding or relaunching the fixture and is better kept as an
 optional extended demo.
 
-## Demo 6: World Log
+## Demo 8: World Log
 
 World Log is a saved-map history investigation workspace. It runs against Perforce but does not
 need Unreal. Start its self-contained fixture with:
@@ -291,7 +318,7 @@ History World**, and run the scan. Try the changelist lens, choose an actor from
 map, then use the time control to see the actor move, appear, or disappear. The temporary server,
 client workspace, credentials, and configuration are removed when Workbench closes.
 
-## Demo 7: Camera Load Lab
+## Demo 9: Camera Load Lab
 
 Camera Load Lab is the live camera data-plane slice. Open it and choose **Launch Camera Fixture**.
 Workbench then discovers Unreal Engine 5.7, incrementally builds the fixture editor target, launches

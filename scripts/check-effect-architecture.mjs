@@ -61,6 +61,7 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/game-text-client.ts",
 	"apps/workbench/src/renderer/global.d.ts",
 	"apps/workbench/src/renderer/input-atlas-client.ts",
+	"apps/workbench/src/renderer/map-capture-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
 	// The opt-in benchmark isolates marker validation and reversible mutations in one filesystem adapter.
@@ -177,6 +178,7 @@ const rendererTransportFiles = new Set([
 	"apps/workbench/src/renderer/game-text-client.ts",
 	"apps/workbench/src/renderer/global.d.ts",
 	"apps/workbench/src/renderer/input-atlas-client.ts",
+	"apps/workbench/src/renderer/map-capture-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
 	"apps/workbench/src/renderer/scenario-studio-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts"

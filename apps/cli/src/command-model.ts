@@ -43,6 +43,11 @@ export const CliCommand = Schema.TaggedUnion({
 		action: EditorPlayAction,
 		endpoint: Schema.String
 	},
+	EditorWorldOpen: {
+		endpoint: Schema.String,
+		mapPath: Schema.String,
+		operationId: Schema.optionalKey(Schema.String)
+	},
 	ScenarioRun: {
 		endpoint: Schema.String,
 		evidenceLimit: Schema.optionalKey(PositiveInt)
@@ -218,6 +223,7 @@ export const CliCommand = Schema.TaggedUnion({
 	MapCaptureRun: {
 		correlationId: Schema.optionalKey(Schema.String),
 		endpoint: Schema.String,
+		openMap: Schema.optionalKey(Schema.Boolean),
 		levels: Schema.optionalKey(
 			Schema.Array(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 		),

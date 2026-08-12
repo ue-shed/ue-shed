@@ -99,6 +99,25 @@ void FUEShedTransientCapture::ConfigureOrthographic(float OrthoWidth)
 	CaptureComponent->OrthoWidth = OrthoWidth;
 }
 
+void FUEShedTransientCapture::ConfigureRenderPolicy(
+	bool bFog,
+	bool bVolumetricFog,
+	float LodDistanceScale)
+{
+	USceneCaptureComponent2D* CaptureComponent = Component();
+	CaptureComponent->LODDistanceFactor = LodDistanceScale;
+	TArray<FEngineShowFlagsSetting> Settings;
+	FEngineShowFlagsSetting Fog;
+	Fog.ShowFlagName = TEXT("Fog");
+	Fog.Enabled = bFog;
+	Settings.Add(Fog);
+	FEngineShowFlagsSetting VolumetricFog;
+	VolumetricFog.ShowFlagName = TEXT("VolumetricFog");
+	VolumetricFog.Enabled = bVolumetricFog;
+	Settings.Add(VolumetricFog);
+	CaptureComponent->SetShowFlagSettings(Settings);
+}
+
 void FUEShedTransientCapture::Capture() const
 {
 	Component()->CaptureScene();

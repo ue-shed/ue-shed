@@ -151,6 +151,28 @@ const approveIntent = {
 	viewId: "view-1"
 };
 
+const mapCapturePlan = {
+	capture: {
+		dataLayers: { mode: "unchanged" },
+		orientation: { pitch: -90, roll: 0, yaw: 0 },
+		render: {
+			effects: { fog: false, volumetricFog: false },
+			lodDistanceScaleByZoom: [2],
+			lodPolicy: "per_level_distance_scale",
+			profile: "full_fidelity"
+		},
+		z: 5000
+	},
+	contract: { name: "ue-shed-map-capture-plan", version: { major: 1, minor: 0 } },
+	gutterPixels: 2,
+	id: "fixture-overview",
+	levels: { coarsestUnitsPerPixel: 4, count: 1 },
+	output: { imageFormat: "png", publication: "local_immutable" },
+	project: { id: "fixture", mapPath: "/Game/Fixture/Cameras/L_CameraLoad" },
+	requestedBounds: { maxX: 1024, maxY: 1024, minX: 0, minY: 0 },
+	tilePixelSize: 256
+};
+
 const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"editor-session:settings": [],
 	"editor-session:set-port": [31001],
@@ -246,6 +268,9 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	],
 	"content-observatory:cancel": [],
 	"map-review:load": [],
+	"map-capture:choose-plan": [],
+	"map-capture:open-map": [mapCapturePlan],
+	"map-capture:capture": [{ openMap: true, plan: mapCapturePlan }],
 	"map-review:review-sets": [],
 	"map-review:create-review-set": [{ displayName: "Lighting review" }],
 	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
@@ -474,6 +499,17 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"content-observatory:start": { status: "not_configured" },
 	"content-observatory:cancel": { status: "not_configured" },
 	"map-review:load": { status: "not_configured" },
+	"map-capture:choose-plan": { status: "cancelled" },
+	"map-capture:open-map": {
+		message: "Editor unavailable.",
+		recovery: "Connect Unreal.",
+		status: "failed"
+	},
+	"map-capture:capture": {
+		message: "Capture unavailable.",
+		recovery: "Connect Unreal.",
+		status: "failed"
+	},
 	"map-review:review-sets": {
 		activeReviewSetId: "fixture-review-set",
 		sets: [
@@ -596,9 +632,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 88 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(88);
-	expect(new Set(invokeChannelNames).size).toBe(88);
+it("registers exactly 91 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(91);
+	expect(new Set(invokeChannelNames).size).toBe(91);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

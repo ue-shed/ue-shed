@@ -36,6 +36,13 @@ import {
 	MapReviewSetSelectIntent
 } from "@ue-shed/cameras/review-contracts";
 import {
+	MapCaptureExecuteIntent,
+	MapCaptureExecuteResult,
+	MapCaptureOpenResult,
+	MapCaptureSelectionResult
+} from "@ue-shed/extension-camera-review/map-capture-client";
+import { MapCapturePlan } from "@ue-shed/cameras";
+import {
 	ConfigComparison,
 	ConfigExplanation,
 	ConfigExplorerPublicError
@@ -705,6 +712,21 @@ export const invokeContracts = {
 		channel: "map-review:load",
 		args: EmptyArgs,
 		result: MapReviewResult
+	}),
+	"map-capture:choose-plan": invoke({
+		channel: "map-capture:choose-plan",
+		args: EmptyArgs,
+		result: MapCaptureSelectionResult
+	}),
+	"map-capture:open-map": invoke({
+		channel: "map-capture:open-map",
+		args: Schema.Tuple([MapCapturePlan]),
+		result: MapCaptureOpenResult
+	}),
+	"map-capture:capture": invoke({
+		channel: "map-capture:capture",
+		args: Schema.Tuple([MapCaptureExecuteIntent]),
+		result: MapCaptureExecuteResult
 	}),
 	"map-review:review-sets": invoke({
 		channel: "map-review:review-sets",

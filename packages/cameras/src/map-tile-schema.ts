@@ -67,9 +67,31 @@ export const MapCaptureDataLayerPolicy = Schema.Union([
 ]);
 
 export const MapCaptureRenderPolicy = Schema.Struct({
-	lodPolicy: Schema.Literals(["natural", "fixed_lod_zero"]),
+	effects: Schema.Struct({
+		fog: Schema.Boolean,
+		volumetricFog: Schema.Boolean
+	}),
+	lodDistanceScaleByZoom: Schema.optionalKey(
+		Schema.Array(Schema.Finite.check(Schema.isBetween({ minimum: 0.1, maximum: 100 }))).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(24)
+		)
+	),
+	lodPolicy: Schema.Literals(["natural", "fixed_lod_zero", "per_level_distance_scale"]),
 	profile: Schema.Literals(["full_fidelity", "observation"])
-});
+}).pipe(
+	Schema.check(
+		Schema.makeFilter((render) =>
+			(render.lodPolicy === "per_level_distance_scale") ===
+			(render.lodDistanceScaleByZoom !== undefined)
+				? undefined
+				: {
+						issue: "Per-level LOD policy requires scales, and other policies must not carry them.",
+						path: ["lodDistanceScaleByZoom"]
+					}
+		)
+	)
+);
 
 export const MapCapturePlan = Schema.Struct({
 	capture: Schema.Struct({
@@ -99,7 +121,19 @@ export const MapCapturePlan = Schema.Struct({
 	project: MapCaptureProject,
 	requestedBounds: MapCaptureWorldBounds,
 	tilePixelSize: Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 4_096 }))
-});
+}).pipe(
+	Schema.check(
+		Schema.makeFilter((plan) =>
+			plan.capture.render.lodPolicy !== "per_level_distance_scale" ||
+			plan.capture.render.lodDistanceScaleByZoom?.length === plan.levels.count
+				? undefined
+				: {
+						issue: "LOD distance scales must contain exactly one value per pyramid level.",
+						path: ["capture", "render", "lodDistanceScaleByZoom"]
+					}
+		)
+	)
+);
 export type MapCapturePlan = typeof MapCapturePlan.Type;
 
 export const MapTileKeySchema = Schema.Struct({
@@ -145,12 +179,25 @@ export const MapTileCaptureRequest = Schema.Struct({
 	Schema.check(
 		Schema.makeFilter((request) => {
 			const identities = request.tiles.map((tile) => mapTileKeyId(tile.key));
-			return new Set(identities).size === identities.length
-				? undefined
-				: {
-						issue: "A bounded tile batch cannot contain duplicate tile keys.",
-						path: ["tiles"]
-					};
+			if (new Set(identities).size !== identities.length) {
+				return {
+					issue: "A bounded tile batch cannot contain duplicate tile keys.",
+					path: ["tiles"]
+				};
+			}
+			if (
+				request.capture.render.lodPolicy === "per_level_distance_scale" &&
+				request.tiles.some(
+					(tile) =>
+						request.capture.render.lodDistanceScaleByZoom?.[tile.key.zoom] === undefined
+				)
+			) {
+				return {
+					issue: "Every requested tile zoom must have a configured LOD distance scale.",
+					path: ["capture", "render", "lodDistanceScaleByZoom"]
+				};
+			}
+			return undefined;
 		})
 	)
 );

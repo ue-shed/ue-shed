@@ -25,6 +25,7 @@ public:
 	UTextureRenderTarget2D* RenderTarget() const;
 	void ConfigurePerspective(float FieldOfViewDegrees);
 	void ConfigureOrthographic(float OrthoWidth);
+	void ConfigureRenderPolicy(bool bFog, bool bVolumetricFog, float LodDistanceScale);
 	void Capture() const;
 	bool ExportPng(const FString& Path, const FIntRect* Crop = nullptr) const;
 

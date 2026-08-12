@@ -44,6 +44,14 @@ describe("map tile contracts", () => {
 		).toBe("Failure");
 	});
 
+	it("requires one scoped LOD distance scale for every pyramid level", () => {
+		const input = structuredClone(fixture("plan-valid.json")) as {
+			capture: { render: { lodDistanceScaleByZoom: number[] } };
+		};
+		input.capture.render.lodDistanceScaleByZoom = [1];
+		expect(Schema.decodeUnknownResult(MapCapturePlan)(input)._tag).toBe("Failure");
+	});
+
 	it("rejects invalid grids and incomplete complete manifests", () => {
 		for (const name of ["manifest-invalid-grid.json", "manifest-invalid-complete.json"]) {
 			expect(Effect.runSyncExit(decodeMapTilePyramidManifest(fixture(name)))._tag).toBe(

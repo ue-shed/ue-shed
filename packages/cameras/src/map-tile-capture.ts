@@ -144,6 +144,10 @@ export interface RunMapCaptureOptions {
 	readonly tiles?: ReadonlyArray<MapTileKey>;
 }
 
+export interface RunMapCapturePlanOptions extends Omit<RunMapCaptureOptions, "planPath"> {
+	readonly plan: MapCapturePlan;
+}
+
 export interface MapCaptureRunOutcome {
 	readonly manifest: MapTilePyramidManifestValue;
 	readonly manifestPath: string;
@@ -273,13 +277,16 @@ function captureFailure(args: {
 }
 
 function runMapCaptureWith(args: {
-	readonly options: RunMapCaptureOptions;
+	readonly options: RunMapCaptureOptions | RunMapCapturePlanOptions;
 	readonly port: MapTileCapturePortShape;
 	readonly repository: MapCaptureRepositoryShape;
 }): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
 	return Effect.scoped(
 		Effect.gen(function* () {
-			const plan = yield* args.repository.loadPlan(args.options.planPath);
+			const plan =
+				"plan" in args.options
+					? args.options.plan
+					: yield* args.repository.loadPlan(args.options.planPath);
 			const projectRoot = yield* validateMapCaptureProjectRoot(args.options.projectRoot);
 			const inspected = yield* inspectMapCapturePlan(plan);
 			const keys = yield* selectedTileKeys({
@@ -530,7 +537,7 @@ export interface MapCaptureShape {
 		plan: MapCapturePlan
 	) => Effect.Effect<InspectMapCapturePlanResult, MapCaptureRunError>;
 	readonly run: (
-		options: RunMapCaptureOptions
+		options: RunMapCaptureOptions | RunMapCapturePlanOptions
 	) => Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError>;
 }
 
@@ -554,6 +561,20 @@ export const MapCaptureLive = Layer.effect(
 
 export function runMapCapture(
 	options: RunMapCaptureOptions
+): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
+	const remoteClient = Layer.sync(RemoteControlClient, () =>
+		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
+	);
+	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
+		Effect.provide(MapCaptureLive),
+		Effect.provide(MapCaptureRepositoryLive),
+		Effect.provide(mapTileCaptureRemotePortLayer(options.endpoint)),
+		Effect.provide(remoteClient)
+	);
+}
+
+export function runMapCapturePlan(
+	options: RunMapCapturePlanOptions
 ): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
 	const remoteClient = Layer.sync(RemoteControlClient, () =>
 		makeRemoteControlClient({ defaultTimeout: "5 minutes" })

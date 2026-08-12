@@ -128,11 +128,39 @@
 				"render": {
 					"type": "object",
 					"additionalProperties": false,
-					"required": ["lodPolicy", "profile"],
+					"required": ["effects", "lodPolicy", "profile"],
 					"properties": {
-						"lodPolicy": { "enum": ["natural", "fixed_lod_zero"] },
+						"effects": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["fog", "volumetricFog"],
+							"properties": {
+								"fog": { "type": "boolean" },
+								"volumetricFog": { "type": "boolean" }
+							}
+						},
+						"lodDistanceScaleByZoom": {
+							"type": "array",
+							"minItems": 1,
+							"maxItems": 24,
+							"items": { "type": "number", "minimum": 0.1, "maximum": 100 }
+						},
+						"lodPolicy": {
+							"enum": ["natural", "fixed_lod_zero", "per_level_distance_scale"]
+						},
 						"profile": { "enum": ["full_fidelity", "observation"] }
-					}
+					},
+					"allOf": [
+						{
+							"if": {
+								"properties": {
+									"lodPolicy": { "const": "per_level_distance_scale" }
+								}
+							},
+							"then": { "required": ["lodDistanceScaleByZoom"] },
+							"else": { "not": { "required": ["lodDistanceScaleByZoom"] } }
+						}
+					]
 				},
 				"z": { "type": "number" }
 			}

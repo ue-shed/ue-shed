@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { Effect, Schema } from "effect";
+import { randomUUID } from "node:crypto";
+import { Effect, Layer, Schema } from "effect";
 import { observeCliOperation } from "../cli-operation.js";
 import { CliCommandError, CliRuntime, messageOf, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
@@ -86,10 +87,46 @@ export const runMapCaptureRun = Effect.fn("Cli.workflow.map_capture.run")(
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const { runMapCapture } = yield* Effect.promise(() => import("@ue-shed/cameras"));
+				const { MapCaptureRepository, MapCaptureRepositoryLive, runMapCapture } =
+					yield* Effect.promise(() => import("@ue-shed/cameras"));
 				const tiles = command.tilesPath
 					? yield* readExplicitTiles(command.tilesPath)
 					: undefined;
+				if (command.openMap === true) {
+					const { EditorWorldControl, EditorWorldControlLive } = yield* Effect.promise(
+						() => import("@ue-shed/engine-discovery")
+					);
+					const { RemoteControlClientLive } = yield* Effect.promise(
+						() => import("@ue-shed/unreal-connection")
+					);
+					const plan = yield* Effect.gen(function* () {
+						const repository = yield* MapCaptureRepository;
+						return yield* repository.loadPlan(command.planPath);
+					}).pipe(
+						Effect.provide(MapCaptureRepositoryLive),
+						Effect.mapError(commandError)
+					);
+					const opened = yield* Effect.gen(function* () {
+						const control = yield* EditorWorldControl;
+						return yield* control.open({
+							endpoint: command.endpoint,
+							operationId: command.correlationId ?? randomUUID(),
+							targetMapPath: plan.project.mapPath
+						});
+					}).pipe(
+						Effect.provide(
+							EditorWorldControlLive.pipe(Layer.provide(RemoteControlClientLive))
+						),
+						Effect.mapError(commandError)
+					);
+					if (opened.outcome === "rejected") {
+						return yield* Effect.fail(
+							new CliCommandError({
+								message: `${opened.message} ${opened.recovery}`
+							})
+						);
+					}
+				}
 				const outcome = yield* runMapCapture({
 					...(command.correlationId === undefined
 						? {}

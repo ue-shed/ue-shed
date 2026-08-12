@@ -20,7 +20,6 @@ the status row when done.
 | [035](035-world-log-investigation-workspace.md)          | Build the World Log investigation workspace                     | P2       | XL     | 034 Map History           | IN PROGRESS — Phase 7            |
 | [041](041-execute-one-live-pie-scenario.md)              | Execute one live PIE scenario                                   | P1       | XL     | Scenario Studio prototype | IN PROGRESS — contract bootstrap |
 | [043](043-config-explorer-settings-archaeology.md)       | Explain saved Unreal configuration provenance                   | P2       | XL     | engine discovery, CLI     | DONE                             |
-| [044](044-map-tile-pyramid.md)                           | Capture generic top-down map tile pyramids                      | P1       | XL     | Map Review capture spine  | IN PROGRESS                      |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this
@@ -28,6 +27,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 044 completed and is archived under
+  [`archive/044-map-tile-pyramid.md`](archive/044-map-tile-pyramid.md) after deterministic grid and
+  selection contracts, transient UE 5.7 orthographic capture, immutable host publication, CLI,
+  reference viewer, and live Map Review regression evidence passed.
 - Plan 042 completed and is archived under
   [`archive/042-project-authored-game-text-quality.md`](archive/042-project-authored-game-text-quality.md)
   after versioned authored roles/rules, pure corpus evaluation, typed findings, safe CLI and

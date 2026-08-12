@@ -41,22 +41,27 @@ export class MapCaptureStorageError extends Schema.TaggedErrorClass<MapCaptureSt
 	}
 ) {}
 
-async function writeJsonAtomically(path: string, value: unknown): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const temporary = `${path}.${randomUUID()}.tmp`;
-	try {
-		const handle = await open(temporary, "wx");
-		try {
-			await handle.writeFile(`${JSON.stringify(value, null, "\t")}\n`, "utf8");
-			await handle.sync();
-		} finally {
-			await handle.close();
-		}
-		await rename(temporary, path);
-	} catch (cause) {
-		await rm(temporary, { force: true });
-		throw cause;
-	}
+function writeJsonAtomically(path: string, value: unknown): Effect.Effect<void, unknown> {
+	return Effect.tryPromise({
+		try: async () => {
+			await mkdir(dirname(path), { recursive: true });
+			const temporary = `${path}.${randomUUID()}.tmp`;
+			try {
+				const handle = await open(temporary, "wx");
+				try {
+					await handle.writeFile(`${JSON.stringify(value, null, "\t")}\n`, "utf8");
+					await handle.sync();
+				} finally {
+					await handle.close();
+				}
+				await rename(temporary, path);
+			} catch (cause) {
+				await rm(temporary, { force: true });
+				throw cause;
+			}
+		},
+		catch: (cause) => cause
+	});
 }
 
 export function mapCaptureRoot(projectRoot: string): string {
@@ -175,20 +180,26 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
 		});
 	}),
 	finalize: Effect.fn("MapCaptureRepository.finalize")(function* (args) {
-		yield* Effect.tryPromise({
-			try: async () => {
-				await mkdir(dirname(args.finalRoot), { recursive: true });
-				await writeJsonAtomically(join(args.stagingRoot, "manifest.json"), args.manifest);
-				await rename(args.stagingRoot, args.finalRoot);
-			},
-			catch: (cause) =>
+		yield* Effect.gen(function* () {
+			yield* Effect.tryPromise({
+				try: () => mkdir(dirname(args.finalRoot), { recursive: true }),
+				catch: (cause) => cause
+			});
+			yield* writeJsonAtomically(join(args.stagingRoot, "manifest.json"), args.manifest);
+			yield* Effect.tryPromise({
+				try: () => rename(args.stagingRoot, args.finalRoot),
+				catch: (cause) => cause
+			});
+		}).pipe(
+			Effect.mapError((cause) =>
 				storageError({
 					cause,
 					operation: "finalize",
 					path: args.finalRoot,
 					recovery: "Inspect the staged run and retry atomic finalization."
 				})
-		});
+			)
+		);
 	}),
 	listRuns: Effect.fn("MapCaptureRepository.listRuns")(function* (args) {
 		const root = mapCaptureRunsRoot(args.projectRoot, args.planId);
@@ -272,20 +283,26 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
 		});
 	}),
 	quarantine: Effect.fn("MapCaptureRepository.quarantine")(function* (args) {
-		yield* Effect.tryPromise({
-			try: async () => {
-				await mkdir(dirname(args.attemptRoot), { recursive: true });
-				await writeJsonAtomically(join(args.stagingRoot, "manifest.json"), args.manifest);
-				await rename(args.stagingRoot, args.attemptRoot);
-			},
-			catch: (cause) =>
+		yield* Effect.gen(function* () {
+			yield* Effect.tryPromise({
+				try: () => mkdir(dirname(args.attemptRoot), { recursive: true }),
+				catch: (cause) => cause
+			});
+			yield* writeJsonAtomically(join(args.stagingRoot, "manifest.json"), args.manifest);
+			yield* Effect.tryPromise({
+				try: () => rename(args.stagingRoot, args.attemptRoot),
+				catch: (cause) => cause
+			});
+		}).pipe(
+			Effect.mapError((cause) =>
 				storageError({
 					cause,
 					operation: "quarantine",
 					path: args.attemptRoot,
 					recovery: "Inspect the .staging run and move it to the attempts tree manually."
 				})
-		});
+			)
+		);
 	}),
 	storeTile: Effect.fn("MapCaptureRepository.storeTile")(function* (args) {
 		return yield* Effect.tryPromise({

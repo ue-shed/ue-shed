@@ -378,7 +378,7 @@ export async function createMapReviewFlowHarness(args: {
 		tuneRig: () =>
 			step("tuneRig", async () => {
 				const page = currentWorkbench().page;
-				const framing = page.locator("details").filter({ hasText: "FRAMING" });
+				const framing = page.locator("details").filter({ hasText: "VIEW PRESETS + RIG" });
 				await framing.locator("summary").click();
 				await framing
 					.getByLabel("Context three-quarter exact camera count")
@@ -401,13 +401,7 @@ export async function createMapReviewFlowHarness(args: {
 				await candidates
 					.getByRole("button", { exact: true, name: "Select Context three-quarter 1" })
 					.click();
-				await framing.getByLabel("Per-view override").check();
-				await framing
-					.locator("label")
-					.filter({ hasText: /^FOV/ })
-					.last()
-					.getByRole("spinbutton")
-					.fill("49");
+				await page.getByLabel("FOV OVERRIDE").fill("49");
 				if (sessionPath === undefined) throw new Error("The session path is unavailable.");
 				await expect
 					.poll(

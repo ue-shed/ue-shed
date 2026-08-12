@@ -50,7 +50,7 @@ describe.skipIf(endpoint === undefined)("map tile capture against Unreal", () =>
 					id: "ue-shed-fixture",
 					mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
 				},
-				requestedBounds: { minX: -512, minY: -512, maxX: 512, maxY: 512 },
+				requestedBounds: { minX: 0, minY: 0, maxX: 1024, maxY: 1024 },
 				tilePixelSize: 64
 			})
 		);

@@ -165,7 +165,9 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				</div>
 			</header>
 			<div
-				ref={surface}
+				ref={(element) => {
+					surface = element;
+				}}
 				{...stylex.props(styles.surface)}
 				onPointerDown={(event) => {
 					event.currentTarget.setPointerCapture(event.pointerId);

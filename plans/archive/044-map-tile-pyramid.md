@@ -2,7 +2,7 @@
 
 | Field      | Value                                                         |
 | ---------- | ------------------------------------------------------------- |
-| Status     | IN PROGRESS                                                   |
+| Status     | DONE — portable and UE 5.7 capture evidence passed            |
 | Product    | Generic top-down cartography beside Map Review                |
 | Depends on | Map Review capture/repository spine and `UEShedCamerasEditor` |
 

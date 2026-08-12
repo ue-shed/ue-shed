@@ -1,0 +1,65 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/map-tile/v1/capture-request.schema.json",
+	"title": "UE Shed bounded map tile capture request v1.0",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"capture",
+		"contract",
+		"correlationId",
+		"expectedMapPath",
+		"gutterPixels",
+		"operationId",
+		"planId",
+		"runId",
+		"tilePixelSize",
+		"tiles"
+	],
+	"properties": {
+		"capture": { "$ref": "plan.schema.json#/$defs/capturePolicy" },
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-map-tile-capture" },
+				"version": { "$ref": "plan.schema.json#/$defs/version" }
+			}
+		},
+		"correlationId": { "$ref": "plan.schema.json#/$defs/id" },
+		"expectedMapPath": { "type": "string", "pattern": "^/[A-Za-z0-9_./-]+$" },
+		"gutterPixels": { "type": "integer", "minimum": 0, "maximum": 32 },
+		"operationId": { "$ref": "plan.schema.json#/$defs/id" },
+		"planId": { "$ref": "plan.schema.json#/$defs/id" },
+		"runId": { "$ref": "plan.schema.json#/$defs/id" },
+		"tilePixelSize": { "type": "integer", "minimum": 64, "maximum": 4096 },
+		"tiles": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 64,
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["key", "unitsPerPixel", "worldBounds"],
+				"properties": {
+					"key": { "$ref": "#/$defs/tileKey" },
+					"unitsPerPixel": { "type": "number", "exclusiveMinimum": 0 },
+					"worldBounds": { "$ref": "plan.schema.json#/$defs/bounds" }
+				}
+			}
+		}
+	},
+	"$defs": {
+		"tileKey": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["zoom", "row", "column"],
+			"properties": {
+				"zoom": { "type": "integer", "minimum": 0 },
+				"row": { "type": "integer", "minimum": 0 },
+				"column": { "type": "integer", "minimum": 0 }
+			}
+		}
+	}
+}

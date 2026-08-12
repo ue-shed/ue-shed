@@ -1,0 +1,39 @@
+{
+	"addressing": {
+		"children": "z+1: (2r,2c),(2r,2c+1),(2r+1,2c),(2r+1,2c+1)",
+		"parent": "z-1: (floor(r/2),floor(c/2))",
+		"path": "Z{zoom:02}/R{row:03}_C{column:03}.png"
+	},
+	"capturePolicy": {
+		"dataLayers": { "mode": "unchanged" },
+		"orientation": { "pitch": -90, "roll": 0, "yaw": 0 },
+		"render": { "lodPolicy": "natural", "profile": "full_fidelity" },
+		"z": 5000
+	},
+	"completedAt": "2026-08-12T08:00:01.000Z",
+	"contract": { "name": "ue-shed-map-tile-pyramid", "version": { "major": 1, "minor": 0 } },
+	"failures": [],
+	"grid": {
+		"orientation": { "name": "rows_max_x_to_min_x_columns_min_y_to_max_y", "version": 1 },
+		"origin": { "x": 256, "y": 0 },
+		"requestedBounds": { "minX": 0, "minY": 0, "maxX": 256, "maxY": 256 },
+		"snappedBounds": { "minX": 0, "minY": 0, "maxX": 256, "maxY": 256 }
+	},
+	"gutter": {
+		"pixels": 2,
+		"rule": "render_overdraw_then_crop",
+		"textureAddress": "clamp_to_edge"
+	},
+	"levels": [
+		{ "columns": 1, "rows": 1, "tileWorldSize": 256, "unitsPerPixel": 1, "zoom": 0 },
+		{ "columns": 3, "rows": 2, "tileWorldSize": 128, "unitsPerPixel": 0.5, "zoom": 1 }
+	],
+	"planId": "fixture-overview",
+	"project": { "id": "ue-shed-fixture", "mapPath": "/Game/Fixture/Cameras/L_CameraLoad" },
+	"provenance": { "producer": "fixture-editor", "tool": "ue-shed", "toolVersion": "0.1.0" },
+	"runId": "fixture-run",
+	"startedAt": "2026-08-12T08:00:00.000Z",
+	"state": "complete",
+	"tilePixelSize": 256,
+	"tiles": []
+}

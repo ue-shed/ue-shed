@@ -1,0 +1,26 @@
+{
+	"capture": {
+		"dataLayers": { "mode": "unchanged" },
+		"orientation": { "pitch": -90, "roll": 0, "yaw": 0 },
+		"render": { "lodPolicy": "natural", "profile": "full_fidelity" },
+		"z": 5000
+	},
+	"contract": {
+		"name": "ue-shed-map-tile-capture",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"correlationId": "fixture-correlation",
+	"expectedMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"gutterPixels": 2,
+	"operationId": "fixture-operation",
+	"planId": "fixture-overview",
+	"runId": "fixture-run",
+	"tilePixelSize": 256,
+	"tiles": [
+		{
+			"key": { "zoom": 0, "row": 0, "column": 0 },
+			"unitsPerPixel": 4,
+			"worldBounds": { "minX": 1024, "minY": -1024, "maxX": 2048, "maxY": 0 }
+		}
+	]
+}

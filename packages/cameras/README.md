@@ -45,6 +45,13 @@ This package does not depend on `@ue-shed/observatory` or `@ue-shed/observabilit
 USOT transform wire contract ships in `@ue-shed/protocol`; the Observatory host package remains a
 separate later public surface.
 
+Generic Map Capture adds an external `Map Capture Plan`, exact tile-pyramid math and selection,
+bounded orthographic editor capture, and immutable hashed manifests without changing Map Review's
+`CaptureProfile` or perspective wire contract. Its language-neutral v1 contracts live under
+`packages/protocol/contracts/cameras/map-tile/v1`. Completed runs live under
+`.ue-shed/map-capture/runs`; Unreal staging is accepted only from
+`Saved/UEShed/MapTileStaging`.
+
 ## License
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or

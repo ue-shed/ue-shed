@@ -122,7 +122,7 @@
 					"properties": {
 						"pitch": { "const": -90 },
 						"roll": { "const": 0 },
-						"yaw": { "type": "number" }
+						"yaw": { "const": 0 }
 					}
 				},
 				"render": {

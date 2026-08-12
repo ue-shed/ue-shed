@@ -29,6 +29,10 @@
 		"./review-contracts": {
 			"types": "./dist/review-ipc.d.ts",
 			"import": "./dist/review-ipc.js"
+		},
+		"./map-tiles": {
+			"types": "./dist/map-tiles.d.ts",
+			"import": "./dist/map-tiles.js"
 		}
 	},
 	"publishConfig": {

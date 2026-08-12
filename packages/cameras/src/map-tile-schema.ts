@@ -1,5 +1,11 @@
 import { Schema } from "effect";
-import { createMapTileGrid, mapTileKeyId, mapTileRelativePath } from "./map-tile-pyramid.js";
+import {
+	assertMapTileKey,
+	createMapTileGrid,
+	mapTileKeyId,
+	mapTileRelativePath,
+	mapTileWorldBounds
+} from "./map-tile-pyramid.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1_024));
 const SafeIdentifier = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/));
@@ -71,7 +77,7 @@ export const MapCapturePlan = Schema.Struct({
 		orientation: Schema.Struct({
 			pitch: Schema.Literal(-90),
 			roll: Schema.Literal(0),
-			yaw: Schema.Finite
+			yaw: Schema.Literal(0)
 		}),
 		render: MapCaptureRenderPolicy,
 		z: Schema.Finite
@@ -115,7 +121,7 @@ export const MapTileCaptureRequest = Schema.Struct({
 		orientation: Schema.Struct({
 			pitch: Schema.Literal(-90),
 			roll: Schema.Literal(0),
-			yaw: Schema.Finite
+			yaw: Schema.Literal(0)
 		}),
 		render: MapCaptureRenderPolicy,
 		z: Schema.Finite
@@ -252,7 +258,7 @@ export const MapTilePyramidManifest = Schema.Struct({
 		orientation: Schema.Struct({
 			pitch: Schema.Literal(-90),
 			roll: Schema.Literal(0),
-			yaw: Schema.Finite
+			yaw: Schema.Literal(0)
 		}),
 		render: MapCaptureRenderPolicy,
 		z: Schema.Finite
@@ -336,6 +342,11 @@ export const MapTilePyramidManifest = Schema.Struct({
 				if (identities.has(identity))
 					return { issue: "Manifest tile keys must be unique.", path: [] };
 				identities.add(identity);
+				try {
+					assertMapTileKey(expectedGrid, tile.key);
+				} catch {
+					return { issue: "Manifest tile key is outside its declared level.", path: [] };
+				}
 				if (tile.relativePath !== mapTileRelativePath(tile.key)) {
 					return {
 						issue: "Manifest tile paths must be derived from their tile key.",
@@ -351,6 +362,30 @@ export const MapTilePyramidManifest = Schema.Struct({
 						path: []
 					};
 				}
+				if (
+					JSON.stringify(tile.worldBounds) !==
+					JSON.stringify(mapTileWorldBounds(expectedGrid, tile.key))
+				) {
+					return {
+						issue: "Manifest tile bounds must be derived exactly from the stable grid.",
+						path: []
+					};
+				}
+			}
+			for (const failure of manifest.failures) {
+				const identity = mapTileKeyId(failure.key);
+				if (identities.has(identity)) {
+					return { issue: "A tile key cannot be both captured and failed.", path: [] };
+				}
+				try {
+					assertMapTileKey(expectedGrid, failure.key);
+				} catch {
+					return {
+						issue: "Manifest failure key is outside its declared level.",
+						path: []
+					};
+				}
+				identities.add(identity);
 			}
 			const expectedTileCount = manifest.levels.reduce(
 				(count, level) => count + level.rows * level.columns,

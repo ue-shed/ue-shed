@@ -52,6 +52,18 @@ bounded orthographic editor capture, and immutable hashed manifests without chan
 `.ue-shed/map-capture/runs`; Unreal staging is accepted only from
 `Saved/UEShed/MapTileStaging`.
 
+```sh
+ue-shed map-capture plan validate <project-root> <plan.json>
+ue-shed map-capture inspect <project-root> <plan.json>
+ue-shed map-capture run <project-root> <plan.json> <endpoint>
+ue-shed map-capture run <project-root> <plan.json> <endpoint> --level 2 --level 3
+ue-shed map-capture run <project-root> <plan.json> <endpoint> --tiles tile-keys.json
+ue-shed map-capture runs <project-root> <plan-id>
+```
+
+Level/tile subsets are recovery or test attempts and are quarantined as partial; only an exhaustive
+all-level run can be atomically published as complete.
+
 ## License
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or

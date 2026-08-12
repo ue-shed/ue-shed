@@ -26,12 +26,14 @@ export class MapCaptureStorageError extends Schema.TaggedErrorClass<MapCaptureSt
 	{
 		message: Schema.String,
 		operation: Schema.Literals([
+			"discard_staging",
 			"finalize",
 			"list_runs",
 			"load_plan",
 			"prepare",
 			"quarantine",
 			"store_tile",
+			"validate_project",
 			"write_manifest"
 		]),
 		path: Schema.String,
@@ -73,6 +75,36 @@ export function mapCaptureAttemptsRoot(projectRoot: string, planId?: string): st
 		: join(mapCaptureRoot(projectRoot), "attempts", planId);
 }
 
+export function validateMapCaptureProjectRoot(
+	projectRoot: string
+): Effect.Effect<string, MapCaptureStorageError> {
+	const root = resolve(projectRoot);
+	return Effect.tryPromise({
+		try: async () => {
+			const details = await stat(root);
+			if (!details.isDirectory())
+				throw new Error("Map capture requires a project directory.");
+			const descriptors = (await readdir(root, { withFileTypes: true })).filter(
+				(entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".uproject")
+			);
+			if (descriptors.length !== 1) {
+				throw new Error(
+					`Project root must contain exactly one .uproject descriptor; found ${descriptors.length}.`
+				);
+			}
+			return root;
+		},
+		catch: (cause) =>
+			storageError({
+				cause,
+				operation: "validate_project",
+				path: root,
+				recovery:
+					"Pass a readable Unreal project root containing exactly one .uproject file."
+			})
+	}).pipe(Effect.withSpan("MapCaptureRepository.validateProjectRoot"));
+}
+
 export interface MapCaptureRunSummary {
 	readonly completedAt: string;
 	readonly manifestPath: string;
@@ -82,6 +114,9 @@ export interface MapCaptureRunSummary {
 }
 
 export interface MapCaptureRepositoryShape {
+	readonly discardStaging: (args: {
+		readonly stagingRoot: string;
+	}) => Effect.Effect<void, MapCaptureStorageError>;
 	readonly finalize: (args: {
 		readonly finalRoot: string;
 		readonly manifest: MapTilePyramidManifestValue;
@@ -127,6 +162,18 @@ function storageError(args: {
 }
 
 const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
+	discardStaging: Effect.fn("MapCaptureRepository.discardStaging")(function* (args) {
+		yield* Effect.tryPromise({
+			try: () => rm(args.stagingRoot, { force: true, recursive: true }),
+			catch: (cause) =>
+				storageError({
+					cause,
+					operation: "discard_staging",
+					path: args.stagingRoot,
+					recovery: "Remove the abandoned project-local .staging directory manually."
+				})
+		});
+	}),
 	finalize: Effect.fn("MapCaptureRepository.finalize")(function* (args) {
 		yield* Effect.tryPromise({
 			try: async () => {

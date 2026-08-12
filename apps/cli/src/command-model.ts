@@ -213,6 +213,19 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	ReviewHistory: { ...Project },
 	ReviewShow: { runPath: Schema.String },
+	MapCapturePlanValidate: { planPath: Schema.String, ...Project },
+	MapCaptureInspect: { planPath: Schema.String, ...Project },
+	MapCaptureRun: {
+		correlationId: Schema.optionalKey(Schema.String),
+		endpoint: Schema.String,
+		levels: Schema.optionalKey(
+			Schema.Array(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
+		),
+		planPath: Schema.String,
+		...Project,
+		tilesPath: Schema.optionalKey(Schema.String)
+	},
+	MapCaptureRuns: { planId: Schema.String, ...Project },
 	PluginsList: { manifestPath: Schema.String },
 	PluginsVerify: { artifactPath: Schema.optionalKey(Schema.String), manifestPath: Schema.String },
 	PluginsInstall: {

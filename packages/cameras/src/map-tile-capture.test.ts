@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect } from "effect";
@@ -12,6 +12,7 @@ import {
 import {
 	MapCaptureRepositoryLive,
 	mapCaptureAttemptsRoot,
+	mapCaptureRoot,
 	mapCaptureRunsRoot
 } from "./map-tile-repository.js";
 
@@ -38,6 +39,7 @@ async function fixtureProject(levelCount: number): Promise<{
 }> {
 	const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-capture-"));
 	temporaryRoots.push(projectRoot);
+	await writeFile(join(projectRoot, "Test.uproject"), "{}\n");
 	const planPath = join(projectRoot, "map-capture-plan.json");
 	await writeFile(
 		planPath,
@@ -181,5 +183,57 @@ describe("map capture orchestration", () => {
 				"manifest.json"
 			)
 		);
+	});
+
+	it("rejects an editor artifact outside the contained staging root", async () => {
+		const project = await fixtureProject(1);
+		const port: MapTileCapturePortShape = {
+			capture: (request) =>
+				Effect.tryPromise(async () => {
+					const tile = request.tiles[0]!;
+					const stagedPath = resolve(project.projectRoot, "escaped.png");
+					await writeFile(stagedPath, fakePng(64));
+					return {
+						actualMapPath: "/Game/Test/Map",
+						contract: {
+							name: "ue-shed-map-tile-capture" as const,
+							version: { major: 1 as const, minor: 0 as const }
+						},
+						correlationId: request.correlationId,
+						dirtyState: { after: false, before: false },
+						durationMs: 1,
+						operationId: request.operationId,
+						results: [
+							{
+								bytes: 24,
+								captureDurationMs: 1,
+								height: 64,
+								key: tile.key,
+								stagedPath,
+								status: "captured" as const,
+								width: 64
+							}
+						],
+						status: "completed" as const,
+						tileCounts: { failed: 0, requested: 1, succeeded: 1 }
+					};
+				})
+		};
+		const outcome = await Effect.runPromise(runWithPort(project, port));
+		expect(outcome.published).toBe(false);
+		expect(outcome.manifest.failures[0]?.failure.code).toBe("write_failed");
+	});
+
+	it("cleans project-local host staging when transport fails", async () => {
+		const project = await fixtureProject(1);
+		const port: MapTileCapturePortShape = {
+			capture: () => Effect.fail(new Error("endpoint unavailable"))
+		};
+		await expect(Effect.runPromise(runWithPort(project, port))).rejects.toThrow(
+			"endpoint unavailable"
+		);
+		await expect(
+			stat(join(mapCaptureRoot(project.projectRoot), ".staging-test-run"))
+		).rejects.toThrow();
 	});
 });

@@ -1,0 +1,325 @@
+import * as stylex from "@stylexjs/stylex";
+import {
+	createMapTileGrid,
+	mapTileKeyId,
+	resolveAvailableMapTiles,
+	selectMapTiles,
+	type MapTileKey,
+	type MapTilePyramidManifestValue
+} from "@ue-shed/cameras/map-tiles";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+	fitMapTileViewport,
+	mapTileScreenRect,
+	mapTileViewportBounds,
+	type MapTileViewport
+} from "./map-tile-viewer-model.js";
+
+export interface MapTilePyramidViewerProps {
+	readonly manifest: MapTilePyramidManifestValue;
+
+	readonly tileUrl: (key: MapTileKey, relativePath: string) => string;
+	readonly maximumCacheEntries?: number;
+}
+
+export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
+	let surface: HTMLDivElement | undefined;
+	let drag: { x: number; y: number; centerX: number; centerY: number } | undefined;
+	const grid = createMemo(() =>
+		createMapTileGrid({
+			coarsestUnitsPerPixel: props.manifest.levels[0]!.unitsPerPixel,
+			levelCount: props.manifest.levels.length,
+			requestedBounds: props.manifest.grid.requestedBounds,
+			tilePixelSize: props.manifest.tilePixelSize
+		})
+	);
+	const artifactPaths = createMemo(
+		() =>
+			new Map(props.manifest.tiles.map((tile) => [mapTileKeyId(tile.key), tile.relativePath]))
+	);
+	const [viewport, setViewport] = createSignal<MapTileViewport>(
+		fitMapTileViewport({ bounds: props.manifest.grid.snappedBounds, height: 600, width: 900 })
+	);
+	const [currentLevel, setCurrentLevel] = createSignal<number>();
+	const [loaded, setLoaded] = createSignal<ReadonlySet<string>>(new Set());
+	const [failed, setFailed] = createSignal<ReadonlySet<string>>(new Set());
+	const cacheLimit = () => props.maximumCacheEntries ?? 256;
+
+	const selection = createMemo(() => {
+		const retainedLevel = currentLevel();
+		const selected = selectMapTiles({
+			...(retainedLevel === undefined ? {} : { currentLevel: retainedLevel }),
+			grid: grid(),
+			hysteresisLevels: 0.15,
+			maximumCacheEntries: props.maximumCacheEntries ?? 256,
+			prefetchRing: 1,
+			screenPixelsPerWorldUnit: viewport().pixelsPerWorldUnit,
+			viewportBounds: mapTileViewportBounds(viewport())
+		});
+		return selected;
+	});
+	createEffect(() => setCurrentLevel(selection().level));
+	const requests = createMemo(() => {
+		const selected = selection();
+		return [
+			...new Map(
+				[...selected.ancestors, ...selected.visible, ...selected.prefetch].map((key) => [
+					mapTileKeyId(key),
+					key
+				])
+			).values()
+		];
+	});
+	const renderTiles = createMemo(() =>
+		resolveAvailableMapTiles({
+			available: loaded(),
+			desired: selection().visible
+		}).render.toSorted((left, right) => left.zoom - right.zoom)
+	);
+	const pendingRequests = createMemo(() =>
+		requests().filter((key) => {
+			const identity = mapTileKeyId(key);
+			return !loaded().has(identity) && !failed().has(identity);
+		})
+	);
+	const loadingCount = () => pendingRequests().length;
+
+	function resize() {
+		if (!surface) return;
+		const bounds = surface.getBoundingClientRect();
+		setViewport((current) => ({ ...current, height: bounds.height, width: bounds.width }));
+	}
+
+	onMount(() => {
+		resize();
+		const observer = new ResizeObserver(resize);
+		if (surface) observer.observe(surface);
+		onCleanup(() => observer.disconnect());
+	});
+
+	function markLoaded(key: MapTileKey) {
+		setLoaded((current) => {
+			const identity = mapTileKeyId(key);
+			return new Set(
+				[...Array.from(current).filter((item) => item !== identity), identity].slice(
+					-cacheLimit()
+				)
+			);
+		});
+		setFailed((current) => {
+			const next = new Set(current);
+			next.delete(mapTileKeyId(key));
+			return next;
+		});
+	}
+
+	function markFailed(key: MapTileKey) {
+		setFailed((current) => new Set([...current, mapTileKeyId(key)].slice(-cacheLimit())));
+	}
+
+	function pan(event: PointerEvent) {
+		if (!drag) return;
+		const pixelsPerWorldUnit = viewport().pixelsPerWorldUnit;
+		setViewport((current) => ({
+			...current,
+			centerX: drag!.centerX + (event.clientY - drag!.y) / pixelsPerWorldUnit,
+			centerY: drag!.centerY - (event.clientX - drag!.x) / pixelsPerWorldUnit
+		}));
+	}
+
+	function zoom(event: WheelEvent) {
+		event.preventDefault();
+		if (!surface) return;
+		const rect = surface.getBoundingClientRect();
+		const current = viewport();
+		const pointerX =
+			current.centerX -
+			(event.clientY - rect.top - rect.height / 2) / current.pixelsPerWorldUnit;
+		const pointerY =
+			current.centerY +
+			(event.clientX - rect.left - rect.width / 2) / current.pixelsPerWorldUnit;
+		const nextScale = Math.max(
+			1e-6,
+			current.pixelsPerWorldUnit * Math.exp(-event.deltaY * 0.0015)
+		);
+		setViewport({
+			...current,
+			centerX: pointerX + (event.clientY - rect.top - rect.height / 2) / nextScale,
+			centerY: pointerY - (event.clientX - rect.left - rect.width / 2) / nextScale,
+			pixelsPerWorldUnit: nextScale
+		});
+	}
+
+	return (
+		<section {...stylex.props(styles.frame)} aria-label="Map tile pyramid viewer">
+			<header {...stylex.props(styles.header)}>
+				<div>
+					<p {...stylex.props(styles.eyebrow)}>ORTHOGRAPHIC CARTOGRAPHY / RUN</p>
+					<h2 {...stylex.props(styles.title)}>{props.manifest.planId}</h2>
+				</div>
+				<div {...stylex.props(styles.readout)}>
+					<span>Z{String(selection().level).padStart(2, "0")}</span>
+					<span>{selection().visible.length} VISIBLE</span>
+					<span>{loadingCount()} QUEUED</span>
+					<span>{failed().size} ERRORS</span>
+				</div>
+			</header>
+			<div
+				ref={surface}
+				{...stylex.props(styles.surface)}
+				onPointerDown={(event) => {
+					event.currentTarget.setPointerCapture(event.pointerId);
+					const current = viewport();
+					drag = {
+						centerX: current.centerX,
+						centerY: current.centerY,
+						x: event.clientX,
+						y: event.clientY
+					};
+				}}
+				onPointerMove={pan}
+				onPointerUp={() => (drag = undefined)}
+				onWheel={zoom}
+			>
+				<div {...stylex.props(styles.grid)} />
+				<For each={renderTiles()}>
+					{(key) => {
+						const rect = () =>
+							mapTileScreenRect({ grid: grid(), key, viewport: viewport() });
+						const path = () => artifactPaths().get(mapTileKeyId(key));
+						return (
+							<Show when={path()}>
+								<img
+									{...stylex.props(styles.tile)}
+									alt={`Map tile z${key.zoom} row ${key.row} column ${key.column}`}
+									draggable={false}
+									src={props.tileUrl(key, path()!)}
+									style={{
+										height: `${rect().height}px`,
+										left: `${rect().left}px`,
+										top: `${rect().top}px`,
+										width: `${rect().width}px`,
+										"z-index": key.zoom + 1
+									}}
+								/>
+							</Show>
+						);
+					}}
+				</For>
+				<div {...stylex.props(styles.preload)} aria-hidden="true">
+					<For each={pendingRequests()}>
+						{(key) => {
+							const path = artifactPaths().get(mapTileKeyId(key));
+							return path ? (
+								<img
+									alt=""
+									src={props.tileUrl(key, path)}
+									onLoad={() => markLoaded(key)}
+									onError={() => markFailed(key)}
+								/>
+							) : null;
+						}}
+					</For>
+				</div>
+				<Show when={renderTiles().length === 0}>
+					<div {...stylex.props(styles.loading)}>SEEKING COARSE COVERAGE…</div>
+				</Show>
+				<div {...stylex.props(styles.axisNorth)}>+X / NORTH</div>
+				<div {...stylex.props(styles.axisEast)}>+Y / EAST</div>
+			</div>
+			<footer {...stylex.props(styles.footer)}>
+				<span>WUP {grid().levels[selection().level]!.unitsPerPixel.toPrecision(5)}</span>
+				<span>CACHE ≤ {selection().recommendedCacheEntries}</span>
+				<span>DRAG TO PAN · WHEEL TO ZOOM</span>
+			</footer>
+		</section>
+	);
+}
+
+const styles = stylex.create({
+	frame: {
+		display: "grid",
+		gridTemplateRows: "auto minmax(320px, 1fr) auto",
+		minHeight: 520,
+		backgroundColor: "#0a0f0f",
+		border: "1px solid #324143",
+		color: "#d5e1dd",
+		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace',
+		overflow: "hidden"
+	},
+	header: {
+		display: "flex",
+		alignItems: "end",
+		justifyContent: "space-between",
+		gap: 24,
+		padding: "14px 18px 12px",
+		borderBottom: "1px solid #324143",
+		backgroundColor: "#101819"
+	},
+	eyebrow: { margin: 0, color: "#e0a94f", fontSize: 8, letterSpacing: ".18em" },
+	title: {
+		margin: "4px 0 0",
+		fontFamily: '"Bodoni Moda", Georgia, serif',
+		fontSize: 22,
+		fontWeight: 400,
+		letterSpacing: ".02em"
+	},
+	readout: {
+		display: "flex",
+		flexWrap: "wrap",
+		justifyContent: "end",
+		gap: "6px 14px",
+		color: "#72d2ca",
+		fontSize: 8,
+		letterSpacing: ".1em"
+	},
+	surface: {
+		position: "relative",
+		overflow: "hidden",
+		cursor: "grab",
+		backgroundColor: "#111718",
+		userSelect: "none",
+		touchAction: "none"
+	},
+	grid: {
+		position: "absolute",
+		inset: 0,
+		backgroundImage:
+			"linear-gradient(#2c3b3d55 1px, transparent 1px), linear-gradient(90deg, #2c3b3d55 1px, transparent 1px)",
+		backgroundSize: "32px 32px",
+		boxShadow: "inset 0 0 120px #000b"
+	},
+	tile: {
+		position: "absolute",
+		display: "block",
+		objectFit: "fill",
+		pointerEvents: "none",
+		imageRendering: "auto"
+	},
+	preload: { position: "absolute", width: 0, height: 0, overflow: "hidden", opacity: 0 },
+	loading: {
+		position: "absolute",
+		left: "50%",
+		top: "50%",
+		transform: "translate(-50%, -50%)",
+		padding: "10px 14px",
+		border: "1px solid #607172",
+		backgroundColor: "#0a0f0fe6",
+		color: "#e0a94f",
+		fontSize: 9,
+		letterSpacing: ".12em"
+	},
+	axisNorth: { position: "absolute", top: 12, left: 14, color: "#72d2ca", fontSize: 8 },
+	axisEast: { position: "absolute", right: 14, bottom: 12, color: "#72d2ca", fontSize: 8 },
+	footer: {
+		display: "flex",
+		justifyContent: "space-between",
+		gap: 16,
+		padding: "8px 18px",
+		borderTop: "1px solid #324143",
+		backgroundColor: "#101819",
+		color: "#7f9290",
+		fontSize: 8,
+		letterSpacing: ".08em"
+	}
+});

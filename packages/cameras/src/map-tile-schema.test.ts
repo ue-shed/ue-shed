@@ -51,4 +51,12 @@ describe("map tile contracts", () => {
 			);
 		}
 	});
+
+	it("rejects tile artifacts that drift away from their grid address", () => {
+		const input = structuredClone(fixture("manifest-valid.json")) as {
+			tiles: Array<{ worldBounds: { minX: number } }>;
+		};
+		input.tiles[0]!.worldBounds.minX += 1;
+		expect(Effect.runSyncExit(decodeMapTilePyramidManifest(input))._tag).toBe("Failure");
+	});
 });

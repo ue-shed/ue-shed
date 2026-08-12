@@ -152,4 +152,15 @@ describe("map tile selection", () => {
 			render: []
 		});
 	});
+
+	it("caps cache recommendations without changing spatial selection", () => {
+		const selection = selectMapTiles({
+			grid,
+			maximumCacheEntries: 2,
+			screenPixelsPerWorldUnit: 1,
+			viewportBounds: grid.snappedBounds
+		});
+		expect(selection.visible.length).toBeGreaterThan(2);
+		expect(selection.recommendedCacheEntries).toBe(2);
+	});
 });

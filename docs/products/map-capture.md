@@ -61,12 +61,18 @@ The pure selection model:
 - recommends a bounded cache size and leaves eviction implementation to the host;
 - aligns every level from manifest bounds, preventing drift or spatial swimming.
 
-The Workbench `#/map-capture` route is the reference host for choosing a portable plan, searching
-the selected project's saved-map inventory to override its target, inspecting its grid, editing fog
-and LOD policy, opening the target map, running capture, and exploring the published pyramid. The
-override is session-local and does not rewrite the portable plan. Its host-neutral Solid component
-owns no filesystem, editor-control, capture, storage, or selection policy; those remain public
-services usable by libraries and the CLI.
+The Workbench `#/map-capture` route is the reference host for creating or opening a portable plan,
+searching the selected project's saved-map inventory, and authoring the executable v1 fields:
+identity, target map, requested world bounds, tile and gutter pixels, pyramid levels, capture Z,
+render profile, fog, and LOD policy. The route continuously validates the draft and recomputes its
+deterministic grid before enabling Save, map control, or capture.
+
+Save writes new plans atomically beneath `.ue-shed/map-capture/plans` by default. Save As can place a
+portable JSON plan elsewhere, and an opened plan saves back to its chosen path. The host-neutral
+Solid component owns no filesystem, editor-control, capture, storage, or selection policy; those
+remain public services usable by libraries and the CLI. Contract fields that the current Unreal
+capability rejects—explicit Data Layers and forced fixed-LOD-zero—remain visible as validation
+errors instead of being silently applied.
 
 ## Project adapter and runtime seam
 

@@ -32,6 +32,7 @@ export class MapCaptureStorageError extends Schema.TaggedErrorClass<MapCaptureSt
 			"load_plan",
 			"prepare",
 			"quarantine",
+			"save_plan",
 			"store_tile",
 			"validate_project",
 			"write_manifest"
@@ -66,6 +67,10 @@ function writeJsonAtomically(path: string, value: unknown): Effect.Effect<void, 
 
 export function mapCaptureRoot(projectRoot: string): string {
 	return resolve(projectRoot, DEFAULT_MAP_CAPTURE_ROOT);
+}
+
+export function mapCapturePlansRoot(projectRoot: string): string {
+	return join(mapCaptureRoot(projectRoot), "plans");
 }
 
 export function mapCaptureRunsRoot(projectRoot: string, planId?: string): string {
@@ -132,6 +137,10 @@ export interface MapCaptureRepositoryShape {
 		readonly projectRoot: string;
 	}) => Effect.Effect<ReadonlyArray<MapCaptureRunSummary>, MapCaptureStorageError>;
 	readonly loadPlan: (path: string) => Effect.Effect<MapCapturePlan, MapCaptureStorageError>;
+	readonly savePlan: (
+		path: string,
+		plan: MapCapturePlan
+	) => Effect.Effect<void, MapCaptureStorageError>;
 	readonly prepare: (args: {
 		readonly root: string;
 		readonly stagingRoot: string;
@@ -263,6 +272,18 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
 					operation: "load_plan",
 					path,
 					recovery: "Validate the Map Capture Plan against contract v1.0."
+				})
+			)
+		);
+	}),
+	savePlan: Effect.fn("MapCaptureRepository.savePlan")(function* (path, plan) {
+		yield* writeJsonAtomically(path, plan).pipe(
+			Effect.mapError((cause) =>
+				storageError({
+					cause,
+					operation: "save_plan",
+					path,
+					recovery: "Check the plan destination permissions and retry Save or Save As."
 				})
 			)
 		);

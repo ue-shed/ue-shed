@@ -56,7 +56,9 @@ declare global {
 		readonly ueShed: {
 			readonly mapCapture: {
 				readonly choosePlan: () => Promise<unknown>;
+				readonly newPlan: () => Promise<unknown>;
 				readonly openMap: (plan: unknown) => Promise<unknown>;
+				readonly savePlan: (intent: unknown) => Promise<unknown>;
 				readonly capture: (intent: unknown) => Promise<unknown>;
 			};
 			readonly configExplorer: {

@@ -1,8 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import {
-	MapCapturePlan,
-	type MapCapturePlan as MapCapturePlanValue
-} from "@ue-shed/cameras/map-tiles";
+import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
 import { SavedMapPicker, createEffectAction, type SavedMapPickerOption } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
@@ -12,6 +9,12 @@ import type {
 	MapCaptureExecuteResult,
 	MapCaptureSelectionResult
 } from "./map-capture-client.js";
+import {
+	mapCaptureDraftGrid,
+	mapCapturePlanDraft,
+	validateMapCapturePlanDraft,
+	type MapCapturePlanDraft
+} from "./map-capture-plan-draft.js";
 import { MapTilePyramidViewer } from "./map-tile-viewer.js";
 
 type ReadySelection = Extract<MapCaptureSelectionResult, { readonly status: "ready" }>;
@@ -21,102 +24,125 @@ function causeMessage(cause: Cause.Cause<unknown>): string {
 	return Cause.pretty(cause);
 }
 
-function editorMapPath(savedMapPath: string): string | undefined {
-	const normalized = savedMapPath.replaceAll("\\", "/");
-	const lower = normalized.toLocaleLowerCase();
-	const contentMarker = lower.lastIndexOf("/content/");
-	const contentStart = lower.startsWith("content/")
-		? "content/".length
-		: contentMarker < 0
-			? undefined
-			: contentMarker + "/content/".length;
-	if (contentStart === undefined || !lower.endsWith(".umap")) return undefined;
-	const relativePackage = normalized.slice(contentStart, -".umap".length);
-	const packagePath = `/Game/${relativePackage}`;
-	return /^\/Game\/[A-Za-z0-9_./-]+$/.test(packagePath) ? packagePath : undefined;
-}
-
 export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape }) {
+	const newAction = createEffectAction();
 	const chooseAction = createEffectAction();
+	const saveAction = createEffectAction();
 	const openAction = createEffectAction();
 	const captureAction = createEffectAction();
 	const [selection, setSelection] = createSignal<ReadySelection>();
-	const [plan, setPlan] = createSignal<MapCapturePlanValue>();
+	const [draft, setDraft] = createSignal<MapCapturePlanDraft>();
+	const [savedPlanJson, setSavedPlanJson] = createSignal<string>();
 	const [capture, setCapture] = createSignal<CompletedCapture>();
 	const [notice, setNotice] = createSignal<{
 		readonly tone: "error" | "info" | "success";
 		readonly text: string;
-	}>({ tone: "info", text: "Choose a versioned plan to begin." });
+	}>({ tone: "info", text: "Create a plan or open a portable plan file to begin." });
+	const validation = createMemo(() => {
+		const current = draft();
+		return current === undefined ? undefined : validateMapCapturePlanDraft(current);
+	});
+	const plan = createMemo(() => {
+		const result = validation();
+		return result?.status === "valid" ? result.plan : undefined;
+	});
+	const validationErrors = createMemo(() => {
+		const result = validation();
+		return result?.status === "invalid" ? result.errors : [];
+	});
+	const grid = createMemo(() => {
+		const result = validation();
+		return result === undefined ? undefined : mapCaptureDraftGrid(result);
+	});
+	const isDirty = createMemo(() => {
+		const current = draft();
+		return current !== undefined && JSON.stringify(current) !== savedPlanJson();
+	});
 	const previewUrls = createMemo(
 		() =>
 			new Map(capture()?.previewTiles.map((tile) => [tile.relativePath, tile.dataUrl]) ?? [])
 	);
 	const mapOptions = createMemo<ReadonlyArray<SavedMapPickerOption>>(() =>
 		(selection()?.maps ?? []).flatMap((map) => {
-			const mapPath = editorMapPath(map.mapPath);
+			const mapPath = savedMapPathToGameMapPath(map.mapPath);
 			return mapPath === undefined ? [] : [{ label: map.label, mapPath }];
 		})
 	);
-	const validTargetMap = createMemo(() =>
-		/^\/Game\/[A-Za-z0-9_./-]+$/.test(plan()?.project.mapPath ?? "")
-	);
+
+	function acceptSelection(result: MapCaptureSelectionResult) {
+		if (result.status === "ready") {
+			setSelection(result);
+			setDraft(mapCapturePlanDraft(result.plan));
+			setSavedPlanJson(result.source === "opened" ? JSON.stringify(result.plan) : undefined);
+			setCapture(undefined);
+			setNotice({
+				tone: "success",
+				text:
+					result.source === "new"
+						? "New Map Capture Plan ready to author."
+						: `${result.tileCount.toLocaleString()} deterministic tiles loaded.`
+			});
+		} else if (result.status === "failed") {
+			setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
+		}
+	}
+
+	function newPlan() {
+		setNotice({ tone: "info", text: "Creating a plan from the selected project…" });
+		newAction.run(props.client.newPlan(), {
+			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
+			onSuccess: acceptSelection
+		});
+	}
 
 	function choosePlan() {
 		setNotice({ tone: "info", text: "Reading plan and completed run evidence…" });
 		chooseAction.run(props.client.choosePlan(), {
 			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
-			onSuccess: (result) => {
-				if (result.status === "ready") {
-					setSelection(result);
-					setPlan(result.plan);
-					setCapture(undefined);
-					setNotice({
-						tone: "success",
-						text: `${result.tileCount.toLocaleString()} deterministic tiles ready to capture.`
-					});
-				} else if (result.status === "failed") {
-					setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
-				}
-			}
+			onSuccess: acceptSelection
 		});
+	}
+
+	function updateDraft(change: (current: MapCapturePlanDraft) => MapCapturePlanDraft) {
+		setDraft((current) => (current === undefined ? current : change(current)));
+		setCapture(undefined);
+		setNotice({ tone: "info", text: "Plan changed. Validate and save before sharing it." });
 	}
 
 	function updateRender(
 		change: (
-			render: MapCapturePlanValue["capture"]["render"]
-		) => MapCapturePlanValue["capture"]["render"]
+			render: MapCapturePlanDraft["capture"]["render"]
+		) => MapCapturePlanDraft["capture"]["render"]
 	) {
-		setPlan((current) =>
-			current === undefined
-				? current
-				: MapCapturePlan.make({
-						...current,
-						capture: { ...current.capture, render: change(current.capture.render) }
-					})
-		);
+		updateDraft((current) => ({
+			...current,
+			capture: { ...current.capture, render: change(current.capture.render) }
+		}));
 	}
 
-	function updateMapPath(mapPath: string) {
-		setPlan((current) =>
-			current === undefined
-				? current
-				: MapCapturePlan.make({
-						...current,
-						project: { ...current.project, mapPath }
-					})
-		);
-		setCapture(undefined);
-		setNotice(
-			/^\/Game\/[A-Za-z0-9_./-]+$/.test(mapPath)
-				? {
-						tone: "info",
-						text: "Target map changed for this capture. The source plan file remains unchanged."
-					}
-				: {
-						tone: "error",
-						text: "Enter an Unreal map package path beginning with /Game/."
-					}
-		);
+	function updateLevelCount(count: number) {
+		updateDraft((current) => {
+			const render = current.capture.render;
+			return {
+				...current,
+				capture: {
+					...current.capture,
+					render:
+						render.lodPolicy === "per_level_distance_scale"
+							? {
+									...render,
+									lodDistanceScaleByZoom: Array.from(
+										{
+											length: Number.isInteger(count) && count > 0 ? count : 0
+										},
+										(_, zoom) => render.lodDistanceScaleByZoom?.[zoom] ?? 1
+									)
+								}
+							: render
+				},
+				levels: { ...current.levels, count }
+			};
+		});
 	}
 
 	function setLodPolicy(mode: "natural" | "per_level_distance_scale") {
@@ -129,14 +155,13 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 				...render,
 				lodDistanceScaleByZoom:
 					render.lodDistanceScaleByZoom ??
-					Array.from({ length: plan()?.levels.count ?? 1 }, () => 1),
+					Array.from({ length: draft()?.levels.count ?? 1 }, () => 1),
 				lodPolicy: "per_level_distance_scale"
 			};
 		});
 	}
 
 	function setLodScale(zoom: number, value: number) {
-		if (!Number.isFinite(value) || value < 0.1 || value > 100) return;
 		updateRender((render) => {
 			const scales = [...(render.lodDistanceScaleByZoom ?? [])];
 			scales[zoom] = value;
@@ -144,9 +169,50 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		});
 	}
 
+	function savePlan(saveAs: boolean) {
+		const current = plan();
+		if (current === undefined) return;
+		const currentPlanPath = selection()?.planPath;
+		setNotice({ tone: "info", text: saveAs ? "Choosing a plan destination…" : "Saving plan…" });
+		saveAction.run(
+			props.client.savePlan({
+				plan: current,
+				...(currentPlanPath === undefined ? {} : { planPath: currentPlanPath }),
+				saveAs
+			}),
+			{
+				onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
+				onSuccess: (result) => {
+					if (result.status === "failed") {
+						setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
+						return;
+					}
+					if (result.status === "cancelled") {
+						setNotice({
+							tone: "info",
+							text: "Save cancelled; the draft is still in memory."
+						});
+						return;
+					}
+					setDraft(mapCapturePlanDraft(result.plan));
+					setSavedPlanJson(JSON.stringify(result.plan));
+					setSelection((currentSelection) =>
+						currentSelection === undefined
+							? currentSelection
+							: { ...currentSelection, plan: result.plan, planPath: result.planPath }
+					);
+					setNotice({
+						tone: "success",
+						text: `Saved portable plan to ${result.planPath}.`
+					});
+				}
+			}
+		);
+	}
+
 	function openMap() {
 		const current = plan();
-		if (current === undefined || !validTargetMap()) return;
+		if (current === undefined) return;
 		setNotice({ tone: "info", text: `Asking Unreal to open ${current.project.mapPath}…` });
 		openAction.run(props.client.openMap(current), {
 			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
@@ -155,14 +221,16 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 					setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
 					return;
 				}
-				const response = result.response;
 				setNotice(
-					response.outcome === "rejected"
-						? { tone: "error", text: `${response.message} ${response.recovery}` }
+					result.response.outcome === "rejected"
+						? {
+								tone: "error",
+								text: `${result.response.message} ${result.response.recovery}`
+							}
 						: {
 								tone: "success",
 								text:
-									response.outcome === "opened"
+									result.response.outcome === "opened"
 										? "Target map opened without player input."
 										: "The target map was already open."
 							}
@@ -173,7 +241,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 
 	function runCapture(openMapFirst: boolean) {
 		const current = plan();
-		if (current === undefined || !validTargetMap()) return;
+		if (current === undefined) return;
 		setNotice({
 			tone: "info",
 			text: openMapFirst
@@ -205,34 +273,77 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		<main {...stylex.props(styles.page)}>
 			<header {...stylex.props(styles.hero)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>MAP CAPTURE / ORTHOGRAPHIC PYRAMID</p>
+					<p {...stylex.props(styles.eyebrow)}>MAP CAPTURE / PLAN AUTHORING</p>
 					<h1 {...stylex.props(styles.title)}>Build the world from above.</h1>
 				</div>
 				<p {...stylex.props(styles.intro)}>
-					Transient editor capture. Stable tile geometry. No actors saved into the map.
+					Author a portable plan. Preview deterministic geometry. Capture without saving
+					actors.
 				</p>
-				<button type="button" onClick={choosePlan} {...stylex.props(styles.primaryButton)}>
-					CHOOSE PLAN
-				</button>
+				<div {...stylex.props(styles.heroActions)}>
+					<button type="button" onClick={newPlan} {...stylex.props(styles.primaryButton)}>
+						NEW PLAN
+					</button>
+					<button
+						type="button"
+						onClick={choosePlan}
+						{...stylex.props(styles.headerButton)}
+					>
+						OPEN PLAN
+					</button>
+				</div>
 			</header>
 
 			<div {...stylex.props(styles.layout)}>
 				<aside {...stylex.props(styles.controls)}>
 					<Show
-						when={plan()}
+						when={draft()}
 						fallback={
 							<div {...stylex.props(styles.emptyPanel)}>
 								<span>01</span>
-								<strong>SELECT A PLAN</strong>
-								<p>The plan stays portable and remains the capture authority.</p>
+								<strong>CREATE OR OPEN A PLAN</strong>
+								<p>
+									New plans begin from the selected project and its first saved
+									map.
+								</p>
 							</div>
 						}
 					>
 						{(current) => (
 							<>
 								<section {...stylex.props(styles.panel)}>
-									<p {...stylex.props(styles.sectionLabel)}>TARGET</p>
-									<h2 {...stylex.props(styles.planName)}>{current().id}</h2>
+									<div {...stylex.props(styles.sectionHeading)}>
+										<p {...stylex.props(styles.sectionLabel)}>
+											IDENTITY + TARGET
+										</p>
+										<span
+											{...stylex.props(
+												styles.dirtyFlag,
+												isDirty() && styles.dirty
+											)}
+										>
+											{isDirty() ? "UNSAVED" : "SAVED"}
+										</span>
+									</div>
+									<div {...stylex.props(styles.fieldGrid)}>
+										<TextField
+											label="PLAN ID"
+											value={current().id}
+											onInput={(id) =>
+												updateDraft((value) => ({ ...value, id }))
+											}
+										/>
+										<TextField
+											label="PROJECT ID"
+											value={current().project.id}
+											onInput={(id) =>
+												updateDraft((value) => ({
+													...value,
+													project: { ...value.project, id }
+												}))
+											}
+										/>
+									</div>
 									<SavedMapPicker
 										allowCustomPath
 										ariaLabel="Map capture target map"
@@ -240,43 +351,173 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 										label="TARGET MAP"
 										maps={mapOptions()}
 										mapPath={current().project.mapPath}
-										onMapPathChange={updateMapPath}
+										onMapPathChange={(mapPath) =>
+											updateDraft((value) => ({
+												...value,
+												project: { ...value.project, mapPath }
+											}))
+										}
 									/>
-									<code {...stylex.props(styles.mapPath)}>
-										{current().project.mapPath}
-									</code>
-									<div {...stylex.props(styles.metrics)}>
-										<Metric
-											label="TILES"
-											value={selection()?.tileCount ?? "—"}
+								</section>
+
+								<section {...stylex.props(styles.panel)}>
+									<p {...stylex.props(styles.sectionLabel)}>WORLD GRID</p>
+									<div {...stylex.props(styles.boundsGrid)}>
+										<NumberField
+											label="MIN X"
+											value={current().requestedBounds.minX}
+											onInput={(minX) =>
+												updateDraft((value) => ({
+													...value,
+													requestedBounds: {
+														...value.requestedBounds,
+														minX
+													}
+												}))
+											}
 										/>
+										<NumberField
+											label="MAX X"
+											value={current().requestedBounds.maxX}
+											onInput={(maxX) =>
+												updateDraft((value) => ({
+													...value,
+													requestedBounds: {
+														...value.requestedBounds,
+														maxX
+													}
+												}))
+											}
+										/>
+										<NumberField
+											label="MIN Y"
+											value={current().requestedBounds.minY}
+											onInput={(minY) =>
+												updateDraft((value) => ({
+													...value,
+													requestedBounds: {
+														...value.requestedBounds,
+														minY
+													}
+												}))
+											}
+										/>
+										<NumberField
+											label="MAX Y"
+											value={current().requestedBounds.maxY}
+											onInput={(maxY) =>
+												updateDraft((value) => ({
+													...value,
+													requestedBounds: {
+														...value.requestedBounds,
+														maxY
+													}
+												}))
+											}
+										/>
+									</div>
+									<div {...stylex.props(styles.metrics)}>
+										<Metric label="TILES" value={grid()?.tileCount ?? "—"} />
 										<Metric label="LEVELS" value={current().levels.count} />
 										<Metric label="PIXELS" value={current().tilePixelSize} />
+									</div>
+									<div {...stylex.props(styles.fieldGrid)}>
+										<NumberField
+											label="TILE PIXELS"
+											min={64}
+											max={4096}
+											step={1}
+											value={current().tilePixelSize}
+											onInput={(tilePixelSize) =>
+												updateDraft((value) => ({
+													...value,
+													tilePixelSize
+												}))
+											}
+										/>
+										<NumberField
+											label="GUTTER PX"
+											min={0}
+											max={32}
+											step={1}
+											value={current().gutterPixels}
+											onInput={(gutterPixels) =>
+												updateDraft((value) => ({ ...value, gutterPixels }))
+											}
+										/>
+										<NumberField
+											label="LEVEL COUNT"
+											min={1}
+											max={24}
+											step={1}
+											value={current().levels.count}
+											onInput={updateLevelCount}
+										/>
+										<NumberField
+											label="COARSEST UU/PX"
+											min={0.01}
+											step={0.1}
+											value={current().levels.coarsestUnitsPerPixel}
+											onInput={(coarsestUnitsPerPixel) =>
+												updateDraft((value) => ({
+													...value,
+													levels: {
+														...value.levels,
+														coarsestUnitsPerPixel
+													}
+												}))
+											}
+										/>
 									</div>
 								</section>
 
 								<section {...stylex.props(styles.panel)}>
-									<p {...stylex.props(styles.sectionLabel)}>ATMOSPHERE</p>
+									<div {...stylex.props(styles.sectionHeading)}>
+										<p {...stylex.props(styles.sectionLabel)}>CAPTURE</p>
+										<select
+											aria-label="Render profile"
+											value={current().capture.render.profile}
+											onChange={(event) =>
+												updateRender((render) => ({
+													...render,
+													profile: event.currentTarget.value as
+														| "full_fidelity"
+														| "observation"
+												}))
+											}
+											{...stylex.props(styles.select)}
+										>
+											<option value="full_fidelity">FULL FIDELITY</option>
+											<option value="observation">OBSERVATION</option>
+										</select>
+									</div>
+									<NumberField
+										label="CAPTURE Z"
+										value={current().capture.z}
+										onInput={(z) =>
+											updateDraft((value) => ({
+												...value,
+												capture: { ...value.capture, z }
+											}))
+										}
+									/>
 									<Toggle
 										checked={current().capture.render.effects.fog}
 										label="Fog"
-										onChange={(checked) =>
+										onChange={(fog) =>
 											updateRender((render) => ({
 												...render,
-												effects: { ...render.effects, fog: checked }
+												effects: { ...render.effects, fog }
 											}))
 										}
 									/>
 									<Toggle
 										checked={current().capture.render.effects.volumetricFog}
 										label="Volumetric fog"
-										onChange={(checked) =>
+										onChange={(volumetricFog) =>
 											updateRender((render) => ({
 												...render,
-												effects: {
-													...render.effects,
-													volumetricFog: checked
-												}
+												effects: { ...render.effects, volumetricFog }
 											}))
 										}
 									/>
@@ -315,46 +556,66 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 										}
 									>
 										<div {...stylex.props(styles.levels)}>
-											<For each={selection()?.grid.levels ?? []}>
+											<For each={grid()?.grid.levels ?? []}>
 												{(level) => (
-													<label {...stylex.props(styles.levelRow)}>
-														<span>Z{level.zoom}</span>
-														<small>{level.unitsPerPixel} uu/px</small>
-														<input
-															type="number"
-															min="0.1"
-															max="100"
-															step="0.1"
-															value={
-																current().capture.render
-																	.lodDistanceScaleByZoom?.[
-																	level.zoom
-																] ?? 1
-															}
-															onInput={(event) =>
-																setLodScale(
-																	level.zoom,
-																	event.currentTarget
-																		.valueAsNumber
-																)
-															}
-															{...stylex.props(styles.numberInput)}
-														/>
-													</label>
+													<NumberField
+														label={`Z${level.zoom} · ${level.unitsPerPixel} UU/PX`}
+														min={0.1}
+														max={100}
+														step={0.1}
+														value={
+															current().capture.render
+																.lodDistanceScaleByZoom?.[
+																level.zoom
+															] ?? 1
+														}
+														onInput={(value) =>
+															setLodScale(level.zoom, value)
+														}
+													/>
 												)}
 											</For>
 										</div>
 									</Show>
 									<p {...stylex.props(styles.hint)}>
-										1 = natural distance · larger values choose coarser LODs.
+										Orientation, PNG output, immutable publication, and
+										unchanged data layers are fixed v1 invariants in this
+										editor.
 									</p>
 								</section>
 
+								<Show when={validation()?.status === "invalid"}>
+									<section {...stylex.props(styles.validationPanel)}>
+										<strong>PLAN NEEDS ATTENTION</strong>
+										<For each={validationErrors()}>
+											{(error) => <p>{error}</p>}
+										</For>
+									</section>
+								</Show>
+
+								<div {...stylex.props(styles.saveActions)}>
+									<button
+										type="button"
+										disabled={plan() === undefined || !isDirty()}
+										onClick={() => savePlan(false)}
+										{...stylex.props(styles.secondaryButton)}
+									>
+										SAVE
+									</button>
+									<button
+										type="button"
+										disabled={plan() === undefined}
+										onClick={() => savePlan(true)}
+										{...stylex.props(styles.secondaryButton)}
+									>
+										SAVE AS
+									</button>
+								</div>
 								<div {...stylex.props(styles.actions)}>
 									<button
 										type="button"
 										onClick={openMap}
-										disabled={!validTargetMap()}
+										disabled={plan() === undefined}
 										{...stylex.props(styles.secondaryButton)}
 									>
 										OPEN TARGET MAP
@@ -362,7 +623,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 									<button
 										type="button"
 										onClick={() => runCapture(true)}
-										disabled={!validTargetMap()}
+										disabled={plan() === undefined}
 										{...stylex.props(styles.captureButton)}
 									>
 										OPEN + CAPTURE
@@ -381,12 +642,12 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 								<div {...stylex.props(styles.north)}>+X / NORTH</div>
 								<div {...stylex.props(styles.reticle)} />
 								<div {...stylex.props(styles.gridReadout)}>
-									<span>SNAPPED GRID</span>
+									<span>LIVE PLAN GEOMETRY</span>
 									<strong>
-										{selection()?.tileCount.toLocaleString() ?? "—"} TILES
+										{grid()?.tileCount.toLocaleString() ?? "—"} TILES
 									</strong>
 									<small>
-										Z0 → Z{Math.max(0, (plan()?.levels.count ?? 1) - 1)}
+										Z0 → Z{Math.max(0, (draft()?.levels.count ?? 1) - 1)}
 									</small>
 								</div>
 							</div>
@@ -404,11 +665,53 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 					<footer {...stylex.props(styles.status, styles[notice().tone])}>
 						<span>{notice().tone.toUpperCase()}</span>
 						<p>{notice().text}</p>
-						<code>{selection()?.planPath ?? "ue-shed-map-capture-plan 1.0"}</code>
+						<code>{selection()?.planPath ?? "NEW / NOT YET SAVED"}</code>
 					</footer>
 				</section>
 			</div>
 		</main>
+	);
+}
+
+function TextField(props: {
+	readonly label: string;
+	readonly value: string;
+	readonly onInput: (value: string) => void;
+}) {
+	return (
+		<label {...stylex.props(styles.field)}>
+			<span>{props.label}</span>
+			<input
+				type="text"
+				value={props.value}
+				onInput={(event) => props.onInput(event.currentTarget.value)}
+				{...stylex.props(styles.input)}
+			/>
+		</label>
+	);
+}
+
+function NumberField(props: {
+	readonly label: string;
+	readonly max?: number;
+	readonly min?: number;
+	readonly step?: number;
+	readonly value: number;
+	readonly onInput: (value: number) => void;
+}) {
+	return (
+		<label {...stylex.props(styles.field)}>
+			<span>{props.label}</span>
+			<input
+				type="number"
+				max={props.max}
+				min={props.min}
+				step={props.step}
+				value={props.value}
+				onInput={(event) => props.onInput(event.currentTarget.valueAsNumber)}
+				{...stylex.props(styles.input)}
+			/>
+		</label>
 	);
 }
 
@@ -454,12 +757,15 @@ const styles = stylex.create({
 	eyebrow: { margin: 0, color: "#8da87a", fontSize: 9, letterSpacing: ".2em" },
 	title: { margin: "8px 0 0", fontFamily: "Georgia, serif", fontSize: 36, fontWeight: 400 },
 	intro: { margin: 0, color: "#879087", fontSize: 11, lineHeight: 1.7 },
-	layout: {
-		display: "grid",
-		gridTemplateColumns: "390px minmax(0, 1fr)",
-		minHeight: "calc(100vh - 183px)"
+	heroActions: { display: "flex", gap: 8 },
+	layout: { display: "grid", gridTemplateColumns: "430px minmax(0, 1fr)", minHeight: 720 },
+	controls: {
+		maxHeight: "calc(100vh - 170px)",
+		overflowY: "auto",
+		borderRight: "1px solid #303831",
+		backgroundColor: "#111613",
+		padding: 22
 	},
-	controls: { borderRight: "1px solid #303831", backgroundColor: "#111613", padding: 22 },
 	panel: {
 		marginBottom: 14,
 		padding: 18,
@@ -468,20 +774,38 @@ const styles = stylex.create({
 	},
 	emptyPanel: { padding: 28, border: "1px dashed #3d493f", color: "#7e897f" },
 	sectionLabel: { margin: 0, color: "#79867a", fontSize: 8, letterSpacing: ".18em" },
-	planName: { margin: "8px 0", fontFamily: "Georgia, serif", fontSize: 22, fontWeight: 400 },
-	mapPath: {
-		display: "block",
-		overflow: "hidden",
-		marginTop: 8,
-		color: "#9cb893",
-		fontSize: 9,
-		textOverflow: "ellipsis"
+	sectionHeading: {
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "center",
+		gap: 12
+	},
+	dirtyFlag: { color: "#758077", fontSize: 8, letterSpacing: ".14em" },
+	dirty: { color: "#e3b65d" },
+	fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "14px 0" },
+	boundsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 },
+	field: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		color: "#778179",
+		fontSize: 8,
+		letterSpacing: ".1em"
+	},
+	input: {
+		width: "100%",
+		boxSizing: "border-box",
+		border: "1px solid #3b473d",
+		backgroundColor: "#0c100e",
+		color: "#c7d0c8",
+		padding: "7px 8px",
+		fontSize: 10
 	},
 	metrics: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
 		gap: 1,
-		marginTop: 18,
+		marginTop: 16,
 		backgroundColor: "#303831"
 	},
 	metric: {
@@ -491,7 +815,6 @@ const styles = stylex.create({
 		padding: 10,
 		backgroundColor: "#101512"
 	},
-	sectionHeading: { display: "flex", justifyContent: "space-between", alignItems: "center" },
 	select: {
 		border: "1px solid #3b473d",
 		backgroundColor: "#0c100e",
@@ -520,29 +843,23 @@ const styles = stylex.create({
 		boxShadow: "inset 0 0 0 1px #b2db8d, 0 0 12px #8ebd6644"
 	},
 	levels: {
-		display: "flex",
-		flexDirection: "column",
+		display: "grid",
+		gap: 8,
 		marginTop: 12,
+		paddingTop: 12,
 		borderTop: "1px solid #303831"
 	},
-	levelRow: {
-		display: "grid",
-		gridTemplateColumns: "38px 1fr 72px",
-		alignItems: "center",
-		gap: 8,
-		padding: "8px 0",
-		borderBottom: "1px solid #252d27",
-		fontSize: 10
-	},
-	numberInput: {
-		width: "100%",
-		boxSizing: "border-box",
-		border: "1px solid #3b473d",
-		backgroundColor: "#0c100e",
-		color: "#c7d0c8",
-		padding: "5px 7px"
-	},
 	hint: { margin: "12px 0 0", color: "#68726a", fontSize: 9, lineHeight: 1.5 },
+	validationPanel: {
+		marginBottom: 14,
+		padding: 14,
+		border: "1px solid #713f35",
+		backgroundColor: "#241613",
+		color: "#d58b79",
+		fontSize: 9,
+		lineHeight: 1.5
+	},
+	saveActions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 },
 	actions: { display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 8 },
 	primaryButton: {
 		border: 0,
@@ -551,6 +868,15 @@ const styles = stylex.create({
 		padding: "12px 18px",
 		fontSize: 9,
 		fontWeight: 800,
+		letterSpacing: ".1em"
+	},
+	headerButton: {
+		border: "1px solid #536154",
+		backgroundColor: "#172019",
+		color: "#bdc8be",
+		padding: "12px 18px",
+		fontSize: 9,
+		fontWeight: 700,
 		letterSpacing: ".1em"
 	},
 	secondaryButton: {

@@ -49,7 +49,8 @@ Generic Map Capture adds an external `Map Capture Plan`, exact tile-pyramid math
 bounded orthographic editor capture, and immutable hashed manifests without changing Map Review's
 `CaptureProfile` or perspective wire contract. Its language-neutral v1 contracts live under
 `packages/protocol/contracts/cameras/map-tile/v1`. Completed runs live under
-`.ue-shed/map-capture/runs`; Unreal staging is accepted only from
+`.ue-shed/map-capture/runs`; Workbench-authored plans default to
+`.ue-shed/map-capture/plans`; Unreal staging is accepted only from
 `Saved/UEShed/MapTileStaging`. Plans independently control fog and volumetric fog and can retain
 natural Unreal LOD behavior or provide one scene-capture LOD distance scale per zoom level. Capture
 Z is placement only and never selects an LOD.

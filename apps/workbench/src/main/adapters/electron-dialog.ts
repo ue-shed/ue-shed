@@ -3,7 +3,8 @@ import {
 	WorkbenchWindow,
 	WorkbenchWindowError,
 	type OpenDialogChoice,
-	type OpenDialogOptions
+	type OpenDialogOptions,
+	type SaveDialogOptions
 } from "./electron-window.js";
 
 export type DialogChoice = OpenDialogChoice;
@@ -17,6 +18,12 @@ export interface ChooseDirectoryOptions {
 	readonly title: string;
 }
 
+export interface ChooseSaveFileOptions {
+	readonly defaultPath?: string;
+	readonly filters?: SaveDialogOptions["filters"];
+	readonly title: string;
+}
+
 export interface ElectronDialogShape {
 	readonly chooseDirectory: (
 		options: ChooseDirectoryOptions
@@ -27,6 +34,9 @@ export interface ElectronDialogShape {
 	/** Like chooseFile but allows several files; read `paths` on the selected choice. */
 	readonly chooseFiles: (
 		options: ChooseFileOptions
+	) => Effect.Effect<DialogChoice, WorkbenchWindowError>;
+	readonly chooseSaveFile: (
+		options: ChooseSaveFileOptions
 	) => Effect.Effect<DialogChoice, WorkbenchWindowError>;
 }
 
@@ -69,7 +79,17 @@ export const ElectronDialogLive = Layer.effect(
 			});
 		});
 
-		return ElectronDialog.of({ chooseDirectory, chooseFile, chooseFiles });
+		const chooseSaveFile = Effect.fn("Workbench.ElectronDialog.chooseSaveFile")(function* (
+			options: ChooseSaveFileOptions
+		) {
+			return yield* window.saveDialog({
+				...(options.defaultPath ? { defaultPath: options.defaultPath } : {}),
+				...(options.filters ? { filters: options.filters } : {}),
+				title: options.title
+			});
+		});
+
+		return ElectronDialog.of({ chooseDirectory, chooseFile, chooseFiles, chooseSaveFile });
 	})
 );
 
@@ -93,6 +113,13 @@ export const makeElectronDialogTestLayer = Layer.effect(
 					...(options.filters ? { filters: options.filters } : {}),
 					multiSelections: true,
 					properties: ["openFile"],
+					title: options.title
+				})
+			),
+			chooseSaveFile: Effect.fn("Workbench.ElectronDialog.Test.chooseSaveFile")((options) =>
+				window.saveDialog({
+					...(options.defaultPath ? { defaultPath: options.defaultPath } : {}),
+					...(options.filters ? { filters: options.filters } : {}),
 					title: options.title
 				})
 			)

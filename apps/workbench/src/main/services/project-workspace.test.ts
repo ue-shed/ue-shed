@@ -89,7 +89,8 @@ const dialog = Layer.succeed(
 	ElectronDialog.of({
 		chooseDirectory: () => Effect.succeed({ path: projectRoot, status: "selected" as const }),
 		chooseFile: () => Effect.die("not used"),
-		chooseFiles: () => Effect.die("not used")
+		chooseFiles: () => Effect.die("not used"),
+		chooseSaveFile: () => Effect.die("not used")
 	})
 );
 

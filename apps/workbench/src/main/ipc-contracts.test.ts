@@ -269,7 +269,9 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"content-observatory:cancel": [],
 	"map-review:load": [],
 	"map-capture:choose-plan": [],
+	"map-capture:new-plan": [],
 	"map-capture:open-map": [mapCapturePlan],
+	"map-capture:save-plan": [{ plan: mapCapturePlan, saveAs: false }],
 	"map-capture:capture": [{ openMap: true, plan: mapCapturePlan }],
 	"map-review:review-sets": [],
 	"map-review:create-review-set": [{ displayName: "Lighting review" }],
@@ -500,11 +502,13 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"content-observatory:cancel": { status: "not_configured" },
 	"map-review:load": { status: "not_configured" },
 	"map-capture:choose-plan": { status: "cancelled" },
+	"map-capture:new-plan": { status: "cancelled" },
 	"map-capture:open-map": {
 		message: "Editor unavailable.",
 		recovery: "Connect Unreal.",
 		status: "failed"
 	},
+	"map-capture:save-plan": { status: "cancelled" },
 	"map-capture:capture": {
 		message: "Capture unavailable.",
 		recovery: "Connect Unreal.",
@@ -632,9 +636,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 91 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(91);
-	expect(new Set(invokeChannelNames).size).toBe(91);
+it("registers exactly 93 invoke channels plus camera and world-observation events", () => {
+	expect(invokeChannelNames).toHaveLength(93);
+	expect(new Set(invokeChannelNames).size).toBe(93);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });

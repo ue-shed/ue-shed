@@ -39,6 +39,8 @@ import {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
 	MapCaptureOpenResult,
+	MapCaptureSaveIntent,
+	MapCaptureSaveResult,
 	MapCaptureSelectionResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { MapCapturePlan } from "@ue-shed/cameras";
@@ -717,6 +719,16 @@ export const invokeContracts = {
 		channel: "map-capture:choose-plan",
 		args: EmptyArgs,
 		result: MapCaptureSelectionResult
+	}),
+	"map-capture:new-plan": invoke({
+		channel: "map-capture:new-plan",
+		args: EmptyArgs,
+		result: MapCaptureSelectionResult
+	}),
+	"map-capture:save-plan": invoke({
+		channel: "map-capture:save-plan",
+		args: Schema.Tuple([MapCaptureSaveIntent]),
+		result: MapCaptureSaveResult
 	}),
 	"map-capture:open-map": invoke({
 		channel: "map-capture:open-map",

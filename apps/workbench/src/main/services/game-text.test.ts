@@ -21,7 +21,8 @@ const gameTextAdapters = Layer.mergeAll(
 		ElectronDialog.of({
 			chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
 			chooseFile: () => Effect.succeed({ status: "cancelled" }),
-			chooseFiles: () => Effect.succeed({ status: "cancelled" })
+			chooseFiles: () => Effect.succeed({ status: "cancelled" }),
+			chooseSaveFile: () => Effect.succeed({ status: "cancelled" })
 		})
 	),
 	makeLocalFilesTestLayer()
@@ -41,7 +42,8 @@ function qualityGameTextLive(contents: string, files = new Map<string, Uint8Arra
 						chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
 						chooseFile: () =>
 							Effect.succeed({ path: qualityRulesPath, status: "selected" }),
-						chooseFiles: () => Effect.succeed({ status: "cancelled" })
+						chooseFiles: () => Effect.succeed({ status: "cancelled" }),
+						chooseSaveFile: () => Effect.succeed({ status: "cancelled" })
 					})
 				),
 				makeLocalFilesTestLayer(files)

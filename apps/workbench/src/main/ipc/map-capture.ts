@@ -1,5 +1,8 @@
 import type { MapCapturePlan } from "@ue-shed/cameras";
-import type { MapCaptureExecuteIntent } from "@ue-shed/extension-camera-review/map-capture-client";
+import type {
+	MapCaptureExecuteIntent,
+	MapCaptureSaveIntent
+} from "@ue-shed/extension-camera-review/map-capture-client";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
@@ -10,6 +13,11 @@ export const register = Effect.gen(function* () {
 	const mapCapture = yield* WorkbenchMapCapture;
 
 	yield* ipc.register(invokeContracts["map-capture:choose-plan"], () => mapCapture.choosePlan());
+	yield* ipc.register(invokeContracts["map-capture:new-plan"], () => mapCapture.newPlan());
+	yield* ipc.register(invokeContracts["map-capture:save-plan"], (...args) => {
+		const [intent] = args as [MapCaptureSaveIntent];
+		return mapCapture.savePlan(intent);
+	});
 	yield* ipc.register(invokeContracts["map-capture:open-map"], (...args) => {
 		const [plan] = args as [MapCapturePlan];
 		return mapCapture.openMap(plan);

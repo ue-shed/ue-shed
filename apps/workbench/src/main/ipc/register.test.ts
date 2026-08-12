@@ -400,6 +400,8 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder
 				.record("mapCapture.choosePlan")
 				.pipe(Effect.as({ status: "cancelled" as const })),
+		newPlan: () =>
+			recorder.record("mapCapture.newPlan").pipe(Effect.as({ status: "cancelled" as const })),
 		openMap: () =>
 			recorder.record("mapCapture.openMap").pipe(
 				Effect.as({
@@ -407,7 +409,9 @@ function buildRegistrationLayer(recorder: Recorder) {
 					recovery: "Connect Unreal.",
 					status: "failed" as const
 				})
-			)
+			),
+		savePlan: () =>
+			recorder.record("mapCapture.savePlan").pipe(Effect.as({ status: "cancelled" as const }))
 	});
 
 	const fixtureLauncher = makeFixtureLauncherTestLayer({
@@ -564,13 +568,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 91 contract channels", () =>
+it.effect("registers exactly the 93 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(91);
+		expect(result).toHaveLength(93);
 	})
 );
 

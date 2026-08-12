@@ -1,7 +1,10 @@
 import {
 	MapCaptureRepository,
 	inspectMapCapturePlan,
+	makeDefaultMapCapturePlan,
+	mapCapturePlansRoot,
 	runMapCapturePlan,
+	savedMapPathToGameMapPath,
 	type MapCapturePlan,
 	type MapTilePyramidManifest
 } from "@ue-shed/cameras";
@@ -10,6 +13,8 @@ import type {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
 	MapCaptureOpenResult,
+	MapCaptureSaveIntent,
+	MapCaptureSaveResult,
 	MapCaptureSelectionResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { Context, Effect, Layer } from "effect";
@@ -67,7 +72,9 @@ function previewTiles(args: {
 export interface WorkbenchMapCaptureShape {
 	readonly capture: (intent: MapCaptureExecuteIntent) => Effect.Effect<MapCaptureExecuteResult>;
 	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult>;
+	readonly newPlan: () => Effect.Effect<MapCaptureSelectionResult>;
 	readonly openMap: (plan: MapCapturePlan) => Effect.Effect<MapCaptureOpenResult>;
+	readonly savePlan: (intent: MapCaptureSaveIntent) => Effect.Effect<MapCaptureSaveResult>;
 }
 
 export class WorkbenchMapCapture extends Context.Service<
@@ -104,6 +111,33 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				);
 		});
 
+		const readySelection = Effect.fn("Workbench.MapCapture.readySelection")(function* (args: {
+			readonly plan: MapCapturePlan;
+			readonly planPath?: string;
+			readonly source: "new" | "opened";
+		}) {
+			const selectedProject = yield* project.savedProject();
+			const inspection = yield* inspectMapCapturePlan(args.plan);
+			const runs = yield* repository.listRuns({
+				planId: args.plan.id,
+				projectRoot: selectedProject.projectRoot
+			});
+			return {
+				grid: {
+					levels: inspection.grid.levels,
+					snappedBounds: inspection.grid.snappedBounds
+				},
+				maps: selectedProject.maps,
+				plan: args.plan,
+				...(args.planPath === undefined ? {} : { planPath: args.planPath }),
+				projectRoot: selectedProject.projectRoot,
+				runs,
+				source: args.source,
+				status: "ready" as const,
+				tileCount: inspection.tileCount
+			};
+		});
+
 		const choosePlan = Effect.fn("Workbench.MapCapture.choosePlan")(function* () {
 			return yield* Effect.gen(function* () {
 				const choice = yield* dialog.chooseFile({
@@ -111,26 +145,8 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					title: "Choose a UE Shed Map Capture Plan"
 				});
 				if (choice.status === "cancelled") return { status: "cancelled" as const };
-				const selectedProject = yield* project.savedProject();
 				const plan = yield* repository.loadPlan(choice.path);
-				const inspection = yield* inspectMapCapturePlan(plan);
-				const runs = yield* repository.listRuns({
-					planId: plan.id,
-					projectRoot: selectedProject.projectRoot
-				});
-				return {
-					grid: {
-						levels: inspection.grid.levels,
-						snappedBounds: inspection.grid.snappedBounds
-					},
-					maps: selectedProject.maps,
-					plan,
-					planPath: choice.path,
-					projectRoot: selectedProject.projectRoot,
-					runs,
-					status: "ready" as const,
-					tileCount: inspection.tileCount
-				};
+				return yield* readySelection({ plan, planPath: choice.path, source: "opened" });
 			}).pipe(
 				Effect.catch((cause) =>
 					Effect.succeed(
@@ -138,6 +154,64 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 							cause,
 							"Choose a valid plan and a Workbench project containing one .uproject file."
 						)
+					)
+				)
+			);
+		});
+
+		const newPlan = Effect.fn("Workbench.MapCapture.newPlan")(function* () {
+			return yield* Effect.gen(function* () {
+				const [selectedProject, savedProject] = yield* Effect.all([
+					project.selectedProject(),
+					project.savedProject()
+				]);
+				const mapPath = savedProject.maps
+					.map((map) => savedMapPathToGameMapPath(map.mapPath))
+					.find((candidate) => candidate !== undefined);
+				const plan = makeDefaultMapCapturePlan({
+					...(mapPath === undefined ? {} : { mapPath }),
+					projectId: selectedProject.projectName
+				});
+				return yield* readySelection({ plan, source: "new" });
+			}).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Choose a Workbench project and let its saved-map inventory finish."
+						)
+					)
+				)
+			);
+		});
+
+		const savePlan = Effect.fn("Workbench.MapCapture.savePlan")(function* (
+			intent: MapCaptureSaveIntent
+		) {
+			return yield* Effect.gen(function* () {
+				const selectedProject = yield* project.selectedProject();
+				const defaultPath = join(
+					mapCapturePlansRoot(selectedProject.projectRoot),
+					`${intent.plan.id}.json`
+				);
+				let planPath = intent.planPath ?? defaultPath;
+				if (intent.saveAs) {
+					const choice = yield* dialog.chooseSaveFile({
+						defaultPath: intent.planPath ?? defaultPath,
+						filters: [{ extensions: ["json"], name: "Map Capture Plan" }],
+						title: "Save UE Shed Map Capture Plan"
+					});
+					if (choice.status === "cancelled") return { status: "cancelled" as const };
+					planPath = choice.path.toLocaleLowerCase().endsWith(".json")
+						? choice.path
+						: `${choice.path}.json`;
+				}
+				yield* repository.savePlan(planPath, intent.plan);
+				return { plan: intent.plan, planPath, status: "saved" as const };
+			}).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed(
+						failure(cause, "Choose a writable plan location and retry Save or Save As.")
 					)
 				)
 			);
@@ -181,7 +255,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			);
 		});
 
-		return WorkbenchMapCapture.of({ capture, choosePlan, openMap });
+		return WorkbenchMapCapture.of({ capture, choosePlan, newPlan, openMap, savePlan });
 	})
 );
 

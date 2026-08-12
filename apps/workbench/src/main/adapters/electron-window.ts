@@ -5,7 +5,15 @@ export class WorkbenchWindowError extends Schema.TaggedErrorClass<WorkbenchWindo
 	{
 		causeText: Schema.String,
 		message: Schema.String,
-		operation: Schema.Literals(["create", "load", "show", "send", "destroy", "openDialog"]),
+		operation: Schema.Literals([
+			"create",
+			"load",
+			"show",
+			"send",
+			"destroy",
+			"openDialog",
+			"saveDialog"
+		]),
 		recovery: Schema.String,
 		retrySafe: Schema.Boolean
 	}
@@ -38,6 +46,16 @@ export interface OpenDialogOptions {
 	readonly title: string;
 }
 
+export type SaveDialogChoice =
+	| { readonly status: "selected"; readonly path: string }
+	| { readonly status: "cancelled" };
+
+export interface SaveDialogOptions {
+	readonly defaultPath?: string;
+	readonly filters?: OpenDialogOptions["filters"];
+	readonly title: string;
+}
+
 export interface WorkbenchWindowShape {
 	readonly destroy: () => Effect.Effect<void, WorkbenchWindowError>;
 	readonly isDestroyed: () => Effect.Effect<boolean>;
@@ -45,6 +63,9 @@ export interface WorkbenchWindowShape {
 	readonly openDialog: (
 		options: OpenDialogOptions
 	) => Effect.Effect<OpenDialogChoice, WorkbenchWindowError>;
+	readonly saveDialog: (
+		options: SaveDialogOptions
+	) => Effect.Effect<SaveDialogChoice, WorkbenchWindowError>;
 	readonly send: (channel: string, payload: unknown) => Effect.Effect<void, WorkbenchWindowError>;
 	readonly show: () => Effect.Effect<void, WorkbenchWindowError>;
 }
@@ -225,6 +246,45 @@ export const workbenchWindowLayer = (
 							: ({ status: "selected", path, paths: choice.filePaths } as const);
 					}
 				),
+				saveDialog: Effect.fn("Workbench.WorkbenchWindow.saveDialog")(
+					function* (dialogOptions) {
+						if (window.isDestroyed()) {
+							return yield* Effect.fail(
+								windowError(
+									"saveDialog",
+									"Window is destroyed",
+									"Reopen Workbench and retry."
+								)
+							);
+						}
+						const choice = yield* Effect.tryPromise({
+							try: () =>
+								electron.dialog.showSaveDialog(window, {
+									...(dialogOptions.defaultPath
+										? { defaultPath: dialogOptions.defaultPath }
+										: {}),
+									...(dialogOptions.filters
+										? {
+												filters: dialogOptions.filters.map((filter) => ({
+													extensions: [...filter.extensions],
+													name: filter.name
+												}))
+											}
+										: {}),
+									title: dialogOptions.title
+								}),
+							catch: (cause) =>
+								windowError(
+									"saveDialog",
+									cause,
+									"Retry the dialog after the window is visible."
+								)
+						});
+						return choice.canceled || !choice.filePath
+							? ({ status: "cancelled" } as const)
+							: ({ status: "selected", path: choice.filePath } as const);
+					}
+				),
 				isDestroyed: Effect.fn("Workbench.WorkbenchWindow.isDestroyed")(() =>
 					Effect.sync(() => window.isDestroyed())
 				),
@@ -252,6 +312,7 @@ export const makeWorkbenchWindowTestLayer = (
 				ReadonlyArray<{ readonly channel: string; readonly payload: unknown }>
 			>([]);
 			const nextDialog = yield* Ref.make<OpenDialogChoice>({ status: "cancelled" });
+			const nextSaveDialog = yield* Ref.make<SaveDialogChoice>({ status: "cancelled" });
 
 			const service = WorkbenchWindowTest.of({
 				destroy:
@@ -280,6 +341,20 @@ export const makeWorkbenchWindowTestLayer = (
 							);
 						}
 						return yield* Ref.get(nextDialog);
+					}),
+				saveDialog:
+					overrides.saveDialog ??
+					Effect.fn("Workbench.WorkbenchWindow.Test.saveDialog")(function* () {
+						if (yield* Ref.get(destroyed)) {
+							return yield* Effect.fail(
+								windowError(
+									"saveDialog",
+									"Window is destroyed",
+									"Reopen Workbench and retry."
+								)
+							);
+						}
+						return yield* Ref.get(nextSaveDialog);
 					}),
 				send:
 					overrides.send ??

@@ -280,8 +280,11 @@ contextBridge.exposeInMainWorld("ueShed", {
 	},
 	mapCapture: {
 		choosePlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:choose-plan"),
+		newPlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:new-plan"),
 		openMap: (plan: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("map-capture:open-map", plan),
+		savePlan: (intent: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("map-capture:save-plan", intent),
 		capture: (intent: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("map-capture:capture", intent)
 	},

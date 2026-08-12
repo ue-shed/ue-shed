@@ -2,9 +2,11 @@ import {
 	MapCaptureClientError,
 	decodeMapCaptureExecuteResult,
 	decodeMapCaptureOpenResult,
+	decodeMapCaptureSaveResult,
 	decodeMapCaptureSelectionResult,
 	type MapCaptureClientShape,
-	type MapCaptureExecuteIntent
+	type MapCaptureExecuteIntent,
+	type MapCaptureSaveIntent
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { Effect } from "effect";
 
@@ -48,10 +50,22 @@ export const mapCaptureClient: MapCaptureClientShape = {
 			invoke: () => window.ueShed.mapCapture.choosePlan(),
 			operation: "mapCapture.choosePlan"
 		}),
+	newPlan: () =>
+		request({
+			decode: decodeMapCaptureSelectionResult,
+			invoke: () => window.ueShed.mapCapture.newPlan(),
+			operation: "mapCapture.newPlan"
+		}),
 	openMap: (plan) =>
 		request({
 			decode: decodeMapCaptureOpenResult,
 			invoke: () => window.ueShed.mapCapture.openMap(plan),
 			operation: "mapCapture.openMap"
+		}),
+	savePlan: (intent: MapCaptureSaveIntent) =>
+		request({
+			decode: decodeMapCaptureSaveResult,
+			invoke: () => window.ueShed.mapCapture.savePlan(intent),
+			operation: "mapCapture.savePlan"
 		})
 };

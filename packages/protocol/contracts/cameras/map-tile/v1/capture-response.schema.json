@@ -1,0 +1,115 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/map-tile/v1/capture-response.schema.json",
+	"title": "UE Shed bounded map tile capture response v1.0",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"contract",
+		"correlationId",
+		"dirtyState",
+		"durationMs",
+		"operationId",
+		"results",
+		"status",
+		"tileCounts"
+	],
+	"properties": {
+		"actualMapPath": { "type": "string", "pattern": "^/[A-Za-z0-9_./-]+$" },
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-map-tile-capture" },
+				"version": { "$ref": "plan.schema.json#/$defs/version" }
+			}
+		},
+		"correlationId": { "$ref": "plan.schema.json#/$defs/id" },
+		"dirtyState": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["before", "after"],
+			"properties": { "before": { "type": "boolean" }, "after": { "type": "boolean" } }
+		},
+		"durationMs": { "type": "number", "minimum": 0 },
+		"failure": { "$ref": "#/$defs/failure" },
+		"operationId": { "$ref": "plan.schema.json#/$defs/id" },
+		"results": {
+			"type": "array",
+			"maxItems": 64,
+			"items": {
+				"oneOf": [
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"required": [
+							"bytes",
+							"captureDurationMs",
+							"height",
+							"key",
+							"stagedPath",
+							"status",
+							"width"
+						],
+						"properties": {
+							"bytes": { "type": "integer", "minimum": 1 },
+							"captureDurationMs": { "type": "number", "minimum": 0 },
+							"height": { "type": "integer", "minimum": 1 },
+							"key": { "$ref": "capture-request.schema.json#/$defs/tileKey" },
+							"stagedPath": { "type": "string", "minLength": 1 },
+							"status": { "const": "captured" },
+							"width": { "type": "integer", "minimum": 1 }
+						}
+					},
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["failure", "key", "status"],
+						"properties": {
+							"failure": { "$ref": "#/$defs/failure" },
+							"key": { "$ref": "capture-request.schema.json#/$defs/tileKey" },
+							"status": { "const": "failed" }
+						}
+					}
+				]
+			}
+		},
+		"status": { "enum": ["completed", "partial", "cancelled", "failed"] },
+		"tileCounts": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["failed", "requested", "succeeded"],
+			"properties": {
+				"failed": { "type": "integer", "minimum": 0 },
+				"requested": { "type": "integer", "minimum": 0 },
+				"succeeded": { "type": "integer", "minimum": 0 }
+			}
+		}
+	},
+	"$defs": {
+		"failure": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["code", "message", "recovery", "retrySafe"],
+			"properties": {
+				"code": {
+					"enum": [
+						"cancelled",
+						"capture_failed",
+						"data_layer_policy_unsupported",
+						"dirty_state_changed",
+						"encoding_failed",
+						"invalid_request",
+						"map_mismatch",
+						"streaming_not_ready",
+						"write_failed"
+					]
+				},
+				"message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+				"recovery": { "type": "string", "minLength": 1, "maxLength": 1024 },
+				"retrySafe": { "type": "boolean" }
+			}
+		}
+	}
+}

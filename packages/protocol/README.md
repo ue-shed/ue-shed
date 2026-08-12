@@ -18,7 +18,8 @@ import {
 ```
 
 The root entry point includes the core capability and connection schemas plus the authoring, camera,
-companion, and editor play-session contracts. Internal source modules are not public subpaths.
+companion, editor play-session, and editor world-control contracts. Internal source modules are not
+public subpaths.
 
 The `contracts/` directory in the package contains the language-neutral JSON Schema authorities and
 conformance fixtures. These files are shipped for protocol implementors, but JavaScript consumers

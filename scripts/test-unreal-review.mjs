@@ -28,9 +28,12 @@ const environment = {
 	UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
 };
 await loadFixtureEditorMap(endpoint, "/Game/Fixture/Cameras/L_CameraLoad");
-const testFile = "packages/cameras/src/review-unreal.integration.test.ts";
-reportUnrealTestGates(environment, [testFile]);
-const result = spawnSync(process.execPath, [vitest, "run", testFile], {
+const testFiles = [
+	"packages/cameras/src/review-unreal.integration.test.ts",
+	"packages/cameras/src/map-tile-unreal.integration.test.ts"
+];
+reportUnrealTestGates(environment, testFiles);
+const result = spawnSync(process.execPath, [vitest, "run", ...testFiles], {
 	cwd: repositoryRoot,
 	env: environment,
 	stdio: "inherit",

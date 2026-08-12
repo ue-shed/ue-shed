@@ -36,6 +36,17 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.control.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.frames.bgra8.pipe.v1")));
 	}
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedCamerasEditor")))
+	{
+		Root->SetStringField(TEXT("cameraReviewObjectPath"),
+			TEXT("/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary"));
+		const TSharedRef<FJsonObject> Limits = MakeShared<FJsonObject>();
+		Limits->SetNumberField(TEXT("maxTilesPerRequest"), 64);
+		Limits->SetNumberField(TEXT("maxTilePixels"), 4096);
+		Limits->SetNumberField(TEXT("maxGutterPixels"), 32);
+		Root->SetObjectField(TEXT("mapTileCaptureLimits"), Limits);
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.map-tile-capture.v1")));
+	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedObservatoryEditor")))
 	{
 		Root->SetStringField(TEXT("observatoryObjectPath"),
@@ -51,8 +62,12 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetStringField(
 			TEXT("playSessionObjectPath"),
 			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary"));
+		Root->SetStringField(
+			TEXT("worldControlObjectPath"),
+			TEXT("/Script/UEShedCoreEditor.Default__UEShedEditorWorldControlLibrary"));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.asset-navigation.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.play-session.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("editor.world-control.v1")));
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedScenariosEditor")))
 	{

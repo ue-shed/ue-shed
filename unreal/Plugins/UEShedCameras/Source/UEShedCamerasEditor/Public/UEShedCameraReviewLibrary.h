@@ -20,4 +20,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Review")
 	static void CaptureReviewView(const FString& RequestJson, FString& ResultJson);
+
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
+	static void CaptureMapTiles(const FString& RequestJson, FString& ResultJson);
 };

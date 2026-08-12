@@ -14,6 +14,7 @@ import { configCommand } from "./commands/config.js";
 import { doctorCommand, versionCommand } from "./commands/core.js";
 import { editorCommand } from "./commands/editor.js";
 import { mapCommand } from "./commands/map.js";
+import { mapCaptureCommand } from "./commands/map-capture.js";
 import { pluginsCommand } from "./commands/plugins.js";
 import { projectIndexCommand } from "./commands/project-index.js";
 import { reviewCommand } from "./commands/review.js";
@@ -38,6 +39,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 		textCommand,
 		inputCommand,
 		mapCommand,
+		mapCaptureCommand,
 		projectIndexCommand,
 		reviewCommand,
 		pluginsCommand

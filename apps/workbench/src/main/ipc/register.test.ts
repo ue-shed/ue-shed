@@ -28,6 +28,7 @@ import { makeFixtureLauncherTestLayer } from "../services/fixture-launcher.js";
 import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
+import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
 import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
@@ -386,6 +387,28 @@ function buildRegistrationLayer(recorder: Recorder) {
 			recorder.record("mapReview.unsubscribeWorldObservations").pipe(Effect.asVoid),
 		worldObservationPresentationReplacements: () => Effect.succeed(0)
 	});
+	const mapCapture = makeWorkbenchMapCaptureTestLayer({
+		capture: () =>
+			recorder.record("mapCapture.capture").pipe(
+				Effect.as({
+					message: "Capture fixture is not configured.",
+					recovery: "Choose a plan.",
+					status: "failed" as const
+				})
+			),
+		choosePlan: () =>
+			recorder
+				.record("mapCapture.choosePlan")
+				.pipe(Effect.as({ status: "cancelled" as const })),
+		openMap: () =>
+			recorder.record("mapCapture.openMap").pipe(
+				Effect.as({
+					message: "Editor fixture is not configured.",
+					recovery: "Connect Unreal.",
+					status: "failed" as const
+				})
+			)
+	});
 
 	const fixtureLauncher = makeFixtureLauncherTestLayer({
 		launch: (mode) =>
@@ -507,6 +530,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		project,
 		authoring,
 		mapReview,
+		mapCapture,
 		fixtureLauncher,
 		projectLauncher,
 		cameraPresentation,
@@ -540,13 +564,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 88 contract channels", () =>
+it.effect("registers exactly the 91 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(88);
+		expect(result).toHaveLength(91);
 	})
 );
 

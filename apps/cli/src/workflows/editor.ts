@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect";
+import { randomUUID } from "node:crypto";
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
@@ -42,6 +43,38 @@ export const runEditorPlaySession = Effect.fn("Cli.workflow.editor_play_session"
 						EditorPlaySessionLive.pipe(Layer.provide(RemoteControlClientLive))
 					)
 				);
+			})
+		)
+);
+
+type EditorWorldOpenCommand = Extract<CliCommand, { readonly _tag: "EditorWorldOpen" }>;
+
+export const runEditorWorldOpen = Effect.fn("Cli.workflow.editor_world_open")(
+	(command: EditorWorldOpenCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const runtime = yield* CliRuntime;
+				const { EditorWorldControl, EditorWorldControlLive } = yield* Effect.promise(
+					() => import("@ue-shed/engine-discovery")
+				);
+				const { RemoteControlClientLive } = yield* Effect.promise(
+					() => import("@ue-shed/unreal-connection")
+				);
+				const response = yield* Effect.gen(function* () {
+					const control = yield* EditorWorldControl;
+					return yield* control.open({
+						endpoint: command.endpoint,
+						operationId: command.operationId ?? randomUUID(),
+						targetMapPath: command.mapPath
+					});
+				}).pipe(
+					Effect.provide(
+						EditorWorldControlLive.pipe(Layer.provide(RemoteControlClientLive))
+					)
+				);
+				yield* printJson(response);
+				if (response.outcome === "rejected") yield* runtime.setExitCode(1);
 			})
 		)
 );

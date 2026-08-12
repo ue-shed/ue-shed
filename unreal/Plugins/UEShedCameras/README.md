@@ -19,6 +19,16 @@ The same editor-only boundary exposes `ue-shed-review-selection` v1. It reports 
 actor's path, label, world bounds, orientation, map, and optional active perspective viewport. It
 does not generate framing policy or persist Review Sets; those remain headless host responsibilities.
 
+Map Capture deepens that same transient realization behind the sibling
+`ue-shed-map-tile-capture` v1 operation. It creates transient orthographic `ASceneCapture2D`
+instances for one bounded tile batch, derives `OrthoWidth` from tile pixels plus gutter and
+world-units-per-pixel, crops the rendered gutter before PNG encoding, and stages only beneath
+`Saved/UEShed/MapTileStaging`. Capture Z is independent of pyramid detail. The v1 capability keeps
+Data Layers unchanged, requires the expected map to be open, waits for level streaming, and reports
+map dirty state before and after every batch. Its scoped render policy can independently include or
+exclude fog and volumetric fog and can apply one `LODDistanceFactor` per pyramid zoom; it never
+mutates editor-global console variables.
+
 All cameras due in a scheduler tick are submitted through one UE 5.7 `ISceneRenderBuilder` workload.
 The builder orders each GPU readback after its camera renderer, while batch count, current/max size,
 and submission time remain visible through status telemetry.

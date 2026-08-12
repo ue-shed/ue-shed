@@ -1,4 +1,5 @@
 #include "UEShedCameraReviewLibrary.h"
+#include "UEShedTransientCapture.h"
 
 #include "Dom/JsonObject.h"
 #include "Editor.h"
@@ -1064,38 +1065,23 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	UPackage* MapPackage = World->GetOutermost();
 	const bool bDirtyBefore = MapPackage->IsDirty();
 	const double StartedSeconds = FPlatformTime::Seconds();
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Name = MakeUniqueObjectName(
-		World->PersistentLevel, ASceneCapture2D::StaticClass(), TEXT("UEShedReviewCapture"));
-	SpawnParameters.ObjectFlags = RF_Transient;
-	SpawnParameters.OverrideLevel = World->PersistentLevel;
-	SpawnParameters.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	SpawnParameters.bTemporaryEditorActor = true;
-	SpawnParameters.bHideFromSceneOutliner = true;
-	SpawnParameters.bCreateActorPackage = false;
-	ASceneCapture2D* CaptureActor = World->SpawnActor<ASceneCapture2D>(
-		Location, Rotation, SpawnParameters);
-	if (CaptureActor == nullptr)
+	TUniquePtr<FUEShedTransientCapture> TransientCapture = FUEShedTransientCapture::Create(
+		World,
+		Location,
+		Rotation,
+		Width,
+		Height,
+		TEXT("UEShedReviewCapture"));
+	if (!TransientCapture.IsValid())
 	{
 		Fail(TEXT("realization_failed"), TEXT("Unreal could not create a transient capture source."),
 			TEXT("Check the editor world and retry."), true);
 		return;
 	}
-
-	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(
-		CaptureActor, NAME_None, RF_Transient);
-	RenderTarget->RenderTargetFormat = RTF_RGBA8_SRGB;
-	RenderTarget->ClearColor = FLinearColor::Black;
-	RenderTarget->InitAutoFormat(Width, Height);
-	RenderTarget->UpdateResourceImmediate(true);
-	USceneCaptureComponent2D* CaptureComponent = CaptureActor->GetCaptureComponent2D();
-	CaptureComponent->bCaptureEveryFrame = false;
-	CaptureComponent->bCaptureOnMovement = false;
-	CaptureComponent->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
-	CaptureComponent->FOVAngle = FieldOfView;
-	CaptureComponent->TextureTarget = RenderTarget;
-	CaptureComponent->CaptureScene();
+	TransientCapture->ConfigurePerspective(FieldOfView);
+	TransientCapture->Capture();
+	UTextureRenderTarget2D* RenderTarget = TransientCapture->RenderTarget();
+	USceneCaptureComponent2D* CaptureComponent = TransientCapture->Component();
 	TSharedPtr<FJsonObject> SubjectProjection;
 	if (bProjectionRequested)
 	{
@@ -1139,8 +1125,6 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 
 	if (!bExported || !bWritten)
 	{
-		CaptureComponent->TextureTarget = nullptr;
-		World->DestroyActor(CaptureActor, false, false);
 		Fail(TEXT("capture_write_failed"), TEXT("Unreal could not write the staged PNG."),
 			TEXT("Check the project Saved directory and retry."), true);
 		return;
@@ -1298,8 +1282,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		}
 	}
 
-	CaptureComponent->TextureTarget = nullptr;
-	World->DestroyActor(CaptureActor, false, false);
+	TransientCapture.Reset();
 	const bool bDirtyAfter = MapPackage->IsDirty();
 
 	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();

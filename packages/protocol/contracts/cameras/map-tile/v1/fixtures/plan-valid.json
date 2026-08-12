@@ -1,0 +1,27 @@
+{
+	"capture": {
+		"dataLayers": { "mode": "unchanged" },
+		"orientation": { "pitch": -90, "roll": 0, "yaw": 0 },
+		"render": {
+			"effects": { "fog": false, "volumetricFog": false },
+			"lodDistanceScaleByZoom": [4, 2, 1],
+			"lodPolicy": "per_level_distance_scale",
+			"profile": "full_fidelity"
+		},
+		"z": 5000
+	},
+	"contract": {
+		"name": "ue-shed-map-capture-plan",
+		"version": { "major": 1, "minor": 0 }
+	},
+	"gutterPixels": 2,
+	"id": "fixture-overview",
+	"levels": { "coarsestUnitsPerPixel": 4, "count": 3 },
+	"output": { "imageFormat": "png", "publication": "local_immutable" },
+	"project": {
+		"id": "ue-shed-fixture",
+		"mapPath": "/Game/Fixture/Cameras/L_CameraLoad"
+	},
+	"requestedBounds": { "minX": -1500, "minY": -600, "maxX": 1100, "maxY": 1500 },
+	"tilePixelSize": 256
+}

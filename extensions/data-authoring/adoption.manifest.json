@@ -40,6 +40,7 @@
 			"packages/protocol/src/companion.ts",
 			"packages/protocol/src/editor-asset-navigation.ts",
 			"packages/protocol/src/editor-play-session.ts",
+			"packages/protocol/src/editor-world-control.ts",
 			"packages/protocol/src/index.ts",
 			"packages/protocol/src/saved-world.ts",
 			"packages/protocol/src/uasset-io.ts",

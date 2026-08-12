@@ -11,6 +11,10 @@
 		"./client": {
 			"types": "./src/map-review-client.ts",
 			"default": "./src/map-review-client.ts"
+		},
+		"./map-capture-client": {
+			"types": "./src/map-capture-client.ts",
+			"default": "./src/map-capture-client.ts"
 		}
 	},
 	"scripts": {

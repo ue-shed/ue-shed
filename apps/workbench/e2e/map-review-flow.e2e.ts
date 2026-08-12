@@ -147,7 +147,7 @@ test("recovers persisted tuning after live subject bounds change", async ({
 		await setActorScale(harness.subjectActorPath, changedScale);
 
 		const page = harness.page();
-		await page.getByRole("link", { name: "Map Review" }).click();
+		await page.getByRole("link", { exact: true, name: "Map Review" }).click();
 		await page.getByRole("tab", { name: "LIVE WORLD" }).click();
 		await expect(
 			page.getByText(/no longer matches the live subject|Reframe before keeping/i)
@@ -158,7 +158,7 @@ test("recovers persisted tuning after live subject bounds change", async ({
 		await expect(page.getByRole("button", { name: "KEEP VIEW" })).toBeEnabled({
 			timeout: 60_000
 		});
-		await expect(page.getByLabel("Per-view override")).not.toBeChecked();
+		await expect(page.getByLabel("FOV OVERRIDE")).toHaveValue("");
 		await page.screenshot({
 			fullPage: true,
 			path: testInfo.outputPath("reframed-recovery.png")

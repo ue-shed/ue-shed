@@ -1,0 +1,93 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/editor-world/v1/response.schema.json",
+	"title": "UE Shed editor world open response v1.0",
+	"oneOf": [
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["after", "before", "contract", "operationId", "outcome", "targetMapPath"],
+			"properties": {
+				"after": { "$ref": "#/$defs/snapshot" },
+				"before": { "$ref": "#/$defs/snapshot" },
+				"contract": { "$ref": "#/$defs/contract" },
+				"operationId": { "$ref": "#/$defs/operationId" },
+				"outcome": { "enum": ["opened", "already_open"] },
+				"targetMapPath": { "$ref": "#/$defs/gameMapPath" }
+			}
+		},
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"after",
+				"before",
+				"code",
+				"contract",
+				"message",
+				"operationId",
+				"outcome",
+				"recovery",
+				"retrySafe",
+				"targetMapPath"
+			],
+			"properties": {
+				"after": { "$ref": "#/$defs/snapshot" },
+				"before": { "$ref": "#/$defs/snapshot" },
+				"code": {
+					"enum": [
+						"dirty_world",
+						"invalid_request",
+						"map_not_found",
+						"open_failed",
+						"play_session_active",
+						"unavailable"
+					]
+				},
+				"contract": { "$ref": "#/$defs/contract" },
+				"message": { "type": "string" },
+				"operationId": { "$ref": "#/$defs/operationId" },
+				"outcome": { "const": "rejected" },
+				"recovery": { "type": "string" },
+				"retrySafe": { "type": "boolean" },
+				"targetMapPath": { "$ref": "#/$defs/gameMapPath" }
+			}
+		}
+	],
+	"$defs": {
+		"contract": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "unreal-editor-world-control" },
+				"version": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["major", "minor"],
+					"properties": { "major": { "const": 1 }, "minor": { "const": 0 } }
+				}
+			}
+		},
+		"mapPath": { "type": "string", "pattern": "^/[A-Za-z0-9_./-]+$" },
+		"gameMapPath": { "type": "string", "pattern": "^/Game/[A-Za-z0-9_./-]+$" },
+		"operationId": {
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
+		"snapshot": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["dirtyWorldPackages", "playSessionActive"],
+			"properties": {
+				"dirtyWorldPackages": {
+					"type": "array",
+					"maxItems": 256,
+					"items": { "$ref": "#/$defs/mapPath" }
+				},
+				"mapPath": { "$ref": "#/$defs/mapPath" },
+				"playSessionActive": { "type": "boolean" }
+			}
+		}
+	}
+}

@@ -54,6 +54,11 @@ import type {
 declare global {
 	interface Window {
 		readonly ueShed: {
+			readonly mapCapture: {
+				readonly choosePlan: () => Promise<unknown>;
+				readonly openMap: (plan: unknown) => Promise<unknown>;
+				readonly capture: (intent: unknown) => Promise<unknown>;
+			};
 			readonly configExplorer: {
 				readonly query: (
 					request: ConfigExplorerQuery

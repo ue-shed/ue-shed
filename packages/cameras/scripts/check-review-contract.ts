@@ -10,6 +10,12 @@ import {
 	ReviewSelectionResponse,
 	ReviewSubjectInspectionResponse
 } from "../src/review-schema.js";
+import {
+	MapCapturePlan,
+	MapTileCaptureRequest,
+	MapTileCaptureResponse,
+	MapTilePyramidManifest
+} from "../src/map-tile-schema.js";
 import { ProvisionedCameraRequest } from "../src/provisioned-cameras-live.js";
 
 const fixturesDirectory = fileURLToPath(
@@ -17,6 +23,9 @@ const fixturesDirectory = fileURLToPath(
 );
 const provisioningFixturesDirectory = fileURLToPath(
 	new URL("../../protocol/contracts/cameras/provisioning/v1/fixtures/", import.meta.url)
+);
+const mapTileFixturesDirectory = fileURLToPath(
+	new URL("../../protocol/contracts/cameras/map-tile/v1/fixtures/", import.meta.url)
 );
 
 type WireSchema = Schema.Top;
@@ -96,6 +105,36 @@ try {
 	throw new Error("provisioned camera request failed JSON/Effect compatibility", { cause });
 }
 
+const mapTileFixtures: ReadonlyArray<{
+	readonly file: string;
+	readonly schema: WireSchema;
+}> = [
+	{ file: "plan-valid.json", schema: MapCapturePlan },
+	{ file: "capture-request-valid.json", schema: MapTileCaptureRequest },
+	{ file: "capture-response-valid.json", schema: MapTileCaptureResponse },
+	{ file: "manifest-valid.json", schema: MapTilePyramidManifest }
+];
+for (const { file, schema } of mapTileFixtures) {
+	const fixture = JSON.parse(
+		readFileSync(join(mapTileFixturesDirectory, file), "utf8")
+	) as unknown;
+	try {
+		deepStrictEqual(roundTrip(schema, fixture), fixture);
+	} catch (cause) {
+		throw new Error(`map tile fixture ${file} failed JSON/Effect decode-encode parity`, {
+			cause
+		});
+	}
+}
+for (const file of ["manifest-invalid-grid.json", "manifest-invalid-complete.json"]) {
+	const fixture = JSON.parse(
+		readFileSync(join(mapTileFixturesDirectory, file), "utf8")
+	) as unknown;
+	if (Schema.decodeUnknownResult(MapTilePyramidManifest)(fixture)._tag !== "Failure") {
+		throw new Error(`invalid map tile fixture ${file} was accepted by Effect schema`);
+	}
+}
+
 const known = new Set([...validFixtures, ...invalidFixtures].map((entry) => entry.file));
 const present = readdirSync(fixturesDirectory);
 for (const file of present) {
@@ -108,5 +147,5 @@ for (const file of present) {
 }
 
 console.log(
-	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v2`
+	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v2; map-tile v1 (${mapTileFixtures.length} valid, 2 invalid)`
 );

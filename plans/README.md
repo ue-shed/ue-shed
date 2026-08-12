@@ -27,6 +27,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 044 completed and is archived under
+  [`archive/044-map-tile-pyramid.md`](archive/044-map-tile-pyramid.md) after deterministic grid and
+  selection contracts, transient UE 5.7 orthographic capture, immutable host publication, CLI,
+  reference viewer, and live Map Review regression evidence passed.
 - Plan 042 completed and is archived under
   [`archive/042-project-authored-game-text-quality.md`](archive/042-project-authored-game-text-quality.md)
   after versioned authored roles/rules, pure corpus evaluation, typed findings, safe CLI and

@@ -3,6 +3,30 @@
 This glossary names durable concepts used across plans, decisions, public modules, and tests. It
 describes product meaning, not a required implementation or storage schema.
 
+## Map capture
+
+### Map Capture Plan
+
+A portable, versioned definition outside an Unreal map that identifies a project and map, requested
+world-space bounds, fixed tile pixel size, deterministic zoom rule, capture Z and orientation, and
+optional Data Layer/render and publication policy. It is distinct from Map Review's Capture Profile:
+a Capture Profile controls the rendering of a Review View, while a Map Capture Plan defines a stable
+cartographic grid and its capture run. Neither requires a saved camera actor or capture volume.
+
+### Tile Pyramid
+
+A multiresolution, world-aligned set of square image tiles derived from one Map Capture Plan. Every
+level uses the same snapped bounds and origin; level `z + 1` halves world-units-per-pixel, doubles
+rows and columns, and gives every parent exactly four children. Capture Z keeps the orthographic
+camera above geometry but does not determine detail. The neutral manifest versions grid orientation,
+gutter/crop policy, addressing, artifact hashes, provenance, and completion state.
+
+### Tile Key
+
+The stable `(zoom, row, column)` address of one tile. In orientation v1, rows progress from world
+max-X toward min-X and columns progress from world min-Y toward max-Y. A Tile Key is spatial
+identity, not a filename; relative paths are deterministically derived from it.
+
 ## Saved-project indexing
 
 ### Project Index

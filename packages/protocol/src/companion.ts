@@ -4,8 +4,10 @@ export const CompanionCapabilityManifest = Schema.Struct({
 	assetAuditsObjectPath: Schema.optional(Schema.String),
 	assetNavigationObjectPath: Schema.optional(Schema.String),
 	authoringObjectPath: Schema.optional(Schema.String),
+	cameraReviewObjectPath: Schema.optional(Schema.String),
 	camerasObjectPath: Schema.optional(Schema.String),
 	playSessionObjectPath: Schema.optional(Schema.String),
+	worldControlObjectPath: Schema.optional(Schema.String),
 	scenariosObjectPath: Schema.optional(Schema.String),
 	capabilities: Schema.Array(Schema.String),
 	authoringLimits: Schema.optional(
@@ -21,6 +23,13 @@ export const CompanionCapabilityManifest = Schema.Struct({
 			maxDurationMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 			maxEvidence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 			maxKeyframes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+		})
+	),
+	mapTileCaptureLimits: Schema.optional(
+		Schema.Struct({
+			maxGutterPixels: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+			maxTilePixels: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+			maxTilesPerRequest: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 		})
 	),
 	producerKind: Schema.Literal("unreal_editor"),

@@ -6,7 +6,7 @@ import { AuthoringRoute } from "@ue-shed/extension-data-authoring";
 import { GameTextRoute } from "@ue-shed/extension-game-text";
 import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
-import { MapReviewRoute } from "@ue-shed/extension-camera-review";
+import { MapCaptureRoute, MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
@@ -18,6 +18,7 @@ import { authoringClient } from "./authoring-client.js";
 import { gameTextClient } from "./game-text-client.js";
 import { inputAtlasClient } from "./input-atlas-client.js";
 import { mapReviewClient } from "./map-review-client.js";
+import { mapCaptureClient } from "./map-capture-client.js";
 import { contentObservatoryClient } from "./content-observatory-client.js";
 import { CameraLab } from "./camera-lab.js";
 import { workbenchRendererClient } from "./workbench-client.js";
@@ -33,6 +34,7 @@ const routes = [
 	{ href: "#/config-explorer", label: "Config", route: "#/config-explorer" },
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
+	{ href: "#/map-capture", label: "Map Capture", route: "#/map-capture" },
 	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
 	{ href: "#/scenarios", label: "Scenarios", route: "#/scenarios" },
 	{ href: "#/camera-lab", label: "Camera Lab", route: "#/camera-lab" }
@@ -46,6 +48,15 @@ const workflowGroups = [
 		label: "Saved project",
 		requirement: "UNREAL CAN STAY CLOSED",
 		workflows: [
+			{
+				action: "OPEN CARTOGRAPHY",
+				description:
+					"Switch to an explicit clean editor map and publish a multiresolution orthographic tile pyramid.",
+				evidence: "map_capture",
+				href: "#/map-capture",
+				title: "Map Capture",
+				tone: "lime"
+			},
 			{
 				action: "OPEN EXPLORER",
 				description:
@@ -179,6 +190,13 @@ function workflowEvidence(
 			detail: `${camera.config.activeCameraCount} scheduled · ${camera.config.resolution} · ${camera.config.pipelineMode.replaceAll("_", " ")}`,
 			label: camera.stats.pipeConnected ? "Camera pipe connected" : "Unreal is offline",
 			ready: camera.stats.pipeConnected
+		};
+	}
+	if (workflow.evidence === "map_capture") {
+		return {
+			detail: "Versioned plan · safe map switch · immutable PNG pyramid",
+			label: "Plan inspection works offline · editor on capture",
+			ready: true
 		};
 	}
 	if (workflow.evidence === "scenarios") {
@@ -328,6 +346,9 @@ export function AppShell() {
 					</Match>
 					<Match when={route() === "#/map-review"}>
 						<MapReviewRoute client={mapReviewClient} />
+					</Match>
+					<Match when={route() === "#/map-capture"}>
+						<MapCaptureRoute client={mapCaptureClient} />
 					</Match>
 					<Match when={route() === "#/content-observatory"}>
 						<ContentObservatoryRoute client={contentObservatoryClient} />

@@ -21,18 +21,40 @@ const grid = createMapTileGrid({
 });
 
 describe("map tile grid", () => {
-	it("snaps non-square negative bounds once and doubles each level", () => {
-		expect(grid.origin).toEqual({ x: 2_048, y: -1_024 });
-		expect(grid.snappedBounds).toEqual({
-			minX: -2_048,
+	it("keeps the requested center fixed while snapping its stable pyramid bounds", () => {
+		const centered = createMapTileGrid({
+			coarsestUnitsPerPixel: 4,
+			levelCount: 3,
+			requestedBounds: { minX: -1_000, minY: -1_000, maxX: 1_000, maxY: 1_000 },
+			tilePixelSize: 512
+		});
+
+		expect(centered.origin).toEqual({ x: 1_024, y: -1_024 });
+		expect(centered.snappedBounds).toEqual({
+			minX: -1_024,
 			minY: -1_024,
-			maxX: 2_048,
-			maxY: 2_048
+			maxX: 1_024,
+			maxY: 1_024
+		});
+		expect(centered.levels.map(({ columns, rows }) => ({ columns, rows }))).toEqual([
+			{ columns: 1, rows: 1 },
+			{ columns: 2, rows: 2 },
+			{ columns: 4, rows: 4 }
+		]);
+	});
+
+	it("snaps non-square negative bounds once and doubles each level", () => {
+		expect(grid.origin).toEqual({ x: 1_336, y: -1_086 });
+		expect(grid.snappedBounds).toEqual({
+			minX: -1_736,
+			minY: -1_086,
+			maxX: 1_336,
+			maxY: 1_986
 		});
 		expect(grid.levels).toEqual([
-			{ zoom: 0, unitsPerPixel: 4, tileWorldSize: 1_024, rows: 4, columns: 3 },
-			{ zoom: 1, unitsPerPixel: 2, tileWorldSize: 512, rows: 8, columns: 6 },
-			{ zoom: 2, unitsPerPixel: 1, tileWorldSize: 256, rows: 16, columns: 12 }
+			{ zoom: 0, unitsPerPixel: 4, tileWorldSize: 1_024, rows: 3, columns: 3 },
+			{ zoom: 1, unitsPerPixel: 2, tileWorldSize: 512, rows: 6, columns: 6 },
+			{ zoom: 2, unitsPerPixel: 1, tileWorldSize: 256, rows: 12, columns: 12 }
 		]);
 	});
 
@@ -77,17 +99,17 @@ describe("map tile grid", () => {
 				}
 			}
 		}
-		expect(worldToMapTile(grid, 2, { x: 2_048, y: -1_024 })).toEqual({
+		expect(worldToMapTile(grid, 2, { x: 1_336, y: -1_086 })).toEqual({
 			zoom: 2,
 			row: 0,
 			column: 0
 		});
-		expect(worldToMapTile(grid, 2, { x: -2_048, y: 2_048 })).toEqual({
+		expect(worldToMapTile(grid, 2, { x: -1_736, y: 1_986 })).toEqual({
 			zoom: 2,
-			row: 15,
+			row: 11,
 			column: 11
 		});
-		expect(worldToMapTile(grid, 0, { x: -2_049, y: 0 })).toBeUndefined();
+		expect(worldToMapTile(grid, 0, { x: -1_737, y: 0 })).toBeUndefined();
 	});
 
 	it("uses deterministic address names", () => {
@@ -97,7 +119,7 @@ describe("map tile grid", () => {
 
 describe("map tile selection", () => {
 	it("selects visible edge-clamped tiles and a one-tile prefetch ring", () => {
-		const viewport = { minX: 1_600, minY: -2_000, maxX: 2_500, maxY: -500 };
+		const viewport = { minX: 850, minY: -1_200, maxX: 1_400, maxY: -200 };
 		expect(visibleMapTiles(grid, 1, viewport)).toEqual([
 			{ zoom: 1, row: 0, column: 0 },
 			{ zoom: 1, row: 0, column: 1 }

@@ -27,6 +27,12 @@ Nanite, HLOD, or foliage intervention is not inferred from camera height.
 Fog and volumetric fog are independent plan settings applied to the transient scene capture's show
 flags. They do not mutate the editor viewport, world actors, global console variables, or saved map.
 
+Full-fidelity tiles render serially through one transient capture context. Moving to a tile begins
+an explicit camera cut, then performs two discarded warm-up renders before the PNG render. The cut
+prevents temporal state from a spatially unrelated tile from leaking forward; the warm-up establishes
+the persistent view state needed by exposure and temporal rendering. PNG encoding may remain bounded
+and concurrent after each exact render has been read back.
+
 Each tile renders `gutterPixels` beyond all four edges at the level's world-units-per-pixel, then is
 cropped to the fixed tile size before PNG encoding. This lets geometry and post processing sample
 past the logical edge. Viewers use clamp-to-edge texture addressing, position each tile from exact
@@ -69,11 +75,11 @@ capture Z and orientation, validates the expected map, and updates the framing s
 5 FPS with a maximum 640-pixel dimension. During PLAY/SIM, the play world becomes the labeled live
 authority under the same rule as Map Review.
 
-This is an observation-quality framing aid, not captured evidence or a promise of full-fidelity
-parity. It writes no PNG, spawns no saved actor, and does not publish tiles. Opening another map or
-starting the real capture clears the transient preview before the map-control or capture workflow
-continues. Full-fidelity fog, LOD, gutter, tile, hashing, and publication behavior remains visible
-only in the executed capture and its manifest.
+This is a responsive framing aid, not captured evidence. Workbench labels it `LIVE FRAMING · NOT
+CAPTURE OUTPUT`. It writes no PNG, spawns no saved actor, and does not publish tiles. Opening another
+map or starting the real capture clears the transient preview before the map-control or capture
+workflow continues. Full-fidelity fog, LOD, gutter, tile, hashing, and publication behavior remains
+visible only in the executed capture and its manifest.
 
 ## Viewer contract
 
@@ -104,14 +110,27 @@ unsaved, procedural, and runtime editor state; the viewer labels it `SAVED ACTOR
 present it as capture-time evidence. A future live-actor layer requires separate Observatory
 authority and labeling.
 
+Workbench labels the executed-run viewer `CAPTURE PROOF`. It renders only the exact PNG artifacts
+owned by the returned manifest. Tiles load individually on demand as the viewport pans and zooms;
+the trusted host validates the manifest location, artifact membership, byte count, and hash before
+returning bytes. There is no eager base64 bundle or partial-preview byte ceiling, and a tile that has
+not yet been requested is not reported as a capture error.
+
 The Workbench `#/map-capture` route is the reference host for creating or opening a portable plan,
 searching the selected project's saved-map inventory, and authoring the executable v1 fields:
 identity, target map, requested world bounds, PNG tile size, pyramid resolution and levels, gutter,
-capture Z, render profile, fog, and LOD policy. Workbench presents standard power-of-two PNG sizes
-and coarsest resolution steps, derives world coverage per tile from those choices, and previews the
-first pyramid levels. The portable plan still stores exact pixels and world-units-per-pixel. The
-route continuously validates the draft and recomputes its deterministic grid before enabling Save,
-map control, or capture.
+capture Z, render profile, fog, and LOD policy. The showcase deliberately authors a symmetrical
+subset: center X/Y plus one square world size, one Level 0 tile count shared by both axes, one
+resolution shared by X/Y, and one square PNG tile size. Requested cardinal edges remain derived
+readouts. Setting the base grid to 1, 2, or 4 authors an exact 1x1, 2x2, or 4x4 Level 0 grid without
+moving the requested capture. Changing tile size adjusts resolution inversely so tile world coverage,
+the deterministic grid, and framing stay fixed; editing resolution directly intentionally changes
+tile coverage and retiles the requested area. The level count adds progressively finer detail. The UI
+calls gutter pixels seam overdraw; its tooltip records
+that those pixels are rendered beyond each edge and cropped, not placed between tiles. The portable
+plan still stores exact rectangular bounds, pixels, world-units-per-pixel, and gutter pixels, so
+libraries and the CLI retain the general contract. The route continuously validates the draft and
+recomputes its deterministic grid before enabling Save, map control, or capture.
 
 Save writes new plans atomically beneath `.ue-shed/map-capture/plans` by default. Save As can place a
 portable JSON plan elsewhere, and an opened plan saves back to its chosen path. The host-neutral

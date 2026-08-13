@@ -427,7 +427,17 @@ function buildRegistrationLayer(recorder: Recorder) {
 				})
 			),
 		savePlan: () =>
-			recorder.record("mapCapture.savePlan").pipe(Effect.as({ status: "cancelled" as const }))
+			recorder
+				.record("mapCapture.savePlan")
+				.pipe(Effect.as({ status: "cancelled" as const })),
+		tile: () =>
+			recorder.record("mapCapture.tile").pipe(
+				Effect.as({
+					message: "Capture proof fixture is not configured.",
+					recovery: "Capture a plan.",
+					status: "failed" as const
+				})
+			)
 	});
 
 	const fixtureLauncher = makeFixtureLauncherTestLayer({
@@ -590,7 +600,7 @@ it.effect("registers exactly the 95 contract channels", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(95);
+		expect(result).toHaveLength(96);
 	})
 );
 

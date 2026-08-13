@@ -17,7 +17,8 @@
 namespace
 {
 constexpr int32 MaximumPendingTileEncodes = 4;
-constexpr int32 MaximumPendingTileReadbacks = 4;
+constexpr int32 MaximumPendingTileReadbacks = 1;
+constexpr int32 FullFidelityWarmupCaptures = 2;
 
 struct FPendingMapTileEncode
 {
@@ -646,6 +647,17 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			Component->ShowFlags.SetMotionBlur(false);
 			Component->ShowFlags.SetBloom(false);
 			Component->ShowFlags.SetAntiAliasing(false);
+		}
+		else
+		{
+			// A camera cut prevents the reused capture context from carrying temporal state from a
+			// spatially unrelated tile. Two discarded renders then establish exposure and temporal
+			// resources before the exact PNG render is read back.
+			Capture->BeginPersistentCameraCut();
+			for (int32 Warmup = 0; Warmup < FullFidelityWarmupCaptures; ++Warmup)
+			{
+				Capture->Capture();
+			}
 		}
 		Capture->Capture();
 		const FString CapturePath = FPaths::Combine(

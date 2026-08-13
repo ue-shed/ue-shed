@@ -17,8 +17,14 @@ import type {
 	MapCaptureSelectionResult
 } from "./map-capture-client.js";
 import {
+	mapCaptureDraftCenter,
 	mapCaptureDraftGrid,
+	mapCaptureDraftSize,
 	mapCapturePlanDraft,
+	recenterMapCapturePlanDraft,
+	resizeMapCapturePlanDraft,
+	setMapCaptureDraftGridSize,
+	setMapCaptureDraftTileSize,
 	validateMapCapturePlanDraft,
 	type MapCapturePlanDraft
 } from "./map-capture-plan-draft.js";
@@ -33,33 +39,8 @@ type LivePreviewState =
 	| { readonly message: string; readonly recovery: string; readonly status: "failed" }
 	| ({ readonly status: "ready" } & Omit<ReadyLivePreview, "status">);
 
-const tilePixelSizeOptions = [512, 1_024, 2_048, 4_096] as const;
-const coarsestResolutionOptions = [
-	{ label: "¼", value: 0.25 },
-	{ label: "½", value: 0.5 },
-	{ label: "1", value: 1 },
-	{ label: "2", value: 2 },
-	{ label: "4", value: 4 },
-	{ label: "8", value: 8 },
-	{ label: "16", value: 16 },
-	{ label: "32", value: 32 },
-	{ label: "64", value: 64 },
-	{ label: "128", value: 128 },
-	{ label: "256", value: 256 },
-	{ label: "512", value: 512 },
-	{ label: "1,024", value: 1_024 }
-] as const;
-
 function formatMeasurement(value: number): string {
 	return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
-}
-
-function isTilePixelSizeOption(value: number): boolean {
-	return tilePixelSizeOptions.some((option) => option === value);
-}
-
-function isCoarsestResolutionOption(value: number): boolean {
-	return coarsestResolutionOptions.some((option) => option.value === value);
 }
 
 function causeMessage(cause: Cause.Cause<unknown>): string {
@@ -159,14 +140,18 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		return result === undefined ? undefined : mapCaptureDraftGrid(result);
 	});
 	const coarsestLevel = createMemo(() => grid()?.grid.levels[0]);
+	const captureCenter = createMemo(() => {
+		const current = draft();
+		return current === undefined ? undefined : mapCaptureDraftCenter(current);
+	});
+	const captureSize = createMemo(() => {
+		const current = draft();
+		return current === undefined ? undefined : mapCaptureDraftSize(current);
+	});
 	const isDirty = createMemo(() => {
 		const current = draft();
 		return current !== undefined && JSON.stringify(current) !== savedPlanJson();
 	});
-	const previewUrls = createMemo(
-		() =>
-			new Map(capture()?.previewTiles.map((tile) => [tile.relativePath, tile.dataUrl]) ?? [])
-	);
 	const isCapturing = createMemo(() => activeCaptureOperationId() !== undefined);
 	const readyLivePreview = createMemo(() => {
 		const current = livePreview();
@@ -188,6 +173,21 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		return {
 			height: `${(94 * xSpan) / frameWorldHeight}%`,
 			width: `${(94 * ySpan) / frameWorldWidth}%`
+		};
+	});
+	const requestedPreviewBoundary = createMemo(() => {
+		const currentGrid = grid()?.grid;
+		if (currentGrid === undefined)
+			return { height: "100%", left: "0%", top: "0%", width: "100%" };
+		const requested = currentGrid.requestedBounds;
+		const snapped = currentGrid.snappedBounds;
+		const xSpan = snapped.maxX - snapped.minX;
+		const ySpan = snapped.maxY - snapped.minY;
+		return {
+			height: `${(100 * (requested.maxX - requested.minX)) / xSpan}%`,
+			left: `${(100 * (requested.minY - snapped.minY)) / ySpan}%`,
+			top: `${(100 * (snapped.maxX - requested.maxX)) / xSpan}%`,
+			width: `${(100 * (requested.maxY - requested.minY)) / ySpan}%`
 		};
 	});
 	let captureSequence = 0;
@@ -290,7 +290,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 	}
 
 	function choosePlan() {
-		setNotice({ tone: "info", text: "Reading plan and completed run evidence…" });
+		setNotice({ tone: "info", text: "Reading portable plan…" });
 		chooseAction.run(props.client.choosePlan(), {
 			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
 			onSuccess: acceptSelection
@@ -337,6 +337,17 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 				levels: { ...current.levels, count }
 			};
 		});
+	}
+
+	function updateCaptureCenter(axis: "x" | "y", coordinate: number) {
+		updateDraft((current) => {
+			const center = mapCaptureDraftCenter(current);
+			return recenterMapCapturePlanDraft(current, { ...center, [axis]: coordinate });
+		});
+	}
+
+	function updateCaptureSize(size: number) {
+		updateDraft((current) => resizeMapCapturePlanDraft(current, size));
 	}
 
 	function setLodPolicy(mode: "natural" | "per_level_distance_scale") {
@@ -473,14 +484,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 						return;
 					}
 					setCapture(result);
-					const previewNote = result.previewTruncated
-						? ` Previewing ${result.previewTiles.length.toLocaleString()} of ${result.manifest.tiles.length.toLocaleString()} tiles in Workbench.`
-						: "";
 					setNotice({
 						tone: result.published ? "success" : "error",
 						text: result.published
-							? `Published immutable run ${result.manifest.runId}.${previewNote}`
-							: `Capture remained a ${result.manifest.state} attempt; inspect its failures.${previewNote}`
+							? `Published immutable run ${result.manifest.runId}. Exact tiles load on demand in Capture Proof.`
+							: `Capture remained a ${result.manifest.state} attempt; inspect its failures in Capture Proof.`
 					});
 				}
 			}
@@ -491,13 +499,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		<main {...stylex.props(styles.page)}>
 			<header {...stylex.props(styles.hero)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>MAP CAPTURE / PLAN AUTHORING</p>
-					<h1 {...stylex.props(styles.title)}>Build the world from above.</h1>
+					<p {...stylex.props(styles.eyebrow)}>PLAN AUTHORING</p>
+					<h1 {...stylex.props(styles.title)}>Map Capture</h1>
 				</div>
-				<p {...stylex.props(styles.intro)}>
-					Author a portable plan. Preview deterministic geometry. Capture without saving
-					actors.
-				</p>
 				<div {...stylex.props(styles.heroActions)}>
 					<button type="button" onClick={newPlan} {...stylex.props(styles.primaryButton)}>
 						NEW PLAN
@@ -520,10 +524,6 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 							<div {...stylex.props(styles.emptyPanel)}>
 								<span>01</span>
 								<strong>CREATE OR OPEN A PLAN</strong>
-								<p>
-									New plans begin from the selected project and its first saved
-									map.
-								</p>
 							</div>
 						}
 					>
@@ -579,76 +579,68 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 								</section>
 
 								<section {...stylex.props(styles.panel)}>
-									<p {...stylex.props(styles.sectionLabel)}>WORLD GRID</p>
-									<div {...stylex.props(styles.boundsGrid)}>
+									<p {...stylex.props(styles.sectionLabel)}>CAPTURE AREA</p>
+									<div {...stylex.props(styles.captureAreaGrid)}>
 										<NumberField
-											label="MIN X"
-											value={current().requestedBounds.minX}
-											onInput={(minX) =>
-												updateDraft((value) => ({
-													...value,
-													requestedBounds: {
-														...value.requestedBounds,
-														minX
-													}
-												}))
-											}
+											label="CENTER X"
+											value={captureCenter()?.x ?? 0}
+											onInput={(x) => updateCaptureCenter("x", x)}
 										/>
 										<NumberField
-											label="MAX X"
-											value={current().requestedBounds.maxX}
-											onInput={(maxX) =>
-												updateDraft((value) => ({
-													...value,
-													requestedBounds: {
-														...value.requestedBounds,
-														maxX
-													}
-												}))
-											}
+											label="CENTER Y"
+											value={captureCenter()?.y ?? 0}
+											onInput={(y) => updateCaptureCenter("y", y)}
 										/>
 										<NumberField
-											label="MIN Y"
-											value={current().requestedBounds.minY}
-											onInput={(minY) =>
-												updateDraft((value) => ({
-													...value,
-													requestedBounds: {
-														...value.requestedBounds,
-														minY
-													}
-												}))
-											}
-										/>
-										<NumberField
-											label="MAX Y"
-											value={current().requestedBounds.maxY}
-											onInput={(maxY) =>
-												updateDraft((value) => ({
-													...value,
-													requestedBounds: {
-														...value.requestedBounds,
-														maxY
-													}
-												}))
-											}
+											commit
+											label="SIZE · UU"
+											min={1}
+											step={100}
+											title="Square capture width and height in Unreal units."
+											value={captureSize() ?? 0}
+											onInput={updateCaptureSize}
 										/>
 									</div>
+									<div {...stylex.props(styles.requestedExtent)}>
+										<small>REQUESTED EDGES</small>
+										<code>
+											S {formatMeasurement(current().requestedBounds.minX)} ·
+											N {formatMeasurement(current().requestedBounds.maxX)} ·
+											W {formatMeasurement(current().requestedBounds.minY)} ·
+											E {formatMeasurement(current().requestedBounds.maxY)}
+										</code>
+									</div>
+									<Show when={grid()?.grid}>
+										{(currentGrid) => {
+											const bounds = () => currentGrid().snappedBounds;
+											return (
+												<div {...stylex.props(styles.outputExtent)}>
+													<small>ACTUAL TILE OUTPUT</small>
+													<code>
+														CENTER{" "}
+														{formatMeasurement(
+															(bounds().minX + bounds().maxX) / 2
+														)}
+														,{" "}
+														{formatMeasurement(
+															(bounds().minY + bounds().maxY) / 2
+														)}{" "}
+														· S {formatMeasurement(bounds().minX)} · N{" "}
+														{formatMeasurement(bounds().maxX)} · W{" "}
+														{formatMeasurement(bounds().minY)} · E{" "}
+														{formatMeasurement(bounds().maxY)}
+													</code>
+												</div>
+											);
+										}}
+									</Show>
 									<div {...stylex.props(styles.metrics)}>
 										<Metric
 											label="TOTAL TILES"
 											value={grid()?.tileCount ?? "—"}
 										/>
 										<Metric
-											label="Z0 GRID"
-											value={
-												coarsestLevel() === undefined
-													? "—"
-													: `${coarsestLevel()!.rows} × ${coarsestLevel()!.columns}`
-											}
-										/>
-										<Metric
-											label="Z0 IMAGE"
+											label="LEVEL 0 IMAGE"
 											value={
 												coarsestLevel() === undefined
 													? "—"
@@ -662,110 +654,63 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											}
 										/>
 									</div>
-									<div {...stylex.props(styles.tileSizeControl)}>
-										<div {...stylex.props(styles.controlLabel)}>
-											<span>PNG TILE SIZE</span>
-											<small>OUTPUT CHUNK · SQUARE</small>
-										</div>
-										<div
-											role="group"
-											aria-label="PNG tile size"
-											{...stylex.props(styles.optionRail)}
-										>
-											<For each={tilePixelSizeOptions}>
-												{(tilePixelSize) => (
-													<button
-														type="button"
-														aria-label={`${formatMeasurement(tilePixelSize)} px`}
-														aria-pressed={
-															current().tilePixelSize ===
-															tilePixelSize
-														}
-														onClick={() =>
-															updateDraft((value) => ({
-																...value,
-																tilePixelSize
-															}))
-														}
-														{...stylex.props(
-															styles.optionButton,
-															current().tilePixelSize ===
-																tilePixelSize &&
-																styles.optionButtonSelected
-														)}
-													>
-														<strong>
-															{formatMeasurement(tilePixelSize)}
-														</strong>
-														<small>PX</small>
-													</button>
-												)}
-											</For>
-										</div>
-										<Show
-											when={!isTilePixelSizeOption(current().tilePixelSize)}
-										>
-											<p {...stylex.props(styles.customValueNotice)}>
-												This opened plan uses a custom{" "}
-												{current().tilePixelSize} px tile. Choose a standard
-												output size above to replace it.
-											</p>
-										</Show>
-									</div>
-									<label {...stylex.props(styles.resolutionControl)}>
-										<div {...stylex.props(styles.controlLabel)}>
-											<span>COARSEST RESOLUTION</span>
-											<small>1 PX = WORLD UNITS</small>
-										</div>
-										<select
-											aria-label="Coarsest resolution"
-											value={current().levels.coarsestUnitsPerPixel}
-											onChange={(event) => {
-												const coarsestUnitsPerPixel = Number(
-													event.currentTarget.value
-												);
-												updateDraft((value) => ({
-													...value,
-													levels: {
-														...value.levels,
-														coarsestUnitsPerPixel
-													}
-												}));
-											}}
-											{...stylex.props(styles.resolutionSelect)}
-										>
-											<Show
-												when={
-													!isCoarsestResolutionOption(
-														current().levels.coarsestUnitsPerPixel
+									<div {...stylex.props(styles.tileGeometryControl)}>
+										<div {...stylex.props(styles.captureAreaGrid)}>
+											<NumberField
+												commit
+												label="BASE GRID · N × N"
+												min={1}
+												step={1}
+												title="Level 0 tile count on each axis; enter 1, 2, 4, or any positive whole number."
+												value={coarsestLevel()?.rows ?? 1}
+												onInput={(tilesPerAxis) =>
+													updateDraft((value) =>
+														setMapCaptureDraftGridSize(
+															value,
+															tilesPerAxis
+														)
 													)
 												}
-											>
-												<option
-													value={current().levels.coarsestUnitsPerPixel}
-												>
-													CUSTOM · 1 PX ={" "}
-													{formatMeasurement(
-														current().levels.coarsestUnitsPerPixel
-													)}{" "}
-													UU
-												</option>
-											</Show>
-											<For each={coarsestResolutionOptions}>
-												{(option) => (
-													<option value={option.value}>
-														{option.label} UU/PX ·
-														{` ${formatMeasurement(
-															current().tilePixelSize * option.value
-														)} UU PER TILE`}
-													</option>
-												)}
-											</For>
-										</select>
-									</label>
+											/>
+											<NumberField
+												commit
+												label="RESOLUTION · UU/PX"
+												min={0.01}
+												step={0.25}
+												title="Level 0 world units per pixel; the same resolution is used on X and Y."
+												value={current().levels.coarsestUnitsPerPixel}
+												onInput={(coarsestUnitsPerPixel) =>
+													updateDraft((value) => ({
+														...value,
+														levels: {
+															...value.levels,
+															coarsestUnitsPerPixel
+														}
+													}))
+												}
+											/>
+											<NumberField
+												commit
+												label="TILE SIZE · PX"
+												min={64}
+												max={4_096}
+												step={64}
+												title="Square PNG size. Changing it preserves tile world coverage by adjusting resolution."
+												value={current().tilePixelSize}
+												onInput={(tilePixelSize) =>
+													updateDraft((value) =>
+														setMapCaptureDraftTileSize(
+															value,
+															tilePixelSize
+														)
+													)
+												}
+											/>
+										</div>
+									</div>
 									<div {...stylex.props(styles.resolutionReadout)}>
 										<div>
-											<small>ONE Z0 PNG COVERS</small>
+											<small>EACH LEVEL 0 TILE COVERS</small>
 											<strong>
 												{formatMeasurement(
 													current().tilePixelSize *
@@ -789,20 +734,22 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 									</div>
 									<div {...stylex.props(styles.fieldGrid)}>
 										<NumberField
-											label="GUTTER PX"
+											label="SEAM OVERDRAW · PX"
 											min={0}
 											max={32}
 											step={1}
+											title="Extra pixels rendered past each tile edge, then cropped to prevent seams."
 											value={current().gutterPixels}
 											onInput={(gutterPixels) =>
 												updateDraft((value) => ({ ...value, gutterPixels }))
 											}
 										/>
 										<NumberField
-											label="LEVEL COUNT"
+											label="ZOOM LEVELS"
 											min={1}
 											max={24}
 											step={1}
+											title="Each added level doubles resolution on X and Y."
 											value={current().levels.count}
 											onInput={updateLevelCount}
 										/>
@@ -811,14 +758,17 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 										<For each={grid()?.grid.levels.slice(0, 3) ?? []}>
 											{(level) => (
 												<div {...stylex.props(styles.levelStep)}>
-													<small>Z{level.zoom}</small>
+													<small>
+														{level.zoom === 0
+															? "LEVEL 0 · WIDEST"
+															: `DETAIL ${level.zoom} · Z${level.zoom}`}
+													</small>
 													<strong>
-														{formatMeasurement(level.unitsPerPixel)}{" "}
-														UU/PX
+														{level.rows} × {level.columns} TILES
 													</strong>
 													<span>
-														{formatMeasurement(level.tileWorldSize)}{" "}
-														UU/TILE
+														{formatMeasurement(level.unitsPerPixel)}{" "}
+														UU/PX
 													</span>
 												</div>
 											)}
@@ -937,11 +887,6 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											</For>
 										</div>
 									</Show>
-									<p {...stylex.props(styles.hint)}>
-										Orientation, PNG output, immutable publication, and
-										unchanged data layers are fixed v1 invariants in this
-										editor.
-									</p>
 								</section>
 
 								<Show when={validation()?.status === "invalid"}>
@@ -1007,7 +952,16 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 								<div
 									style={livePreviewBoundary()}
 									{...stylex.props(styles.captureBoundary)}
-								/>
+								>
+									<div
+										style={requestedPreviewBoundary()}
+										{...stylex.props(styles.requestedBoundary)}
+									>
+										<span {...stylex.props(styles.requestedBoundaryLabel)}>
+											REQUESTED AREA
+										</span>
+									</div>
+								</div>
 								<div {...stylex.props(styles.previewStatus)}>
 									<Show when={livePreview().status === "loading"}>
 										<span {...stylex.props(styles.previewPulse)} />
@@ -1022,7 +976,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 														? "EDITOR LIVE"
 														: "PLAY LIVE"}
 												</strong>
-												<small>OBSERVATION FRAMING</small>
+												<small>LIVE FRAMING · NOT CAPTURE OUTPUT</small>
 											</>
 										)}
 									</Show>
@@ -1065,10 +1019,25 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 								loadActors={() =>
 									props.client.actors(completed().manifest.project.mapPath)
 								}
-								manifest={completed().manifest}
-								tileUrl={(_key, relativePath) =>
-									previewUrls().get(relativePath) ?? ""
+								loadTile={(_key, relativePath) =>
+									props.client
+										.tile({
+											manifestPath: completed().manifestPath,
+											relativePath
+										})
+										.pipe(
+											Effect.flatMap((result) =>
+												result.status === "ready"
+													? Effect.succeed(result.bytes)
+													: Effect.fail(
+															new Error(
+																`${result.message} ${result.recovery}`
+															)
+														)
+											)
+										)
 								}
+								manifest={completed().manifest}
 							/>
 						)}
 					</Show>
@@ -1152,15 +1121,17 @@ function TextField(props: {
 }
 
 function NumberField(props: {
+	readonly commit?: boolean;
 	readonly label: string;
 	readonly max?: number;
 	readonly min?: number;
 	readonly step?: number;
+	readonly title?: string;
 	readonly value: number;
 	readonly onInput: (value: number) => void;
 }) {
 	return (
-		<label {...stylex.props(styles.field)}>
+		<label title={props.title} {...stylex.props(styles.field)}>
 			<span>{props.label}</span>
 			<input
 				type="number"
@@ -1168,7 +1139,21 @@ function NumberField(props: {
 				min={props.min}
 				step={props.step}
 				value={props.value}
-				onInput={(event) => props.onInput(event.currentTarget.valueAsNumber)}
+				onBlur={(event) => {
+					if (!Number.isFinite(event.currentTarget.valueAsNumber)) {
+						event.currentTarget.value = String(props.value);
+					}
+				}}
+				onChange={(event) => {
+					if (props.commit && Number.isFinite(event.currentTarget.valueAsNumber)) {
+						props.onInput(event.currentTarget.valueAsNumber);
+					}
+				}}
+				onInput={(event) => {
+					if (!props.commit && Number.isFinite(event.currentTarget.valueAsNumber)) {
+						props.onInput(event.currentTarget.valueAsNumber);
+					}
+				}}
 				{...stylex.props(styles.input)}
 			/>
 		</label>
@@ -1207,7 +1192,7 @@ const styles = stylex.create({
 	page: { minHeight: "calc(100vh - 52px)", backgroundColor: "#0c100e", color: tokens.colorText },
 	hero: {
 		display: "grid",
-		gridTemplateColumns: "minmax(420px, 1fr) minmax(280px, .7fr) auto",
+		gridTemplateColumns: "minmax(420px, 1fr) auto",
 		alignItems: "end",
 		gap: 36,
 		padding: "34px 42px 28px",
@@ -1216,7 +1201,6 @@ const styles = stylex.create({
 	},
 	eyebrow: { margin: 0, color: "#8da87a", fontSize: 9, letterSpacing: ".2em" },
 	title: { margin: "8px 0 0", fontFamily: "Georgia, serif", fontSize: 36, fontWeight: 400 },
-	intro: { margin: 0, color: "#879087", fontSize: 11, lineHeight: 1.7 },
 	heroActions: { display: "flex", gap: 8 },
 	layout: { display: "grid", gridTemplateColumns: "430px minmax(0, 1fr)", minHeight: 720 },
 	controls: {
@@ -1243,7 +1227,33 @@ const styles = stylex.create({
 	dirtyFlag: { color: "#758077", fontSize: 8, letterSpacing: ".14em" },
 	dirty: { color: "#e3b65d" },
 	fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "14px 0" },
-	boundsGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 },
+	captureAreaGrid: {
+		display: "grid",
+		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+		gap: 10,
+		marginTop: 14
+	},
+	requestedExtent: {
+		display: "grid",
+		gap: 6,
+		marginTop: 12,
+		padding: "9px 10px",
+		backgroundColor: "#101512",
+		color: "#7d897f",
+		fontSize: 8,
+		lineHeight: 1.5
+	},
+	outputExtent: {
+		display: "grid",
+		gap: 6,
+		marginTop: 12,
+		padding: "9px 10px",
+		borderLeft: "2px solid #d1ae61",
+		backgroundColor: "#101512",
+		color: "#7d897f",
+		fontSize: 8,
+		lineHeight: 1.5
+	},
 	field: {
 		display: "flex",
 		flexDirection: "column",
@@ -1263,61 +1273,12 @@ const styles = stylex.create({
 	},
 	metrics: {
 		display: "grid",
-		gridTemplateColumns: "repeat(3, 1fr)",
+		gridTemplateColumns: "repeat(2, 1fr)",
 		gap: 1,
 		marginTop: 16,
 		backgroundColor: "#303831"
 	},
-	tileSizeControl: { display: "grid", gap: 9, marginTop: 16 },
-	controlLabel: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 12,
-		color: "#778179",
-		fontSize: 8,
-		letterSpacing: ".1em"
-	},
-	optionRail: {
-		display: "grid",
-		gridTemplateColumns: "repeat(4, 1fr)",
-		gap: 1,
-		padding: 1,
-		backgroundColor: "#3b473d"
-	},
-	optionButton: {
-		display: "flex",
-		alignItems: "baseline",
-		justifyContent: "center",
-		gap: 4,
-		minWidth: 0,
-		border: 0,
-		backgroundColor: { default: "#0c100e", ":hover": "#192219" },
-		color: "#879288",
-		padding: "9px 4px",
-		cursor: "pointer",
-		fontSize: 9
-	},
-	optionButtonSelected: {
-		backgroundColor: { default: "#29391f", ":hover": "#314526" },
-		color: "#d9f2b7",
-		boxShadow: "inset 0 -2px #b7e26d"
-	},
-	customValueNotice: {
-		margin: 0,
-		color: "#d1ae61",
-		fontSize: 8,
-		lineHeight: 1.5
-	},
-	resolutionControl: { display: "grid", gap: 8, marginTop: 16 },
-	resolutionSelect: {
-		width: "100%",
-		border: "1px solid #3b473d",
-		backgroundColor: "#0c100e",
-		color: "#c7d0c8",
-		padding: "9px 10px",
-		fontSize: 10
-	},
+	tileGeometryControl: { marginTop: 2 },
 	resolutionReadout: {
 		display: "flex",
 		alignItems: "end",
@@ -1396,7 +1357,6 @@ const styles = stylex.create({
 		paddingTop: 12,
 		borderTop: "1px solid #303831"
 	},
-	hint: { margin: "12px 0 0", color: "#68726a", fontSize: 9, lineHeight: 1.5 },
 	validationPanel: {
 		marginBottom: 14,
 		padding: 14,
@@ -1491,6 +1451,23 @@ const styles = stylex.create({
 		border: "1px solid #b7e26d66",
 		boxShadow: "inset 0 0 54px #07100899, 0 0 30px #b7e26d12",
 		pointerEvents: "none"
+	},
+	requestedBoundary: {
+		position: "absolute",
+		boxSizing: "border-box",
+		border: "1px dashed #e3b65dcc",
+		boxShadow: "inset 0 0 0 1px #0b0f0c66"
+	},
+	requestedBoundaryLabel: {
+		position: "absolute",
+		left: 4,
+		top: 4,
+		padding: "3px 5px",
+		backgroundColor: "#0b0f0cbb",
+		color: "#e3c57f",
+		fontSize: 7,
+		letterSpacing: ".1em",
+		whiteSpace: "nowrap"
 	},
 	north: {
 		position: "absolute",

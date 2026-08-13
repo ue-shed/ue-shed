@@ -279,6 +279,12 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-capture:capture": [
 		{ openMap: true, operationId: "capture-ui-operation-1", plan: mapCapturePlan }
 	],
+	"map-capture:tile": [
+		{
+			manifestPath: "D:/Projects/Demo/.ue-shed/map-capture/runs/plan/run/manifest.json",
+			relativePath: "Z00/R000_C000.png"
+		}
+	],
 	"map-review:review-sets": [],
 	"map-review:create-review-set": [{ displayName: "Lighting review" }],
 	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
@@ -533,6 +539,7 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		recovery: "Connect Unreal.",
 		status: "failed"
 	},
+	"map-capture:tile": { bytes: new Uint8Array([1, 2, 3]), status: "ready" },
 	"map-review:review-sets": {
 		activeReviewSetId: "fixture-review-set",
 		sets: [
@@ -652,12 +659,13 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:approve-candidate": [{ candidateId: "only" }],
 	"map-review:set-live-preview-fps": ["fast"],
 	"map-review:subscribe-world-observations": [0],
-	"map-review:set-world-observation-rate": [0]
+	"map-review:set-world-observation-rate": [0],
+	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 };
 
-it("registers exactly 95 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(95);
-	expect(new Set(invokeChannelNames).size).toBe(95);
+it("registers exactly 96 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(96);
+	expect(new Set(invokeChannelNames).size).toBe(96);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

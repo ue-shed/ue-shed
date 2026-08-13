@@ -63,6 +63,7 @@ declare global {
 				readonly preview: (plan: unknown) => Promise<unknown>;
 				readonly savePlan: (intent: unknown) => Promise<unknown>;
 				readonly capture: (intent: unknown) => Promise<unknown>;
+				readonly tile: (intent: unknown) => Promise<unknown>;
 				readonly onProgress: (
 					listener: (progress: MapCaptureProgressEvent) => void
 				) => () => void;

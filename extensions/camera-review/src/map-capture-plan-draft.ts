@@ -12,11 +12,91 @@ export type MapCapturePlanValidation =
 	| { readonly status: "valid"; readonly plan: MapCapturePlanValue }
 	| { readonly status: "invalid"; readonly errors: ReadonlyArray<string> };
 
+export interface MapCaptureDraftCenter {
+	readonly x: number;
+	readonly y: number;
+}
+
 const safeIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const gameMapPathPattern = /^\/Game\/[A-Za-z0-9_./-]+$/;
 
 export function mapCapturePlanDraft(plan: MapCapturePlanValue): MapCapturePlanDraft {
 	return { ...plan, id: plan.id };
+}
+
+export function mapCaptureDraftCenter(draft: MapCapturePlanDraft): MapCaptureDraftCenter {
+	return {
+		x: (draft.requestedBounds.minX + draft.requestedBounds.maxX) / 2,
+		y: (draft.requestedBounds.minY + draft.requestedBounds.maxY) / 2
+	};
+}
+
+export function recenterMapCapturePlanDraft(
+	draft: MapCapturePlanDraft,
+	center: MapCaptureDraftCenter
+): MapCapturePlanDraft {
+	const currentCenter = mapCaptureDraftCenter(draft);
+	const deltaX = center.x - currentCenter.x;
+	const deltaY = center.y - currentCenter.y;
+	return {
+		...draft,
+		requestedBounds: {
+			maxX: draft.requestedBounds.maxX + deltaX,
+			maxY: draft.requestedBounds.maxY + deltaY,
+			minX: draft.requestedBounds.minX + deltaX,
+			minY: draft.requestedBounds.minY + deltaY
+		}
+	};
+}
+
+export function mapCaptureDraftSize(draft: MapCapturePlanDraft): number {
+	return draft.requestedBounds.maxX - draft.requestedBounds.minX;
+}
+
+export function resizeMapCapturePlanDraft(
+	draft: MapCapturePlanDraft,
+	size: number
+): MapCapturePlanDraft {
+	const center = mapCaptureDraftCenter(draft);
+	const halfSize = size / 2;
+	return {
+		...draft,
+		requestedBounds: {
+			maxX: center.x + halfSize,
+			maxY: center.y + halfSize,
+			minX: center.x - halfSize,
+			minY: center.y - halfSize
+		}
+	};
+}
+
+export function setMapCaptureDraftTileSize(
+	draft: MapCapturePlanDraft,
+	tilePixelSize: number
+): MapCapturePlanDraft {
+	const tileWorldSize = draft.tilePixelSize * draft.levels.coarsestUnitsPerPixel;
+	return {
+		...draft,
+		levels: {
+			...draft.levels,
+			coarsestUnitsPerPixel: tileWorldSize / tilePixelSize
+		},
+		tilePixelSize
+	};
+}
+
+export function setMapCaptureDraftGridSize(
+	draft: MapCapturePlanDraft,
+	tilesPerAxis: number
+): MapCapturePlanDraft {
+	if (!Number.isInteger(tilesPerAxis) || tilesPerAxis < 1) return draft;
+	return {
+		...draft,
+		levels: {
+			...draft.levels,
+			coarsestUnitsPerPixel: mapCaptureDraftSize(draft) / (draft.tilePixelSize * tilesPerAxis)
+		}
+	};
 }
 
 export function validateMapCapturePlanDraft(draft: MapCapturePlanDraft): MapCapturePlanValidation {
@@ -35,6 +115,8 @@ export function validateMapCapturePlanDraft(draft: MapCapturePlanDraft): MapCapt
 		errors.push("Every world bound must be a finite number.");
 	} else if (bounds.maxX <= bounds.minX || bounds.maxY <= bounds.minY) {
 		errors.push("Maximum X and Y bounds must be greater than their minimums.");
+	} else if (bounds.maxX - bounds.minX !== bounds.maxY - bounds.minY) {
+		errors.push("Workbench authors square capture areas; set one equal size for X and Y.");
 	}
 	if (
 		!Number.isInteger(draft.tilePixelSize) ||
@@ -61,7 +143,7 @@ export function validateMapCapturePlanDraft(draft: MapCapturePlanDraft): MapCapt
 		!Number.isFinite(draft.levels.coarsestUnitsPerPixel) ||
 		draft.levels.coarsestUnitsPerPixel <= 0
 	) {
-		errors.push("Coarsest units per pixel must be greater than zero.");
+		errors.push("Resolution in world units per pixel must be greater than zero.");
 	}
 	if (!Number.isFinite(draft.capture.z)) errors.push("Capture Z must be a finite number.");
 	if (draft.capture.dataLayers.mode !== "unchanged") {

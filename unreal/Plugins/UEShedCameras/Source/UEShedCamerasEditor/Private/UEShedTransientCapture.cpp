@@ -130,6 +130,13 @@ void FUEShedTransientCapture::ConfigureRenderPolicy(
 	CaptureComponent->SetShowFlagSettings(Settings);
 }
 
+void FUEShedTransientCapture::BeginPersistentCameraCut()
+{
+	USceneCaptureComponent2D* CaptureComponent = Component();
+	CaptureComponent->bAlwaysPersistRenderingState = true;
+	CaptureComponent->bCameraCutThisFrame = true;
+}
+
 void FUEShedTransientCapture::Capture() const
 {
 	Component()->CaptureScene();

@@ -1,5 +1,6 @@
 import {
 	MapCapturePlan,
+	MapTileArtifact,
 	MapTilePyramidManifest,
 	type MapCapturePlan as MapCapturePlanValue
 } from "@ue-shed/cameras/map-tiles";
@@ -7,14 +8,6 @@ import { EditorWorldOpenResponse, SavedWorld, SavedWorldMap } from "@ue-shed/pro
 import { type Effect, Schema, type Stream } from "effect";
 
 const MapCaptureUiOperationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
-
-const MapCaptureRunSummary = Schema.Struct({
-	completedAt: Schema.String,
-	manifestPath: Schema.String,
-	planId: Schema.String,
-	runId: Schema.String,
-	tileCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-});
 
 const MapCaptureGridView = Schema.Struct({
 	levels: Schema.Array(
@@ -49,7 +42,6 @@ export const MapCaptureSelectionResult = Schema.Union([
 		plan: MapCapturePlan,
 		planPath: Schema.optionalKey(Schema.String),
 		projectRoot: Schema.String,
-		runs: Schema.Array(MapCaptureRunSummary),
 		source: Schema.Literals(["new", "opened"]),
 		status: Schema.Literal("ready"),
 		tileCount: Schema.Int.check(Schema.isGreaterThan(0))
@@ -118,18 +110,23 @@ export interface MapCaptureExecuteIntent extends Schema.Schema.Type<
 	typeof MapCaptureExecuteIntent
 > {}
 
-const MapCapturePreviewTile = Schema.Struct({
-	dataUrl: Schema.String.check(Schema.isStartsWith("data:image/png;base64,")),
-	relativePath: Schema.String
+export const MapCaptureTileIntent = Schema.Struct({
+	manifestPath: Schema.NonEmptyString,
+	relativePath: MapTileArtifact.fields.relativePath
 });
+export interface MapCaptureTileIntent extends Schema.Schema.Type<typeof MapCaptureTileIntent> {}
+
+export const MapCaptureTileResult = Schema.Union([
+	WorkbenchFailure,
+	Schema.Struct({ bytes: Schema.Uint8Array, status: Schema.Literal("ready") })
+]);
+export type MapCaptureTileResult = typeof MapCaptureTileResult.Type;
 
 export const MapCaptureExecuteResult = Schema.Union([
 	WorkbenchFailure,
 	Schema.Struct({
 		manifest: MapTilePyramidManifest,
 		manifestPath: Schema.String,
-		previewTiles: Schema.Array(MapCapturePreviewTile),
-		previewTruncated: Schema.Boolean,
 		published: Schema.Boolean,
 		status: Schema.Literal("completed")
 	})
@@ -176,6 +173,9 @@ export interface MapCaptureClientShape {
 	readonly savePlan: (
 		intent: MapCaptureSaveIntent
 	) => Effect.Effect<MapCaptureSaveResult, MapCaptureClientError>;
+	readonly tile: (
+		intent: MapCaptureTileIntent
+	) => Effect.Effect<MapCaptureTileResult, MapCaptureClientError>;
 }
 
 export const decodeMapCaptureExecuteResult = Schema.decodeUnknownEffect(MapCaptureExecuteResult);
@@ -189,3 +189,4 @@ export const decodeMapCaptureLivePreviewResult = Schema.decodeUnknownEffect(
 export const decodeMapCaptureSaveResult = Schema.decodeUnknownEffect(MapCaptureSaveResult);
 export const decodeMapCaptureSelectionResult =
 	Schema.decodeUnknownEffect(MapCaptureSelectionResult);
+export const decodeMapCaptureTileResult = Schema.decodeUnknownEffect(MapCaptureTileResult);

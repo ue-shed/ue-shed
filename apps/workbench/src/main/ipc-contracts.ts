@@ -44,7 +44,9 @@ import {
 	MapCaptureProgressEvent,
 	MapCaptureSaveIntent,
 	MapCaptureSaveResult,
-	MapCaptureSelectionResult
+	MapCaptureSelectionResult,
+	MapCaptureTileIntent,
+	MapCaptureTileResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { MapCapturePlan } from "@ue-shed/cameras";
 import {
@@ -772,6 +774,11 @@ export const invokeContracts = {
 		channel: "map-capture:capture",
 		args: Schema.Tuple([MapCaptureExecuteIntent]),
 		result: MapCaptureExecuteResult
+	}),
+	"map-capture:tile": invoke({
+		channel: "map-capture:tile",
+		args: Schema.Tuple([MapCaptureTileIntent]),
+		result: MapCaptureTileResult
 	}),
 	"map-review:review-sets": invoke({
 		channel: "map-review:review-sets",

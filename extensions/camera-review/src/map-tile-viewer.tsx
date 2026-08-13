@@ -4,6 +4,7 @@ import {
 	pointMapMarkerRadius,
 	pointMapResizeCanvasForDisplay
 } from "@ue-shed/ui/point-map-core";
+import { createEffectAction } from "@ue-shed/ui";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -12,6 +13,7 @@ import {
 	type MapTileKey,
 	type MapTilePyramidManifestValue
 } from "@ue-shed/cameras/map-tiles";
+import type { Effect } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
 	fitMapTileViewport,
@@ -42,12 +44,32 @@ export interface MapTilePyramidViewerProps {
 		| ((controller: MapTilePyramidViewerController | undefined) => void)
 		| undefined;
 	readonly selectedActorKey?: string | undefined;
-	readonly tileUrl: (key: MapTileKey, relativePath: string) => string;
+	readonly loadTile: (
+		key: MapTileKey,
+		relativePath: string
+	) => Effect.Effect<Uint8Array, unknown>;
 	readonly maximumCacheEntries?: number;
 }
 
 /** Reads a Solid input solely to register it as a paint dependency. */
 function observeMapTileInput(_value: unknown): void {}
+
+function MapTileRequest(props: {
+	readonly keyValue: MapTileKey;
+	readonly load: () => Effect.Effect<Uint8Array, unknown>;
+	readonly onFailed: (key: MapTileKey) => void;
+	readonly onLoaded: (key: MapTileKey, bytes: Uint8Array) => void;
+}) {
+	const action = createEffectAction();
+	onMount(() => {
+		action.run(props.load(), {
+			onFailure: () => props.onFailed(props.keyValue),
+			onSuccess: (bytes) => props.onLoaded(props.keyValue, bytes)
+		});
+	});
+	onCleanup(() => action.cancel());
+	return null;
+}
 
 export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 	let surface: HTMLDivElement | undefined;
@@ -78,7 +100,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		fitMapTileViewport({ bounds: props.manifest.grid.snappedBounds, height: 600, width: 900 })
 	);
 	const [currentLevel, setCurrentLevel] = createSignal<number>();
-	const [loaded, setLoaded] = createSignal<ReadonlySet<string>>(new Set());
+	const [tileUrls, setTileUrls] = createSignal<ReadonlyMap<string, string>>(new Map());
 	const [failed, setFailed] = createSignal<ReadonlySet<string>>(new Set());
 	const cacheLimit = () => props.maximumCacheEntries ?? 256;
 
@@ -96,27 +118,28 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		return selected;
 	});
 	createEffect(() => setCurrentLevel(selection().level));
-	const requests = createMemo(() => {
+	const requests = createMemo<ReadonlyArray<MapTileKey>>((previous = []) => {
 		const selected = selection();
+		const previousById = new Map(previous.map((key) => [mapTileKeyId(key), key]));
 		return [
 			...new Map(
 				[...selected.ancestors, ...selected.visible, ...selected.prefetch].map((key) => [
 					mapTileKeyId(key),
-					key
+					previousById.get(mapTileKeyId(key)) ?? key
 				])
 			).values()
 		];
-	});
+	}, []);
 	const renderTiles = createMemo(() =>
 		resolveAvailableMapTiles({
-			available: loaded(),
+			available: new Set(tileUrls().keys()),
 			desired: selection().visible
 		}).render.toSorted((left, right) => left.zoom - right.zoom)
 	);
 	const pendingRequests = createMemo(() =>
 		requests().filter((key) => {
 			const identity = mapTileKeyId(key);
-			return !loaded().has(identity) && !failed().has(identity);
+			return !tileUrls().has(identity) && !failed().has(identity);
 		})
 	);
 	const loadingCount = () => pendingRequests().length;
@@ -272,25 +295,48 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		paintActorOverlay();
 	});
 
-	function markLoaded(key: MapTileKey) {
-		setLoaded((current) => {
-			const identity = mapTileKeyId(key);
-			return new Set(
-				[...Array.from(current).filter((item) => item !== identity), identity].slice(
-					-cacheLimit()
-				)
-			);
+	function markLoaded(key: MapTileKey, bytes: Uint8Array) {
+		const identity = mapTileKeyId(key);
+		const ownedBytes = new Uint8Array(bytes.byteLength);
+		ownedBytes.set(bytes);
+		const url = URL.createObjectURL(new Blob([ownedBytes.buffer], { type: "image/png" }));
+		setTileUrls((current) => {
+			const replaced = current.get(identity);
+			if (replaced !== undefined) URL.revokeObjectURL(replaced);
+			const entries = [
+				...Array.from(current).filter(([item]) => item !== identity),
+				[identity, url] as const
+			];
+			const retained = entries.slice(-cacheLimit());
+			const retainedIds = new Set(retained.map(([item]) => item));
+			for (const [item, evictedUrl] of entries) {
+				if (!retainedIds.has(item)) URL.revokeObjectURL(evictedUrl);
+			}
+			return new Map(retained);
 		});
 		setFailed((current) => {
 			const next = new Set(current);
-			next.delete(mapTileKeyId(key));
+			next.delete(identity);
 			return next;
 		});
 	}
 
 	function markFailed(key: MapTileKey) {
-		setFailed((current) => new Set([...current, mapTileKeyId(key)].slice(-cacheLimit())));
+		const identity = mapTileKeyId(key);
+		setTileUrls((current) => {
+			const url = current.get(identity);
+			if (url === undefined) return current;
+			URL.revokeObjectURL(url);
+			const next = new Map(current);
+			next.delete(identity);
+			return next;
+		});
+		setFailed((current) => new Set([...current, identity].slice(-cacheLimit())));
 	}
+
+	onCleanup(() => {
+		for (const url of tileUrls().values()) URL.revokeObjectURL(url);
+	});
 
 	function pan(event: PointerEvent) {
 		if (!drag) return;
@@ -330,7 +376,10 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		<section {...stylex.props(styles.frame)} aria-label="Map tile pyramid viewer">
 			<header {...stylex.props(styles.header)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>ORTHOGRAPHIC CARTOGRAPHY / RUN</p>
+					<p {...stylex.props(styles.eyebrow)}>
+						CAPTURE PROOF / EXACT{" "}
+						{props.manifest.state === "complete" ? "PUBLISHED" : "ATTEMPT"} PNG
+					</p>
 					<h2 {...stylex.props(styles.title)}>{props.manifest.planId}</h2>
 				</div>
 				<div {...stylex.props(styles.readout)}>
@@ -383,7 +432,8 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 									{...stylex.props(styles.tile)}
 									alt={`Map tile z${key.zoom} row ${key.row} column ${key.column}`}
 									draggable={false}
-									src={props.tileUrl(key, path()!)}
+									src={tileUrls().get(mapTileKeyId(key))}
+									onError={() => markFailed(key)}
 									style={{
 										height: `${rect().height}px`,
 										left: `${rect().left}px`,
@@ -409,11 +459,11 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 						{(key) => {
 							const path = artifactPaths().get(mapTileKeyId(key));
 							return path ? (
-								<img
-									alt=""
-									src={props.tileUrl(key, path)}
-									onLoad={() => markLoaded(key)}
-									onError={() => markFailed(key)}
+								<MapTileRequest
+									keyValue={key}
+									load={() => props.loadTile(key, path)}
+									onFailed={markFailed}
+									onLoaded={markLoaded}
 								/>
 							) : null;
 						}}

@@ -3,14 +3,15 @@ import {
 	MapCaptureRepository,
 	awaitProvisionedCameraFrame,
 	clearProvisionedCameras,
+	decodeMapTilePyramidManifest,
 	ensureProvisionedCameras,
 	inspectMapCapturePlan,
 	makeDefaultMapCapturePlan,
 	mapCapturePlansRoot,
+	mapCaptureRoot,
 	runMapCapturePlan,
 	savedMapPathToGameMapPath,
-	type MapCapturePlan,
-	type MapTilePyramidManifest
+	type MapCapturePlan
 } from "@ue-shed/cameras";
 import { EditorWorldControl } from "@ue-shed/engine-discovery";
 import type {
@@ -22,21 +23,21 @@ import type {
 	MapCaptureProgressEvent,
 	MapCaptureSaveIntent,
 	MapCaptureSaveResult,
-	MapCaptureSelectionResult
+	MapCaptureSelectionResult,
+	MapCaptureTileIntent,
+	MapCaptureTileResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { AssetReader } from "@ue-shed/unreal-assets";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer } from "effect";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { WorkbenchWindow } from "../adapters/electron-window.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
-const previewTileLimit = 128;
-const previewByteLimit = 16 * 1024 * 1024;
 const progressEventChannel = "map-capture:progress";
 const livePreviewMaximumDimension = 640;
 const livePreviewHeight = 360;
@@ -50,37 +51,14 @@ function failure(cause: unknown, recovery: string) {
 	return { message: messageOf(cause), recovery, status: "failed" as const };
 }
 
-function previewTiles(args: {
-	readonly manifest: MapTilePyramidManifest;
-	readonly manifestPath: string;
-}) {
-	return Effect.tryPromise({
-		try: async () => {
-			const result: Array<{ readonly dataUrl: string; readonly relativePath: string }> = [];
-			let bytesRead = 0;
-			for (const tile of args.manifest.tiles) {
-				if (
-					result.length >= previewTileLimit ||
-					bytesRead + tile.bytes > previewByteLimit
-				) {
-					break;
-				}
-				const bytes = await readFile(
-					join(dirname(args.manifestPath), ...tile.relativePath.split("/"))
-				);
-				bytesRead += bytes.byteLength;
-				result.push({
-					dataUrl: `data:image/png;base64,${bytes.toString("base64")}`,
-					relativePath: tile.relativePath
-				});
-			}
-			return {
-				previewTiles: result,
-				previewTruncated: result.length < args.manifest.tiles.length
-			};
-		},
-		catch: (cause) => cause
-	});
+function isContainedPath(root: string, candidate: string): boolean {
+	const relativePath = relative(resolve(root), resolve(candidate));
+	return (
+		relativePath !== "" &&
+		relativePath !== ".." &&
+		!relativePath.startsWith(`..${sep}`) &&
+		!isAbsolute(relativePath)
+	);
 }
 
 function previewCameraFrame(bounds: {
@@ -114,6 +92,7 @@ export interface WorkbenchMapCaptureShape {
 	readonly openMap: (plan: MapCapturePlan) => Effect.Effect<MapCaptureOpenResult>;
 	readonly preview: (plan: MapCapturePlan) => Effect.Effect<MapCaptureLivePreviewResult>;
 	readonly savePlan: (intent: MapCaptureSaveIntent) => Effect.Effect<MapCaptureSaveResult>;
+	readonly tile: (intent: MapCaptureTileIntent) => Effect.Effect<MapCaptureTileResult>;
 }
 
 export class WorkbenchMapCapture extends Context.Service<
@@ -226,10 +205,6 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		}) {
 			const selectedProject = yield* project.savedProject();
 			const inspection = yield* inspectMapCapturePlan(args.plan);
-			const runs = yield* repository.listRuns({
-				planId: args.plan.id,
-				projectRoot: selectedProject.projectRoot
-			});
 			return {
 				grid: {
 					levels: inspection.grid.levels,
@@ -239,7 +214,6 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				plan: args.plan,
 				...(args.planPath === undefined ? {} : { planPath: args.planPath }),
 				projectRoot: selectedProject.projectRoot,
-				runs,
 				source: args.source,
 				status: "ready" as const,
 				tileCount: inspection.tileCount
@@ -355,6 +329,63 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			);
 		});
 
+		const tile = Effect.fn("Workbench.MapCapture.tile")(function* (
+			intent: MapCaptureTileIntent
+		) {
+			return yield* Effect.gen(function* () {
+				const selectedProject = yield* project.selectedProject();
+				const captureRoot = mapCaptureRoot(selectedProject.projectRoot);
+				const manifestPath = resolve(intent.manifestPath);
+				if (
+					basename(manifestPath) !== "manifest.json" ||
+					!isContainedPath(captureRoot, manifestPath)
+				) {
+					return yield* Effect.fail(
+						new Error("Capture proof manifest is outside the selected project.")
+					);
+				}
+				const manifest = yield* Effect.tryPromise({
+					try: async () => JSON.parse(await readFile(manifestPath, "utf8")) as unknown,
+					catch: (cause) => cause
+				}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
+				const artifact = manifest.tiles.find(
+					(candidate) => candidate.relativePath === intent.relativePath
+				);
+				if (artifact === undefined) {
+					return yield* Effect.fail(
+						new Error("Capture proof tile is not listed by this manifest.")
+					);
+				}
+				const runRoot = dirname(manifestPath);
+				const tilePath = resolve(runRoot, ...artifact.relativePath.split("/"));
+				if (!isContainedPath(runRoot, tilePath)) {
+					return yield* Effect.fail(
+						new Error("Capture proof tile resolves outside its immutable run.")
+					);
+				}
+				const bytes = yield* Effect.tryPromise({
+					try: () => readFile(tilePath),
+					catch: (cause) => cause
+				});
+				const hash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+				if (bytes.byteLength !== artifact.bytes || hash !== artifact.hash) {
+					return yield* Effect.fail(
+						new Error("Capture proof tile no longer matches its immutable manifest.")
+					);
+				}
+				return { bytes: new Uint8Array(bytes), status: "ready" as const };
+			}).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Inspect or recapture this run; Workbench only loads manifest-owned PNG tiles."
+						)
+					)
+				)
+			);
+		});
+
 		const capture = Effect.fn("Workbench.MapCapture.capture")(function* (
 			intent: MapCaptureExecuteIntent
 		) {
@@ -383,21 +414,8 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					plan: intent.plan,
 					projectRoot: selectedProject.projectRoot
 				});
-				yield* reportProgress({
-					failedTiles: outcome.manifest.failures.length,
-					operationId: intent.operationId,
-					phase: "loading_preview",
-					processedTiles:
-						outcome.manifest.tiles.length + outcome.manifest.failures.length,
-					totalTiles: outcome.manifest.tiles.length + outcome.manifest.failures.length
-				});
-				const preview = yield* previewTiles({
-					manifest: outcome.manifest,
-					manifestPath: outcome.manifestPath
-				});
 				return {
 					...outcome,
-					...preview,
 					status: "completed" as const
 				};
 			}).pipe(
@@ -419,7 +437,8 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			newPlan,
 			openMap,
 			preview,
-			savePlan
+			savePlan,
+			tile
 		});
 	})
 );

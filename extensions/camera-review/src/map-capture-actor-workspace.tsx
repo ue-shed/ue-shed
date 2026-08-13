@@ -49,8 +49,11 @@ function isInsideCapture(
 
 export function MapCaptureActorWorkspace(props: {
 	readonly loadActors: () => Effect.Effect<MapCaptureActorCatalogResult, MapCaptureClientError>;
+	readonly loadTile: (
+		key: MapTileKey,
+		relativePath: string
+	) => Effect.Effect<Uint8Array, unknown>;
 	readonly manifest: MapTilePyramidManifestValue;
-	readonly tileUrl: (key: MapTileKey, relativePath: string) => string;
 }) {
 	const loadAction = createEffectAction();
 	let viewer: MapTilePyramidViewerController | undefined;
@@ -244,7 +247,7 @@ export function MapCaptureActorWorkspace(props: {
 						viewer = controller;
 					}}
 					selectedActorKey={selectedKey()}
-					tileUrl={props.tileUrl}
+					loadTile={props.loadTile}
 				/>
 			</div>
 		</section>

@@ -6,10 +6,12 @@ import {
 	decodeMapCaptureOpenResult,
 	decodeMapCaptureSaveResult,
 	decodeMapCaptureSelectionResult,
+	decodeMapCaptureTileResult,
 	type MapCaptureClientShape,
 	type MapCaptureExecuteIntent,
 	type MapCaptureProgressEvent,
-	type MapCaptureSaveIntent
+	type MapCaptureSaveIntent,
+	type MapCaptureTileIntent
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { Effect, Queue, Stream } from "effect";
 
@@ -112,5 +114,11 @@ export const mapCaptureClient: MapCaptureClientShape = {
 			decode: decodeMapCaptureSaveResult,
 			invoke: () => window.ueShed.mapCapture.savePlan(intent),
 			operation: "mapCapture.savePlan"
+		}),
+	tile: (intent: MapCaptureTileIntent) =>
+		request({
+			decode: decodeMapCaptureTileResult,
+			invoke: () => window.ueShed.mapCapture.tile(intent),
+			operation: "mapCapture.tile"
 		})
 };

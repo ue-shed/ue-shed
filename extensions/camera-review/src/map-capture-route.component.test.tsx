@@ -68,7 +68,6 @@ describe("MapCaptureRoute", () => {
 					maps: [],
 					plan,
 					projectRoot: "C:/Fixture",
-					runs: [],
 					source: "opened" as const,
 					status: "ready" as const,
 					tileCount: 1
@@ -90,7 +89,8 @@ describe("MapCaptureRoute", () => {
 					};
 				}),
 			progress: Stream.empty,
-			savePlan: () => Effect.die("not used")
+			savePlan: () => Effect.die("not used"),
+			tile: () => Effect.die("not used")
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -102,7 +102,7 @@ describe("MapCaptureRoute", () => {
 		expect(await screen.findByLabelText("Live top-down map framing preview")).toBeDefined();
 		expect(previewedPlanId).toBe("fixture-overview");
 		expect(screen.getByText("EDITOR LIVE")).toBeDefined();
-		expect(screen.getByText("OBSERVATION FRAMING")).toBeDefined();
+		expect(screen.getByText("LIVE FRAMING · NOT CAPTURE OUTPUT")).toBeDefined();
 	});
 
 	it("surfaces scoped atmosphere and per-level LOD settings in the capture intent", async () => {
@@ -137,7 +137,6 @@ describe("MapCaptureRoute", () => {
 					plan,
 					planPath: "C:/Fixture/map-capture.json",
 					projectRoot: "C:/Fixture",
-					runs: [],
 					source: "opened" as const,
 					status: "ready" as const,
 					tileCount: 5
@@ -147,7 +146,8 @@ describe("MapCaptureRoute", () => {
 			liveFrames: Stream.empty,
 			preview: () => Effect.die("not used"),
 			progress: Stream.empty,
-			savePlan: () => Effect.die("not used")
+			savePlan: () => Effect.die("not used"),
+			tile: () => Effect.die("not used")
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -205,7 +205,6 @@ describe("MapCaptureRoute", () => {
 					maps: [],
 					plan,
 					projectRoot: "C:/Fixture",
-					runs: [],
 					source: "new" as const,
 					status: "ready" as const,
 					tileCount: 5
@@ -222,7 +221,8 @@ describe("MapCaptureRoute", () => {
 						planPath: "C:/Fixture/.ue-shed/map-capture/plans/city-overview.json",
 						status: "saved" as const
 					};
-				})
+				}),
+			tile: () => Effect.die("not used")
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -235,18 +235,67 @@ describe("MapCaptureRoute", () => {
 		const planId = await screen.findByRole("textbox", { name: "PLAN ID" });
 		await user.clear(planId);
 		await user.type(planId, "city-overview");
-		await user.click(screen.getByRole("button", { name: "2,048 px" }));
-		await user.selectOptions(
-			screen.getByRole("combobox", { name: "Coarsest resolution" }),
-			"8"
-		);
-		expect(screen.getByText("16,384 × 16,384 UU")).toBeDefined();
+		fireEvent.input(screen.getByRole("spinbutton", { name: "CENTER X" }), {
+			target: { value: "2000" }
+		});
+		const centerY = screen.getByRole("spinbutton", { name: "CENTER Y" });
+		await user.clear(centerY);
+		expect(screen.queryByText("Every world bound must be a finite number.")).toBeNull();
+		await user.tab();
+		expect((centerY as HTMLInputElement).valueAsNumber).toBe(512);
+		await user.clear(centerY);
+		await user.type(centerY, "0");
+		fireEvent.change(screen.getByRole("spinbutton", { name: "SIZE · UU" }), {
+			target: { value: "3000" }
+		});
+		expect(screen.getByText(/S 500 · N 3,500 · W -1,500 · E 1,500/)).toBeDefined();
+		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
+		fireEvent.change(screen.getByRole("spinbutton", { name: "TILE SIZE · PX" }), {
+			target: { value: "2048" }
+		});
+		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
+		expect(screen.getByText("2 × 2 TILES")).toBeDefined();
+		expect(
+			(
+				screen.getByRole("spinbutton", {
+					name: "RESOLUTION · UU/PX"
+				}) as HTMLInputElement
+			).valueAsNumber
+		).toBe(1);
+		fireEvent.change(screen.getByRole("spinbutton", { name: "TILE SIZE · PX" }), {
+			target: { value: "512" }
+		});
+		expect(screen.getByText("2 × 2 TILES")).toBeDefined();
+		const baseGrid = screen.getByRole("spinbutton", { name: "BASE GRID · N × N" });
+		fireEvent.change(baseGrid, {
+			target: { value: "4" }
+		});
+		expect((baseGrid as HTMLInputElement).valueAsNumber).toBe(4);
+		expect(screen.getByText("4 × 4 TILES")).toBeDefined();
+		expect(
+			(
+				screen.getByRole("spinbutton", {
+					name: "RESOLUTION · UU/PX"
+				}) as HTMLInputElement
+			).valueAsNumber
+		).toBe(1.46484375);
+		fireEvent.change(screen.getByRole("spinbutton", { name: "RESOLUTION · UU/PX" }), {
+			target: { value: "0.5" }
+		});
+		expect(screen.getByText("12 × 12 TILES")).toBeDefined();
+		expect(screen.getByText("256 × 256 UU")).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "SAVE" }));
 
 		await waitFor(() => expect(saved?.plan.id).toBe("city-overview"));
 		expect(saved?.saveAs).toBe(false);
-		expect(saved?.plan.tilePixelSize).toBe(2_048);
-		expect(saved?.plan.levels.coarsestUnitsPerPixel).toBe(8);
+		expect(saved?.plan.tilePixelSize).toBe(512);
+		expect(saved?.plan.levels.coarsestUnitsPerPixel).toBe(0.5);
+		expect(saved?.plan.requestedBounds).toEqual({
+			maxX: 3_500,
+			maxY: 1_500,
+			minX: 500,
+			minY: -1_500
+		});
 		expect(await screen.findByText(/Saved portable plan/)).toBeDefined();
 	});
 
@@ -271,7 +320,6 @@ describe("MapCaptureRoute", () => {
 					maps: [],
 					plan,
 					projectRoot: "C:/Fixture",
-					runs: [],
 					source: "opened" as const,
 					status: "ready" as const,
 					tileCount: 5
@@ -281,7 +329,8 @@ describe("MapCaptureRoute", () => {
 			liveFrames: Stream.empty,
 			preview: () => Effect.die("not used"),
 			progress: Stream.fromQueue(progressQueue),
-			savePlan: () => Effect.die("not used")
+			savePlan: () => Effect.die("not used"),
+			tile: () => Effect.die("not used")
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>

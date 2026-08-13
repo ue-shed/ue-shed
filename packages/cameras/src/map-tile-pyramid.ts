@@ -73,6 +73,13 @@ function requirePositiveInteger(value: number, name: string): void {
 	}
 }
 
+function tileCountForSpan(span: number, tileWorldSize: number): number {
+	const quotient = span / tileWorldSize;
+	const nearestInteger = Math.round(quotient);
+	const tolerance = Number.EPSILON * Math.max(1, Math.abs(quotient)) * 8;
+	return Math.abs(quotient - nearestInteger) <= tolerance ? nearestInteger : Math.ceil(quotient);
+}
+
 export function createMapTileGrid(options: CreateMapTileGridOptions): MapTileGrid {
 	requireBounds(options.requestedBounds, "requestedBounds");
 	requirePositiveInteger(options.tilePixelSize, "tilePixelSize");
@@ -83,19 +90,27 @@ export function createMapTileGrid(options: CreateMapTileGridOptions): MapTileGri
 	}
 
 	const coarseTileWorldSize = options.tilePixelSize * options.coarsestUnitsPerPixel;
-	const origin = {
-		x: Math.ceil(options.requestedBounds.maxX / coarseTileWorldSize) * coarseTileWorldSize,
-		y: Math.floor(options.requestedBounds.minY / coarseTileWorldSize) * coarseTileWorldSize
-	};
-	const coarseRows = Math.ceil((origin.x - options.requestedBounds.minX) / coarseTileWorldSize);
-	const coarseColumns = Math.ceil(
-		(options.requestedBounds.maxY - origin.y) / coarseTileWorldSize
+	const coarseRows = tileCountForSpan(
+		options.requestedBounds.maxX - options.requestedBounds.minX,
+		coarseTileWorldSize
 	);
+	const coarseColumns = tileCountForSpan(
+		options.requestedBounds.maxY - options.requestedBounds.minY,
+		coarseTileWorldSize
+	);
+	const center = {
+		x: (options.requestedBounds.minX + options.requestedBounds.maxX) / 2,
+		y: (options.requestedBounds.minY + options.requestedBounds.maxY) / 2
+	};
 	const snappedBounds = {
-		minX: origin.x - coarseRows * coarseTileWorldSize,
-		minY: origin.y,
-		maxX: origin.x,
-		maxY: origin.y + coarseColumns * coarseTileWorldSize
+		minX: center.x - (coarseRows * coarseTileWorldSize) / 2,
+		minY: center.y - (coarseColumns * coarseTileWorldSize) / 2,
+		maxX: center.x + (coarseRows * coarseTileWorldSize) / 2,
+		maxY: center.y + (coarseColumns * coarseTileWorldSize) / 2
+	};
+	const origin = {
+		x: snappedBounds.maxX,
+		y: snappedBounds.minY
 	};
 	const levels = Array.from({ length: options.levelCount }, (_, zoom) => {
 		const scale = 2 ** zoom;

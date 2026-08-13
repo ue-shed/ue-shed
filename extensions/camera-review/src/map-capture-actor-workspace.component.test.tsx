@@ -72,6 +72,10 @@ describe("MapCaptureActorWorkspace", () => {
 			}
 		);
 		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+		vi.stubGlobal("URL", {
+			createObjectURL: () => "blob:map-capture-tile",
+			revokeObjectURL: () => undefined
+		});
 	});
 	afterEach(() => {
 		cleanup();
@@ -91,8 +95,8 @@ describe("MapCaptureActorWorkspace", () => {
 							return { status: "ready" as const, world };
 						})
 					}
+					loadTile={() => Effect.succeed(new Uint8Array([1, 2, 3]))}
 					manifest={manifest}
-					tileUrl={() => "data:image/png;base64,fixture"}
 				/>
 			</EffectRuntimeProvider>
 		));

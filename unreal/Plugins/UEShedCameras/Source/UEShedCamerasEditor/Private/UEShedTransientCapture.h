@@ -28,6 +28,7 @@ public:
 	void ConfigurePerspective(float FieldOfViewDegrees);
 	void ConfigureOrthographic(float OrthoWidth);
 	void ConfigureRenderPolicy(bool bFog, bool bVolumetricFog, float LodDistanceScale);
+	void BeginPersistentCameraCut();
 	void Capture() const;
 	bool ReadImage(FImage& Image, const FIntRect* Crop = nullptr) const;
 	static bool WritePng(const FString& Path, const FImage& Image);

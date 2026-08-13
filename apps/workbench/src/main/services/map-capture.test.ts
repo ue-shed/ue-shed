@@ -1,15 +1,18 @@
 import {
 	MapCaptureRepositoryLive,
+	decodeMapTilePyramidManifest,
 	makeCameraFeedTestLayer,
-	mapCapturePlansRoot
+	mapCapturePlansRoot,
+	mapCaptureRunsRoot
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { makeEditorWorldControlTestLayer } from "@ue-shed/engine-discovery";
 import { Effect, Layer } from "effect";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect } from "vitest";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
@@ -125,6 +128,27 @@ it.effect(
 		})
 );
 
+it.effect("does not inspect published runs while creating a plan", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-map-author-legacy-run-"))
+		);
+		roots.push(projectRoot);
+		const legacyRunRoot = join(mapCaptureRunsRoot(projectRoot, "map-overview"), "legacy-run");
+		yield* Effect.promise(() => mkdir(legacyRunRoot, { recursive: true }));
+		yield* Effect.promise(() =>
+			writeFile(join(legacyRunRoot, "manifest.json"), "not valid JSON", "utf8")
+		);
+
+		const result = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			return yield* service.newPlan();
+		}).pipe(Effect.provide(mapCaptureLayer(projectRoot)));
+
+		expect(result.status).toBe("ready");
+	})
+);
+
 it.effect("loads saved actors for the capture map through the shared asset reader", () =>
 	Effect.gen(function* () {
 		const projectRoot = yield* Effect.promise(() =>
@@ -181,6 +205,56 @@ it.effect("loads saved actors for the capture map through the shared asset reade
 			mapPath: "Content/Maps/L_City.umap",
 			projectRoot
 		});
+	})
+);
+
+it.effect("loads only manifest-owned capture proof tiles and verifies their hash", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-map-proof-"))
+		);
+		roots.push(projectRoot);
+		const fixture = yield* Effect.tryPromise({
+			try: async () =>
+				JSON.parse(
+					await readFile(
+						join(
+							process.cwd(),
+							"packages/protocol/contracts/cameras/map-tile/v1/fixtures/manifest-valid.json"
+						),
+						"utf8"
+					)
+				) as unknown,
+			catch: (cause) => cause
+		}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
+		const fixtureArtifact = fixture.tiles[0]!;
+		const tileBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+		const artifact = {
+			...fixtureArtifact,
+			bytes: tileBytes.byteLength,
+			hash: `sha256:${createHash("sha256").update(tileBytes).digest("hex")}`
+		};
+		const manifest = { ...fixture, tiles: [artifact, ...fixture.tiles.slice(1)] };
+		const runRoot = join(mapCaptureRunsRoot(projectRoot, manifest.planId), manifest.runId);
+		const manifestPath = join(runRoot, "manifest.json");
+		const tilePath = join(runRoot, ...artifact.relativePath.split("/"));
+		yield* Effect.promise(() => mkdir(dirname(tilePath), { recursive: true }));
+		yield* Effect.promise(() => writeFile(manifestPath, JSON.stringify(manifest), "utf8"));
+		yield* Effect.promise(() => writeFile(tilePath, tileBytes));
+
+		const result = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			return yield* service.tile({ manifestPath, relativePath: artifact.relativePath });
+		}).pipe(Effect.provide(mapCaptureLayer(projectRoot)));
+
+		expect(result).toEqual({ bytes: tileBytes, status: "ready" });
+
+		yield* Effect.promise(() => writeFile(tilePath, new Uint8Array([0])));
+		const tampered = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			return yield* service.tile({ manifestPath, relativePath: artifact.relativePath });
+		}).pipe(Effect.provide(mapCaptureLayer(projectRoot)));
+		expect(tampered.status).toBe("failed");
 	})
 );
 
@@ -267,6 +341,6 @@ it.effect("provisions the snapped bounds as one orthographic live camera", () =>
 					}>;
 				}
 			).cameras[0]?.projection.orthoWidth
-		).toBeCloseTo((4096 * 16) / 9);
+		).toBeCloseTo((2048 * 16) / 9);
 	})
 );

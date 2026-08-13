@@ -293,6 +293,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("map-capture:save-plan", intent),
 		capture: (intent: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("map-capture:capture", intent),
+		tile: (intent: unknown): Promise<unknown> => ipcRenderer.invoke("map-capture:tile", intent),
 		onProgress: (listener: (progress: MapCaptureProgressEvent) => void) => {
 			const handler = (
 				_event: Electron.IpcRendererEvent,

@@ -127,6 +127,8 @@ export interface MapReviewClientShape {
 		candidateId: string
 	) => Effect.Effect<MapReviewCandidatePreviewResult, MapReviewClientError>;
 	readonly liveFrames: Stream.Stream<MapReviewLiveFrame>;
+	/** Cheap capability probe used to promote cached PNG previews after Unreal reconnects. */
+	readonly livePreviewAvailable?: () => Effect.Effect<boolean, MapReviewClientError>;
 	readonly setLivePreviewFps: (fps: number) => Effect.Effect<number, MapReviewClientError>;
 }
 

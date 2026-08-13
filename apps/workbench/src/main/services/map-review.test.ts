@@ -124,6 +124,15 @@ const dyingAuthoring: ReviewAuthoringShape = {
 	previewCandidate: () => Effect.die("not used")
 };
 const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
+	if (request.functionName === "EnsureProvisionedCameras") {
+		return Effect.succeed({
+			cameras: [],
+			error: "editor-live-unavailable",
+			schemaVersion: 2,
+			status: "failed",
+			worldContext: "editor"
+		});
+	}
 	if (request.functionName === "ClearProvisionedCameras") {
 		return Effect.succeed({ cameras: [], schemaVersion: 1 });
 	}
@@ -1772,8 +1781,127 @@ const livePreviewSession = {
 	viewId: "initial-view"
 };
 
-it.effect("streams the selected draft pose while PIE is running", () =>
-	Effect.gen(function* () {
+function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
+	return MapReviewLiveWithDialog.pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				assetReaderTestLayer,
+				makeCameraFeedTestLayer({
+					latestFrames: Effect.succeed(
+						new Map([
+							[
+								0,
+								{
+									cameraId: "cam-0",
+									cameraIndex: 0,
+									captureMonotonicMs: 1,
+									height: 180,
+									pixels: new Uint8Array([10, 20, 30, 255]),
+									producerId: "producer",
+									readbackDrops: 0,
+									readbackLatencyMs: 1,
+									receivedMonotonicMs: 2,
+									sequence: 1n,
+									sessionId: "session",
+									transportReplacements: 0,
+									width: 320,
+									worldSeconds: 0.1
+								}
+							]
+						])
+					)
+				}),
+				makeWorkbenchWindowTestLayer(),
+				makeRemoteControlClientTestLayer((request) => {
+					if (request.functionName === "EnsureProvisionedCameras") {
+						const provisioned = JSON.parse(String(request.parameters.RequestJson)) as {
+							cameras: Array<{ location: unknown; projection: unknown }>;
+						};
+						expect(provisioned.cameras[0]).toMatchObject({
+							location: { x: 40, y: 50, z: 60 },
+							projection: { fieldOfViewDegrees: 55, type: "perspective" }
+						});
+						return Effect.succeed({
+							cameras: [
+								{
+									cameraId: "cam-0",
+									candidateId: "facade_front",
+									displayName: "facade_front",
+									height: 180,
+									index: 0,
+									width: 320
+								}
+							],
+							schemaVersion: 2,
+							worldContext
+						});
+					}
+					if (request.functionName === "ClearProvisionedCameras") {
+						return Effect.succeed({ cameras: [], schemaVersion: 2, worldContext });
+					}
+					return Effect.die(`unexpected remote call ${request.functionName}`);
+				}),
+				makeReviewAuthoringSessionsTestLayer({
+					...dyingAuthoringSessions,
+					load: () => Effect.succeed(livePreviewSession as never)
+				}),
+				Layer.succeed(
+					Observatory,
+					Observatory.of({
+						focus: () => Effect.die("not used"),
+						observe: () => Stream.die("not used"),
+						setObservationCadence: () => Effect.die("not used"),
+						snapshot: () => Effect.die("not used")
+					})
+				),
+				makeEditorPlaySessionTestLayer({
+					execute: () => Effect.die("not used"),
+					pause: () => Effect.die("not used"),
+					resume: () => Effect.die("not used"),
+					start: () => Effect.die("not used"),
+					status: () =>
+						Effect.succeed({
+							contract: {
+								name: "unreal-editor-play-session",
+								version: { major: 1, minor: 0 }
+							},
+							state:
+								worldContext === "play"
+									? {
+											mode: "play" as const,
+											sessionId: "pie-1" as never,
+											status: "running" as const
+										}
+									: { status: "stopped" as const }
+						}),
+					stop: () => Effect.die("not used")
+				}),
+				makeWorkbenchConfigurationLayer(projectConfigured),
+				makeLocalFilesTestLayer(),
+				makeReviewRepositoryTestLayer({
+					discardStaging: () => Effect.die("not used"),
+					findSet: () => Effect.die("not used"),
+					finalizeRun: () => Effect.die("not used"),
+					listRuns: () => Effect.die("not used"),
+					loadRun: () => Effect.die("not used"),
+					loadSet: () => Effect.die("not used"),
+					prepareRun: () => Effect.die("not used"),
+					saveSet: () => Effect.die("not used"),
+					storeArtifact: () => Effect.die("not used"),
+					writeRunDocument: () => Effect.die("not used")
+				}),
+				makeReviewCaptureTestLayer(dyingCapture),
+				makeReviewAuthoringTestLayer({
+					...dyingAuthoring,
+					previewCandidate: () => Effect.die("PNG fallback must not run")
+				})
+			)
+		)
+	);
+}
+
+function expectLiveDraftPreview(previewContext: "editor_live" | "play_live") {
+	return Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
 		const result = yield* service.previewAuthoringCandidate({
 			candidateId: "facade_front",
@@ -1785,131 +1913,21 @@ it.effect("streams the selected draft pose while PIE is running", () =>
 			diagnostics: [],
 			height: 180,
 			pixelFormat: "bgra8",
+			previewContext,
 			status: "ready",
 			width: 320
 		});
-	}).pipe(
-		Effect.provide(
-			MapReviewLiveWithDialog.pipe(
-				Layer.provide(
-					Layer.mergeAll(
-						assetReaderTestLayer,
-						makeCameraFeedTestLayer({
-							latestFrames: Effect.succeed(
-								new Map([
-									[
-										0,
-										{
-											cameraId: "cam-0",
-											cameraIndex: 0,
-											captureMonotonicMs: 1,
-											height: 180,
-											pixels: new Uint8Array([10, 20, 30, 255]),
-											producerId: "producer",
-											readbackDrops: 0,
-											readbackLatencyMs: 1,
-											receivedMonotonicMs: 2,
-											sequence: 1n,
-											sessionId: "session",
-											transportReplacements: 0,
-											width: 320,
-											worldSeconds: 0.1
-										}
-									]
-								])
-							)
-						}),
-						makeWorkbenchWindowTestLayer(),
-						makeRemoteControlClientTestLayer((request) => {
-							if (request.functionName === "EnsureProvisionedCameras") {
-								const provisioned = JSON.parse(
-									String(request.parameters.RequestJson)
-								) as {
-									cameras: Array<{
-										fieldOfViewDegrees: number;
-										location: unknown;
-									}>;
-								};
-								expect(provisioned.cameras[0]).toMatchObject({
-									fieldOfViewDegrees: 55,
-									location: { x: 40, y: 50, z: 60 }
-								});
-								return Effect.succeed({
-									cameras: [
-										{
-											cameraId: "cam-0",
-											candidateId: "facade_front",
-											displayName: "facade_front",
-											height: 180,
-											index: 0,
-											width: 320
-										}
-									],
-									schemaVersion: 1
-								});
-							}
-							if (request.functionName === "ClearProvisionedCameras") {
-								return Effect.succeed({ cameras: [], schemaVersion: 1 });
-							}
-							return Effect.die(`unexpected remote call ${request.functionName}`);
-						}),
-						makeReviewAuthoringSessionsTestLayer({
-							...dyingAuthoringSessions,
-							load: () => Effect.succeed(livePreviewSession as never)
-						}),
-						Layer.succeed(
-							Observatory,
-							Observatory.of({
-								focus: () => Effect.die("not used"),
-								observe: () => Stream.die("not used"),
-								setObservationCadence: () => Effect.die("not used"),
-								snapshot: () => Effect.die("not used")
-							})
-						),
-						makeEditorPlaySessionTestLayer({
-							execute: () => Effect.die("not used"),
-							pause: () => Effect.die("not used"),
-							resume: () => Effect.die("not used"),
-							start: () => Effect.die("not used"),
-							status: () =>
-								Effect.succeed({
-									contract: {
-										name: "unreal-editor-play-session",
-										version: { major: 1, minor: 0 }
-									},
-									state: {
-										mode: "play",
-										sessionId: "pie-1" as never,
-										status: "running"
-									}
-								}),
-							stop: () => Effect.die("not used")
-						}),
-						makeWorkbenchConfigurationLayer(projectConfigured),
-						makeLocalFilesTestLayer(),
-						makeReviewRepositoryTestLayer({
-							discardStaging: () => Effect.die("not used"),
-							findSet: () => Effect.die("not used"),
-							finalizeRun: () => Effect.die("not used"),
-							listRuns: () => Effect.die("not used"),
-							loadRun: () => Effect.die("not used"),
-							loadSet: () => Effect.die("not used"),
-							prepareRun: () => Effect.die("not used"),
-							saveSet: () => Effect.die("not used"),
-							storeArtifact: () => Effect.die("not used"),
-							writeRunDocument: () => Effect.die("not used")
-						}),
-						makeReviewCaptureTestLayer(dyingCapture),
-						makeReviewAuthoringTestLayer({
-							...dyingAuthoring,
-							previewCandidate: () =>
-								Effect.die("PNG preview must not run while PIE is active")
-						})
-					)
-				)
-			)
-		)
+	});
+}
+
+it.effect("streams the selected draft pose from the editor world while stopped", () =>
+	expectLiveDraftPreview("editor_live").pipe(
+		Effect.provide(makeLivePreviewServiceLayer("editor"))
 	)
+);
+
+it.effect("streams the selected draft pose from the play world while PIE is running", () =>
+	expectLiveDraftPreview("play_live").pipe(Effect.provide(makeLivePreviewServiceLayer("play")))
 );
 
 it.effect("blocks Capture Set while PIE is running", () =>

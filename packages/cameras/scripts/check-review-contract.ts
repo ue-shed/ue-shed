@@ -147,5 +147,5 @@ for (const file of present) {
 }
 
 console.log(
-	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v2; map-tile v1 (${mapTileFixtures.length} valid, 2 invalid)`
+	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v3; map-tile v1 (${mapTileFixtures.length} valid, 2 invalid)`
 );

@@ -17,8 +17,9 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "UObject/StructOnScope.h"
+#include "UObject/UnrealType.h"
 #include "UEShedEditorPlaySessionLibrary.h"
-#include "UEShedScenarioStateProvider.h"
 #include "UEShedScenariosModule.h"
 
 namespace
@@ -112,7 +113,8 @@ AActor* StateProvider(UWorld* World)
 	if (World == nullptr) return nullptr;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		if (It->GetClass()->ImplementsInterface(UUEShedScenarioStateProvider::StaticClass()))
+		if (It->FindFunction(TEXT("EvaluateScenarioCondition")) != nullptr
+			&& It->FindFunction(TEXT("GetScenarioStateJson")) != nullptr)
 		{
 			return *It;
 		}
@@ -123,15 +125,32 @@ AActor* StateProvider(UWorld* World)
 bool Condition(UWorld* World, FName ConditionId)
 {
 	AActor* Provider = StateProvider(World);
-	return Provider != nullptr
-		&& IUEShedScenarioStateProvider::Execute_EvaluateScenarioCondition(Provider, ConditionId);
+	UFunction* Function = Provider == nullptr
+		? nullptr : Provider->FindFunction(TEXT("EvaluateScenarioCondition"));
+	if (Function == nullptr) return false;
+	FStructOnScope Params(Function);
+	FNameProperty* ConditionProperty = FindFProperty<FNameProperty>(Function, TEXT("ConditionId"));
+	FBoolProperty* ReturnProperty = FindFProperty<FBoolProperty>(Function, TEXT("ReturnValue"));
+	if (ConditionProperty == nullptr || ReturnProperty == nullptr) return false;
+	ConditionProperty->SetPropertyValue_InContainer(Params.GetStructMemory(), ConditionId);
+	Provider->ProcessEvent(Function, Params.GetStructMemory());
+	return ReturnProperty->GetPropertyValue_InContainer(Params.GetStructMemory());
 }
 
 FString StateSummary(UWorld* World)
 {
 	AActor* Provider = StateProvider(World);
 	if (Provider == nullptr) return TEXT("Scenario state provider is unavailable.");
-	return IUEShedScenarioStateProvider::Execute_GetScenarioStateJson(Provider);
+	UFunction* Function = Provider->FindFunction(TEXT("GetScenarioStateJson"));
+	FStrProperty* ReturnProperty = Function == nullptr
+		? nullptr : FindFProperty<FStrProperty>(Function, TEXT("ReturnValue"));
+	if (Function == nullptr || ReturnProperty == nullptr)
+	{
+		return TEXT("Scenario state provider has an invalid state function.");
+	}
+	FStructOnScope Params(Function);
+	Provider->ProcessEvent(Function, Params.GetStructMemory());
+	return ReturnProperty->GetPropertyValue_InContainer(Params.GetStructMemory());
 }
 
 FVector InterpolatedValue(const FScenarioActionClip& Clip, int32 AtMs)
@@ -252,13 +271,12 @@ void FUEShedScenarioExecution::Shutdown()
 void FUEShedScenarioExecution::Prepare(const FString& ScenarioId, const FString& MapPath,
 	FString& ResultJson)
 {
-	const FUEShedScenarioRegistration* Registration =
-		IUEShedScenariosModule::Get().FindScenario(FName(*ScenarioId));
-	if (Registration == nullptr || Registration->MapPath != MapPath)
+	if (ScenarioId.IsEmpty() || !FPackageName::IsValidLongPackageName(MapPath)
+		|| !FPackageName::DoesPackageExist(MapPath))
 	{
 		Serialize(Rejected(TEXT("unsupported_scenario"),
-			TEXT("The requested scenario and map are not registered by this producer."),
-			TEXT("Use the advertised generic Movement Gym fixture.")), ResultJson);
+			TEXT("The requested scenario map is unavailable to this project."),
+			TEXT("Use a scenario ID and an existing /Game map path.")), ResultJson);
 		return;
 	}
 	if (GEditor == nullptr)
@@ -347,13 +365,11 @@ void FUEShedScenarioExecution::Start(const FString& RequestJson, FString& Result
 			TEXT("Use the shipped Movement Gym execution request and advertised limits.")), ResultJson);
 		return;
 	}
-	const FUEShedScenarioRegistration* ScenarioRegistration =
-		IUEShedScenariosModule::Get().FindScenario(FName(*ScenarioId));
-	if (ScenarioRegistration == nullptr || ScenarioRegistration->MapPath != MapPath)
+	if (ScenarioId.IsEmpty() || !FPackageName::IsValidLongPackageName(MapPath))
 	{
 		Serialize(Rejected(TEXT("unsupported_scenario"),
-			TEXT("The requested scenario and map are not registered by this producer."),
-			TEXT("Use the advertised generic Movement Gym fixture.")), ResultJson);
+			TEXT("The requested scenario identity or map path is invalid."),
+			TEXT("Use a non-empty scenario ID and a valid /Game map path.")), ResultJson);
 		return;
 	}
 
@@ -464,31 +480,33 @@ void FUEShedScenarioExecution::Start(const FString& RequestJson, FString& Result
 		const FName ActionId(*ActionIdString);
 		const bool bSupportedActionId = ActionId == TEXT("Move")
 			|| ActionId == TEXT("Jump") || ActionId == TEXT("Interact");
-		const FUEShedScenarioActionRegistration* Registration =
-			IUEShedScenariosModule::Get().FindAction(ActionId);
 		const bool bAxis2D = ValueType == TEXT("Axis2D");
 		if ((ValueType != TEXT("Axis2D") && ValueType != TEXT("Boolean"))
-			|| !bSupportedActionId || Registration == nullptr
-			|| Registration->PublicPath != ActionPath
-			|| (bAxis2D ? EUEShedScenarioActionValueType::Axis2D
-				: EUEShedScenarioActionValueType::Boolean) != Registration->ValueType)
+			|| !bSupportedActionId || !FPackageName::IsValidLongPackageName(ActionPath))
 		{
 			Serialize(Rejected(TEXT("unsupported_action"),
-				FString::Printf(TEXT("Action %s is not registered for this producer."), *ActionIdString),
-				TEXT("Use the advertised Movement Gym Move, Jump, and Interact registry.")), ResultJson);
+				FString::Printf(TEXT("Action %s is not supported by this execution slice."), *ActionIdString),
+				TEXT("Use Movement Gym Move, Jump, and Interact action clips.")), ResultJson);
 			return;
 		}
-		UInputAction* InputAction = Cast<UInputAction>(Registration->ObjectPath.TryLoad());
-		if (InputAction == nullptr)
+		const FString AssetName = FPackageName::GetLongPackageAssetName(ActionPath);
+		UInputAction* InputAction = LoadObject<UInputAction>(
+			nullptr, *FString::Printf(TEXT("%s.%s"), *ActionPath, *AssetName));
+		const EInputActionValueType ExpectedValueType = bAxis2D
+			? EInputActionValueType::Axis2D : EInputActionValueType::Boolean;
+		if (InputAction == nullptr || InputAction->ValueType != ExpectedValueType)
 		{
-			Serialize(Rejected(TEXT("action_unavailable"), TEXT("A registered action asset could not be loaded."),
-				TEXT("Regenerate the fixture input assets and retry.")), ResultJson);
+			Serialize(Rejected(TEXT("action_unavailable"),
+				TEXT("The requested action asset is missing or has a different value type."),
+				TEXT("Use an existing Input Action whose type matches the action clip.")), ResultJson);
 			return;
 		}
 		FScenarioActionClip& Clip = Candidate->Actions.AddDefaulted_GetRef();
 		Clip.ActionId = ActionId;
 		Clip.ActionPath = ActionPath;
-		Clip.ValueType = Registration->ValueType;
+		Clip.ValueType = bAxis2D
+			? EUEShedScenarioActionValueType::Axis2D
+			: EUEShedScenarioActionValueType::Boolean;
 		Clip.Action = InputAction;
 		if (ActionId == TEXT("Move")) ++MoveClipCount;
 		else if (ActionId == TEXT("Jump")) ++JumpClipCount;

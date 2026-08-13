@@ -1,14 +1,16 @@
 import {
 	MapCaptureClientError,
 	decodeMapCaptureExecuteResult,
+	decodeMapCaptureLivePreviewResult,
 	decodeMapCaptureOpenResult,
 	decodeMapCaptureSaveResult,
 	decodeMapCaptureSelectionResult,
 	type MapCaptureClientShape,
 	type MapCaptureExecuteIntent,
+	type MapCaptureProgressEvent,
 	type MapCaptureSaveIntent
 } from "@ue-shed/extension-camera-review/map-capture-client";
-import { Effect } from "effect";
+import { Effect, Queue, Stream } from "effect";
 
 function request<A>(args: {
 	readonly decode: (value: unknown) => Effect.Effect<A, unknown>;
@@ -62,6 +64,42 @@ export const mapCaptureClient: MapCaptureClientShape = {
 			invoke: () => window.ueShed.mapCapture.openMap(plan),
 			operation: "mapCapture.openMap"
 		}),
+	liveFrames: Stream.callback(
+		(queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() =>
+					window.ueShed.onFrame((frame) =>
+						Queue.offerUnsafe(queue, {
+							cameraId: frame.cameraId,
+							cameraIndex: frame.cameraIndex,
+							height: frame.height,
+							pixels: frame.pixels,
+							width: frame.width
+						})
+					)
+				),
+				(unsubscribe) => Effect.sync(unsubscribe)
+			),
+		{ bufferSize: 1, strategy: "sliding" }
+	),
+	preview: (plan) =>
+		request({
+			decode: decodeMapCaptureLivePreviewResult,
+			invoke: () => window.ueShed.mapCapture.preview(plan),
+			operation: "mapCapture.preview"
+		}),
+	progress: Stream.callback<MapCaptureProgressEvent>(
+		(queue) =>
+			Effect.acquireRelease(
+				Effect.sync(() =>
+					window.ueShed.mapCapture.onProgress((progress) =>
+						Queue.offerUnsafe(queue, progress)
+					)
+				),
+				(unsubscribe) => Effect.sync(unsubscribe)
+			),
+		{ bufferSize: 1, strategy: "sliding" }
+	),
 	savePlan: (intent: MapCaptureSaveIntent) =>
 		request({
 			decode: decodeMapCaptureSaveResult,

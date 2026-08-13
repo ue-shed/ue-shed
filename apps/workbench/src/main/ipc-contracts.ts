@@ -38,7 +38,9 @@ import {
 import {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
+	MapCaptureLivePreviewResult,
 	MapCaptureOpenResult,
+	MapCaptureProgressEvent,
 	MapCaptureSaveIntent,
 	MapCaptureSaveResult,
 	MapCaptureSelectionResult
@@ -735,6 +737,11 @@ export const invokeContracts = {
 		args: Schema.Tuple([MapCapturePlan]),
 		result: MapCaptureOpenResult
 	}),
+	"map-capture:preview": invoke({
+		channel: "map-capture:preview",
+		args: Schema.Tuple([MapCapturePlan]),
+		result: MapCaptureLivePreviewResult
+	}),
 	"map-capture:capture": invoke({
 		channel: "map-capture:capture",
 		args: Schema.Tuple([MapCaptureExecuteIntent]),
@@ -876,6 +883,12 @@ export const worldObservationEvent = {
 	payload: RendererWorldObservationEvent
 } as const;
 
+export const mapCaptureProgressEvent = {
+	kind: "event",
+	channel: "map-capture:progress",
+	payload: MapCaptureProgressEvent
+} as const;
+
 export const invokeChannelNames = Object.keys(invokeContracts) as Array<InvokeChannel>;
 
 export const decodeInvokeArgs = <C extends InvokeContract>(contract: C) =>
@@ -885,6 +898,9 @@ export const encodeInvokeResult = <C extends InvokeContract>(contract: C) =>
 	Schema.encodeUnknownEffect(contract.result);
 
 export const decodeCameraFrameEvent = Schema.decodeUnknownEffect(cameraFrameEvent.payload);
+export const decodeMapCaptureProgressEvent = Schema.decodeUnknownEffect(
+	mapCaptureProgressEvent.payload
+);
 export const decodeWorldObservationEvent = Schema.decodeUnknownEffect(
 	worldObservationEvent.payload
 );

@@ -39,6 +39,11 @@ accepts an expected map, capture policy, operation/correlation identity, and til
 output directory, UObject pointer, or console-variable bag. Output is contained beneath
 `Saved/UEShed/MapTileStaging`.
 
+The host pipelines those batches through a one-response bounded buffer. Unreal captures batches in
+strict sequence while the host validates and promotes the previous batch, so filesystem ingestion
+does not leave the editor idle. This never issues concurrent capture requests to the editor, and
+manifest and progress order remain deterministic.
+
 The capture capability requires the expected editor map to be open and continues to reject explicit
 Data Layer and forced fixed-LOD policies. The separate `editor.world-control.v1` capability can open
 an explicit `/Game/` map before capture. It refuses active PIE, missing maps, and dirty world
@@ -49,6 +54,26 @@ control and capture workflows.
 The host validates every staged path, hashes each PNG, writes a neutral manifest, and atomically
 renames a staging run only when every requested tile is present and valid. Partial, failed, and
 cancelled attempts retain truthful failures but never appear in completed-run discovery.
+
+Capture progress is reported from completed host batches rather than estimated by a timer. The
+Workbench route correlates events to the active operation and presents opening-map, tile capture,
+publication, and preview-loading phases, including processed, captured, and failed tile counts.
+Progress delivery is advisory: a closed renderer or failed event send never changes capture or
+publication semantics.
+
+## Live framing preview
+
+The Workbench reuses the process-shared asynchronous camera stream for one transient orthographic
+camera centered over the plan's snapped bounds. It renders the current editor world at the plan's
+capture Z and orientation, validates the expected map, and updates the framing stage at a bounded
+5 FPS with a maximum 640-pixel dimension. During PLAY/SIM, the play world becomes the labeled live
+authority under the same rule as Map Review.
+
+This is an observation-quality framing aid, not captured evidence or a promise of full-fidelity
+parity. It writes no PNG, spawns no saved actor, and does not publish tiles. Opening another map or
+starting the real capture clears the transient preview before the map-control or capture workflow
+continues. Full-fidelity fog, LOD, gutter, tile, hashing, and publication behavior remains visible
+only in the executed capture and its manifest.
 
 ## Viewer contract
 
@@ -63,9 +88,12 @@ The pure selection model:
 
 The Workbench `#/map-capture` route is the reference host for creating or opening a portable plan,
 searching the selected project's saved-map inventory, and authoring the executable v1 fields:
-identity, target map, requested world bounds, tile and gutter pixels, pyramid levels, capture Z,
-render profile, fog, and LOD policy. The route continuously validates the draft and recomputes its
-deterministic grid before enabling Save, map control, or capture.
+identity, target map, requested world bounds, PNG tile size, pyramid resolution and levels, gutter,
+capture Z, render profile, fog, and LOD policy. Workbench presents standard power-of-two PNG sizes
+and coarsest resolution steps, derives world coverage per tile from those choices, and previews the
+first pyramid levels. The portable plan still stores exact pixels and world-units-per-pixel. The
+route continuously validates the draft and recomputes its deterministic grid before enabling Save,
+map control, or capture.
 
 Save writes new plans atomically beneath `.ue-shed/map-capture/plans` by default. Save As can place a
 portable JSON plan elsewhere, and an opened plan saves back to its chosen path. The host-neutral

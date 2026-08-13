@@ -222,6 +222,7 @@ export const MapReviewAuthoringCandidate = Schema.Struct({
 			cameraIndex: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 			height: Schema.Int.check(Schema.isGreaterThan(0)),
 			pixelFormat: Schema.optional(Schema.Literals(["png", "bgra8"])),
+			previewContext: Schema.optional(Schema.Literals(["editor_live", "play_live"])),
 			width: Schema.Int.check(Schema.isGreaterThan(0))
 		}),
 		Schema.Struct({ status: Schema.Literal("pending") }),
@@ -238,6 +239,7 @@ export const MapReviewCandidatePreviewResult = Schema.Union([
 		height: Schema.Int.check(Schema.isGreaterThan(0)),
 		diagnostics: Schema.optional(Schema.Array(FramingDiagnostic)),
 		pixelFormat: Schema.optional(Schema.Literals(["png", "bgra8"])),
+		previewContext: Schema.optional(Schema.Literals(["editor_live", "play_live"])),
 		projection: Schema.optional(ReviewSubjectProjection),
 		width: Schema.Int.check(Schema.isGreaterThan(0))
 	}),

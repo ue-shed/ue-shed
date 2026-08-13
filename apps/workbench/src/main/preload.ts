@@ -17,6 +17,7 @@ import type {
 	MapReviewSetLibraryResult,
 	MapReviewSetSelectIntent
 } from "@ue-shed/extension-camera-review/client";
+import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraScheduleConfig,
@@ -283,10 +284,20 @@ contextBridge.exposeInMainWorld("ueShed", {
 		newPlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:new-plan"),
 		openMap: (plan: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("map-capture:open-map", plan),
+		preview: (plan: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("map-capture:preview", plan),
 		savePlan: (intent: unknown): Promise<unknown> =>
 			ipcRenderer.invoke("map-capture:save-plan", intent),
 		capture: (intent: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("map-capture:capture", intent)
+			ipcRenderer.invoke("map-capture:capture", intent),
+		onProgress: (listener: (progress: MapCaptureProgressEvent) => void) => {
+			const handler = (
+				_event: Electron.IpcRendererEvent,
+				progress: MapCaptureProgressEvent
+			) => listener(progress);
+			ipcRenderer.on("map-capture:progress", handler);
+			return () => ipcRenderer.removeListener("map-capture:progress", handler);
+		}
 	},
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),

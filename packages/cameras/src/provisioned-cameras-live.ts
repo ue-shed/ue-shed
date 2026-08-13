@@ -7,6 +7,7 @@ import {
 	ReviewVector,
 	ReviewRotation
 } from "./review-schema.js";
+import { MapCapturePlanId } from "./map-tile-schema.js";
 
 const cameraLibraryPath = "/Script/UEShedCameras.Default__UEShedCameraLibrary";
 const positiveWidth = Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 2560 }));
@@ -24,18 +25,38 @@ export class ProvisionedCameraError extends Schema.TaggedErrorClass<ProvisionedC
 
 export const ProvisionedCameraCorrelation = Schema.Union([
 	Schema.Struct({ candidateId: FramingCandidateId, type: Schema.Literal("framing_candidate") }),
-	Schema.Struct({ reviewViewId: ReviewViewId, type: Schema.Literal("review_view") })
+	Schema.Struct({ reviewViewId: ReviewViewId, type: Schema.Literal("review_view") }),
+	Schema.Struct({
+		mapCapturePlanId: MapCapturePlanId,
+		type: Schema.Literal("map_capture_plan")
+	})
 ]);
 export type ProvisionedCameraCorrelation = Schema.Schema.Type<typeof ProvisionedCameraCorrelation>;
 
-export const ProvisionedCameraSpec = Schema.Struct({
+const ProvisionedCameraFields = {
 	correlation: ProvisionedCameraCorrelation,
-	fieldOfViewDegrees: Schema.Finite.check(Schema.isBetween({ minimum: 5, maximum: 170 })),
 	height: positiveHeight,
 	location: ReviewVector,
 	rotation: ReviewRotation,
 	width: positiveWidth
-});
+};
+
+export const ProvisionedCameraSpec = Schema.Union([
+	Schema.Struct({
+		...ProvisionedCameraFields,
+		projection: Schema.Struct({
+			fieldOfViewDegrees: Schema.Finite.check(Schema.isBetween({ minimum: 5, maximum: 170 })),
+			type: Schema.Literal("perspective")
+		})
+	}),
+	Schema.Struct({
+		...ProvisionedCameraFields,
+		projection: Schema.Struct({
+			orthoWidth: Schema.Finite.check(Schema.isGreaterThan(0)),
+			type: Schema.Literal("orthographic")
+		})
+	})
+]);
 export type ProvisionedCameraSpec = Schema.Schema.Type<typeof ProvisionedCameraSpec>;
 
 export const ProvisionedCameraRequest = Schema.Struct({
@@ -43,10 +64,36 @@ export const ProvisionedCameraRequest = Schema.Struct({
 		Schema.isMinLength(1),
 		Schema.isMaxLength(32)
 	),
+	expectedMapPath: Schema.String.check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(1_024),
+		Schema.isPattern(/^\/[A-Za-z0-9_./-]+$/)
+	),
+	previewFps: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })),
+	schemaVersion: Schema.Literal(3)
+});
+export type ProvisionedCameraRequest = Schema.Schema.Type<typeof ProvisionedCameraRequest>;
+
+const PreviousProvisionedCameraRequest = Schema.Struct({
+	cameras: Schema.Array(
+		Schema.Struct({
+			correlation: Schema.Union([
+				Schema.Struct({
+					candidateId: FramingCandidateId,
+					type: Schema.Literal("framing_candidate")
+				}),
+				Schema.Struct({ reviewViewId: ReviewViewId, type: Schema.Literal("review_view") })
+			]),
+			fieldOfViewDegrees: Schema.Finite.check(Schema.isBetween({ minimum: 5, maximum: 170 })),
+			height: positiveHeight,
+			location: ReviewVector,
+			rotation: ReviewRotation,
+			width: positiveWidth
+		})
+	).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
 	previewFps: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })),
 	schemaVersion: Schema.Literal(2)
 });
-export type ProvisionedCameraRequest = Schema.Schema.Type<typeof ProvisionedCameraRequest>;
 
 const LegacyProvisionedCameraRequest = Schema.Struct({
 	cameras: Schema.Array(
@@ -64,12 +111,16 @@ const LegacyProvisionedCameraRequest = Schema.Struct({
 
 export function decodeProvisionedCameraRequest(input: unknown) {
 	return Schema.decodeUnknownEffect(
-		Schema.Union([ProvisionedCameraRequest, LegacyProvisionedCameraRequest])
+		Schema.Union([
+			ProvisionedCameraRequest,
+			PreviousProvisionedCameraRequest,
+			LegacyProvisionedCameraRequest
+		])
 	)(input).pipe(
 		Effect.map((request) =>
 			"schemaVersion" in request
 				? request
-				: ProvisionedCameraRequest.make({
+				: PreviousProvisionedCameraRequest.make({
 						cameras: request.cameras.map((camera) => ({
 							correlation: {
 								candidateId: camera.candidateId,
@@ -89,20 +140,23 @@ export function decodeProvisionedCameraRequest(input: unknown) {
 }
 
 const ProvisionedCameraStatus = Schema.Struct({
-	cameras: Schema.Array(
-		Schema.Struct({
-			cameraId: ProvisionedCameraId,
-			candidateId: Schema.optional(FramingCandidateId),
-			correlation: Schema.optional(ProvisionedCameraCorrelation),
-			displayName: Schema.String,
-			height: positiveHeight,
-			index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-			width: positiveWidth
-		})
+	cameras: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				cameraId: ProvisionedCameraId,
+				candidateId: Schema.optional(FramingCandidateId),
+				correlation: Schema.optional(ProvisionedCameraCorrelation),
+				displayName: Schema.String,
+				height: positiveHeight,
+				index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+				width: positiveWidth
+			})
+		)
 	),
 	error: Schema.optional(Schema.String),
-	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2 }))),
-	status: Schema.optional(Schema.String)
+	schemaVersion: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 }))),
+	status: Schema.optional(Schema.String),
+	worldContext: Schema.optional(Schema.Literals(["editor", "play"]))
 });
 
 export const ProvisionedCameraBinding = Schema.Struct({
@@ -110,11 +164,13 @@ export const ProvisionedCameraBinding = Schema.Struct({
 	correlation: ProvisionedCameraCorrelation,
 	height: positiveHeight,
 	index: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	previewContext: Schema.Literals(["editor_live", "play_live"]),
 	width: positiveWidth
 });
 export type ProvisionedCameraBinding = Schema.Schema.Type<typeof ProvisionedCameraBinding>;
 
 export const ProvisionedCameraFrame = Schema.Struct({
+	cameraId: Schema.optional(Schema.String),
 	cameraIndex: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	height: positiveHeight,
 	pixels: Schema.Uint8Array,
@@ -138,7 +194,7 @@ function provisionedCameraError(
 export function ensureProvisionedCameras(
 	endpoint: string,
 	cameras: ReadonlyArray<ProvisionedCameraSpec>,
-	options: { readonly previewFps?: number } = {}
+	options: { readonly expectedMapPath: string; readonly previewFps?: number }
 ): Effect.Effect<
 	ReadonlyArray<ProvisionedCameraBinding>,
 	ProvisionedCameraError,
@@ -147,8 +203,9 @@ export function ensureProvisionedCameras(
 	return Effect.gen(function* () {
 		const request = yield* Schema.decodeUnknownEffect(ProvisionedCameraRequest)({
 			cameras,
+			expectedMapPath: options.expectedMapPath,
 			previewFps: Math.min(10, Math.max(1, Math.round(options.previewFps ?? 5))),
-			schemaVersion: 2
+			schemaVersion: 3
 		}).pipe(
 			Effect.mapError((cause) =>
 				provisionedCameraError(
@@ -173,7 +230,7 @@ export function ensureProvisionedCameras(
 					provisionedCameraError(
 						"ensure_cameras",
 						cause,
-						"Start PIE in the fixture map, then retry live previews."
+						"Open the expected map in Unreal Editor, then retry live previews."
 					)
 				)
 			);
@@ -186,17 +243,18 @@ export function ensureProvisionedCameras(
 				)
 			)
 		);
-		if (status.error !== undefined || status.cameras.length === 0) {
+		const statusCameras = status.cameras ?? [];
+		if (status.error !== undefined || statusCameras.length === 0) {
 			return yield* Effect.fail(
 				new ProvisionedCameraError({
 					message: status.error ?? "No provisioned cameras were registered.",
 					operation: "ensure_cameras",
-					recovery: "Start PIE with UEShedCameras enabled, then retry.",
+					recovery: "Open the expected map with UEShedCameras enabled, then retry.",
 					retrySafe: true
 				})
 			);
 		}
-		return yield* Effect.forEach(status.cameras, (camera) => {
+		return yield* Effect.forEach(statusCameras, (camera) => {
 			const correlation =
 				camera.correlation ??
 				(camera.candidateId === undefined
@@ -219,6 +277,7 @@ export function ensureProvisionedCameras(
 					correlation,
 					height: camera.height,
 					index: camera.index,
+					previewContext: status.worldContext === "editor" ? "editor_live" : "play_live",
 					width: camera.width
 				})
 			);
@@ -245,7 +304,7 @@ export function clearProvisionedCameras(
 					provisionedCameraError(
 						"clear_cameras",
 						cause,
-						"Stop PIE or clear the provisioned cameras from the editor."
+						"Reconnect Unreal, then clear the provisioned preview cameras."
 					)
 				)
 			);
@@ -254,6 +313,7 @@ export function clearProvisionedCameras(
 
 export function awaitProvisionedCameraFrame(args: {
 	readonly cameraIndex: number;
+	readonly expectedCameraId?: string;
 	readonly latestFrames: Effect.Effect<ReadonlyMap<number, ProvisionedCameraFrame>>;
 	readonly timeout?: Duration.Input;
 }): Effect.Effect<ProvisionedCameraFrame, ProvisionedCameraError> {
@@ -264,7 +324,12 @@ export function awaitProvisionedCameraFrame(args: {
 		while ((yield* Clock.currentTimeMillis) < deadline) {
 			const latest = yield* args.latestFrames;
 			const frame = latest.get(args.cameraIndex);
-			if (frame !== undefined) return frame;
+			if (
+				frame !== undefined &&
+				(args.expectedCameraId === undefined || frame.cameraId === args.expectedCameraId)
+			) {
+				return frame;
+			}
 			yield* Effect.sleep("50 millis");
 		}
 		return yield* Effect.fail(
@@ -272,7 +337,7 @@ export function awaitProvisionedCameraFrame(args: {
 				message: `Timed out waiting for provisioned camera frame ${args.cameraIndex}.`,
 				operation: "await_frame",
 				recovery:
-					"Confirm Workbench is listening on the camera pipe and PIE is still running.",
+					"Confirm Workbench is listening on the camera pipe and the Unreal world is available.",
 				retrySafe: true
 			})
 		);

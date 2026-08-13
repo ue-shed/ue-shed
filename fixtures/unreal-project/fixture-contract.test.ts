@@ -701,23 +701,34 @@ describe("generic Unreal fixture contract", () => {
 });
 
 describe("fixture project", () => {
-	it("enables the stock Remote Control and UE Shed capability plugins", () => {
+	it("keeps UE Shed plugins out of the portable project descriptor", () => {
 		const project = readJson(join(fixtureRoot, "UEShedFixture.uproject"));
 		if (!isRecord(project) || !Array.isArray(project.Plugins)) {
 			throw new Error("UEShedFixture.uproject has no plugin list");
 		}
+		expect(project).not.toHaveProperty("AdditionalPluginDirectories");
 		const pluginNames = project.Plugins.flatMap((plugin) =>
 			isRecord(plugin) && typeof plugin.Name === "string" ? [plugin.Name] : []
 		);
-		expect(pluginNames).toEqual([
-			"EnhancedInput",
-			"RemoteControl",
-			"UEShedCore",
-			"UEShedScenarios",
-			"UEShedAuthoring",
-			"UEShedCameras",
-			"UEShedObservatory",
-			"UEShedAssetAudits"
-		]);
+		expect(pluginNames).toEqual(["EnhancedInput", "RemoteControl"]);
+	});
+
+	it("builds fixture modules without UE Shed plugin dependencies", () => {
+		const buildRules = [
+			"Source/UEShedFixture/UEShedFixture.Build.cs",
+			"Source/UEShedFixtureEditor/UEShedFixtureEditor.Build.cs"
+		]
+			.map((path) => readFileSync(join(fixtureRoot, path), "utf8"))
+			.join("\n");
+		expect(buildRules).not.toMatch(
+			/"UEShed(?:AssetAudits|Authoring|Cameras|Core|Observatory|Scenarios)"/
+		);
+	});
+
+	it("saves stock camera actors instead of plugin-owned classes", () => {
+		const cameraMap = readFileSync(
+			join(fixtureRoot, "Content/Fixture/Cameras/L_CameraLoad.umap")
+		).toString("latin1");
+		expect(cameraMap).not.toContain("/Script/UEShedCameras");
 	});
 });

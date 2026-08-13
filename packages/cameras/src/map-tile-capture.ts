@@ -5,7 +5,7 @@ import {
 	RemoteControlClient,
 	type RemoteControlClientShape
 } from "@ue-shed/unreal-connection";
-import { Clock, Context, Effect, Layer, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -138,6 +138,7 @@ export interface RunMapCaptureOptions {
 	readonly correlationId?: string;
 	readonly endpoint: string;
 	readonly levels?: ReadonlyArray<number>;
+	readonly onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>;
 	readonly planPath: string;
 	readonly projectRoot: string;
 	readonly runId?: string;
@@ -152,6 +153,13 @@ export interface MapCaptureRunOutcome {
 	readonly manifest: MapTilePyramidManifestValue;
 	readonly manifestPath: string;
 	readonly published: boolean;
+}
+
+export interface MapCaptureRunProgress {
+	readonly failedTiles: number;
+	readonly phase: "capturing" | "publishing";
+	readonly processedTiles: number;
+	readonly totalTiles: number;
 }
 
 function allTileKeys(grid: MapTileGrid): ReadonlyArray<MapTileKey> {
@@ -335,16 +343,28 @@ function runMapCaptureWith(args: {
 			const captured: Array<MapTilePyramidManifestValue["tiles"][number]> = [];
 			const failures: Array<MapTilePyramidManifestValue["failures"][number]> = [];
 			let cancelled = false;
-			for (const batch of batches(keys, maximumTilesPerRequest)) {
+			const tileBatches = batches(keys, maximumTilesPerRequest);
+			yield* (
+				args.options.onProgress?.({
+					failedTiles: 0,
+					phase: "capturing",
+					processedTiles: 0,
+					totalTiles: keys.length
+				}) ?? Effect.void
+			);
+			const captureBatch = Effect.fn("MapCapture.captureBatch")(function* (input: {
+				readonly batch: ReadonlyArray<MapTileKey>;
+				readonly batchIndex: number;
+			}) {
 				const request = makeRequest({
-					batch,
+					batch: input.batch,
 					correlationId,
 					grid: inspected.grid,
 					operationId: randomUUID(),
 					plan,
 					runId
 				});
-				const response = yield* args.port.capture(request).pipe(
+				return yield* args.port.capture(request).pipe(
 					Effect.mapError(
 						(cause) =>
 							new MapCaptureRunError({
@@ -354,110 +374,169 @@ function runMapCaptureWith(args: {
 									"Reconnect to the expected editor map and retry this run or tile subset.",
 								runId
 							})
+					),
+					Effect.withSpan("camera.map_tile.capture_batch", {
+						attributes: {
+							"camera.map_tile.batch.index": input.batchIndex,
+							"camera.map_tile.batch.tiles": input.batch.length
+						}
+					})
+				);
+			});
+			const ingestBatch = Effect.fn("MapCapture.ingestBatch")(
+				(input: {
+					readonly batch: ReadonlyArray<MapTileKey>;
+					readonly batchIndex: number;
+					readonly response: MapTileCaptureResponse;
+				}) =>
+					Effect.gen(function* () {
+						const { batch, response } = input;
+						const resultByKey = new Map(
+							response.results.map((result) => [mapTileKeyId(result.key), result])
+						);
+						if (response.status === "cancelled") cancelled = true;
+						for (const key of batch) {
+							const result = resultByKey.get(mapTileKeyId(key));
+							if (!result) {
+								failures.push({
+									failure:
+										response.failure ??
+										captureFailure({
+											code: "invalid_request",
+											message:
+												"Editor response did not inventory the requested tile.",
+											retrySafe: false
+										}),
+									key
+								});
+								continue;
+							}
+							if (result.status === "failed") {
+								failures.push({ failure: result.failure, key });
+								continue;
+							}
+							if (
+								response.dirtyState.before !== response.dirtyState.after ||
+								response.actualMapPath !== plan.project.mapPath
+							) {
+								failures.push({
+									failure: captureFailure({
+										code: "dirty_state_changed",
+										message:
+											"Editor map identity or package dirty state changed during capture.",
+										retrySafe: false
+									}),
+									key
+								});
+								continue;
+							}
+							const normalizedStagingRoot = resolve(unrealStagingRoot);
+							const normalizedSource = resolve(result.stagedPath);
+							const sourceRelativePath = relative(
+								normalizedStagingRoot,
+								normalizedSource
+							);
+							if (
+								sourceRelativePath === "" ||
+								sourceRelativePath === ".." ||
+								sourceRelativePath.startsWith(`..${sep}`) ||
+								isAbsolute(sourceRelativePath)
+							) {
+								failures.push({
+									failure: captureFailure({
+										code: "write_failed",
+										message:
+											"Editor returned a staged path outside Saved/UEShed/MapTileStaging.",
+										retrySafe: false
+									}),
+									key
+								});
+								continue;
+							}
+							const relativePath = mapTileRelativePath(key);
+							const bytes = yield* args.repository.storeTile({
+								destinationPath: join(stagingRoot, ...relativePath.split("/")),
+								sourcePath: normalizedSource
+							});
+							const dimensions = yield* Effect.try({
+								try: () => readPngDimensions(bytes),
+								catch: (cause) =>
+									new MapCaptureRunError({
+										message: String(cause),
+										operation: "capture",
+										recovery:
+											"Quarantine the invalid staged artifact and retry its tile.",
+										runId
+									})
+							});
+							if (
+								dimensions.width !== plan.tilePixelSize ||
+								dimensions.height !== plan.tilePixelSize
+							) {
+								failures.push({
+									failure: captureFailure({
+										code: "write_failed",
+										message:
+											"Staged PNG dimensions do not match the fixed tile pixel size.",
+										retrySafe: true
+									}),
+									key
+								});
+								continue;
+							}
+							captured.push({
+								bytes: bytes.byteLength,
+								hash: sha256(bytes),
+								height: dimensions.height,
+								key,
+								relativePath,
+								width: dimensions.width,
+								worldBounds: mapTileWorldBounds(inspected.grid, key)
+							});
+						}
+						yield* (
+							args.options.onProgress?.({
+								failedTiles: failures.length,
+								phase: "capturing",
+								processedTiles: captured.length + failures.length,
+								totalTiles: keys.length
+							}) ?? Effect.void
+						);
+					}).pipe(
+						Effect.withSpan("camera.map_tile.ingest_batch", {
+							attributes: {
+								"camera.map_tile.batch.index": input.batchIndex,
+								"camera.map_tile.batch.tiles": input.batch.length
+							}
+						})
 					)
-				);
-				const resultByKey = new Map(
-					response.results.map((result) => [mapTileKeyId(result.key), result])
-				);
-				if (response.status === "cancelled") cancelled = true;
-				for (const key of batch) {
-					const result = resultByKey.get(mapTileKeyId(key));
-					if (!result) {
-						failures.push({
-							failure:
-								response.failure ??
-								captureFailure({
-									code: "invalid_request",
-									message:
-										"Editor response did not inventory the requested tile.",
-									retrySafe: false
-								}),
-							key
-						});
-						continue;
-					}
-					if (result.status === "failed") {
-						failures.push({ failure: result.failure, key });
-						continue;
-					}
-					if (
-						response.dirtyState.before !== response.dirtyState.after ||
-						response.actualMapPath !== plan.project.mapPath
-					) {
-						failures.push({
-							failure: captureFailure({
-								code: "dirty_state_changed",
-								message:
-									"Editor map identity or package dirty state changed during capture.",
-								retrySafe: false
-							}),
-							key
-						});
-						continue;
-					}
-					const normalizedStagingRoot = resolve(unrealStagingRoot);
-					const normalizedSource = resolve(result.stagedPath);
-					const sourceRelativePath = relative(normalizedStagingRoot, normalizedSource);
-					if (
-						sourceRelativePath === "" ||
-						sourceRelativePath === ".." ||
-						sourceRelativePath.startsWith(`..${sep}`) ||
-						isAbsolute(sourceRelativePath)
-					) {
-						failures.push({
-							failure: captureFailure({
-								code: "write_failed",
-								message:
-									"Editor returned a staged path outside Saved/UEShed/MapTileStaging.",
-								retrySafe: false
-							}),
-							key
-						});
-						continue;
-					}
-					const relativePath = mapTileRelativePath(key);
-					const bytes = yield* args.repository.storeTile({
-						destinationPath: join(stagingRoot, ...relativePath.split("/")),
-						sourcePath: normalizedSource
-					});
-					const dimensions = yield* Effect.try({
-						try: () => readPngDimensions(bytes),
-						catch: (cause) =>
-							new MapCaptureRunError({
-								message: String(cause),
-								operation: "capture",
-								recovery:
-									"Quarantine the invalid staged artifact and retry its tile.",
-								runId
-							})
-					});
-					if (
-						dimensions.width !== plan.tilePixelSize ||
-						dimensions.height !== plan.tilePixelSize
-					) {
-						failures.push({
-							failure: captureFailure({
-								code: "write_failed",
-								message:
-									"Staged PNG dimensions do not match the fixed tile pixel size.",
-								retrySafe: true
-							}),
-							key
-						});
-						continue;
-					}
-					captured.push({
-						bytes: bytes.byteLength,
-						hash: sha256(bytes),
-						height: dimensions.height,
-						key,
-						relativePath,
-						width: dimensions.width,
-						worldBounds: mapTileWorldBounds(inspected.grid, key)
-					});
+			);
+			const capturedBatches = Stream.paginate(0, (batchIndex) => {
+				const batch = tileBatches[batchIndex];
+				if (batch === undefined) {
+					return Effect.succeed([[], Option.none<number>()] as const);
 				}
-				if (cancelled) break;
-			}
+				return captureBatch({ batch, batchIndex }).pipe(
+					Effect.map((response) => {
+						const hasNext = tileBatches[batchIndex + 1] !== undefined;
+						return [
+							[{ batch, batchIndex, response }],
+							response.status !== "cancelled" && hasNext
+								? Option.some(batchIndex + 1)
+								: Option.none<number>()
+						] as const;
+					})
+				);
+			}).pipe(Stream.buffer({ capacity: 1, strategy: "suspend" }));
+			yield* capturedBatches.pipe(Stream.runForEach(ingestBatch));
+			yield* (
+				args.options.onProgress?.({
+					failedTiles: failures.length,
+					phase: "publishing",
+					processedTiles: captured.length + failures.length,
+					totalTiles: keys.length
+				}) ?? Effect.void
+			);
 
 			const selectedAllTiles = keys.length === inspected.tileCount;
 			const state = cancelled

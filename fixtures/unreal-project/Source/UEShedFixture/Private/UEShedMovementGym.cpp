@@ -89,8 +89,7 @@ bool AUEShedMovementGymState::IsLandingReady() const
 		&& Pawn->GetActorLocation().X > 850.0 && Now - StartWorldTime >= 3.9;
 }
 
-bool AUEShedMovementGymState::EvaluateScenarioCondition_Implementation(
-	const FName ConditionId) const
+bool AUEShedMovementGymState::EvaluateScenarioCondition(const FName ConditionId) const
 {
 	if (ConditionId == TEXT("landing_ready")) return IsLandingReady();
 	if (ConditionId == TEXT("cache_open")) return bCacheOpen;
@@ -102,7 +101,7 @@ void AUEShedMovementGymState::OpenCache()
 	if (IsLandingReady()) bCacheOpen = true;
 }
 
-FString AUEShedMovementGymState::GetScenarioStateJson_Implementation() const
+FString AUEShedMovementGymState::GetScenarioStateJson() const
 {
 	const AUEShedMovementGymPawn* Pawn = FindScenarioPawn();
 	TSharedRef<FJsonObject> State = MakeShared<FJsonObject>();

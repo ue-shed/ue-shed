@@ -21,7 +21,7 @@ export const register = Effect.gen(function* () {
 				onFailure: () => ({
 					message: "Camera streaming is unavailable in the current editor state.",
 					recovery:
-						"Start a Play or Simulate session before opening Camera Lab streaming.",
+						"Launch the project With UE Shed and wait for UEShedCameras to connect. PIE is optional.",
 					status: "unavailable" as const
 				}),
 				onSuccess: (camera) => ({ camera, status: "ready" as const })

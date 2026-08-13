@@ -1,14 +1,23 @@
 {
-	"schemaVersion": 2,
+	"schemaVersion": 3,
+	"expectedMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
 	"previewFps": 5,
 	"cameras": [
 		{
 			"correlation": { "type": "framing_candidate", "candidateId": "context_three_quarter" },
-			"fieldOfViewDegrees": 60,
+			"projection": { "type": "perspective", "fieldOfViewDegrees": 60 },
 			"location": { "x": 1200, "y": -1400, "z": 700 },
 			"rotation": { "pitch": -12, "yaw": 135, "roll": 0 },
 			"width": 320,
 			"height": 180
+		},
+		{
+			"correlation": { "type": "map_capture_plan", "mapCapturePlanId": "fixture-overview" },
+			"projection": { "type": "orthographic", "orthoWidth": 4096 },
+			"location": { "x": 0, "y": 0, "z": 5000 },
+			"rotation": { "pitch": -90, "yaw": 0, "roll": 0 },
+			"width": 640,
+			"height": 360
 		}
 	]
 }

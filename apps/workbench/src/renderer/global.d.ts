@@ -30,6 +30,7 @@ import type {
 	MapReviewSetLibraryResult,
 	MapReviewSetSelectIntent
 } from "@ue-shed/extension-camera-review/client";
+import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/map-capture-client";
 import type { ContentObservatoryHistoryRequestWire } from "@ue-shed/extension-content-observatory/client";
 import type {
 	CameraStatusResult,
@@ -58,8 +59,12 @@ declare global {
 				readonly choosePlan: () => Promise<unknown>;
 				readonly newPlan: () => Promise<unknown>;
 				readonly openMap: (plan: unknown) => Promise<unknown>;
+				readonly preview: (plan: unknown) => Promise<unknown>;
 				readonly savePlan: (intent: unknown) => Promise<unknown>;
 				readonly capture: (intent: unknown) => Promise<unknown>;
+				readonly onProgress: (
+					listener: (progress: MapCaptureProgressEvent) => void
+				) => () => void;
 			};
 			readonly configExplorer: {
 				readonly query: (

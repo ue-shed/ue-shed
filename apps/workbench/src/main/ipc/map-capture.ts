@@ -22,6 +22,10 @@ export const register = Effect.gen(function* () {
 		const [plan] = args as [MapCapturePlan];
 		return mapCapture.openMap(plan);
 	});
+	yield* ipc.register(invokeContracts["map-capture:preview"], (...args) => {
+		const [plan] = args as [MapCapturePlan];
+		return mapCapture.preview(plan);
+	});
 	yield* ipc.register(invokeContracts["map-capture:capture"], (...args) => {
 		const [intent] = args as [MapCaptureExecuteIntent];
 		return mapCapture.capture(intent);

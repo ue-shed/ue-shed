@@ -2,6 +2,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	prepareUnrealPlugins,
+	ueShedPluginIds,
+	unrealEngineVersion
+} from "./unreal-plugin-host.mjs";
+import { unrealRemoteControlLaunchArguments } from "./workbench-tools.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
@@ -9,12 +15,7 @@ const projectFile = join(fixtureRoot, "UEShedFixture.uproject");
 const contract = JSON.parse(readFileSync(join(fixtureRoot, "fixture-contract.json"), "utf8"));
 
 function engineVersion(engineRoot) {
-	const versionPath = join(engineRoot, "Engine", "Build", "Build.version");
-	if (!existsSync(versionPath)) {
-		return undefined;
-	}
-	const version = JSON.parse(readFileSync(versionPath, "utf8"));
-	return { major: version.MajorVersion, minor: version.MinorVersion };
+	return unrealEngineVersion(engineRoot);
 }
 
 function isMatchingEngine(engineRoot) {
@@ -90,16 +91,26 @@ function build(tools) {
 		"Win64",
 		"Development",
 		projectFile,
+		"-NoUBTMakefiles",
 		"-WaitMutex",
 		"-NoHotReloadFromIDE"
 	]);
 }
 
-function runCommandlet(tools, extraArgs = []) {
+function pluginArguments(pluginDescriptors) {
+	if (pluginDescriptors.length === 0) return [];
+	return [
+		...pluginDescriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
+		`-EnablePlugins=${ueShedPluginIds.join(",")}`
+	];
+}
+
+function runCommandlet(tools, pluginDescriptors, extraArgs = []) {
 	run(tools.editorCommandlet, [
 		projectFile,
 		"-run=UEShedBuildFixture",
 		...extraArgs,
+		...pluginArguments(pluginDescriptors),
 		"-unattended",
 		"-nop4",
 		"-nosplash",
@@ -120,25 +131,22 @@ function formatMapHistoryFixture() {
 	]);
 }
 
-function launch(tools) {
+function launch(tools, pluginDescriptors) {
 	const remoteControlPort = new URL(
 		process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001"
 	).port;
-	const remoteControlWebSocketPort = String(Number(remoteControlPort) + 1);
 	const child = spawn(
 		tools.editor,
 		[
 			projectFile,
 			process.env.UE_SHED_FIXTURE_AUTHORING_MAP ?? "/Game/Fixture/Cameras/L_CameraLoad",
+			...pluginDescriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
 			"-game",
 			"-windowed",
 			"-ResX=1280",
 			"-ResY=720",
-			"-RCWebControlEnable",
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${remoteControlPort}`,
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${remoteControlWebSocketPort}`,
+			...unrealRemoteControlLaunchArguments(ueShedPluginIds, Number(remoteControlPort)),
 			"-ini:EditorSettings:[/Script/UnrealEd.EditorPerformanceSettings]:bThrottleCPUWhenNotForeground=False",
-			"-NoLiveCoding",
 			"-nop4",
 			"-nosplash"
 		],
@@ -152,7 +160,7 @@ function launch(tools) {
 	child.unref();
 }
 
-function launchAuthoring(tools) {
+function launchAuthoring(tools, pluginDescriptors) {
 	const remoteControlPort = new URL(
 		process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001"
 	).port;
@@ -163,12 +171,9 @@ function launchAuthoring(tools) {
 		[
 			projectFile,
 			process.env.UE_SHED_FIXTURE_AUTHORING_MAP ?? "/Game/Fixture/Cameras/L_CameraLoad",
-			"-RCWebControlEnable",
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlHttpServerPort=${remoteControlPort}`,
-			`-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:RemoteControlWebSocketServerPort=${Number(remoteControlPort) + 1}`,
-			"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:bAutoStartWebServer=True",
+			...pluginDescriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
+			...unrealRemoteControlLaunchArguments(ueShedPluginIds, Number(remoteControlPort)),
 			"-ini:EditorSettings:[/Script/UnrealEd.EditorPerformanceSettings]:bThrottleCPUWhenNotForeground=False",
-			"-NoLiveCoding",
 			"-nop4",
 			"-nosplash"
 		],
@@ -205,44 +210,58 @@ if (
 	);
 }
 
-const tools = engineTools(discoverEngineRoot());
+const engineRoot = discoverEngineRoot();
+const tools = engineTools(engineRoot);
 build(tools);
+const needsPlugins = new Set([
+	"apply",
+	"apply-pair",
+	"conformance",
+	"evidence",
+	"launch",
+	"launch-authoring",
+	"save",
+	"snapshot"
+]).has(action);
+const pluginDescriptors = needsPlugins
+	? prepareUnrealPlugins({ engineRoot, projectPath: projectFile, tools })
+	: [];
 if (action === "launch") {
-	launch(tools);
+	launch(tools, pluginDescriptors);
 }
 if (action === "launch-authoring") {
-	launchAuthoring(tools);
+	launchAuthoring(tools, pluginDescriptors);
 }
 if (action === "generate" || action === "verify" || action === "conformance") {
-	runCommandlet(tools);
+	runCommandlet(tools, pluginDescriptors);
 }
 if (action === "scenario") {
-	runCommandlet(tools, ["-ScenarioOnly"]);
-	runCommandlet(tools, ["-ScenarioOnly", "-VerifyOnly"]);
+	runCommandlet(tools, pluginDescriptors, ["-ScenarioOnly"]);
+	runCommandlet(tools, pluginDescriptors, ["-ScenarioOnly", "-VerifyOnly"]);
 }
 if (action === "map-history") {
-	runCommandlet(tools, [
+	runCommandlet(tools, pluginDescriptors, [
 		`-MapHistoryFixtureDirectory=${join(repositoryRoot, "fixtures", "perforce-map-history")}`,
 		"-OverwriteMapHistoryFixture"
 	]);
 	formatMapHistoryFixture();
 }
 if (action === "verify" || action === "conformance") {
-	runCommandlet(tools, ["-VerifyOnly"]);
+	runCommandlet(tools, pluginDescriptors, ["-VerifyOnly"]);
 }
 if (action === "evidence" || action === "conformance") {
 	const output = process.argv[3];
 	if (!output) {
 		throw new Error(`${action} requires an output directory`);
 	}
-	runCommandlet(tools, [`-ConformanceDirectory=${resolve(output)}`]);
+	runCommandlet(tools, pluginDescriptors, [`-ConformanceDirectory=${resolve(output)}`]);
 }
 if (action === "snapshot") {
 	const output = process.argv[3];
 	if (!output) {
 		throw new Error("snapshot requires an output directory");
 	}
-	runCommandlet(tools, [`-SnapshotDirectory=${resolve(output)}`]);
+	runCommandlet(tools, pluginDescriptors, [`-SnapshotDirectory=${resolve(output)}`]);
 }
 if (action === "apply" || action === "save") {
 	const input = process.argv[3];
@@ -264,14 +283,14 @@ if (action === "apply" || action === "save") {
 			`-LookupOutput=${resolve(process.argv[8])}`
 		);
 	}
-	runCommandlet(tools, args);
+	runCommandlet(tools, pluginDescriptors, args);
 }
 if (action === "apply-pair") {
 	const [firstInput, firstOutput, secondInput, secondOutput] = process.argv.slice(3);
 	if (!firstInput || !firstOutput || !secondInput || !secondOutput) {
 		throw new Error("apply-pair requires two input and two output JSON paths");
 	}
-	runCommandlet(tools, [
+	runCommandlet(tools, pluginDescriptors, [
 		`-ApplyRequest=${resolve(firstInput)}`,
 		`-ApplyOutput=${resolve(firstOutput)}`,
 		`-SecondApplyRequest=${resolve(secondInput)}`,

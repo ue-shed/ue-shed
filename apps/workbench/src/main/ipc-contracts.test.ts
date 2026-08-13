@@ -14,6 +14,8 @@ import { expect } from "vitest";
 import {
 	CameraStatusResult,
 	cameraFrameEvent,
+	decodeMapCaptureProgressEvent,
+	mapCaptureProgressEvent,
 	worldObservationEvent,
 	CandidateId,
 	decodeCameraFrameEvent,
@@ -271,8 +273,11 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-capture:choose-plan": [],
 	"map-capture:new-plan": [],
 	"map-capture:open-map": [mapCapturePlan],
+	"map-capture:preview": [mapCapturePlan],
 	"map-capture:save-plan": [{ plan: mapCapturePlan, saveAs: false }],
-	"map-capture:capture": [{ openMap: true, plan: mapCapturePlan }],
+	"map-capture:capture": [
+		{ openMap: true, operationId: "capture-ui-operation-1", plan: mapCapturePlan }
+	],
 	"map-review:review-sets": [],
 	"map-review:create-review-set": [{ displayName: "Lighting review" }],
 	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
@@ -508,6 +513,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		recovery: "Connect Unreal.",
 		status: "failed"
 	},
+	"map-capture:preview": {
+		message: "Editor unavailable.",
+		recovery: "Connect Unreal.",
+		status: "failed"
+	},
 	"map-capture:save-plan": { status: "cancelled" },
 	"map-capture:capture": {
 		message: "Capture unavailable.",
@@ -636,17 +646,28 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 93 invoke channels plus camera and world-observation events", () => {
-	expect(invokeChannelNames).toHaveLength(93);
-	expect(new Set(invokeChannelNames).size).toBe(93);
+it("registers exactly 94 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(94);
+	expect(new Set(invokeChannelNames).size).toBe(94);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
+	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");
 });
+
+it.effect("decodes map-capture progress events", () =>
+	decodeMapCaptureProgressEvent({
+		failedTiles: 1,
+		operationId: "capture-ui-operation-1",
+		phase: "capturing",
+		processedTiles: 64,
+		totalTiles: 84
+	})
+);
 
 it("keeps contract channels in exact preload parity", () => {
 	expect([...preloadInvokeChannels].sort()).toEqual([...invokeChannelNames].sort());
 	expect(preloadEventChannels.toSorted()).toEqual(
-		["camera:frame", "map-review:world-observation"].toSorted()
+		["camera:frame", "map-capture:progress", "map-review:world-observation"].toSorted()
 	);
 });
 

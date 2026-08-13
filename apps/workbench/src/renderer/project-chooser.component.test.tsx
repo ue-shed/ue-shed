@@ -166,9 +166,7 @@ describe("ProjectChooser", () => {
 		await userEvent.setup().click(screen.getByRole("button", { name: /WITH UE SHED/ }));
 
 		await waitFor(() => expect(launchProject).toHaveBeenCalledWith("ue_shed"));
-		expect((await screen.findByRole("status")).textContent).toContain(
-			"all five UE Shed plugins"
-		);
+		expect((await screen.findByRole("status")).textContent).toContain("UE Shed plugin suite");
 		expect(screen.getByRole("button", { name: "Fixture" })).toBeDefined();
 	});
 });

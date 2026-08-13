@@ -18,6 +18,7 @@ import {
 	ReviewAuthoringSessionId,
 	ReviewSet,
 	ReviewViewId,
+	type CaptureProfileId,
 	type FramingCandidate,
 	type FramingCandidateOverride,
 	type FramingParameters,
@@ -27,7 +28,8 @@ import {
 	type ReviewAuthoringDestination,
 	type ReviewCandidateRealization,
 	type ReviewSelectionResponse,
-	type ReviewSubjectProjection
+	type ReviewSubjectProjection,
+	type VisibilityPolicyId
 } from "./review-schema.js";
 
 export const REVIEW_AUTHORING_SESSIONS_DIRECTORY = "authoring-sessions";
@@ -229,6 +231,51 @@ function applyOverrides(args: {
 		const overrides = byCandidate.get(candidate.id);
 		return overrides === undefined ? candidate : applyCandidateOverrides(candidate, overrides);
 	});
+}
+
+function appendKeptCandidateViews(args: {
+	readonly captureProfileId: CaptureProfileId;
+	readonly candidates: readonly FramingCandidate[];
+	readonly reviewSet: ReviewSet;
+	readonly session: ReviewAuthoringSessionDocument;
+	readonly visibilityPolicyId: VisibilityPolicyId;
+}): ReviewSet {
+	const subject = {
+		actorPath: args.session.subject.actorPath,
+		diagnosticLabel: args.session.subject.displayName,
+		kind: "actor_path" as const
+	};
+	let views = [...args.reviewSet.views];
+	for (const [index, candidate] of args.candidates.entries()) {
+		const viewId =
+			index === 0
+				? args.session.viewId
+				: nextReviewViewId({
+						displayName: args.session.subject.displayName,
+						reviewSet: ReviewSet.make({ ...args.reviewSet, views })
+					});
+		const manuallyAdjusted = args.session.selectedCandidateId === candidate.id;
+		views = [
+			...views,
+			createReviewViewFromCandidate({
+				candidate,
+				captureProfileId: args.captureProfileId,
+				displayName: candidate.displayName,
+				...(manuallyAdjusted && args.session.draftPose !== undefined
+					? { manualPose: args.session.draftPose }
+					: {}),
+				...(manuallyAdjusted && args.session.manualReason !== undefined
+					? { manualReason: args.session.manualReason }
+					: {}),
+				purpose: `Review ${args.session.subject.displayName} · ${candidate.displayName}`,
+				subject,
+				tags: [],
+				viewId,
+				visibilityPolicyId: args.visibilityPolicyId
+			})
+		];
+	}
+	return ReviewSet.make({ ...args.reviewSet, views });
 }
 
 function staleSession(args: {
@@ -869,14 +916,13 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					})
 				);
 			}
-			const candidate =
-				session.candidates.find(
-					(item) =>
-						item.id === session.selectedCandidateId &&
-						!session.discardedCandidateIds.includes(item.id)
-				) ??
-				session.candidates.find((item) => !session.discardedCandidateIds.includes(item.id));
-			if (!candidate) {
+			const keptCandidates = session.candidates.filter(
+				(item) => !session.discardedCandidateIds.includes(item.id)
+			);
+			const selectedCandidate =
+				keptCandidates.find((item) => item.id === session.selectedCandidateId) ??
+				keptCandidates[0];
+			if (!selectedCandidate) {
 				return yield* Effect.fail(
 					new ReviewAuthoringSessionError({
 						message: "All framing candidates were discarded.",
@@ -906,47 +952,47 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				diagnosticLabel: session.subject.displayName,
 				kind: "actor_path" as const
 			};
-			const approvedReviewSet =
-				session.pendingReviewSet === undefined
-					? (() => {
-							const view = reviewSet.views.find((item) => item.id === session.viewId);
-							if (!view) return undefined;
-							const approved = approveFramingCandidate({
-								candidate,
-								...(session.draftPose === undefined
-									? {}
-									: { manualPose: session.draftPose }),
-								...(session.manualReason === undefined
-									? {}
-									: { manualReason: session.manualReason }),
-								reviewSet,
-								subject,
-								viewId: view.id
-							});
-							return approved.status === "approved" ? approved.reviewSet : undefined;
-						})()
-					: ReviewSet.make({
-							...reviewSet,
-							views: [
-								...reviewSet.views,
-								createReviewViewFromCandidate({
-									candidate,
-									captureProfileId: reviewSet.captureProfiles[0]!.id,
-									displayName: session.subject.displayName,
-									...(session.draftPose === undefined
-										? {}
-										: { manualPose: session.draftPose }),
-									...(session.manualReason === undefined
-										? {}
-										: { manualReason: session.manualReason }),
-									purpose: `Review ${session.subject.displayName}`,
-									subject,
-									tags: [],
-									viewId: session.viewId,
-									visibilityPolicyId: reviewSet.visibilityPolicies[0]!.id
-								})
-							]
-						});
+			let approvedReviewSet: ReviewSet | undefined;
+			if (session.pendingReviewSet === undefined) {
+				const view = reviewSet.views.find((item) => item.id === session.viewId);
+				if (view !== undefined) {
+					const approved = approveFramingCandidate({
+						candidate: selectedCandidate,
+						...(session.draftPose === undefined ||
+						session.selectedCandidateId !== selectedCandidate.id
+							? {}
+							: { manualPose: session.draftPose }),
+						...(session.manualReason === undefined ||
+						session.selectedCandidateId !== selectedCandidate.id
+							? {}
+							: { manualReason: session.manualReason }),
+						reviewSet,
+						subject,
+						viewId: view.id
+					});
+					if (approved.status === "approved") approvedReviewSet = approved.reviewSet;
+				}
+			} else {
+				const captureProfile = reviewSet.captureProfiles[0];
+				const visibilityPolicy = reviewSet.visibilityPolicies[0];
+				if (captureProfile === undefined || visibilityPolicy === undefined) {
+					return yield* Effect.fail(
+						new ReviewAuthoringSessionError({
+							message: "The Review Set has no capture profile or visibility policy.",
+							operation: "approve",
+							path: session.reviewSet.path,
+							recovery: "Repair the Review Set before keeping these Review Views."
+						})
+					);
+				}
+				approvedReviewSet = appendKeptCandidateViews({
+					captureProfileId: captureProfile.id,
+					candidates: keptCandidates,
+					reviewSet,
+					session,
+					visibilityPolicyId: visibilityPolicy.id
+				});
+			}
 			if (approvedReviewSet === undefined) {
 				return yield* Effect.fail(
 					new ReviewAuthoringSessionError({

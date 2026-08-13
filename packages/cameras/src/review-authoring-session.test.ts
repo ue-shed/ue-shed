@@ -262,6 +262,7 @@ describe("ReviewAuthoringSessions", () => {
 	it("holds a new map-scoped Review Set in the session until an author keeps a view", async () => {
 		const projectRoot = await makeProjectRoot();
 		let savedReviewSet: ReviewSet | undefined;
+		const candidates = generateFramingCandidates(selection);
 		const layer = sessionLayer({
 			inspectSubject: () => selection,
 			onSave: (next) => {
@@ -270,7 +271,7 @@ describe("ReviewAuthoringSessions", () => {
 		});
 		const created = await withSessions(layer, (sessions) =>
 			sessions.start({
-				candidates: generateFramingCandidates(selection),
+				candidates,
 				destination: { kind: "append_view" },
 				projectRoot,
 				selection
@@ -295,11 +296,14 @@ describe("ReviewAuthoringSessions", () => {
 			})
 		);
 		expect(approved).toMatchObject({ status: "resumable", session: { lifecycle: "approved" } });
-		expect(savedReviewSet?.views).toHaveLength(1);
+		expect(savedReviewSet?.views).toHaveLength(candidates.length);
 		expect(savedReviewSet?.views[0]).toMatchObject({
-			displayName: selection.displayName,
+			displayName: candidates[0]?.displayName,
 			target: { kind: "actor", subject: { actorPath: selection.actorPath } }
 		});
+		expect(savedReviewSet?.views.map((view) => view.displayName)).toEqual(
+			candidates.map((candidate) => candidate.displayName)
+		);
 		const afterApproval = await readFile(
 			reviewAuthoringSessionPath({ id: created.id, projectRoot }),
 			"utf8"
@@ -310,6 +314,7 @@ describe("ReviewAuthoringSessions", () => {
 	it("appends a selected subject without replacing an existing Review View", async () => {
 		const projectRoot = await makeProjectRoot();
 		const sameLabelSelection = { ...selection, displayName: "Structure context" };
+		const candidates = generateFramingCandidates(sameLabelSelection);
 		let savedReviewSet: ReviewSet | undefined;
 		const layer = sessionLayer({
 			inspectSubject: () => sameLabelSelection,
@@ -319,7 +324,7 @@ describe("ReviewAuthoringSessions", () => {
 		});
 		const created = await withSessions(layer, (sessions) =>
 			sessions.start({
-				candidates: generateFramingCandidates(sameLabelSelection),
+				candidates,
 				destination: { kind: "append_view" },
 				projectRoot,
 				reviewSetPath,
@@ -328,6 +333,17 @@ describe("ReviewAuthoringSessions", () => {
 		);
 		expect(created.viewId).toBe("structure-context-2");
 		expect(created.pendingReviewSet?.views).toHaveLength(1);
+		await withSessions(layer, (sessions) =>
+			sessions.patch({
+				patch: {
+					discardedCandidateIds: candidates.slice(2).map((candidate) => candidate.id),
+					manualReason: "",
+					selectedCandidateId: candidates[0]?.id
+				},
+				projectRoot,
+				sessionId: created.id
+			})
+		);
 
 		await withSessions(layer, (sessions) =>
 			sessions.approve({
@@ -338,8 +354,12 @@ describe("ReviewAuthoringSessions", () => {
 		);
 		expect(savedReviewSet?.views.map((view) => view.id)).toEqual([
 			"structure-context",
-			"structure-context-2"
+			"structure-context-2",
+			"structure-context-3"
 		]);
+		expect(savedReviewSet?.views.slice(1).map((view) => view.displayName)).toEqual(
+			candidates.slice(0, 2).map((candidate) => candidate.displayName)
+		);
 	});
 
 	it("revises only the explicitly identified Review View", async () => {
@@ -398,7 +418,7 @@ describe("ReviewAuthoringSessions", () => {
 		const appendCurrent = async (layer: ReturnType<typeof makeLayer>) => {
 			const created = await withSessions(layer, (sessions) =>
 				sessions.start({
-					candidates: generateFramingCandidates(currentSelection),
+					candidates: generateFramingCandidates(currentSelection).slice(0, 1),
 					destination: { kind: "append_view" },
 					projectRoot,
 					reviewSetPath,

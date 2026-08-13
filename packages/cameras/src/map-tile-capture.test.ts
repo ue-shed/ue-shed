@@ -1,20 +1,25 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { Effect } from "effect";
+import { it as effectIt } from "@effect/vitest";
+import { Deferred, Duration, Effect, Fiber, Layer } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	MapCapture,
 	MapCaptureLive,
 	mapTileCapturePortLayer,
+	type MapCaptureRunProgress,
 	type MapTileCapturePortShape
 } from "./map-tile-capture.js";
 import {
+	MapCaptureRepository,
 	MapCaptureRepositoryLive,
 	mapCaptureAttemptsRoot,
 	mapCaptureRoot,
-	mapCaptureRunsRoot
+	mapCaptureRunsRoot,
+	type MapCaptureRepositoryShape
 } from "./map-tile-repository.js";
+import { mapTileKeyId, mapTileRelativePath } from "./map-tile-pyramid.js";
 
 const temporaryRoots: string[] = [];
 
@@ -76,19 +81,22 @@ async function fixtureProject(levelCount: number): Promise<{
 function runWithPort(
 	project: { readonly planPath: string; readonly projectRoot: string },
 	port: MapTileCapturePortShape,
-	levels?: ReadonlyArray<number>
+	levels?: ReadonlyArray<number>,
+	onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>,
+	repositoryLayer: Layer.Layer<MapCaptureRepository> = MapCaptureRepositoryLive
 ) {
 	return Effect.flatMap(MapCapture, (capture) =>
 		capture.run({
 			endpoint: "http://127.0.0.1:30010",
 			...(levels === undefined ? {} : { levels }),
+			...(onProgress === undefined ? {} : { onProgress }),
 			planPath: project.planPath,
 			projectRoot: project.projectRoot,
 			runId: "test-run"
 		})
 	).pipe(
 		Effect.provide(MapCaptureLive),
-		Effect.provide(MapCaptureRepositoryLive),
+		Effect.provide(repositoryLayer),
 		Effect.provide(mapTileCapturePortLayer(port))
 	);
 }
@@ -96,6 +104,7 @@ function runWithPort(
 describe("map capture orchestration", () => {
 	it("validates, hashes, and atomically publishes an exhaustive run", async () => {
 		const project = await fixtureProject(1);
+		const progress: MapCaptureRunProgress[] = [];
 		const port: MapTileCapturePortShape = {
 			capture: (request) =>
 				Effect.tryPromise(async () => {
@@ -132,7 +141,11 @@ describe("map capture orchestration", () => {
 					};
 				})
 		};
-		const outcome = await Effect.runPromise(runWithPort(project, port));
+		const outcome = await Effect.runPromise(
+			runWithPort(project, port, undefined, (update) =>
+				Effect.sync(() => progress.push(update))
+			)
+		);
 		expect(outcome.published).toBe(true);
 		expect(outcome.manifest.state).toBe("complete");
 		expect(outcome.manifest.tiles[0]?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -140,6 +153,11 @@ describe("map capture orchestration", () => {
 			join(mapCaptureRunsRoot(project.projectRoot, "test-plan"), "test-run", "manifest.json")
 		);
 		expect(JSON.parse(await readFile(outcome.manifestPath, "utf8"))).toEqual(outcome.manifest);
+		expect(progress).toEqual([
+			{ failedTiles: 0, phase: "capturing", processedTiles: 0, totalTiles: 1 },
+			{ failedTiles: 0, phase: "capturing", processedTiles: 1, totalTiles: 1 },
+			{ failedTiles: 0, phase: "publishing", processedTiles: 1, totalTiles: 1 }
+		]);
 	});
 
 	it("quarantines a bounded subset instead of publishing it as complete", async () => {
@@ -243,4 +261,101 @@ describe("map capture orchestration", () => {
 			stat(join(mapCaptureRoot(project.projectRoot), ".staging-test-run"))
 		).rejects.toThrow();
 	});
+
+	effectIt.effect("captures the next batch while the host ingests the previous batch", () =>
+		Effect.gen(function* () {
+			const project = yield* Effect.promise(() => fixtureProject(4));
+			const firstStoreStarted = yield* Deferred.make<void>();
+			const releaseFirstStore = yield* Deferred.make<void>();
+			const secondCaptureStarted = yield* Deferred.make<void>();
+			const requestedKeys: string[] = [];
+			let captureCalls = 0;
+			let blockFirstStore = true;
+			const repositoryLayer = Layer.effect(
+				MapCaptureRepository,
+				Effect.gen(function* () {
+					const delegate = yield* MapCaptureRepository;
+					const service: MapCaptureRepositoryShape = {
+						...delegate,
+						storeTile: (input) => {
+							if (!blockFirstStore) return delegate.storeTile(input);
+							blockFirstStore = false;
+							return Deferred.succeed(firstStoreStarted, undefined).pipe(
+								Effect.andThen(Deferred.await(releaseFirstStore)),
+								Effect.andThen(delegate.storeTile(input))
+							);
+						}
+					};
+					return MapCaptureRepository.of(service);
+				})
+			).pipe(Layer.provide(MapCaptureRepositoryLive));
+			const port: MapTileCapturePortShape = {
+				capture: (request) =>
+					Effect.gen(function* () {
+						captureCalls += 1;
+						requestedKeys.push(...request.tiles.map(({ key }) => mapTileKeyId(key)));
+						if (captureCalls === 2) {
+							yield* Deferred.succeed(secondCaptureStarted, undefined);
+						}
+						const results = yield* Effect.forEach(request.tiles, (tile) =>
+							Effect.tryPromise(async () => {
+								const relativePath = mapTileRelativePath(tile.key);
+								const stagedPath = resolve(
+									project.projectRoot,
+									"Saved/UEShed/MapTileStaging/test-run",
+									...relativePath.split("/")
+								);
+								await mkdir(dirname(stagedPath), { recursive: true });
+								await writeFile(stagedPath, fakePng(64));
+								return {
+									bytes: 24,
+									captureDurationMs: 1,
+									height: 64,
+									key: tile.key,
+									stagedPath,
+									status: "captured" as const,
+									width: 64
+								};
+							})
+						);
+						return {
+							actualMapPath: "/Game/Test/Map",
+							contract: {
+								name: "ue-shed-map-tile-capture" as const,
+								version: { major: 1 as const, minor: 0 as const }
+							},
+							correlationId: request.correlationId,
+							dirtyState: { after: false, before: false },
+							durationMs: results.length,
+							operationId: request.operationId,
+							results,
+							status: "completed" as const,
+							tileCounts: {
+								failed: 0,
+								requested: results.length,
+								succeeded: results.length
+							}
+						};
+					})
+			};
+			const runFiber = yield* runWithPort(
+				project,
+				port,
+				undefined,
+				undefined,
+				repositoryLayer
+			).pipe(Effect.forkScoped);
+			yield* Deferred.await(firstStoreStarted);
+			yield* Deferred.await(secondCaptureStarted).pipe(
+				Effect.timeout(Duration.seconds(1)),
+				Effect.ensuring(Deferred.succeed(releaseFirstStore, undefined))
+			);
+			const outcome = yield* Fiber.join(runFiber);
+			expect(captureCalls).toBe(2);
+			expect(outcome.manifest.tiles).toHaveLength(85);
+			expect(outcome.manifest.tiles.map(({ key }) => mapTileKeyId(key))).toEqual(
+				requestedKeys
+			);
+		})
+	);
 });

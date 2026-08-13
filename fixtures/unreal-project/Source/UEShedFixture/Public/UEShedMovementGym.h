@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/GameModeBase.h"
-#include "UEShedScenarioStateProvider.h"
 #include "UEShedMovementGym.generated.h"
 
 class UInputAction;
@@ -42,16 +41,19 @@ private:
 };
 
 UCLASS()
-class UESHEDFIXTURE_API AUEShedMovementGymState final : public AActor,
-	public IUEShedScenarioStateProvider
+class UESHEDFIXTURE_API AUEShedMovementGymState final : public AActor
 {
 	GENERATED_BODY()
 
 public:
 	AUEShedMovementGymState();
 	virtual void BeginPlay() override;
-	virtual bool EvaluateScenarioCondition_Implementation(FName ConditionId) const override;
-	virtual FString GetScenarioStateJson_Implementation() const override;
+
+	UFUNCTION()
+	bool EvaluateScenarioCondition(FName ConditionId) const;
+
+	UFUNCTION()
+	FString GetScenarioStateJson() const;
 
 	void OpenCache();
 

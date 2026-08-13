@@ -43,11 +43,20 @@ import {
 	type WorldObservationState,
 	type WorldScoutResult
 } from "@ue-shed/observatory";
-import { decodeSavedWorld, decodeSavedWorldChoice, SavedWorldMap } from "@ue-shed/protocol";
+import {
+	CameraStatus,
+	decodeSavedWorld,
+	decodeSavedWorldChoice,
+	SavedWorldMap
+} from "@ue-shed/protocol";
 import { Effect, Queue, Schema, Stream } from "effect";
 import type { RendererWorldObservationEvent } from "../main/ipc-contracts.js";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
+const CameraStatusResult = Schema.Union([
+	Schema.Struct({ camera: CameraStatus, status: Schema.Literal("ready") }),
+	Schema.Struct({ status: Schema.Literal("unavailable") })
+]);
 
 const loadWorldSnapshot = (): Effect.Effect<WorldScoutResult, MapReviewClientError> =>
 	request({
@@ -346,6 +355,16 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 				(unsubscribe) => Effect.sync(unsubscribe)
 			),
 		{ bufferSize: 32, strategy: "sliding" }
+	),
+	livePreviewAvailable: Effect.fn("MapReviewClient.livePreviewAvailable")(() =>
+		request({
+			decode: Schema.decodeUnknownEffect(CameraStatusResult),
+			invoke: () => window.ueShed.getStatus(),
+			operation: "mapReview.livePreviewAvailable"
+		}).pipe(
+			Effect.map((result) => result.status === "ready" && result.camera.stats.pipeConnected),
+			Effect.orElseSucceed(() => false)
+		)
 	),
 	setLivePreviewFps: Effect.fn("MapReviewClient.setLivePreviewFps")((fps) =>
 		request({

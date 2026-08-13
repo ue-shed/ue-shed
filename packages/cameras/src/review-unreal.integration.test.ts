@@ -11,6 +11,7 @@ import { inspectReviewSelection, previewReviewCandidate } from "./review-authori
 import { captureReviewSet } from "./review-capture.js";
 import { generateFramingCandidates, realizationFramingDiagnostics } from "./review-framing.js";
 import { captureReviewView, getReviewAssessmentCapabilities } from "./review-live.js";
+import { MapCapturePlanId } from "./map-tile-schema.js";
 import {
 	awaitProvisionedCameraFrame,
 	clearProvisionedCameras,
@@ -866,7 +867,75 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 		throw new Error(`Play session did not reach ${status}`);
 	}
 
-	it("registers provisioned cameras, delivers BGRA frames, clears without dirt, and keeps overview healthy", async () => {
+	it("streams a map-correlated orthographic editor frame", async () => {
+		const initial = (await playCall("GetPlaySessionState")) as {
+			readonly state?: { readonly status?: string };
+		};
+		if (initial.state?.status !== "stopped") {
+			await playCall("StopPlaySession");
+			await waitForPlayStatus("stopped");
+		}
+
+		const scope = await Effect.runPromise(Scope.make());
+		scopes.push(scope);
+		const feedContext = await Effect.runPromise(
+			Layer.buildWithScope(cameraFeedLayer({ capacity: 4 }), scope)
+		);
+		const feed = Context.get(feedContext, CameraFeed);
+
+		try {
+			const bindings = await Effect.runPromise(
+				ensureProvisionedCameras(
+					endpoint!,
+					[
+						{
+							correlation: {
+								mapCapturePlanId: MapCapturePlanId.make("fixture-overview"),
+								type: "map_capture_plan"
+							},
+							height: 360,
+							location: { x: 0, y: 0, z: 5000 },
+							projection: {
+								orthoWidth: (4096 * 16) / 9,
+								type: "orthographic"
+							},
+							rotation: { pitch: -90, roll: 0, yaw: 0 },
+							width: 640
+						}
+					],
+					{
+						expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+						previewFps: 5
+					}
+				).pipe(Effect.provide(RemoteControlClientLive))
+			);
+			expect(bindings).toHaveLength(1);
+			expect(bindings[0]).toMatchObject({
+				correlation: {
+					mapCapturePlanId: "fixture-overview",
+					type: "map_capture_plan"
+				},
+				height: 360,
+				previewContext: "editor_live",
+				width: 640
+			});
+			const frame = await Effect.runPromise(
+				awaitProvisionedCameraFrame({
+					cameraIndex: bindings[0]!.index,
+					expectedCameraId: bindings[0]!.cameraId,
+					latestFrames: feed.latestFrames,
+					timeout: "12 seconds"
+				})
+			);
+			expect(frame.pixels.byteLength).toBe(640 * 360 * 4);
+		} finally {
+			await Effect.runPromise(
+				clearProvisionedCameras(endpoint!).pipe(Effect.provide(RemoteControlClientLive))
+			);
+		}
+	});
+
+	it("streams editor and play worlds, clears without dirt, and keeps overview healthy", async () => {
 		const initial = (await playCall("GetPlaySessionState")) as {
 			readonly state?: { readonly status?: string };
 		};
@@ -881,8 +950,76 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 			Layer.buildWithScope(cameraFeedLayer({ capacity: 16 }), scope)
 		);
 		const feed = Context.get(feedContext, CameraFeed);
+		const sources = [
+			{
+				correlation: {
+					candidateId: FramingCandidateId.make("context_three_quarter"),
+					type: "framing_candidate" as const
+				},
+				height: 180,
+				location: { x: 1200, y: -1400, z: 700 },
+				projection: { fieldOfViewDegrees: 60, type: "perspective" as const },
+				rotation: { pitch: -18, roll: 0, yaw: 140 },
+				width: 320
+			},
+			{
+				correlation: {
+					candidateId: FramingCandidateId.make("facade_front"),
+					type: "framing_candidate" as const
+				},
+				height: 180,
+				location: { x: 0, y: -1600, z: 450 },
+				projection: { fieldOfViewDegrees: 55, type: "perspective" as const },
+				rotation: { pitch: -10, roll: 0, yaw: 90 },
+				width: 320
+			}
+		] as const;
 
 		try {
+			const editorBindings = await Effect.runPromise(
+				ensureProvisionedCameras(endpoint!, sources, {
+					expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+					previewFps: 5
+				}).pipe(Effect.provide(RemoteControlClientLive))
+			);
+			expect(editorBindings.map((binding) => binding.previewContext)).toEqual([
+				"editor_live",
+				"editor_live"
+			]);
+			const editorFrame = await Effect.runPromise(
+				awaitProvisionedCameraFrame({
+					cameraIndex: editorBindings[0]!.index,
+					expectedCameraId: editorBindings[0]!.cameraId,
+					latestFrames: feed.latestFrames,
+					timeout: "12 seconds"
+				})
+			);
+			expect(editorFrame.pixels.byteLength).toBe(320 * 180 * 4);
+			const adjustedEditorBindings = await Effect.runPromise(
+				ensureProvisionedCameras(
+					endpoint!,
+					[{ ...sources[0], location: { ...sources[0].location, x: 1300 } }, sources[1]],
+					{
+						expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+						previewFps: 5
+					}
+				).pipe(Effect.provide(RemoteControlClientLive))
+			);
+			expect(adjustedEditorBindings[0]?.cameraId).not.toBe(editorBindings[0]?.cameraId);
+			expect(adjustedEditorBindings[1]?.cameraId).toBe(editorBindings[1]?.cameraId);
+			const adjustedEditorFrame = await Effect.runPromise(
+				awaitProvisionedCameraFrame({
+					cameraIndex: adjustedEditorBindings[0]!.index,
+					expectedCameraId: adjustedEditorBindings[0]!.cameraId,
+					latestFrames: feed.latestFrames,
+					timeout: "12 seconds"
+				})
+			);
+			expect(adjustedEditorFrame.pixels.byteLength).toBe(320 * 180 * 4);
+			await Effect.runPromise(
+				clearProvisionedCameras(endpoint!).pipe(Effect.provide(RemoteControlClientLive))
+			);
+
 			await playCall("StartPlaySession");
 			await waitForPlayStatus("running");
 
@@ -894,37 +1031,14 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 				status: "blocked"
 			});
 
-			const sources = [
-				{
-					correlation: {
-						candidateId: FramingCandidateId.make("context_three_quarter"),
-						type: "framing_candidate" as const
-					},
-					fieldOfViewDegrees: 60,
-					height: 180,
-					location: { x: 1200, y: -1400, z: 700 },
-					rotation: { pitch: -18, roll: 0, yaw: 140 },
-					width: 320
-				},
-				{
-					correlation: {
-						candidateId: FramingCandidateId.make("facade_front"),
-						type: "framing_candidate" as const
-					},
-					fieldOfViewDegrees: 55,
-					height: 180,
-					location: { x: 0, y: -1600, z: 450 },
-					rotation: { pitch: -10, roll: 0, yaw: 90 },
-					width: 320
-				}
-			] as const;
-
 			const bindings = await Effect.runPromise(
-				ensureProvisionedCameras(endpoint!, sources, { previewFps: 5 }).pipe(
-					Effect.provide(RemoteControlClientLive)
-				)
+				ensureProvisionedCameras(endpoint!, sources, {
+					expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+					previewFps: 5
+				}).pipe(Effect.provide(RemoteControlClientLive))
 			);
 			expect(bindings).toHaveLength(2);
+			expect(bindings.every((binding) => binding.previewContext === "play_live")).toBe(true);
 			expect(
 				bindings
 					.map((item) =>
@@ -945,11 +1059,13 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 				Effect.gen(function* () {
 					const first = yield* awaitProvisionedCameraFrame({
 						cameraIndex: bindings[0]!.index,
+						expectedCameraId: bindings[0]!.cameraId,
 						latestFrames: feed.latestFrames,
 						timeout: "12 seconds"
 					});
 					const second = yield* awaitProvisionedCameraFrame({
 						cameraIndex: bindings[1]!.index,
+						expectedCameraId: bindings[1]!.cameraId,
 						latestFrames: feed.latestFrames,
 						timeout: "12 seconds"
 					});

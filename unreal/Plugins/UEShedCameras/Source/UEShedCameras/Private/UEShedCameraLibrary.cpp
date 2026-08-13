@@ -13,15 +13,52 @@ namespace
 UUEShedCameraSubsystem* FindCameraSubsystem()
 {
 	if (GEngine == nullptr) return nullptr;
+	UUEShedCameraSubsystem* EditorSubsystem = nullptr;
 	for (const FWorldContext& Context : GEngine->GetWorldContexts())
 	{
 		UWorld* World = Context.World();
 		if (World != nullptr && World->IsGameWorld())
 		{
-			return World->GetSubsystem<UUEShedCameraSubsystem>();
+			if (UUEShedCameraSubsystem* Subsystem =
+				World->GetSubsystem<UUEShedCameraSubsystem>()) return Subsystem;
+		}
+		if (World != nullptr && World->WorldType == EWorldType::Editor)
+		{
+			EditorSubsystem = World->GetSubsystem<UUEShedCameraSubsystem>();
 		}
 	}
-	return nullptr;
+	return EditorSubsystem;
+}
+
+void ClearOtherProvisionedCameraSubsystems(UUEShedCameraSubsystem* Selected)
+{
+	if (GEngine == nullptr) return;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		UWorld* World = Context.World();
+		if (World == nullptr) continue;
+		UUEShedCameraSubsystem* Subsystem = World->GetSubsystem<UUEShedCameraSubsystem>();
+		if (Subsystem != nullptr && Subsystem != Selected
+			&& Subsystem->IsProvisionedCameraSessionActive())
+		{
+			Subsystem->ClearProvisionedCameras();
+		}
+	}
+}
+
+void ClearAllProvisionedCameraSubsystems()
+{
+	if (GEngine == nullptr) return;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		UWorld* World = Context.World();
+		if (World == nullptr) continue;
+		if (UUEShedCameraSubsystem* Subsystem = World->GetSubsystem<UUEShedCameraSubsystem>();
+			Subsystem != nullptr && Subsystem->IsProvisionedCameraSessionActive())
+		{
+			Subsystem->ClearProvisionedCameras();
+		}
+	}
 }
 
 FString ErrorJson(const TCHAR* Code)
@@ -37,7 +74,7 @@ void UUEShedCameraLibrary::GetStatus(FString& ResultJson)
 		ResultJson = Subsystem->StatusJson();
 		return;
 	}
-	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-running-game-world\"}");
+	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-renderable-world\"}");
 }
 
 void UUEShedCameraLibrary::Configure(const FString& ConfigJson, FString& ResultJson)
@@ -53,7 +90,7 @@ void UUEShedCameraLibrary::Configure(const FString& ConfigJson, FString& ResultJ
 		ResultJson = FString::Printf(TEXT("{\"schemaVersion\":1,\"error\":\"%s\"}"), *Error);
 		return;
 	}
-	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-running-game-world\"}");
+	ResultJson = TEXT("{\"schemaVersion\":1,\"error\":\"no-renderable-world\"}");
 }
 
 void UUEShedCameraLibrary::EnsureProvisionedCameras(
@@ -63,7 +100,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	UUEShedCameraSubsystem* Subsystem = FindCameraSubsystem();
 	if (Subsystem == nullptr)
 	{
-		ResultJson = ErrorJson(TEXT("no-running-game-world"));
+		ResultJson = ErrorJson(TEXT("no-renderable-world"));
 		return;
 	}
 	TSharedPtr<FJsonObject> Root;
@@ -72,6 +109,18 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 	{
 		ResultJson = ErrorJson(TEXT("invalid-json"));
 		return;
+	}
+	FString ExpectedMapPath;
+	if (Root->TryGetStringField(TEXT("expectedMapPath"), ExpectedMapPath))
+	{
+		const UWorld* World = Subsystem->GetWorld();
+		const FString ActualMapPath = World == nullptr
+			? FString() : UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
+		if (ExpectedMapPath.IsEmpty() || ActualMapPath != ExpectedMapPath)
+		{
+			ResultJson = ErrorJson(TEXT("expected-map-mismatch"));
+			return;
+		}
 	}
 	const TArray<TSharedPtr<FJsonValue>>* CamerasJson = nullptr;
 	if (!Root->TryGetArrayField(TEXT("cameras"), CamerasJson))
@@ -105,13 +154,16 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		{
 			if (!(*CorrelationObject)->TryGetStringField(TEXT("type"), Spec.CorrelationType)
 				|| (Spec.CorrelationType != TEXT("framing_candidate")
-					&& Spec.CorrelationType != TEXT("review_view")))
+					&& Spec.CorrelationType != TEXT("review_view")
+					&& Spec.CorrelationType != TEXT("map_capture_plan")))
 			{
 				ResultJson = ErrorJson(TEXT("invalid-correlation-type"));
 				return;
 			}
-			const TCHAR* CorrelationIdField = Spec.CorrelationType == TEXT("framing_candidate")
-				? TEXT("candidateId") : TEXT("reviewViewId");
+			const TCHAR* CorrelationIdField =
+				Spec.CorrelationType == TEXT("framing_candidate") ? TEXT("candidateId")
+				: Spec.CorrelationType == TEXT("review_view") ? TEXT("reviewViewId")
+				: TEXT("mapCapturePlanId");
 			if (!(*CorrelationObject)->TryGetStringField(CorrelationIdField, Spec.CorrelationId)
 				|| Spec.CorrelationId.IsEmpty())
 			{
@@ -139,6 +191,7 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		double Yaw = 0;
 		double Roll = 0;
 		double Fov = 60;
+		double OrthoWidth = 512;
 		double Width = 320;
 		double Height = 180;
 		if (!Object->TryGetObjectField(TEXT("location"), LocationObject)
@@ -153,10 +206,48 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 			return;
 		}
 		(*RotationObject)->TryGetNumberField(TEXT("roll"), Roll);
-		Object->TryGetNumberField(TEXT("fieldOfViewDegrees"), Fov);
+		const TSharedPtr<FJsonObject>* ProjectionObject = nullptr;
+		if (Object->TryGetObjectField(TEXT("projection"), ProjectionObject))
+		{
+			FString ProjectionType;
+			if (!(*ProjectionObject)->TryGetStringField(TEXT("type"), ProjectionType))
+			{
+				ResultJson = ErrorJson(TEXT("invalid-projection"));
+				return;
+			}
+			if (ProjectionType == TEXT("perspective"))
+			{
+				if (!(*ProjectionObject)->TryGetNumberField(TEXT("fieldOfViewDegrees"), Fov))
+				{
+					ResultJson = ErrorJson(TEXT("invalid-perspective-projection"));
+					return;
+				}
+			}
+			else if (ProjectionType == TEXT("orthographic"))
+			{
+				Spec.bOrthographic = true;
+				if (!(*ProjectionObject)->TryGetNumberField(TEXT("orthoWidth"), OrthoWidth))
+				{
+					ResultJson = ErrorJson(TEXT("invalid-orthographic-projection"));
+					return;
+				}
+			}
+			else
+			{
+				ResultJson = ErrorJson(TEXT("invalid-projection-type"));
+				return;
+			}
+		}
+		else
+		{
+			// Compatibility decoder for schemaVersion 1 and 2 perspective requests.
+			Object->TryGetNumberField(TEXT("fieldOfViewDegrees"), Fov);
+		}
 		Object->TryGetNumberField(TEXT("width"), Width);
 		Object->TryGetNumberField(TEXT("height"), Height);
-		if (!FMath::IsFinite(Fov) || Fov < 5 || Fov > 170 || Width < 64 || Width > 2560
+		if ((!Spec.bOrthographic && (!FMath::IsFinite(Fov) || Fov < 5 || Fov > 170))
+			|| (Spec.bOrthographic && (!FMath::IsFinite(OrthoWidth) || OrthoWidth <= 0))
+			|| Width < 64 || Width > 2560
 			|| Height < 64 || Height > 1440)
 		{
 			ResultJson = ErrorJson(TEXT("invalid-camera-dimensions"));
@@ -165,10 +256,12 @@ void UUEShedCameraLibrary::EnsureProvisionedCameras(
 		Spec.Location = FVector(X, Y, Z);
 		Spec.Rotation = FRotator(Pitch, Yaw, Roll);
 		Spec.FieldOfViewDegrees = static_cast<float>(Fov);
+		Spec.OrthoWidth = static_cast<float>(OrthoWidth);
 		Spec.Width = FMath::RoundToInt(Width);
 		Spec.Height = FMath::RoundToInt(Height);
 		Specs.Add(Spec);
 	}
+	ClearOtherProvisionedCameraSubsystems(Subsystem);
 	FString Error;
 	if (!Subsystem->EnsureProvisionedCameras(Specs, Error))
 	{
@@ -204,9 +297,9 @@ void UUEShedCameraLibrary::ClearProvisionedCameras(FString& ResultJson)
 	UUEShedCameraSubsystem* Subsystem = FindCameraSubsystem();
 	if (Subsystem == nullptr)
 	{
-		ResultJson = ErrorJson(TEXT("no-running-game-world"));
+		ResultJson = ErrorJson(TEXT("no-renderable-world"));
 		return;
 	}
-	Subsystem->ClearProvisionedCameras();
+	ClearAllProvisionedCameraSubsystems();
 	ResultJson = Subsystem->StatusJson();
 }

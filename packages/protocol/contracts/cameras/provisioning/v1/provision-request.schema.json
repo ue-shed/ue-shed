@@ -4,68 +4,149 @@
 	"title": "UE Shed provisioned camera request v1",
 	"type": "object",
 	"additionalProperties": false,
-	"required": ["schemaVersion", "previewFps", "cameras"],
+	"required": ["schemaVersion", "expectedMapPath", "previewFps", "cameras"],
 	"properties": {
-		"schemaVersion": { "const": 2 },
+		"schemaVersion": { "const": 3 },
+		"expectedMapPath": {
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 1024,
+			"pattern": "^/[A-Za-z0-9_./-]+$"
+		},
 		"previewFps": { "type": "integer", "minimum": 1, "maximum": 10 },
 		"cameras": {
 			"type": "array",
 			"minItems": 1,
 			"maxItems": 32,
 			"items": {
-				"type": "object",
-				"additionalProperties": false,
-				"required": [
-					"correlation",
-					"fieldOfViewDegrees",
-					"location",
-					"rotation",
-					"width",
-					"height"
-				],
-				"properties": {
-					"correlation": {
-						"oneOf": [
-							{
-								"type": "object",
-								"additionalProperties": false,
-								"required": ["type", "candidateId"],
-								"properties": {
-									"type": { "const": "framing_candidate" },
-									"candidateId": {
-										"type": "string",
-										"minLength": 1,
-										"maxLength": 128,
-										"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-									}
-								}
-							},
-							{
-								"type": "object",
-								"additionalProperties": false,
-								"required": ["type", "reviewViewId"],
-								"properties": {
-									"type": { "const": "review_view" },
-									"reviewViewId": {
-										"type": "string",
-										"minLength": 1,
-										"maxLength": 128,
-										"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-									}
-								}
-							}
-						]
+				"oneOf": [
+					{
+						"$ref": "#/$defs/perspectiveCamera"
 					},
-					"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 },
-					"location": { "$ref": "#/$defs/vector" },
-					"rotation": { "$ref": "#/$defs/rotation" },
-					"width": { "type": "integer", "minimum": 64, "maximum": 2560 },
-					"height": { "type": "integer", "minimum": 64, "maximum": 1440 }
-				}
+					{
+						"$ref": "#/$defs/orthographicCamera"
+					}
+				]
 			}
 		}
 	},
 	"$defs": {
+		"cameraFields": {
+			"type": "object",
+			"required": ["correlation", "projection", "location", "rotation", "width", "height"],
+			"properties": {
+				"correlation": { "$ref": "#/$defs/correlation" },
+				"location": { "$ref": "#/$defs/vector" },
+				"rotation": { "$ref": "#/$defs/rotation" },
+				"width": { "type": "integer", "minimum": 64, "maximum": 2560 },
+				"height": { "type": "integer", "minimum": 64, "maximum": 1440 }
+			}
+		},
+		"perspectiveCamera": {
+			"allOf": [
+				{ "$ref": "#/$defs/cameraFields" },
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": [
+						"correlation",
+						"projection",
+						"location",
+						"rotation",
+						"width",
+						"height"
+					],
+					"properties": {
+						"correlation": { "$ref": "#/$defs/correlation" },
+						"projection": { "$ref": "#/$defs/perspectiveProjection" },
+						"location": { "$ref": "#/$defs/vector" },
+						"rotation": { "$ref": "#/$defs/rotation" },
+						"width": { "type": "integer", "minimum": 64, "maximum": 2560 },
+						"height": { "type": "integer", "minimum": 64, "maximum": 1440 }
+					}
+				}
+			]
+		},
+		"orthographicCamera": {
+			"allOf": [
+				{ "$ref": "#/$defs/cameraFields" },
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": [
+						"correlation",
+						"projection",
+						"location",
+						"rotation",
+						"width",
+						"height"
+					],
+					"properties": {
+						"correlation": { "$ref": "#/$defs/correlation" },
+						"projection": { "$ref": "#/$defs/orthographicProjection" },
+						"location": { "$ref": "#/$defs/vector" },
+						"rotation": { "$ref": "#/$defs/rotation" },
+						"width": { "type": "integer", "minimum": 64, "maximum": 2560 },
+						"height": { "type": "integer", "minimum": 64, "maximum": 1440 }
+					}
+				}
+			]
+		},
+		"perspectiveProjection": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["type", "fieldOfViewDegrees"],
+			"properties": {
+				"type": { "const": "perspective" },
+				"fieldOfViewDegrees": { "type": "number", "minimum": 5, "maximum": 170 }
+			}
+		},
+		"orthographicProjection": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["type", "orthoWidth"],
+			"properties": {
+				"type": { "const": "orthographic" },
+				"orthoWidth": { "type": "number", "exclusiveMinimum": 0 }
+			}
+		},
+		"correlation": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "candidateId"],
+					"properties": {
+						"type": { "const": "framing_candidate" },
+						"candidateId": { "$ref": "#/$defs/identifier" }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "reviewViewId"],
+					"properties": {
+						"type": { "const": "review_view" },
+						"reviewViewId": { "$ref": "#/$defs/identifier" }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "mapCapturePlanId"],
+					"properties": {
+						"type": { "const": "map_capture_plan" },
+						"mapCapturePlanId": { "$ref": "#/$defs/identifier" }
+					}
+				}
+			]
+		},
+		"identifier": {
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 128,
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
 		"vector": {
 			"type": "object",
 			"additionalProperties": false,

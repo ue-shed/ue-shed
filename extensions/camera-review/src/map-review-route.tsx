@@ -417,13 +417,20 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 								{...stylex.props(styles.viewNavigator)}
 							>
 								<div {...stylex.props(styles.historyHeading)}>
-									<span>APPROVED OBSERVATIONS</span>
-									<small>GROUPED BY SUBJECT</small>
+									<span>ACTORS IN THIS REVIEW SET</span>
+									<small>CHOOSE AN ACTOR, THEN A VIEW</small>
 								</div>
 								<For each={subjectGroups()}>
 									{([subject, views]) => (
-										<div {...stylex.props(styles.subjectGroup)}>
-											<div>
+										<section
+											aria-label={`${views[0]?.subjectLabel ?? views[0]?.displayName ?? "Review subject"} views`}
+											{...stylex.props(styles.subjectGroup)}
+										>
+											<div {...stylex.props(styles.subjectIdentity)}>
+												<span {...stylex.props(styles.subjectCount)}>
+													{views.length}{" "}
+													{views.length === 1 ? "VIEW" : "VIEWS"}
+												</span>
 												<strong>
 													{views[0]?.subjectLabel ??
 														views[0]?.displayName}
@@ -473,7 +480,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientShape })
 													)}
 												</For>
 											</div>
-										</div>
+										</section>
 									)}
 								</For>
 							</section>
@@ -1015,6 +1022,16 @@ const styles = stylex.create({
 		gap: 12,
 		padding: 12,
 		borderBottom: "1px solid #2b302d"
+	},
+	subjectIdentity: { display: "grid", alignContent: "start", gap: 4 },
+	subjectCount: {
+		width: "fit-content",
+		padding: "2px 5px",
+		border: "1px solid #4a534d",
+		color: "#b9f227",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".1em"
 	},
 	viewRail: { display: "flex", gap: 7, overflowX: "auto" },
 	viewCard: {

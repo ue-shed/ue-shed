@@ -4,17 +4,21 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { userEvent } from "@testing-library/user-event";
 import { decodeMapCapturePlan } from "@ue-shed/cameras/map-tiles";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type {
 	MapCaptureClientShape,
 	MapCaptureExecuteIntent,
+	MapCaptureProgressEvent,
 	MapCaptureSaveIntent
 } from "./map-capture-client.js";
 import { MapCaptureRoute } from "./map-capture-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
 afterAll(() => runtime.dispose());
 
 const plan = Effect.runSync(
@@ -36,11 +40,70 @@ const plan = Effect.runSync(
 		output: { imageFormat: "png", publication: "local_immutable" },
 		project: { id: "fixture", mapPath: "/Game/Fixture/Cameras/L_CameraLoad" },
 		requestedBounds: { maxX: 1024, maxY: 1024, minX: 0, minY: 0 },
-		tilePixelSize: 256
+		tilePixelSize: 512
 	})
 );
 
 describe("MapCaptureRoute", () => {
+	it("streams the top-down editor camera into the framing stage", async () => {
+		let previewedPlanId: string | undefined;
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+		const client: MapCaptureClientShape = {
+			capture: () => Effect.die("not used"),
+			choosePlan: () =>
+				Effect.succeed({
+					grid: {
+						levels: [
+							{
+								columns: 1,
+								rows: 1,
+								tileWorldSize: 2048,
+								unitsPerPixel: 4,
+								zoom: 0
+							}
+						],
+						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+					},
+					maps: [],
+					plan,
+					projectRoot: "C:/Fixture",
+					runs: [],
+					source: "opened" as const,
+					status: "ready" as const,
+					tileCount: 1
+				}),
+			liveFrames: Stream.empty,
+			newPlan: () => Effect.die("not used"),
+			openMap: () => Effect.die("not used"),
+			preview: (current) =>
+				Effect.sync(() => {
+					previewedPlanId = current.id;
+					return {
+						bytes: new Uint8Array(64 * 64 * 4),
+						cameraId: "map-camera",
+						cameraIndex: 0,
+						height: 64,
+						previewContext: "editor_live" as const,
+						status: "ready" as const,
+						width: 64
+					};
+				}),
+			progress: Stream.empty,
+			savePlan: () => Effect.die("not used")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<MapCaptureRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		await userEvent.click(screen.getByRole("button", { name: "OPEN PLAN" }));
+		expect(await screen.findByLabelText("Live top-down map framing preview")).toBeDefined();
+		expect(previewedPlanId).toBe("fixture-overview");
+		expect(screen.getByText("EDITOR LIVE")).toBeDefined();
+		expect(screen.getByText("OBSERVATION FRAMING")).toBeDefined();
+	});
+
 	it("surfaces scoped atmosphere and per-level LOD settings in the capture intent", async () => {
 		let captured: MapCaptureExecuteIntent | undefined;
 		const client: MapCaptureClientShape = {
@@ -57,10 +120,10 @@ describe("MapCaptureRoute", () => {
 				Effect.succeed({
 					grid: {
 						levels: [
-							{ columns: 1, rows: 1, tileWorldSize: 1024, unitsPerPixel: 4, zoom: 0 },
-							{ columns: 2, rows: 2, tileWorldSize: 512, unitsPerPixel: 2, zoom: 1 }
+							{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
+							{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
 						],
-						snappedBounds: { maxX: 1024, maxY: 1024, minX: 0, minY: 0 }
+						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
 					},
 					maps: [
 						{
@@ -79,6 +142,9 @@ describe("MapCaptureRoute", () => {
 				}),
 			newPlan: () => Effect.die("not used"),
 			openMap: () => Effect.die("not used"),
+			liveFrames: Stream.empty,
+			preview: () => Effect.die("not used"),
+			progress: Stream.empty,
 			savePlan: () => Effect.die("not used")
 		};
 		render(() => (
@@ -109,6 +175,7 @@ describe("MapCaptureRoute", () => {
 
 		await waitFor(() => expect(captured).toBeDefined());
 		expect(captured?.openMap).toBe(true);
+		expect(captured?.operationId).toMatch(/^map-capture-/);
 		expect(captured?.plan.project.mapPath).toBe("/Game/Maps/L_Lighting");
 		expect(captured?.plan.capture.render).toEqual({
 			effects: { fog: false, volumetricFog: false },
@@ -127,10 +194,10 @@ describe("MapCaptureRoute", () => {
 				Effect.succeed({
 					grid: {
 						levels: [
-							{ columns: 1, rows: 1, tileWorldSize: 1024, unitsPerPixel: 4, zoom: 0 },
-							{ columns: 2, rows: 2, tileWorldSize: 512, unitsPerPixel: 2, zoom: 1 }
+							{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
+							{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
 						],
-						snappedBounds: { maxX: 1024, maxY: 1024, minX: 0, minY: 0 }
+						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
 					},
 					maps: [],
 					plan,
@@ -141,6 +208,9 @@ describe("MapCaptureRoute", () => {
 					tileCount: 5
 				}),
 			openMap: () => Effect.die("not used"),
+			liveFrames: Stream.empty,
+			preview: () => Effect.die("not used"),
+			progress: Stream.empty,
 			savePlan: (intent) =>
 				Effect.sync(() => {
 					saved = intent;
@@ -162,10 +232,84 @@ describe("MapCaptureRoute", () => {
 		const planId = await screen.findByRole("textbox", { name: "PLAN ID" });
 		await user.clear(planId);
 		await user.type(planId, "city-overview");
+		await user.click(screen.getByRole("button", { name: "2,048 px" }));
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Coarsest resolution" }),
+			"8"
+		);
+		expect(screen.getByText("16,384 × 16,384 UU")).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "SAVE" }));
 
 		await waitFor(() => expect(saved?.plan.id).toBe("city-overview"));
 		expect(saved?.saveAs).toBe(false);
+		expect(saved?.plan.tilePixelSize).toBe(2_048);
+		expect(saved?.plan.levels.coarsestUnitsPerPixel).toBe(8);
 		expect(await screen.findByText(/Saved portable plan/)).toBeDefined();
+	});
+
+	it("shows actual tile progress and locks capture controls while a run is active", async () => {
+		let captured: MapCaptureExecuteIntent | undefined;
+		const progressQueue = Effect.runSync(Queue.unbounded<MapCaptureProgressEvent>());
+		const client: MapCaptureClientShape = {
+			capture: (intent) =>
+				Effect.sync(() => {
+					captured = intent;
+				}).pipe(Effect.andThen(Effect.never)),
+			choosePlan: () =>
+				Effect.succeed({
+					grid: {
+						levels: [
+							{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
+							{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
+						],
+						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+					},
+					maps: [],
+					plan,
+					projectRoot: "C:/Fixture",
+					runs: [],
+					source: "opened" as const,
+					status: "ready" as const,
+					tileCount: 5
+				}),
+			newPlan: () => Effect.die("not used"),
+			openMap: () => Effect.die("not used"),
+			liveFrames: Stream.empty,
+			preview: () => Effect.die("not used"),
+			progress: Stream.fromQueue(progressQueue),
+			savePlan: () => Effect.die("not used")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<MapCaptureRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		const user = userEvent.setup();
+		await user.click(screen.getByRole("button", { name: "OPEN PLAN" }));
+		await screen.findByDisplayValue("fixture-overview");
+		await user.click(screen.getByRole("button", { name: "OPEN + CAPTURE" }));
+		await waitFor(() => expect(captured).toBeDefined());
+		Queue.offerUnsafe(progressQueue, {
+			failedTiles: 1,
+			operationId: captured!.operationId,
+			phase: "capturing",
+			processedTiles: 4,
+			totalTiles: 5
+		});
+
+		const progressbar = await screen.findByRole("progressbar", {
+			name: "Map capture progress"
+		});
+		await waitFor(() => expect(progressbar.getAttribute("aria-valuenow")).toBe("4"));
+		expect(screen.getByText("4 / 5 PROCESSED")).toBeDefined();
+		expect(screen.getByText("3 CAPTURED")).toBeDefined();
+		expect(screen.getByText("1 FAILED")).toBeDefined();
+		expect(
+			(screen.getByRole("button", { name: "OPEN + CAPTURE" }) as HTMLButtonElement).disabled
+		).toBe(true);
+		expect(
+			(screen.getByRole("button", { name: "OPEN TARGET MAP" }) as HTMLButtonElement).disabled
+		).toBe(true);
 	});
 });

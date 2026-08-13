@@ -133,7 +133,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		const result = launchResult();
 		if (result?.status === "launched") {
 			return result.mode === "ue_shed"
-				? "Unreal launched with all five UE Shed plugins."
+				? "Unreal launched with the UE Shed plugin suite."
 				: "Unreal launched normally.";
 		}
 		return undefined;
@@ -164,7 +164,9 @@ export function ProjectChooser(props: ProjectChooserProps) {
 							<strong>
 								{launching() === "ue_shed" ? "PREPARING PLUGINS…" : "WITH UE SHED"}
 							</strong>
-							<span>Core · Authoring · Cameras · Observatory · Asset Audits</span>
+							<span>
+								Core · Authoring · Cameras · Observatory · Asset Audits · Scenarios
+							</span>
 						</button>
 						<button
 							type="button"

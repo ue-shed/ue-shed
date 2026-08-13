@@ -55,6 +55,7 @@ there; do not invent a second status source in docs.
 | [0005](decisions/0005-gate-peculiar-sheets-and-defer-custom-authoring-ui.md) | Gate Peculiar Sheets; defer custom authoring UI |
 | [0006](decisions/0006-bounded-observatory-transform-stream.md)               | Bounded Observatory transform stream            |
 | [0007](decisions/0007-separate-uasset-inspection-and-io.md)                  | Separate UAsset parsing, inspection, and IO     |
+| [0008](decisions/0008-editor-world-camera-preview-stream.md)                 | Stream Map Review from the editor world         |
 
 ## Research
 

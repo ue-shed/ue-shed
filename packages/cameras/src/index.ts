@@ -66,8 +66,15 @@ export class CameraFeedError extends Schema.TaggedErrorClass<CameraFeedError>()(
 	retrySafe: Schema.Boolean
 }) {}
 
-function bytesToId(buffer: Buffer, offset: number): string {
-	return buffer.subarray(offset, offset + 16).toString("hex");
+function unrealGuidToDigits(buffer: Buffer, offset: number): string {
+	return [0, 4, 8, 12]
+		.map((wordOffset) =>
+			buffer
+				.readUInt32LE(offset + wordOffset)
+				.toString(16)
+				.padStart(8, "0")
+		)
+		.join("");
 }
 
 export class CameraFrameDecoder {
@@ -199,17 +206,17 @@ export class CameraFrameDecoder {
 			const pixels = this.read(payloadBytes);
 			if (!pixels) break;
 			frames.push({
-				cameraId: bytesToId(header, 96),
+				cameraId: unrealGuidToDigits(header, 96),
 				cameraIndex: header.readUInt32LE(28),
 				captureMonotonicMs: header.readDoubleLE(48),
 				height,
 				pixels: new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
-				producerId: bytesToId(header, 64),
+				producerId: unrealGuidToDigits(header, 64),
 				readbackDrops: header.readUInt32LE(112),
 				readbackLatencyMs: header.readDoubleLE(56),
 				receivedMonotonicMs: performance.now(),
 				sequence: header.readBigUInt64LE(32),
-				sessionId: bytesToId(header, 80),
+				sessionId: unrealGuidToDigits(header, 80),
 				transportReplacements: header.readUInt32LE(116),
 				width,
 				worldSeconds: header.readDoubleLE(40)

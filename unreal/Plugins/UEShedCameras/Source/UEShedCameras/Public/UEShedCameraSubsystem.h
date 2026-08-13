@@ -54,7 +54,9 @@ struct FUEShedProvisionedCameraSpec
 	FString CorrelationType;
 	FVector Location = FVector::ZeroVector;
 	FRotator Rotation = FRotator::ZeroRotator;
+	bool bOrthographic = false;
 	float FieldOfViewDegrees = 60.f;
+	float OrthoWidth = 512.f;
 	int32 Width = 320;
 	int32 Height = 180;
 };
@@ -71,6 +73,8 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+	virtual bool IsTickableInEditor() const override { return true; }
+	virtual bool IsTickableWhenPaused() const override { return true; }
 
 	bool ApplyConfigJson(const FString& ConfigJson, FString& Error);
 	FString StatusJson() const;

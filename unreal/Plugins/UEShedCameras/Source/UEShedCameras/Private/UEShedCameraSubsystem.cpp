@@ -3,6 +3,7 @@
 #include "Async/Async.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Dom/JsonObject.h"
+#include "Engine/Engine.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "EngineUtils.h"
 #include "HAL/CriticalSection.h"
@@ -77,6 +78,36 @@ void WriteGuid(TArray<uint8>& Bytes, int32 Offset, const FGuid& Value)
 	WriteValue(Bytes, Offset + 4, Value.B);
 	WriteValue(Bytes, Offset + 8, Value.C);
 	WriteValue(Bytes, Offset + 12, Value.D);
+}
+
+bool MatchesProvisionedProjection(
+	const USceneCaptureComponent2D* Capture,
+	const FUEShedProvisionedCameraSpec& Spec)
+{
+	if (Capture == nullptr) return false;
+	const ECameraProjectionMode::Type ExpectedProjection = Spec.bOrthographic
+		? ECameraProjectionMode::Orthographic : ECameraProjectionMode::Perspective;
+	if (Capture->ProjectionType != ExpectedProjection) return false;
+	return Spec.bOrthographic
+		? FMath::IsNearlyEqual(Capture->OrthoWidth, Spec.OrthoWidth)
+		: FMath::IsNearlyEqual(Capture->FOVAngle, Spec.FieldOfViewDegrees);
+}
+
+void ApplyProvisionedProjection(
+	USceneCaptureComponent2D* Capture,
+	const FUEShedProvisionedCameraSpec& Spec)
+{
+	if (Capture == nullptr) return;
+	Capture->ProjectionType = Spec.bOrthographic
+		? ECameraProjectionMode::Orthographic : ECameraProjectionMode::Perspective;
+	if (Spec.bOrthographic)
+	{
+		Capture->OrthoWidth = FMath::Max(Spec.OrthoWidth, 1.f);
+	}
+	else
+	{
+		Capture->FOVAngle = FMath::Clamp(Spec.FieldOfViewDegrees, 5.f, 170.f);
+	}
 }
 
 class FCameraPipeWriter final : public FRunnable
@@ -172,6 +203,26 @@ private:
 	TMap<int32, TSharedPtr<FFramePacket, ESPMode::ThreadSafe>> Latest;
 };
 
+TSharedPtr<FCameraPipeWriter, ESPMode::ThreadSafe> SharedCameraPipeWriter()
+{
+	// Editor and PIE worlds coexist in the same process. One process-wide writer keeps those
+	// world-scoped producers from racing to create the fixed local pipe.
+	static TSharedPtr<FCameraPipeWriter, ESPMode::ThreadSafe> Writer =
+		MakeShared<FCameraPipeWriter, ESPMode::ThreadSafe>();
+	return Writer;
+}
+
+bool HasActiveGameWorld()
+{
+	if (GEngine == nullptr) return false;
+	for (const FWorldContext& Context : GEngine->GetWorldContexts())
+	{
+		const UWorld* World = Context.World();
+		if (World != nullptr && World->IsGameWorld()) return true;
+	}
+	return false;
+}
+
 FString GuidString(const FGuid& Guid)
 {
 	return Guid.ToString(EGuidFormats::Digits).ToLower();
@@ -182,7 +233,7 @@ struct FUEShedCameraRuntime
 {
 	FUEShedCameraScheduleConfig Config;
 	TArray<FCameraState> Cameras;
-	TUniquePtr<FCameraPipeWriter> Writer;
+	TSharedPtr<FCameraPipeWriter, ESPMode::ThreadSafe> Writer;
 	FGuid ProducerId = FGuid::NewGuid();
 	FGuid SessionId = FGuid::NewGuid();
 	bool bProvisionedCameraSession = false;
@@ -219,14 +270,15 @@ struct FUEShedCameraRuntime
 bool UUEShedCameraSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
-	return World != nullptr && (World->WorldType == EWorldType::PIE || World->WorldType == EWorldType::Game);
+	return World != nullptr && (World->WorldType == EWorldType::Editor
+		|| World->WorldType == EWorldType::PIE || World->WorldType == EWorldType::Game);
 }
 
 void UUEShedCameraSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	Runtime = MakeUnique<FUEShedCameraRuntime>();
-	Runtime->Writer = MakeUnique<FCameraPipeWriter>();
+	Runtime->Writer = SharedCameraPipeWriter();
 }
 
 void UUEShedCameraSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -288,6 +340,54 @@ void UUEShedCameraSubsystem::DiscoverAuthoredCameras()
 	{
 		RegisterSource(Source);
 	}
+
+	// Authored maps stay portable by saving stock scene-capture actors. Adapt tagged captures to
+	// UE Shed's runtime source type only inside the process that loaded this optional plugin.
+	TArray<ASceneCapture2D*> AuthoredCaptures;
+	for (TActorIterator<ASceneCapture2D> It(GetWorld()); It; ++It)
+	{
+		if (!It->IsA<AUEShedCameraSource>()
+			&& It->ActorHasTag(TEXT("UEShedCameraSource")))
+		{
+			AuthoredCaptures.Add(*It);
+		}
+	}
+	AuthoredCaptures.Sort([](const ASceneCapture2D& Left, const ASceneCapture2D& Right)
+	{
+		return Left.GetPathName() < Right.GetPathName();
+	});
+	for (int32 Index = 0; Index < AuthoredCaptures.Num(); ++Index)
+	{
+		ASceneCapture2D* Authored = AuthoredCaptures[Index];
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.ObjectFlags = RF_Transient;
+		SpawnParams.OverrideLevel = GetWorld()->PersistentLevel;
+		SpawnParams.SpawnCollisionHandlingOverride =
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+#if WITH_EDITOR
+		SpawnParams.bTemporaryEditorActor = true;
+		SpawnParams.bHideFromSceneOutliner = true;
+		SpawnParams.bCreateActorPackage = false;
+#endif
+		AUEShedCameraSource* Source = GetWorld()->SpawnActor<AUEShedCameraSource>(
+			AUEShedCameraSource::StaticClass(), Authored->GetActorLocation(),
+			Authored->GetActorRotation(), SpawnParams);
+		if (Source == nullptr) continue;
+		Source->bTransientAuthoredCamera = true;
+		Source->CameraIndex = Sources.Num() + Index;
+		Source->CameraId = FGuid(
+			0x55455348, 0x45444341, 0x4D000000 | Source->CameraIndex, 0x00000001);
+		Source->CaptureWidth = Runtime->Config.CaptureWidth;
+		Source->CaptureHeight = Runtime->Config.CaptureHeight;
+		Source->ObservationTarget = Authored->GetAttachParentActor();
+		Source->EnsureCaptureTarget();
+		if (const USceneCaptureComponent2D* AuthoredComponent =
+			Authored->GetCaptureComponent2D())
+		{
+			Source->GetCaptureComponent2D()->FOVAngle = AuthoredComponent->FOVAngle;
+		}
+		RegisterSource(Source);
+	}
 }
 
 bool UUEShedCameraSubsystem::IsProvisionedCameraSessionActive() const
@@ -302,7 +402,7 @@ void UUEShedCameraSubsystem::ClearProvisionedCameras()
 	TArray<AUEShedCameraSource*> ToDestroy;
 	for (TActorIterator<AUEShedCameraSource> It(World); It; ++It)
 	{
-		if (It->bTransientProvisionedCamera) ToDestroy.Add(*It);
+		if (It->bTransientProvisionedCamera || It->bTransientAuthoredCamera) ToDestroy.Add(*It);
 	}
 	ResetCameraStates();
 	Runtime->bProvisionedCameraSession = false;
@@ -311,7 +411,7 @@ void UUEShedCameraSubsystem::ClearProvisionedCameras()
 	{
 		if (IsValid(Source))
 		{
-			Source->Destroy();
+			World->DestroyActor(Source, false, false);
 		}
 	}
 }
@@ -336,41 +436,109 @@ bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
 		Error = TEXT("invalid-source-count");
 		return false;
 	}
-	ClearProvisionedCameras();
-	ResetCameraStates();
-	for (int32 Index = 0; Index < Specs.Num(); ++Index)
+	bool bCanReconcile = Runtime->bProvisionedCameraSession
+		&& Runtime->Cameras.Num() == Specs.Num();
+	if (bCanReconcile)
 	{
-		const FUEShedProvisionedCameraSpec& Spec = Specs[Index];
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride =
-			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		// Destroy() marks old preview actors for teardown, but their names remain reserved until the
-		// end of the frame. Let Unreal allocate a unique transient name so replacing provisioned
-		// cameras during PIE cannot collide with a just-destroyed source and crash the editor.
-		AUEShedCameraSource* Source = World->SpawnActor<AUEShedCameraSource>(
-			AUEShedCameraSource::StaticClass(),
-			Spec.Location,
-			Spec.Rotation,
-			SpawnParams);
-		if (Source == nullptr)
+		for (int32 Index = 0; Index < Specs.Num(); ++Index)
 		{
-			ClearProvisionedCameras();
-			Error = TEXT("spawn-failed");
-			return false;
+			AUEShedCameraSource* Source = Runtime->Cameras[Index].Source.Get();
+			const FUEShedProvisionedCameraSpec& Spec = Specs[Index];
+			if (Source == nullptr || !Source->bTransientProvisionedCamera
+				|| Source->CameraIndex != Index
+				|| Source->ProvisioningCorrelationId != Spec.CorrelationId
+				|| Source->ProvisioningCorrelationType != Spec.CorrelationType)
+			{
+				bCanReconcile = false;
+				break;
+			}
 		}
-		Source->bTransientProvisionedCamera = true;
-		Source->ProvisioningCorrelationId = Spec.CorrelationId;
-		Source->ProvisioningCorrelationType = Spec.CorrelationType;
-		Source->CameraIndex = Index;
-		Source->CameraId = FGuid::NewGuid();
-		Source->CaptureWidth = FMath::Clamp(Spec.Width, 64, 2560);
-		Source->CaptureHeight = FMath::Clamp(Spec.Height, 64, 1440);
-		Source->EnsureCaptureTarget();
-		if (USceneCaptureComponent2D* Capture = Source->GetCaptureComponent2D())
+	}
+
+	if (bCanReconcile)
+	{
+		TArray<int32> ChangedIndices;
+		for (int32 Index = 0; Index < Specs.Num(); ++Index)
 		{
-			Capture->FOVAngle = FMath::Clamp(Spec.FieldOfViewDegrees, 5.f, 170.f);
+			AUEShedCameraSource* Source = Runtime->Cameras[Index].Source.Get();
+			const USceneCaptureComponent2D* Capture = Source->GetCaptureComponent2D();
+			const FUEShedProvisionedCameraSpec& Spec = Specs[Index];
+			if (!Source->GetActorLocation().Equals(Spec.Location, KINDA_SMALL_NUMBER)
+				|| !Source->GetActorRotation().Equals(Spec.Rotation, KINDA_SMALL_NUMBER)
+				|| !MatchesProvisionedProjection(Capture, Spec)
+				|| Source->CaptureWidth != Spec.Width || Source->CaptureHeight != Spec.Height)
+			{
+				ChangedIndices.Add(Index);
+			}
 		}
-		RegisterSource(Source);
+		if (!ChangedIndices.IsEmpty())
+		{
+			// A changed camera keeps its actor and render target, but receives fresh readback slots
+			// and an identity. That lets the host reject any queued frame from the previous pose.
+			FlushRenderingCommands();
+			for (const int32 Index : ChangedIndices)
+			{
+				FCameraState& Camera = Runtime->Cameras[Index];
+				AUEShedCameraSource* Source = Camera.Source.Get();
+				const FUEShedProvisionedCameraSpec& Spec = Specs[Index];
+				for (TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : Camera.Slots)
+				{
+					Slot = MakeShared<FReadbackSlot, ESPMode::ThreadSafe>();
+				}
+				Source->SetActorLocationAndRotation(Spec.Location, Spec.Rotation);
+				Source->CaptureWidth = FMath::Clamp(Spec.Width, 64, 2560);
+				Source->CaptureHeight = FMath::Clamp(Spec.Height, 64, 1440);
+				Source->EnsureCaptureTarget();
+				ApplyProvisionedProjection(Source->GetCaptureComponent2D(), Spec);
+				Source->CameraId = FGuid::NewGuid();
+				Camera.OverviewTransform = Source->GetActorTransform();
+				Camera.NextCaptureSeconds = 0;
+				Camera.Sequence = 0;
+			}
+		}
+	}
+	else
+	{
+		ClearProvisionedCameras();
+		ResetCameraStates();
+		for (int32 Index = 0; Index < Specs.Num(); ++Index)
+		{
+			const FUEShedProvisionedCameraSpec& Spec = Specs[Index];
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.ObjectFlags = RF_Transient;
+			SpawnParams.OverrideLevel = World->PersistentLevel;
+			SpawnParams.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+#if WITH_EDITOR
+			SpawnParams.bTemporaryEditorActor = true;
+			SpawnParams.bHideFromSceneOutliner = true;
+			SpawnParams.bCreateActorPackage = false;
+#endif
+			// Destroy() marks old preview actors for teardown, but their names remain reserved until the
+			// end of the frame. Let Unreal allocate a unique transient name so replacing provisioned
+			// cameras during PIE cannot collide with a just-destroyed source and crash the editor.
+			AUEShedCameraSource* Source = World->SpawnActor<AUEShedCameraSource>(
+				AUEShedCameraSource::StaticClass(),
+				Spec.Location,
+				Spec.Rotation,
+				SpawnParams);
+			if (Source == nullptr)
+			{
+				ClearProvisionedCameras();
+				Error = TEXT("spawn-failed");
+				return false;
+			}
+			Source->bTransientProvisionedCamera = true;
+			Source->ProvisioningCorrelationId = Spec.CorrelationId;
+			Source->ProvisioningCorrelationType = Spec.CorrelationType;
+			Source->CameraIndex = Index;
+			Source->CameraId = FGuid::NewGuid();
+			Source->CaptureWidth = FMath::Clamp(Spec.Width, 64, 2560);
+			Source->CaptureHeight = FMath::Clamp(Spec.Height, 64, 1440);
+			Source->EnsureCaptureTarget();
+			ApplyProvisionedProjection(Source->GetCaptureComponent2D(), Spec);
+			RegisterSource(Source);
+		}
 	}
 	Runtime->bProvisionedCameraSession = true;
 	Runtime->Config.ViewMode = EUEShedCameraViewMode::Posed;
@@ -389,7 +557,13 @@ bool UUEShedCameraSubsystem::EnsureProvisionedCameras(
 void UUEShedCameraSubsystem::Tick(float DeltaTime)
 {
 	if (!Runtime) return;
-	if (Runtime->Cameras.IsEmpty() && !Runtime->bProvisionedCameraSession)
+	UWorld* World = GetWorld();
+	if (World == nullptr) return;
+	// A play world is the authoritative producer while PIE/SIE exists. The editor subsystem keeps
+	// its transient session so it can resume after play ends, but it performs no render or pipe work.
+	if (World->WorldType == EWorldType::Editor && HasActiveGameWorld()) return;
+	if (World->WorldType != EWorldType::Editor && Runtime->Cameras.IsEmpty()
+		&& !Runtime->bProvisionedCameraSession)
 	{
 		DiscoverAuthoredCameras();
 	}
@@ -526,8 +700,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 	if (Runtime->Config.PipelineMode == EUEShedCameraPipelineMode::FullPipeline
 		&& !Runtime->Writer->bConnected.Load()) return;
 
-	UWorld* World = GetWorld();
-	if (World == nullptr || World->Scene == nullptr) return;
+	if (World->Scene == nullptr) return;
 
 	struct FPendingCapture
 	{
@@ -841,6 +1014,9 @@ FString UUEShedCameraSubsystem::StatusJson() const
 	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetNumberField(TEXT("schemaVersion"), 1);
 	Root->SetStringField(TEXT("pipeName"), PipeName);
+	const UWorld* World = GetWorld();
+	Root->SetStringField(TEXT("worldContext"),
+		World != nullptr && World->WorldType == EWorldType::Editor ? TEXT("editor") : TEXT("play"));
 	const TSharedRef<FJsonObject> Config = MakeShared<FJsonObject>();
 	Config->SetNumberField(TEXT("activeCameraCount"), Runtime->Config.ActiveCameraCount);
 	Config->SetNumberField(TEXT("backgroundFps"), Runtime->Config.BackgroundFps);
@@ -893,6 +1069,11 @@ FString UUEShedCameraSubsystem::StatusJson() const
 			else if (Source->ProvisioningCorrelationType == TEXT("review_view"))
 			{
 				Correlation->SetStringField(TEXT("reviewViewId"), Source->ProvisioningCorrelationId);
+			}
+			else if (Source->ProvisioningCorrelationType == TEXT("map_capture_plan"))
+			{
+				Correlation->SetStringField(
+					TEXT("mapCapturePlanId"), Source->ProvisioningCorrelationId);
 			}
 			Camera->SetObjectField(TEXT("correlation"), Correlation);
 		}

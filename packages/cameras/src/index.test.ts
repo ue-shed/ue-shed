@@ -12,7 +12,21 @@ import {
 	type CameraFeedShape
 } from "./index.js";
 
-function frame(sequence: bigint, payload = Buffer.from([1, 2, 3, 4])): Buffer {
+function writeUnrealGuid(buffer: Buffer, offset: number, digits: string): void {
+	for (let word = 0; word < 4; word += 1) {
+		const start = word * 8;
+		buffer.writeUInt32LE(
+			Number.parseInt(digits.slice(start, start + 8), 16),
+			offset + word * 4
+		);
+	}
+}
+
+function frame(
+	sequence: bigint,
+	payload = Buffer.from([1, 2, 3, 4]),
+	cameraId = "00000000000000000000000000000000"
+): Buffer {
 	const header = Buffer.alloc(CAMERA_FRAME_HEADER_BYTES);
 	header.write("USCF");
 	header.writeUInt16LE(1, 4);
@@ -23,6 +37,7 @@ function frame(sequence: bigint, payload = Buffer.from([1, 2, 3, 4])): Buffer {
 	header.writeUInt32LE(payload.length, 24);
 	header.writeUInt32LE(3, 28);
 	header.writeBigUInt64LE(sequence, 32);
+	writeUnrealGuid(header, 96, cameraId);
 	return Buffer.concat([header, payload]);
 }
 
@@ -97,6 +112,12 @@ describe("CameraFrameDecoder", () => {
 		const decoded = decoder.push(encoded.subarray(51));
 		expect(decoded.frames[0]?.sequence).toBe(42n);
 		expect(decoded.frames[0]?.pixels).toEqual(Uint8Array.from([1, 2, 3, 4]));
+	});
+
+	test("formats binary Unreal camera IDs like the Remote Control response", () => {
+		const cameraId = "3b85e62e4f1f9ea3ea79b8b7e12d825d";
+		const decoded = new CameraFrameDecoder().push(frame(1n, undefined, cameraId));
+		expect(decoded.frames[0]?.cameraId).toBe(cameraId);
 	});
 
 	test("resynchronizes after malformed bytes", () => {

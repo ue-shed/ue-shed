@@ -4,7 +4,9 @@ import {
 	type MapCapturePlan as MapCapturePlanValue
 } from "@ue-shed/cameras/map-tiles";
 import { EditorWorldOpenResponse, SavedWorldMap } from "@ue-shed/protocol";
-import { type Effect, Schema } from "effect";
+import { type Effect, Schema, type Stream } from "effect";
+
+const MapCaptureUiOperationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
 
 const MapCaptureRunSummary = Schema.Struct({
 	completedAt: Schema.String,
@@ -61,6 +63,28 @@ export const MapCaptureOpenResult = Schema.Union([
 ]);
 export type MapCaptureOpenResult = typeof MapCaptureOpenResult.Type;
 
+export const MapCaptureLivePreviewResult = Schema.Union([
+	WorkbenchFailure,
+	Schema.Struct({
+		bytes: Schema.Uint8Array,
+		cameraId: Schema.String,
+		cameraIndex: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		height: Schema.Int.check(Schema.isGreaterThan(0)),
+		previewContext: Schema.Literals(["editor_live", "play_live"]),
+		status: Schema.Literal("ready"),
+		width: Schema.Int.check(Schema.isGreaterThan(0))
+	})
+]);
+export type MapCaptureLivePreviewResult = typeof MapCaptureLivePreviewResult.Type;
+
+export interface MapCaptureLiveFrame {
+	readonly cameraId: string;
+	readonly cameraIndex: number;
+	readonly height: number;
+	readonly pixels: Uint8Array;
+	readonly width: number;
+}
+
 export const MapCaptureSaveIntent = Schema.Struct({
 	plan: MapCapturePlan,
 	planPath: Schema.optionalKey(Schema.String),
@@ -80,6 +104,7 @@ export const MapCaptureSaveResult = Schema.Union([
 export type MapCaptureSaveResult = typeof MapCaptureSaveResult.Type;
 
 export const MapCaptureExecuteIntent = Schema.Struct({
+	operationId: MapCaptureUiOperationId,
 	openMap: Schema.Boolean,
 	plan: MapCapturePlan
 });
@@ -105,6 +130,17 @@ export const MapCaptureExecuteResult = Schema.Union([
 ]);
 export type MapCaptureExecuteResult = typeof MapCaptureExecuteResult.Type;
 
+export const MapCaptureProgressEvent = Schema.Struct({
+	failedTiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	operationId: MapCaptureUiOperationId,
+	phase: Schema.Literals(["opening_map", "capturing", "publishing", "loading_preview"]),
+	processedTiles: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	totalTiles: Schema.Int.check(Schema.isGreaterThan(0))
+});
+export interface MapCaptureProgressEvent extends Schema.Schema.Type<
+	typeof MapCaptureProgressEvent
+> {}
+
 export class MapCaptureClientError extends Schema.TaggedErrorClass<MapCaptureClientError>()(
 	"MapCaptureClientError",
 	{
@@ -123,6 +159,11 @@ export interface MapCaptureClientShape {
 	readonly openMap: (
 		plan: MapCapturePlanValue
 	) => Effect.Effect<MapCaptureOpenResult, MapCaptureClientError>;
+	readonly liveFrames: Stream.Stream<MapCaptureLiveFrame>;
+	readonly preview: (
+		plan: MapCapturePlanValue
+	) => Effect.Effect<MapCaptureLivePreviewResult, MapCaptureClientError>;
+	readonly progress: Stream.Stream<MapCaptureProgressEvent>;
 	readonly savePlan: (
 		intent: MapCaptureSaveIntent
 	) => Effect.Effect<MapCaptureSaveResult, MapCaptureClientError>;
@@ -130,6 +171,9 @@ export interface MapCaptureClientShape {
 
 export const decodeMapCaptureExecuteResult = Schema.decodeUnknownEffect(MapCaptureExecuteResult);
 export const decodeMapCaptureOpenResult = Schema.decodeUnknownEffect(MapCaptureOpenResult);
+export const decodeMapCaptureLivePreviewResult = Schema.decodeUnknownEffect(
+	MapCaptureLivePreviewResult
+);
 export const decodeMapCaptureSaveResult = Schema.decodeUnknownEffect(MapCaptureSaveResult);
 export const decodeMapCaptureSelectionResult =
 	Schema.decodeUnknownEffect(MapCaptureSelectionResult);

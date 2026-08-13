@@ -20,9 +20,9 @@ frames from an old session are disposable.
 |     40 | f64     | Unreal world seconds at capture request              |
 |     48 | f64     | producer monotonic milliseconds at capture request   |
 |     56 | f64     | GPU readback latency in milliseconds                 |
-|     64 | u8[16]  | producer ID                                          |
-|     80 | u8[16]  | session ID                                           |
-|     96 | u8[16]  | camera ID                                            |
+|     64 | u32[4]  | producer FGuid words, each little-endian             |
+|     80 | u32[4]  | session FGuid words, each little-endian              |
+|     96 | u32[4]  | camera FGuid words, each little-endian               |
 |    112 | u32     | cumulative readback/staging drops                    |
 |    116 | u32     | cumulative latest-frame transport replacements       |
 |    120 | u32     | reserved, zero                                       |
@@ -31,3 +31,6 @@ frames from an old session are disposable.
 The payload is top-to-bottom, tightly packed BGRA8. Live buffers are bounded and latest-frame-wins;
 sequence gaps are expected and observable. The control plane owns camera listing, schedule tuning,
 pause/focus, and health. This binary stream never carries durable evidence.
+
+To compare an ID with Unreal's `FGuid::ToString(EGuidFormats::Digits)` output, read the four
+little-endian `u32` words and concatenate them as four zero-padded, eight-digit hexadecimal values.

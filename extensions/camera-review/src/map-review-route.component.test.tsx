@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import {
+	bootstrapMapReviewSet,
 	defaultFramingParameters,
 	generateFramingCandidates,
 	ReviewAuthoringSession,
@@ -253,6 +254,18 @@ describe("MapReviewRoute", () => {
 		);
 		await waitFor(() => expect(patches).toHaveLength(1), { timeout: 1_500 });
 		expect(patches[0]?.patch.framingParameters?.groups[0]?.pattern.count).toBe(3);
+
+		const xScrubber = screen.getByRole("button", { name: "Drag X to adjust" });
+		fireEvent.pointerDown(xScrubber, { button: 0, clientX: 10, pointerId: 11 });
+		fireEvent.pointerMove(xScrubber, { clientX: 15, pointerId: 11 });
+		fireEvent.pointerMove(xScrubber, { clientX: 22, pointerId: 11 });
+		expect(patches).toHaveLength(1);
+		fireEvent.pointerUp(xScrubber, { clientX: 22, pointerId: 11 });
+		await waitFor(() => expect(patches).toHaveLength(2));
+		expect(patches[1]?.patch.draftPose?.location.x).toBeCloseTo(
+			(candidates[0]?.approvedPose.location.x ?? 0) + 12,
+			5
+		);
 	});
 
 	it("offers first-run authoring and can reopen a discovered Review Set", async () => {
@@ -652,7 +665,11 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		const views = await screen.findByRole("region", { name: "Review views" });
+		expect(views.textContent).toContain("ACTORS IN THIS REVIEW SET");
 		expect(views.textContent).toContain("Fixture subject");
+		expect(screen.getByRole("region", { name: "Fixture subject views" }).textContent).toContain(
+			"2 VIEWS"
+		);
 		expect(views.textContent).toContain("Structure context");
 		expect(views.textContent).toContain("Detail angle");
 		expect(screen.getByText("r2 · current")).toBeDefined();
@@ -794,9 +811,13 @@ describe("MapReviewRoute", () => {
 		await screen.findByText("No captures yet. Use Capture Set when you want PNG evidence.");
 		await user.click(screen.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" }));
 		expect(await screen.findByText("Review Subject")).toBeDefined();
-		const z = screen.getByRole("spinbutton", { name: "Z" });
-		await user.clear(z);
-		await user.type(z, "725");
+		const zScrubber = screen.getByRole("button", { name: "Drag Z to adjust" });
+		fireEvent.pointerDown(zScrubber, { button: 0, clientX: 10, pointerId: 7 });
+		fireEvent.pointerMove(zScrubber, { clientX: 35, pointerId: 7 });
+		fireEvent.pointerUp(zScrubber, { clientX: 35, pointerId: 7 });
+		expect((screen.getByRole("spinbutton", { name: "Z" }) as HTMLInputElement).value).toBe(
+			"725"
+		);
 		await user.type(
 			screen.getByRole("textbox", { name: "MANUAL ADJUSTMENT NOTE" }),
 			"Lift above foreground"
@@ -804,7 +825,7 @@ describe("MapReviewRoute", () => {
 		const keepView = screen.getByRole("button", { name: "KEEP VIEW" });
 		expect((keepView as HTMLButtonElement).disabled).toBe(false);
 		await user.click(keepView);
-		expect(await screen.findByText("APPROVED + SAVED")).toBeDefined();
+		expect(await screen.findByText("VIEW SAVED")).toBeDefined();
 		expect(authoringIntent).toEqual({ destination: { kind: "append_view" } });
 		expect(approved).toMatchObject({
 			candidateId: "context-three-quarter",
@@ -814,6 +835,120 @@ describe("MapReviewRoute", () => {
 			sourceActorPath: "/Game/Fixture.Subject",
 			viewId: "structure-context"
 		});
+	});
+
+	it("keeps every remaining durable candidate for an actor after discards", async () => {
+		const selection = {
+			actorPath: "/Game/Fixture.Subject",
+			bounds: {
+				center: { x: 0, y: 0, z: 0 },
+				extent: { x: 100, y: 100, z: 100 },
+				rotation: { pitch: 0, roll: 0, yaw: 0 }
+			},
+			contract: {
+				name: "ue-shed-review-selection" as const,
+				version: { major: 1 as const, minor: 0 }
+			},
+			displayName: "Review Subject",
+			mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+			status: "selected" as const
+		};
+		const candidates = generateFramingCandidates(selection).slice(0, 2);
+		const [firstCandidate, secondCandidate] = candidates;
+		if (firstCandidate === undefined || secondCandidate === undefined) {
+			throw new Error("Expected two framing candidates for the batch authoring fixture.");
+		}
+		const bootstrap = bootstrapMapReviewSet({ projectRoot: "C:/Fixture", selection });
+		const durable = ReviewAuthoringSession.make({
+			candidates,
+			contract: {
+				name: "ue-shed-review-authoring-session",
+				version: { major: 1, minor: 0 }
+			},
+			createdAt: "2026-08-12T00:00:00.000Z",
+			diagnostics: [],
+			discardedCandidateIds: [],
+			draftPose: firstCandidate.approvedPose,
+			id: ReviewAuthoringSessionId.make("batch-session"),
+			lifecycle: "active",
+			pendingReviewSet: bootstrap.reviewSet,
+			realizations: [],
+			reviewSet: {
+				id: bootstrap.reviewSet.id,
+				mapPath: selection.mapPath,
+				path: bootstrap.reviewSetPath
+			},
+			selectedCandidateId: firstCandidate.id,
+			subject: {
+				actorPath: ReviewSubjectActorPath.make(selection.actorPath),
+				bounds: selection.bounds,
+				displayName: selection.displayName,
+				mapPath: selection.mapPath
+			},
+			updatedAt: "2026-08-12T00:00:00.000Z",
+			viewId: ReviewViewId.make("review-subject")
+		});
+		let discardedCandidateIds: ReadonlyArray<string> = [];
+		let approvedSessionId: string | undefined;
+		const ready: MapReviewAuthoringResult = {
+			candidates: candidates.map((candidate) => ({
+				diagnostics: candidate.diagnostics,
+				displayName: candidate.displayName,
+				id: candidate.id,
+				pose: candidate.approvedPose,
+				preset: candidate.recipe.preset,
+				preview: { message: "Preview omitted", status: "failed" }
+			})),
+			selection: {
+				actorPath: selection.actorPath,
+				displayName: selection.displayName,
+				mapPath: selection.mapPath
+			},
+			session: durable,
+			sessionId: "batch-session",
+			status: "ready",
+			viewId: "review-subject"
+		};
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveAuthoring: ({ sessionId }) =>
+				Effect.sync(() => {
+					approvedSessionId = sessionId;
+					return { candidateId: firstCandidate.id, status: "approved" as const };
+				}),
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			authoringResume: () => Effect.succeed(ready),
+			authoringPatch: (intent) =>
+				Effect.sync(() => {
+					discardedCandidateIds = intent.patch.discardedCandidateIds;
+					return {
+						...ready,
+						session: { ...durable, ...intent.patch }
+					} satisfies MapReviewAuthoringResult;
+				}),
+			capture: () => Effect.die("not used"),
+			load: () => Effect.succeed(empty),
+			previewAuthoringCandidate: () =>
+				Effect.succeed({
+					error: { message: "Preview omitted", recovery: "Not required" },
+					status: "failed"
+				}),
+			previewCandidate: () => Effect.die("not used")
+		};
+		const user = userEvent.setup();
+		renderRoute(client);
+		await screen.findByText("Review Subject");
+		expect(screen.getByRole("button", { name: "KEEP 2 VIEWS" })).toBeDefined();
+		await user.click(screen.getAllByRole("button", { name: "DISCARD" })[1]!);
+		await waitFor(() => expect(discardedCandidateIds).toEqual([secondCandidate.id]));
+		expect(
+			screen.queryByRole("button", { name: `Select ${secondCandidate.displayName}` })
+		).toBeNull();
+		await user.click(screen.getByRole("button", { name: "KEEP 1 VIEW" }));
+		expect(await screen.findByText("VIEW SAVED")).toBeDefined();
+		expect(approvedSessionId).toBe("batch-session");
 	});
 
 	it("resumes durable intent, regenerates previews, and requires explicit Reframe for stale evidence", async () => {
@@ -1102,5 +1237,88 @@ describe("MapReviewRoute", () => {
 		expect(previewCalls.at(-1)?.candidateId).toBe("facade-front");
 		expect(patches.at(-1)?.candidateOverrides).toBeDefined();
 		expect(patches.at(-1)?.framingParameters).toBeUndefined();
+	});
+
+	it("promotes cached PNG previews when the live camera capability connects", async () => {
+		Object.defineProperty(URL, "createObjectURL", {
+			configurable: true,
+			value: () => "blob:png-fallback"
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			configurable: true,
+			value: () => undefined
+		});
+		const pose = {
+			aspectRatio: "16:9" as const,
+			fieldOfViewDegrees: 60,
+			location: { x: 1000, y: -1000, z: 725 },
+			projection: "perspective" as const,
+			rotation: { pitch: -15, roll: 0, yaw: 135 }
+		};
+		const ready: MapReviewAuthoringResult = {
+			candidates: [
+				{
+					diagnostics: [],
+					displayName: "Live candidate",
+					id: "live-candidate",
+					pose,
+					preset: "context_three_quarter",
+					preview: { status: "pending" }
+				}
+			],
+			selection: {
+				actorPath: "/Game/Fixture.Subject",
+				displayName: "Live Review Subject",
+				mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+			},
+			session: {
+				discardedCandidateIds: [],
+				id: "live-session",
+				lifecycle: "active",
+				selectedCandidateId: "live-candidate"
+			} as never,
+			sessionId: "live-session",
+			status: "ready",
+			viewId: "live-view"
+		};
+		let previewCalls = 0;
+		const client: MapReviewClientShape = {
+			...offlineScout,
+			...unavailableDurableAuthoring,
+			approveCandidate: () => Effect.die("not used"),
+			authorFromSelection: () => Effect.die("not used"),
+			authoringResume: () => Effect.succeed(ready),
+			capture: () => Effect.die("not used"),
+			livePreviewAvailable: () => Effect.succeed(true),
+			load: () => Effect.succeed(empty),
+			previewAuthoringCandidate: () =>
+				Effect.sync(() => {
+					previewCalls += 1;
+					return previewCalls === 1
+						? {
+								bytes: new Uint8Array([137, 80, 78, 71]),
+								height: 180,
+								pixelFormat: "png" as const,
+								status: "ready" as const,
+								width: 320
+							}
+						: {
+								bytes: new Uint8Array(320 * 180 * 4),
+								cameraIndex: 0,
+								height: 180,
+								pixelFormat: "bgra8" as const,
+								previewContext: "editor_live" as const,
+								status: "ready" as const,
+								width: 320
+							};
+				}),
+			previewCandidate: () => Effect.die("not used")
+		};
+
+		renderRoute(client);
+
+		expect(await screen.findByText("EDITOR LIVE 5 FPS")).toBeDefined();
+		expect(previewCalls).toBe(2);
+		expect(screen.queryByText("PNG FALLBACK")).toBeNull();
 	});
 });

@@ -1,13 +1,24 @@
 # UEShedCameras
 
-Optional runtime camera observation capability. It discovers authored `AUEShedCameraSource` actors
-saved in the map and can provision transient instances of the same type from external JSON camera
-definitions. It manually schedules scene captures only while a named-pipe consumer is connected,
+Optional runtime camera observation capability. It adapts tagged stock `ASceneCapture2D` actors
+saved in the map and can provision transient `AUEShedCameraSource` instances from external JSON
+camera definitions. It manually schedules scene captures only while a named-pipe consumer is connected,
 uses two asynchronous GPU readback slots per camera, and sends self-describing BGRA8 frames through
 a bounded latest-frame-wins writer.
 
 The runtime calls the former **authored cameras** and the latter **provisioned cameras**. Provisioned
 cameras are destroyed when their session is cleared; authored cameras remain owned by the world.
+Provisioned cameras can render either the open editor world or a PIE/game world. The play world is
+authoritative while it exists; otherwise editor-world tick drives the same batched GPU-readback
+pipeline. One process-wide pipe writer prevents coexisting world subsystems from competing for the
+fixed transport. Editor provisioned actors are transient, hidden from the outliner, package-less,
+and destroyed without modifying the level. Editor-live frames show current editor scene state but do
+not imply gameplay simulation.
+
+Repeated provisioning requests reconcile cameras in place while their ordered correlations remain
+stable. A pose or lens edit keeps the transient actor and render target, replaces only that camera's
+readback slots and frame identity, and schedules an immediate fresh capture. Topology changes still
+replace the set atomically.
 
 The separately enabled `UEShedCamerasEditor` module provides the durable Map Review capture boundary.
 It accepts the versioned `ue-shed-review-capture` request over Remote Control, resolves one stable

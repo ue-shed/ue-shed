@@ -44,8 +44,9 @@ The current-project strip reports the selected project, indexed package and map 
 actual live camera-pipe state. Choosing a project is always offline and never starts Unreal. Once a
 project is selected, the compact **Launch** menu offers two explicit process actions:
 
-- **With UE Shed** incrementally builds and loads Core, Authoring, Cameras, Observatory, and Asset
-  Audits through Unreal's `-PLUGIN` argument. It also enables Remote Control for that process.
+- **With UE Shed** incrementally builds and loads Core, Authoring, Cameras, Observatory, Asset
+  Audits, and Scenarios through Unreal's `-PLUGIN` argument. It also enables Remote Control for that
+  process.
 - **Normally** opens the selected project without UE Shed plugin injection.
 
 Neither action edits the selected `.uproject`. The disposable build host defaults to
@@ -144,9 +145,12 @@ pnpm ue-shed config compare packages\config-explorer\fixtures\config-source\Proj
 
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
 at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
-that editor process without editing the project descriptor. The generic fixture's
-[`UEShedFixture.uproject`](../fixtures/unreal-project/UEShedFixture.uproject) remains the reference
-for projects that deliberately want persistent plugin entries instead.
+that editor process without editing the project descriptor. The generic fixture follows that same
+clean-project path: its checked-in
+[`UEShedFixture.uproject`](../fixtures/unreal-project/UEShedFixture.uproject) contains no UE Shed
+plugin paths or entries, and its source modules build using stock Unreal dependencies alone. The
+fixture launch helpers stage UE Shed separately and inject it only into the Unreal process they
+launch.
 
 Launch the editor with rendering available (not `-NullRHI`), choose its project in Workbench, and
 click the `:port` control beside the editor status if Remote Control is not using the displayed

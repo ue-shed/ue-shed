@@ -13,9 +13,7 @@ public class UEShedFixture : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"EnhancedInput",
-				"Json",
-				"UEShedCameras",
-				"UEShedScenarios"
+				"Json"
 			}
 		);
 	}

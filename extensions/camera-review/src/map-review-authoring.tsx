@@ -5,12 +5,13 @@ import {
 	type FramingParameters
 } from "@ue-shed/cameras";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
-import { Cause, Effect, Stream } from "effect";
+import { Cause, Effect, Schedule, Stream } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
 	MapReviewAuthoringCandidate,
 	MapReviewAuthorFromSelectionIntent,
 	MapReviewAuthoringResult,
+	MapReviewApprovalResult,
 	MapReviewCandidatePreviewResult,
 	MapReviewClientShape,
 	MapReviewLiveFrame,
@@ -18,6 +19,7 @@ import type {
 } from "./map-review-client.js";
 import type { ObservedActor } from "@ue-shed/observatory";
 import { FramingSettings } from "./framing-settings.js";
+import { ScrubbableNumberField } from "./scrubbable-number-field.js";
 
 type AuthoringState =
 	| { readonly status: "idle" }
@@ -30,6 +32,7 @@ type AuthoringState =
 			readonly status: "approved";
 			readonly session: ReadyAuthoring;
 			readonly candidateId: string;
+			readonly keptCount: number;
 	  };
 
 type ReadyAuthoring = Extract<MapReviewAuthoringResult, { status: "ready" }>;
@@ -172,6 +175,7 @@ export function MapReviewAuthoring(props: {
 	const previewSubscription = createEffectSubscription();
 	const selectedPreviewAction = createEffectAction();
 	const liveFrameSubscription = createEffectSubscription();
+	const liveCapabilitySubscription = createEffectSubscription();
 	const fpsAction = createEffectAction();
 	const approveAction = createEffectAction();
 	const resumeAction = createEffectAction();
@@ -208,6 +212,39 @@ export function MapReviewAuthoring(props: {
 		() => candidates().find((candidate) => candidate.id === selectedId()) ?? candidates()[0]
 	);
 	const liveStreaming = createMemo(() => liveBindings().size > 0);
+	const pngFallback = createMemo(() =>
+		candidates().some(
+			(candidate) =>
+				candidate.preview.status === "ready" && candidate.preview.pixelFormat !== "bgra8"
+		)
+	);
+	const liveContextLabel = createMemo(() => {
+		const livePreview = candidates().find(
+			(candidate) =>
+				candidate.preview.status === "ready" && candidate.preview.pixelFormat === "bgra8"
+		)?.preview;
+		if (livePreview?.status !== "ready") return "LIVE";
+		return livePreview.previewContext === "editor_live"
+			? "EDITOR LIVE"
+			: livePreview.previewContext === "play_live"
+				? "PLAY LIVE"
+				: "LIVE";
+	});
+	const keepsContactSheet = createMemo(() => session()?.session?.pendingReviewSet !== undefined);
+	const keepLabel = createMemo(() => {
+		if (!keepsContactSheet()) return "KEEP VIEW";
+		const count = candidates().length;
+		return `KEEP ${count} ${count === 1 ? "VIEW" : "VIEWS"}`;
+	});
+	const keepSummary = createMemo(() => {
+		if (!keepsContactSheet()) {
+			return "Keeps this Review View only — does not spawn a map actor";
+		}
+		const count = candidates().length;
+		return count === 1
+			? "Keeps the remaining preview as a Review View for this actor"
+			: `Keeps all ${count} remaining previews as Review Views for this actor`;
+	});
 	const authoringBlocked = createMemo(() => {
 		const durable = session()?.session;
 		return durable !== undefined && durable.lifecycle !== "active";
@@ -396,6 +433,12 @@ export function MapReviewAuthoring(props: {
 													...(result.pixelFormat === undefined
 														? {}
 														: { pixelFormat: result.pixelFormat }),
+													...(result.previewContext === undefined
+														? {}
+														: {
+																previewContext:
+																	result.previewContext
+															}),
 													status: "ready" as const,
 													width: result.width
 												}
@@ -435,6 +478,10 @@ export function MapReviewAuthoring(props: {
 						cameraIndex,
 						height: frame.height,
 						pixelFormat: "bgra8" as const,
+						...(candidate.preview.status === "ready" &&
+						candidate.preview.previewContext !== undefined
+							? { previewContext: candidate.preview.previewContext }
+							: {}),
 						status: "ready" as const,
 						width: frame.width
 					}
@@ -491,6 +538,24 @@ export function MapReviewAuthoring(props: {
 			}
 		);
 	};
+	createEffect(() => {
+		const probe = props.client.livePreviewAvailable;
+		const active = session();
+		const shouldPromote = pngFallback() && !liveStreaming();
+		liveCapabilitySubscription.cancel();
+		if (probe === undefined || active === undefined || !shouldPromote) return;
+		liveCapabilitySubscription.subscribe(
+			Stream.fromEffectSchedule(probe(), Schedule.spaced("2 seconds")).pipe(
+				Stream.filter((available) => available),
+				Stream.take(1)
+			),
+			{
+				onFailure: () => undefined,
+				onValue: () => hydratePreviews(active)
+			}
+		);
+		onCleanup(() => liveCapabilitySubscription.cancel());
+	});
 	createEffect(() => {
 		const bindings = liveBindings();
 		const fps = liveFps();
@@ -614,35 +679,57 @@ export function MapReviewAuthoring(props: {
 	const updateNumber = (
 		section: "location" | "rotation" | "pose",
 		field: "x" | "y" | "z" | "pitch" | "yaw" | "fieldOfViewDegrees",
-		value: string
+		value: number,
+		commit: boolean
 	) => {
-		const parsed = Number(value);
-		if (!Number.isFinite(parsed)) return;
 		const current = draftPose();
 		if (!current) return;
 		const next =
 			section === "pose"
-				? { ...current, fieldOfViewDegrees: parsed }
-				: { ...current, [section]: { ...current[section], [field]: parsed } };
+				? { ...current, fieldOfViewDegrees: value }
+				: { ...current, [section]: { ...current[section], [field]: value } };
 		setDraftPose(next);
+		if (!commit) return;
 		const candidateId = selected()?.id;
-		persist(currentPatch({ draftPose: next }), {
-			...(candidateId === undefined
-				? {}
-				: { refreshPreviews: { candidateId, kind: "candidate" } })
-		});
+		persist(
+			currentPatch({ draftPose: next }),
+			candidateId === undefined ? {} : { refreshPreviews: { candidateId, kind: "candidate" } }
+		);
 	};
 	const approve = () => {
 		const activeSession = session();
 		const candidate = selected();
 		const pose = draftPose();
 		if (!activeSession || !candidate || !pose) return;
+		const keptCount = keepsContactSheet() ? candidates().length : 1;
 		setState({ session: activeSession, status: "saving" });
 		const adjusted = !samePose(candidate.pose, pose);
 		const durable = activeSession.session;
+		if (durable !== undefined) {
+			framingPatchAction.cancel();
+			patchAction.cancel();
+		}
 		approveAction.run(
 			durable
-				? props.client.approveAuthoring({ sessionId: durable.id })
+				? props.client
+						.authoringPatch({ patch: currentPatch(), sessionId: durable.id })
+						.pipe(
+							Effect.flatMap((result) =>
+								result.status === "ready"
+									? props.client.approveAuthoring({ sessionId: durable.id })
+									: Effect.succeed<MapReviewApprovalResult>({
+											error:
+												result.status === "failed"
+													? result.error
+													: {
+															message:
+																"The Review Set changed before approval.",
+															recovery: result.recovery
+														},
+											status: "failed"
+										})
+							)
+						)
 				: props.client.approveCandidate({
 						candidateId: candidate.id,
 						candidatePose: candidate.pose,
@@ -675,6 +762,7 @@ export function MapReviewAuthoring(props: {
 					}
 					setState({
 						candidateId: result.candidateId,
+						keptCount,
 						session: activeSession,
 						status: "approved"
 					});
@@ -723,7 +811,9 @@ export function MapReviewAuthoring(props: {
 					</button>
 					<Show when={liveStreaming()}>
 						<label {...stylex.props(styles.fpsControl)}>
-							<span>LIVE {liveFps()} FPS</span>
+							<span>
+								{liveContextLabel()} {liveFps()} FPS
+							</span>
 							<input
 								type="range"
 								min={1}
@@ -738,6 +828,14 @@ export function MapReviewAuthoring(props: {
 								}
 							/>
 						</label>
+					</Show>
+					<Show when={pngFallback() && !liveStreaming()}>
+						<span
+							title="These are slower PNG captures. Workbench will switch them to the live camera stream automatically when UEShedCameras connects."
+							{...stylex.props(styles.fallbackMode)}
+						>
+							PNG FALLBACK
+						</span>
 					</Show>
 				</div>
 			</div>
@@ -919,47 +1017,138 @@ export function MapReviewAuthoring(props: {
 						{(candidate) => (
 							<div {...stylex.props(styles.approvalBench)}>
 								<div>
-									<p>FINAL POSE / {candidate().displayName.toUpperCase()}</p>
+									<div {...stylex.props(styles.poseHeading)}>
+										<p>FINAL POSE / {candidate().displayName.toUpperCase()}</p>
+										<span {...stylex.props(styles.poseScrubHint)}>
+											↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+										</span>
+									</div>
 									<small {...stylex.props(styles.poseHint)}>
-										Use offsets above for relative tuning, or edit exact
-										world-space values here. Only this selected preview updates.
+										Drag for visual tuning or type an exact value. Changes apply
+										to this selected preview only.
 									</small>
 									<div {...stylex.props(styles.poseGrid)}>
-										<For
-											each={
-												[
-													["X", "location", "x"],
-													["Y", "location", "y"],
-													["Z", "location", "z"],
-													["PITCH", "rotation", "pitch"],
-													["YAW", "rotation", "yaw"],
-													["FOV", "pose", "fieldOfViewDegrees"]
-												] as const
-											}
-										>
-											{([label, section, field]) => (
-												<label {...stylex.props(styles.poseField)}>
-													<span>{label}</span>
-													<input
-														type="number"
-														step="0.1"
-														value={poseFieldValue(
-															draftPose(),
-															section,
-															field
-														)}
-														{...stylex.props(styles.poseInput)}
-														onInput={(event) =>
-															updateNumber(
-																section,
-																field,
-																event.currentTarget.value
-															)
-														}
-													/>
-												</label>
+										<section
+											{...stylex.props(
+												styles.poseGroup,
+												styles.positionGroup
 											)}
-										</For>
+										>
+											<header {...stylex.props(styles.poseGroupHeader)}>
+												<strong>POSITION</strong>
+												<span>WORLD UNITS</span>
+											</header>
+											<div {...stylex.props(styles.positionFields)}>
+												<For each={["x", "y", "z"] as const}>
+													{(field) => (
+														<ScrubbableNumberField
+															label={field.toUpperCase()}
+															value={poseFieldValue(
+																draftPose(),
+																"location",
+																field
+															)}
+															scrubStep={1}
+															step={0.1}
+															tone={field}
+															unit="UU"
+															onValueChange={(value) =>
+																updateNumber(
+																	"location",
+																	field,
+																	value,
+																	false
+																)
+															}
+															onValueCommit={(value) =>
+																updateNumber(
+																	"location",
+																	field,
+																	value,
+																	true
+																)
+															}
+														/>
+													)}
+												</For>
+											</div>
+										</section>
+										<section {...stylex.props(styles.poseGroup)}>
+											<header {...stylex.props(styles.poseGroupHeader)}>
+												<strong>ORIENTATION</strong>
+												<span>LOOK ANGLE</span>
+											</header>
+											<div {...stylex.props(styles.orientationFields)}>
+												<For each={["pitch", "yaw"] as const}>
+													{(field) => (
+														<ScrubbableNumberField
+															label={field.toUpperCase()}
+															value={poseFieldValue(
+																draftPose(),
+																"rotation",
+																field
+															)}
+															scrubStep={0.25}
+															step={0.1}
+															unit="DEG"
+															onValueChange={(value) =>
+																updateNumber(
+																	"rotation",
+																	field,
+																	value,
+																	false
+																)
+															}
+															onValueCommit={(value) =>
+																updateNumber(
+																	"rotation",
+																	field,
+																	value,
+																	true
+																)
+															}
+														/>
+													)}
+												</For>
+											</div>
+										</section>
+										<section
+											{...stylex.props(styles.poseGroup, styles.lensGroup)}
+										>
+											<header {...stylex.props(styles.poseGroupHeader)}>
+												<strong>LENS</strong>
+												<span>PERSPECTIVE</span>
+											</header>
+											<ScrubbableNumberField
+												label="FOV"
+												value={poseFieldValue(
+													draftPose(),
+													"pose",
+													"fieldOfViewDegrees"
+												)}
+												min={5}
+												max={170}
+												scrubStep={0.25}
+												step={0.1}
+												unit="DEG"
+												onValueChange={(value) =>
+													updateNumber(
+														"pose",
+														"fieldOfViewDegrees",
+														value,
+														false
+													)
+												}
+												onValueCommit={(value) =>
+													updateNumber(
+														"pose",
+														"fieldOfViewDegrees",
+														value,
+														true
+													)
+												}
+											/>
+										</section>
 									</div>
 									<label {...stylex.props(styles.reasonField)}>
 										<span>MANUAL ADJUSTMENT NOTE</span>
@@ -969,16 +1158,20 @@ export function MapReviewAuthoring(props: {
 											onInput={(event) => {
 												const next = event.currentTarget.value;
 												setManualReason(next);
-												persist(currentPatch({ manualReason: next }));
 											}}
+											onChange={(event) =>
+												persist(
+													currentPatch({
+														manualReason: event.currentTarget.value
+													})
+												)
+											}
 											placeholder="Why did this framing need art direction?"
 										/>
 									</label>
 								</div>
 								<div {...stylex.props(styles.approveColumn)}>
-									<span>
-										Keeps a Review View only — does not spawn a map actor
-									</span>
+									<span>{keepSummary()}</span>
 									<Show when={candidate().diagnostics.length > 0}>
 										<div role="status" {...stylex.props(styles.diagnosticList)}>
 											<For each={candidate().diagnostics}>
@@ -1003,12 +1196,20 @@ export function MapReviewAuthoring(props: {
 										onClick={() => void approve()}
 										{...stylex.props(styles.keepButton)}
 									>
-										{state().status === "saving" ? "SAVING…" : "KEEP VIEW"}
+										{state().status === "saving" ? "SAVING…" : keepLabel()}
 									</button>
 									<Show when={state().status === "approved"}>
-										<strong {...stylex.props(styles.savedMark)}>
-											APPROVED + SAVED
-										</strong>
+										{(() => {
+											const current = state();
+											if (current.status !== "approved") return null;
+											return (
+												<strong {...stylex.props(styles.savedMark)}>
+													{current.keptCount === 1
+														? "VIEW SAVED"
+														: `${current.keptCount} VIEWS SAVED`}
+												</strong>
+											);
+										})()}
 									</Show>
 								</div>
 							</div>
@@ -1082,6 +1283,15 @@ const styles = stylex.create({
 		color: "#9aa59a",
 		fontSize: 8,
 		fontWeight: 700,
+		letterSpacing: ".1em"
+	},
+	fallbackMode: {
+		padding: "6px 8px",
+		border: "1px solid #725240",
+		backgroundColor: "#1a110d",
+		color: "#e6a37d",
+		fontSize: 8,
+		fontWeight: 800,
 		letterSpacing: ".1em"
 	},
 	authoringError: {
@@ -1210,16 +1420,68 @@ const styles = stylex.create({
 	},
 	approvalBench: {
 		display: "grid",
-		gridTemplateColumns: "minmax(0, 1fr) 190px",
+		gridTemplateColumns: {
+			default: "minmax(0, 1fr) 190px",
+			"@media (max-width: 900px)": "1fr"
+		},
 		gap: 18,
 		marginTop: 10,
 		padding: 16,
 		border: "1px solid #39413c",
 		backgroundColor: "#171b18"
 	},
-	poseGrid: { display: "grid", gridTemplateColumns: "repeat(6, minmax(70px, 1fr))", gap: 7 },
+	poseHeading: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 12
+	},
+	poseScrubHint: {
+		color: "#8fa65d",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".08em"
+	},
+	poseGrid: {
+		display: "grid",
+		gridTemplateColumns: {
+			default: "minmax(250px, 1.2fr) minmax(210px, .8fr)",
+			"@media (max-width: 700px)": "1fr"
+		},
+		gap: 8
+	},
 	poseHint: { display: "block", marginBottom: 10, color: "#89948c", lineHeight: 1.45 },
-	poseField: { display: "grid", gap: 4, color: "#a9b2ab", fontSize: 8 },
+	poseGroup: {
+		display: "grid",
+		alignContent: "start",
+		gap: 7,
+		padding: 9,
+		border: "1px solid #303832",
+		backgroundColor: "#0d110e"
+	},
+	positionGroup: {
+		gridRow: { default: "1 / span 2", "@media (max-width: 700px)": "auto" }
+	},
+	lensGroup: { borderTopColor: "#b9f227" },
+	poseGroupHeader: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 8,
+		color: "#c8d0c9",
+		fontSize: 8,
+		letterSpacing: ".1em"
+	},
+	positionFields: {
+		display: "grid",
+		gridTemplateColumns: "1fr",
+		gap: 6
+	},
+	orientationFields: {
+		display: "grid",
+		gridTemplateColumns: "1fr",
+		gap: 6
+	},
 	poseInput: {
 		width: "100%",
 		boxSizing: "border-box",

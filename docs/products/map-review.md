@@ -109,7 +109,8 @@ current-editor-view candidate. Callers may tune finite camera parameters and req
 group count; generation returns the exact requested set without a product camera cap. Workbench renders real
 transient previews from provisioned cameras as a contact sheet and supports discard, numeric
 pose/FOV adjustment, framing-rig controls, per-view overrides, adjustment provenance, explicit
-Reframe, and Keep View persistence without creating an authored camera in the map. The Workbench
+Reframe, and atomic persistence of every non-discarded candidate as Review Views without creating
+authored cameras in the map. Revising an existing Review View remains a single-view operation. The Workbench
 uses 1–24 as an ergonomic slider range and warns rather than changing the portable definition when
 a large rig makes preview expensive. The CLI exposes the same selection, generation,
 durable-session, and approval path. A project with no configured Review Set now starts in an honest
@@ -150,10 +151,16 @@ position. Runtime-only PIE actors can still focus the level viewport, but they d
 durable editor selection or stable authoring subject.
 
 The proven Slice 2 scope now includes post-realization projected-bounds diagnostics and restart-level
-authoring-session recovery. Authoring contact-sheet previews stream live BGRA while PLAY/SIM is
-active (a provisioned camera set at **320×180**, painted continuously to canvas at a user-selected
-**1–10 FPS**) and fall back to the same thumbnail size via PNG `CaptureReviewView` when the editor is
-stopped; Keep / Capture Set remain editor-world PNG evidence at the Review Set profile resolution.
+authoring-session recovery. Authoring contact-sheet previews stream live BGRA from the currently
+authoritative Unreal world (a provisioned camera set at **320×180**, painted continuously to canvas
+at a user-selected **1–10 FPS**). While stopped, that authority is the open editor world, including
+its current unsaved scene state. During PLAY/SIM, the play world takes authority and exposes runtime
+state. Editor-live preview does not pretend to run BeginPlay, gameplay ticks, physics, AI, or
+runtime-only actors. A stopped editor may fall back to the same thumbnail size via one-shot PNG
+`CaptureReviewView` when the live producer or feed is unavailable. While showing that fallback, the
+Workbench probes the camera capability and automatically replaces the cached PNG contact sheet with
+live frames after an editor launched **With UE Shed** becomes ready. Keep / Capture Set remain
+editor-world PNG evidence at the Review Set profile resolution and remain blocked during PLAY/SIM.
 Consumers may build artifact comparison and review applications from the durable evidence contracts.
 
 ## User outcomes
@@ -246,7 +253,8 @@ Use these names consistently in schemas, APIs, CLI output, diagnostics, and UI c
 Camera origin uses two terms consistently:
 
 - **Provisioned camera:** an `AUEShedCameraSource` created from an external camera definition for the
-  current runtime session. Map Review provisions these cameras from generated JSON definitions.
+  current runtime session. Map Review provisions perspective sets and Map Capture provisions one
+  orthographic framing camera from generated JSON definitions.
 - **Authored camera:** an `AUEShedCameraSource` saved in a map and discovered when that world runs.
 
 Both use the same runtime type and bounded frame transport. Provisioning origin and lifetime are the
@@ -268,7 +276,8 @@ fixtures green via `pnpm --filter @ue-shed/cameras contract:check` (included in 
 update UEShedCameras and run `pnpm check:unreal` with Remote Control connected. Portable Review Set
 and Capture Run v1.1 documents remain TypeScript-owned, with Effect Schema migrations authoritative
 for portable persistence. The versioned provisioned-camera request is language-neutral JSON Schema
-under `packages/protocol/contracts/cameras/provisioning/v1`.
+under `packages/protocol/contracts/cameras/provisioning/v1`; it carries expected-map authority,
+durable consumer correlation, and an explicit perspective-or-orthographic projection.
 
 Initial IDs include `ReviewSetId`, `ReviewViewId`, `SubjectId`, `CaptureProfileId`, `CaptureRunId`,
 `ViewResultId`, `ArtifactId`, `ReviewRecordId`, `ProducerId`, `SessionId`, and `WorldId`.
@@ -638,17 +647,25 @@ workspace.
 
 - Begin from the current Unreal selection or an existing Review View.
 - Present generated candidates as an immediate contact sheet.
+- Treat append authoring as a keep-the-survivors workflow: **Discard** removes unwanted candidates,
+  while **Keep Views** appends every remaining candidate in contact-sheet order with one atomic
+  Review Set save.
 - Use a large real capture preview and a stable filmstrip for navigation.
 - Overlay safe frame, projected subject bounds, framing margin, and clipping/near-plane warnings.
 - Make **Keep**, **Discard**, **Reframe**, **Use editor view**, and **Focus subject in Unreal** the
   primary actions.
-- Keep numeric transform and projection controls in a secondary inspector.
+- Keep numeric transform and projection controls in a secondary inspector. Group them by intent
+  (position, orientation, lens, composition, and optics), make their labels horizontally scrubbable
+  with coarse and fine modifiers, and retain exact keyboard entry.
 - Explain preset lineage and manual offsets without forcing the author to understand schema fields.
 - Keep framing controls behind a progressive disclosure. Present 1–24 as the normal slider range,
   accept an explicit larger count, and explain that preview may become expensive without rejecting
   or truncating the headless rig.
 - Make per-view overrides opt-in and store only explicitly changed values.
 - Preserve selection and scroll position when previews refresh or Unreal reconnects.
+- Present the saved Review Set actor-first by default. Group Review Views under normalized subject
+  identity, then let the reviewer choose an individual viewpoint within that actor group. This is a
+  Workbench projection over the flat ordered Review View collection, not a new durable Actor Set.
 
 ### Pure and Clear inspection
 

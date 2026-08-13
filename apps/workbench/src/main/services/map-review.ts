@@ -7,6 +7,7 @@ import {
 	createReviewSetFromTemplate,
 	ensureProvisionedCameras,
 	generateFramingCandidates,
+	ProvisionedCameraError,
 	ReviewAuthoring,
 	ReviewAuthoringSessions,
 	ReviewCapture,
@@ -63,6 +64,7 @@ import {
 	Option,
 	Queue,
 	Ref,
+	Result,
 	Clock,
 	Semaphore,
 	Schema,
@@ -359,8 +361,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const provisionedCameraBindings = yield* Ref.make<
 			Option.Option<{
 				readonly bindings: ReadonlyArray<{
+					readonly cameraId: string;
 					readonly candidateId: string;
 					readonly index: number;
+					readonly previewContext: "editor_live" | "play_live";
 				}>;
 				readonly poseFingerprint: string;
 				readonly sessionId: string;
@@ -1482,12 +1486,6 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			}
 			const projectRoot = reviewProject.projectRoot;
 			return yield* Effect.gen(function* () {
-				if (
-					intent.patch.framingParameters !== undefined ||
-					intent.patch.candidateOverrides !== undefined
-				) {
-					yield* invalidateProvisionedCameras();
-				}
 				return yield* authoringSessions.patch({
 					patch: intent.patch,
 					projectRoot,
@@ -1627,84 +1625,110 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								)
 				});
 
-				if (playActive && session.candidates.length <= 32) {
-					const bindings = yield* liveEnsureGate.withPermits(1)(
-						Effect.gen(function* () {
-							const cached = yield* Ref.get(provisionedCameraBindings);
-							if (
-								Option.isSome(cached) &&
-								cached.value.sessionId === intent.sessionId &&
-								cached.value.poseFingerprint === poseFingerprint
-							) {
-								return cached.value.bindings;
-							}
-							return yield* runExclusive(
-								Effect.gen(function* () {
-									const fps = yield* Ref.get(livePreviewFps);
-									const next = yield* ensureProvisionedCameras(
-										configuration.remoteControlEndpoint,
-										previewCandidates.map((item) => ({
-											correlation: {
-												candidateId: item.id,
-												type: "framing_candidate" as const
-											},
-											fieldOfViewDegrees:
-												item.approvedPose.fieldOfViewDegrees,
-											height: 180,
-											location: item.approvedPose.location,
-											rotation: item.approvedPose.rotation,
-											width: 320
-										})),
-										{ previewFps: fps }
-									).pipe(
-										Effect.provideService(RemoteControlClient, remoteControl)
-									);
-									yield* Ref.set(
-										provisionedCameraBindings,
-										Option.some({
-											bindings: next.map((item) => ({
-												candidateId:
-													"candidateId" in item.correlation
-														? item.correlation.candidateId
-														: "",
-												index: item.index
+				if (session.candidates.length <= 32) {
+					const liveAttempt = yield* Effect.gen(function* () {
+						const bindings = yield* liveEnsureGate.withPermits(1)(
+							Effect.gen(function* () {
+								const cached = yield* Ref.get(provisionedCameraBindings);
+								if (
+									Option.isSome(cached) &&
+									cached.value.sessionId === intent.sessionId &&
+									cached.value.poseFingerprint === poseFingerprint
+								) {
+									return cached.value.bindings;
+								}
+								return yield* runExclusive(
+									Effect.gen(function* () {
+										const fps = yield* Ref.get(livePreviewFps);
+										const next = yield* ensureProvisionedCameras(
+											configuration.remoteControlEndpoint,
+											previewCandidates.map((item) => ({
+												correlation: {
+													candidateId: item.id,
+													type: "framing_candidate" as const
+												},
+												height: 180,
+												location: item.approvedPose.location,
+												projection: {
+													fieldOfViewDegrees:
+														item.approvedPose.fieldOfViewDegrees,
+													type: "perspective" as const
+												},
+												rotation: item.approvedPose.rotation,
+												width: 320
 											})),
-											poseFingerprint,
-											sessionId: intent.sessionId
-										})
-									);
-									return next.map((item) => ({
-										candidateId:
-											"candidateId" in item.correlation
-												? item.correlation.candidateId
-												: "",
-										index: item.index
-									}));
+											{
+												expectedMapPath: session.subject.mapPath,
+												previewFps: fps
+											}
+										).pipe(
+											Effect.provideService(
+												RemoteControlClient,
+												remoteControl
+											)
+										);
+										yield* Ref.set(
+											provisionedCameraBindings,
+											Option.some({
+												bindings: next.map((item) => ({
+													cameraId: item.cameraId,
+													candidateId:
+														"candidateId" in item.correlation
+															? item.correlation.candidateId
+															: "",
+													index: item.index,
+													previewContext: item.previewContext
+												})),
+												poseFingerprint,
+												sessionId: intent.sessionId
+											})
+										);
+										return next.map((item) => ({
+											cameraId: item.cameraId,
+											candidateId:
+												"candidateId" in item.correlation
+													? item.correlation.candidateId
+													: "",
+											index: item.index,
+											previewContext: item.previewContext
+										}));
+									})
+								);
+							})
+						);
+						const binding = bindings.find((item) => item.candidateId === candidate.id);
+						if (!binding) {
+							return yield* Effect.fail(
+								new ProvisionedCameraError({
+									message: `Provisioned camera for ${candidate.id} was not registered.`,
+									operation: "ensure_cameras",
+									recovery:
+										"Reconnect Unreal, then reframe the selected subject.",
+									retrySafe: true
 								})
 							);
-						})
-					);
-					const binding = bindings.find((item) => item.candidateId === candidate.id);
-					if (!binding) {
-						return mapReviewAuthoringFailure({
-							message: `Provisioned camera for ${candidate.id} was not registered.`,
-							recovery: "Stop and restart PIE, then reframe the subject."
+						}
+						const frame = yield* awaitProvisionedCameraFrame({
+							cameraIndex: binding.index,
+							expectedCameraId: binding.cameraId,
+							latestFrames: cameraFeed.latestFrames,
+							timeout: "3 seconds"
 						});
-					}
-					const frame = yield* awaitProvisionedCameraFrame({
-						cameraIndex: binding.index,
-						latestFrames: cameraFeed.latestFrames,
-						timeout: "3 seconds"
-					});
-					return {
-						bytes: frame.pixels,
-						cameraIndex: binding.index,
-						diagnostics: [],
-						height: frame.height,
-						pixelFormat: "bgra8" as const,
-						status: "ready" as const,
-						width: frame.width
-					};
+						return {
+							bytes: frame.pixels,
+							cameraIndex: binding.index,
+							diagnostics: [],
+							height: frame.height,
+							pixelFormat: "bgra8" as const,
+							previewContext: binding.previewContext,
+							status: "ready" as const,
+							width: frame.width
+						};
+					}).pipe(Effect.result);
+					if (Result.isSuccess(liveAttempt)) return liveAttempt.success;
+					// A running play world is the requested authority, so surfacing its failure is
+					// more truthful than silently switching the preview to the editor world.
+					if (playActive) return yield* Effect.fail(liveAttempt.failure);
 				}
 
 				yield* invalidateProvisionedCameras();

@@ -8,6 +8,7 @@ import {
 	FramingParameters
 } from "@ue-shed/cameras";
 import { For, Show } from "solid-js";
+import { ScrubbableNumberField } from "./scrubbable-number-field.js";
 
 const showcaseSliderMaximum = 24;
 
@@ -32,25 +33,22 @@ function ParameterField(props: {
 	readonly max?: number;
 	readonly min?: number;
 	readonly onInput: (value: number) => void;
+	readonly scrubStep?: number;
 	readonly step?: number;
+	readonly unit?: string;
 	readonly value: number;
 }) {
 	return (
-		<label {...stylex.props(styles.parameterField)}>
-			<span>{props.label}</span>
-			<input
-				type="number"
-				value={props.value}
-				min={props.min}
-				max={props.max}
-				step={props.step ?? 0.1}
-				onInput={(event) => {
-					const value = parsedNumber(event.currentTarget.value);
-					if (value !== undefined) props.onInput(value);
-				}}
-				{...stylex.props(styles.numberInput)}
-			/>
-		</label>
+		<ScrubbableNumberField
+			label={props.label}
+			value={props.value}
+			min={props.min}
+			max={props.max}
+			step={props.step}
+			scrubStep={props.scrubStep}
+			unit={props.unit}
+			onValueChange={props.onInput}
+		/>
 	);
 }
 
@@ -131,6 +129,12 @@ export function FramingSettings(props: {
 		) as FramingCandidateOverrides;
 		setSelectedOverride(Object.keys(compact).length === 0 ? undefined : compact);
 	};
+	const selectedGroup = () =>
+		props.parameters.groups.find((group) => group.id === props.selectedCandidate?.preset);
+	const selectedYawOrigin = () => {
+		const group = selectedGroup();
+		return group?.pattern.kind === "arc" ? group.pattern.yawOffsetDegrees : 0;
+	};
 
 	return (
 		<section {...stylex.props(styles.settings)}>
@@ -140,15 +144,22 @@ export function FramingSettings(props: {
 					<small>{requestedCount()} GENERATED VIEWS · EDIT ALL</small>
 				</summary>
 				<div {...stylex.props(styles.settingsBody)}>
-					<p {...stylex.props(styles.sectionHint)}>
-						These controls regenerate the full contact sheet. Each enabled group is a
-						preset that produces one or more views.
-					</p>
+					<div {...stylex.props(styles.settingsIntro)}>
+						<p {...stylex.props(styles.sectionHint)}>
+							These controls regenerate the full contact sheet. Each enabled group is
+							a preset that produces one or more views.
+						</p>
+						<span {...stylex.props(styles.scrubHint)}>
+							↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+						</span>
+					</div>
 					<div {...stylex.props(styles.globalGrid)}>
 						<ParameterField
 							label="FIELD OF VIEW"
 							min={5}
 							max={170}
+							scrubStep={0.25}
+							unit="DEG"
 							value={props.parameters.fieldOfViewDegrees}
 							onInput={(fieldOfViewDegrees) =>
 								props.onParametersChange({
@@ -162,6 +173,8 @@ export function FramingSettings(props: {
 							min={0}
 							max={0.45}
 							step={0.01}
+							scrubStep={0.002}
+							unit="RATIO"
 							value={props.parameters.margin}
 							onInput={(margin) =>
 								props.onParametersChange({ ...props.parameters, margin })
@@ -215,6 +228,8 @@ export function FramingSettings(props: {
 										<ParameterField
 											label="DISTANCE"
 											min={0.01}
+											scrubStep={0.01}
+											unit="SCALE"
 											value={group.distanceScale}
 											onInput={(distanceScale) =>
 												props.onParametersChange(
@@ -231,6 +246,8 @@ export function FramingSettings(props: {
 										/>
 										<ParameterField
 											label="ELEVATION"
+											scrubStep={0.01}
+											unit="OFFSET"
 											value={group.elevation}
 											onInput={(elevation) =>
 												props.onParametersChange(
@@ -256,6 +273,8 @@ export function FramingSettings(props: {
 												<>
 													<ParameterField
 														label="YAW"
+														scrubStep={0.25}
+														unit="DEG"
 														value={pattern().yawOffsetDegrees}
 														onInput={(yawOffsetDegrees) =>
 															props.onParametersChange(
@@ -280,6 +299,8 @@ export function FramingSettings(props: {
 													<ParameterField
 														label="SPREAD"
 														min={0}
+														scrubStep={0.25}
+														unit="DEG"
 														value={pattern().spreadDegrees}
 														onInput={(spreadDegrees) =>
 															props.onParametersChange(
@@ -314,6 +335,8 @@ export function FramingSettings(props: {
 											{(pattern) => (
 												<ParameterField
 													label="RING OFFSET"
+													scrubStep={0.25}
+													unit="DEG"
 													value={pattern().ringOffsetDegrees}
 													onInput={(ringOffsetDegrees) =>
 														props.onParametersChange(
@@ -378,45 +401,99 @@ export function FramingSettings(props: {
 									RESET OFFSETS
 								</button>
 							</header>
-							<p {...stylex.props(styles.sectionHint)}>
-								Blank values inherit the preset. Editing an offset updates this
-								preview without regenerating the rest of the contact sheet.
-							</p>
+							<div {...stylex.props(styles.settingsIntro)}>
+								<p {...stylex.props(styles.sectionHint)}>
+									Blank values inherit the preset. Drag a label to opt in and tune
+									this preview without regenerating the rest of the contact sheet.
+								</p>
+								<span {...stylex.props(styles.scrubHint)}>
+									↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+								</span>
+							</div>
 							<div {...stylex.props(styles.overrideGrid)}>
-								<For
-									each={
-										[
-											["DISTANCE SCALE", "distanceScale"],
-											["ELEVATION OFFSET", "elevation"],
-											["YAW OFFSET", "yawOffsetDegrees"],
-											["FOV OVERRIDE", "fieldOfViewDegrees"],
-											["MARGIN OVERRIDE", "margin"]
-										] as const
-									}
-								>
-									{([label, field]) => (
-										<label {...stylex.props(styles.parameterField)}>
-											<span>{label}</span>
-											<input
-												type="number"
-												step="0.1"
-												value={selectedOverride()?.[field] ?? ""}
-												placeholder="INHERIT"
-												onInput={(event) =>
-													updateOverride(
-														field,
-														event.currentTarget.value === ""
-															? undefined
-															: parsedNumber(
-																	event.currentTarget.value
-																)
-													)
-												}
-												{...stylex.props(styles.numberInput)}
-											/>
-										</label>
-									)}
-								</For>
+								<section {...stylex.props(styles.overrideGroup)}>
+									<header>COMPOSITION</header>
+									<div {...stylex.props(styles.compositionFields)}>
+										<ScrubbableNumberField
+											label="DISTANCE SCALE"
+											wide
+											value={selectedOverride()?.distanceScale}
+											scrubOrigin={selectedGroup()?.distanceScale ?? 1}
+											scrubStep={0.01}
+											min={0.01}
+											placeholder="INHERIT"
+											unit="SCALE"
+											onValueChange={(value) =>
+												updateOverride("distanceScale", value)
+											}
+											onClear={() =>
+												updateOverride("distanceScale", undefined)
+											}
+										/>
+										<ScrubbableNumberField
+											label="ELEVATION OFFSET"
+											value={selectedOverride()?.elevation}
+											scrubOrigin={selectedGroup()?.elevation ?? 0}
+											scrubStep={0.01}
+											placeholder="INHERIT"
+											unit="OFFSET"
+											onValueChange={(value) =>
+												updateOverride("elevation", value)
+											}
+											onClear={() => updateOverride("elevation", undefined)}
+										/>
+										<ScrubbableNumberField
+											label="YAW OFFSET"
+											value={selectedOverride()?.yawOffsetDegrees}
+											scrubOrigin={selectedYawOrigin()}
+											scrubStep={0.25}
+											placeholder="INHERIT"
+											unit="DEG"
+											onValueChange={(value) =>
+												updateOverride("yawOffsetDegrees", value)
+											}
+											onClear={() =>
+												updateOverride("yawOffsetDegrees", undefined)
+											}
+										/>
+									</div>
+								</section>
+								<section {...stylex.props(styles.overrideGroup)}>
+									<header>OPTICS</header>
+									<div {...stylex.props(styles.opticsFields)}>
+										<ScrubbableNumberField
+											label="FOV OVERRIDE"
+											value={selectedOverride()?.fieldOfViewDegrees}
+											scrubOrigin={props.parameters.fieldOfViewDegrees}
+											scrubStep={0.25}
+											min={5}
+											max={170}
+											placeholder="INHERIT"
+											unit="DEG"
+											onValueChange={(value) =>
+												updateOverride("fieldOfViewDegrees", value)
+											}
+											onClear={() =>
+												updateOverride("fieldOfViewDegrees", undefined)
+											}
+										/>
+										<ScrubbableNumberField
+											label="MARGIN OVERRIDE"
+											value={selectedOverride()?.margin}
+											scrubOrigin={props.parameters.margin}
+											scrubStep={0.002}
+											step={0.01}
+											min={0}
+											max={0.45}
+											placeholder="INHERIT"
+											unit="RATIO"
+											onValueChange={(value) =>
+												updateOverride("margin", value)
+											}
+											onClear={() => updateOverride("margin", undefined)}
+										/>
+									</div>
+								</section>
 							</div>
 						</>
 					)}
@@ -440,7 +517,20 @@ const styles = stylex.create({
 		letterSpacing: ".12em"
 	},
 	settingsBody: { display: "grid", gap: 12, padding: "4px 12px 14px" },
+	settingsIntro: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 12
+	},
 	sectionHint: { margin: 0, color: "#89948c", fontSize: 9, lineHeight: 1.5 },
+	scrubHint: {
+		flexShrink: 0,
+		color: "#8fa65d",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".08em"
+	},
 	globalGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(120px, 1fr))", gap: 8 },
 	groupList: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 },
 	group: { border: "1px solid #303832", backgroundColor: "#0b0e0c", padding: 10 },
@@ -451,21 +541,6 @@ const styles = stylex.create({
 		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
 		gap: 7,
 		marginTop: 10
-	},
-	parameterField: {
-		display: "grid",
-		gap: 4,
-		color: "#89948c",
-		fontSize: 8,
-		letterSpacing: ".08em"
-	},
-	numberInput: {
-		width: "100%",
-		boxSizing: "border-box",
-		border: "1px solid #424c44",
-		backgroundColor: "#080a09",
-		color: "#eef3ee",
-		padding: "6px 7px"
 	},
 	countField: { display: "grid", gridTemplateColumns: "1fr 52px", gap: 6, alignItems: "end" },
 	sliderLabel: { display: "grid", gap: 5, color: "#89948c", fontSize: 8, letterSpacing: ".08em" },
@@ -506,8 +581,35 @@ const styles = stylex.create({
 	},
 	overrideGrid: {
 		display: "grid",
-		gridTemplateColumns: "repeat(5, minmax(80px, 1fr))",
-		gap: 7,
+		gridTemplateColumns: {
+			default: "minmax(300px, 1.25fr) minmax(240px, .75fr)",
+			"@media (max-width: 760px)": "1fr"
+		},
+		gap: 9,
 		marginTop: 9
+	},
+	overrideGroup: {
+		display: "grid",
+		gap: 7,
+		padding: 9,
+		border: "1px solid #2d352f",
+		backgroundColor: "#0d110e",
+		color: "#7f8c83",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".11em"
+	},
+	compositionFields: {
+		display: "grid",
+		gridTemplateColumns: {
+			default: "repeat(2, minmax(150px, 1fr))",
+			"@media (max-width: 520px)": "1fr"
+		},
+		gap: 7
+	},
+	opticsFields: {
+		display: "grid",
+		gridTemplateColumns: "1fr",
+		gap: 7
 	}
 });

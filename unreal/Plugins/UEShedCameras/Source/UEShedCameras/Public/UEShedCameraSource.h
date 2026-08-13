@@ -35,6 +35,10 @@ public:
 	UPROPERTY(Transient)
 	bool bTransientProvisionedCamera = false;
 
+	/** Runtime adapter for a tagged stock scene capture saved in the authored map. */
+	UPROPERTY(Transient)
+	bool bTransientAuthoredCamera = false;
+
 	/** Explicit temporary-camera correlation, never a durable camera identity. */
 	UPROPERTY(Transient)
 	FString ProvisioningCorrelationId;

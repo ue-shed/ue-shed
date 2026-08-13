@@ -1,12 +1,18 @@
-import { MapCaptureRepositoryLive, mapCapturePlansRoot } from "@ue-shed/cameras";
+import {
+	MapCaptureRepositoryLive,
+	makeCameraFeedTestLayer,
+	mapCapturePlansRoot
+} from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { makeEditorWorldControlTestLayer } from "@ue-shed/engine-discovery";
 import { Effect, Layer } from "effect";
+import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect } from "vitest";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
+import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import {
 	makeWorkbenchConfigurationLayer,
 	type WorkbenchConfigurationShape
@@ -31,7 +37,13 @@ const configuration: WorkbenchConfigurationShape = {
 	unrealEngineRoot: { status: "not_configured" }
 };
 
-function mapCaptureLayer(projectRoot: string) {
+function mapCaptureLayer(
+	projectRoot: string,
+	options: {
+		readonly cameraFeed?: ReturnType<typeof makeCameraFeedTestLayer>;
+		readonly remoteControl?: ReturnType<typeof makeRemoteControlClientTestLayer>;
+	} = {}
+) {
 	const project = makeWorkbenchProjectTestLayer({
 		choose: () => Effect.die("not used"),
 		current: () => Effect.die("not used"),
@@ -58,8 +70,12 @@ function mapCaptureLayer(projectRoot: string) {
 		Layer.provide(
 			Layer.mergeAll(
 				MapCaptureRepositoryLive,
+				options.cameraFeed ?? makeCameraFeedTestLayer(),
+				options.remoteControl ??
+					makeRemoteControlClientTestLayer(() => Effect.die("not used")),
 				project,
 				dialog,
+				makeWorkbenchWindowTestLayer(),
 				worldControl,
 				makeWorkbenchConfigurationLayer(configuration)
 			)
@@ -95,4 +111,91 @@ it.effect(
 				JSON.parse(yield* Effect.promise(() => readFile(result.planPath, "utf8")))
 			).toEqual(result.plan);
 		})
+);
+
+it.effect("provisions the snapped bounds as one orthographic live camera", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-map-preview-"))
+		);
+		roots.push(projectRoot);
+		let provisionRequest: unknown;
+		const remoteControl = makeRemoteControlClientTestLayer((request) => {
+			if (request.functionName !== "EnsureProvisionedCameras") return Effect.die("not used");
+			provisionRequest = JSON.parse(String(request.parameters.RequestJson));
+			return Effect.succeed({
+				cameras: [
+					{
+						cameraId: "map-camera",
+						correlation: {
+							mapCapturePlanId: "map-overview",
+							type: "map_capture_plan"
+						},
+						displayName: "map-overview",
+						height: 360,
+						index: 0,
+						width: 640
+					}
+				],
+				schemaVersion: 3,
+				worldContext: "editor"
+			});
+		});
+		const cameraFeed = makeCameraFeedTestLayer({
+			latestFrames: Effect.succeed(
+				new Map([
+					[
+						0,
+						{
+							cameraId: "map-camera",
+							cameraIndex: 0,
+							captureMonotonicMs: 1,
+							height: 360,
+							pixels: new Uint8Array([1, 2, 3, 4]),
+							producerId: "producer",
+							readbackDrops: 0,
+							readbackLatencyMs: 1,
+							receivedMonotonicMs: 2,
+							sequence: 1n,
+							sessionId: "session",
+							transportReplacements: 0,
+							width: 640,
+							worldSeconds: 1
+						}
+					]
+				])
+			)
+		});
+		const result = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			const created = yield* service.newPlan();
+			if (created.status !== "ready") return created;
+			return yield* service.preview(created.plan);
+		}).pipe(Effect.provide(mapCaptureLayer(projectRoot, { cameraFeed, remoteControl })));
+
+		expect(result.status).toBe("ready");
+		expect(provisionRequest).toMatchObject({
+			expectedMapPath: "/Game/Maps/L_City",
+			schemaVersion: 3,
+			cameras: [
+				{
+					correlation: { mapCapturePlanId: "map-overview", type: "map_capture_plan" },
+					height: 360,
+					location: { x: 0, y: 0, z: 5000 },
+					projection: { type: "orthographic" },
+					rotation: { pitch: -90, roll: 0, yaw: 0 },
+					width: 640
+				}
+			]
+		});
+		expect(
+			(
+				provisionRequest as {
+					readonly cameras: ReadonlyArray<{
+						readonly projection: { readonly orthoWidth: number };
+					}>;
+				}
+			).cameras[0]?.projection.orthoWidth
+		).toBeCloseTo((4096 * 16) / 9);
+	})
 );

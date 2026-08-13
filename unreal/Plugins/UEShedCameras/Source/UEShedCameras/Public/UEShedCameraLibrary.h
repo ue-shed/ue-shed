@@ -15,7 +15,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras")
 	static void Configure(const FString& ConfigJson, FString& ResultJson);
 
-	/** Provision or replace cameras from JSON in the running PIE/Game world. */
+	/** Provision or reconcile transient cameras from JSON in the active editor or play world. */
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras")
 	static void EnsureProvisionedCameras(const FString& RequestJson, FString& ResultJson);
 

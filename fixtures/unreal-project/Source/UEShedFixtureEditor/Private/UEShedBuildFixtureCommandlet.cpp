@@ -9,11 +9,13 @@
 #include "Engine/DataTable.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
+#include "Engine/SceneCapture2D.h"
 #include "Engine/SkyLight.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
@@ -60,10 +62,8 @@
 #include "UObject/SavePackage.h"
 #include "UObject/UObjectHash.h"
 #include "UObject/UnrealType.h"
-#include "UEShedAuthoringLibrary.h"
 #include "UEShedFixtureTypes.h"
 #include "UEShedFixtureMover.h"
-#include "UEShedCameraSource.h"
 #include "UEShedMovementGym.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(UEShedBuildFixtureCommandlet)
@@ -79,6 +79,33 @@ constexpr int32 IntermittentMoverCount = 409;
 constexpr int32 LargeTableRowCount = 10000;
 constexpr int32 OfflineWorldActorCount = 6;
 constexpr int32 MapHistoryActorCount = 6;
+
+bool InvokeAuthoringCapability(const FName FunctionName, const FString& Input,
+	FString& ResultJson)
+{
+	UClass* LibraryClass = FindObject<UClass>(
+		nullptr, TEXT("/Script/UEShedAuthoring.UEShedAuthoringLibrary"));
+	UFunction* Function = LibraryClass == nullptr
+		? nullptr : LibraryClass->FindFunctionByName(FunctionName);
+	UObject* Library = LibraryClass == nullptr ? nullptr : LibraryClass->GetDefaultObject();
+	if (Function == nullptr || Library == nullptr)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("The optional UEShedAuthoring capability is unavailable for %s."),
+			*FunctionName.ToString());
+		return false;
+	}
+
+	struct FAuthoringParams
+	{
+		FString Input;
+		FString Result;
+	};
+	FAuthoringParams Params{ Input, FString() };
+	Library->ProcessEvent(Function, &Params);
+	ResultJson = MoveTemp(Params.Result);
+	return true;
+}
 
 struct FFixtureTableDefinition
 {
@@ -1725,7 +1752,8 @@ bool WriteAuthoringEvidence(const FString& OutputDirectory)
 	for (const FFixtureTableDefinition& Definition : GetTableDefinitions())
 	{
 		FString SnapshotJson;
-		UUEShedAuthoringLibrary::GetTableSnapshot(ObjectPath(Definition), SnapshotJson);
+		bSucceeded = InvokeAuthoringCapability(
+			TEXT("GetTableSnapshot"), ObjectPath(Definition), SnapshotJson) && bSucceeded;
 		const FString Filename = FPaths::Combine(
 			OutputDirectory, TEXT("authoring"), FString(Definition.AssetName) + TEXT(".json"));
 		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
@@ -1733,8 +1761,8 @@ bool WriteAuthoringEvidence(const FString& OutputDirectory)
 			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) && bSucceeded;
 	}
 	FString CompositeJson;
-	UUEShedAuthoringLibrary::GetTableSnapshot(
-		TEXT("/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"), CompositeJson);
+	bSucceeded = InvokeAuthoringCapability(TEXT("GetTableSnapshot"),
+		TEXT("/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"), CompositeJson) && bSucceeded;
 	const FString CompositeFilename = FPaths::Combine(
 		OutputDirectory, TEXT("authoring/CDT_Scalars.json"));
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(CompositeFilename), true);
@@ -2490,10 +2518,11 @@ bool GenerateCameraMap()
 					&& (!Mover->IsA<AUEShedFixtureIntermittent>()
 						|| Mover->Motion == EUEShedFixtureMotion::Intermittent);
 			}
-			if (const AUEShedCameraSource* Camera = Cast<AUEShedCameraSource>(Actor))
+			if (const ASceneCapture2D* Camera = Cast<ASceneCapture2D>(Actor);
+				Camera != nullptr && Camera->ActorHasTag(TEXT("UEShedCameraSource")))
 			{
 				++ExistingCameras;
-				bAllCamerasBound = bAllCamerasBound && Camera->ObservationTarget != nullptr;
+				bAllCamerasBound = bAllCamerasBound && Camera->GetAttachParentActor() != nullptr;
 			}
 		}
 		const bool bFamiliesMatch = StationaryMovers == StationaryMoverCount
@@ -2516,7 +2545,6 @@ bool GenerateCameraMap()
 		if (Actor == nullptr) continue;
 		if (Actor->ActorHasTag(TEXT("UEShedCameraFixture"))
 			|| Actor->IsA<AUEShedFixtureMover>()
-			|| Actor->IsA<AUEShedCameraSource>()
 			|| Actor->IsA<ASkyAtmosphere>()
 			|| Actor->IsA<AExponentialHeightFog>()
 			|| Actor->IsA<ADirectionalLight>()
@@ -2679,12 +2707,18 @@ bool GenerateCameraMap()
 		const FVector CameraLocation(FMath::Cos(Angle) * 2600.0,
 			FMath::Sin(Angle) * 2600.0, 1150.0 + (Index % 2) * 250.0);
 		const FRotator CameraRotation = (Mover->GetActorLocation() - CameraLocation).Rotation();
-		AUEShedCameraSource* Camera = World->SpawnActor<AUEShedCameraSource>(
-			CameraLocation, CameraRotation);
+		FActorSpawnParameters CameraSpawn;
+		CameraSpawn.Name = *FString::Printf(TEXT("FixtureCamera_%02d"), Index);
+		CameraSpawn.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ErrorAndReturnNull;
+		ASceneCapture2D* Camera = World->SpawnActor<ASceneCapture2D>(
+			CameraLocation, CameraRotation, CameraSpawn);
+		if (Camera == nullptr) return false;
 		Camera->Tags.Add(TEXT("UEShedCameraFixture"));
-		Camera->CameraIndex = Index;
-		Camera->CameraId = FGuid(0x55455348, 0x45444341, 0x4D000000 | Index, 0x00000001);
-		Camera->ObservationTarget = Mover;
+		Camera->Tags.Add(TEXT("UEShedCameraSource"));
+		Camera->AttachToActor(Mover, FAttachmentTransformRules::KeepWorldTransform);
+		Camera->GetCaptureComponent2D()->bCaptureEveryFrame = false;
+		Camera->GetCaptureComponent2D()->bCaptureOnMovement = false;
+		Camera->GetCaptureComponent2D()->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
 		Camera->SetActorLabel(FString::Printf(TEXT("Camera %02d"), Index + 1));
 	}
 
@@ -2735,10 +2769,11 @@ bool VerifyCameraMap()
 				&& (!Mover->IsA<AUEShedFixtureIntermittent>()
 					|| Mover->Motion == EUEShedFixtureMotion::Intermittent);
 		}
-		if (const AUEShedCameraSource* Camera = Cast<AUEShedCameraSource>(Actor))
+		if (const ASceneCapture2D* Camera = Cast<ASceneCapture2D>(Actor);
+			Camera != nullptr && Camera->ActorHasTag(TEXT("UEShedCameraSource")))
 		{
 			++Cameras;
-			BoundCameras += Camera->ObservationTarget != nullptr ? 1 : 0;
+			BoundCameras += Camera->GetAttachParentActor() != nullptr ? 1 : 0;
 		}
 	}
 	UE_LOG(LogTemp, Display,
@@ -3185,7 +3220,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		if (!FFileHelper::LoadFileToString(
 			RequestJson, *FPaths::ConvertRelativePathToFull(ApplyRequestPath))) return 1;
 		FString ResultJson;
-		UUEShedAuthoringLibrary::Apply(RequestJson, ResultJson);
+		if (!InvokeAuthoringCapability(TEXT("Apply"), RequestJson, ResultJson)) return 1;
 		bool bSucceeded = FFileHelper::SaveStringToFile(
 			ResultJson, *FPaths::ConvertRelativePathToFull(ApplyOutputPath));
 		FString SecondApplyRequest;
@@ -3197,7 +3232,8 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			FString SecondResultJson;
 			bSucceeded = FFileHelper::LoadFileToString(SecondRequestJson,
 				*FPaths::ConvertRelativePathToFull(SecondApplyRequest)) && bSucceeded;
-			UUEShedAuthoringLibrary::Apply(SecondRequestJson, SecondResultJson);
+			bSucceeded = InvokeAuthoringCapability(
+				TEXT("Apply"), SecondRequestJson, SecondResultJson) && bSucceeded;
 			bSucceeded = FFileHelper::SaveStringToFile(SecondResultJson,
 				*FPaths::ConvertRelativePathToFull(SecondApplyOutput)) && bSucceeded;
 		}
@@ -3207,7 +3243,8 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			&& FParse::Value(*Params, TEXT("LookupOutput="), LookupOutput))
 		{
 			FString LookupJson;
-			UUEShedAuthoringLibrary::LookupApplyResult(LookupOperation, LookupJson);
+			bSucceeded = InvokeAuthoringCapability(
+				TEXT("LookupApplyResult"), LookupOperation, LookupJson) && bSucceeded;
 			bSucceeded = FFileHelper::SaveStringToFile(
 				LookupJson, *FPaths::ConvertRelativePathToFull(LookupOutput)) && bSucceeded;
 		}
@@ -3220,7 +3257,8 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 			FString SaveResultJson;
 			bSucceeded = FFileHelper::LoadFileToString(SaveRequestJson,
 				*FPaths::ConvertRelativePathToFull(SaveAfterApplyRequest)) && bSucceeded;
-			UUEShedAuthoringLibrary::Save(SaveRequestJson, SaveResultJson);
+			bSucceeded = InvokeAuthoringCapability(
+				TEXT("Save"), SaveRequestJson, SaveResultJson) && bSucceeded;
 			bSucceeded = FFileHelper::SaveStringToFile(SaveResultJson,
 				*FPaths::ConvertRelativePathToFull(SaveAfterApplyOutput)) && bSucceeded;
 		}
@@ -3236,7 +3274,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		if (!FFileHelper::LoadFileToString(
 			RequestJson, *FPaths::ConvertRelativePathToFull(SaveRequestPath))) return 1;
 		FString ResultJson;
-		UUEShedAuthoringLibrary::Save(RequestJson, ResultJson);
+		if (!InvokeAuthoringCapability(TEXT("Save"), RequestJson, ResultJson)) return 1;
 		return FFileHelper::SaveStringToFile(
 			ResultJson, *FPaths::ConvertRelativePathToFull(SaveOutputPath)) ? 0 : 1;
 	}
@@ -3250,14 +3288,15 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		for (const FFixtureTableDefinition& Definition : Definitions)
 		{
 			FString SnapshotJson;
-			UUEShedAuthoringLibrary::GetTableSnapshot(ObjectPath(Definition), SnapshotJson);
+			bSucceeded = InvokeAuthoringCapability(
+				TEXT("GetTableSnapshot"), ObjectPath(Definition), SnapshotJson) && bSucceeded;
 			bSucceeded = FFileHelper::SaveStringToFile(
 				SnapshotJson, *FPaths::Combine(OutputDirectory,
 					FString(Definition.AssetName) + TEXT(".json"))) && bSucceeded;
 		}
 		FString CompositeJson;
-		UUEShedAuthoringLibrary::GetTableSnapshot(
-			TEXT("/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"), CompositeJson);
+		bSucceeded = InvokeAuthoringCapability(TEXT("GetTableSnapshot"),
+			TEXT("/Game/Fixture/Authoring/CDT_Scalars.CDT_Scalars"), CompositeJson) && bSucceeded;
 		bSucceeded = FFileHelper::SaveStringToFile(
 			CompositeJson, *FPaths::Combine(OutputDirectory, TEXT("CDT_Scalars.json")))
 			&& bSucceeded;
@@ -3283,7 +3322,8 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		&& FParse::Value(*Params, TEXT("SnapshotOutput="), SnapshotOutput))
 	{
 		FString SnapshotJson;
-		UUEShedAuthoringLibrary::GetTableSnapshot(SnapshotTable, SnapshotJson);
+		if (!InvokeAuthoringCapability(
+			TEXT("GetTableSnapshot"), SnapshotTable, SnapshotJson)) return 1;
 		const FString OutputPath = FPaths::ConvertRelativePathToFull(SnapshotOutput);
 		IFileManager::Get().MakeDirectory(*FPaths::GetPath(OutputPath), true);
 		return FFileHelper::SaveStringToFile(SnapshotJson, *OutputPath) ? 0 : 1;
@@ -3293,6 +3333,10 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	if (FParse::Param(*Params, TEXT("ScenarioOnly")))
 	{
 		return (VerifyOnly ? VerifyMovementGym() : GenerateMovementGym()) ? 0 : 1;
+	}
+	if (FParse::Param(*Params, TEXT("CameraOnly")))
+	{
+		return (VerifyOnly ? VerifyCameraMap() : GenerateCameraMap()) ? 0 : 1;
 	}
 
 	bool Succeeded = true;

@@ -59,6 +59,47 @@ describe("provisioned camera helpers", () => {
 		)
 	);
 
+	it.effect("decodes a map-correlated orthographic v3 request", () =>
+		Effect.gen(function* () {
+			const request = yield* decodeProvisionedCameraRequest({
+				cameras: [
+					{
+						correlation: {
+							mapCapturePlanId: "fixture-overview",
+							type: "map_capture_plan"
+						},
+						height: 360,
+						location: { x: 0, y: 0, z: 5000 },
+						projection: { orthoWidth: 4096, type: "orthographic" },
+						rotation: { pitch: -90, roll: 0, yaw: 0 },
+						width: 640
+					}
+				],
+				expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+				previewFps: 5,
+				schemaVersion: 3
+			});
+			expect(request).toEqual({
+				cameras: [
+					{
+						correlation: {
+							mapCapturePlanId: "fixture-overview",
+							type: "map_capture_plan"
+						},
+						height: 360,
+						location: { x: 0, y: 0, z: 5000 },
+						projection: { orthoWidth: 4096, type: "orthographic" },
+						rotation: { pitch: -90, roll: 0, yaw: 0 },
+						width: 640
+					}
+				],
+				expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+				previewFps: 5,
+				schemaVersion: 3
+			});
+		})
+	);
+
 	it.effect("awaits the latest BGRA frame for a posed camera index", () =>
 		Effect.gen(function* () {
 			const frame = yield* awaitProvisionedCameraFrame({
@@ -87,12 +128,26 @@ describe("provisioned camera helpers", () => {
 		})
 	);
 
-	it.effect("fails with typed recovery when the feed host never delivers", () =>
+	it.effect("rejects a stale frame identity and fails with typed recovery", () =>
 		Effect.gen(function* () {
 			const fiber = yield* Effect.forkChild(
 				awaitProvisionedCameraFrame({
 					cameraIndex: 0,
-					latestFrames: Effect.succeed(new Map()),
+					expectedCameraId: "current-camera",
+					latestFrames: Effect.succeed(
+						new Map([
+							[
+								0,
+								{
+									cameraId: "stale-camera",
+									cameraIndex: 0,
+									height: 180,
+									pixels: new Uint8Array([1, 2, 3, 4]),
+									width: 320
+								}
+							]
+						])
+					),
 					timeout: "100 millis"
 				}).pipe(Effect.flip)
 			);

@@ -410,6 +410,14 @@ function buildRegistrationLayer(recorder: Recorder) {
 					status: "failed" as const
 				})
 			),
+		preview: () =>
+			recorder.record("mapCapture.preview").pipe(
+				Effect.as({
+					message: "Editor fixture is not configured.",
+					recovery: "Connect Unreal.",
+					status: "failed" as const
+				})
+			),
 		savePlan: () =>
 			recorder.record("mapCapture.savePlan").pipe(Effect.as({ status: "cancelled" as const }))
 	});
@@ -568,13 +576,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 93 contract channels", () =>
+it.effect("registers exactly the 94 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(93);
+		expect(result).toHaveLength(94);
 	})
 );
 

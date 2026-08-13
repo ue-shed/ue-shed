@@ -20,8 +20,6 @@ public class UEShedFixtureEditor : ModuleRules
 				"LevelSequence",
 				"MovieScene",
 				"MovieSceneTracks",
-				"UEShedAuthoring",
-				"UEShedCameras",
 				"UEShedFixture",
 				"UnrealEd"
 			}

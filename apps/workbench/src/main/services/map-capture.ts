@@ -1,5 +1,9 @@
 import {
+	CameraFeed,
 	MapCaptureRepository,
+	awaitProvisionedCameraFrame,
+	clearProvisionedCameras,
+	ensureProvisionedCameras,
 	inspectMapCapturePlan,
 	makeDefaultMapCapturePlan,
 	mapCapturePlansRoot,
@@ -12,21 +16,29 @@ import { EditorWorldControl } from "@ue-shed/engine-discovery";
 import type {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
+	MapCaptureLivePreviewResult,
 	MapCaptureOpenResult,
+	MapCaptureProgressEvent,
 	MapCaptureSaveIntent,
 	MapCaptureSaveResult,
 	MapCaptureSelectionResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
+import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer } from "effect";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
+import { WorkbenchWindow } from "../adapters/electron-window.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 const previewTileLimit = 128;
 const previewByteLimit = 16 * 1024 * 1024;
+const progressEventChannel = "map-capture:progress";
+const livePreviewMaximumDimension = 640;
+const livePreviewHeight = 360;
+const livePreviewFps = 5;
 
 function messageOf(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
@@ -69,11 +81,35 @@ function previewTiles(args: {
 	});
 }
 
+function previewCameraFrame(bounds: {
+	readonly maxX: number;
+	readonly maxY: number;
+	readonly minX: number;
+	readonly minY: number;
+}) {
+	const xSpan = bounds.maxX - bounds.minX;
+	const ySpan = bounds.maxY - bounds.minY;
+	const width = livePreviewMaximumDimension;
+	const height = livePreviewHeight;
+	const renderAspect = width / height;
+	return {
+		height,
+		location: {
+			x: (bounds.minX + bounds.maxX) * 0.5,
+			y: (bounds.minY + bounds.maxY) * 0.5
+		},
+		// A -90°/0° top-down camera maps world Y across the image and world X vertically.
+		orthoWidth: Math.max(ySpan, xSpan * renderAspect),
+		width
+	};
+}
+
 export interface WorkbenchMapCaptureShape {
 	readonly capture: (intent: MapCaptureExecuteIntent) => Effect.Effect<MapCaptureExecuteResult>;
 	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult>;
 	readonly newPlan: () => Effect.Effect<MapCaptureSelectionResult>;
 	readonly openMap: (plan: MapCapturePlan) => Effect.Effect<MapCaptureOpenResult>;
+	readonly preview: (plan: MapCapturePlan) => Effect.Effect<MapCaptureLivePreviewResult>;
 	readonly savePlan: (intent: MapCaptureSaveIntent) => Effect.Effect<MapCaptureSaveResult>;
 }
 
@@ -85,13 +121,24 @@ export class WorkbenchMapCapture extends Context.Service<
 export const WorkbenchMapCaptureLive = Layer.effect(
 	WorkbenchMapCapture,
 	Effect.gen(function* () {
+		const cameraFeed = yield* CameraFeed;
 		const configuration = yield* WorkbenchConfiguration;
 		const dialog = yield* ElectronDialog;
 		const project = yield* WorkbenchProject;
 		const repository = yield* MapCaptureRepository;
+		const remoteControl = yield* RemoteControlClient;
+		const window = yield* WorkbenchWindow;
 		const worldControl = yield* EditorWorldControl;
+		const reportProgress = (progress: MapCaptureProgressEvent): Effect.Effect<void> =>
+			window.send(progressEventChannel, progress).pipe(Effect.ignore);
+		const clearLivePreview = () =>
+			clearProvisionedCameras(configuration.remoteControlEndpoint).pipe(
+				Effect.provideService(RemoteControlClient, remoteControl),
+				Effect.ignore
+			);
 
 		const openMap = Effect.fn("Workbench.MapCapture.openMap")(function* (plan: MapCapturePlan) {
+			yield* clearLivePreview();
 			return yield* worldControl
 				.open({
 					endpoint: configuration.remoteControlEndpoint,
@@ -109,6 +156,63 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 						)
 					)
 				);
+		});
+
+		const preview = Effect.fn("Workbench.MapCapture.preview")(function* (plan: MapCapturePlan) {
+			return yield* Effect.gen(function* () {
+				const inspection = yield* inspectMapCapturePlan(plan);
+				const frame = previewCameraFrame(inspection.grid.snappedBounds);
+				const bindings = yield* ensureProvisionedCameras(
+					configuration.remoteControlEndpoint,
+					[
+						{
+							correlation: {
+								mapCapturePlanId: plan.id,
+								type: "map_capture_plan" as const
+							},
+							height: frame.height,
+							location: { ...frame.location, z: plan.capture.z },
+							projection: {
+								orthoWidth: frame.orthoWidth,
+								type: "orthographic" as const
+							},
+							rotation: plan.capture.orientation,
+							width: frame.width
+						}
+					],
+					{ expectedMapPath: plan.project.mapPath, previewFps: livePreviewFps }
+				).pipe(Effect.provideService(RemoteControlClient, remoteControl));
+				const binding = bindings[0];
+				if (binding === undefined) {
+					return yield* Effect.fail(
+						new Error("Unreal did not register the map preview camera.")
+					);
+				}
+				const firstFrame = yield* awaitProvisionedCameraFrame({
+					cameraIndex: binding.index,
+					expectedCameraId: binding.cameraId,
+					latestFrames: cameraFeed.latestFrames,
+					timeout: "3 seconds"
+				});
+				return {
+					bytes: firstFrame.pixels,
+					cameraId: binding.cameraId,
+					cameraIndex: binding.index,
+					height: firstFrame.height,
+					previewContext: binding.previewContext,
+					status: "ready" as const,
+					width: firstFrame.width
+				};
+			}).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Open the target map in an editor launched With UE Shed, then retry the live preview."
+						)
+					)
+				)
+			);
 		});
 
 		const readySelection = Effect.fn("Workbench.MapCapture.readySelection")(function* (args: {
@@ -221,8 +325,17 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			intent: MapCaptureExecuteIntent
 		) {
 			return yield* Effect.gen(function* () {
+				yield* clearLivePreview();
 				const selectedProject = yield* project.selectedProject();
 				if (intent.openMap) {
+					const inspection = yield* inspectMapCapturePlan(intent.plan);
+					yield* reportProgress({
+						failedTiles: 0,
+						operationId: intent.operationId,
+						phase: "opening_map",
+						processedTiles: 0,
+						totalTiles: inspection.tileCount
+					});
 					const opened = yield* openMap(intent.plan);
 					if (opened.status === "failed") return opened;
 					if (opened.response.outcome === "rejected") {
@@ -231,8 +344,18 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				}
 				const outcome = yield* runMapCapturePlan({
 					endpoint: configuration.remoteControlEndpoint,
+					onProgress: (progress) =>
+						reportProgress({ ...progress, operationId: intent.operationId }),
 					plan: intent.plan,
 					projectRoot: selectedProject.projectRoot
+				});
+				yield* reportProgress({
+					failedTiles: outcome.manifest.failures.length,
+					operationId: intent.operationId,
+					phase: "loading_preview",
+					processedTiles:
+						outcome.manifest.tiles.length + outcome.manifest.failures.length,
+					totalTiles: outcome.manifest.tiles.length + outcome.manifest.failures.length
 				});
 				const preview = yield* previewTiles({
 					manifest: outcome.manifest,
@@ -255,7 +378,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			);
 		});
 
-		return WorkbenchMapCapture.of({ capture, choosePlan, newPlan, openMap, savePlan });
+		return WorkbenchMapCapture.of({ capture, choosePlan, newPlan, openMap, preview, savePlan });
 	})
 );
 

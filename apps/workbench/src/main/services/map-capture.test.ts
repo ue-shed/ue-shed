@@ -7,6 +7,7 @@ import { it } from "@effect/vitest";
 import { makeEditorWorldControlTestLayer } from "@ue-shed/engine-discovery";
 import { Effect, Layer } from "effect";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
+import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -40,6 +41,7 @@ const configuration: WorkbenchConfigurationShape = {
 function mapCaptureLayer(
 	projectRoot: string,
 	options: {
+		readonly assetReader?: ReturnType<typeof makeAssetReaderTestLayer>;
 		readonly cameraFeed?: ReturnType<typeof makeCameraFeedTestLayer>;
 		readonly remoteControl?: ReturnType<typeof makeRemoteControlClientTestLayer>;
 	} = {}
@@ -66,10 +68,20 @@ function mapCaptureLayer(
 		})
 	);
 	const worldControl = makeEditorWorldControlTestLayer({ open: () => Effect.die("not used") });
+	const assetReader =
+		options.assetReader ??
+		makeAssetReaderTestLayer({
+			discoverAssets: () => Effect.die("not used"),
+			discoverTables: () => Effect.die("not used"),
+			readAsset: () => Effect.die("not used"),
+			readTable: () => Effect.die("not used"),
+			source: () => Effect.succeed("path")
+		});
 	return WorkbenchMapCaptureLive.pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				MapCaptureRepositoryLive,
+				assetReader,
 				options.cameraFeed ?? makeCameraFeedTestLayer(),
 				options.remoteControl ??
 					makeRemoteControlClientTestLayer(() => Effect.die("not used")),
@@ -111,6 +123,65 @@ it.effect(
 				JSON.parse(yield* Effect.promise(() => readFile(result.planPath, "utf8")))
 			).toEqual(result.plan);
 		})
+);
+
+it.effect("loads saved actors for the capture map through the shared asset reader", () =>
+	Effect.gen(function* () {
+		const projectRoot = yield* Effect.promise(() =>
+			mkdtemp(join(tmpdir(), "ue-shed-map-actors-"))
+		);
+		roots.push(projectRoot);
+		let readOptions: unknown;
+		const world = {
+			authority: { kind: "project_files" as const, mapPackage: "Content/Maps/L_City.umap" },
+			completeness: "complete" as const,
+			contract: {
+				name: "unreal-saved-world" as const,
+				version: { major: 1 as const, minor: 0 }
+			},
+			diagnostics: [],
+			mapPath: "Content/Maps/L_City.umap",
+			sourceKind: "level" as const,
+			actors: [
+				{
+					actorPath: "/Game/Maps/L_City.L_City:PersistentLevel.Center",
+					classPath: "/Script/Engine.StaticMeshActor",
+					label: "Center",
+					packageName: "/Game/Maps/L_City",
+					position: { location: { x: 10, y: 20, z: 30 }, status: "resolved" as const }
+				}
+			],
+			summary: {
+				failedPackages: 0,
+				partialPackages: 0,
+				resolvedActors: 1,
+				scannedPackages: 1
+			}
+		};
+		const assetReader = makeAssetReaderTestLayer({
+			discoverAssets: () => Effect.die("not used"),
+			discoverTables: () => Effect.die("not used"),
+			readAsset: () => Effect.die("not used"),
+			readSavedWorld: (options) =>
+				Effect.sync(() => {
+					readOptions = options;
+					return world;
+				}),
+			readTable: () => Effect.die("not used"),
+			source: () => Effect.succeed("path")
+		});
+		const result = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapCapture;
+			return yield* service.actors("/Game/Maps/L_City");
+		}).pipe(Effect.provide(mapCaptureLayer(projectRoot, { assetReader })));
+
+		expect(result).toEqual({ status: "ready", world });
+		expect(readOptions).toEqual({
+			concurrency: 8,
+			mapPath: "Content/Maps/L_City.umap",
+			projectRoot
+		});
+	})
 );
 
 it.effect("provisions the snapped bounds as one orthographic live camera", () =>

@@ -3,7 +3,7 @@ import {
 	MapTilePyramidManifest,
 	type MapCapturePlan as MapCapturePlanValue
 } from "@ue-shed/cameras/map-tiles";
-import { EditorWorldOpenResponse, SavedWorldMap } from "@ue-shed/protocol";
+import { EditorWorldOpenResponse, SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { type Effect, Schema, type Stream } from "effect";
 
 const MapCaptureUiOperationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
@@ -62,6 +62,12 @@ export const MapCaptureOpenResult = Schema.Union([
 	Schema.Struct({ response: EditorWorldOpenResponse, status: Schema.Literal("completed") })
 ]);
 export type MapCaptureOpenResult = typeof MapCaptureOpenResult.Type;
+
+export const MapCaptureActorCatalogResult = Schema.Union([
+	WorkbenchFailure,
+	Schema.Struct({ status: Schema.Literal("ready"), world: SavedWorld })
+]);
+export type MapCaptureActorCatalogResult = typeof MapCaptureActorCatalogResult.Type;
 
 export const MapCaptureLivePreviewResult = Schema.Union([
 	WorkbenchFailure,
@@ -151,6 +157,9 @@ export class MapCaptureClientError extends Schema.TaggedErrorClass<MapCaptureCli
 ) {}
 
 export interface MapCaptureClientShape {
+	readonly actors: (
+		mapPath: string
+	) => Effect.Effect<MapCaptureActorCatalogResult, MapCaptureClientError>;
 	readonly capture: (
 		intent: MapCaptureExecuteIntent
 	) => Effect.Effect<MapCaptureExecuteResult, MapCaptureClientError>;
@@ -170,6 +179,9 @@ export interface MapCaptureClientShape {
 }
 
 export const decodeMapCaptureExecuteResult = Schema.decodeUnknownEffect(MapCaptureExecuteResult);
+export const decodeMapCaptureActorCatalogResult = Schema.decodeUnknownEffect(
+	MapCaptureActorCatalogResult
+);
 export const decodeMapCaptureOpenResult = Schema.decodeUnknownEffect(MapCaptureOpenResult);
 export const decodeMapCaptureLivePreviewResult = Schema.decodeUnknownEffect(
 	MapCaptureLivePreviewResult

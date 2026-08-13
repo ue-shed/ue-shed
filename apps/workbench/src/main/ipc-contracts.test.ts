@@ -270,6 +270,7 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	],
 	"content-observatory:cancel": [],
 	"map-review:load": [],
+	"map-capture:actors": ["/Game/Maps/L_City"],
 	"map-capture:choose-plan": [],
 	"map-capture:new-plan": [],
 	"map-capture:open-map": [mapCapturePlan],
@@ -506,6 +507,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"content-observatory:start": { status: "not_configured" },
 	"content-observatory:cancel": { status: "not_configured" },
 	"map-review:load": { status: "not_configured" },
+	"map-capture:actors": {
+		message: "Saved actors unavailable.",
+		recovery: "Choose a saved map.",
+		status: "failed"
+	},
 	"map-capture:choose-plan": { status: "cancelled" },
 	"map-capture:new-plan": { status: "cancelled" },
 	"map-capture:open-map": {
@@ -646,9 +652,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:set-world-observation-rate": [0]
 };
 
-it("registers exactly 94 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(94);
-	expect(new Set(invokeChannelNames).size).toBe(94);
+it("registers exactly 95 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(95);
+	expect(new Set(invokeChannelNames).size).toBe(95);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

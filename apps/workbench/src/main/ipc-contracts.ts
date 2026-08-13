@@ -38,6 +38,7 @@ import {
 import {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
+	MapCaptureActorCatalogResult,
 	MapCaptureLivePreviewResult,
 	MapCaptureOpenResult,
 	MapCaptureProgressEvent,
@@ -721,6 +722,11 @@ export const invokeContracts = {
 		channel: "map-capture:choose-plan",
 		args: EmptyArgs,
 		result: MapCaptureSelectionResult
+	}),
+	"map-capture:actors": invoke({
+		channel: "map-capture:actors",
+		args: Schema.Tuple([Schema.NonEmptyString]),
+		result: MapCaptureActorCatalogResult
 	}),
 	"map-capture:new-plan": invoke({
 		channel: "map-capture:new-plan",

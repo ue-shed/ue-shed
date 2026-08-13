@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, createUniqueId } from "solid-js";
 import type { JSX } from "solid-js";
 import { pointMapColorForClass } from "./point-map-core.js";
 import {
@@ -61,6 +61,7 @@ export function ActorExplorer(props: {
 }) {
 	const rowRefs = new Map<string, HTMLButtonElement>();
 	let listRef: HTMLUListElement | undefined;
+	const classFiltersId = createUniqueId();
 	const [classMenuOpen, setClassMenuOpen] = createSignal(false);
 	const [collapsedClasses, setCollapsedClasses] = createSignal<ReadonlySet<string>>(new Set());
 	const classOptions = createMemo(() => {
@@ -193,6 +194,9 @@ export function ActorExplorer(props: {
 		<section
 			aria-label={props.ariaLabel ?? "Actor explorer"}
 			role={props.role}
+			onKeyDown={(event) => {
+				if (event.key === "Escape") setClassMenuOpen(false);
+			}}
 			{...stylex.props(
 				styles.explorer,
 				props.density === "compact" && styles.explorerCompact
@@ -231,87 +235,114 @@ export function ActorExplorer(props: {
 				/>
 			</label>
 			<Show when={classOptions().length > 0}>
-				<div
-					{...stylex.props(
-						styles.classToolbar,
-						props.density === "compact" && styles.classToolbarCompact
-					)}
-				>
-					<span {...stylex.props(styles.classToolbarLabel)}>CLASS FILTER</span>
-					<button
-						type="button"
-						disabled={props.disabled}
-						aria-expanded={classMenuOpen()}
-						aria-controls="actor-class-filters"
-						aria-label="Toggle actor class filters"
-						onClick={() => setClassMenuOpen((open) => !open)}
-						{...stylex.props(styles.classSummary)}
-					>
-						{classSummary()}{" "}
-						<b>
-							{activeClassCount()}/{classOptions().length}
-						</b>{" "}
-						<span>⌄</span>
-					</button>
-				</div>
-				<Show when={classMenuOpen()}>
+				<div {...stylex.props(styles.classMenu)}>
 					<div
-						id="actor-class-filters"
-						aria-label="Actor class filters"
 						{...stylex.props(
-							styles.classFilters,
-							props.density === "compact" && styles.classFiltersCompact
+							styles.classToolbar,
+							props.density === "compact" && styles.classToolbarCompact
 						)}
 					>
-						<Show
-							when={props.classMode !== "target" && props.classSelection !== "single"}
+						<span {...stylex.props(styles.classToolbarLabel)}>CLASS FILTER</span>
+						<button
+							type="button"
+							disabled={props.disabled}
+							aria-expanded={classMenuOpen()}
+							aria-controls={classFiltersId}
+							aria-label="Toggle actor class filters"
+							onClick={() => setClassMenuOpen((open) => !open)}
+							{...stylex.props(styles.classSummary)}
 						>
-							<button
-								type="button"
-								disabled={props.disabled}
-								title="Invert which actor classes are selected"
-								onClick={invertClasses}
-								{...stylex.props(styles.classAction)}
-							>
-								INVERT
-							</button>
-						</Show>
-						<For each={filteredClassOptions()}>
-							{(option) => {
-								const active = () =>
-									props.classMode === "target"
-										? props.selectedClassPath === option.classPath
-										: props.filters.classPaths === undefined ||
-											props.filters.classPaths.includes(option.classPath);
-								return (
+							{classSummary()}{" "}
+							<b>
+								{activeClassCount()}/{classOptions().length}
+							</b>{" "}
+							<span>{classMenuOpen() ? "⌃" : "⌄"}</span>
+						</button>
+					</div>
+					<Show when={classMenuOpen()}>
+						<div
+							id={classFiltersId}
+							aria-label="Actor class filters"
+							{...stylex.props(
+								styles.classFilters,
+								props.density === "compact" && styles.classFiltersCompact
+							)}
+						>
+							<div {...stylex.props(styles.classFiltersHeader)}>
+								<div>
+									<strong>FILTER CLASSES</strong>
+									<span>
+										{filteredClassOptions().length} of {classOptions().length}{" "}
+										shown
+									</span>
+								</div>
+								<div {...stylex.props(styles.classFilterActions)}>
+									<Show
+										when={
+											props.classMode !== "target" &&
+											props.classSelection !== "single"
+										}
+									>
+										<button
+											type="button"
+											disabled={props.disabled}
+											title="Invert which actor classes are selected"
+											onClick={invertClasses}
+											{...stylex.props(styles.classAction)}
+										>
+											INVERT
+										</button>
+									</Show>
 									<button
 										type="button"
-										disabled={props.disabled}
-										aria-pressed={active()}
-										onClick={() => toggleClass(option.classPath)}
-										{...stylex.props(
-											styles.classOption,
-											active() && styles.classOptionActive
-										)}
+										onClick={() => setClassMenuOpen(false)}
+										{...stylex.props(styles.classAction)}
 									>
-										<i
-											{...stylex.props(styles.swatch)}
-											style={{
-												"background-color": pointMapColorForClass(
-													option.classPath
-												)
-											}}
-										/>
-										<span {...stylex.props(styles.classOptionLabel)}>
-											{classLabel(option)}
-										</span>
-										<b>{option.count}</b>
+										CLOSE
 									</button>
-								);
-							}}
-						</For>
-					</div>
-				</Show>
+								</div>
+							</div>
+							<div {...stylex.props(styles.classOptionGrid)}>
+								<For each={filteredClassOptions()}>
+									{(option) => {
+										const active = () =>
+											props.classMode === "target"
+												? props.selectedClassPath === option.classPath
+												: props.filters.classPaths === undefined ||
+													props.filters.classPaths.includes(
+														option.classPath
+													);
+										return (
+											<button
+												type="button"
+												disabled={props.disabled}
+												aria-pressed={active()}
+												onClick={() => toggleClass(option.classPath)}
+												{...stylex.props(
+													styles.classOption,
+													active() && styles.classOptionActive
+												)}
+											>
+												<i
+													{...stylex.props(styles.swatch)}
+													style={{
+														"background-color": pointMapColorForClass(
+															option.classPath
+														)
+													}}
+												/>
+												<span {...stylex.props(styles.classOptionLabel)}>
+													{classLabel(option)}
+												</span>
+												<b>{option.count}</b>
+											</button>
+										);
+									}}
+								</For>
+							</div>
+						</div>
+					</Show>
+				</div>
 			</Show>
 			<Show when={props.extraControls}>{props.extraControls}</Show>
 			<ul
@@ -415,12 +446,13 @@ export function ActorExplorer(props: {
 
 const styles = stylex.create({
 	explorer: {
+		position: "relative",
 		display: "flex",
 		flexDirection: "column",
 		minWidth: 0,
 		minHeight: 0,
 		maxHeight: "min(70vh, 520px)",
-		overflow: "hidden",
+		overflow: "visible",
 		border: "1px solid #344245",
 		backgroundColor: "#0d1415",
 		color: "#dce6e4"
@@ -465,17 +497,40 @@ const styles = stylex.create({
 		fontSize: 10,
 		outline: { default: "none", ":focus": "1px solid #73c7d0" }
 	},
+	classMenu: { position: "relative", flex: "0 0 auto", zIndex: 4 },
 	classFilters: {
-		display: "grid",
-		gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))",
-		gap: 5,
-		minWidth: 0,
-		maxHeight: 132,
-		overflowY: "auto",
-		padding: "0 13px 9px",
-		borderBottom: "1px solid #293638"
+		position: "absolute",
+		top: "calc(100% - 1px)",
+		left: 12,
+		width: "min(460px, calc(100vw - 48px))",
+		maxHeight: "min(55vh, 440px)",
+		overflow: "hidden",
+		border: "1px solid #526568",
+		backgroundColor: "#0d1516f7",
+		boxShadow: "0 18px 44px #000c, 0 0 0 1px #0a0e0f",
+		backdropFilter: "blur(8px)"
 	},
-	classFiltersCompact: { maxHeight: 92, padding: "0 10px 6px" },
+	classFiltersCompact: { maxHeight: "min(48vh, 360px)", left: 8 },
+	classFiltersHeader: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 12,
+		padding: "10px 11px",
+		borderBottom: "1px solid #344346",
+		color: "#dce9e8",
+		fontSize: 9,
+		letterSpacing: ".09em"
+	},
+	classFilterActions: { display: "flex", gap: 6, flex: "0 0 auto" },
+	classOptionGrid: {
+		display: "grid",
+		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+		gap: 6,
+		maxHeight: "min(46vh, 380px)",
+		overflowY: "auto",
+		padding: 10
+	},
 	classToolbar: {
 		display: "flex",
 		alignItems: "center",

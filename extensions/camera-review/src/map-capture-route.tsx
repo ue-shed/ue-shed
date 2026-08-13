@@ -22,7 +22,7 @@ import {
 	validateMapCapturePlanDraft,
 	type MapCapturePlanDraft
 } from "./map-capture-plan-draft.js";
-import { MapTilePyramidViewer } from "./map-tile-viewer.js";
+import { MapCaptureActorWorkspace } from "./map-capture-actor-workspace.js";
 
 type ReadySelection = Extract<MapCaptureSelectionResult, { readonly status: "ready" }>;
 type CompletedCapture = Extract<MapCaptureExecuteResult, { readonly status: "completed" }>;
@@ -1061,7 +1061,10 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 						}
 					>
 						{(completed) => (
-							<MapTilePyramidViewer
+							<MapCaptureActorWorkspace
+								loadActors={() =>
+									props.client.actors(completed().manifest.project.mapPath)
+								}
 								manifest={completed().manifest}
 								tileUrl={(_key, relativePath) =>
 									previewUrls().get(relativePath) ?? ""

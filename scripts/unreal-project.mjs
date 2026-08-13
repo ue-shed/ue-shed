@@ -7,6 +7,7 @@ import {
 	unrealEngineTools,
 	unrealEngineVersion
 } from "./unreal-plugin-host.mjs";
+import { parseUnrealDescriptor, registeredEngineRoot } from "./unreal-project-support.mjs";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.mjs";
 
 function option(name) {
@@ -42,10 +43,12 @@ function discoverEngineRoot(projectPath) {
 		return root;
 	}
 
-	const descriptor = JSON.parse(readFileSync(projectPath, "utf8"));
+	const descriptor = parseUnrealDescriptor(readFileSync(projectPath, "utf8"));
 	const association =
 		typeof descriptor.EngineAssociation === "string" ? descriptor.EngineAssociation : undefined;
 	if (process.platform === "win32") {
+		const registeredRoot = registeredEngineRoot(association);
+		if (registeredRoot && engineVersion(registeredRoot)) return resolve(registeredRoot);
 		const epicRoot = join(process.env.ProgramFiles ?? "C:\\Program Files", "Epic Games");
 		if (existsSync(epicRoot)) {
 			const candidates = readdirSync(epicRoot, { withFileTypes: true })

@@ -1,5 +1,6 @@
 import {
 	MapCaptureClientError,
+	decodeMapCaptureActorCatalogResult,
 	decodeMapCaptureExecuteResult,
 	decodeMapCaptureLivePreviewResult,
 	decodeMapCaptureOpenResult,
@@ -40,6 +41,12 @@ function request<A>(args: {
 }
 
 export const mapCaptureClient: MapCaptureClientShape = {
+	actors: (mapPath) =>
+		request({
+			decode: decodeMapCaptureActorCatalogResult,
+			invoke: () => window.ueShed.mapCapture.actors(mapPath),
+			operation: "mapCapture.actors"
+		}),
 	capture: (intent: MapCaptureExecuteIntent) =>
 		request({
 			decode: decodeMapCaptureExecuteResult,

@@ -56,6 +56,7 @@ declare global {
 	interface Window {
 		readonly ueShed: {
 			readonly mapCapture: {
+				readonly actors: (mapPath: string) => Promise<unknown>;
 				readonly choosePlan: () => Promise<unknown>;
 				readonly newPlan: () => Promise<unknown>;
 				readonly openMap: (plan: unknown) => Promise<unknown>;

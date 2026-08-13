@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	fitMapTileViewport,
 	mapTileScreenRect,
+	mapTileScreenPoint,
 	mapTileViewportBounds
 } from "./map-tile-viewer-model.js";
 
@@ -50,5 +51,26 @@ describe("map tile viewer alignment", () => {
 		expect(Math.max(...children.map((rect) => rect.top + rect.height))).toBe(
 			parentRect.top + parentRect.height
 		);
+	});
+
+	it("projects actor coordinates with the same +X north and +Y east orientation as tiles", () => {
+		const viewport = fitMapTileViewport({
+			bounds: grid.snappedBounds,
+			height: 512,
+			paddingPixels: 0,
+			width: 512
+		});
+		expect(mapTileScreenPoint({ viewport, worldX: 256, worldY: -256 })).toEqual({
+			left: 0,
+			top: 0
+		});
+		expect(mapTileScreenPoint({ viewport, worldX: 0, worldY: 0 })).toEqual({
+			left: 256,
+			top: 256
+		});
+		expect(mapTileScreenPoint({ viewport, worldX: -256, worldY: 256 })).toEqual({
+			left: 512,
+			top: 512
+		});
 	});
 });

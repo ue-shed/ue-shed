@@ -388,6 +388,14 @@ function buildRegistrationLayer(recorder: Recorder) {
 		worldObservationPresentationReplacements: () => Effect.succeed(0)
 	});
 	const mapCapture = makeWorkbenchMapCaptureTestLayer({
+		actors: () =>
+			recorder.record("mapCapture.actors").pipe(
+				Effect.as({
+					message: "Saved actors are not configured.",
+					recovery: "Choose a map.",
+					status: "failed" as const
+				})
+			),
 		capture: () =>
 			recorder.record("mapCapture.capture").pipe(
 				Effect.as({
@@ -576,13 +584,13 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 94 contract channels", () =>
+it.effect("registers exactly the 95 contract channels", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(94);
+		expect(result).toHaveLength(95);
 	})
 );
 

@@ -1,5 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
 import {
+	pointMapColorForClass,
+	pointMapMarkerRadius,
+	pointMapResizeCanvasForDisplay
+} from "@ue-shed/ui/point-map-core";
+import {
 	createMapTileGrid,
 	mapTileKeyId,
 	resolveAvailableMapTiles,
@@ -10,21 +15,53 @@ import {
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
 	fitMapTileViewport,
+	mapTileScreenPoint,
 	mapTileScreenRect,
 	mapTileViewportBounds,
 	type MapTileViewport
 } from "./map-tile-viewer-model.js";
 
-export interface MapTilePyramidViewerProps {
-	readonly manifest: MapTilePyramidManifestValue;
+export interface MapTileActorMarker {
+	readonly className: string;
+	readonly key: string;
+	readonly label: string;
+	readonly worldX: number;
+	readonly worldY: number;
+}
 
+export interface MapTilePyramidViewerController {
+	readonly focusActor: (key: string) => void;
+	readonly resetView: () => void;
+}
+
+export interface MapTilePyramidViewerProps {
+	readonly actorMarkers?: ReadonlyArray<MapTileActorMarker> | undefined;
+	readonly manifest: MapTilePyramidManifestValue;
+	readonly onActorSelect?: ((key: string | undefined) => void) | undefined;
+	readonly onController?:
+		| ((controller: MapTilePyramidViewerController | undefined) => void)
+		| undefined;
+	readonly selectedActorKey?: string | undefined;
 	readonly tileUrl: (key: MapTileKey, relativePath: string) => string;
 	readonly maximumCacheEntries?: number;
 }
 
+/** Reads a Solid input solely to register it as a paint dependency. */
+function observeMapTileInput(_value: unknown): void {}
+
 export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 	let surface: HTMLDivElement | undefined;
-	let drag: { x: number; y: number; centerX: number; centerY: number } | undefined;
+	let actorCanvas: HTMLCanvasElement | undefined;
+	let drag:
+		| {
+				centerX: number;
+				centerY: number;
+				moved: boolean;
+				pointerId: number;
+				x: number;
+				y: number;
+		  }
+		| undefined;
 	const grid = createMemo(() =>
 		createMapTileGrid({
 			coarsestUnitsPerPixel: props.manifest.levels[0]!.unitsPerPixel,
@@ -83,18 +120,156 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 		})
 	);
 	const loadingCount = () => pendingRequests().length;
+	const captureCoverageVisible = createMemo(() => {
+		const visible = mapTileViewportBounds(viewport());
+		const capture = props.manifest.grid.snappedBounds;
+		return (
+			visible.minX < capture.maxX &&
+			visible.maxX > capture.minX &&
+			visible.minY < capture.maxY &&
+			visible.maxY > capture.minY
+		);
+	});
 
 	function resize() {
 		if (!surface) return;
 		const bounds = surface.getBoundingClientRect();
-		setViewport((current) => ({ ...current, height: bounds.height, width: bounds.width }));
+		const nextHeight = Math.max(1, bounds.height);
+		const nextWidth = Math.max(1, bounds.width);
+		setViewport((current) => {
+			const previousFit = fitMapTileViewport({
+				bounds: props.manifest.grid.snappedBounds,
+				height: current.height,
+				width: current.width
+			});
+			const nextFit = fitMapTileViewport({
+				bounds: props.manifest.grid.snappedBounds,
+				height: nextHeight,
+				width: nextWidth
+			});
+			return {
+				...current,
+				height: nextHeight,
+				pixelsPerWorldUnit:
+					nextFit.pixelsPerWorldUnit *
+					(current.pixelsPerWorldUnit / previousFit.pixelsPerWorldUnit),
+				width: nextWidth
+			};
+		});
+	}
+
+	function resetView() {
+		if (!surface) return;
+		const bounds = surface.getBoundingClientRect();
+		setViewport(
+			fitMapTileViewport({
+				bounds: props.manifest.grid.snappedBounds,
+				height: Math.max(1, bounds.height),
+				width: Math.max(1, bounds.width)
+			})
+		);
+	}
+
+	function focusActor(key: string) {
+		const actor = props.actorMarkers?.find((candidate) => candidate.key === key);
+		if (actor === undefined) return;
+		setViewport((current) => {
+			const fit = fitMapTileViewport({
+				bounds: props.manifest.grid.snappedBounds,
+				height: current.height,
+				width: current.width
+			});
+			return {
+				...current,
+				centerX: actor.worldX,
+				centerY: actor.worldY,
+				pixelsPerWorldUnit: Math.max(current.pixelsPerWorldUnit, fit.pixelsPerWorldUnit * 6)
+			};
+		});
+	}
+
+	function paintActorOverlay() {
+		if (actorCanvas === undefined) return;
+		const current = viewport();
+		const context = pointMapResizeCanvasForDisplay(
+			actorCanvas,
+			current.width,
+			current.height,
+			typeof window === "undefined" ? 1 : window.devicePixelRatio || 1
+		);
+		if (context === undefined) return;
+		context.clearRect(0, 0, current.width, current.height);
+		const markers = props.actorMarkers ?? [];
+		const radius = pointMapMarkerRadius(markers.length, current.width, current.height);
+		for (const marker of markers) {
+			const point = mapTileScreenPoint({
+				viewport: current,
+				worldX: marker.worldX,
+				worldY: marker.worldY
+			});
+			if (
+				point.left < -radius ||
+				point.left > current.width + radius ||
+				point.top < -radius ||
+				point.top > current.height + radius
+			) {
+				continue;
+			}
+			const selected = marker.key === props.selectedActorKey;
+			context.beginPath();
+			context.arc(point.left, point.top, selected ? radius + 2 : radius, 0, Math.PI * 2);
+			context.fillStyle = pointMapColorForClass(marker.className);
+			context.fill();
+			context.lineWidth = selected ? 2 : 1;
+			context.strokeStyle = selected ? "#ffffff" : "rgba(255, 255, 255, 0.34)";
+			context.stroke();
+		}
+	}
+
+	function selectActorAt(clientX: number, clientY: number) {
+		if (surface === undefined || props.onActorSelect === undefined) return;
+		const bounds = surface.getBoundingClientRect();
+		const current = viewport();
+		const markers = props.actorMarkers ?? [];
+		const pickRadius = Math.max(
+			8,
+			pointMapMarkerRadius(markers.length, current.width, current.height) + 4
+		);
+		let closestKey: string | undefined;
+		let closestDistance = Number.POSITIVE_INFINITY;
+		for (const marker of markers) {
+			const point = mapTileScreenPoint({
+				viewport: current,
+				worldX: marker.worldX,
+				worldY: marker.worldY
+			});
+			const distance = Math.hypot(
+				point.left - (clientX - bounds.left),
+				point.top - (clientY - bounds.top)
+			);
+			if (distance <= pickRadius && distance < closestDistance) {
+				closestDistance = distance;
+				closestKey = marker.key;
+			}
+		}
+		props.onActorSelect(closestKey);
 	}
 
 	onMount(() => {
 		resize();
 		const observer = new ResizeObserver(resize);
 		if (surface) observer.observe(surface);
-		onCleanup(() => observer.disconnect());
+		props.onController?.({ focusActor, resetView });
+		onCleanup(() => {
+			observer.disconnect();
+			props.onController?.(undefined);
+		});
+	});
+	createEffect(() => {
+		observeMapTileInput(viewport());
+		observeMapTileInput(props.actorMarkers);
+		observeMapTileInput(props.selectedActorKey);
+		paintActorOverlay();
 	});
 
 	function markLoaded(key: MapTileKey) {
@@ -119,6 +294,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 
 	function pan(event: PointerEvent) {
 		if (!drag) return;
+		if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) >= 3) drag.moved = true;
 		const pixelsPerWorldUnit = viewport().pixelsPerWorldUnit;
 		setViewport((current) => ({
 			...current,
@@ -162,6 +338,9 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 					<span>{selection().visible.length} VISIBLE</span>
 					<span>{loadingCount()} QUEUED</span>
 					<span>{failed().size} ERRORS</span>
+					<Show when={(props.actorMarkers?.length ?? 0) > 0}>
+						<span>{props.actorMarkers!.length.toLocaleString()} ACTORS</span>
+					</Show>
 				</div>
 			</header>
 			<div
@@ -175,12 +354,21 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 					drag = {
 						centerX: current.centerX,
 						centerY: current.centerY,
+						moved: false,
+						pointerId: event.pointerId,
 						x: event.clientX,
 						y: event.clientY
 					};
 				}}
 				onPointerMove={pan}
-				onPointerUp={() => (drag = undefined)}
+				onPointerUp={(event) => {
+					const completed = drag;
+					drag = undefined;
+					if (completed !== undefined && !completed.moved) {
+						selectActorAt(event.clientX, event.clientY);
+					}
+				}}
+				onPointerCancel={() => (drag = undefined)}
 				onWheel={zoom}
 			>
 				<div {...stylex.props(styles.grid)} />
@@ -208,6 +396,14 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 						);
 					}}
 				</For>
+				<canvas
+					ref={(element) => {
+						actorCanvas = element;
+						paintActorOverlay();
+					}}
+					aria-hidden="true"
+					{...stylex.props(styles.actorOverlay)}
+				/>
 				<div {...stylex.props(styles.preload)} aria-hidden="true">
 					<For each={pendingRequests()}>
 						{(key) => {
@@ -224,7 +420,11 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 					</For>
 				</div>
 				<Show when={renderTiles().length === 0}>
-					<div {...stylex.props(styles.loading)}>SEEKING COARSE COVERAGE…</div>
+					<div {...stylex.props(styles.loading)}>
+						{captureCoverageVisible()
+							? "SEEKING COARSE COVERAGE…"
+							: "OUTSIDE CAPTURE COVERAGE"}
+					</div>
 				</Show>
 				<div {...stylex.props(styles.axisNorth)}>+X / NORTH</div>
 				<div {...stylex.props(styles.axisEast)}>+Y / EAST</div>
@@ -297,6 +497,14 @@ const styles = stylex.create({
 		objectFit: "fill",
 		pointerEvents: "none",
 		imageRendering: "auto"
+	},
+	actorOverlay: {
+		position: "absolute",
+		zIndex: 30,
+		inset: 0,
+		width: "100%",
+		height: "100%",
+		pointerEvents: "none"
 	},
 	preload: { position: "absolute", width: 0, height: 0, overflow: "hidden", opacity: 0 },
 	loading: {

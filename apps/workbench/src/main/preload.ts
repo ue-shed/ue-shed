@@ -280,6 +280,8 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("map-review:unsubscribe-world-observations")
 	},
 	mapCapture: {
+		actors: (mapPath: string): Promise<unknown> =>
+			ipcRenderer.invoke("map-capture:actors", mapPath),
 		choosePlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:choose-plan"),
 		newPlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:new-plan"),
 		openMap: (plan: unknown): Promise<unknown> =>

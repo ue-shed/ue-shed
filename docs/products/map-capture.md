@@ -86,6 +86,24 @@ The pure selection model:
 - recommends a bounded cache size and leaves eviction implementation to the host;
 - aligns every level from manifest bounds, preventing drift or spatial swimming.
 
+### Saved actor overlay
+
+The reference viewer can load the selected map's saved-world actor projection on demand and place
+resolved actor locations over the immutable tile pyramid. The overlay uses the manifest's exact
+snapped world bounds and the same +X-north/+Y-east viewport transform as tile placement; it never
+infers spatial coverage from PNG dimensions. Search, class filtering, selection, and focus reuse the
+shared actor explorer.
+
+The viewer reports actors inside the captured bounds separately from all resolved and saved actors.
+Focusing an actor outside the capture pans into an uncovered grid instead of stretching or implying
+imagery beyond the manifest bounds. Actors without resolved positions remain available in the
+outliner but are not plotted.
+
+This layer is explicitly saved-package authority. It may differ from an older capture or from
+unsaved, procedural, and runtime editor state; the viewer labels it `SAVED ACTORS` and does not
+present it as capture-time evidence. A future live-actor layer requires separate Observatory
+authority and labeling.
+
 The Workbench `#/map-capture` route is the reference host for creating or opening a portable plan,
 searching the selected project's saved-map inventory, and authoring the executable v1 fields:
 identity, target map, requested world bounds, PNG tile size, pyramid resolution and levels, gutter,

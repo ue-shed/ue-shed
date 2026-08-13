@@ -49,6 +49,7 @@ describe("MapCaptureRoute", () => {
 		let previewedPlanId: string | undefined;
 		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 		const client: MapCaptureClientShape = {
+			actors: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
 			choosePlan: () =>
 				Effect.succeed({
@@ -107,6 +108,7 @@ describe("MapCaptureRoute", () => {
 	it("surfaces scoped atmosphere and per-level LOD settings in the capture intent", async () => {
 		let captured: MapCaptureExecuteIntent | undefined;
 		const client: MapCaptureClientShape = {
+			actors: () => Effect.die("not used"),
 			capture: (intent) =>
 				Effect.sync(() => {
 					captured = intent;
@@ -188,6 +190,7 @@ describe("MapCaptureRoute", () => {
 	it("creates, edits, validates, and saves a plan from the Map Capture path", async () => {
 		let saved: MapCaptureSaveIntent | undefined;
 		const client: MapCaptureClientShape = {
+			actors: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
 			choosePlan: () => Effect.die("not used"),
 			newPlan: () =>
@@ -251,6 +254,7 @@ describe("MapCaptureRoute", () => {
 		let captured: MapCaptureExecuteIntent | undefined;
 		const progressQueue = Effect.runSync(Queue.unbounded<MapCaptureProgressEvent>());
 		const client: MapCaptureClientShape = {
+			actors: () => Effect.die("not used"),
 			capture: (intent) =>
 				Effect.sync(() => {
 					captured = intent;

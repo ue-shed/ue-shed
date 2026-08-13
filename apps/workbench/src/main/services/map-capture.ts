@@ -16,6 +16,7 @@ import { EditorWorldControl } from "@ue-shed/engine-discovery";
 import type {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
+	MapCaptureActorCatalogResult,
 	MapCaptureLivePreviewResult,
 	MapCaptureOpenResult,
 	MapCaptureProgressEvent,
@@ -23,6 +24,7 @@ import type {
 	MapCaptureSaveResult,
 	MapCaptureSelectionResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
+import { AssetReader } from "@ue-shed/unreal-assets";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer } from "effect";
 import { randomUUID } from "node:crypto";
@@ -105,6 +107,7 @@ function previewCameraFrame(bounds: {
 }
 
 export interface WorkbenchMapCaptureShape {
+	readonly actors: (mapPath: string) => Effect.Effect<MapCaptureActorCatalogResult>;
 	readonly capture: (intent: MapCaptureExecuteIntent) => Effect.Effect<MapCaptureExecuteResult>;
 	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult>;
 	readonly newPlan: () => Effect.Effect<MapCaptureSelectionResult>;
@@ -121,6 +124,7 @@ export class WorkbenchMapCapture extends Context.Service<
 export const WorkbenchMapCaptureLive = Layer.effect(
 	WorkbenchMapCapture,
 	Effect.gen(function* () {
+		const assetReader = yield* AssetReader;
 		const cameraFeed = yield* CameraFeed;
 		const configuration = yield* WorkbenchConfiguration;
 		const dialog = yield* ElectronDialog;
@@ -240,6 +244,36 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				status: "ready" as const,
 				tileCount: inspection.tileCount
 			};
+		});
+
+		const actors = Effect.fn("Workbench.MapCapture.actors")(function* (mapPath: string) {
+			return yield* Effect.gen(function* () {
+				const selectedProject = yield* project.savedProject();
+				const savedMap = selectedProject.maps.find(
+					(candidate) => savedMapPathToGameMapPath(candidate.mapPath) === mapPath
+				);
+				if (savedMap === undefined) {
+					return failure(
+						`Saved map ${mapPath} is not part of the selected project inventory.`,
+						"Choose a saved map from this project, then capture it again."
+					);
+				}
+				const world = yield* assetReader.readSavedWorld({
+					concurrency: 8,
+					mapPath: savedMap.mapPath,
+					projectRoot: selectedProject.projectRoot
+				});
+				return { status: "ready" as const, world };
+			}).pipe(
+				Effect.catch((cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Verify the saved map packages and selected project, then retry the actor overlay."
+						)
+					)
+				)
+			);
 		});
 
 		const choosePlan = Effect.fn("Workbench.MapCapture.choosePlan")(function* () {
@@ -378,7 +412,15 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			);
 		});
 
-		return WorkbenchMapCapture.of({ capture, choosePlan, newPlan, openMap, preview, savePlan });
+		return WorkbenchMapCapture.of({
+			actors,
+			capture,
+			choosePlan,
+			newPlan,
+			openMap,
+			preview,
+			savePlan
+		});
 	})
 );
 

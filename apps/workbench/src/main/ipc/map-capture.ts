@@ -12,6 +12,10 @@ export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const mapCapture = yield* WorkbenchMapCapture;
 
+	yield* ipc.register(invokeContracts["map-capture:actors"], (...args) => {
+		const [mapPath] = args as [string];
+		return mapCapture.actors(mapPath);
+	});
 	yield* ipc.register(invokeContracts["map-capture:choose-plan"], () => mapCapture.choosePlan());
 	yield* ipc.register(invokeContracts["map-capture:new-plan"], () => mapCapture.newPlan());
 	yield* ipc.register(invokeContracts["map-capture:save-plan"], (...args) => {

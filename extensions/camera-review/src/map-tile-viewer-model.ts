@@ -20,6 +20,11 @@ export interface MapTileScreenRect {
 	readonly width: number;
 }
 
+export interface MapTileScreenPoint {
+	readonly left: number;
+	readonly top: number;
+}
+
 export function mapTileViewportBounds(viewport: MapTileViewport): MapWorldBounds {
 	const halfWorldWidth = viewport.width / viewport.pixelsPerWorldUnit / 2;
 	const halfWorldHeight = viewport.height / viewport.pixelsPerWorldUnit / 2;
@@ -43,6 +48,19 @@ export function mapTileScreenRect(args: {
 		left: (bounds.minY - viewportBounds.minY) * args.viewport.pixelsPerWorldUnit,
 		top: (viewportBounds.maxX - bounds.maxX) * args.viewport.pixelsPerWorldUnit,
 		width: (bounds.maxY - bounds.minY) * args.viewport.pixelsPerWorldUnit
+	};
+}
+
+/** Projects Unreal world X north/up and world Y east/right onto the tile surface. */
+export function mapTileScreenPoint(args: {
+	readonly viewport: MapTileViewport;
+	readonly worldX: number;
+	readonly worldY: number;
+}): MapTileScreenPoint {
+	const viewportBounds = mapTileViewportBounds(args.viewport);
+	return {
+		left: (args.worldY - viewportBounds.minY) * args.viewport.pixelsPerWorldUnit,
+		top: (viewportBounds.maxX - args.worldX) * args.viewport.pixelsPerWorldUnit
 	};
 }
 

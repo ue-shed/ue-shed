@@ -77,7 +77,7 @@ export const ProjectLauncherLive = Layer.effect(
 											message: result.message,
 											recovery:
 												mode === "ue_shed"
-													? "Check the Unreal Build Tool log, then retry or launch normally."
+													? "Review the launcher error. If Unreal Build Tool ran, check its log, then retry or launch normally."
 													: "Verify the selected project's Unreal installation, then retry."
 										}
 						),

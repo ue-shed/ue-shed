@@ -13,7 +13,20 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["editor-session:status"], () =>
 		connection.endpoint().pipe(
 			Effect.flatMap((endpoint) => editorSession.status(endpoint)),
-			Effect.orDie
+			Effect.match({
+				onFailure: (error) => ({
+					error: {
+						code: error.code,
+						endpoint: error.endpoint,
+						message: error.message,
+						operation: error.operation,
+						recovery: error.recovery,
+						retrySafe: error.retrySafe
+					},
+					status: "unavailable" as const
+				}),
+				onSuccess: (session) => ({ session, status: "ready" as const })
+			})
 		)
 	);
 	yield* ipc.register(invokeContracts["editor-session:execute"], (...args) => {

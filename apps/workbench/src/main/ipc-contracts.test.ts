@@ -356,8 +356,11 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"editor-session:settings": { port: 30001 },
 	"editor-session:set-port": { port: 31001 },
 	"editor-session:status": {
-		contract: { name: "unreal-editor-play-session", version: { major: 1, minor: 0 } },
-		state: { status: "stopped" }
+		session: {
+			contract: { name: "unreal-editor-play-session", version: { major: 1, minor: 0 } },
+			state: { status: "stopped" }
+		},
+		status: "ready"
 	},
 	"editor-session:execute": {
 		command: "start_play",

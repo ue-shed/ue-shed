@@ -128,6 +128,26 @@ export const CameraStatusResult = Schema.Union([
 ]);
 export type CameraStatusResult = Schema.Schema.Type<typeof CameraStatusResult>;
 
+export const EditorSessionStatusResult = Schema.Union([
+	Schema.Struct({ session: EditorPlaySessionStateResponse, status: Schema.Literal("ready") }),
+	Schema.Struct({
+		error: Schema.Struct({
+			code: Schema.Literals([
+				"capability_unavailable",
+				"contract_failure",
+				"transport_failure"
+			]),
+			endpoint: Schema.String,
+			message: Schema.String,
+			operation: Schema.String,
+			recovery: Schema.String,
+			retrySafe: Schema.Boolean
+		}),
+		status: Schema.Literal("unavailable")
+	})
+]);
+export type EditorSessionStatusResult = Schema.Schema.Type<typeof EditorSessionStatusResult>;
+
 export const UnrealConnectionSettings = Schema.Struct({
 	port: RemoteControlPort
 });
@@ -411,7 +431,7 @@ export const invokeContracts = {
 	"editor-session:status": invoke({
 		channel: "editor-session:status",
 		args: EmptyArgs,
-		result: EditorPlaySessionStateResponse
+		result: EditorSessionStatusResult
 	}),
 	"editor-session:execute": invoke({
 		channel: "editor-session:execute",

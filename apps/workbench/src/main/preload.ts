@@ -23,8 +23,7 @@ import type {
 	CameraScheduleConfig,
 	CameraStatus,
 	EditorPlaySessionCommand,
-	EditorPlaySessionCommandResponse,
-	EditorPlaySessionStateResponse
+	EditorPlaySessionCommandResponse
 } from "@ue-shed/protocol";
 import type {
 	WorldScoutFocusResult,
@@ -43,6 +42,7 @@ import type {
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
+	EditorSessionStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -61,6 +61,7 @@ export type {
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
+	EditorSessionStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
@@ -85,7 +86,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("editor-session:settings"),
 		setPort: (port: number): Promise<UnrealConnectionSettings> =>
 			ipcRenderer.invoke("editor-session:set-port", port),
-		status: (): Promise<EditorPlaySessionStateResponse> =>
+		status: (): Promise<EditorSessionStatusResult> =>
 			ipcRenderer.invoke("editor-session:status"),
 		execute: (command: EditorPlaySessionCommand): Promise<EditorPlaySessionCommandResponse> =>
 			ipcRenderer.invoke("editor-session:execute", command)

@@ -2,7 +2,6 @@ import {
 	CameraStatus,
 	decodeCameraStatus,
 	decodeEditorPlaySessionCommandResponse,
-	decodeEditorPlaySessionStateResponse,
 	type CameraScheduleConfig,
 	type EditorPlaySessionCommand,
 	type EditorPlaySessionCommandResponse,
@@ -13,13 +12,17 @@ import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
 import type {
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
+	EditorSessionStatusResult,
 	FixtureLaunchResult,
 	RendererCameraFrame,
 	ShowcaseContext,
 	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
-import { ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema } from "../main/ipc-contracts.js";
+import {
+	ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema,
+	EditorSessionStatusResult as EditorSessionStatusResultSchema
+} from "../main/ipc-contracts.js";
 import {
 	ProjectLaunchResult,
 	type ProjectLaunchMode,
@@ -118,6 +121,7 @@ function request<A>(args: {
 
 const decodeShowcaseContext = Schema.decodeUnknownEffect(ShowcaseContextSchema);
 const decodeConfigExplorerQueryResult = Schema.decodeUnknownEffect(ConfigExplorerQueryResultSchema);
+const decodeEditorSessionStatusResult = Schema.decodeUnknownEffect(EditorSessionStatusResultSchema);
 const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResultSchema);
 const decodeWorkbenchCameraMetrics = Schema.decodeUnknownEffect(WorkbenchCameraMetricsSchema);
 const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
@@ -138,6 +142,29 @@ const decodeCameraStatusResult = Schema.decodeUnknownEffect(
 			status: Schema.Literal("unavailable")
 		})
 	])
+);
+
+export function editorSessionStateFromResult(
+	result: EditorSessionStatusResult
+): Effect.Effect<EditorPlaySessionStateResponse, WorkbenchRendererError> {
+	return result.status === "ready"
+		? Effect.succeed(result.session)
+		: Effect.fail(
+				new WorkbenchRendererError({
+					cause: result.error,
+					operation: result.error.operation,
+					recovery: result.error.recovery
+				})
+			);
+}
+
+const getEditorSessionStatus = Effect.fn("WorkbenchRenderer.editorSessionStatus")(
+	(): Effect.Effect<EditorPlaySessionStateResponse, WorkbenchRendererError> =>
+		request({
+			decode: decodeEditorSessionStatusResult,
+			invoke: () => window.ueShed.editorSession.status(),
+			operation: "editorSession.status"
+		}).pipe(Effect.flatMap(editorSessionStateFromResult))
 );
 
 const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
@@ -230,13 +257,7 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: "project.choose"
 		})
 	),
-	editorSessionStatus: Effect.fn("WorkbenchRenderer.editorSessionStatus")(() =>
-		request({
-			decode: decodeEditorPlaySessionStateResponse,
-			invoke: () => window.ueShed.editorSession.status(),
-			operation: "editorSession.status"
-		})
-	),
+	editorSessionStatus: getEditorSessionStatus,
 	executeEditorSessionCommand: Effect.fn("WorkbenchRenderer.executeEditorSessionCommand")(
 		(command) =>
 			request({
@@ -246,13 +267,7 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			})
 	),
 	editorSessionStatuses: Stream.fromEffectSchedule(
-		Effect.exit(
-			request({
-				decode: decodeEditorPlaySessionStateResponse,
-				invoke: () => window.ueShed.editorSession.status(),
-				operation: "editorSession.status"
-			})
-		),
+		Effect.exit(getEditorSessionStatus()),
 		Schedule.spaced("750 millis")
 	),
 	unrealConnectionSettings: Effect.fn("WorkbenchRenderer.unrealConnectionSettings")(() =>

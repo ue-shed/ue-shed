@@ -2,8 +2,7 @@ import type {
 	CameraScheduleConfig,
 	CameraStatus,
 	EditorPlaySessionCommand,
-	EditorPlaySessionCommandResponse,
-	EditorPlaySessionStateResponse
+	EditorPlaySessionCommandResponse
 } from "@ue-shed/protocol";
 import type {
 	WorldScoutFocusResult,
@@ -36,6 +35,7 @@ import type {
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
+	EditorSessionStatusResult,
 	RendererCameraFrame,
 	RendererWorldObservationEvent,
 	FixtureLaunchResult,
@@ -78,7 +78,7 @@ declare global {
 			readonly editorSession: {
 				readonly settings: () => Promise<UnrealConnectionSettings>;
 				readonly setPort: (port: number) => Promise<UnrealConnectionSettings>;
-				readonly status: () => Promise<EditorPlaySessionStateResponse>;
+				readonly status: () => Promise<EditorSessionStatusResult>;
 				readonly execute: (
 					command: EditorPlaySessionCommand
 				) => Promise<EditorPlaySessionCommandResponse>;

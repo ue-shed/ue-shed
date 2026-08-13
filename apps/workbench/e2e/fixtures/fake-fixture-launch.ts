@@ -53,7 +53,7 @@ export async function createFakeFixtureLaunchHarness(options?: {
 	await mkdir(scriptsDir, { recursive: true });
 
 	await writeFile(
-		join(scriptsDir, "unreal-fixture.mjs"),
+		join(scriptsDir, "unreal-fixture.ts"),
 		`import { appendFileSync, writeFileSync } from "node:fs";
 
 const marker = process.env.UE_SHED_FAKE_LAUNCH_MARKER;

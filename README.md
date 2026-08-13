@@ -46,7 +46,7 @@ missing-capability diagnostics visible rather than guessing.
 
 The committed generic fixture is the fastest way to see the product. For the full showcase, install
 Unreal Engine 5.7 and Visual Studio 2022 with the Unreal Engine C++ workload, alongside Node.js
-22.14 or newer, pnpm 11, and Rust 1.88 or newer.
+26 or newer, pnpm 11, and Rust 1.88 or newer.
 
 ```powershell
 pnpm install

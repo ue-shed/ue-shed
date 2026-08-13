@@ -104,7 +104,7 @@ Document: publish exact candidate; open downstream bump PR; run downstream porta
 - `.github/workflows/candidate-release.yml` builds a checksummed candidate, can bind an exact trusted
   Unreal run ID, creates GitHub provenance, and exposes npm publication only through the protected
   `npm-release` environment on an exact candidate tag with OIDC.
-- `scripts/create-release-candidate.mjs` rejects version ranges, shortened commits, ambiguous run
+- `scripts/create-release-candidate.ts` rejects version ranges, shortened commits, ambiguous run
   IDs, nonempty output directories, and public package versions that differ from the candidate.
 - Local verification on 2026-07-23: actionlint 1.7.12 passed; a candidate dry run produced and
   rehashed both archives; `pnpm -r --if-present build` and `pnpm check` exited 0.

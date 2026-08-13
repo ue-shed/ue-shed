@@ -14,7 +14,7 @@ needed.
 
 ## Open the Workbench
 
-Requirements are Node.js 22.14 or newer, pnpm 11, and Rust 1.88 or newer. Live actions additionally
+Requirements are Node.js 26 or newer, pnpm 11, and Rust 1.88 or newer. Live actions additionally
 require Unreal Engine 5.7 and Visual Studio 2022 with the Unreal Engine C++ workload. The initial
 Workbench and saved-package demos do not require Unreal or Visual Studio. From the repository root:
 
@@ -410,5 +410,5 @@ exports, and the showcase tabs fail typecheck if their capture leaves the manife
 media cannot drift from a real recording.
 
 Review exported frames before deploying. Captures show the real Workbench, including whatever
-diagnostics it surfaces; withhold a capture in `scripts/site-media.mjs` rather than publish an
+diagnostics it surfaces; withhold a capture in `scripts/site-media.ts` rather than publish an
 embarrassing frame.

@@ -51,7 +51,7 @@ jobs:
             - name: Install Node.js
               uses: actions/setup-node@v6
               with:
-                  node-version: "24"
+                  node-version: "26"
                   cache: pnpm
 
             - name: Install Rust
@@ -120,7 +120,7 @@ jobs:
                   if [[ "$REQUIRE_UNREAL_EVIDENCE" == "true" ]]; then
                     args+=(--require-unreal-evidence)
                   fi
-                  node scripts/create-release-candidate.mjs "${args[@]}"
+                  node scripts/create-release-candidate.ts "${args[@]}"
 
             - name: Upload immutable candidate
               uses: actions/upload-artifact@v7
@@ -210,7 +210,7 @@ jobs:
             - name: Install Node.js for npm trusted publishing
               uses: actions/setup-node@v6
               with:
-                  node-version: "24"
+                  node-version: "26"
                   registry-url: https://registry.npmjs.org
                   package-manager-cache: false
 
@@ -252,7 +252,7 @@ jobs:
               env:
                   CANDIDATE_VERSION: ${{ inputs.version }}
               run: |
-                  node scripts/publish-public-packages.mjs \
+                  node scripts/publish-public-packages.ts \
                     --manifest candidate/npm/packages-manifest.json \
                     --version "$CANDIDATE_VERSION" \
                     --tag next
@@ -288,7 +288,7 @@ jobs:
             - name: Install Node.js for bootstrap provenance
               uses: actions/setup-node@v6
               with:
-                  node-version: "24"
+                  node-version: "26"
                   registry-url: https://registry.npmjs.org
                   package-manager-cache: false
 
@@ -324,7 +324,7 @@ jobs:
                   CANDIDATE_VERSION: ${{ inputs.version }}
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
               run: |
-                  node scripts/publish-public-packages.mjs \
+                  node scripts/publish-public-packages.ts \
                     --manifest candidate/npm/packages-manifest.json \
                     --version "$CANDIDATE_VERSION" \
                     --tag next \

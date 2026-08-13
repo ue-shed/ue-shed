@@ -39,7 +39,7 @@ const rowReferenceAssetPath = join(
 );
 
 function runFixture(...args: string[]): void {
-	execFileSync(process.execPath, ["scripts/unreal-fixture.mjs", ...args], {
+	execFileSync(process.execPath, ["scripts/unreal-fixture.ts", ...args], {
 		cwd: repositoryRoot,
 		stdio: "pipe",
 		timeout: 120_000,

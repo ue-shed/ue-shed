@@ -33,7 +33,7 @@ const unconfigured: WorkbenchConfigurationShape = {
 };
 
 const repositoryRoot = "C:/repo";
-const launchScriptPath = join(repositoryRoot, "scripts", "unreal-fixture.mjs");
+const launchScriptPath = join(repositoryRoot, "scripts", "unreal-fixture.ts");
 
 const configuredCheckout: WorkbenchConfigurationShape = {
 	...unconfigured,

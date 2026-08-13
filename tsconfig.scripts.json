@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"exactOptionalPropertyTypes": true,
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"noEmit": true,
+		"rewriteRelativeImportExtensions": true,
+		"strict": true,
+		"target": "ESNext",
+		"types": ["node"],
+		"verbatimModuleSyntax": true
+	},
+	"include": ["packages/uasset-win32-x64/scripts/**/*.mts", "scripts/**/*.ts"]
+}

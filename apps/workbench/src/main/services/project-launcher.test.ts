@@ -9,7 +9,7 @@ import { ProjectLauncher, ProjectLauncherLive } from "./project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const repositoryRoot = "C:/ue-shed";
-const script = join(repositoryRoot, "scripts", "unreal-project.mjs");
+const script = join(repositoryRoot, "scripts", "unreal-project.ts");
 const selected = {
 	project: {
 		inputAtlas: "ready" as const,

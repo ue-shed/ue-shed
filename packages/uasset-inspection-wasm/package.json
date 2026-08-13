@@ -48,10 +48,10 @@
 		"access": "public"
 	},
 	"scripts": {
-		"build": "node ../../scripts/build-uasset-wasm.mjs",
+		"build": "node ../../scripts/build-uasset-wasm.ts",
 		"prepack": "pnpm run build",
-		"test": "node ../../scripts/test-uasset-wasm-package.mjs",
-		"test:browser": "node ../../scripts/test-uasset-wasm-browser.mjs",
+		"test": "node ../../scripts/test-uasset-wasm-package.ts",
+		"test:browser": "node ../../scripts/test-uasset-wasm-browser.ts",
 		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"engines": {

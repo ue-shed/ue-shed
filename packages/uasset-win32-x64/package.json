@@ -30,7 +30,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"assemble": "node ./scripts/assemble.mjs",
+		"assemble": "node ./scripts/assemble.mts",
 		"prepack": "pnpm run assemble",
 		"test": "node --test"
 	}

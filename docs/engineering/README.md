@@ -38,3 +38,10 @@ UE Shed code should be functional, typed, observable, and well tested.
 
 TypeScript for public code. Effect for app behavior. SolidJS for first-party UI. StyleX for styles.
 C++ for small Unreal-side features.
+
+Repository development, CI, and maintained internal scripts use Node.js 26. Internal scripts are
+erasable TypeScript and are checked by `tsconfig.scripts.json`. Public packages retain their
+declared Node.js 22.14 minimum and their packed artifacts are tested on that exact version. Reserve
+plain `.mjs` for published JavaScript artifacts, tests that directly exercise those artifacts, or
+standalone adoption scripts copied outside the repository, where depending on the repository's
+TypeScript configuration would break portability.

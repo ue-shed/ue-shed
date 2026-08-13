@@ -68,6 +68,9 @@ The normal package gate builds and packs every public package, validates metadat
 installs the tarballs into a clean offline consumer, and exercises the saved-project Game Text
 journey. The protected public-package allowlist remains a conformance boundary; it prevents an
 accidentally non-private workspace from being published, but it does not select the release.
+Primary development and release tooling runs on Node.js 26. A separate portable CI lane installs
+the packed public artifacts and runs their consumer journeys on Node.js 22.14, the declared minimum
+for those packages.
 
 Authenticate to npm outside the repository, then publish from the clean committed release:
 
@@ -100,7 +103,7 @@ Build a portable plugin bundle into an empty directory, verify its manifest, and
 selection before installation:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version <version> --output out/plugins
+node scripts/plugin-bundle.ts bundle --version <version> --output out/plugins
 pnpm ue-shed plugins verify out/plugins/plugins.manifest.json
 pnpm ue-shed plugins list out/plugins/plugins.manifest.json
 pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.uproject `
@@ -110,7 +113,7 @@ pnpm ue-shed plugins install --project fixtures/unreal-project/UEShedFixture.upr
 For Map Review, select only Core and Cameras:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version <version> `
+node scripts/plugin-bundle.ts bundle --version <version> `
   --output out/plugins-map-review --plugins UEShedCore,UEShedCameras
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 ```
@@ -118,7 +121,7 @@ pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 For a headless Observatory host, select only Observatory:
 
 ```powershell
-node scripts/plugin-bundle.mjs bundle --version <version> `
+node scripts/plugin-bundle.ts bundle --version <version> `
   --output out/plugins-observatory --plugins UEShedObservatory
 pnpm ue-shed plugins verify out/plugins-observatory/plugins.manifest.json
 ```

@@ -32,7 +32,7 @@ jobs:
             - name: Install Node.js
               uses: actions/setup-node@v6
               with:
-                  node-version: "24"
+                  node-version: "26"
                   cache: pnpm
 
             - name: Install Rust
@@ -70,3 +70,36 @@ jobs:
                       coverage/**
                   if-no-files-found: ignore
                   retention-days: 14
+
+    public-package-node-22:
+        name: Public packages / Node 22.14
+        runs-on: blacksmith-2vcpu-ubuntu-2404
+        timeout-minutes: 30
+        steps:
+            - name: Checkout without persisted credentials
+              uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - name: Install pnpm
+              uses: pnpm/action-setup@v6
+
+            - name: Install Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "22.14.0"
+                  cache: pnpm
+
+            - name: Install Rust
+              run: |
+                  rustup toolchain install stable --profile minimal --no-self-update
+                  rustup target add wasm32-unknown-unknown
+                  cargo install wasm-pack --locked --version 0.14.0
+
+            - name: Install locked dependencies
+              run: pnpm install --frozen-lockfile --config.engine-strict=false
+
+            - name: Test packed public packages
+              env:
+                  NODE_OPTIONS: --experimental-strip-types
+              run: pnpm run test:release:packages

@@ -15,7 +15,7 @@ const decodeTextQualityReport = (input: unknown) =>
 	Effect.runSync(decodeTextQualityReportEffect(input));
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const cliScript = join(repositoryRoot, "scripts", "ue-shed.mjs");
+const cliScript = join(repositoryRoot, "scripts", "ue-shed.ts");
 const cliIndex = join(repositoryRoot, "apps", "cli", "src", "index.ts");
 const scalarAsset = join(
 	repositoryRoot,

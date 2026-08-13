@@ -74,7 +74,7 @@ function assertFixtureCatalog(state: WorldObservationState): number | undefined 
 function runWorkbenchLiveBenchmark(): void {
 	const result = spawnSync(
 		process.execPath,
-		["scripts/benchmark-observatory-workbench-live.mjs"],
+		["scripts/benchmark-observatory-workbench-live.ts"],
 		{
 			cwd: repoRoot,
 			stdio: "inherit",

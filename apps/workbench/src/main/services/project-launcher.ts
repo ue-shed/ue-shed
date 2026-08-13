@@ -42,7 +42,7 @@ export const ProjectLauncherLive = Layer.effect(
 			if (configuration.sourceCheckout.status !== "configured") return noLauncher;
 
 			const cwd = configuration.sourceCheckout.path;
-			const script = join(cwd, "scripts", "unreal-project.mjs");
+			const script = join(cwd, "scripts", "unreal-project.ts");
 			if (!(yield* files.exists(script))) return noLauncher;
 
 			return yield* Effect.scoped(

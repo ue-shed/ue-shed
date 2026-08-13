@@ -207,7 +207,7 @@ export const FixtureLauncherLive = Layer.effect(
 			}
 			if (configuration.sourceCheckout.status !== "configured") return missingSourceCheckout;
 			const cwd = configuration.sourceCheckout.path;
-			const launchScript = join(cwd, "scripts", "unreal-fixture.mjs");
+			const launchScript = join(cwd, "scripts", "unreal-fixture.ts");
 			const scriptExists = yield* localFiles.exists(launchScript);
 			if (!scriptExists) return missingSourceCheckout;
 			return yield* spawnAndWait(mode, capability, launchScript, cwd);

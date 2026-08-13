@@ -10,6 +10,13 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
+namespace
+{
+// PNG quality values -1 through -9 select the corresponding zlib compression level. Level one
+// retains lossless pixels while favoring an interactive editor workflow over minimum file size.
+constexpr int32 MapCapturePngZlibLevel = -1;
+}
+
 TUniquePtr<FUEShedTransientCapture> FUEShedTransientCapture::Create(
 	UWorld* World,
 	const FVector& Location,
@@ -85,6 +92,11 @@ UTextureRenderTarget2D* FUEShedTransientCapture::RenderTarget() const
 	return Target;
 }
 
+void FUEShedTransientCapture::SetLocation(const FVector& Location)
+{
+	if (Actor != nullptr) Actor->SetActorLocation(Location);
+}
+
 void FUEShedTransientCapture::ConfigurePerspective(float FieldOfViewDegrees)
 {
 	USceneCaptureComponent2D* CaptureComponent = Component();
@@ -126,12 +138,21 @@ void FUEShedTransientCapture::Capture() const
 bool FUEShedTransientCapture::ExportPng(const FString& Path, const FIntRect* Crop) const
 {
 	FImage Image;
-	const bool bRead = Crop == nullptr
+	return ReadImage(Image, Crop) && WritePng(Path, Image);
+}
+
+bool FUEShedTransientCapture::ReadImage(FImage& Image, const FIntRect* Crop) const
+{
+	return Crop == nullptr
 		? FImageUtils::GetRenderTargetImage(Target, Image)
 		: FImageUtils::GetRenderTargetImage(Target, Image, *Crop);
-	if (!bRead) return false;
+}
+
+bool FUEShedTransientCapture::WritePng(const FString& Path, const FImage& Image)
+{
 	TArray64<uint8> PngBytes;
-	if (!FImageUtils::CompressImage(PngBytes, TEXT("png"), Image)) return false;
+	if (!FImageUtils::CompressImage(PngBytes, TEXT("png"), Image, MapCapturePngZlibLevel))
+		return false;
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
 	return FFileHelper::SaveArrayToFile(PngBytes, *Path);
 }

@@ -59,8 +59,9 @@ there; do not invent a second status source in docs.
 
 ## Research
 
-| Note                                                                                                | Topic                         |
-| --------------------------------------------------------------------------------------------------- | ----------------------------- |
-| [uasset-parser-roadmap.md](research/uasset-parser-roadmap.md)                                       | Parser expansion roadmap      |
-| [hosting-ue57-boundary.md](research/hosting-ue57-boundary.md)                                       | UE 5.7 hosting boundary notes |
-| [map-review-detected-occluder-feasibility.md](research/map-review-detected-occluder-feasibility.md) | Automatic Clear intervention  |
+| Note                                                                                                | Topic                              |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [uasset-parser-roadmap.md](research/uasset-parser-roadmap.md)                                       | Parser expansion roadmap           |
+| [hosting-ue57-boundary.md](research/hosting-ue57-boundary.md)                                       | UE 5.7 hosting boundary notes      |
+| [map-capture-performance-2026-08-13.md](research/map-capture-performance-2026-08-13.md)             | Map Capture performance experiment |
+| [map-review-detected-occluder-feasibility.md](research/map-review-detected-occluder-feasibility.md) | Automatic Clear intervention       |

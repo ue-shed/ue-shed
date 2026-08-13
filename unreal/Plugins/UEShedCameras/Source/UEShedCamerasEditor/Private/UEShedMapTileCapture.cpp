@@ -1,11 +1,13 @@
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedTransientCapture.h"
 
+#include "Async/Async.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Dom/JsonObject.h"
 #include "Editor.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
+#include "ImageCore.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -14,6 +16,52 @@
 
 namespace
 {
+constexpr int32 MaximumPendingTileEncodes = 4;
+constexpr int32 MaximumPendingTileReadbacks = 4;
+
+struct FPendingMapTileEncode
+{
+	FPendingMapTileEncode(
+		const TSharedRef<FJsonObject>& InResult,
+		FString InPath,
+		double InStartedSeconds,
+		TFuture<bool>&& InWritten)
+		: Result(InResult)
+		, Path(MoveTemp(InPath))
+		, StartedSeconds(InStartedSeconds)
+		, Written(MoveTemp(InWritten))
+	{
+	}
+
+	TSharedRef<FJsonObject> Result;
+	FString Path;
+	double StartedSeconds;
+	TFuture<bool> Written;
+};
+
+struct FPendingMapTileReadback
+{
+	FPendingMapTileReadback(
+		FUEShedTransientCapture* InCapture,
+		const TSharedRef<FJsonObject>& InResult,
+		FString InPath,
+		double InStartedSeconds,
+		const FIntRect& InCrop)
+		: Capture(InCapture)
+		, Result(InResult)
+		, Path(MoveTemp(InPath))
+		, StartedSeconds(InStartedSeconds)
+		, Crop(InCrop)
+	{
+	}
+
+	FUEShedTransientCapture* Capture;
+	TSharedRef<FJsonObject> Result;
+	FString Path;
+	double StartedSeconds;
+	FIntRect Crop;
+};
+
 FString MapTileJsonString(const TSharedRef<FJsonObject>& Object)
 {
 	FString Result;
@@ -388,6 +436,78 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 	int32 Failed = 0;
 	bool bCancelled = false;
 	TSet<FString> UniqueKeys;
+	TArray<TUniquePtr<FUEShedTransientCapture>> CapturePool;
+	TArray<FPendingMapTileEncode> PendingEncodes;
+	TArray<FPendingMapTileReadback> PendingReadbacks;
+	auto FinalizeOldestEncode = [&]()
+	{
+		FPendingMapTileEncode Pending = MoveTemp(PendingEncodes[0]);
+		PendingEncodes.RemoveAt(0, EAllowShrinking::No);
+		const bool bWritten = Pending.Written.Get();
+		if (!bWritten)
+		{
+			Pending.Result->SetStringField(TEXT("status"), TEXT("failed"));
+			Pending.Result->SetObjectField(
+				TEXT("failure"),
+				MapTileFailure(
+					TEXT("encoding_failed"),
+					TEXT("Unreal could not encode or stage the tile PNG."),
+					TEXT("Check the project Saved directory and retry this tile."),
+					true));
+			Failed += 1;
+		}
+		else
+		{
+			Pending.Result->SetStringField(TEXT("status"), TEXT("captured"));
+			Pending.Result->SetStringField(
+				TEXT("stagedPath"), FPaths::ConvertRelativePathToFull(Pending.Path));
+			Pending.Result->SetNumberField(TEXT("width"), TilePixelSize);
+			Pending.Result->SetNumberField(TEXT("height"), TilePixelSize);
+			Pending.Result->SetNumberField(
+				TEXT("bytes"), IFileManager::Get().FileSize(*Pending.Path));
+			Pending.Result->SetNumberField(
+				TEXT("captureDurationMs"),
+				(FPlatformTime::Seconds() - Pending.StartedSeconds) * 1000.0);
+			Succeeded += 1;
+		}
+		TileResults.Add(MakeShared<FJsonValueObject>(Pending.Result));
+	};
+	auto FinalizeAllEncodes = [&]()
+	{
+		while (!PendingEncodes.IsEmpty()) FinalizeOldestEncode();
+	};
+	auto FinalizeAllReadbacks = [&]()
+	{
+		for (FPendingMapTileReadback& Pending : PendingReadbacks)
+		{
+			FImage Image;
+			if (!Pending.Capture->ReadImage(Image, &Pending.Crop))
+			{
+				FinalizeAllEncodes();
+				Pending.Result->SetStringField(TEXT("status"), TEXT("failed"));
+				Pending.Result->SetObjectField(
+					TEXT("failure"),
+					MapTileFailure(
+						TEXT("encoding_failed"),
+						TEXT("Unreal could not crop or read the tile render target."),
+						TEXT("Check the project Saved directory and retry this tile."),
+						true));
+				Failed += 1;
+				TileResults.Add(MakeShared<FJsonValueObject>(Pending.Result));
+				continue;
+			}
+			TFuture<bool> Written = Async(
+				EAsyncExecution::ThreadPool,
+				[CapturePath = Pending.Path, Image = MoveTemp(Image)]() mutable
+				{
+					return FUEShedTransientCapture::WritePng(CapturePath, Image);
+				});
+			PendingEncodes.Emplace(
+				Pending.Result, Pending.Path, Pending.StartedSeconds, MoveTemp(Written));
+			if (PendingEncodes.Num() >= MaximumPendingTileEncodes) FinalizeOldestEncode();
+		}
+		PendingReadbacks.Reset();
+	};
 	for (const TSharedPtr<FJsonValue>& TileValue : *Tiles)
 	{
 		if (IsEngineExitRequested())
@@ -436,6 +556,8 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		}
 		if (!bValid)
 		{
+			FinalizeAllReadbacks();
+			FinalizeAllEncodes();
 			MapTileTopFailure(
 				ResultJson,
 				OperationId,
@@ -458,6 +580,8 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			|| !FMath::IsNearlyEqual(MaxX - MinX, ExpectedWorldSize, Tolerance)
 			|| !FMath::IsNearlyEqual(MaxY - MinY, ExpectedWorldSize, Tolerance))
 		{
+			FinalizeAllReadbacks();
+			FinalizeAllEncodes();
 			MapTileTopFailure(
 				ResultJson,
 				OperationId,
@@ -475,17 +599,27 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		const int32 RenderSize = TilePixelSize + GutterPixels * 2;
 		const double OrthoWidth = RenderSize * UnitsPerPixel;
 		const FVector Location((MinX + MaxX) * 0.5, (MinY + MaxY) * 0.5, CaptureZ);
-		TUniquePtr<FUEShedTransientCapture> Capture = FUEShedTransientCapture::Create(
-			World,
-			Location,
-			FRotator(-90.0, 0.0, 0.0),
-			RenderSize,
-			RenderSize,
-			TEXT("UEShedMapTileCapture"));
+		const int32 CaptureSlot = PendingReadbacks.Num();
+		if (!CapturePool.IsValidIndex(CaptureSlot))
+		{
+			TUniquePtr<FUEShedTransientCapture> NewCapture = FUEShedTransientCapture::Create(
+				World,
+				Location,
+				FRotator(-90.0, 0.0, 0.0),
+				RenderSize,
+				RenderSize,
+				TEXT("UEShedMapTileCapture"));
+			if (NewCapture.IsValid()) CapturePool.Add(MoveTemp(NewCapture));
+		}
+		FUEShedTransientCapture* Capture = CapturePool.IsValidIndex(CaptureSlot)
+			? CapturePool[CaptureSlot].Get()
+			: nullptr;
 		const TSharedRef<FJsonObject> TileResult = MakeShared<FJsonObject>();
 		TileResult->SetObjectField(TEXT("key"), MapTileKeyJson(Zoom, Row, Column));
-		if (!Capture.IsValid())
+		if (Capture == nullptr)
 		{
+			FinalizeAllReadbacks();
+			FinalizeAllEncodes();
 			TileResult->SetStringField(TEXT("status"), TEXT("failed"));
 			TileResult->SetObjectField(
 				TEXT("failure"),
@@ -498,6 +632,7 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			TileResults.Add(MakeShared<FJsonValueObject>(TileResult));
 			continue;
 		}
+		Capture->SetLocation(Location);
 		Capture->ConfigureOrthographic(static_cast<float>(OrthoWidth));
 		Capture->ConfigureRenderPolicy(
 			bFog,
@@ -525,36 +660,12 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			GutterPixels,
 			GutterPixels + TilePixelSize,
 			GutterPixels + TilePixelSize);
-		const bool bWritten = Capture->ExportPng(CapturePath, &Crop);
-		Capture.Reset();
-		if (!bWritten)
-		{
-			TileResult->SetStringField(TEXT("status"), TEXT("failed"));
-			TileResult->SetObjectField(
-				TEXT("failure"),
-				MapTileFailure(
-					TEXT("encoding_failed"),
-					TEXT("Unreal could not crop, encode, or stage the tile PNG."),
-					TEXT("Check the project Saved directory and retry this tile."),
-					true));
-			Failed += 1;
-		}
-		else
-		{
-			TileResult->SetStringField(TEXT("status"), TEXT("captured"));
-			TileResult->SetStringField(
-				TEXT("stagedPath"), FPaths::ConvertRelativePathToFull(CapturePath));
-			TileResult->SetNumberField(TEXT("width"), TilePixelSize);
-			TileResult->SetNumberField(TEXT("height"), TilePixelSize);
-			TileResult->SetNumberField(
-				TEXT("bytes"), IFileManager::Get().FileSize(*CapturePath));
-			TileResult->SetNumberField(
-				TEXT("captureDurationMs"),
-				(FPlatformTime::Seconds() - TileStartedSeconds) * 1000.0);
-			Succeeded += 1;
-		}
-		TileResults.Add(MakeShared<FJsonValueObject>(TileResult));
+		PendingReadbacks.Emplace(
+			Capture, TileResult, CapturePath, TileStartedSeconds, Crop);
+		if (PendingReadbacks.Num() >= MaximumPendingTileReadbacks) FinalizeAllReadbacks();
 	}
+	FinalizeAllReadbacks();
+	FinalizeAllEncodes();
 
 	if (bCancelled)
 	{

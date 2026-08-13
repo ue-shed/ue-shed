@@ -1,7 +1,12 @@
 # `@ue-shed/evidence`
 
-Durable artifacts, metadata, provenance, logs, captures, and retention semantics shared by camera and
-scenario workflows. Domain packages contribute typed evidence instead of inventing storage paths.
+Portable local evidence primitives for UE Shed camera and scenario workflows: artifact identity,
+typed manifests, hashes, provenance, and honest complete/partial outcomes. Domain packages
+contribute portable evidence without inventing unrelated local paths.
+
+This package does not own a centralized archive, downstream MB Map Observation contract,
+automation schedule, studio retention policy, or cross-product search index. A downstream archive
+references UE Shed manifests and hashes through its own schema.
 
 Map Capture contributes the versioned `ue-shed-map-tile-pyramid` manifest through
 `@ue-shed/cameras`. It records requested and snapped bounds, exact grid policy, capture/render

@@ -64,3 +64,18 @@ An immutable identifier for one successfully committed Project Index state. A ge
 only after a complete refresh transaction commits. Cancelled, failed, or partial enumeration cannot
 delete unseen packages or publish a new generation. Queries may require an expected generation and
 fail explicitly when it is stale.
+
+## Downstream integration
+
+### MB Map Observation
+
+A studio-owned, immutable record that correlates one saved-world actor snapshot
+with optional Map Capture and Map Review artifacts. Its contract, archive,
+idempotency, scheduling, retention, studio actor classification, and product
+queries belong to the downstream MB Map module in the Tools repository. The
+headless producer and designer presentation belong to Electroswag.
+
+UE Shed supplies generic SavedWorld, Map Capture, and Capture Run primitives;
+it does not own or persist MB Map Observations. MB Map Observation is distinct
+from optional Perforce-backed Map History and World Log, and from live
+actor/camera observation in Observatory.

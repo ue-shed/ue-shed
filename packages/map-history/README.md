@@ -11,8 +11,9 @@ Deep History reconstructs one complete map-scope corpus. Fast History is a separ
 accepts a single-actor Investigation Target, proves that actor's external-actor package from the
 SavedWorld projection, and returns explicit targeted-coverage metadata.
 
-The first implementation is intentionally Perforce-specific. A source-neutral revision abstraction
-is deferred until another real producer exists.
+This module intentionally remains Perforce-specific. A downstream MB Map producer should use
+`@ue-shed/unreal-assets` directly and own its product contract/archive; only independently reusable
+identity, diff, or playback primitive gaps should be proposed upstream.
 
 Install the headless package with its exact compatible release dependencies:
 
@@ -36,7 +37,7 @@ range-start snapshot and semantic deltas locally; it neither serializes full sna
 changelist nor receives Perforce or filesystem authority.
 
 See [the product contract](../../docs/products/map-history.md) and
-[Plan 034](../../plans/034-build-perforce-map-history.md).
+[Plan 034](../../plans/archive/034-build-perforce-map-history.md).
 
 ## Real Perforce conformance
 

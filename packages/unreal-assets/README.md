@@ -46,6 +46,10 @@ camera framing still require a connected editor authority. `maximumAssets` is a 
 limit (100,000 by default in the native reader); exceeding it returns `AssetReaderError` with
 `kind: "resource_limit"`.
 
+`SavedWorld` is one authority-tagged current read, not a historical corpus. Cross-run actor
+identity, daily observation lifecycle, diff policy, persistence, retention, and capture correlation
+belong to the consuming product.
+
 ## Scanning a whole project
 
 For routine project opening and repeated candidate queries, prefer the headless `ProjectIndex` over

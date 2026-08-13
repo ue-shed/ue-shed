@@ -7,9 +7,10 @@ Perforce range. A level designer, technical artist, producer, or agent selects a
 time range; UE Shed reconstructs the relevant saved revisions and returns actor-level changes with
 the changelists, authors, descriptions, package revisions, and coverage evidence that support them.
 
-The first product is deliberately Perforce-backed. It preserves Perforce concepts rather than
-flattening them into generic revisions, while keeping the dependency confined to the optional
-`@ue-shed/map-history` package.
+Map History is deliberately an optional Perforce-backed workflow. It preserves Perforce concepts
+rather than flattening them into generic revisions and confines that dependency to
+`@ue-shed/map-history`. A downstream product may omit this package and read current saved worlds
+directly.
 
 ## First supported question
 
@@ -44,6 +45,8 @@ download `.umap` or `.uasset` revisions manually, or compare parser documents th
 - Studio-specific taxonomy, ownership, milestones, approval, retention, and notification policy.
 - Private decoders or interpretations for project-specific actor classes and native serialization.
 - Central indexing, hosted storage, scheduling, web portals, permissions, and reporting.
+- Daily MB Map Observation contracts, archive publication, idempotency, retention, and correlation
+  with capture artifacts.
 
 ## Supported authority
 
@@ -281,7 +284,8 @@ Use a generic Perforce fixture with one conventional map and one World Partition
 - Referenced Blueprint, mesh, material, texture, and transitive dependency history.
 - Whole-project growth, cartography, and Janitor findings.
 - Persistent indexing or a global revision cache.
-- Additional source-control producers and a source-neutral history abstraction.
+- Additional acquisition producers inside this Perforce-specific workflow. A downstream filesystem
+  MB Map producer does not require generalizing `@ue-shed/map-history`.
 - Runtime or live-world history.
 - Project-specific identity heuristics.
 - Automatic judgments about whether a change is good, expected, or safe.

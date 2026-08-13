@@ -203,12 +203,18 @@ The first credible release must let a level designer, environment artist, or rev
 - Branch, changelist, build, CI, source-control, and capture-farm policy.
 - Studio-specific environment control, map taxonomy, naming policy, approval rules, and retention.
 - Ingestion from and export back to UE Shed's portable contracts.
+- Daily MB Map Observation lifecycle and the archive relation that correlates actor snapshots with
+  Capture Runs or Review Views.
 
 ### The handoff boundary
 
 The portable Capture Run is the integration boundary. Its manifests use stable IDs, versions,
 content hashes, and relative artifact references. They never require local absolute paths, a source
 control vendor, an object-store URI scheme, or a particular database.
+
+A downstream archive may reference Capture Run IDs, artifact hashes, or an opaque external
+correlation value. Those references do not add MB Map Observation lifecycle or storage fields to
+Review Set, Review View, or Capture Run schemas.
 
 ```text
 Unreal + local UE Shed
@@ -547,8 +553,9 @@ ownership are demonstrated by the tracer bullet.
 ### `packages/evidence`
 
 Own artifact identity, manifests, content hashing, atomic local persistence, provenance, derived
-artifact relationships, and retention hooks. Camera-specific metadata remains contributed by the
-camera domain through typed evidence payloads.
+artifact relationships, and portable local lifecycle semantics. Camera-specific metadata remains
+contributed by the camera domain through typed evidence payloads. This package does not own a
+central MB Map Observation archive or studio retention policy.
 
 ### `extensions/camera-review`
 

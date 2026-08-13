@@ -362,6 +362,14 @@ The healthy relationship is downstream composition, not a long-lived fork:
 - Generic fixes flow into UE Shed first; private behavior remains downstream.
 - Existing internal behavior can become a conformance case after its provenance and generality are
   understood.
+- The downstream Tools repository owns the MB Map domain, Map Observation archive, automation
+  integration, retention, studio classification, and cross-artifact correlation. Electroswag owns
+  its headless producer and canonical designer experience.
+- UE Shed supplies generic saved-world parsing and camera/tile capture primitives. A downstream
+  need changes UE Shed only when a fixture-backed gap is reusable across hosts; opaque external
+  correlation values do not transfer schema ownership upstream.
+- `@ue-shed/map-history` and Workbench World Log remain optional Perforce-specific tools, not
+  prerequisites for an MB Map producer.
 
 This keeps the public project honest while avoiding two diverging copies of every useful feature.
 

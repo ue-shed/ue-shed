@@ -55,6 +55,10 @@ bounded orthographic editor capture, and immutable hashed manifests without chan
 natural Unreal LOD behavior or provide one scene-capture LOD distance scale per zoom level. Capture
 Z is placement only and never selects an LOD.
 
+Review Capture and Map Capture outputs are portable local evidence. Downstream products may
+correlate their stable identities and hashes externally; this package does not own an MB Map
+Observation archive, daily scheduling, or studio retention policy.
+
 ```sh
 ue-shed map-capture plan validate <project-root> <plan.json>
 ue-shed map-capture inspect <project-root> <plan.json>

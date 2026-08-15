@@ -408,6 +408,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					}
 				}
 				const outcome = yield* runMapCapturePlan({
+					captureBackend: intent.captureBackend,
 					endpoint: configuration.remoteControlEndpoint,
 					onProgress: (progress) =>
 						reportProgress({ ...progress, operationId: intent.operationId }),

@@ -5,13 +5,19 @@
 #include "Components/SceneCaptureComponent2D.h"
 #include "Dom/JsonObject.h"
 #include "Editor.h"
+#include "EditorViewportClient.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
+#include "HighResScreenshot.h"
 #include "ImageCore.h"
+#include "ImageUtils.h"
+#include "LevelEditorViewport.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "UnrealClient.h"
 #include "WorldPartition/WorldPartition.h"
 
 namespace
@@ -19,6 +25,7 @@ namespace
 constexpr int32 MaximumPendingTileEncodes = 4;
 constexpr int32 MaximumPendingTileReadbacks = 1;
 constexpr int32 FullFidelityWarmupCaptures = 2;
+constexpr int32 SeamStableRenderScale = 2;
 
 struct FPendingMapTileEncode
 {
@@ -47,12 +54,14 @@ struct FPendingMapTileReadback
 		const TSharedRef<FJsonObject>& InResult,
 		FString InPath,
 		double InStartedSeconds,
-		const FIntRect& InCrop)
+		const FIntRect& InCrop,
+		int32 InOutputSize)
 		: Capture(InCapture)
 		, Result(InResult)
 		, Path(MoveTemp(InPath))
 		, StartedSeconds(InStartedSeconds)
 		, Crop(InCrop)
+		, OutputSize(InOutputSize)
 	{
 	}
 
@@ -61,6 +70,7 @@ struct FPendingMapTileReadback
 	FString Path;
 	double StartedSeconds;
 	FIntRect Crop;
+	int32 OutputSize;
 };
 
 FString MapTileJsonString(const TSharedRef<FJsonObject>& Object)
@@ -188,6 +198,355 @@ bool ReadInteger(
 		return false;
 	}
 	OutValue = static_cast<int32>(Value);
+	return true;
+}
+
+struct FViewportHighResolutionTile
+{
+	TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	int32 Zoom = 0;
+	int32 Row = 0;
+	int32 Column = 0;
+	double MinX = 0.0;
+	double MinY = 0.0;
+	double MaxX = 0.0;
+	double MaxY = 0.0;
+};
+
+struct FScopedViewportHighResolutionState
+{
+	explicit FScopedViewportHighResolutionState(FLevelEditorViewportClient& InClient)
+		: Client(InClient)
+		, ViewportType(InClient.GetViewportType())
+		, ViewLocation(InClient.GetViewLocation())
+		, ViewRotation(InClient.GetViewRotation())
+		, ScreenshotConfig(GetHighResScreenshotConfig())
+		, ScreenshotResolutionX(GScreenshotResolutionX)
+		, ScreenshotResolutionY(GScreenshotResolutionY)
+		, bWasHighResolutionScreenshot(GIsHighResScreenshot)
+	{
+		AlignedOrthoZoom = IConsoleManager::Get().FindConsoleVariable(
+			TEXT("r.Editor.AlignedOrthoZoom"));
+		DisableFogInOrtho = IConsoleManager::Get().FindConsoleVariable(
+			TEXT("r.Editor.DisableFogInOrthoDebugViews"));
+		AlignedOrthoZoomValue = AlignedOrthoZoom == nullptr ? 1 : AlignedOrthoZoom->GetInt();
+		DisableFogInOrthoValue = DisableFogInOrtho == nullptr ? 1 : DisableFogInOrtho->GetInt();
+		if (ViewportType == LVT_Perspective)
+		{
+			Client.SetViewportType(LVT_OrthoTop);
+			OrthographicViewLocation = Client.GetViewLocation();
+			OrthographicViewRotation = Client.GetViewRotation();
+			OrthographicZoom = Client.GetOrthoZoom();
+			Client.SetViewportType(ViewportType);
+		}
+		else
+		{
+			OrthographicViewLocation = ViewLocation;
+			OrthographicViewRotation = ViewRotation;
+			OrthographicZoom = Client.GetOrthoZoom();
+		}
+	}
+
+	~FScopedViewportHighResolutionState()
+	{
+		Client.SetViewportType(LVT_OrthoTop);
+		Client.SetViewLocation(OrthographicViewLocation);
+		Client.SetViewRotation(OrthographicViewRotation);
+		Client.SetOrthoZoom(OrthographicZoom);
+		Client.SetViewportType(ViewportType);
+		Client.SetViewLocation(ViewLocation);
+		Client.SetViewRotation(ViewRotation);
+		if (bInstalledShowFlagsOverride) Client.DisableOverrideEngineShowFlags();
+		GetHighResScreenshotConfig() = ScreenshotConfig;
+		GScreenshotResolutionX = ScreenshotResolutionX;
+		GScreenshotResolutionY = ScreenshotResolutionY;
+		GIsHighResScreenshot = bWasHighResolutionScreenshot;
+		if (AlignedOrthoZoom != nullptr)
+			AlignedOrthoZoom->Set(AlignedOrthoZoomValue, ECVF_SetByCode);
+		if (DisableFogInOrtho != nullptr)
+			DisableFogInOrtho->Set(DisableFogInOrthoValue, ECVF_SetByCode);
+	}
+
+	FLevelEditorViewportClient& Client;
+	ELevelViewportType ViewportType;
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	FVector OrthographicViewLocation;
+	FRotator OrthographicViewRotation;
+	float OrthographicZoom = 1.0f;
+	FHighResScreenshotConfig ScreenshotConfig;
+	uint32 ScreenshotResolutionX;
+	uint32 ScreenshotResolutionY;
+	bool bWasHighResolutionScreenshot;
+	IConsoleVariable* AlignedOrthoZoom = nullptr;
+	IConsoleVariable* DisableFogInOrtho = nullptr;
+	int32 AlignedOrthoZoomValue = 1;
+	int32 DisableFogInOrthoValue = 1;
+	bool bInstalledShowFlagsOverride = false;
+};
+
+bool CaptureViewportHighResolutionLevel(
+	const TArray<TSharedPtr<FJsonValue>>& TileValues,
+	int32 TilePixelSize,
+	int32 GutterPixels,
+	double CaptureZ,
+	bool bFog,
+	bool bVolumetricFog,
+	const FString& RenderProfile,
+	const FString& RunId,
+	TArray<TSharedPtr<FJsonValue>>& OutTileResults,
+	int32& OutSucceeded,
+	int32& OutFailed,
+	FString& OutFailureCode,
+	FString& OutFailureMessage,
+	FString& OutFailureRecovery)
+{
+	auto Fail = [&](const TCHAR* Code, const TCHAR* Message, const TCHAR* Recovery)
+	{
+		OutFailureCode = Code;
+		OutFailureMessage = Message;
+		OutFailureRecovery = Recovery;
+		return false;
+	};
+	if (GCurrentLevelEditingViewportClient == nullptr
+		|| GCurrentLevelEditingViewportClient->Viewport == nullptr)
+	{
+		return Fail(
+			TEXT("capture_failed"),
+			TEXT("No active Level Editor viewport is available for High Resolution Screenshot."),
+			TEXT("Open a Level Editor viewport for the target map and retry."));
+	}
+	FLevelEditorViewportClient& Client = *GCurrentLevelEditingViewportClient;
+	FViewport* Viewport = Client.Viewport;
+	FScopedViewportHighResolutionState SavedState(Client);
+
+	TArray<FViewportHighResolutionTile> Tiles;
+	Tiles.Reserve(TileValues.Num());
+	int32 Zoom = INDEX_NONE;
+	int32 MaximumRow = INDEX_NONE;
+	int32 MaximumColumn = INDEX_NONE;
+	double UnitsPerPixel = 0.0;
+	double FullMinX = TNumericLimits<double>::Max();
+	double FullMinY = TNumericLimits<double>::Max();
+	double FullMaxX = TNumericLimits<double>::Lowest();
+	double FullMaxY = TNumericLimits<double>::Lowest();
+	TSet<FString> UniqueKeys;
+	for (const TSharedPtr<FJsonValue>& TileValue : TileValues)
+	{
+		const TSharedPtr<FJsonObject>* TileObject;
+		const TSharedPtr<FJsonObject>* Key;
+		const TSharedPtr<FJsonObject>* Bounds;
+		FViewportHighResolutionTile Tile;
+		double TileUnitsPerPixel = 0.0;
+		const bool bValid = TileValue.IsValid()
+			&& TileValue->TryGetObject(TileObject)
+			&& (*TileObject)->TryGetObjectField(TEXT("key"), Key)
+			&& ReadInteger(*Key, TEXT("zoom"), Tile.Zoom)
+			&& ReadInteger(*Key, TEXT("row"), Tile.Row)
+			&& ReadInteger(*Key, TEXT("column"), Tile.Column)
+			&& Tile.Zoom >= 0
+			&& Tile.Row >= 0
+			&& Tile.Column >= 0
+			&& (*TileObject)->TryGetNumberField(TEXT("unitsPerPixel"), TileUnitsPerPixel)
+			&& FMath::IsFinite(TileUnitsPerPixel)
+			&& TileUnitsPerPixel > 0.0
+			&& (*TileObject)->TryGetObjectField(TEXT("worldBounds"), Bounds)
+			&& (*Bounds)->TryGetNumberField(TEXT("minX"), Tile.MinX)
+			&& (*Bounds)->TryGetNumberField(TEXT("minY"), Tile.MinY)
+			&& (*Bounds)->TryGetNumberField(TEXT("maxX"), Tile.MaxX)
+			&& (*Bounds)->TryGetNumberField(TEXT("maxY"), Tile.MaxY);
+		const double ExpectedWorldSize = TilePixelSize * TileUnitsPerPixel;
+		const double Tolerance = FMath::Max(0.001, ExpectedWorldSize * UE_DOUBLE_SMALL_NUMBER);
+		const FString KeyIdentity = FString::Printf(
+			TEXT("%d/%d/%d"), Tile.Zoom, Tile.Row, Tile.Column);
+		if (!bValid
+			|| (Zoom != INDEX_NONE && Tile.Zoom != Zoom)
+			|| (UnitsPerPixel > 0.0
+				&& !FMath::IsNearlyEqual(TileUnitsPerPixel, UnitsPerPixel, UE_DOUBLE_SMALL_NUMBER))
+			|| UniqueKeys.Contains(KeyIdentity)
+			|| !FMath::IsNearlyEqual(Tile.MaxX - Tile.MinX, ExpectedWorldSize, Tolerance)
+			|| !FMath::IsNearlyEqual(Tile.MaxY - Tile.MinY, ExpectedWorldSize, Tolerance))
+		{
+			return Fail(
+				TEXT("invalid_request"),
+				TEXT("Viewport High Resolution capture requires one valid, uniform zoom level."),
+				TEXT("Send every tile from exactly one complete zoom level."));
+		}
+		Zoom = Tile.Zoom;
+		UnitsPerPixel = TileUnitsPerPixel;
+		MaximumRow = FMath::Max(MaximumRow, Tile.Row);
+		MaximumColumn = FMath::Max(MaximumColumn, Tile.Column);
+		FullMinX = FMath::Min(FullMinX, Tile.MinX);
+		FullMinY = FMath::Min(FullMinY, Tile.MinY);
+		FullMaxX = FMath::Max(FullMaxX, Tile.MaxX);
+		FullMaxY = FMath::Max(FullMaxY, Tile.MaxY);
+		UniqueKeys.Add(KeyIdentity);
+		Tile.Result->SetObjectField(
+			TEXT("key"), MapTileKeyJson(Tile.Zoom, Tile.Row, Tile.Column));
+		Tiles.Add(MoveTemp(Tile));
+	}
+
+	const int32 Rows = MaximumRow + 1;
+	const int32 Columns = MaximumColumn + 1;
+	if (Rows <= 0 || Columns <= 0 || Rows * Columns != Tiles.Num())
+	{
+		return Fail(
+			TEXT("invalid_request"),
+			TEXT("Viewport High Resolution capture requires a complete rectangular zoom level."),
+			TEXT("Capture the full zoom, or use the tiled Scene Capture backend for subsets."));
+	}
+	const double TileWorldSize = TilePixelSize * UnitsPerPixel;
+	const double Tolerance = FMath::Max(0.001, TileWorldSize * UE_DOUBLE_SMALL_NUMBER);
+	for (const FViewportHighResolutionTile& Tile : Tiles)
+	{
+		const double ExpectedMinX = FullMaxX - (Tile.Row + 1) * TileWorldSize;
+		const double ExpectedMinY = FullMinY + Tile.Column * TileWorldSize;
+		if (!FMath::IsNearlyEqual(Tile.MinX, ExpectedMinX, Tolerance)
+			|| !FMath::IsNearlyEqual(Tile.MinY, ExpectedMinY, Tolerance))
+		{
+			return Fail(
+				TEXT("invalid_request"),
+				TEXT("Viewport High Resolution tile bounds do not form the declared row and column grid."),
+				TEXT("Regenerate the request from the deterministic Map Capture grid."));
+		}
+	}
+
+	const int32 RenderWidth = Columns * TilePixelSize + GutterPixels * 2;
+	const int32 RenderHeight = Rows * TilePixelSize + GutterPixels * 2;
+	FHighResScreenshotConfig& Config = GetHighResScreenshotConfig();
+	if (!Config.SetResolution(RenderWidth, RenderHeight))
+	{
+		return Fail(
+			TEXT("capture_failed"),
+			TEXT("The complete zoom exceeds Unreal's maximum High Resolution Screenshot size."),
+			TEXT("Reduce tile size or zoom dimensions, or use the tiled Scene Capture backend."));
+	}
+
+	if (SavedState.AlignedOrthoZoom != nullptr)
+		SavedState.AlignedOrthoZoom->Set(0, ECVF_SetByCode);
+	if (SavedState.DisableFogInOrtho != nullptr)
+		SavedState.DisableFogInOrtho->Set(0, ECVF_SetByCode);
+	Client.SetViewportType(LVT_OrthoTop);
+	Client.SetViewLocation(FVector(
+		(FullMinX + FullMaxX) * 0.5,
+		(FullMinY + FullMaxY) * 0.5,
+		CaptureZ));
+	Client.SetOrthoZoom(static_cast<float>(
+		(FullMaxY - FullMinY + GutterPixels * 2.0 * UnitsPerPixel) * 15.0));
+	if (Client.IsEngineShowFlagsOverrideEnabled())
+	{
+		return Fail(
+			TEXT("capture_failed"),
+			TEXT("The active Level Editor viewport already owns a temporary show-flag override."),
+			TEXT("Finish the current viewport operation and retry the experimental capture."));
+	}
+	Client.EnableOverrideEngineShowFlags(
+		[bFog, bVolumetricFog, RenderProfile](FEngineShowFlags& ShowFlags)
+		{
+			ShowFlags.SetGrid(false);
+			ShowFlags.SetFog(bFog);
+			ShowFlags.SetVolumetricFog(bVolumetricFog);
+			if (RenderProfile == TEXT("observation"))
+			{
+				ShowFlags.DisableAdvancedFeatures();
+				ShowFlags.SetPostProcessing(false);
+				ShowFlags.SetMotionBlur(false);
+				ShowFlags.SetBloom(false);
+				ShowFlags.SetAntiAliasing(false);
+			}
+		});
+	SavedState.bInstalledShowFlagsOverride = true;
+
+	const FString ScreenshotPath = FPaths::Combine(
+		FPaths::ProjectSavedDir(),
+		TEXT("UEShed"),
+		TEXT("MapTileStaging"),
+		RunId,
+		FString::Printf(TEXT("_viewport_Z%02d.png"), Zoom));
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(ScreenshotPath), true);
+	IFileManager::Get().Delete(*ScreenshotPath, false, true);
+	Config.SetFilename(ScreenshotPath);
+	Config.SetMaskEnabled(false);
+	Config.SetHDRCapture(false);
+	const double CaptureStartedSeconds = FPlatformTime::Seconds();
+	if (!Viewport->TakeHighResScreenShot())
+	{
+		return Fail(
+			TEXT("capture_failed"),
+			TEXT("Unreal rejected the High Resolution Screenshot request."),
+			TEXT("Reduce the complete zoom dimensions and retry."));
+	}
+	Viewport->Draw(false);
+
+	FImage FullImage;
+	const bool bLoadedScreenshot = FImageUtils::LoadImage(*ScreenshotPath, FullImage);
+	if (!bLoadedScreenshot
+		|| FullImage.SizeX != RenderWidth
+		|| FullImage.SizeY != RenderHeight)
+	{
+		IFileManager::Get().Delete(*ScreenshotPath, false, true);
+		return Fail(
+			TEXT("capture_failed"),
+			TEXT("Unreal did not produce the expected viewport High Resolution Screenshot."),
+			TEXT("Keep the Level Editor viewport visible, reduce the zoom dimensions, and retry."));
+	}
+	IFileManager::Get().Delete(*ScreenshotPath, false, true);
+	FullImage.ChangeFormat(ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+	const int64 BytesPerPixel = FullImage.GetBytesPerPixel();
+	const int64 SourceStride = FullImage.GetStrideBytes();
+	const double CaptureDurationMs =
+		(FPlatformTime::Seconds() - CaptureStartedSeconds) * 1000.0;
+	for (FViewportHighResolutionTile& Tile : Tiles)
+	{
+		FImage TileImage(
+			TilePixelSize,
+			TilePixelSize,
+			ERawImageFormat::BGRA8,
+			EGammaSpace::sRGB);
+		const int32 SourceX = GutterPixels + Tile.Column * TilePixelSize;
+		const int32 SourceY = GutterPixels + Tile.Row * TilePixelSize;
+		for (int32 PixelRow = 0; PixelRow < TilePixelSize; ++PixelRow)
+		{
+			const uint8* Source = FullImage.RawData.GetData()
+				+ (SourceY + PixelRow) * SourceStride
+				+ SourceX * BytesPerPixel;
+			uint8* Destination = TileImage.RawData.GetData()
+				+ PixelRow * TileImage.GetStrideBytes();
+			FMemory::Memcpy(Destination, Source, TilePixelSize * BytesPerPixel);
+		}
+		const FString CapturePath = FPaths::Combine(
+			FPaths::ProjectSavedDir(),
+			TEXT("UEShed"),
+			TEXT("MapTileStaging"),
+			RunId,
+			FString::Printf(TEXT("Z%02d"), Tile.Zoom),
+			FString::Printf(TEXT("R%03d_C%03d.png"), Tile.Row, Tile.Column));
+		if (!FUEShedTransientCapture::WritePng(CapturePath, TileImage))
+		{
+			Tile.Result->SetStringField(TEXT("status"), TEXT("failed"));
+			Tile.Result->SetObjectField(
+				TEXT("failure"),
+				MapTileFailure(
+					TEXT("encoding_failed"),
+					TEXT("Unreal could not encode a tile cut from the viewport screenshot."),
+					TEXT("Check the project Saved directory and retry this zoom."),
+					true));
+			OutFailed += 1;
+		}
+		else
+		{
+			Tile.Result->SetStringField(TEXT("status"), TEXT("captured"));
+			Tile.Result->SetStringField(
+				TEXT("stagedPath"), FPaths::ConvertRelativePathToFull(CapturePath));
+			Tile.Result->SetNumberField(TEXT("width"), TilePixelSize);
+			Tile.Result->SetNumberField(TEXT("height"), TilePixelSize);
+			Tile.Result->SetNumberField(
+				TEXT("bytes"), IFileManager::Get().FileSize(*CapturePath));
+			Tile.Result->SetNumberField(TEXT("captureDurationMs"), CaptureDurationMs);
+			OutSucceeded += 1;
+		}
+		OutTileResults.Add(MakeShared<FJsonValueObject>(Tile.Result));
+	}
 	return true;
 }
 }
@@ -357,6 +716,8 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		|| Yaw != 0.0
 		|| Roll != 0.0
 		|| (RenderProfile != TEXT("full_fidelity")
+			&& RenderProfile != TEXT("seam_stable")
+			&& RenderProfile != TEXT("scene_capture_defaults")
 			&& RenderProfile != TEXT("observation")))
 	{
 		Fail(
@@ -401,6 +762,18 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* Tiles;
+	FString CaptureBackend(TEXT("scene_capture_tiles"));
+	Request->TryGetStringField(TEXT("captureBackend"), CaptureBackend);
+	if (CaptureBackend != TEXT("scene_capture_tiles")
+		&& CaptureBackend != TEXT("viewport_high_resolution"))
+	{
+		Fail(
+			TEXT("invalid_request"),
+			TEXT("The requested Map Capture backend is unsupported."),
+			TEXT("Use scene_capture_tiles or viewport_high_resolution."),
+			false);
+		return;
+	}
 	if (!Request->TryGetArrayField(TEXT("tiles"), Tiles)
 		|| Tiles->IsEmpty()
 		|| Tiles->Num() > 64)
@@ -437,6 +810,42 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 	int32 Failed = 0;
 	bool bCancelled = false;
 	TSet<FString> UniqueKeys;
+	if (CaptureBackend == TEXT("viewport_high_resolution"))
+	{
+		FString FailureCode;
+		FString FailureMessage;
+		FString FailureRecovery;
+		if (!CaptureViewportHighResolutionLevel(
+				*Tiles,
+				TilePixelSize,
+				GutterPixels,
+				CaptureZ,
+				bFog,
+				bVolumetricFog,
+				RenderProfile,
+				RunId,
+				TileResults,
+				Succeeded,
+				Failed,
+				FailureCode,
+				FailureMessage,
+				FailureRecovery))
+		{
+			MapTileTopFailure(
+				ResultJson,
+				OperationId,
+				CorrelationId,
+				*FailureCode,
+				*FailureMessage,
+				*FailureRecovery,
+				FailureCode != TEXT("invalid_request"),
+				bDirtyBefore,
+				MapPackage->IsDirty());
+			return;
+		}
+	}
+	else
+	{
 	TArray<TUniquePtr<FUEShedTransientCapture>> CapturePool;
 	TArray<FPendingMapTileEncode> PendingEncodes;
 	TArray<FPendingMapTileReadback> PendingReadbacks;
@@ -496,6 +905,14 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 				Failed += 1;
 				TileResults.Add(MakeShared<FJsonValueObject>(Pending.Result));
 				continue;
+			}
+			if (Image.SizeX != Pending.OutputSize || Image.SizeY != Pending.OutputSize)
+			{
+				FImageCore::ResizeImageInPlace(
+					Image,
+					Pending.OutputSize,
+					Pending.OutputSize,
+					FImageCore::EResizeImageFilter::Box);
 			}
 			TFuture<bool> Written = Async(
 				EAsyncExecution::ThreadPool,
@@ -597,8 +1014,11 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		}
 		UniqueKeys.Add(KeyIdentity);
 
-		const int32 RenderSize = TilePixelSize + GutterPixels * 2;
-		const double OrthoWidth = RenderSize * UnitsPerPixel;
+		const int32 RenderScale = RenderProfile == TEXT("seam_stable")
+			? SeamStableRenderScale
+			: 1;
+		const int32 RenderSize = (TilePixelSize + GutterPixels * 2) * RenderScale;
+		const double OrthoWidth = (TilePixelSize + GutterPixels * 2) * UnitsPerPixel;
 		const FVector Location((MinX + MaxX) * 0.5, (MinY + MaxY) * 0.5, CaptureZ);
 		const int32 CaptureSlot = PendingReadbacks.Num();
 		if (!CapturePool.IsValidIndex(CaptureSlot))
@@ -650,9 +1070,17 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		}
 		else
 		{
+			if (RenderProfile == TEXT("full_fidelity"))
+			{
+				Capture->ConfigureFullFidelityRenderer();
+			}
+			else if (RenderProfile == TEXT("seam_stable"))
+			{
+				Capture->ConfigureSeamStableRenderer();
+			}
 			// A camera cut prevents the reused capture context from carrying temporal state from a
-			// spatially unrelated tile. Two discarded renders then establish exposure and temporal
-			// resources before the exact PNG render is read back.
+			// spatially unrelated tile. The discarded synchronous renders prime render resources, but
+			// do not advance shared exposure or cross-frame temporal history.
 			Capture->BeginPersistentCameraCut();
 			for (int32 Warmup = 0; Warmup < FullFidelityWarmupCaptures; ++Warmup)
 			{
@@ -668,12 +1096,12 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			FString::Printf(TEXT("Z%02d"), Zoom),
 			FString::Printf(TEXT("R%03d_C%03d.png"), Row, Column));
 		const FIntRect Crop(
-			GutterPixels,
-			GutterPixels,
-			GutterPixels + TilePixelSize,
-			GutterPixels + TilePixelSize);
+			GutterPixels * RenderScale,
+			GutterPixels * RenderScale,
+			(GutterPixels + TilePixelSize) * RenderScale,
+			(GutterPixels + TilePixelSize) * RenderScale);
 		PendingReadbacks.Emplace(
-			Capture, TileResult, CapturePath, TileStartedSeconds, Crop);
+			Capture, TileResult, CapturePath, TileStartedSeconds, Crop, TilePixelSize);
 		if (PendingReadbacks.Num() >= MaximumPendingTileReadbacks) FinalizeAllReadbacks();
 	}
 	FinalizeAllReadbacks();
@@ -706,6 +1134,7 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 			TileResults.Add(MakeShared<FJsonValueObject>(TileResult));
 			Failed += 1;
 		}
+	}
 	}
 
 	const bool bDirtyAfter = MapPackage->IsDirty();

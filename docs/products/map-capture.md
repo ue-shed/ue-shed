@@ -27,11 +27,24 @@ Nanite, HLOD, or foliage intervention is not inferred from camera height.
 Fog and volumetric fog are independent plan settings applied to the transient scene capture's show
 flags. They do not mutate the editor viewport, world actors, global console variables, or saved map.
 
-Full-fidelity tiles render serially through one transient capture context. Moving to a tile begins
-an explicit camera cut, then performs two discarded warm-up renders before the PNG render. The cut
-prevents temporal state from a spatially unrelated tile from leaking forward; the warm-up establishes
-the persistent view state needed by exposure and temporal rendering. PNG encoding may remain bounded
-and concurrent after each exact render has been read back.
+Full-fidelity tiles render serially through one transient capture context. The `full_fidelity`
+profile explicitly restores the active project's dynamic GI, reflection, anti-aliasing,
+ray-tracing, tonemapping, and post-processing choices because Unreal's independent scene-capture
+defaults otherwise reduce or disable several of them. `scene_capture_defaults` leaves Unreal's
+SceneCapture renderer defaults unchanged as a visual comparison baseline; tile framing, gutters,
+camera cuts, warm-ups, and publication are otherwise identical. Moving to a tile begins an explicit camera cut, then
+performs two discarded warm-up renders before the PNG render. The cut prevents temporal state from a
+spatially unrelated tile from leaking forward. PNG encoding may remain bounded and concurrent after
+each exact render has been read back. Shared full-frame exposure and true cross-frame tile history
+remain separate seam-correction work; the synchronous warm-up renders do not claim to provide either.
+
+The `seam_stable` profile keeps the restored project lighting, tonemapping, color grading, and
+world-space Lumen fallbacks while disabling temporal AA, eye adaptation, local exposure, motion
+blur, screen-space reflections and AO, Lumen screen traces, lens flares, vignette, and chromatic
+aberration. Unreal falls back from project TAA or TSR to FXAA for that view. Each logical tile and
+its configured gutter render at 2x resolution and are gamma-correct box-downsampled before the
+fixed-size PNG is published. This profile favors cross-tile consistency over view-dependent effects;
+volumetric fog remains an explicit plan choice and can still introduce view-frustum differences.
 
 Each tile renders `gutterPixels` beyond all four edges at the level's world-units-per-pixel, then is
 cropped to the fixed tile size before PNG encoding. This lets geometry and post processing sample
@@ -49,6 +62,14 @@ The host pipelines those batches through a one-response bounded buffer. Unreal c
 strict sequence while the host validates and promotes the previous batch, so filesystem ingestion
 does not leave the editor idle. This never issues concurrent capture requests to the editor, and
 manifest and progress order remain deterministic.
+
+Workbench also exposes `VIEWPORT HIGH RES · EXPERIMENTAL` as an execution-only A/B switch. It is not
+saved in the Map Capture Plan. The host sends one complete zoom at a time; Unreal temporarily frames
+the active Level Editor viewport over that full extent, runs the built-in High Resolution Screenshot
+pipeline, restores the viewport and console state, and cuts the single image into normal immutable
+tiles. This removes per-tile exposure boundaries and exercises the viewport renderer, but Unreal's
+High Resolution Screenshot forces LOD0. The initial test lane accepts at most 8x8 tiles per zoom and
+fails instead of silently falling back when the full image exceeds the GPU texture limit.
 
 The capture capability requires the expected editor map to be open and continues to reject explicit
 Data Layer and forced fixed-LOD policies. The separate `editor.world-control.v1` capability can open

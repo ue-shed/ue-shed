@@ -26,6 +26,7 @@ import {
 } from "./map-tile-repository.js";
 import {
 	MapCaptureOperationId,
+	type MapCaptureBackend,
 	MapCaptureRunId,
 	MapTileCaptureRequest,
 	decodeMapTileCaptureResponse,
@@ -135,6 +136,7 @@ export function inspectMapCapturePlan(
 }
 
 export interface RunMapCaptureOptions {
+	readonly captureBackend?: MapCaptureBackend;
 	readonly correlationId?: string;
 	readonly endpoint: string;
 	readonly levels?: ReadonlyArray<number>;
@@ -246,6 +248,7 @@ function isoNow(millis: number): string {
 
 function makeRequest(args: {
 	readonly batch: ReadonlyArray<MapTileKey>;
+	readonly captureBackend: MapCaptureBackend;
 	readonly correlationId: string;
 	readonly grid: MapTileGrid;
 	readonly operationId: string;
@@ -254,6 +257,7 @@ function makeRequest(args: {
 }): MapTileCaptureRequestValue {
 	return MapTileCaptureRequest.make({
 		capture: args.plan.capture,
+		captureBackend: args.captureBackend,
 		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 0 } },
 		correlationId: args.correlationId,
 		expectedMapPath: args.plan.project.mapPath,
@@ -267,6 +271,48 @@ function makeRequest(args: {
 			unitsPerPixel: args.grid.levels[key.zoom]!.unitsPerPixel,
 			worldBounds: mapTileWorldBounds(args.grid, key)
 		}))
+	});
+}
+
+function viewportLevelBatches(args: {
+	readonly grid: MapTileGrid;
+	readonly keys: ReadonlyArray<MapTileKey>;
+}): Effect.Effect<ReadonlyArray<ReadonlyArray<MapTileKey>>, MapCaptureRunError> {
+	return Effect.try({
+		try: () => {
+			const selected = new Set(args.keys.map(mapTileKeyId));
+			const zooms = [...new Set(args.keys.map((key) => key.zoom))].toSorted((a, b) => a - b);
+			return zooms.map((zoom) => {
+				const level = args.grid.levels[zoom];
+				if (level === undefined)
+					throw new RangeError(`Zoom ${zoom} is outside the plan grid.`);
+				const levelKeys: MapTileKey[] = [];
+				for (let row = 0; row < level.rows; row += 1) {
+					for (let column = 0; column < level.columns; column += 1) {
+						const key = { zoom, row, column };
+						if (!selected.has(mapTileKeyId(key))) {
+							throw new RangeError(
+								"Viewport High Resolution capture requires complete zoom levels."
+							);
+						}
+						levelKeys.push(key);
+					}
+				}
+				if (levelKeys.length > maximumTilesPerRequest) {
+					throw new RangeError(
+						`Viewport High Resolution test supports at most ${maximumTilesPerRequest} tiles per zoom; Z${zoom} has ${levelKeys.length}.`
+					);
+				}
+				return levelKeys;
+			});
+		},
+		catch: (cause) =>
+			new MapCaptureRunError({
+				message: String(cause),
+				operation: "prepare",
+				recovery:
+					"Capture complete levels no larger than 8 x 8 tiles, or use the tiled Scene Capture backend."
+			})
 	});
 }
 
@@ -291,6 +337,7 @@ function runMapCaptureWith(args: {
 }): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
 	return Effect.scoped(
 		Effect.gen(function* () {
+			const captureBackend = args.options.captureBackend ?? "scene_capture_tiles";
 			const plan =
 				"plan" in args.options
 					? args.options.plan
@@ -343,7 +390,10 @@ function runMapCaptureWith(args: {
 			const captured: Array<MapTilePyramidManifestValue["tiles"][number]> = [];
 			const failures: Array<MapTilePyramidManifestValue["failures"][number]> = [];
 			let cancelled = false;
-			const tileBatches = batches(keys, maximumTilesPerRequest);
+			const tileBatches =
+				captureBackend === "viewport_high_resolution"
+					? yield* viewportLevelBatches({ grid: inspected.grid, keys })
+					: batches(keys, maximumTilesPerRequest);
 			yield* (
 				args.options.onProgress?.({
 					failedTiles: 0,
@@ -358,6 +408,7 @@ function runMapCaptureWith(args: {
 			}) {
 				const request = makeRequest({
 					batch: input.batch,
+					captureBackend,
 					correlationId,
 					grid: inspected.grid,
 					operationId: randomUUID(),
@@ -571,7 +622,14 @@ function runMapCaptureWith(args: {
 				levels: inspected.grid.levels,
 				planId: plan.id,
 				project: plan.project,
-				provenance: { producer: "unreal-editor", tool: "ue-shed", toolVersion: "0.1.0" },
+				provenance: {
+					producer:
+						captureBackend === "viewport_high_resolution"
+							? "unreal-editor-viewport-high-resolution-experimental"
+							: "unreal-editor",
+					tool: "ue-shed",
+					toolVersion: "0.1.0"
+				},
 				runId: MapCaptureRunId.make(runId),
 				startedAt,
 				state,
@@ -605,7 +663,11 @@ function runMapCaptureWith(args: {
 			return { manifest, manifestPath: join(attemptRoot, "manifest.json"), published: false };
 		}).pipe(
 			Effect.withSpan("camera.map_tile.run", {
-				attributes: { "camera.map_tile.batch.maximum": maximumTilesPerRequest }
+				attributes: {
+					"camera.map_tile.batch.maximum": maximumTilesPerRequest,
+					"camera.map_tile.capture_backend":
+						args.options.captureBackend ?? "scene_capture_tiles"
+				}
 			})
 		)
 	);

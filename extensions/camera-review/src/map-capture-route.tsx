@@ -11,6 +11,7 @@ import { Cause, Effect } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
 	MapCaptureClientShape,
+	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
 	MapCaptureLivePreviewResult,
 	MapCaptureProgressEvent,
@@ -33,6 +34,7 @@ import { MapCaptureActorWorkspace } from "./map-capture-actor-workspace.js";
 type ReadySelection = Extract<MapCaptureSelectionResult, { readonly status: "ready" }>;
 type CompletedCapture = Extract<MapCaptureExecuteResult, { readonly status: "completed" }>;
 type ReadyLivePreview = Extract<MapCaptureLivePreviewResult, { readonly status: "ready" }>;
+type CaptureBackend = MapCaptureExecuteIntent["captureBackend"];
 type LivePreviewState =
 	| { readonly status: "idle" }
 	| { readonly status: "loading" }
@@ -115,6 +117,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 	const [draft, setDraft] = createSignal<MapCapturePlanDraft>();
 	const [savedPlanJson, setSavedPlanJson] = createSignal<string>();
 	const [capture, setCapture] = createSignal<CompletedCapture>();
+	const [captureBackend, setCaptureBackend] = createSignal<CaptureBackend>("scene_capture_tiles");
 	const [activeCaptureOperationId, setActiveCaptureOperationId] = createSignal<string>();
 	const [captureProgress, setCaptureProgress] = createSignal<MapCaptureProgressEvent>();
 	const [livePreview, setLivePreview] = createSignal<LivePreviewState>({ status: "idle" });
@@ -464,12 +467,20 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		});
 		setNotice({
 			tone: "info",
-			text: openMapFirst
-				? "Safely opening the target map, then capturing bounded batches…"
-				: "Capturing the currently open target map in bounded batches…"
+			text:
+				captureBackend() === "viewport_high_resolution"
+					? "Opening the map, then rendering each zoom with Unreal's viewport High Resolution Screenshot…"
+					: openMapFirst
+						? "Safely opening the target map, then capturing bounded batches…"
+						: "Capturing the currently open target map in bounded batches…"
 		});
 		captureAction.run(
-			props.client.capture({ openMap: openMapFirst, operationId, plan: current }),
+			props.client.capture({
+				captureBackend: captureBackend(),
+				openMap: openMapFirst,
+				operationId,
+				plan: current
+			}),
 			{
 				onFailure: (cause) => {
 					setActiveCaptureOperationId(undefined);
@@ -790,17 +801,38 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											onChange={(event) =>
 												updateRender((render) => ({
 													...render,
-													profile: event.currentTarget.value as
-														| "full_fidelity"
-														| "observation"
+													profile: event.currentTarget
+														.value as MapCapturePlanDraft["capture"]["render"]["profile"]
 												}))
 											}
 											{...stylex.props(styles.select)}
 										>
 											<option value="full_fidelity">FULL FIDELITY</option>
+											<option value="seam_stable">SEAM STABLE</option>
+											<option value="scene_capture_defaults">
+												SCENE CAPTURE DEFAULTS
+											</option>
 											<option value="observation">OBSERVATION</option>
 										</select>
 									</div>
+									<Show
+										when={
+											current().capture.render.profile ===
+											"scene_capture_defaults"
+										}
+									>
+										<p {...stylex.props(styles.backendNote)}>
+											Comparison baseline using the previous tiled
+											SceneCapture renderer defaults.
+										</p>
+									</Show>
+									<Show when={current().capture.render.profile === "seam_stable"}>
+										<p {...stylex.props(styles.backendNote)}>
+											Project lighting with fixed exposure, spatial AA, and
+											view-independent Lumen fallbacks. Renders 2× then
+											downsamples.
+										</p>
+									</Show>
 									<NumberField
 										label="CAPTURE Z"
 										value={current().capture.z}
@@ -831,6 +863,37 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											}))
 										}
 									/>
+									<div {...stylex.props(styles.backendField)}>
+										<label for="map-capture-backend">CAPTURE ENGINE</label>
+										<select
+											id="map-capture-backend"
+											aria-label="Capture engine"
+											value={captureBackend()}
+											onChange={(event) =>
+												setCaptureBackend(
+													event.currentTarget.value as CaptureBackend
+												)
+											}
+											{...stylex.props(styles.select)}
+										>
+											<option value="scene_capture_tiles">
+												TILED SCENE CAPTURE
+											</option>
+											<option value="viewport_high_resolution">
+												VIEWPORT HIGH RES · EXPERIMENTAL
+											</option>
+										</select>
+										<Show
+											when={captureBackend() === "viewport_high_resolution"}
+										>
+											<p {...stylex.props(styles.backendNote)}>
+												Renders one complete zoom through Unreal&apos;s
+												active Level Editor viewport, then cuts that image
+												into tiles. Unreal forces LOD0. Test limit: 8 × 8
+												tiles per zoom.
+											</p>
+										</Show>
+									</div>
 								</section>
 
 								<section {...stylex.props(styles.panel)}>
@@ -1329,6 +1392,26 @@ const styles = stylex.create({
 		color: "#bcc8bd",
 		padding: "6px 8px",
 		fontSize: 9
+	},
+	backendField: {
+		display: "grid",
+		gap: 7,
+		marginTop: 15,
+		paddingTop: 13,
+		borderTop: "1px solid #303831",
+		color: "#748077",
+		fontSize: 8,
+		letterSpacing: ".1em"
+	},
+	backendNote: {
+		margin: 0,
+		padding: "9px 10px",
+		borderLeft: "2px solid #d2a653",
+		backgroundColor: "#17140e",
+		color: "#b9a878",
+		fontSize: 8,
+		letterSpacing: 0,
+		lineHeight: 1.5
 	},
 	toggle: {
 		position: "relative",

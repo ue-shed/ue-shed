@@ -3,6 +3,7 @@ export * from "./map-tile-pyramid.js";
 export * from "./map-tile-authoring.js";
 export {
 	MapCaptureContractVersion,
+	MapCaptureBackend,
 	MapCaptureDataLayerPolicy,
 	MapCapturePlan,
 	MapCapturePlanId,

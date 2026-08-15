@@ -167,6 +167,11 @@ describe("MapCaptureRoute", () => {
 			screen.getByRole("combobox", { name: "LOD policy" }),
 			"per_level_distance_scale"
 		);
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Capture engine" }),
+			"viewport_high_resolution"
+		);
+		expect(screen.getByText(/Renders one complete zoom/)).toBeDefined();
 		fireEvent.input(screen.getByRole("spinbutton", { name: /Z0/ }), {
 			target: { value: "4" }
 		});
@@ -176,6 +181,7 @@ describe("MapCaptureRoute", () => {
 		await user.click(screen.getByRole("button", { name: "OPEN + CAPTURE" }));
 
 		await waitFor(() => expect(captured).toBeDefined());
+		expect(captured?.captureBackend).toBe("viewport_high_resolution");
 		expect(captured?.openMap).toBe(true);
 		expect(captured?.operationId).toMatch(/^map-capture-/);
 		expect(captured?.plan.project.mapPath).toBe("/Game/Maps/L_Lighting");
@@ -284,12 +290,19 @@ describe("MapCaptureRoute", () => {
 		});
 		expect(screen.getByText("12 × 12 TILES")).toBeDefined();
 		expect(screen.getByText("256 × 256 UU")).toBeDefined();
+		await user.selectOptions(
+			screen.getByRole("combobox", { name: "Render profile" }),
+			"seam_stable"
+		);
+		expect(screen.getByText(/Project lighting with fixed exposure/)).toBeDefined();
+		expect(screen.getByRole("option", { name: "SCENE CAPTURE DEFAULTS" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "SAVE" }));
 
 		await waitFor(() => expect(saved?.plan.id).toBe("city-overview"));
 		expect(saved?.saveAs).toBe(false);
 		expect(saved?.plan.tilePixelSize).toBe(512);
 		expect(saved?.plan.levels.coarsestUnitsPerPixel).toBe(0.5);
+		expect(saved?.plan.capture.render.profile).toBe("seam_stable");
 		expect(saved?.plan.requestedBounds).toEqual({
 			maxX: 3_500,
 			maxY: 1_500,

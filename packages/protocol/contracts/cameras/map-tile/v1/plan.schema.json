@@ -148,7 +148,14 @@
 						"lodPolicy": {
 							"enum": ["natural", "fixed_lod_zero", "per_level_distance_scale"]
 						},
-						"profile": { "enum": ["full_fidelity", "observation"] }
+						"profile": {
+							"enum": [
+								"full_fidelity",
+								"seam_stable",
+								"scene_capture_defaults",
+								"observation"
+							]
+						}
 					},
 					"allOf": [
 						{

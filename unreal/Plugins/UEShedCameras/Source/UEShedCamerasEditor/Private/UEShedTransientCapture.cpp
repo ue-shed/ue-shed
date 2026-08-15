@@ -6,15 +6,24 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
 #include "ImageUtils.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "SceneUtils.h"
 
 namespace
 {
 // PNG quality values -1 through -9 select the corresponding zlib compression level. Level one
 // retains lossless pixels while favoring an interactive editor workflow over minimum file size.
 constexpr int32 MapCapturePngZlibLevel = -1;
+
+int32 RendererSetting(const TCHAR* Name, int32 Fallback, int32 Maximum)
+{
+	const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name);
+	if (Variable == nullptr) return Fallback;
+	return FMath::Clamp(Variable->GetInt(), 0, Maximum);
+}
 }
 
 TUniquePtr<FUEShedTransientCapture> FUEShedTransientCapture::Create(
@@ -128,6 +137,76 @@ void FUEShedTransientCapture::ConfigureRenderPolicy(
 	VolumetricFog.Enabled = bVolumetricFog;
 	Settings.Add(VolumetricFog);
 	CaptureComponent->SetShowFlagSettings(Settings);
+}
+
+void FUEShedTransientCapture::ConfigureFullFidelityRenderer()
+{
+	USceneCaptureComponent2D* CaptureComponent = Component();
+	const EDynamicGlobalIlluminationMethod::Type GlobalIlluminationMethod =
+		static_cast<EDynamicGlobalIlluminationMethod::Type>(RendererSetting(
+			TEXT("r.DynamicGlobalIlluminationMethod"),
+			static_cast<int32>(EDynamicGlobalIlluminationMethod::None),
+			static_cast<int32>(EDynamicGlobalIlluminationMethod::Plugin)));
+	const EReflectionMethod::Type ReflectionMethod =
+		static_cast<EReflectionMethod::Type>(RendererSetting(
+			TEXT("r.ReflectionMethod"),
+			static_cast<int32>(EReflectionMethod::None),
+			static_cast<int32>(EReflectionMethod::ScreenSpace)));
+	const EAntiAliasingMethod AntiAliasingMethod =
+		GetDefaultAntiAliasingMethod(World->GetFeatureLevel());
+
+	// Scene captures intentionally start from reduced rendering defaults. Full fidelity restores the
+	// active project's renderer choices so this independent view does not silently drop the lighting
+	// and post-processing features used by the game and Level Editor viewport.
+	CaptureComponent->ShowFlags.SetLighting(true);
+	CaptureComponent->ShowFlags.SetPostProcessing(true);
+	CaptureComponent->ShowFlags.SetTonemapper(true);
+	CaptureComponent->ShowFlags.SetGlobalIllumination(true);
+	CaptureComponent->ShowFlags.SetReflectionEnvironment(true);
+	CaptureComponent->ShowFlags.SetLumenGlobalIllumination(
+		GlobalIlluminationMethod == EDynamicGlobalIlluminationMethod::Lumen);
+	CaptureComponent->ShowFlags.SetLumenReflections(
+		ReflectionMethod == EReflectionMethod::Lumen);
+	CaptureComponent->ShowFlags.SetAntiAliasing(AntiAliasingMethod != AAM_None);
+	CaptureComponent->ShowFlags.SetTemporalAA(
+		IsTemporalAccumulationBasedMethod(AntiAliasingMethod));
+	CaptureComponent->bUseRayTracingIfEnabled = true;
+
+	FPostProcessSettings& PostProcessSettings = CaptureComponent->PostProcessSettings;
+	PostProcessSettings.bOverride_DynamicGlobalIlluminationMethod = true;
+	PostProcessSettings.DynamicGlobalIlluminationMethod = GlobalIlluminationMethod;
+	PostProcessSettings.bOverride_ReflectionMethod = true;
+	PostProcessSettings.ReflectionMethod = ReflectionMethod;
+	PostProcessSettings.bOverride_LumenSurfaceCacheResolution = true;
+	PostProcessSettings.LumenSurfaceCacheResolution = 1.0f;
+	CaptureComponent->PostProcessBlendWeight = 1.0f;
+}
+
+void FUEShedTransientCapture::ConfigureSeamStableRenderer()
+{
+	ConfigureFullFidelityRenderer();
+	USceneCaptureComponent2D* CaptureComponent = Component();
+
+	// These effects derive their result from one tile's pixels or temporal history. Keep the
+	// project renderer, but force view-independent fallbacks so adjacent tiles see the same world.
+	CaptureComponent->ShowFlags.SetTemporalAA(false);
+	CaptureComponent->ShowFlags.SetMotionBlur(false);
+	CaptureComponent->ShowFlags.SetEyeAdaptation(false);
+	CaptureComponent->ShowFlags.SetLocalExposure(false);
+	CaptureComponent->ShowFlags.SetScreenSpaceReflections(false);
+	CaptureComponent->ShowFlags.SetScreenSpaceAO(false);
+	CaptureComponent->ShowFlags.SetLumenScreenTraces(false);
+	CaptureComponent->ShowFlags.SetLensFlares(false);
+
+	FPostProcessSettings& PostProcessSettings = CaptureComponent->PostProcessSettings;
+	PostProcessSettings.bOverride_LumenFinalGatherScreenTraces = true;
+	PostProcessSettings.LumenFinalGatherScreenTraces = false;
+	PostProcessSettings.bOverride_LumenReflectionsScreenTraces = true;
+	PostProcessSettings.LumenReflectionsScreenTraces = false;
+	PostProcessSettings.bOverride_VignetteIntensity = true;
+	PostProcessSettings.VignetteIntensity = 0.0f;
+	PostProcessSettings.bOverride_SceneFringeIntensity = true;
+	PostProcessSettings.SceneFringeIntensity = 0.0f;
 }
 
 void FUEShedTransientCapture::BeginPersistentCameraCut()

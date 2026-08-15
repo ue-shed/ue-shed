@@ -52,6 +52,26 @@ describe("map tile contracts", () => {
 		expect(Schema.decodeUnknownResult(MapCapturePlan)(input)._tag).toBe("Failure");
 	});
 
+	it("exposes the unmodified SceneCapture renderer as an explicit comparison profile", () => {
+		const input = structuredClone(fixture("plan-valid.json")) as {
+			capture: { render: { profile: string } };
+		};
+		input.capture.render.profile = "scene_capture_defaults";
+		expect(Schema.decodeUnknownSync(MapCapturePlan)(input).capture.render.profile).toBe(
+			"scene_capture_defaults"
+		);
+	});
+
+	it("accepts the seam-stable spatial renderer profile", () => {
+		const input = structuredClone(fixture("plan-valid.json")) as {
+			capture: { render: { profile: string } };
+		};
+		input.capture.render.profile = "seam_stable";
+		expect(Schema.decodeUnknownSync(MapCapturePlan)(input).capture.render.profile).toBe(
+			"seam_stable"
+		);
+	});
+
 	it("rejects invalid grids and incomplete complete manifests", () => {
 		for (const name of ["manifest-invalid-grid.json", "manifest-invalid-complete.json"]) {
 			expect(Effect.runSyncExit(decodeMapTilePyramidManifest(fixture(name)))._tag).toBe(

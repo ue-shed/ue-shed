@@ -277,7 +277,12 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-capture:preview": [mapCapturePlan],
 	"map-capture:save-plan": [{ plan: mapCapturePlan, saveAs: false }],
 	"map-capture:capture": [
-		{ openMap: true, operationId: "capture-ui-operation-1", plan: mapCapturePlan }
+		{
+			captureBackend: "scene_capture_tiles",
+			openMap: true,
+			operationId: "capture-ui-operation-1",
+			plan: mapCapturePlan
+		}
 	],
 	"map-capture:tile": [
 		{

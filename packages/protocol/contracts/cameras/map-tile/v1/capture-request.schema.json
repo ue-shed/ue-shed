@@ -18,6 +18,9 @@
 	],
 	"properties": {
 		"capture": { "$ref": "plan.schema.json#/$defs/capturePolicy" },
+		"captureBackend": {
+			"enum": ["scene_capture_tiles", "viewport_high_resolution"]
+		},
 		"contract": {
 			"type": "object",
 			"additionalProperties": false,

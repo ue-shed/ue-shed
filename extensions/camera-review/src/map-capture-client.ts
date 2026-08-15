@@ -1,4 +1,5 @@
 import {
+	MapCaptureBackend,
 	MapCapturePlan,
 	MapTileArtifact,
 	MapTilePyramidManifest,
@@ -102,6 +103,7 @@ export const MapCaptureSaveResult = Schema.Union([
 export type MapCaptureSaveResult = typeof MapCaptureSaveResult.Type;
 
 export const MapCaptureExecuteIntent = Schema.Struct({
+	captureBackend: MapCaptureBackend,
 	operationId: MapCaptureUiOperationId,
 	openMap: Schema.Boolean,
 	plan: MapCapturePlan

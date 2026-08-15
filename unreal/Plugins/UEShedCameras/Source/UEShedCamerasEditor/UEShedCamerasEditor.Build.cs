@@ -7,7 +7,7 @@ public class UEShedCamerasEditor : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine" });
 		PrivateDependencyModuleNames.AddRange(new[] {
-			"Json", "RenderCore", "UEShedCameras", "UnrealEd"
+			"ImageCore", "Json", "RenderCore", "UEShedCameras", "UnrealEd"
 		});
 	}
 }

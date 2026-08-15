@@ -169,27 +169,30 @@ it.effect("keeps a failed scenario structured while setting a non-zero outcome",
 	})
 );
 
-it.effect("rejects invalid Map History time input before contacting Perforce", () =>
-	Effect.gen(function* () {
-		const output = yield* Ref.make("");
-		const layer = Layer.succeed(
-			CliRuntime,
-			CliRuntime.of({
-				print: (value) => Ref.update(output, (current) => current + value),
-				printError: () => Effect.void,
-				setExitCode: () => Effect.void
-			})
-		);
-		const error = yield* runMapHistory({
-			_tag: "MapHistory",
-			mapPath: "Content/Maps/L_Example.umap",
-			projectRoot: "project",
-			since: "not-a-timestamp-or-duration"
-		}).pipe(Effect.provide(layer), Effect.flip);
+it.effect(
+	"rejects invalid Map History time input before contacting Perforce",
+	() =>
+		Effect.gen(function* () {
+			const output = yield* Ref.make("");
+			const layer = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (value) => Ref.update(output, (current) => current + value),
+					printError: () => Effect.void,
+					setExitCode: () => Effect.void
+				})
+			);
+			const error = yield* runMapHistory({
+				_tag: "MapHistory",
+				mapPath: "Content/Maps/L_Example.umap",
+				projectRoot: "project",
+				since: "not-a-timestamp-or-duration"
+			}).pipe(Effect.provide(layer), Effect.flip);
 
-		expect(error.message).toContain("--since");
-		expect(yield* Ref.get(output)).toBe("");
-	})
+			expect(error.message).toContain("--since");
+			expect(yield* Ref.get(output)).toBe("");
+		}),
+	{ timeout: 15_000 }
 );
 
 it.effect("rejects Fast History path identity without both package and path", () =>

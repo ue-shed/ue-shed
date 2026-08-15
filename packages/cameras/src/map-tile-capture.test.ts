@@ -20,6 +20,7 @@ import {
 	type MapCaptureRepositoryShape
 } from "./map-tile-repository.js";
 import { mapTileKeyId, mapTileRelativePath } from "./map-tile-pyramid.js";
+import type { MapCaptureBackend } from "./map-tile-schema.js";
 
 const temporaryRoots: string[] = [];
 
@@ -83,10 +84,12 @@ function runWithPort(
 	port: MapTileCapturePortShape,
 	levels?: ReadonlyArray<number>,
 	onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>,
-	repositoryLayer: Layer.Layer<MapCaptureRepository> = MapCaptureRepositoryLive
+	repositoryLayer: Layer.Layer<MapCaptureRepository> = MapCaptureRepositoryLive,
+	captureBackend?: MapCaptureBackend
 ) {
 	return Effect.flatMap(MapCapture, (capture) =>
 		capture.run({
+			...(captureBackend === undefined ? {} : { captureBackend }),
 			endpoint: "http://127.0.0.1:30010",
 			...(levels === undefined ? {} : { levels }),
 			...(onProgress === undefined ? {} : { onProgress }),
@@ -158,6 +161,73 @@ describe("map capture orchestration", () => {
 			{ failedTiles: 0, phase: "capturing", processedTiles: 1, totalTiles: 1 },
 			{ failedTiles: 0, phase: "publishing", processedTiles: 1, totalTiles: 1 }
 		]);
+	});
+
+	it("sends complete zoom levels to the experimental viewport backend", async () => {
+		const project = await fixtureProject(2);
+		const requestedBatches: Array<ReadonlyArray<string>> = [];
+		const port: MapTileCapturePortShape = {
+			capture: (request) =>
+				Effect.tryPromise(async () => {
+					requestedBatches.push(request.tiles.map(({ key }) => mapTileKeyId(key)));
+					const results = [];
+					for (const tile of request.tiles) {
+						const relativePath = mapTileRelativePath(tile.key);
+						const stagedPath = resolve(
+							project.projectRoot,
+							"Saved/UEShed/MapTileStaging/test-run",
+							...relativePath.split("/")
+						);
+						await mkdir(dirname(stagedPath), { recursive: true });
+						await writeFile(stagedPath, fakePng(64));
+						results.push({
+							bytes: 24,
+							captureDurationMs: 1,
+							height: 64,
+							key: tile.key,
+							stagedPath,
+							status: "captured" as const,
+							width: 64
+						});
+					}
+					expect(request.captureBackend).toBe("viewport_high_resolution");
+					return {
+						actualMapPath: "/Game/Test/Map",
+						contract: {
+							name: "ue-shed-map-tile-capture" as const,
+							version: { major: 1 as const, minor: 0 as const }
+						},
+						correlationId: request.correlationId,
+						dirtyState: { after: false, before: false },
+						durationMs: results.length,
+						operationId: request.operationId,
+						results,
+						status: "completed" as const,
+						tileCounts: {
+							failed: 0,
+							requested: results.length,
+							succeeded: results.length
+						}
+					};
+				})
+		};
+
+		const outcome = await Effect.runPromise(
+			runWithPort(
+				project,
+				port,
+				undefined,
+				undefined,
+				MapCaptureRepositoryLive,
+				"viewport_high_resolution"
+			)
+		);
+
+		expect(outcome.published).toBe(true);
+		expect(outcome.manifest.provenance.producer).toBe(
+			"unreal-editor-viewport-high-resolution-experimental"
+		);
+		expect(requestedBatches).toEqual([["0/0/0"], ["1/0/0", "1/0/1", "1/1/0", "1/1/1"]]);
 	});
 
 	it("quarantines a bounded subset instead of publishing it as complete", async () => {

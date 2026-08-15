@@ -78,7 +78,12 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 		)
 	),
 	lodPolicy: Schema.Literals(["natural", "fixed_lod_zero", "per_level_distance_scale"]),
-	profile: Schema.Literals(["full_fidelity", "observation"])
+	profile: Schema.Literals([
+		"full_fidelity",
+		"seam_stable",
+		"scene_capture_defaults",
+		"observation"
+	])
 }).pipe(
 	Schema.check(
 		Schema.makeFilter((render) =>
@@ -149,6 +154,12 @@ export const MapTileCaptureTileRequest = Schema.Struct({
 	worldBounds: MapCaptureWorldBounds
 });
 
+export const MapCaptureBackend = Schema.Literals([
+	"scene_capture_tiles",
+	"viewport_high_resolution"
+]);
+export type MapCaptureBackend = typeof MapCaptureBackend.Type;
+
 export const MapTileCaptureRequest = Schema.Struct({
 	capture: Schema.Struct({
 		dataLayers: MapCaptureDataLayerPolicy,
@@ -160,6 +171,7 @@ export const MapTileCaptureRequest = Schema.Struct({
 		render: MapCaptureRenderPolicy,
 		z: Schema.Finite
 	}),
+	captureBackend: Schema.optionalKey(MapCaptureBackend),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-map-tile-capture"),
 		version: MapCaptureContractVersion

@@ -106,6 +106,12 @@ contextBridge.exposeInMainWorld("ueShed", {
 		query: (request: ConfigExplorerQuery): Promise<ConfigExplorerQueryResult> =>
 			ipcRenderer.invoke("config-explorer:query", request)
 	},
+	projectCustodian: {
+		configuredScan: (): Promise<unknown> =>
+			ipcRenderer.invoke("project-custodian:configured-scan"),
+		chooseAndScan: (): Promise<unknown> =>
+			ipcRenderer.invoke("project-custodian:choose-and-scan")
+	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
 		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current"),

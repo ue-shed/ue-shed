@@ -25,6 +25,7 @@ it.effect("renders generated help through the Effect CLI command tree", () =>
 		);
 		expect(yield* Ref.get(output)).toContain("authoring");
 		expect(yield* Ref.get(output)).toContain("project-index");
+		expect(yield* Ref.get(output)).toContain("custodian");
 		expect(yield* Ref.get(output)).toContain("scenarios");
 		expect(yield* Ref.get(errors)).toBe("");
 		expect(yield* Ref.get(exitCode)).toBe(0);

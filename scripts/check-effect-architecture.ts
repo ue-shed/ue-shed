@@ -63,6 +63,7 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-capture-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
+	"apps/workbench/src/renderer/project-custodian-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
 	// The opt-in benchmark isolates marker validation and reversible mutations in one filesystem adapter.
 	"apps/workbench/scripts/benchmark-project-index-support.ts",
@@ -80,6 +81,8 @@ const approvedPromiseAdapters = new Set([
 	// process seam; callers consume only Effect and Stream operations.
 	"packages/unreal-assets/src/project-index-process.ts",
 	"packages/unreal-assets/src/scan-target.ts",
+	// Project Custodian owns Node filesystem promises in one cancellable scan adapter.
+	"packages/project-custodian/src/node-scanner.ts",
 	// The generated browser declaration is a foreign WebAssembly adapter surface.
 	"packages/uasset-inspection-wasm/src/browser.d.ts"
 ]);
@@ -180,6 +183,7 @@ const rendererTransportFiles = new Set([
 	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-capture-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
+	"apps/workbench/src/renderer/project-custodian-client.ts",
 	"apps/workbench/src/renderer/scenario-studio-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts"
 ]);

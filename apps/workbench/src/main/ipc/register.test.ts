@@ -31,6 +31,7 @@ import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
 import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
 import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
+import { makeWorkbenchCustodianTestLayer } from "../services/project-custodian.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
 import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
@@ -241,6 +242,16 @@ function buildRegistrationLayer(recorder: Recorder) {
 		inputAtlas: () => Effect.die("not used"),
 		savedTables: () => Effect.die("savedTables is not used"),
 		savedProject: () => Effect.die("not used")
+	});
+	const custodian = makeWorkbenchCustodianTestLayer({
+		chooseAndScan: () =>
+			recorder
+				.record("projectCustodian.chooseAndScan")
+				.pipe(Effect.as({ status: "cancelled" as const })),
+		configuredScan: () =>
+			recorder
+				.record("projectCustodian.configuredScan")
+				.pipe(Effect.as({ status: "not_configured" as const }))
 	});
 
 	const sessionFailure = {
@@ -558,6 +569,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		configExplorer,
 		inputAtlas,
 		project,
+		custodian,
 		authoring,
 		mapReview,
 		mapCapture,
@@ -594,13 +606,28 @@ function runRegistered<A>(
 	}).pipe(Effect.scoped);
 }
 
-it.effect("registers exactly the 95 contract channels", () =>
+it.effect("registers every schema-owned contract channel exactly once", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) => ipc.handlers());
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(96);
+		expect(result).toHaveLength(98);
+	})
+);
+
+it.effect("dispatches Project Custodian scans through the read-only service", () =>
+	Effect.gen(function* () {
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("project-custodian:configured-scan");
+				yield* ipc.invoke("project-custodian:choose-and-scan");
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			"projectCustodian.configuredScan",
+			"projectCustodian.chooseAndScan"
+		]);
 	})
 );
 

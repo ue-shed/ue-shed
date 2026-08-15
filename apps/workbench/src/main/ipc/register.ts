@@ -12,6 +12,7 @@ import { register as registerInputAtlas } from "./input-atlas.js";
 import { register as registerMapReview } from "./map-review.js";
 import { register as registerMapCapture } from "./map-capture.js";
 import { register as registerProjectWorkspace } from "./project-workspace.js";
+import { register as registerProjectCustodian } from "./project-custodian.js";
 import { register as registerScenarios } from "./scenarios.js";
 import { register as registerShowcase } from "./showcase.js";
 
@@ -24,6 +25,7 @@ export const register = Effect.all(
 		registerFixture,
 		registerShowcase,
 		registerProjectWorkspace,
+		registerProjectCustodian,
 		registerAssetAudits,
 		registerAssetNavigation,
 		registerGameText,

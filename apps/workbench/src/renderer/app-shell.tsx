@@ -8,6 +8,7 @@ import { InputAtlasRoute } from "@ue-shed/extension-input-atlas";
 import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapCaptureRoute, MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
+import { ProjectCustodianRoute } from "@ue-shed/extension-project-custodian";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
@@ -25,6 +26,7 @@ import { workbenchRendererClient } from "./workbench-client.js";
 import { scenarioStudioClient } from "./scenario-studio-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
+import { projectCustodianClient } from "./project-custodian-client.js";
 
 const routes = [
 	{ href: "#/", label: "Showcase", route: "#/" },
@@ -32,6 +34,7 @@ const routes = [
 	{ href: "#/game-text", label: "Game Text", route: "#/game-text" },
 	{ href: "#/input-atlas", label: "Input Atlas", route: "#/input-atlas" },
 	{ href: "#/config-explorer", label: "Config", route: "#/config-explorer" },
+	{ href: "#/project-custodian", label: "Custodian", route: "#/project-custodian" },
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
 	{ href: "#/map-capture", label: "Map Capture", route: "#/map-capture" },
@@ -48,6 +51,15 @@ const workflowGroups = [
 		label: "Saved project",
 		requirement: "UNREAL CAN STAY CLOSED",
 		workflows: [
+			{
+				action: "OPEN CUSTODIAN",
+				description:
+					"Inventory regeneratable project and engine storage, then inspect a pressure-aware dry-run queue.",
+				evidence: "custodian",
+				href: "#/project-custodian",
+				title: "Project Custodian",
+				tone: "orange"
+			},
 			{
 				action: "OPEN CARTOGRAPHY",
 				description:
@@ -213,6 +225,13 @@ function workflowEvidence(
 			ready: true
 		};
 	}
+	if (workflow.evidence === "custodian") {
+		return {
+			detail: "Explicit scan root · protected paths · largest-first dry run",
+			label: "Read-only storage planning",
+			ready: true
+		};
+	}
 	if (context === undefined) {
 		return {
 			detail: "Reading Project Index",
@@ -343,6 +362,9 @@ export function AppShell() {
 					</Match>
 					<Match when={route() === "#/config-explorer"}>
 						<ConfigExplorerShowcase client={workbenchRendererClient} />
+					</Match>
+					<Match when={route() === "#/project-custodian"}>
+						<ProjectCustodianRoute client={projectCustodianClient} />
 					</Match>
 					<Match when={route() === "#/map-review"}>
 						<MapReviewRoute client={mapReviewClient} />

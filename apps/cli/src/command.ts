@@ -11,6 +11,7 @@ import { assetsCommand, inputCommand, textCommand } from "./commands/asset.js";
 import { auditCommand } from "./commands/audit.js";
 import { authoringCommand } from "./commands/authoring.js";
 import { configCommand } from "./commands/config.js";
+import { custodianCommand } from "./commands/custodian.js";
 import { doctorCommand, versionCommand } from "./commands/core.js";
 import { editorCommand } from "./commands/editor.js";
 import { mapCommand } from "./commands/map.js";
@@ -30,6 +31,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 	Command.withSubcommands([
 		versionCommand,
 		doctorCommand,
+		custodianCommand,
 		configCommand,
 		editorCommand,
 		scenarioCommand,

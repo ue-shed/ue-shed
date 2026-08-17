@@ -383,6 +383,19 @@ async function containsBuildRule(root: string, signal: AbortSignal): Promise<boo
 	return false;
 }
 
+async function pluginDeclaresNativeModules(descriptor: string): Promise<boolean> {
+	try {
+		const document: unknown = JSON.parse(await readFile(descriptor, "utf8"));
+		if (!isRecord(document)) return true;
+		const modules = document["Modules"];
+		if (modules === undefined) return false;
+		return !Array.isArray(modules) || modules.length > 0;
+	} catch {
+		// Descriptor uncertainty must preserve binaries rather than broaden reclaim authority.
+		return true;
+	}
+}
+
 async function hasNativeCode(
 	projectRoot: string,
 	plugins: readonly ProjectPlugin[],
@@ -391,6 +404,7 @@ async function hasNativeCode(
 	if (await isDirectory(join(projectRoot, "Source"))) return true;
 	for (const plugin of plugins) {
 		if (await containsBuildRule(join(plugin.root, "Source"), signal)) return true;
+		if (await pluginDeclaresNativeModules(plugin.descriptor)) return true;
 	}
 	return false;
 }

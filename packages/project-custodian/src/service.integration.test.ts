@@ -282,6 +282,60 @@ it.effect("protects binaries for projects with native plugin source", () =>
 	)
 );
 
+it.effect("protects binaries for source-less plugins with descriptor modules", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			yield* Effect.tryPromise(async () => {
+				const plugin = join(project, "Plugins", "PrecompiledPlugin");
+				await mkdir(join(plugin, "Binaries", "Win64"), { recursive: true });
+				const descriptor = join(plugin, "PrecompiledPlugin.uplugin");
+				await writeFile(
+					descriptor,
+					JSON.stringify({
+						Modules: [{ Name: "PrecompiledPlugin", Type: "Runtime" }]
+					})
+				);
+				await writeFile(
+					join(plugin, "Binaries", "Win64", "PrecompiledPlugin.dll"),
+					"binary"
+				);
+				const old = new Date(Date.now() - 120 * 86_400_000);
+				await utimes(descriptor, old, old);
+			});
+			const report = yield* scan(root);
+			const found = report.projects[0];
+			expect(found?.isCpp).toBe(true);
+			const targetPaths = found?.targets.map(({ relativePath }) => relativePath);
+			expect(targetPaths).not.toContain("Binaries");
+			expect(targetPaths).not.toContain("Plugins/PrecompiledPlugin/Binaries");
+		})
+	)
+);
+
+it.effect("preserves binaries when a plugin descriptor cannot be parsed", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			yield* Effect.tryPromise(async () => {
+				const plugin = join(project, "Plugins", "UnknownPlugin");
+				await mkdir(join(plugin, "Binaries", "Win64"), { recursive: true });
+				const descriptor = join(plugin, "UnknownPlugin.uplugin");
+				await writeFile(descriptor, "{not-json");
+				await writeFile(join(plugin, "Binaries", "Win64", "UnknownPlugin.dll"), "binary");
+				const old = new Date(Date.now() - 120 * 86_400_000);
+				await utimes(descriptor, old, old);
+			});
+			const report = yield* scan(root);
+			const found = report.projects[0];
+			expect(found?.isCpp).toBe(true);
+			expect(found?.targets.map(({ relativePath }) => relativePath)).not.toContain(
+				"Plugins/UnknownPlugin/Binaries"
+			);
+		})
+	)
+);
+
 it.effect("excludes hardlinks shared across reclaim targets", () =>
 	withWorkspace((root) =>
 		Effect.gen(function* () {

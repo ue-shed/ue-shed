@@ -61,7 +61,13 @@ export interface CustodianTarget extends Schema.Schema.Type<typeof CustodianTarg
 export const CustodianRefusal = Schema.Struct({
 	path: Schema.NonEmptyString,
 	relativePath: Schema.NonEmptyString,
-	code: Schema.Literals(["protected_path", "outside_root", "installed_engine", "unreadable"]),
+	code: Schema.Literals([
+		"protected_path",
+		"outside_root",
+		"different_volume",
+		"installed_engine",
+		"unreadable"
+	]),
 	reason: Schema.NonEmptyString
 });
 export interface CustodianRefusal extends Schema.Schema.Type<typeof CustodianRefusal> {}
@@ -71,7 +77,9 @@ export const CustodianDiagnostic = Schema.Struct({
 		"invalid_policy",
 		"descriptor_unreadable",
 		"target_unreadable",
-		"discovery_incomplete"
+		"discovery_incomplete",
+		"cross_volume_skipped",
+		"hardlink_excluded"
 	]),
 	message: Schema.NonEmptyString,
 	path: Schema.optionalKey(Schema.NonEmptyString)

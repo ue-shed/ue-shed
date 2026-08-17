@@ -122,6 +122,19 @@ interface EngineIdentity {
 	readonly buildKind: "installed" | "source";
 }
 
+export interface NodeScannerDependencies {
+	readonly deviceOf: (path: string) => Promise<number>;
+	readonly freeBytesAt: (path: string) => Promise<number>;
+}
+
+const defaultNodeScannerDependencies: NodeScannerDependencies = {
+	deviceOf: async (path) => (await stat(path)).dev,
+	freeBytesAt: async (path) => {
+		const volume = await statfs(path);
+		return Math.max(0, Math.floor(volume.bavail * volume.bsize));
+	}
+};
+
 function throwIfAborted(signal: AbortSignal): void {
 	if (signal.aborted) throw signal.reason ?? new Error("Custodian scan was cancelled.");
 }
@@ -134,7 +147,12 @@ async function isDirectory(path: string): Promise<boolean> {
 	}
 }
 
-async function discover(root: string, signal: AbortSignal): Promise<DiscoveryResult> {
+async function discover(
+	root: string,
+	rootDevice: number,
+	signal: AbortSignal,
+	dependencies: NodeScannerDependencies
+): Promise<DiscoveryResult> {
 	const descriptors: string[] = [];
 	const engineManifests: string[] = [];
 	const diagnostics: CustodianDiagnostic[] = [];
@@ -171,6 +189,24 @@ async function discover(root: string, signal: AbortSignal): Promise<DiscoveryRes
 			}
 			if (!entry.isDirectory() || current.depth >= maximumDiscoveryDepth) continue;
 			if (discoveryPruneDirectories.has(entry.name.toLocaleLowerCase())) continue;
+			try {
+				if ((await dependencies.deviceOf(path)) !== rootDevice) {
+					diagnostics.push({
+						code: "cross_volume_skipped",
+						message:
+							"Directory is on a different filesystem than the explicit scan root.",
+						path
+					});
+					continue;
+				}
+			} catch (cause) {
+				diagnostics.push({
+					code: "discovery_incomplete",
+					message: `Could not identify directory filesystem: ${cause instanceof Error ? cause.message : String(cause)}`,
+					path
+				});
+				continue;
+			}
 			queue.push({ path, depth: current.depth + 1 });
 		}
 	}
@@ -259,6 +295,106 @@ async function newestMtime(root: string, signal: AbortSignal): Promise<number | 
 	return newest;
 }
 
+async function fileMtime(path: string): Promise<number | undefined> {
+	try {
+		const metadata = await stat(path);
+		return metadata.isFile() ? metadata.mtimeMs : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function newestTimestamp(values: readonly (number | undefined)[]): number | undefined {
+	return values.reduce<number | undefined>(
+		(current, value) =>
+			value === undefined
+				? current
+				: current === undefined || value > current
+					? value
+					: current,
+		undefined
+	);
+}
+
+interface ProjectPlugin {
+	readonly descriptor: string;
+	readonly root: string;
+}
+
+async function discoverProjectPlugins(
+	projectRoot: string,
+	signal: AbortSignal
+): Promise<readonly ProjectPlugin[]> {
+	const pluginsRoot = join(projectRoot, "Plugins");
+	if (!(await isDirectory(pluginsRoot))) return [];
+	const plugins: ProjectPlugin[] = [];
+	const queue: Array<{ readonly path: string; readonly depth: number }> = [
+		{ path: pluginsRoot, depth: 0 }
+	];
+	for (let index = 0; index < queue.length; index++) {
+		throwIfAborted(signal);
+		const current = queue[index];
+		if (current === undefined) continue;
+		let entries;
+		try {
+			entries = await readdir(current.path, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		const descriptor = entries
+			.filter(
+				(entry) => entry.isFile() && entry.name.toLocaleLowerCase().endsWith(".uplugin")
+			)
+			.map((entry) => join(current.path, entry.name))
+			.sort((left, right) => left.localeCompare(right))[0];
+		if (descriptor !== undefined) {
+			plugins.push({ descriptor, root: current.path });
+			continue;
+		}
+		if (current.depth >= maximumDiscoveryDepth) continue;
+		for (const entry of entries) {
+			if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+			if (discoveryPruneDirectories.has(entry.name.toLocaleLowerCase())) continue;
+			queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 });
+		}
+	}
+	return plugins.sort((left, right) => left.root.localeCompare(right.root));
+}
+
+async function containsBuildRule(root: string, signal: AbortSignal): Promise<boolean> {
+	if (!(await isDirectory(root))) return false;
+	const queue = [root];
+	for (let index = 0; index < queue.length; index++) {
+		throwIfAborted(signal);
+		const directory = queue[index];
+		if (directory === undefined) continue;
+		let entries;
+		try {
+			entries = await readdir(directory, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		for (const entry of entries) {
+			if (entry.isSymbolicLink()) continue;
+			if (entry.isFile() && entry.name.toLocaleLowerCase().endsWith(".build.cs")) return true;
+			if (entry.isDirectory()) queue.push(join(directory, entry.name));
+		}
+	}
+	return false;
+}
+
+async function hasNativeCode(
+	projectRoot: string,
+	plugins: readonly ProjectPlugin[],
+	signal: AbortSignal
+): Promise<boolean> {
+	if (await isDirectory(join(projectRoot, "Source"))) return true;
+	for (const plugin of plugins) {
+		if (await containsBuildRule(join(plugin.root, "Source"), signal)) return true;
+	}
+	return false;
+}
+
 async function newestLogSession(savedLogs: string): Promise<number | undefined> {
 	let entries;
 	try {
@@ -292,31 +428,26 @@ async function newestLogSession(savedLogs: string): Promise<number | undefined> 
 
 async function measureFreshness(
 	projectRoot: string,
+	descriptor: string,
+	plugins: readonly ProjectPlugin[],
 	now: number,
 	signal: AbortSignal
 ): Promise<CustodianFreshness> {
-	const authored = await Promise.all(
-		["Content", "Source", "Config"].map((name) => newestMtime(join(projectRoot, name), signal))
-	);
-	const authoredAtMs = authored.reduce<number | undefined>(
-		(current, value) =>
-			value === undefined
-				? current
-				: current === undefined || value > current
-					? value
-					: current,
-		undefined
-	);
+	const projectAuthored = await Promise.all([
+		fileMtime(descriptor),
+		...["Content", "Source", "Config"].map((name) =>
+			newestMtime(join(projectRoot, name), signal)
+		),
+		...plugins.flatMap((plugin) => [
+			fileMtime(plugin.descriptor),
+			...["Content", "Source", "Config"].map((name) =>
+				newestMtime(join(plugin.root, name), signal)
+			)
+		])
+	]);
+	const authoredAtMs = newestTimestamp(projectAuthored);
 	const lastSessionAtMs = await newestLogSession(join(projectRoot, "Saved", "Logs"));
-	const effectiveAtMs = [authoredAtMs, lastSessionAtMs].reduce<number | undefined>(
-		(current, value) =>
-			value === undefined
-				? current
-				: current === undefined || value > current
-					? value
-					: current,
-		undefined
-	);
+	const effectiveAtMs = newestTimestamp([authoredAtMs, lastSessionAtMs]);
 	return {
 		...(authoredAtMs === undefined ? {} : { authoredAt: new Date(authoredAtMs).toISOString() }),
 		...(lastSessionAtMs === undefined
@@ -335,14 +466,30 @@ async function measureFreshness(
 	};
 }
 
-async function directorySize(path: string, signal: AbortSignal): Promise<number> {
-	let total = 0;
-	const seen = new Set<string>();
-	const queue = [path];
+interface DirectoryMeasurement {
+	readonly bytes: number;
+	readonly crossVolumePaths: readonly string[];
+	readonly hardlinkExcludedBytes: number;
+}
+
+async function measureDirectory(options: {
+	readonly path: string;
+	readonly expectedDevice: number;
+	readonly signal: AbortSignal;
+	readonly dependencies: NodeScannerDependencies;
+}): Promise<DirectoryMeasurement> {
+	let bytes = 0;
+	let hardlinkExcludedBytes = 0;
+	const crossVolumePaths: string[] = [];
+	const queue = [options.path];
 	for (let index = 0; index < queue.length; index++) {
-		throwIfAborted(signal);
+		throwIfAborted(options.signal);
 		const directory = queue[index];
 		if (directory === undefined) continue;
+		if ((await options.dependencies.deviceOf(directory)) !== options.expectedDevice) {
+			crossVolumePaths.push(directory);
+			continue;
+		}
 		const entries = await readdir(directory, { withFileTypes: true });
 		for (const entry of entries) {
 			if (entry.isSymbolicLink()) continue;
@@ -354,14 +501,16 @@ async function directorySize(path: string, signal: AbortSignal): Promise<number>
 			if (!entry.isFile()) continue;
 			const metadata = await lstat(child);
 			if (metadata.nlink > 1) {
-				const identity = `${metadata.dev}:${metadata.ino}`;
-				if (seen.has(identity)) continue;
-				seen.add(identity);
+				// A read-only inventory cannot prove that every other name will be removed by a
+				// future plan. Excluding the allocation is conservative and prevents both
+				// cross-target double counting and credit while a retained link survives.
+				hardlinkExcludedBytes += metadata.size;
+				continue;
 			}
-			total += metadata.size;
+			bytes += metadata.size;
 		}
 	}
-	return total;
+	return { bytes, crossVolumePaths, hardlinkExcludedBytes };
 }
 
 async function loadPolicy(projectRoot: string): Promise<{
@@ -407,8 +556,7 @@ async function loadPolicy(projectRoot: string): Promise<{
 async function projectCandidates(
 	projectRoot: string,
 	policy: CustodianPolicy,
-	isCpp: boolean,
-	ageDays: number | undefined
+	isCpp: boolean
 ): Promise<readonly { readonly definition: ProjectTargetDefinition; readonly path: string }[]> {
 	const selected = new Set(policy.targets);
 	const candidates: Array<{
@@ -421,12 +569,6 @@ async function projectCandidates(
 			isCpp &&
 			policy.keepBinariesForCpp &&
 			(definition.key === "binaries" || definition.key === "plugin_binaries")
-		) {
-			continue;
-		}
-		if (
-			definition.minimumAgeDays > 0 &&
-			(ageDays === undefined || ageDays < definition.minimumAgeDays)
 		) {
 			continue;
 		}
@@ -471,8 +613,10 @@ async function measureProjectTargets(options: {
 	readonly projectRoot: string;
 	readonly policy: CustodianPolicy;
 	readonly isCpp: boolean;
-	readonly ageDays?: number;
+	readonly now: number;
+	readonly expectedDevice: number;
 	readonly signal: AbortSignal;
+	readonly dependencies: NodeScannerDependencies;
 }): Promise<{
 	readonly targets: readonly CustodianTarget[];
 	readonly refusals: readonly CustodianRefusal[];
@@ -482,12 +626,7 @@ async function measureProjectTargets(options: {
 	const refusals: CustodianRefusal[] = [];
 	const diagnostics: CustodianDiagnostic[] = [];
 	const canonicalRoot = await realpath(options.projectRoot);
-	const candidates = await projectCandidates(
-		options.projectRoot,
-		options.policy,
-		options.isCpp,
-		options.ageDays
-	);
+	const candidates = await projectCandidates(options.projectRoot, options.policy, options.isCpp);
 	for (const candidate of candidates) {
 		throwIfAborted(options.signal);
 		if (!(await isDirectory(candidate.path))) continue;
@@ -533,12 +672,51 @@ async function measureProjectTargets(options: {
 			);
 			continue;
 		}
+		if (candidate.definition.minimumAgeDays > 0) {
+			const newestTargetAt = await newestMtime(candidate.path, options.signal);
+			const targetAgeDays =
+				newestTargetAt === undefined
+					? undefined
+					: Math.max(0, (options.now - newestTargetAt) / 86_400_000);
+			if (
+				targetAgeDays === undefined ||
+				targetAgeDays < candidate.definition.minimumAgeDays
+			) {
+				continue;
+			}
+		}
 		try {
+			const measurement = await measureDirectory({
+				path: candidate.path,
+				expectedDevice: options.expectedDevice,
+				signal: options.signal,
+				dependencies: options.dependencies
+			});
+			if (measurement.crossVolumePaths.length > 0) {
+				refusals.push(
+					refusal(
+						options.projectRoot,
+						candidate.path,
+						"different_volume",
+						"Target contains storage on a different filesystem than the scan root."
+					)
+				);
+				continue;
+			}
+			if (measurement.hardlinkExcludedBytes > 0) {
+				diagnostics.push({
+					code: "hardlink_excluded",
+					message:
+						`${measurement.hardlinkExcludedBytes} byte(s) have multiple names and ` +
+						"were conservatively excluded from reclaim estimates.",
+					path: candidate.path
+				});
+			}
 			targets.push({
 				key: candidate.definition.key,
 				path: candidate.path,
 				relativePath,
-				bytes: await directorySize(candidate.path, options.signal),
+				bytes: measurement.bytes,
 				description: candidate.definition.description,
 				rebuildCost: candidate.definition.rebuildCost,
 				risk: candidate.definition.risk
@@ -578,7 +756,9 @@ async function mapConcurrent<A, B>(
 async function scanProject(options: {
 	readonly descriptor: string;
 	readonly now: number;
+	readonly expectedDevice: number;
 	readonly signal: AbortSignal;
+	readonly dependencies: NodeScannerDependencies;
 }): Promise<CustodianProjectReport> {
 	const root = dirname(options.descriptor);
 	let engineAssociation = "not specified";
@@ -600,14 +780,23 @@ async function scanProject(options: {
 	}
 	const loadedPolicy = await loadPolicy(root);
 	if (loadedPolicy.diagnostic !== undefined) diagnostics.push(loadedPolicy.diagnostic);
-	const freshness = await measureFreshness(root, options.now, options.signal);
-	const isCpp = await isDirectory(join(root, "Source"));
+	const plugins = await discoverProjectPlugins(root, options.signal);
+	const freshness = await measureFreshness(
+		root,
+		options.descriptor,
+		plugins,
+		options.now,
+		options.signal
+	);
+	const isCpp = await hasNativeCode(root, plugins, options.signal);
 	const measured = await measureProjectTargets({
 		projectRoot: root,
 		policy: loadedPolicy.policy,
 		isCpp,
-		...(freshness.ageDays === undefined ? {} : { ageDays: freshness.ageDays }),
-		signal: options.signal
+		now: options.now,
+		expectedDevice: options.expectedDevice,
+		signal: options.signal,
+		dependencies: options.dependencies
 	});
 	diagnostics.push(...measured.diagnostics);
 	const reclaimableBytes = measured.targets.reduce((total, target) => total + target.bytes, 0);
@@ -645,15 +834,18 @@ async function scanProject(options: {
 	};
 }
 
-async function scanEngine(
-	engine: EngineIdentity,
-	signal: AbortSignal
-): Promise<CustodianEngineReport> {
+async function scanEngine(options: {
+	readonly engine: EngineIdentity;
+	readonly expectedDevice: number;
+	readonly signal: AbortSignal;
+	readonly dependencies: NodeScannerDependencies;
+}): Promise<CustodianEngineReport> {
+	const { engine } = options;
 	const targets: CustodianTarget[] = [];
 	const refusals: CustodianRefusal[] = [];
 	const diagnostics: CustodianDiagnostic[] = [];
 	for (const definition of engineTargetDefinitions) {
-		throwIfAborted(signal);
+		throwIfAborted(options.signal);
 		const path = join(engine.root, ...definition.relativePath.split("/"));
 		if (!(await isDirectory(path))) continue;
 		if (definition.sourceBuildOnly && engine.buildKind === "installed") {
@@ -667,11 +859,35 @@ async function scanEngine(
 		}
 		if (!definition.defaultOn) continue;
 		try {
+			const measurement = await measureDirectory({
+				path,
+				expectedDevice: options.expectedDevice,
+				signal: options.signal,
+				dependencies: options.dependencies
+			});
+			if (measurement.crossVolumePaths.length > 0) {
+				refusals.push({
+					path,
+					relativePath: definition.relativePath,
+					code: "different_volume",
+					reason: "Target contains storage on a different filesystem than the scan root."
+				});
+				continue;
+			}
+			if (measurement.hardlinkExcludedBytes > 0) {
+				diagnostics.push({
+					code: "hardlink_excluded",
+					message:
+						`${measurement.hardlinkExcludedBytes} byte(s) have multiple names and ` +
+						"were conservatively excluded from reclaim estimates.",
+					path
+				});
+			}
 			targets.push({
 				key: definition.key,
 				path,
 				relativePath: definition.relativePath,
-				bytes: await directorySize(path, signal),
+				bytes: measurement.bytes,
 				description: definition.description,
 				rebuildCost: definition.rebuildCost,
 				risk: definition.risk
@@ -768,13 +984,15 @@ function makePlan(options: {
 
 export async function scanCustodian(
 	request: CustodianScanRequest,
-	signal: AbortSignal
+	signal: AbortSignal,
+	dependencies: NodeScannerDependencies = defaultNodeScannerDependencies
 ): Promise<CustodianReport> {
 	const root = resolve(request.root);
 	const rootStat = await stat(root);
 	if (!rootStat.isDirectory()) throw new Error(`Scan root is not a directory: ${root}`);
+	const rootDevice = await dependencies.deviceOf(root);
 	const now = Date.now();
-	const discovery = await discover(root, signal);
+	const discovery = await discover(root, rootDevice, signal, dependencies);
 	const engines = await identifyEngines(discovery.engineManifests, signal);
 	const canonicalEngineRoots = await Promise.all(engines.map(({ root }) => realpath(root)));
 	const descriptors: string[] = [];
@@ -792,12 +1010,19 @@ export async function scanCustodian(
 	}
 	const [projects, engineReports] = await Promise.all([
 		mapConcurrent(descriptors, scanConcurrency, (descriptor) =>
-			scanProject({ descriptor, now, signal })
+			scanProject({
+				descriptor,
+				now,
+				expectedDevice: rootDevice,
+				signal,
+				dependencies
+			})
 		),
-		mapConcurrent(engines, scanConcurrency, (engine) => scanEngine(engine, signal))
+		mapConcurrent(engines, scanConcurrency, (engine) =>
+			scanEngine({ engine, expectedDevice: rootDevice, signal, dependencies })
+		)
 	]);
-	const volume = await statfs(root);
-	const freeBytes = Math.max(0, Math.floor(volume.bavail * volume.bsize));
+	const freeBytes = await dependencies.freeBytesAt(root);
 	const sortedProjects = [...projects].sort((left, right) => left.name.localeCompare(right.name));
 	const sortedEngines = [...engineReports].sort((left, right) =>
 		left.root.localeCompare(right.root)

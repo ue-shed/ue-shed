@@ -13,7 +13,8 @@ and the CLI.
 
 ## Scope and authority
 
-- Every scan has one explicit root. The first slice never silently walks every drive.
+- Every scan has one explicit root and one filesystem. Mounted directories on other volumes are
+  reported and skipped so their bytes cannot satisfy the root volume's pressure target.
 - Discovery is bounded by depth and prunes known generated, system, and dependency directories.
 - `.uproject` descriptors identify projects. `Engine/Build/Build.version` plus build machinery
   identifies engine installations; packaged games are not engines.
@@ -21,7 +22,11 @@ and the CLI.
   engine source are never reclaim targets.
 - Project-local `.ueclean.json` can opt out, set age/pressure thresholds, keep C++ binaries, or
   select known target keys. Unknown keys fail visibly.
-- Freshness combines authored-file mtimes with timestamps embedded in rotated Unreal log names.
+- Freshness combines project and plugin descriptors, project/plugin `Content`, `Source`, and
+  `Config` mtimes, and timestamps embedded in rotated Unreal log names.
+- Autosaves use the newest file in their own target for the independent 90-day grace period.
+- Files with multiple hardlinks are reported but conservatively excluded from reclaim estimates;
+  the read-only slice cannot prove that every retained name would be removed.
 - Reports distinguish inventory from a pressure-aware plan. A plan is still evidence only and
   performs no filesystem mutation.
 - Launcher/unmarked engines treat `Engine/Binaries` and `Engine/Intermediate` as protected.

@@ -153,6 +153,9 @@ importers:
       '@ue-shed/plugin-bundles':
         specifier: workspace:*
         version: link:../../packages/plugin-bundles
+      '@ue-shed/project-custodian':
+        specifier: workspace:*
+        version: link:../../packages/project-custodian
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -251,6 +254,9 @@ importers:
       '@ue-shed/extension-input-atlas':
         specifier: workspace:*
         version: link:../../extensions/input-atlas
+      '@ue-shed/extension-project-custodian':
+        specifier: workspace:*
+        version: link:../../extensions/project-custodian
       '@ue-shed/extension-scenarios':
         specifier: workspace:*
         version: link:../../extensions/scenarios
@@ -269,6 +275,9 @@ importers:
       '@ue-shed/observatory':
         specifier: workspace:*
         version: link:../../packages/observatory
+      '@ue-shed/project-custodian':
+        specifier: workspace:*
+        version: link:../../packages/project-custodian
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -499,6 +508,27 @@ importers:
       '@ue-shed/enhanced-input':
         specifier: workspace:*
         version: link:../../packages/enhanced-input
+      '@ue-shed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+      solid-js:
+        specifier: 'catalog:'
+        version: 1.9.14
+
+  extensions/project-custodian:
+    dependencies:
+      '@stylexjs/stylex':
+        specifier: 'catalog:'
+        version: 0.19.0
+      '@ue-shed/project-custodian':
+        specifier: workspace:*
+        version: link:../../packages/project-custodian
       '@ue-shed/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -760,6 +790,16 @@ importers:
         version: 4.0.0-beta.98
 
   packages/plugin-bundles:
+    dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
+
+  packages/project-custodian:
     dependencies:
       effect:
         specifier: 'catalog:'

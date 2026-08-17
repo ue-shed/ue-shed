@@ -22,6 +22,8 @@ const EditorPlayAction = Schema.Literals([
 export const CliCommand = Schema.TaggedUnion({
 	Version: {},
 	Doctor: {},
+	CustodianReport: { root: Schema.String },
+	CustodianPlan: { root: Schema.String, ignorePressure: Schema.Boolean },
 	ConfigExplain: {
 		project: Schema.String,
 		section: Schema.String,

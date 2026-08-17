@@ -55,6 +55,10 @@ import type {
 declare global {
 	interface Window {
 		readonly ueShed: {
+			readonly projectCustodian: {
+				readonly configuredScan: () => Promise<unknown>;
+				readonly chooseAndScan: () => Promise<unknown>;
+			};
 			readonly mapCapture: {
 				readonly actors: (mapPath: string) => Promise<unknown>;
 				readonly choosePlan: () => Promise<unknown>;

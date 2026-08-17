@@ -27,6 +27,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 045 completed and is archived under
+  [`archive/045-project-custodian-read-only-slice.md`](archive/045-project-custodian-read-only-slice.md)
+  after the schema-owned read-only scanner, safety policies, CLI, Workbench ledger, browser layout
+  review, and full portable gate passed.
 - Plan 044 completed and is archived under
   [`archive/044-map-tile-pyramid.md`](archive/044-map-tile-pyramid.md) after deterministic grid and
   selection contracts, transient UE 5.7 orthographic capture, immutable host publication, CLI,

@@ -197,6 +197,8 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 			source: "sample_fixture"
 		}
 	],
+	"project-custodian:configured-scan": [],
+	"project-custodian:choose-and-scan": [],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -407,6 +409,8 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 		},
 		status: "failed"
 	},
+	"project-custodian:configured-scan": { status: "not_configured" },
+	"project-custodian:choose-and-scan": { status: "cancelled" },
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
 	"project:progress": {
@@ -668,9 +672,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 };
 
-it("registers exactly 96 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(96);
-	expect(new Set(invokeChannelNames).size).toBe(96);
+it("registers exactly 98 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(98);
+	expect(new Set(invokeChannelNames).size).toBe(98);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

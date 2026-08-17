@@ -25,6 +25,7 @@ import {
 } from "@ue-shed/unreal-assets";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { ScenarioRunnerLive } from "@ue-shed/scenarios";
+import { CustodianNodeLive } from "@ue-shed/project-custodian";
 import { Effect, Layer } from "effect";
 import { join } from "node:path";
 import { electronAppLayer, ElectronApp, type ElectronAppHost } from "./adapters/electron-app.js";
@@ -49,6 +50,7 @@ import { WorkbenchMapCaptureLive } from "./services/map-capture.js";
 import { OfflineTexturePreviewLive } from "./services/offline-texture-preview.js";
 import { ProjectLauncherLive } from "./services/project-launcher.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
+import { WorkbenchCustodianLive } from "./services/project-custodian.js";
 import { ShowcaseLive } from "./services/showcase.js";
 import { WorkbenchUnrealConnectionLive } from "./services/unreal-connection.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
@@ -128,6 +130,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 		TextureAuditLive,
 		TextCorpusServiceLive,
 		EnhancedInputServiceLive,
+		CustodianNodeLive,
 		AuthoringCatalogLive,
 		OfflineTexturePreviewLive,
 		ProjectLauncherLive.pipe(Layer.provide(project)),
@@ -164,6 +167,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		WorkbenchAssetNavigationLive,
 		WorkbenchGameTextLive,
 		WorkbenchInputAtlasLive,
+		WorkbenchCustodianLive,
 		authoring,
 		authoringClient,
 		mapReview,

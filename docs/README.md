@@ -43,6 +43,7 @@ there; do not invent a second status source in docs.
 | [config-explorer.md](products/config-explorer.md)         | Saved Unreal config provenance       |
 | [game-text.md](products/game-text.md)                     | Saved text corpus and quality review |
 | [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution          |
+| [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage |
 
 ## Decisions
 

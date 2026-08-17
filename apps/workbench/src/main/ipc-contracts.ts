@@ -104,6 +104,7 @@ import {
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import { ProjectRelativeMapPath } from "@ue-shed/map-history/contract";
+import { CustodianRunResult } from "@ue-shed/extension-project-custodian/client";
 import { Schema, SchemaGetter } from "effect";
 import {
 	ProjectLaunchMode,
@@ -474,6 +475,16 @@ export const invokeContracts = {
 		channel: "config-explorer:query",
 		args: Schema.Tuple([ConfigExplorerQuery]),
 		result: ConfigExplorerQueryResult
+	}),
+	"project-custodian:configured-scan": invoke({
+		channel: "project-custodian:configured-scan",
+		args: EmptyArgs,
+		result: CustodianRunResult
+	}),
+	"project-custodian:choose-and-scan": invoke({
+		channel: "project-custodian:choose-and-scan",
+		args: EmptyArgs,
+		result: CustodianRunResult
 	}),
 	"project:current": invoke({
 		channel: "project:current",

@@ -1,3 +1,5 @@
+import type { CustodianPrepareIntent } from "@ue-shed/extension-project-custodian/client";
+import type { CustodianExecuteRequest, CustodianProposalId } from "@ue-shed/project-custodian";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
@@ -13,4 +15,16 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["project-custodian:choose-and-scan"], () =>
 		custodian.chooseAndScan()
 	);
+	yield* ipc.register(invokeContracts["project-custodian:prepare"], (...args) => {
+		const [intent] = args as [CustodianPrepareIntent];
+		return custodian.prepare(intent);
+	});
+	yield* ipc.register(invokeContracts["project-custodian:execute"], (...args) => {
+		const [intent] = args as [CustodianExecuteRequest];
+		return custodian.execute(intent);
+	});
+	yield* ipc.register(invokeContracts["project-custodian:cancel"], (...args) => {
+		const [proposalId] = args as [CustodianProposalId];
+		return custodian.cancel(proposalId);
+	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerProjectCustodian"));

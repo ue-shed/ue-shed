@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, lstat, readdir, readFile, realpath, stat, statfs } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
@@ -20,6 +21,7 @@ import type {
 	CustodianTarget,
 	EngineTargetKey
 } from "./schema.js";
+import { CustodianTargetId } from "./schema.js";
 
 const gibibyte = 1024 ** 3;
 const maximumDiscoveryDepth = 8;
@@ -47,6 +49,20 @@ const discoveryPruneDirectories = new Set(
 		"Library"
 	].map((value) => value.toLocaleLowerCase())
 );
+
+function targetId(options: {
+	readonly kind: "project" | "engine";
+	readonly root: string;
+	readonly key: CustodianTarget["key"];
+	readonly relativePath: string;
+}) {
+	const digest = createHash("sha256")
+		.update(
+			JSON.stringify([options.kind, resolve(options.root), options.key, options.relativePath])
+		)
+		.digest("hex");
+	return CustodianTargetId.make(`target-${digest}`);
+}
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -727,6 +743,12 @@ async function measureProjectTargets(options: {
 				});
 			}
 			targets.push({
+				id: targetId({
+					kind: "project",
+					root: options.projectRoot,
+					key: candidate.definition.key,
+					relativePath
+				}),
 				key: candidate.definition.key,
 				path: candidate.path,
 				relativePath,
@@ -898,6 +920,12 @@ async function scanEngine(options: {
 				});
 			}
 			targets.push({
+				id: targetId({
+					kind: "engine",
+					root: engine.root,
+					key: definition.key,
+					relativePath: definition.relativePath
+				}),
 				key: definition.key,
 				path,
 				relativePath: definition.relativePath,
@@ -1046,7 +1074,7 @@ export async function scanCustodian(
 		0
 	);
 	return {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		root,
 		measuredAt: new Date(now).toISOString(),
 		freeBytes,
@@ -1060,6 +1088,6 @@ export async function scanCustodian(
 			freeBytes,
 			ignorePressure: request.ignorePressure ?? false
 		}),
-		destructiveOperationsAvailable: false
+		destructiveOperationsAvailable: true
 	};
 }

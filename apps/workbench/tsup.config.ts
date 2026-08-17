@@ -7,7 +7,7 @@ export default defineConfig([
 		},
 		clean: false,
 		entry: ["src/main/main.ts"],
-		external: [/^electron(?:\/|$)/],
+		external: [/^electron(?:\/|$)/, "trash"],
 		format: ["esm"],
 		noExternal: [/^@ue-shed\//, "effect"],
 		outDir: "dist/main",

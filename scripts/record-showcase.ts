@@ -2,11 +2,17 @@ import { spawnSync } from "node:child_process";
 import { globSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { createWorkbenchEnvironment, repositoryRoot, runPnpm } from "./workbench-tools.ts";
+import {
+	createCustodianShowcaseFixture,
+	createWorkbenchEnvironment,
+	repositoryRoot,
+	runPnpm
+} from "./workbench-tools.ts";
 import { startPerforceMapHistoryFixture } from "./test-perforce-map-history.ts";
 
 const supportedJourneys = [
 	"saved-workflows",
+	"custodian",
 	"config-explorer",
 	"map-review",
 	"world-log",
@@ -40,6 +46,8 @@ const fixture =
 	journey === "world-log" || journey === "world-log-fast"
 		? await startPerforceMapHistoryFixture()
 		: undefined;
+const custodianFixture =
+	journey === "custodian" ? await createCustodianShowcaseFixture() : undefined;
 
 try {
 	const {
@@ -59,6 +67,10 @@ try {
 					UE_SHED_PROJECT_ROOT: fixture.projectRoot,
 					UE_SHED_SAVED_WORLD_MAP: fixture.seeded.worldPartition.mapPath
 				}
+			: {}),
+		...(custodianFixture ? { UE_SHED_CUSTODIAN_ROOT: custodianFixture.root } : {}),
+		...(journey === "custodian"
+			? { UE_SHED_CAMERA_PIPE_NAME: `\\\\.\\pipe\\ue-shed-cameras-${recordingId}` }
 			: {}),
 		UE_SHED_RECORDING_COMMIT: gitOutput(["rev-parse", "--short", "HEAD"]),
 		UE_SHED_RECORDING_DIRTY: gitOutput(["status", "--porcelain"]) ? "true" : "false",
@@ -86,5 +98,6 @@ try {
 		process.stdout.write(`\nShowcase review bundle: ${join(resultRoot, dirname(manifest))}\n`);
 	}
 } finally {
+	await custodianFixture?.dispose();
 	await fixture?.stop();
 }

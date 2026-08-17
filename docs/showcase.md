@@ -5,12 +5,12 @@ uses the committed generic fixture as its default project and keeps live Unreal 
 capability.
 
 Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
-Game Text, Texture Audit, Config Explorer, Map Review, Map Capture, World Log, and Camera Lab. The
-catalog groups them by what they actually require: a saved project, Perforce on demand, or a running
-Unreal session. Each entry shows evidence from the selected project before it is opened, including
-indexed candidate-package and map counts. Saved-source workflows open without Unreal; live texture
-preview, Live World, Map Capture, and Camera Lab request a separately enabled editor only when
-needed.
+Game Text, Texture Audit, Config Explorer, Project Custodian, Map Review, Map Capture, World Log, and
+Camera Lab. The catalog groups them by what they actually require: a saved project, Perforce on
+demand, or a running Unreal session. Each entry shows evidence from the selected project before it
+is opened, including indexed candidate-package and map counts. Saved-source workflows open without
+Unreal; live texture preview, Live World, Map Capture, and Camera Lab request a separately enabled
+editor only when needed.
 
 ## Open the Workbench
 
@@ -141,7 +141,29 @@ pnpm ue-shed config explain packages\config-explorer\fixtures\config-source\Proj
 pnpm ue-shed config compare packages\config-explorer\fixtures\config-source\Project Fixture.Settings Entries --platform PlatformA --platform PlatformB --engine-root packages\config-explorer\fixtures\config-source\Engine --family Game
 ```
 
-## Demo 5: Map Review
+## Demo 5: Project Custodian
+
+Choose **Custodian** from the nav. A showcase launch creates a fresh disposable Unreal project under
+`out/showcase-custodian`, points this route at it, and removes its remaining fixture files when
+Workbench exits. The scan distinguishes the authored `Content` file from generated Intermediate,
+Derived Data Cache, and log targets.
+
+Choose **Review cleanup…**, select exact targets, and keep the default **Trash / Recycle Bin** mode.
+**Create proposal** persists the review plus its append-only event log. Type the displayed approval
+phrase exactly, then choose **Move to Trash**. Execution refuses a running Unreal Editor or changed
+disk evidence, revalidates every target at the last responsible moment, and finishes with a durable
+per-target receipt. Permanent deletion is available only as an explicit proposal choice.
+
+For a real project, set an explicit scan root before opening Workbench:
+
+```powershell
+$env:UE_SHED_CUSTODIAN_ROOT = "D:\Unreal"
+pnpm showcase
+```
+
+The same scan, prepare, and apply lifecycle is available under `pnpm ue-shed custodian --help`.
+
+## Demo 6: Map Review
 
 Map Review does not require fixture content or a pre-authored Review Set. Point Workbench or the CLI
 at the project root. In Workbench, choose **Launch → With UE Shed** to load the required plugins for
@@ -237,7 +259,7 @@ screenshots, both Run A/Run B 1280x720 Unreal captures, persisted authoring/Revi
 manifest. The 1–24 slider is an ergonomic hint; `high-count-rig` enters 31 context cameras for 37
 total and leaves the requested count intact.
 
-## Demo 6: Map Capture
+## Demo 7: Map Capture
 
 Open **Map Capture** from the home or nav, then choose a portable Map Capture Plan. The route shows
 the snapped grid, level and tile counts, map target, and capture policy before it touches Unreal.
@@ -263,7 +285,7 @@ pnpm ue-shed map-capture run fixtures\unreal-project packages\protocol\contracts
 Use `pnpm ue-shed editor world open <endpoint> <map-path>` when map control is needed without a
 capture.
 
-## Demo 7: Scenario Studio
+## Demo 8: Scenario Studio
 
 Scenario Studio's shortest live proof runs the portable Movement Gym document through the same
 public runner used by the CLI. Launch the fixture in editor mode so the separately enabled scenario
@@ -307,7 +329,7 @@ structured cancelled result and restored input. Disabling `UEShedScenarios` demo
 capability-missing path, but requires rebuilding or relaunching the fixture and is better kept as an
 optional extended demo.
 
-## Demo 8: World Log
+## Demo 9: World Log
 
 World Log is a saved-map history investigation workspace. It runs against Perforce but does not
 need Unreal. Start its self-contained fixture with:
@@ -322,7 +344,7 @@ History World**, and run the scan. Try the changelist lens, choose an actor from
 map, then use the time control to see the actor move, appear, or disappear. The temporary server,
 client workspace, credentials, and configuration are removed when Workbench closes.
 
-## Demo 9: Camera Load Lab
+## Demo 10: Camera Load Lab
 
 Camera Load Lab is the live camera data-plane slice. Open it and choose **Launch Camera Fixture**.
 Workbench then discovers Unreal Engine 5.7, incrementally builds the fixture editor target, launches
@@ -371,6 +393,17 @@ Workbench route:
 ```powershell
 pnpm showcase:record config-explorer
 ```
+
+To record the self-contained Project Custodian journey, including a real recoverable cleanup and
+durable receipt:
+
+```powershell
+pnpm showcase:record custodian
+```
+
+The command creates a fresh disposable project, moves only its generated targets to the operating
+system Trash/Recycle Bin, verifies the receipt in Workbench, and removes the remaining fixture files
+after recording. It never points cleanup at the repository fixture.
 
 To showcase Map Review by creating fresh evidence and comparing it with the prior Capture Run:
 

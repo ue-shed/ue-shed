@@ -199,6 +199,18 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	],
 	"project-custodian:configured-scan": [],
 	"project-custodian:choose-and-scan": [],
+	"project-custodian:prepare": [
+		{
+			root: "C:/Projects",
+			ignorePressure: false,
+			mode: "trash",
+			targetIds: ["target-1"]
+		}
+	],
+	"project-custodian:execute": [
+		{ proposalPath: "C:/Records/proposal.json", approvalPhrase: "RECLAIM proposal-1" }
+	],
+	"project-custodian:cancel": ["proposal-1"],
 	"project:current": [],
 	"project:choose": [],
 	"project:progress": [],
@@ -411,6 +423,33 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	},
 	"project-custodian:configured-scan": { status: "not_configured" },
 	"project-custodian:choose-and-scan": { status: "cancelled" },
+	"project-custodian:prepare": {
+		status: "failed",
+		error: {
+			code: "prepare_failed",
+			message: "Proposal unavailable.",
+			recovery: "Rescan and retry.",
+			retrySafe: true
+		}
+	},
+	"project-custodian:execute": {
+		status: "failed",
+		error: {
+			code: "execution_failed",
+			message: "Execution unavailable.",
+			recovery: "Inspect the event log.",
+			retrySafe: false
+		}
+	},
+	"project-custodian:cancel": {
+		status: "failed",
+		error: {
+			code: "execution_failed",
+			message: "Cancellation unavailable.",
+			recovery: "Inspect the running cleanup.",
+			retrySafe: true
+		}
+	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
 	"project:progress": {
@@ -672,9 +711,9 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 };
 
-it("registers exactly 98 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(98);
-	expect(new Set(invokeChannelNames).size).toBe(98);
+it("registers exactly 101 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(101);
+	expect(new Set(invokeChannelNames).size).toBe(101);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

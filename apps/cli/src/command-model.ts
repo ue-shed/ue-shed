@@ -1,4 +1,5 @@
 import { AuthoringValue } from "@ue-shed/protocol";
+import { CustodianExecutionMode, CustodianTargetId } from "@ue-shed/project-custodian";
 import { Schema } from "effect";
 
 const Project = { projectRoot: Schema.String };
@@ -24,6 +25,14 @@ export const CliCommand = Schema.TaggedUnion({
 	Doctor: {},
 	CustodianReport: { root: Schema.String },
 	CustodianPlan: { root: Schema.String, ignorePressure: Schema.Boolean },
+	CustodianPrepare: {
+		root: Schema.String,
+		ignorePressure: Schema.Boolean,
+		mode: CustodianExecutionMode,
+		outputDirectory: Schema.String,
+		targetIds: Schema.Array(CustodianTargetId).check(Schema.isMinLength(1))
+	},
+	CustodianApply: { proposalPath: Schema.String, approvalPhrase: Schema.String },
 	ConfigExplain: {
 		project: Schema.String,
 		section: Schema.String,

@@ -8,6 +8,7 @@ import {
 	ReviewIdGeneratorLive,
 	ReviewRepositoryLive,
 	cameraFeedLayer,
+	CAMERA_PIPE_NAME,
 	reviewCaptureRemotePortLayer
 } from "@ue-shed/cameras";
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
@@ -78,6 +79,11 @@ const windowOptions: WorkbenchWindowOptions = {
  */
 function baseLayer(hosts: WorkbenchHosts) {
 	const remoteControl = RemoteControlClientLive;
+	const cameraFeed = Layer.unwrap(
+		Effect.map(WorkbenchConfiguration, (configuration) =>
+			cameraFeedLayer({ pipeName: configuration.cameraPipeName ?? CAMERA_PIPE_NAME })
+		)
+	);
 	const editorPlaySession = EditorPlaySessionLive.pipe(Layer.provide(remoteControl));
 	const editorWorldControl = EditorWorldControlLive.pipe(Layer.provide(remoteControl));
 	const scenarioRunner = ScenarioRunnerLive.pipe(
@@ -98,7 +104,7 @@ function baseLayer(hosts: WorkbenchHosts) {
 		ReviewRepositoryLive,
 		MapCaptureRepositoryLive,
 		ReviewIdGeneratorLive,
-		cameraFeedLayer(),
+		cameraFeed,
 		LocalFilesLive,
 		offlineTexturePreviewHostLayer(hosts.environment),
 		fixtureProcessLayer(hosts.environment),

@@ -1,4 +1,5 @@
 import { Config, ConfigProvider, Context, Effect, Layer, Option, Schema } from "effect";
+import { CAMERA_PIPE_NAME } from "@ue-shed/cameras";
 import type { SavedWorldMap } from "@ue-shed/protocol";
 
 export type ConfiguredPath =
@@ -32,6 +33,8 @@ export type SavedWorldMapsConfiguration =
 
 export interface WorkbenchConfigurationShape {
 	readonly authoringAsset: ConfiguredPath;
+	readonly cameraPipeName?: string;
+	readonly custodianRoot?: ConfiguredPath;
 	readonly expectedProject: ExpectedProjectConfiguration;
 	readonly project: ProjectConfiguration;
 	readonly remoteControlEndpoint: string;
@@ -69,6 +72,9 @@ const remoteControlEndpointConfig = Config.schema(
 	HttpEndpoint,
 	"UE_SHED_REMOTE_CONTROL_ENDPOINT"
 ).pipe(Config.withDefault("http://127.0.0.1:30001"));
+const cameraPipeNameConfig = Config.schema(NonEmptyConfigString, "UE_SHED_CAMERA_PIPE_NAME").pipe(
+	Config.withDefault(CAMERA_PIPE_NAME)
+);
 const projectRootConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_PROJECT_ROOT")
 );
@@ -96,6 +102,9 @@ const authoringAssetConfig = Config.option(
 );
 const unrealEngineRootConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_UNREAL_ENGINE_ROOT")
+);
+const custodianRootConfig = Config.option(
+	Config.schema(NonEmptyConfigString, "UE_SHED_CUSTODIAN_ROOT")
 );
 
 function configuredPath(path: Option.Option<string>): ConfiguredPath {
@@ -131,6 +140,8 @@ export function savedMapLabel(mapPath: string): string {
 export function makeWorkbenchConfiguration(input: {
 	readonly authoringAsset: Option.Option<string>;
 	readonly authoringSessionRoot: Option.Option<string>;
+	readonly cameraPipeName?: string;
+	readonly custodianRoot?: Option.Option<string>;
 	readonly expectedProjectName: Option.Option<string>;
 	readonly projectRoot: Option.Option<string>;
 	readonly remoteControlEndpoint: string;
@@ -174,6 +185,8 @@ export function makeWorkbenchConfiguration(input: {
 
 	return {
 		authoringAsset: configuredPath(input.authoringAsset),
+		cameraPipeName: input.cameraPipeName ?? CAMERA_PIPE_NAME,
+		custodianRoot: configuredPath(input.custodianRoot ?? Option.none()),
 		expectedProject,
 		project,
 		remoteControlEndpoint: input.remoteControlEndpoint,
@@ -196,6 +209,8 @@ export const WorkbenchConfigurationLive = Layer.effect(
 			makeWorkbenchConfiguration({
 				authoringAsset: yield* authoringAssetConfig,
 				authoringSessionRoot: yield* authoringSessionRootConfig,
+				cameraPipeName: yield* cameraPipeNameConfig,
+				custodianRoot: yield* custodianRootConfig,
 				expectedProjectName: yield* projectNameConfig,
 				projectRoot: yield* projectRootConfig,
 				remoteControlEndpoint: yield* remoteControlEndpointConfig,

@@ -17,7 +17,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"effect": "catalog:"
+		"effect": "catalog:",
+		"trash": "10.1.1"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:"

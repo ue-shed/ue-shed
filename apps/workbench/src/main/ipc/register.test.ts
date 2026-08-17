@@ -251,7 +251,38 @@ function buildRegistrationLayer(recorder: Recorder) {
 		configuredScan: () =>
 			recorder
 				.record("projectCustodian.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" as const }))
+				.pipe(Effect.as({ status: "not_configured" as const })),
+		prepare: (intent) =>
+			recorder.record(`projectCustodian.prepare:${intent.targetIds.length}`).pipe(
+				Effect.as({
+					status: "failed" as const,
+					error: {
+						code: "prepare_failed" as const,
+						message: "not used",
+						recovery: "not used",
+						retrySafe: false
+					}
+				})
+			),
+		execute: (intent) =>
+			recorder.record(`projectCustodian.execute:${intent.proposalPath}`).pipe(
+				Effect.as({
+					status: "failed" as const,
+					error: {
+						code: "execution_failed" as const,
+						message: "not used",
+						recovery: "not used",
+						retrySafe: false
+					}
+				})
+			),
+		cancel: (proposalId) =>
+			recorder.record(`projectCustodian.cancel:${proposalId}`).pipe(
+				Effect.as({
+					status: "completed" as const,
+					result: { proposalId, status: "cancelled" as const }
+				})
+			)
 	});
 
 	const sessionFailure = {
@@ -612,21 +643,35 @@ it.effect("registers every schema-owned contract channel exactly once", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(98);
+		expect(result).toHaveLength(101);
 	})
 );
 
-it.effect("dispatches Project Custodian scans through the read-only service", () =>
+it.effect("dispatches Project Custodian scans and guarded cleanup through the service", () =>
 	Effect.gen(function* () {
 		const { recorder } = yield* runRegistered((ipc) =>
 			Effect.gen(function* () {
 				yield* ipc.invoke("project-custodian:configured-scan");
 				yield* ipc.invoke("project-custodian:choose-and-scan");
+				yield* ipc.invoke("project-custodian:prepare", {
+					root: "C:/Projects",
+					ignorePressure: false,
+					mode: "trash",
+					targetIds: ["target-1"]
+				});
+				yield* ipc.invoke("project-custodian:execute", {
+					proposalPath: "C:/Records/proposal.json",
+					approvalPhrase: "RECLAIM proposal-1"
+				});
+				yield* ipc.invoke("project-custodian:cancel", "proposal-1");
 			})
 		);
 		expect(yield* recorder.calls()).toEqual([
 			"projectCustodian.configuredScan",
-			"projectCustodian.chooseAndScan"
+			"projectCustodian.chooseAndScan",
+			"projectCustodian.prepare:1",
+			"projectCustodian.execute:C:/Records/proposal.json",
+			"projectCustodian.cancel:proposal-1"
 		]);
 	})
 );

@@ -110,7 +110,13 @@ contextBridge.exposeInMainWorld("ueShed", {
 		configuredScan: (): Promise<unknown> =>
 			ipcRenderer.invoke("project-custodian:configured-scan"),
 		chooseAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("project-custodian:choose-and-scan")
+			ipcRenderer.invoke("project-custodian:choose-and-scan"),
+		prepare: (intent: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("project-custodian:prepare", intent),
+		execute: (intent: unknown): Promise<unknown> =>
+			ipcRenderer.invoke("project-custodian:execute", intent),
+		cancel: (proposalId: string): Promise<unknown> =>
+			ipcRenderer.invoke("project-custodian:cancel", proposalId)
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),

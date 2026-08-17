@@ -1,12 +1,29 @@
-import type { CustodianRunResult } from "@ue-shed/extension-project-custodian/client";
-import { Custodian } from "@ue-shed/project-custodian";
+import type {
+	CustodianCancelRunResult,
+	CustodianExecutionRunResult,
+	CustodianPrepareIntent,
+	CustodianPrepareRunResult,
+	CustodianRunResult
+} from "@ue-shed/extension-project-custodian/client";
+import {
+	Custodian,
+	type CustodianExecuteRequest,
+	type CustodianProposalId
+} from "@ue-shed/project-custodian";
+import { join } from "node:path";
 import { Context, Effect, Layer, Ref } from "effect";
+import { ElectronApp } from "../adapters/electron-app.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
 export interface WorkbenchCustodianShape {
 	readonly chooseAndScan: () => Effect.Effect<CustodianRunResult>;
 	readonly configuredScan: () => Effect.Effect<CustodianRunResult>;
+	readonly prepare: (intent: CustodianPrepareIntent) => Effect.Effect<CustodianPrepareRunResult>;
+	readonly execute: (
+		intent: CustodianExecuteRequest
+	) => Effect.Effect<CustodianExecutionRunResult>;
+	readonly cancel: (proposalId: CustodianProposalId) => Effect.Effect<CustodianCancelRunResult>;
 }
 
 export class WorkbenchCustodian extends Context.Service<
@@ -20,10 +37,13 @@ export const WorkbenchCustodianLive = Layer.effect(
 		const configuration = yield* WorkbenchConfiguration;
 		const custodian = yield* Custodian;
 		const dialog = yield* ElectronDialog;
+		const electronApp = yield* ElectronApp;
 		const root = yield* Ref.make<string | undefined>(
-			configuration.project.status === "configured"
-				? configuration.project.projectRoot
-				: undefined
+			configuration.custodianRoot?.status === "configured"
+				? configuration.custodianRoot.path
+				: configuration.project.status === "configured"
+					? configuration.project.projectRoot
+					: undefined
 		);
 
 		const scan = Effect.fn("Workbench.ProjectCustodian.scan")(function* (scanRoot: string) {
@@ -71,7 +91,70 @@ export const WorkbenchCustodianLive = Layer.effect(
 			return yield* scan(choice.path);
 		});
 
-		return WorkbenchCustodian.of({ chooseAndScan, configuredScan });
+		const prepare = Effect.fn("Workbench.ProjectCustodian.prepare")(function* (
+			intent: CustodianPrepareIntent
+		) {
+			return yield* Effect.gen(function* () {
+				const userData = yield* electronApp.getPath("userData");
+				const proposal = yield* custodian.prepare({
+					...intent,
+					proposalDirectory: join(userData, "custodian")
+				});
+				return { status: "completed" as const, proposal };
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: {
+							code: "prepare_failed" as const,
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: error.retrySafe
+						}
+					})
+				)
+			);
+		});
+
+		const execute = Effect.fn("Workbench.ProjectCustodian.execute")(function* (
+			intent: CustodianExecuteRequest
+		) {
+			return yield* custodian.execute(intent).pipe(
+				Effect.map((receipt) => ({ status: "completed" as const, receipt })),
+				Effect.catch((error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: {
+							code: "execution_failed" as const,
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: error.retrySafe
+						}
+					})
+				)
+			);
+		});
+
+		const cancel = Effect.fn("Workbench.ProjectCustodian.cancel")(function* (
+			proposalId: CustodianProposalId
+		) {
+			return yield* custodian.cancel(proposalId).pipe(
+				Effect.map((result) => ({ status: "completed" as const, result })),
+				Effect.catch((error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: {
+							code: "execution_failed" as const,
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: error.retrySafe
+						}
+					})
+				)
+			);
+		});
+
+		return WorkbenchCustodian.of({ chooseAndScan, configuredScan, prepare, execute, cancel });
 	})
 );
 

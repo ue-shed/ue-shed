@@ -58,6 +58,9 @@ declare global {
 			readonly projectCustodian: {
 				readonly configuredScan: () => Promise<unknown>;
 				readonly chooseAndScan: () => Promise<unknown>;
+				readonly prepare: (intent: unknown) => Promise<unknown>;
+				readonly execute: (intent: unknown) => Promise<unknown>;
+				readonly cancel: (proposalId: string) => Promise<unknown>;
 			};
 			readonly mapCapture: {
 				readonly actors: (mapPath: string) => Promise<unknown>;

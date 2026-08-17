@@ -11,12 +11,14 @@ it.effect("defaults the remote control endpoint when unset", () =>
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
 		expect(configuration.remoteControlEndpoint).toBe("http://127.0.0.1:30001");
+		expect(configuration.cameraPipeName).toBe("\\\\.\\pipe\\ue-shed-cameras-v1");
 		expect(configuration.project).toEqual({ status: "not_configured" });
 		expect(configuration.review).toEqual({ status: "not_configured" });
 		expect(configuration.savedWorldMap).toEqual({ status: "not_configured" });
 		expect(configuration.savedWorldMaps).toEqual({ status: "not_configured" });
 		expect(configuration.textureAuditRules).toEqual({ status: "not_configured" });
 		expect(configuration.authoringAsset).toEqual({ status: "not_configured" });
+		expect(configuration.custodianRoot).toEqual({ status: "not_configured" });
 		expect(configuration.sourceCheckout).toEqual({ status: "not_configured" });
 		expect(configuration.expectedProject).toEqual({ status: "not_configured" });
 		expect(configuration.unrealEngineRoot).toEqual({ status: "not_configured" });
@@ -86,6 +88,8 @@ it.effect("loads a complete configured Workbench session", () =>
 		const configuration = yield* WorkbenchConfiguration;
 		expect(configuration).toEqual({
 			authoringAsset: { status: "configured", path: "C:/table.uasset" },
+			cameraPipeName: "\\\\.\\pipe\\ue-shed-cameras-recording",
+			custodianRoot: { status: "configured", path: "C:/Unreal" },
 			expectedProject: { status: "configured", projectName: "Fixture" },
 			project: {
 				status: "configured",
@@ -112,6 +116,8 @@ it.effect("loads a complete configured Workbench session", () =>
 			workbenchConfigurationFromUnknown({
 				UE_SHED_AUTHORING_ASSET: "C:/table.uasset",
 				UE_SHED_AUTHORING_SESSION_ROOT: "C:/Temp/authoring-sessions",
+				UE_SHED_CAMERA_PIPE_NAME: "\\\\.\\pipe\\ue-shed-cameras-recording",
+				UE_SHED_CUSTODIAN_ROOT: "C:/Unreal",
 				UE_SHED_PROJECT_NAME: "Fixture",
 				UE_SHED_PROJECT_ROOT: "C:/FixtureProject",
 				UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30010",

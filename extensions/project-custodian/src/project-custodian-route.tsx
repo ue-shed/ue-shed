@@ -1,8 +1,12 @@
 import * as stylex from "@stylexjs/stylex";
 import type {
 	CustodianEngineReport,
+	CustodianExecutionMode,
+	CustodianProposal,
 	CustodianProjectReport,
+	CustodianReceipt,
 	CustodianReport,
+	CustodianTargetId,
 	CustodianTarget
 } from "@ue-shed/project-custodian/browser";
 import { Button, createEffectAction, PageHeader } from "@ue-shed/ui";
@@ -24,6 +28,14 @@ type ViewState =
 	| { readonly status: "ready"; readonly report: CustodianReport };
 
 type InventoryItem = CustodianProjectReport | CustodianEngineReport;
+
+type CleanupState =
+	| { readonly stage: "select" }
+	| { readonly stage: "preparing" }
+	| { readonly stage: "approve"; readonly proposal: CustodianProposal }
+	| { readonly stage: "executing"; readonly proposal: CustodianProposal }
+	| { readonly stage: "result"; readonly receipt: CustodianReceipt }
+	| { readonly stage: "failed"; readonly error: CustodianPublicError };
 
 function humanBytes(bytes: number): string {
 	const units = ["B", "KB", "MB", "GB", "TB"] as const;
@@ -75,6 +87,7 @@ function stateFrom(result: CustodianRunResult): ViewState {
 export function ProjectCustodianRoute(props: { readonly client: CustodianClientShape }) {
 	const action = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
+	const [cleanupOpen, setCleanupOpen] = createSignal(false);
 	const report = createMemo(() => {
 		const current = state();
 		return current.status === "ready" ? current.report : undefined;
@@ -91,6 +104,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientS
 	});
 
 	const run = (operation: () => ReturnType<CustodianClientShape["configuredScan"]>) => {
+		setCleanupOpen(false);
 		setState({ status: "loading" });
 		action.run(operation(), {
 			onSuccess: (result) => setState(stateFrom(result)),
@@ -134,9 +148,10 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientS
 			/>
 
 			<div {...stylex.props(styles.safetyRail)}>
-				<span {...stylex.props(styles.safetyMark)}>READ ONLY</span>
+				<span {...stylex.props(styles.safetyMark)}>GUARDED CLEANUP</span>
 				<span>
-					Inventory and planning only. No delete, move, Trash, or Recycle Bin authority.
+					Every run creates a durable proposal, requires its exact approval phrase, and
+					revalidates targets before Trash or permanent deletion.
 				</span>
 			</div>
 
@@ -190,10 +205,25 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientS
 				</Match>
 				<Match when={report()}>
 					{(current: Accessor<CustodianReport>) => (
-						<CustodianLedger report={current()} inventory={inventory()} />
+						<CustodianLedger
+							report={current()}
+							inventory={inventory()}
+							onReviewCleanup={() => setCleanupOpen(true)}
+						/>
 					)}
 				</Match>
 			</Switch>
+
+			<Show when={cleanupOpen() ? report() : undefined} keyed>
+				{(current) => (
+					<CleanupWorkflow
+						client={props.client}
+						report={current}
+						onClose={() => setCleanupOpen(false)}
+						onFinished={() => run(() => props.client.configuredScan())}
+					/>
+				)}
+			</Show>
 		</main>
 	);
 }
@@ -215,6 +245,7 @@ function EmptyState(props: {
 function CustodianLedger(props: {
 	readonly report: CustodianReport;
 	readonly inventory: readonly InventoryItem[];
+	readonly onReviewCleanup: () => void;
 }) {
 	const pressure = () => {
 		const threshold = props.report.plan.thresholdBytes;
@@ -309,8 +340,19 @@ function CustodianLedger(props: {
 						</For>
 					</Show>
 					<footer {...stylex.props(styles.planFooter)}>
-						<span>EXECUTION</span>
-						<strong>NOT AVAILABLE</strong>
+						<div>
+							<span>EXECUTION</span>
+							<strong>
+								{props.report.plan.items.length > 0 ? "AVAILABLE" : "NO QUEUE"}
+							</strong>
+						</div>
+						<Button
+							tone="primary"
+							disabled={props.report.plan.items.length === 0}
+							onClick={props.onReviewCleanup}
+						>
+							Review cleanup…
+						</Button>
 					</footer>
 				</aside>
 			</div>
@@ -407,6 +449,476 @@ function TargetRow(props: { readonly target: CustodianTarget }) {
 			</div>
 			<b>{humanBytes(props.target.bytes)}</b>
 		</div>
+	);
+}
+
+function CleanupWorkflow(props: {
+	readonly client: CustodianClientShape;
+	readonly report: CustodianReport;
+	readonly onClose: () => void;
+	readonly onFinished: () => void;
+}) {
+	const action = createEffectAction();
+	const cancelAction = createEffectAction();
+	const targets = props.report.plan.items.flatMap((item) =>
+		item.targets.map((target) => ({ owner: item.name, target }))
+	);
+	const [selectedIds, setSelectedIds] = createSignal<readonly CustodianTargetId[]>(
+		targets.map(({ target }) => target.id)
+	);
+	const [mode, setMode] = createSignal<CustodianExecutionMode>("trash");
+	const [approval, setApproval] = createSignal("");
+	const [cancelRequested, setCancelRequested] = createSignal(false);
+	const [state, setState] = createSignal<CleanupState>({ stage: "select" });
+	const selectedTargets = createMemo(() =>
+		targets.filter(({ target }) => selectedIds().includes(target.id))
+	);
+	const selectedBytes = createMemo(() =>
+		selectedTargets().reduce((total, { target }) => total + target.bytes, 0)
+	);
+	const step = createMemo(() => {
+		switch (state().stage) {
+			case "select":
+			case "preparing":
+				return 0;
+			case "approve":
+				return 1;
+			default:
+				return 2;
+		}
+	});
+	const toggle = (targetId: CustodianTargetId) => {
+		setSelectedIds((current) =>
+			current.includes(targetId)
+				? current.filter((candidate) => candidate !== targetId)
+				: [...current, targetId]
+		);
+	};
+	const clientFailure = (cause: Cause.Cause<unknown>): CustodianPublicError => ({
+		code: "execution_failed",
+		message: Cause.pretty(cause),
+		recovery: "Restart Workbench, rescan the root, and inspect durable cleanup records.",
+		retrySafe: false
+	});
+	const prepare = () => {
+		if (selectedIds().length === 0) return;
+		setState({ stage: "preparing" });
+		action.run(
+			props.client.prepare({
+				root: props.report.root,
+				ignorePressure: false,
+				mode: mode(),
+				targetIds: selectedIds()
+			}),
+			{
+				onFailure: (cause) => setState({ stage: "failed", error: clientFailure(cause) }),
+				onSuccess: (result) =>
+					result.status === "completed"
+						? setState({ stage: "approve", proposal: result.proposal })
+						: setState({ stage: "failed", error: result.error })
+			}
+		);
+	};
+	const execute = (proposal: CustodianProposal) => {
+		if (approval() !== proposal.approvalPhrase) return;
+		setState({ stage: "executing", proposal });
+		action.run(
+			props.client.execute({
+				proposalPath: proposal.proposalPath,
+				approvalPhrase: approval()
+			}),
+			{
+				onFailure: (cause) => setState({ stage: "failed", error: clientFailure(cause) }),
+				onSuccess: (result) =>
+					result.status === "completed"
+						? setState({ stage: "result", receipt: result.receipt })
+						: setState({ stage: "failed", error: result.error })
+			}
+		);
+	};
+	const cancel = (proposal: CustodianProposal) => {
+		setCancelRequested(true);
+		cancelAction.run(props.client.cancel(proposal.id), {
+			onFailure: (cause) => setState({ stage: "failed", error: clientFailure(cause) }),
+			onSuccess: (result) => {
+				if (result.status === "failed") setState({ stage: "failed", error: result.error });
+			}
+		});
+	};
+
+	return (
+		<div {...stylex.props(styles.workflowScrim)}>
+			<section
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="custodian-cleanup-title"
+				{...stylex.props(styles.workflow)}
+			>
+				<header {...stylex.props(styles.workflowHeader)}>
+					<div>
+						<span {...stylex.props(styles.workflowKicker)}>DESTRUCTIVE BOUNDARY</span>
+						<h2 id="custodian-cleanup-title">Review cleanup</h2>
+					</div>
+					<button
+						type="button"
+						aria-label="Close cleanup workflow"
+						disabled={state().stage === "executing"}
+						onClick={props.onClose}
+						{...stylex.props(styles.workflowClose)}
+					>
+						×
+					</button>
+				</header>
+
+				<ol aria-label="Cleanup workflow progress" {...stylex.props(styles.workflowSteps)}>
+					<For each={["SELECT", "APPROVE", "EXECUTE"] as const}>
+						{(label, index) => (
+							<li
+								{...stylex.props(
+									styles.workflowStep,
+									index() <= step() && styles.workflowStepActive
+								)}
+							>
+								<span>{String(index() + 1).padStart(2, "0")}</span>
+								<strong>{label}</strong>
+							</li>
+						)}
+					</For>
+				</ol>
+
+				<div {...stylex.props(styles.workflowBody)}>
+					<Switch>
+						<Match when={state().stage === "select" || state().stage === "preparing"}>
+							<section
+								aria-label="Select cleanup targets"
+								{...stylex.props(styles.workflowStage)}
+							>
+								<p {...stylex.props(styles.workflowIndex)}>01 / SELECT TARGETS</p>
+								<h3>Choose the rebuildable layer to reclaim.</h3>
+								<p {...stylex.props(styles.workflowCopy)}>
+									The proposal records exact target IDs and measured bytes.
+									Authored Content, Source, Config, project roots, and save games
+									cannot enter this list.
+								</p>
+								<div {...stylex.props(styles.modeGrid)}>
+									<label
+										{...stylex.props(
+											styles.modeChoice,
+											mode() === "trash" && styles.modeSelected
+										)}
+									>
+										<input
+											type="radio"
+											name="cleanup-mode"
+											checked={mode() === "trash"}
+											onChange={() => setMode("trash")}
+										/>
+										<span {...stylex.props(styles.modeCopy)}>
+											<strong>Trash / Recycle Bin</strong>
+											<small>
+												Recoverable. Space returns after the bin is emptied.
+											</small>
+										</span>
+									</label>
+									<label
+										{...stylex.props(
+											styles.modeChoice,
+											mode() === "permanent" && styles.modeDanger
+										)}
+									>
+										<input
+											type="radio"
+											name="cleanup-mode"
+											checked={mode() === "permanent"}
+											onChange={() => setMode("permanent")}
+										/>
+										<span {...stylex.props(styles.modeCopy)}>
+											<strong>Permanent deletion</strong>
+											<small>
+												Immediate space. These directories cannot be
+												restored.
+											</small>
+										</span>
+									</label>
+								</div>
+								<ul {...stylex.props(styles.cleanupTargets)}>
+									<For each={targets}>
+										{({ owner, target }) => (
+											<li {...stylex.props(styles.cleanupTarget)}>
+												<label {...stylex.props(styles.cleanupTargetLabel)}>
+													<input
+														type="checkbox"
+														checked={selectedIds().includes(target.id)}
+														onChange={() => toggle(target.id)}
+													/>
+													<span
+														{...stylex.props(styles.cleanupTargetCopy)}
+													>
+														<strong>{target.relativePath}</strong>
+														<small>
+															{owner} · {target.rebuildCost}
+														</small>
+													</span>
+													<b>{humanBytes(target.bytes)}</b>
+												</label>
+											</li>
+										)}
+									</For>
+								</ul>
+							</section>
+						</Match>
+
+						<Match when={state().stage === "approve"}>
+							{(() => {
+								const current = state();
+								if (current.stage !== "approve") return null;
+								return (
+									<section
+										aria-label="Approve cleanup proposal"
+										{...stylex.props(styles.workflowStage)}
+									>
+										<p {...stylex.props(styles.workflowIndex)}>
+											02 / APPROVE PROPOSAL
+										</p>
+										<h3>The plan is now durable.</h3>
+										<p {...stylex.props(styles.workflowCopy)}>
+											Nothing has moved yet. The executor will rescan every
+											target, refuse drift, and refuse while any Unreal Editor
+											is running.
+										</p>
+										<dl {...stylex.props(styles.proposalFacts)}>
+											<div {...stylex.props(styles.proposalFact)}>
+												<dt {...stylex.props(styles.proposalFactLabel)}>
+													Mode
+												</dt>
+												<dd {...stylex.props(styles.proposalFactValue)}>
+													{current.proposal.mode}
+												</dd>
+											</div>
+											<div {...stylex.props(styles.proposalFact)}>
+												<dt {...stylex.props(styles.proposalFactLabel)}>
+													Targets
+												</dt>
+												<dd {...stylex.props(styles.proposalFactValue)}>
+													{current.proposal.targets.length}
+												</dd>
+											</div>
+											<div {...stylex.props(styles.proposalFact)}>
+												<dt {...stylex.props(styles.proposalFactLabel)}>
+													Measured
+												</dt>
+												<dd {...stylex.props(styles.proposalFactValue)}>
+													{humanBytes(current.proposal.bytes)}
+												</dd>
+											</div>
+											<div {...stylex.props(styles.proposalFact)}>
+												<dt {...stylex.props(styles.proposalFactLabel)}>
+													Proposal
+												</dt>
+												<dd {...stylex.props(styles.proposalFactValue)}>
+													{leaf(current.proposal.proposalPath)}
+												</dd>
+											</div>
+										</dl>
+										<label {...stylex.props(styles.approvalLabel)}>
+											<span>Type the exact approval phrase</span>
+											<code>{current.proposal.approvalPhrase}</code>
+											<input
+												value={approval()}
+												onInput={(event) =>
+													setApproval(event.currentTarget.value)
+												}
+												autocomplete="off"
+												spellcheck={false}
+											/>
+										</label>
+									</section>
+								);
+							})()}
+						</Match>
+
+						<Match when={state().stage === "executing"}>
+							<section
+								aria-label="Cleanup in progress"
+								aria-live="polite"
+								{...stylex.props(styles.executing)}
+							>
+								<span {...stylex.props(styles.executionPulse)} />
+								<p {...stylex.props(styles.workflowIndex)}>03 / EXECUTE</p>
+								<h3>
+									{cancelRequested()
+										? "Cancelling remaining targets…"
+										: "Revalidating, then reclaiming."}
+								</h3>
+								<p>Each completed target is appended to the durable event log.</p>
+							</section>
+						</Match>
+
+						<Match when={state().stage === "result"}>
+							{(() => {
+								const current = state();
+								if (current.stage !== "result") return null;
+								return <CleanupResult receipt={current.receipt} />;
+							})()}
+						</Match>
+
+						<Match when={state().stage === "failed"}>
+							{(() => {
+								const current = state();
+								if (current.stage !== "failed") return null;
+								return (
+									<section role="alert" {...stylex.props(styles.workflowFailure)}>
+										<p {...stylex.props(styles.workflowIndex)}>
+											CLEANUP FAILED
+										</p>
+										<h3>{current.error.message}</h3>
+										<p>{current.error.recovery}</p>
+									</section>
+								);
+							})()}
+						</Match>
+					</Switch>
+				</div>
+
+				<footer {...stylex.props(styles.workflowFooter)}>
+					<Show when={state().stage === "select" || state().stage === "preparing"}>
+						<button
+							type="button"
+							onClick={props.onClose}
+							{...stylex.props(styles.secondaryAction)}
+						>
+							CANCEL
+						</button>
+						<span {...stylex.props(styles.selectionTotal)}>
+							{selectedIds().length} TARGETS · {humanBytes(selectedBytes())}
+						</span>
+						<button
+							type="button"
+							disabled={selectedIds().length === 0 || state().stage === "preparing"}
+							onClick={prepare}
+							{...stylex.props(styles.primaryAction)}
+						>
+							{state().stage === "preparing" ? "CREATING…" : "CREATE PROPOSAL →"}
+						</button>
+					</Show>
+					<Show when={state().stage === "approve"}>
+						{(() => {
+							const current = state();
+							if (current.stage !== "approve") return null;
+							return (
+								<>
+									<button
+										type="button"
+										onClick={props.onClose}
+										{...stylex.props(styles.secondaryAction)}
+									>
+										CLOSE
+									</button>
+									<button
+										type="button"
+										disabled={approval() !== current.proposal.approvalPhrase}
+										onClick={() => execute(current.proposal)}
+										{...stylex.props(styles.dangerAction)}
+									>
+										{current.proposal.mode === "trash"
+											? "MOVE TO TRASH"
+											: "DELETE PERMANENTLY"}
+									</button>
+								</>
+							);
+						})()}
+					</Show>
+					<Show when={state().stage === "executing"}>
+						{(() => {
+							const current = state();
+							if (current.stage !== "executing") return null;
+							return (
+								<button
+									type="button"
+									disabled={cancelRequested()}
+									onClick={() => cancel(current.proposal)}
+									{...stylex.props(styles.secondaryAction)}
+								>
+									CANCEL REMAINING
+								</button>
+							);
+						})()}
+					</Show>
+					<Show when={state().stage === "result" || state().stage === "failed"}>
+						<button
+							type="button"
+							onClick={props.onFinished}
+							{...stylex.props(styles.primaryAction)}
+						>
+							DONE · RESCAN
+						</button>
+					</Show>
+				</footer>
+			</section>
+		</div>
+	);
+}
+
+function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
+	return (
+		<section
+			aria-label="Cleanup result"
+			aria-live="polite"
+			{...stylex.props(styles.workflowStage)}
+		>
+			<p {...stylex.props(styles.workflowIndex)}>03 / {props.receipt.status.toUpperCase()}</p>
+			<h3>
+				{props.receipt.status === "completed"
+					? "Cleanup finished with durable evidence."
+					: props.receipt.status === "refused"
+						? "Cleanup was refused before mutation."
+						: props.receipt.status === "cancelled"
+							? "Remaining targets were cancelled."
+							: "Cleanup completed partially."}
+			</h3>
+			<Show when={props.receipt.refusal} keyed>
+				{(refusal) => (
+					<div role="alert" {...stylex.props(styles.receiptRefusal)}>
+						<strong>{refusal.message}</strong>
+						<p>{refusal.recovery}</p>
+					</div>
+				)}
+			</Show>
+			<div {...stylex.props(styles.resultSummary)}>
+				<div {...stylex.props(styles.resultDatum)}>
+					<strong>
+						{
+							props.receipt.entries.filter(
+								({ status }) => status === "trashed" || status === "deleted"
+							).length
+						}
+					</strong>
+					<span>PROCESSED</span>
+				</div>
+				<div {...stylex.props(styles.resultDatum)}>
+					<strong>{humanBytes(props.receipt.processedBytes)}</strong>
+					<span>{props.receipt.mode === "trash" ? "MOVED" : "DELETED"}</span>
+				</div>
+				<div {...stylex.props(styles.resultDatum)}>
+					<strong>
+						{props.receipt.entries.filter(({ status }) => status === "failed").length}
+					</strong>
+					<span>FAILED</span>
+				</div>
+			</div>
+			<ul {...stylex.props(styles.receiptEntries)}>
+				<For each={props.receipt.entries}>
+					{(entry) => (
+						<li {...stylex.props(styles.receiptEntry)}>
+							<span>{entry.status.toUpperCase()}</span>
+							<strong>{entry.relativePath}</strong>
+							<small>{entry.message ?? humanBytes(entry.bytes)}</small>
+						</li>
+					)}
+				</For>
+			</ul>
+			<p {...stylex.props(styles.receiptPath)}>Receipt · {props.receipt.receiptPath}</p>
+		</section>
 	);
 }
 
@@ -589,6 +1101,8 @@ const styles = stylex.create({
 	planFooter: {
 		display: "flex",
 		justifyContent: "space-between",
+		alignItems: "center",
+		gap: 10,
 		margin: 12,
 		paddingTop: 12,
 		borderTop: "1px solid #3b433f",
@@ -596,6 +1110,234 @@ const styles = stylex.create({
 		fontSize: 8,
 		letterSpacing: ".12em"
 	},
+	workflowScrim: {
+		position: "fixed",
+		inset: 0,
+		zIndex: 90,
+		display: "flex",
+		justifyContent: "flex-end",
+		backgroundColor: "#030403c7",
+		backdropFilter: "blur(4px)"
+	},
+	workflow: {
+		width: "min(620px, 96vw)",
+		height: "100%",
+		display: "grid",
+		gridTemplateRows: "auto auto minmax(0, 1fr) auto",
+		borderLeft: "1px solid #58463a",
+		backgroundColor: "#101311",
+		boxShadow: "-30px 0 90px #000c",
+		color: tokens.colorText
+	},
+	workflowHeader: {
+		minHeight: 94,
+		display: "flex",
+		alignItems: "flex-start",
+		justifyContent: "space-between",
+		padding: "22px 24px 18px",
+		borderBottom: "1px solid #3c3934"
+	},
+	workflowKicker: {
+		color: "#e39b54",
+		fontSize: 8,
+		fontWeight: 800,
+		letterSpacing: ".16em"
+	},
+	workflowClose: {
+		width: 32,
+		height: 32,
+		border: "1px solid #4b4943",
+		backgroundColor: { default: "transparent", ":hover": "#28251f" },
+		color: "#9d9a91",
+		fontSize: 20,
+		cursor: "pointer"
+	},
+	workflowSteps: {
+		listStyle: "none",
+		margin: 0,
+		padding: 0,
+		display: "grid",
+		gridTemplateColumns: "repeat(3, 1fr)",
+		borderBottom: "1px solid #3c3934"
+	},
+	workflowStep: {
+		display: "flex",
+		gap: 8,
+		padding: "12px 16px",
+		borderRight: "1px solid #302e2a",
+		color: "#615f59",
+		fontSize: 8,
+		letterSpacing: ".12em"
+	},
+	workflowStepActive: { color: "#e3a66c", boxShadow: "inset 0 -2px #e39b54" },
+	workflowBody: { overflowY: "auto" },
+	workflowStage: { padding: "28px 26px 34px" },
+	workflowIndex: { color: "#e39b54", fontSize: 9, letterSpacing: ".16em" },
+	workflowCopy: { color: "#929a94", fontSize: 11, lineHeight: 1.7 },
+	modeGrid: {
+		display: "grid",
+		gridTemplateColumns: "1fr 1fr",
+		gap: 8,
+		margin: "22px 0 14px"
+	},
+	modeChoice: {
+		minHeight: 84,
+		display: "grid",
+		gridTemplateColumns: "18px 1fr",
+		alignContent: "center",
+		gap: "5px 8px",
+		padding: 13,
+		border: "1px solid #3b403c",
+		backgroundColor: "#151916",
+		color: "#c2c9c4",
+		fontSize: 10,
+		cursor: "pointer"
+	},
+	modeCopy: { minWidth: 0, display: "flex", flexDirection: "column", gap: 6, lineHeight: 1.45 },
+	modeSelected: { borderColor: "#72bda7", backgroundColor: "#14201c" },
+	modeDanger: { borderColor: "#a95b4e", backgroundColor: "#211512" },
+	cleanupTargets: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 },
+	cleanupTarget: { border: "1px solid #343a36", backgroundColor: "#131714" },
+	cleanupTargetLabel: {
+		minHeight: 62,
+		display: "grid",
+		gridTemplateColumns: "18px minmax(0, 1fr) auto",
+		alignItems: "center",
+		gap: 10,
+		padding: "0 13px",
+		cursor: "pointer"
+	},
+	cleanupTargetCopy: { minWidth: 0, display: "flex", flexDirection: "column", gap: 5 },
+	proposalFacts: { margin: "22px 0", border: "1px solid #3a3e3a" },
+	proposalFact: {
+		minHeight: 42,
+		display: "grid",
+		gridTemplateColumns: "120px minmax(0, 1fr)",
+		alignItems: "center",
+		padding: "0 13px",
+		borderBottom: "1px solid #303531"
+	},
+	proposalFactLabel: { color: "#707972", fontSize: 8, letterSpacing: ".11em" },
+	proposalFactValue: {
+		margin: 0,
+		color: "#c5cbc6",
+		fontSize: 10,
+		overflow: "hidden",
+		textOverflow: "ellipsis"
+	},
+	approvalLabel: {
+		display: "grid",
+		gap: 8,
+		padding: 16,
+		borderLeft: "3px solid #e39b54",
+		backgroundColor: "#1c1915",
+		color: "#9ea39f",
+		fontSize: 9,
+		letterSpacing: ".08em"
+	},
+	executing: {
+		minHeight: "100%",
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "center",
+		justifyContent: "center",
+		padding: 30,
+		textAlign: "center",
+		color: "#929a94"
+	},
+	executionPulse: {
+		width: 74,
+		height: 74,
+		marginBottom: 20,
+		border: "1px solid #5b4c40",
+		borderTopColor: "#e39b54",
+		borderRadius: "50%",
+		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
+		animationDuration: "1.8s",
+		animationIterationCount: "infinite",
+		animationTimingFunction: "linear"
+	},
+	workflowFailure: { padding: 28, color: "#e3937f" },
+	workflowFooter: {
+		minHeight: 72,
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "flex-end",
+		gap: 9,
+		padding: "14px 20px",
+		borderTop: "1px solid #393833",
+		backgroundColor: "#0c0e0c"
+	},
+	secondaryAction: {
+		minHeight: 38,
+		padding: "0 16px",
+		border: "1px solid #464943",
+		backgroundColor: { default: "transparent", ":hover": "#1a1e1a" },
+		color: "#a0a59f",
+		fontSize: 9,
+		letterSpacing: ".11em",
+		cursor: "pointer"
+	},
+	selectionTotal: { marginRight: "auto", color: "#757d77", fontSize: 8, letterSpacing: ".1em" },
+	primaryAction: {
+		minHeight: 38,
+		padding: "0 18px",
+		border: "1px solid #74c1aa",
+		backgroundColor: { default: "#74c1aa", ":hover": "#92dbc6", ":disabled": "#354d46" },
+		color: "#0d1713",
+		fontSize: 9,
+		fontWeight: 800,
+		letterSpacing: ".11em",
+		cursor: "pointer"
+	},
+	dangerAction: {
+		minHeight: 38,
+		padding: "0 18px",
+		border: "1px solid #e26d5c",
+		backgroundColor: { default: "#e26d5c", ":hover": "#f48776", ":disabled": "#5a3732" },
+		color: "#1b0c09",
+		fontSize: 9,
+		fontWeight: 900,
+		letterSpacing: ".11em",
+		cursor: "pointer"
+	},
+	receiptRefusal: {
+		margin: "18px 0",
+		padding: 15,
+		borderLeft: "3px solid #e26d5c",
+		backgroundColor: "#211411",
+		color: "#dd978b",
+		fontSize: 10
+	},
+	resultSummary: {
+		display: "grid",
+		gridTemplateColumns: "repeat(3, 1fr)",
+		margin: "22px 0",
+		border: "1px solid #39413c"
+	},
+	resultDatum: {
+		minHeight: 78,
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "center",
+		justifyContent: "center",
+		gap: 7,
+		borderRight: "1px solid #333a35",
+		color: "#7e8881",
+		fontSize: 8,
+		letterSpacing: ".1em"
+	},
+	receiptEntries: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 5 },
+	receiptEntry: {
+		display: "grid",
+		gridTemplateColumns: "72px minmax(0, 1fr) auto",
+		gap: 10,
+		padding: "10px 12px",
+		border: "1px solid #343a36",
+		backgroundColor: "#141815",
+		fontSize: 9
+	},
+	receiptPath: { marginTop: 18, color: "#606963", fontSize: 8, overflowWrap: "anywhere" },
 	provenance: {
 		marginTop: 12,
 		color: "#535d57",

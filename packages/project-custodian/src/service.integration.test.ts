@@ -1,10 +1,25 @@
-import { link, mkdtemp, mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import {
+	access,
+	link,
+	mkdtemp,
+	mkdir,
+	rename,
+	rm,
+	symlink,
+	utimes,
+	writeFile
+} from "node:fs/promises";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { expect } from "vitest";
 import { scanCustodian } from "./node-scanner.js";
+import {
+	executeCustodianProposal,
+	prepareCustodianProposal,
+	type CustodianExecutorDependencies
+} from "./node-executor.js";
 import { CustodianReport } from "./schema.js";
 import { Custodian, CustodianNodeLive } from "./service.js";
 
@@ -64,6 +79,26 @@ function scan(root: string, ignorePressure = true) {
 	}).pipe(Effect.provide(CustodianNodeLive));
 }
 
+function exists(path: string) {
+	return Effect.tryPromise(() => access(path)).pipe(
+		Effect.as(true),
+		Effect.catch(() => Effect.succeed(false))
+	);
+}
+
+function executorDependencies(
+	overrides: Partial<CustodianExecutorDependencies> = {}
+): CustodianExecutorDependencies {
+	return {
+		now: () => new Date("2026-08-17T12:00:00.000Z"),
+		newId: () => "fixture-id",
+		runningProcesses: async () => [],
+		moveToTrash: async () => undefined,
+		removePermanently: async (path) => rm(path, { force: true, recursive: true }),
+		...overrides
+	};
+}
+
 it.effect("inventories only known regeneratable project targets", () =>
 	withWorkspace((root) =>
 		Effect.gen(function* () {
@@ -81,7 +116,7 @@ it.effect("inventories only known regeneratable project targets", () =>
 			);
 			expect(project?.eligibility.kind).toBe("candidate");
 			expect(report.plan.items.map(({ name }) => name)).toEqual(["FixtureProject"]);
-			expect(report.destructiveOperationsAvailable).toBe(false);
+			expect(report.destructiveOperationsAvailable).toBe(true);
 			yield* Schema.decodeUnknownEffect(CustodianReport)(report);
 		})
 	)
@@ -445,6 +480,203 @@ it.effect("refuses a reclaim target mounted on another filesystem", () =>
 				})
 			]);
 			expect(report.plan.items).toEqual([]);
+		})
+	)
+);
+
+it.effect("persists an approved proposal and permanently removes only its revalidated target", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			const report = yield* scan(root);
+			const target = report.projects[0]?.targets.find(
+				({ relativePath }) => relativePath === "Intermediate"
+			);
+			expect(target).toBeDefined();
+			if (target === undefined) return;
+			const dependencies = executorDependencies();
+			const proposal = yield* Effect.tryPromise((signal) =>
+				prepareCustodianProposal(
+					{
+						root,
+						ignorePressure: true,
+						mode: "permanent",
+						proposalDirectory: join(root, "custodian-records"),
+						targetIds: [target.id]
+					},
+					signal,
+					dependencies
+				)
+			);
+			expect(yield* exists(proposal.proposalPath)).toBe(true);
+
+			const receipt = yield* Effect.tryPromise((signal) =>
+				executeCustodianProposal(proposal, proposal.approvalPhrase, signal, dependencies)
+			);
+			expect(receipt.status).toBe("completed");
+			expect(receipt.entries.map(({ status }) => status)).toEqual(["deleted"]);
+			expect(yield* exists(join(project, "Intermediate"))).toBe(false);
+			expect(yield* exists(join(project, "Content", "authored.txt"))).toBe(true);
+			expect(yield* exists(proposal.receiptPath)).toBe(true);
+			expect(yield* exists(proposal.logPath)).toBe(true);
+		})
+	)
+);
+
+it.effect("moves approved targets through the trash adapter", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			const report = yield* scan(root);
+			const target = report.projects[0]?.targets.find(
+				({ relativePath }) => relativePath === "Intermediate"
+			);
+			expect(target).toBeDefined();
+			if (target === undefined) return;
+			const trashRoot = join(root, "test-trash");
+			yield* Effect.tryPromise(() => mkdir(trashRoot));
+			const dependencies = executorDependencies({
+				moveToTrash: async (path) => rename(path, join(trashRoot, basename(path)))
+			});
+			const proposal = yield* Effect.tryPromise((signal) =>
+				prepareCustodianProposal(
+					{
+						root,
+						ignorePressure: true,
+						mode: "trash",
+						proposalDirectory: join(root, "custodian-records"),
+						targetIds: [target.id]
+					},
+					signal,
+					dependencies
+				)
+			);
+			const receipt = yield* Effect.tryPromise((signal) =>
+				executeCustodianProposal(proposal, proposal.approvalPhrase, signal, dependencies)
+			);
+			expect(receipt.entries.map(({ status }) => status)).toEqual(["trashed"]);
+			expect(yield* exists(join(project, "Intermediate"))).toBe(false);
+			expect(yield* exists(join(trashRoot, "Intermediate"))).toBe(true);
+		})
+	)
+);
+
+it.effect("refuses a proposal whose target changed after review", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			const report = yield* scan(root);
+			const target = report.projects[0]?.targets.find(
+				({ relativePath }) => relativePath === "Intermediate"
+			);
+			expect(target).toBeDefined();
+			if (target === undefined) return;
+			const dependencies = executorDependencies();
+			const proposal = yield* Effect.tryPromise((signal) =>
+				prepareCustodianProposal(
+					{
+						root,
+						ignorePressure: true,
+						mode: "trash",
+						proposalDirectory: join(root, "custodian-records"),
+						targetIds: [target.id]
+					},
+					signal,
+					dependencies
+				)
+			);
+			yield* Effect.tryPromise(() =>
+				writeFile(join(project, "Intermediate", "Build", "after-review.bin"), "changed")
+			);
+			const receipt = yield* Effect.tryPromise((signal) =>
+				executeCustodianProposal(proposal, proposal.approvalPhrase, signal, dependencies)
+			);
+			expect(receipt.status).toBe("refused");
+			expect(receipt.refusal?.code).toBe("proposal_stale");
+			expect(yield* exists(join(project, "Intermediate"))).toBe(true);
+		})
+	)
+);
+
+it.effect("refuses cleanup while an Unreal Editor process is running", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			const report = yield* scan(root);
+			const target = report.projects[0]?.targets.find(
+				({ relativePath }) => relativePath === "Intermediate"
+			);
+			expect(target).toBeDefined();
+			if (target === undefined) return;
+			const dependencies = executorDependencies({
+				runningProcesses: async () => [{ name: "UnrealEditor.exe", pid: 42 }]
+			});
+			const proposal = yield* Effect.tryPromise((signal) =>
+				prepareCustodianProposal(
+					{
+						root,
+						ignorePressure: true,
+						mode: "permanent",
+						proposalDirectory: join(root, "custodian-records"),
+						targetIds: [target.id]
+					},
+					signal,
+					dependencies
+				)
+			);
+			const receipt = yield* Effect.tryPromise((signal) =>
+				executeCustodianProposal(proposal, proposal.approvalPhrase, signal, dependencies)
+			);
+			expect(receipt.status).toBe("refused");
+			expect(receipt.refusal?.code).toBe("editor_running");
+			expect(yield* exists(join(project, "Intermediate"))).toBe(true);
+		})
+	)
+);
+
+it.effect("cancels remaining targets and keeps durable partial evidence", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			const project = yield* makeProject({ root, ageDays: 120 });
+			const report = yield* scan(root);
+			const selected = report.projects[0]?.targets.filter(({ relativePath }) =>
+				["Intermediate", "Binaries"].includes(relativePath)
+			);
+			expect(selected).toHaveLength(2);
+			if (selected === undefined || selected.length !== 2) return;
+			const controller = new AbortController();
+			const trashRoot = join(root, "test-trash");
+			yield* Effect.tryPromise(() => mkdir(trashRoot));
+			const dependencies = executorDependencies({
+				moveToTrash: async (path) => {
+					await rename(path, join(trashRoot, basename(path)));
+					controller.abort(new Error("fixture cancellation"));
+				}
+			});
+			const proposal = yield* Effect.tryPromise((signal) =>
+				prepareCustodianProposal(
+					{
+						root,
+						ignorePressure: true,
+						mode: "trash",
+						proposalDirectory: join(root, "custodian-records"),
+						targetIds: selected.map(({ id }) => id)
+					},
+					signal,
+					dependencies
+				)
+			);
+			const receipt = yield* Effect.tryPromise(() =>
+				executeCustodianProposal(
+					proposal,
+					proposal.approvalPhrase,
+					controller.signal,
+					dependencies
+				)
+			);
+			expect(receipt.status).toBe("cancelled");
+			expect(receipt.entries.map(({ status }) => status)).toEqual(["trashed", "cancelled"]);
+			expect(yield* exists(join(project, "Binaries"))).toBe(true);
 		})
 	)
 );

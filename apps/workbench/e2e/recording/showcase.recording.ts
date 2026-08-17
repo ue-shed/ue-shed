@@ -9,6 +9,7 @@ import { WorkbenchPage } from "../pages/workbench-page.js";
 
 const RecordingJourney = Schema.Literals([
 	"saved-workflows",
+	"custodian",
 	"config-explorer",
 	"map-review",
 	"world-log",
@@ -564,6 +565,87 @@ test(`records the ${journey} Workbench journey`, async ({
 					slug: "06-unclassified-evidence",
 					testInfo,
 					title: "Keep unclassified evidence visible"
+				})
+			);
+		} else if (journey === "custodian") {
+			await startScreencast();
+			await startTracing();
+			const recordingPage = page;
+			if (recordingPage === undefined) throw new Error("Workbench page is unavailable");
+			const cleanup = recordingPage.getByRole("dialog", { name: "Review cleanup" });
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await workbench.expectShowcaseReady();
+						await workbench.openRoute("Custodian");
+						await expect(
+							recordingPage.getByRole("region", { name: "Storage summary" })
+						).toBeVisible();
+						await expect(
+							recordingPage.getByRole("complementary", { name: "Dry-run plan" })
+						).toContainText("ReclaimableShowcase");
+					},
+					description:
+						"Scan a disposable Unreal project and distinguish authored content from its exact rebuildable queue.",
+					page: recordingPage,
+					slug: "01-storage-plan",
+					testInfo,
+					title: "Inventory rebuildable storage"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await recordingPage
+							.getByRole("button", { name: "Review cleanup…" })
+							.click();
+						await expect(cleanup).toBeVisible();
+						await expect(
+							cleanup.getByRole("region", { name: "Select cleanup targets" })
+						).toContainText("Trash / Recycle Bin");
+					},
+					description:
+						"Select exact target IDs and the recoverable Trash mode before any mutation authority exists.",
+					page: recordingPage,
+					slug: "02-target-selection",
+					testInfo,
+					title: "Select cleanup targets"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						await cleanup.getByRole("button", { name: "CREATE PROPOSAL →" }).click();
+						await expect(
+							cleanup.getByRole("region", { name: "Approve cleanup proposal" })
+						).toBeVisible();
+					},
+					description:
+						"Persist the exact plan and expose its approval phrase, receipt path, and revalidation contract.",
+					page: recordingPage,
+					slug: "03-durable-proposal",
+					testInfo,
+					title: "Create a durable proposal"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
+						const phrase = await cleanup.getByText(/^RECLAIM proposal-/).textContent();
+						if (phrase === null)
+							throw new Error("Custodian approval phrase is missing");
+						await cleanup.getByRole("textbox").fill(phrase);
+						await cleanup.getByRole("button", { name: "MOVE TO TRASH" }).click();
+						await expect(
+							cleanup.getByRole("region", { name: "Cleanup result" })
+						).toContainText("Cleanup finished");
+					},
+					description:
+						"Approve the reviewed proposal, revalidate against live disk state, and retain a per-target receipt.",
+					page: recordingPage,
+					slug: "04-cleanup-receipt",
+					testInfo,
+					title: "Execute with durable evidence"
 				})
 			);
 		} else if (journey === "config-explorer") {

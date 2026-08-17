@@ -41,7 +41,8 @@
 		"@ue-shed/unreal-assets": "workspace:*",
 		"@ue-shed/unreal-connection": "workspace:*",
 		"effect": "catalog:",
-		"solid-js": "catalog:"
+		"solid-js": "catalog:",
+		"trash": "10.1.1"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",

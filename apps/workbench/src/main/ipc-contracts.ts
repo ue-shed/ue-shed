@@ -104,7 +104,15 @@ import {
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import { ProjectRelativeMapPath } from "@ue-shed/map-history/contract";
-import { CustodianRunResult } from "@ue-shed/extension-project-custodian/client";
+import {
+	CustodianCancelRunResult,
+	CustodianExecuteIntent,
+	CustodianExecutionRunResult,
+	CustodianPrepareIntent,
+	CustodianPrepareRunResult,
+	CustodianRunResult
+} from "@ue-shed/extension-project-custodian/client";
+import { CustodianProposalId } from "@ue-shed/project-custodian/browser";
 import { Schema, SchemaGetter } from "effect";
 import {
 	ProjectLaunchMode,
@@ -485,6 +493,21 @@ export const invokeContracts = {
 		channel: "project-custodian:choose-and-scan",
 		args: EmptyArgs,
 		result: CustodianRunResult
+	}),
+	"project-custodian:prepare": invoke({
+		channel: "project-custodian:prepare",
+		args: Schema.Tuple([CustodianPrepareIntent]),
+		result: CustodianPrepareRunResult
+	}),
+	"project-custodian:execute": invoke({
+		channel: "project-custodian:execute",
+		args: Schema.Tuple([CustodianExecuteIntent]),
+		result: CustodianExecutionRunResult
+	}),
+	"project-custodian:cancel": invoke({
+		channel: "project-custodian:cancel",
+		args: Schema.Tuple([CustodianProposalId]),
+		result: CustodianCancelRunResult
 	}),
 	"project:current": invoke({
 		channel: "project:current",

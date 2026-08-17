@@ -3,6 +3,15 @@ import { Schema } from "effect";
 const Bytes = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const NonNegativeNumber = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0));
 
+export const CustodianTargetId = Schema.NonEmptyString.pipe(Schema.brand("CustodianTargetId"));
+export type CustodianTargetId = typeof CustodianTargetId.Type;
+
+export const CustodianProposalId = Schema.NonEmptyString.pipe(Schema.brand("CustodianProposalId"));
+export type CustodianProposalId = typeof CustodianProposalId.Type;
+
+export const CustodianExecutionMode = Schema.Literals(["trash", "permanent"]);
+export type CustodianExecutionMode = typeof CustodianExecutionMode.Type;
+
 export const ProjectTargetKey = Schema.Literals([
 	"intermediate",
 	"plugin_intermediate",
@@ -48,6 +57,7 @@ export const CustodianFreshness = Schema.Struct({
 export interface CustodianFreshness extends Schema.Schema.Type<typeof CustodianFreshness> {}
 
 export const CustodianTarget = Schema.Struct({
+	id: CustodianTargetId,
 	key: Schema.Union([ProjectTargetKey, EngineTargetKey]),
 	path: Schema.NonEmptyString,
 	relativePath: Schema.NonEmptyString,
@@ -152,7 +162,7 @@ export const CustodianScanRequest = Schema.Struct({
 export interface CustodianScanRequest extends Schema.Schema.Type<typeof CustodianScanRequest> {}
 
 export const CustodianReport = Schema.Struct({
-	schemaVersion: Schema.Literal(1),
+	schemaVersion: Schema.Literal(2),
 	root: Schema.NonEmptyString,
 	measuredAt: Schema.String,
 	freeBytes: Bytes,
@@ -161,9 +171,108 @@ export const CustodianReport = Schema.Struct({
 	engines: Schema.Array(CustodianEngineReport),
 	diagnostics: Schema.Array(CustodianDiagnostic),
 	plan: CustodianPlan,
-	destructiveOperationsAvailable: Schema.Literal(false)
+	destructiveOperationsAvailable: Schema.Literal(true)
 });
 export interface CustodianReport extends Schema.Schema.Type<typeof CustodianReport> {}
 
+export const CustodianProposalTarget = Schema.Struct({
+	kind: Schema.Literals(["project", "engine"]),
+	name: Schema.NonEmptyString,
+	root: Schema.NonEmptyString,
+	target: CustodianTarget
+});
+export interface CustodianProposalTarget extends Schema.Schema.Type<
+	typeof CustodianProposalTarget
+> {}
+
+export const CustodianPrepareRequest = Schema.Struct({
+	root: Schema.NonEmptyString,
+	ignorePressure: Schema.optionalKey(Schema.Boolean),
+	mode: CustodianExecutionMode,
+	proposalDirectory: Schema.NonEmptyString,
+	targetIds: Schema.Array(CustodianTargetId).check(Schema.isMinLength(1))
+});
+export interface CustodianPrepareRequest extends Schema.Schema.Type<
+	typeof CustodianPrepareRequest
+> {}
+
+export const CustodianProposal = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	id: CustodianProposalId,
+	createdAt: Schema.String,
+	root: Schema.NonEmptyString,
+	ignorePressure: Schema.Boolean,
+	mode: CustodianExecutionMode,
+	proposalPath: Schema.NonEmptyString,
+	receiptPath: Schema.NonEmptyString,
+	logPath: Schema.NonEmptyString,
+	approvalPhrase: Schema.NonEmptyString,
+	bytes: Bytes,
+	targets: Schema.Array(CustodianProposalTarget).check(Schema.isMinLength(1))
+});
+export interface CustodianProposal extends Schema.Schema.Type<typeof CustodianProposal> {}
+
+export const CustodianExecuteRequest = Schema.Struct({
+	proposalPath: Schema.NonEmptyString,
+	approvalPhrase: Schema.NonEmptyString
+});
+export interface CustodianExecuteRequest extends Schema.Schema.Type<
+	typeof CustodianExecuteRequest
+> {}
+
+export const CustodianCancelResult = Schema.Struct({
+	proposalId: CustodianProposalId,
+	status: Schema.Literals(["cancelled", "not_running"])
+});
+export interface CustodianCancelResult extends Schema.Schema.Type<typeof CustodianCancelResult> {}
+
+export const CustodianExecutionRefusal = Schema.Struct({
+	code: Schema.Literals([
+		"approval_mismatch",
+		"editor_running",
+		"proposal_stale",
+		"target_invalid"
+	]),
+	message: Schema.NonEmptyString,
+	recovery: Schema.NonEmptyString
+});
+export interface CustodianExecutionRefusal extends Schema.Schema.Type<
+	typeof CustodianExecutionRefusal
+> {}
+
+export const CustodianExecutionEntry = Schema.Struct({
+	targetId: CustodianTargetId,
+	path: Schema.NonEmptyString,
+	relativePath: Schema.NonEmptyString,
+	bytes: Bytes,
+	status: Schema.Literals(["trashed", "deleted", "failed", "cancelled"]),
+	message: Schema.optionalKey(Schema.NonEmptyString)
+});
+export interface CustodianExecutionEntry extends Schema.Schema.Type<
+	typeof CustodianExecutionEntry
+> {}
+
+export const CustodianReceipt = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	proposalId: CustodianProposalId,
+	proposalPath: Schema.NonEmptyString,
+	receiptPath: Schema.NonEmptyString,
+	logPath: Schema.NonEmptyString,
+	root: Schema.NonEmptyString,
+	mode: CustodianExecutionMode,
+	startedAt: Schema.String,
+	finishedAt: Schema.String,
+	status: Schema.Literals(["completed", "partial", "cancelled", "refused"]),
+	plannedBytes: Bytes,
+	processedBytes: Bytes,
+	entries: Schema.Array(CustodianExecutionEntry),
+	refusal: Schema.optionalKey(CustodianExecutionRefusal)
+});
+export interface CustodianReceipt extends Schema.Schema.Type<typeof CustodianReceipt> {}
+
 export const decodeCustodianScanRequest = Schema.decodeUnknownEffect(CustodianScanRequest);
 export const decodeCustodianReport = Schema.decodeUnknownEffect(CustodianReport);
+export const decodeCustodianPrepareRequest = Schema.decodeUnknownEffect(CustodianPrepareRequest);
+export const decodeCustodianProposal = Schema.decodeUnknownEffect(CustodianProposal);
+export const decodeCustodianExecuteRequest = Schema.decodeUnknownEffect(CustodianExecuteRequest);
+export const decodeCustodianReceipt = Schema.decodeUnknownEffect(CustodianReceipt);

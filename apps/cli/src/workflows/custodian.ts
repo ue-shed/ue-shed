@@ -38,3 +38,36 @@ export const runCustodianPlan = Effect.fn("Cli.workflow.custodian_plan")(
 			}).pipe(Effect.provide(CustodianNodeLive))
 		)
 );
+
+export const runCustodianPrepare = Effect.fn("Cli.workflow.custodian_prepare")(
+	(command: Command<"CustodianPrepare">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const custodian = yield* Custodian;
+				const proposal = yield* custodian.prepare({
+					root: command.root,
+					ignorePressure: command.ignorePressure,
+					mode: command.mode,
+					proposalDirectory: command.outputDirectory,
+					targetIds: command.targetIds
+				});
+				return yield* printJson(proposal);
+			}).pipe(Effect.provide(CustodianNodeLive))
+		)
+);
+
+export const runCustodianApply = Effect.fn("Cli.workflow.custodian_apply")(
+	(command: Command<"CustodianApply">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const custodian = yield* Custodian;
+				const receipt = yield* custodian.execute({
+					proposalPath: command.proposalPath,
+					approvalPhrase: command.approvalPhrase
+				});
+				return yield* printJson(receipt);
+			}).pipe(Effect.provide(CustodianNodeLive))
+		)
+);

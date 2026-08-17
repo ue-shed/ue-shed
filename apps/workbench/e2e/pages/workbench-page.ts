@@ -9,6 +9,7 @@ export type WorkbenchRoute =
 	| "Texture Audit"
 	| "Camera Lab"
 	| "Config"
+	| "Custodian"
 	| "World Log";
 
 export class WorkbenchPage {
@@ -30,6 +31,7 @@ export class WorkbenchPage {
 		const workflows = this.page.getByRole("region", { name: "Workbench workflows" });
 		for (const name of [
 			"Config Explorer",
+			"Project Custodian",
 			"Data Authoring",
 			"Input Atlas",
 			"Game Text",

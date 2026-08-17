@@ -1,5 +1,11 @@
+import { CustodianTargetId } from "@ue-shed/project-custodian";
 import { Argument, Command, Flag } from "effect/unstable/cli";
-import { runCustodianPlan, runCustodianReport } from "../workflows/custodian.js";
+import {
+	runCustodianApply,
+	runCustodianPlan,
+	runCustodianPrepare,
+	runCustodianReport
+} from "../workflows/custodian.js";
 
 const report = Command.make("report", { root: Argument.string("root") }, ({ root }) =>
 	runCustodianReport({ _tag: "CustodianReport", root })
@@ -22,7 +28,45 @@ const plan = Command.make(
 	)
 );
 
+const prepare = Command.make(
+	"prepare",
+	{
+		root: Argument.string("root"),
+		ignorePressure: Flag.boolean("ignore-pressure"),
+		mode: Flag.choice("mode", ["trash", "permanent"]).pipe(Flag.withDefault("trash")),
+		outputDirectory: Flag.string("output"),
+		targetIds: Flag.string("target").pipe(Flag.atLeast(1))
+	},
+	({ root, ignorePressure, mode, outputDirectory, targetIds }) =>
+		runCustodianPrepare({
+			_tag: "CustodianPrepare",
+			root,
+			ignorePressure,
+			mode,
+			outputDirectory,
+			targetIds: targetIds.map((targetId) => CustodianTargetId.make(targetId))
+		})
+).pipe(
+	Command.withDescription(
+		"Persist a reviewable cleanup proposal for explicitly selected target IDs."
+	)
+);
+
+const apply = Command.make(
+	"apply",
+	{
+		proposalPath: Argument.string("proposal"),
+		approvalPhrase: Flag.string("approve")
+	},
+	({ proposalPath, approvalPhrase }) =>
+		runCustodianApply({ _tag: "CustodianApply", proposalPath, approvalPhrase })
+).pipe(
+	Command.withDescription(
+		"Revalidate and execute an approved proposal, with Trash/Recycle Bin as the default mode."
+	)
+);
+
 export const custodianCommand = Command.make("custodian").pipe(
-	Command.withDescription("Explain reclaimable Unreal workspace storage without opening Unreal."),
-	Command.withSubcommands([report, plan])
+	Command.withDescription("Inspect and safely reclaim regeneratable Unreal workspace storage."),
+	Command.withSubcommands([report, plan, prepare, apply])
 );

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
-import { dirname, join, resolve } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureUassetExecutable } from "./native-tools.ts";
 
@@ -14,6 +15,60 @@ const savedWorldMaps = [
 	"Content/Fixture/Offline/L_OfflineWorld.umap",
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].join(";");
+
+export interface CustodianShowcaseFixture {
+	readonly root: string;
+	readonly dispose: () => Promise<void>;
+}
+
+export async function createCustodianShowcaseFixture(): Promise<CustodianShowcaseFixture> {
+	const fixtureParent = join(repositoryRoot, "out", "showcase-custodian");
+	await mkdir(fixtureParent, { recursive: true });
+	const root = await mkdtemp(join(fixtureParent, "run-"));
+	const project = join(root, "ReclaimableShowcase");
+	await Promise.all([
+		mkdir(join(project, "Content"), { recursive: true }),
+		mkdir(join(project, "Intermediate", "Build"), { recursive: true }),
+		mkdir(join(project, "DerivedDataCache"), { recursive: true }),
+		mkdir(join(project, "Saved", "Logs"), { recursive: true })
+	]);
+	await Promise.all([
+		writeFile(
+			join(project, "ReclaimableShowcase.uproject"),
+			JSON.stringify({ EngineAssociation: "5.7" })
+		),
+		writeFile(join(project, "Content", "AuthoredContent.keep"), "showcase authored content"),
+		writeFile(
+			join(project, ".ueclean.json"),
+			JSON.stringify({
+				min_age_days: 0,
+				min_free_gb: 1_000_000,
+				targets: ["intermediate", "ddc", "logs"]
+			})
+		),
+		writeFile(
+			join(project, "Intermediate", "Build", "objects.bin"),
+			Buffer.alloc(2_000_000, 11)
+		),
+		writeFile(join(project, "DerivedDataCache", "derived.bin"), Buffer.alloc(1_000_000, 17)),
+		writeFile(join(project, "Saved", "Logs", "showcase.log"), Buffer.alloc(32_000, 23))
+	]);
+	return {
+		root,
+		dispose: async () => {
+			const fromParent = relative(fixtureParent, root);
+			if (
+				fromParent === "" ||
+				fromParent === ".." ||
+				fromParent.startsWith(`..${sep}`) ||
+				isAbsolute(fromParent)
+			) {
+				throw new Error(`Refusing to remove unexpected Custodian fixture path: ${root}`);
+			}
+			await rm(root, { force: true, recursive: true });
+		}
+	};
+}
 
 type FetchImplementation = (input: string, init?: RequestInit) => Promise<Pick<Response, "ok">>;
 

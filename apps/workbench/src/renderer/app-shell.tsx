@@ -54,7 +54,7 @@ const workflowGroups = [
 			{
 				action: "OPEN CUSTODIAN",
 				description:
-					"Inventory regeneratable project and engine storage, then inspect a pressure-aware dry-run queue.",
+					"Inventory regeneratable storage, approve exact targets, then retain a durable cleanup receipt.",
 				evidence: "custodian",
 				href: "#/project-custodian",
 				title: "Project Custodian",
@@ -227,8 +227,8 @@ function workflowEvidence(
 	}
 	if (workflow.evidence === "custodian") {
 		return {
-			detail: "Explicit scan root · protected paths · largest-first dry run",
-			label: "Read-only storage planning",
+			detail: "Exact target IDs · Trash by default · live revalidation · durable receipt",
+			label: "Guarded cleanup available",
 			ready: true
 		};
 	}

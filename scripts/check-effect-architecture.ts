@@ -83,6 +83,9 @@ const approvedPromiseAdapters = new Set([
 	"packages/unreal-assets/src/scan-target.ts",
 	// Project Custodian owns Node filesystem promises in one cancellable scan adapter.
 	"packages/project-custodian/src/node-scanner.ts",
+	// Project Custodian owns process inspection, filesystem mutation, OS Trash, and durable
+	// proposal/receipt promises in one executor adapter; the public service remains Effect-shaped.
+	"packages/project-custodian/src/node-executor.ts",
 	// The generated browser declaration is a foreign WebAssembly adapter surface.
 	"packages/uasset-inspection-wasm/src/browser.d.ts"
 ]);

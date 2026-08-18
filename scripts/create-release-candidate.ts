@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { isJsonString } from "./json.ts";
+import { isJsonString, type JsonValue } from "./json.ts";
 import { packPublicPackages, PUBLIC_VERSION, WASM_PACKAGE_NAME } from "./pack-public-packages.ts";
 import { buildPluginBundle } from "./plugin-bundle.ts";
 
@@ -107,6 +107,10 @@ const expectedWasmLimits = {
 	maxProjectionItems: 1_000_000
 };
 
+function isNonEmptyJsonString(value: JsonValue | undefined): value is string {
+	return value !== undefined && isJsonString(value) && value.length > 0;
+}
+
 export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 	const failures: string[] = [];
 	if (buildInfo?.schemaVersion !== 1) failures.push("schemaVersion must be 1");
@@ -122,7 +126,7 @@ export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 	}
 	for (const tool of ["rustc", "wasmPack", "wasmBindgen"]) {
 		const identity = buildInfo?.tools?.[tool];
-		if (!isJsonString(identity) || identity.length === 0) {
+		if (!isNonEmptyJsonString(identity)) {
 			failures.push(`tools.${tool} must record the build identity`);
 		}
 	}
@@ -131,17 +135,20 @@ export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 	if (optimizer?.enabled !== true && optimizer?.enabled !== false) {
 		failures.push("optimizer.enabled must state whether wasm-opt ran");
 	}
-	if (!buildInfo?.tools?.wasmOpt) {
+	if (!isNonEmptyJsonString(buildInfo?.tools?.wasmOpt)) {
 		failures.push("tools.wasmOpt must describe the optimizer state");
 	}
 	if (optimizer?.enabled === true) {
-		if (!optimizer.version) {
+		if (!isNonEmptyJsonString(optimizer.version)) {
 			failures.push("enabled optimizer must record a concrete version");
 		}
-		if (!optimizer.command) {
+		if (!isNonEmptyJsonString(optimizer.command)) {
 			failures.push("enabled optimizer must record its invocation");
 		}
-		if (optimizer.version && /(?:unavailable|disabled|not[ -]?run)/iu.test(optimizer.version)) {
+		if (
+			isNonEmptyJsonString(optimizer.version) &&
+			/(?:unavailable|disabled|not[ -]?run)/iu.test(optimizer.version)
+		) {
 			failures.push("enabled optimizer must have a concrete version");
 		}
 		if (buildInfo.tools.wasmOpt !== optimizer.version) {
@@ -152,10 +159,13 @@ export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 		if (optimizer.status !== "disabled") {
 			failures.push("disabled optimizer must record status disabled");
 		}
-		if (!optimizer.reason) {
+		if (!isNonEmptyJsonString(optimizer.reason)) {
 			failures.push("disabled optimizer must record why it did not run");
 		}
-		if (!/(?:disabled|no[ -]?opt|not[ -]?run|not[ -]?used)/iu.test(buildInfo.tools.wasmOpt)) {
+		if (
+			!isNonEmptyJsonString(buildInfo?.tools?.wasmOpt) ||
+			!/(?:disabled|no[ -]?opt|not[ -]?run|not[ -]?used)/iu.test(buildInfo.tools.wasmOpt)
+		) {
 			failures.push("tools.wasmOpt must explicitly record that optimization was disabled");
 		}
 	}

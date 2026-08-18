@@ -1,4 +1,4 @@
-import { EditorPlaySessionLive } from "@ue-shed/engine-discovery";
+import { EditorPlaySessionLive } from "@ue-shed/engine";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";

@@ -6,6 +6,37 @@ import type { CliCommand } from "../command-model.js";
 
 type EditorPlaySessionCommand = Extract<CliCommand, { readonly _tag: "EditorPlaySession" }>;
 
+type EditorProjectLaunchCommand = Extract<CliCommand, { readonly _tag: "EditorProjectLaunch" }>;
+
+export const runEditorProjectLaunch = Effect.fn("Cli.workflow.editor_project_launch")(
+	(command: EditorProjectLaunchCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const {
+					EngineInstallationDiscoveryLive,
+					UnrealProjectLauncher,
+					UnrealProjectLauncherLive,
+					UnrealProjectProcessLive
+				} = yield* Effect.promise(() => import("@ue-shed/engine"));
+				const dependencies = Layer.merge(
+					EngineInstallationDiscoveryLive,
+					UnrealProjectProcessLive
+				);
+				const result = yield* Effect.flatMap(UnrealProjectLauncher, (launcher) =>
+					launcher.launch({
+						projectDescriptor: command.projectDescriptor,
+						mode: { kind: "normal" },
+						...(command.engineRoot === undefined
+							? undefined
+							: { explicitEngineRoot: command.engineRoot })
+					})
+				).pipe(Effect.provide(UnrealProjectLauncherLive.pipe(Layer.provide(dependencies))));
+				yield* printJson(result);
+			})
+		)
+);
+
 export const runEditorPlaySession = Effect.fn("Cli.workflow.editor_play_session")(
 	(command: EditorPlaySessionCommand) =>
 		observeCliOperation(
@@ -13,7 +44,7 @@ export const runEditorPlaySession = Effect.fn("Cli.workflow.editor_play_session"
 			Effect.gen(function* () {
 				const runtime = yield* CliRuntime;
 				const { EditorPlaySession, EditorPlaySessionLive } = yield* Effect.promise(
-					() => import("@ue-shed/engine-discovery")
+					() => import("@ue-shed/engine")
 				);
 				const { RemoteControlClientLive } = yield* Effect.promise(
 					() => import("@ue-shed/unreal-connection")
@@ -56,7 +87,7 @@ export const runEditorWorldOpen = Effect.fn("Cli.workflow.editor_world_open")(
 			Effect.gen(function* () {
 				const runtime = yield* CliRuntime;
 				const { EditorWorldControl, EditorWorldControlLive } = yield* Effect.promise(
-					() => import("@ue-shed/engine-discovery")
+					() => import("@ue-shed/engine")
 				);
 				const { RemoteControlClientLive } = yield* Effect.promise(
 					() => import("@ue-shed/unreal-connection")

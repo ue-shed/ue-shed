@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -165,6 +165,9 @@ function launch(tools: UnrealEngineTools, pluginDescriptors: readonly string[]) 
 			windowsHide: false
 		}
 	);
+	if (process.env.UE_SHED_FIXTURE_PID_FILE) {
+		writeFileSync(process.env.UE_SHED_FIXTURE_PID_FILE, String(child.pid));
+	}
 	child.unref();
 }
 
@@ -192,6 +195,9 @@ function launchAuthoring(tools: UnrealEngineTools, pluginDescriptors: readonly s
 			windowsHide: false
 		}
 	);
+	if (process.env.UE_SHED_FIXTURE_PID_FILE) {
+		writeFileSync(process.env.UE_SHED_FIXTURE_PID_FILE, String(child.pid));
+	}
 	child.unref();
 }
 

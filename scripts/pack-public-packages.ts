@@ -57,17 +57,19 @@ interface RunOptions {
 export const WASM_PACKAGE_NAME = "@ue-shed/uasset-inspection-wasm";
 export const GAME_TEXT_PACKAGE_NAME = "@ue-shed/game-text";
 export const MAP_HISTORY_PACKAGE_NAME = "@ue-shed/map-history";
+export const ENGINE_PACKAGE_NAME = "@ue-shed/engine";
+export const CONFIG_EXPLORER_PACKAGE_NAME = "@ue-shed/config-explorer";
+export const PROJECT_CUSTODIAN_PACKAGE_NAME = "@ue-shed/project-custodian";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
- * Plan 025 shipped the parser slice; Plans 030 and 031 add the headless Map Review and Observatory
- * closures without making a UI package public. Plan 036 adds the bytes-only WASM inspection
- * surface. Game Text and World Log's Map History boundary add headless existing-host features
- * without publishing their Workbench presentation.
+ * Every entry belongs to the synchronized public suite. Applications, extensions, UI packages,
+ * and unreviewed domain implementations remain private and are recorded in the release ledger.
  */
 export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
 	{ name: "@ue-shed/observability", directory: "packages/observability" },
 	{ name: "@ue-shed/unreal-connection", directory: "packages/unreal-connection" },
+	{ name: ENGINE_PACKAGE_NAME, directory: "packages/engine" },
 	{ name: "@ue-shed/cameras", directory: "packages/cameras" },
 	{ name: "@ue-shed/observatory", directory: "packages/observatory" },
 	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
@@ -75,13 +77,13 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: "@ue-shed/unreal-assets", directory: "packages/unreal-assets" },
 	{ name: MAP_HISTORY_PACKAGE_NAME, directory: "packages/map-history" },
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" },
-	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" }
+	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" },
+	{ name: CONFIG_EXPLORER_PACKAGE_NAME, directory: "packages/config-explorer" },
+	{ name: PROJECT_CUSTODIAN_PACKAGE_NAME, directory: "packages/project-custodian" }
 ];
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// Legacy source/plugin candidates still have one release identity. npm packages are independently
-// versioned by Changesets; the launcher version remains the candidate identity until the post-1.0
-// hosted lane is redesigned around Changesets' release plan.
+// Every public npm package and plugin candidate shares one suite release identity through 1.0.0.
 // SAFETY: this repository-owned package.json is validated by the release checks before publication.
 const versionManifest = JSON.parse(
 	await readFile(join(repositoryRoot, "packages/uasset/package.json"), "utf8")
@@ -91,6 +93,7 @@ const localProtocolPattern = /(?:workspace|catalog|file|link|portal):/;
 const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
 const exactEffectVersion = "4.0.0-beta.98";
 const exactUnrealRcVersion = "0.5.3";
+const exactTrashVersion = "10.1.1";
 
 function packedPath(path: string) {
 	return `package/${path.replace(/^\.\//u, "")}`;
@@ -382,6 +385,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	const protocol = byName.get("@ue-shed/protocol");
 	const observability = byName.get("@ue-shed/observability");
 	const unrealConnection = byName.get("@ue-shed/unreal-connection");
+	const engine = byName.get(ENGINE_PACKAGE_NAME);
 	const cameras = byName.get("@ue-shed/cameras");
 	const observatory = byName.get("@ue-shed/observatory");
 	const wasm = byName.get(WASM_PACKAGE_NAME);
@@ -390,12 +394,24 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	const platform = byName.get("@ue-shed/uasset-win32-x64");
 	const gameText = byName.get(GAME_TEXT_PACKAGE_NAME);
 	const mapHistory = byName.get(MAP_HISTORY_PACKAGE_NAME);
+	const configExplorer = byName.get(CONFIG_EXPLORER_PACKAGE_NAME);
+	const projectCustodian = byName.get(PROJECT_CUSTODIAN_PACKAGE_NAME);
+	for (const entry of manifests) {
+		if (entry.manifest.version !== PUBLIC_VERSION) {
+			failures.push(
+				`${entry.name} must share suite version ${PUBLIC_VERSION}, received ${entry.manifest.version}`
+			);
+		}
+	}
 	requireExactDependency(protocol, "effect", exactEffectVersion, failures);
 	requireExactDependency(observability, "effect", exactEffectVersion, failures);
 	requireExactDependency(observability, "@effect/opentelemetry", exactEffectVersion, failures);
 	requireExactInternalDependency(unrealConnection, "@ue-shed/protocol", byName, failures);
 	requireExactDependency(unrealConnection, "effect", exactEffectVersion, failures);
 	requireExactDependency(unrealConnection, "unreal-rc", exactUnrealRcVersion, failures);
+	requireExactInternalDependency(engine, "@ue-shed/protocol", byName, failures);
+	requireExactInternalDependency(engine, "@ue-shed/unreal-connection", byName, failures);
+	requireExactDependency(engine, "effect", exactEffectVersion, failures);
 	requireExactInternalDependency(cameras, "@ue-shed/observability", byName, failures);
 	requireExactInternalDependency(cameras, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(cameras, "@ue-shed/unreal-connection", byName, failures);
@@ -411,6 +427,10 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactInternalDependency(mapHistory, "@ue-shed/unreal-assets", byName, failures);
 	requireExactDependency(mapHistory, "effect", exactEffectVersion, failures);
 	requireExactDependency(mapHistory, "p4client-ts", "0.7.1", failures);
+	requireExactInternalDependency(configExplorer, ENGINE_PACKAGE_NAME, byName, failures);
+	requireExactDependency(configExplorer, "effect", exactEffectVersion, failures);
+	requireExactDependency(projectCustodian, "effect", exactEffectVersion, failures);
+	requireExactDependency(projectCustodian, "trash", exactTrashVersion, failures);
 	for (const dependencyField of [
 		"dependencies",
 		"optionalDependencies",
@@ -449,6 +469,12 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	if (gameText?.exports?.["./browser"] === undefined) {
 		failures.push(`${GAME_TEXT_PACKAGE_NAME} must export ./browser`);
 	}
+	if (configExplorer?.exports?.["./browser"] === undefined) {
+		failures.push(`${CONFIG_EXPLORER_PACKAGE_NAME} must export ./browser`);
+	}
+	if (projectCustodian?.exports?.["./browser"] === undefined) {
+		failures.push(`${PROJECT_CUSTODIAN_PACKAGE_NAME} must export ./browser`);
+	}
 	for (const entrypoint of ["./contract", "./playback"]) {
 		if (mapHistory?.exports?.[entrypoint] === undefined) {
 			failures.push(`${MAP_HISTORY_PACKAGE_NAME} must export ${entrypoint}`);
@@ -473,6 +499,7 @@ export async function packPublicPackages({
 		run(executable("pnpm"), ["--filter", "@ue-shed/protocol", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observability", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);
+		run(executable("pnpm"), ["--filter", ENGINE_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/cameras", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observatory", "build"]);
 		run(executable("pnpm"), ["--filter", WASM_PACKAGE_NAME, "build"]);
@@ -480,6 +507,8 @@ export async function packPublicPackages({
 		run(executable("pnpm"), ["--filter", MAP_HISTORY_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
 		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
+		run(executable("pnpm"), ["--filter", CONFIG_EXPLORER_PACKAGE_NAME, "build"]);
+		run(executable("pnpm"), ["--filter", PROJECT_CUSTODIAN_PACKAGE_NAME, "build"]);
 	}
 	const packed: PackedPackage[] = [];
 	for (const workspacePackage of PUBLIC_PACKAGES) {

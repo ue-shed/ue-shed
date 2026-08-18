@@ -53,13 +53,17 @@ function canonicalJson<Value>(value: Value): string {
 		return `[${value.map(canonicalJson).join(",")}]`;
 	}
 	const entries = Object.entries(value)
-		.toSorted(([left], [right]) => left.localeCompare(right))
+		.toSorted(([left], [right]) => compareOrdinal(left, right))
 		.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
 	return `{${entries.join(",")}}`;
 }
 
+function compareOrdinal(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function compareCanonical<Value>(left: Value, right: Value): number {
-	return canonicalJson(left).localeCompare(canonicalJson(right));
+	return compareOrdinal(canonicalJson(left), canonicalJson(right));
 }
 
 export function semanticTableJson(snapshot: AuthoringTableSnapshot): string {

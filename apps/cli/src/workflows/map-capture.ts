@@ -95,7 +95,7 @@ export const runMapCaptureRun = Effect.fn("Cli.workflow.map_capture.run")(
 					: undefined;
 				if (command.openMap === true) {
 					const { EditorWorldControl, EditorWorldControlLive } = yield* Effect.promise(
-						() => import("@ue-shed/engine-discovery")
+						() => import("@ue-shed/engine")
 					);
 					const { RemoteControlClientLive } = yield* Effect.promise(
 						() => import("@ue-shed/unreal-connection")

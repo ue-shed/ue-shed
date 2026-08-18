@@ -28,3 +28,8 @@ pnpm ue-shed custodian plan D:\Unreal --ignore-pressure
 pnpm ue-shed custodian prepare D:\Unreal --ignore-pressure --target <target-id> --output .\custodian-review
 pnpm ue-shed custodian apply .\custodian-review\<proposal>.json --approve "RECLAIM <proposal-id>"
 ```
+
+## License
+
+MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or
+endorsed by Epic Games.

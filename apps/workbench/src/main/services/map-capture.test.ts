@@ -6,7 +6,7 @@ import {
 	mapCaptureRunsRoot
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
-import { makeEditorWorldControlTestLayer } from "@ue-shed/engine-discovery";
+import { makeEditorWorldControlTestLayer } from "@ue-shed/engine";
 import { Effect, Layer, Schema } from "effect";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";

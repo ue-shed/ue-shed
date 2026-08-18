@@ -6,10 +6,13 @@ import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+	CONFIG_EXPLORER_PACKAGE_NAME,
+	ENGINE_PACKAGE_NAME,
 	GAME_TEXT_PACKAGE_NAME,
 	MAP_HISTORY_PACKAGE_NAME,
 	packPublicPackages,
 	PUBLIC_PACKAGES,
+	PROJECT_CUSTODIAN_PACKAGE_NAME,
 	WASM_PACKAGE_NAME
 } from "./pack-public-packages.ts";
 
@@ -62,6 +65,15 @@ try {
 	);
 	for (const entry of packed) {
 		assert.equal(entry.manifest.license, "MIT", `${entry.name} must retain MIT metadata`);
+	}
+	for (const packageName of [
+		ENGINE_PACKAGE_NAME,
+		CONFIG_EXPLORER_PACKAGE_NAME,
+		PROJECT_CUSTODIAN_PACKAGE_NAME
+	]) {
+		const entry = packed.find((candidate) => candidate.name === packageName);
+		assert.ok(entry, `the public package graph must contain ${packageName}`);
+		assert.ok(entry.manifest.exports?.["."], `${packageName} must export its public root`);
 	}
 	const wasmEntry = packed.find((entry) => entry.name === WASM_PACKAGE_NAME);
 	assert.ok(wasmEntry, "the public package graph must contain the WASM package");
@@ -205,25 +217,66 @@ try {
 	);
 	const consumerEnvironment = { ...process.env };
 	delete consumerEnvironment.UE_SHED_UASSET_EXECUTABLE;
+	const configFixture = join(consumerDirectory, "config-source");
+	await cp(
+		join(repositoryRoot, "packages", "config-explorer", "fixtures", "config-source"),
+		configFixture,
+		{
+			recursive: true
+		}
+	);
+	const custodianRoot = join(consumerDirectory, "custodian-root");
+	const custodianProject = join(custodianRoot, "PackedFixture");
+	const custodianTarget = join(custodianProject, "Intermediate");
+	await mkdir(join(custodianProject, "Content"), { recursive: true });
+	await mkdir(custodianTarget, { recursive: true });
+	await writeFile(
+		join(custodianProject, "PackedFixture.uproject"),
+		JSON.stringify({ EngineAssociation: "5.7" }),
+		"utf8"
+	);
+	await writeFile(
+		join(custodianProject, ".ueclean.json"),
+		JSON.stringify({ min_age_days: 0, min_free_gb: 1000000, targets: ["intermediate"] }),
+		"utf8"
+	);
+	await writeFile(join(custodianTarget, "cache.bin"), "before", "utf8");
 	const consumerScript = join(consumerDirectory, "verify-map-review.mjs");
 	await writeFile(
 		consumerScript,
 		`${[
+			"import { access, writeFile } from 'node:fs/promises';",
+			"import { resolve } from 'node:path';",
 			"import { Effect, Schema } from 'effect';",
 			"import * as protocol from '@ue-shed/protocol';",
 			"import * as assets from '@ue-shed/unreal-assets';",
 			"import * as observability from '@ue-shed/observability';",
 			"import * as connection from '@ue-shed/unreal-connection';",
+			"import * as engine from '@ue-shed/engine';",
 			"import * as cameras from '@ue-shed/cameras';",
 			"import * as reviewContracts from '@ue-shed/cameras/review-contracts';",
 			"import * as observatory from '@ue-shed/observatory';",
 			"import * as presentation from '@ue-shed/observatory/presentation';",
+			"import { ConfigExplorer, ConfigExplorerNodeLive, ConfigFamily, ConfigKey, ConfigPlatform, ConfigSection } from '@ue-shed/config-explorer';",
+			"import { ConfigExplanation } from '@ue-shed/config-explorer/browser';",
+			"import { Custodian, CustodianNodeLive } from '@ue-shed/project-custodian';",
+			"import { CustodianReceipt } from '@ue-shed/project-custodian/browser';",
 			"if (protocol.CURRENT_PROTOCOL_VERSION.major !== 0) throw new Error('bad protocol');",
 			"if (typeof assets.decodeSavedAssetInspection !== 'function') {",
 			"  throw new Error('bad assets export');",
 			"}",
 			"if (typeof connection.RemoteControlClient !== 'function') {",
 			"  throw new Error('bad unreal-connection export');",
+			"}",
+			"for (const name of ['UnrealProjectLauncher', 'EditorConnection', 'EditorPlaySession', 'EditorWorldControl']) {",
+			"  if (typeof engine[name] !== 'function') throw new Error('bad engine export ' + name);",
+			"}",
+			"const launchArgs = engine.unrealProjectLaunchArguments({",
+			"  mode: { kind: 'normal' },",
+			"  projectDescriptor: './PackedFixture.uproject'",
+			"});",
+			"if (launchArgs.length !== 1 || !launchArgs[0].endsWith('PackedFixture.uproject')) {",
+			"  throw new Error('bad engine launch arguments');",
 			"}",
 			"if (typeof cameras.decodeReviewSet !== 'function') {",
 			"  throw new Error('bad cameras decodeReviewSet');",
@@ -260,6 +313,46 @@ try {
 			");",
 			"const health = observability.aggregateHealth(observability.defaultHealthInput);",
 			"if (health.status !== 'healthy') throw new Error('health aggregation failed');",
+			"const explanation = await Effect.runPromise(",
+			"  Effect.flatMap(ConfigExplorer, (explorer) => explorer.explain({",
+			"    project: resolve('./config-source'),",
+			"    engineRoot: resolve('./config-source'),",
+			"    platform: ConfigPlatform.make('PlatformA'),",
+			"    family: ConfigFamily.make('Game'),",
+			"    section: ConfigSection.make('Fixture.Settings'),",
+			"    key: ConfigKey.make('Entries')",
+			"  })).pipe(Effect.provide(ConfigExplorerNodeLive))",
+			");",
+			"await Effect.runPromise(Schema.decodeUnknownEffect(ConfigExplanation)(explanation));",
+			"if (explanation.status !== 'complete' || explanation.effectiveValue?.values?.[0] !== 'PlatformA') {",
+			"  throw new Error('packed Config Explorer journey failed');",
+			"}",
+			"const custodian = await Effect.runPromise(",
+			"  Effect.gen(function* () {",
+			"    const service = yield* Custodian;",
+			"    const root = resolve('./custodian-root');",
+			"    const report = yield* service.scan({ root, ignorePressure: true });",
+			"    const target = report.projects[0]?.targets.find((item) => item.relativePath === 'Intermediate');",
+			"    if (target === undefined) throw new Error('packed Custodian scan found no Intermediate target');",
+			"    const proposal = yield* service.prepare({",
+			"      root,",
+			"      ignorePressure: true,",
+			"      mode: 'trash',",
+			"      proposalDirectory: resolve('./custodian-proposals'),",
+			"      targetIds: [target.id]",
+			"    });",
+			"    yield* Effect.promise(() => writeFile(resolve('./custodian-root/PackedFixture/Intermediate/cache.bin'), 'changed-after-review'));",
+			"    return yield* service.execute({",
+			"      proposalPath: proposal.proposalPath,",
+			"      approvalPhrase: proposal.approvalPhrase",
+			"    });",
+			"  }).pipe(Effect.provide(CustodianNodeLive))",
+			");",
+			"await Effect.runPromise(Schema.decodeUnknownEffect(CustodianReceipt)(custodian));",
+			"if (custodian.status !== 'refused' || custodian.refusal?.code !== 'proposal_stale') {",
+			"  throw new Error('packed Custodian did not refuse stale trash proposal');",
+			"}",
+			"await access(resolve('./custodian-root/PackedFixture/Intermediate/cache.bin'));",
 			"const bytes = observatory.encodeActorStreamPacket({",
 			"  catalogRevision: 1n,",
 			"  records: [{ flags: 0, location: { x: 1, y: 2, z: 3 }, rotation: { pitch: 0, roll: 0, yaw: 0 }, streamIndex: 0 }],",
@@ -268,15 +361,17 @@ try {
 			"});",
 			"const packets = new observatory.ActorStreamDecoder().push(bytes).packets;",
 			"if (packets.length !== 1 || packets[0].records.length !== 1) throw new Error('observatory decode failed');",
-			"console.log('map-review-offline-ok');"
+			"console.log('public-suite-offline-ok');"
 		].join("\n")}\n`,
 		"utf8"
 	);
 	const mapReviewStatus = run(process.execPath, [consumerScript], consumerDirectory, {
 		env: consumerEnvironment
 	});
-	if (mapReviewStatus !== "map-review-offline-ok") {
-		throw new Error(`Map Review offline consumer returned ${JSON.stringify(mapReviewStatus)}.`);
+	if (mapReviewStatus !== "public-suite-offline-ok") {
+		throw new Error(
+			`Public suite offline consumer returned ${JSON.stringify(mapReviewStatus)}.`
+		);
 	}
 	const version = run(executable("pnpm"), ["exec", "uasset", "--version"], consumerDirectory, {
 		env: consumerEnvironment

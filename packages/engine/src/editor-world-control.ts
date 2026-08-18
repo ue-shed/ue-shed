@@ -42,7 +42,7 @@ export interface EditorWorldControlApi {
 export class EditorWorldControl extends Context.Service<
 	EditorWorldControl,
 	EditorWorldControlApi
->()("@ue-shed/engine-discovery/EditorWorldControl") {}
+>()("@ue-shed/engine/EditorWorldControl") {}
 
 function normalizedEndpoint(endpoint: string): string {
 	return endpoint.replace(/\/+$/, "");

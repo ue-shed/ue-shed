@@ -8,3 +8,8 @@ Use the root export for the Effect-native Node service and adapters. Use `./brow
 parsing, folding, and comparison projections that do not import Node or filesystem authority. The
 module never reads user-private config locations and does not claim to represent live CVars, Device
 Profiles, command-line overrides, or cooked configuration.
+
+## License
+
+MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or
+endorsed by Epic Games.

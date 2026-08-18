@@ -37,6 +37,7 @@ const editorActorSubsystem = "/Script/UnrealEd.Default__EditorActorSubsystem";
 const cameraLibrary = "/Script/UEShedCameras.Default__UEShedCameraLibrary";
 const editorLoadingLibrary = "/Script/UnrealEd.Default__EditorLoadingAndSavingUtils";
 const playSessionLibrary = "/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary";
+const keepViewsName = /^KEEP(?: \d+)? VIEWS?$/;
 
 if (!Schema.is(Schema.String)(electronExecutable)) {
 	throw new TypeError("The Electron package did not resolve to an executable path");
@@ -231,6 +232,7 @@ export async function createMapReviewFlowHarness(args: {
 	let sessionPath: string | undefined;
 	let runPath: string | undefined;
 	let firstRunPath: string | undefined;
+	let expectedViewCount = 0;
 	const createdSessionPaths = new Set<string>();
 	const createdRunPaths = new Set<string>();
 
@@ -402,7 +404,9 @@ export async function createMapReviewFlowHarness(args: {
 				await candidates
 					.getByRole("button", { exact: true, name: "Select Context three-quarter 1" })
 					.click();
-				await page.getByLabel("FOV OVERRIDE").fill("49");
+				await page
+					.getByRole("spinbutton", { exact: true, name: "FOV OVERRIDE" })
+					.fill("49");
 				if (sessionPath === undefined) throw new Error("The session path is unavailable.");
 				await expect
 					.poll(
@@ -447,13 +451,23 @@ export async function createMapReviewFlowHarness(args: {
 		approveView: () =>
 			step("approveView", async () => {
 				const page = currentWorkbench().page;
+				const candidates = page.getByRole("region", { name: "Framing candidates" });
+				const retainedCount = await candidates
+					.getByRole("button", { name: /^Select / })
+					.count();
+				expect(retainedCount).toBeGreaterThan(0);
 				await page
 					.getByRole("textbox", { name: "MANUAL ADJUSTMENT NOTE" })
 					.fill("Plan 39 recorded authoring round trip");
-				await page.getByRole("button", { name: "KEEP VIEW" }).click();
-				await expect(page.getByText("APPROVED + SAVED")).toBeVisible({ timeout: 60_000 });
+				await page.getByRole("button", { name: keepViewsName }).click();
+				await expect(
+					page.getByText(
+						retainedCount === 1 ? "VIEW SAVED" : `${retainedCount} VIEWS SAVED`
+					)
+				).toBeVisible({ timeout: 60_000 });
 				let saved = Schema.decodeUnknownSync(ReviewSet)(await readOnlyJson(reviewSetPath));
-				expect(saved.views).toHaveLength(1);
+				expectedViewCount = retainedCount;
+				expect(saved.views).toHaveLength(expectedViewCount);
 				if (collection) {
 					const additionalSubjects = [
 						"compact",
@@ -463,7 +477,7 @@ export async function createMapReviewFlowHarness(args: {
 						"partial",
 						"compound"
 					] as const;
-					for (const [index, key] of additionalSubjects.entries()) {
+					for (const key of additionalSubjects) {
 						const actorPath = fixtureContract.mapReviewGallery.subjects[key];
 						if (actorPath === undefined)
 							throw new Error(`Missing gallery subject ${key}.`);
@@ -471,10 +485,20 @@ export async function createMapReviewFlowHarness(args: {
 						await page
 							.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" })
 							.click();
-						await expect(page.getByRole("button", { name: "KEEP VIEW" })).toBeEnabled({
-							timeout: 60_000
+						const nextCandidates = page.getByRole("region", {
+							name: "Framing candidates"
 						});
-						await page.getByRole("button", { name: "KEEP VIEW" }).click();
+						await expect(page.getByRole("button", { name: keepViewsName })).toBeEnabled(
+							{
+								timeout: 60_000
+							}
+						);
+						const addedCount = await nextCandidates
+							.getByRole("button", { name: /^Select / })
+							.count();
+						expect(addedCount).toBeGreaterThan(0);
+						expectedViewCount += addedCount;
+						await page.getByRole("button", { name: keepViewsName }).click();
 						await expect
 							.poll(async () => {
 								const current = Schema.decodeUnknownSync(ReviewSet)(
@@ -482,11 +506,11 @@ export async function createMapReviewFlowHarness(args: {
 								);
 								return current.views.length;
 							})
-							.toBe(index + 2);
+							.toBe(expectedViewCount);
 						saved = Schema.decodeUnknownSync(ReviewSet)(
 							await readOnlyJson(reviewSetPath)
 						);
-						expect(saved.views).toHaveLength(index + 2);
+						expect(saved.views).toHaveLength(expectedViewCount);
 					}
 					const newFiles = (await readdir(authoringRoot)).filter(
 						(name) => name.endsWith(".json") && !initialAuthoringFiles.has(name)
@@ -531,9 +555,12 @@ export async function createMapReviewFlowHarness(args: {
 				const current = currentWorkbench();
 				await current.openRoute("Map Review");
 				await current.page.getByRole("tab", { name: "LIVE WORLD" }).click();
+				const saved = Schema.decodeUnknownSync(ReviewSet)(
+					await readOnlyJson(reviewSetPath)
+				);
 				const status = current.page.getByRole("region", { name: "Review set status" });
 				await expect(status).toContainText("Map Review Flow Gallery", { timeout: 60_000 });
-				await expect(status).toContainText(collection ? "7" : "1");
+				await expect(status).toContainText(String(saved.views.length));
 				const stop = current.page.getByRole("button", { exact: true, name: "STOP" });
 				if (await stop.isVisible()) {
 					await stop.click();
@@ -541,9 +568,6 @@ export async function createMapReviewFlowHarness(args: {
 						current.page.getByRole("button", { exact: true, name: "PLAY" })
 					).toBeVisible({ timeout: 30_000 });
 				}
-				const saved = Schema.decodeUnknownSync(ReviewSet)(
-					await readOnlyJson(reviewSetPath)
-				);
 				return {
 					identity: {
 						viewId: saved.views[0]!.id,

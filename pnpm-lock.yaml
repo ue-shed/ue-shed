@@ -93,6 +93,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.10
         version: 4.1.10(vitest@4.1.10)
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1(@noble/hashes@2.2.0)
@@ -138,9 +141,9 @@ importers:
       '@ue-shed/config-explorer':
         specifier: workspace:*
         version: link:../../packages/config-explorer
-      '@ue-shed/engine-discovery':
+      '@ue-shed/engine':
         specifier: workspace:*
-        version: link:../../packages/engine-discovery
+        version: link:../../packages/engine
       '@ue-shed/enhanced-input':
         specifier: workspace:*
         version: link:../../packages/enhanced-input
@@ -230,9 +233,9 @@ importers:
       '@ue-shed/config-explorer':
         specifier: workspace:*
         version: link:../../packages/config-explorer
-      '@ue-shed/engine-discovery':
+      '@ue-shed/engine':
         specifier: workspace:*
-        version: link:../../packages/engine-discovery
+        version: link:../../packages/engine
       '@ue-shed/enhanced-input':
         specifier: workspace:*
         version: link:../../packages/enhanced-input
@@ -650,9 +653,9 @@ importers:
 
   packages/config-explorer:
     dependencies:
-      '@ue-shed/engine-discovery':
-        specifier: workspace:*
-        version: link:../engine-discovery
+      '@ue-shed/engine':
+        specifier: workspace:0.1.0
+        version: link:../engine
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
@@ -661,13 +664,13 @@ importers:
         specifier: 'catalog:'
         version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
 
-  packages/engine-discovery:
+  packages/engine:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:*
+        specifier: workspace:0.1.0
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:*
+        specifier: workspace:0.1.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -826,9 +829,9 @@ importers:
 
   packages/scenarios:
     dependencies:
-      '@ue-shed/engine-discovery':
+      '@ue-shed/engine':
         specifier: workspace:*
-        version: link:../engine-discovery
+        version: link:../engine
       '@ue-shed/protocol':
         specifier: workspace:*
         version: link:../protocol

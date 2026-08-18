@@ -3,7 +3,7 @@ import {
 	EngineInstallationDiscovery,
 	EngineInstallationDiscoveryLive,
 	type EngineInstallationError
-} from "@ue-shed/engine-discovery";
+} from "@ue-shed/engine";
 import { Context, Effect, Layer, Result, Schema } from "effect";
 import {
 	ConfigFileAccess,

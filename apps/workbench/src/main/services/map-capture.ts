@@ -13,7 +13,7 @@ import {
 	savedMapPathToGameMapPath,
 	type MapCapturePlan
 } from "@ue-shed/cameras";
-import { EditorWorldControl } from "@ue-shed/engine-discovery";
+import { EditorWorldControl } from "@ue-shed/engine";
 import type {
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,

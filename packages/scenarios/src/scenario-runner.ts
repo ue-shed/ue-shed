@@ -2,7 +2,7 @@ import {
 	decodeCompanionCapabilityManifest,
 	type CompanionCapabilityManifest
 } from "@ue-shed/protocol";
-import { EditorPlaySession, type EditorPlaySessionError } from "@ue-shed/engine-discovery";
+import { EditorPlaySession, type EditorPlaySessionError } from "@ue-shed/engine";
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schedule, Schema } from "effect";
 import { movementGymScenario } from "./demo.js";

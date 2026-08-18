@@ -2,7 +2,24 @@
 	"$schema": "https://unpkg.com/@changesets/config@4.0.0/schema.json",
 	"changelog": "@changesets/cli/changelog",
 	"commit": false,
-	"fixed": [["@ue-shed/uasset", "@ue-shed/uasset-inspection-wasm", "@ue-shed/uasset-win32-x64"]],
+	"fixed": [
+		[
+			"@ue-shed/protocol",
+			"@ue-shed/observability",
+			"@ue-shed/unreal-connection",
+			"@ue-shed/engine",
+			"@ue-shed/cameras",
+			"@ue-shed/observatory",
+			"@ue-shed/uasset-inspection-wasm",
+			"@ue-shed/uasset-win32-x64",
+			"@ue-shed/unreal-assets",
+			"@ue-shed/map-history",
+			"@ue-shed/uasset",
+			"@ue-shed/game-text",
+			"@ue-shed/config-explorer",
+			"@ue-shed/project-custodian"
+		]
+	],
 	"linked": [],
 	"access": "public",
 	"baseBranch": "main",

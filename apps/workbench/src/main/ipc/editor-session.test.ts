@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { EditorPlaySessionError, makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import { EditorPlaySessionError, makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { Effect, Exit, Layer } from "effect";
 import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";

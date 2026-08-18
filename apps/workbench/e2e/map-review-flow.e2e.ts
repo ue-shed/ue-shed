@@ -8,6 +8,7 @@ import {
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 const enabled = process.env.UE_SHED_MAP_REVIEW_FLOW_E2E === "1" && endpoint !== undefined;
+const keepViewsName = /^KEEP(?: \d+)? VIEWS?$/;
 
 test.skip(
 	!enabled,
@@ -152,13 +153,15 @@ test("recovers persisted tuning after live subject bounds change", async ({
 		await expect(
 			page.getByText(/no longer matches the live subject|Reframe before keeping/i)
 		).toBeVisible({ timeout: 60_000 });
-		await expect(page.getByRole("button", { name: "KEEP VIEW" })).toBeDisabled();
+		await expect(page.getByRole("button", { name: keepViewsName })).toBeDisabled();
 		await selectActor(harness.subjectActorPath);
 		await page.getByRole("button", { name: "REFRAME SELECTED ACTOR" }).click();
-		await expect(page.getByRole("button", { name: "KEEP VIEW" })).toBeEnabled({
+		await expect(page.getByRole("button", { name: keepViewsName })).toBeEnabled({
 			timeout: 60_000
 		});
-		await expect(page.getByLabel("FOV OVERRIDE")).toHaveValue("");
+		await expect(
+			page.getByRole("spinbutton", { exact: true, name: "FOV OVERRIDE" })
+		).toHaveValue("");
 		await page.screenshot({
 			fullPage: true,
 			path: testInfo.outputPath("reframed-recovery.png")

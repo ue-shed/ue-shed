@@ -49,7 +49,7 @@ export interface EditorPlaySessionApi {
 }
 
 export class EditorPlaySession extends Context.Service<EditorPlaySession, EditorPlaySessionApi>()(
-	"@ue-shed/engine-discovery/EditorPlaySession"
+	"@ue-shed/engine/EditorPlaySession"
 ) {}
 
 function normalizedEndpoint(endpoint: string): string {

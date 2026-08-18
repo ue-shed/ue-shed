@@ -5,7 +5,7 @@ import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts"
 import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import type { TextCorpusRunResult } from "@ue-shed/game-text";
 import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
-import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import {
 	makeScenarioRunnerTestLayer,
 	movementGymRuns,

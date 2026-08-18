@@ -14,6 +14,7 @@ import {
 	type MapTileGrid,
 	type MapTileKey
 } from "./map-tile-pyramid.js";
+import { CAMERAS_PACKAGE_VERSION } from "./version.js";
 import {
 	MapCaptureRepository,
 	MapCaptureRepositoryLive,
@@ -633,7 +634,7 @@ function runMapCaptureWith(args: {
 							? "unreal-editor-viewport-high-resolution-experimental"
 							: "unreal-editor",
 					tool: "ue-shed",
-					toolVersion: "0.1.0"
+					toolVersion: CAMERAS_PACKAGE_VERSION
 				},
 				runId: MapCaptureRunId.make(runId),
 				startedAt,

@@ -98,7 +98,7 @@ metadata, and hierarchy construction.
 
 - Accept an explicit engine root through schema-validated configuration.
 - Otherwise resolve the project's `.uproject` `EngineAssociation` through reusable
-  `@ue-shed/engine-discovery` capability. Extend that package only with a narrow installation
+  `@ue-shed/engine` capability. Extend that package only with a narrow installation
   service; do not transplant script-only global discovery or create a config-specific locator.
 - Validate the engine using version/build/config evidence. Never bake in the local UE path.
 - Discover config families from engine/project source filenames. Return ambiguity rather than choose

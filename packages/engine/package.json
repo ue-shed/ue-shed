@@ -1,0 +1,49 @@
+{
+	"name": "@ue-shed/engine",
+	"version": "0.1.0",
+	"description": "Typed Unreal Engine discovery, launch, readiness, PIE, and editor-world control.",
+	"homepage": "https://github.com/ue-shed/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/ue-shed/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ue-shed/ue-shed.git",
+		"directory": "packages/engine"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"type": "module",
+	"sideEffects": false,
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepack": "pnpm run build",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@ue-shed/protocol": "workspace:0.1.0",
+		"@ue-shed/unreal-connection": "workspace:0.1.0",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/vitest": "catalog:"
+	},
+	"engines": {
+		"node": ">=22.14.0"
+	}
+}

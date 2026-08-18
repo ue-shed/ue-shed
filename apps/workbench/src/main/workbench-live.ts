@@ -14,7 +14,7 @@ import {
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
-import { EditorPlaySessionLive, EditorWorldControlLive } from "@ue-shed/engine-discovery";
+import { EditorPlaySessionLive, EditorWorldControlLive } from "@ue-shed/engine";
 import { AuthoringClientLive } from "@ue-shed/host";
 import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";

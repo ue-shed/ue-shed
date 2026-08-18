@@ -6,7 +6,7 @@ interface TestGate {
 
 const gates: readonly TestGate[] = [
 	{
-		file: "packages/engine-discovery/src/real-unreal.integration.test.ts",
+		file: "packages/engine/src/real-unreal.integration.test.ts",
 		name: "real Unreal editor play-session lifecycle",
 		missing: (environment) =>
 			environment.UE_SHED_UNREAL_PLAY_SESSION_INTEGRATION === "1" &&

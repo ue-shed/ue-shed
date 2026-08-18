@@ -33,7 +33,7 @@ export const runScenario = Effect.fn("Cli.workflow.scenario_run")((command: Scen
 				() => import("@ue-shed/scenarios")
 			);
 			const { EditorPlaySessionLive } = yield* Effect.promise(
-				() => import("@ue-shed/engine-discovery")
+				() => import("@ue-shed/engine")
 			);
 			const { RemoteControlClientLive } = yield* Effect.promise(
 				() => import("@ue-shed/unreal-connection")

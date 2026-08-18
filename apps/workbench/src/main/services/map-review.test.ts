@@ -14,7 +14,7 @@ import {
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { Observatory, ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
-import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { EditorPlaySessionId } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";

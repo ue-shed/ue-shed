@@ -13,7 +13,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/engine-discovery": "workspace:*",
+		"@ue-shed/engine": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/unreal-connection": "workspace:*",
 		"effect": "catalog:"

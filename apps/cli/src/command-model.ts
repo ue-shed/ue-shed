@@ -54,6 +54,10 @@ export const CliCommand = Schema.TaggedUnion({
 		action: EditorPlayAction,
 		endpoint: Schema.String
 	},
+	EditorProjectLaunch: {
+		engineRoot: Schema.optionalKey(Schema.String),
+		projectDescriptor: Schema.String
+	},
 	EditorWorldOpen: {
 		endpoint: Schema.String,
 		mapPath: Schema.String,

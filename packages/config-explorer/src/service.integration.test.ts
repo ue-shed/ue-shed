@@ -1,9 +1,6 @@
 import { resolve } from "node:path";
 import { it } from "@effect/vitest";
-import {
-	EngineInstallationError,
-	makeEngineInstallationDiscoveryTestLayer
-} from "@ue-shed/engine-discovery";
+import { EngineInstallationError, makeEngineInstallationDiscoveryTestLayer } from "@ue-shed/engine";
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { expect } from "vitest";
 import {

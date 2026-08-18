@@ -1,6 +1,10 @@
 import { Argument, Command } from "effect/unstable/cli";
 import { optionalFlag, optionalValue } from "./options.js";
-import { runEditorPlaySession, runEditorWorldOpen } from "../workflows/editor.js";
+import {
+	runEditorPlaySession,
+	runEditorProjectLaunch,
+	runEditorWorldOpen
+} from "../workflows/editor.js";
 
 const playActions = ["status", "start", "simulate", "pause", "resume", "stop"] as const;
 type PlayAction = (typeof playActions)[number];
@@ -14,6 +18,23 @@ function makePlayCommand(action: PlayAction) {
 export const editorCommand = Command.make("editor").pipe(
 	Command.withDescription("Control a connected Unreal Editor session."),
 	Command.withSubcommands([
+		Command.make(
+			"launch",
+			{
+				projectDescriptor: Argument.string("project-descriptor"),
+				engineRoot: optionalFlag("engine-root")
+			},
+			({ projectDescriptor, engineRoot }) => {
+				const explicitEngineRoot = optionalValue(engineRoot);
+				return runEditorProjectLaunch({
+					_tag: "EditorProjectLaunch",
+					projectDescriptor,
+					...(explicitEngineRoot === undefined
+						? undefined
+						: { engineRoot: explicitEngineRoot })
+				});
+			}
+		).pipe(Command.withDescription("Launch an explicit Unreal project normally.")),
 		Command.make("play").pipe(
 			Command.withDescription("Inspect or control Play In Editor."),
 			Command.withSubcommands(playActions.map(makePlayCommand))

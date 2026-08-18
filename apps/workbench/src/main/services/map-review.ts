@@ -21,7 +21,7 @@ import {
 	type CaptureRunSummary,
 	type ReviewSet
 } from "@ue-shed/cameras";
-import { EditorPlaySession } from "@ue-shed/engine-discovery";
+import { EditorPlaySession } from "@ue-shed/engine";
 import { recordObservatoryIpcReplacements } from "@ue-shed/observability";
 import type {
 	MapReviewApprovalResult,

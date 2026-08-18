@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { Config, Context, Effect, Layer, Schema } from "effect";
 
@@ -15,9 +16,12 @@ const EngineBuildVersion = Schema.Struct({
 	PatchVersion: Schema.optional(Schema.Int)
 });
 
-const ProjectDescriptor = Schema.Struct({
+export const ProjectDescriptor = Schema.Struct({
 	EngineAssociation: Schema.optional(Schema.String)
 });
+export interface ProjectDescriptor extends Schema.Schema.Type<typeof ProjectDescriptor> {}
+
+const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
 
 export const EngineInstallation = Schema.Struct({
 	root: Schema.NonEmptyString,
@@ -55,7 +59,7 @@ export interface EngineInstallationDiscoveryApi {
 export class EngineInstallationDiscovery extends Context.Service<
 	EngineInstallationDiscovery,
 	EngineInstallationDiscoveryApi
->()("@ue-shed/engine-discovery/EngineInstallationDiscovery") {}
+>()("@ue-shed/engine/EngineInstallationDiscovery") {}
 
 function failure(
 	code: EngineInstallationError["code"],
@@ -88,6 +92,84 @@ function readJson(path: string, code: EngineInstallationError["code"]) {
 				false
 			)
 	});
+}
+
+function withoutJsonComments(contents: string): string {
+	let result = "";
+	let inString = false;
+	let escaped = false;
+	let lineComment = false;
+	let blockComment = false;
+	for (let index = 0; index < contents.length; index += 1) {
+		const character = contents[index]!;
+		const next = contents[index + 1];
+		if (lineComment) {
+			if (character === "\n" || character === "\r") {
+				lineComment = false;
+				result += character;
+			} else result += " ";
+			continue;
+		}
+		if (blockComment) {
+			if (character === "*" && next === "/") {
+				result += "  ";
+				index += 1;
+				blockComment = false;
+			} else result += character === "\n" || character === "\r" ? character : " ";
+			continue;
+		}
+		if (inString) {
+			result += character;
+			if (escaped) escaped = false;
+			else if (character === "\\") escaped = true;
+			else if (character === '"') inString = false;
+			continue;
+		}
+		if (character === '"') {
+			inString = true;
+			result += character;
+		} else if (character === "/" && next === "/") {
+			lineComment = true;
+			result += "  ";
+			index += 1;
+		} else if (character === "/" && next === "*") {
+			blockComment = true;
+			result += "  ";
+			index += 1;
+		} else result += character;
+	}
+	return result;
+}
+
+function withoutTrailingCommas(contents: string): string {
+	let result = "";
+	let inString = false;
+	let escaped = false;
+	for (let index = 0; index < contents.length; index += 1) {
+		const character = contents[index]!;
+		if (inString) {
+			result += character;
+			if (escaped) escaped = false;
+			else if (character === "\\") escaped = true;
+			else if (character === '"') inString = false;
+			continue;
+		}
+		if (character === '"') inString = true;
+		if (character === ",") {
+			let nextIndex = index + 1;
+			while (/\s/u.test(contents[nextIndex] ?? "")) nextIndex += 1;
+			if (contents[nextIndex] === "]" || contents[nextIndex] === "}") continue;
+		}
+		result += character;
+	}
+	return result;
+}
+
+export function parseUnrealProjectDescriptor(contents: string): ProjectDescriptor {
+	const withoutBom = contents.charCodeAt(0) === 0xfeff ? contents.slice(1) : contents;
+	return Schema.decodeUnknownSync(ProjectDescriptor)(
+		JSON.parse(withoutTrailingCommas(withoutJsonComments(withoutBom)))
+	);
 }
 
 function installationAt(root: string): Effect.Effect<EngineInstallation, EngineInstallationError> {
@@ -130,19 +212,45 @@ function associationOf(
 				false
 			);
 		}
-		const value = yield* readJson(projectDescriptor, "invalid_project_descriptor").pipe(
-			Effect.flatMap(Schema.decodeUnknownEffect(ProjectDescriptor)),
-			Effect.mapError(() =>
+		const value = yield* Effect.tryPromise({
+			try: (signal) =>
+				readFile(projectDescriptor, { encoding: "utf8", signal }).then(
+					parseUnrealProjectDescriptor
+				),
+			catch: () =>
 				failure(
 					"invalid_project_descriptor",
-					"The selected .uproject descriptor has an invalid contract.",
+					"The selected .uproject descriptor is unreadable or invalid JSON.",
 					"Choose a readable Unreal .uproject descriptor.",
 					false
 				)
-			)
-		);
+		});
 		return value.EngineAssociation?.trim() || undefined;
 	});
+}
+
+function registeredEngineRoot(association: string | undefined): Effect.Effect<string | undefined> {
+	if (process.platform !== "win32" || association === undefined) {
+		return Effect.succeed(undefined);
+	}
+	return Effect.callback<string | undefined>((resume) => {
+		const child = execFile(
+			"reg.exe",
+			["query", registeredBuildsKey, "/v", association],
+			{ encoding: "utf8", windowsHide: true },
+			(error, stdout) => resume(Effect.succeed(error ? undefined : stdout))
+		);
+		return Effect.sync(() => child.kill());
+	}).pipe(
+		Effect.map((output) => {
+			if (output === undefined) return undefined;
+			for (const line of output.split(/\r?\n/u)) {
+				const match = line.match(/^\s*(.*?)\s{2,}REG_(?:EXPAND_)?SZ\s{2,}(.+?)\s*$/u);
+				if (match?.[1] === association && match[2]) return resolve(match[2]);
+			}
+			return undefined;
+		})
+	);
 }
 
 function versionLabel(version: EngineVersion): string {
@@ -196,6 +304,11 @@ export const EngineInstallationDiscoveryLive = Layer.effect(
 			if (request.explicitRoot !== undefined)
 				return yield* installationAt(request.explicitRoot);
 			const association = yield* associationOf(resolve(request.projectDescriptor));
+			const registeredRoot = yield* registeredEngineRoot(association);
+			if (registeredRoot !== undefined) {
+				const registered = yield* Effect.option(installationAt(registeredRoot));
+				if (registered._tag === "Some") return registered.value;
+			}
 			const candidates = yield* discoverStandardInstallations({
 				programFiles: configuredProgramFiles,
 				...(association === undefined ? undefined : { association })

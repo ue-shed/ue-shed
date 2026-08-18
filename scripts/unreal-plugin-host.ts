@@ -90,6 +90,16 @@ export function ueShedPluginDescriptors() {
 	});
 }
 
+function copyFileIfChanged(source: string, destination: string) {
+	if (existsSync(destination) && readFileSync(source).equals(readFileSync(destination))) return;
+	copyFileSync(source, destination);
+}
+
+function writeFileIfChanged(path: string, content: string) {
+	if (existsSync(path) && readFileSync(path, "utf8") === content) return;
+	writeFileSync(path, content);
+}
+
 export function stagePluginRuntime(hostRoot: string) {
 	const binariesRoot = join(hostRoot, "Binaries", "Win64");
 	// SAFETY: UnrealBuildTool generated this module manifest for the staged engine build.
@@ -104,7 +114,7 @@ export function stagePluginRuntime(hostRoot: string) {
 		const stagedPluginRoot = join(runtimePluginRoot, pluginId);
 		const stagedBinariesRoot = join(stagedPluginRoot, "Binaries", "Win64");
 		mkdirSync(stagedBinariesRoot, { recursive: true });
-		copyFileSync(descriptor, join(stagedPluginRoot, `${pluginId}.uplugin`));
+		copyFileIfChanged(descriptor, join(stagedPluginRoot, `${pluginId}.uplugin`));
 		const configRoot = join(dirname(descriptor), "Config");
 		if (existsSync(configRoot)) {
 			cpSync(configRoot, join(stagedPluginRoot, "Config"), { force: true, recursive: true });
@@ -115,10 +125,13 @@ export function stagePluginRuntime(hostRoot: string) {
 				if (!binaryName) {
 					throw new Error(`The disposable build did not produce module ${moduleName}.`);
 				}
-				copyFileSync(join(binariesRoot, binaryName), join(stagedBinariesRoot, binaryName));
+				copyFileIfChanged(
+					join(binariesRoot, binaryName),
+					join(stagedBinariesRoot, binaryName)
+				);
 				const symbolsName = binaryName.replace(/\.dll$/i, ".pdb");
 				if (existsSync(join(binariesRoot, symbolsName))) {
-					copyFileSync(
+					copyFileIfChanged(
 						join(binariesRoot, symbolsName),
 						join(stagedBinariesRoot, symbolsName)
 					);
@@ -126,7 +139,7 @@ export function stagePluginRuntime(hostRoot: string) {
 				return [moduleName, binaryName];
 			})
 		);
-		writeFileSync(
+		writeFileIfChanged(
 			join(stagedBinariesRoot, "UnrealEditor.modules"),
 			`${JSON.stringify({ BuildId: moduleManifest.BuildId, Modules: stagedModules }, null, "\t")}\n`
 		);

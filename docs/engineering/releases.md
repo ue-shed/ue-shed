@@ -28,9 +28,10 @@ Until then:
 
 ## Pre-1.0 local release lane
 
-Public npm packages are independently versioned with Changesets. Package selection belongs in a
-small Markdown changeset committed with the implementation, not in a release-time feature list or
-custom bundle command.
+Through `1.0.0`, every public npm package and Unreal plugin descriptor shares one suite version.
+Changesets records which packages changed directly, while its fixed group advances all public npm
+packages to the highest requested SemVer impact. This keeps documentation, examples, plugin
+artifacts, and downstream support statements on one recognizable release train.
 
 When a public package changes, run:
 
@@ -38,11 +39,11 @@ When a public package changes, run:
 pnpm changeset
 ```
 
-Select the directly affected public packages and the SemVer impact. Do not select private
+Select the directly affected public packages and the SemVer impact. Do not add unchanged packages
+merely for alignment; the fixed suite group handles that automatically. Do not select private
 applications, extensions, examples, or tooling. Exact internal workspace dependencies are handled
-by Changesets: if a dependency moves out of range, the affected public dependent receives the
-required patch release. The native launcher, Windows artifact, and WASM package form one fixed
-version group because they share the Rust release line.
+by Changesets. The protected allowlist in `scripts/pack-public-packages.ts` is the authoritative
+public set; [the private-package ledger](private-packages.md) explains every excluded workspace.
 
 Preview the accumulated release at any time:
 
@@ -60,8 +61,8 @@ pnpm check:unreal
 ```
 
 `release:version` updates package manifests, exact internal dependency pins, changelogs, the
-lockfile, and the Rust/native version metadata. Review those changes and commit them as the release
-commit. `pnpm check:unreal` is required when the release changes Unreal-facing behavior, native
+lockfile, Rust/native version metadata, generated artifact metadata, and Unreal plugin descriptors.
+Review those changes and commit them as the release commit. `pnpm check:unreal` is required when the release changes Unreal-facing behavior, native
 saved-asset evidence, or plugin artifacts. For a portable-only release, record why it was omitted.
 
 The normal package gate builds and packs every public package, validates metadata and checksums,
@@ -92,10 +93,11 @@ guide](https://changesets.dev/guide/cli), npm's [access-token
 guidance](https://docs.npmjs.com/about-access-tokens/), and [two-factor authentication
 requirements](https://docs.npmjs.com/about-two-factor-authentication/).
 
-The initial stable `0.1.0` release promotes the existing public packages from `0.1.0-rc.4` and adds
-`@ue-shed/game-text` plus World Log's headless `@ue-shed/map-history` boundary. Later Texture Audit
-or other public features follow the same flow and release only themselves plus genuinely affected
-dependencies.
+The initial stable `0.1.0` release promoted the original public packages from `0.1.0-rc.4` and added
+`@ue-shed/game-text` plus World Log's headless `@ue-shed/map-history` boundary. Starting with
+`0.2.0`, the entire protected public set advances together. A package can be republished solely to
+retain suite alignment; its changeset and release notes must say when it has no direct behavioral
+change.
 
 ## Local plugin artifacts
 

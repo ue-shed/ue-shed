@@ -102,7 +102,7 @@ packages/
   observability/               # Shared telemetry policy, metrics, and public health
   host/                        # Lifecycle and static extension composition
   unreal-connection/           # Remote Control and companion transports
-  engine-discovery/            # Installed engines, projects, processes, sessions
+  engine/            # Installed engines, projects, processes, sessions
   unreal-assets/               # Versioned read-only saved-package inspection
   ui-theme/                    # StyleX variables and suite themes
   ui/                          # Shared SolidJS + StyleX primitives

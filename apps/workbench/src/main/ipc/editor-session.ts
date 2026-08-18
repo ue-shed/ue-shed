@@ -1,4 +1,4 @@
-import { EditorPlaySession } from "@ue-shed/engine-discovery";
+import { EditorPlaySession } from "@ue-shed/engine";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";

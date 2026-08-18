@@ -132,7 +132,10 @@ const approvedResourceAdapters = new Set([
 	// The actor feed owns its named-pipe server and per-connection sockets through Effect.acquireRelease.
 	"packages/observatory/src/actor-feed.ts",
 	// The saved-asset protocol transport owns and cancels the bounded native child process.
-	"packages/unreal-assets/src/protocol-transport.ts"
+	"packages/unreal-assets/src/protocol-transport.ts",
+	// The engine launcher owns the detached Unreal Editor spawn boundary; its Effect.callback
+	// cancellation finalizer terminates a child that has not completed startup.
+	"packages/engine/src/project-launcher.ts"
 ]);
 const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
 const externalServiceEvidence = new Map([

@@ -1,17 +1,14 @@
-import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdirSync } from "node:fs";
+import { basename, extname, join, resolve } from "node:path";
+import { Effect, Layer } from "effect";
 import {
-	prepareUnrealPlugins,
-	ueShedPluginIds,
-	unrealEngineTools,
-	unrealEngineVersion,
-	type UnrealEngineTools,
-	type UnrealEngineVersion
-} from "./unreal-plugin-host.ts";
-import { parseUnrealDescriptor, registeredEngineRoot } from "./unreal-project-support.ts";
-import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
-import { isJsonString } from "./json.ts";
+	EngineInstallationDiscovery,
+	EngineInstallationDiscoveryLive,
+	UnrealProjectLauncher,
+	UnrealProjectLauncherLive,
+	UnrealProjectProcessLive
+} from "../packages/engine/src/index.ts";
+import { prepareUnrealPlugins, unrealEngineTools } from "./unreal-plugin-host.ts";
 
 type LaunchMode = "normal" | "ue_shed";
 
@@ -34,88 +31,6 @@ function projectFile(projectRoot: string) {
 	return projects[0];
 }
 
-function engineVersion(engineRoot: string) {
-	return unrealEngineVersion(engineRoot);
-}
-
-function discoverEngineRoot(projectPath: string) {
-	const configured = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
-	if (configured) {
-		const root = resolve(configured);
-		if (!engineVersion(root)) {
-			throw new Error(`UE_SHED_UNREAL_ENGINE_ROOT is not an Unreal installation: ${root}`);
-		}
-		return root;
-	}
-
-	const descriptor = parseUnrealDescriptor(readFileSync(projectPath, "utf8"));
-	const association = isJsonString(descriptor.EngineAssociation)
-		? descriptor.EngineAssociation
-		: undefined;
-	if (process.platform === "win32") {
-		const registeredRoot = registeredEngineRoot(association);
-		if (registeredRoot && engineVersion(registeredRoot)) return resolve(registeredRoot);
-		const epicRoot = join(process.env.ProgramFiles ?? "C:\\Program Files", "Epic Games");
-		if (existsSync(epicRoot)) {
-			const candidates = readdirSync(epicRoot, { withFileTypes: true })
-				.filter((entry) => entry.isDirectory() && entry.name.startsWith("UE_"))
-				.map((entry) => join(epicRoot, entry.name))
-				.map((root) => ({ root, version: engineVersion(root) }))
-				.filter(
-					(candidate): candidate is { root: string; version: UnrealEngineVersion } =>
-						candidate.version !== undefined
-				)
-				.filter(
-					(candidate) =>
-						association === undefined || candidate.version.label === association
-				)
-				.sort((left, right) =>
-					left.version.label.localeCompare(right.version.label, undefined, {
-						numeric: true
-					})
-				);
-			if (candidates.length > 0) return candidates.at(-1)!.root;
-		}
-	}
-
-	throw new Error(
-		association
-			? `Could not discover Unreal ${association}. Set UE_SHED_UNREAL_ENGINE_ROOT for a custom engine.`
-			: "Could not discover the project's Unreal installation. Set UE_SHED_UNREAL_ENGINE_ROOT."
-	);
-}
-
-function tools(engineRoot: string) {
-	return unrealEngineTools(engineRoot);
-}
-
-function launch(
-	projectRoot: string,
-	projectPath: string,
-	engineTools: UnrealEngineTools,
-	mode: LaunchMode,
-	preparedPluginDescriptors: readonly string[]
-) {
-	const args = [projectPath];
-	if (mode === "ue_shed") {
-		const endpoint = new URL(
-			process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001"
-		);
-		const port = endpoint.port || (endpoint.protocol === "https:" ? "443" : "80");
-		args.push(
-			...preparedPluginDescriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
-			...unrealRemoteControlLaunchArguments(ueShedPluginIds, Number(port))
-		);
-	}
-	const child = spawn(engineTools.editor, args, {
-		cwd: projectRoot,
-		detached: true,
-		stdio: "ignore",
-		windowsHide: false
-	});
-	child.unref();
-}
-
 const action = process.argv[2];
 const modeInput = option("--mode");
 const mode: LaunchMode | undefined =
@@ -133,8 +48,19 @@ if (
 
 const root = resolve(selectedRoot);
 const selectedProject = projectFile(root);
-const engineRoot = discoverEngineRoot(selectedProject);
-const engineTools = tools(engineRoot);
+const explicitEngineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
+const engineRoot = await Effect.runPromise(
+	Effect.flatMap(EngineInstallationDiscovery, (engines) =>
+		engines.resolve({
+			projectDescriptor: selectedProject,
+			...(explicitEngineRoot === undefined ? undefined : { explicitRoot: explicitEngineRoot })
+		})
+	).pipe(
+		Effect.provide(EngineInstallationDiscoveryLive),
+		Effect.map(({ root }) => root)
+	)
+);
+const engineTools = unrealEngineTools(engineRoot);
 let preparedPluginDescriptors: readonly string[] = [];
 if (action === "prepare" || mode === "ue_shed") {
 	preparedPluginDescriptors = prepareUnrealPlugins({
@@ -144,5 +70,32 @@ if (action === "prepare" || mode === "ue_shed") {
 	});
 }
 if (action === "launch") {
-	launch(root, selectedProject, engineTools, mode!, preparedPluginDescriptors);
+	const endpoint = new URL(
+		process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001"
+	);
+	const port = Number(endpoint.port || (endpoint.protocol === "https:" ? "443" : "80"));
+	const launchMode =
+		mode === "ue_shed"
+			? {
+					kind: "with_plugins" as const,
+					plugins: preparedPluginDescriptors.map((descriptor) => ({
+						descriptor,
+						id: basename(descriptor, extname(descriptor))
+					})),
+					remoteControlHttpPort: port
+				}
+			: { kind: "normal" as const };
+	const launcherDependencies = Layer.merge(
+		EngineInstallationDiscoveryLive,
+		UnrealProjectProcessLive
+	);
+	await Effect.runPromise(
+		Effect.flatMap(UnrealProjectLauncher, (launcher) =>
+			launcher.launch({
+				explicitEngineRoot: engineRoot,
+				mode: launchMode,
+				projectDescriptor: selectedProject
+			})
+		).pipe(Effect.provide(UnrealProjectLauncherLive.pipe(Layer.provide(launcherDependencies))))
+	);
 }

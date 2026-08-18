@@ -78,6 +78,15 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			const rowReferenceBase = decodeAuthoringTableSnapshot(
 				await json(join(snapshots, "DT_LeftReferences.json"))
 			);
+			for (const snapshot of [base, enumBase, rowReferenceBase]) {
+				expect("fingerprint" in snapshot).toBe(true);
+				if ("fingerprint" in snapshot) {
+					expect(snapshot.fingerprint.status).toBe("available");
+					if (snapshot.fingerprint.status === "available") {
+						expect(fingerprintTable(snapshot)).toBe(snapshot.fingerprint.value);
+					}
+				}
+			}
 			const alpha = base.table.rows[0]!;
 			const beta = base.table.rows[1]!;
 			const enabledField = alpha.fields.find((field) => field.name === "Enabled")!;
@@ -363,5 +372,5 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			runFixture("generate");
 			await rm(directory, { force: true, recursive: true });
 		}
-	}, 120_000);
+	}, 180_000);
 });

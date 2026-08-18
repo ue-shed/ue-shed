@@ -1,14 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PUBLIC_PACKAGES } from "./pack-public-packages.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checkOnly = process.argv.includes("--check");
-const nativePackagePaths = [
-	"packages/uasset/package.json",
-	"packages/uasset-inspection-wasm/package.json",
-	"packages/uasset-win32-x64/package.json"
-];
+const publicPackagePaths = PUBLIC_PACKAGES.map(({ directory }) => `${directory}/package.json`);
 const cargoManifestPaths = [
 	"crates/uasset-parser/Cargo.toml",
 	"crates/uasset-inspection/Cargo.toml",
@@ -25,6 +22,14 @@ const cargoLocks = [
 		crates: ["uasset-parser", "uasset-inspection", "uasset-inspection-wasm"]
 	}
 ];
+const pluginDescriptorPaths = [
+	"unreal/Plugins/UEShedAssetAudits/UEShedAssetAudits.uplugin",
+	"unreal/Plugins/UEShedAuthoring/UEShedAuthoring.uplugin",
+	"unreal/Plugins/UEShedCameras/UEShedCameras.uplugin",
+	"unreal/Plugins/UEShedCore/UEShedCore.uplugin",
+	"unreal/Plugins/UEShedObservatory/UEShedObservatory.uplugin",
+	"unreal/Plugins/UEShedScenarios/UEShedScenarios.uplugin"
+];
 
 async function read(path: string) {
 	return readFile(join(repositoryRoot, path), "utf8");
@@ -36,13 +41,13 @@ async function replace(path: string, transform: (source: string) => string) {
 	const after = transform(before);
 	if (after === before) return;
 	if (checkOnly) {
-		throw new Error(`${path} is not synchronized with the fixed native npm package group.`);
+		throw new Error(`${path} is not synchronized with the public suite version.`);
 	}
 	await writeFile(absolutePath, after, "utf8");
 }
 
 const packageVersions = await Promise.all(
-	nativePackagePaths.map(
+	publicPackagePaths.map(
 		// SAFETY: every path points to a repository-owned npm package manifest with a version field.
 		async (path) => (JSON.parse(await read(path)) as { readonly version: string }).version
 	)
@@ -50,11 +55,11 @@ const packageVersions = await Promise.all(
 const versions = new Set(packageVersions);
 if (versions.size !== 1) {
 	throw new Error(
-		`The fixed native package group must share one version: ${packageVersions.join(", ")}.`
+		`Every public package must share one suite version: ${packageVersions.join(", ")}.`
 	);
 }
 const version = versions.values().next().value;
-if (version === undefined) throw new Error("The fixed native package group is empty.");
+if (version === undefined) throw new Error("The public package suite is empty.");
 
 for (const path of cargoManifestPaths) {
 	await replace(path, (source) => {
@@ -81,4 +86,24 @@ for (const lock of cargoLocks) {
 	});
 }
 
-console.log(`Native Rust and npm packages agree on ${version}.`);
+for (const path of pluginDescriptorPaths) {
+	await replace(path, (source) => {
+		const pattern = /("VersionName"\s*:\s*")[^"]+/u;
+		if (!pattern.test(source)) {
+			throw new Error(`${path} has no VersionName to synchronize.`);
+		}
+		return source.replace(pattern, `$1${version}`);
+	});
+}
+
+await replace("packages/cameras/src/version.ts", (source) => {
+	const pattern = /(CAMERAS_PACKAGE_VERSION = ")[^"]+/u;
+	if (!pattern.test(source)) {
+		throw new Error("packages/cameras/src/version.ts has no package version to synchronize.");
+	}
+	return source.replace(pattern, `$1${version}`);
+});
+
+console.log(
+	`Public npm packages, native Rust crates, generated metadata, and Unreal plugin descriptors agree on ${version}.`
+);

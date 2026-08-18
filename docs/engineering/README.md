@@ -32,6 +32,7 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [Project Index storage report](project-index-storage-comparison.html) | Visual comparison of four measured eras     |
 | [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence         |
 | [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan |
+| [Private package ledger](private-packages.md)                         | Why excluded workspaces are not published   |
 | [Agent adoption](agent-adoption.md)                                   | Agent-operated workflows and copied slices  |
 
 ## Stack

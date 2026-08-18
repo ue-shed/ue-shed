@@ -38,7 +38,7 @@ async function read(path: string) {
 async function replace(path: string, transform: (source: string) => string) {
 	const absolutePath = join(repositoryRoot, path);
 	const before = await readFile(absolutePath, "utf8");
-	const after = transform(before);
+	const after = transform(before).replaceAll("\r\n", "\n");
 	if (after === before) return;
 	if (checkOnly) {
 		throw new Error(`${path} is not synchronized with the public suite version.`);

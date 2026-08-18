@@ -1,4 +1,4 @@
-# @ue-shed/unreal-connection
+# @ue-shed/project-custodian
 
 ## 0.2.0
 
@@ -9,17 +9,3 @@
   contracts and Node service layers. Add portable Map Capture plans, editor-world previews,
   orthographic tile-pyramid capture, safe map control, and more precise JSON and provisioning
   contracts.
-
-### Patch Changes
-
-- Updated dependencies [51c0e1b]
-    - @ue-shed/protocol@0.2.0
-
-## 0.1.0
-
-### Patch Changes
-
-- 9c2cdce: Publish the stable 0.1 package set, including the headless Game Text and World Log Map History
-  integration packages.
-- Updated dependencies [9c2cdce]
-    - @ue-shed/protocol@0.1.0

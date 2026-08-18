@@ -639,13 +639,13 @@ importers:
   packages/cameras:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../observability
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -654,7 +654,7 @@ importers:
   packages/config-explorer:
     dependencies:
       '@ue-shed/engine':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../engine
       effect:
         specifier: 'catalog:'
@@ -667,10 +667,10 @@ importers:
   packages/engine:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -692,7 +692,7 @@ importers:
   packages/game-text:
     dependencies:
       '@ue-shed/unreal-assets':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../unreal-assets
     devDependencies:
       effect:
@@ -730,10 +730,10 @@ importers:
   packages/map-history:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../protocol
       '@ue-shed/unreal-assets':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../unreal-assets
       effect:
         specifier: 'catalog:'
@@ -789,10 +789,10 @@ importers:
   packages/observatory:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../observability
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -849,7 +849,7 @@ importers:
   packages/uasset:
     optionalDependencies:
       '@ue-shed/uasset-win32-x64':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../uasset-win32-x64
 
   packages/uasset-inspection-wasm: {}
@@ -880,7 +880,7 @@ importers:
   packages/unreal-assets:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../protocol
       effect:
         specifier: 'catalog:'
@@ -893,7 +893,7 @@ importers:
   packages/unreal-connection:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.2.0
         version: link:../protocol
       effect:
         specifier: 'catalog:'

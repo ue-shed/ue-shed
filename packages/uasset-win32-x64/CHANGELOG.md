@@ -1,5 +1,11 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.2.0
+
+### Patch Changes
+
+- 51c0e1b: Align the unchanged public packages with the synchronized UE Shed `0.2.0` suite release.
+
 ## 0.1.0
 
 ### Patch Changes

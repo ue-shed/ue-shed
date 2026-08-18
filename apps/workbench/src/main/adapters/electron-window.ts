@@ -56,7 +56,7 @@ export interface SaveDialogOptions {
 	readonly title: string;
 }
 
-export interface WorkbenchWindowShape {
+export interface WorkbenchWindowApi {
 	readonly destroy: () => Effect.Effect<void, WorkbenchWindowError>;
 	readonly isDestroyed: () => Effect.Effect<boolean>;
 	readonly load: () => Effect.Effect<void, WorkbenchWindowError>;
@@ -66,15 +66,18 @@ export interface WorkbenchWindowShape {
 	readonly saveDialog: (
 		options: SaveDialogOptions
 	) => Effect.Effect<SaveDialogChoice, WorkbenchWindowError>;
-	readonly send: (channel: string, payload: unknown) => Effect.Effect<void, WorkbenchWindowError>;
+	readonly send: <Payload>(
+		channel: string,
+		payload: Payload
+	) => Effect.Effect<void, WorkbenchWindowError>;
 	readonly show: () => Effect.Effect<void, WorkbenchWindowError>;
 }
 
-export class WorkbenchWindow extends Context.Service<WorkbenchWindow, WorkbenchWindowShape>()(
+export class WorkbenchWindow extends Context.Service<WorkbenchWindow, WorkbenchWindowApi>()(
 	"@ue-shed/workbench/WorkbenchWindow"
 ) {}
 
-export interface WorkbenchWindowTestShape extends WorkbenchWindowShape {
+export interface WorkbenchWindowTestApi extends WorkbenchWindowApi {
 	readonly sent: () => Effect.Effect<
 		ReadonlyArray<{ readonly channel: string; readonly payload: unknown }>
 	>;
@@ -83,7 +86,7 @@ export interface WorkbenchWindowTestShape extends WorkbenchWindowShape {
 
 export class WorkbenchWindowTest extends Context.Service<
 	WorkbenchWindowTest,
-	WorkbenchWindowTestShape
+	WorkbenchWindowTestApi
 >()("@ue-shed/workbench/WorkbenchWindow/Test") {}
 
 function windowError(
@@ -224,7 +227,7 @@ export const workbenchWindowLayer = (
 													name: filter.name
 												}))
 											}
-										: {}),
+										: undefined),
 									properties: [
 										...dialogOptions.properties,
 										...(dialogOptions.multiSelections
@@ -262,7 +265,7 @@ export const workbenchWindowLayer = (
 								electron.dialog.showSaveDialog(window, {
 									...(dialogOptions.defaultPath
 										? { defaultPath: dialogOptions.defaultPath }
-										: {}),
+										: undefined),
 									...(dialogOptions.filters
 										? {
 												filters: dialogOptions.filters.map((filter) => ({
@@ -270,7 +273,7 @@ export const workbenchWindowLayer = (
 													name: filter.name
 												}))
 											}
-										: {}),
+										: undefined),
 									title: dialogOptions.title
 								}),
 							catch: (cause) =>
@@ -302,7 +305,7 @@ export const workbenchWindowLayer = (
 	);
 
 export const makeWorkbenchWindowTestLayer = (
-	overrides: Partial<WorkbenchWindowTestShape> = {}
+	overrides: Partial<WorkbenchWindowTestApi> = {}
 ): Layer.Layer<WorkbenchWindow | WorkbenchWindowTest> =>
 	Layer.effectContext(
 		Effect.gen(function* () {

@@ -208,7 +208,7 @@ export class AuthoringClientError extends Schema.TaggedErrorClass<AuthoringClien
 	}
 ) {}
 
-export interface AuthoringClientShape {
+export interface AuthoringClientApi {
 	readonly getCatalogProgress: () => Effect.Effect<
 		AuthoringCatalogProgress,
 		AuthoringClientError
@@ -256,7 +256,7 @@ export interface AuthoringClientShape {
 	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;
 }
 
-export class AuthoringClient extends Context.Service<AuthoringClient, AuthoringClientShape>()(
+export class AuthoringClient extends Context.Service<AuthoringClient, AuthoringClientApi>()(
 	"@ue-shed/authoring-sdk/AuthoringClient"
 ) {}
 
@@ -300,7 +300,7 @@ export const decodeAuthoringTransportResponse = Schema.decodeUnknownEffect(
 );
 
 export function dispatchAuthoringTransportRequest(
-	client: AuthoringClientShape,
+	client: AuthoringClientApi,
 	request: AuthoringTransportRequest
 ) {
 	const operation = (() => {
@@ -352,9 +352,9 @@ export interface AuthoringHttpClientOptions {
 	readonly endpoint: string;
 }
 
-export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): AuthoringClientShape {
-	const request = <A>(args: {
-		readonly decode: (input: unknown) => Effect.Effect<A, unknown>;
+export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): AuthoringClientApi {
+	const request = <A, DecodeError>(args: {
+		readonly decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>;
 		readonly operation: string;
 		readonly payload: AuthoringTransportRequest;
 	}) =>

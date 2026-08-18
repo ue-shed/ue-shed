@@ -1,4 +1,4 @@
-import { ScenarioRunner, type ScenarioDocument, type ScenarioRunHandle } from "@ue-shed/scenarios";
+import { ScenarioRunner } from "@ue-shed/scenarios";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
@@ -8,17 +8,17 @@ export const register = Effect.gen(function* () {
 	const runner = yield* ScenarioRunner;
 
 	yield* ipc.register(invokeContracts["scenario:start"], (...args) => {
-		const [document, endpoint] = args as [ScenarioDocument, string];
+		const [document, endpoint] = args;
 		return runner.start({ document, endpoint }).pipe(Effect.orDie);
 	});
 
 	yield* ipc.register(invokeContracts["scenario:status"], (...args) => {
-		const [handle] = args as [ScenarioRunHandle];
+		const [handle] = args;
 		return runner.status(handle).pipe(Effect.orDie);
 	});
 
 	yield* ipc.register(invokeContracts["scenario:cancel"], (...args) => {
-		const [handle] = args as [ScenarioRunHandle];
+		const [handle] = args;
 		return Effect.gen(function* () {
 			const cancelled = yield* runner.cancelHandle(handle);
 			if (cancelled._tag === "Rejected") {

@@ -3,9 +3,9 @@ import {
 	PerforceFastMapHistory,
 	PerforceMapHistory,
 	makeMapHistoryTestLayer,
-	type MapHistoryShape
+	type MapHistoryApi
 } from "@ue-shed/map-history";
-import { makeAssetReaderTestLayer, type AssetReaderTestShape } from "@ue-shed/unreal-assets";
+import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
 import {
 	ContentObservatoryHistoryRequest,
 	type ContentObservatoryState
@@ -77,6 +77,7 @@ const defaultSavedProject: TestSavedProject = {
 	projectRoot: "C:/Project"
 };
 
+// SAFETY: the literal mode is fast, fixing the decoded request union variant.
 const fastRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	mode: "fast",
 	limits: request.limits,
@@ -85,6 +86,7 @@ const fastRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	target: { identity: { actorGuid: "actor-npc-1", kind: "actor_guid" }, kind: "actor" }
 }) as Extract<ContentObservatoryHistoryRequest, { mode: "fast" }>;
 
+// SAFETY: the literal mode and actor_class target fix the decoded request union variant.
 const fastClassRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	mode: "fast",
 	limits: request.limits,
@@ -132,7 +134,7 @@ const fastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory)({
 });
 
 function stateLayer(
-	source: MapHistoryShape,
+	source: MapHistoryApi,
 	savedWorld: SavedWorld | undefined = undefined,
 	savedProject: () => Effect.Effect<TestSavedProject> = () => Effect.succeed(defaultSavedProject)
 ) {
@@ -155,7 +157,7 @@ function stateLayer(
 							? Effect.die("saved-world target discovery is not used")
 							: Effect.succeed(savedWorld),
 					source: () => Effect.succeed("path" as const)
-				} satisfies AssetReaderTestShape),
+				} satisfies AssetReaderTestApi),
 				makeMapHistoryTestLayer(source),
 				makeWorkbenchProjectTestLayer({
 					choose: () => Effect.succeed({ status: "cancelled" as const }),

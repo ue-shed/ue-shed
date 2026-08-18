@@ -4,13 +4,13 @@ import {
 	decodeCustodianExecutionRunResult,
 	decodeCustodianPrepareRunResult,
 	decodeCustodianRunResult,
-	type CustodianClientShape
+	type CustodianClientApi
 } from "@ue-shed/extension-project-custodian";
 import { Effect } from "effect";
 
-function request<A, E>(
-	options: { readonly invoke: () => Promise<unknown>; readonly operation: string },
-	decode: (value: unknown) => Effect.Effect<A, E>
+function request<A, HostValue, DecodeError>(
+	options: { readonly invoke: () => Promise<HostValue>; readonly operation: string },
+	decode: (value: HostValue) => Effect.Effect<A, DecodeError>
 ) {
 	return Effect.tryPromise({
 		try: options.invoke,
@@ -33,7 +33,7 @@ function request<A, E>(
 	);
 }
 
-export const projectCustodianClient: CustodianClientShape = {
+export const projectCustodianClient: CustodianClientApi = {
 	configuredScan: Effect.fn("ProjectCustodianClient.configuredScan")(() =>
 		request(
 			{

@@ -220,10 +220,7 @@ export function catalogFromSnapshot(
 	snapshot: WorldActorSnapshotType,
 	sessionId: ObservationSessionId,
 	revision: CatalogRevision
-): {
-	readonly catalog: WorldActorCatalog;
-	readonly transforms: ReadonlyArray<WorldIndexedTransform>;
-} {
+) {
 	const entries: Array<WorldActorCatalogEntry> = [];
 	const transforms: Array<WorldIndexedTransform> = [];
 	for (let index = 0; index < snapshot.actors.length; index += 1) {
@@ -472,10 +469,7 @@ export function catalogFromWireEntries(args: {
 	readonly sessionId: ObservationSessionId;
 	readonly worldKind: "editor" | "pie";
 	readonly worldSeconds: number;
-}): {
-	readonly catalog: WorldActorCatalog;
-	readonly transforms: ReadonlyArray<WorldIndexedTransform>;
-} {
+}) {
 	const entries: Array<WorldActorCatalogEntry> = [];
 	const transforms: Array<WorldIndexedTransform> = [];
 	for (const actor of args.actors) {

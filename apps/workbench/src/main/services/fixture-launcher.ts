@@ -1,6 +1,6 @@
 import { decodeCompanionCapabilityManifest } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { Cache, Context, Duration, Effect, Layer, Result, Schedule } from "effect";
+import { Cache, Context, Duration, Effect, Layer, Result, Schedule, Schema } from "effect";
 import { join } from "node:path";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { LocalFiles } from "../adapters/local-files.js";
@@ -18,11 +18,11 @@ export type FixtureHealthResult =
 	| { readonly status: "incompatible"; readonly message: string; readonly recovery: string }
 	| { readonly status: "not_running" };
 
-export interface FixtureHealthShape {
+export interface FixtureHealthApi {
 	readonly check: (capability?: FixtureHealthCapability) => Effect.Effect<FixtureHealthResult>;
 }
 
-export class FixtureHealth extends Context.Service<FixtureHealth, FixtureHealthShape>()(
+export class FixtureHealth extends Context.Service<FixtureHealth, FixtureHealthApi>()(
 	"@ue-shed/workbench/FixtureHealth"
 ) {}
 
@@ -49,11 +49,7 @@ export const FixtureHealthLive = Layer.effect(
 		const configuration = yield* WorkbenchConfiguration;
 		const remoteControl = yield* RemoteControlClient;
 
-		const probe = (
-			functionName: string,
-			objectPath: string,
-			parameters: Readonly<Record<string, unknown>>
-		) =>
+		const probe = (functionName: string, objectPath: string, parameters: Schema.JsonObject) =>
 			remoteControl.request({
 				endpoint: configuration.remoteControlEndpoint,
 				functionName,
@@ -97,19 +93,17 @@ export const FixtureHealthLive = Layer.effect(
 	})
 );
 
-export function makeFixtureHealthTestLayer(
-	service: FixtureHealthShape
-): Layer.Layer<FixtureHealth> {
+export function makeFixtureHealthTestLayer(service: FixtureHealthApi): Layer.Layer<FixtureHealth> {
 	return Layer.succeed(FixtureHealth, FixtureHealth.of(service));
 }
 
 export type FixtureLaunchMode = "default" | "authoring";
 
-export interface FixtureLauncherShape {
+export interface FixtureLauncherApi {
 	readonly launch: (mode: FixtureLaunchMode) => Effect.Effect<FixtureLaunchResult>;
 }
 
-export class FixtureLauncher extends Context.Service<FixtureLauncher, FixtureLauncherShape>()(
+export class FixtureLauncher extends Context.Service<FixtureLauncher, FixtureLauncherApi>()(
 	"@ue-shed/workbench/FixtureLauncher"
 ) {}
 
@@ -232,7 +226,7 @@ export const FixtureLauncherLive = Layer.effect(
 );
 
 export function makeFixtureLauncherTestLayer(
-	service: FixtureLauncherShape
+	service: FixtureLauncherApi
 ): Layer.Layer<FixtureLauncher> {
 	return Layer.succeed(FixtureLauncher, FixtureLauncher.of(service));
 }

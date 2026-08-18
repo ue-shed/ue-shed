@@ -54,11 +54,13 @@ const assetsScanCommand = Command.make(
 		return runAssetsScan({
 			_tag: "AssetsScan",
 			path,
-			...(classPrefixes.length === 0 ? {} : { classPrefixes }),
-			...(classes.length === 0 ? {} : { classes }),
-			...(names.length === 0 ? {} : { names }),
-			...(maximumAssetsValue === undefined ? {} : { maximumAssets: maximumAssetsValue }),
-			...(fullValue === undefined ? {} : { full: fullValue }),
+			...(classPrefixes.length === 0 ? undefined : { classPrefixes }),
+			...(classes.length === 0 ? undefined : { classes }),
+			...(names.length === 0 ? undefined : { names }),
+			...(maximumAssetsValue === undefined
+				? undefined
+				: { maximumAssets: maximumAssetsValue }),
+			...(fullValue === undefined ? undefined : { full: fullValue }),
 			...readerFields(reader)
 		});
 	}

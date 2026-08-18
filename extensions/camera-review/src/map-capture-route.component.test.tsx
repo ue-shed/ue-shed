@@ -7,7 +7,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type {
-	MapCaptureClientShape,
+	MapCaptureClientApi,
 	MapCaptureExecuteIntent,
 	MapCaptureProgressEvent,
 	MapCaptureSaveIntent
@@ -48,7 +48,7 @@ describe("MapCaptureRoute", () => {
 	it("streams the top-down editor camera into the framing stage", async () => {
 		let previewedPlanId: string | undefined;
 		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-		const client: MapCaptureClientShape = {
+		const client: MapCaptureClientApi = {
 			actors: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
 			choosePlan: () =>
@@ -107,7 +107,7 @@ describe("MapCaptureRoute", () => {
 
 	it("surfaces scoped atmosphere and per-level LOD settings in the capture intent", async () => {
 		let captured: MapCaptureExecuteIntent | undefined;
-		const client: MapCaptureClientShape = {
+		const client: MapCaptureClientApi = {
 			actors: () => Effect.die("not used"),
 			capture: (intent) =>
 				Effect.sync(() => {
@@ -195,7 +195,7 @@ describe("MapCaptureRoute", () => {
 
 	it("creates, edits, validates, and saves a plan from the Map Capture path", async () => {
 		let saved: MapCaptureSaveIntent | undefined;
-		const client: MapCaptureClientShape = {
+		const client: MapCaptureClientApi = {
 			actors: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
 			choosePlan: () => Effect.die("not used"),
@@ -244,11 +244,11 @@ describe("MapCaptureRoute", () => {
 		fireEvent.input(screen.getByRole("spinbutton", { name: "CENTER X" }), {
 			target: { value: "2000" }
 		});
-		const centerY = screen.getByRole("spinbutton", { name: "CENTER Y" });
+		const centerY = screen.getByRole<HTMLInputElement>("spinbutton", { name: "CENTER Y" });
 		await user.clear(centerY);
 		expect(screen.queryByText("Every world bound must be a finite number.")).toBeNull();
 		await user.tab();
-		expect((centerY as HTMLInputElement).valueAsNumber).toBe(512);
+		expect(centerY.valueAsNumber).toBe(512);
 		await user.clear(centerY);
 		await user.type(centerY, "0");
 		fireEvent.change(screen.getByRole("spinbutton", { name: "SIZE · UU" }), {
@@ -262,28 +262,26 @@ describe("MapCaptureRoute", () => {
 		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
 		expect(screen.getByText("2 × 2 TILES")).toBeDefined();
 		expect(
-			(
-				screen.getByRole("spinbutton", {
-					name: "RESOLUTION · UU/PX"
-				}) as HTMLInputElement
-			).valueAsNumber
+			screen.getByRole<HTMLInputElement>("spinbutton", {
+				name: "RESOLUTION · UU/PX"
+			}).valueAsNumber
 		).toBe(1);
 		fireEvent.change(screen.getByRole("spinbutton", { name: "TILE SIZE · PX" }), {
 			target: { value: "512" }
 		});
 		expect(screen.getByText("2 × 2 TILES")).toBeDefined();
-		const baseGrid = screen.getByRole("spinbutton", { name: "BASE GRID · N × N" });
+		const baseGrid = screen.getByRole<HTMLInputElement>("spinbutton", {
+			name: "BASE GRID · N × N"
+		});
 		fireEvent.change(baseGrid, {
 			target: { value: "4" }
 		});
-		expect((baseGrid as HTMLInputElement).valueAsNumber).toBe(4);
+		expect(baseGrid.valueAsNumber).toBe(4);
 		expect(screen.getByText("4 × 4 TILES")).toBeDefined();
 		expect(
-			(
-				screen.getByRole("spinbutton", {
-					name: "RESOLUTION · UU/PX"
-				}) as HTMLInputElement
-			).valueAsNumber
+			screen.getByRole<HTMLInputElement>("spinbutton", {
+				name: "RESOLUTION · UU/PX"
+			}).valueAsNumber
 		).toBe(1.46484375);
 		fireEvent.change(screen.getByRole("spinbutton", { name: "RESOLUTION · UU/PX" }), {
 			target: { value: "0.5" }
@@ -315,7 +313,7 @@ describe("MapCaptureRoute", () => {
 	it("shows actual tile progress and locks capture controls while a run is active", async () => {
 		let captured: MapCaptureExecuteIntent | undefined;
 		const progressQueue = Effect.runSync(Queue.unbounded<MapCaptureProgressEvent>());
-		const client: MapCaptureClientShape = {
+		const client: MapCaptureClientApi = {
 			actors: () => Effect.die("not used"),
 			capture: (intent) =>
 				Effect.sync(() => {
@@ -372,10 +370,10 @@ describe("MapCaptureRoute", () => {
 		expect(screen.getByText("3 CAPTURED")).toBeDefined();
 		expect(screen.getByText("1 FAILED")).toBeDefined();
 		expect(
-			(screen.getByRole("button", { name: "OPEN + CAPTURE" }) as HTMLButtonElement).disabled
+			screen.getByRole<HTMLButtonElement>("button", { name: "OPEN + CAPTURE" }).disabled
 		).toBe(true);
 		expect(
-			(screen.getByRole("button", { name: "OPEN TARGET MAP" }) as HTMLButtonElement).disabled
+			screen.getByRole<HTMLButtonElement>("button", { name: "OPEN TARGET MAP" }).disabled
 		).toBe(true);
 	});
 });

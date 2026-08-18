@@ -231,7 +231,9 @@ export function ConfigExplorerRoute(props: { readonly result: ConfigExplorerSupp
 
 			<Show
 				when={isComparison(props.result) ? props.result : undefined}
-				fallback={<EvidencePanel result={props.result as ConfigExplanation} />}
+				fallback={
+					isComparison(props.result) ? undefined : <EvidencePanel result={props.result} />
+				}
 			>
 				{(comparison) => (
 					<>

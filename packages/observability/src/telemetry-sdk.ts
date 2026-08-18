@@ -27,7 +27,7 @@ export function telemetrySdkLayer(options: RuntimeObservabilityOptions, mode: Te
 		resource: {
 			serviceName: options.serviceName,
 			...(options.serviceVersion === undefined
-				? {}
+				? undefined
 				: { serviceVersion: options.serviceVersion })
 		},
 		spanProcessor

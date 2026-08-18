@@ -54,19 +54,19 @@ class TestPresentation extends Context.Service<
 	{ readonly kind: "presentation" }
 >()("Test/TestPresentation") {}
 
-interface TestFixtureLauncherShape {
+interface TestFixtureLauncherApi {
 	readonly launchSlow: () => Effect.Effect<void>;
 }
 
-class TestFixtureLauncher extends Context.Service<TestFixtureLauncher, TestFixtureLauncherShape>()(
+class TestFixtureLauncher extends Context.Service<TestFixtureLauncher, TestFixtureLauncherApi>()(
 	"Test/TestFixtureLauncher"
 ) {}
 
-function trackedLayer<Self, Shape>(
-	tag: Context.Key<Self, Shape>,
+function trackedLayer<Self, Service>(
+	tag: Context.Key<Self, Service>,
 	name: string,
 	journal: Journal,
-	value: Shape
+	value: Service
 ): Layer.Layer<Self> {
 	return Layer.effect(
 		tag,

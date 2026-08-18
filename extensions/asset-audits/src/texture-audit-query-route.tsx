@@ -16,7 +16,7 @@ import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress"
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Schedule, Stream } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
-import type { TextureAuditClientShape } from "./texture-audit-client.js";
+import type { TextureAuditClientApi } from "./texture-audit-client.js";
 
 type ViewState =
 	| { readonly status: "loading" }
@@ -131,7 +131,7 @@ function savedPreviewBatchLabel(count: number, loading: boolean): string {
 }
 
 /** Bounded query presentation; full texture records remain in the Workbench main process. */
-export function TextureAuditRoute(props: { readonly client: TextureAuditClientShape }) {
+export function TextureAuditRoute(props: { readonly client: TextureAuditClientApi }) {
 	const refreshAction = createEffectAction();
 	const searchAction = createEffectAction();
 	const detailAction = createEffectAction();
@@ -259,11 +259,11 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientSh
 		const generation = ++searchGeneration;
 		searchAction.run(
 			props.client.search({
-				...(cursor === undefined ? {} : { cursor }),
+				...(cursor === undefined ? undefined : { cursor }),
 				findingsOnly: findingsOnly(),
 				pageSize: 100,
 				query: query(),
-				...(selection() === undefined ? {} : { selection: selection()! })
+				...(selection() === undefined ? undefined : { selection: selection()! })
 			}),
 			{
 				onFailure: (cause) => setState(failure(cause)),

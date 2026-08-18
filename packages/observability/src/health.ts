@@ -59,14 +59,14 @@ export function aggregateHealth(input: RuntimeHealthInput): RuntimeHealth {
 	};
 }
 
-export interface RuntimeHealthServiceShape {
+export interface RuntimeHealthServiceApi {
 	readonly report: (input: RuntimeHealthInput) => Effect.Effect<RuntimeHealth>;
 	readonly snapshot: () => Effect.Effect<RuntimeHealth>;
 }
 
 export class RuntimeHealthService extends Context.Service<
 	RuntimeHealthService,
-	RuntimeHealthServiceShape
+	RuntimeHealthServiceApi
 >()("@ue-shed/observability/RuntimeHealthService") {}
 
 export function runtimeHealthLayer(

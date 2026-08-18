@@ -13,11 +13,7 @@ import {
 	onCleanup,
 	onMount
 } from "solid-js";
-import type {
-	MapReviewClientShape,
-	MapReviewResult,
-	MapReviewRunView
-} from "./map-review-client.js";
+import type { MapReviewClientApi, MapReviewResult, MapReviewRunView } from "./map-review-client.js";
 import { MapReviewAuthoring } from "./map-review-authoring.js";
 import { CaptureWorkflow } from "./capture-workflow.js";
 import { ReviewSetLibrary } from "./review-set-library.js";
@@ -86,7 +82,7 @@ function ArtifactImage(props: { readonly artifact: RunArtifact; readonly alt: st
 	);
 }
 
-export function MapReviewRoute(props: { readonly client: MapReviewClientShape }) {
+export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 	const action = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [selectedRunId, setSelectedRunId] = createSignal<string>();

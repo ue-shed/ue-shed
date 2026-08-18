@@ -337,7 +337,7 @@ export type UAssetIoEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
 export const decodeUAssetIoRequest = Schema.decodeUnknownEffect(UAssetIoRequest);
 export const decodeUAssetIoEvent = Schema.decodeUnknownEffect(UAssetIoEvent);
 
-export function makeUAssetIoJsonSchema(contract: Schema.Top): Readonly<Record<string, unknown>> {
+export function makeUAssetIoJsonSchema(contract: Schema.Top) {
 	const document = Schema.toJsonSchemaDocument(contract);
 	const definitions = { ...document.definitions };
 	if ("UAssetIoNonNegativeInt" in definitions) {

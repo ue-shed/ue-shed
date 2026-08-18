@@ -4,7 +4,7 @@ import {
 	AssetReader,
 	isHeaderScanEntry,
 	type AssetReaderError,
-	type AssetReaderShape,
+	type AssetReaderApi,
 	type SavedAssetInspection,
 	type SavedAssetScan,
 	type SavedAssetTextureExtractionEvent,
@@ -267,7 +267,10 @@ function stringDistribution(
 
 export function foldTextureDistributions(records: readonly TextureRecord[]): TextureDistributions {
 	const dimensionOrder = ["le-256", "257-512", "513-1024", "gt-1024", "unavailable"];
-	const dimensionLabels: Record<string, string> = {
+	interface DimensionLabels {
+		readonly [dimension: string]: string;
+	}
+	const dimensionLabels: DimensionLabels = {
 		"le-256": "≤ 256 px",
 		"257-512": "257–512 px",
 		"513-1024": "513–1,024 px",
@@ -318,7 +321,7 @@ function readRuleSet(path: string): Effect.Effect<TextureAuditRuleSet, TextureAu
 	}).pipe(
 		Effect.flatMap((json) =>
 			Effect.try({
-				try: () => JSON.parse(json) as unknown,
+				try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(json)),
 				catch: (cause) =>
 					new TextureAuditScanError({
 						code: "invalid_rules",
@@ -449,7 +452,7 @@ function textureAuditFromExtraction(options: {
 }
 
 function extractTextureAuditWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	options: {
 		readonly concurrency?: number;
 		readonly discoveredPackages: number;
@@ -487,9 +490,9 @@ function extractTextureAuditWith(
 				.extractProjectTextures({
 					concurrency: Math.max(1, options.concurrency ?? 8),
 					...(options.maximumAssets === undefined
-						? {}
+						? undefined
 						: { maximumAssets: options.maximumAssets }),
-					...(options.paths === undefined ? {} : { paths: options.paths }),
+					...(options.paths === undefined ? undefined : { paths: options.paths }),
 					projectRoot: options.projectRoot
 				})
 				.pipe(
@@ -543,7 +546,7 @@ function extractTextureAuditWith(
 }
 
 function scanTextureAuditWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	options: TextureAuditScanOptions,
 	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
@@ -553,9 +556,11 @@ function scanTextureAuditWith(
 			reader,
 			{
 				discoveredPackages: 0,
-				...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+				...(options.concurrency === undefined
+					? undefined
+					: { concurrency: options.concurrency }),
 				...(options.maximumAssets === undefined
-					? {}
+					? undefined
 					: { maximumAssets: options.maximumAssets }),
 				projectRoot: options.projectRoot,
 				rules
@@ -567,7 +572,7 @@ function scanTextureAuditWith(
 }
 
 function scanTextureAuditFromProjectIndexWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	index: SavedAssetScan,
 	options: TextureAuditScanOptions,
 	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
@@ -579,9 +584,11 @@ function scanTextureAuditFromProjectIndexWith(
 			reader,
 			{
 				discoveredPackages: index.summary.scannedAssets,
-				...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+				...(options.concurrency === undefined
+					? undefined
+					: { concurrency: options.concurrency }),
 				...(options.maximumAssets === undefined
-					? {}
+					? undefined
 					: { maximumAssets: options.maximumAssets }),
 				paths,
 				projectRoot: options.projectRoot,
@@ -597,7 +604,7 @@ function scanTextureAuditFromProjectIndexWith(
 	}).pipe(Effect.withSpan("asset-audits.scan-textures-from-project-index"));
 }
 
-export interface TextureAuditShape {
+export interface TextureAuditApi {
 	readonly progress: () => Effect.Effect<ExtractionProgress>;
 	readonly scan: (
 		options: TextureAuditScanOptions
@@ -608,7 +615,7 @@ export interface TextureAuditShape {
 	) => Effect.Effect<TextureAuditReport, TextureAuditScanError>;
 }
 
-export class TextureAudit extends Context.Service<TextureAudit, TextureAuditShape>()(
+export class TextureAudit extends Context.Service<TextureAudit, TextureAuditApi>()(
 	"@ue-shed/asset-audits/TextureAudit"
 ) {}
 
@@ -665,12 +672,10 @@ export const TextureAuditLive = Layer.effect(
 	})
 );
 
-export type TextureAuditTestShape = Omit<TextureAuditShape, "progress" | "scanFromProjectIndex"> &
-	Partial<Pick<TextureAuditShape, "progress" | "scanFromProjectIndex">>;
+export type TextureAuditTestApi = Omit<TextureAuditApi, "progress" | "scanFromProjectIndex"> &
+	Partial<Pick<TextureAuditApi, "progress" | "scanFromProjectIndex">>;
 
-export function makeTextureAuditTestLayer(
-	service: TextureAuditTestShape
-): Layer.Layer<TextureAudit> {
+export function makeTextureAuditTestLayer(service: TextureAuditTestApi): Layer.Layer<TextureAudit> {
 	return Layer.succeed(
 		TextureAudit,
 		TextureAudit.of({

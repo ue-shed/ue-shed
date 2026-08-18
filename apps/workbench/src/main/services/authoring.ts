@@ -9,7 +9,7 @@ import {
 	ShedHostConfiguration,
 	makeShedHostConfiguration,
 	makeShedAuthoringTestLayer,
-	type ShedAuthoringShape
+	type ShedAuthoringApi
 } from "@ue-shed/host";
 import { AuthoringClient } from "@ue-shed/authoring-sdk";
 import { AssetReader } from "@ue-shed/unreal-assets";
@@ -20,7 +20,7 @@ import { WorkbenchProject } from "./project-workspace.js";
 
 export { sessionView } from "@ue-shed/host";
 export { ShedAuthoring as WorkbenchAuthoring } from "@ue-shed/host";
-export type WorkbenchAuthoringShape = ShedAuthoringShape;
+export type WorkbenchAuthoringApi = ShedAuthoringApi;
 
 const WorkbenchShedHostConfigurationLive = Layer.effect(
 	ShedHostConfiguration,
@@ -156,7 +156,7 @@ export const WorkbenchAuthoringLive = ShedAuthoringLive.pipe(
 );
 
 export function makeWorkbenchAuthoringTestLayer(
-	service: WorkbenchAuthoringShape
+	service: WorkbenchAuthoringApi
 ): Layer.Layer<ShedAuthoring | AuthoringClient> {
 	const shedAuthoring = makeShedAuthoringTestLayer(service);
 	return Layer.merge(shedAuthoring, AuthoringClientLive.pipe(Layer.provide(shedAuthoring)));

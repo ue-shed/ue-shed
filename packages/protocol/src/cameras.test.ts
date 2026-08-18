@@ -5,9 +5,9 @@ import {
 	decodeCameraStatus as decodeCameraStatusEffect
 } from "./cameras.js";
 
-const decodeCameraScheduleConfig = (input: unknown) =>
+const decodeCameraScheduleConfig = <Input>(input: Input) =>
 	Effect.runSync(decodeCameraScheduleConfigEffect(input));
-const decodeCameraStatus = (input: unknown) => Effect.runSync(decodeCameraStatusEffect(input));
+const decodeCameraStatus = <Input>(input: Input) => Effect.runSync(decodeCameraStatusEffect(input));
 
 const config = {
 	activeCameraCount: 8,

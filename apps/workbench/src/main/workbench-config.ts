@@ -31,7 +31,7 @@ export type SavedWorldMapsConfiguration =
 	| { readonly status: "configured"; readonly maps: readonly SavedWorldMap[] }
 	| { readonly status: "not_configured" };
 
-export interface WorkbenchConfigurationShape {
+export interface WorkbenchConfigurationApi {
 	readonly authoringAsset: ConfiguredPath;
 	readonly cameraPipeName?: string;
 	readonly custodianRoot?: ConfiguredPath;
@@ -51,7 +51,7 @@ export interface WorkbenchConfigurationShape {
 
 export class WorkbenchConfiguration extends Context.Service<
 	WorkbenchConfiguration,
-	WorkbenchConfigurationShape
+	WorkbenchConfigurationApi
 >()("@ue-shed/workbench/WorkbenchConfiguration") {}
 
 const NonEmptyConfigString = Schema.NonEmptyString.check(Schema.isPattern(/\S/));
@@ -151,14 +151,14 @@ export function makeWorkbenchConfiguration(input: {
 	readonly savedWorldMaps?: Option.Option<string>;
 	readonly textureAuditRules: Option.Option<string>;
 	readonly unrealEngineRoot?: Option.Option<string>;
-}): WorkbenchConfigurationShape {
+}): WorkbenchConfigurationApi {
 	const project: ProjectConfiguration = Option.match(input.projectRoot, {
 		onNone: () => ({ status: "not_configured" as const }),
 		onSome: (projectRoot) => ({
 			projectRoot,
 			...(Option.isSome(input.authoringSessionRoot)
 				? { sessionStorageRoot: input.authoringSessionRoot.value }
-				: {}),
+				: undefined),
 			status: "configured" as const
 		})
 	});
@@ -226,7 +226,7 @@ export const WorkbenchConfigurationLive = Layer.effect(
 );
 
 export const makeWorkbenchConfigurationLayer = (
-	configuration: WorkbenchConfigurationShape
+	configuration: WorkbenchConfigurationApi
 ): Layer.Layer<WorkbenchConfiguration> =>
 	Layer.succeed(WorkbenchConfiguration, WorkbenchConfiguration.of(configuration));
 

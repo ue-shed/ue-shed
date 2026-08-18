@@ -73,9 +73,7 @@ export const decodeEditorPlaySessionCommandResponse = Schema.decodeUnknownEffect
 	EditorPlaySessionCommandResponse
 );
 
-export function makeEditorPlaySessionJsonSchema(
-	contract: Schema.Top
-): Readonly<Record<string, unknown>> {
+export function makeEditorPlaySessionJsonSchema(contract: Schema.Top) {
 	const document = Schema.toJsonSchemaDocument(contract);
 	return {
 		$schema: "https://json-schema.org/draft/2020-12/schema",

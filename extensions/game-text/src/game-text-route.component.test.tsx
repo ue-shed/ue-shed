@@ -5,6 +5,7 @@ import { userEvent } from "@testing-library/user-event";
 import {
 	makeTextOccurrenceId,
 	makeTextUnitId,
+	TextQualityFindingId,
 	TextQualityRuleId,
 	TextQualityRuleDocument,
 	TextRoleId,
@@ -16,7 +17,7 @@ import {
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { type GameTextClientShape } from "./game-text-client.js";
+import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
 
 const corpus: TextCorpus = {
@@ -125,7 +126,7 @@ afterEach(cleanup);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 
-function makeClient(overrides: Partial<GameTextClientShape> = {}): GameTextClientShape {
+function makeClient(overrides: Partial<GameTextClientApi> = {}): GameTextClientApi {
 	return {
 		chooseQualityRules: () => Effect.succeed({ status: "not_ready" }),
 		chooseProjectAndScan: () => Effect.succeed(completed),
@@ -166,6 +167,7 @@ function makeClient(overrides: Partial<GameTextClientShape> = {}): GameTextClien
 						status: "found"
 					}
 				: { status: "not_found" };
+			// SAFETY: both branches above construct the complete discriminated TextCorpusFocusResult.
 			return Effect.succeed(result as TextCorpusFocusResult);
 		},
 		locateAsset: (objectPath) =>
@@ -245,9 +247,9 @@ describe("GameTextRoute interactions", () => {
 	it("keeps the search input focused while an async page replaces its results", async () => {
 		const user = userEvent.setup();
 		renderRoute();
-		const input = (await screen.findByRole("searchbox", {
+		const input = await screen.findByRole<HTMLInputElement>("searchbox", {
 			name: "Search game text"
-		})) as HTMLInputElement;
+		});
 
 		await user.click(input);
 		await user.type(input, "Continue");
@@ -351,11 +353,13 @@ describe("GameTextRoute interactions", () => {
 			},
 			diagnosticCount: 1,
 			findingCount: 2,
-			roles: [{ matchedOccurrences: 2, matchedTextUnits: 2, role: "menu.prompt" as never }],
+			roles: [
+				{ matchedOccurrences: 2, matchedTextUnits: 2, role: TextRoleId.make("menu.prompt") }
+			],
 			ruleDocumentVersion: 1 as const,
 			rules: [
-				{ findingCount: 1, ruleId: "menu.prompt.characters" as never },
-				{ findingCount: 1, ruleId: "menu.prompt.terms" as never }
+				{ findingCount: 1, ruleId: TextQualityRuleId.make("menu.prompt.characters") },
+				{ findingCount: 1, ruleId: TextQualityRuleId.make("menu.prompt.terms") }
 			],
 			schemaVersion: 1 as const,
 			status: "partial" as const,
@@ -403,7 +407,7 @@ describe("GameTextRoute interactions", () => {
 		const budgetFinding = {
 			actual: "58 characters",
 			expectation: "Maximum 32 characters",
-			id: "quality-finding:1" as never,
+			id: TextQualityFindingId.make("quality-finding:1"),
 			kind: "character_budget" as const,
 			occurrenceCount: 1,
 			recovery: "Shorten the prompt while keeping the action clear.",
@@ -415,7 +419,7 @@ describe("GameTextRoute interactions", () => {
 		const terminologyFinding = {
 			actual: "“old” at 10–13",
 			expectation: "Prefer “select”",
-			id: "quality-finding:2" as never,
+			id: TextQualityFindingId.make("quality-finding:2"),
 			kind: "terminology" as const,
 			occurrenceCount: 1,
 			recovery: "Use the preferred interaction term.",

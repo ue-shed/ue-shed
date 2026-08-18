@@ -67,7 +67,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 			source: source(),
 			section: section().trim(),
 			key: key().trim(),
-			...(family().trim() === "" ? {} : { family: family().trim() })
+			...(family().trim() === "" ? undefined : { family: family().trim() })
 		};
 		return mode() === "explain"
 			? {

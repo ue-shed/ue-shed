@@ -33,7 +33,7 @@ export interface OpenEditorWorldOptions {
 	readonly targetMapPath: string;
 }
 
-export interface EditorWorldControlShape {
+export interface EditorWorldControlApi {
 	readonly open: (
 		options: OpenEditorWorldOptions
 	) => Effect.Effect<EditorWorldOpenResponse, EditorWorldControlError>;
@@ -41,7 +41,7 @@ export interface EditorWorldControlShape {
 
 export class EditorWorldControl extends Context.Service<
 	EditorWorldControl,
-	EditorWorldControlShape
+	EditorWorldControlApi
 >()("@ue-shed/engine-discovery/EditorWorldControl") {}
 
 function normalizedEndpoint(endpoint: string): string {
@@ -185,7 +185,7 @@ export const EditorWorldControlLive = Layer.effect(
 );
 
 export function makeEditorWorldControlTestLayer(
-	service: EditorWorldControlShape
+	service: EditorWorldControlApi
 ): Layer.Layer<EditorWorldControl> {
 	return Layer.succeed(EditorWorldControl, EditorWorldControl.of(service));
 }

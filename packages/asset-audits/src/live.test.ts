@@ -14,7 +14,7 @@ async function withRemoteControl(
 	await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
 	try {
 		const address = server.address();
-		if (!address || typeof address === "string") throw new Error("Expected a TCP address");
+		if (!(address instanceof Object)) throw new Error("Expected a TCP address");
 		await run(`http://127.0.0.1:${address.port}`);
 	} finally {
 		await new Promise<void>((resolveClose, rejectClose) =>
@@ -23,7 +23,7 @@ async function withRemoteControl(
 	}
 }
 
-function sendResult(response: ServerResponse, result: unknown) {
+function sendResult<Result>(response: ServerResponse, result: Result) {
 	response.writeHead(200, { "content-type": "application/json" });
 	response.end(JSON.stringify({ ResultJson: JSON.stringify(result) }));
 }
@@ -36,6 +36,7 @@ describe("live texture preview", () => {
 				request.setEncoding("utf8");
 				request.on("data", (chunk) => (body += chunk));
 				request.on("end", () => {
+					// SAFETY: the audit client serializes Remote Control requests with functionName.
 					const call = JSON.parse(body) as { functionName: string };
 					if (call.functionName === "GetCapabilityManifest") {
 						sendResult(response, {

@@ -55,6 +55,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 			readonly durationMs: number;
 			readonly sequence: string;
 		};
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldScoutPaintSamples?: Sample[];
 			__ueShedWorldObservationEvents?: Array<{
@@ -109,24 +110,21 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 		});
 		target.addEventListener("ue-shed:world-scout-painted", (event) => {
 			const detail = event.detail;
-			if (
-				typeof detail !== "object" ||
-				detail === null ||
-				!("actorsChanged" in detail) ||
-				!("actorsObserved" in detail) ||
-				!("durationMs" in detail) ||
-				!("sequence" in detail)
-			)
-				return;
-			const sample = detail as Sample;
-			if (
-				typeof sample.actorsChanged !== "number" ||
-				typeof sample.actorsObserved !== "number" ||
-				typeof sample.durationMs !== "number" ||
-				typeof sample.sequence !== "string"
-			)
-				return;
-			samples.push(sample);
+			const isNumber = <Value>(value: Value): value is Value & number =>
+				Object.prototype.toString.call(value) === "[object Number]";
+			const isString = <Value>(value: Value): value is Value & string =>
+				Object.prototype.toString.call(value) === "[object String]";
+			const isSample = <Value>(value: Value): value is Value & Sample =>
+				value instanceof Object &&
+				"actorsChanged" in value &&
+				isNumber(value.actorsChanged) &&
+				"actorsObserved" in value &&
+				isNumber(value.actorsObserved) &&
+				"durationMs" in value &&
+				isNumber(value.durationMs) &&
+				"sequence" in value &&
+				isString(value.sequence);
+			if (isSample(detail)) samples.push(detail);
 		});
 	});
 	await workbench.openRoute("Map Review");
@@ -137,6 +135,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 	});
 	await workbench.page.waitForFunction(
 		() => {
+			// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 			const target = globalThis as typeof globalThis & {
 				__ueShedWorldScoutPaintSamples?: Array<{
 					readonly actorsObserved: number;
@@ -151,12 +150,14 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 		{ timeout: 60_000 }
 	);
 	const sequenceBeforeCadenceChange = await workbench.page.evaluate(() => {
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldScoutPaintSamples?: WorldScoutPaintSample[];
 		};
 		return target.__ueShedWorldScoutPaintSamples?.at(-1)?.sequence;
 	});
 	await workbench.page.evaluate(() => {
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldObservationEvents?: Measurement["ipcEvents"] extends ReadonlyArray<
 				infer Event
@@ -171,6 +172,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 	await expect(refreshRate).toHaveValue("20");
 	await workbench.page.waitForFunction(
 		(sequenceBefore) => {
+			// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 			const target = globalThis as typeof globalThis & {
 				__ueShedWorldScoutPaintSamples?: WorldScoutPaintSample[];
 			};
@@ -182,6 +184,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 		{ timeout: 5_000 }
 	);
 	const lifecycleEventsAfterCadenceChange = await workbench.page.evaluate(() => {
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldObservationEvents?: Measurement["ipcEvents"] extends ReadonlyArray<
 				infer Event
@@ -207,12 +210,14 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 	});
 	await expect(workbench.page.getByRole("button", { name: /GO TO ACTOR/ })).toBeVisible();
 	const sequenceBeforeFocus = await workbench.page.evaluate(() => {
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldScoutPaintSamples?: WorldScoutPaintSample[];
 		};
 		return target.__ueShedWorldScoutPaintSamples?.at(-1)?.sequence;
 	});
 	await workbench.page.evaluate(() => {
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldScoutPaintSamples?: WorldScoutPaintSample[];
 			__ueShedWorldObservationEvents?: Measurement["ipcEvents"] extends ReadonlyArray<
@@ -228,6 +233,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 	await expect(workbench.page.getByText(/FOCUSED (IN UNREAL|RUNTIME ACTOR)/)).toBeVisible();
 	await workbench.page.waitForFunction(
 		(sequenceBefore) => {
+			// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 			const target = globalThis as typeof globalThis & {
 				__ueShedWorldScoutPaintSamples?: WorldScoutPaintSample[];
 			};
@@ -239,6 +245,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 		{ timeout: 5_000 }
 	);
 	const staleEventsAfterFocus = await workbench.page.evaluate(() => {
+		// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 		const target = globalThis as typeof globalThis & {
 			__ueShedWorldObservationEvents?: Measurement["ipcEvents"] extends ReadonlyArray<
 				infer Event
@@ -255,6 +262,7 @@ test("presents live L_CameraLoad transforms through Workbench at at least 10 FPS
 	const measurement = await workbench.page.evaluate(
 		(durationMs): Promise<Measurement> =>
 			new Promise((resolveMeasurement) => {
+				// SAFETY: this runs in the Workbench renderer, whose preload and test setup install these globals.
 				const target = globalThis as typeof globalThis & {
 					__ueShedWorldScoutPaintSamples?: WorldScoutPaintSample[];
 					__ueShedWorldObservationEvents?: Array<{

@@ -18,8 +18,7 @@ import {
 	redo,
 	undo,
 	workingTable,
-	type CommandEnvelope,
-	type DraftSession
+	type CommandEnvelope
 } from "./draft.js";
 import { fingerprintTable } from "./fingerprint.js";
 import {
@@ -88,7 +87,7 @@ const PersistedAuthoringSessionDocument = Schema.Struct({
 const decodePersistedDocument = Schema.decodeUnknownEffect(PersistedAuthoringSessionDocument);
 const decodeCurrentDocument = Schema.decodeUnknownEffect(AuthoringSessionDocument);
 
-function decodeDocument(input: unknown) {
+function decodeDocument<Input>(input: Input) {
 	return Effect.gen(function* () {
 		const persisted = yield* decodePersistedDocument(input);
 		const decodedDraft = yield* decodeDraftSessionWithMigration(persisted.draft);
@@ -150,11 +149,11 @@ export class AuthoringSessionLiveError extends Schema.TaggedErrorClass<Authoring
 	}
 ) {}
 
-export type AuthoringSessionLivePortShape = AuthoringLivePort<AuthoringSessionLiveError>;
+export type AuthoringSessionLivePortApi = AuthoringLivePort<AuthoringSessionLiveError>;
 
 export class AuthoringSessionLivePort extends Context.Service<
 	AuthoringSessionLivePort,
-	AuthoringSessionLivePortShape
+	AuthoringSessionLivePortApi
 >()("@ue-shed/authoring/AuthoringSessionLivePort") {}
 
 function liveError(
@@ -162,10 +161,9 @@ function liveError(
 	cause: unknown
 ): AuthoringSessionLiveError {
 	const retrySafe =
-		typeof cause === "object" &&
-		cause !== null &&
+		cause instanceof Object &&
 		"retrySafe" in cause &&
-		typeof cause.retrySafe === "boolean"
+		Schema.is(Schema.Boolean)(cause.retrySafe)
 			? cause.retrySafe
 			: false;
 	return new AuthoringSessionLiveError({
@@ -173,6 +171,10 @@ function liveError(
 		operation,
 		retrySafe
 	});
+}
+
+function hasErrorCode(cause: unknown, code: string): boolean {
+	return cause instanceof Object && "code" in cause && cause.code === code;
 }
 
 export function authoringSessionLivePortLayer<E>(
@@ -358,13 +360,13 @@ export interface AuthoringSessionServiceConfig {
 	readonly storageRoot?: string;
 }
 
-export interface AuthoringIdGeneratorShape {
+export interface AuthoringIdGeneratorApi {
 	readonly generate: () => Effect.Effect<string>;
 }
 
 export class AuthoringIdGenerator extends Context.Service<
 	AuthoringIdGenerator,
-	AuthoringIdGeneratorShape
+	AuthoringIdGeneratorApi
 >()("@ue-shed/authoring/AuthoringIdGenerator") {}
 
 export const AuthoringIdGeneratorLive = Layer.succeed(
@@ -383,7 +385,7 @@ export function authoringIdGeneratorLayer(makeId: () => string): Layer.Layer<Aut
 	);
 }
 
-export interface AuthoringSessionRepositoryShape {
+export interface AuthoringSessionRepositoryApi {
 	readonly project: { readonly id: string; readonly root: string };
 	readonly storageRoot: string;
 	readonly discard: (sessionId: string) => Effect.Effect<void, AuthoringSessionServiceError>;
@@ -403,7 +405,7 @@ export interface AuthoringSessionRepositoryShape {
 
 export class AuthoringSessionRepository extends Context.Service<
 	AuthoringSessionRepository,
-	AuthoringSessionRepositoryShape
+	AuthoringSessionRepositoryApi
 >()("@ue-shed/authoring/AuthoringSessionRepository") {}
 
 export function authoringSessionRepositoryLayer(
@@ -461,7 +463,7 @@ export function authoringSessionRepositoryLayer(
 				return yield* Effect.tryPromise({
 					try: () => readFile(pathFor(sessionId), "utf8"),
 					catch: (cause) =>
-						(cause as NodeJS.ErrnoException).code === "ENOENT"
+						hasErrorCode(cause, "ENOENT")
 							? new SessionNotFoundError({
 									message: `Authoring session ${sessionId} does not exist`,
 									recovery: "List project sessions or create a new one.",
@@ -485,7 +487,7 @@ export function authoringSessionRepositoryLayer(
 							await stat(pathFor(sessionId));
 							return true;
 						} catch (cause) {
-							if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false;
+							if (hasErrorCode(cause, "ENOENT")) return false;
 							throw cause;
 						}
 					},
@@ -547,7 +549,7 @@ export function authoringSessionRepositoryLayer(
 				yield* Effect.tryPromise({
 					try: () => rm(pathFor(sessionId)),
 					catch: (cause) =>
-						(cause as NodeJS.ErrnoException).code === "ENOENT"
+						hasErrorCode(cause, "ENOENT")
 							? new SessionNotFoundError({
 									message: `Authoring session ${sessionId} does not exist`,
 									recovery: "List project sessions or create a new one.",
@@ -623,9 +625,10 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					repository.read(validId).pipe(
 						Effect.flatMap((contents) =>
 							Effect.try({
-								try: () => JSON.parse(contents) as unknown,
+								try: () => JSON.parse(contents),
 								catch: (cause) => cause
 							}).pipe(
+								Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
 								Effect.flatMap(decodeDocument),
 								Effect.catch((cause) => repository.quarantine(validId, cause))
 							)
@@ -724,11 +727,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 								recovery: firstError.recovery
 							});
 						}
-						const request = buildApplyRequest(
-							document.draft as DraftSession,
-							requestId,
-							limits
-						);
+						const request = buildApplyRequest(document.draft, requestId, limits);
 						return {
 							...document,
 							pendingOperation: {
@@ -768,7 +767,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					return {
 						...document,
 						draft: acceptApplyResult(
-							document.draft as DraftSession,
+							document.draft,
 							document.pendingOperation.request,
 							result,
 							timestamp
@@ -784,10 +783,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					const operationId = requestId ?? (yield* ids.generate());
 					return yield* update(sessionId, (document, timestamp) => {
 						requireIdle(document);
-						const request = buildSaveRequest(
-							document.draft as DraftSession,
-							operationId
-						);
+						const request = buildSaveRequest(document.draft, operationId);
 						return {
 							...document,
 							pendingOperation: {
@@ -827,7 +823,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					return {
 						...document,
 						draft: acceptSaveResult(
-							document.draft as DraftSession,
+							document.draft,
 							document.pendingOperation.request,
 							result,
 							timestamp
@@ -942,7 +938,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			append: Effect.fn("AuthoringSessions.append")((sessionId, commands) =>
 				update(sessionId, (document, timestamp) => {
 					requireIdle(document);
-					const draft = appendCommandGroup(document.draft as DraftSession, commands);
+					const draft = appendCommandGroup(document.draft, commands);
 					for (const objectPath of new Set(
 						commands.map((command) => command.tableObjectPath)
 					)) {
@@ -962,11 +958,11 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							commandIds,
 							edits: args.edits,
 							groupId,
-							session: document.draft as DraftSession,
+							session: document.draft,
 							tableObjectPath: args.tableObjectPath,
-							...(args.author === undefined ? {} : { author: args.author })
+							...(args.author === undefined ? undefined : { author: args.author })
 						});
-						const draft = appendCommandGroup(document.draft as DraftSession, commands);
+						const draft = appendCommandGroup(document.draft, commands);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});
@@ -985,12 +981,12 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							groupId,
 							rowId,
 							rowName: args.rowName,
-							session: document.draft as DraftSession,
+							session: document.draft,
 							tableObjectPath: args.tableObjectPath,
-							...(args.atIndex === undefined ? {} : { atIndex: args.atIndex }),
-							...(args.author === undefined ? {} : { author: args.author })
+							...(args.atIndex === undefined ? undefined : { atIndex: args.atIndex }),
+							...(args.author === undefined ? undefined : { author: args.author })
 						});
-						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						const draft = appendCommandGroup(document.draft, [command]);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});
@@ -1009,13 +1005,13 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							groupId,
 							rowId,
 							rowName: args.rowName,
-							session: document.draft as DraftSession,
+							session: document.draft,
 							sourceRowId: args.sourceRowId,
 							tableObjectPath: args.tableObjectPath,
-							...(args.atIndex === undefined ? {} : { atIndex: args.atIndex }),
-							...(args.author === undefined ? {} : { author: args.author })
+							...(args.atIndex === undefined ? undefined : { atIndex: args.atIndex }),
+							...(args.author === undefined ? undefined : { author: args.author })
 						});
-						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						const draft = appendCommandGroup(document.draft, [command]);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});
@@ -1032,11 +1028,11 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							commandId,
 							groupId,
 							rowId: args.rowId,
-							session: document.draft as DraftSession,
+							session: document.draft,
 							tableObjectPath: args.tableObjectPath,
-							...(args.author === undefined ? {} : { author: args.author })
+							...(args.author === undefined ? undefined : { author: args.author })
 						});
-						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						const draft = appendCommandGroup(document.draft, [command]);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});
@@ -1054,11 +1050,11 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							groupId,
 							rowId: args.rowId,
 							rowName: args.rowName,
-							session: document.draft as DraftSession,
+							session: document.draft,
 							tableObjectPath: args.tableObjectPath,
-							...(args.author === undefined ? {} : { author: args.author })
+							...(args.author === undefined ? undefined : { author: args.author })
 						});
-						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						const draft = appendCommandGroup(document.draft, [command]);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});
@@ -1075,11 +1071,11 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 							commandId,
 							groupId,
 							rowIds: args.rowIds,
-							session: document.draft as DraftSession,
+							session: document.draft,
 							tableObjectPath: args.tableObjectPath,
-							...(args.author === undefined ? {} : { author: args.author })
+							...(args.author === undefined ? undefined : { author: args.author })
 						});
-						const draft = appendCommandGroup(document.draft as DraftSession, [command]);
+						const draft = appendCommandGroup(document.draft, [command]);
 						workingTable(draft, args.tableObjectPath);
 						return { ...document, draft, updatedAt: timestamp };
 					});
@@ -1090,7 +1086,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					requireIdle(document);
 					return {
 						...document,
-						draft: undo(document.draft as DraftSession),
+						draft: undo(document.draft),
 						updatedAt: timestamp
 					};
 				})
@@ -1100,7 +1096,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					requireIdle(document);
 					return {
 						...document,
-						draft: redo(document.draft as DraftSession),
+						draft: redo(document.draft),
 						updatedAt: timestamp
 					};
 				})

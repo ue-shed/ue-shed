@@ -11,6 +11,7 @@ import {
 } from "./unreal-plugin-host.ts";
 import { parseUnrealDescriptor, registeredEngineRoot } from "./unreal-project-support.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
+import { isJsonString } from "./json.ts";
 
 type LaunchMode = "normal" | "ue_shed";
 
@@ -48,8 +49,9 @@ function discoverEngineRoot(projectPath: string) {
 	}
 
 	const descriptor = parseUnrealDescriptor(readFileSync(projectPath, "utf8"));
-	const association =
-		typeof descriptor.EngineAssociation === "string" ? descriptor.EngineAssociation : undefined;
+	const association = isJsonString(descriptor.EngineAssociation)
+		? descriptor.EngineAssociation
+		: undefined;
 	if (process.platform === "win32") {
 		const registeredRoot = registeredEngineRoot(association);
 		if (registeredRoot && engineVersion(registeredRoot)) return resolve(registeredRoot);

@@ -3,7 +3,7 @@ import type {
 	AuthoringCatalogResult,
 	AuthoringCatalogProgress,
 	AuthoringAuthority,
-	AuthoringClientShape,
+	AuthoringClientApi,
 	AuthoringLoadFailure,
 	AuthoringLoadResult,
 	AuthoringSessionListResult,
@@ -144,7 +144,7 @@ function applyNotice(view: AuthoringSessionView): string | undefined {
 }
 
 function RowReferencePicker(props: {
-	readonly client: AuthoringClientShape;
+	readonly client: AuthoringClientApi;
 	readonly authority: AuthoringAuthority;
 	readonly disabled: boolean;
 	readonly onStage: (value: RowReferenceValue) => void;
@@ -541,7 +541,7 @@ function SessionShelf(props: {
 	);
 }
 
-export function AuthoringRoute(props: { readonly client: AuthoringClientShape }) {
+export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 	const loadAction = createEffectAction();
 	const catalogAction = createEffectAction();
 	const catalogProgressSubscription = createEffectSubscription();

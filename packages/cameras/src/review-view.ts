@@ -51,7 +51,7 @@ export function putReviewView(args: {
 			reviewSet: args.reviewSet,
 			viewId: args.view.id,
 			...(args.view.visibilityOverrides === undefined
-				? {}
+				? undefined
 				: { visibilityOverrides: args.view.visibilityOverrides }),
 			visibilityPolicyId: args.view.visibilityPolicyId
 		});

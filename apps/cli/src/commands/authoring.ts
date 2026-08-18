@@ -17,7 +17,7 @@ import { nonNegativeIntegerFlag, optionalFlag, optionalValue, readerFields } fro
 
 function parseAuthoringValue(valueJson: string) {
 	return Effect.try({
-		try: () => JSON.parse(valueJson) as unknown,
+		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(valueJson)),
 		catch: (cause) => new CliCommandError({ message: `Invalid value JSON: ${String(cause)}` })
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(AuthoringValue)),
@@ -31,7 +31,7 @@ function parseAuthoringValue(valueJson: string) {
 
 function parseRowIds(value: string) {
 	return Effect.try({
-		try: () => JSON.parse(value) as unknown,
+		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value)),
 		catch: (cause) => new CliCommandError({ message: `Invalid row IDs JSON: ${String(cause)}` })
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(Schema.String))),
@@ -93,7 +93,7 @@ const authoringCatalogCommand = Command.make(
 		return runAuthoringCatalog({
 			_tag: "AuthoringCatalog",
 			projectRoot,
-			...(endpointValue === undefined ? {} : { endpoint: endpointValue }),
+			...(endpointValue === undefined ? undefined : { endpoint: endpointValue }),
 			...readerFields(reader)
 		});
 	}
@@ -168,7 +168,7 @@ const sessionsCreateCommand = Command.make(
 			_tag: "SessionsCreate",
 			assetPath,
 			projectRoot,
-			...(idValue === undefined ? {} : { id: idValue }),
+			...(idValue === undefined ? undefined : { id: idValue }),
 			...readerFields(reader)
 		});
 	}
@@ -275,7 +275,7 @@ const sessionsAddRowCommand = Command.make(
 			rowName,
 			sessionId,
 			tablePath,
-			...(atIndex === undefined ? {} : { atIndex })
+			...(atIndex === undefined ? undefined : { atIndex })
 		});
 	}
 ).pipe(Command.withDescription("Add a row to an authoring session."));
@@ -301,7 +301,7 @@ const sessionsDuplicateRowCommand = Command.make(
 			sessionId,
 			sourceRowId,
 			tablePath,
-			...(atIndex === undefined ? {} : { atIndex })
+			...(atIndex === undefined ? undefined : { atIndex })
 		});
 	}
 ).pipe(Command.withDescription("Duplicate a row in an authoring session."));

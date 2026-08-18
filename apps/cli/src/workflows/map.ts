@@ -39,7 +39,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				);
 			}
 			const asTimestamp = decodeUtcTimestamp(command.since);
-			const duration = Duration.fromInput(command.since as Duration.Input);
+			const duration = Schema.decodeUnknownOption(Schema.DurationFromString)(command.since);
 			const since = Option.isSome(asTimestamp)
 				? asTimestamp.value
 				: Option.isSome(duration) &&

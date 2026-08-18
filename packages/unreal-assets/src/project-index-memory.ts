@@ -9,7 +9,7 @@ import {
 	type ProjectIndexMap,
 	type ProjectIndexPage,
 	type ProjectIndexQuery,
-	type ProjectIndexShape,
+	type ProjectIndexApi,
 	type ProjectIndexStatus,
 	type ProjectIndexSummary,
 	type ProjectIndexTarget,
@@ -115,7 +115,7 @@ const pageItems = (
 			projectId,
 			...(nextOffset < items.length
 				? { nextCursor: CursorSchema.make(String(nextOffset)) }
-				: {})
+				: undefined)
 		};
 	});
 
@@ -185,7 +185,7 @@ const refreshStream = (
 		})
 	);
 
-const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexShape => {
+const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexApi => {
 	const status = Effect.fn("ProjectIndex.Memory.status")(function* (target: ProjectIndexTarget) {
 		const current = yield* Ref.get(state);
 		const catalog = current.byProjectRoot.get(target.projectRoot);

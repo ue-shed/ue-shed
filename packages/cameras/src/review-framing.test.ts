@@ -24,7 +24,7 @@ import {
 	type ReviewSubjectProjection
 } from "./review-schema.js";
 
-const decodeReviewSet = (input: unknown) => Effect.runSync(decodeReviewSetEffect(input));
+const decodeReviewSet = <Input>(input: Input) => Effect.runSync(decodeReviewSetEffect(input));
 
 const selection = {
 	actorPath: "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",

@@ -91,7 +91,7 @@ export interface PerforceMapLineageOptions {
 	readonly maxRevisionRecords: number;
 }
 
-export interface PerforceHistorySourceShape {
+export interface PerforceHistorySourceApi {
 	readonly describeChangelist: (
 		change: number
 	) => Effect.Effect<PerforceChangeDescription, MapHistoryError>;
@@ -120,7 +120,7 @@ export interface PerforceHistorySourceShape {
 
 export class PerforceHistorySource extends Context.Service<
 	PerforceHistorySource,
-	PerforceHistorySourceShape
+	PerforceHistorySourceApi
 >()("@ue-shed/map-history/PerforceHistorySource") {}
 
 /** The selected project root used to resolve local Perforce configuration and workspace context. */
@@ -152,7 +152,7 @@ const P4WhereRecord = Schema.Struct({
 });
 const decodeP4WhereRecords = Schema.decodeUnknownEffect(Schema.Array(P4WhereRecord));
 const decodeP4TaggedRecords = Schema.decodeUnknownEffect(
-	Schema.Array(Schema.Record(Schema.String, Schema.Unknown))
+	Schema.Array(Schema.Record(Schema.String, Schema.Json))
 );
 
 const P4MaterializationFile = Schema.Struct({
@@ -181,9 +181,9 @@ function toSubmittedChange(change: {
 	const user = optionalString(change.user);
 	return {
 		change: change.change,
-		...(description.value === undefined ? {} : { description: description.value }),
-		...(submittedAt.value === undefined ? {} : { submittedAt: submittedAt.value }),
-		...(user.value === undefined ? {} : { user: user.value })
+		...(description.value === undefined ? undefined : { description: description.value }),
+		...(submittedAt.value === undefined ? undefined : { submittedAt: submittedAt.value }),
+		...(user.value === undefined ? undefined : { user: user.value })
 	};
 }
 
@@ -198,27 +198,25 @@ function toDepotFile(file: ListDepotFilesAtChangeResult["items"][number]): Perfo
 }
 
 function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
-	const tagged = cause as {
-		readonly _tag?: string;
-		readonly category?: string;
-		readonly message?: string;
-		readonly reason?: string;
-	};
+	const tag = cause instanceof Object && "_tag" in cause ? cause._tag : undefined;
+	const category = cause instanceof Object && "category" in cause ? cause.category : undefined;
+	const message = cause instanceof Object && "message" in cause ? cause.message : undefined;
+	const reason = cause instanceof Object && "reason" in cause ? cause.reason : undefined;
 	const kind =
-		tagged._tag === "P4MaterializationError"
-			? tagged.reason === "limit_exceeded"
+		tag === "P4MaterializationError"
+			? reason === "limit_exceeded"
 				? "resource_limit"
 				: "materialization"
-			: tagged._tag === "P4CommandError" && tagged.category === "authentication"
+			: tag === "P4CommandError" && category === "authentication"
 				? "perforce_authentication"
-				: tagged._tag === "P4CommandError" &&
-					  (tagged.category === "server_config" || tagged.category === "client")
+				: tag === "P4CommandError" &&
+					  (category === "server_config" || category === "client")
 					? "perforce_configuration"
 					: "perforce_command";
 	return new MapHistoryError({
 		cause,
 		kind,
-		message: tagged.message ?? `${operation} failed.`,
+		message: Schema.is(Schema.String)(message) ? message : `${operation} failed.`,
 		recovery:
 			kind === "perforce_authentication"
 				? "Authenticate with Perforce and retry."
@@ -228,8 +226,7 @@ function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
 						? "Narrow the history range or raise the explicit operation limit."
 						: "Inspect the Perforce diagnostic and retry when it is safe.",
 		retrySafe:
-			tagged._tag === "P4TimeoutError" ||
-			(tagged._tag === "P4CommandError" && tagged.category === "connection")
+			tag === "P4TimeoutError" || (tag === "P4CommandError" && category === "connection")
 	});
 }
 
@@ -248,24 +245,19 @@ function mapLineageError(
 	});
 }
 
-function taggedString(record: Readonly<Record<string, unknown>>, key: string): string | undefined {
+function taggedString(record: Schema.JsonObject, key: string): string | undefined {
 	const value = record[key];
-	return typeof value === "string" ? value : undefined;
+	return Schema.is(Schema.String)(value) ? value : undefined;
 }
 
-function positiveTaggedInt(
-	record: Readonly<Record<string, unknown>>,
-	key: string
-): number | undefined {
+function positiveTaggedInt(record: Schema.JsonObject, key: string): number | undefined {
 	const value = taggedString(record, key);
 	if (value === undefined) return undefined;
 	const parsed = Number(value);
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function directMovesFromFilelog(
-	records: readonly Readonly<Record<string, unknown>>[]
-): readonly PerforceMapMove[] {
+function directMovesFromFilelog(records: readonly Schema.JsonObject[]): readonly PerforceMapMove[] {
 	const moves: PerforceMapMove[] = [];
 	for (const record of records) {
 		const depotPath = taggedString(record, "depotFile");
@@ -319,7 +311,7 @@ function directMovesFromFilelog(
 function orderedDirectLineage(options: {
 	readonly moves: readonly PerforceMapMove[];
 	readonly selectedDepotPath: string;
-}): { readonly depotPaths: readonly string[]; readonly moves: readonly PerforceMapMove[] } {
+}) {
 	const outgoing = new Map<string, PerforceMapMove>();
 	const incoming = new Map<string, PerforceMapMove>();
 	for (const move of options.moves) {
@@ -386,14 +378,14 @@ function resolveBackend(
 	backend: PerforceBackend | PerforceBackendResolver
 ): Effect.Effect<PerforceBackend> {
 	return Effect.gen(function* () {
-		if (typeof backend !== "function") return backend;
+		if (!(backend instanceof Function)) return backend;
 		return backend(yield* selectedProjectRoot());
 	});
 }
 
 export function makePerforceHistorySource(
 	backend: PerforceBackend | PerforceBackendResolver,
-	resolveLocalPath: PerforceHistorySourceShape["resolveLocalPath"] = (localPath) =>
+	resolveLocalPath: PerforceHistorySourceApi["resolveLocalPath"] = (localPath) =>
 		Effect.fail(
 			new MapHistoryError({
 				kind: "perforce_configuration",
@@ -402,8 +394,8 @@ export function makePerforceHistorySource(
 				retrySafe: false
 			})
 		),
-	resolveMapLineage?: NonNullable<PerforceHistorySourceShape["resolveMapLineage"]>
-): PerforceHistorySourceShape {
+	resolveMapLineage?: NonNullable<PerforceHistorySourceApi["resolveMapLineage"]>
+): PerforceHistorySourceApi {
 	return PerforceHistorySource.of({
 		describeChangelist: Effect.fn("PerforceHistorySource.describeChangelist")(function* (
 			change: number
@@ -484,7 +476,7 @@ export function makePerforceHistorySource(
 			};
 		}),
 		resolveLocalPath,
-		...(resolveMapLineage === undefined ? {} : { resolveMapLineage })
+		...(resolveMapLineage === undefined ? undefined : { resolveMapLineage })
 	});
 }
 
@@ -542,10 +534,10 @@ async function optionsForProject(options: P4ClientOptions, projectRoot: string |
 		...projectOptions,
 		env: {
 			...(localEnvironment?.p4Port === null || localEnvironment?.p4Port === undefined
-				? {}
+				? undefined
 				: { P4PORT: localEnvironment.p4Port }),
 			...(localEnvironment?.p4User === null || localEnvironment?.p4User === undefined
-				? {}
+				? undefined
 				: { P4USER: localEnvironment.p4User }),
 			...options.env,
 			P4CONFIG: p4ConfigBypassPath,
@@ -746,7 +738,7 @@ export function perforceHistorySourceLayer(
 }
 
 export function makePerforceHistorySourceTestLayer(
-	source: PerforceHistorySourceShape
+	source: PerforceHistorySourceApi
 ): Layer.Layer<PerforceHistorySource> {
 	return Layer.succeed(PerforceHistorySource, PerforceHistorySource.of(source));
 }

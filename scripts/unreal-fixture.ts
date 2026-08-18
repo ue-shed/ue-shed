@@ -13,6 +13,7 @@ import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureRoot = join(repositoryRoot, "fixtures", "unreal-project");
 const projectFile = join(fixtureRoot, "UEShedFixture.uproject");
+// SAFETY: the repository fixture contract owns this required engine version object.
 const contract = JSON.parse(readFileSync(join(fixtureRoot, "fixture-contract.json"), "utf8")) as {
 	readonly engine: { readonly major: number; readonly minor: number };
 };

@@ -756,6 +756,7 @@ describe("AuthoringSessionService", () => {
 									Effect.gen(function* () {
 										yield* Deferred.succeed(started, undefined);
 										yield* Deferred.await(release);
+										// SAFETY: this test port is interrupted after release and must not produce an apply result.
 										return null as never;
 									}),
 								lookupApplyResult: () => Effect.die("unused"),

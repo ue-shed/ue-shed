@@ -44,7 +44,7 @@ async function availablePort() {
 		server.listen(0, "127.0.0.1", resolveListen);
 	});
 	const address = server.address();
-	if (!address || typeof address === "string") fail("could not allocate a local port");
+	if (!(address instanceof Object)) fail("could not allocate a local port");
 	await new Promise((resolveClose, reject) =>
 		server.close((error) => (error ? reject(error) : resolveClose()))
 	);
@@ -80,7 +80,7 @@ const child = spawn(pnpm.command, [...pnpm.args, "start"], {
 		UE_SHED_PROJECT_ROOT: resolve(projectRoot),
 		UE_SHED_UASSET_EXECUTABLE: resolve(reader),
 		...(remoteControlEndpoint === undefined
-			? {}
+			? undefined
 			: { UE_SHED_REMOTE_CONTROL_ENDPOINT: remoteControlEndpoint })
 	},
 	shell: false,

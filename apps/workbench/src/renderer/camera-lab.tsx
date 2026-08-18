@@ -18,7 +18,7 @@ interface TileTelemetry {
 
 type CaptureResolution = CameraScheduleConfig["resolution"];
 
-const resolutionDimensions: Readonly<Record<CaptureResolution, readonly [number, number]>> = {
+const resolutionDimensions = {
 	"160x90": [160, 90],
 	"320x180": [320, 180],
 	"640x360": [640, 360],
@@ -26,9 +26,14 @@ const resolutionDimensions: Readonly<Record<CaptureResolution, readonly [number,
 	"1280x720": [1280, 720],
 	"1920x1080": [1920, 1080],
 	"2560x1440": [2560, 1440]
-};
+} satisfies Readonly<Record<CaptureResolution, readonly [number, number]>>;
 
-const resolutionOptions = Object.keys(resolutionDimensions) as ReadonlyArray<CaptureResolution>;
+const resolutionOptions = [
+	"640x360",
+	"1280x720",
+	"1920x1080",
+	"2560x1440"
+] satisfies ReadonlyArray<CaptureResolution>;
 
 const defaultConfig: CameraScheduleConfig = {
 	activeCameraCount: 8,

@@ -4,7 +4,18 @@ import type { Plugin } from "vite";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 
-const stylex = stylexModule as unknown as (options: PluginOptions) => Plugin;
+function isStylexPluginFactory<Value>(
+	value: Value
+): value is Value & ((options: PluginOptions) => Plugin) {
+	return value instanceof Function;
+}
+
+const stylex = (options: PluginOptions): Plugin => {
+	if (!isStylexPluginFactory(stylexModule)) {
+		throw new TypeError("The StyleX Rollup plugin did not export its plugin factory.");
+	}
+	return stylexModule(options);
+};
 
 export default defineConfig(({ command }) => ({
 	plugins: [

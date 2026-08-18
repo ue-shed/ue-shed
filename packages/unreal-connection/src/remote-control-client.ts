@@ -21,19 +21,19 @@ export interface RemoteControlRequest {
 	readonly functionName: string;
 	readonly objectPath: string;
 	readonly operation?: string;
-	readonly parameters: Readonly<Record<string, unknown>>;
+	readonly parameters: Schema.JsonObject;
 	readonly timeout?: Duration.Input;
 }
 
-export interface RemoteControlClientShape {
+export interface RemoteControlClientApi {
 	readonly request: (
 		request: RemoteControlRequest
-	) => Effect.Effect<unknown, RemoteControlClientError>;
+	) => Effect.Effect<Schema.Json, RemoteControlClientError>;
 }
 
 export class RemoteControlClient extends Context.Service<
 	RemoteControlClient,
-	RemoteControlClientShape
+	RemoteControlClientApi
 >()("@ue-shed/unreal-connection/RemoteControlClient") {}
 
 function normalizedEndpoint(endpoint: string): string {
@@ -54,7 +54,7 @@ function clientError(
 		message: fields.message,
 		operation: request.operation ?? `remote_control.${request.functionName}`,
 		retrySafe: fields.retrySafe,
-		...(fields.status === undefined ? {} : { status: fields.status })
+		...(fields.status === undefined ? undefined : { status: fields.status })
 	});
 }
 
@@ -78,13 +78,13 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 				? cause.message
 				: `Remote Control returned HTTP ${status}: ${cause.message}`,
 		retrySafe,
-		...(status === undefined ? {} : { status })
+		...(status === undefined ? undefined : { status })
 	});
 }
 
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
-}): RemoteControlClientShape {
+}): RemoteControlClientApi {
 	const request = Effect.fn("RemoteControlClient.request")(
 		function* (request: RemoteControlRequest) {
 			const endpoint = normalizedEndpoint(request.endpoint);
@@ -130,7 +130,7 @@ export function makeRemoteControlClient(options: {
 				)
 			);
 			return yield* Effect.try({
-				try: () => JSON.parse(envelope.ResultJson) as unknown,
+				try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(envelope.ResultJson)),
 				catch: (cause) =>
 					clientError(request, {
 						message: `Invalid Remote Control JSON: ${String(cause)}`,
@@ -164,7 +164,7 @@ export const RemoteControlClientLive = Layer.effect(
 );
 
 export function makeRemoteControlClientTestLayer(
-	handle: RemoteControlClientShape["request"]
+	handle: RemoteControlClientApi["request"]
 ): Layer.Layer<RemoteControlClient> {
 	return Layer.succeed(RemoteControlClient, RemoteControlClient.of({ request: handle }));
 }

@@ -2,14 +2,14 @@ import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
 import { Context, Effect, Layer } from "effect";
 import { WorkbenchProject } from "./project-workspace.js";
 
-export interface WorkbenchInputAtlasShape {
+export interface WorkbenchInputAtlasApi {
 	readonly chooseAndScan: () => Effect.Effect<EnhancedInputRunResult>;
 	readonly configuredScan: () => Effect.Effect<EnhancedInputRunResult>;
 }
 
 export class WorkbenchInputAtlas extends Context.Service<
 	WorkbenchInputAtlas,
-	WorkbenchInputAtlasShape
+	WorkbenchInputAtlasApi
 >()("@ue-shed/workbench/WorkbenchInputAtlas") {}
 
 export const WorkbenchInputAtlasLive = Layer.effect(
@@ -47,7 +47,7 @@ export const WorkbenchInputAtlasLive = Layer.effect(
 );
 
 export function makeWorkbenchInputAtlasTestLayer(
-	service: WorkbenchInputAtlasShape
+	service: WorkbenchInputAtlasApi
 ): Layer.Layer<WorkbenchInputAtlas> {
 	return Layer.succeed(WorkbenchInputAtlas, WorkbenchInputAtlas.of(service));
 }

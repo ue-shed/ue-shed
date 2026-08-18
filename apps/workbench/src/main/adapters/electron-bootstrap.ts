@@ -12,7 +12,7 @@ export interface RuntimeDisposal {
 }
 
 export interface RuntimeDisposalTask {
-	readonly finally: (onFinally: () => void) => unknown;
+	readonly finally: (onFinally: () => void) => RuntimeDisposalTask;
 }
 
 /**

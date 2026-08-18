@@ -1,7 +1,7 @@
 import { deepStrictEqual } from "node:assert";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeUAssetIoEvent,
@@ -11,11 +11,15 @@ import {
 	UAssetIoRequest
 } from "./uasset-io.js";
 
-const fixture = async (path: string): Promise<unknown> =>
-	JSON.parse(
-		await readFile(
-			fileURLToPath(new URL("../contracts/uasset-io/v1/fixtures/" + path, import.meta.url)),
-			"utf8"
+const fixture = async (path: string): Promise<Schema.Json> =>
+	Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(
+			await readFile(
+				fileURLToPath(
+					new URL("../contracts/uasset-io/v1/fixtures/" + path, import.meta.url)
+				),
+				"utf8"
+			)
 		)
 	);
 

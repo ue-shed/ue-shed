@@ -2,10 +2,7 @@ import {
 	recordObservatoryPacket,
 	recordObservatoryReceiverReplacements
 } from "@ue-shed/observability";
-import {
-	RemoteControlClientError,
-	type RemoteControlClientShape
-} from "@ue-shed/unreal-connection";
+import { RemoteControlClientError, type RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import {
 	Context,
 	Duration,
@@ -78,13 +75,13 @@ export class ActorFeedError extends Schema.TaggedErrorClass<ActorFeedError>()("A
 	retrySafe: Schema.Boolean
 }) {}
 
-export interface ActorFeedShape {
+export interface ActorFeedApi {
 	readonly latestPacket: Effect.Effect<ActorStreamPacket | undefined>;
 	readonly metrics: Effect.Effect<ActorFeedMetrics>;
 	readonly packets: Stream.Stream<ActorStreamPacket>;
 }
 
-export class ActorFeed extends Context.Service<ActorFeed, ActorFeedShape>()(
+export class ActorFeed extends Context.Service<ActorFeed, ActorFeedApi>()(
 	"@ue-shed/observatory/ActorFeed"
 ) {}
 
@@ -95,7 +92,7 @@ export interface ActorFeedOptions {
 }
 
 interface AcquiredActorFeed {
-	readonly feed: ActorFeedShape;
+	readonly feed: ActorFeedApi;
 	readonly pubsub: PubSub.PubSub<ActorStreamPacket>;
 	readonly server: Server;
 	readonly sockets: Set<Socket>;
@@ -260,7 +257,7 @@ function acquireActorFeedResource(
 /** Scoped acquisition usable directly (bypassing `Context`) when the pipe name is dynamic. */
 export function acquireActorFeedScoped(
 	options: ActorFeedOptions
-): Effect.Effect<ActorFeedShape, ActorFeedError, Scope.Scope> {
+): Effect.Effect<ActorFeedApi, ActorFeedError, Scope.Scope> {
 	return Effect.acquireRelease(acquireActorFeedResource(options), closeActorFeed).pipe(
 		Effect.map((resource) => resource.feed)
 	);
@@ -270,7 +267,7 @@ export function actorFeedLayer(options: ActorFeedOptions): Layer.Layer<ActorFeed
 	return Layer.effect(ActorFeed, acquireActorFeedScoped(options));
 }
 
-export function makeActorFeedTestLayer(feed: Partial<ActorFeedShape> = {}): Layer.Layer<ActorFeed> {
+export function makeActorFeedTestLayer(feed: Partial<ActorFeedApi> = {}): Layer.Layer<ActorFeed> {
 	return Layer.succeed(ActorFeed, {
 		latestPacket: feed.latestPacket ?? Effect.succeed(undefined),
 		metrics:
@@ -393,7 +390,7 @@ function controlError(
 			message: cause.message,
 			operation,
 			retrySafe: cause.retrySafe,
-			...(cause.status === undefined ? {} : { status: cause.status })
+			...(cause.status === undefined ? undefined : { status: cause.status })
 		});
 	}
 	return new ActorObservationControlError({
@@ -405,7 +402,7 @@ function controlError(
 }
 
 const callStartActorObservation = Effect.fn("ActorObservation.start")(function* (
-	remote: RemoteControlClientShape,
+	remote: RemoteControlClientApi,
 	endpoint: string,
 	cadenceHz: number
 ) {
@@ -424,7 +421,7 @@ const callStartActorObservation = Effect.fn("ActorObservation.start")(function* 
 });
 
 const callStopActorObservation = Effect.fn("ActorObservation.stop")(function* (
-	remote: RemoteControlClientShape,
+	remote: RemoteControlClientApi,
 	endpoint: string
 ) {
 	yield* remote
@@ -439,7 +436,7 @@ const callStopActorObservation = Effect.fn("ActorObservation.stop")(function* (
 });
 
 const requestActorSnapshotForFallback = Effect.fn("ActorObservation.snapshotFallback")(function* (
-	remote: RemoteControlClientShape,
+	remote: RemoteControlClientApi,
 	endpoint: string
 ) {
 	const value = yield* remote
@@ -514,7 +511,7 @@ type AttemptOutcome =
 	  };
 
 function runLiveAttempt(args: {
-	readonly feed: ActorFeedShape;
+	readonly feed: ActorFeedApi;
 	readonly getState: () => WorldObservationState;
 	readonly maxConsecutiveRejectedBatches: number;
 	readonly onDiagnostic?: (diagnostic: ActorObservationDiagnostic) => Effect.Effect<void>;
@@ -617,7 +614,7 @@ function runPollingFallback(args: {
 	readonly cadenceHz: number;
 	readonly endpoint: string;
 	readonly publish: (state: WorldObservationState) => Effect.Effect<void>;
-	readonly remote: RemoteControlClientShape;
+	readonly remote: RemoteControlClientApi;
 }): Effect.Effect<never> {
 	const effectiveHz = Math.min(Math.max(1, Math.round(args.cadenceHz)), 10);
 	const tick = requestActorSnapshotForFallback(args.remote, args.endpoint).pipe(
@@ -658,7 +655,7 @@ interface DriveObservationArgs {
 		| ((diagnostic: ActorObservationDiagnostic) => Effect.Effect<void>)
 		| undefined;
 	readonly publish: (state: WorldObservationState) => Effect.Effect<void>;
-	readonly remote: RemoteControlClientShape;
+	readonly remote: RemoteControlClientApi;
 }
 
 function driveObservation(
@@ -682,7 +679,7 @@ function driveObservation(
 		remote
 	} = args;
 	return Effect.gen(function* () {
-		let feed: ActorFeedShape | undefined;
+		let feed: ActorFeedApi | undefined;
 		let boundPipeName: string | undefined;
 		let attempts = 0;
 
@@ -769,7 +766,7 @@ function driveObservation(
 				getState,
 				maxConsecutiveRejectedBatches,
 				publish,
-				...(onDiagnostic === undefined ? {} : { onDiagnostic })
+				...(onDiagnostic === undefined ? undefined : { onDiagnostic })
 			});
 			if (liveOutcome._tag === "reset") {
 				// Unreal-initiated catalog invalidation (map change, actor add/delete) is expected
@@ -823,7 +820,7 @@ export interface ObserveActorFeedOptions {
  * attempt budget, and always call `StopActorObservation` when the returned stream's scope closes.
  */
 export function observeActorFeed(
-	remote: RemoteControlClientShape,
+	remote: RemoteControlClientApi,
 	endpoint: string,
 	options: ObserveActorFeedOptions
 ): Stream.Stream<

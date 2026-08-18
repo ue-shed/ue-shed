@@ -11,6 +11,7 @@ import {
 	writeFile
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { Schema } from "effect";
 import trash from "trash";
 import { scanCustodian } from "./node-scanner.js";
 import {
@@ -72,7 +73,7 @@ function decodePs(output: string): readonly RunningProcess[] {
 		const command = fields[3];
 		return name === undefined || !Number.isInteger(pid)
 			? []
-			: [{ pid, name, ...(command === undefined ? {} : { command }) }];
+			: [{ pid, name, ...(command === undefined ? undefined : { command }) }];
 	});
 }
 
@@ -132,7 +133,7 @@ function proposalId(seed: string) {
 	);
 }
 
-async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+async function writeJsonAtomic<Value>(path: string, value: Value): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temporaryPath = `${path}.${randomUUID()}.tmp`;
 	try {
@@ -149,7 +150,7 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 
 async function appendLog(
 	proposal: CustodianProposal,
-	entry: Readonly<Record<string, unknown>>,
+	entry: Schema.JsonObject,
 	dependencies: CustodianExecutorDependencies
 ): Promise<void> {
 	await mkdir(dirname(proposal.logPath), { recursive: true });
@@ -160,8 +161,8 @@ async function appendLog(
 	);
 }
 
-export async function readCustodianProposalDocument(path: string): Promise<unknown> {
-	return JSON.parse(await readFile(resolve(path), "utf8")) as unknown;
+export async function readCustodianProposalDocument(path: string): Promise<Schema.Json> {
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(resolve(path), "utf8")));
 }
 
 export function custodianProposalStorageIsValid(

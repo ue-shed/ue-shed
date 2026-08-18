@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureUassetExecutable } from "./native-tools.ts";
+import { isJsonString, parseJsonObject, type JsonObject } from "./json.ts";
 
 export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const workbenchRoot = join(repositoryRoot, "apps", "workbench");
@@ -76,7 +77,7 @@ interface RemoteControlOptions {
 	readonly fetch?: FetchImplementation;
 }
 
-type RemoteCallResult = Record<string, unknown>;
+type RemoteCallResult = JsonObject;
 
 export function unrealRemoteControlLaunchArguments(pluginIds: readonly string[], httpPort: number) {
 	if (!Number.isInteger(httpPort) || httpPort < 1 || httpPort >= 65_535) {
@@ -168,7 +169,7 @@ export async function createWorkbenchEnvironment(
 		UE_SHED_AUTHORING_ASSET: environment.UE_SHED_AUTHORING_ASSET ?? authoringAsset,
 		UE_SHED_REMOTE_CONTROL_ENDPOINT: await resolveRemoteControlEndpoint(environment, options),
 		UE_SHED_REPOSITORY_ROOT: repositoryRoot,
-		...(reviewSet ? { UE_SHED_REVIEW_SET: reviewSet } : {}),
+		...(reviewSet ? { UE_SHED_REVIEW_SET: reviewSet } : undefined),
 		UE_SHED_TEXTURE_AUDIT_RULES: environment.UE_SHED_TEXTURE_AUDIT_RULES ?? textureRules,
 		UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable(environment)
 	};
@@ -178,7 +179,7 @@ async function remoteObjectCall(
 	endpoint: string,
 	objectPath: string,
 	functionName: string,
-	parameters: Record<string, unknown> = {}
+	parameters: JsonObject = {}
 ): Promise<RemoteCallResult> {
 	const response = await fetch(`${endpoint.replace(/\/+$/, "")}/remote/object/call`, {
 		body: JSON.stringify({ functionName, generateTransaction: false, objectPath, parameters }),
@@ -187,7 +188,7 @@ async function remoteObjectCall(
 		signal: AbortSignal.timeout(30_000)
 	});
 	if (!response.ok) throw new Error(`${functionName} failed with HTTP ${response.status}.`);
-	return (await response.json()) as RemoteCallResult;
+	return parseJsonObject(await response.text());
 }
 
 /** Establish a clean fixture editor map before a live evidence lane. */
@@ -207,7 +208,7 @@ export async function loadFixtureEditorMap(endpoint: string, mapPath: string) {
 	const loaded = await remoteObjectCall(endpoint, loadingLibrary, "LoadMap", {
 		Filename: mapPath
 	});
-	if (typeof loaded.ReturnValue !== "string" || !loaded.ReturnValue.startsWith(`${mapPath}.`)) {
+	if (!isJsonString(loaded.ReturnValue) || !loaded.ReturnValue.startsWith(`${mapPath}.`)) {
 		throw new Error(`Unreal did not confirm loading ${mapPath}.`);
 	}
 }

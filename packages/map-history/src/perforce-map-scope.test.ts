@@ -2,7 +2,7 @@ import type { SavedWorld } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
-import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceShape } from "./perforce.js";
+import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceMapHistoryQuery } from "./schema.js";
 import { resolvePerforceMapScope, scopedPerforceFile } from "./perforce-map-scope.js";
 
@@ -35,7 +35,7 @@ function world(
 		completeness: "complete",
 		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
 		diagnostics: [],
-		...(externalActorRoot === undefined ? {} : { externalActorRoot }),
+		...(externalActorRoot === undefined ? undefined : { externalActorRoot }),
 		mapPath: "Content/Maps/L_Example.umap",
 		sourceKind,
 		actors: [],
@@ -43,7 +43,7 @@ function world(
 	};
 }
 
-function perforceSource(): PerforceHistorySourceShape {
+function perforceSource(): PerforceHistorySourceApi {
 	return {
 		describeChangelist: () => Effect.die("Scope resolution must not describe changelists."),
 		listDepotFilesAtChange: () => Effect.die("Scope resolution must not inventory files."),

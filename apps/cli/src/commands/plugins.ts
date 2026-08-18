@@ -74,7 +74,7 @@ const pluginsVerifyCommand = Command.make(
 			return yield* runPluginsVerify({
 				_tag: "PluginsVerify",
 				manifestPath,
-				...(artifactValue === undefined ? {} : { artifactPath: artifactValue })
+				...(artifactValue === undefined ? undefined : { artifactPath: artifactValue })
 			});
 		})
 ).pipe(Command.withDescription("Verify a plugin release manifest and artifact."));
@@ -99,7 +99,7 @@ const pluginsInstallCommand = Command.make(
 				_tag: "PluginsInstall",
 				manifestPath: manifest,
 				projectRoot,
-				...(artifactValue === undefined ? {} : { artifactPath: artifactValue })
+				...(artifactValue === undefined ? undefined : { artifactPath: artifactValue })
 			});
 		})
 ).pipe(Command.withDescription("Install a plugin bundle into a project."));

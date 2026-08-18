@@ -1,7 +1,7 @@
 import { AuthoringFieldDescriptor, type AuthoringTableSnapshot } from "@ue-shed/protocol";
 import {
 	AssetReader,
-	type AssetReaderShape,
+	type AssetReaderApi,
 	type SavedTableCatalog,
 	type SavedTableDescriptor
 } from "@ue-shed/unreal-assets";
@@ -94,7 +94,7 @@ function liveCandidate(snapshot: AuthoringTableSnapshot): CatalogCandidate {
 		authority: {
 			authority: "live",
 			completeness: snapshot.completeness,
-			...(v2 ? { fingerprint: v2.fingerprint } : {}),
+			...(v2 ? { fingerprint: v2.fingerprint } : undefined),
 			schema: v2?.table.schema ?? {
 				reason: "The connected editor returned a legacy snapshot without schema evidence.",
 				status: "unavailable"
@@ -184,7 +184,7 @@ export function authoringLiveConnectionLayer(
 }
 
 function discoverAuthoringProjectCatalogWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	options: AuthoringCatalogDiscoverArgs,
 	liveConnection: Option.Option<UnrealAuthoringConnection>
 ): Effect.Effect<AuthoringProjectCatalog> {
@@ -193,7 +193,7 @@ function discoverAuthoringProjectCatalogWith(
 		: options.projectRoot
 			? reader
 					.discoverTables({
-						...(options.concurrency ? { concurrency: options.concurrency } : {}),
+						...(options.concurrency ? { concurrency: options.concurrency } : undefined),
 						projectRoot: options.projectRoot
 					})
 					.pipe(Effect.result)
@@ -226,7 +226,7 @@ function discoverAuthoringProjectCatalogWith(
 					authority: "saved",
 					code: saved.failure.kind,
 					message: saved.failure.message,
-					...(saved.failure.path ? { path: saved.failure.path } : {}),
+					...(saved.failure.path ? { path: saved.failure.path } : undefined),
 					retrySafe: saved.failure.retrySafe
 				});
 			}
@@ -266,13 +266,13 @@ function discoverAuthoringProjectCatalogWith(
 	);
 }
 
-export interface AuthoringCatalogShape {
+export interface AuthoringCatalogApi {
 	readonly discover: (
 		options: AuthoringCatalogDiscoverArgs
 	) => Effect.Effect<AuthoringProjectCatalog>;
 }
 
-export class AuthoringCatalog extends Context.Service<AuthoringCatalog, AuthoringCatalogShape>()(
+export class AuthoringCatalog extends Context.Service<AuthoringCatalog, AuthoringCatalogApi>()(
 	"@ue-shed/authoring-catalog/AuthoringCatalog"
 ) {}
 
@@ -291,7 +291,7 @@ export const AuthoringCatalogLive = Layer.effect(
 );
 
 export function makeAuthoringCatalogTestLayer(
-	service: AuthoringCatalogShape
+	service: AuthoringCatalogApi
 ): Layer.Layer<AuthoringCatalog> {
 	return Layer.succeed(AuthoringCatalog, AuthoringCatalog.of(service));
 }

@@ -9,7 +9,7 @@ import {
 	MapCaptureLive,
 	mapTileCapturePortLayer,
 	type MapCaptureRunProgress,
-	type MapTileCapturePortShape
+	type MapTileCapturePortApi
 } from "./map-tile-capture.js";
 import {
 	MapCaptureRepository,
@@ -17,7 +17,7 @@ import {
 	mapCaptureAttemptsRoot,
 	mapCaptureRoot,
 	mapCaptureRunsRoot,
-	type MapCaptureRepositoryShape
+	type MapCaptureRepositoryApi
 } from "./map-tile-repository.js";
 import { mapTileKeyId, mapTileRelativePath } from "./map-tile-pyramid.js";
 import type { MapCaptureBackend } from "./map-tile-schema.js";
@@ -81,7 +81,7 @@ async function fixtureProject(levelCount: number): Promise<{
 
 function runWithPort(
 	project: { readonly planPath: string; readonly projectRoot: string },
-	port: MapTileCapturePortShape,
+	port: MapTileCapturePortApi,
 	levels?: ReadonlyArray<number>,
 	onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>,
 	repositoryLayer: Layer.Layer<MapCaptureRepository> = MapCaptureRepositoryLive,
@@ -89,10 +89,10 @@ function runWithPort(
 ) {
 	return Effect.flatMap(MapCapture, (capture) =>
 		capture.run({
-			...(captureBackend === undefined ? {} : { captureBackend }),
+			...(captureBackend === undefined ? undefined : { captureBackend }),
 			endpoint: "http://127.0.0.1:30010",
-			...(levels === undefined ? {} : { levels }),
-			...(onProgress === undefined ? {} : { onProgress }),
+			...(levels === undefined ? undefined : { levels }),
+			...(onProgress === undefined ? undefined : { onProgress }),
 			planPath: project.planPath,
 			projectRoot: project.projectRoot,
 			runId: "test-run"
@@ -108,7 +108,7 @@ describe("map capture orchestration", () => {
 	it("validates, hashes, and atomically publishes an exhaustive run", async () => {
 		const project = await fixtureProject(1);
 		const progress: MapCaptureRunProgress[] = [];
-		const port: MapTileCapturePortShape = {
+		const port: MapTileCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise(async () => {
 					const tile = request.tiles[0]!;
@@ -166,7 +166,7 @@ describe("map capture orchestration", () => {
 	it("sends complete zoom levels to the experimental viewport backend", async () => {
 		const project = await fixtureProject(2);
 		const requestedBatches: Array<ReadonlyArray<string>> = [];
-		const port: MapTileCapturePortShape = {
+		const port: MapTileCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise(async () => {
 					requestedBatches.push(request.tiles.map(({ key }) => mapTileKeyId(key)));
@@ -232,7 +232,7 @@ describe("map capture orchestration", () => {
 
 	it("quarantines a bounded subset instead of publishing it as complete", async () => {
 		const project = await fixtureProject(2);
-		const port: MapTileCapturePortShape = {
+		const port: MapTileCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise(async () => {
 					const tile = request.tiles[0]!;
@@ -282,7 +282,7 @@ describe("map capture orchestration", () => {
 
 	it("rejects an editor artifact outside the contained staging root", async () => {
 		const project = await fixtureProject(1);
-		const port: MapTileCapturePortShape = {
+		const port: MapTileCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise(async () => {
 					const tile = request.tiles[0]!;
@@ -321,7 +321,7 @@ describe("map capture orchestration", () => {
 
 	it("cleans project-local host staging when transport fails", async () => {
 		const project = await fixtureProject(1);
-		const port: MapTileCapturePortShape = {
+		const port: MapTileCapturePortApi = {
 			capture: () => Effect.fail(new Error("endpoint unavailable"))
 		};
 		await expect(Effect.runPromise(runWithPort(project, port))).rejects.toThrow(
@@ -345,7 +345,7 @@ describe("map capture orchestration", () => {
 				MapCaptureRepository,
 				Effect.gen(function* () {
 					const delegate = yield* MapCaptureRepository;
-					const service: MapCaptureRepositoryShape = {
+					const service: MapCaptureRepositoryApi = {
 						...delegate,
 						storeTile: (input) => {
 							if (!blockFirstStore) return delegate.storeTile(input);
@@ -359,7 +359,7 @@ describe("map capture orchestration", () => {
 					return MapCaptureRepository.of(service);
 				})
 			).pipe(Layer.provide(MapCaptureRepositoryLive));
-			const port: MapTileCapturePortShape = {
+			const port: MapTileCapturePortApi = {
 				capture: (request) =>
 					Effect.gen(function* () {
 						captureCalls += 1;

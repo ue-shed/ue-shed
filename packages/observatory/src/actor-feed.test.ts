@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { connect, type Socket } from "node:net";
 import {
-	type RemoteControlClientShape,
+	type RemoteControlClientApi,
 	type RemoteControlRequest,
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect";
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect";
 import { afterEach, describe, expect, test } from "vitest";
 import {
 	ACTOR_STREAM_FLAG_RESET,
@@ -17,7 +17,7 @@ import {
 	encodeActorStreamPacket,
 	observeActorFeed,
 	StreamActorIndex,
-	type ActorFeedShape,
+	type ActorFeedApi,
 	type ActorObservationDiagnostic,
 	type WorldObservationState
 } from "./index.js";
@@ -40,7 +40,7 @@ async function acquireFeed(
 	name: string,
 	capacity = 8,
 	maxMalformedPackets = 128
-): Promise<{ readonly feed: ActorFeedShape; readonly scope: Scope.Closeable }> {
+): Promise<{ readonly feed: ActorFeedApi; readonly scope: Scope.Closeable }> {
 	const scope = await Effect.runPromise(Scope.make());
 	scopes.push(scope);
 	const context = await Effect.runPromise(
@@ -86,7 +86,7 @@ function packet(args: {
 }
 
 function collectSequences(
-	feed: ActorFeedShape,
+	feed: ActorFeedApi,
 	count: number,
 	started: Deferred.Deferred<void>
 ): Promise<ReadonlyArray<bigint>> {
@@ -100,7 +100,7 @@ function collectSequences(
 	);
 }
 
-async function waitForPackets(feed: ActorFeedShape, expected: number): Promise<void> {
+async function waitForPackets(feed: ActorFeedApi, expected: number): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		if ((await Effect.runPromise(feed.metrics)).packetsReceived >= expected) return;
 		await new Promise<void>((resolve) => setImmediate(resolve));
@@ -108,7 +108,7 @@ async function waitForPackets(feed: ActorFeedShape, expected: number): Promise<v
 	throw new Error(`Actor feed did not receive ${expected} packets.`);
 }
 
-async function waitForDeliveryReplacement(feed: ActorFeedShape): Promise<void> {
+async function waitForDeliveryReplacement(feed: ActorFeedApi): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		if ((await Effect.runPromise(feed.metrics)).deliveryReplacements > 0) return;
 		await new Promise<void>((resolve) => setImmediate(resolve));
@@ -116,7 +116,7 @@ async function waitForDeliveryReplacement(feed: ActorFeedShape): Promise<void> {
 	throw new Error("Actor feed did not report a delivery replacement.");
 }
 
-async function waitForMalformed(feed: ActorFeedShape, expected: number): Promise<void> {
+async function waitForMalformed(feed: ActorFeedApi, expected: number): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		if ((await Effect.runPromise(feed.metrics)).malformedPackets >= expected) return;
 		await new Promise<void>((resolve) => setImmediate(resolve));
@@ -185,14 +185,16 @@ function snapshotResponse() {
 	};
 }
 
-function makeRemote(options: {
-	readonly onStart?: (request: RemoteControlRequest) => unknown;
-	readonly onStop?: () => void;
-	readonly onSnapshot?: () => unknown;
-}): {
-	readonly remote: RemoteControlClientShape;
+interface RemoteFixture {
+	readonly remote: RemoteControlClientApi;
 	readonly stops: { count: number };
-} {
+}
+
+function makeRemote(options: {
+	readonly onStart?: (request: RemoteControlRequest) => Schema.Json;
+	readonly onStop?: () => void;
+	readonly onSnapshot?: () => Schema.Json;
+}): RemoteFixture {
 	const stops = { count: 0 };
 	return {
 		stops,
@@ -305,7 +307,7 @@ describe("ActorFeed", () => {
 
 	test("interruption closes connected sockets and the server deterministically", async () => {
 		const name = pipeName();
-		const acquired = await Effect.runPromise(Deferred.make<ActorFeedShape>());
+		const acquired = await Effect.runPromise(Deferred.make<ActorFeedApi>());
 		const owner = Effect.runFork(
 			Effect.scoped(
 				Effect.gen(function* () {

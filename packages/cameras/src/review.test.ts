@@ -9,7 +9,7 @@ import {
 	ReviewCaptureLive,
 	reviewCapturePortLayer,
 	reviewIdGeneratorLayer,
-	type ReviewCapturePortShape
+	type ReviewCapturePortApi
 } from "./review-capture.js";
 import {
 	captureRunPath,
@@ -39,7 +39,7 @@ import {
 	type ReviewSet
 } from "./review-schema.js";
 
-const decodeReviewSet = (input: unknown) => Effect.runSync(decodeReviewSetEffect(input));
+const decodeReviewSet = <Input>(input: Input) => Effect.runSync(decodeReviewSetEffect(input));
 
 const temporaryDirectories: string[] = [];
 
@@ -99,7 +99,7 @@ function runCapture(
 		readonly reviewSetPath: string;
 		readonly viewIds?: ReadonlyArray<ReviewViewId>;
 	},
-	port: ReviewCapturePortShape,
+	port: ReviewCapturePortApi,
 	makeId: () => string
 ) {
 	return Effect.runPromise(
@@ -108,8 +108,10 @@ function runCapture(
 				endpoint: "http://127.0.0.1:30001",
 				projectRoot: options.projectRoot,
 				reviewSetPath: options.reviewSetPath,
-				...(options.invocation === undefined ? {} : { invocation: options.invocation }),
-				...(options.viewIds ? { viewIds: options.viewIds } : {})
+				...(options.invocation === undefined
+					? undefined
+					: { invocation: options.invocation }),
+				...(options.viewIds ? { viewIds: options.viewIds } : undefined)
 			})
 		).pipe(
 			Effect.provide(ReviewCaptureLive),
@@ -451,7 +453,7 @@ describe("durable capture loop", () => {
 			}).pipe(Effect.provide(ReviewRepositoryLive))
 		);
 		const requested: string[] = [];
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: (request) => {
 				requested.push(request.viewId);
 				return Effect.succeed({
@@ -532,8 +534,8 @@ describe("durable capture loop", () => {
 				reviewSet: decodeReviewSet({ ...base, views: [following, area] })
 			}).pipe(Effect.provide(ReviewRepositoryLive))
 		);
-		const requests: Parameters<ReviewCapturePortShape["capture"]>[0][] = [];
-		const port: ReviewCapturePortShape = {
+		const requests: Parameters<ReviewCapturePortApi["capture"]>[0][] = [];
+		const port: ReviewCapturePortApi = {
 			capture: (request) => {
 				requests.push(request);
 				return Effect.succeed({
@@ -576,7 +578,7 @@ describe("durable capture loop", () => {
 				Effect.provide(ReviewRepositoryLive)
 			)
 		);
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: (request) =>
 				Effect.succeed({
 					code: "fixture_failure",
@@ -673,7 +675,7 @@ describe("durable capture loop", () => {
 			)
 		);
 		const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise({
 					try: async () => {
@@ -838,7 +840,7 @@ describe("durable capture loop", () => {
 		);
 		const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 		let failClear = false;
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise({
 					try: async () => {
@@ -992,7 +994,7 @@ describe("durable capture loop", () => {
 			)
 		);
 		const outside = join(dirname(projectRoot), "outside.png");
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: (request) =>
 				Effect.succeed({
 					captureDurationMs: 1,
@@ -1051,7 +1053,7 @@ describe("durable capture loop", () => {
 				Effect.provide(ReviewRepositoryLive)
 			)
 		);
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: () => Effect.die(new Error("capture boom"))
 		};
 		const ids = ["run-cleanup", "invocation-cleanup", "operation-cleanup"];
@@ -1073,7 +1075,7 @@ describe("durable capture loop", () => {
 			)
 		);
 		const png = new Uint8Array([137, 80, 78, 71]);
-		const port: ReviewCapturePortShape = {
+		const port: ReviewCapturePortApi = {
 			capture: (request) =>
 				Effect.tryPromise({
 					try: async () => {

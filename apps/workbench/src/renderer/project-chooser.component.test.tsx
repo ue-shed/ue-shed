@@ -89,15 +89,13 @@ describe("ProjectChooser", () => {
 
 		expect(screen.queryByRole("alert")).toBeNull();
 		expect(
-			(screen.getByRole("button", { name: "INDEXING PROJECT…" }) as HTMLButtonElement)
-				.disabled
+			screen.getByRole<HTMLButtonElement>("button", { name: "INDEXING PROJECT…" }).disabled
 		).toBe(true);
 
 		await Effect.runPromise(Deferred.succeed(completion, { status: "cancelled" }));
 		await waitFor(() =>
 			expect(
-				(screen.getByRole("button", { name: "CHOOSE PROJECT…" }) as HTMLButtonElement)
-					.disabled
+				screen.getByRole<HTMLButtonElement>("button", { name: "CHOOSE PROJECT…" }).disabled
 			).toBe(false)
 		);
 	});
@@ -110,9 +108,9 @@ describe("ProjectChooser", () => {
 
 		expect(
 			(
-				(await screen.findByRole("button", {
+				await screen.findByRole<HTMLButtonElement>("button", {
 					name: "CHOOSE PROJECT…"
-				})) as HTMLButtonElement
+				})
 			).disabled
 		).toBe(false);
 		expect(screen.queryByRole("alert")).toBeNull();

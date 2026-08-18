@@ -3,6 +3,7 @@ import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { Schema } from "effect";
 import { _electron as electron } from "playwright";
 import { WorkbenchPage } from "../pages/workbench-page.js";
 
@@ -14,7 +15,7 @@ const sourceRuleFile = resolve(
 	"../../fixtures/unreal-project/FixtureSource/Text/quality-rules.json"
 );
 
-if (typeof electronExecutable !== "string") {
+if (!Schema.is(Schema.String)(electronExecutable)) {
 	throw new TypeError("The Electron package did not resolve to an executable path");
 }
 

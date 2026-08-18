@@ -305,7 +305,7 @@ function workflowEvidence(
 export function AppShell() {
 	const routeFromLocation = (): Route => {
 		const value = window.location.hash || "#/";
-		return routes.some((route) => route.route === value) ? (value as Route) : "#/";
+		return routes.find((route) => route.route === value)?.route ?? "#/";
 	};
 	const [route, setRoute] = createSignal<Route>(routeFromLocation());
 	const [projectRevision, setProjectRevision] = createSignal(1);

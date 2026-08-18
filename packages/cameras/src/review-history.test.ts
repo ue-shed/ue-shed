@@ -3,9 +3,7 @@ import {
 	CaptureProfileId,
 	ReviewSetId,
 	ReviewViewId,
-	ReviewViewRevisionId,
-	type CaptureRun,
-	type ReviewSet
+	ReviewViewRevisionId
 } from "./review-schema.js";
 import { projectReviewViewHistory } from "./review-history.js";
 
@@ -30,35 +28,43 @@ describe("projectReviewViewHistory", () => {
 				}
 			],
 			visibilityPolicies: []
-		} as unknown as ReviewSet;
+		};
 		const result = (args: {
 			readonly revision: number;
 			readonly status: "captured" | "failed";
-		}) => ({
-			...(args.status === "captured"
+		}) => {
+			const view = {
+				viewId: ReviewViewId.make("subject"),
+				viewRevision: {
+					id: ReviewViewRevisionId.make(`subject-r${args.revision}`),
+					number: args.revision,
+					status: "numbered" as const
+				}
+			};
+			return args.status === "captured"
 				? {
+						...view,
 						artifacts: [],
 						captureDurationMs: 1,
-						clearCompanion: { status: "not_requested" },
+						clearCompanion: { status: "not_requested" as const },
 						realization: {},
-						visibility: { reason: "fixture", status: "not_assessed" }
+						status: "captured" as const,
+						visibility: { reason: "fixture", status: "not_assessed" as const }
 					}
 				: {
+						...view,
 						code: "subject_missing",
 						message: "Missing",
 						recovery: "Restore",
-						retrySafe: true
-					}),
-			status: args.status,
-			viewId: ReviewViewId.make("subject"),
-			viewRevision: {
-				id: ReviewViewRevisionId.make(`subject-r${args.revision}`),
-				number: args.revision,
-				status: "numbered"
-			}
+						retrySafe: true,
+						status: "failed" as const
+					};
+		};
+		const run = (id: string, results: ReadonlyArray<ReturnType<typeof result>>) => ({
+			completedAt: id,
+			id,
+			results
 		});
-		const run = (id: string, results: ReadonlyArray<unknown>) =>
-			({ completedAt: id, id, results }) as unknown as CaptureRun;
 		const [history] = projectReviewViewHistory({
 			reviewSet,
 			runs: [

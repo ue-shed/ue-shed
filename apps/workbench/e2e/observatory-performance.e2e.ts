@@ -25,6 +25,31 @@ interface PaintScenarioResult {
 	readonly scheduledPaints: number;
 }
 
+interface ObservatoryPaintOptions {
+	readonly actorCount: number;
+	readonly changeRatio: number;
+	readonly durationMs: number;
+	readonly producerHz: number;
+}
+
+interface ObservatoryPaintHarnessResult {
+	readonly actorCount: number;
+	readonly canvasCount: number;
+	readonly changeRatio: number;
+	readonly frames: number;
+	readonly maxPendingAfterBurst: number;
+	readonly paintMs: number[];
+	readonly scheduledPaints: number;
+}
+
+interface ObservatoryPaintWindow {
+	readonly __runObservatoryPaintBench?: (
+		options: ObservatoryPaintOptions
+	) => Promise<ObservatoryPaintHarnessResult>;
+}
+
+declare const window: ObservatoryPaintWindow;
+
 function percentile(sorted: ReadonlyArray<number>, ratio: number): number {
 	if (sorted.length === 0) return 0;
 	const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
@@ -78,7 +103,7 @@ test.describe("observatory canvas performance", () => {
 			server.listen(0, "127.0.0.1", () => resolveListen());
 		});
 		const address = server.address();
-		if (address === null || typeof address === "string") {
+		if (!(address instanceof Object)) {
 			throw new Error("Failed to bind Observatory paint harness");
 		}
 
@@ -99,32 +124,12 @@ test.describe("observatory canvas performance", () => {
 			await page.goto(`http://127.0.0.1:${address.port}/observatory-paint.html`, {
 				waitUntil: "networkidle"
 			});
-			await page.waitForFunction(
-				() =>
-					typeof (globalThis as { __runObservatoryPaintBench?: unknown })
-						.__runObservatoryPaintBench === "function"
-			);
+			await page.waitForFunction(() => window.__runObservatoryPaintBench !== undefined);
 
 			for (const scenario of scenarios) {
 				const raw = await page.evaluate(async (input) => {
-					const run = (
-						globalThis as unknown as {
-							__runObservatoryPaintBench: (options: {
-								readonly actorCount: number;
-								readonly changeRatio: number;
-								readonly durationMs: number;
-								readonly producerHz: number;
-							}) => Promise<{
-								readonly actorCount: number;
-								readonly canvasCount: number;
-								readonly changeRatio: number;
-								readonly frames: number;
-								readonly maxPendingAfterBurst: number;
-								readonly paintMs: number[];
-								readonly scheduledPaints: number;
-							}>;
-						}
-					).__runObservatoryPaintBench;
+					const run = window.__runObservatoryPaintBench;
+					if (run === undefined) throw new Error("The paint benchmark is not ready.");
 					return run({
 						...input,
 						producerHz: 60

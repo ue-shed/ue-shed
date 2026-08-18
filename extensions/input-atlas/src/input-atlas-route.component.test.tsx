@@ -2,11 +2,11 @@
 
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
-import type { EnhancedInputReport, EnhancedInputRunResult } from "@ue-shed/enhanced-input/browser";
+import { EnhancedInputReport, type EnhancedInputRunResult } from "@ue-shed/enhanced-input/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { InputAtlasClientShape } from "./input-atlas-client.js";
+import type { InputAtlasClientApi } from "./input-atlas-client.js";
 import { InputAtlasRoute } from "./input-atlas-route.js";
 
 const available = (value: string) =>
@@ -22,7 +22,7 @@ const mappingContext = (name: string, key: string, action: string) => ({
 	exports: []
 });
 
-const report = {
+const report = Schema.decodeUnknownSync(EnhancedInputReport)({
 	schemaVersion: 1,
 	status: "complete",
 	coverage: {
@@ -56,7 +56,7 @@ const report = {
 		mappingContext("IMC_Vehicle", "SpaceBar", "/Game/Input/IA_Handbrake.IA_Handbrake")
 	],
 	diagnostics: []
-} as unknown as EnhancedInputReport;
+});
 
 const completed = {
 	report,
@@ -68,7 +68,7 @@ afterEach(cleanup);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 
-function renderRoute(client?: Partial<InputAtlasClientShape>) {
+function renderRoute(client?: Partial<InputAtlasClientApi>) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			<InputAtlasRoute

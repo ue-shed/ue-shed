@@ -22,7 +22,7 @@ import {
 	MapReviewClient,
 	MapReviewClientError,
 	type MapReviewWorldObservation,
-	type MapReviewClientShape
+	type MapReviewClientApi
 } from "@ue-shed/extension-camera-review/client";
 import {
 	CatalogRevision,
@@ -86,9 +86,9 @@ const chooseProjectAndMaps = () =>
 		operation: "mapReview.chooseProjectAndMaps"
 	});
 
-function request<A>(args: {
-	readonly decode: (value: unknown) => Effect.Effect<A, unknown>;
-	readonly invoke: () => Promise<unknown>;
+function request<A, HostValue, DecodeError>(args: {
+	readonly decode: (value: HostValue) => Effect.Effect<A, DecodeError>;
+	readonly invoke: () => Promise<HostValue>;
 	readonly operation: string;
 }): Effect.Effect<A, MapReviewClientError> {
 	return Effect.tryPromise({
@@ -115,8 +115,8 @@ function wireSampleToDomain(sample: {
 		};
 	}>;
 }): WorldObservationSample {
-	const catalog = WorldActorCatalog.make(sample.catalog as never);
-	const health = WorldObservationHealth.make(sample.health as never);
+	const catalog = Schema.decodeUnknownSync(WorldActorCatalog)(sample.catalog);
+	const health = Schema.decodeUnknownSync(WorldObservationHealth)(sample.health);
 	const transforms = new Map(
 		sample.transforms.map(
 			(entry) =>
@@ -197,7 +197,9 @@ function applyRendererObservationEvent(
 				status: "unavailable",
 				message: event.message,
 				recovery: event.recovery,
-				...(event.sample === undefined ? {} : { sample: wireSampleToDomain(event.sample) })
+				...(event.sample === undefined
+					? undefined
+					: { sample: wireSampleToDomain(event.sample) })
 			};
 	}
 }
@@ -242,7 +244,7 @@ export function reconcileSparseTransformChanges(
 	return { ...current, changedTransforms };
 }
 
-export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
+export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 	createReviewSet: Effect.fn("MapReviewClient.createReviewSet")(
 		(intent: MapReviewSetCreateIntent) =>
 			request({
@@ -316,7 +318,7 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 			{ bufferSize: 1, strategy: "sliding" }
 		).pipe(
 			Stream.mapAccum(
-				() => undefined as MapReviewWorldObservation | undefined,
+				(): MapReviewWorldObservation | undefined => undefined,
 				(
 					previous: MapReviewWorldObservation | undefined,
 					current: MapReviewWorldObservation
@@ -329,12 +331,7 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 	setWorldObservationRate: Effect.fn("MapReviewClient.setWorldObservationRate")(
 		(refreshRate: WorldScoutRefreshRate) =>
 			request({
-				decode: (value) =>
-					typeof value === "number"
-						? Effect.succeed(WorldScoutRefreshRate.make(value))
-						: Effect.fail(
-								new Error("Expected a numeric world observation refresh rate.")
-							),
+				decode: (value) => Effect.succeed(WorldScoutRefreshRate.make(value)),
 				invoke: () => window.ueShed.mapReview.setWorldObservationRate(refreshRate),
 				operation: "mapReview.setWorldObservationRate"
 			})
@@ -368,10 +365,7 @@ export const mapReviewClient: MapReviewClientShape = MapReviewClient.of({
 	),
 	setLivePreviewFps: Effect.fn("MapReviewClient.setLivePreviewFps")((fps) =>
 		request({
-			decode: (value) =>
-				typeof value === "number"
-					? Effect.succeed(value)
-					: Effect.fail(new Error("Expected a numeric live preview FPS.")),
+			decode: (value) => Effect.succeed(value),
 			invoke: () => window.ueShed.mapReview.setLivePreviewFps(fps),
 			operation: "mapReview.setLivePreviewFps"
 		})

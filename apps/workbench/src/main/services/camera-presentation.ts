@@ -78,7 +78,7 @@ function takeOnePendingFrame(
 	});
 }
 
-export interface CameraPresentationShape {
+export interface CameraPresentationApi {
 	readonly configure: (
 		config: CameraScheduleConfig
 	) => Effect.Effect<CameraStatus, CameraControlError>;
@@ -89,7 +89,7 @@ export interface CameraPresentationShape {
 
 export class CameraPresentation extends Context.Service<
 	CameraPresentation,
-	CameraPresentationShape
+	CameraPresentationApi
 >()("@ue-shed/workbench/CameraPresentation") {}
 
 export const CameraPresentationLive = Layer.effect(
@@ -233,7 +233,7 @@ export const CameraPresentationLive = Layer.effect(
 );
 
 export function makeCameraPresentationTestLayer(
-	service: CameraPresentationShape
+	service: CameraPresentationApi
 ): Layer.Layer<CameraPresentation> {
 	return Layer.succeed(CameraPresentation, CameraPresentation.of(service));
 }

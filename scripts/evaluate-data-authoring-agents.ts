@@ -139,12 +139,14 @@ function parseOptions() {
 		index += flag.consumed;
 	}
 
+	// SAFETY: AgentName is defined as keyof defaultModels, the exact object enumerated here.
 	const knownAgents = Object.keys(defaultModels) as AgentName[];
 	const selectedAgents =
 		positional.length === 0 || positional.includes("all") ? knownAgents : positional;
 	for (const name of selectedAgents) {
 		if (!(name in defaultModels)) fail(`unknown agent '${name}'`);
 	}
+	// SAFETY: every selected name was checked against defaultModels immediately above.
 	const uniqueAgents = [...new Set(selectedAgents)] as AgentName[];
 	if ((flags.model || flags.variant || flags.label) && uniqueAgents.length !== 1) {
 		fail("--model, --variant, and --label require exactly one selected agent");
@@ -175,7 +177,7 @@ const workspaceRoot = options.workspaceRoot;
 const sourceKitRoot = join(workspaceRoot, "source-kit");
 const emptyNpmConfig = join(evidenceRoot, "empty-npmrc");
 
-const agents: Record<AgentName, AgentDefinition> = {
+const agents = {
 	cursor: {
 		command: "powershell.exe",
 		args: ({ model, prompt, target }) => [
@@ -253,7 +255,7 @@ const agents: Record<AgentName, AgentDefinition> = {
 			prompt
 		]
 	}
-};
+} satisfies Record<AgentName, AgentDefinition>;
 
 function credentialHostileEnvironment(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 	return {
@@ -288,6 +290,7 @@ function run(command: string, args: string[], runOptions: RunOptions = {}): Comm
 		status: result.status,
 		stderr: result.stderr ?? "",
 		stdout: result.stdout ?? "",
+		// SAFETY: Node spawnSync reports OS failures through ErrnoException-shaped error values.
 		timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT"
 	};
 }
@@ -508,9 +511,13 @@ function parseAgentMetrics(stdout: string): AgentMetrics {
 		rows = stdout
 			.split(/\r?\n/)
 			.filter(Boolean)
-			.map((line) => JSON.parse(line) as AgentMetricRow);
+			.map((line) => {
+				// SAFETY: these JSONL rows come from the evaluator's own AgentMetricRow serializer.
+				return JSON.parse(line) as AgentMetricRow;
+			});
 	} catch {
 		try {
+			// SAFETY: the fallback accepts the evaluator's single-row AgentMetricRow output form.
 			rows = [JSON.parse(stdout) as AgentMetricRow];
 		} catch {
 			return metrics;
@@ -720,6 +727,7 @@ async function verifyTarget(label: string, target: string, sourceCommit: string,
 await mkdir(evidenceRoot, { recursive: true });
 await mkdir(workspaceRoot, { recursive: true });
 await writeFile(emptyNpmConfig, "");
+// SAFETY: this is the materializer-owned adoption manifest and required fields are checked below.
 const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as AdoptionManifest;
 if (!Array.isArray(manifest.kit?.entrypoints) || manifest.kit.entrypoints.length !== 2) {
 	fail("manifest must declare exactly two kit entrypoints");

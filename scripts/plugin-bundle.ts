@@ -118,10 +118,10 @@ function validateCommit(value: string | null | undefined) {
 function validateUnrealRange(unreal?: Partial<UnrealRange>): UnrealRange {
 	const minimum = unreal?.minimum ?? "5.7";
 	const maximum = unreal?.maximum ?? minimum;
-	if (typeof minimum !== "string" || minimum.length === 0) {
+	if (minimum.length === 0) {
 		throw new Error("Unreal compatibility minimum must be a non-empty version string.");
 	}
-	if (typeof maximum !== "string" || maximum.length === 0) {
+	if (maximum.length === 0) {
 		throw new Error("Unreal compatibility maximum must be a non-empty version string.");
 	}
 	return { minimum, maximum };
@@ -235,6 +235,7 @@ async function readDescriptors({
 				);
 			continue;
 		}
+		// SAFETY: these are Unreal plugin descriptors; the optional fields are validated below.
 		const descriptor = JSON.parse(await readFile(descriptorPath, "utf8")) as {
 			readonly Name?: string;
 			readonly VersionName?: string;
@@ -369,6 +370,7 @@ async function candidateProvenance(
 	}
 	const resolvedPath = resolve(path);
 	const raw = await readFile(resolvedPath, "utf8");
+	// SAFETY: the candidate's version fields are checked before they influence bundle metadata.
 	const candidate = JSON.parse(raw) as {
 		readonly candidateVersion?: string;
 		readonly version?: string;

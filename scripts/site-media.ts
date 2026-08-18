@@ -24,6 +24,10 @@ interface ExportPlanEntry {
 	readonly video?: string;
 }
 
+interface ExportPlan {
+	readonly [journey: string]: ExportPlanEntry;
+}
+
 interface RecordingManifest {
 	readonly contract: { readonly name: string };
 	readonly status: string;
@@ -49,7 +53,7 @@ interface JourneyInfo {
 	video?: string;
 }
 
-const exportPlan: Readonly<Record<string, ExportPlanEntry>> = {
+const exportPlan: ExportPlan = {
 	"saved-workflows": {
 		chapters: {
 			"02-data-authoring": { key: "authoring", file: "authoring.png" },
@@ -102,6 +106,7 @@ if (!existsSync(resultsRoot)) {
 
 function readManifest(manifestPath: string): RecordingManifest | undefined {
 	try {
+		// SAFETY: only the recorder-owned manifest is accepted, and its contract tag is checked next.
 		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as RecordingManifest;
 		if (manifest?.contract?.name !== "ue-shed-showcase-recording") {
 			return undefined;

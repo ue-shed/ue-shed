@@ -1,15 +1,18 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import type { AuthoringTableSnapshot, AuthoringValue } from "@ue-shed/protocol";
+import { Schema } from "effect";
 
 export const FINGERPRINT_VERSION = "sha256-v1" as const;
 
-function normalizeValue(value: AuthoringValue): unknown {
+function normalizeValue(value: AuthoringValue): AuthoringValue {
 	switch (value.kind) {
 		case "float":
 			return {
 				kind: value.kind,
-				value: typeof value.value === "number" ? Math.fround(value.value) : value.value
+				value: Schema.is(Schema.Number)(value.value)
+					? Math.fround(value.value)
+					: value.value
 			};
 		case "array":
 			return { kind: value.kind, values: value.values.map(normalizeValue) };
@@ -42,21 +45,20 @@ function normalizeValue(value: AuthoringValue): unknown {
 	}
 }
 
-function canonicalJson(value: unknown): string {
-	if (value === null || typeof value !== "object") {
+function canonicalJson<Value>(value: Value): string {
+	if (!(value instanceof Object)) {
 		return JSON.stringify(value);
 	}
 	if (Array.isArray(value)) {
 		return `[${value.map(canonicalJson).join(",")}]`;
 	}
-	const record = value as Record<string, unknown>;
-	const entries = Object.keys(record)
-		.toSorted()
-		.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
+	const entries = Object.entries(value)
+		.toSorted(([left], [right]) => left.localeCompare(right))
+		.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
 	return `{${entries.join(",")}}`;
 }
 
-function compareCanonical(left: unknown, right: unknown): number {
+function compareCanonical<Value>(left: Value, right: Value): number {
 	return canonicalJson(left).localeCompare(canonicalJson(right));
 }
 

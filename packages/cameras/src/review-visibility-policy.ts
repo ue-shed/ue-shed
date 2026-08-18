@@ -108,7 +108,7 @@ export function replaceViewVisibilityPolicy(args: {
 	const replacement = {
 		...view,
 		...(args.visibilityOverrides === undefined
-			? {}
+			? undefined
 			: { visibilityOverrides: args.visibilityOverrides }),
 		visibilityPolicyId: args.policy.id
 	};

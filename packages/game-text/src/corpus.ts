@@ -3,7 +3,7 @@ import {
 	AssetReader,
 	isHeaderScanEntry,
 	type AssetReaderError,
-	type AssetReaderShape,
+	type AssetReaderApi,
 	type SavedAssetInspection,
 	type SavedAssetScan,
 	type SavedAssetTextExtractionEvent,
@@ -641,7 +641,7 @@ function buildTextCorpusFromExtraction(options: {
 }
 
 function extractTextCorpusWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	options: {
 		readonly concurrency?: number;
 		readonly discoveredPackages: number;
@@ -673,9 +673,9 @@ function extractTextCorpusWith(
 				.extractProjectText({
 					concurrency: Math.max(1, options.concurrency ?? 8),
 					...(options.maximumAssets === undefined
-						? {}
+						? undefined
 						: { maximumAssets: options.maximumAssets }),
-					...(options.paths === undefined ? {} : { paths: options.paths }),
+					...(options.paths === undefined ? undefined : { paths: options.paths }),
 					projectRoot: options.projectRoot
 				})
 				.pipe(
@@ -729,7 +729,7 @@ function extractTextCorpusWith(
 }
 
 function scanTextCorpusWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	options: TextCorpusScanOptions,
 	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextCorpus, TextCorpusScanError> {
@@ -737,9 +737,11 @@ function scanTextCorpusWith(
 		reader,
 		{
 			discoveredPackages: 0,
-			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.concurrency === undefined
+				? undefined
+				: { concurrency: options.concurrency }),
 			...(options.maximumAssets === undefined
-				? {}
+				? undefined
 				: { maximumAssets: options.maximumAssets }),
 			projectRoot: options.projectRoot
 		},
@@ -749,7 +751,7 @@ function scanTextCorpusWith(
 }
 
 function scanTextCorpusFromProjectIndexWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	index: SavedAssetScan,
 	options: TextCorpusScanOptions,
 	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
@@ -766,9 +768,11 @@ function scanTextCorpusFromProjectIndexWith(
 		reader,
 		{
 			discoveredPackages: index.summary.scannedAssets,
-			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.concurrency === undefined
+				? undefined
+				: { concurrency: options.concurrency }),
 			...(options.maximumAssets === undefined
-				? {}
+				? undefined
 				: { maximumAssets: options.maximumAssets }),
 			paths,
 			projectRoot: options.projectRoot
@@ -778,7 +782,7 @@ function scanTextCorpusFromProjectIndexWith(
 	).pipe(Effect.withSpan("game-text.scan-corpus-from-project-index"));
 }
 
-export interface TextCorpusServiceShape {
+export interface TextCorpusServiceApi {
 	readonly progress: () => Effect.Effect<ExtractionProgress>;
 	readonly scan: (
 		options: TextCorpusScanOptions
@@ -790,7 +794,7 @@ export interface TextCorpusServiceShape {
 }
 
 /** Canonical TextCorpus domain service (plan name: TextCorpus.Service). */
-export class TextCorpusService extends Context.Service<TextCorpusService, TextCorpusServiceShape>()(
+export class TextCorpusService extends Context.Service<TextCorpusService, TextCorpusServiceApi>()(
 	"@ue-shed/game-text/TextCorpus"
 ) {}
 
@@ -845,14 +849,14 @@ export const TextCorpusServiceLive = Layer.effect(
 	})
 );
 
-export type TextCorpusServiceTestShape = Omit<
-	TextCorpusServiceShape,
+export type TextCorpusServiceTestApi = Omit<
+	TextCorpusServiceApi,
 	"progress" | "scanFromProjectIndex"
 > &
-	Partial<Pick<TextCorpusServiceShape, "progress" | "scanFromProjectIndex">>;
+	Partial<Pick<TextCorpusServiceApi, "progress" | "scanFromProjectIndex">>;
 
 export function makeTextCorpusServiceTestLayer(
-	service: TextCorpusServiceTestShape
+	service: TextCorpusServiceTestApi
 ): Layer.Layer<TextCorpusService> {
 	return Layer.succeed(
 		TextCorpusService,

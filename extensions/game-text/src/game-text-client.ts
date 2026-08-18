@@ -25,7 +25,7 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 	}
 ) {}
 
-export interface GameTextClientShape {
+export interface GameTextClientApi {
 	readonly chooseProjectAndScan: () => Effect.Effect<
 		TextCorpusQueryRunResult,
 		GameTextClientError
@@ -62,6 +62,6 @@ export interface GameTextClientShape {
 	) => Effect.Effect<TextQualityRuleUpdateResult, GameTextClientError>;
 }
 
-export class GameTextClient extends Context.Service<GameTextClient, GameTextClientShape>()(
+export class GameTextClient extends Context.Service<GameTextClient, GameTextClientApi>()(
 	"@ue-shed/extension-game-text/GameTextClient"
 ) {}

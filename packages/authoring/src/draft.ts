@@ -24,18 +24,6 @@ export interface CommandEnvelope {
 	readonly body: AuthoringCommand;
 }
 
-export interface DraftSession {
-	readonly version: 2;
-	readonly id: string;
-	readonly base: Readonly<Record<string, AuthoringTableSnapshot>>;
-	readonly fingerprints: Readonly<Record<string, string>>;
-	readonly commands: readonly CommandEnvelope[];
-	readonly undoPointer: number;
-	readonly applyReceipts: readonly ApplyReceipt[];
-	readonly saveReceipts: readonly SaveReceipt[];
-	readonly awaitingSave: readonly string[];
-}
-
 export interface ApplyReceipt {
 	readonly operationId: string;
 	readonly appliedAt: string;
@@ -114,16 +102,17 @@ export const DraftSessionSchema = Schema.Struct({
 	undoPointer: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	version: Schema.Literal(2)
 });
+export type DraftSession = Schema.Schema.Type<typeof DraftSessionSchema>;
 
 const decodePersistedDraftSession = Schema.decodeUnknownEffect(
 	Schema.Union([DraftSessionV1Schema, DraftSessionSchema])
 );
 
-export function decodeDraftSession(input: unknown) {
+export function decodeDraftSession<Input>(input: Input) {
 	return decodeDraftSessionWithMigration(input).pipe(Effect.map(({ draft }) => draft));
 }
 
-export function decodeDraftSessionWithMigration(input: unknown) {
+export function decodeDraftSessionWithMigration<Input>(input: Input) {
 	return decodePersistedDraftSession(input).pipe(
 		Effect.map((session) =>
 			session.version === 1
@@ -365,7 +354,7 @@ export function buildSetCellCommand(args: {
 		groupId: args.groupId,
 		id: args.commandId,
 		tableObjectPath: args.tableObjectPath,
-		...(args.author === undefined ? {} : { author: args.author })
+		...(args.author === undefined ? undefined : { author: args.author })
 	};
 }
 
@@ -423,7 +412,7 @@ export function buildSetCellCommandGroup(args: {
 			groupId: args.groupId,
 			id: commandId,
 			tableObjectPath: args.tableObjectPath,
-			...(args.author === undefined ? {} : { author: args.author })
+			...(args.author === undefined ? undefined : { author: args.author })
 		};
 		commands.push(command);
 		staged = appendCommandGroup(staged, [command]);
@@ -620,7 +609,7 @@ function rowEnvelope(args: RowCommandMetadata, body: AuthoringCommand): CommandE
 		groupId: args.groupId,
 		id: args.commandId,
 		tableObjectPath: args.tableObjectPath,
-		...(args.author === undefined ? {} : { author: args.author })
+		...(args.author === undefined ? undefined : { author: args.author })
 	};
 }
 

@@ -16,7 +16,7 @@ import { ElectronApp } from "../adapters/electron-app.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
-export interface WorkbenchCustodianShape {
+export interface WorkbenchCustodianApi {
 	readonly chooseAndScan: () => Effect.Effect<CustodianRunResult>;
 	readonly configuredScan: () => Effect.Effect<CustodianRunResult>;
 	readonly prepare: (intent: CustodianPrepareIntent) => Effect.Effect<CustodianPrepareRunResult>;
@@ -28,7 +28,7 @@ export interface WorkbenchCustodianShape {
 
 export class WorkbenchCustodian extends Context.Service<
 	WorkbenchCustodian,
-	WorkbenchCustodianShape
+	WorkbenchCustodianApi
 >()("@ue-shed/workbench/WorkbenchCustodian") {}
 
 export const WorkbenchCustodianLive = Layer.effect(
@@ -159,7 +159,7 @@ export const WorkbenchCustodianLive = Layer.effect(
 );
 
 export function makeWorkbenchCustodianTestLayer(
-	service: WorkbenchCustodianShape
+	service: WorkbenchCustodianApi
 ): Layer.Layer<WorkbenchCustodian> {
 	return Layer.succeed(WorkbenchCustodian, WorkbenchCustodian.of(service));
 }

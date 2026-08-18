@@ -126,6 +126,7 @@ describe("plugin installer", () => {
 				"utf8"
 			)
 		).toContain("portable plugin source");
+		// SAFETY: the test fixture writes this uproject shape before invoking the installer.
 		const project = JSON.parse(await readFile(fixture.projectPath, "utf8")) as {
 			Plugins: Array<{ Enabled: boolean; Name: string }>;
 		};
@@ -154,6 +155,7 @@ describe("plugin installer", () => {
 		await writeFile(join(generatedOutput, "generated.dll"), "generated\n", "utf8");
 
 		const upgradeManifestPath = join(fixture.root, "plugins.upgrade.manifest.json");
+		// SAFETY: the installer just wrote this ownership manifest for the asserted upgrade.
 		const upgradeManifest = JSON.parse(await readFile(fixture.manifestPath, "utf8")) as {
 			plugins: Array<{ id: string }>;
 			provenance: {
@@ -180,6 +182,7 @@ describe("plugin installer", () => {
 		await expect(
 			stat(join(fixture.root, "Plugins", "UEShed", "UEShedRetired"))
 		).rejects.toThrow();
+		// SAFETY: the installer just rewrote this test-owned uproject descriptor.
 		const upgradedProject = JSON.parse(await readFile(fixture.projectPath, "utf8")) as {
 			Plugins: Array<{ Enabled: boolean; Name: string }>;
 		};

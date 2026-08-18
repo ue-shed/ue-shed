@@ -21,12 +21,12 @@ export interface WorldLogChangelistMapOverlay {
 	readonly summary: WorldLogChangelistSummary;
 }
 
-const toneColors: Readonly<Record<WorldLogChangelistTone, string>> = {
+const toneColors = {
 	added: "#6ebd88",
 	changed: "#e1b85e",
 	moved: "#73c7d0",
 	removed: "#d77d6a"
-};
+} satisfies Readonly<Record<WorldLogChangelistTone, string>>;
 
 export function worldLogChangelistToneColor(tone: WorldLogChangelistTone): string {
 	return toneColors[tone];
@@ -59,7 +59,7 @@ function pointForActor(input: {
 		className: input.actor.classPath,
 		color: input.color,
 		key: input.key,
-		...(input.opacity === undefined ? {} : { opacity: input.opacity }),
+		...(input.opacity === undefined ? undefined : { opacity: input.opacity }),
 		selectionKey: input.selectionKey,
 		x: input.actor.position.location.x,
 		y: input.actor.position.location.y

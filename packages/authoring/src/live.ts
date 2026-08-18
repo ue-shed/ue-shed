@@ -267,7 +267,9 @@ export function dispatchApply<E>(args: {
 				Effect.catch((cause) =>
 					cause instanceof ApplyWorkflowError
 						? Effect.fail(cause)
-						: Effect.succeed({
+						: // SAFETY: after excluding ApplyWorkflowError, the only remaining failure is port error E.
+							Effect.succeed({
+								// SAFETY: after excluding ApplyWorkflowError, the failure channel is the port error E.
 								cause: cause as E,
 								kind: "indeterminate" as const,
 								session: markIndeterminate(

@@ -12,6 +12,7 @@ process.once("SIGINT", markInterrupted);
 process.once("SIGTERM", markInterrupted);
 
 try {
+	// SAFETY: createPerforceFixture returns a process.env-compatible string dictionary.
 	const {
 		P4CONFIG: _configFile,
 		P4ENVIRO: _environmentFile,

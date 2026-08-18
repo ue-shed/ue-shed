@@ -26,7 +26,11 @@ const requireFromWorkbench = createRequire(
 	join(repositoryRoot, "apps", "workbench", "package.json")
 );
 const { chromium } = requireFromWorkbench("playwright");
-const contentTypes: Readonly<Record<string, string>> = {
+interface ContentTypesByExtension {
+	readonly [extension: string]: string;
+}
+
+const contentTypes: ContentTypesByExtension = {
 	".js": "text/javascript; charset=utf-8",
 	".wasm": "application/wasm",
 	".json": "application/json"
@@ -72,7 +76,7 @@ const server = createServer((request, response) => {
 
 await new Promise<void>((resolveListening) => server.listen(0, "127.0.0.1", resolveListening));
 const address = server.address();
-assert.ok(address && typeof address === "object", "browser smoke server must listen");
+assert.ok(address instanceof Object, "browser smoke server must listen");
 const origin = `http://127.0.0.1:${address.port}`;
 const browser = await chromium.launch({ headless: true });
 
@@ -80,10 +84,10 @@ try {
 	const page = await browser.newPage();
 	await page.goto(`${origin}/`, { waitUntil: "load" });
 	const result = await page.evaluate(async (baseUrl: string) => {
-		const errorCode = (error: unknown): unknown =>
-			typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+		const errorCode = (cause: unknown): string | undefined =>
+			cause instanceof Object && "code" in cause ? String(cause.code) : undefined;
 		const module = await import(`${baseUrl}/package/browser.js`);
-		if (typeof module.createBrowserRuntime !== "function") {
+		if (!(module.createBrowserRuntime instanceof Function)) {
 			throw new Error("browser entry is missing createBrowserRuntime");
 		}
 		const runtime = await module.createBrowserRuntime();

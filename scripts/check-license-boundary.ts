@@ -3,6 +3,13 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import {
+	isJsonObject,
+	parseJson,
+	parseJsonObject,
+	type JsonObject,
+	type JsonValue
+} from "./json.ts";
 
 const forbiddenFormulaPackages = ["hyperformula", "peculiar-sheets-ironcalc", "@ironcalc/wasm"];
 
@@ -114,21 +121,23 @@ export function validateRustDependencyLicenses({
 	return failures;
 }
 
+interface ProductionPaths {
+	readonly [dependency: string]: readonly JsonValue[] | undefined;
+}
+
+interface LicenseBoundaryInput {
+	readonly rootManifest: JsonObject;
+	readonly rootLicense: string;
+	readonly peculiarManifest: JsonObject;
+	readonly productionPaths: ProductionPaths;
+}
+
 export function validateLicenseBoundary({
 	rootManifest,
 	rootLicense,
 	peculiarManifest,
 	productionPaths
-}: {
-	readonly rootManifest: { readonly license?: unknown };
-	readonly rootLicense: string;
-	readonly peculiarManifest: {
-		readonly version?: unknown;
-		readonly license?: unknown;
-		readonly dependencies?: Readonly<Record<string, unknown>>;
-	};
-	readonly productionPaths: Readonly<Record<string, readonly unknown[] | undefined>>;
-}) {
+}: LicenseBoundaryInput) {
 	const failures: string[] = [];
 	if (rootManifest.license !== "MIT") {
 		failures.push("package.json: license must be MIT");
@@ -146,8 +155,9 @@ export function validateLicenseBoundary({
 			`peculiar-sheets: expected MIT metadata, received ${peculiarManifest.license ?? "none"}`
 		);
 	}
+	const dependencies = peculiarManifest.dependencies;
 	for (const dependency of forbiddenFormulaPackages) {
-		if (dependency in (peculiarManifest.dependencies ?? {})) {
+		if (isJsonObject(dependencies) && dependency in dependencies) {
 			failures.push(
 				`peculiar-sheets: production dependency ${dependency} violates the formula-free core boundary`
 			);
@@ -159,7 +169,7 @@ export function validateLicenseBoundary({
 	return failures;
 }
 
-function readProductionPaths(root: string): Record<string, unknown[]> {
+function readProductionPaths(root: string): ProductionPaths {
 	const pnpmCli = process.env.npm_execpath;
 	if (!pnpmCli) throw new Error("license:check must run through pnpm");
 	return Object.fromEntries(
@@ -177,7 +187,9 @@ function readProductionPaths(root: string): Record<string, unknown[]> {
 					`pnpm why failed for ${dependency}: ${result.error?.message ?? result.stderr ?? result.stdout}`
 				);
 			}
-			return [dependency, JSON.parse(result.stdout || "[]")];
+			const paths = parseJson(result.stdout || "[]");
+			if (!Array.isArray(paths)) throw new Error(`pnpm why returned non-array JSON.`);
+			return [dependency, paths] as const;
 		})
 	);
 }
@@ -191,9 +203,9 @@ async function main() {
 	const peculiarEntry = requireFromAuthoring.resolve("peculiar-sheets");
 	const peculiarManifestPath = resolve(dirname(peculiarEntry), "..", "package.json");
 	const [rootManifest, rootLicense, peculiarManifest, lockfile] = await Promise.all([
-		readFile(join(root, "package.json"), "utf8").then(JSON.parse),
+		readFile(join(root, "package.json"), "utf8").then(parseJsonObject),
 		readFile(join(root, "LICENSE"), "utf8"),
-		readFile(peculiarManifestPath, "utf8").then(JSON.parse),
+		readFile(peculiarManifestPath, "utf8").then(parseJsonObject),
 		readFile(join(root, "Cargo.lock"), "utf8")
 	]);
 	const failures = [

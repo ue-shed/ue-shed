@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { PerforceMapHistory } from "@ue-shed/map-history/contract";
+import { SavedWorld } from "@ue-shed/protocol";
 import {
 	collectCurrentWorldLogActors,
 	collectWorldLogActors,
@@ -50,10 +51,22 @@ function snapshot(actors: readonly ReturnType<typeof actor>[]) {
 describe("World Log actor projection", () => {
 	it("uses the current saved map as the initial actor projection", () => {
 		const lamp = actor({ guid: "lamp", label: "Key lamp", x: 10, y: 20 });
-		const world = {
+		const world = Schema.decodeUnknownSync(SavedWorld)({
 			actors: [lamp],
-			mapPath: "Content/Maps/L_Example.umap"
-		} as unknown as Parameters<typeof collectCurrentWorldLogActors>[0];
+			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
+			completeness: "complete",
+			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			diagnostics: [],
+			mapPackage: "/Game/Maps/L_Example",
+			mapPath: "Content/Maps/L_Example.umap",
+			sourceKind: "world_partition",
+			summary: {
+				failedPackages: 0,
+				partialPackages: 0,
+				resolvedActors: 1,
+				scannedPackages: 1
+			}
+		});
 
 		const projected = collectCurrentWorldLogActors(world);
 

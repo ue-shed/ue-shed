@@ -25,7 +25,9 @@ import {
 	PresentationBudgetMbPerSecond,
 	RemoteControlPort,
 	SessionId,
-	type InvokeChannel
+	type InvokeArguments,
+	type InvokeChannel,
+	type InvokeResult
 } from "./ipc-contracts.js";
 
 const mainDir = dirname(fileURLToPath(import.meta.url));
@@ -130,7 +132,7 @@ const qualityRuleDocument = {
 		}
 	],
 	schemaVersion: 1
-};
+} satisfies InvokeArguments<"game-text:quality:preview-rules">[0];
 
 it.effect("represents a stopped game world as unavailable camera status", () =>
 	Schema.decodeUnknownEffect(CameraStatusResult)({
@@ -173,9 +175,31 @@ const mapCapturePlan = {
 	project: { id: "fixture", mapPath: "/Game/Fixture/Cameras/L_CameraLoad" },
 	requestedBounds: { maxX: 1024, maxY: 1024, minX: 0, minY: 0 },
 	tilePixelSize: 256
+} satisfies InvokeArguments<"map-capture:open-map">[0];
+
+interface IpcFixtureObject {
+	readonly [key: string]: IpcFixtureValue;
+}
+
+type IpcFixtureValue =
+	| undefined
+	| null
+	| boolean
+	| number
+	| string
+	| Uint8Array
+	| readonly IpcFixtureValue[]
+	| IpcFixtureObject;
+
+type ValidArgsByChannel = {
+	readonly [Channel in InvokeChannel]: InvokeArguments<Channel>;
 };
 
-const validArgsByChannel: Record<InvokeChannel, unknown> = {
+type ValidResultByChannel = {
+	readonly [Channel in InvokeChannel]: InvokeResult<Channel>;
+};
+
+const validArgsByChannel = {
 	"editor-session:settings": [],
 	"editor-session:set-port": [31001],
 	"editor-session:status": [],
@@ -375,9 +399,9 @@ const validArgsByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:subscribe-world-observations": [5],
 	"map-review:set-world-observation-rate": [5],
 	"map-review:unsubscribe-world-observations": []
-};
+} satisfies ValidArgsByChannel;
 
-const validResultByChannel: Record<InvokeChannel, unknown> = {
+const validResultByChannel = {
 	"editor-session:settings": { port: 30001 },
 	"editor-session:set-port": { port: 31001 },
 	"editor-session:status": {
@@ -671,9 +695,9 @@ const validResultByChannel: Record<InvokeChannel, unknown> = {
 	"map-review:subscribe-world-observations": undefined,
 	"map-review:set-world-observation-rate": 5,
 	"map-review:unsubscribe-world-observations": undefined
-};
+} satisfies ValidResultByChannel;
 
-const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
+const malformedArgsByChannel = {
 	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
@@ -709,7 +733,7 @@ const malformedArgsByChannel: Partial<Record<InvokeChannel, unknown>> = {
 	"map-review:subscribe-world-observations": [0],
 	"map-review:set-world-observation-rate": [0],
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
-};
+} satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
 it("registers exactly 101 invoke channels plus renderer events", () => {
 	expect(invokeChannelNames).toHaveLength(101);
@@ -750,6 +774,7 @@ it("decodes valid arguments for every invoke channel", () => {
 
 it("rejects no-input channels that receive unexpected values", () => {
 	for (const channel of invokeChannelNames) {
+		// SAFETY: validArgsByChannel is exhaustive and each value is an encoded argument tuple.
 		if ((validArgsByChannel[channel] as ReadonlyArray<unknown>).length !== 0) continue;
 		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].args)(["unexpected"]);
 		expect(Result.isFailure(decoded)).toBe(true);
@@ -757,6 +782,7 @@ it("rejects no-input channels that receive unexpected values", () => {
 });
 
 it("rejects malformed input for every input-bearing channel", () => {
+	// SAFETY: malformedArgsByChannel is declared as an exhaustive InvokeChannel-keyed record.
 	for (const [channel, args] of Object.entries(malformedArgsByChannel) as Array<
 		[InvokeChannel, unknown]
 	>) {

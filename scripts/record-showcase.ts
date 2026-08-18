@@ -50,6 +50,7 @@ const custodianFixture =
 	journey === "custodian" ? await createCustodianShowcaseFixture() : undefined;
 
 try {
+	// SAFETY: fixture.environment is constructed from process.env-compatible string entries.
 	const {
 		P4CONFIG: _configFile,
 		P4ENVIRO: _environmentFile,
@@ -60,18 +61,18 @@ try {
 		...perforceEnvironment,
 		...(journey === "map-review" && !process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT
 			? { UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30001" }
-			: {}),
+			: undefined),
 		...(fixture
 			? {
 					UE_SHED_PROJECT_NAME: "World Log Perforce Fixture",
 					UE_SHED_PROJECT_ROOT: fixture.projectRoot,
 					UE_SHED_SAVED_WORLD_MAP: fixture.seeded.worldPartition.mapPath
 				}
-			: {}),
-		...(custodianFixture ? { UE_SHED_CUSTODIAN_ROOT: custodianFixture.root } : {}),
+			: undefined),
+		...(custodianFixture ? { UE_SHED_CUSTODIAN_ROOT: custodianFixture.root } : undefined),
 		...(journey === "custodian"
 			? { UE_SHED_CAMERA_PIPE_NAME: `\\\\.\\pipe\\ue-shed-cameras-${recordingId}` }
-			: {}),
+			: undefined),
 		UE_SHED_RECORDING_COMMIT: gitOutput(["rev-parse", "--short", "HEAD"]),
 		UE_SHED_RECORDING_DIRTY: gitOutput(["status", "--porcelain"]) ? "true" : "false",
 		UE_SHED_RECORDING_ID: recordingId,

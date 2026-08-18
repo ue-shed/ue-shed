@@ -1,6 +1,6 @@
 import type {
 	AuthoringCatalogResult,
-	AuthoringClientShape,
+	AuthoringClientApi,
 	AuthoringLoadResult,
 	AuthoringSessionIntent,
 	AuthoringSessionListResult,
@@ -30,7 +30,7 @@ export const browserContractSurface = {
 
 export type BrowserAuthoringContractSurface = {
 	readonly catalog: AuthoringCatalogResult;
-	readonly client: AuthoringClientShape;
+	readonly client: AuthoringClientApi;
 	readonly intent: AuthoringSessionIntent;
 	readonly list: AuthoringSessionListResult;
 	readonly load: AuthoringLoadResult;

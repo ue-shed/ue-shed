@@ -6,14 +6,25 @@ import {
 	type VisibilityPolicy
 } from "@ue-shed/cameras";
 import { createEffectAction } from "@ue-shed/ui";
-import { Cause } from "effect";
+import { Cause, Schema } from "effect";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
-import type { MapReviewClientShape, MapReviewResult } from "./map-review-client.js";
+import type { MapReviewClientApi, MapReviewResult } from "./map-review-client.js";
 
 type ReadyReview = Extract<MapReviewResult, { status: "ready" }>;
 type AssessmentMethod = VisibilityPolicy["assessment"]["method"];
 type LowAction = VisibilityPolicy["onLowVisibility"]["action"];
 type OutputMode = "natural_only" | "natural_and_clear";
+
+const decodeAssessmentMethod = Schema.decodeUnknownSync(
+	Schema.Literals(["automatic", "depth_compare", "ray_samples", "subject_mask"])
+);
+const decodeLowAction = Schema.decodeUnknownSync(Schema.Literals(["record", "warn", "fail"]));
+const decodeOutputMode = Schema.decodeUnknownSync(
+	Schema.Literals(["natural_only", "natural_and_clear"])
+);
+const decodeClearStrategy = Schema.decodeUnknownSync(
+	Schema.Literals(["isolate_target", "hide_explicit"])
+);
 
 function locatorList(value: string) {
 	return value
@@ -32,7 +43,7 @@ function pathList(overrides: VisibilityOverrides | undefined, field: keyof Visib
 }
 
 export function VisibilityPolicySettings(props: {
-	readonly client: MapReviewClientShape;
+	readonly client: MapReviewClientApi;
 	readonly onUpdated: (review: ReadyReview) => void;
 	readonly review: ReadyReview;
 }) {
@@ -92,11 +103,12 @@ export function VisibilityPolicySettings(props: {
 		const current = view?.visibilityPolicy;
 		if (!view || !current || props.client.replaceVisibilityPolicy === undefined) return;
 		const boundedThreshold = Math.min(1, Math.max(0, Number(threshold()) || 0));
+		const assessmentMethod = assessment();
 		const policy: VisibilityPolicy = {
 			assessment:
-				assessment() === "ray_samples"
+				assessmentMethod === "ray_samples"
 					? { method: "ray_samples", samplePreset: "standard" }
-					: ({ method: assessment() } as VisibilityPolicy["assessment"]),
+					: { method: assessmentMethod },
 			id: VisibilityPolicyId.make(`${current.id}-r${Date.now().toString(36)}`),
 			name: `${current.name} revision`,
 			onLowVisibility:
@@ -161,7 +173,7 @@ export function VisibilityPolicySettings(props: {
 						<select
 							value={assessment()}
 							onChange={(event) =>
-								setAssessment(event.currentTarget.value as AssessmentMethod)
+								setAssessment(decodeAssessmentMethod(event.currentTarget.value))
 							}
 						>
 							<option value="automatic">Automatic</option>
@@ -175,7 +187,7 @@ export function VisibilityPolicySettings(props: {
 						<select
 							value={lowAction()}
 							onChange={(event) =>
-								setLowAction(event.currentTarget.value as LowAction)
+								setLowAction(decodeLowAction(event.currentTarget.value))
 							}
 						>
 							<option value="record">Record</option>
@@ -200,7 +212,7 @@ export function VisibilityPolicySettings(props: {
 						<select
 							value={outputMode()}
 							onChange={(event) =>
-								setOutputMode(event.currentTarget.value as OutputMode)
+								setOutputMode(decodeOutputMode(event.currentTarget.value))
 							}
 						>
 							<option value="natural_only">Natural only</option>
@@ -213,11 +225,7 @@ export function VisibilityPolicySettings(props: {
 							<select
 								value={strategy()}
 								onChange={(event) =>
-									setStrategy(
-										event.currentTarget.value as
-											| "isolate_target"
-											| "hide_explicit"
-									)
+									setStrategy(decodeClearStrategy(event.currentTarget.value))
 								}
 							>
 								<option value="isolate_target">Isolate target</option>

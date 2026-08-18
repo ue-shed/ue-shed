@@ -27,7 +27,7 @@ type ViewState =
 	| { readonly status: "ready"; readonly corpus: TextCorpus };
 
 /** Retained only for compatibility with tests of the pre-query presentation model. */
-export interface LegacyGameTextClientShape {
+export interface LegacyGameTextClientApi {
 	readonly chooseProjectAndScan: () => import("effect").Effect.Effect<
 		TextCorpusRunResult,
 		unknown
@@ -77,7 +77,7 @@ function OccurrenceCard(props: { readonly occurrence: TextOccurrence }) {
 	);
 }
 
-export function LegacyGameTextRoute(props: { readonly client: LegacyGameTextClientShape }) {
+export function LegacyGameTextRoute(props: { readonly client: LegacyGameTextClientApi }) {
 	const scanAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [query, setQuery] = createSignal("");

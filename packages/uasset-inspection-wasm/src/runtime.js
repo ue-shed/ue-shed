@@ -124,7 +124,23 @@ function assertInputBytes(bytes, maxInputBytes) {
  * @returns {value is Record<string, unknown>}
  */
 function isObject(value) {
-	return typeof value === "object" && value !== null;
+	return value instanceof Object;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is string}
+ */
+function isString(value) {
+	return Object.prototype.toString.call(value) === "[object String]";
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Function}
+ */
+function isFunction(value) {
+	return value instanceof Function;
 }
 
 /**
@@ -134,7 +150,7 @@ function isObject(value) {
  * @param {number} maxOutputBytes
  */
 function decodeResult(operation, raw, schemaVersion, maxOutputBytes) {
-	if (typeof raw !== "string") {
+	if (!isString(raw)) {
 		throw new WasmProtocolError(operation, "the binding did not return a JSON string");
 	}
 	const actualBytes = textEncoder.encode(raw).byteLength;
@@ -147,11 +163,7 @@ function decodeResult(operation, raw, schemaVersion, maxOutputBytes) {
 	} catch (cause) {
 		throw new WasmProtocolError(operation, "the result was not valid JSON", cause);
 	}
-	if (
-		!isObject(value) ||
-		value.schema_version !== schemaVersion ||
-		typeof value.status !== "string"
-	) {
+	if (!isObject(value) || value.schema_version !== schemaVersion || !isString(value.status)) {
 		throw new WasmProtocolError(
 			operation,
 			`expected schema ${schemaVersion} with a status, received ${JSON.stringify(value)}`
@@ -168,11 +180,11 @@ function decodeResult(operation, raw, schemaVersion, maxOutputBytes) {
 export function createRuntime(binding, options = undefined) {
 	const limits = normalizeLimits(options);
 	if (
-		typeof binding.inspect !== "function" ||
-		typeof binding.extract_text !== "function" ||
-		typeof binding.extract_textures !== "function" ||
-		typeof binding.extract_level_sequences !== "function" ||
-		typeof binding.version !== "function"
+		!isFunction(binding.inspect) ||
+		!isFunction(binding.extract_text) ||
+		!isFunction(binding.extract_textures) ||
+		!isFunction(binding.extract_level_sequences) ||
+		!isFunction(binding.version)
 	) {
 		throw new WasmProtocolError("initialization", "the generated binding is missing an export");
 	}
@@ -227,7 +239,7 @@ export function createRuntime(binding, options = undefined) {
 		},
 		version() {
 			const value = binding.version();
-			if (typeof value !== "string" || value.length === 0) {
+			if (!isString(value) || value.length === 0) {
 				throw new WasmProtocolError("version", "the binding returned an empty version");
 			}
 			return value;

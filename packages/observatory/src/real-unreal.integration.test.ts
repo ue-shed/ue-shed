@@ -1,5 +1,5 @@
 import {
-	type RemoteControlClientShape,
+	type RemoteControlClientApi,
 	type RemoteControlRequest,
 	RemoteControlClient,
 	RemoteControlClientLive
@@ -107,7 +107,7 @@ const ensureStopped = Effect.gen(function* () {
 	}
 });
 
-function interceptStartNotSupported(inner: RemoteControlClientShape): RemoteControlClientShape {
+function interceptStartNotSupported(inner: RemoteControlClientApi): RemoteControlClientApi {
 	return {
 		request: (request: RemoteControlRequest) => {
 			if (request.functionName === "StartActorObservation") {

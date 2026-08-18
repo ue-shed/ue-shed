@@ -214,7 +214,7 @@ export function buildConfigHierarchy(options: {
 						engineRoot: options.engineRoot,
 						projectRoot: options.projectRoot,
 						template,
-						...(platform === undefined ? {} : { platform })
+						...(platform === undefined ? undefined : { platform })
 					}).filter((_, expansion) => expansion === index)
 				)
 		)

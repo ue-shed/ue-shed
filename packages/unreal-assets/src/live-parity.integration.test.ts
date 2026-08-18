@@ -7,7 +7,7 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { AssetReader, assetReaderLayer, discoverSavedAssets, readSavedTable } from "./index.js";
 
-const decodeAuthoringTableSnapshot = (input: unknown) =>
+const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;

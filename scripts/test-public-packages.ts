@@ -85,14 +85,22 @@ try {
 	);
 	assert.equal(wasmBuildInfo.packageVersion, wasmEntry.manifest.version);
 	assert.deepEqual(wasmBuildInfo.targets, ["nodejs", "web"]);
-	assert.equal(typeof wasmBuildInfo.optimizer?.enabled, "boolean");
-	assert.equal(typeof wasmBuildInfo.tools?.wasmOpt, "string");
+	assert.ok(
+		wasmBuildInfo.optimizer?.enabled === true || wasmBuildInfo.optimizer?.enabled === false
+	);
+	assert.equal(Object.prototype.toString.call(wasmBuildInfo.tools?.wasmOpt), "[object String]");
 	if (wasmBuildInfo.optimizer.enabled) {
-		assert.equal(typeof wasmBuildInfo.optimizer.version, "string");
+		assert.equal(
+			Object.prototype.toString.call(wasmBuildInfo.optimizer.version),
+			"[object String]"
+		);
 		assert.equal(wasmBuildInfo.tools.wasmOpt, wasmBuildInfo.optimizer.version);
 	} else {
 		assert.equal(wasmBuildInfo.optimizer.status, "disabled");
-		assert.equal(typeof wasmBuildInfo.optimizer.reason, "string");
+		assert.equal(
+			Object.prototype.toString.call(wasmBuildInfo.optimizer.reason),
+			"[object String]"
+		);
 		assert.match(wasmBuildInfo.tools.wasmOpt, /disabled|no[ -]?opt/iu);
 	}
 	const gameTextEntry = packed.find((entry) => entry.name === GAME_TEXT_PACKAGE_NAME);

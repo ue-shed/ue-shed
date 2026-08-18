@@ -2,12 +2,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isJsonObject, isJsonString, type JsonValue } from "./json.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const crateDirectory = join(repositoryRoot, "crates", "uasset-inspection-wasm");
 const packageDirectory = join(repositoryRoot, "packages", "uasset-inspection-wasm");
 const packageDist = join(packageDirectory, "dist");
 const wasmDirectory = join(packageDist, "wasm");
+// SAFETY: this repository-owned package.json supplies the build artifact identity.
 const packageManifest = JSON.parse(
 	readFileSync(join(packageDirectory, "package.json"), "utf8")
 ) as { readonly name: string; readonly version: string };
@@ -137,12 +139,12 @@ function validateGeneratedManifest(outputDirectory: string, target: string, vers
 	}
 }
 
-function containsAbsolutePath(value: unknown): boolean {
-	if (typeof value === "string") {
+function containsAbsolutePath(value: JsonValue): boolean {
+	if (isJsonString(value)) {
 		return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 	}
 	if (Array.isArray(value)) return value.some(containsAbsolutePath);
-	if (value !== null && typeof value === "object") {
+	if (isJsonObject(value)) {
 		return Object.values(value).some(containsAbsolutePath);
 	}
 	return false;

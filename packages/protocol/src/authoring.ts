@@ -523,7 +523,7 @@ export const decodeAuthoringApplyResult = Schema.decodeUnknownEffect(AuthoringAp
 export const decodeAuthoringSaveRequest = Schema.decodeUnknownEffect(AuthoringSaveRequest);
 export const decodeAuthoringSaveResult = Schema.decodeUnknownEffect(AuthoringSaveResult);
 
-export function makeAuthoringJsonSchema(contract: Schema.Top): Readonly<Record<string, unknown>> {
+export function makeAuthoringJsonSchema(contract: Schema.Top) {
 	const document = Schema.toJsonSchemaDocument(contract);
 	const definitions = { ...document.definitions };
 	if ("NonNegativeInt" in definitions) {

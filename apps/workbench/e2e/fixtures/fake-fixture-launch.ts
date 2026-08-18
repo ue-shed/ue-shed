@@ -83,6 +83,7 @@ process.exit(0);
 					return;
 				}
 				const body = await readBody(request);
+				// SAFETY: this fake server only inspects the optional functionName in test-owned JSON bodies.
 				const payload = JSON.parse(body) as { functionName?: string };
 				if (payload.functionName === "GetCapabilityManifest") {
 					response.writeHead(200, { "content-type": "application/json" });
@@ -115,7 +116,7 @@ process.exit(0);
 		server.listen(0, "127.0.0.1", () => resolve());
 	});
 	const address = server.address();
-	if (address === null || typeof address === "string") {
+	if (!(address instanceof Object)) {
 		throw new Error("Fake Remote Control server did not bind a TCP port");
 	}
 	const endpoint = `http://127.0.0.1:${address.port}`;

@@ -261,7 +261,7 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 				total: matched.length,
 				...(final !== undefined && start + page.length < matched.length
 					? { nextCursor: final }
-					: {})
+					: undefined)
 			};
 		},
 		focus: (request) => {
@@ -293,7 +293,7 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 				...(final !== undefined &&
 				start + affectedOccurrences.length < finding.affectedOccurrences.length
 					? { nextOccurrenceCursor: final }
-					: {})
+					: undefined)
 			};
 			return finding.kind === "character_budget"
 				? {

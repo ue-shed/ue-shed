@@ -6,9 +6,9 @@ import {
 	savedTableDescriptorsFromInspection
 } from "./index.js";
 
-const decodeSavedAssetCatalogInspection = (input: unknown) =>
+const decodeSavedAssetCatalogInspection = <Input>(input: Input) =>
 	Effect.runSync(decodeSavedAssetCatalogInspectionEffect(input));
-const decodeSavedAssetInspection = (input: unknown) =>
+const decodeSavedAssetInspection = <Input>(input: Input) =>
 	Effect.runSync(decodeSavedAssetInspectionEffect(input));
 
 describe("saved DataTable catalog", () => {

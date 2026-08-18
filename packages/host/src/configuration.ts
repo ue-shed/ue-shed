@@ -13,7 +13,7 @@ export type ConfiguredProject =
 	  }
 	| { readonly status: "not_configured" };
 
-export interface ShedHostConfigurationShape {
+export interface ShedHostConfigurationApi {
 	readonly authoringAsset: () => Effect.Effect<ConfiguredAsset>;
 	readonly project: () => Effect.Effect<ConfiguredProject>;
 	readonly remoteControlEndpoint: () => Effect.Effect<string>;
@@ -27,12 +27,12 @@ export interface ShedHostConfigurationValues {
 
 export class ShedHostConfiguration extends Context.Service<
 	ShedHostConfiguration,
-	ShedHostConfigurationShape
+	ShedHostConfigurationApi
 >()("@ue-shed/host/ShedHostConfiguration") {}
 
 export function makeShedHostConfiguration(
 	values: ShedHostConfigurationValues
-): ShedHostConfigurationShape {
+): ShedHostConfigurationApi {
 	return ShedHostConfiguration.of({
 		authoringAsset: Effect.fn("ShedHostConfiguration.authoringAsset")(() =>
 			Effect.succeed(values.authoringAsset)

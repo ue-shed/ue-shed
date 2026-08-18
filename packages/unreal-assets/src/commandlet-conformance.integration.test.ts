@@ -3,7 +3,7 @@ import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { semanticTableJson } from "@ue-shed/authoring";
 import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	AssetReader,
@@ -13,7 +13,7 @@ import {
 	readSavedTable
 } from "./index.js";
 
-const decodeAuthoringTableSnapshot = (input: unknown) =>
+const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
 
 /**
@@ -54,8 +54,8 @@ const expectedTargets = join(fixtureRoot, "FixtureExpected", "parser-targets");
 const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
 
-async function json(path: string): Promise<unknown> {
-	return JSON.parse(await readFile(path, "utf8")) as unknown;
+async function json(path: string): Promise<Schema.Json> {
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
 }
 
 async function filesBelow(root: string, directory = root): Promise<readonly string[]> {
@@ -90,9 +90,11 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 	});
 
 	it("decodes every level property tag that is on disk", async () => {
+		// SAFETY: the commandlet writes this versioned conformance evidence file.
 		const evidence = (await json(
 			join(evidenceDirectory!, "levels", "L_CameraLoad.json")
 		)) as LevelEvidence;
+		// SAFETY: the repository fixture owns this expected conformance document.
 		const expected = (await json(
 			join(fixtureRoot, "FixtureExpected", "level-decode-gaps.json")
 		)) as LevelDecodeGaps;

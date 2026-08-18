@@ -23,7 +23,7 @@ import {
 export const DEFAULT_REVIEW_ROOT = ".ue-shed/review";
 
 function hasErrorCode(cause: unknown, code: string): boolean {
-	return typeof cause === "object" && cause !== null && "code" in cause && cause.code === code;
+	return cause instanceof Object && "code" in cause && cause.code === code;
 }
 
 export class ReviewStorageError extends Schema.TaggedErrorClass<ReviewStorageError>()(
@@ -48,7 +48,7 @@ export class ReviewStorageError extends Schema.TaggedErrorClass<ReviewStorageErr
 	}
 ) {}
 
-async function writeJsonAtomically(path: string, value: unknown): Promise<void> {
+async function writeJsonAtomically<Value>(path: string, value: Value): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const temporary = `${path}.${randomUUID()}.tmp`;
 	try {
@@ -68,7 +68,8 @@ async function writeJsonAtomically(path: string, value: unknown): Promise<void> 
 
 function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
 	return Effect.tryPromise({
-		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+		try: async () =>
+			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 		catch: (cause) =>
 			new ReviewStorageError({
 				message: String(cause),
@@ -175,7 +176,12 @@ function listReviewSetsWithNode(
 			return Promise.all(
 				files.map(async (entry) => {
 					const path = join(root, entry.name);
-					return { input: JSON.parse(await readFile(path, "utf8")) as unknown, path };
+					return {
+						input: Schema.decodeUnknownSync(Schema.Json)(
+							JSON.parse(await readFile(path, "utf8"))
+						),
+						path
+					};
 				})
 			);
 		},
@@ -287,7 +293,8 @@ export function captureRunsRoot(projectRoot: string): string {
 
 function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
 	return Effect.tryPromise({
-		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+		try: async () =>
+			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 		catch: (cause) =>
 			new ReviewStorageError({
 				message: String(cause),
@@ -337,7 +344,12 @@ function listCaptureRunsWithNode(
 			return Promise.all(
 				directories.map(async (entry) => {
 					const path = join(root, entry.name, "run.json");
-					return { input: JSON.parse(await readFile(path, "utf8")) as unknown, path };
+					return {
+						input: Schema.decodeUnknownSync(Schema.Json)(
+							JSON.parse(await readFile(path, "utf8"))
+						),
+						path
+					};
 				})
 			);
 		},
@@ -400,7 +412,7 @@ export function runIdFromPath(path: string): string {
 	return basename(dirname(path));
 }
 
-export interface ReviewRepositoryShape {
+export interface ReviewRepositoryApi {
 	readonly discardStaging: (stagingRoot: string) => Effect.Effect<void, ReviewStorageError>;
 	readonly findSet: (path: string) => Effect.Effect<ReviewSet | undefined, ReviewStorageError>;
 	readonly finalizeRun: (args: {
@@ -434,11 +446,11 @@ export interface ReviewRepositoryShape {
 	}) => Effect.Effect<void, ReviewStorageError>;
 }
 
-export class ReviewRepository extends Context.Service<ReviewRepository, ReviewRepositoryShape>()(
+export class ReviewRepository extends Context.Service<ReviewRepository, ReviewRepositoryApi>()(
 	"@ue-shed/cameras/ReviewRepository"
 ) {}
 
-const makeReviewRepository = (): ReviewRepositoryShape => {
+const makeReviewRepository = (): ReviewRepositoryApi => {
 	const prepareRun = Effect.fn("ReviewRepository.prepareRun")(function* (args: {
 		readonly root: string;
 		readonly stagingRoot: string;
@@ -545,8 +557,7 @@ const makeReviewRepository = (): ReviewRepositoryShape => {
 export const ReviewRepositoryLive = Layer.sync(ReviewRepository, makeReviewRepository);
 
 export function makeReviewRepositoryTestLayer(
-	service: Omit<ReviewRepositoryShape, "listSets"> &
-		Partial<Pick<ReviewRepositoryShape, "listSets">>
+	service: Omit<ReviewRepositoryApi, "listSets"> & Partial<Pick<ReviewRepositoryApi, "listSets">>
 ): Layer.Layer<ReviewRepository> {
 	return Layer.succeed(
 		ReviewRepository,

@@ -4,7 +4,7 @@ import {
 	isHeaderScanEntry,
 	isFullScanEntry,
 	type AssetReaderError,
-	type AssetReaderShape,
+	type AssetReaderApi,
 	type SavedAssetScan,
 	type SavedAssetInspection,
 	type SavedProperty,
@@ -19,8 +19,7 @@ import {
 	type InputActionRecord,
 	type InputInstancedObjectRef,
 	type InputMappingContextRecord,
-	type InputMappingRecord,
-	type InputMappingsProperty
+	type InputMappingRecord
 } from "./schema.js";
 
 export const ENHANCED_INPUT_CLASS_PREFIX = "/Script/EnhancedInput.";
@@ -182,16 +181,13 @@ function projectMapping(
 function mappingsFromProperties(
 	properties: readonly SavedProperty[],
 	exportsByPath: ReadonlyMap<string, string>
-): {
-	readonly mappingsProperty: InputMappingsProperty | null;
-	readonly mappings: readonly InputMappingRecord[];
-} {
+) {
 	const defaultKeyMappings = rootProperty(properties, "DefaultKeyMappings");
 	if (defaultKeyMappings?.value_kind === "struct") {
 		const nested = rootProperty(defaultKeyMappings.properties, "Mappings");
 		if (nested?.value_kind === "array") {
 			return {
-				mappingsProperty: "DefaultKeyMappings",
+				mappingsProperty: "DefaultKeyMappings" as const,
 				mappings: nested.values.flatMap((value) => {
 					const mapping = projectMapping(value, exportsByPath);
 					return mapping ? [mapping] : [];
@@ -203,7 +199,7 @@ function mappingsFromProperties(
 	const legacy = rootProperty(properties, "Mappings");
 	if (legacy?.value_kind === "array") {
 		return {
-			mappingsProperty: "Mappings",
+			mappingsProperty: "Mappings" as const,
 			mappings: legacy.values.flatMap((value) => {
 				const mapping = projectMapping(value, exportsByPath);
 				return mapping ? [mapping] : [];
@@ -436,7 +432,7 @@ export function scanEnhancedInputFromProjectIndex(
 }
 
 export function scanEnhancedInputWith(
-	reader: Pick<AssetReaderShape, "scanProject">,
+	reader: Pick<AssetReaderApi, "scanProject">,
 	options: EnhancedInputScanOptions
 ): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
 	return Effect.gen(function* () {
@@ -448,9 +444,9 @@ export function scanEnhancedInputWith(
 				classNameSuffixes: ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
 				concurrency: Math.max(1, options.concurrency ?? 8),
 				...(options.maximumAssets === undefined
-					? {}
+					? undefined
 					: { maximumAssets: options.maximumAssets }),
-				...(options.paths === undefined ? {} : { paths: options.paths }),
+				...(options.paths === undefined ? undefined : { paths: options.paths }),
 				projectRoot: options.projectRoot
 			})
 			.pipe(Effect.mapError(enhancedInputScanFailure));
@@ -463,7 +459,7 @@ export function scanEnhancedInputWith(
 }
 
 function inspectEnhancedInputPathWith(
-	reader: AssetReaderShape,
+	reader: AssetReaderApi,
 	path: string
 ): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
 	return Effect.gen(function* () {
@@ -488,7 +484,7 @@ function inspectEnhancedInputPathWith(
 	}).pipe(Effect.withSpan("enhanced-input.inspect-path"));
 }
 
-export interface EnhancedInputServiceShape {
+export interface EnhancedInputServiceApi {
 	readonly inspectPath: (
 		path: string
 	) => Effect.Effect<EnhancedInputReport, EnhancedInputScanError>;
@@ -499,7 +495,7 @@ export interface EnhancedInputServiceShape {
 
 export class EnhancedInputService extends Context.Service<
 	EnhancedInputService,
-	EnhancedInputServiceShape
+	EnhancedInputServiceApi
 >()("@ue-shed/enhanced-input/EnhancedInput") {}
 
 export const EnhancedInputServiceLive = Layer.effect(

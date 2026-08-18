@@ -76,11 +76,11 @@ function growProjection(values: Float64Array<ArrayBufferLike>, length: number) {
 	if (values.length >= length) return values;
 	const next = new Float64Array(Math.max(length, values.length === 0 ? 32 : values.length * 2));
 	next.set(values);
-	return next as Float64Array<ArrayBufferLike>;
+	return next;
 }
 
 /** Reads a prop in a Solid effect solely to register it as a reactive dependency. */
-function observePointMapInput(_value: unknown): void {}
+function observePointMapInput<Value>(_value: Value): void {}
 
 function pointMapOpacity(value: number | undefined): number {
 	return Math.min(1, Math.max(0, value ?? 1));
@@ -213,7 +213,7 @@ export function PointMapCanvas(props: {
 			canvas,
 			cssWidth,
 			cssHeight,
-			typeof window === "undefined" ? 1 : window.devicePixelRatio || 1
+			globalThis.window?.devicePixelRatio || 1
 		);
 		if (context === undefined) return;
 		prepareProjection();
@@ -277,12 +277,14 @@ export function PointMapCanvas(props: {
 	};
 	const requestPaint = () => {
 		if (paintHandle !== undefined) return;
-		const schedule =
-			typeof requestAnimationFrame === "undefined" ? setTimeout : requestAnimationFrame;
-		paintHandle = schedule(() => {
+		const paintFrame = () => {
 			paintHandle = undefined;
 			paint();
-		}) as unknown as number;
+		};
+		paintHandle =
+			globalThis.requestAnimationFrame === undefined
+				? Number(setTimeout(paintFrame, 0))
+				: globalThis.requestAnimationFrame(paintFrame);
 	};
 	const syncCanvasSize = () => {
 		if (canvas === undefined) return;
@@ -429,7 +431,7 @@ export function PointMapCanvas(props: {
 		canvas = element;
 		syncCanvasSize();
 		resizeObserver?.disconnect();
-		if (typeof ResizeObserver !== "undefined") {
+		if (globalThis.ResizeObserver !== undefined) {
 			resizeObserver = new ResizeObserver(syncCanvasSize);
 			resizeObserver.observe(element);
 		}
@@ -452,7 +454,7 @@ export function PointMapCanvas(props: {
 	onMount(() => props.onController?.({ focusKey, resetView, setZoomFactor }));
 	onCleanup(() => {
 		if (paintHandle !== undefined) {
-			if (typeof cancelAnimationFrame === "undefined") clearTimeout(paintHandle);
+			if (globalThis.cancelAnimationFrame === undefined) clearTimeout(paintHandle);
 			else cancelAnimationFrame(paintHandle);
 		}
 		resizeObserver?.disconnect();

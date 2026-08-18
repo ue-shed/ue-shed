@@ -8,7 +8,7 @@ import {
 	proveFastHistoryActorTarget
 } from "./fast-history-target.js";
 import type { ResolvedPerforceMapScope } from "./perforce-map-scope.js";
-import type { PerforceDepotPath } from "./schema.js";
+import { PerforceDepotPath } from "./schema.js";
 
 const eastPackage =
 	"/Game/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC";
@@ -154,12 +154,14 @@ describe("fastHistoryTargetedCoverage", () => {
 		expect(proven).not.toBeInstanceOf(MapHistoryError);
 		if (proven instanceof MapHistoryError) return;
 		const coverage = fastHistoryTargetedCoverage({
-			mapDepotFileSpec:
-				"//Project/Main/Content/Fixture/History/L_MapHistoryWorld.*" as PerforceDepotPath,
+			mapDepotFileSpec: PerforceDepotPath.make(
+				"//Project/Main/Content/Fixture/History/L_MapHistoryWorld.*"
+			),
 			mapPackageName: worldPartitionScope.mapPackageName,
 			proven,
-			targetDepotFileSpec:
-				"//Project/Main/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.*" as PerforceDepotPath
+			targetDepotFileSpec: PerforceDepotPath.make(
+				"//Project/Main/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.*"
+			)
 		});
 		expect(coverage).toEqual({
 			acquiredPackages: [
@@ -198,15 +200,17 @@ describe("fastHistoryTargetedCoverage", () => {
 		expect(proven).not.toBeInstanceOf(MapHistoryError);
 		if (proven instanceof MapHistoryError) return;
 		const coverage = fastHistoryActorClassTargetedCoverage({
-			mapDepotFileSpec:
-				"//Project/Main/Content/Fixture/History/L_MapHistoryWorld.*" as PerforceDepotPath,
+			mapDepotFileSpec: PerforceDepotPath.make(
+				"//Project/Main/Content/Fixture/History/L_MapHistoryWorld.*"
+			),
 			mapPackageName: worldPartitionScope.mapPackageName,
 			proven,
 			target: { classPath: eastActor.classPath, kind: "actor_class" },
 			targetPackages: [
 				{
-					depotFileSpec:
-						"//Project/Main/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.*" as PerforceDepotPath,
+					depotFileSpec: PerforceDepotPath.make(
+						"//Project/Main/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.*"
+					),
 					proven: proven[0]!
 				}
 			]

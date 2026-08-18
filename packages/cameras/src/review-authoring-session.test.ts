@@ -8,7 +8,7 @@ import {
 	ReviewAuthoringSessions,
 	ReviewAuthoringSessionsLive,
 	reviewAuthoringSessionPath,
-	type ReviewAuthoringSessionsShape
+	type ReviewAuthoringSessionsApi
 } from "./review-authoring-session.js";
 import {
 	defaultFramingParameters,
@@ -149,7 +149,7 @@ function run<A, E>(
 
 function withSessions<A, E>(
 	layer: Layer.Layer<ReviewAuthoringSessions>,
-	use: (sessions: ReviewAuthoringSessionsShape) => Effect.Effect<A, E>
+	use: (sessions: ReviewAuthoringSessionsApi) => Effect.Effect<A, E>
 ) {
 	return run(layer, Effect.flatMap(ReviewAuthoringSessions, use));
 }

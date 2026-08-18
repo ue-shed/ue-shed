@@ -1,5 +1,6 @@
 import type { AuthoringRow, AuthoringValue } from "@ue-shed/protocol";
 import type { CellMutation, CellValue, ColumnDef, SheetOperation } from "peculiar-sheets";
+import { Schema } from "effect";
 import type { AuthoringColumn } from "./authoring-view.js";
 import { fieldInRow, formatAuthoringValue } from "./authoring-view.js";
 
@@ -44,7 +45,7 @@ function isEditable(column: AuthoringColumn): boolean {
 }
 
 function parseEditorText(text: string, context: { readonly previousValue: CellValue }): CellValue {
-	if (typeof context.previousValue === "boolean") {
+	if (Schema.is(Schema.Boolean)(context.previousValue)) {
 		if (text.toLocaleLowerCase() === "true") return true;
 		if (text.toLocaleLowerCase() === "false") return false;
 	}
@@ -54,8 +55,8 @@ function parseEditorText(text: string, context: { readonly previousValue: CellVa
 function decodeValue(current: AuthoringValue, input: CellValue): AuthoringValue | undefined {
 	switch (current.kind) {
 		case "bool":
-			if (typeof input === "boolean") return { kind: "bool", value: input };
-			if (typeof input === "string" && /^(true|false)$/i.test(input.trim())) {
+			if (Schema.is(Schema.Boolean)(input)) return { kind: "bool", value: input };
+			if (Schema.is(Schema.String)(input) && /^(true|false)$/i.test(input.trim())) {
 				return { kind: "bool", value: input.trim().toLocaleLowerCase() === "true" };
 			}
 			return undefined;
@@ -69,7 +70,7 @@ function decodeValue(current: AuthoringValue, input: CellValue): AuthoringValue 
 		}
 		case "float":
 		case "double": {
-			const value = typeof input === "number" ? input : Number(input);
+			const value = Schema.is(Schema.Number)(input) ? input : Number(input);
 			return Number.isFinite(value) ? { kind: current.kind, value } : undefined;
 		}
 		case "name":
@@ -77,11 +78,13 @@ function decodeValue(current: AuthoringValue, input: CellValue): AuthoringValue 
 		case "string":
 		case "guid":
 		case "soft_object_path":
-			return typeof input === "string" ? { kind: current.kind, value: input } : undefined;
+			return Schema.is(Schema.String)(input)
+				? { kind: current.kind, value: input }
+				: undefined;
 		case "object_ref":
 			return input === null || input === ""
 				? { kind: "object_ref", value: null }
-				: typeof input === "string"
+				: Schema.is(Schema.String)(input)
 					? { kind: "object_ref", value: input }
 					: undefined;
 		default:

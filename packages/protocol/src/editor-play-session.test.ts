@@ -1,17 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeEditorPlaySessionCommandResponse,
 	decodeEditorPlaySessionStateResponse
 } from "./editor-play-session.js";
 
-async function fixture(name: string): Promise<unknown> {
+async function fixture(name: string): Promise<Schema.Json> {
 	const path = fileURLToPath(
 		new URL(`../contracts/editor-session/v1/fixtures/${name}.json`, import.meta.url)
 	);
-	return JSON.parse(await readFile(path, "utf8")) as unknown;
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
 }
 
 describe("editor play-session wire contract", () => {

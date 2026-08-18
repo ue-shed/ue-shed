@@ -105,7 +105,7 @@ function pageBase(command: Command<"ProjectIndexMaps"> | Command<"ProjectIndexQu
 			limit: command.limit,
 			projectId: summary.projectId,
 			...(command.cursor === undefined
-				? {}
+				? undefined
 				: { cursor: ProjectIndexCursor.make(command.cursor) })
 		};
 	});

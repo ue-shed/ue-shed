@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUBLIC_PACKAGES, PUBLIC_VERSION } from "./pack-public-packages.ts";
+import { isJsonObject, isJsonString, parseJson as decodeJsonText, type JsonValue } from "./json.ts";
 
 const npmRegistry = "https://registry.npmjs.org";
 const integrityPattern = /^sha512-[A-Za-z0-9+/]+={0,2}$/u;
@@ -53,9 +54,9 @@ function runNpm(args: readonly string[], { inherit = false }: { inherit?: boolea
 	return result;
 }
 
-function parseJson(value: string): unknown {
+function parseJson(value: string): JsonValue | undefined {
 	try {
-		return JSON.parse(value);
+		return decodeJsonText(value);
 	} catch {
 		return undefined;
 	}
@@ -78,7 +79,7 @@ export function parseRegistryIntegrity({
 }) {
 	if (status === 0) {
 		const value = parseJson(stdout.trim());
-		if (typeof value !== "string" || !integrityPattern.test(value)) {
+		if (value === undefined || !isJsonString(value) || !integrityPattern.test(value)) {
 			throw new Error(
 				`Registry returned invalid dist.integrity for ${packageSpec}: ${stdout.trim() || "empty output"}.`
 			);
@@ -88,11 +89,9 @@ export function parseRegistryIntegrity({
 	const errorPayload = parseJson(stdout.trim()) ?? parseJson(stderr.trim());
 	const combined = `${stdout}\n${stderr}`;
 	const errorCode =
-		typeof errorPayload === "object" &&
-		errorPayload !== null &&
-		"error" in errorPayload &&
-		typeof errorPayload.error === "object" &&
-		errorPayload.error !== null &&
+		errorPayload !== undefined &&
+		isJsonObject(errorPayload) &&
+		isJsonObject(errorPayload.error) &&
 		"code" in errorPayload.error
 			? errorPayload.error.code
 			: undefined;
@@ -152,10 +151,10 @@ export function validatePublicationManifest({
 			failures.push(`${entry.name} version must be ${expectedVersion}`);
 		}
 		if (entry.license !== "MIT") failures.push(`${entry.name} license must be MIT`);
-		if (typeof entry.filename !== "string" || basename(entry.filename) !== entry.filename) {
+		if (basename(entry.filename) !== entry.filename) {
 			failures.push(`${entry.name} filename must be a basename`);
 		}
-		if (typeof entry.sha256 !== "string" || !digestPattern.test(entry.sha256)) {
+		if (!digestPattern.test(entry.sha256)) {
 			failures.push(`${entry.name} sha256 must be an exact lowercase digest`);
 		}
 		if (!Number.isSafeInteger(entry.bytes) || entry.bytes < 1) {
@@ -257,6 +256,7 @@ export async function publishPublicPackages({
 	}
 	if (!tagPattern.test(tag)) throw new Error(`Invalid npm dist-tag ${tag}.`);
 	const resolvedManifestPath = resolve(manifestPath);
+	// SAFETY: validatePublicationManifest checks every publication field before it is consumed.
 	const manifest = JSON.parse(
 		await readFile(resolvedManifestPath, "utf8")
 	) as PublicationManifest;
@@ -296,13 +296,28 @@ function parseArguments(args: readonly string[]) {
 	return values;
 }
 
+function requiredArgument(values: ReadonlyMap<string, string | boolean>, key: string): string {
+	const value = values.get(key);
+	if (value === undefined || value === true || value === false)
+		throw new Error(`Missing required --${key} argument.`);
+	return value;
+}
+
+function optionalArgument(
+	values: ReadonlyMap<string, string | boolean>,
+	key: string
+): string | undefined {
+	const value = values.get(key);
+	return value === undefined || value === true || value === false ? undefined : value;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const args = parseArguments(process.argv.slice(2));
 	await publishPublicPackages({
-		manifestPath: args.get("manifest") as string,
-		expectedVersion: args.get("version") as string,
-		tag: args.get("tag") as string,
-		only: args.get("only") as string | undefined,
+		manifestPath: requiredArgument(args, "manifest"),
+		expectedVersion: requiredArgument(args, "version"),
+		tag: requiredArgument(args, "tag"),
+		only: optionalArgument(args, "only"),
 		provenance: args.has("provenance")
 	});
 }

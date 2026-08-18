@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { buildJoinedView, type JoinedViewRow } from "@ue-shed/authoring/joined-views";
-import type { AuthoringAuthority, AuthoringClientShape } from "@ue-shed/authoring-sdk";
+import type { AuthoringAuthority, AuthoringClientApi } from "@ue-shed/authoring-sdk";
 import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
@@ -10,7 +10,7 @@ import { fieldInRow, formatAuthoringValue, tableColumns } from "./authoring-view
 
 interface CombinedViewProps {
 	readonly catalogTablePaths: readonly string[];
-	readonly client: AuthoringClientShape;
+	readonly client: AuthoringClientApi;
 	readonly initialSnapshot: AuthoringTableSnapshot;
 	readonly onOpenForEditing: (objectPath: string) => void;
 }
@@ -131,7 +131,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 					columns: snapshot ? tableColumns(snapshot).map((column) => column.name) : [],
 					objectPath,
 					role,
-					...(snapshot ? { snapshot } : {})
+					...(snapshot ? { snapshot } : undefined)
 				};
 			})
 			.filter((group) => visiblePaths().has(group.objectPath))

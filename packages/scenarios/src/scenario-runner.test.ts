@@ -1,11 +1,11 @@
 import { it } from "@effect/vitest";
 import {
 	makeEditorPlaySessionTestLayer,
-	type EditorPlaySessionShape
+	type EditorPlaySessionApi
 } from "@ue-shed/engine-discovery";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { EditorPlaySessionId } from "@ue-shed/protocol";
-import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { movementGymRuns } from "./demo.js";
@@ -17,7 +17,7 @@ const pieState = {
 	state: { mode: "play", sessionId: EditorPlaySessionId.make("pie-session-1"), status: "running" }
 } as const;
 
-const editor: EditorPlaySessionShape = {
+const editor: EditorPlaySessionApi = {
 	execute: () => Effect.die("unexpected editor command"),
 	pause: () => Effect.die("unexpected pause"),
 	resume: () => Effect.die("unexpected resume"),
@@ -48,7 +48,7 @@ const prepared = {
 
 function runnerLayer(
 	handle: Parameters<typeof makeRemoteControlClientTestLayer>[0],
-	editorService: EditorPlaySessionShape = editor
+	editorService: EditorPlaySessionApi = editor
 ) {
 	return ScenarioRunnerLive.pipe(
 		Layer.provide(
@@ -78,23 +78,25 @@ it.effect("returns a schema-validated terminal ScenarioRun through the public se
 			if (request.functionName === "GetScenarioRunStatus") {
 				return Ref.getAndUpdate(statusReads, (value) => value + 1).pipe(
 					Effect.map((read) =>
-						read === 0
-							? {
-									_tag: "Active",
-									contract: scenarioWireContract,
-									gameTimeMs: 20,
-									pieSessionId: "pie-session-1",
-									runId: "run-live-1",
-									state: "running"
-								}
-							: {
-									_tag: "Terminal",
-									contract: scenarioWireContract,
-									result: {
-										...movementGymRuns[1]!,
-										pieSessionId: "pie-session-1"
+						Schema.decodeUnknownSync(Schema.Json)(
+							read === 0
+								? {
+										_tag: "Active",
+										contract: scenarioWireContract,
+										gameTimeMs: 20,
+										pieSessionId: "pie-session-1",
+										runId: "run-live-1",
+										state: "running"
 									}
-								}
+								: {
+										_tag: "Terminal",
+										contract: scenarioWireContract,
+										result: {
+											...movementGymRuns[1]!,
+											pieSessionId: "pie-session-1"
+										}
+									}
+						)
 					)
 				);
 			}

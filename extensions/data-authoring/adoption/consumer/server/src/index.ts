@@ -11,7 +11,7 @@ import {
 	ShedHostLive,
 	shedHostConfigurationLayer
 } from "@ue-shed/host";
-import { Config, Effect, Layer, ManagedRuntime, Option } from "effect";
+import { Config, Effect, Layer, ManagedRuntime, Option, Schema } from "effect";
 
 const maxRequestBytes = 1024 * 1024;
 const staticRoot = resolve(import.meta.dirname, "../../app/dist");
@@ -48,7 +48,11 @@ const runtime = ManagedRuntime.make(
 	ShedHostLive.pipe(Layer.provide(configurationLive), Layer.provide(AuthoringFilePickerCancelled))
 );
 
-const contentTypes: Readonly<Record<string, string>> = {
+interface ContentTypesByExtension {
+	readonly [extension: string]: string;
+}
+
+const contentTypes: ContentTypesByExtension = {
 	".css": "text/css; charset=utf-8",
 	".html": "text/html; charset=utf-8",
 	".js": "text/javascript; charset=utf-8",
@@ -56,7 +60,7 @@ const contentTypes: Readonly<Record<string, string>> = {
 	".svg": "image/svg+xml"
 };
 
-function writeJson(response: ServerResponse, status: number, body: unknown): void {
+function writeJson<Body>(response: ServerResponse, status: number, body: Body): void {
 	response.writeHead(status, {
 		"cache-control": "no-store",
 		"content-type": "application/json; charset=utf-8"
@@ -64,7 +68,7 @@ function writeJson(response: ServerResponse, status: number, body: unknown): voi
 	response.end(JSON.stringify(body));
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+async function readJson(request: IncomingMessage): Promise<Schema.Json> {
 	const chunks: Buffer[] = [];
 	let bytes = 0;
 	for await (const chunk of request) {
@@ -73,7 +77,9 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
 		if (bytes > maxRequestBytes) throw new Error("Authoring request exceeds 1 MiB");
 		chunks.push(buffer);
 	}
-	return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+	return Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(Buffer.concat(chunks).toString("utf8"))
+	);
 }
 
 async function handleAuthoring(request: IncomingMessage, response: ServerResponse): Promise<void> {

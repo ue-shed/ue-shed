@@ -1,4 +1,3 @@
-import type { ContentObservatoryHistoryRequest } from "@ue-shed/extension-content-observatory/client";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
@@ -10,11 +9,11 @@ export const register = Effect.gen(function* () {
 
 	yield* ipc.register(invokeContracts["content-observatory:status"], () => observatory.status());
 	yield* ipc.register(invokeContracts["content-observatory:targets"], (...args) => {
-		const [mapPath] = args as [string];
+		const [mapPath] = args;
 		return observatory.targets(mapPath).pipe(Effect.orDie);
 	});
 	yield* ipc.register(invokeContracts["content-observatory:start"], (...args) => {
-		const [request] = args as [ContentObservatoryHistoryRequest];
+		const [request] = args;
 		return observatory.start(request);
 	});
 	yield* ipc.register(invokeContracts["content-observatory:cancel"], () => observatory.cancel());

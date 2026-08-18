@@ -7,15 +7,19 @@ import {
 	type ProjectIndexError,
 	type ProjectIndexPage,
 	type ProjectIndexQuery,
-	type ProjectIndexShape,
+	type ProjectIndexApi,
 	type ProjectIndexStatus,
 	type ProjectIndexSummary,
 	type ProjectIndexTarget,
 	ProjectIndex,
 	ProjectIndexCacheRoot as CacheRootSchema,
 	ProjectIndexConfig,
+	ProjectIndexCorruptCatalog,
+	ProjectIndexIncompatibleWorker,
+	ProjectIndexInvalidRequest,
 	ProjectIndexRefreshEvent,
 	ProjectIndexRefreshFailed,
+	ProjectIndexStaleGeneration,
 	ProjectIndexUnavailable,
 	decodeProjectIndexPage,
 	projectIndexConfigLayer
@@ -110,7 +114,7 @@ const toWireQuery = (request: ProjectIndexQuery): UAssetIoProjectIndexQuery => {
 		expectedGeneration: request.expectedGeneration,
 		limit: request.limit,
 		projectId: request.projectId,
-		...(request.cursor === undefined ? {} : { cursor: request.cursor })
+		...(request.cursor === undefined ? undefined : { cursor: request.cursor })
 	};
 	switch (request._tag) {
 		case "Maps":
@@ -144,11 +148,18 @@ const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexErr
 		return mapProjectIndexProtocolFailure({
 			sawAccepted,
 			stderr: cause.stderr ?? cause.message,
-			...(cause.exitCode === undefined ? {} : { exitCode: cause.exitCode })
+			...(cause.exitCode === undefined ? undefined : { exitCode: cause.exitCode })
 		});
 	}
-	if (cause && typeof cause === "object" && "_tag" in cause) {
-		return cause as ProjectIndexError;
+	if (
+		cause instanceof ProjectIndexUnavailable ||
+		cause instanceof ProjectIndexInvalidRequest ||
+		cause instanceof ProjectIndexStaleGeneration ||
+		cause instanceof ProjectIndexIncompatibleWorker ||
+		cause instanceof ProjectIndexCorruptCatalog ||
+		cause instanceof ProjectIndexRefreshFailed
+	) {
+		return cause;
 	}
 	return new ProjectIndexRefreshFailed({
 		message: cause instanceof Error ? cause.message : String(cause),
@@ -287,7 +298,7 @@ async function* refreshEventStream(
 			quarantined,
 			terminal: "complete",
 			...(metrics === null
-				? {}
+				? undefined
 				: {
 						committedRows: metrics.committedRows,
 						durationMs: metrics.durationMs,
@@ -435,7 +446,7 @@ function refreshStream(
 function makeProcessService(
 	configuration: ProjectIndexProcessConfiguration,
 	cacheRoot: ProjectIndexCacheRoot
-): Effect.Effect<ProjectIndexShape, never, Scope.Scope> {
+): Effect.Effect<ProjectIndexApi, never, Scope.Scope> {
 	return Effect.gen(function* () {
 		const mutex = yield* Semaphore.make(1);
 		const session = yield* Effect.acquireRelease(
@@ -522,7 +533,7 @@ export function projectIndexProcessLayerFromReader(
 		executable: configuration.executable,
 		timeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
 		...(configuration.protocolObserver === undefined
-			? {}
+			? undefined
 			: { protocolObserver: configuration.protocolObserver })
 	});
 }

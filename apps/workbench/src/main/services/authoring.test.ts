@@ -1,9 +1,9 @@
 import type { AuthoringTableSnapshot, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
 import {
 	makeAuthoringCatalogTestLayer,
-	type AuthoringCatalogShape
+	type AuthoringCatalogApi
 } from "@ue-shed/authoring-catalog";
-import { makeAssetReaderTestLayer, type AssetReaderTestShape } from "@ue-shed/unreal-assets";
+import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
 import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClient,
@@ -13,13 +13,13 @@ import { it } from "@effect/vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, Layer, Ref } from "effect";
+import { Effect, Layer, Ref, Schema } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import {
 	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationShape
+	type WorkbenchConfigurationApi
 } from "../workbench-config.js";
 import {
 	WorkbenchAuthoring,
@@ -55,7 +55,7 @@ function fixtureSnapshot(): AuthoringTableSnapshotV1 {
 	};
 }
 
-const unconfigured: WorkbenchConfigurationShape = {
+const unconfigured: WorkbenchConfigurationApi = {
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
 	project: { status: "not_configured" },
@@ -77,11 +77,11 @@ const failingRemoteControl = makeRemoteControlClientTestLayer(() =>
 	)
 );
 
-const emptyCatalog: AuthoringCatalogShape = {
+const emptyCatalog: AuthoringCatalogApi = {
 	discover: () => Effect.succeed({ diagnostics: [], scannedSavedAssets: 0, tables: [] })
 };
 
-const dyingReader: AssetReaderTestShape = {
+const dyingReader: AssetReaderTestApi = {
 	discoverAssets: () => Effect.die("not used"),
 	discoverTables: () => Effect.die("not used"),
 	readAsset: () => Effect.die("not used"),
@@ -297,7 +297,7 @@ it.effect("invalidates negotiated authoring connections after live catalog failu
 				}
 			})
 		);
-		const liveFailureCatalog: AuthoringCatalogShape = {
+		const liveFailureCatalog: AuthoringCatalogApi = {
 			discover: () =>
 				Effect.succeed({
 					diagnostics: [
@@ -528,10 +528,12 @@ it.effect("opens the requested authority and restores only matching non-inert dr
 					schemaVersion: 1
 				});
 			}
-			if (functionName === "GetTableSnapshot") return Effect.succeed(live);
+			if (functionName === "GetTableSnapshot") {
+				return Effect.succeed(Schema.decodeUnknownSync(Schema.Json)(live));
+			}
 			return Effect.die(`unexpected Remote Control call ${functionName}`);
 		});
-		const catalog: AuthoringCatalogShape = {
+		const catalog: AuthoringCatalogApi = {
 			discover: () =>
 				Effect.succeed({
 					diagnostics: [],

@@ -12,9 +12,9 @@ import type {
 	ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import { Context, Effect, Fiber, Layer, Option, Ref } from "effect";
-import { WorkbenchProject, type WorkbenchProjectShape } from "./project-workspace.js";
+import { WorkbenchProject, type WorkbenchProjectApi } from "./project-workspace.js";
 
-export interface WorkbenchContentObservatoryShape {
+export interface WorkbenchContentObservatoryApi {
 	readonly cancel: () => Effect.Effect<ContentObservatoryState>;
 	readonly start: (
 		request: ContentObservatoryHistoryRequest
@@ -30,12 +30,12 @@ export interface WorkbenchContentObservatoryShape {
 
 export class WorkbenchContentObservatory extends Context.Service<
 	WorkbenchContentObservatory,
-	WorkbenchContentObservatoryShape
+	WorkbenchContentObservatoryApi
 >()("@ue-shed/workbench/WorkbenchContentObservatory") {}
 
 type ActiveJob = Fiber.Fiber<unknown, unknown>;
 
-type SavedProject = Effect.Success<ReturnType<WorkbenchProjectShape["savedProject"]>>;
+type SavedProject = Effect.Success<ReturnType<WorkbenchProjectApi["savedProject"]>>;
 
 function readyState(project: SavedProject): Extract<ContentObservatoryState, { status: "ready" }> {
 	return {
@@ -116,10 +116,10 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 					yield* Ref.set(state, latestProject);
 					return latestProject;
 				}
-				const refreshed = {
+				const refreshed: ContentObservatoryState = {
 					...current,
 					maps: latestProject.maps
-				} as ContentObservatoryState;
+				};
 				yield* Ref.set(state, refreshed);
 				return refreshed;
 			}
@@ -257,7 +257,7 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 );
 
 export function makeWorkbenchContentObservatoryTestLayer(
-	service: WorkbenchContentObservatoryShape
+	service: WorkbenchContentObservatoryApi
 ): Layer.Layer<WorkbenchContentObservatory> {
 	return Layer.succeed(WorkbenchContentObservatory, WorkbenchContentObservatory.of(service));
 }

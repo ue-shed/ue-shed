@@ -110,6 +110,7 @@ describe("authoring SDK contracts", () => {
 				body += chunk;
 			});
 			request.on("end", () => {
+				// SAFETY: the SDK serializes every authoring request with its operation discriminator.
 				const payload = JSON.parse(body) as { operation: string };
 				operations.push(payload.operation);
 				response.writeHead(200, { "content-type": "application/json" });
@@ -133,7 +134,7 @@ describe("authoring SDK contracts", () => {
 		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 		try {
 			const address = server.address();
-			if (!address || typeof address === "string") throw new Error("Expected TCP address");
+			if (!(address instanceof Object)) throw new Error("Expected TCP address");
 			const client = makeAuthoringHttpClient({
 				endpoint: `http://127.0.0.1:${address.port}/api/authoring`
 			});

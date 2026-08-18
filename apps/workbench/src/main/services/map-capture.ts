@@ -29,7 +29,7 @@ import type {
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { AssetReader } from "@ue-shed/unreal-assets";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -84,7 +84,7 @@ function previewCameraFrame(bounds: {
 	};
 }
 
-export interface WorkbenchMapCaptureShape {
+export interface WorkbenchMapCaptureApi {
 	readonly actors: (mapPath: string) => Effect.Effect<MapCaptureActorCatalogResult>;
 	readonly capture: (intent: MapCaptureExecuteIntent) => Effect.Effect<MapCaptureExecuteResult>;
 	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult>;
@@ -97,7 +97,7 @@ export interface WorkbenchMapCaptureShape {
 
 export class WorkbenchMapCapture extends Context.Service<
 	WorkbenchMapCapture,
-	WorkbenchMapCaptureShape
+	WorkbenchMapCaptureApi
 >()("@ue-shed/workbench/WorkbenchMapCapture") {}
 
 export const WorkbenchMapCaptureLive = Layer.effect(
@@ -212,7 +212,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				},
 				maps: selectedProject.maps,
 				plan: args.plan,
-				...(args.planPath === undefined ? {} : { planPath: args.planPath }),
+				...(args.planPath === undefined ? undefined : { planPath: args.planPath }),
 				projectRoot: selectedProject.projectRoot,
 				source: args.source,
 				status: "ready" as const,
@@ -281,7 +281,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					.map((map) => savedMapPathToGameMapPath(map.mapPath))
 					.find((candidate) => candidate !== undefined);
 				const plan = makeDefaultMapCapturePlan({
-					...(mapPath === undefined ? {} : { mapPath }),
+					...(mapPath === undefined ? undefined : { mapPath }),
 					projectId: selectedProject.projectName
 				});
 				return yield* readySelection({ plan, source: "new" });
@@ -345,7 +345,10 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					);
 				}
 				const manifest = yield* Effect.tryPromise({
-					try: async () => JSON.parse(await readFile(manifestPath, "utf8")) as unknown,
+					try: async () =>
+						Schema.decodeUnknownSync(Schema.Json)(
+							JSON.parse(await readFile(manifestPath, "utf8"))
+						),
 					catch: (cause) => cause
 				}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
 				const artifact = manifest.tiles.find(
@@ -445,7 +448,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 );
 
 export function makeWorkbenchMapCaptureTestLayer(
-	service: WorkbenchMapCaptureShape
+	service: WorkbenchMapCaptureApi
 ): Layer.Layer<WorkbenchMapCapture> {
 	return Layer.succeed(WorkbenchMapCapture, WorkbenchMapCapture.of(service));
 }

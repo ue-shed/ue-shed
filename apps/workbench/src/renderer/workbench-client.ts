@@ -103,9 +103,9 @@ const WorkbenchCameraMetricsSchema = Schema.Struct({
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
-function request<A>(args: {
-	readonly decode: (value: unknown) => Effect.Effect<A, unknown>;
-	readonly invoke: () => Promise<unknown>;
+function request<A, HostValue, DecodeError>(args: {
+	readonly decode: (value: HostValue) => Effect.Effect<A, DecodeError>;
+	readonly invoke: () => Promise<HostValue>;
 	readonly operation: string;
 }): Effect.Effect<A, WorkbenchRendererError> {
 	return Effect.tryPromise({

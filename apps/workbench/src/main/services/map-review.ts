@@ -128,7 +128,7 @@ function stateToStatusEvent(
 				kind: "unavailable",
 				message: state.message,
 				recovery: state.recovery,
-				...(state.sample === undefined ? {} : { sample: sampleToWire(state.sample) })
+				...(state.sample === undefined ? undefined : { sample: sampleToWire(state.sample) })
 			};
 	}
 }
@@ -209,7 +209,7 @@ export class SavedWorldUnavailable extends Schema.TaggedErrorClass<SavedWorldUna
 	}
 ) {}
 
-export interface WorkbenchMapReviewShape {
+export interface WorkbenchMapReviewApi {
 	/** Chooses the global Workbench project, then returns its cached saved-map inventory. */
 	readonly chooseProjectAndMaps: () => Effect.Effect<SavedWorldChoice, WorkbenchWindowError>;
 	/** Lists configured saved maps; this deliberately never connects to Unreal. */
@@ -272,7 +272,7 @@ export interface WorkbenchMapReviewShape {
 
 export class WorkbenchMapReview extends Context.Service<
 	WorkbenchMapReview,
-	WorkbenchMapReviewShape
+	WorkbenchMapReviewApi
 >()("@ue-shed/workbench/WorkbenchMapReview") {}
 
 function mapReviewFailure(cause: {
@@ -323,7 +323,7 @@ function authoringResult(
 				preview: { status: "pending" as const }
 			};
 		}),
-		...(recovery === undefined ? {} : { recovery }),
+		...(recovery === undefined ? undefined : { recovery }),
 		selection: {
 			actorPath: session.subject.actorPath,
 			displayName: session.subject.displayName,
@@ -473,9 +473,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								})
 							),
 							worldSeconds: pending.worldSeconds,
-							...(pending.message === undefined ? {} : { message: pending.message }),
+							...(pending.message === undefined
+								? undefined
+								: { message: pending.message }),
 							...(pending.recovery === undefined
-								? {}
+								? undefined
 								: { recovery: pending.recovery })
 						};
 			yield* sendObservationEvent(event);
@@ -586,7 +588,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					worldSeconds: state.sample.sampleWorldSeconds,
 					...(state.status === "stale"
 						? { message: state.message, recovery: state.recovery }
-						: {})
+						: undefined)
 				};
 				return [
 					Option.isSome(current.transforms),
@@ -635,7 +637,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
 								...(Option.isSome(sample)
 									? { sample: sampleToWire(sample.value) }
-									: {})
+									: undefined)
 							});
 						})
 					),
@@ -690,7 +692,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			pauseObservationForExclusive().pipe(
 				Effect.andThen(effect),
 				Effect.ensuring(resumeObservationAfterExclusive())
-			) as Effect.Effect<A, E, R>;
+			);
 
 		const runExclusive = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 			coordinator.exclusive(withObservationPause(effect));
@@ -1003,10 +1005,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							viewRevision: captured.viewRevision,
 							visibility: captured.visibility,
 							...(captured.visibilityOverrides === undefined
-								? {}
+								? undefined
 								: { visibilityOverrides: captured.visibilityOverrides }),
 							...(captured.visibilityPolicy === undefined
-								? {}
+								? undefined
 								: { visibilityPolicy: captured.visibilityPolicy })
 						};
 					}),
@@ -1016,7 +1018,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const pure = firstCapture?.artifacts.find((artifact) => artifact.variant === "pure");
 			return {
 				...summary,
-				...(firstCapture === undefined ? {} : { capture: firstCapture }),
+				...(firstCapture === undefined ? undefined : { capture: firstCapture }),
 				captures,
 				failures: run.results
 					.filter((result) => result.status === "failed")
@@ -1026,7 +1028,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						viewRevision: result.viewRevision
 					})),
 				...(pure === undefined || firstCapture === undefined
-					? {}
+					? undefined
 					: {
 							preview: {
 								bytes: pure.bytes,
@@ -1090,7 +1092,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						(reviewSet) => reviewSet.path === selectedPath
 					)?.id;
 					return {
-						...(activeReviewSetId === undefined ? {} : { activeReviewSetId }),
+						...(activeReviewSetId === undefined ? undefined : { activeReviewSetId }),
 						sets: sets.map(({ path: _path, ...reviewSet }) => reviewSet),
 						status: "ready" as const
 					};
@@ -1117,7 +1119,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						? Effect.succeed({
 								...(view.target.kind === "actor"
 									? { actorPath: view.target.subject.actorPath }
-									: {}),
+									: undefined),
 								captureProfileId: profile.id,
 								displayName: view.displayName,
 								id: view.id,
@@ -1129,9 +1131,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 										: view.displayName,
 								viewpoint: view.viewpoint.kind,
 								...(view.visibilityOverrides === undefined
-									? {}
+									? undefined
 									: { visibilityOverrides: view.visibilityOverrides }),
-								...(visibilityPolicy === undefined ? {} : { visibilityPolicy })
+								...(visibilityPolicy === undefined
+									? undefined
+									: { visibilityPolicy })
 							})
 						: Effect.fail(
 								new Error(
@@ -1223,7 +1227,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					reviewSet,
 					viewId: ReviewViewId.make(intent.viewId),
 					...(intent.visibilityOverrides === undefined
-						? {}
+						? undefined
 						: { visibilityOverrides: intent.visibilityOverrides })
 				});
 				yield* repository.saveSet({ path: reviewSetPath, reviewSet: updated });
@@ -1365,7 +1369,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									matchingSets.length === 1 ? matchingSets[0] : undefined;
 								return {
 									...(matchingReviewSet === undefined
-										? {}
+										? undefined
 										: {
 												matchingReviewSet: {
 													displayName: matchingReviewSet.displayName,
@@ -1404,7 +1408,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 											viewId: ReviewViewId.make(intent.destination.viewId)
 										},
 							projectRoot,
-							...(reviewSetPath === undefined ? {} : { reviewSetPath }),
+							...(reviewSetPath === undefined ? undefined : { reviewSetPath }),
 							selection
 						});
 						return authoringResult(session);
@@ -1958,8 +1962,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					}
 					const approved = approveFramingCandidate({
 						candidate,
-						...(intent.manualPose ? { manualPose: intent.manualPose } : {}),
-						...(intent.manualReason ? { manualReason: intent.manualReason } : {}),
+						...(intent.manualPose ? { manualPose: intent.manualPose } : undefined),
+						...(intent.manualReason
+							? { manualReason: intent.manualReason }
+							: undefined),
 						reviewSet,
 						subject: {
 							actorPath: selection.actorPath,
@@ -2015,7 +2021,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 export function makeWorkbenchMapReviewTestLayer(
 	service: Omit<
-		WorkbenchMapReviewShape,
+		WorkbenchMapReviewApi,
 		| "savedWorld"
 		| "savedWorldMaps"
 		| "chooseProjectAndMaps"
@@ -2027,7 +2033,7 @@ export function makeWorkbenchMapReviewTestLayer(
 	> &
 		Partial<
 			Pick<
-				WorkbenchMapReviewShape,
+				WorkbenchMapReviewApi,
 				| "savedWorld"
 				| "savedWorldMaps"
 				| "chooseProjectAndMaps"

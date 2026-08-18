@@ -35,7 +35,7 @@ type PreviewState =
 	  };
 
 /** Retained only for compatibility with tests of the pre-query presentation model. */
-export interface LegacyTextureAuditClientShape {
+export interface LegacyTextureAuditClientApi {
 	readonly chooseProjectAndScan: () => import("effect").Effect.Effect<
 		TextureAuditRunResult,
 		unknown
@@ -137,7 +137,7 @@ function Distribution(props: {
 	);
 }
 
-export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureAuditClientShape }) {
+export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureAuditClientApi }) {
 	const scanAction = createEffectAction();
 	const previewAction = createEffectAction();
 	const launchAction = createEffectAction();

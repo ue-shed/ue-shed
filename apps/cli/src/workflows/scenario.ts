@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import type { ScenarioRunnerShape } from "@ue-shed/scenarios";
+import type { ScenarioRunnerApi } from "@ue-shed/scenarios";
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
@@ -8,12 +8,14 @@ type ScenarioRunCommand = Extract<CliCommand, { readonly _tag: "ScenarioRun" }>;
 
 export function executeScenarioCommand(
 	command: ScenarioRunCommand,
-	runner: Pick<ScenarioRunnerShape, "run">
+	runner: Pick<ScenarioRunnerApi, "run">
 ) {
 	return Effect.gen(function* () {
 		const result = yield* runner.run({
 			endpoint: command.endpoint,
-			...(command.evidenceLimit === undefined ? {} : { evidenceLimit: command.evidenceLimit })
+			...(command.evidenceLimit === undefined
+				? undefined
+				: { evidenceLimit: command.evidenceLimit })
 		});
 		yield* printJson(result);
 		if (result.status === "failed" || result.status === "cancelled") {

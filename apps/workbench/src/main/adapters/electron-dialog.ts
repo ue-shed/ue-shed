@@ -24,7 +24,7 @@ export interface ChooseSaveFileOptions {
 	readonly title: string;
 }
 
-export interface ElectronDialogShape {
+export interface ElectronDialogApi {
 	readonly chooseDirectory: (
 		options: ChooseDirectoryOptions
 	) => Effect.Effect<DialogChoice, WorkbenchWindowError>;
@@ -40,7 +40,7 @@ export interface ElectronDialogShape {
 	) => Effect.Effect<DialogChoice, WorkbenchWindowError>;
 }
 
-export class ElectronDialog extends Context.Service<ElectronDialog, ElectronDialogShape>()(
+export class ElectronDialog extends Context.Service<ElectronDialog, ElectronDialogApi>()(
 	"@ue-shed/workbench/ElectronDialog"
 ) {}
 
@@ -62,7 +62,7 @@ export const ElectronDialogLive = Layer.effect(
 			options: ChooseFileOptions
 		) {
 			return yield* window.openDialog({
-				...(options.filters ? { filters: options.filters } : {}),
+				...(options.filters ? { filters: options.filters } : undefined),
 				properties: ["openFile"],
 				title: options.title
 			});
@@ -72,7 +72,7 @@ export const ElectronDialogLive = Layer.effect(
 			options: ChooseFileOptions
 		) {
 			return yield* window.openDialog({
-				...(options.filters ? { filters: options.filters } : {}),
+				...(options.filters ? { filters: options.filters } : undefined),
 				multiSelections: true,
 				properties: ["openFile"],
 				title: options.title
@@ -83,8 +83,8 @@ export const ElectronDialogLive = Layer.effect(
 			options: ChooseSaveFileOptions
 		) {
 			return yield* window.saveDialog({
-				...(options.defaultPath ? { defaultPath: options.defaultPath } : {}),
-				...(options.filters ? { filters: options.filters } : {}),
+				...(options.defaultPath ? { defaultPath: options.defaultPath } : undefined),
+				...(options.filters ? { filters: options.filters } : undefined),
 				title: options.title
 			});
 		});
@@ -103,14 +103,14 @@ export const makeElectronDialogTestLayer = Layer.effect(
 			),
 			chooseFile: Effect.fn("Workbench.ElectronDialog.Test.chooseFile")((options) =>
 				window.openDialog({
-					...(options.filters ? { filters: options.filters } : {}),
+					...(options.filters ? { filters: options.filters } : undefined),
 					properties: ["openFile"],
 					title: options.title
 				})
 			),
 			chooseFiles: Effect.fn("Workbench.ElectronDialog.Test.chooseFiles")((options) =>
 				window.openDialog({
-					...(options.filters ? { filters: options.filters } : {}),
+					...(options.filters ? { filters: options.filters } : undefined),
 					multiSelections: true,
 					properties: ["openFile"],
 					title: options.title
@@ -118,8 +118,8 @@ export const makeElectronDialogTestLayer = Layer.effect(
 			),
 			chooseSaveFile: Effect.fn("Workbench.ElectronDialog.Test.chooseSaveFile")((options) =>
 				window.saveDialog({
-					...(options.defaultPath ? { defaultPath: options.defaultPath } : {}),
-					...(options.filters ? { filters: options.filters } : {}),
+					...(options.defaultPath ? { defaultPath: options.defaultPath } : undefined),
+					...(options.filters ? { filters: options.filters } : undefined),
 					title: options.title
 				})
 			)

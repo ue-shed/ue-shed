@@ -6,7 +6,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { AuditRuleId, TextureObjectPath } from "@ue-shed/asset-audits/browser";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { TextureAuditClientShape } from "./texture-audit-client.js";
+import type { TextureAuditClientApi } from "./texture-audit-client.js";
 import { savedPreviewBatchPaths, TextureAuditRoute } from "./texture-audit-query-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -16,7 +16,7 @@ afterAll(() => runtime.dispose());
 describe("TextureAuditRoute", () => {
 	it("uses the globally selected project and exposes no second chooser", async () => {
 		let rescans = 0;
-		const client: TextureAuditClientShape = {
+		const client: TextureAuditClientApi = {
 			chooseProjectAndScan: () =>
 				Effect.die("the route must use the Workbench header for project choice"),
 			locateAsset: () => Effect.die("unused"),
@@ -95,7 +95,7 @@ describe("TextureAuditRoute", () => {
 				selectedPath
 			)
 		).toEqual([selectedPath, warningPath, objectPath]);
-		const client: TextureAuditClientShape = {
+		const client: TextureAuditClientApi = {
 			chooseProjectAndScan: () => Effect.die("unused"),
 			locateAsset: (requestedPath) =>
 				Effect.sync(() => {

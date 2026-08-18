@@ -17,7 +17,7 @@ import { Effect, Schema } from "effect";
 import {
 	RemoteControlClient,
 	type RemoteControlClientError,
-	type RemoteControlClientShape
+	type RemoteControlClientApi
 } from "./remote-control-client.js";
 
 export * from "./remote-control-client.js";
@@ -76,28 +76,28 @@ function connectionError(error: RemoteControlClientError): UnrealConnectionError
 		message: error.message,
 		operation: error.operation,
 		retrySafe: error.retrySafe,
-		...(error.status === undefined ? {} : { status: error.status })
+		...(error.status === undefined ? undefined : { status: error.status })
 	});
 }
 
 function remoteCall(
-	client: RemoteControlClientShape,
+	client: RemoteControlClientApi,
 	endpoint: string,
 	objectPath: string,
 	functionName: string,
-	parameters: Readonly<Record<string, unknown>>
-): Effect.Effect<unknown, UnrealConnectionError> {
+	parameters: Schema.JsonObject
+): Effect.Effect<Schema.Json, UnrealConnectionError> {
 	const operation = `remote_control.${functionName}`;
 	return client
 		.request({ endpoint, functionName, objectPath, operation, parameters })
 		.pipe(Effect.mapError(connectionError));
 }
 
-function decodeResult<A>(
-	effect: Effect.Effect<unknown, UnrealConnectionError>,
+function decodeResult<A, DecodeError>(
+	effect: Effect.Effect<Schema.Json, UnrealConnectionError>,
 	endpoint: string,
 	operation: string,
-	decode: (input: unknown) => Effect.Effect<A, unknown>
+	decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>
 ): Effect.Effect<A, UnrealConnectionError> {
 	return effect.pipe(
 		Effect.flatMap((input) =>
@@ -216,7 +216,7 @@ export function connectUnrealAuthoring(
 			);
 		}
 		const authoringObjectPath = manifest.authoringObjectPath;
-		const call = (functionName: string, parameters: Readonly<Record<string, unknown>>) =>
+		const call = (functionName: string, parameters: Schema.JsonObject) =>
 			remoteCall(client, endpoint, authoringObjectPath, functionName, parameters);
 		return {
 			endpoint,

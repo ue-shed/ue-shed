@@ -9,7 +9,7 @@ function validManifest(
 		readonly omitAttachmentHeight?: boolean;
 		readonly path?: string;
 	} = {}
-): Record<string, unknown> {
+) {
 	return {
 		artifacts: {
 			logs: "logs.txt",
@@ -20,7 +20,7 @@ function validManifest(
 			{
 				attachments: [
 					{
-						...(options.omitAttachmentHeight ? {} : { height: 720 }),
+						...(options.omitAttachmentHeight ? undefined : { height: 720 }),
 						kind: "raw-capture",
 						path: options.path ?? "captures/approved.png",
 						width: 1280
@@ -49,7 +49,7 @@ function validManifest(
 		contract: { name: "ue-shed-map-review-flow-recording", version: 1 },
 		dirty: false,
 		finishedAt: timestamp,
-		...(options.failure === undefined ? {} : { failure: options.failure }),
+		...(options.failure === undefined ? undefined : { failure: options.failure }),
 		fixture: {
 			map: "/Game/Fixture/MapReview/L_MapReviewFixture",
 			subjectKey: "compound"

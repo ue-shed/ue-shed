@@ -120,29 +120,26 @@ export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 		failures.push(`targets must be ${JSON.stringify(expectedWasmTargets)}`);
 	}
 	for (const tool of ["rustc", "wasmPack", "wasmBindgen"]) {
-		if (typeof buildInfo?.tools?.[tool] !== "string" || buildInfo.tools[tool].length === 0) {
+		if (!buildInfo?.tools?.[tool]) {
 			failures.push(`tools.${tool} must record the build identity`);
 		}
 	}
 	const optimizer = buildInfo?.optimizer;
 	if (optimizer?.name !== "wasm-opt") failures.push("optimizer.name must be wasm-opt");
-	if (typeof optimizer?.enabled !== "boolean") {
+	if (optimizer?.enabled !== true && optimizer?.enabled !== false) {
 		failures.push("optimizer.enabled must state whether wasm-opt ran");
 	}
-	if (typeof buildInfo?.tools?.wasmOpt !== "string" || buildInfo.tools.wasmOpt.length === 0) {
+	if (!buildInfo?.tools?.wasmOpt) {
 		failures.push("tools.wasmOpt must describe the optimizer state");
 	}
 	if (optimizer?.enabled === true) {
-		if (typeof optimizer.version !== "string" || optimizer.version.length === 0) {
+		if (!optimizer.version) {
 			failures.push("enabled optimizer must record a concrete version");
 		}
-		if (typeof optimizer.command !== "string" || optimizer.command.length === 0) {
+		if (!optimizer.command) {
 			failures.push("enabled optimizer must record its invocation");
 		}
-		if (
-			typeof optimizer.version === "string" &&
-			/(?:unavailable|disabled|not[ -]?run)/iu.test(optimizer.version)
-		) {
+		if (optimizer.version && /(?:unavailable|disabled|not[ -]?run)/iu.test(optimizer.version)) {
 			failures.push("enabled optimizer must have a concrete version");
 		}
 		if (buildInfo.tools.wasmOpt !== optimizer.version) {
@@ -153,7 +150,7 @@ export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 		if (optimizer.status !== "disabled") {
 			failures.push("disabled optimizer must record status disabled");
 		}
-		if (typeof optimizer.reason !== "string" || optimizer.reason.length === 0) {
+		if (!optimizer.reason) {
 			failures.push("disabled optimizer must record why it did not run");
 		}
 		if (!/(?:disabled|no[ -]?opt|not[ -]?run|not[ -]?used)/iu.test(buildInfo.tools.wasmOpt)) {
@@ -181,6 +178,7 @@ async function readWasmBuildInfo() {
 	);
 	let buildInfo: WasmBuildInfo;
 	try {
+		// SAFETY: the WASM build writes this contract and validateWasmBuildInfo checks every field next.
 		buildInfo = JSON.parse(await readFile(path, "utf8")) as WasmBuildInfo;
 	} catch (cause) {
 		throw new Error(`Could not read generated WASM build evidence at ${path}.`, { cause });
@@ -355,6 +353,7 @@ export async function createReleaseCandidate({
 	artifacts.sort((left, right) => left.path.localeCompare(right.path));
 
 	const wasmBuildInfo = await readWasmBuildInfo();
+	// SAFETY: the repository root package.json owns the packageManager field used for evidence.
 	const rootManifest = JSON.parse(
 		await readFile(join(repositoryRoot, "package.json"), "utf8")
 	) as { readonly packageManager: string };
@@ -430,15 +429,30 @@ function parseArguments(args: readonly string[]) {
 	return values;
 }
 
+function requiredArgument(values: ReadonlyMap<string, string | boolean>, key: string): string {
+	const value = values.get(key);
+	if (value === undefined || value === true || value === false)
+		throw new Error(`Missing required --${key} argument.`);
+	return value;
+}
+
+function optionalArgument(
+	values: ReadonlyMap<string, string | boolean>,
+	key: string
+): string | undefined {
+	const value = values.get(key);
+	return value === undefined || value === true || value === false ? undefined : value;
+}
+
 async function main() {
 	const args = parseArguments(process.argv.slice(2));
 	const manifest = await createReleaseCandidate({
-		version: args.get("version") as string,
-		commit: args.get("commit") as string,
-		ref: args.get("ref") as string,
-		output: args.get("output") as string,
-		unrealEvidenceDirectory: args.get("unreal-evidence") as string | undefined,
-		unrealRunId: args.get("unreal-run-id") as string | undefined,
+		version: requiredArgument(args, "version"),
+		commit: requiredArgument(args, "commit"),
+		ref: requiredArgument(args, "ref"),
+		output: requiredArgument(args, "output"),
+		unrealEvidenceDirectory: optionalArgument(args, "unreal-evidence"),
+		unrealRunId: optionalArgument(args, "unreal-run-id"),
 		requireTrustedUnrealEvidence: args.has("require-unreal-evidence")
 	});
 	console.log(

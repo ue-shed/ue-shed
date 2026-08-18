@@ -1,11 +1,4 @@
 import { Effect } from "effect";
-import type {
-	TextCorpusFocusRequest,
-	TextCorpusSearchRequest,
-	TextQualityFocusRequest,
-	TextQualityRuleDocument,
-	TextQualitySearchRequest
-} from "@ue-shed/game-text";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchGameText } from "../services/game-text.js";
@@ -28,30 +21,30 @@ export const register = Effect.gen(function* () {
 	);
 	yield* ipc.register(invokeContracts["game-text:progress"], () => gameText.progress());
 	yield* ipc.register(invokeContracts["game-text:search"], (...args) => {
-		const [request] = args as [TextCorpusSearchRequest];
+		const [request] = args;
 		return gameText.search(request);
 	});
 	yield* ipc.register(invokeContracts["game-text:focus"], (...args) => {
-		const [request] = args as [TextCorpusFocusRequest];
+		const [request] = args;
 		return gameText.focus(request);
 	});
 	yield* ipc.register(invokeContracts["game-text:quality:choose-rules"], () =>
 		gameText.chooseQualityRules()
 	);
 	yield* ipc.register(invokeContracts["game-text:quality:preview-rules"], (...args) => {
-		const [document] = args as [TextQualityRuleDocument];
+		const [document] = args;
 		return gameText.previewQualityRules(document);
 	});
 	yield* ipc.register(invokeContracts["game-text:quality:save-rules"], (...args) => {
-		const [document] = args as [TextQualityRuleDocument];
+		const [document] = args;
 		return gameText.saveQualityRules(document);
 	});
 	yield* ipc.register(invokeContracts["game-text:quality:search"], (...args) => {
-		const [request] = args as [TextQualitySearchRequest];
+		const [request] = args;
 		return gameText.qualitySearch(request);
 	});
 	yield* ipc.register(invokeContracts["game-text:quality:focus"], (...args) => {
-		const [request] = args as [TextQualityFocusRequest];
+		const [request] = args;
 		return gameText.qualityFocus(request);
 	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerGameText"));

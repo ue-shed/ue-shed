@@ -143,7 +143,7 @@ export const runAuthoringCatalog = Effect.fn("Cli.workflow.authoring_catalog")(
 				? catalogWithLive({
 						endpoint: command.endpoint,
 						projectRoot: command.projectRoot,
-						...(command.reader === undefined ? {} : { reader: command.reader })
+						...(command.reader === undefined ? undefined : { reader: command.reader })
 					})
 				: loadCatalog(command)
 			).pipe(Effect.flatMap(printJson))
@@ -384,7 +384,7 @@ function sessionProgram(command: SessionCommand) {
 										...common,
 										rowName: command.rowName,
 										...(command.atIndex === undefined
-											? {}
+											? undefined
 											: { atIndex: command.atIndex })
 									})
 								: command._tag === "SessionsDuplicateRow"
@@ -393,7 +393,7 @@ function sessionProgram(command: SessionCommand) {
 											rowName: command.rowName,
 											sourceRowId: command.sourceRowId,
 											...(command.atIndex === undefined
-												? {}
+												? undefined
 												: { atIndex: command.atIndex })
 										})
 									: command._tag === "SessionsRemoveRow"

@@ -15,7 +15,7 @@ export interface ConfigDirectoryEntry {
 	readonly kind: "file" | "directory" | "other";
 }
 
-export interface ConfigFileAccessShape {
+export interface ConfigFileAccessApi {
 	readonly exists: (path: string) => Effect.Effect<boolean>;
 	readonly isFile: (path: string) => Effect.Effect<boolean, ConfigFileAccessError>;
 	readonly list: (
@@ -24,7 +24,7 @@ export interface ConfigFileAccessShape {
 	readonly readText: (path: string) => Effect.Effect<string, ConfigFileAccessError>;
 }
 
-export class ConfigFileAccess extends Context.Service<ConfigFileAccess, ConfigFileAccessShape>()(
+export class ConfigFileAccess extends Context.Service<ConfigFileAccess, ConfigFileAccessApi>()(
 	"@ue-shed/config-explorer/ConfigFileAccess"
 ) {}
 
@@ -76,7 +76,7 @@ export const ConfigFileAccessLive = Layer.succeed(
 );
 
 export function makeConfigFileAccessTestLayer(
-	service: ConfigFileAccessShape
+	service: ConfigFileAccessApi
 ): Layer.Layer<ConfigFileAccess> {
 	return Layer.succeed(ConfigFileAccess, ConfigFileAccess.of(service));
 }

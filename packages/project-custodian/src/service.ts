@@ -37,7 +37,7 @@ export class CustodianError extends Schema.TaggedErrorClass<CustodianError>()(
 	}
 ) {}
 
-export interface CustodianShape {
+export interface CustodianApi {
 	readonly scan: (
 		request: CustodianScanRequest
 	) => Effect.Effect<CustodianReport, CustodianError>;
@@ -52,7 +52,7 @@ export interface CustodianShape {
 	) => Effect.Effect<CustodianCancelResult, CustodianError>;
 }
 
-export class Custodian extends Context.Service<Custodian, CustodianShape>()(
+export class Custodian extends Context.Service<Custodian, CustodianApi>()(
 	"@ue-shed/project-custodian/Custodian"
 ) {}
 
@@ -245,6 +245,6 @@ export const CustodianNodeLive = Layer.effect(
 	})
 );
 
-export function makeCustodianTestLayer(service: CustodianShape): Layer.Layer<Custodian> {
+export function makeCustodianTestLayer(service: CustodianApi): Layer.Layer<Custodian> {
 	return Layer.succeed(Custodian, Custodian.of(service));
 }

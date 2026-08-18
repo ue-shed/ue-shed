@@ -15,7 +15,7 @@ import {
 import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
 import { Cause } from "effect";
 import { Show, createMemo, createSignal, onMount } from "solid-js";
-import type { MapReviewClientShape } from "./map-review-client.js";
+import type { MapReviewClientApi } from "./map-review-client.js";
 import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.js";
 
 /**
@@ -24,7 +24,7 @@ import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.
  */
 export function SavedWorldScout(props: {
 	readonly client: Pick<
-		MapReviewClientShape,
+		MapReviewClientApi,
 		"readSavedWorld" | "savedWorldMaps" | "chooseProjectAndMaps"
 	>;
 }) {

@@ -370,7 +370,7 @@ function candidateFromGroup(args: {
 				: `${args.group.displayName} ${args.index}`,
 		id: generateFramingCandidateId({ groupId: args.group.id, index: args.index }),
 		recipe: {
-			...(args.overrides === undefined ? {} : { candidateOverrides: args.overrides }),
+			...(args.overrides === undefined ? undefined : { candidateOverrides: args.overrides }),
 			groupId: args.group.id,
 			groupIndex: args.index,
 			kind: "preset",
@@ -587,10 +587,10 @@ export function reviseReviewView(args: {
 		...current,
 		...args.definition,
 		...(args.visibilityOverrides === undefined
-			? {}
+			? undefined
 			: { visibilityOverrides: args.visibilityOverrides }),
 		...(args.visibilityPolicyId === undefined
-			? {}
+			? undefined
 			: { visibilityPolicyId: args.visibilityPolicyId })
 	});
 	const views = [...args.reviewSet.views];
@@ -632,7 +632,7 @@ export function createReviewViewFromCandidate(args: {
 						reason: args.manualReason?.trim() || "Adjusted in Map Review authoring"
 					}
 				}
-			: {})
+			: undefined)
 	};
 	const framingDiagnostics = [
 		...args.candidate.diagnostics,
@@ -720,8 +720,8 @@ export function approveFramingCandidate(args: {
 		candidate: args.candidate,
 		captureProfileId: current.captureProfileId,
 		displayName: current.displayName,
-		...(args.manualPose === undefined ? {} : { manualPose: args.manualPose }),
-		...(args.manualReason === undefined ? {} : { manualReason: args.manualReason }),
+		...(args.manualPose === undefined ? undefined : { manualPose: args.manualPose }),
+		...(args.manualReason === undefined ? undefined : { manualReason: args.manualReason }),
 		purpose: current.purpose,
 		subject,
 		tags: current.tags,

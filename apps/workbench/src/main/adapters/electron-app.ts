@@ -30,10 +30,10 @@ export interface ElectronAppHost {
 		event: ElectronAppEvent,
 		listener: (...args: Array<unknown>) => void
 	) => void;
-	readonly whenReady: () => Promise<unknown>;
+	readonly whenReady: () => Promise<void>;
 }
 
-export interface ElectronAppShape {
+export interface ElectronAppApi {
 	readonly getAppMetrics: () => Effect.Effect<
 		ReadonlyArray<ElectronProcessMetric>,
 		ElectronAppError
@@ -47,15 +47,15 @@ export interface ElectronAppShape {
 	readonly whenReady: () => Effect.Effect<void, ElectronAppError>;
 }
 
-export class ElectronApp extends Context.Service<ElectronApp, ElectronAppShape>()(
+export class ElectronApp extends Context.Service<ElectronApp, ElectronAppApi>()(
 	"@ue-shed/workbench/ElectronApp"
 ) {}
 
-export interface ElectronAppTestShape extends ElectronAppShape {
+export interface ElectronAppTestApi extends ElectronAppApi {
 	readonly quitCount: () => Effect.Effect<number>;
 }
 
-export class ElectronAppTest extends Context.Service<ElectronAppTest, ElectronAppTestShape>()(
+export class ElectronAppTest extends Context.Service<ElectronAppTest, ElectronAppTestApi>()(
 	"@ue-shed/workbench/ElectronApp/Test"
 ) {}
 
@@ -141,6 +141,7 @@ export const electronAppLayer = (app: ElectronAppHost): Layer.Layer<ElectronApp>
 					})
 				),
 				on: Effect.fn("Workbench.ElectronApp.on")(function* (event, listener) {
+					// SAFETY: Electron passes variadic event arguments, while this adapter ignores their values.
 					const wrapped = listener as (...args: Array<unknown>) => void;
 					yield* Effect.try({
 						try: () => app.on(event, wrapped),
@@ -157,7 +158,7 @@ export const electronAppLayer = (app: ElectronAppHost): Layer.Layer<ElectronApp>
 	);
 
 export const makeElectronAppTestLayer = (
-	overrides: Partial<ElectronAppTestShape> = {}
+	overrides: Partial<ElectronAppTestApi> = {}
 ): Layer.Layer<ElectronApp | ElectronAppTest> =>
 	Layer.effectContext(
 		Effect.gen(function* () {

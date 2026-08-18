@@ -1,7 +1,5 @@
 import { Effect } from "effect";
-import type { TextureAuditSearchRequest, TexturePreviewBatchRequest } from "@ue-shed/asset-audits";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
-import type { GameObjectPath } from "../ipc-contracts.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchAssetAudits } from "../services/asset-audits.js";
 
@@ -23,25 +21,25 @@ export const register = Effect.gen(function* () {
 	);
 	yield* ipc.register(invokeContracts["asset-audits:textures:progress"], () => audits.progress());
 	yield* ipc.register(invokeContracts["asset-audits:textures:search"], (...args) => {
-		const [request] = args as [TextureAuditSearchRequest];
+		const [request] = args;
 		return audits.search(request);
 	});
 	yield* ipc.register(invokeContracts["asset-audits:textures:record"], (...args) => {
-		const [objectPath] = args as [GameObjectPath];
+		const [objectPath] = args;
 		return audits.record(objectPath);
 	});
 	yield* ipc.register(invokeContracts["asset-audits:textures:preview"], (...args) => {
-		const [objectPath] = args as [GameObjectPath];
+		const [objectPath] = args;
 		return audits.preview(objectPath);
 	});
 	yield* ipc.register(invokeContracts["asset-audits:textures:preview-offline"], (...args) => {
-		const [objectPath] = args as [GameObjectPath];
+		const [objectPath] = args;
 		return audits.previewOffline(objectPath);
 	});
 	yield* ipc.register(
 		invokeContracts["asset-audits:textures:preview-offline-batch"],
 		(...args) => {
-			const [request] = args as [TexturePreviewBatchRequest];
+			const [request] = args;
 			return audits.previewOfflineBatch(request);
 		}
 	);

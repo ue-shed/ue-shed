@@ -6,11 +6,11 @@ import type { ShowcaseContext } from "../ipc-contracts.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
-export interface ShowcaseShape {
+export interface ShowcaseApi {
 	readonly context: () => Effect.Effect<ShowcaseContext>;
 }
 
-export class Showcase extends Context.Service<Showcase, ShowcaseShape>()(
+export class Showcase extends Context.Service<Showcase, ShowcaseApi>()(
 	"@ue-shed/workbench/Showcase"
 ) {}
 
@@ -91,9 +91,9 @@ export const ShowcaseLive = Layer.effect(
 				),
 				health: runtimeHealth,
 				project: evidence,
-				...(projectRoot ? { projectRoot } : {}),
+				...(projectRoot ? { projectRoot } : undefined),
 				reader,
-				...(ruleFile ? { ruleFile } : {})
+				...(ruleFile ? { ruleFile } : undefined)
 			} satisfies ShowcaseContext;
 		});
 
@@ -101,6 +101,6 @@ export const ShowcaseLive = Layer.effect(
 	})
 );
 
-export function makeShowcaseTestLayer(service: ShowcaseShape): Layer.Layer<Showcase> {
+export function makeShowcaseTestLayer(service: ShowcaseApi): Layer.Layer<Showcase> {
 	return Layer.succeed(Showcase, Showcase.of(service));
 }

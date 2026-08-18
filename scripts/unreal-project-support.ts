@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { parseJsonObject, type JsonObject } from "./json.ts";
 
 const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
 
@@ -74,9 +75,9 @@ function withoutTrailingCommas(contents: string) {
 	return result;
 }
 
-export function parseUnrealDescriptor(contents: string): Record<string, unknown> {
+export function parseUnrealDescriptor(contents: string): JsonObject {
 	const withoutBom = contents.charCodeAt(0) === 0xfeff ? contents.slice(1) : contents;
-	return JSON.parse(withoutTrailingCommas(withoutJsonComments(withoutBom)));
+	return parseJsonObject(withoutTrailingCommas(withoutJsonComments(withoutBom)));
 }
 
 export function registeredEngineRoot(

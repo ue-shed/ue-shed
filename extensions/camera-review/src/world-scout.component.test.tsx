@@ -20,7 +20,7 @@ import {
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { MapReviewClientShape } from "./map-review-client.js";
+import type { MapReviewClientApi } from "./map-review-client.js";
 import { shouldRequestFollowUpdate, WorldScout } from "./world-scout.js";
 
 const observed: ObservedActor = {
@@ -64,8 +64,9 @@ function syncPaintScheduler() {
 }
 
 function mockCanvasContext() {
-	HTMLCanvasElement.prototype.getContext = (() =>
-		({
+	Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+		configurable: true,
+		value: () => ({
 			arc: () => undefined,
 			beginPath: () => undefined,
 			clearRect: () => undefined,
@@ -76,7 +77,8 @@ function mockCanvasContext() {
 			fillStyle: "",
 			lineWidth: 1,
 			strokeStyle: ""
-		}) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+		})
+	});
 }
 
 mockCanvasContext();
@@ -129,7 +131,7 @@ describe("WorldScout", () => {
 					return refreshRate;
 				})
 		} satisfies Pick<
-			MapReviewClientShape,
+			MapReviewClientApi,
 			"connectWorld" | "focusActor" | "setWorldObservationRate" | "worldObservations"
 		>;
 
@@ -208,7 +210,7 @@ describe("WorldScout", () => {
 					status: "focused" as const
 				}),
 			worldObservations: () => Stream.make(ready, unavailable)
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -252,7 +254,7 @@ describe("WorldScout", () => {
 					status: "focused" as const
 				}),
 			worldObservations: () => Stream.make(fallbackObservation(snapshot))
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -295,7 +297,7 @@ describe("WorldScout", () => {
 			connectWorld: () => Effect.succeed(readyResult(snapshot)),
 			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
 			worldObservations: () => Stream.make(fallbackObservation(snapshot))
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -307,9 +309,9 @@ describe("WorldScout", () => {
 			</EffectRuntimeProvider>
 		));
 		paint.flush();
-		const zoom = (await screen.findByRole("slider", {
+		const zoom = await screen.findByRole<HTMLInputElement>("slider", {
 			name: "Map zoom"
-		})) as HTMLInputElement;
+		});
 		const initialZoom = Number(zoom.value);
 		const user = userEvent.setup();
 		await user.click(screen.getByRole("button", { name: /Orbit 07/ }));
@@ -338,7 +340,7 @@ describe("WorldScout", () => {
 					return { actorId, status: "not_supported" as const };
 				}),
 			worldObservations: () => Stream.make(fallbackObservation(snapshot))
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -405,7 +407,7 @@ describe("WorldScout", () => {
 					status: "focused" as const
 				}),
 			worldObservations: () => Stream.fromIterable(frames)
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -507,7 +509,7 @@ describe("WorldScout", () => {
 			connectWorld: () => Effect.succeed(readyResult(snapshot)),
 			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
 			worldObservations: () => Stream.make(initial, next)
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -549,7 +551,7 @@ describe("WorldScout", () => {
 					message: "Named-pipe observation is unavailable on this host.",
 					snapshot
 				})
-		} satisfies Pick<MapReviewClientShape, "connectWorld" | "focusActor" | "worldObservations">;
+		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
 
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>

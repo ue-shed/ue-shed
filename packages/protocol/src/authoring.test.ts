@@ -16,7 +16,7 @@ import {
 	makeAuthoringJsonSchema
 } from "./authoring.js";
 
-const decodeAuthoringTableSnapshot = (input: unknown) =>
+const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
 
 describe("authoring wire contract", () => {

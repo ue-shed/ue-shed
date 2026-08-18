@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeAuthoringTableSnapshot as decodeAuthoringTableSnapshotEffect } from "@ue-shed/protocol";
 import { decodeTextQualityReport as decodeTextQualityReportEffect } from "@ue-shed/game-text";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-const decodeAuthoringTableSnapshot = (input: unknown) =>
+const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
-const decodeTextQualityReport = (input: unknown) =>
+const decodeTextQualityReport = <Input>(input: Input) =>
 	Effect.runSync(decodeTextQualityReportEffect(input));
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -111,12 +111,10 @@ function runCliAsync(args: readonly string[]): Promise<CliResult> {
 	});
 }
 
-function parseRecord(output: string): Readonly<Record<string, unknown>> {
-	const value: unknown = JSON.parse(output);
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		throw new Error("Expected the CLI to print one JSON object");
-	}
-	return value as Readonly<Record<string, unknown>>;
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+
+function parseRecord(output: string): Schema.JsonObject {
+	return Schema.decodeUnknownSync(JsonObject)(JSON.parse(output));
 }
 
 describe("ue-shed CLI process", () => {
@@ -650,6 +648,7 @@ describe("ue-shed CLI process", () => {
 				status: "revised",
 				viewId: "loading-area"
 			});
+			// SAFETY: the CLI just persisted this Review Set fixture and the assertion reads owned fields.
 			const persisted = JSON.parse(await readFile(reviewSetPath, "utf8")) as {
 				views: Array<{ id: string; revision: { id: string; number: number } }>;
 			};
@@ -687,6 +686,7 @@ describe("ue-shed CLI process", () => {
 				let body = "";
 				request.setEncoding("utf8");
 				for await (const chunk of request) body += chunk;
+				// SAFETY: the CLI serializes Remote Control calls with a required functionName.
 				const call = JSON.parse(body) as { functionName: string };
 				if (call.functionName !== "InspectReviewSelection") {
 					throw new Error(`Unexpected call ${call.functionName}`);
@@ -720,7 +720,7 @@ describe("ue-shed CLI process", () => {
 		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 		try {
 			const address = server.address();
-			if (address === null || typeof address === "string") throw new Error("No server port");
+			if (!(address instanceof Object)) throw new Error("No server port");
 			const endpoint = `http://127.0.0.1:${address.port}`;
 			const generatedProcess = await runCliAsync([
 				"review",
@@ -790,11 +790,13 @@ describe("ue-shed CLI process", () => {
 				let body = "";
 				request.setEncoding("utf8");
 				for await (const chunk of request) body += chunk;
+				// SAFETY: the CLI serializes this private Remote Control request contract.
 				const call = JSON.parse(body) as {
 					functionName: string;
 					parameters: { RequestJson: string };
 				};
 				if (call.functionName !== "CaptureReviewView") throw new Error("Unexpected call");
+				// SAFETY: RequestJson is produced by the map-capture client immediately before this check.
 				const capture = JSON.parse(call.parameters.RequestJson) as {
 					contract: { name: "ue-shed-review-capture"; version: { major: 1; minor: 4 } };
 					expectedMapPath: string;
@@ -860,7 +862,7 @@ describe("ue-shed CLI process", () => {
 		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 		try {
 			const address = server.address();
-			if (address === null || typeof address === "string") throw new Error("No server port");
+			if (!(address instanceof Object)) throw new Error("No server port");
 			const endpoint = `http://127.0.0.1:${address.port}`;
 			const captureArgs = [
 				"review",
@@ -886,8 +888,9 @@ describe("ue-shed CLI process", () => {
 			expect(second.invocation).toMatchObject({
 				cause: { correlationId: "nightly-fixture", type: "external_automation" }
 			});
-			const firstResult = (first.results as Array<Record<string, unknown>>)[0]!;
-			const secondResult = (second.results as Array<Record<string, unknown>>)[0]!;
+			const resultArray = Schema.Array(JsonObject);
+			const firstResult = Schema.decodeUnknownSync(resultArray)(first.results)[0]!;
+			const secondResult = Schema.decodeUnknownSync(resultArray)(second.results)[0]!;
 			expect(firstResult.viewRevision).toEqual(secondResult.viewRevision);
 			expect(firstResult.realization).toEqual(secondResult.realization);
 		} finally {

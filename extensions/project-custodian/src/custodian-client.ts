@@ -76,7 +76,7 @@ export class CustodianClientError extends Schema.TaggedErrorClass<CustodianClien
 	}
 ) {}
 
-export interface CustodianClientShape {
+export interface CustodianClientApi {
 	readonly configuredScan: () => Effect.Effect<CustodianRunResult, CustodianClientError>;
 	readonly chooseAndScan: () => Effect.Effect<CustodianRunResult, CustodianClientError>;
 	readonly prepare: (

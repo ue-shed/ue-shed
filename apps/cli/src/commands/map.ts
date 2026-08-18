@@ -96,22 +96,26 @@ const mapHistoryCommand = Command.make(
 		}
 		return runMapHistory({
 			_tag: "MapHistory",
-			...(actorClassValue === undefined ? {} : { actorClass: actorClassValue }),
-			...(actorGuidValue === undefined ? {} : { actorGuid: actorGuidValue }),
-			...(actorPackageValue === undefined ? {} : { actorPackage: actorPackageValue }),
-			...(actorPathValue === undefined ? {} : { actorPath: actorPathValue }),
-			...(concurrencyValue === undefined ? {} : { concurrency: concurrencyValue }),
+			...(actorClassValue === undefined ? undefined : { actorClass: actorClassValue }),
+			...(actorGuidValue === undefined ? undefined : { actorGuid: actorGuidValue }),
+			...(actorPackageValue === undefined ? undefined : { actorPackage: actorPackageValue }),
+			...(actorPathValue === undefined ? undefined : { actorPath: actorPathValue }),
+			...(concurrencyValue === undefined ? undefined : { concurrency: concurrencyValue }),
 			mapPath,
-			...(maxChangelistsValue === undefined ? {} : { maxChangelists: maxChangelistsValue }),
-			...(maxDurationMsValue === undefined ? {} : { maxDurationMs: maxDurationMsValue }),
+			...(maxChangelistsValue === undefined
+				? undefined
+				: { maxChangelists: maxChangelistsValue }),
+			...(maxDurationMsValue === undefined
+				? undefined
+				: { maxDurationMs: maxDurationMsValue }),
 			...(maxMaterializedFilesValue === undefined
-				? {}
+				? undefined
 				: { maxMaterializedFiles: maxMaterializedFilesValue }),
-			...(maxPackagesValue === undefined ? {} : { maxPackages: maxPackagesValue }),
-			...(modeValue === undefined ? {} : { mode: modeValue }),
+			...(maxPackagesValue === undefined ? undefined : { maxPackages: maxPackagesValue }),
+			...(modeValue === undefined ? undefined : { mode: modeValue }),
 			projectRoot,
 			since,
-			...(untilValue === undefined ? {} : { until: untilValue })
+			...(untilValue === undefined ? undefined : { until: untilValue })
 		});
 	}
 ).pipe(Command.withDescription("Read Perforce-backed saved map history."));

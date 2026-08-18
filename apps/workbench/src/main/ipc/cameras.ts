@@ -1,7 +1,6 @@
-import type { CameraScheduleConfig } from "@ue-shed/protocol";
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
-import { invokeContracts, type PresentationBudgetMbPerSecond } from "../ipc-contracts.js";
+import { invokeContracts } from "../ipc-contracts.js";
 import { CameraPresentation } from "../services/camera-presentation.js";
 
 export const register = Effect.gen(function* () {
@@ -12,7 +11,7 @@ export const register = Effect.gen(function* () {
 		presentation.metrics().pipe(Effect.orDie)
 	);
 	yield* ipc.register(invokeContracts["camera:presentation-budget"], (...args) => {
-		const [megabytesPerSecond] = args as [PresentationBudgetMbPerSecond];
+		const [megabytesPerSecond] = args;
 		return presentation.setPresentationBudget(megabytesPerSecond);
 	});
 	yield* ipc.register(invokeContracts["camera:status"], () =>
@@ -29,7 +28,7 @@ export const register = Effect.gen(function* () {
 		)
 	);
 	yield* ipc.register(invokeContracts["camera:configure"], (...args) => {
-		const [config] = args as [CameraScheduleConfig];
+		const [config] = args;
 		return presentation.configure(config).pipe(Effect.orDie);
 	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerCameras"));

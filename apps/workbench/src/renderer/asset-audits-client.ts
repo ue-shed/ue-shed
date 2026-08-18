@@ -17,7 +17,7 @@ import {
 	TextureAuditClient,
 	TextureAuditClientError,
 	decodeTextureAuditLaunchResult,
-	type TextureAuditClientShape,
+	type TextureAuditClientApi,
 	type TextureAuditLaunchResult
 } from "@ue-shed/extension-asset-audits";
 import { WorkbenchTaskProgress } from "../main/project-workspace-contract.js";
@@ -25,9 +25,9 @@ import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
-function request<A>(args: {
-	readonly decode: (value: unknown) => Effect.Effect<A, unknown>;
-	readonly invoke: () => Promise<unknown>;
+function request<A, HostValue, DecodeError>(args: {
+	readonly decode: (value: HostValue) => Effect.Effect<A, DecodeError>;
+	readonly invoke: () => Promise<HostValue>;
 	readonly operation: string;
 }): Effect.Effect<A, TextureAuditClientError> {
 	return Effect.tryPromise({
@@ -42,7 +42,7 @@ function request<A>(args: {
 	);
 }
 
-export const assetAuditsClient: TextureAuditClientShape = TextureAuditClient.of({
+export const assetAuditsClient: TextureAuditClientApi = TextureAuditClient.of({
 	locateAsset: Effect.fn("TextureAuditClient.locateAsset")(
 		(objectPath: string): Effect.Effect<EditorAssetLocateResult, TextureAuditClientError> =>
 			request({

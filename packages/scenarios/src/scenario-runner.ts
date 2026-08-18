@@ -61,7 +61,7 @@ export type ScenarioRunHandle = typeof ScenarioRunHandle.Type;
 
 export type ScenarioRunnerStatus = Exclude<ScenarioStatusResponse, { readonly _tag: "Rejected" }>;
 
-export interface ScenarioRunnerShape {
+export interface ScenarioRunnerApi {
 	readonly cancel: (
 		endpoint: string,
 		runId: string
@@ -78,7 +78,7 @@ export interface ScenarioRunnerShape {
 	) => Effect.Effect<ScenarioRunnerStatus, ScenarioRunnerError>;
 }
 
-export class ScenarioRunner extends Context.Service<ScenarioRunner, ScenarioRunnerShape>()(
+export class ScenarioRunner extends Context.Service<ScenarioRunner, ScenarioRunnerApi>()(
 	"@ue-shed/scenarios/ScenarioRunner"
 ) {}
 
@@ -211,7 +211,7 @@ export const ScenarioRunnerLive = Layer.effect(
 			readonly functionName: string;
 			readonly objectPath: string;
 			readonly operation: string;
-			readonly parameters: Readonly<Record<string, unknown>>;
+			readonly parameters: Schema.JsonObject;
 		}) {
 			return yield* remote
 				.request(options)
@@ -519,7 +519,7 @@ export const ScenarioRunnerLive = Layer.effect(
 );
 
 export function makeScenarioRunnerTestLayer(
-	service: ScenarioRunnerShape
+	service: ScenarioRunnerApi
 ): Layer.Layer<ScenarioRunner> {
 	return Layer.succeed(ScenarioRunner, ScenarioRunner.of(service));
 }

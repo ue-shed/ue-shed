@@ -217,7 +217,7 @@ export function textureAuditQuery(report: TextureAuditReport): TextureAuditQuery
 				total: matched.length,
 				...(final !== undefined && afterCursor + page.length < matched.length
 					? { nextCursor: final }
-					: {})
+					: undefined)
 			};
 		},
 		record: (objectPath) => {

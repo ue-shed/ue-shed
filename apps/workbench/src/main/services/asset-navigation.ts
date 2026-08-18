@@ -10,13 +10,13 @@ import {
 import { Context, Effect, Layer } from "effect";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
-export interface WorkbenchAssetNavigationShape {
+export interface WorkbenchAssetNavigationApi {
 	readonly locate: (objectPath: string) => Effect.Effect<EditorAssetLocateResult>;
 }
 
 export class WorkbenchAssetNavigation extends Context.Service<
 	WorkbenchAssetNavigation,
-	WorkbenchAssetNavigationShape
+	WorkbenchAssetNavigationApi
 >()("@ue-shed/workbench/WorkbenchAssetNavigation") {}
 
 function unavailableAssetLocation(options: {
@@ -74,7 +74,7 @@ export const WorkbenchAssetNavigationLive = Layer.effect(
 );
 
 export function makeWorkbenchAssetNavigationTestLayer(
-	service?: Partial<WorkbenchAssetNavigationShape>
+	service?: Partial<WorkbenchAssetNavigationApi>
 ): Layer.Layer<WorkbenchAssetNavigation> {
 	return Layer.succeed(
 		WorkbenchAssetNavigation,

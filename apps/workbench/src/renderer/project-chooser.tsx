@@ -35,7 +35,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	const [project, setProject] = createSignal<WorkbenchProjectState>();
 	const [launching, setLaunching] = createSignal<ProjectLaunchMode>();
 	const [launchResult, setLaunchResult] = createSignal<ProjectLaunchResult>();
-	let launchMenu: HTMLDetailsElement | undefined;
+	const [launchMenu, setLaunchMenu] = createSignal<HTMLDetailsElement>();
 	const applyProject = (
 		next: WorkbenchProjectState,
 		notifyRoutes: boolean,
@@ -125,7 +125,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			onSuccess: (result) => {
 				setLaunching(undefined);
 				setLaunchResult(result);
-				if (result.status === "launched" && launchMenu) launchMenu.open = false;
+				if (result.status === "launched" && launchMenu()) launchMenu()!.open = false;
 			}
 		});
 	};
@@ -152,7 +152,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			</button>
 			<Show when={project()?.status === "ready"}>
 				<span {...stylex.props(styles.offline)}>OFFLINE</span>
-				<details ref={launchMenu} {...stylex.props(styles.launchControl)}>
+				<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
 					<summary {...stylex.props(styles.launchSummary)}>LAUNCH ▾</summary>
 					<div {...stylex.props(styles.launchMenu)}>
 						<button

@@ -171,7 +171,7 @@ export interface ProjectIndexConfiguration {
 	readonly cacheRoot: ProjectIndexCacheRoot;
 }
 
-export interface ProjectIndexShape {
+export interface ProjectIndexApi {
 	readonly rebuild: (
 		target: ProjectIndexTarget
 	) => Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError>;
@@ -186,7 +186,7 @@ export interface ProjectIndexShape {
 	) => Effect.Effect<ProjectIndexStatus, ProjectIndexError>;
 }
 
-export class ProjectIndex extends Context.Service<ProjectIndex, ProjectIndexShape>()(
+export class ProjectIndex extends Context.Service<ProjectIndex, ProjectIndexApi>()(
 	"@ue-shed/unreal-assets/ProjectIndex"
 ) {}
 
@@ -221,25 +221,27 @@ const invalidRequest = (message: string): ProjectIndexInvalidRequest =>
 		retrySafe: false
 	});
 
-export const decodeProjectIndexTarget = Effect.fn("ProjectIndex.decodeTarget")((input: unknown) =>
-	Schema.decodeUnknownEffect(ProjectIndexTarget)(input).pipe(
-		Effect.mapError(() =>
-			invalidRequest("Project Index target must include a non-empty project root.")
-		)
-	)
-);
-
-export const decodeProjectIndexQuery = Effect.fn("ProjectIndex.decodeQuery")((input: unknown) =>
-	Schema.decodeUnknownEffect(ProjectIndexQuery)(input).pipe(
-		Effect.mapError(() =>
-			invalidRequest(
-				`Project Index queries must be bounded to at most ${PROJECT_INDEX_MAX_PAGE_SIZE} items.`
+export const decodeProjectIndexTarget = Effect.fn("ProjectIndex.decodeTarget")(
+	<Input>(input: Input) =>
+		Schema.decodeUnknownEffect(ProjectIndexTarget)(input).pipe(
+			Effect.mapError(() =>
+				invalidRequest("Project Index target must include a non-empty project root.")
 			)
 		)
-	)
 );
 
-export const decodeProjectIndexPage = Effect.fn("ProjectIndex.decodePage")((input: unknown) =>
+export const decodeProjectIndexQuery = Effect.fn("ProjectIndex.decodeQuery")(
+	<Input>(input: Input) =>
+		Schema.decodeUnknownEffect(ProjectIndexQuery)(input).pipe(
+			Effect.mapError(() =>
+				invalidRequest(
+					`Project Index queries must be bounded to at most ${PROJECT_INDEX_MAX_PAGE_SIZE} items.`
+				)
+			)
+		)
+);
+
+export const decodeProjectIndexPage = Effect.fn("ProjectIndex.decodePage")(<Input>(input: Input) =>
 	Schema.decodeUnknownEffect(ProjectIndexPage)(input).pipe(
 		Effect.mapError(
 			() =>
@@ -321,7 +323,7 @@ export const getProjectIndexCacheRoot = Effect.fn("ProjectIndex.cacheRoot")(() =
 	Effect.map(ProjectIndexConfig, (configuration) => configuration.cacheRoot)
 );
 
-export function makeProjectIndexTestLayer(service: ProjectIndexShape): Layer.Layer<ProjectIndex> {
+export function makeProjectIndexTestLayer(service: ProjectIndexApi): Layer.Layer<ProjectIndex> {
 	return Layer.succeed(ProjectIndex, ProjectIndex.of(service));
 }
 

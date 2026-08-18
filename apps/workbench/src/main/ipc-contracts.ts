@@ -937,6 +937,12 @@ export const invokeContracts = {
 } as const;
 
 export type InvokeChannel = keyof typeof invokeContracts;
+export type InvokeArguments<Channel extends InvokeChannel> = Schema.Codec.Encoded<
+	(typeof invokeContracts)[Channel]["args"]
+>;
+export type InvokeResult<Channel extends InvokeChannel> = Schema.Codec.Encoded<
+	(typeof invokeContracts)[Channel]["result"]
+>;
 
 export const cameraFrameEvent = {
 	kind: "event",
@@ -956,7 +962,9 @@ export const mapCaptureProgressEvent = {
 	payload: MapCaptureProgressEvent
 } as const;
 
-export const invokeChannelNames = Object.keys(invokeContracts) as Array<InvokeChannel>;
+// SAFETY: invokeContracts is the sole source of keys, so Object.keys cannot produce another channel.
+const invokeContractKeys = Object.keys(invokeContracts) as Array<InvokeChannel>;
+export const invokeChannelNames = invokeContractKeys;
 
 export const decodeInvokeArgs = <C extends InvokeContract>(contract: C) =>
 	Schema.decodeUnknownEffect(contract.args);

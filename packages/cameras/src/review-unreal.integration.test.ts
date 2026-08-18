@@ -74,10 +74,7 @@ function pureStagingPath(
 	return artifact.stagingPath;
 }
 
-async function editorActorCall(
-	functionName: string,
-	parameters: Readonly<Record<string, unknown>>
-): Promise<void> {
+async function editorActorCall(functionName: string, parameters: Schema.JsonObject): Promise<void> {
 	const response = await fetch(`${endpoint}/remote/object/call`, {
 		body: JSON.stringify({
 			functionName,
@@ -690,7 +687,9 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 	});
 
 	it("serializes invalid capture requests as contract-shaped failures", async () => {
-		const request = JSON.parse(await readFile(invalidCaptureRequestPath, "utf8")) as unknown;
+		const request = Schema.decodeUnknownSync(Schema.Json)(
+			JSON.parse(await readFile(invalidCaptureRequestPath, "utf8"))
+		);
 		const payload = await Effect.runPromise(
 			Effect.flatMap(RemoteControlClient, (client) =>
 				client.request({
@@ -840,7 +839,7 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 		);
 	});
 
-	async function playCall(functionName: string): Promise<unknown> {
+	async function playCall(functionName: string): Promise<Schema.Json> {
 		return Effect.runPromise(
 			Effect.flatMap(RemoteControlClient, (client) =>
 				client.request({
@@ -851,13 +850,17 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 					parameters: {},
 					timeout: "15 seconds"
 				})
-			).pipe(Effect.provide(RemoteControlClientLive))
+			).pipe(
+				Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+				Effect.provide(RemoteControlClientLive)
+			)
 		);
 	}
 
 	async function waitForPlayStatus(status: "stopped" | "running"): Promise<void> {
 		const deadline = Date.now() + 20_000;
 		while (Date.now() < deadline) {
+			// SAFETY: GetPlaySessionState is the UE Shed function that emits this versioned response.
 			const response = (await playCall("GetPlaySessionState")) as {
 				readonly state?: { readonly status?: string };
 			};
@@ -868,6 +871,7 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 	}
 
 	it("streams a map-correlated orthographic editor frame", async () => {
+		// SAFETY: GetPlaySessionState is the UE Shed function that emits this versioned response.
 		const initial = (await playCall("GetPlaySessionState")) as {
 			readonly state?: { readonly status?: string };
 		};
@@ -936,6 +940,7 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 	});
 
 	it("streams editor and play worlds, clears without dirt, and keeps overview healthy", async () => {
+		// SAFETY: GetPlaySessionState is the UE Shed function that emits this versioned response.
 		const initial = (await playCall("GetPlaySessionState")) as {
 			readonly state?: { readonly status?: string };
 		};
@@ -1023,6 +1028,7 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 			await playCall("StartPlaySession");
 			await waitForPlayStatus("running");
 
+			// SAFETY: GetPlaySessionState is the UE Shed function that emits this versioned response.
 			const playState = (await playCall("GetPlaySessionState")) as {
 				readonly state: Parameters<typeof evaluateReviewCapturePolicy>[0];
 			};

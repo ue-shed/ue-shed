@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EditorPlaySessionId } from "@ue-shed/protocol";
 import { evaluateReviewCapturePolicy } from "./review-session-policy.js";
 
 describe("review capture session policy", () => {
@@ -14,7 +15,7 @@ describe("review capture session policy", () => {
 			expect(
 				evaluateReviewCapturePolicy({
 					mode: "play",
-					sessionId: "session-1" as never,
+					sessionId: EditorPlaySessionId.make("session-1"),
 					status
 				})
 			).toMatchObject({ code: "play_session_active", status: "blocked" });
@@ -25,7 +26,7 @@ describe("review capture session policy", () => {
 		expect(
 			evaluateReviewCapturePolicy({
 				mode: "simulate",
-				sessionId: "session-2" as never,
+				sessionId: EditorPlaySessionId.make("session-2"),
 				status: "stopping"
 			})
 		).toMatchObject({ code: "play_session_transition", status: "blocked" });

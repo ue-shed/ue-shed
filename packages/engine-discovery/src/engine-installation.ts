@@ -9,6 +9,16 @@ export const EngineVersion = Schema.Struct({
 });
 export type EngineVersion = typeof EngineVersion.Type;
 
+const EngineBuildVersion = Schema.Struct({
+	MajorVersion: Schema.Int,
+	MinorVersion: Schema.Int,
+	PatchVersion: Schema.optional(Schema.Int)
+});
+
+const ProjectDescriptor = Schema.Struct({
+	EngineAssociation: Schema.optional(Schema.String)
+});
+
 export const EngineInstallation = Schema.Struct({
 	root: Schema.NonEmptyString,
 	version: EngineVersion
@@ -36,7 +46,7 @@ export class EngineInstallationError extends Schema.TaggedErrorClass<EngineInsta
 	}
 ) {}
 
-export interface EngineInstallationDiscoveryShape {
+export interface EngineInstallationDiscoveryApi {
 	readonly resolve: (
 		request: EngineInstallationRequest
 	) => Effect.Effect<EngineInstallation, EngineInstallationError>;
@@ -44,7 +54,7 @@ export interface EngineInstallationDiscoveryShape {
 
 export class EngineInstallationDiscovery extends Context.Service<
 	EngineInstallationDiscovery,
-	EngineInstallationDiscoveryShape
+	EngineInstallationDiscoveryApi
 >()("@ue-shed/engine-discovery/EngineInstallationDiscovery") {}
 
 function failure(
@@ -59,7 +69,7 @@ function failure(
 		message,
 		recovery,
 		retrySafe,
-		...(candidates === undefined ? {} : { candidates: [...candidates] })
+		...(candidates === undefined ? undefined : { candidates: [...candidates] })
 	});
 }
 
@@ -86,26 +96,23 @@ function installationAt(root: string): Effect.Effect<EngineInstallation, EngineI
 		const value = yield* readJson(
 			join(normalized, "Engine", "Build", "Build.version"),
 			"invalid_engine_root"
+		).pipe(
+			Effect.flatMap(Schema.decodeUnknownEffect(EngineBuildVersion)),
+			Effect.mapError(() =>
+				failure(
+					"invalid_engine_root",
+					"The selected Unreal Build.version has an invalid version contract.",
+					"Choose a complete Unreal installation root.",
+					false
+				)
+			)
 		);
-		if (
-			typeof value !== "object" ||
-			value === null ||
-			typeof value.MajorVersion !== "number" ||
-			typeof value.MinorVersion !== "number"
-		) {
-			return yield* failure(
-				"invalid_engine_root",
-				"The selected Unreal Build.version has an invalid version contract.",
-				"Choose a complete Unreal installation root.",
-				false
-			);
-		}
 		return {
 			root: normalized,
 			version: {
 				major: value.MajorVersion,
 				minor: value.MinorVersion,
-				patch: typeof value.PatchVersion === "number" ? value.PatchVersion : 0
+				patch: value.PatchVersion ?? 0
 			}
 		};
 	});
@@ -123,11 +130,18 @@ function associationOf(
 				false
 			);
 		}
-		const value = yield* readJson(projectDescriptor, "invalid_project_descriptor");
-		if (typeof value !== "object" || value === null) return undefined;
-		return typeof value.EngineAssociation === "string" && value.EngineAssociation.trim() !== ""
-			? value.EngineAssociation.trim()
-			: undefined;
+		const value = yield* readJson(projectDescriptor, "invalid_project_descriptor").pipe(
+			Effect.flatMap(Schema.decodeUnknownEffect(ProjectDescriptor)),
+			Effect.mapError(() =>
+				failure(
+					"invalid_project_descriptor",
+					"The selected .uproject descriptor has an invalid contract.",
+					"Choose a readable Unreal .uproject descriptor.",
+					false
+				)
+			)
+		);
+		return value.EngineAssociation?.trim() || undefined;
 	});
 }
 
@@ -184,7 +198,7 @@ export const EngineInstallationDiscoveryLive = Layer.effect(
 			const association = yield* associationOf(resolve(request.projectDescriptor));
 			const candidates = yield* discoverStandardInstallations({
 				programFiles: configuredProgramFiles,
-				...(association === undefined ? {} : { association })
+				...(association === undefined ? undefined : { association })
 			});
 			if (candidates.length === 1) return candidates[0]!;
 			if (candidates.length > 1) {
@@ -210,7 +224,7 @@ export const EngineInstallationDiscoveryLive = Layer.effect(
 );
 
 export function makeEngineInstallationDiscoveryTestLayer(
-	resolveInstallation: EngineInstallationDiscoveryShape["resolve"]
+	resolveInstallation: EngineInstallationDiscoveryApi["resolve"]
 ): Layer.Layer<EngineInstallationDiscovery> {
 	return Layer.succeed(
 		EngineInstallationDiscovery,

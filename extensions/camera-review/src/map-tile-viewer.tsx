@@ -52,7 +52,7 @@ export interface MapTilePyramidViewerProps {
 }
 
 /** Reads a Solid input solely to register it as a paint dependency. */
-function observeMapTileInput(_value: unknown): void {}
+function observeMapTileInput<Value>(_value: Value): void {}
 
 function MapTileRequest(props: {
 	readonly keyValue: MapTileKey;
@@ -107,7 +107,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 	const selection = createMemo(() => {
 		const retainedLevel = currentLevel();
 		const selected = selectMapTiles({
-			...(retainedLevel === undefined ? {} : { currentLevel: retainedLevel }),
+			...(retainedLevel === undefined ? undefined : { currentLevel: retainedLevel }),
 			grid: grid(),
 			hysteresisLevels: 0.15,
 			maximumCacheEntries: props.maximumCacheEntries ?? 256,
@@ -218,7 +218,7 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 			actorCanvas,
 			current.width,
 			current.height,
-			typeof window === "undefined" ? 1 : window.devicePixelRatio || 1
+			globalThis.window?.devicePixelRatio || 1
 		);
 		if (context === undefined) return;
 		context.clearRect(0, 0, current.width, current.height);

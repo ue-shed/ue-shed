@@ -50,7 +50,7 @@ function liveError(
 		message: error.message,
 		operation,
 		retrySafe: error.retrySafe,
-		...(error.status === undefined ? {} : { status: error.status })
+		...(error.status === undefined ? undefined : { status: error.status })
 	});
 }
 
@@ -59,7 +59,7 @@ function remoteCall(options: {
 	readonly objectPath: string;
 	readonly functionName: string;
 	readonly operation: "manifest" | "preview";
-	readonly parameters: Readonly<Record<string, unknown>>;
+	readonly parameters: Schema.JsonObject;
 }): Effect.Effect<unknown, LiveTexturePreviewError, RemoteControlClient> {
 	const endpoint = options.endpoint.replace(/\/+$/, "");
 	return Effect.flatMap(RemoteControlClient, (client) =>

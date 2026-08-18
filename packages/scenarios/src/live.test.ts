@@ -27,11 +27,11 @@ function withSemanticTrack(
 	};
 }
 
-async function fixture(name: string): Promise<unknown> {
+async function fixture(name: string): Promise<Schema.Json> {
 	const path = fileURLToPath(
 		new URL(`../../protocol/contracts/scenarios/live/v1/fixtures/${name}.json`, import.meta.url)
 	);
-	return JSON.parse(await readFile(path, "utf8")) as unknown;
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
 }
 
 async function expectFixtureRoundTrip<T, E>(

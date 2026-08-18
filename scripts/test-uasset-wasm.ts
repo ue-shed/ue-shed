@@ -46,6 +46,7 @@ const projectionFixtures: ReadonlyArray<{
 	}
 ];
 
+// SAFETY: packageNodeEntry is the generated module and its declared type is the source contract.
 const wasm = (await import(
 	pathToFileURL(packageNodeEntry).href
 )) as typeof import("../packages/uasset-inspection-wasm/src/node.js");
@@ -188,11 +189,10 @@ assert.equal(malformedText.kind, "unsupported_format");
 const narrowRuntime = wasm.createNodeRuntime({ maxInputBytes: 4 });
 assert.throws(
 	() => narrowRuntime.inspect("TooLarge.uasset", new Uint8Array(5)),
-	(error: unknown) =>
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		error.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT"
+	(cause: unknown) =>
+		cause instanceof Object &&
+		"code" in cause &&
+		cause.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT"
 );
 
 process.stdout.write(

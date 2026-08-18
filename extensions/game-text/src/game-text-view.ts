@@ -4,7 +4,6 @@ import {
 	type TextLocation,
 	type TextOccurrence,
 	type TextUnit,
-	type TextUnitContext,
 	type TextUnitSearchResult
 } from "@ue-shed/game-text/browser";
 
@@ -67,7 +66,7 @@ export function textContext(location: TextLocation): TextContextPresentation {
 
 export function primaryContext(
 	unit: Pick<TextUnitSearchResult, "contexts" | "remainingContextCount">
-): { readonly context: TextUnitContext | undefined; readonly additional: number } {
+) {
 	return {
 		context: unit.contexts[0],
 		additional: unit.remainingContextCount + Math.max(0, unit.contexts.length - 1)

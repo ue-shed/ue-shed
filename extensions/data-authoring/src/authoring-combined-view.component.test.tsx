@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
-import type { AuthoringClientShape } from "@ue-shed/authoring-sdk";
+import type { AuthoringClientApi } from "@ue-shed/authoring-sdk";
 import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
@@ -67,7 +67,7 @@ const target = snapshot({
 	rowName: "Right_Alpha"
 });
 
-function client(): AuthoringClientShape {
+function client(): AuthoringClientApi {
 	return {
 		applySession: () => Effect.die("unused"),
 		beginSession: () => Effect.die("unused"),

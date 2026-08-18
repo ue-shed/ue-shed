@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	connectUnrealAuthoring,
@@ -26,13 +26,14 @@ describe("Remote Control asset navigation adapter", () => {
 		const calls: Array<{
 			readonly functionName: string;
 			readonly objectPath: string;
-			readonly parameters: Readonly<Record<string, unknown>>;
+			readonly parameters: Schema.JsonObject;
 		}> = [];
 		const endpoint = await listen((request, response) => {
 			let body = "";
 			request.setEncoding("utf8");
 			request.on("data", (chunk: string) => (body += chunk));
 			request.on("end", () => {
+				// SAFETY: the client serializes this private request shape before the test server reads it.
 				const call = JSON.parse(body) as (typeof calls)[number];
 				calls.push(call);
 				response.setHeader("content-type", "application/json");
@@ -108,11 +109,11 @@ async function listen(
 	server = createServer(handler);
 	await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
 	const address = server.address();
-	if (!address || typeof address === "string") throw new Error("test server has no TCP address");
+	if (!(address instanceof Object)) throw new Error("test server has no TCP address");
 	return `http://127.0.0.1:${address.port}`;
 }
 
-function resultJson(value: unknown): string {
+function resultJson<Value>(value: Value): string {
 	return JSON.stringify({ ResultJson: JSON.stringify(value) });
 }
 
@@ -123,7 +124,7 @@ describe("Remote Control authoring adapter", () => {
 				readonly functionName: string;
 				readonly generateTransaction: boolean;
 				readonly objectPath: string;
-				readonly parameters: Readonly<Record<string, unknown>>;
+				readonly parameters: Schema.JsonObject;
 			};
 			readonly method: string | undefined;
 			readonly url: string | undefined;
@@ -133,6 +134,7 @@ describe("Remote Control authoring adapter", () => {
 			request.setEncoding("utf8");
 			request.on("data", (chunk: string) => (body += chunk));
 			request.on("end", () => {
+				// SAFETY: the client serializes this private request body before the test server reads it.
 				const call = JSON.parse(body) as (typeof calls)[number]["body"];
 				calls.push({ body: call, method: request.method, url: request.url });
 				response.setHeader("content-type", "application/json");
@@ -245,6 +247,7 @@ describe("Remote Control authoring adapter", () => {
 			request.setEncoding("utf8");
 			request.on("data", (chunk: string) => (body += chunk));
 			request.on("end", () => {
+				// SAFETY: every Remote Control request body includes its serialized functionName.
 				calls.push((JSON.parse(body) as { functionName: string }).functionName);
 				response.statusCode = 503;
 				response.setHeader("content-type", "application/json");

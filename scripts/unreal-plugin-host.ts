@@ -38,6 +38,7 @@ export const ueShedPluginIds = Object.freeze([
 export function unrealEngineVersion(engineRoot: string): UnrealEngineVersion | undefined {
 	const versionPath = join(engineRoot, "Engine", "Build", "Build.version");
 	if (!existsSync(versionPath)) return undefined;
+	// SAFETY: Build.version is an Unreal-owned file with stable numeric version fields.
 	const version = JSON.parse(readFileSync(versionPath, "utf8")) as {
 		readonly MajorVersion: number;
 		readonly MinorVersion: number;
@@ -91,12 +92,14 @@ export function ueShedPluginDescriptors() {
 
 export function stagePluginRuntime(hostRoot: string) {
 	const binariesRoot = join(hostRoot, "Binaries", "Win64");
+	// SAFETY: UnrealBuildTool generated this module manifest for the staged engine build.
 	const moduleManifest = JSON.parse(
 		readFileSync(join(binariesRoot, "UnrealEditor.modules"), "utf8")
 	) as UnrealModuleManifest;
 	const runtimePluginRoot = join(hostRoot, "RuntimePlugins");
 	return ueShedPluginDescriptors().map((descriptor) => {
 		const pluginId = basename(descriptor, ".uplugin");
+		// SAFETY: descriptors are UE Shed-owned .uplugin files selected by ueShedPluginDescriptors.
 		const plugin = JSON.parse(readFileSync(descriptor, "utf8")) as UnrealPluginDescriptor;
 		const stagedPluginRoot = join(runtimePluginRoot, pluginId);
 		const stagedBinariesRoot = join(stagedPluginRoot, "Binaries", "Win64");

@@ -66,10 +66,7 @@ export function pointMapFitViewportSize(
 }
 
 /** Zoom-in floor and fit-all ceiling for the world-window width. */
-export function pointMapViewportSizeLimits(
-	fitSize: number,
-	absoluteMin = pointMapMinViewportSize
-): { readonly min: number; readonly max: number } {
+export function pointMapViewportSizeLimits(fitSize: number, absoluteMin = pointMapMinViewportSize) {
 	const max = Math.max(fitSize, 1);
 	return { min: Math.min(absoluteMin, max), max };
 }
@@ -165,10 +162,7 @@ export function pointMapCanvasAspect(cssWidth: number, cssHeight: number): numbe
 }
 
 /** World-space width/height of the viewport window for a canvas aspect ratio. */
-export function pointMapWorldWindowSize(
-	viewport: PointMapViewport,
-	aspect: number
-): { readonly width: number; readonly height: number } {
+export function pointMapWorldWindowSize(viewport: PointMapViewport, aspect: number) {
 	const width = Math.max(viewport.size, 1);
 	return { width, height: width / Math.max(aspect, 1e-9) };
 }

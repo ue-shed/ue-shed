@@ -10,7 +10,7 @@ import type {
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Match, Show, Switch, createEffect, createSignal, on } from "solid-js";
-import type { GameTextClientShape } from "./game-text-client.js";
+import type { GameTextClientApi } from "./game-text-client.js";
 
 type EditorFeedback =
 	| { readonly status: "idle" }
@@ -103,7 +103,7 @@ function draftProblem(document: TextQualityRuleDocument): string | undefined {
 }
 
 export function GameTextRuleEditor(props: {
-	readonly client: GameTextClientShape;
+	readonly client: GameTextClientApi;
 	readonly document: TextQualityRuleDocument;
 	readonly onReviewed: (
 		result: Extract<TextQualityRuleUpdateResult, { status: "completed" }>

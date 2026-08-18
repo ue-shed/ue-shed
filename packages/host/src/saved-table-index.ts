@@ -9,11 +9,11 @@ import { ShedHostConfiguration } from "./configuration.js";
  * paying for a second project-wide enumeration. Workbench builds one inventory per project and
  * serves tables from it; a headless host has no such inventory and reads through the asset reader.
  */
-export interface SavedTableIndexShape {
+export interface SavedTableIndexApi {
 	readonly savedTables: () => Effect.Effect<SavedTableCatalog, AssetReaderError>;
 }
 
-export class SavedTableIndex extends Context.Service<SavedTableIndex, SavedTableIndexShape>()(
+export class SavedTableIndex extends Context.Service<SavedTableIndex, SavedTableIndexApi>()(
 	"@ue-shed/host/SavedTableIndex"
 ) {}
 
@@ -34,7 +34,7 @@ export const SavedTableIndexLive = Layer.effect(
 				}
 				return yield* assetReader.discoverTables({
 					...(project.catalogCachePath === undefined
-						? {}
+						? undefined
 						: { cachePath: project.catalogCachePath }),
 					projectRoot: project.projectRoot
 				});
@@ -44,7 +44,7 @@ export const SavedTableIndexLive = Layer.effect(
 );
 
 export function makeSavedTableIndexTestLayer(
-	service: SavedTableIndexShape
+	service: SavedTableIndexApi
 ): Layer.Layer<SavedTableIndex> {
 	return Layer.succeed(SavedTableIndex, SavedTableIndex.of(service));
 }

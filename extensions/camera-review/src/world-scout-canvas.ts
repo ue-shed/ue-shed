@@ -1,6 +1,7 @@
 import {
 	actorInstanceKey,
 	materializeObservedActor,
+	StreamActorIndex,
 	type ActorId,
 	type ObservedActor,
 	type WorldActorCatalogEntry,
@@ -62,7 +63,7 @@ export interface WorldScoutActorRecord {
 function growFloat64(source: Float64Array, capacity: number): Float64Array {
 	const next = new Float64Array(capacity);
 	next.set(source.subarray(0, Math.min(source.length, capacity)));
-	return next as Float64Array;
+	return next;
 }
 
 function growArray<T>(source: Array<T | undefined>, capacity: number): Array<T | undefined> {
@@ -264,10 +265,10 @@ export class WorldScoutRetainedStore {
 			},
 			className,
 			displayName,
-			...(this.ids[streamIndex] === undefined ? {} : { id: this.ids[streamIndex] }),
+			...(this.ids[streamIndex] === undefined ? undefined : { id: this.ids[streamIndex] }),
 			instanceKey,
 			...(this.packageNames[streamIndex] === undefined
-				? {}
+				? undefined
 				: { packageName: this.packageNames[streamIndex] }),
 			path,
 			streamIndex
@@ -284,7 +285,7 @@ export class WorldScoutRetainedStore {
 				displayName: meta.displayName,
 				id: meta.id,
 				path: meta.path,
-				streamIndex: streamIndex as WorldActorCatalogEntry["streamIndex"]
+				streamIndex: StreamActorIndex.make(streamIndex)
 			},
 			{
 				location: {

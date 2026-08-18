@@ -21,17 +21,17 @@ import { decodeEditorAssetLocateResult } from "@ue-shed/protocol";
 import {
 	GameTextClient,
 	GameTextClientError,
-	type GameTextClientShape
+	type GameTextClientApi
 } from "@ue-shed/extension-game-text";
 import { WorkbenchTaskProgress } from "../main/project-workspace-contract.js";
 import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
-function invokeRequest<A>(
+function invokeRequest<A, HostValue, DecodeError>(
 	operation: string,
-	invoke: () => Promise<unknown>,
-	decode: (value: unknown) => Effect.Effect<A, unknown>
+	invoke: () => Promise<HostValue>,
+	decode: (value: HostValue) => Effect.Effect<A, DecodeError>
 ): Effect.Effect<A, GameTextClientError> {
 	return Effect.tryPromise({
 		try: invoke,
@@ -42,7 +42,7 @@ function invokeRequest<A>(
 	);
 }
 
-export const gameTextClient: GameTextClientShape = GameTextClient.of({
+export const gameTextClient: GameTextClientApi = GameTextClient.of({
 	loadConfiguredProject: Effect.fn("GameTextClient.loadConfiguredProject")(() =>
 		invokeRequest(
 			"gameText.loadConfiguredProject",

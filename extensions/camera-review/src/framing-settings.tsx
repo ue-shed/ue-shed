@@ -124,9 +124,19 @@ export function FramingSettings(props: {
 	};
 	const updateOverride = (field: keyof FramingCandidateOverrides, value: number | undefined) => {
 		const next = { ...selectedOverride(), [field]: value };
-		const compact = Object.fromEntries(
-			Object.entries(next).filter((entry) => entry[1] !== undefined)
-		) as FramingCandidateOverrides;
+		const compact = {
+			...(next.distanceScale === undefined
+				? undefined
+				: { distanceScale: next.distanceScale }),
+			...(next.elevation === undefined ? undefined : { elevation: next.elevation }),
+			...(next.fieldOfViewDegrees === undefined
+				? undefined
+				: { fieldOfViewDegrees: next.fieldOfViewDegrees }),
+			...(next.margin === undefined ? undefined : { margin: next.margin }),
+			...(next.yawOffsetDegrees === undefined
+				? undefined
+				: { yawOffsetDegrees: next.yawOffsetDegrees })
+		} satisfies FramingCandidateOverrides;
 		setSelectedOverride(Object.keys(compact).length === 0 ? undefined : compact);
 	};
 	const selectedGroup = () =>

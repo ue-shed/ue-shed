@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isJsonString } from "./json.ts";
 import { packPublicPackages, PUBLIC_VERSION, WASM_PACKAGE_NAME } from "./pack-public-packages.ts";
 import { buildPluginBundle } from "./plugin-bundle.ts";
 
@@ -120,7 +121,8 @@ export function validateWasmBuildInfo(buildInfo: WasmBuildInfo) {
 		failures.push(`targets must be ${JSON.stringify(expectedWasmTargets)}`);
 	}
 	for (const tool of ["rustc", "wasmPack", "wasmBindgen"]) {
-		if (!buildInfo?.tools?.[tool]) {
+		const identity = buildInfo?.tools?.[tool];
+		if (!isJsonString(identity) || identity.length === 0) {
 			failures.push(`tools.${tool} must record the build identity`);
 		}
 	}

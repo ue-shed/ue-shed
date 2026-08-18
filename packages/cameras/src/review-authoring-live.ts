@@ -113,6 +113,9 @@ export interface ReviewAuthoringApi {
 	) => Effect.Effect<ReviewCandidatePreview, ReviewAuthoringConnectionError>;
 }
 
+/** @deprecated Use `ReviewAuthoringApi`. */
+export type ReviewAuthoringShape = ReviewAuthoringApi;
+
 export class ReviewAuthoring extends Context.Service<ReviewAuthoring, ReviewAuthoringApi>()(
 	"@ue-shed/cameras/ReviewAuthoring"
 ) {}

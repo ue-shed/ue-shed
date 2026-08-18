@@ -372,6 +372,9 @@ export interface ReviewAuthoringSessionsApi {
 	}) => Effect.Effect<ReviewAuthoringSessionRecovery, ReviewAuthoringSessionError>;
 }
 
+/** @deprecated Use `ReviewAuthoringSessionsApi`. */
+export type ReviewAuthoringSessionsShape = ReviewAuthoringSessionsApi;
+
 export class ReviewAuthoringSessions extends Context.Service<
 	ReviewAuthoringSessions,
 	ReviewAuthoringSessionsApi

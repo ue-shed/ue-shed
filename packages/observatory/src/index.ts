@@ -111,6 +111,9 @@ export interface ObservatoryApi {
 	) => Effect.Effect<WorldActorSnapshot, ObservatoryConnectionError>;
 }
 
+/** @deprecated Use `ObservatoryApi`. */
+export type ObservatoryShape = ObservatoryApi;
+
 export class Observatory extends Context.Service<Observatory, ObservatoryApi>()(
 	"@ue-shed/observatory/Observatory"
 ) {}
@@ -336,3 +339,6 @@ export type {
 	ActorObservationDiagnostic,
 	ObserveActorFeedOptions
 } from "./actor-feed.js";
+
+/** @deprecated Use `ActorFeedApi`. */
+export type ActorFeedShape = import("./actor-feed.js").ActorFeedApi;

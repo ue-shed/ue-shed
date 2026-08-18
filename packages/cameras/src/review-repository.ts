@@ -446,6 +446,9 @@ export interface ReviewRepositoryApi {
 	}) => Effect.Effect<void, ReviewStorageError>;
 }
 
+/** @deprecated Use `ReviewRepositoryApi`. */
+export type ReviewRepositoryShape = ReviewRepositoryApi;
+
 export class ReviewRepository extends Context.Service<ReviewRepository, ReviewRepositoryApi>()(
 	"@ue-shed/cameras/ReviewRepository"
 ) {}

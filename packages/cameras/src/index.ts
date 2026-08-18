@@ -229,6 +229,9 @@ export interface CameraFeedApi {
 	readonly metrics: Effect.Effect<CameraFeedMetrics>;
 }
 
+/** @deprecated Use `CameraFeedApi`. */
+export type CameraFeedShape = CameraFeedApi;
+
 export class CameraFeed extends Context.Service<CameraFeed, CameraFeedApi>()(
 	"@ue-shed/cameras/CameraFeed"
 ) {}

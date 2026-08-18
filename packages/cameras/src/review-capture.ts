@@ -59,6 +59,9 @@ export interface ReviewCapturePortApi {
 	) => Effect.Effect<ReviewCaptureResponse, unknown>;
 }
 
+/** @deprecated Use `ReviewCapturePortApi`. */
+export type ReviewCapturePortShape = ReviewCapturePortApi;
+
 export class ReviewCapturePort extends Context.Service<ReviewCapturePort, ReviewCapturePortApi>()(
 	"@ue-shed/cameras/ReviewCapturePort"
 ) {}
@@ -66,6 +69,9 @@ export class ReviewCapturePort extends Context.Service<ReviewCapturePort, Review
 export interface ReviewIdGeneratorApi {
 	readonly generate: () => Effect.Effect<string>;
 }
+
+/** @deprecated Use `ReviewIdGeneratorApi`. */
+export type ReviewIdGeneratorShape = ReviewIdGeneratorApi;
 
 export class ReviewIdGenerator extends Context.Service<ReviewIdGenerator, ReviewIdGeneratorApi>()(
 	"@ue-shed/cameras/ReviewIdGenerator"
@@ -514,6 +520,9 @@ export interface ReviewCaptureApi {
 		options: CaptureReviewSetOptions
 	) => Effect.Effect<CaptureRun, ReviewCaptureRunError | ReviewStorageError>;
 }
+
+/** @deprecated Use `ReviewCaptureApi`. */
+export type ReviewCaptureShape = ReviewCaptureApi;
 
 export class ReviewCapture extends Context.Service<ReviewCapture, ReviewCaptureApi>()(
 	"@ue-shed/cameras/ReviewCapture"

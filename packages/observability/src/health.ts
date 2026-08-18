@@ -64,6 +64,9 @@ export interface RuntimeHealthServiceApi {
 	readonly snapshot: () => Effect.Effect<RuntimeHealth>;
 }
 
+/** @deprecated Use `RuntimeHealthServiceApi`. */
+export type RuntimeHealthServiceShape = RuntimeHealthServiceApi;
+
 export class RuntimeHealthService extends Context.Service<
 	RuntimeHealthService,
 	RuntimeHealthServiceApi

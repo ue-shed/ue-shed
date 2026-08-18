@@ -31,6 +31,9 @@ export interface RemoteControlClientApi {
 	) => Effect.Effect<Schema.Json, RemoteControlClientError>;
 }
 
+/** @deprecated Use `RemoteControlClientApi`. */
+export type RemoteControlClientShape = RemoteControlClientApi;
+
 export class RemoteControlClient extends Context.Service<
 	RemoteControlClient,
 	RemoteControlClientApi

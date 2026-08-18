@@ -57,6 +57,9 @@ export interface MapTileCapturePortApi {
 	) => Effect.Effect<MapTileCaptureResponse, unknown>;
 }
 
+/** @deprecated Use `MapTileCapturePortApi`. */
+export type MapTileCapturePortShape = MapTileCapturePortApi;
+
 export class MapTileCapturePort extends Context.Service<
 	MapTileCapturePort,
 	MapTileCapturePortApi
@@ -683,6 +686,9 @@ export interface MapCaptureApi {
 		options: RunMapCaptureOptions | RunMapCapturePlanOptions
 	) => Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError>;
 }
+
+/** @deprecated Use `MapCaptureApi`. */
+export type MapCaptureShape = MapCaptureApi;
 
 export class MapCapture extends Context.Service<MapCapture, MapCaptureApi>()(
 	"@ue-shed/cameras/MapCapture"

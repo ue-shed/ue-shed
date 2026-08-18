@@ -156,6 +156,9 @@ export interface MapCaptureRepositoryApi {
 	}) => Effect.Effect<Uint8Array, MapCaptureStorageError>;
 }
 
+/** @deprecated Use `MapCaptureRepositoryApi`. */
+export type MapCaptureRepositoryShape = MapCaptureRepositoryApi;
+
 export class MapCaptureRepository extends Context.Service<
 	MapCaptureRepository,
 	MapCaptureRepositoryApi

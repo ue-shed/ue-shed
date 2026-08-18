@@ -49,6 +49,9 @@ export interface MapHistoryApi {
 	) => Effect.Effect<PerforceFastMapHistory, MapHistoryError>;
 }
 
+/** @deprecated Use `MapHistoryApi`. */
+export type MapHistoryShape = MapHistoryApi;
+
 /** The Perforce-first Map History workflow. It owns no credentials or source-control policy. */
 export class MapHistory extends Context.Service<MapHistory, MapHistoryApi>()(
 	"@ue-shed/map-history/MapHistory"

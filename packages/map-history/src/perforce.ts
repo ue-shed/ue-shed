@@ -118,6 +118,9 @@ export interface PerforceHistorySourceApi {
 	) => Effect.Effect<PerforceMapLineage, MapHistoryError>;
 }
 
+/** @deprecated Use `PerforceHistorySourceApi`. */
+export type PerforceHistorySourceShape = PerforceHistorySourceApi;
+
 export class PerforceHistorySource extends Context.Service<
 	PerforceHistorySource,
 	PerforceHistorySourceApi

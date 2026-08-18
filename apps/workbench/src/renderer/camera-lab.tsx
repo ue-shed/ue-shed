@@ -1,8 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
-import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
+import { CameraScheduleConfig, type CameraStatus } from "@ue-shed/protocol";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../main/preload.js";
 import { workbenchRendererClient } from "./workbench-client.js";
@@ -28,12 +28,9 @@ const resolutionDimensions = {
 	"2560x1440": [2560, 1440]
 } satisfies Readonly<Record<CaptureResolution, readonly [number, number]>>;
 
-const resolutionOptions = [
-	"640x360",
-	"1280x720",
-	"1920x1080",
-	"2560x1440"
-] satisfies ReadonlyArray<CaptureResolution>;
+const resolutionOptions = Schema.decodeUnknownSync(
+	Schema.Array(CameraScheduleConfig.fields.resolution)
+)(Object.keys(resolutionDimensions));
 
 const defaultConfig: CameraScheduleConfig = {
 	activeCameraCount: 8,

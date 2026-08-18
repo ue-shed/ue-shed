@@ -22,17 +22,51 @@ function importedName(node: ESTree.Node): string | null {
 	return node.imported.type === "Identifier" ? node.imported.name : node.imported.value;
 }
 
-function isTestFrameworkObject(
+function memberName(expression: ESTree.MemberExpression): string | null {
+	const property = expression.property;
+	return expression.computed
+		? property.type === "Literal" && typeof property.value === "string"
+			? property.value
+			: null
+		: property.type === "Identifier"
+			? property.name
+			: null;
+}
+
+function namespaceImportSource(
 	sourceCode: SourceCode,
-	expression: ESTree.Expression
-): expression is ESTree.IdentifierReference {
+	identifier: ESTree.IdentifierReference
+): string | null {
+	const variable = resolveVariable(sourceCode, identifier);
+	if (variable === null) return null;
+	for (const definition of variable.defs) {
+		if (
+			definition.type === "ImportBinding" &&
+			definition.node.type === "ImportNamespaceSpecifier" &&
+			definition.parent?.type === "ImportDeclaration"
+		) {
+			return definition.parent.source.value;
+		}
+	}
+	return null;
+}
+
+function isTestFrameworkObject(sourceCode: SourceCode, expression: ESTree.Expression): boolean {
+	if (expression.type === "MemberExpression") {
+		if (expression.object.type !== "Identifier") return false;
+		const source = namespaceImportSource(sourceCode, expression.object);
+		const name = memberName(expression);
+		return (
+			(source === "vitest" && name === "vi") ||
+			(source === "@jest/globals" && name === "jest")
+		);
+	}
 	if (expression.type !== "Identifier") return false;
 	if (
 		(expression.name === "vi" || expression.name === "jest") &&
 		sourceCode.isGlobalReference(expression)
-	) {
+	)
 		return true;
-	}
 
 	const variable = resolveVariable(sourceCode, expression);
 	if (variable === null || variable.defs.length === 0) {
@@ -55,19 +89,9 @@ function isTestFrameworkObject(
 }
 
 function moduleMockCall(sourceCode: SourceCode, callee: ESTree.Expression): boolean {
-	if (!("property" in callee) || !("object" in callee) || !("computed" in callee)) return false;
+	if (callee.type !== "MemberExpression") return false;
 	if (!isTestFrameworkObject(sourceCode, callee.object)) return false;
-	const property = callee.property;
-	const method = callee.computed
-		? property.type === "Literal" &&
-			(property.value === "doMock" ||
-				property.value === "mock" ||
-				property.value === "unstable_mockModule")
-			? property.value
-			: null
-		: property.type === "Identifier"
-			? property.name
-			: null;
+	const method = memberName(callee);
 	return method !== null && moduleMockMethods.has(method);
 }
 

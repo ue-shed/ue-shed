@@ -107,6 +107,110 @@ test("rejects WASM evidence that hides optimizer state", () => {
 	);
 });
 
+test("rejects non-string WASM tool identities even when they are truthy", () => {
+	const malformedJson = JSON.stringify({
+		schemaVersion: 1,
+		cargoLocked: true,
+		packageVersion: PUBLIC_VERSION,
+		crateVersion: PUBLIC_VERSION,
+		targets: ["nodejs", "web"],
+		tools: {
+			rustc: {},
+			wasmPack: [],
+			wasmBindgen: 1,
+			wasmOpt: "wasm-opt version 131"
+		},
+		optimizer: {
+			name: "wasm-opt",
+			command: "wasm-opt",
+			version: "wasm-opt version 131",
+			enabled: true
+		},
+		limits: {
+			maxInputBytes: 67108864,
+			maxOutputBytes: 67108864,
+			maxExports: 100000,
+			maxProjectionItems: 1000000
+		}
+	});
+	// SAFETY: this negative test intentionally supplies malformed external JSON to the validator.
+	const malformed = JSON.parse(malformedJson) as WasmBuildInfo;
+	assert.throws(
+		() => validateWasmBuildInfo(malformed),
+		/tools\.rustc.*tools\.wasmPack.*tools\.wasmBindgen/s
+	);
+});
+
+test("rejects non-string enabled optimizer identities even when they compare equal", () => {
+	const malformedJson = JSON.stringify({
+		schemaVersion: 1,
+		cargoLocked: true,
+		packageVersion: PUBLIC_VERSION,
+		crateVersion: PUBLIC_VERSION,
+		targets: ["nodejs", "web"],
+		tools: {
+			rustc: "rustc",
+			wasmPack: "wasm-pack",
+			wasmBindgen: "wasm-bindgen",
+			wasmOpt: 1
+		},
+		optimizer: {
+			name: "wasm-opt",
+			command: {},
+			version: 1,
+			enabled: true
+		},
+		limits: {
+			maxInputBytes: 67108864,
+			maxOutputBytes: 67108864,
+			maxExports: 100000,
+			maxProjectionItems: 1000000
+		}
+	});
+	// SAFETY: this negative test intentionally supplies malformed external JSON to the validator.
+	const malformed = JSON.parse(malformedJson) as WasmBuildInfo;
+	assert.throws(
+		() => validateWasmBuildInfo(malformed),
+		/tools\.wasmOpt.*concrete version.*record its invocation/s
+	);
+});
+
+test("rejects non-string and empty disabled optimizer identities", () => {
+	const malformedJson = JSON.stringify({
+		schemaVersion: 1,
+		cargoLocked: true,
+		packageVersion: PUBLIC_VERSION,
+		crateVersion: PUBLIC_VERSION,
+		targets: ["nodejs", "web"],
+		tools: {
+			rustc: "rustc",
+			wasmPack: "wasm-pack",
+			wasmBindgen: "wasm-bindgen",
+			wasmOpt: ""
+		},
+		optimizer: {
+			name: "wasm-opt",
+			status: "disabled",
+			reason: {},
+			command: null,
+			version: null,
+			enabled: false
+		},
+		limits: {
+			maxInputBytes: 67108864,
+			maxOutputBytes: 67108864,
+			maxExports: 100000,
+			maxProjectionItems: 1000000
+		}
+	});
+	// SAFETY: this negative test intentionally supplies malformed external JSON to the validator.
+	const malformed = JSON.parse(malformedJson) as WasmBuildInfo;
+	assert.throws(
+		() => validateWasmBuildInfo(malformed),
+		/tools\.wasmOpt.*record why it did not run.*explicitly record that optimization was disabled/s
+	);
+});
+
 test("requires a candidate to bind the exact successful Trusted Unreal evidence artifact", () => {
 	const manifest = {
 		evidence: { unrealWorkflow: "Trusted Unreal", unrealRunId: "123456" },

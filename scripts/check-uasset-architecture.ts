@@ -51,7 +51,7 @@ async function main() {
 			);
 		}
 	} catch (error) {
-		if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") {
+		if (!(error instanceof Object) || !("code" in error) || error.code !== "ENOENT") {
 			throw error;
 		}
 	}

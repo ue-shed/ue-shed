@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { textQualityQuery } from "./quality-query.js";
-import type { TextQualityReport } from "./quality-schema.js";
+import { TextQualityRuleId, TextRoleId, type TextQualityReport } from "./quality-schema.js";
 import { makeTextOccurrenceId, makeTextUnitId } from "./schema.js";
 
 const occurrence = {
@@ -44,8 +44,8 @@ const report: TextQualityReport = {
 			expectation: { kind: "maximum_characters", maximumCharacters: 10 },
 			kind: "character_budget",
 			recovery: "Shorten this prompt.",
-			role: "ui.prompt" as never,
-			ruleId: "ui.prompt.characters" as never,
+			role: TextRoleId.make("ui.prompt"),
+			ruleId: TextQualityRuleId.make("ui.prompt.characters"),
 			textUnitId: makeTextUnitId("text:menu")
 		},
 		{
@@ -60,16 +60,16 @@ const report: TextQualityReport = {
 			expectation: { kind: "forbidden_term", term: "old" },
 			kind: "terminology",
 			recovery: "Remove the deprecated term.",
-			role: "ui.prompt" as never,
-			ruleId: "ui.prompt.terms" as never,
+			role: TextRoleId.make("ui.prompt"),
+			ruleId: TextQualityRuleId.make("ui.prompt.terms"),
 			textUnitId: makeTextUnitId("text:menu")
 		}
 	],
-	roles: [{ matchedOccurrences: 1, matchedTextUnits: 1, role: "ui.prompt" as never }],
+	roles: [{ matchedOccurrences: 1, matchedTextUnits: 1, role: TextRoleId.make("ui.prompt") }],
 	ruleDocumentVersion: 1,
 	rules: [
-		{ findingCount: 1, ruleId: "ui.prompt.characters" as never },
-		{ findingCount: 1, ruleId: "ui.prompt.terms" as never }
+		{ findingCount: 1, ruleId: TextQualityRuleId.make("ui.prompt.characters") },
+		{ findingCount: 1, ruleId: TextQualityRuleId.make("ui.prompt.terms") }
 	],
 	schemaVersion: 1,
 	status: "partial"

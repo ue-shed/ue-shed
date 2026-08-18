@@ -163,7 +163,7 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 				units: page.map(({ presentation }) => presentation),
 				...(final !== undefined && afterCursor + page.length < matched.length
 					? { nextCursor: final }
-					: {})
+					: undefined)
 			};
 		},
 		focus: (request) => {
@@ -199,7 +199,7 @@ export function textCorpusQuery(corpus: TextCorpus): TextCorpusQuery {
 				...(final !== undefined &&
 				afterCursor + occurrences.length < unit.occurrences.length
 					? { nextOccurrenceCursor: final }
-					: {})
+					: undefined)
 			};
 		}
 	};

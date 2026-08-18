@@ -30,7 +30,7 @@ import {
 	ENHANCED_INPUT_CLASS_PREFIX,
 	scanEnhancedInputFromProjectIndex
 } from "@ue-shed/enhanced-input";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import {
 	DISPOSABLE_MARKER_CONTENT,
 	DISPOSABLE_MARKER_FILE,
@@ -204,8 +204,8 @@ export function parseArguments(arguments_: readonly string[]): BenchmarkOptions 
 	if (projectRoot === undefined) throw new Error("--project is required.");
 	return {
 		buildReader,
-		...(mutationProjectRoot === undefined ? {} : { mutationProjectRoot }),
-		...(output === undefined ? {} : { output }),
+		...(mutationProjectRoot === undefined ? undefined : { mutationProjectRoot }),
+		...(output === undefined ? undefined : { output }),
 		projectRoot,
 		reader,
 		runs,
@@ -217,7 +217,7 @@ function roundMilliseconds(value: number): number {
 	return Math.round(value * 1_000) / 1_000;
 }
 
-function gitContext(): { readonly dirty: boolean; readonly revision: string } {
+function gitContext() {
 	return {
 		dirty:
 			execFileSync("git", ["status", "--porcelain"], {
@@ -477,9 +477,9 @@ class ResourceSampler {
 }
 
 function failureKind(cause: unknown): string {
-	if (typeof cause === "object" && cause !== null && "kind" in cause) {
+	if (cause instanceof Object && "kind" in cause) {
 		const kind = cause.kind;
-		if (typeof kind === "string") return kind;
+		if (Schema.is(Schema.String)(kind)) return kind;
 	}
 	return cause instanceof Error ? cause.name : "unknown";
 }
@@ -550,7 +550,7 @@ async function runProjectIndex(
 					expectedGeneration: summary.generation,
 					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 					projectId: summary.projectId,
-					...(cursor === undefined ? {} : { cursor })
+					...(cursor === undefined ? undefined : { cursor })
 				})
 			);
 			const exactClasses = yield* queryPages((cursor) =>
@@ -559,7 +559,7 @@ async function runProjectIndex(
 					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 					projectId: summary.projectId,
 					values: [...SAVED_TABLE_SCAN_CLASSES, STRING_TABLE_CLASS, TEXTURE_CLASS],
-					...(cursor === undefined ? {} : { cursor })
+					...(cursor === undefined ? undefined : { cursor })
 				})
 			);
 			const enhancedPrefixes = yield* queryPages((cursor) =>
@@ -568,7 +568,7 @@ async function runProjectIndex(
 					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 					projectId: summary.projectId,
 					values: [ENHANCED_INPUT_CLASS_PREFIX],
-					...(cursor === undefined ? {} : { cursor })
+					...(cursor === undefined ? undefined : { cursor })
 				})
 			);
 			const enhancedSuffixes = yield* queryPages((cursor) =>
@@ -577,7 +577,7 @@ async function runProjectIndex(
 					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 					projectId: summary.projectId,
 					values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES],
-					...(cursor === undefined ? {} : { cursor })
+					...(cursor === undefined ? undefined : { cursor })
 				})
 			);
 			const serializedNames = yield* queryPages((cursor) =>
@@ -586,7 +586,7 @@ async function runProjectIndex(
 					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 					projectId: summary.projectId,
 					values: [TEXT_PROPERTY_NAME],
-					...(cursor === undefined ? {} : { cursor })
+					...(cursor === undefined ? undefined : { cursor })
 				})
 			);
 			const queryMs =
@@ -621,7 +621,7 @@ async function runProjectIndex(
 			}
 			return {
 				index,
-				...(inputPackages === undefined ? {} : { inputPackages }),
+				...(inputPackages === undefined ? undefined : { inputPackages }),
 				queryPages:
 					maps.pages +
 					exactClasses.pages +
@@ -631,7 +631,7 @@ async function runProjectIndex(
 				summary,
 				timings: {
 					foldingMs,
-					...(inputDecodeMs === undefined ? {} : { inputDecodeMs }),
+					...(inputDecodeMs === undefined ? undefined : { inputDecodeMs }),
 					native: nativeTiming,
 					queryMs,
 					refreshMs
@@ -655,12 +655,14 @@ async function observedSample(
 			...(await sampler.stop(cacheRoot)),
 			durationMs: roundMilliseconds(performance.now() - started),
 			index: indexObservation(result.summary, result.index, result.queryPages),
-			...(result.inputPackages === undefined ? {} : { inputPackages: result.inputPackages }),
+			...(result.inputPackages === undefined
+				? undefined
+				: { inputPackages: result.inputPackages }),
 			timings: {
 				...result.timings,
 				foldingMs: roundMilliseconds(result.timings.foldingMs),
 				...(result.timings.inputDecodeMs === undefined
-					? {}
+					? undefined
 					: { inputDecodeMs: roundMilliseconds(result.timings.inputDecodeMs) }),
 				native: {
 					committingMs: roundMilliseconds(result.timings.native.committingMs),
@@ -749,7 +751,7 @@ async function repeated(
 	return samples;
 }
 
-function writeResult(path: string, result: unknown): void {
+function writeResult<Result>(path: string, result: Result): void {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(result, null, "\t")}\n`, "utf8");
 }

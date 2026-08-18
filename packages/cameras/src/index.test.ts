@@ -9,7 +9,7 @@ import {
 	CameraFeedError,
 	CameraFrameDecoder,
 	cameraFeedLayer,
-	type CameraFeedShape
+	type CameraFeedApi
 } from "./index.js";
 
 function writeUnrealGuid(buffer: Buffer, offset: number, digits: string): void {
@@ -58,7 +58,7 @@ function pipeName(): string {
 async function acquireFeed(
 	name: string,
 	capacity = 8
-): Promise<{ readonly feed: CameraFeedShape; readonly scope: Scope.Closeable }> {
+): Promise<{ readonly feed: CameraFeedApi; readonly scope: Scope.Closeable }> {
 	const scope = await Effect.runPromise(Scope.make());
 	scopes.push(scope);
 	const context = await Effect.runPromise(
@@ -74,7 +74,7 @@ async function connectToFeed(name: string): Promise<Socket> {
 }
 
 function collectFrames(
-	feed: CameraFeedShape,
+	feed: CameraFeedApi,
 	count: number,
 	started: Deferred.Deferred<void>
 ): Promise<ReadonlyArray<bigint>> {
@@ -88,7 +88,7 @@ function collectFrames(
 	);
 }
 
-async function waitForFrames(feed: CameraFeedShape, expected: number): Promise<void> {
+async function waitForFrames(feed: CameraFeedApi, expected: number): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		if ((await Effect.runPromise(feed.metrics)).framesReceived >= expected) return;
 		await new Promise<void>((resolve) => setImmediate(resolve));
@@ -96,7 +96,7 @@ async function waitForFrames(feed: CameraFeedShape, expected: number): Promise<v
 	throw new Error(`Camera feed did not receive ${expected} frames.`);
 }
 
-async function waitForDeliveryReplacement(feed: CameraFeedShape): Promise<void> {
+async function waitForDeliveryReplacement(feed: CameraFeedApi): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt += 1) {
 		if ((await Effect.runPromise(feed.metrics)).deliveryReplacements > 0) return;
 		await new Promise<void>((resolve) => setImmediate(resolve));
@@ -211,7 +211,7 @@ describe("CameraFeed", () => {
 
 	test("interruption closes connected sockets and the server deterministically", async () => {
 		const name = pipeName();
-		const acquired = await Effect.runPromise(Deferred.make<CameraFeedShape>());
+		const acquired = await Effect.runPromise(Deferred.make<CameraFeedApi>());
 		const owner = Effect.runFork(
 			Effect.scoped(
 				Effect.gen(function* () {

@@ -68,13 +68,15 @@ const invalidFixtures: ReadonlyArray<{
 	{ file: "invalid-selection-unknown-code.json", schema: ReviewSubjectInspectionResponse }
 ];
 
-function readJson(file: string): unknown {
-	return JSON.parse(readFileSync(join(fixturesDirectory, file), "utf8")) as unknown;
+function readJson(file: string): Schema.Json {
+	return Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(readFileSync(join(fixturesDirectory, file), "utf8"))
+	);
 }
 
-function roundTrip(schema: WireSchema, input: unknown): unknown {
+function roundTrip(schema: WireSchema, input: Schema.Json): Schema.Json {
 	const decoded = Schema.decodeUnknownSync(schema)(input);
-	return Schema.encodeUnknownSync(schema)(decoded);
+	return Schema.decodeUnknownSync(Schema.Json)(Schema.encodeUnknownSync(schema)(decoded));
 }
 
 for (const { file, schema } of validFixtures) {
@@ -96,6 +98,7 @@ for (const { file, schema } of invalidFixtures) {
 	}
 }
 
+// SAFETY: this repository fixture is decoded by the matching protocol schema below.
 const provisioningFixture = JSON.parse(
 	readFileSync(join(provisioningFixturesDirectory, "provision-request-valid.json"), "utf8")
 ) as unknown;
@@ -115,6 +118,7 @@ const mapTileFixtures: ReadonlyArray<{
 	{ file: "manifest-valid.json", schema: MapTilePyramidManifest }
 ];
 for (const { file, schema } of mapTileFixtures) {
+	// SAFETY: this repository fixture is decoded by the matching review schema below.
 	const fixture = JSON.parse(
 		readFileSync(join(mapTileFixturesDirectory, file), "utf8")
 	) as unknown;
@@ -127,6 +131,7 @@ for (const { file, schema } of mapTileFixtures) {
 	}
 }
 for (const file of ["manifest-invalid-grid.json", "manifest-invalid-complete.json"]) {
+	// SAFETY: this repository fixture is decoded by the matching review schema below.
 	const fixture = JSON.parse(
 		readFileSync(join(mapTileFixturesDirectory, file), "utf8")
 	) as unknown;

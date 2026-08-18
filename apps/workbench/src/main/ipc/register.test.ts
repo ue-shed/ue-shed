@@ -12,7 +12,7 @@ import {
 	movementGymScenario,
 	ScenarioRunHandle,
 	scenarioWireContract,
-	type ScenarioRunnerShape
+	type ScenarioRunnerApi
 } from "@ue-shed/scenarios";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
@@ -115,11 +115,11 @@ function buildRegistrationLayer(recorder: Recorder) {
 		chooseAndScan: () =>
 			recorder
 				.record("assetAudits.chooseAndScan")
-				.pipe(Effect.as({ status: "not_configured" } as TextureAuditRunResult)),
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextureAuditRunResult)),
 		configuredScan: () =>
 			recorder
 				.record("assetAudits.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" } as TextureAuditRunResult)),
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextureAuditRunResult)),
 		preview: (objectPath) =>
 			recorder.record(`assetAudits.preview:${objectPath}`).pipe(
 				Effect.as({
@@ -129,7 +129,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 					reason: "not_connected",
 					retrySafe: true,
 					status: "unavailable"
-				} as TexturePreviewResult)
+				} satisfies TexturePreviewResult)
 			),
 		previewOffline: (objectPath) =>
 			recorder.record(`assetAudits.previewOffline:${objectPath}`).pipe(
@@ -140,7 +140,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 					reason: "offline_unavailable",
 					retrySafe: true,
 					status: "unavailable"
-				} as TexturePreviewResult)
+				} satisfies TexturePreviewResult)
 			),
 		previewOfflineBatch: (request) =>
 			recorder
@@ -161,7 +161,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 									reason: "offline_unavailable",
 									retrySafe: true,
 									status: "unavailable"
-								}) as TexturePreviewResult
+								}) satisfies TexturePreviewResult
 						)
 					})
 				)
@@ -184,11 +184,11 @@ function buildRegistrationLayer(recorder: Recorder) {
 		chooseAndScan: () =>
 			recorder
 				.record("gameText.chooseAndScan")
-				.pipe(Effect.as({ status: "not_configured" } as TextCorpusRunResult)),
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusRunResult)),
 		configuredScan: () =>
 			recorder
 				.record("gameText.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" } as TextCorpusRunResult))
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextCorpusRunResult))
 	});
 
 	const contentObservatory = makeWorkbenchContentObservatoryTestLayer({
@@ -211,11 +211,11 @@ function buildRegistrationLayer(recorder: Recorder) {
 		chooseAndScan: () =>
 			recorder
 				.record("inputAtlas.chooseAndScan")
-				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult)),
+				.pipe(Effect.as({ status: "not_configured" } satisfies EnhancedInputRunResult)),
 		configuredScan: () =>
 			recorder
 				.record("inputAtlas.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" } as EnhancedInputRunResult))
+				.pipe(Effect.as({ status: "not_configured" } satisfies EnhancedInputRunResult))
 	});
 	const configExplorer = makeWorkbenchConfigExplorerTestLayer({
 		query: (request) =>
@@ -357,7 +357,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 				Effect.as({
 					status: "failed",
 					error: { message: "m", recovery: "r" }
-				} as MapReviewApprovalResult)
+				} satisfies MapReviewApprovalResult)
 			),
 		authorFromSelection: () =>
 			recorder
@@ -560,7 +560,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		runId: "run-live-1",
 		scenarioId: movementGymScenario.id
 	});
-	const scenarioRunner: ScenarioRunnerShape = {
+	const scenarioRunner: ScenarioRunnerApi = {
 		cancel: () => Effect.die("not used"),
 		cancelHandle: () =>
 			recorder.record("scenarioRunner.cancel").pipe(

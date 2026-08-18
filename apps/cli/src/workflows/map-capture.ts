@@ -21,7 +21,8 @@ const ExplicitTiles = Schema.Array(
 
 function readExplicitTiles(path: string) {
 	return Effect.tryPromise({
-		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+		try: async () =>
+			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 		catch: commandError
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(ExplicitTiles)),
@@ -129,13 +130,13 @@ export const runMapCaptureRun = Effect.fn("Cli.workflow.map_capture.run")(
 				}
 				const outcome = yield* runMapCapture({
 					...(command.correlationId === undefined
-						? {}
+						? undefined
 						: { correlationId: command.correlationId }),
 					endpoint: command.endpoint,
-					...(command.levels === undefined ? {} : { levels: command.levels }),
+					...(command.levels === undefined ? undefined : { levels: command.levels }),
 					planPath: command.planPath,
 					projectRoot: command.projectRoot,
-					...(tiles === undefined ? {} : { tiles })
+					...(tiles === undefined ? undefined : { tiles })
 				}).pipe(Effect.mapError(commandError));
 				yield* printJson(outcome);
 				if (!outcome.published) {

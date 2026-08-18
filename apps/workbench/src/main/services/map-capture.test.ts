@@ -7,7 +7,7 @@ import {
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { makeEditorWorldControlTestLayer } from "@ue-shed/engine-discovery";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { createHash } from "node:crypto";
@@ -19,7 +19,7 @@ import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import {
 	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationShape
+	type WorkbenchConfigurationApi
 } from "../workbench-config.js";
 import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
@@ -30,7 +30,7 @@ afterEach(async () => {
 	await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
-const configuration: WorkbenchConfigurationShape = {
+const configuration: WorkbenchConfigurationApi = {
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
 	project: { status: "not_configured" },
@@ -216,15 +216,17 @@ it.effect("loads only manifest-owned capture proof tiles and verifies their hash
 		roots.push(projectRoot);
 		const fixture = yield* Effect.tryPromise({
 			try: async () =>
-				JSON.parse(
-					await readFile(
-						join(
-							process.cwd(),
-							"packages/protocol/contracts/cameras/map-tile/v1/fixtures/manifest-valid.json"
-						),
-						"utf8"
+				Schema.decodeUnknownSync(Schema.Json)(
+					JSON.parse(
+						await readFile(
+							join(
+								process.cwd(),
+								"packages/protocol/contracts/cameras/map-tile/v1/fixtures/manifest-valid.json"
+							),
+							"utf8"
+						)
 					)
-				) as unknown,
+				),
 			catch: (cause) => cause
 		}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
 		const fixtureArtifact = fixture.tiles[0]!;
@@ -334,6 +336,7 @@ it.effect("provisions the snapped bounds as one orthographic live camera", () =>
 			]
 		});
 		expect(
+			// SAFETY: toMatchObject above verified the provision request's camera projection structure.
 			(
 				provisionRequest as {
 					readonly cameras: ReadonlyArray<{

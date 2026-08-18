@@ -162,10 +162,7 @@ export class CameraFrameDecoder {
 		return false;
 	}
 
-	push(chunk: Uint8Array): {
-		readonly frames: ReadonlyArray<CameraFrame>;
-		readonly malformed: number;
-	} {
+	push(chunk: Uint8Array) {
 		if (chunk.byteLength > 0) {
 			this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
 			this.bufferedBytes += chunk.byteLength;
@@ -226,13 +223,16 @@ export class CameraFrameDecoder {
 	}
 }
 
-export interface CameraFeedShape {
+export interface CameraFeedApi {
 	readonly frames: Stream.Stream<CameraFrame>;
 	readonly latestFrames: Effect.Effect<ReadonlyMap<number, CameraFrame>>;
 	readonly metrics: Effect.Effect<CameraFeedMetrics>;
 }
 
-export class CameraFeed extends Context.Service<CameraFeed, CameraFeedShape>()(
+/** @deprecated Use `CameraFeedApi`. */
+export type CameraFeedShape = CameraFeedApi;
+
+export class CameraFeed extends Context.Service<CameraFeed, CameraFeedApi>()(
 	"@ue-shed/cameras/CameraFeed"
 ) {}
 
@@ -242,7 +242,7 @@ export interface CameraFeedOptions {
 }
 
 interface AcquiredCameraFeed {
-	readonly feed: CameraFeedShape;
+	readonly feed: CameraFeedApi;
 	readonly pubsub: PubSub.PubSub<CameraFrame>;
 	readonly server: Server;
 	readonly sockets: Set<Socket>;
@@ -398,7 +398,7 @@ export function cameraFeedLayer(
 export const CameraFeedLive = cameraFeedLayer();
 
 export function makeCameraFeedTestLayer(
-	feed: Partial<CameraFeedShape> = {}
+	feed: Partial<CameraFeedApi> = {}
 ): Layer.Layer<CameraFeed> {
 	return Layer.succeed(CameraFeed, {
 		frames: feed.frames ?? Stream.empty,
@@ -439,7 +439,7 @@ function cameraControlError(
 			message: cause.message,
 			operation,
 			retrySafe: cause.retrySafe,
-			...(cause.status === undefined ? {} : { status: cause.status })
+			...(cause.status === undefined ? undefined : { status: cause.status })
 		});
 	}
 	return new CameraControlError({
@@ -454,7 +454,7 @@ const cameraRemoteCall = Effect.fn("CameraControl.remoteCall")(function* (
 	endpoint: string,
 	functionName: string,
 	operation: "configure" | "status",
-	parameters: Readonly<Record<string, unknown>>
+	parameters: Schema.JsonObject
 ) {
 	const client = yield* RemoteControlClient;
 	return yield* client

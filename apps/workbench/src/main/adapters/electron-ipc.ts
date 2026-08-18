@@ -13,31 +13,40 @@ export class ElectronIpcError extends Schema.TaggedErrorClass<ElectronIpcError>(
 	}
 ) {}
 
+export interface ElectronIpcEvent {}
+
+type InvokeHandlerArguments<Contract extends InvokeContract> =
+	Contract["args"]["Type"] extends ReadonlyArray<infer _Argument>
+		? Contract["args"]["Type"]
+		: never;
+
 export interface ElectronIpcHost {
-	readonly handle: (
+	readonly handle: <Result>(
 		channel: string,
-		listener: (event: unknown, ...args: Array<unknown>) => Promise<unknown>
+		listener: (event: ElectronIpcEvent, ...args: Array<unknown>) => Promise<Result>
 	) => void;
 	readonly removeHandler: (channel: string) => void;
 }
 
-export interface ElectronIpcShape {
-	readonly register: (
-		contract: InvokeContract,
-		handler: (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown>
+export interface ElectronIpcApi {
+	readonly register: <Contract extends InvokeContract, HandlerError, Requirements>(
+		contract: Contract,
+		handler: (
+			...args: InvokeHandlerArguments<Contract>
+		) => Effect.Effect<Contract["result"]["Type"], HandlerError, Requirements>
 	) => Effect.Effect<void, ElectronIpcError, Scope.Scope>;
 }
 
-export class ElectronIpc extends Context.Service<ElectronIpc, ElectronIpcShape>()(
+export class ElectronIpc extends Context.Service<ElectronIpc, ElectronIpcApi>()(
 	"@ue-shed/workbench/ElectronIpc"
 ) {}
 
-export interface RegisteredHandler {
+export interface RegisteredHandler<Result = unknown> {
 	readonly channel: string;
-	readonly invoke: (...args: ReadonlyArray<unknown>) => Promise<unknown>;
+	readonly invoke: (...args: ReadonlyArray<unknown>) => Promise<Result>;
 }
 
-export interface ElectronIpcTestShape extends ElectronIpcShape {
+export interface ElectronIpcTestApi extends ElectronIpcApi {
 	readonly handlers: () => Effect.Effect<ReadonlyArray<RegisteredHandler>>;
 	readonly invoke: (
 		channel: string,
@@ -45,7 +54,7 @@ export interface ElectronIpcTestShape extends ElectronIpcShape {
 	) => Effect.Effect<unknown, unknown>;
 }
 
-export class ElectronIpcTest extends Context.Service<ElectronIpcTest, ElectronIpcTestShape>()(
+export class ElectronIpcTest extends Context.Service<ElectronIpcTest, ElectronIpcTestApi>()(
 	"@ue-shed/workbench/ElectronIpc/Test"
 ) {}
 
@@ -65,14 +74,16 @@ function ipcError(
 	});
 }
 
-const adaptHandler = (
-	contract: InvokeContract,
-	handler: (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown>,
+const adaptHandler = <Contract extends InvokeContract, HandlerError, Requirements>(
+	contract: Contract,
+	handler: (
+		...args: InvokeHandlerArguments<Contract>
+	) => Effect.Effect<Contract["result"]["Type"], HandlerError, Requirements>,
 	runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
-): ((...args: ReadonlyArray<unknown>) => Promise<unknown>) => {
+): ((...args: ReadonlyArray<unknown>) => Promise<Contract["result"]["Encoded"]>) => {
 	return (...args: ReadonlyArray<unknown>) => {
 		const program = Effect.gen(function* () {
-			const decodedArgs = (yield* decodeInvokeArgs(contract)(args).pipe(
+			const decoded = yield* decodeInvokeArgs(contract)(args).pipe(
 				Effect.mapError((cause) =>
 					ipcError(
 						"decodeArgs",
@@ -81,7 +92,10 @@ const adaptHandler = (
 						"Pass arguments that match the Workbench IPC contract."
 					)
 				)
-			)) as ReadonlyArray<unknown>;
+			);
+			// SAFETY: every InvokeContract is constructed with a tuple args schema; successful
+			// decoding therefore yields the exact argument tuple owned by this contract.
+			const decodedArgs = decoded as InvokeHandlerArguments<Contract>;
 			const result = yield* handler(...decodedArgs);
 			return yield* encodeInvokeResult(contract)(result).pipe(
 				Effect.mapError((cause) =>
@@ -94,7 +108,11 @@ const adaptHandler = (
 				)
 			);
 		});
-		return runPromise(program as Effect.Effect<unknown, ElectronIpcError>);
+		// SAFETY: the Electron layer captures the complete Workbench runtime Context before
+		// registration, so all handler requirements are supplied when this program is executed.
+		return runPromise(
+			program as Effect.Effect<Contract["result"]["Encoded"], ElectronIpcError | HandlerError>
+		);
 	};
 };
 

@@ -6,7 +6,7 @@ import {
 	scanEnhancedInputWith
 } from "./project.js";
 import type {
-	AssetReaderShape,
+	AssetReaderApi,
 	SavedAssetInspection,
 	SavedAssetScanOptions
 } from "@ue-shed/unreal-assets";
@@ -277,7 +277,7 @@ describe("enhanced input projection", () => {
 
 	it("requests header candidates for conventionally named Input subclasses", async () => {
 		let requested: SavedAssetScanOptions | undefined;
-		const reader: Pick<AssetReaderShape, "scanProject"> = {
+		const reader: Pick<AssetReaderApi, "scanProject"> = {
 			scanProject: (options) => {
 				requested = options;
 				return Effect.succeed({

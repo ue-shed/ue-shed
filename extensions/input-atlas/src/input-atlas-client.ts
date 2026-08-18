@@ -10,7 +10,7 @@ export class InputAtlasClientError extends Schema.TaggedErrorClass<InputAtlasCli
 	}
 ) {}
 
-export interface InputAtlasClientShape {
+export interface InputAtlasClientApi {
 	readonly loadConfiguredProject: () => Effect.Effect<
 		EnhancedInputRunResult,
 		InputAtlasClientError
@@ -21,6 +21,6 @@ export interface InputAtlasClientShape {
 	>;
 }
 
-export class InputAtlasClient extends Context.Service<InputAtlasClient, InputAtlasClientShape>()(
+export class InputAtlasClient extends Context.Service<InputAtlasClient, InputAtlasClientApi>()(
 	"@ue-shed/extension-input-atlas/InputAtlasClient"
 ) {}

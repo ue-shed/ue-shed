@@ -53,13 +53,13 @@ const mapCaptureRunCommand = Command.make(
 		const tiles = optionalValue(tilesPath);
 		return runMapCaptureRun({
 			_tag: "MapCaptureRun",
-			...(correlation === undefined ? {} : { correlationId: correlation }),
+			...(correlation === undefined ? undefined : { correlationId: correlation }),
 			endpoint,
-			...(shouldOpenMap === undefined ? {} : { openMap: shouldOpenMap }),
-			...(levels.length === 0 ? {} : { levels }),
+			...(shouldOpenMap === undefined ? undefined : { openMap: shouldOpenMap }),
+			...(levels.length === 0 ? undefined : { levels }),
 			planPath,
 			projectRoot,
-			...(tiles === undefined ? {} : { tilesPath: tiles })
+			...(tiles === undefined ? undefined : { tilesPath: tiles })
 		});
 	}
 ).pipe(

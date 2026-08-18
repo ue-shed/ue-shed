@@ -25,7 +25,7 @@ export class EditorPlaySessionError extends Schema.TaggedErrorClass<EditorPlaySe
 	}
 ) {}
 
-export interface EditorPlaySessionShape {
+export interface EditorPlaySessionApi {
 	readonly status: (
 		endpoint: string
 	) => Effect.Effect<EditorPlaySessionStateResponse, EditorPlaySessionError>;
@@ -48,7 +48,7 @@ export interface EditorPlaySessionShape {
 	) => Effect.Effect<EditorPlaySessionCommandResponse, EditorPlaySessionError>;
 }
 
-export class EditorPlaySession extends Context.Service<EditorPlaySession, EditorPlaySessionShape>()(
+export class EditorPlaySession extends Context.Service<EditorPlaySession, EditorPlaySessionApi>()(
 	"@ue-shed/engine-discovery/EditorPlaySession"
 ) {}
 
@@ -86,13 +86,13 @@ function contractError(
 	});
 }
 
-const commandFunctions: Readonly<Record<EditorPlaySessionCommand, string>> = {
+const commandFunctions = {
 	pause: "PausePlaySession",
 	resume: "ResumePlaySession",
 	start_play: "StartPlaySession",
 	start_simulate: "StartSimulateSession",
 	stop: "StopPlaySession"
-};
+} satisfies Readonly<Record<EditorPlaySessionCommand, string>>;
 
 export const EditorPlaySessionLive = Layer.effect(
 	EditorPlaySession,
@@ -188,7 +188,7 @@ export const EditorPlaySessionLive = Layer.effect(
 );
 
 export function makeEditorPlaySessionTestLayer(
-	service: EditorPlaySessionShape
+	service: EditorPlaySessionApi
 ): Layer.Layer<EditorPlaySession> {
 	return Layer.succeed(EditorPlaySession, EditorPlaySession.of(service));
 }

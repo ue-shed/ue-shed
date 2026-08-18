@@ -31,7 +31,7 @@ function summarizeScan(scan: SavedAssetScan) {
 			objects: entry.inspection.assets.map((asset) => ({
 				kind: asset.kind,
 				objectPath: asset.object_path,
-				...(asset.kind === "UObject" ? { classPath: asset.class_path } : {})
+				...(asset.kind === "UObject" ? { classPath: asset.class_path } : undefined)
 			}))
 		})),
 		failures: scan.failures,
@@ -53,12 +53,14 @@ export const runAssetsScan = Effect.fn("Cli.workflow.assets_scan")((command: Ass
 				const target = yield* resolveScanTarget(command.path);
 				return yield* scanSavedProject({
 					projectRoot: target.projectRoot,
-					...(target.paths.length > 0 ? { paths: target.paths } : {}),
-					...(command.classes ? { classes: command.classes } : {}),
-					...(command.classPrefixes ? { classPrefixes: command.classPrefixes } : {}),
-					...(command.names ? { names: command.names } : {}),
+					...(target.paths.length > 0 ? { paths: target.paths } : undefined),
+					...(command.classes ? { classes: command.classes } : undefined),
+					...(command.classPrefixes
+						? { classPrefixes: command.classPrefixes }
+						: undefined),
+					...(command.names ? { names: command.names } : undefined),
 					...(command.maximumAssets === undefined
-						? {}
+						? undefined
 						: { maximumAssets: command.maximumAssets })
 				});
 			}).pipe(
@@ -185,7 +187,7 @@ export const runInputInspect = Effect.fn("Cli.workflow.input_inspect")(
 						const target = yield* resolveScanTarget(command.path);
 						return yield* service.scan({
 							projectRoot: target.projectRoot,
-							...(target.paths.length > 0 ? { paths: target.paths } : {})
+							...(target.paths.length > 0 ? { paths: target.paths } : undefined)
 						});
 					}
 					return yield* service.inspectPath(command.path);

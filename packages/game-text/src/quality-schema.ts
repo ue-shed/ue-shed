@@ -180,8 +180,8 @@ function validateRuleDocument(
 	return Effect.succeed(document);
 }
 
-export function decodeTextQualityRuleDocument(
-	input: unknown
+export function decodeTextQualityRuleDocument<Input>(
+	input: Input
 ): Effect.Effect<TextQualityRuleDocument, TextQualityRuleDocumentError> {
 	return Schema.decodeUnknownEffect(TextQualityRuleDocument)(input).pipe(
 		Effect.mapError(() => ruleDocumentError("invalid_structure")),
@@ -193,7 +193,7 @@ export function decodeTextQualityRuleDocumentJson(
 	input: string
 ): Effect.Effect<TextQualityRuleDocument, TextQualityRuleDocumentError> {
 	return Effect.try({
-		try: (): unknown => JSON.parse(input),
+		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(input)),
 		catch: () => ruleDocumentError("invalid_json")
 	}).pipe(Effect.flatMap(decodeTextQualityRuleDocument));
 }

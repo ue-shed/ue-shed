@@ -15,7 +15,7 @@ import { Cause } from "effect";
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
 import type { Accessor, JSX } from "solid-js";
 import type {
-	CustodianClientShape,
+	CustodianClientApi,
 	CustodianPublicError,
 	CustodianRunResult
 } from "./custodian-client.js";
@@ -84,7 +84,7 @@ function stateFrom(result: CustodianRunResult): ViewState {
 	}
 }
 
-export function ProjectCustodianRoute(props: { readonly client: CustodianClientShape }) {
+export function ProjectCustodianRoute(props: { readonly client: CustodianClientApi }) {
 	const action = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	const [cleanupOpen, setCleanupOpen] = createSignal(false);
@@ -103,7 +103,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientS
 				);
 	});
 
-	const run = (operation: () => ReturnType<CustodianClientShape["configuredScan"]>) => {
+	const run = (operation: () => ReturnType<CustodianClientApi["configuredScan"]>) => {
 		setCleanupOpen(false);
 		setState({ status: "loading" });
 		action.run(operation(), {
@@ -453,7 +453,7 @@ function TargetRow(props: { readonly target: CustodianTarget }) {
 }
 
 function CleanupWorkflow(props: {
-	readonly client: CustodianClientShape;
+	readonly client: CustodianClientApi;
 	readonly report: CustodianReport;
 	readonly onClose: () => void;
 	readonly onFinished: () => void;

@@ -109,7 +109,7 @@ const LegacyProvisionedCameraRequest = Schema.Struct({
 	previewFps: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })))
 });
 
-export function decodeProvisionedCameraRequest(input: unknown) {
+export function decodeProvisionedCameraRequest<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(
 		Schema.Union([
 			ProvisionedCameraRequest,

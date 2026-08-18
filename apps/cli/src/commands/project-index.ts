@@ -53,7 +53,7 @@ const maps = Command.make("maps", pageOptions, ({ cursor, limit, ...value }) => 
 		_tag: "ProjectIndexMaps",
 		...targetFields(value),
 		limit,
-		...(cursorValue === undefined ? {} : { cursor: cursorValue })
+		...(cursorValue === undefined ? undefined : { cursor: cursorValue })
 	});
 }).pipe(Command.withDescription("Read one bounded page of saved maps."));
 
@@ -77,7 +77,7 @@ const query = Command.make(
 			kind,
 			limit,
 			values,
-			...(cursorValue === undefined ? {} : { cursor: cursorValue })
+			...(cursorValue === undefined ? undefined : { cursor: cursorValue })
 		});
 	}
 ).pipe(Command.withDescription("Read one bounded domain-neutral candidate page."));

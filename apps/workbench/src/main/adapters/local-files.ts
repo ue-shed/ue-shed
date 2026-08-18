@@ -16,7 +16,7 @@ export class LocalFilesError extends Schema.TaggedErrorClass<LocalFilesError>()(
 	}
 ) {}
 
-export interface LocalFilesShape {
+export interface LocalFilesApi {
 	readonly exists: (path: string) => Effect.Effect<boolean>;
 	readonly readFile: (
 		path: string,
@@ -34,7 +34,7 @@ export interface LocalFilesShape {
 	) => Effect.Effect<void, LocalFilesError>;
 }
 
-export class LocalFiles extends Context.Service<LocalFiles, LocalFilesShape>()(
+export class LocalFiles extends Context.Service<LocalFiles, LocalFilesApi>()(
 	"@ue-shed/workbench/LocalFiles"
 ) {}
 

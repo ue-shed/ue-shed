@@ -7,10 +7,10 @@ import {
 	type SavedMapPickerOption
 } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Schema } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
-	MapCaptureClientShape,
+	MapCaptureClientApi,
 	MapCaptureExecuteIntent,
 	MapCaptureExecuteResult,
 	MapCaptureLivePreviewResult,
@@ -35,6 +35,15 @@ type ReadySelection = Extract<MapCaptureSelectionResult, { readonly status: "rea
 type CompletedCapture = Extract<MapCaptureExecuteResult, { readonly status: "completed" }>;
 type ReadyLivePreview = Extract<MapCaptureLivePreviewResult, { readonly status: "ready" }>;
 type CaptureBackend = MapCaptureExecuteIntent["captureBackend"];
+const decodeRenderProfile = Schema.decodeUnknownSync(
+	Schema.Literals(["full_fidelity", "seam_stable", "scene_capture_defaults", "observation"])
+);
+const decodeCaptureBackend = Schema.decodeUnknownSync(
+	Schema.Literals(["scene_capture_tiles", "viewport_high_resolution"])
+);
+const decodeLodPolicy = Schema.decodeUnknownSync(
+	Schema.Literals(["natural", "per_level_distance_scale"])
+);
 type LivePreviewState =
 	| { readonly status: "idle" }
 	| { readonly status: "loading" }
@@ -104,7 +113,7 @@ function MapCaptureLiveCanvas(props: { readonly preview: ReadyLivePreview }) {
 	);
 }
 
-export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape }) {
+export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi }) {
 	const newAction = createEffectAction();
 	const chooseAction = createEffectAction();
 	const saveAction = createEffectAction();
@@ -385,7 +394,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 		saveAction.run(
 			props.client.savePlan({
 				plan: current,
-				...(currentPlanPath === undefined ? {} : { planPath: currentPlanPath }),
+				...(currentPlanPath === undefined ? undefined : { planPath: currentPlanPath }),
 				saveAs
 			}),
 			{
@@ -801,8 +810,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											onChange={(event) =>
 												updateRender((render) => ({
 													...render,
-													profile: event.currentTarget
-														.value as MapCapturePlanDraft["capture"]["render"]["profile"]
+													profile: decodeRenderProfile(
+														event.currentTarget.value
+													)
 												}))
 											}
 											{...stylex.props(styles.select)}
@@ -871,7 +881,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											value={captureBackend()}
 											onChange={(event) =>
 												setCaptureBackend(
-													event.currentTarget.value as CaptureBackend
+													decodeCaptureBackend(event.currentTarget.value)
 												)
 											}
 											{...stylex.props(styles.select)}
@@ -909,9 +919,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientShape 
 											}
 											onChange={(event) =>
 												setLodPolicy(
-													event.currentTarget.value as
-														| "natural"
-														| "per_level_distance_scale"
+													decodeLodPolicy(event.currentTarget.value)
 												)
 											}
 											{...stylex.props(styles.select)}

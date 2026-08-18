@@ -6,7 +6,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { MapReviewClientShape } from "./map-review-client.js";
+import type { MapReviewClientApi } from "./map-review-client.js";
 import { SavedWorldScout } from "./saved-world-scout.js";
 
 const maps = [
@@ -54,8 +54,9 @@ const runtime = ManagedRuntime.make(Layer.empty);
 afterEach(cleanup);
 afterAll(() => runtime.dispose());
 
-HTMLCanvasElement.prototype.getContext = (() =>
-	({
+Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+	configurable: true,
+	value: () => ({
 		arc: () => undefined,
 		beginPath: () => undefined,
 		clearRect: () => undefined,
@@ -67,13 +68,14 @@ HTMLCanvasElement.prototype.getContext = (() =>
 		setTransform: () => undefined,
 		stroke: () => undefined,
 		strokeStyle: ""
-	}) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+	})
+});
 
 function renderScout() {
 	const client = {
 		readSavedWorld: (mapPath: string) => Effect.succeed(savedWorld(mapPath)),
 		savedWorldMaps: () => Effect.succeed(maps)
-	} satisfies Pick<MapReviewClientShape, "readSavedWorld" | "savedWorldMaps">;
+	} satisfies Pick<MapReviewClientApi, "readSavedWorld" | "savedWorldMaps">;
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			<SavedWorldScout client={client} />

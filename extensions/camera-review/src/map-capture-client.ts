@@ -155,7 +155,7 @@ export class MapCaptureClientError extends Schema.TaggedErrorClass<MapCaptureCli
 	}
 ) {}
 
-export interface MapCaptureClientShape {
+export interface MapCaptureClientApi {
 	readonly actors: (
 		mapPath: string
 	) => Effect.Effect<MapCaptureActorCatalogResult, MapCaptureClientError>;

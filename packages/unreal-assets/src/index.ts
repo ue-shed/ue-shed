@@ -31,14 +31,21 @@ export type {
 	AssetReaderConfiguration,
 	AssetReaderOptions,
 	AssetReaderProtocolObservation,
-	AssetReaderShape,
-	AssetReaderTestShape,
+	AssetReaderApi,
+	AssetReaderTestApi,
 	ProtocolTerminalState,
 	SavedAssetExtractionOptions,
 	SavedAssetScanOptions,
 	SavedTableCatalogOptions,
 	SavedWorldReadOptions
 } from "./asset-reader.js";
+
+/** @deprecated Use `AssetReaderApi`. */
+export type AssetReaderShape = import("./asset-reader.js").AssetReaderApi;
+/** @deprecated Use `AssetReaderTestApi`. */
+export type AssetReaderTestShape = import("./asset-reader.js").AssetReaderTestApi;
+/** @deprecated Use `ProjectIndexApi`. */
+export type ProjectIndexShape = import("./project-index.js").ProjectIndexApi;
 export {
 	ProtocolOutputBudget,
 	ProtocolStreamFailure,

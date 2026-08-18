@@ -12,15 +12,15 @@ import {
 	type AuthoringSaveRequest
 } from "@ue-shed/protocol";
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { makeAuthoringSessionService } from "./session-service.js";
 import { fingerprintTable } from "./fingerprint.js";
 
-const decodeAuthoringApplyResult = (input: unknown) =>
+const decodeAuthoringApplyResult = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringApplyResultEffect(input));
-const decodeAuthoringSaveResult = (input: unknown) =>
+const decodeAuthoringSaveResult = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringSaveResultEffect(input));
-const decodeAuthoringTableSnapshot = (input: unknown) =>
+const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -47,17 +47,19 @@ function runFixture(...args: string[]): void {
 	});
 }
 
-function readDiskSnapshot(path = assetPath): unknown {
-	return JSON.parse(
-		execFileSync(executable!, ["authoring", path, "--format", "json"], {
-			encoding: "utf8",
-			windowsHide: true
-		})
+function readDiskSnapshot(path = assetPath): Schema.Json {
+	return Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(
+			execFileSync(executable!, ["authoring", path, "--format", "json"], {
+				encoding: "utf8",
+				windowsHide: true
+			})
+		)
 	);
 }
 
-async function json(path: string): Promise<unknown> {
-	return JSON.parse(await readFile(path, "utf8"));
+async function json(path: string): Promise<Schema.Json> {
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
 }
 
 describe.skipIf(!enabled)("real Unreal authoring mutation", () => {

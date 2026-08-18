@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Ref } from "effect";
 import type { UnrealConnectionSettings } from "../ipc-contracts.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
-export interface WorkbenchUnrealConnectionShape {
+export interface WorkbenchUnrealConnectionApi {
 	readonly endpoint: () => Effect.Effect<string>;
 	readonly settings: () => Effect.Effect<UnrealConnectionSettings>;
 	readonly setPort: (port: number) => Effect.Effect<UnrealConnectionSettings>;
@@ -10,7 +10,7 @@ export interface WorkbenchUnrealConnectionShape {
 
 export class WorkbenchUnrealConnection extends Context.Service<
 	WorkbenchUnrealConnection,
-	WorkbenchUnrealConnectionShape
+	WorkbenchUnrealConnectionApi
 >()("@ue-shed/workbench/WorkbenchUnrealConnection") {}
 
 function endpointPort(endpoint: string): number {

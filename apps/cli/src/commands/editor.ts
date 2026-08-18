@@ -34,7 +34,7 @@ export const editorCommand = Command.make("editor").pipe(
 							_tag: "EditorWorldOpen",
 							endpoint,
 							mapPath,
-							...(operation === undefined ? {} : { operationId: operation })
+							...(operation === undefined ? undefined : { operationId: operation })
 						});
 					}
 				).pipe(

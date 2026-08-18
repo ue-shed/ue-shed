@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { decodeUAssetIoEvent } from "@ue-shed/protocol";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeProjectIndexWirePage,
@@ -10,13 +10,18 @@ import {
 	mapProjectIndexProtocolFailure
 } from "./project-index-protocol.js";
 
-const fixture = async (name: string): Promise<unknown> =>
-	JSON.parse(
-		await readFile(
-			fileURLToPath(
-				new URL(`../../protocol/contracts/uasset-io/v1/fixtures/${name}`, import.meta.url)
-			),
-			"utf8"
+const fixture = async (name: string): Promise<Schema.Json> =>
+	Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(
+			await readFile(
+				fileURLToPath(
+					new URL(
+						`../../protocol/contracts/uasset-io/v1/fixtures/${name}`,
+						import.meta.url
+					)
+				),
+				"utf8"
+			)
 		)
 	);
 

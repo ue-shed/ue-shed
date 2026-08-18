@@ -39,7 +39,7 @@ export interface OfflineTexturePreviewHostRunResult {
 	readonly stderr: string;
 }
 
-export interface OfflineTexturePreviewHostShape {
+export interface OfflineTexturePreviewHostApi {
 	readonly exists: (path: string) => Effect.Effect<boolean>;
 	readonly listDirectories: (
 		path: string
@@ -67,7 +67,7 @@ export interface OfflineTexturePreviewHostShape {
 
 export class OfflineTexturePreviewHost extends Context.Service<
 	OfflineTexturePreviewHost,
-	OfflineTexturePreviewHostShape
+	OfflineTexturePreviewHostApi
 >()("@ue-shed/workbench/OfflineTexturePreviewHost") {}
 
 function hostError(

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import {
 	makeRemoteControlClient,
 	RemoteControlClient,
-	type RemoteControlClientShape
+	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { Clock, Context, Effect, Layer, Ref, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
@@ -11,7 +11,7 @@ import {
 	ReviewRepository,
 	captureRunsRoot,
 	isPathWithin,
-	type ReviewRepositoryShape,
+	type ReviewRepositoryApi,
 	type ReviewStorageError
 } from "./review-repository.js";
 import {
@@ -53,21 +53,27 @@ export const defaultReviewCaptureConcurrency = ReviewCaptureConcurrency.make(1);
 
 type SchemaReviewCaptureRequest = typeof ReviewCaptureRequestCurrent.Type;
 
-export interface ReviewCapturePortShape {
+export interface ReviewCapturePortApi {
 	readonly capture: (
 		request: SchemaReviewCaptureRequest
 	) => Effect.Effect<ReviewCaptureResponse, unknown>;
 }
 
-export class ReviewCapturePort extends Context.Service<ReviewCapturePort, ReviewCapturePortShape>()(
+/** @deprecated Use `ReviewCapturePortApi`. */
+export type ReviewCapturePortShape = ReviewCapturePortApi;
+
+export class ReviewCapturePort extends Context.Service<ReviewCapturePort, ReviewCapturePortApi>()(
 	"@ue-shed/cameras/ReviewCapturePort"
 ) {}
 
-export interface ReviewIdGeneratorShape {
+export interface ReviewIdGeneratorApi {
 	readonly generate: () => Effect.Effect<string>;
 }
 
-export class ReviewIdGenerator extends Context.Service<ReviewIdGenerator, ReviewIdGeneratorShape>()(
+/** @deprecated Use `ReviewIdGeneratorApi`. */
+export type ReviewIdGeneratorShape = ReviewIdGeneratorApi;
+
+export class ReviewIdGenerator extends Context.Service<ReviewIdGenerator, ReviewIdGeneratorApi>()(
 	"@ue-shed/cameras/ReviewIdGenerator"
 ) {}
 
@@ -109,7 +115,7 @@ export function manualCaptureInvocation(args: {
 		cause: { type: "manual" },
 		id: args.id,
 		reviewSetId: args.reviewSetId,
-		...(args.viewIds === undefined ? {} : { viewIds: [...args.viewIds] })
+		...(args.viewIds === undefined ? undefined : { viewIds: [...args.viewIds] })
 	});
 }
 
@@ -121,10 +127,7 @@ function isoNow(millis: number): string {
 	return new Date(millis).toISOString();
 }
 
-function remoteCapturePort(
-	client: RemoteControlClientShape,
-	endpoint: string
-): ReviewCapturePortShape {
+function remoteCapturePort(client: RemoteControlClientApi, endpoint: string): ReviewCapturePortApi {
 	return {
 		capture: (request) =>
 			captureReviewView({ endpoint, request }).pipe(
@@ -146,7 +149,7 @@ export function reviewCaptureRemotePortLayer(
 }
 
 export function reviewCapturePortLayer(
-	service: ReviewCapturePortShape
+	service: ReviewCapturePortApi
 ): Layer.Layer<ReviewCapturePort> {
 	return Layer.succeed(ReviewCapturePort, ReviewCapturePort.of(service));
 }
@@ -212,9 +215,9 @@ function durableClearCompanion(
 }
 
 function captureOneView(args: {
-	readonly capturePort: ReviewCapturePortShape;
-	readonly ids: ReviewIdGeneratorShape;
-	readonly repository: ReviewRepositoryShape;
+	readonly capturePort: ReviewCapturePortApi;
+	readonly ids: ReviewIdGeneratorApi;
+	readonly repository: ReviewRepositoryApi;
 	readonly reviewSet: ReviewSet;
 	readonly runId: typeof CaptureRunId.Type;
 	readonly stagingRoot: string;
@@ -365,7 +368,7 @@ function captureOneView(args: {
 			viewId: args.view.id,
 			viewRevision: args.view.revision,
 			...(args.view.visibilityOverrides === undefined
-				? {}
+				? undefined
 				: { visibilityOverrides: args.view.visibilityOverrides }),
 			visibilityPolicy,
 			visibility: durableVisibility(response)
@@ -379,10 +382,10 @@ function captureOneView(args: {
 }
 
 function captureReviewSetWith(args: {
-	readonly capturePort: ReviewCapturePortShape;
-	readonly ids: ReviewIdGeneratorShape;
+	readonly capturePort: ReviewCapturePortApi;
+	readonly ids: ReviewIdGeneratorApi;
 	readonly options: CaptureReviewSetOptions;
-	readonly repository: ReviewRepositoryShape;
+	readonly repository: ReviewRepositoryApi;
 }): Effect.Effect<CaptureRun, ReviewCaptureRunError | ReviewStorageError> {
 	const concurrency = args.options.concurrency ?? defaultReviewCaptureConcurrency;
 	return Effect.gen(function* () {
@@ -393,7 +396,9 @@ function captureReviewSetWith(args: {
 			manualCaptureInvocation({
 				id: CaptureInvocationId.make(yield* args.ids.generate()),
 				reviewSetId: reviewSet.id,
-				...(args.options.viewIds === undefined ? {} : { viewIds: args.options.viewIds })
+				...(args.options.viewIds === undefined
+					? undefined
+					: { viewIds: args.options.viewIds })
 			});
 		if (invocation.reviewSetId !== reviewSet.id) {
 			return yield* Effect.fail(
@@ -510,13 +515,16 @@ function captureReviewSetWith(args: {
 	);
 }
 
-export interface ReviewCaptureShape {
+export interface ReviewCaptureApi {
 	readonly captureSet: (
 		options: CaptureReviewSetOptions
 	) => Effect.Effect<CaptureRun, ReviewCaptureRunError | ReviewStorageError>;
 }
 
-export class ReviewCapture extends Context.Service<ReviewCapture, ReviewCaptureShape>()(
+/** @deprecated Use `ReviewCaptureApi`. */
+export type ReviewCaptureShape = ReviewCaptureApi;
+
+export class ReviewCapture extends Context.Service<ReviewCapture, ReviewCaptureApi>()(
 	"@ue-shed/cameras/ReviewCapture"
 ) {}
 
@@ -541,9 +549,7 @@ export const ReviewCaptureLive = Layer.effect(
 	})
 );
 
-export function makeReviewCaptureTestLayer(
-	service: ReviewCaptureShape
-): Layer.Layer<ReviewCapture> {
+export function makeReviewCaptureTestLayer(service: ReviewCaptureApi): Layer.Layer<ReviewCapture> {
 	return Layer.succeed(ReviewCapture, ReviewCapture.of(service));
 }
 

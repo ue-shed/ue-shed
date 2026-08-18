@@ -46,12 +46,10 @@ function identifierError(kind: IdentifierKind, input: string): IdentifierValidat
 function decodeIdentifier<S extends Schema.ConstraintDecoder<string>>(
 	schema: S,
 	kind: IdentifierKind,
-	input: unknown
+	input: string
 ): Effect.Effect<S["Type"], IdentifierValidationError, S["DecodingServices"]> {
 	return Schema.decodeUnknownEffect(schema)(input).pipe(
-		Effect.mapError(() =>
-			identifierError(kind, typeof input === "string" ? input : String(input))
-		)
+		Effect.mapError(() => identifierError(kind, input))
 	);
 }
 
@@ -67,12 +65,12 @@ function createIdentifier<S extends Schema.ConstraintDecoder<string>>(
 	}
 }
 
-export const decodeActorId = (input: unknown) => decodeIdentifier(ActorId, "actor", input);
-export const decodeCapabilityId = (input: unknown) =>
+export const decodeActorId = (input: string) => decodeIdentifier(ActorId, "actor", input);
+export const decodeCapabilityId = (input: string) =>
 	decodeIdentifier(CapabilityId, "capability", input);
-export const decodeProducerId = (input: unknown) => decodeIdentifier(ProducerId, "producer", input);
-export const decodeSessionId = (input: unknown) => decodeIdentifier(SessionId, "session", input);
-export const decodeWorldId = (input: unknown) => decodeIdentifier(WorldId, "world", input);
+export const decodeProducerId = (input: string) => decodeIdentifier(ProducerId, "producer", input);
+export const decodeSessionId = (input: string) => decodeIdentifier(SessionId, "session", input);
+export const decodeWorldId = (input: string) => decodeIdentifier(WorldId, "world", input);
 
 export function createActorId(input: string): ActorId {
 	return createIdentifier(ActorId, "actor", input);

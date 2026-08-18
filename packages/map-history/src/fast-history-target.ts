@@ -15,9 +15,9 @@ import type {
 	ActorIdentity,
 	FastHistoryInvestigationTarget,
 	FastHistoryTargetedCoverage,
-	PerforceDepotPath,
 	PerforceFastMapHistoryQuery
 } from "./schema.js";
+import { PerforceDepotPath } from "./schema.js";
 
 const ZERO_GUID = /^0{8}-0{8}-0{8}-0{8}$/;
 
@@ -214,7 +214,7 @@ export function fastHistoryTargetedCoverage(options: {
 		claimsCompleteMapCoverage: false,
 		claimsHistoricalClassCoverage: false,
 		investigationTarget: {
-			...(isUsableGuid(actor.actorGuid) ? { actorGuid: actor.actorGuid } : {}),
+			...(isUsableGuid(actor.actorGuid) ? { actorGuid: actor.actorGuid } : undefined),
 			actorPath: actor.actorPath,
 			classPath: actor.classPath,
 			identity,
@@ -306,7 +306,9 @@ export function resolvePerforceFastMapScope(
 			);
 		}
 
-		const mapDepotFileSpec = depotPackageFileSpec(mapScope.mapDepotPath) as PerforceDepotPath;
+		const mapDepotFileSpec = PerforceDepotPath.make(
+			depotPackageFileSpec(mapScope.mapDepotPath)
+		);
 		const targetPackages: Array<{
 			readonly depotFileSpec: PerforceDepotPath;
 			readonly proven: ProvenFastHistoryActorTarget;
@@ -322,7 +324,9 @@ export function resolvePerforceFastMapScope(
 			const targetLocalPath = resolve(query.projectRoot, target.packageProjectRelativePath);
 			const targetMapping = yield* perforce.resolveLocalPath(targetLocalPath);
 			targetPackages.push({
-				depotFileSpec: depotPackageFileSpec(targetMapping.depotPath) as PerforceDepotPath,
+				depotFileSpec: PerforceDepotPath.make(
+					depotPackageFileSpec(targetMapping.depotPath)
+				),
 				proven: target
 			});
 		}

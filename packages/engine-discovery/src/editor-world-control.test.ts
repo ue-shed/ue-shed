@@ -1,9 +1,9 @@
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
-import { RemoteControlClient, type RemoteControlClientShape } from "@ue-shed/unreal-connection";
+import { RemoteControlClient, type RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import { EditorWorldControl, EditorWorldControlLive } from "./editor-world-control.js";
 
-function clientLayer(request: RemoteControlClientShape["request"]) {
+function clientLayer(request: RemoteControlClientApi["request"]) {
 	return Layer.succeed(RemoteControlClient, RemoteControlClient.of({ request }));
 }
 

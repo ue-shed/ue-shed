@@ -17,7 +17,7 @@ import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress"
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect, Schedule, Stream } from "effect";
 import { For, Match, Show, Switch, createSignal, onMount, type Accessor } from "solid-js";
-import type { GameTextClientShape } from "./game-text-client.js";
+import type { GameTextClientApi } from "./game-text-client.js";
 import { GameTextQualityWorkspace } from "./game-text-quality-workspace.js";
 import {
 	identityLabel,
@@ -214,7 +214,7 @@ function OccurrenceCard(props: {
 }
 
 /** Bounded query presentation; the renderer never receives the whole corpus. */
-export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
+export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 	const refreshAction = createEffectAction();
 	const searchAction = createEffectAction();
 	const focusAction = createEffectAction();
@@ -284,7 +284,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientShape }) {
 		searchAction.run(
 			props.client.search({
 				capability: options.capability ?? capability(),
-				...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+				...(options.cursor === undefined ? undefined : { cursor: options.cursor }),
 				lens: options.lens ?? lens(),
 				pageSize: 50,
 				query: options.query ?? query()

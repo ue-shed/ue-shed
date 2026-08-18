@@ -40,7 +40,7 @@ export class ConfigExplorerError extends Schema.TaggedErrorClass<ConfigExplorerE
 	ConfigExplorerPublicError.fields
 ) {}
 
-export interface ConfigExplorerShape {
+export interface ConfigExplorerApi {
 	readonly explain: (
 		request: ConfigExplainRequest
 	) => Effect.Effect<ConfigExplanation, ConfigExplorerError>;
@@ -49,7 +49,7 @@ export interface ConfigExplorerShape {
 	) => Effect.Effect<ConfigComparison, ConfigExplorerError>;
 }
 
-export class ConfigExplorer extends Context.Service<ConfigExplorer, ConfigExplorerShape>()(
+export class ConfigExplorer extends Context.Service<ConfigExplorer, ConfigExplorerApi>()(
 	"@ue-shed/config-explorer/ConfigExplorer"
 ) {}
 
@@ -108,7 +108,7 @@ function error(
 		message,
 		recovery,
 		retrySafe,
-		...(candidates === undefined ? {} : { candidates: [...candidates] })
+		...(candidates === undefined ? undefined : { candidates: [...candidates] })
 	});
 }
 
@@ -238,7 +238,7 @@ function loadConfigRedirectCoverage(options: {
 				status: relevant ? "unsupported" : "read",
 				...(relevant
 					? { detail: "A section or key redirect can affect the selected identity." }
-					: {})
+					: undefined)
 			});
 			if (relevant) {
 				diagnostics.push({
@@ -299,7 +299,7 @@ function loadHierarchy(options: {
 				source: candidate.source,
 				status: parsed.diagnostics.length === 0 ? "read" : "unsupported",
 				...(parsed.diagnostics.length === 0
-					? {}
+					? undefined
 					: { detail: "Selected-key syntax is not fully supported in this layer." })
 			});
 		}
@@ -368,7 +368,7 @@ export const ConfigExplorerLive = Layer.effect(
 				.resolve({
 					projectDescriptor: project.descriptor,
 					...(request.engineRoot === undefined
-						? {}
+						? undefined
 						: { explicitRoot: request.engineRoot })
 				})
 				.pipe(Effect.mapError(engineError));
@@ -388,7 +388,7 @@ export const ConfigExplorerLive = Layer.effect(
 					platforms
 				});
 			const family = yield* chooseFamily({
-				...(request.family === undefined ? {} : { requested: request.family }),
+				...(request.family === undefined ? undefined : { requested: request.family }),
 				families,
 				hierarchyFor,
 				section: request.section,
@@ -451,8 +451,10 @@ export const ConfigExplorerLive = Layer.effect(
 				project: request.project,
 				section: request.section,
 				key: request.key,
-				...(request.engineRoot === undefined ? {} : { engineRoot: request.engineRoot }),
-				...(request.family === undefined ? {} : { family: request.family })
+				...(request.engineRoot === undefined
+					? undefined
+					: { engineRoot: request.engineRoot }),
+				...(request.family === undefined ? undefined : { family: request.family })
 			};
 			const [left, right] = yield* Effect.all(
 				[
@@ -474,7 +476,7 @@ export const ConfigExplorerNodeLive = ConfigExplorerLive.pipe(
 );
 
 export function makeConfigExplorerTestLayer(
-	service: ConfigExplorerShape
+	service: ConfigExplorerApi
 ): Layer.Layer<ConfigExplorer> {
 	return Layer.succeed(ConfigExplorer, ConfigExplorer.of(service));
 }

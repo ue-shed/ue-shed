@@ -5,7 +5,7 @@ import { Cause } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js";
 import type {
 	MapReviewCaptureCompletedJob,
-	MapReviewClientShape,
+	MapReviewClientApi,
 	MapReviewResult
 } from "./map-review-client.js";
 
@@ -24,7 +24,7 @@ type WorkflowState =
 const stageOrder = ["PREPARE", "PREVIEW", "CAPTURE"] as const;
 
 export function CaptureWorkflow(props: {
-	readonly client: MapReviewClientShape;
+	readonly client: MapReviewClientApi;
 	readonly onCaptured: (review: ReadyReview) => void;
 	readonly onClose: () => void;
 	readonly review: ReadyReview;

@@ -19,8 +19,8 @@ const explain = Command.make(
 		return runConfigExplain({
 			_tag: "ConfigExplain",
 			...value,
-			...(selectedEngine === undefined ? {} : { engineRoot: selectedEngine }),
-			...(selectedFamily === undefined ? {} : { family: selectedFamily })
+			...(selectedEngine === undefined ? undefined : { engineRoot: selectedEngine }),
+			...(selectedFamily === undefined ? undefined : { family: selectedFamily })
 		});
 	}
 ).pipe(
@@ -42,8 +42,8 @@ const compare = Command.make(
 		return runConfigCompare({
 			_tag: "ConfigCompare",
 			...value,
-			...(selectedEngine === undefined ? {} : { engineRoot: selectedEngine }),
-			...(selectedFamily === undefined ? {} : { family: selectedFamily })
+			...(selectedEngine === undefined ? undefined : { engineRoot: selectedEngine }),
+			...(selectedFamily === undefined ? undefined : { family: selectedFamily })
 		});
 	}
 ).pipe(

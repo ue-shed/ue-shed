@@ -5,11 +5,18 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import { ElectronApp } from "../adapters/electron-app.js";
 import {
 	OfflineTexturePreviewHost,
-	type OfflineTexturePreviewHostShape
+	type OfflineTexturePreviewHostApi
 } from "../adapters/offline-texture-preview-host.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
 const maximumPreviewResultBytes = 5_700_000;
+const ProjectDescriptor = Schema.Struct({
+	EngineAssociation: Schema.optional(Schema.String)
+});
+const EngineBuildVersion = Schema.Struct({
+	MajorVersion: Schema.Number,
+	MinorVersion: Schema.Number
+});
 
 const PreviewRequest = Schema.Struct({
 	maxDimension: Schema.Int,
@@ -45,7 +52,7 @@ export interface OfflineTexturePreviewInput {
 	readonly projectRoot: string;
 }
 
-export interface OfflineTexturePreviewShape {
+export interface OfflineTexturePreviewApi {
 	readonly preview: (
 		input: OfflineTexturePreviewInput
 	) => Effect.Effect<TexturePreviewResult, OfflineTexturePreviewError>;
@@ -62,7 +69,7 @@ export interface OfflineTexturePreviewBatch {
 
 export class OfflineTexturePreview extends Context.Service<
 	OfflineTexturePreview,
-	OfflineTexturePreviewShape
+	OfflineTexturePreviewApi
 >()("@ue-shed/workbench/OfflineTexturePreview") {}
 
 function previewError(
@@ -85,7 +92,7 @@ function commandletExecutable(engineRoot: string): string {
 }
 
 function projectFile(
-	host: OfflineTexturePreviewHostShape,
+	host: OfflineTexturePreviewHostApi,
 	projectRoot: string
 ): Effect.Effect<string, Error> {
 	return host.listProjectFiles(projectRoot).pipe(
@@ -113,7 +120,7 @@ interface EngineCandidate {
 }
 
 function engineCandidate(
-	host: OfflineTexturePreviewHostShape,
+	host: OfflineTexturePreviewHostApi,
 	root: string
 ): Effect.Effect<EngineCandidate | undefined> {
 	const executable = commandletExecutable(root);
@@ -125,45 +132,35 @@ function engineCandidate(
 		if (Option.isNone(bytes)) return undefined;
 		const decoded = yield* Effect.try(() =>
 			JSON.parse(new TextDecoder().decode(bytes.value))
-		).pipe(Effect.option);
+		).pipe(Effect.flatMap(Schema.decodeUnknownEffect(EngineBuildVersion)), Effect.option);
 		if (Option.isNone(decoded)) return undefined;
-		const version: unknown = decoded.value;
-		return typeof version === "object" &&
-			version !== null &&
-			"MajorVersion" in version &&
-			"MinorVersion" in version &&
-			typeof version.MajorVersion === "number" &&
-			typeof version.MinorVersion === "number"
-			? {
-					major: version.MajorVersion,
-					minor: version.MinorVersion,
-					root,
-					version: `${version.MajorVersion}.${version.MinorVersion}`
-				}
-			: undefined;
+		const version = decoded.value;
+		return {
+			major: version.MajorVersion,
+			minor: version.MinorVersion,
+			root,
+			version: `${version.MajorVersion}.${version.MinorVersion}`
+		};
 	});
 }
 
 function projectEngineAssociation(
-	host: OfflineTexturePreviewHostShape,
+	host: OfflineTexturePreviewHostApi,
 	path: string
 ): Effect.Effect<string | undefined> {
 	return host.readFile(path, 1_024 * 1_024).pipe(
-		Effect.flatMap((bytes) => Effect.try(() => JSON.parse(new TextDecoder().decode(bytes)))),
-		Effect.map((descriptor: unknown) =>
-			typeof descriptor === "object" &&
-			descriptor !== null &&
-			"EngineAssociation" in descriptor &&
-			typeof descriptor.EngineAssociation === "string"
-				? descriptor.EngineAssociation
-				: undefined
+		Effect.flatMap((bytes) =>
+			Effect.try(() => JSON.parse(new TextDecoder().decode(bytes))).pipe(
+				Effect.flatMap(Schema.decodeUnknownEffect(ProjectDescriptor))
+			)
 		),
+		Effect.map((descriptor) => descriptor.EngineAssociation),
 		Effect.orElseSucceed(() => undefined)
 	);
 }
 
 function discoverEngineRoot(
-	host: OfflineTexturePreviewHostShape,
+	host: OfflineTexturePreviewHostApi,
 	options: {
 		readonly configuredRoot?: string;
 		readonly projectFile: string;
@@ -213,7 +210,7 @@ function discoverEngineRoot(
 }
 
 function readPreview(
-	host: OfflineTexturePreviewHostShape,
+	host: OfflineTexturePreviewHostApi,
 	path: string
 ): Effect.Effect<TexturePreviewResult, OfflineTexturePreviewError> {
 	return host.readFile(path, maximumPreviewResultBytes).pipe(
@@ -361,7 +358,7 @@ export const OfflineTexturePreviewLive = Layer.effect(
 				const engineRoot = yield* discoverEngineRoot(host, {
 					...(configuration.unrealEngineRoot?.status === "configured"
 						? { configuredRoot: configuration.unrealEngineRoot.path }
-						: {}),
+						: undefined),
 					projectFile: descriptor
 				}).pipe(
 					Effect.mapError((cause) =>
@@ -522,8 +519,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 );
 
 export const makeOfflineTexturePreviewTestLayer = (
-	service: Pick<OfflineTexturePreviewShape, "preview"> &
-		Partial<Omit<OfflineTexturePreviewShape, "preview">>
+	service: Pick<OfflineTexturePreviewApi, "preview"> &
+		Partial<Omit<OfflineTexturePreviewApi, "preview">>
 ): Layer.Layer<OfflineTexturePreview> =>
 	Layer.succeed(
 		OfflineTexturePreview,

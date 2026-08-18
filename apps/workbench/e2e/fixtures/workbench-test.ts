@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test as base, type ElectronApplication } from "@playwright/test";
+import { Schema } from "effect";
 import { _electron as electron } from "playwright";
 import { WorkbenchPage } from "../pages/workbench-page.js";
 import {
@@ -23,11 +24,15 @@ interface DemandLaunchFixtures {
 	};
 }
 
+interface ElectronLaunchEnvironment {
+	[name: string]: string;
+}
+
 const require = createRequire(import.meta.url);
 const electronExecutable: unknown = require("electron");
 const workbenchRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
-if (typeof electronExecutable !== "string") {
+if (!Schema.is(Schema.String)(electronExecutable)) {
 	throw new TypeError("The Electron package did not resolve to an executable path");
 }
 
@@ -35,13 +40,11 @@ async function closeApplication(application: ElectronApplication): Promise<void>
 	await application.close().catch(() => undefined);
 }
 
-function launchEnvironment(overrides: Readonly<Record<string, string>> = {}): {
-	[key: string]: string;
-} {
+function launchEnvironment(overrides: Readonly<Record<string, string>> = {}) {
 	if (!process.env.UE_SHED_UASSET_EXECUTABLE) {
 		throw new Error("Launch Workbench E2E through pnpm test:e2e:workbench");
 	}
-	const environment: { [key: string]: string } = {
+	const environment: ElectronLaunchEnvironment = {
 		ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
 		...overrides
 	};

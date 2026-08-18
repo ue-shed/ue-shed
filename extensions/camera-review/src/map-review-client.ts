@@ -67,7 +67,7 @@ export class MapReviewClientError extends Schema.TaggedErrorClass<MapReviewClien
 	}
 ) {}
 
-export interface MapReviewClientShape {
+export interface MapReviewClientApi {
 	/** Optional while older hosts adopt saved-map support. This source is never an editor session. */
 	readonly readSavedWorld?: (mapPath: string) => Effect.Effect<SavedWorld, MapReviewClientError>;
 	readonly savedWorldMaps?: () => Effect.Effect<readonly SavedWorldMap[], MapReviewClientError>;
@@ -139,6 +139,6 @@ export interface MapReviewLiveFrame {
 	readonly width: number;
 }
 
-export class MapReviewClient extends Context.Service<MapReviewClient, MapReviewClientShape>()(
+export class MapReviewClient extends Context.Service<MapReviewClient, MapReviewClientApi>()(
 	"@ue-shed/extension-camera-review/MapReviewClient"
 ) {}

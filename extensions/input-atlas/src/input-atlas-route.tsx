@@ -12,7 +12,7 @@ import { Button, createEffectAction, PageHeader } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
-import type { InputAtlasClientShape } from "./input-atlas-client.js";
+import type { InputAtlasClientApi } from "./input-atlas-client.js";
 import {
 	capLabel,
 	FACE_RADIUS,
@@ -46,7 +46,7 @@ function projectName(projectRoot: string): string {
 	return leaf && leaf.length > 0 ? leaf : projectRoot;
 }
 
-export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape }) {
+export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi }) {
 	const scanAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
 	// The last project we successfully scanned, kept across a Rescan so the banner still names it
@@ -131,7 +131,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 		} else setState({ status: result.status });
 	};
 
-	const run = (effect: () => ReturnType<InputAtlasClientShape["loadConfiguredProject"]>) => {
+	const run = (effect: () => ReturnType<InputAtlasClientApi["loadConfiguredProject"]>) => {
 		setState({ status: "loading" });
 		scanAction.run(effect(), {
 			onSuccess: applyResult,
@@ -330,7 +330,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 													onClick={() => setSelectedKey(control.key)}
 													{...stylex.props(styles.hit)}
 												>
-													{control.shape === "pad" ? (
+													{control.kind === "pad" ? (
 														<rect
 															x={control.x}
 															y={control.y}
@@ -352,7 +352,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 															cx={control.cx}
 															cy={control.cy}
 															r={
-																control.shape === "stick"
+																control.kind === "stick"
 																	? STICK_RADIUS
 																	: FACE_RADIUS
 															}
@@ -369,12 +369,12 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientShape 
 													)}
 													<text
 														x={
-															control.shape === "pad"
+															control.kind === "pad"
 																? control.x + control.width / 2
 																: control.cx
 														}
 														y={
-															control.shape === "pad"
+															control.kind === "pad"
 																? control.y + control.height / 2
 																: control.cy
 														}

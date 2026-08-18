@@ -30,7 +30,7 @@ export class TextureAuditClientError extends Schema.TaggedErrorClass<TextureAudi
 	}
 ) {}
 
-export interface TextureAuditClientShape {
+export interface TextureAuditClientApi {
 	readonly locateAsset: (
 		objectPath: string
 	) => Effect.Effect<EditorAssetLocateResult, TextureAuditClientError>;
@@ -63,7 +63,7 @@ export interface TextureAuditClientShape {
 
 export class TextureAuditClient extends Context.Service<
 	TextureAuditClient,
-	TextureAuditClientShape
+	TextureAuditClientApi
 >()("@ue-shed/extension-asset-audits/TextureAuditClient") {}
 
 export const decodeTextureAuditLaunchResult = Schema.decodeUnknownEffect(TextureAuditLaunchResult);

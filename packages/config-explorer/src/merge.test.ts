@@ -7,7 +7,7 @@ const source = { scope: "project" as const, path: "Config/DefaultGame.ini" };
 const location = { line: 1, column: 1 };
 
 function command(operation: ConfigOperation, value?: string): ParsedConfigCommand {
-	return { source, location, operation, ...(value === undefined ? {} : { value }) };
+	return { source, location, operation, ...(value === undefined ? undefined : { value }) };
 }
 
 describe("foldConfigCommands", () => {

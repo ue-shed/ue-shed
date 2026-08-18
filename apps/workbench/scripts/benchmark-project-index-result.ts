@@ -178,7 +178,7 @@ function assertScenario(name: string, scenario: BenchmarkScenario, runs: number)
 	}
 }
 
-function assertNoSensitiveValues(value: unknown, sensitiveValues: readonly string[]): void {
+function assertNoSensitiveValues<Value>(value: Value, sensitiveValues: readonly string[]): void {
 	const serialized = JSON.stringify(value).replaceAll("\\", "/").toLowerCase();
 	for (const sensitiveValue of sensitiveValues) {
 		const normalized = sensitiveValue.replaceAll("\\", "/").toLowerCase();
@@ -190,8 +190,8 @@ function assertNoSensitiveValues(value: unknown, sensitiveValues: readonly strin
 	}
 }
 
-export function validateProjectIndexBenchmarkEvidence(
-	input: unknown,
+export function validateProjectIndexBenchmarkEvidence<Input>(
+	input: Input,
 	sensitiveValues: readonly string[] = []
 ): ProjectIndexBenchmarkEvidence {
 	const evidence = Schema.decodeUnknownSync(ProjectIndexBenchmarkEvidence)(input);

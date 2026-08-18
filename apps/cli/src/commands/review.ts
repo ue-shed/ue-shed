@@ -40,7 +40,7 @@ const reviewPoliciesReplaceCommand = Command.make(
 			policyPath,
 			reviewSetPath,
 			viewId,
-			...(overrides === undefined ? {} : { overridesPath: overrides })
+			...(overrides === undefined ? undefined : { overridesPath: overrides })
 		});
 	}
 ).pipe(
@@ -87,7 +87,7 @@ const reviewFramingCandidatesCommand = Command.make(
 		return runReviewFraming({
 			_tag: "ReviewFramingCandidates",
 			endpoint,
-			...(parameters === undefined ? {} : { parametersPath: parameters })
+			...(parameters === undefined ? undefined : { parametersPath: parameters })
 		});
 	}
 ).pipe(Command.withDescription("List live framing candidates."));
@@ -107,7 +107,7 @@ const reviewFramingApproveCommand = Command.make(
 			_tag: "ReviewFramingApprove",
 			candidateId,
 			endpoint,
-			...(parameters === undefined ? {} : { parametersPath: parameters }),
+			...(parameters === undefined ? undefined : { parametersPath: parameters }),
 			reviewSetPath,
 			viewId
 		});
@@ -228,8 +228,8 @@ const reviewCaptureCommand = Command.make(
 			endpoint,
 			projectRoot,
 			reviewSetPath,
-			...(causeValue === undefined ? {} : { cause: causeValue }),
-			...(correlationValue === undefined ? {} : { correlationId: correlationValue })
+			...(causeValue === undefined ? undefined : { cause: causeValue }),
+			...(correlationValue === undefined ? undefined : { correlationId: correlationValue })
 		});
 	}
 ).pipe(Command.withDescription("Capture a Review Set run."));

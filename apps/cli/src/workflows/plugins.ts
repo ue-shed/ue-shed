@@ -45,7 +45,7 @@ export const runPluginsInstall = Effect.fn("Cli.workflow.plugins_install")(
 				);
 				return yield* installPluginBundle({
 					...(command.artifactPath === undefined
-						? {}
+						? undefined
 						: { artifactPath: command.artifactPath }),
 					manifestPath: command.manifestPath,
 					projectPath: command.projectRoot

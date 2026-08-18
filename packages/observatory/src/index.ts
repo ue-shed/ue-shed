@@ -83,7 +83,7 @@ export class ObservatoryConnectionError extends Schema.TaggedErrorClass<Observat
 	}
 ) {}
 
-export interface ObservatoryShape {
+export interface ObservatoryApi {
 	/** Retunes an active named-pipe producer without replacing its session or writer. */
 	readonly setObservationCadence: (
 		endpoint: string,
@@ -111,7 +111,10 @@ export interface ObservatoryShape {
 	) => Effect.Effect<WorldActorSnapshot, ObservatoryConnectionError>;
 }
 
-export class Observatory extends Context.Service<Observatory, ObservatoryShape>()(
+/** @deprecated Use `ObservatoryApi`. */
+export type ObservatoryShape = ObservatoryApi;
+
+export class Observatory extends Context.Service<Observatory, ObservatoryApi>()(
 	"@ue-shed/observatory/Observatory"
 ) {}
 
@@ -332,7 +335,10 @@ export {
 export type {
 	ActorFeedMetrics,
 	ActorFeedOptions,
-	ActorFeedShape,
+	ActorFeedApi,
 	ActorObservationDiagnostic,
 	ObserveActorFeedOptions
 } from "./actor-feed.js";
+
+/** @deprecated Use `ActorFeedApi`. */
+export type ActorFeedShape = import("./actor-feed.js").ActorFeedApi;

@@ -1,8 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
-import type { CameraScheduleConfig, CameraStatus } from "@ue-shed/protocol";
+import { CameraScheduleConfig, type CameraStatus } from "@ue-shed/protocol";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../main/preload.js";
 import { workbenchRendererClient } from "./workbench-client.js";
@@ -18,7 +18,7 @@ interface TileTelemetry {
 
 type CaptureResolution = CameraScheduleConfig["resolution"];
 
-const resolutionDimensions: Readonly<Record<CaptureResolution, readonly [number, number]>> = {
+const resolutionDimensions = {
 	"160x90": [160, 90],
 	"320x180": [320, 180],
 	"640x360": [640, 360],
@@ -26,9 +26,11 @@ const resolutionDimensions: Readonly<Record<CaptureResolution, readonly [number,
 	"1280x720": [1280, 720],
 	"1920x1080": [1920, 1080],
 	"2560x1440": [2560, 1440]
-};
+} satisfies Readonly<Record<CaptureResolution, readonly [number, number]>>;
 
-const resolutionOptions = Object.keys(resolutionDimensions) as ReadonlyArray<CaptureResolution>;
+const resolutionOptions = Schema.decodeUnknownSync(
+	Schema.Array(CameraScheduleConfig.fields.resolution)
+)(Object.keys(resolutionDimensions));
 
 const defaultConfig: CameraScheduleConfig = {
 	activeCameraCount: 8,

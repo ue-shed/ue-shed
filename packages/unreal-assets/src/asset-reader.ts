@@ -245,7 +245,7 @@ export type AssetReaderProtocolObservation =
 			readonly terminalState: ProtocolTerminalState;
 	  };
 
-export interface AssetReaderShape {
+export interface AssetReaderApi {
 	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
 	/** Returns the native worker settings needed by sibling headless adapters. */
 	readonly configuration: () => Effect.Effect<AssetReaderConfiguration>;
@@ -296,10 +296,10 @@ type AssetReaderTestDefaults =
 	| "scanProgress"
 	| "scanProject";
 
-export type AssetReaderTestShape = Omit<AssetReaderShape, AssetReaderTestDefaults> &
-	Partial<Pick<AssetReaderShape, AssetReaderTestDefaults>>;
+export type AssetReaderTestApi = Omit<AssetReaderApi, AssetReaderTestDefaults> &
+	Partial<Pick<AssetReaderApi, AssetReaderTestDefaults>>;
 
-export class AssetReader extends Context.Service<AssetReader, AssetReaderShape>()(
+export class AssetReader extends Context.Service<AssetReader, AssetReaderApi>()(
 	"@ue-shed/unreal-assets/AssetReader"
 ) {}
 
@@ -493,7 +493,7 @@ function makeAssetReader(
 	scanStore: ScanProgressStore,
 	savedWorldStore: SavedWorldProgressStore,
 	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle
-): AssetReaderShape {
+): AssetReaderApi {
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
 	);
@@ -502,7 +502,7 @@ function makeAssetReader(
 			catalogTimeoutMs: configuration.catalogTimeoutMs,
 			executable: configuration.executable,
 			...(configuration.protocolObserver === undefined
-				? {}
+				? undefined
 				: { protocolObserver: configuration.protocolObserver }),
 			timeoutMs: configuration.timeoutMs
 		})
@@ -594,10 +594,10 @@ function makeAssetReader(
 				},
 				{
 					...(options.concurrency === undefined
-						? {}
+						? undefined
 						: { concurrency: options.concurrency }),
 					...(options.maximumAssets === undefined
-						? {}
+						? undefined
 						: { maximumAssets: options.maximumAssets }),
 					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 					timeoutMs: configuration.catalogTimeoutMs
@@ -630,9 +630,11 @@ function makeAssetReader(
 		return yield* invokeProtocolScan(
 			configuration,
 			{
-				...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
+				...(options.cachePath === undefined ? undefined : { cachePath: options.cachePath }),
 				classes: SAVED_TABLE_SCAN_CLASSES,
-				...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+				...(options.concurrency === undefined
+					? undefined
+					: { concurrency: options.concurrency }),
 				depth: "header",
 				projectRoot: options.projectRoot
 			},
@@ -692,7 +694,7 @@ export function assetReaderLayer(
 			catalogTimeoutMs: configuration.catalogTimeoutMs ?? DEFAULT_CATALOG_TIMEOUT_MS,
 			executable: configuration.executable ?? "uasset",
 			...(configuration.protocolObserver === undefined
-				? {}
+				? undefined
 				: { protocolObserver: configuration.protocolObserver }),
 			source: configuration.executable === undefined ? "path" : "configured",
 			timeoutMs: configuration.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -721,7 +723,7 @@ export const AssetReaderLive = Layer.effect(
 	})
 );
 
-export function makeAssetReaderTestLayer(service: AssetReaderTestShape): Layer.Layer<AssetReader> {
+export function makeAssetReaderTestLayer(service: AssetReaderTestApi): Layer.Layer<AssetReader> {
 	return Layer.succeed(
 		AssetReader,
 		AssetReader.of({

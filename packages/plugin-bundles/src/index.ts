@@ -341,8 +341,8 @@ export const validatePluginBundleManifestValue = (
 	});
 
 /** Decodes and validates an unknown manifest at a CLI or release-artifact boundary. */
-export const validatePluginBundleManifest = (
-	input: unknown,
+export const validatePluginBundleManifest = <Input>(
+	input: Input,
 	options: PluginBundleManifestValidationOptions = {}
 ): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
 	Schema.decodeUnknownEffect(PluginBundleManifest)(input).pipe(
@@ -378,8 +378,8 @@ export const verifyPluginBundleArtifactChecksum = (
 };
 
 /** Validates a manifest and checks that the target Unreal version is supported. */
-export const validatePluginBundleForUnreal = (
-	input: unknown,
+export const validatePluginBundleForUnreal = <Input>(
+	input: Input,
 	engineVersion: string,
 	options: Omit<PluginBundleManifestValidationOptions, "unrealVersion"> = {}
 ): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>

@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isJsonObject, parseJsonObject } from "./json.ts";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceRoots = ["apps", "packages", "extensions"];
@@ -54,6 +55,9 @@ const approvedPromiseAdapters = new Set([
 	"apps/cli/src/plugin-installer.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",
 	"apps/workbench/src/main/adapters/electron-ipc.ts",
+	// The shared preload contract describes Electron's Promise-returning renderer bridge; the
+	// implementation remains isolated in preload.ts and the Electron IPC adapter.
+	"apps/workbench/src/main/preload-contract.ts",
 	"apps/workbench/src/main/preload.ts",
 	"apps/workbench/src/renderer/asset-audits-client.ts",
 	"apps/workbench/src/renderer/authoring-client.ts",
@@ -123,6 +127,8 @@ const approvedResourceAdapters = new Set([
 	"extensions/data-authoring/adoption/consumer/app/src/index.tsx",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	"packages/cameras/src/index.ts",
+	// PointMap owns its animation-frame fallback and ResizeObserver through Solid onCleanup.
+	"packages/ui/src/point-map.tsx",
 	// The actor feed owns its named-pipe server and per-connection sockets through Effect.acquireRelease.
 	"packages/observatory/src/actor-feed.ts",
 	// The saved-asset protocol transport owns and cancels the bounded native child process.
@@ -205,7 +211,7 @@ async function filesUnder(root: string, directory: string): Promise<string[]> {
 	try {
 		entries = await readdir(absolute, { withFileTypes: true });
 	} catch (error) {
-		if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+		if (error instanceof Object && "code" in error && error.code === "ENOENT") {
 			return [];
 		}
 		throw error;
@@ -326,17 +332,16 @@ export async function checkCatalogUsage(root: string) {
 		}
 	}
 	for (const manifestPath of manifests) {
-		const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
-			string,
-			Record<string, unknown> | undefined
-		>;
+		const manifest = parseJsonObject(await readFile(manifestPath, "utf8"));
 		for (const section of [
 			"dependencies",
 			"devDependencies",
 			"peerDependencies",
 			"optionalDependencies"
 		]) {
-			for (const [dependency, version] of Object.entries(manifest[section] ?? {})) {
+			const dependencies = manifest[section];
+			if (dependencies === undefined || !isJsonObject(dependencies)) continue;
+			for (const [dependency, version] of Object.entries(dependencies)) {
 				if (catalogOwned.has(dependency) && version !== "catalog:") {
 					failures.push(
 						`${relative(root, manifestPath)}: ${section}.${dependency} must use catalog:`
@@ -455,13 +460,13 @@ export async function checkDomainServices(root: string = repositoryRoot) {
 	);
 	if (
 		/inspectSelection:[\s\S]*?RemoteControlClient/.test(authoring) &&
-		authoring.includes("ReviewAuthoringShape")
+		authoring.includes("ReviewAuthoringApi")
 	) {
-		const shape = authoring.slice(
-			authoring.indexOf("export interface ReviewAuthoringShape"),
+		const reviewAuthoringContract = authoring.slice(
+			authoring.indexOf("export interface ReviewAuthoringApi"),
 			authoring.indexOf("export class ReviewAuthoring")
 		);
-		if (shape.includes("RemoteControlClient")) {
+		if (reviewAuthoringContract.includes("RemoteControlClient")) {
 			failures.push(
 				"packages/cameras/src/review-authoring-live.ts: ReviewAuthoring methods must not require RemoteControlClient from callers"
 			);
@@ -482,11 +487,11 @@ export async function checkDomainServices(root: string = repositoryRoot) {
 			"packages/authoring/src/session-service.ts: live mutation dependencies must come from AuthoringSessionLivePort"
 		);
 	}
-	const sessionShape = sessions.slice(
+	const sessionApi = sessions.slice(
 		sessions.indexOf("export interface AuthoringSessionService"),
 		sessions.indexOf("export interface AuthoringSessionServiceConfig")
 	);
-	if (sessionShape.includes("port: AuthoringLivePort")) {
+	if (sessionApi.includes("port: AuthoringLivePort")) {
 		failures.push(
 			"packages/authoring/src/session-service.ts: session operations must not take ad-hoc live ports"
 		);

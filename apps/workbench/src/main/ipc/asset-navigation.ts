@@ -1,6 +1,5 @@
 import { Effect } from "effect";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
-import type { GameObjectPath } from "../ipc-contracts.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { WorkbenchAssetNavigation } from "../services/asset-navigation.js";
 
@@ -9,7 +8,7 @@ export const register = Effect.gen(function* () {
 	const navigation = yield* WorkbenchAssetNavigation;
 
 	yield* ipc.register(invokeContracts["asset-navigation:locate"], (...args) => {
-		const [objectPath] = args as [GameObjectPath];
+		const [objectPath] = args;
 		return navigation.locate(objectPath);
 	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerAssetNavigation"));

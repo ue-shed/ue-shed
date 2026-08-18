@@ -42,7 +42,7 @@ export class MapCaptureStorageError extends Schema.TaggedErrorClass<MapCaptureSt
 	}
 ) {}
 
-function writeJsonAtomically(path: string, value: unknown): Effect.Effect<void, unknown> {
+function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<void, unknown> {
 	return Effect.tryPromise({
 		try: async () => {
 			await mkdir(dirname(path), { recursive: true });
@@ -123,7 +123,7 @@ export interface MapCaptureRunSummary {
 	readonly tileCount: number;
 }
 
-export interface MapCaptureRepositoryShape {
+export interface MapCaptureRepositoryApi {
 	readonly discardStaging: (args: {
 		readonly stagingRoot: string;
 	}) => Effect.Effect<void, MapCaptureStorageError>;
@@ -156,9 +156,12 @@ export interface MapCaptureRepositoryShape {
 	}) => Effect.Effect<Uint8Array, MapCaptureStorageError>;
 }
 
+/** @deprecated Use `MapCaptureRepositoryApi`. */
+export type MapCaptureRepositoryShape = MapCaptureRepositoryApi;
+
 export class MapCaptureRepository extends Context.Service<
 	MapCaptureRepository,
-	MapCaptureRepositoryShape
+	MapCaptureRepositoryApi
 >()("@ue-shed/cameras/MapCaptureRepository") {}
 
 function storageError(args: {
@@ -175,7 +178,7 @@ function storageError(args: {
 	});
 }
 
-const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
+const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 	discardStaging: Effect.fn("MapCaptureRepository.discardStaging")(function* (args) {
 		yield* Effect.tryPromise({
 			try: () => rm(args.stagingRoot, { force: true, recursive: true }),
@@ -227,7 +230,9 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
 					);
 					for (const run of runs) {
 						const manifestPath = join(plan.path, run.name, "manifest.json");
-						const input = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+						const input = Schema.decodeUnknownSync(Schema.Json)(
+							JSON.parse(await readFile(manifestPath, "utf8"))
+						);
 						const manifest = Schema.decodeUnknownSync(MapTilePyramidManifest)(input);
 						if (manifest.state !== "complete") {
 							throw new Error(`Published manifest ${manifestPath} is not complete.`);
@@ -256,7 +261,8 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
 	}),
 	loadPlan: Effect.fn("MapCaptureRepository.loadPlan")(function* (path) {
 		const input = yield* Effect.tryPromise({
-			try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+			try: async () =>
+				Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 			catch: (cause) =>
 				storageError({
 					cause,
@@ -350,7 +356,7 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryShape => ({
 export const MapCaptureRepositoryLive = Layer.sync(MapCaptureRepository, makeMapCaptureRepository);
 
 export function makeMapCaptureRepositoryTestLayer(
-	service: MapCaptureRepositoryShape
+	service: MapCaptureRepositoryApi
 ): Layer.Layer<MapCaptureRepository> {
 	return Layer.succeed(MapCaptureRepository, MapCaptureRepository.of(service));
 }

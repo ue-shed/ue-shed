@@ -193,7 +193,7 @@ export class ActorStreamDecoder {
 	private headOffset = 0;
 	private malformedCount = 0;
 
-	readonly metrics = (): { readonly bufferedBytes: number; readonly malformed: number } => ({
+	readonly metrics = () => ({
 		bufferedBytes: this.bufferedBytes,
 		malformed: this.malformedCount
 	});
@@ -290,10 +290,7 @@ export class ActorStreamDecoder {
 		}
 	}
 
-	push(chunk: Uint8Array): {
-		readonly malformed: number;
-		readonly packets: ReadonlyArray<ActorStreamPacket>;
-	} {
+	push(chunk: Uint8Array) {
 		if (chunk.byteLength > 0) {
 			this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
 			this.bufferedBytes += chunk.byteLength;

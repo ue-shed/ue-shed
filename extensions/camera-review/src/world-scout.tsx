@@ -15,7 +15,7 @@ import {
 } from "@ue-shed/ui";
 import { Effect } from "effect";
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import type { MapReviewClientShape, MapReviewWorldObservation } from "./map-review-client.js";
+import type { MapReviewClientApi, MapReviewWorldObservation } from "./map-review-client.js";
 import {
 	contentBounds,
 	clampViewportSize,
@@ -80,7 +80,7 @@ function actorObjectName(actorPath: string): string {
 
 export function WorldScout(props: {
 	readonly client: Pick<
-		MapReviewClientShape,
+		MapReviewClientApi,
 		"connectWorld" | "focusActor" | "setWorldObservationRate" | "worldObservations"
 	>;
 	readonly onActorFocused: (actor: ObservedActor) => void;
@@ -168,9 +168,9 @@ export function WorldScout(props: {
 					path: actor.path
 				},
 				...(actorObjectName(actor.path) === actor.displayName
-					? {}
+					? undefined
 					: { secondary: actorObjectName(actor.path) }),
-				...(actor.id === undefined ? { badges: ["CATALOG ONLY"] } : {})
+				...(actor.id === undefined ? { badges: ["CATALOG ONLY"] } : undefined)
 			});
 		}
 		return items;
@@ -289,7 +289,7 @@ export function WorldScout(props: {
 			canvas,
 			cssWidth,
 			cssHeight,
-			typeof window === "undefined" ? 1 : window.devicePixelRatio || 1
+			globalThis.window?.devicePixelRatio || 1
 		);
 		if (!context) return;
 		prepareVisibleProjection();
@@ -659,7 +659,7 @@ export function WorldScout(props: {
 		resizeObserver = undefined;
 		if (frame !== null) {
 			syncCanvasSize(frame);
-			if (typeof ResizeObserver !== "undefined") {
+			if (globalThis.ResizeObserver !== undefined) {
 				resizeObserver = new ResizeObserver(() => syncCanvasSize(frame));
 				resizeObserver.observe(frame);
 			}

@@ -17,7 +17,7 @@ import {
 import {
 	ContentObservatoryHistoryRequest,
 	type ContentObservatoryTargetCatalog,
-	type ContentObservatoryClientShape,
+	type ContentObservatoryClientApi,
 	type ContentObservatoryState
 } from "./content-observatory-client.js";
 import { WorldLogScene, type WorldLogSceneView } from "./world-log-actor-atlas.js";
@@ -43,6 +43,21 @@ import { WorldLogTimeline, type WorldLogChangeFilter } from "./world-log-timelin
 
 type ViewState = { readonly status: "loading" } | ContentObservatoryState;
 type StateUpdateSource = "mutation" | "poll";
+interface RawHistoryRequestFields {
+	readonly limits: WorldLogScanLimits;
+	readonly mapPath: string;
+	readonly range: { readonly since: string; readonly until: string };
+}
+type RawHistoryRequest = RawHistoryRequestFields &
+	(
+		| { readonly mode: "deep" }
+		| {
+				readonly mode: "fast";
+				readonly target:
+					| { readonly identity: ActorIdentity; readonly kind: "actor" }
+					| { readonly classPath: string; readonly kind: "actor_class" };
+		  }
+	);
 type WorldLogLens = "world" | "changelists";
 
 const decodeHistoryRequest = Schema.decodeUnknownEffect(ContentObservatoryHistoryRequest);
@@ -97,7 +112,7 @@ function actorIdentityOfTarget(actor: SavedWorldActor): ActorIdentity {
  * The route owns only presentation state. Perforce acquisition, progress, cancellation, and
  * temporary reconstruction authority remain behind the injected browser client.
  */
-export function ContentObservatoryRoute(props: { readonly client: ContentObservatoryClientShape }) {
+export function ContentObservatoryRoute(props: { readonly client: ContentObservatoryClientApi }) {
 	const action = createEffectAction();
 	const targetAction = createEffectAction();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
@@ -273,7 +288,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		const selectedTarget = targetCatalog()?.actors.find(
 			(actor) => actorKeyFromSavedActor(actor) === targetKey()
 		);
-		let request: object;
+		let request: RawHistoryRequest;
 		if (mode() === "fast") {
 			if (fastTargetKind() === "actor" && selectedTarget === undefined) return;
 			if (fastTargetKind() === "actor_class" && targetClassPath() === undefined) return;
@@ -331,7 +346,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 				const detail =
 					cause instanceof Error
 						? cause.message
-						: typeof cause === "object" && cause !== null && "message" in cause
+						: cause instanceof Object && "message" in cause
 							? String(cause.message)
 							: undefined;
 				setTargetError(

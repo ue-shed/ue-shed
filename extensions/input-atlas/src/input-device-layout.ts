@@ -5,11 +5,11 @@
 import type { AtlasKey, InputAtlas } from "@ue-shed/enhanced-input/browser";
 
 export type GamepadControl =
-	| { readonly key: string; readonly shape: "stick"; readonly cx: number; readonly cy: number }
-	| { readonly key: string; readonly shape: "face"; readonly cx: number; readonly cy: number }
+	| { readonly key: string; readonly kind: "stick"; readonly cx: number; readonly cy: number }
+	| { readonly key: string; readonly kind: "face"; readonly cx: number; readonly cy: number }
 	| {
 			readonly key: string;
-			readonly shape: "pad";
+			readonly kind: "pad";
 			readonly x: number;
 			readonly y: number;
 			readonly width: number;
@@ -27,22 +27,22 @@ export const STICK_RADIUS = 20;
 export const FACE_RADIUS = 13;
 
 export const gamepadControls: readonly GamepadControl[] = [
-	{ key: "Gamepad_LeftTrigger", shape: "pad", x: 58, y: 6, width: 48, height: 14 },
-	{ key: "Gamepad_RightTrigger", shape: "pad", x: 234, y: 6, width: 48, height: 14 },
-	{ key: "Gamepad_LeftShoulder", shape: "pad", x: 52, y: 24, width: 60, height: 14 },
-	{ key: "Gamepad_RightShoulder", shape: "pad", x: 228, y: 24, width: 60, height: 14 },
-	{ key: "Gamepad_LeftThumbstick", shape: "stick", cx: 74, cy: 76 },
-	{ key: "Gamepad_FaceButton_Top", shape: "face", cx: 266, cy: 57 },
-	{ key: "Gamepad_FaceButton_Right", shape: "face", cx: 287, cy: 78 },
-	{ key: "Gamepad_FaceButton_Bottom", shape: "face", cx: 266, cy: 99 },
-	{ key: "Gamepad_FaceButton_Left", shape: "face", cx: 245, cy: 78 },
-	{ key: "Gamepad_DPad_Up", shape: "pad", x: 114, y: 88, width: 16, height: 17 },
-	{ key: "Gamepad_DPad_Down", shape: "pad", x: 114, y: 127, width: 16, height: 17 },
-	{ key: "Gamepad_DPad_Left", shape: "pad", x: 96, y: 108, width: 17, height: 16 },
-	{ key: "Gamepad_DPad_Right", shape: "pad", x: 131, y: 108, width: 17, height: 16 },
-	{ key: "Gamepad_RightThumbstick", shape: "stick", cx: 196, cy: 120 },
-	{ key: "Gamepad_Special_Left", shape: "pad", x: 150, y: 72, width: 18, height: 10 },
-	{ key: "Gamepad_Special_Right", shape: "pad", x: 174, y: 72, width: 18, height: 10 }
+	{ key: "Gamepad_LeftTrigger", kind: "pad", x: 58, y: 6, width: 48, height: 14 },
+	{ key: "Gamepad_RightTrigger", kind: "pad", x: 234, y: 6, width: 48, height: 14 },
+	{ key: "Gamepad_LeftShoulder", kind: "pad", x: 52, y: 24, width: 60, height: 14 },
+	{ key: "Gamepad_RightShoulder", kind: "pad", x: 228, y: 24, width: 60, height: 14 },
+	{ key: "Gamepad_LeftThumbstick", kind: "stick", cx: 74, cy: 76 },
+	{ key: "Gamepad_FaceButton_Top", kind: "face", cx: 266, cy: 57 },
+	{ key: "Gamepad_FaceButton_Right", kind: "face", cx: 287, cy: 78 },
+	{ key: "Gamepad_FaceButton_Bottom", kind: "face", cx: 266, cy: 99 },
+	{ key: "Gamepad_FaceButton_Left", kind: "face", cx: 245, cy: 78 },
+	{ key: "Gamepad_DPad_Up", kind: "pad", x: 114, y: 88, width: 16, height: 17 },
+	{ key: "Gamepad_DPad_Down", kind: "pad", x: 114, y: 127, width: 16, height: 17 },
+	{ key: "Gamepad_DPad_Left", kind: "pad", x: 96, y: 108, width: 17, height: 16 },
+	{ key: "Gamepad_DPad_Right", kind: "pad", x: 131, y: 108, width: 17, height: 16 },
+	{ key: "Gamepad_RightThumbstick", kind: "stick", cx: 196, cy: 120 },
+	{ key: "Gamepad_Special_Left", kind: "pad", x: 150, y: 72, width: 18, height: 10 },
+	{ key: "Gamepad_Special_Right", kind: "pad", x: 174, y: 72, width: 18, height: 10 }
 ];
 
 export interface KeyboardCap {
@@ -205,7 +205,11 @@ export const mouseCaps: readonly KeyboardCap[] = [
 ];
 
 /** Short caps for the diagram. The atlas keeps the serialized `FKey` name as identity. */
-export const keyLabels: Readonly<Record<string, string>> = {
+interface KeyLabels {
+	readonly [key: string]: string;
+}
+
+export const keyLabels: KeyLabels = {
 	Escape: "Esc",
 	Backslash: "\\",
 	BackSpace: "Backspace",

@@ -33,6 +33,7 @@ const fixture = join(
 );
 const bytes = readFileSync(fixture);
 const displayPath = relative(repositoryRoot, fixture).replaceAll("\\", "/");
+// SAFETY: wasmPackage is the build output whose public inspect export this benchmark exercises.
 const wasm = (await import(pathToFileURL(wasmPackage).href)) as {
 	readonly inspect: (path: string, bytes: Uint8Array) => string;
 };

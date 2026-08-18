@@ -18,7 +18,7 @@ export class AuthoringFilePickerError extends Schema.TaggedErrorClass<AuthoringF
 	}
 ) {}
 
-export interface AuthoringFilePickerShape {
+export interface AuthoringFilePickerApi {
 	readonly chooseFile: (
 		options: AuthoringFilePickerOptions
 	) => Effect.Effect<AuthoringFilePickerChoice, AuthoringFilePickerError>;
@@ -26,11 +26,11 @@ export interface AuthoringFilePickerShape {
 
 export class AuthoringFilePicker extends Context.Service<
 	AuthoringFilePicker,
-	AuthoringFilePickerShape
+	AuthoringFilePickerApi
 >()("@ue-shed/host/AuthoringFilePicker") {}
 
 export function authoringFilePickerLayer(
-	service: AuthoringFilePickerShape
+	service: AuthoringFilePickerApi
 ): Layer.Layer<AuthoringFilePicker> {
 	return Layer.succeed(AuthoringFilePicker, AuthoringFilePicker.of(service));
 }

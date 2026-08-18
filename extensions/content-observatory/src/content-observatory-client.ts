@@ -115,7 +115,7 @@ export class ContentObservatoryClientError extends Schema.TaggedErrorClass<Conte
 	}
 ) {}
 
-export interface ContentObservatoryClientShape {
+export interface ContentObservatoryClientApi {
 	readonly cancel: () => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
 	readonly start: (
 		request: ContentObservatoryHistoryRequest
@@ -128,5 +128,5 @@ export interface ContentObservatoryClientShape {
 
 export class ContentObservatoryClient extends Context.Service<
 	ContentObservatoryClient,
-	ContentObservatoryClientShape
+	ContentObservatoryClientApi
 >()("@ue-shed/extension-content-observatory/ContentObservatoryClient") {}

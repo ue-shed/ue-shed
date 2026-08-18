@@ -15,8 +15,10 @@ const fixturesRoot = join(
 	"packages/protocol/contracts/cameras/map-tile/v1/fixtures"
 );
 
-function fixture(name: string): unknown {
-	return JSON.parse(readFileSync(join(fixturesRoot, name), "utf8")) as unknown;
+function fixture(name: string): Schema.Json {
+	return Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(readFileSync(join(fixturesRoot, name), "utf8"))
+	);
 }
 
 describe("map tile contracts", () => {
@@ -34,8 +36,10 @@ describe("map tile contracts", () => {
 	}
 
 	it("rejects duplicate request tiles", () => {
-		const input = fixture("capture-request-valid.json") as Record<string, unknown>;
-		const tiles = input.tiles as ReadonlyArray<unknown>;
+		const input = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+			fixture("capture-request-valid.json")
+		);
+		const tiles = Schema.decodeUnknownSync(Schema.Array(Schema.Json))(input.tiles);
 		expect(
 			Schema.decodeUnknownResult(MapTileCaptureRequest)({
 				...input,
@@ -45,6 +49,7 @@ describe("map tile contracts", () => {
 	});
 
 	it("requires one scoped LOD distance scale for every pyramid level", () => {
+		// SAFETY: plan-valid.json is schema-decoded in the baseline test before this mutation.
 		const input = structuredClone(fixture("plan-valid.json")) as {
 			capture: { render: { lodDistanceScaleByZoom: number[] } };
 		};
@@ -53,6 +58,7 @@ describe("map tile contracts", () => {
 	});
 
 	it("exposes the unmodified SceneCapture renderer as an explicit comparison profile", () => {
+		// SAFETY: plan-valid.json is schema-decoded in the baseline test before this mutation.
 		const input = structuredClone(fixture("plan-valid.json")) as {
 			capture: { render: { profile: string } };
 		};
@@ -63,6 +69,7 @@ describe("map tile contracts", () => {
 	});
 
 	it("accepts the seam-stable spatial renderer profile", () => {
+		// SAFETY: plan-valid.json is schema-decoded in the baseline test before this mutation.
 		const input = structuredClone(fixture("plan-valid.json")) as {
 			capture: { render: { profile: string } };
 		};
@@ -81,6 +88,7 @@ describe("map tile contracts", () => {
 	});
 
 	it("rejects tile artifacts that drift away from their grid address", () => {
+		// SAFETY: manifest-valid.json is schema-decoded in the baseline test before this mutation.
 		const input = structuredClone(fixture("manifest-valid.json")) as {
 			tiles: Array<{ worldBounds: { minX: number } }>;
 		};

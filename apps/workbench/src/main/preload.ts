@@ -3,14 +3,12 @@ import type {
 	MapReviewApprovalResult,
 	MapReviewApproveCandidateIntent,
 	MapReviewAuthorFromSelectionIntent,
-	MapReviewAuthoringPatchIntent,
 	MapReviewAuthoringPreviewIntent,
 	MapReviewAuthoringResult,
 	MapReviewAuthoringSessionIntent,
 	MapReviewCaptureIntent,
 	MapReviewCaptureResult,
 	MapReviewApplyVisibilityPolicyIntent,
-	MapReviewReplaceVisibilityPolicyIntent,
 	MapReviewCandidatePreviewResult,
 	MapReviewResult,
 	MapReviewSetCreateIntent,
@@ -25,18 +23,9 @@ import type {
 	EditorPlaySessionCommand,
 	EditorPlaySessionCommandResponse
 } from "@ue-shed/protocol";
-import type {
-	WorldScoutFocusResult,
-	WorldScoutRefreshRate,
-	WorldScoutResult
-} from "@ue-shed/observatory";
+import type { WorldScoutFocusResult, WorldScoutResult } from "@ue-shed/observatory";
 import type { SavedWorld } from "@ue-shed/protocol";
-import type {
-	ScenarioDocument,
-	ScenarioRun,
-	ScenarioRunHandle,
-	ScenarioRunnerStatus
-} from "@ue-shed/scenarios";
+import type { ScenarioRun, ScenarioRunHandle, ScenarioRunnerStatus } from "@ue-shed/scenarios";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
 	CameraStatusResult,
@@ -56,6 +45,7 @@ import type {
 	WorkbenchProjectState,
 	WorkbenchTaskProgress
 } from "./project-workspace-contract.js";
+import type { WorkbenchRendererApi } from "./preload-contract.js";
 
 export type {
 	CameraStatusResult,
@@ -76,10 +66,9 @@ export type {
 	WorkbenchTaskProgress
 } from "./project-workspace-contract.js";
 
-contextBridge.exposeInMainWorld("ueShed", {
+const workbenchRendererApi = {
 	assetNavigation: {
-		locate: (objectPath: string): Promise<unknown> =>
-			ipcRenderer.invoke("asset-navigation:locate", objectPath)
+		locate: (objectPath: string) => ipcRenderer.invoke("asset-navigation:locate", objectPath)
 	},
 	editorSession: {
 		settings: (): Promise<UnrealConnectionSettings> =>
@@ -94,8 +83,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 	scenarios: {
 		cancel: (handle: ScenarioRunHandle): Promise<ScenarioRun> =>
 			ipcRenderer.invoke("scenario:cancel", handle),
-		start: (document: ScenarioDocument, endpoint: string): Promise<ScenarioRunHandle> =>
-			ipcRenderer.invoke("scenario:start", document, endpoint),
+		start: (document, endpoint) => ipcRenderer.invoke("scenario:start", document, endpoint),
 		status: (handle: ScenarioRunHandle): Promise<ScenarioRunnerStatus> =>
 			ipcRenderer.invoke("scenario:status", handle)
 	},
@@ -107,16 +95,11 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("config-explorer:query", request)
 	},
 	projectCustodian: {
-		configuredScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("project-custodian:configured-scan"),
-		chooseAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("project-custodian:choose-and-scan"),
-		prepare: (intent: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("project-custodian:prepare", intent),
-		execute: (intent: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("project-custodian:execute", intent),
-		cancel: (proposalId: string): Promise<unknown> =>
-			ipcRenderer.invoke("project-custodian:cancel", proposalId)
+		configuredScan: () => ipcRenderer.invoke("project-custodian:configured-scan"),
+		chooseAndScan: () => ipcRenderer.invoke("project-custodian:choose-and-scan"),
+		prepare: (intent) => ipcRenderer.invoke("project-custodian:prepare", intent),
+		execute: (intent) => ipcRenderer.invoke("project-custodian:execute", intent),
+		cancel: (proposalId: string) => ipcRenderer.invoke("project-custodian:cancel", proposalId)
 	},
 	project: {
 		choose: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:choose"),
@@ -126,94 +109,73 @@ contextBridge.exposeInMainWorld("ueShed", {
 		progress: (): Promise<WorkbenchTaskProgress> => ipcRenderer.invoke("project:progress")
 	},
 	assetAudits: {
-		loadConfiguredProject: (): Promise<unknown> =>
-			ipcRenderer.invoke("asset-audits:textures:configured-scan"),
-		chooseProjectAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("asset-audits:textures:choose-and-scan"),
-		refreshConfiguredProject: (): Promise<unknown> =>
+		loadConfiguredProject: () => ipcRenderer.invoke("asset-audits:textures:configured-scan"),
+		chooseProjectAndScan: () => ipcRenderer.invoke("asset-audits:textures:choose-and-scan"),
+		refreshConfiguredProject: () =>
 			ipcRenderer.invoke("asset-audits:textures:configured-refresh"),
-		chooseProjectAndRefresh: (): Promise<unknown> =>
+		chooseProjectAndRefresh: () =>
 			ipcRenderer.invoke("asset-audits:textures:choose-and-refresh"),
-		progress: (): Promise<unknown> => ipcRenderer.invoke("asset-audits:textures:progress"),
-		search: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("asset-audits:textures:search", request),
-		record: (objectPath: string): Promise<unknown> =>
+		progress: () => ipcRenderer.invoke("asset-audits:textures:progress"),
+		search: (request) => ipcRenderer.invoke("asset-audits:textures:search", request),
+		record: (objectPath: string) =>
 			ipcRenderer.invoke("asset-audits:textures:record", objectPath),
-		preview: (objectPath: string): Promise<unknown> =>
+		preview: (objectPath: string) =>
 			ipcRenderer.invoke("asset-audits:textures:preview", objectPath),
-		previewOffline: (objectPath: string): Promise<unknown> =>
+		previewOffline: (objectPath: string) =>
 			ipcRenderer.invoke("asset-audits:textures:preview-offline", objectPath),
-		previewOfflineBatch: (request: unknown): Promise<unknown> =>
+		previewOfflineBatch: (request) =>
 			ipcRenderer.invoke("asset-audits:textures:preview-offline-batch", request)
 	},
 	gameText: {
-		loadConfiguredProject: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:configured-scan"),
-		chooseProjectAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:choose-and-scan"),
-		refreshConfiguredProject: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:configured-refresh"),
-		chooseProjectAndRefresh: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:choose-and-refresh"),
-		progress: (): Promise<unknown> => ipcRenderer.invoke("game-text:progress"),
-		search: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:search", request),
-		focus: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:focus", request),
-		chooseQualityRules: (): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:quality:choose-rules"),
-		previewQualityRules: (document: unknown): Promise<unknown> =>
+		loadConfiguredProject: () => ipcRenderer.invoke("game-text:configured-scan"),
+		chooseProjectAndScan: () => ipcRenderer.invoke("game-text:choose-and-scan"),
+		refreshConfiguredProject: () => ipcRenderer.invoke("game-text:configured-refresh"),
+		chooseProjectAndRefresh: () => ipcRenderer.invoke("game-text:choose-and-refresh"),
+		progress: () => ipcRenderer.invoke("game-text:progress"),
+		search: (request) => ipcRenderer.invoke("game-text:search", request),
+		focus: (request) => ipcRenderer.invoke("game-text:focus", request),
+		chooseQualityRules: () => ipcRenderer.invoke("game-text:quality:choose-rules"),
+		previewQualityRules: (document) =>
 			ipcRenderer.invoke("game-text:quality:preview-rules", document),
-		saveQualityRules: (document: unknown): Promise<unknown> =>
+		saveQualityRules: (document) =>
 			ipcRenderer.invoke("game-text:quality:save-rules", document),
-		qualitySearch: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:quality:search", request),
-		qualityFocus: (request: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("game-text:quality:focus", request)
+		qualitySearch: (request) => ipcRenderer.invoke("game-text:quality:search", request),
+		qualityFocus: (request) => ipcRenderer.invoke("game-text:quality:focus", request)
 	},
 	inputAtlas: {
-		loadConfiguredProject: (): Promise<unknown> =>
-			ipcRenderer.invoke("input-atlas:configured-scan"),
-		chooseProjectAndScan: (): Promise<unknown> =>
-			ipcRenderer.invoke("input-atlas:choose-and-scan")
+		loadConfiguredProject: () => ipcRenderer.invoke("input-atlas:configured-scan"),
+		chooseProjectAndScan: () => ipcRenderer.invoke("input-atlas:choose-and-scan")
 	},
 	contentObservatory: {
-		status: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:status"),
-		targets: (mapPath: string): Promise<unknown> =>
-			ipcRenderer.invoke("content-observatory:targets", mapPath),
-		start: (request: ContentObservatoryHistoryRequestWire): Promise<unknown> =>
+		status: () => ipcRenderer.invoke("content-observatory:status"),
+		targets: (mapPath: string) => ipcRenderer.invoke("content-observatory:targets", mapPath),
+		start: (request: ContentObservatoryHistoryRequestWire) =>
 			ipcRenderer.invoke("content-observatory:start", request),
-		cancel: (): Promise<unknown> => ipcRenderer.invoke("content-observatory:cancel")
+		cancel: () => ipcRenderer.invoke("content-observatory:cancel")
 	},
 	authoring: {
-		beginSession: (objectPath: string): Promise<unknown> =>
+		beginSession: (objectPath: string) =>
 			ipcRenderer.invoke("authoring:session:begin", objectPath),
-		listSessions: (): Promise<unknown> => ipcRenderer.invoke("authoring:session:list"),
-		openSession: (sessionId: string): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:session:open", sessionId),
-		discardSession: (sessionId: string): Promise<unknown> =>
+		listSessions: () => ipcRenderer.invoke("authoring:session:list"),
+		openSession: (sessionId: string) => ipcRenderer.invoke("authoring:session:open", sessionId),
+		discardSession: (sessionId: string) =>
 			ipcRenderer.invoke("authoring:session:discard", sessionId),
-		editSession: (intent: AuthoringSessionIntent): Promise<unknown> =>
+		editSession: (intent: AuthoringSessionIntent) =>
 			ipcRenderer.invoke("authoring:session:edit", intent),
-		reviewSession: (sessionId: string): Promise<unknown> =>
+		reviewSession: (sessionId: string) =>
 			ipcRenderer.invoke("authoring:session:review", sessionId),
-		applySession: (sessionId: string): Promise<unknown> =>
+		applySession: (sessionId: string) =>
 			ipcRenderer.invoke("authoring:session:apply", sessionId),
-		reconcileSession: (sessionId: string): Promise<unknown> =>
+		reconcileSession: (sessionId: string) =>
 			ipcRenderer.invoke("authoring:session:reconcile", sessionId),
-		saveSession: (sessionId: string): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:session:save", sessionId),
-		undoSession: (sessionId: string): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:session:undo", sessionId),
-		redoSession: (sessionId: string): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:session:redo", sessionId),
-		loadConfiguredCatalog: (): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:configured-catalog"),
-		loadConfiguredTable: (): Promise<unknown> =>
-			ipcRenderer.invoke("authoring:configured-table"),
-		openCatalogTable: (objectPath: string, authority: AuthoringAuthority): Promise<unknown> =>
+		saveSession: (sessionId: string) => ipcRenderer.invoke("authoring:session:save", sessionId),
+		undoSession: (sessionId: string) => ipcRenderer.invoke("authoring:session:undo", sessionId),
+		redoSession: (sessionId: string) => ipcRenderer.invoke("authoring:session:redo", sessionId),
+		loadConfiguredCatalog: () => ipcRenderer.invoke("authoring:configured-catalog"),
+		loadConfiguredTable: () => ipcRenderer.invoke("authoring:configured-table"),
+		openCatalogTable: (objectPath: string, authority: AuthoringAuthority) =>
 			ipcRenderer.invoke("authoring:open-catalog-table", objectPath, authority),
-		chooseTable: (): Promise<unknown> => ipcRenderer.invoke("authoring:choose-table")
+		chooseTable: () => ipcRenderer.invoke("authoring:choose-table")
 	},
 	fixture: {
 		launch: (): Promise<FixtureLaunchResult> => ipcRenderer.invoke("fixture:launch"),
@@ -234,8 +196,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 		savedWorldMaps: (): Promise<
 			readonly { readonly label: string; readonly mapPath: string }[]
 		> => ipcRenderer.invoke("map-review:saved-world-maps"),
-		chooseProjectAndMaps: (): Promise<unknown> =>
-			ipcRenderer.invoke("map-review:choose-project-and-maps"),
+		chooseProjectAndMaps: () => ipcRenderer.invoke("map-review:choose-project-and-maps"),
 		focusActor: (actorId: string, bringToFront: boolean): Promise<WorldScoutFocusResult> =>
 			ipcRenderer.invoke("map-review:focus-actor", actorId, bringToFront),
 		approveCandidate: (
@@ -248,10 +209,7 @@ contextBridge.exposeInMainWorld("ueShed", {
 			ipcRenderer.invoke("map-review:author-from-selection", intent),
 		authoringResume: (): Promise<MapReviewAuthoringResult> =>
 			ipcRenderer.invoke("map-review:authoring-resume"),
-		authoringPatch: (
-			intent: MapReviewAuthoringPatchIntent
-		): Promise<MapReviewAuthoringResult> =>
-			ipcRenderer.invoke("map-review:authoring-patch", intent),
+		authoringPatch: (intent) => ipcRenderer.invoke("map-review:authoring-patch", intent),
 		authoringReframe: (
 			intent: MapReviewAuthoringSessionIntent
 		): Promise<MapReviewAuthoringResult> =>
@@ -275,37 +233,28 @@ contextBridge.exposeInMainWorld("ueShed", {
 		load: (): Promise<MapReviewResult> => ipcRenderer.invoke("map-review:load"),
 		reviewSets: (): Promise<MapReviewSetLibraryResult> =>
 			ipcRenderer.invoke("map-review:review-sets"),
-		replaceVisibilityPolicy: (
-			intent: MapReviewReplaceVisibilityPolicyIntent
-		): Promise<MapReviewResult> =>
+		replaceVisibilityPolicy: (intent) =>
 			ipcRenderer.invoke("map-review:replace-visibility-policy", intent),
 		setLivePreviewFps: (fps: number): Promise<number> =>
 			ipcRenderer.invoke("map-review:set-live-preview-fps", fps),
 		selectReviewSet: (intent: MapReviewSetSelectIntent): Promise<MapReviewResult> =>
 			ipcRenderer.invoke("map-review:select-review-set", intent),
-		subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate): Promise<void> =>
+		subscribeWorldObservations: (cadenceHz) =>
 			ipcRenderer.invoke("map-review:subscribe-world-observations", cadenceHz),
-		setWorldObservationRate: (
-			cadenceHz: WorldScoutRefreshRate
-		): Promise<WorldScoutRefreshRate> =>
+		setWorldObservationRate: (cadenceHz) =>
 			ipcRenderer.invoke("map-review:set-world-observation-rate", cadenceHz),
-		unsubscribeWorldObservations: (): Promise<void> =>
+		unsubscribeWorldObservations: (): Promise<undefined> =>
 			ipcRenderer.invoke("map-review:unsubscribe-world-observations")
 	},
 	mapCapture: {
-		actors: (mapPath: string): Promise<unknown> =>
-			ipcRenderer.invoke("map-capture:actors", mapPath),
-		choosePlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:choose-plan"),
-		newPlan: (): Promise<unknown> => ipcRenderer.invoke("map-capture:new-plan"),
-		openMap: (plan: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("map-capture:open-map", plan),
-		preview: (plan: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("map-capture:preview", plan),
-		savePlan: (intent: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("map-capture:save-plan", intent),
-		capture: (intent: unknown): Promise<unknown> =>
-			ipcRenderer.invoke("map-capture:capture", intent),
-		tile: (intent: unknown): Promise<unknown> => ipcRenderer.invoke("map-capture:tile", intent),
+		actors: (mapPath: string) => ipcRenderer.invoke("map-capture:actors", mapPath),
+		choosePlan: () => ipcRenderer.invoke("map-capture:choose-plan"),
+		newPlan: () => ipcRenderer.invoke("map-capture:new-plan"),
+		openMap: (plan) => ipcRenderer.invoke("map-capture:open-map", plan),
+		preview: (plan) => ipcRenderer.invoke("map-capture:preview", plan),
+		savePlan: (intent) => ipcRenderer.invoke("map-capture:save-plan", intent),
+		capture: (intent) => ipcRenderer.invoke("map-capture:capture", intent),
+		tile: (intent) => ipcRenderer.invoke("map-capture:tile", intent),
 		onProgress: (listener: (progress: MapCaptureProgressEvent) => void) => {
 			const handler = (
 				_event: Electron.IpcRendererEvent,
@@ -335,4 +284,6 @@ contextBridge.exposeInMainWorld("ueShed", {
 		ipcRenderer.on("map-review:world-observation", handler);
 		return () => ipcRenderer.removeListener("map-review:world-observation", handler);
 	}
-});
+} satisfies WorkbenchRendererApi;
+
+contextBridge.exposeInMainWorld("ueShed", workbenchRendererApi);

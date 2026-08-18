@@ -3,7 +3,7 @@
 import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import type {
-	AuthoringClientShape,
+	AuthoringClientApi,
 	AuthoringSessionIntent,
 	AuthoringSessionView
 } from "@ue-shed/authoring-sdk";
@@ -231,7 +231,7 @@ describe("AuthoringRoute", () => {
 		};
 		let opened = snapshot;
 		const requests: Array<{ authority: "saved" | "live"; objectPath: string }> = [];
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: cleanSession(opened) }),
@@ -300,7 +300,7 @@ describe("AuthoringRoute", () => {
 
 	it("keeps zero-change sessions out of Draft Sessions while retaining unsaved live work", async () => {
 		const pendingSavePath = "/Game/Fixture/DT_PendingSave.DT_PendingSave";
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
@@ -393,7 +393,7 @@ describe("AuthoringRoute", () => {
 				status: "rejected"
 			}
 		};
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			applySession: () => Effect.succeed({ status: "ready" as const, view: rejectedView }),
 			beginSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
 			chooseTable: () => Effect.die("unused"),
@@ -442,7 +442,7 @@ describe("AuthoringRoute", () => {
 			table: { ...snapshot.table, kind: "composite_data_table" }
 		};
 		const view = cleanSession(composite);
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.succeed({ status: "ready" as const, view }),
 			chooseTable: () => Effect.die("unused"),
@@ -478,7 +478,7 @@ describe("AuthoringRoute", () => {
 	});
 	it("keeps the expandable route responsive when table selection is cancelled", async () => {
 		let selections = 0;
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			getCatalogProgress: () =>
 				Effect.succeed({
 					cacheHits: 0,
@@ -522,7 +522,7 @@ describe("AuthoringRoute", () => {
 	});
 
 	it("shows truthful project indexing progress while catalog discovery is pending", async () => {
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.die("unused"),
 			chooseTable: () => Effect.die("unused"),
@@ -561,7 +561,7 @@ describe("AuthoringRoute", () => {
 
 	it("stages row intents and presents semantic Session Review", async () => {
 		const intents: AuthoringSessionIntent[] = [];
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			getCatalogProgress: () =>
 				Effect.succeed({
 					cacheHits: 0,
@@ -691,7 +691,7 @@ describe("AuthoringRoute", () => {
 	it("loads a referenced table without replacing the source draft and stages a typed row handle", async () => {
 		const intents: AuthoringSessionIntent[] = [];
 		const opened: string[] = [];
-		const client: AuthoringClientShape = {
+		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: rowReferenceSession }),

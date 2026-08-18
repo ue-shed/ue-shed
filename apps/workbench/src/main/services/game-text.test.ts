@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest";
 import {
 	makeTextCorpusServiceTestLayer,
+	makeTextUnitId,
 	TextCorpusScanError,
 	TextQualityRuleId,
 	TextQualityRuleDocument,
@@ -221,7 +222,9 @@ it.effect("keeps refreshed corpus data in main and serves bounded query results"
 			page: { total: 0, units: [] },
 			status: "ready"
 		});
-		expect(yield* service.focus({ id: "unreal:UI:Missing" as never, pageSize: 50 })).toEqual({
+		expect(
+			yield* service.focus({ id: makeTextUnitId("unreal:UI:Missing"), pageSize: 50 })
+		).toEqual({
 			status: "not_found"
 		});
 	}).pipe(

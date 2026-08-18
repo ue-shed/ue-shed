@@ -67,7 +67,7 @@ function addContribution(
 		source: command.source,
 		location: command.location,
 		operation: command.operation,
-		...(command.value === undefined ? {} : { inputValue: command.value }),
+		...(command.value === undefined ? undefined : { inputValue: command.value }),
 		priorValue,
 		effect,
 		remainsEffective: false

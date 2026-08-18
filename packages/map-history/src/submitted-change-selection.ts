@@ -103,7 +103,7 @@ export function selectSubmittedChanges(
 				return yield* Effect.die("Map history file scope disappeared after validation.");
 			}
 			const page = yield* source.listSubmittedChangelists({
-				...(beforeChange === undefined ? {} : { beforeChange }),
+				...(beforeChange === undefined ? undefined : { beforeChange }),
 				fileSpec,
 				limit: pageLimit
 			});

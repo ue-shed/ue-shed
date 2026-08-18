@@ -70,7 +70,7 @@ function history(input: {
 			range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-28T00:00:00.000Z" }
 		},
 		...(input.start === undefined
-			? {}
+			? undefined
 			: { rangeStartSnapshot: snapshot(input.start, input.startCompleteness) }),
 		rangeEndSnapshot: snapshot(input.end, input.endCompleteness),
 		revisions: input.revisions,

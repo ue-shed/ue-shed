@@ -22,7 +22,6 @@ import type {
 } from "../src/main/map-review-flow-contract.js";
 import type {
 	MapReviewAuthoringRoundtripDriver,
-	MapReviewFlowCheckpointSink,
 	MapReviewFlowStepEvidence
 } from "../src/main/map-review-flow.js";
 import { MapReviewFlowExecutionError } from "../src/main/map-review-flow.js";
@@ -39,13 +38,15 @@ const cameraLibrary = "/Script/UEShedCameras.Default__UEShedCameraLibrary";
 const editorLoadingLibrary = "/Script/UnrealEd.Default__EditorLoadingAndSavingUtils";
 const playSessionLibrary = "/Script/UEShedCoreEditor.Default__UEShedEditorPlaySessionLibrary";
 
-if (typeof electronExecutable !== "string") {
+if (!Schema.is(Schema.String)(electronExecutable)) {
 	throw new TypeError("The Electron package did not resolve to an executable path");
 }
 const electronPath: string = electronExecutable;
 
-interface RemoteCallResponse {
-	readonly [key: string]: unknown;
+type RemoteCallResponse = Schema.JsonObject;
+
+interface ElectronLaunchEnvironment {
+	[name: string]: string;
 }
 
 const FixtureContract = Schema.Struct({
@@ -111,7 +112,7 @@ async function remoteCall(args: {
 	readonly endpoint: string;
 	readonly functionName: string;
 	readonly objectPath: string;
-	readonly parameters?: Readonly<Record<string, unknown>>;
+	readonly parameters?: Schema.JsonObject;
 }): Promise<RemoteCallResponse> {
 	const response = await fetch(`${args.endpoint}/remote/object/call`, {
 		body: JSON.stringify({
@@ -127,14 +128,15 @@ async function remoteCall(args: {
 	if (!response.ok) {
 		throw new Error(`${args.functionName} failed with HTTP ${response.status}`);
 	}
+	// SAFETY: this helper calls Unreal Remote Control, whose successful response is a JSON object.
 	return (await response.json()) as RemoteCallResponse;
 }
 
-function launchEnvironment(overrides: Readonly<Record<string, string>>): Record<string, string> {
+function launchEnvironment(overrides: Readonly<Record<string, string>>) {
 	if (!process.env.UE_SHED_UASSET_EXECUTABLE) {
 		throw new Error("Launch Map Review flows through the repository flow command.");
 	}
-	const environment: Record<string, string> = {
+	const environment: ElectronLaunchEnvironment = {
 		ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
 		...overrides
 	};
@@ -152,15 +154,15 @@ function launchEnvironment(overrides: Readonly<Record<string, string>>): Record<
 	return environment;
 }
 
-function pngDimensions(bytes: Buffer): { readonly height: number; readonly width: number } {
+function pngDimensions(bytes: Buffer) {
 	if (bytes.length < 24 || bytes.toString("hex", 0, 8) !== "89504e470d0a1a0a") {
 		throw new Error("The raw capture is not a PNG.");
 	}
 	return { height: bytes.readUInt32BE(20), width: bytes.readUInt32BE(16) };
 }
 
-async function readOnlyJson(path: string): Promise<unknown> {
-	return JSON.parse(await readFile(path, "utf8")) as unknown;
+async function readOnlyJson(path: string): Promise<Schema.Json> {
+	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
 }
 
 export async function createMapReviewFlowHarness(args: {
@@ -323,8 +325,7 @@ export async function createMapReviewFlowHarness(args: {
 					"globalThis.ueShed.fixture.launchReview()"
 				);
 				if (
-					typeof launchResult !== "object" ||
-					launchResult === null ||
+					!(launchResult instanceof Object) ||
 					!("status" in launchResult) ||
 					launchResult.status !== "ready"
 				) {
@@ -435,14 +436,10 @@ export async function createMapReviewFlowHarness(args: {
 				const preview = candidates.locator("canvas, img").first();
 				await expect(preview).toBeVisible({ timeout: 60_000 });
 				const width = await preview.evaluate((node) => {
-					const previewNode = node as unknown as {
-						readonly naturalWidth: number;
-						readonly tagName: string;
-						readonly width: number;
-					};
-					return previewNode.tagName === "CANVAS"
-						? previewNode.width
-						: previewNode.naturalWidth;
+					if (node.tagName === "CANVAS" && "width" in node) return Number(node.width);
+					if (node.tagName === "IMG" && "naturalWidth" in node)
+						return Number(node.naturalWidth);
+					throw new Error("The framing preview is neither a Canvas nor an image.");
 				});
 				expect(width).toBe(320);
 				return {};
@@ -698,6 +695,7 @@ export async function createMapReviewFlowHarness(args: {
 						functionName: "GetStatus",
 						objectPath: cameraLibrary
 					});
+					// SAFETY: GetMapCaptureStatus returns this UE Shed-owned status payload in ResultJson.
 					const status = JSON.parse(String(statusResponse.ResultJson)) as {
 						readonly cameras?: ReadonlyArray<unknown>;
 					};
@@ -761,15 +759,12 @@ export function makeMapReviewCheckpointCollector(args: {
 	readonly harness: MapReviewFlowHarness;
 	readonly recording: boolean;
 	readonly testInfo: TestInfo;
-}): {
-	readonly checkpoints: ReadonlyArray<MapReviewFlowCheckpoint>;
-	readonly sink: MapReviewFlowCheckpointSink;
-} {
+}) {
 	const checkpoints: MapReviewFlowCheckpoint[] = [];
 	return {
 		checkpoints,
 		sink: {
-			checkpoint: (checkpoint) =>
+			checkpoint: (checkpoint: MapReviewFlowCheckpoint) =>
 				Effect.tryPromise({
 					try: async () => {
 						if (checkpoint.id === "cleanup-verified") {

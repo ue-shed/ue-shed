@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { materializeBaseline } from "./baseline-materialization.js";
 import { acquireHistoricalProjectTree } from "./historical-project-tree.js";
-import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceShape } from "./perforce.js";
+import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 
 const scope = {
 	externalActorDepotRoot: "//Project/Main/Content/__ExternalActors__/Maps/L_Example",
@@ -20,7 +20,7 @@ const scope = {
 	sourceKind: "world_partition" as const
 };
 
-function source(materializedPath: string, hasMore = false): PerforceHistorySourceShape {
+function source(materializedPath: string, hasMore = false): PerforceHistorySourceApi {
 	return {
 		describeChangelist: () => Effect.die("Baseline materialization must not describe changes."),
 		listDepotFilesAtChange: (options) =>

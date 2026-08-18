@@ -49,7 +49,7 @@ const validateProtocolEventType = Schema.decodeUnknownExit(
 const decodeProtocolEvent = Schema.decodeUnknownSync(UAssetIoEvent, exactProtocolParseOptions);
 
 /** @internal Validate one exact wire event through the measured large-frame type-side path. */
-export function validateProtocolEvent(input: unknown, frameCharacters: number): ProtocolEvent {
+export function validateProtocolEvent<Input>(input: Input, frameCharacters: number): ProtocolEvent {
 	if (frameCharacters < TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS) {
 		return decodeProtocolEvent(input);
 	}
@@ -114,7 +114,7 @@ export class ProtocolStreamValidator {
 		}
 		let event: ProtocolEvent;
 		try {
-			event = validateProtocolEvent(JSON.parse(line) as unknown, line.length);
+			event = validateProtocolEvent(JSON.parse(line), line.length);
 		} catch (cause) {
 			throw new ProtocolStreamFailure("contract", `Invalid protocol event: ${String(cause)}`);
 		}
@@ -467,7 +467,7 @@ function recordProtocolTelemetry(
 		kind: "worker_completed",
 		largestFrameBytes: telemetry.largestFrameBytes,
 		outputBytes: telemetry.outputBytes,
-		...(telemetry.workerPid === undefined ? {} : { pid: telemetry.workerPid }),
+		...(telemetry.workerPid === undefined ? undefined : { pid: telemetry.workerPid }),
 		terminalState
 	});
 	const cacheOutcome = protocolCacheOutcome(
@@ -568,7 +568,7 @@ export function updateSavedWorldProgress(
 			...store.current,
 			phase: savedWorldPhase(event.phase),
 			processedPackages: event.completedItems,
-			...(event.totalItems === undefined ? {} : { totalPackages: event.totalItems })
+			...(event.totalItems === undefined ? undefined : { totalPackages: event.totalItems })
 		};
 		return;
 	}
@@ -616,7 +616,7 @@ function mapProtocolFailure(
 			path,
 			retrySafe:
 				cause.kind === "timeout" || cause.kind === "discovery" || cause.kind === "process",
-			...(cause.exitCode === undefined ? {} : { exitCode: cause.exitCode })
+			...(cause.exitCode === undefined ? undefined : { exitCode: cause.exitCode })
 		});
 	}
 	return new AssetReaderError({
@@ -644,7 +644,7 @@ export async function* runUassetProtocolEvents(options: {
 				catalogTimeoutMs: options.timeoutMs,
 				executable: options.configuration.executable,
 				...(options.configuration.protocolObserver === undefined
-					? {}
+					? undefined
 					: { protocolObserver: options.configuration.protocolObserver }),
 				timeoutMs: options.timeoutMs
 			},
@@ -654,7 +654,7 @@ export async function* runUassetProtocolEvents(options: {
 			signal: options.signal,
 			telemetry,
 			timeoutMs: options.timeoutMs,
-			...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
+			...(options.onEvent === undefined ? undefined : { onEvent: options.onEvent })
 		});
 	} finally {
 		if (telemetry.terminalState === undefined && !telemetry.cancelled) {
@@ -931,6 +931,7 @@ async function* protocolEvents(options: {
 			options.request.contract,
 			options.request.requestId
 		);
+		// SAFETY: spawn configures stdout encoding to utf8 above, so iterator chunks are strings.
 		for await (const chunk of child.stdout as AsyncIterable<string>) {
 			observeProtocolChunk(chunk, options.telemetry);
 			outputBudget.observe(chunk);
@@ -974,22 +975,24 @@ async function collectProtocolScan(
 			kind: "scan",
 			projectRoot: options.projectRoot,
 			depth: options.depth ?? "full",
-			...(options.paths === undefined ? {} : { paths: [...options.paths] }),
-			...(options.cachePath === undefined ? {} : { cachePath: options.cachePath }),
-			...(options.inventory === undefined ? {} : { inventory: options.inventory }),
-			...(options.classes === undefined ? {} : { classes: [...options.classes] }),
+			...(options.paths === undefined ? undefined : { paths: [...options.paths] }),
+			...(options.cachePath === undefined ? undefined : { cachePath: options.cachePath }),
+			...(options.inventory === undefined ? undefined : { inventory: options.inventory }),
+			...(options.classes === undefined ? undefined : { classes: [...options.classes] }),
 			...(options.classPrefixes === undefined
-				? {}
+				? undefined
 				: { classPrefixes: [...options.classPrefixes] }),
 			...(options.classNameSuffixes === undefined
-				? {}
+				? undefined
 				: { classNameSuffixes: [...options.classNameSuffixes] }),
-			...(options.names === undefined ? {} : { names: [...options.names] })
+			...(options.names === undefined ? undefined : { names: [...options.names] })
 		},
 		{
-			...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+			...(options.concurrency === undefined
+				? undefined
+				: { concurrency: options.concurrency }),
 			...(options.maximumAssets === undefined
-				? {}
+				? undefined
 				: { maximumAssets: options.maximumAssets }),
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: configuration.catalogTimeoutMs
@@ -1014,7 +1017,7 @@ async function collectProtocolScan(
 				...progress.current,
 				phase: protocolPhase(event.phase),
 				processedAssets: event.completedItems,
-				...(event.totalItems === undefined ? {} : { totalAssets: event.totalItems })
+				...(event.totalItems === undefined ? undefined : { totalAssets: event.totalItems })
 			};
 		} else if (event.kind === "diagnostic") {
 			partial = true;
@@ -1055,7 +1058,7 @@ async function collectProtocolScan(
 	return {
 		assets,
 		failures,
-		...(inventory.length === 0 ? {} : { inventory }),
+		...(inventory.length === 0 ? undefined : { inventory }),
 		summary: {
 			...summary,
 			partialAssets: Math.max(summary.partialAssets, partial ? 1 : 0)
@@ -1111,7 +1114,7 @@ async function collectProtocolSingle<A>(options: {
 			signal: options.signal,
 			telemetry: options.telemetry,
 			timeoutMs: options.configuration.timeoutMs,
-			...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
+			...(options.onEvent === undefined ? undefined : { onEvent: options.onEvent })
 		}),
 		expected: options.expected,
 		select: options.select
@@ -1158,7 +1161,7 @@ export function invokeProtocolSessionSingle<A>(options: {
 					request: options.request,
 					signal,
 					timeoutMs: options.configuration.timeoutMs,
-					...(options.onEvent === undefined ? {} : { onEvent: options.onEvent })
+					...(options.onEvent === undefined ? undefined : { onEvent: options.onEvent })
 				}),
 				expected: options.expected,
 				select: options.select
@@ -1218,15 +1221,15 @@ export function protocolProjectionStream<A>(options: {
 			kind: operation,
 			projectRoot: options.extraction.projectRoot,
 			...(options.extraction.paths === undefined
-				? {}
+				? undefined
 				: { paths: [...options.extraction.paths] })
 		},
 		{
 			...(options.extraction.concurrency === undefined
-				? {}
+				? undefined
 				: { concurrency: options.extraction.concurrency }),
 			...(options.extraction.maximumAssets === undefined
-				? {}
+				? undefined
 				: { maximumAssets: options.extraction.maximumAssets }),
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs: options.configuration.catalogTimeoutMs
@@ -1253,7 +1256,9 @@ export function protocolProjectionStream<A>(options: {
 						...options.scanStore.current,
 						phase: protocolPhase(event.phase),
 						processedAssets: event.completedItems,
-						...(event.totalItems === undefined ? {} : { totalAssets: event.totalItems })
+						...(event.totalItems === undefined
+							? undefined
+							: { totalAssets: event.totalItems })
 					};
 				}
 				if (event.kind === "result") {

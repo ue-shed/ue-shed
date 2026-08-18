@@ -7,7 +7,7 @@ import {
 	decodeMapCaptureSaveResult,
 	decodeMapCaptureSelectionResult,
 	decodeMapCaptureTileResult,
-	type MapCaptureClientShape,
+	type MapCaptureClientApi,
 	type MapCaptureExecuteIntent,
 	type MapCaptureProgressEvent,
 	type MapCaptureSaveIntent,
@@ -15,9 +15,9 @@ import {
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { Effect, Queue, Stream } from "effect";
 
-function request<A>(args: {
-	readonly decode: (value: unknown) => Effect.Effect<A, unknown>;
-	readonly invoke: () => Promise<unknown>;
+function request<A, HostValue, DecodeError>(args: {
+	readonly decode: (value: HostValue) => Effect.Effect<A, DecodeError>;
+	readonly invoke: () => Promise<HostValue>;
 	readonly operation: string;
 }): Effect.Effect<A, MapCaptureClientError> {
 	return Effect.tryPromise({
@@ -42,7 +42,7 @@ function request<A>(args: {
 	);
 }
 
-export const mapCaptureClient: MapCaptureClientShape = {
+export const mapCaptureClient: MapCaptureClientApi = {
 	actors: (mapPath) =>
 		request({
 			decode: decodeMapCaptureActorCatalogResult,

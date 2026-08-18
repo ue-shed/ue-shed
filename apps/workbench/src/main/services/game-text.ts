@@ -29,7 +29,7 @@ import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFiles } from "../adapters/local-files.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
-export interface WorkbenchGameTextShape {
+export interface WorkbenchGameTextApi {
 	readonly chooseAndRefresh: () => Effect.Effect<TextCorpusQueryRunResult>;
 	readonly chooseAndScan: () => Effect.Effect<TextCorpusRunResult>;
 	readonly configuredRefresh: () => Effect.Effect<TextCorpusQueryRunResult>;
@@ -52,7 +52,7 @@ export interface WorkbenchGameTextShape {
 	) => Effect.Effect<TextQualitySearchResult>;
 }
 
-export class WorkbenchGameText extends Context.Service<WorkbenchGameText, WorkbenchGameTextShape>()(
+export class WorkbenchGameText extends Context.Service<WorkbenchGameText, WorkbenchGameTextApi>()(
 	"@ue-shed/workbench/WorkbenchGameText"
 ) {}
 
@@ -406,8 +406,8 @@ export const WorkbenchGameTextLive = Layer.effect(
 );
 
 export function makeWorkbenchGameTextTestLayer(
-	service: Pick<WorkbenchGameTextShape, "chooseAndScan" | "configuredScan"> &
-		Partial<Omit<WorkbenchGameTextShape, "chooseAndScan" | "configuredScan">>
+	service: Pick<WorkbenchGameTextApi, "chooseAndScan" | "configuredScan"> &
+		Partial<Omit<WorkbenchGameTextApi, "chooseAndScan" | "configuredScan">>
 ): Layer.Layer<WorkbenchGameText> {
 	return Layer.succeed(
 		WorkbenchGameText,

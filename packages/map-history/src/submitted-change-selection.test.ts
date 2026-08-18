@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
 import {
 	makePerforceHistorySourceTestLayer,
-	type PerforceHistorySourceShape,
+	type PerforceHistorySourceApi,
 	type PerforceSubmittedChange
 } from "./perforce.js";
 import { MapHistoryRange } from "./schema.js";
@@ -18,7 +18,7 @@ function range() {
 function change(changeNumber: number, submittedAt?: string): PerforceSubmittedChange {
 	return {
 		change: changeNumber,
-		...(submittedAt === undefined ? {} : { submittedAt })
+		...(submittedAt === undefined ? undefined : { submittedAt })
 	};
 }
 
@@ -31,7 +31,7 @@ function source(
 			readonly nextBeforeChange: number | null;
 		}
 	>
-): PerforceHistorySourceShape {
+): PerforceHistorySourceApi {
 	return {
 		describeChangelist: () =>
 			Effect.die("The submitted-change selection test must not describe changelists."),
@@ -52,8 +52,8 @@ function source(
 	};
 }
 
-function provide(sourceShape: PerforceHistorySourceShape) {
-	return Layer.provide(makePerforceHistorySourceTestLayer(sourceShape), Layer.empty);
+function provide(sourceApi: PerforceHistorySourceApi) {
+	return Layer.provide(makePerforceHistorySourceTestLayer(sourceApi), Layer.empty);
 }
 
 describe("selectSubmittedChanges", () => {

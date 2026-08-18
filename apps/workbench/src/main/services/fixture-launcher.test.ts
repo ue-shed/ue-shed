@@ -3,7 +3,7 @@ import {
 	makeRemoteControlClientTestLayer,
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
-import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { join } from "node:path";
 import { expect } from "vitest";
@@ -11,7 +11,7 @@ import { FixtureProcess } from "../adapters/fixture-process.js";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import {
 	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationShape
+	type WorkbenchConfigurationApi
 } from "../workbench-config.js";
 import {
 	FixtureHealth,
@@ -22,7 +22,7 @@ import {
 	type FixtureHealthResult
 } from "./fixture-launcher.js";
 
-const unconfigured: WorkbenchConfigurationShape = {
+const unconfigured: WorkbenchConfigurationApi = {
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
 	project: { status: "not_configured" },
@@ -35,7 +35,7 @@ const unconfigured: WorkbenchConfigurationShape = {
 const repositoryRoot = "C:/repo";
 const launchScriptPath = join(repositoryRoot, "scripts", "unreal-fixture.ts");
 
-const configuredCheckout: WorkbenchConfigurationShape = {
+const configuredCheckout: WorkbenchConfigurationApi = {
 	...unconfigured,
 	sourceCheckout: { path: repositoryRoot, status: "configured" }
 };
@@ -57,7 +57,7 @@ function neverCalledFixtureProcess() {
 
 // --- FixtureHealth -----------------------------------------------------------
 
-const manifestOf = (fields: Readonly<Record<string, unknown>>) => ({
+const manifestOf = (fields: Schema.JsonObject) => ({
 	capabilities: [],
 	producerKind: "unreal_editor" as const,
 	schemaVersion: 1 as const,

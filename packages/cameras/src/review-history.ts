@@ -1,9 +1,30 @@
-import type {
-	CapturedReviewViewRevision,
-	CaptureRun,
-	ReviewSet,
-	ReviewViewRevisionId
-} from "./review-schema.js";
+import type { CapturedReviewViewRevision, ReviewViewRevisionId } from "./review-schema.js";
+
+interface ReviewHistorySet {
+	readonly views: ReadonlyArray<{
+		readonly id: string;
+		readonly revision: { readonly id: ReviewViewRevisionId };
+	}>;
+}
+
+type ReviewHistoryResult =
+	| {
+			readonly status: "captured";
+			readonly viewId: string;
+			readonly viewRevision: CapturedReviewViewRevision;
+	  }
+	| {
+			readonly message: string;
+			readonly status: "failed";
+			readonly viewId: string;
+			readonly viewRevision: CapturedReviewViewRevision;
+	  };
+
+interface ReviewHistoryRun {
+	readonly completedAt: string;
+	readonly id: string;
+	readonly results: ReadonlyArray<ReviewHistoryResult>;
+}
 
 export type ReviewViewHistoryEntry =
 	| {
@@ -36,8 +57,8 @@ export interface ReviewViewHistory {
  * remains visible as missing; no evidence is rewritten or inferred as a capture.
  */
 export function projectReviewViewHistory(args: {
-	readonly reviewSet: ReviewSet;
-	readonly runs: ReadonlyArray<CaptureRun>;
+	readonly reviewSet: ReviewHistorySet;
+	readonly runs: ReadonlyArray<ReviewHistoryRun>;
 }): ReadonlyArray<ReviewViewHistory> {
 	return args.reviewSet.views.map((view) => ({
 		currentRevisionId: view.revision.id,

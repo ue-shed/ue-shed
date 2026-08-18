@@ -24,7 +24,7 @@ import { WorkbenchConfiguration } from "../workbench-config.js";
 import { OfflineTexturePreview } from "./offline-texture-preview.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
-export interface WorkbenchAssetAuditsShape {
+export interface WorkbenchAssetAuditsApi {
 	readonly chooseAndRefresh: () => Effect.Effect<
 		TextureAuditQueryRunResult,
 		WorkbenchWindowError
@@ -46,7 +46,7 @@ export interface WorkbenchAssetAuditsShape {
 
 export class WorkbenchAssetAudits extends Context.Service<
 	WorkbenchAssetAudits,
-	WorkbenchAssetAuditsShape
+	WorkbenchAssetAuditsApi
 >()("@ue-shed/workbench/WorkbenchAssetAudits") {}
 
 function unavailablePreview(
@@ -437,8 +437,8 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 );
 
 export function makeWorkbenchAssetAuditsTestLayer(
-	service: Pick<WorkbenchAssetAuditsShape, "chooseAndScan" | "configuredScan" | "preview"> &
-		Partial<Omit<WorkbenchAssetAuditsShape, "chooseAndScan" | "configuredScan" | "preview">>
+	service: Pick<WorkbenchAssetAuditsApi, "chooseAndScan" | "configuredScan" | "preview"> &
+		Partial<Omit<WorkbenchAssetAuditsApi, "chooseAndScan" | "configuredScan" | "preview">>
 ): Layer.Layer<WorkbenchAssetAudits> {
 	return Layer.succeed(
 		WorkbenchAssetAudits,

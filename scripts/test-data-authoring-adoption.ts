@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseJsonObject, type JsonObject } from "./json.ts";
 
 interface HostResponse {
 	readonly status?: unknown;
@@ -83,7 +84,7 @@ async function availablePort() {
 		server.listen(0, "127.0.0.1", resolveListening);
 	});
 	const address = server.address();
-	if (!address || typeof address === "string") fail("could not allocate a host conformance port");
+	if (!(address instanceof Object)) fail("could not allocate a host conformance port");
 	await new Promise<void>((resolveClosing, reject) =>
 		server.close((error) => (error ? reject(error) : resolveClosing()))
 	);
@@ -139,14 +140,15 @@ async function verifyFunctionalHost(remoteControlEndpoint: string) {
 	child.stderr.on("data", (chunk) => (stderr += chunk));
 
 	const endpoint = `http://127.0.0.1:${port}/api/authoring`;
-	const post = async (payload: Record<string, unknown>): Promise<HostResponse> => {
+	const post = async (payload: JsonObject): Promise<HostResponse> => {
 		const response = await fetch(endpoint, {
 			body: JSON.stringify(payload),
 			headers: { "content-type": "application/json" },
 			method: "POST"
 		});
 		if (!response.ok) fail(`functional host returned HTTP ${response.status}`);
-		return (await response.json()) as HostResponse;
+		// SAFETY: The functional host endpoint is validated through the assertions below.
+		return parseJsonObject(await response.text()) as HostResponse;
 	};
 
 	try {
@@ -216,6 +218,7 @@ await rm(targetRoot, { force: true, recursive: true });
 await mkdir(dirname(targetRoot), { recursive: true });
 run(process.execPath, [materializer, "--target", targetRoot, "--source-commit", sourceCommit]);
 
+// SAFETY: the materializer just wrote this adoption manifest; assertions below verify its contents.
 const manifest = JSON.parse(
 	await readFile(join(targetRoot, ".ue-shed", "data-authoring", "adoption.manifest.json"), "utf8")
 ) as {

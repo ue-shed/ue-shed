@@ -73,8 +73,8 @@ function normalizeArgs(args: readonly string[]): ReadonlyArray<string> {
 export function runCli(args: readonly string[]): Effect.Effect<void, CliCommandError, CliRuntime> {
 	return Effect.gen(function* () {
 		const runtime = yield* CliRuntime;
-		const help = [] as string[];
-		const errors = [] as string[];
+		const help: string[] = [];
+		const errors: string[] = [];
 		const consoleLayer = Layer.succeed(Console.Console, makeBufferedConsole(help, errors));
 		const result = yield* Effect.exit(
 			Command.runWith(cliCommand, { version })(normalizeArgs(args)).pipe(

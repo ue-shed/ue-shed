@@ -12,7 +12,7 @@ import { AuthoringCatalog, AuthoringLiveConnection } from "@ue-shed/authoring-ca
 import {
 	AuthoringClient,
 	AuthoringClientError,
-	type AuthoringClientShape,
+	type AuthoringClientApi,
 	type AuthoringAuthority,
 	type AuthoringCatalogResult,
 	type AuthoringCatalogProgress,
@@ -45,7 +45,7 @@ interface CatalogIndex {
 
 const emptyCatalogIndex: CatalogIndex = { assetPaths: new Map(), liveObjectPaths: new Set() };
 
-export interface ShedAuthoringShape {
+export interface ShedAuthoringApi {
 	readonly catalogProgress?: () => Effect.Effect<AuthoringCatalogProgress>;
 	readonly applySession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly beginSession: (objectPath: string) => Effect.Effect<AuthoringSessionResult>;
@@ -67,7 +67,7 @@ export interface ShedAuthoringShape {
 	readonly undoSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 }
 
-export class ShedAuthoring extends Context.Service<ShedAuthoring, ShedAuthoringShape>()(
+export class ShedAuthoring extends Context.Service<ShedAuthoring, ShedAuthoringApi>()(
 	"@ue-shed/host/ShedAuthoring"
 ) {}
 
@@ -79,7 +79,7 @@ export const ShedAuthoringSessionsLive = Layer.unwrap(
 				? authoringSessionServiceLayer({
 						projectRoot: project.projectRoot,
 						...(project.sessionStorageRoot === undefined
-							? {}
+							? undefined
 							: { storageRoot: project.sessionStorageRoot })
 					})
 				: Layer.empty
@@ -101,7 +101,7 @@ export function sessionView(
 		dirty: review.activeCommandCount > 0,
 		lifecycle: document.lifecycle,
 		...(lastApply === undefined
-			? {}
+			? undefined
 			: {
 					lastApply: {
 						errors: lastApply.errors ?? [],
@@ -305,7 +305,7 @@ export const ShedAuthoringLive = Layer.effect(
 					...discovered.diagnostics.map(({ code, message, path }) => ({
 						code,
 						message,
-						...(path ? { path } : {})
+						...(path ? { path } : undefined)
 					}))
 				],
 				status: "ready" as const,
@@ -515,7 +515,9 @@ export const ShedAuthoringLive = Layer.effect(
 								sessionId: intent.sessionId,
 								tableObjectPath: intent.tableObjectPath,
 								rowName: intent.rowName,
-								...(intent.atIndex === undefined ? {} : { atIndex: intent.atIndex })
+								...(intent.atIndex === undefined
+									? undefined
+									: { atIndex: intent.atIndex })
 							})
 						: intent.kind === "duplicate_row"
 							? service.duplicateRow({
@@ -524,7 +526,7 @@ export const ShedAuthoringLive = Layer.effect(
 									rowName: intent.rowName,
 									sourceRowId: intent.sourceRowId,
 									...(intent.atIndex === undefined
-										? {}
+										? undefined
 										: { atIndex: intent.atIndex })
 								})
 							: intent.kind === "remove_row"
@@ -684,8 +686,8 @@ export const ShedAuthoringLive = Layer.effect(
 );
 
 export function makeShedAuthoringTestLayer(
-	service: Omit<ShedAuthoringShape, "catalogProgress"> &
-		Partial<Pick<ShedAuthoringShape, "catalogProgress">>
+	service: Omit<ShedAuthoringApi, "catalogProgress"> &
+		Partial<Pick<ShedAuthoringApi, "catalogProgress">>
 ): Layer.Layer<ShedAuthoring> {
 	return Layer.succeed(
 		ShedAuthoring,
@@ -709,7 +711,7 @@ export const AuthoringClientLive = Layer.effect(
 	AuthoringClient,
 	Effect.map(
 		ShedAuthoring,
-		(authoring): AuthoringClientShape =>
+		(authoring): AuthoringClientApi =>
 			AuthoringClient.of({
 				applySession: authoring.applySession,
 				beginSession: authoring.beginSession,

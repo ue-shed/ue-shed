@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import type { ProjectLaunchMode } from "../project-workspace-contract.js";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
 import { ProjectLauncher } from "../services/project-launcher.js";
@@ -14,7 +13,7 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["project:choose"], () => project.choose());
 	yield* ipc.register(invokeContracts["project:progress"], () => project.progress());
 	yield* ipc.register(invokeContracts["project:launch"], (...args) => {
-		const [mode] = args as [ProjectLaunchMode];
+		const [mode] = args;
 		return launcher.launch(mode);
 	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerProjectWorkspace"));

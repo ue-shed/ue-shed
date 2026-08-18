@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import {
 	defaultFramingParameters,
+	FramingCandidateId,
 	type FramingCandidateOverride,
 	type FramingParameters
 } from "@ue-shed/cameras";
@@ -13,7 +14,7 @@ import type {
 	MapReviewAuthoringResult,
 	MapReviewApprovalResult,
 	MapReviewCandidatePreviewResult,
-	MapReviewClientShape,
+	MapReviewClientApi,
 	MapReviewLiveFrame,
 	MapReviewPose
 } from "./map-review-client.js";
@@ -38,7 +39,7 @@ type AuthoringState =
 type ReadyAuthoring = Extract<MapReviewAuthoringResult, { status: "ready" }>;
 type MapMismatch = Extract<MapReviewAuthoringResult, { status: "map_mismatch" }>;
 type CandidateId = MapReviewAuthoringCandidate["id"];
-type AuthoringPatch = Parameters<MapReviewClientShape["authoringPatch"]>[0]["patch"];
+type AuthoringPatch = Parameters<MapReviewClientApi["authoringPatch"]>[0]["patch"];
 type PreviewRefresh =
 	| { readonly kind: "all" }
 	| { readonly candidateId: CandidateId; readonly kind: "candidate" };
@@ -160,7 +161,7 @@ function poseFieldValue(
 }
 
 export function MapReviewAuthoring(props: {
-	readonly client: MapReviewClientShape;
+	readonly client: MapReviewClientApi;
 	readonly destination?: MapReviewAuthorFromSelectionIntent["destination"];
 	readonly focusRequest?:
 		| {
@@ -334,15 +335,16 @@ export function MapReviewAuthoring(props: {
 	): AuthoringPatch => {
 		const nextDraftPose = overrides.draftPose ?? draftPose();
 		const nextSelectedId = overrides.selectedCandidateId ?? selectedId();
-		const discardedCandidateIds = (overrides.discardedCandidateIds ?? [
-			...discarded()
-		]) as AuthoringPatch["discardedCandidateIds"];
-		const selectedCandidateId = nextSelectedId as AuthoringPatch["selectedCandidateId"];
+		const discardedCandidateIds = (overrides.discardedCandidateIds ?? [...discarded()]).map(
+			(candidateId) => FramingCandidateId.make(candidateId)
+		);
+		const selectedCandidateId =
+			nextSelectedId === undefined ? undefined : FramingCandidateId.make(nextSelectedId);
 		return {
 			discardedCandidateIds,
 			manualReason: overrides.manualReason ?? manualReason(),
-			...(nextDraftPose === undefined ? {} : { draftPose: nextDraftPose }),
-			...(selectedCandidateId === undefined ? {} : { selectedCandidateId })
+			...(nextDraftPose === undefined ? undefined : { draftPose: nextDraftPose }),
+			...(selectedCandidateId === undefined ? undefined : { selectedCandidateId })
 		};
 	};
 	const scheduleFramingPatch = (args: {
@@ -390,9 +392,10 @@ export function MapReviewAuthoring(props: {
 			result.pixelFormat === "bgra8" &&
 			result.cameraIndex !== undefined
 		) {
+			const cameraIndex = result.cameraIndex;
 			setLiveBindings((current) => {
 				const next = new Map(current);
-				next.set(candidateId, result.cameraIndex as number);
+				next.set(candidateId, cameraIndex);
 				return next;
 			});
 		} else {
@@ -421,20 +424,20 @@ export function MapReviewAuthoring(props: {
 									...currentCandidate,
 									...(result.status === "ready" && result.diagnostics
 										? { diagnostics: result.diagnostics }
-										: {}),
+										: undefined),
 									preview:
 										result.status === "ready"
 											? {
 													bytes: result.bytes,
 													height: result.height,
 													...(result.cameraIndex === undefined
-														? {}
+														? undefined
 														: { cameraIndex: result.cameraIndex }),
 													...(result.pixelFormat === undefined
-														? {}
+														? undefined
 														: { pixelFormat: result.pixelFormat }),
 													...(result.previewContext === undefined
-														? {}
+														? undefined
 														: {
 																previewContext:
 																	result.previewContext
@@ -481,7 +484,7 @@ export function MapReviewAuthoring(props: {
 						...(candidate.preview.status === "ready" &&
 						candidate.preview.previewContext !== undefined
 							? { previewContext: candidate.preview.previewContext }
-							: {}),
+							: undefined),
 						status: "ready" as const,
 						width: frame.width
 					}
@@ -515,7 +518,7 @@ export function MapReviewAuthoring(props: {
 			{
 				onFailure: () => undefined,
 				onValue: ({ candidateId, result }) => {
-					applyPreviewResult(candidateId as CandidateId, result);
+					applyPreviewResult(FramingCandidateId.make(candidateId), result);
 				}
 			}
 		);
@@ -534,7 +537,7 @@ export function MapReviewAuthoring(props: {
 			{
 				onFailure: () => undefined,
 				onSuccess: ({ candidateId: refreshedId, result }) =>
-					applyPreviewResult(refreshedId as CandidateId, result)
+					applyPreviewResult(FramingCandidateId.make(refreshedId), result)
 			}
 		);
 	};
@@ -599,7 +602,7 @@ export function MapReviewAuthoring(props: {
 				? props.client.authoringReframe({ sessionId: durable.id })
 				: props.client.authorFromSelection({
 						destination: props.destination ?? { kind: "append_view" },
-						...(reviewSetMode === undefined ? {} : { reviewSetMode })
+						...(reviewSetMode === undefined ? undefined : { reviewSetMode })
 					}),
 			{
 				onFailure: (cause) =>
@@ -733,13 +736,13 @@ export function MapReviewAuthoring(props: {
 				: props.client.approveCandidate({
 						candidateId: candidate.id,
 						candidatePose: candidate.pose,
-						...(adjusted ? { manualPose: pose } : {}),
+						...(adjusted ? { manualPose: pose } : undefined),
 						...(adjusted
 							? {
 									manualReason:
 										manualReason().trim() || "Adjusted in Map Review authoring"
 								}
-							: {}),
+							: undefined),
 						sourceActorPath: activeSession.selection.actorPath,
 						viewId: activeSession.viewId
 					}),
@@ -822,9 +825,7 @@ export function MapReviewAuthoring(props: {
 								value={liveFps()}
 								aria-label="Live preview frame rate"
 								onInput={(event) =>
-									updateLiveFps(
-										Number((event.currentTarget as HTMLInputElement).value)
-									)
+									updateLiveFps(Number(event.currentTarget.value))
 								}
 							/>
 						</label>

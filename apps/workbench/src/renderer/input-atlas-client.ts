@@ -5,15 +5,15 @@ import {
 import {
 	InputAtlasClient,
 	InputAtlasClientError,
-	type InputAtlasClientShape
+	type InputAtlasClientApi
 } from "@ue-shed/extension-input-atlas";
 import { Effect } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
-function request(
+function request<HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
+	invoke: () => Promise<HostValue>
 ): Effect.Effect<EnhancedInputRunResult, InputAtlasClientError> {
 	return Effect.tryPromise({
 		try: invoke,
@@ -24,7 +24,7 @@ function request(
 	);
 }
 
-export const inputAtlasClient: InputAtlasClientShape = InputAtlasClient.of({
+export const inputAtlasClient: InputAtlasClientApi = InputAtlasClient.of({
 	loadConfiguredProject: Effect.fn("InputAtlasClient.loadConfiguredProject")(() =>
 		request("inputAtlas.loadConfiguredProject", () =>
 			window.ueShed.inputAtlas.loadConfiguredProject()

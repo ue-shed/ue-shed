@@ -3,6 +3,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJson,
+	type JsonValue
+} from "../../scripts/json.ts";
 
 type DataTableContractBase = {
 	readonly kind: "data-table";
@@ -115,21 +122,21 @@ type FixtureContract = {
 			readonly stationary: {
 				readonly className: string;
 				readonly count: number;
-				readonly shape: string;
+				readonly ["shape"]: string;
 				readonly materialColor: string;
 				readonly behavior: string;
 			};
 			readonly flying: {
 				readonly className: string;
 				readonly count: number;
-				readonly shape: string;
+				readonly ["shape"]: string;
 				readonly materialColor: string;
 				readonly behavior: string;
 			};
 			readonly intermittent: {
 				readonly className: string;
 				readonly count: number;
-				readonly shape: string;
+				readonly ["shape"]: string;
 				readonly materialColor: string;
 				readonly behavior: string;
 			};
@@ -187,32 +194,28 @@ const parserTargetFiles = [
 	"FixtureExpected/parser-targets/texture2d.json"
 ] as const;
 
-function readJson(path: string): unknown {
-	return JSON.parse(readFileSync(path, "utf8"));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+function readJson(path: string): JsonValue {
+	return parseJson(readFileSync(path, "utf8"));
 }
 
 function readContract(): FixtureContract {
 	const value = readJson(join(fixtureRoot, "fixture-contract.json"));
 	if (
-		!isRecord(value) ||
-		typeof value.schemaVersion !== "number" ||
-		typeof value.fixtureVersion !== "string" ||
-		!isRecord(value.engine) ||
-		!isRecord(value.cameraLoad) ||
-		!isRecord(value.mapReview) ||
-		!isRecord(value.offlineWorld) ||
-		!isRecord(value.gameText) ||
-		!isRecord(value.levelSequence) ||
-		!isRecord(value.enhancedInput) ||
-		!isRecord(value.scenarioStudio) ||
-		!isRecord(value.textureAudit) ||
-		typeof value.engine.major !== "number" ||
-		typeof value.engine.minor !== "number" ||
-		typeof value.contentRoot !== "string" ||
+		!isJsonObject(value) ||
+		!isJsonNumber(value.schemaVersion) ||
+		!isJsonString(value.fixtureVersion) ||
+		!isJsonObject(value.engine) ||
+		!isJsonObject(value.cameraLoad) ||
+		!isJsonObject(value.mapReview) ||
+		!isJsonObject(value.offlineWorld) ||
+		!isJsonObject(value.gameText) ||
+		!isJsonObject(value.levelSequence) ||
+		!isJsonObject(value.enhancedInput) ||
+		!isJsonObject(value.scenarioStudio) ||
+		!isJsonObject(value.textureAudit) ||
+		!isJsonNumber(value.engine.major) ||
+		!isJsonNumber(value.engine.minor) ||
+		!isJsonString(value.contentRoot) ||
 		!Array.isArray(value.tables) ||
 		!Array.isArray(value.enhancedInput.actions) ||
 		!Array.isArray(value.offlineWorld.labels) ||
@@ -224,6 +227,7 @@ function readContract(): FixtureContract {
 	) {
 		throw new Error("fixture-contract.json does not match the fixture contract envelope");
 	}
+	// SAFETY: Every field consumed by this test is validated above before branding the fixture.
 	return value as FixtureContract;
 }
 
@@ -233,7 +237,7 @@ function sourceRowNames(sourcePath: string): readonly string[] {
 		throw new Error(`${sourcePath} must contain an array of rows`);
 	}
 	return value.map((row, index) => {
-		if (!isRecord(row) || typeof row.Name !== "string" || row.Name.length === 0) {
+		if (!isJsonObject(row) || !isJsonString(row.Name) || row.Name.length === 0) {
 			throw new Error(`${sourcePath} row ${index} must have a non-empty Name`);
 		}
 		return row.Name;
@@ -246,9 +250,8 @@ function generatedAssetPath(assetPath: string): string {
 }
 
 function externalActorPackageCount(root: string): number {
-	return readdirSync(root, { recursive: true }).filter(
-		(entry) => typeof entry === "string" && entry.endsWith(".uasset")
-	).length;
+	return readdirSync(root, { recursive: true }).filter((entry) => entry.endsWith(".uasset"))
+		.length;
 }
 
 describe("generic Unreal fixture contract", () => {
@@ -314,21 +317,21 @@ describe("generic Unreal fixture contract", () => {
 				stationary: {
 					className: "UEShedFixtureStationary",
 					count: 3278,
-					shape: "cube",
+					["shape"]: "cube",
 					materialColor: "slate",
 					behavior: "fixed-pose"
 				},
 				flying: {
 					className: "UEShedFixtureFlying",
 					count: 409,
-					shape: "sphere",
+					["shape"]: "sphere",
 					materialColor: "cyan",
 					behavior: "airborne-orbit"
 				},
 				intermittent: {
 					className: "UEShedFixtureIntermittent",
 					count: 409,
-					shape: "cylinder",
+					["shape"]: "cylinder",
 					materialColor: "amber",
 					behavior: "visibility-cycle"
 				}
@@ -662,7 +665,9 @@ describe("generic Unreal fixture contract", () => {
 
 	it("publishes real-Unreal target shapes for the next parser asset types", () => {
 		const targets = parserTargetFiles.map((path) => readJson(resolve(fixtureRoot, path)));
-		expect(targets.map((target) => (isRecord(target) ? target.assetType : undefined))).toEqual([
+		expect(
+			targets.map((target) => (isJsonObject(target) ? target.assetType : undefined))
+		).toEqual([
 			"enhanced_input",
 			"level_sequence",
 			"string_table",
@@ -684,18 +689,18 @@ describe("generic Unreal fixture contract", () => {
 		const stringTable = targets[2];
 		const textAsset = targets[3];
 		const textures = targets[4];
-		expect(isRecord(enhancedInput) && Array.isArray(enhancedInput.actions)).toBe(true);
-		expect(isRecord(levelSequence) && levelSequence.objectPath).toBe(
+		expect(isJsonObject(enhancedInput) && Array.isArray(enhancedInput.actions)).toBe(true);
+		expect(isJsonObject(levelSequence) && levelSequence.objectPath).toBe(
 			contract.levelSequence.assetPath
 		);
-		expect(isRecord(stringTable) && stringTable.objectPath).toBe(
+		expect(isJsonObject(stringTable) && stringTable.objectPath).toBe(
 			contract.gameText.stringTable.assetPath
 		);
-		expect(isRecord(textAsset) && textAsset.objectPath).toBe(
+		expect(isJsonObject(textAsset) && textAsset.objectPath).toBe(
 			contract.gameText.occurrenceAsset.assetPath
 		);
 		expect(
-			isRecord(textures) && Array.isArray(textures.assets) ? textures.assets : []
+			isJsonObject(textures) && Array.isArray(textures.assets) ? textures.assets : []
 		).toHaveLength(contract.textureAudit.textures.length);
 	});
 });
@@ -703,12 +708,12 @@ describe("generic Unreal fixture contract", () => {
 describe("fixture project", () => {
 	it("keeps UE Shed plugins out of the portable project descriptor", () => {
 		const project = readJson(join(fixtureRoot, "UEShedFixture.uproject"));
-		if (!isRecord(project) || !Array.isArray(project.Plugins)) {
+		if (!isJsonObject(project) || !Array.isArray(project.Plugins)) {
 			throw new Error("UEShedFixture.uproject has no plugin list");
 		}
 		expect(project).not.toHaveProperty("AdditionalPluginDirectories");
 		const pluginNames = project.Plugins.flatMap((plugin) =>
-			isRecord(plugin) && typeof plugin.Name === "string" ? [plugin.Name] : []
+			isJsonObject(plugin) && isJsonString(plugin.Name) ? [plugin.Name] : []
 		);
 		expect(pluginNames).toEqual(["EnhancedInput", "RemoteControl"]);
 	});

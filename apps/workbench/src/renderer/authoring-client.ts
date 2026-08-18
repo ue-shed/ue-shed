@@ -7,19 +7,19 @@ import {
 	decodeAuthoringSessionReviewResult,
 	decodeAuthoringSessionResult,
 	type AuthoringCatalogResult,
-	type AuthoringClientShape,
+	type AuthoringClientApi,
 	type AuthoringLoadResult,
 	type AuthoringSessionListResult,
 	type AuthoringSessionReviewResult,
 	type AuthoringSessionResult
 } from "@ue-shed/authoring-sdk";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
-function request<A>(args: {
-	readonly decode: (value: unknown) => Effect.Effect<A, unknown>;
-	readonly invoke: () => Promise<unknown>;
+function request<A, HostValue, DecodeError>(args: {
+	readonly decode: (value: HostValue) => Effect.Effect<A, DecodeError>;
+	readonly invoke: () => Promise<HostValue>;
 	readonly operation: string;
 }): Effect.Effect<A, AuthoringClientError> {
 	return Effect.tryPromise({
@@ -34,7 +34,7 @@ function request<A>(args: {
 }
 
 export const decodeAuthoringLoadResultFromHost = (
-	value: unknown
+	value: Schema.Json
 ): Effect.Effect<AuthoringLoadResult, AuthoringClientError> =>
 	decodeAuthoringLoadResult(value).pipe(
 		Effect.mapError(
@@ -44,7 +44,7 @@ export const decodeAuthoringLoadResultFromHost = (
 	);
 
 export const decodeAuthoringCatalogResultFromHost = (
-	value: unknown
+	value: Schema.Json
 ): Effect.Effect<AuthoringCatalogResult, AuthoringClientError> =>
 	decodeAuthoringCatalogResult(value).pipe(
 		Effect.mapError(
@@ -53,31 +53,31 @@ export const decodeAuthoringCatalogResultFromHost = (
 		)
 	);
 
-const loadRequest = (
+const loadRequest = <HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
+	invoke: () => Promise<HostValue>
 ): Effect.Effect<AuthoringLoadResult, AuthoringClientError> =>
 	request({ decode: decodeAuthoringLoadResult, invoke, operation });
 
-const sessionRequest = (
+const sessionRequest = <HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
+	invoke: () => Promise<HostValue>
 ): Effect.Effect<AuthoringSessionResult, AuthoringClientError> =>
 	request({ decode: decodeAuthoringSessionResult, invoke, operation });
 
-const reviewRequest = (
+const reviewRequest = <HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
+	invoke: () => Promise<HostValue>
 ): Effect.Effect<AuthoringSessionReviewResult, AuthoringClientError> =>
 	request({ decode: decodeAuthoringSessionReviewResult, invoke, operation });
 
-const sessionListRequest = (
+const sessionListRequest = <HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
+	invoke: () => Promise<HostValue>
 ): Effect.Effect<AuthoringSessionListResult, AuthoringClientError> =>
 	request({ decode: decodeAuthoringSessionListResult, invoke, operation });
 
-export const authoringClient: AuthoringClientShape = AuthoringClient.of({
+export const authoringClient: AuthoringClientApi = AuthoringClient.of({
 	getCatalogProgress: Effect.fn("AuthoringClient.getCatalogProgress")(() =>
 		Effect.succeed({
 			cacheHits: 0,

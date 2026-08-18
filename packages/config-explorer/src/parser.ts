@@ -1,7 +1,11 @@
 import type { ParsedConfigCommand, ParsedConfigFile } from "./merge.js";
 import type { ConfigKey, ConfigOperation, ConfigSection, ConfigSource } from "./schema.js";
 
-const OPERATIONS: Readonly<Record<string, ConfigOperation>> = {
+interface OperationsByPrefix {
+	readonly [prefix: string]: ConfigOperation;
+}
+
+const OPERATIONS: OperationsByPrefix = {
 	"": "set",
 	"+": "add_unique",
 	".": "append",
@@ -14,7 +18,7 @@ function equalsConfigName(left: string, right: string): boolean {
 	return left.toLowerCase() === right.toLowerCase();
 }
 
-function quotedValue(input: string): { readonly value?: string; readonly malformed: boolean } {
+function quotedValue(input: string) {
 	if (!input.startsWith('"')) return { value: input, malformed: false };
 	let value = "";
 	let escaped = false;
@@ -179,7 +183,7 @@ export function parseConfigFile(options: {
 			source: options.source,
 			location: { line: index + 1, column },
 			operation: OPERATIONS[prefix === "~" ? "" : prefix]!,
-			...(prefix === "!" || prefix === "^" ? {} : { value: parsed.value })
+			...(prefix === "!" || prefix === "^" ? undefined : { value: parsed.value })
 		});
 	}
 	return { commands, diagnostics };

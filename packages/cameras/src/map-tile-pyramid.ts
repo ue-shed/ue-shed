@@ -348,10 +348,7 @@ export function selectMapTiles(options: MapTileSelectionOptions): MapTileSelecti
 export function resolveAvailableMapTiles(args: {
 	readonly desired: ReadonlyArray<MapTileKey>;
 	readonly available: ReadonlySet<string>;
-}): {
-	readonly render: ReadonlyArray<MapTileKey>;
-	readonly missing: ReadonlyArray<MapTileKey>;
-} {
+}) {
 	const render: MapTileKey[] = [];
 	const missing: MapTileKey[] = [];
 	for (const desired of args.desired) {

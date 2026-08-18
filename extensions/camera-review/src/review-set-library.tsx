@@ -4,7 +4,7 @@ import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { For, Match, Show, Switch, createSignal, onMount } from "solid-js";
 import type {
-	MapReviewClientShape,
+	MapReviewClientApi,
 	MapReviewResult,
 	MapReviewSetLibraryResult
 } from "./map-review-client.js";
@@ -13,7 +13,7 @@ type LibraryState = { readonly status: "loading" } | MapReviewSetLibraryResult;
 
 export function ReviewSetLibrary(props: {
 	readonly canCreate: boolean;
-	readonly client: MapReviewClientShape;
+	readonly client: MapReviewClientApi;
 	readonly onChanged: (review: MapReviewResult) => void;
 	readonly onClose: () => void;
 }) {

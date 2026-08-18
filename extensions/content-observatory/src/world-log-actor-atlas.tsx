@@ -92,11 +92,13 @@ export function WorldLogScene(props: {
 	const visibleActors = createMemo(() =>
 		actors().filter((actor) => worldLogActorMatchesViewFilters(actor, viewFilters()))
 	);
-	const actorFilters = createMemo<ActorExplorerFilters>(() => ({
-		classPaths:
-			viewFilters().classPath === undefined ? undefined : [viewFilters().classPath as string],
-		query: viewFilters().query
-	}));
+	const actorFilters = createMemo<ActorExplorerFilters>(() => {
+		const filters = viewFilters();
+		return {
+			classPaths: filters.classPath === undefined ? undefined : [filters.classPath],
+			query: filters.query
+		};
+	});
 	const classPaths = createMemo(() =>
 		[...new Set(actors().map((actor) => actor.actor.classPath))].toSorted((left, right) =>
 			shortClass(left).localeCompare(shortClass(right))

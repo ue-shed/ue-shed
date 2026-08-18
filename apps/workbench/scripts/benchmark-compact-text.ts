@@ -144,7 +144,7 @@ async function main(): Promise<void> {
 	process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
-main().catch((error: unknown) => {
-	process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+main().catch((cause: unknown) => {
+	process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
 	process.exitCode = 1;
 });

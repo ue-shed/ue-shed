@@ -59,7 +59,7 @@ const require = createRequire(import.meta.url);
 const electronExecutable: unknown = require("electron");
 const workbenchRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
-if (typeof electronExecutable !== "string") {
+if (!Schema.is(Schema.String)(electronExecutable)) {
 	throw new TypeError("The Electron package did not resolve to an executable path");
 }
 
@@ -1003,13 +1003,13 @@ test(`records the ${journey} Workbench journey`, async ({
 				finalScreenshot: "final.png",
 				logs: "workbench.log",
 				trace: "trace.zip",
-				...(videoReady ? { video: "demo.webm" } : {})
+				...(videoReady ? { video: "demo.webm" } : undefined)
 			},
 			chapters,
 			commit: process.env.UE_SHED_RECORDING_COMMIT ?? "unknown",
 			contract: { name: "ue-shed-showcase-recording", version: 1 },
 			dirty: process.env.UE_SHED_RECORDING_DIRTY === "true",
-			...(failure ? { error: errorMessage(failure) } : {}),
+			...(failure ? { error: errorMessage(failure) } : undefined),
 			finishedAt: new Date().toISOString(),
 			id: process.env.UE_SHED_RECORDING_ID ?? "unknown",
 			journey,

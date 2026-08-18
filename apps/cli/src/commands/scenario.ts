@@ -16,7 +16,7 @@ const runCommand = Command.make(
 		return runScenario({
 			_tag: "ScenarioRun",
 			endpoint,
-			...(limit === undefined ? {} : { evidenceLimit: limit })
+			...(limit === undefined ? undefined : { evidenceLimit: limit })
 		});
 	}
 ).pipe(

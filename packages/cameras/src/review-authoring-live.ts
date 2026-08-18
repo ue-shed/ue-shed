@@ -3,7 +3,7 @@ import { readFile, unlink } from "node:fs/promises";
 import {
 	RemoteControlClient,
 	RemoteControlClientError,
-	type RemoteControlClientShape
+	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
@@ -60,12 +60,12 @@ function reviewConnectionError(
 }
 
 function remoteReviewCall(
-	client: RemoteControlClientShape,
+	client: RemoteControlClientApi,
 	args: {
 		readonly endpoint: string;
 		readonly functionName: string;
 		readonly operation: "inspect_selection" | "inspect_subject" | "preview_candidate";
-		readonly parameters: Readonly<Record<string, unknown>>;
+		readonly parameters: Schema.JsonObject;
 	}
 ): Effect.Effect<unknown, ReviewAuthoringConnectionError> {
 	return client
@@ -100,7 +100,7 @@ export interface PreviewReviewCandidateArgs {
 	};
 }
 
-export interface ReviewAuthoringShape {
+export interface ReviewAuthoringApi {
 	readonly inspectSelection: (
 		endpoint: string
 	) => Effect.Effect<ReviewSelectionResponse, ReviewAuthoringConnectionError>;
@@ -113,7 +113,10 @@ export interface ReviewAuthoringShape {
 	) => Effect.Effect<ReviewCandidatePreview, ReviewAuthoringConnectionError>;
 }
 
-export class ReviewAuthoring extends Context.Service<ReviewAuthoring, ReviewAuthoringShape>()(
+/** @deprecated Use `ReviewAuthoringApi`. */
+export type ReviewAuthoringShape = ReviewAuthoringApi;
+
+export class ReviewAuthoring extends Context.Service<ReviewAuthoring, ReviewAuthoringApi>()(
 	"@ue-shed/cameras/ReviewAuthoring"
 ) {}
 
@@ -281,8 +284,8 @@ export const ReviewAuthoringLive = Layer.effect(
 );
 
 export function makeReviewAuthoringTestLayer(
-	service: Omit<ReviewAuthoringShape, "inspectSubject"> &
-		Partial<Pick<ReviewAuthoringShape, "inspectSubject">>
+	service: Omit<ReviewAuthoringApi, "inspectSubject"> &
+		Partial<Pick<ReviewAuthoringApi, "inspectSubject">>
 ): Layer.Layer<ReviewAuthoring> {
 	return Layer.succeed(
 		ReviewAuthoring,

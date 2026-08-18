@@ -14,21 +14,24 @@ const contractDirectory = fileURLToPath(
 	new URL("../../protocol/contracts/cameras/review/v1/", import.meta.url)
 );
 
-function json(path: string): unknown {
-	return JSON.parse(readFileSync(`${contractDirectory}${path}`, "utf8")) as unknown;
+function json(path: string): Schema.Json {
+	return Schema.decodeUnknownSync(Schema.Json)(
+		JSON.parse(readFileSync(`${contractDirectory}${path}`, "utf8"))
+	);
 }
 
-const decodeCapture = (input: unknown) => Effect.runSync(decodeReviewCaptureResponse(input));
-const decodeAssessmentCapabilities = (input: unknown) =>
+const decodeCapture = (input: Schema.Json) => Effect.runSync(decodeReviewCaptureResponse(input));
+const decodeAssessmentCapabilities = (input: Schema.Json) =>
 	Effect.runSync(decodeReviewAssessmentCapabilities(input));
-const decodeSubject = (input: unknown) =>
+const decodeSubject = (input: Schema.Json) =>
 	Effect.runSync(decodeReviewSubjectInspectionResponse(input));
 
 describe("Map Review language-neutral wire contracts", () => {
 	it("keeps capture projection and visibility variants strict across compatible minors", () => {
+		// SAFETY: this checked-in schema document owns the properties inspected by the test.
 		const contract = json("capture-response.schema.json") as {
 			readonly $defs: {
-				readonly subjectProjection: { readonly oneOf: readonly Record<string, unknown>[] };
+				readonly subjectProjection: { readonly oneOf: readonly Schema.JsonObject[] };
 			};
 			readonly oneOf: readonly {
 				readonly allOf?: readonly {
@@ -117,6 +120,7 @@ describe("Map Review language-neutral wire contracts", () => {
 	});
 
 	it("records InspectReviewSubject failures without broadening ambient selection failures", () => {
+		// SAFETY: this checked-in schema document owns the properties inspected by the test.
 		const contract = json("selection-response.schema.json") as {
 			readonly oneOf: readonly {
 				readonly properties?: { readonly code?: { readonly enum?: readonly string[] } };
@@ -133,9 +137,10 @@ describe("Map Review language-neutral wire contracts", () => {
 	});
 
 	it("keeps optional assessment capabilities factual and policy-free", () => {
+		// SAFETY: this checked-in schema document owns the properties inspected by the test.
 		const contract = json("assessment-capabilities.schema.json") as {
 			readonly $defs: {
-				readonly methodCapability: { readonly oneOf: readonly Record<string, unknown>[] };
+				readonly methodCapability: { readonly oneOf: readonly Schema.JsonObject[] };
 			};
 		};
 		expect(contract.$defs.methodCapability.oneOf).toHaveLength(2);

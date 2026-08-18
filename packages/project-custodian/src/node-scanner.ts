@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, lstat, readdir, readFile, realpath, stat, statfs } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { Schema } from "effect";
 import {
 	defaultCustodianPolicy,
 	projectTargetDefinitions,
@@ -64,8 +65,12 @@ function targetId(options: {
 	return CustodianTargetId.make(`target-${digest}`);
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const NodeError = Schema.Struct({ code: Schema.optional(Schema.String) });
+
+function isRecord(value: Schema.Json): value is Schema.JsonObject {
+	return Schema.is(JsonObject)(value);
 }
 
 interface EngineTargetDefinition {
@@ -250,11 +255,11 @@ async function identifyEngines(
 			(await isDirectory(join(root, "Engine", "Build", "BatchFiles")));
 		if (!hasBuildMachinery) continue;
 		try {
-			const document: unknown = JSON.parse(await readFile(manifest, "utf8"));
+			const document = decodeJson(JSON.parse(await readFile(manifest, "utf8")));
 			if (!isRecord(document)) continue;
 			const version = document;
 			const label = ["MajorVersion", "MinorVersion", "PatchVersion"]
-				.map((key) => (typeof version[key] === "number" ? String(version[key]) : "0"))
+				.map((key) => (Schema.is(Schema.Number)(version[key]) ? String(version[key]) : "0"))
 				.join(".");
 			const build = join(root, "Engine", "Build");
 			const installedMarker = await access(join(build, "InstalledBuild.txt")).then(
@@ -401,7 +406,7 @@ async function containsBuildRule(root: string, signal: AbortSignal): Promise<boo
 
 async function pluginDeclaresNativeModules(descriptor: string): Promise<boolean> {
 	try {
-		const document: unknown = JSON.parse(await readFile(descriptor, "utf8"));
+		const document = decodeJson(JSON.parse(await readFile(descriptor, "utf8")));
 		if (!isRecord(document)) return true;
 		const modules = document["Modules"];
 		if (modules === undefined) return false;
@@ -479,12 +484,14 @@ async function measureFreshness(
 	const lastSessionAtMs = await newestLogSession(join(projectRoot, "Saved", "Logs"));
 	const effectiveAtMs = newestTimestamp([authoredAtMs, lastSessionAtMs]);
 	return {
-		...(authoredAtMs === undefined ? {} : { authoredAt: new Date(authoredAtMs).toISOString() }),
+		...(authoredAtMs === undefined
+			? undefined
+			: { authoredAt: new Date(authoredAtMs).toISOString() }),
 		...(lastSessionAtMs === undefined
-			? {}
+			? undefined
 			: { lastSessionAt: new Date(lastSessionAtMs).toISOString() }),
 		...(effectiveAtMs === undefined
-			? {}
+			? undefined
 			: {
 					effectiveAt: new Date(effectiveAtMs).toISOString(),
 					ageDays: Math.max(0, (now - effectiveAtMs) / 86_400_000)
@@ -550,11 +557,11 @@ async function loadPolicy(projectRoot: string): Promise<{
 	const path = join(projectRoot, policyFilename);
 	try {
 		const contents = await readFile(path, "utf8");
-		const resolution = resolvePolicyDocument(JSON.parse(contents));
+		const resolution = resolvePolicyDocument(decodeJson(JSON.parse(contents)));
 		return {
 			policy: resolution.policy,
 			...(resolution.error === undefined
-				? {}
+				? undefined
 				: {
 						diagnostic: {
 							code: "invalid_policy" as const,
@@ -564,12 +571,7 @@ async function loadPolicy(projectRoot: string): Promise<{
 					})
 		};
 	} catch (cause) {
-		if (
-			typeof cause === "object" &&
-			cause !== null &&
-			"code" in cause &&
-			cause.code === "ENOENT"
-		) {
+		if (Schema.is(NodeError)(cause) && cause.code === "ENOENT") {
 			return { policy: defaultCustodianPolicy };
 		}
 		return {
@@ -800,10 +802,10 @@ async function scanProject(options: {
 	let engineAssociation = "not specified";
 	const diagnostics: CustodianDiagnostic[] = [];
 	try {
-		const document: unknown = JSON.parse(await readFile(options.descriptor, "utf8"));
+		const document = decodeJson(JSON.parse(await readFile(options.descriptor, "utf8")));
 		if (isRecord(document)) {
 			const association = document.EngineAssociation;
-			if (typeof association === "string" && association.trim() !== "") {
+			if (Schema.is(Schema.String)(association) && association.trim() !== "") {
 				engineAssociation = association.trim();
 			}
 		}

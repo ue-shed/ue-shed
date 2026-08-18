@@ -5,7 +5,7 @@ import {
 	ContentObservatoryTargetCatalog,
 	decodeContentObservatoryTargetCatalog,
 	decodeContentObservatoryState,
-	type ContentObservatoryClientShape
+	type ContentObservatoryClientApi
 } from "@ue-shed/extension-content-observatory/client";
 import { Effect, Schema } from "effect";
 import { ProjectRelativeMapPath } from "@ue-shed/map-history/contract";
@@ -14,10 +14,10 @@ const recovery = "Restart Workbench. If the problem persists, verify package ver
 const encodeHistoryRequest = Schema.encodeUnknownEffect(ContentObservatoryHistoryRequest);
 const decodeTargetMapPath = Schema.decodeUnknownEffect(ProjectRelativeMapPath);
 
-function request(
+function request<HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
-): ReturnType<ContentObservatoryClientShape["status"]> {
+	invoke: () => Promise<HostValue>
+): ReturnType<ContentObservatoryClientApi["status"]> {
 	return Effect.tryPromise({
 		try: invoke,
 		catch: (cause) => new ContentObservatoryClientError({ cause, operation, recovery })
@@ -29,9 +29,9 @@ function request(
 	);
 }
 
-function targetRequest(
+function targetRequest<HostValue>(
 	operation: string,
-	invoke: () => Promise<unknown>
+	invoke: () => Promise<HostValue>
 ): Effect.Effect<ContentObservatoryTargetCatalog, ContentObservatoryClientError> {
 	return Effect.tryPromise({
 		try: invoke,
@@ -44,7 +44,7 @@ function targetRequest(
 	);
 }
 
-export const contentObservatoryClient: ContentObservatoryClientShape = ContentObservatoryClient.of({
+export const contentObservatoryClient: ContentObservatoryClientApi = ContentObservatoryClient.of({
 	cancel: Effect.fn("ContentObservatoryClient.cancel")(() =>
 		request("contentObservatory.cancel", () => window.ueShed.contentObservatory.cancel())
 	),

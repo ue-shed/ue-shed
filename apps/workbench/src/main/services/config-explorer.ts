@@ -12,14 +12,20 @@ import type { ConfigExplorerQuery, ConfigExplorerQueryResult } from "../ipc-cont
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
-export interface WorkbenchConfigExplorerShape {
+export interface WorkbenchConfigExplorerApi {
 	readonly query: (request: ConfigExplorerQuery) => Effect.Effect<ConfigExplorerQueryResult>;
 }
 
 export class WorkbenchConfigExplorer extends Context.Service<
 	WorkbenchConfigExplorer,
-	WorkbenchConfigExplorerShape
+	WorkbenchConfigExplorerApi
 >()("@ue-shed/workbench/WorkbenchConfigExplorer") {}
+
+interface ConfigQueryTarget {
+	readonly engineRoot?: string;
+	readonly projectName: string;
+	readonly projectRoot: string;
+}
 
 function publicFailure(error: ConfigExplorerError): ConfigExplorerQueryResult {
 	return {
@@ -28,7 +34,7 @@ function publicFailure(error: ConfigExplorerError): ConfigExplorerQueryResult {
 			message: error.message,
 			recovery: error.recovery,
 			retrySafe: error.retrySafe,
-			...(error.candidates === undefined ? {} : { candidates: error.candidates })
+			...(error.candidates === undefined ? undefined : { candidates: error.candidates })
 		},
 		status: "failed"
 	};
@@ -41,14 +47,10 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 		const explorer = yield* ConfigExplorer;
 		const project = yield* WorkbenchProject;
 
-		const query: WorkbenchConfigExplorerShape["query"] = Effect.fn(
+		const query: WorkbenchConfigExplorerApi["query"] = Effect.fn(
 			"Workbench.WorkbenchConfigExplorer.query"
 		)(function* (request: ConfigExplorerQuery) {
-			let target: {
-				readonly engineRoot?: string;
-				readonly projectName: string;
-				readonly projectRoot: string;
-			};
+			let target: ConfigQueryTarget;
 			if (request.source === "sample_fixture") {
 				if (configuration.sourceCheckout.status !== "configured") {
 					return {
@@ -94,7 +96,7 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 					...selected.value,
 					...(configuration.unrealEngineRoot?.status === "configured"
 						? { engineRoot: configuration.unrealEngineRoot.path }
-						: {})
+						: undefined)
 				};
 			}
 
@@ -103,9 +105,9 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 				section: ConfigSection.make(request.section),
 				key: ConfigKey.make(request.key),
 				...(request.family === undefined
-					? {}
+					? undefined
 					: { family: ConfigFamily.make(request.family) }),
-				...(target.engineRoot === undefined ? {} : { engineRoot: target.engineRoot })
+				...(target.engineRoot === undefined ? undefined : { engineRoot: target.engineRoot })
 			};
 
 			if (request.mode === "explain") {
@@ -148,7 +150,7 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 );
 
 export function makeWorkbenchConfigExplorerTestLayer(
-	service: WorkbenchConfigExplorerShape
+	service: WorkbenchConfigExplorerApi
 ): Layer.Layer<WorkbenchConfigExplorer> {
 	return Layer.succeed(WorkbenchConfigExplorer, WorkbenchConfigExplorer.of(service));
 }

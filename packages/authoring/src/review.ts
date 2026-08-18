@@ -20,7 +20,7 @@ export {
 	AuthoringTableReview
 } from "@ue-shed/protocol";
 
-function valuesEqual(left: unknown, right: unknown): boolean {
+function valuesEqual<Left, Right>(left: Left, right: Right): boolean {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -32,7 +32,7 @@ function validationDiagnostics(snapshot: AuthoringTableSnapshot): AuthoringRevie
 	const diagnostics: AuthoringReviewDiagnostic[] = snapshot.diagnostics.map((diagnostic) => ({
 		code: diagnostic.code,
 		message: diagnostic.message,
-		...(diagnostic.path === undefined ? {} : { path: diagnostic.path }),
+		...(diagnostic.path === undefined ? undefined : { path: diagnostic.path }),
 		recovery: "Review the source authority diagnostic before applying this draft.",
 		severity: "warning" as const,
 		tableObjectPath: snapshot.table.objectPath
@@ -189,7 +189,7 @@ function commandGroups(session: DraftSession): readonly AuthoringCommandGroupRev
 		if (first === undefined) throw new Error(`Command group ${groupId} is empty`);
 		return {
 			active: group.start < session.undoPointer,
-			...(first.author === undefined ? {} : { author: first.author }),
+			...(first.author === undefined ? undefined : { author: first.author }),
 			authoredAt: first.authoredAt,
 			commands: group.commands.map((command) => ({
 				body: command.body,

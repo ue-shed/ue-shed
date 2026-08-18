@@ -3,7 +3,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	makeRemoteControlClient,
 	RemoteControlClient,
-	type RemoteControlClientShape
+	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { Clock, Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
@@ -21,7 +21,7 @@ import {
 	mapCaptureRoot,
 	mapCaptureRunsRoot,
 	validateMapCaptureProjectRoot,
-	type MapCaptureRepositoryShape,
+	type MapCaptureRepositoryApi,
 	type MapCaptureStorageError
 } from "./map-tile-repository.js";
 import {
@@ -51,21 +51,24 @@ export class MapCaptureRunError extends Schema.TaggedErrorClass<MapCaptureRunErr
 	}
 ) {}
 
-export interface MapTileCapturePortShape {
+export interface MapTileCapturePortApi {
 	readonly capture: (
 		request: MapTileCaptureRequestValue
 	) => Effect.Effect<MapTileCaptureResponse, unknown>;
 }
 
+/** @deprecated Use `MapTileCapturePortApi`. */
+export type MapTileCapturePortShape = MapTileCapturePortApi;
+
 export class MapTileCapturePort extends Context.Service<
 	MapTileCapturePort,
-	MapTileCapturePortShape
+	MapTileCapturePortApi
 >()("@ue-shed/cameras/MapTileCapturePort") {}
 
 function remoteCapturePort(
-	client: RemoteControlClientShape,
+	client: RemoteControlClientApi,
 	endpoint: string
-): MapTileCapturePortShape {
+): MapTileCapturePortApi {
 	return {
 		capture: (request) =>
 			client
@@ -93,7 +96,7 @@ export function mapTileCaptureRemotePortLayer(
 }
 
 export function mapTileCapturePortLayer(
-	service: MapTileCapturePortShape
+	service: MapTileCapturePortApi
 ): Layer.Layer<MapTileCapturePort> {
 	return Layer.succeed(MapTileCapturePort, MapTileCapturePort.of(service));
 }
@@ -233,7 +236,7 @@ function sha256(bytes: Uint8Array): string {
 	return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-function readPngDimensions(bytes: Uint8Array): { readonly width: number; readonly height: number } {
+function readPngDimensions(bytes: Uint8Array) {
 	const signature = [137, 80, 78, 71, 13, 10, 26, 10];
 	if (bytes.length < 24 || !signature.every((value, index) => bytes[index] === value)) {
 		throw new Error("Staged artifact is not a PNG file.");
@@ -332,8 +335,8 @@ function captureFailure(args: {
 
 function runMapCaptureWith(args: {
 	readonly options: RunMapCaptureOptions | RunMapCapturePlanOptions;
-	readonly port: MapTileCapturePortShape;
-	readonly repository: MapCaptureRepositoryShape;
+	readonly port: MapTileCapturePortApi;
+	readonly repository: MapCaptureRepositoryApi;
 }): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
 	return Effect.scoped(
 		Effect.gen(function* () {
@@ -346,8 +349,10 @@ function runMapCaptureWith(args: {
 			const inspected = yield* inspectMapCapturePlan(plan);
 			const keys = yield* selectedTileKeys({
 				grid: inspected.grid,
-				...(args.options.levels === undefined ? {} : { levels: args.options.levels }),
-				...(args.options.tiles === undefined ? {} : { tiles: args.options.tiles })
+				...(args.options.levels === undefined
+					? undefined
+					: { levels: args.options.levels }),
+				...(args.options.tiles === undefined ? undefined : { tiles: args.options.tiles })
 			});
 			const runId = yield* Schema.decodeUnknownEffect(MapCaptureRunId)(
 				args.options.runId ?? randomUUID()
@@ -673,7 +678,7 @@ function runMapCaptureWith(args: {
 	);
 }
 
-export interface MapCaptureShape {
+export interface MapCaptureApi {
 	readonly inspect: (
 		plan: MapCapturePlan
 	) => Effect.Effect<InspectMapCapturePlanResult, MapCaptureRunError>;
@@ -682,7 +687,10 @@ export interface MapCaptureShape {
 	) => Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError>;
 }
 
-export class MapCapture extends Context.Service<MapCapture, MapCaptureShape>()(
+/** @deprecated Use `MapCaptureApi`. */
+export type MapCaptureShape = MapCaptureApi;
+
+export class MapCapture extends Context.Service<MapCapture, MapCaptureApi>()(
 	"@ue-shed/cameras/MapCapture"
 ) {}
 

@@ -82,7 +82,7 @@ export function WorldLogQueryForm(props: {
 			packageName: actor.packageName,
 			path: actor.actorPath,
 			...(actorObjectName(actor.actorPath) === actorDisplayName(actor)
-				? {}
+				? undefined
 				: { secondary: actorObjectName(actor.actorPath) }),
 			searchFields: {
 				class: actor.classPath,

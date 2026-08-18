@@ -10,7 +10,9 @@ import {
 	captureReviewView,
 	generateFramingCandidates,
 	inspectReviewSelection,
-	previewReviewCandidate
+	previewReviewCandidate,
+	type ReviewSubjectProjection,
+	type VisibilityResult
 } from "@ue-shed/cameras";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Effect, Schema } from "effect";
@@ -37,8 +39,8 @@ test.setTimeout(300_000);
 async function remoteCall(args: {
 	readonly functionName: string;
 	readonly objectPath: string;
-	readonly parameters?: Readonly<Record<string, unknown>>;
-}): Promise<unknown> {
+	readonly parameters?: Schema.JsonObject;
+}): Promise<Schema.Json> {
 	if (endpoint === undefined) throw new Error("The live Map Review endpoint is unavailable.");
 	const response = await fetch(`${endpoint}/remote/object/call`, {
 		body: JSON.stringify({
@@ -52,12 +54,12 @@ async function remoteCall(args: {
 		signal: AbortSignal.timeout(30_000)
 	});
 	if (!response.ok) throw new Error(`${args.functionName} failed with HTTP ${response.status}.`);
-	return response.json() as Promise<unknown>;
+	return Schema.decodeUnknownSync(Schema.Json)(await response.json());
 }
 
 async function contract() {
 	return Schema.decodeUnknownSync(FixtureContract)(
-		JSON.parse(await readFile(fixtureContractPath, "utf8")) as unknown
+		JSON.parse(await readFile(fixtureContractPath, "utf8"))
 	).mapReviewGallery;
 }
 
@@ -146,7 +148,11 @@ test("captures occlusion bays and restores explicit Clear interventions", async 
 	const gallery = await contract();
 	const subjectKeys = ["clear", "partial", "full", "translucent", "enclosed"] as const;
 	const stagingPaths: string[] = [];
-	const evidence: Array<Readonly<Record<string, unknown>>> = [];
+	const evidence: Array<{
+		readonly key: string;
+		readonly projection?: ReviewSubjectProjection;
+		readonly visibility?: VisibilityResult;
+	}> = [];
 	try {
 		for (const key of subjectKeys) {
 			const actorPath = gallery.subjects[key];
@@ -212,8 +218,12 @@ test("captures occlusion bays and restores explicit Clear interventions", async 
 			}
 			evidence.push({
 				key,
-				projection: response.subjectProjection,
-				visibility: "visibility" in response ? response.visibility : undefined
+				...(response.subjectProjection === undefined
+					? undefined
+					: { projection: response.subjectProjection }),
+				...(!("visibility" in response) || response.visibility === undefined
+					? undefined
+					: { visibility: response.visibility })
 			});
 		}
 		await writeFile(

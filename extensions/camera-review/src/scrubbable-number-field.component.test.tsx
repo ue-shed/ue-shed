@@ -51,7 +51,7 @@ describe("ScrubbableNumberField", () => {
 			/>
 		));
 
-		expect((screen.getByRole("spinbutton", { name: "X" }) as HTMLInputElement).value).toBe(
+		expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "X" }).value).toBe(
 			"529402.335"
 		);
 	});

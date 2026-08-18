@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import { makeCameraFeedTestLayer, type CameraFrame } from "@ue-shed/cameras";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Exit, Layer, Option, Queue, Ref, Scope, Stream } from "effect";
+import { Effect, Exit, Layer, Option, Queue, Ref, Schema, Scope, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { makeElectronAppTestLayer } from "../adapters/electron-app.js";
@@ -10,12 +10,12 @@ import {
 	WorkbenchWindow,
 	WorkbenchWindowError
 } from "../adapters/electron-window.js";
-import type { RendererCameraFrame } from "../ipc-contracts.js";
+import { RendererCameraFrame } from "../ipc-contracts.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import {
 	CameraPresentation,
 	CameraPresentationLive,
-	type CameraPresentationShape
+	type CameraPresentationApi
 } from "./camera-presentation.js";
 
 const configuration = makeWorkbenchConfigurationLayer({
@@ -71,10 +71,11 @@ const makeGatedRecordingWindow = () =>
 		const started = yield* Queue.unbounded<void>();
 		const release = yield* Queue.unbounded<void>();
 
-		const send = Effect.fn("Test.GatedRecordingWindow.send")(function* (
+		const send = Effect.fn("Test.GatedRecordingWindow.send")(function* <Payload>(
 			_channel: string,
-			payload: unknown
+			payload: Payload
 		) {
+			const frame = Schema.decodeUnknownSync(RendererCameraFrame)(payload);
 			yield* Queue.offer(started, undefined);
 			if (yield* Ref.get(destroyed)) {
 				return yield* Effect.fail(
@@ -88,7 +89,7 @@ const makeGatedRecordingWindow = () =>
 				);
 			}
 			yield* Queue.take(release);
-			yield* Ref.update(sentFrames, (frames) => [...frames, payload as RendererCameraFrame]);
+			yield* Ref.update(sentFrames, (frames) => [...frames, frame]);
 		});
 
 		const destroy = Effect.fn("Test.GatedRecordingWindow.destroy")(() =>
@@ -130,7 +131,7 @@ function buildLayer(
 function runWithPresentation<A, E>(
 	feedQueue: Queue.Queue<CameraFrame>,
 	recordingWindow: GatedRecordingWindow,
-	body: (presentation: CameraPresentationShape) => Effect.Effect<A, E, CameraPresentation>
+	body: (presentation: CameraPresentationApi) => Effect.Effect<A, E, CameraPresentation>
 ) {
 	return Effect.provide(
 		Effect.gen(function* () {

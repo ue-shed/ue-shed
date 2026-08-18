@@ -127,6 +127,7 @@ it.effect("prints the public scenario runner result as structured JSON", () =>
 			runner
 		).pipe(Effect.provide(layer));
 
+		// SAFETY: the CLI test runtime captured printJson output with a required status field.
 		const printed = JSON.parse(yield* Ref.get(output)) as { status: string };
 		expect(printed.status).toBe("completed");
 	})
@@ -164,6 +165,7 @@ it.effect("keeps a failed scenario structured while setting a non-zero outcome",
 			runner
 		).pipe(Effect.provide(layer));
 
+		// SAFETY: the CLI test runtime captured printJson output with a required status field.
 		expect((JSON.parse(yield* Ref.get(output)) as { status: string }).status).toBe("failed");
 		expect(yield* Ref.get(exitCode)).toBe(1);
 	})

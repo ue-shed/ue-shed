@@ -148,7 +148,7 @@ const platformBinaries = {
 	}
 };
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert(condition: boolean, message: string): asserts condition {
 	if (!condition) throw new Error(message);
 }
 
@@ -193,7 +193,7 @@ async function cachePinnedBinary(directory: string, binary: PinnedBinary): Promi
 		report("RUN ", `using hash-verified cached ${binary.name}`);
 		return destination;
 	} catch (error) {
-		if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+		if (error instanceof Object && "code" in error && error.code === "ENOENT") {
 			// Download below.
 		} else {
 			throw error;
@@ -226,13 +226,14 @@ async function resolveBinaries(): Promise<{ p4: string; p4d: string }> {
 	const configuredP4d = process.env.UE_SHED_PERFORCE_MAP_HISTORY_P4D_EXECUTABLE;
 	if (configuredP4 || configuredP4d) {
 		assert(
-			configuredP4 && configuredP4d,
+			configuredP4 !== undefined && configuredP4d !== undefined,
 			"Set both UE_SHED_PERFORCE_MAP_HISTORY_P4_EXECUTABLE and UE_SHED_PERFORCE_MAP_HISTORY_P4D_EXECUTABLE."
 		);
 		await Promise.all([access(configuredP4), access(configuredP4d)]);
 		report("RUN ", "using explicitly configured isolated p4 and p4d binaries");
 		return { p4: configuredP4, p4d: configuredP4d };
 	}
+	// SAFETY: unsupported Node platforms intentionally resolve to undefined and are rejected below.
 	const platform = platformBinaries[process.platform as keyof typeof platformBinaries];
 	assert(
 		platform !== undefined,
@@ -303,7 +304,7 @@ async function getAvailablePort(): Promise<number> {
 		server.once("error", reject);
 		server.listen({ host: "127.0.0.1", port: 0 }, () => {
 			const address = server.address();
-			if (!address || typeof address === "string") {
+			if (!(address instanceof Object)) {
 				server.close();
 				reject(
 					new Error("Could not reserve a localhost port for the disposable p4d server.")
@@ -338,7 +339,7 @@ async function waitForServer(
 }
 
 function validateFixturePath(path: string): string {
-	assert(typeof path === "string" && path.length > 0, "Fixture revision path must be non-empty.");
+	assert(path.length > 0, "Fixture revision path must be non-empty.");
 	assert(!isAbsolute(path), `Fixture revision path must be project-relative: ${path}`);
 	const normalized = resolve("fixture-root", path);
 	assert(
@@ -353,13 +354,11 @@ function validateFixturePath(path: string): string {
 }
 
 function loadScenario(fileName: string): FixtureScenario {
+	// SAFETY: repository fixture scenarios are validated field-by-field immediately after parsing.
 	const scenario = JSON.parse(requireText(join(fixtureRoot, fileName))) as FixtureScenario;
 	assert(Array.isArray(scenario.revisions), `${fileName} must declare revisions.`);
 	for (const revision of scenario.revisions) {
-		assert(
-			typeof revision?.id === "string" && revision.id.length > 0,
-			"Fixture revision needs an id."
-		);
+		assert(revision.id.length > 0, "Fixture revision needs an id.");
 		assert(Array.isArray(revision.files), `Fixture revision ${revision.id} needs files.`);
 		for (const file of revision.files) {
 			assert(["add", "edit", "delete"].includes(file?.action), `Unsupported fixture action.`);
@@ -398,7 +397,10 @@ async function latestSubmittedChange(
 	const row = result.stdout
 		.split(/\r?\n/)
 		.filter(Boolean)
-		.map((line) => JSON.parse(line) as { change?: unknown; time?: unknown })[0];
+		.map((line) => {
+			// SAFETY: p4 -Mj emits JSON records; the two consumed fields are normalized below.
+			return JSON.parse(line) as { change?: unknown; time?: unknown };
+		})[0];
 	assert(row !== undefined, "Perforce did not return the submitted fixture changelist.");
 	const change = Number(row.change);
 	const submittedAtSeconds = Number(row.time);
@@ -665,6 +667,7 @@ async function runCliJourney(fixture: PerforceMapHistoryFixture): Promise<void> 
 		revisions?: Array<{ changes?: Array<{ kind?: string }> }>;
 	};
 	try {
+		// SAFETY: the invoked UE Shed CLI emits the history contract asserted by this integration test.
 		history = JSON.parse(result.stdout) as typeof history;
 	} catch (error) {
 		throw new Error(

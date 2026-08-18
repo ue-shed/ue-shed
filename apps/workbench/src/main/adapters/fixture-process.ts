@@ -27,23 +27,23 @@ export type FixtureProcessExit =
 			readonly recovery: string;
 	  };
 
-export interface FixtureProcessShape {
+export interface FixtureProcessApi {
 	readonly launch: (
 		options: FixtureProcessLaunchOptions
 	) => Effect.Effect<FixtureProcessExit, FixtureProcessError, Scope.Scope>;
 }
 
-export class FixtureProcess extends Context.Service<FixtureProcess, FixtureProcessShape>()(
+export class FixtureProcess extends Context.Service<FixtureProcess, FixtureProcessApi>()(
 	"@ue-shed/workbench/FixtureProcess"
 ) {}
 
-export interface FixtureProcessTestShape extends FixtureProcessShape {
+export interface FixtureProcessTestApi extends FixtureProcessApi {
 	readonly launches: () => Effect.Effect<ReadonlyArray<FixtureProcessLaunchOptions>>;
 }
 
 export class FixtureProcessTest extends Context.Service<
 	FixtureProcessTest,
-	FixtureProcessTestShape
+	FixtureProcessTestApi
 >()("@ue-shed/workbench/FixtureProcess/Test") {}
 
 function terminateChild(child: ChildProcess): void {

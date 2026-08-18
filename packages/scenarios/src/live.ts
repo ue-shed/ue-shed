@@ -134,7 +134,11 @@ export const decodeScenarioStatusResponse = Schema.decodeUnknownEffect(ScenarioS
 export const decodeScenarioCancelResponse = Schema.decodeUnknownEffect(ScenarioCancelResponse);
 export const decodeScenarioExecutionRequest = Schema.decodeUnknownEffect(ScenarioExecutionRequest);
 
-const actionIdsByPath: Readonly<Record<string, LiveScenarioActionId>> = {
+interface ScenarioActionIdsByPath {
+	readonly [actionPath: string]: LiveScenarioActionId;
+}
+
+const actionIdsByPath: ScenarioActionIdsByPath = {
 	"/Game/Fixture/Input/IA_Interact": "Interact",
 	"/Game/Fixture/Input/IA_Jump": "Jump",
 	"/Game/Fixture/Input/IA_Move": "Move"
@@ -143,8 +147,10 @@ const actionIdsByPath: Readonly<Record<string, LiveScenarioActionId>> = {
 function inputValue(
 	value: SemanticActionClip["keyframes"][number]["value"]
 ): LiveScenarioInputValue {
-	if (typeof value === "boolean") return LiveScenarioInputValue.cases.Boolean.make({ value });
-	if (typeof value === "object") {
+	if (Schema.is(Schema.Boolean)(value)) {
+		return LiveScenarioInputValue.cases.Boolean.make({ value });
+	}
+	if (value instanceof Object) {
 		return LiveScenarioInputValue.cases.Axis2D.make({ x: value.x, y: value.y });
 	}
 	throw new Error("Movement Gym does not register a one-dimensional live action.");
@@ -174,7 +180,7 @@ export function movementGymExecutionRequest(options: {
 		const first = clip.keyframes[0];
 		if (first === undefined)
 			throw new Error(`Movement Gym action ${actionId} has no keyframes.`);
-		const valueType = typeof first.value === "object" ? "Axis2D" : "Boolean";
+		const valueType = first.value instanceof Object ? "Axis2D" : "Boolean";
 		const expectedValueType = actionId === "Move" ? "Axis2D" : "Boolean";
 		if (valueType !== expectedValueType) {
 			throw new Error(

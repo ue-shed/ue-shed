@@ -6,7 +6,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type {
-	ContentObservatoryClientShape,
+	ContentObservatoryClientApi,
 	ContentObservatoryHistoryRequest
 } from "./content-observatory-client.js";
 import {
@@ -21,8 +21,9 @@ afterAll(() => runtime.dispose());
 
 type CompletedContentObservatoryState = Extract<ContentObservatoryState, { status: "complete" }>;
 
-HTMLCanvasElement.prototype.getContext = (() =>
-	({
+Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+	configurable: true,
+	value: () => ({
 		arc: () => undefined,
 		beginPath: () => undefined,
 		clearRect: () => undefined,
@@ -34,9 +35,11 @@ HTMLCanvasElement.prototype.getContext = (() =>
 		setTransform: () => undefined,
 		stroke: () => undefined,
 		strokeStyle: ""
-	}) as unknown as CanvasRenderingContext2D) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+	})
+});
 
 function completeState(): CompletedContentObservatoryState {
+	// SAFETY: the decoded fixture's literal status is complete, fixing the union variant.
 	return Schema.decodeUnknownSync(ContentObservatoryState)({
 		maps: [{ label: "Example map", mapPath: "Content/Maps/L_Example.umap" }],
 		projectRoot: "C:/Project",
@@ -231,10 +234,12 @@ function completeState(): CompletedContentObservatoryState {
 
 function fastCompleteState(): CompletedContentObservatoryState {
 	const complete = completeState();
+	// SAFETY: completeState returns the complete variant encoded by the same schema.
 	const encoded = Schema.encodeSync(ContentObservatoryState)(complete) as Extract<
 		Schema.Codec.Encoded<typeof ContentObservatoryState>,
 		{ readonly status: "complete" }
 	>;
+	// SAFETY: this fixture preserves the complete status while replacing its fast request/history.
 	return Schema.decodeUnknownSync(ContentObservatoryState)({
 		...encoded,
 		request: {
@@ -273,7 +278,7 @@ function fastCompleteState(): CompletedContentObservatoryState {
 
 describe("ContentObservatoryRoute", () => {
 	it("explains the project prerequisite without exposing filesystem authority", async () => {
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed({ status: "not_configured" as const }),
 			start: () => Effect.succeed({ status: "not_configured" as const }),
 			status: () => Effect.succeed({ status: "not_configured" as const })
@@ -323,7 +328,7 @@ describe("ContentObservatoryRoute", () => {
 			},
 			status: "running" as const
 		});
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(running),
 			start: (request) =>
 				Effect.sync(() => {
@@ -368,7 +373,7 @@ describe("ContentObservatoryRoute", () => {
 			sourceKind: currentWorld.sourceKind,
 			summary: currentWorld.summary
 		});
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(ready),
@@ -468,7 +473,7 @@ describe("ContentObservatoryRoute", () => {
 			},
 			status: "running" as const
 		});
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(running),
 			start: (request) =>
 				Effect.sync(() => {
@@ -537,7 +542,7 @@ describe("ContentObservatoryRoute", () => {
 				scannedPackages: 1
 			}
 		});
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(ready),
 			start: (request) => {
 				received = request;
@@ -576,7 +581,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("preserves Fast coverage when decoding a completed actor-class result", async () => {
 		const complete = fastCompleteState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -597,7 +602,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("uses the point map and outliner to narrow changelist evidence to one saved actor", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -632,7 +637,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("keeps attributable actor focus and package evidence together for a timeline change", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -660,7 +665,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("keeps a selected changelist visible while its diff map focuses an actor", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -688,7 +693,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("uses field-qualified actor View Filters and opens a selected actor event locally", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -720,7 +725,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("keeps a range-removed actor inspectable with its lifecycle evidence", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -747,7 +752,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("replays discrete saved actor frames without another history request", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -784,7 +789,7 @@ describe("ContentObservatoryRoute", () => {
 
 	it("retains and labels a completed result when its map query becomes stale", async () => {
 		const complete = completeState();
-		const client: ContentObservatoryClientShape = {
+		const client: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
 			status: () => Effect.succeed(complete)
@@ -823,7 +828,7 @@ describe("ContentObservatoryRoute", () => {
 				)
 			}
 		};
-		const partialClient: ContentObservatoryClientShape = {
+		const partialClient: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(partial),
 			start: () => Effect.succeed(partial),
 			status: () => Effect.succeed(partial)
@@ -856,7 +861,7 @@ describe("ContentObservatoryRoute", () => {
 				revisions: []
 			}
 		};
-		const emptyClient: ContentObservatoryClientShape = {
+		const emptyClient: ContentObservatoryClientApi = {
 			cancel: () => Effect.succeed(empty),
 			start: () => Effect.succeed(empty),
 			status: () => Effect.succeed(empty)

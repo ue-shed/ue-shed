@@ -34,8 +34,10 @@ export const runConfigExplain = Effect.fn("Cli.workflow.config_explain")(
 					platform: command.platform,
 					section: command.section,
 					key: command.key,
-					...(command.engineRoot === undefined ? {} : { engineRoot: command.engineRoot }),
-					...(command.family === undefined ? {} : { family: command.family })
+					...(command.engineRoot === undefined
+						? undefined
+						: { engineRoot: command.engineRoot }),
+					...(command.family === undefined ? undefined : { family: command.family })
 				});
 				const explorer = yield* ConfigExplorer;
 				return yield* printConfigOutcome(explorer.explain(request));
@@ -54,8 +56,10 @@ export const runConfigCompare = Effect.fn("Cli.workflow.config_compare")(
 					rightPlatform: command.rightPlatform,
 					section: command.section,
 					key: command.key,
-					...(command.engineRoot === undefined ? {} : { engineRoot: command.engineRoot }),
-					...(command.family === undefined ? {} : { family: command.family })
+					...(command.engineRoot === undefined
+						? undefined
+						: { engineRoot: command.engineRoot }),
+					...(command.family === undefined ? undefined : { family: command.family })
 				});
 				const explorer = yield* ConfigExplorer;
 				return yield* printConfigOutcome(explorer.compare(request));

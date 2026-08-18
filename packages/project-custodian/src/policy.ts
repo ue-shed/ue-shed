@@ -1,4 +1,5 @@
 import type { CustodianPolicy, ProjectTargetKey } from "./schema.js";
+import { Schema } from "effect";
 
 export interface ProjectTargetDefinition {
 	readonly key: ProjectTargetKey;
@@ -141,15 +142,17 @@ export interface PolicyResolution {
 	readonly error?: string;
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+
+function isRecord(value: Schema.Json): value is Schema.JsonObject {
+	return Schema.is(JsonObject)(value);
 }
 
-function nonNegativeNumber(value: unknown): value is number {
-	return typeof value === "number" && Number.isFinite(value) && value >= 0;
+function nonNegativeNumber(value: Schema.Json): value is number {
+	return Schema.is(Schema.Number)(value) && Number.isFinite(value) && value >= 0;
 }
 
-export function resolvePolicyDocument(value: unknown): PolicyResolution {
+export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 	if (!isRecord(value)) {
 		return {
 			policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
@@ -170,7 +173,7 @@ export function resolvePolicyDocument(value: unknown): PolicyResolution {
 			error: `Unknown policy field(s): ${unknownFields.sort().join(", ")}.`
 		};
 	}
-	if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+	if (value.enabled !== undefined && !Schema.is(Schema.Boolean)(value.enabled)) {
 		return {
 			policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 			error: "enabled must be boolean."
@@ -190,7 +193,7 @@ export function resolvePolicyDocument(value: unknown): PolicyResolution {
 	}
 	if (
 		value.keep_binaries_for_cpp !== undefined &&
-		typeof value.keep_binaries_for_cpp !== "boolean"
+		!Schema.is(Schema.Boolean)(value.keep_binaries_for_cpp)
 	) {
 		return {
 			policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
@@ -199,20 +202,21 @@ export function resolvePolicyDocument(value: unknown): PolicyResolution {
 	}
 	let targets = defaultCustodianPolicy.targets;
 	if (value.targets !== undefined) {
-		if (!Array.isArray(value.targets) || value.targets.some((key) => typeof key !== "string")) {
+		const targetNames = value.targets;
+		if (!Array.isArray(targetNames) || !targetNames.every(Schema.is(Schema.String))) {
 			return {
 				policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 				error: "targets must be an array of known target keys."
 			};
 		}
-		const unknownTargets = value.targets.filter((key) => !isProjectTargetKey(key));
+		const unknownTargets = targetNames.filter((key) => !isProjectTargetKey(key));
 		if (unknownTargets.length > 0) {
 			return {
 				policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 				error: `Unknown target(s): ${unknownTargets.sort().join(", ")}.`
 			};
 		}
-		targets = [...new Set(value.targets.filter(isProjectTargetKey))];
+		targets = [...new Set(targetNames.filter(isProjectTargetKey))];
 	}
 	return {
 		policy: {

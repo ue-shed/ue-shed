@@ -13,7 +13,7 @@ import {
 	readPerforceFastMapHistory,
 	readPerforceMapHistory
 } from "./map-history.js";
-import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceShape } from "./perforce.js";
+import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.js";
 
 const projectRoot = "C:/Project";
@@ -97,7 +97,7 @@ function readerLayer(observedHistoricalRoots: string[]) {
 	});
 }
 
-function source(materializedRoot: string): PerforceHistorySourceShape {
+function source(materializedRoot: string): PerforceHistorySourceApi {
 	const materializedPath = (file: { readonly depotPath: string; readonly revision: number }) =>
 		resolve(materializedRoot, `${file.revision}-${basename(file.depotPath)}`);
 	return {
@@ -247,7 +247,7 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 	});
 	const materializedPath = (file: { readonly depotPath: string; readonly revision: number }) =>
 		resolve(materializedRoot, `${file.revision}-${basename(file.depotPath)}`);
-	const perforce: PerforceHistorySourceShape = {
+	const perforce: PerforceHistorySourceApi = {
 		describeChangelist: (change) =>
 			Effect.succeed({
 				change,
@@ -337,7 +337,7 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 	);
 }
 
-function futureOnlySource(): PerforceHistorySourceShape {
+function futureOnlySource(): PerforceHistorySourceApi {
 	return {
 		describeChangelist: () => Effect.die("An empty range must not describe changelists."),
 		listDepotFilesAtChange: () => Effect.die("An empty range must not inventory a baseline."),
@@ -480,14 +480,14 @@ describe("readPerforceMapHistory", () => {
 			const slowSource = {
 				...source("unused"),
 				materializeDepotFiles: (
-					options: Parameters<PerforceHistorySourceShape["materializeDepotFiles"]>[0]
+					options: Parameters<PerforceHistorySourceApi["materializeDepotFiles"]>[0]
 				) =>
 					Effect.gen(function* () {
 						materializationDirectories.push(options.directory);
 						yield* Deferred.succeed(materializationStarted, undefined);
 						return yield* Effect.never;
 					})
-			} satisfies PerforceHistorySourceShape;
+			} satisfies PerforceHistorySourceApi;
 			const layer = Layer.provide(
 				mapHistoryLayer,
 				Layer.merge(
@@ -539,7 +539,7 @@ function fastClassQuery() {
 	});
 }
 
-function fastSource(materializedRoot: string): PerforceHistorySourceShape {
+function fastSource(materializedRoot: string): PerforceHistorySourceApi {
 	const base = source(materializedRoot);
 	return {
 		...base,

@@ -6,11 +6,11 @@ import type { ProjectLaunchMode, ProjectLaunchResult } from "../project-workspac
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
-export interface ProjectLauncherShape {
+export interface ProjectLauncherApi {
 	readonly launch: (mode: ProjectLaunchMode) => Effect.Effect<ProjectLaunchResult>;
 }
 
-export class ProjectLauncher extends Context.Service<ProjectLauncher, ProjectLauncherShape>()(
+export class ProjectLauncher extends Context.Service<ProjectLauncher, ProjectLauncherApi>()(
 	"@ue-shed/workbench/ProjectLauncher"
 ) {}
 
@@ -64,7 +64,7 @@ export const ProjectLauncherLive = Layer.effect(
 											configuration.unrealEngineRoot.path
 									}
 								}
-							: {}),
+							: undefined),
 						executable: process.execPath
 					})
 					.pipe(
@@ -97,7 +97,7 @@ export const ProjectLauncherLive = Layer.effect(
 );
 
 export function makeProjectLauncherTestLayer(
-	service: ProjectLauncherShape
+	service: ProjectLauncherApi
 ): Layer.Layer<ProjectLauncher> {
 	return Layer.succeed(ProjectLauncher, ProjectLauncher.of(service));
 }

@@ -43,6 +43,7 @@ async function replace(path: string, transform: (source: string) => string) {
 
 const packageVersions = await Promise.all(
 	nativePackagePaths.map(
+		// SAFETY: every path points to a repository-owned npm package manifest with a version field.
 		async (path) => (JSON.parse(await read(path)) as { readonly version: string }).version
 	)
 );

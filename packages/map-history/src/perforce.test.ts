@@ -25,7 +25,9 @@ function backend() {
 		description: "Move actor",
 		files: [
 			{
+				// SAFETY: p4client-ts brands protocol strings but exposes no runtime constructors.
 				action: "edit" as P4FileAction,
+				// SAFETY: p4client-ts brands depot paths but exposes no runtime constructor.
 				depotFile: "//Project/Main/Content/Maps/L_Example.umap" as P4DepotPath,
 				revision: 7,
 				type: "binary"
@@ -55,6 +57,7 @@ function backend() {
 			}),
 		materializeDepotFiles: () =>
 			Effect.succeed({
+				// SAFETY: p4client-ts brands normalized local paths but exposes no runtime constructor.
 				directory: "C:/temp/history" as P4LocalPath,
 				items: [],
 				totalCount: 0

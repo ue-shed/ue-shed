@@ -268,6 +268,7 @@ async function runPaintScenarios(): Promise<ReadonlyArray<PaintScenarioResult>> 
 			`Observatory paint Playwright scenario failed with status ${result.status}`
 		);
 	}
+	// SAFETY: the Playwright benchmark writes this private PaintScenarioResult envelope.
 	const payload = JSON.parse(readFileSync(paintResultsPath, "utf8")) as {
 		readonly results: ReadonlyArray<PaintScenarioResult>;
 	};

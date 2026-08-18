@@ -4,11 +4,11 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 import { acquireHistoricalProjectTree } from "./historical-project-tree.js";
-import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceShape } from "./perforce.js";
+import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { materializePlannedRevision } from "./revision-materialization.js";
 import { planScopedRevision } from "./revision-plan.js";
 
-function source(materializedPath: string): PerforceHistorySourceShape {
+function source(materializedPath: string): PerforceHistorySourceApi {
 	return {
 		describeChangelist: () =>
 			Effect.die("Revision materialization must not describe changelists."),

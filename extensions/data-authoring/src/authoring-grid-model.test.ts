@@ -34,6 +34,7 @@ const rows: readonly AuthoringRow[] = [
 	}
 ];
 
+// SAFETY: Peculiar Sheets brands plain integer row/column coordinates without a public constructor.
 const address = (row: number, col: number): CellMutation["address"] =>
 	({ col, row }) as CellMutation["address"];
 

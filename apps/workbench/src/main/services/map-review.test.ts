@@ -5,15 +5,17 @@ import {
 	makeReviewRepositoryTestLayer,
 	makeCameraFeedTestLayer,
 	decodeReviewSet,
-	type ReviewAuthoringShape,
+	type ReviewAuthoringApi,
 	ReviewAuthoringSessionError,
-	type ReviewAuthoringSessionsShape,
-	type ReviewCaptureShape,
+	VisibilityPolicyId,
+	type ReviewAuthoringSessionsApi,
+	type ReviewCaptureApi,
 	type ReviewSet
 } from "@ue-shed/cameras";
 import { it } from "@effect/vitest";
 import { Observatory, ActorId, WorldScoutRefreshRate } from "@ue-shed/observatory";
 import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine-discovery";
+import { EditorPlaySessionId } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { Effect, Layer, Queue, Ref, Stream } from "effect";
@@ -24,7 +26,7 @@ import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchWindowTestLayer, WorkbenchWindowTest } from "../adapters/electron-window.js";
 import {
 	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationShape
+	type WorkbenchConfigurationApi
 } from "../workbench-config.js";
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
@@ -59,45 +61,47 @@ const MapReviewLiveWithDialog = Layer.provide(WorkbenchMapReviewLive, projectTes
 const reviewSetPath = "C:/Fixture/.ue-shed/review/sets/fixture.json";
 const projectRoot = "C:/FixtureProject";
 
-const fixtureReviewSet: ReviewSet = {
-	captureProfiles: [
-		{
-			id: "profile-1" as ReviewSet["captureProfiles"][number]["id"],
-			imageFormat: "png",
-			renderProfile: "full_fidelity",
-			resolution: { height: 1080, width: 1920 },
-			variantPolicy: "pure_only"
-		}
-	],
-	contract: { name: "ue-shed-review-set", version: { major: 1, minor: 0 } },
-	displayName: "Fixture Review Set",
-	id: "review-set-1" as ReviewSet["id"],
-	project: { id: "fixture", mapPath: "/Game/Maps/Fixture" },
-	views: [
-		{
-			approvedPose: {
-				aspectRatio: "16:9",
-				fieldOfViewDegrees: 60,
-				location: { x: 0, y: 0, z: 0 },
-				projection: "perspective",
-				rotation: { pitch: 0, roll: 0, yaw: 0 }
-			},
-			captureProfileId: "profile-1" as ReviewSet["captureProfiles"][number]["id"],
-			displayName: "Front view",
-			framingRecipe: { kind: "manual", version: 1 },
-			id: "view-1" as ReviewSet["views"][number]["id"],
-			purpose: "Establishing shot",
-			subject: {
-				actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
-				kind: "actor_path"
-			},
-			tags: []
-		}
-	]
-} as unknown as ReviewSet;
+const fixtureReviewSet = Effect.runSync(
+	decodeReviewSet({
+		captureProfiles: [
+			{
+				id: "profile-1",
+				imageFormat: "png",
+				renderProfile: "full_fidelity",
+				resolution: { height: 1080, width: 1920 },
+				variantPolicy: "pure_only"
+			}
+		],
+		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 0 } },
+		displayName: "Fixture Review Set",
+		id: "review-set-1",
+		project: { id: "fixture", mapPath: "/Game/Maps/Fixture" },
+		views: [
+			{
+				approvedPose: {
+					aspectRatio: "16:9",
+					fieldOfViewDegrees: 60,
+					location: { x: 0, y: 0, z: 0 },
+					projection: "perspective",
+					rotation: { pitch: 0, roll: 0, yaw: 0 }
+				},
+				captureProfileId: "profile-1",
+				displayName: "Front view",
+				framingRecipe: { kind: "manual", version: 1 },
+				id: "view-1",
+				purpose: "Establishing shot",
+				subject: {
+					actorPath: "/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
+					kind: "actor_path"
+				},
+				tags: []
+			}
+		]
+	})
+);
 const policyReviewSet = Effect.runSync(decodeReviewSet(fixtureReviewSet));
 
-const configuredReview: WorkbenchConfigurationShape = {
+const configuredReview: WorkbenchConfigurationApi = {
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
 	project: { status: "not_configured" },
@@ -107,18 +111,18 @@ const configuredReview: WorkbenchConfigurationShape = {
 	textureAuditRules: { status: "not_configured" }
 };
 
-const notConfigured: WorkbenchConfigurationShape = {
+const notConfigured: WorkbenchConfigurationApi = {
 	...configuredReview,
 	review: { status: "not_configured" }
 };
 
-const projectConfigured: WorkbenchConfigurationShape = {
+const projectConfigured: WorkbenchConfigurationApi = {
 	...configuredReview,
 	review: { projectRoot, status: "project_configured" }
 };
 
-const dyingCapture: ReviewCaptureShape = { captureSet: () => Effect.die("not used") };
-const dyingAuthoring: ReviewAuthoringShape = {
+const dyingCapture: ReviewCaptureApi = { captureSet: () => Effect.die("not used") };
+const dyingAuthoring: ReviewAuthoringApi = {
 	inspectSelection: () => Effect.die("not used"),
 	inspectSubject: () => Effect.die("not used"),
 	previewCandidate: () => Effect.die("not used")
@@ -138,9 +142,10 @@ const clearOnlyRemoteControl = makeRemoteControlClientTestLayer((request) => {
 	}
 	return Effect.die(`unexpected remote call ${request.functionName}`);
 });
-const dyingAuthoringSessions: ReviewAuthoringSessionsShape = {
+const dyingAuthoringSessions: ReviewAuthoringSessionsApi = {
 	approve: () => Effect.die("not used"),
 	create: (args) =>
+		// SAFETY: this focused session mock supplies every field read by WorkbenchMapReview.
 		Effect.succeed({
 			candidates: [...args.candidates],
 			contract: { name: "ue-shed-review-authoring-session", version: { major: 1, minor: 0 } },
@@ -200,7 +205,7 @@ const assetReaderTestLayer = makeAssetReaderTestLayer({
 });
 
 const makeMapReviewDeps = (
-	authoringSessions: ReviewAuthoringSessionsShape = dyingAuthoringSessions
+	authoringSessions: ReviewAuthoringSessionsApi = dyingAuthoringSessions
 ) =>
 	Layer.mergeAll(
 		assetReaderTestLayer,
@@ -412,6 +417,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 									}
 								]),
 							loadRun: () =>
+								// SAFETY: this fixture supplies the complete capture run contract used by the test.
 								Effect.succeed({
 									completedAt: "2026-01-01T00:00:00.000Z",
 									contract: {
@@ -578,7 +584,7 @@ it.effect("round-trips immutable policy replacement through the headless service
 		const result = yield* service.replaceVisibilityPolicy({
 			policy: {
 				assessment: { method: "depth_compare" },
-				id: "clear-v2" as ReviewSet["visibilityPolicies"][number]["id"],
+				id: VisibilityPolicyId.make("clear-v2"),
 				name: "Clear v2",
 				onLowVisibility: { action: "warn", threshold: 0.5 },
 				output: {
@@ -683,7 +689,7 @@ it.effect("reports an actionable map mismatch before starting authoring", () =>
 );
 
 it.effect("does not carry the startup Review Set into a newly selected project", () => {
-	let startArgs: Parameters<ReviewAuthoringSessionsShape["start"]>[0] | undefined;
+	let startArgs: Parameters<ReviewAuthoringSessionsApi["start"]>[0] | undefined;
 	const selectedProjectRoot = "D:/Games/Hex";
 	const selectedProjectLayer = makeWorkbenchProjectTestLayer({
 		choose: () => Effect.die("not used"),
@@ -696,7 +702,7 @@ it.effect("does not carry the startup Review Set into a newly selected project",
 		savedTables: () => Effect.die("not used"),
 		savedProject: () => Effect.die("not used")
 	});
-	const sessions: ReviewAuthoringSessionsShape = {
+	const sessions: ReviewAuthoringSessionsApi = {
 		...dyingAuthoringSessions,
 		start: (args) => {
 			startArgs = args;
@@ -866,6 +872,7 @@ it.effect(
 							makeReviewAuthoringSessionsTestLayer({
 								...dyingAuthoringSessions,
 								load: () =>
+									// SAFETY: this fixture supplies the complete persisted session used by reframe.
 									Effect.succeed({
 										candidates: [
 											{
@@ -926,6 +933,7 @@ it.effect(
 										viewId: "initial-view"
 									} as never),
 								recordProjection: (args) =>
+									// SAFETY: this mock returns every active-session field consumed by the service.
 									Effect.succeed({
 										candidates: [],
 										contract: {
@@ -1011,6 +1019,7 @@ it.effect(
 							makeReviewAuthoringTestLayer({
 								...dyingAuthoring,
 								inspectSubject: () =>
+									// SAFETY: this ready subject fixture contains every field consumed by the service.
 									Effect.succeed({
 										actorPath:
 											"/Game/Maps/Fixture.Fixture:PersistentLevel.Subject_0",
@@ -1230,9 +1239,11 @@ it.effect("resumes the latest persisted authoring session after a fresh service 
 						makeReviewAuthoringTestLayer(dyingAuthoring),
 						makeReviewAuthoringSessionsTestLayer({
 							...dyingAuthoringSessions,
+							// SAFETY: durableAuthoringSession is a complete test-owned persisted session fixture.
 							latest: () => Effect.succeed(durableAuthoringSession as never),
 							resume: () =>
 								Effect.succeed({
+									// SAFETY: the same persisted fixture is the resumable session returned by this mock.
 									session: durableAuthoringSession as never,
 									status: "resumable" as const
 								})
@@ -1321,6 +1332,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 								Effect.succeed({
 									reasons: ["bounds_changed" as const],
 									recovery: staleRecoveryGuidance,
+									// SAFETY: lifecycle is deliberately changed on a complete session fixture.
 									session: {
 										...durableAuthoringSession,
 										lifecycle: "stale" as const
@@ -1328,6 +1340,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 									status: "stale" as const
 								}),
 							load: () =>
+								// SAFETY: lifecycle is deliberately changed on a complete session fixture.
 								Effect.succeed({
 									...durableAuthoringSession,
 									lifecycle: "stale" as const
@@ -1336,6 +1349,7 @@ it.effect("surfaces stale bounds recovery and refuses Keep View approval", () =>
 								Effect.succeed({
 									reasons: ["bounds_changed" as const],
 									recovery: staleRecoveryGuidance,
+									// SAFETY: lifecycle is deliberately changed on a complete session fixture.
 									session: {
 										...durableAuthoringSession,
 										lifecycle: "stale" as const
@@ -1554,15 +1568,18 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 			const catalogEventIndex = afterTransforms.findIndex(
 				(entry) =>
 					entry.channel === "map-review:world-observation" &&
+					// SAFETY: this channel's payload is encoded by RendererWorldObservationEvent.
 					(entry.payload as { kind: string }).kind === "catalog"
 			);
 			const transformEvents = afterTransforms.filter(
 				(entry) =>
 					entry.channel === "map-review:world-observation" &&
+					// SAFETY: this channel's payload is encoded by RendererWorldObservationEvent.
 					(entry.payload as { kind: string }).kind === "transforms"
 			);
 			expect(catalogEventIndex).toBeGreaterThanOrEqual(0);
 			expect(transformEvents.length).toBeGreaterThanOrEqual(1);
+			// SAFETY: transformEvents was filtered to the transforms payload variant above.
 			const lastTransform = transformEvents.at(-1)?.payload as {
 				readonly transforms: ReadonlyArray<{ readonly streamIndex: number }>;
 			};
@@ -1703,7 +1720,9 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 				sent.some(
 					(entry) =>
 						entry.channel === "map-review:world-observation" &&
+						// SAFETY: this channel's payload is encoded by RendererWorldObservationEvent.
 						(entry.payload as { kind: string; status?: string }).kind === "catalog" &&
+						// SAFETY: this is the same catalog payload narrowed on the preceding line.
 						(entry.payload as { status?: string }).status === "stale"
 				)
 			).toBe(false);
@@ -1814,6 +1833,7 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				makeWorkbenchWindowTestLayer(),
 				makeRemoteControlClientTestLayer((request) => {
 					if (request.functionName === "EnsureProvisionedCameras") {
+						// SAFETY: WorkbenchMapReview just serialized this private provisioning request.
 						const provisioned = JSON.parse(String(request.parameters.RequestJson)) as {
 							cameras: Array<{ location: unknown; projection: unknown }>;
 						};
@@ -1843,6 +1863,7 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				}),
 				makeReviewAuthoringSessionsTestLayer({
 					...dyingAuthoringSessions,
+					// SAFETY: livePreviewSession is a complete test-owned session fixture.
 					load: () => Effect.succeed(livePreviewSession as never)
 				}),
 				Layer.succeed(
@@ -1869,7 +1890,7 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 								worldContext === "play"
 									? {
 											mode: "play" as const,
-											sessionId: "pie-1" as never,
+											sessionId: EditorPlaySessionId.make("pie-1"),
 											status: "running" as const
 										}
 									: { status: "stopped" as const }
@@ -1970,7 +1991,7 @@ it.effect("blocks Capture Set while PIE is running", () =>
 									},
 									state: {
 										mode: "play",
-										sessionId: "pie-1" as never,
+										sessionId: EditorPlaySessionId.make("pie-1"),
 										status: "running"
 									}
 								}),

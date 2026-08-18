@@ -7,7 +7,7 @@ import {
 } from "@ue-shed/project-custodian/browser";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { CustodianClientShape } from "./custodian-client.js";
+import type { CustodianClientApi } from "./custodian-client.js";
 import { ProjectCustodianRoute } from "./project-custodian-route.js";
 
 afterEach(cleanup);
@@ -81,7 +81,7 @@ const sampleReport: CustodianReport = {
 	destructiveOperationsAvailable: true
 };
 
-function inactiveCleanupClient(): Pick<CustodianClientShape, "prepare" | "execute" | "cancel"> {
+function inactiveCleanupClient(): Pick<CustodianClientApi, "prepare" | "execute" | "cancel"> {
 	return {
 		prepare: () =>
 			Effect.succeed({
@@ -114,7 +114,7 @@ function inactiveCleanupClient(): Pick<CustodianClientShape, "prepare" | "execut
 describe("ProjectCustodianRoute", () => {
 	it("keeps an unconfigured host read-only and requests an explicit root", async () => {
 		let choices = 0;
-		const client: CustodianClientShape = {
+		const client: CustodianClientApi = {
 			...inactiveCleanupClient(),
 			configuredScan: () => Effect.succeed({ status: "not_configured" }),
 			chooseAndScan: () => {
@@ -137,7 +137,7 @@ describe("ProjectCustodianRoute", () => {
 	});
 
 	it("shows measured inventory and exposes guarded cleanup review", async () => {
-		const client: CustodianClientShape = {
+		const client: CustodianClientApi = {
 			...inactiveCleanupClient(),
 			configuredScan: () => Effect.succeed({ status: "completed", report: sampleReport }),
 			chooseAndScan: () => Effect.succeed({ status: "cancelled" })
@@ -180,7 +180,7 @@ describe("ProjectCustodianRoute", () => {
 		};
 		let prepared = 0;
 		let executed = 0;
-		const client: CustodianClientShape = {
+		const client: CustodianClientApi = {
 			configuredScan: () => Effect.succeed({ status: "completed", report: sampleReport }),
 			chooseAndScan: () => Effect.succeed({ status: "cancelled" }),
 			prepare: () => {

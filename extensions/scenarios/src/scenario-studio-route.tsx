@@ -19,7 +19,7 @@ import {
 } from "@ue-shed/scenarios";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause, Effect, Option, Schedule } from "effect";
+import { Cause, Effect, Option, Schedule, Schema } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
 import type { ScenarioStudioClient } from "./client.js";
 
@@ -276,13 +276,14 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 	);
 	const formatClientFailure = (cause: Cause.Cause<unknown>): string => {
 		const error = Cause.findErrorOption(cause);
-		if (Option.isSome(error) && typeof error.value === "object" && error.value !== null) {
-			const value = error.value as {
-				readonly message?: unknown;
-				readonly recovery?: unknown;
-			};
-			if (typeof value.message === "string") {
-				return `${value.message}${typeof value.recovery === "string" ? ` ${value.recovery}` : ""}`;
+		if (Option.isSome(error) && error.value instanceof Object) {
+			const value = error.value;
+			if ("message" in value && Schema.is(Schema.String)(value.message)) {
+				const recovery =
+					"recovery" in value && Schema.is(Schema.String)(value.recovery)
+						? ` ${value.recovery}`
+						: "";
+				return `${value.message}${recovery}`;
 			}
 		}
 		return Cause.pretty(cause);
@@ -992,7 +993,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 																{formatTime(keyframe.offsetMs)}
 															</span>
 															<code>
-																{typeof keyframe.value === "object"
+																{keyframe.value instanceof Object
 																	? `${keyframe.value.x.toFixed(2)}, ${keyframe.value.y.toFixed(2)}`
 																	: String(keyframe.value)}
 															</code>

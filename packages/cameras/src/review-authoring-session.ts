@@ -92,7 +92,7 @@ export function nextReviewViewId(args: {
 	}
 }
 
-function writeJsonAtomically(path: string, value: unknown): Effect.Effect<void, unknown> {
+function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<void, unknown> {
 	return Effect.tryPromise({
 		try: async () => {
 			await mkdir(dirname(path), { recursive: true });
@@ -154,7 +154,8 @@ function loadDocument(args: {
 		const id = yield* decodeSessionId(args.id, "load", args.projectRoot);
 		const path = reviewAuthoringSessionPath({ id, projectRoot: args.projectRoot });
 		const input = yield* Effect.tryPromise({
-			try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+			try: async () =>
+				Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 			catch: (cause) =>
 				sessionError({
 					cause,
@@ -263,10 +264,10 @@ function appendKeptCandidateViews(args: {
 				displayName: candidate.displayName,
 				...(manuallyAdjusted && args.session.draftPose !== undefined
 					? { manualPose: args.session.draftPose }
-					: {}),
+					: undefined),
 				...(manuallyAdjusted && args.session.manualReason !== undefined
 					? { manualReason: args.session.manualReason }
-					: {}),
+					: undefined),
 				purpose: `Review ${args.session.subject.displayName} · ${candidate.displayName}`,
 				subject,
 				tags: [],
@@ -314,7 +315,7 @@ function staleRecovery(args: {
 	};
 }
 
-export interface ReviewAuthoringSessionsShape {
+export interface ReviewAuthoringSessionsApi {
 	readonly approve: (args: {
 		readonly endpoint: string;
 		readonly projectRoot: string;
@@ -371,9 +372,12 @@ export interface ReviewAuthoringSessionsShape {
 	}) => Effect.Effect<ReviewAuthoringSessionRecovery, ReviewAuthoringSessionError>;
 }
 
+/** @deprecated Use `ReviewAuthoringSessionsApi`. */
+export type ReviewAuthoringSessionsShape = ReviewAuthoringSessionsApi;
+
 export class ReviewAuthoringSessions extends Context.Service<
 	ReviewAuthoringSessions,
-	ReviewAuthoringSessionsShape
+	ReviewAuthoringSessionsApi
 >()("@ue-shed/cameras/ReviewAuthoringSessions") {}
 
 export const ReviewAuthoringSessionsLive = Layer.effect(
@@ -424,7 +428,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				candidates: [...args.candidates],
 				candidateOverrides: [],
 				...(args.pendingReviewSet === undefined
-					? {}
+					? undefined
 					: { pendingReviewSet: args.pendingReviewSet }),
 				contract: {
 					name: "ue-shed-review-authoring-session",
@@ -501,7 +505,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				}
 				return yield* create({
 					candidates: args.candidates,
-					...(destination.kind === "append_view" ? { pendingReviewSet: reviewSet } : {}),
+					...(destination.kind === "append_view"
+						? { pendingReviewSet: reviewSet }
+						: undefined),
 					projectRoot: args.projectRoot,
 					reviewSetPath,
 					selection: args.selection,
@@ -554,7 +560,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			}
 			return yield* create({
 				candidates: args.candidates,
-				...(destination.kind === "append_view" ? { pendingReviewSet: reviewSet } : {}),
+				...(destination.kind === "append_view"
+					? { pendingReviewSet: reviewSet }
+					: undefined),
 				projectRoot: args.projectRoot,
 				reviewSetPath: bootstrap.reviewSetPath,
 				selection: args.selection,
@@ -604,7 +612,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 							bounds: session.subject.bounds,
 							displayName: session.subject.displayName,
 							...(editorCandidate === undefined
-								? {}
+								? undefined
 								: { editorView: editorCandidate.approvedPose }),
 							mapPath: session.subject.mapPath
 						},
@@ -687,9 +695,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				candidateOverrides: retainedOverrides,
 				candidates,
 				discardedCandidateIds,
-				...(parameters === undefined ? {} : { framingParameters: parameters }),
+				...(parameters === undefined ? undefined : { framingParameters: parameters }),
 				...(!framingChanged
-					? {}
+					? undefined
 					: {
 							diagnostics: [],
 							draftPose: undefined,
@@ -960,11 +968,11 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 						candidate: selectedCandidate,
 						...(session.draftPose === undefined ||
 						session.selectedCandidateId !== selectedCandidate.id
-							? {}
+							? undefined
 							: { manualPose: session.draftPose }),
 						...(session.manualReason === undefined ||
 						session.selectedCandidateId !== selectedCandidate.id
-							? {}
+							? undefined
 							: { manualReason: session.manualReason }),
 						reviewSet,
 						subject,
@@ -1095,7 +1103,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 );
 
 export function makeReviewAuthoringSessionsTestLayer(
-	service: ReviewAuthoringSessionsShape
+	service: ReviewAuthoringSessionsApi
 ): Layer.Layer<ReviewAuthoringSessions> {
 	return Layer.succeed(ReviewAuthoringSessions, ReviewAuthoringSessions.of(service));
 }

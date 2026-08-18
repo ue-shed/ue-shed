@@ -520,16 +520,16 @@ const maxRuntimeTriggerDepth = 4;
 const maxRuntimeTriggerKeys = 32;
 const maxRuntimeTriggerArrayLength = 32;
 
-function boundedJsonIssue(value: unknown, depth = 0): string | undefined {
+function boundedJsonIssue(value: Schema.Json, depth = 0): string | undefined {
 	if (depth > maxRuntimeTriggerDepth) return "Runtime trigger provenance is nested too deeply.";
 	if (
 		value === null ||
-		typeof value === "boolean" ||
-		(typeof value === "number" && Number.isFinite(value))
+		Schema.is(Schema.Boolean)(value) ||
+		(Schema.is(Schema.Number)(value) && Number.isFinite(value))
 	) {
 		return undefined;
 	}
-	if (typeof value === "string") {
+	if (Schema.is(Schema.String)(value)) {
 		return value.length <= 1_024
 			? undefined
 			: "Runtime trigger strings are limited to 1024 characters.";
@@ -544,8 +544,6 @@ function boundedJsonIssue(value: unknown, depth = 0): string | undefined {
 		}
 		return undefined;
 	}
-	if (typeof value !== "object")
-		return "Runtime trigger provenance must contain JSON values only.";
 	const entries = Object.entries(value);
 	if (entries.length > maxRuntimeTriggerKeys) {
 		return "Runtime trigger provenance is limited to 32 object keys.";
@@ -560,7 +558,7 @@ function boundedJsonIssue(value: unknown, depth = 0): string | undefined {
 	return undefined;
 }
 
-export const BoundedJsonObject = Schema.Record(BoundedString, Schema.Unknown).pipe(
+export const BoundedJsonObject = Schema.Record(BoundedString, Schema.Json).pipe(
 	Schema.check(
 		Schema.makeFilter((value) => {
 			const issue = boundedJsonIssue(value);
@@ -941,7 +939,7 @@ function migrateLegacyReviewSet(legacy: Schema.Schema.Type<typeof LegacyReviewSe
 			({ variantPolicy: _variantPolicy, ...profile }) => CaptureProfile.make(profile)
 		),
 		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 1 } },
-		...(legacy.description === undefined ? {} : { description: legacy.description }),
+		...(legacy.description === undefined ? undefined : { description: legacy.description }),
 		displayName: legacy.displayName,
 		id: legacy.id,
 		project: legacy.project,
@@ -950,7 +948,7 @@ function migrateLegacyReviewSet(legacy: Schema.Schema.Type<typeof LegacyReviewSe
 				captureProfileId: view.captureProfileId,
 				displayName: view.displayName,
 				...(view.framingDiagnostics === undefined
-					? {}
+					? undefined
 					: { framingDiagnostics: view.framingDiagnostics }),
 				framingRecipe: view.framingRecipe,
 				id: view.id,
@@ -969,7 +967,7 @@ function migrateLegacyReviewSet(legacy: Schema.Schema.Type<typeof LegacyReviewSe
 export const ReviewSet = ReviewSetCurrent;
 export type ReviewSet = Schema.Schema.Type<typeof ReviewSet>;
 
-export function decodeReviewSetWithMigration(input: unknown) {
+export function decodeReviewSetWithMigration<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(Schema.Union([ReviewSetCurrent, LegacyReviewSet]))(
 		input
 	).pipe(
@@ -1807,7 +1805,7 @@ function migrateLegacyCaptureRun(legacy: Schema.Schema.Type<typeof LegacyCapture
 export const CaptureRun = CaptureRunCurrent;
 export type CaptureRun = Schema.Schema.Type<typeof CaptureRun>;
 
-export function decodeCaptureRunWithMigration(input: unknown) {
+export function decodeCaptureRunWithMigration<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(CaptureRunCurrent)(input).pipe(
 		Effect.map((run) => ({ migrated: false as const, run })),
 		Effect.catch(() =>
@@ -1853,7 +1851,7 @@ export function reviewViewApprovedPose(view: ReviewView): ApprovedPose | undefin
 	return view.viewpoint.kind === "world_fixed" ? view.viewpoint.approvedPose : undefined;
 }
 
-export const decodeReviewSet = (input: unknown) =>
+export const decodeReviewSet = <Input>(input: Input) =>
 	decodeReviewSetWithMigration(input).pipe(Effect.map(({ reviewSet }) => reviewSet));
 export const decodeReviewCaptureRequest = Schema.decodeUnknownEffect(ReviewCaptureRequest);
 export const decodeReviewCaptureResponse = Schema.decodeUnknownEffect(ReviewCaptureResponse);
@@ -1868,6 +1866,6 @@ export const decodeApproveReviewCandidateIntent = Schema.decodeUnknownEffect(
 	ApproveReviewCandidateIntent
 );
 export const decodeCaptureInvocation = Schema.decodeUnknownEffect(CaptureInvocation);
-export const decodeCaptureRun = (input: unknown) =>
+export const decodeCaptureRun = <Input>(input: Input) =>
 	decodeCaptureRunWithMigration(input).pipe(Effect.map(({ run }) => run));
 export const decodeReviewAuthoringSession = Schema.decodeUnknownEffect(ReviewAuthoringSession);

@@ -1,11 +1,11 @@
 import { it } from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { CliRuntime, type CliRuntimeShape } from "./cli-runtime.js";
+import { CliRuntime, type CliRuntimeApi } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 
 function runtimeLayer(output: Ref.Ref<string>, errors: Ref.Ref<string>, exitCode: Ref.Ref<number>) {
-	const runtime: CliRuntimeShape = {
+	const runtime: CliRuntimeApi = {
 		print: (value) => Ref.update(output, (current) => current + value),
 		printError: (value) => Ref.update(errors, (current) => current + value),
 		setExitCode: (value) => Ref.set(exitCode, value)

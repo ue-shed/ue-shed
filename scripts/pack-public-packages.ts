@@ -15,6 +15,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
 
 export interface PublicPackage {
 	readonly name: string;
@@ -29,7 +30,7 @@ export interface PackageManifest {
 	readonly type?: string;
 	readonly publishConfig?: { readonly access?: string };
 	readonly repository?: { readonly url?: string };
-	readonly exports?: Readonly<Record<string, unknown>>;
+	readonly exports?: JsonObject;
 	readonly main?: string;
 	readonly types?: string;
 	readonly bin?: string | Readonly<Record<string, string>>;
@@ -81,11 +82,11 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Legacy source/plugin candidates still have one release identity. npm packages are independently
 // versioned by Changesets; the launcher version remains the candidate identity until the post-1.0
 // hosted lane is redesigned around Changesets' release plan.
-export const PUBLIC_VERSION = (
-	JSON.parse(
-		await readFile(join(repositoryRoot, "packages/uasset/package.json"), "utf8")
-	) as PackageManifest
-).version;
+// SAFETY: this repository-owned package.json is validated by the release checks before publication.
+const versionManifest = JSON.parse(
+	await readFile(join(repositoryRoot, "packages/uasset/package.json"), "utf8")
+) as PackageManifest;
+export const PUBLIC_VERSION = versionManifest.version;
 const localProtocolPattern = /(?:workspace|catalog|file|link|portal):/;
 const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
 const exactEffectVersion = "4.0.0-beta.98";
@@ -135,6 +136,7 @@ async function assertPublicPackageSet() {
 			if (!entry.isDirectory()) continue;
 			const manifestPath = join(directory, entry.name, "package.json");
 			if (!existsSync(manifestPath)) continue;
+			// SAFETY: workspace package manifests are repository-owned and checked by this release gate.
 			const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as PackageManifest;
 			if (manifest.private !== true) actual.push(manifest.name);
 		}
@@ -202,17 +204,17 @@ async function packWorkspacePackage(workspacePackage: PublicPackage, outputDirec
 }
 
 function collectExportTargets(
-	exportsValue: unknown,
+	exportsValue: JsonValue | undefined,
 	failures: string[],
 	prefix = "exports"
 ): string[] {
-	if (typeof exportsValue === "string") return [exportsValue];
+	if (exportsValue !== undefined && isJsonString(exportsValue)) return [exportsValue];
 	if (Array.isArray(exportsValue)) {
 		return exportsValue.flatMap((value, index) =>
 			collectExportTargets(value, failures, `${prefix}[${index}]`)
 		);
 	}
-	if (exportsValue === null || typeof exportsValue !== "object") {
+	if (exportsValue === undefined || !isJsonObject(exportsValue)) {
 		failures.push(`${prefix} must be a string or object`);
 		return [];
 	}
@@ -294,7 +296,7 @@ export function validatePackedManifest({
 		failures.push("packed manifest contains a local workspace/catalog/file/link protocol");
 	}
 	for (const field of ["main", "types"] as const) {
-		if (typeof manifest[field] === "string" && !files.includes(packedPath(manifest[field]))) {
+		if (manifest[field] !== undefined && !files.includes(packedPath(manifest[field]))) {
 			failures.push(`${field} points to missing packed file ${manifest[field]}`);
 		}
 	}
@@ -312,7 +314,9 @@ export function validatePackedManifest({
 		}
 	}
 	const bins =
-		typeof manifest.bin === "string" ? { [manifest.name]: manifest.bin } : manifest.bin;
+		manifest.bin !== undefined && isJsonString(manifest.bin)
+			? { [manifest.name]: manifest.bin }
+			: manifest.bin;
 	for (const path of Object.values(bins ?? {})) {
 		if (!files.includes(packedPath(path)))
 			failures.push(`bin points to missing packed file ${path}`);
@@ -479,12 +483,14 @@ export async function packPublicPackages({
 	}
 	const packed: PackedPackage[] = [];
 	for (const workspacePackage of PUBLIC_PACKAGES) {
+		// SAFETY: PUBLIC_PACKAGES contains only repository-owned package manifests.
 		const workspaceManifest = JSON.parse(
 			await readFile(join(repositoryRoot, workspacePackage.directory, "package.json"), "utf8")
 		) as PackageManifest;
 		const path = await packWorkspacePackage(workspacePackage, outputDirectory);
 		const filename = basename(path);
 		const manifestRaw = readPackedFile(path, "package/package.json");
+		// SAFETY: npm pack generated this manifest from workspaceManifest and it is validated below.
 		const manifest = JSON.parse(manifestRaw) as PackageManifest;
 		const files = listPackedFiles(path);
 		const failures = validatePackedManifest({

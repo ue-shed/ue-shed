@@ -11,14 +11,15 @@ import {
 	ReviewAuthoringSessionId,
 	ReviewSetId,
 	ReviewSubjectActorPath,
-	ReviewViewId
+	ReviewViewId,
+	ReviewViewRevisionId
 } from "@ue-shed/cameras";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type {
 	MapReviewCaptureResult,
 	MapReviewAuthoringResult,
-	MapReviewClientShape,
+	MapReviewClientApi,
 	MapReviewResult
 } from "./map-review-client.js";
 import { MapReviewRoute } from "./map-review-route.js";
@@ -93,7 +94,7 @@ const offlineScout = {
 			status: "unavailable" as const
 		})
 } satisfies Pick<
-	MapReviewClientShape,
+	MapReviewClientApi,
 	| "connectWorld"
 	| "createReviewSet"
 	| "focusActor"
@@ -136,7 +137,7 @@ const unavailableDurableAuthoring = {
 	liveFrames: Stream.empty,
 	setLivePreviewFps: (fps) => Effect.succeed(fps)
 } satisfies Pick<
-	MapReviewClientShape,
+	MapReviewClientApi,
 	| "approveAuthoring"
 	| "authoringPatch"
 	| "authoringReframe"
@@ -147,7 +148,7 @@ const unavailableDurableAuthoring = {
 	| "setLivePreviewFps"
 >;
 
-function renderRoute(client: MapReviewClientShape) {
+function renderRoute(client: MapReviewClientApi) {
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
 			<MapReviewRoute client={client} />
@@ -218,8 +219,8 @@ describe("MapReviewRoute", () => {
 			status: "ready",
 			viewId: durable.viewId
 		};
-		const patches: Array<Parameters<MapReviewClientShape["authoringPatch"]>[0]> = [];
-		const client: MapReviewClientShape = {
+		const patches: Array<Parameters<MapReviewClientApi["authoringPatch"]>[0]> = [];
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -270,7 +271,7 @@ describe("MapReviewRoute", () => {
 
 	it("offers first-run authoring and can reopen a discovered Review Set", async () => {
 		let selectedReviewSetId: string | undefined;
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -322,7 +323,7 @@ describe("MapReviewRoute", () => {
 			}
 		} satisfies MapReviewResult;
 		let selectedReviewSetId: string | undefined;
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -380,7 +381,7 @@ describe("MapReviewRoute", () => {
 			}
 		} satisfies MapReviewResult;
 		let createdName: string | undefined;
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -425,7 +426,7 @@ describe("MapReviewRoute", () => {
 		};
 		let captures = 0;
 		let captureViewIds: ReadonlyArray<string> = [];
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.succeed({ candidateId: "context", status: "approved" }),
@@ -521,6 +522,11 @@ describe("MapReviewRoute", () => {
 						},
 						viewId: "structure-context",
 						viewName: "Structure context",
+						viewRevision: {
+							id: ReviewViewRevisionId.make("structure-context-r1"),
+							number: 1,
+							status: "numbered"
+						},
 						visibility: {
 							assessmentDurationMs: 4,
 							limitations: ["Translucent pixels may not write depth."],
@@ -539,8 +545,8 @@ describe("MapReviewRoute", () => {
 				}
 			],
 			status: "ready"
-		} as unknown as MapReviewResult;
-		const client: MapReviewClientShape = {
+		} satisfies MapReviewResult;
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -582,7 +588,7 @@ describe("MapReviewRoute", () => {
 			viewId,
 			viewName,
 			viewRevision: {
-				id: `${viewId}-r${revision}`,
+				id: ReviewViewRevisionId.make(`${viewId}-r${revision}`),
 				number: revision,
 				status: "numbered" as const
 			},
@@ -641,9 +647,9 @@ describe("MapReviewRoute", () => {
 				}
 			],
 			status: "ready"
-		} as unknown as MapReviewResult;
-		let authoringIntent: Parameters<MapReviewClientShape["authorFromSelection"]>[0] | undefined;
-		const client: MapReviewClientShape = {
+		} satisfies MapReviewResult;
+		let authoringIntent: Parameters<MapReviewClientApi["authorFromSelection"]>[0] | undefined;
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -689,8 +695,8 @@ describe("MapReviewRoute", () => {
 	});
 
 	it("explains map mismatches and can start authoring from the selected map", async () => {
-		const intents: Array<Parameters<MapReviewClientShape["authorFromSelection"]>[0]> = [];
-		const client: MapReviewClientShape = {
+		const intents: Array<Parameters<MapReviewClientApi["authorFromSelection"]>[0]> = [];
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -755,9 +761,9 @@ describe("MapReviewRoute", () => {
 			projection: "perspective" as const,
 			rotation: { pitch: -15, roll: 0, yaw: 135 }
 		};
-		let approved: Parameters<MapReviewClientShape["approveCandidate"]>[0] | undefined;
-		let authoringIntent: Parameters<MapReviewClientShape["authorFromSelection"]>[0] | undefined;
-		const client: MapReviewClientShape = {
+		let approved: Parameters<MapReviewClientApi["approveCandidate"]>[0] | undefined;
+		let authoringIntent: Parameters<MapReviewClientApi["authorFromSelection"]>[0] | undefined;
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: (intent) =>
@@ -815,15 +821,13 @@ describe("MapReviewRoute", () => {
 		fireEvent.pointerDown(zScrubber, { button: 0, clientX: 10, pointerId: 7 });
 		fireEvent.pointerMove(zScrubber, { clientX: 35, pointerId: 7 });
 		fireEvent.pointerUp(zScrubber, { clientX: 35, pointerId: 7 });
-		expect((screen.getByRole("spinbutton", { name: "Z" }) as HTMLInputElement).value).toBe(
-			"725"
-		);
+		expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Z" }).value).toBe("725");
 		await user.type(
 			screen.getByRole("textbox", { name: "MANUAL ADJUSTMENT NOTE" }),
 			"Lift above foreground"
 		);
-		const keepView = screen.getByRole("button", { name: "KEEP VIEW" });
-		expect((keepView as HTMLButtonElement).disabled).toBe(false);
+		const keepView = screen.getByRole<HTMLButtonElement>("button", { name: "KEEP VIEW" });
+		expect(keepView.disabled).toBe(false);
 		await user.click(keepView);
 		expect(await screen.findByText("VIEW SAVED")).toBeDefined();
 		expect(authoringIntent).toEqual({ destination: { kind: "append_view" } });
@@ -909,7 +913,7 @@ describe("MapReviewRoute", () => {
 			status: "ready",
 			viewId: "review-subject"
 		};
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveAuthoring: ({ sessionId }) =>
@@ -990,6 +994,7 @@ describe("MapReviewRoute", () => {
 				}
 			],
 			selection: subject,
+			// SAFETY: this test-owned recovery session supplies every field rendered by the route.
 			session: {
 				candidates: [],
 				contract: {
@@ -1032,7 +1037,7 @@ describe("MapReviewRoute", () => {
 			readonly candidateId: string;
 			readonly sessionId: string;
 		}> = [];
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -1062,16 +1067,15 @@ describe("MapReviewRoute", () => {
 		renderRoute(client);
 		await screen.findByText("Recovered Review Subject");
 		expect(
-			(screen.getByRole("textbox", { name: "MANUAL ADJUSTMENT NOTE" }) as HTMLInputElement)
-				.value
+			screen.getByRole<HTMLInputElement>("textbox", { name: "MANUAL ADJUSTMENT NOTE" }).value
 		).toBe("Recovered art direction note");
 		expect(screen.queryByText("Discarded framing")).toBeNull();
 		expect(screen.getByRole("status").textContent).toMatch(
 			/below the requested framing margin/i
 		);
-		expect(
-			(screen.getByRole("button", { name: "KEEP VIEW" }) as HTMLButtonElement).disabled
-		).toBe(true);
+		expect(screen.getByRole<HTMLButtonElement>("button", { name: "KEEP VIEW" }).disabled).toBe(
+			true
+		);
 		await waitFor(() =>
 			expect(regeneratedPreviews).toEqual([
 				{ candidateId: "recovered-candidate", sessionId: "recovered-session" },
@@ -1140,6 +1144,7 @@ describe("MapReviewRoute", () => {
 				}
 			],
 			selection: subject,
+			// SAFETY: this test-owned active session supplies every field used by candidate selection.
 			session: {
 				candidates: [],
 				contract: {
@@ -1181,9 +1186,9 @@ describe("MapReviewRoute", () => {
 			readonly candidateId: string;
 			readonly sessionId: string;
 		}> = [];
-		const patches: Array<Parameters<MapReviewClientShape["authoringPatch"]>[0]["patch"]> = [];
+		const patches: Array<Parameters<MapReviewClientApi["authoringPatch"]>[0]["patch"]> = [];
 		let patchCount = 0;
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
@@ -1271,6 +1276,7 @@ describe("MapReviewRoute", () => {
 				displayName: "Live Review Subject",
 				mapPath: "/Game/Fixture/Cameras/L_CameraLoad"
 			},
+			// SAFETY: the live-preview case only reads these three session fields.
 			session: {
 				discardedCandidateIds: [],
 				id: "live-session",
@@ -1282,7 +1288,7 @@ describe("MapReviewRoute", () => {
 			viewId: "live-view"
 		};
 		let previewCalls = 0;
-		const client: MapReviewClientShape = {
+		const client: MapReviewClientApi = {
 			...offlineScout,
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),

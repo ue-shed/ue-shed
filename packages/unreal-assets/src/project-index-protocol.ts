@@ -39,7 +39,7 @@ export function mapProjectIndexProgress(
 	return ProjectIndexRefreshEvent.cases.Progress.make({
 		completedPackages: event.completedItems,
 		phase: event.phase,
-		...(event.totalItems === undefined ? {} : { totalPackages: event.totalItems })
+		...(event.totalItems === undefined ? undefined : { totalPackages: event.totalItems })
 	});
 }
 
@@ -79,7 +79,7 @@ export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): Proj
 		items,
 		projectId: ProjectIdentity.make(page.projectId),
 		...(page.nextCursor === undefined
-			? {}
+			? undefined
 			: { nextCursor: ProjectIndexCursor.make(page.nextCursor) })
 	};
 }

@@ -299,18 +299,14 @@ function runSetup(command: string, arguments_: string[], jsonOnly: boolean): voi
 	}
 }
 
-function invoke(
-	command: string,
-	arguments_: string[],
-	options: InvokeOptions
-): { elapsedMs: number; stdout: string } {
+function invoke(command: string, arguments_: string[], options: InvokeOptions) {
 	const started = performance.now();
 	const result = spawnSync(command, arguments_, {
 		cwd: repositoryRoot,
 		encoding: "utf8",
 		env: options.environment ?? process.env,
 		maxBuffer: maxOutputBytes,
-		...(options.input === undefined ? {} : { input: options.input }),
+		...(options.input === undefined ? undefined : { input: options.input }),
 		stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
 		windowsHide: true
 	});
@@ -411,6 +407,8 @@ async function measureProtocolSessionScenario(
 			)
 		};
 	};
+	let result: BenchmarkScenario | undefined;
+	let invocationFailure: unknown;
 	try {
 		for (let index = 0; index < options.warmups; index += 1) await invokeSession(index);
 		const samples: number[] = [];
@@ -420,7 +418,7 @@ async function measureProtocolSessionScenario(
 			samples.push(sample.elapsedMs);
 			outputBytes = sample.outputBytes;
 		}
-		return {
+		result = {
 			command: [releaseExecutable, "protocol-session"],
 			distribution: distribution(samples),
 			id: options.id,
@@ -430,17 +428,22 @@ async function measureProtocolSessionScenario(
 			warmups: options.warmups,
 			workload: relative(repositoryRoot, options.assetPath)
 		};
-	} finally {
-		child.stdin.end();
-		const closed = await close;
-		if (processErrorMessage !== undefined) throw new Error(processErrorMessage);
-		if (closed.code !== 0) {
-			throw new Error(
-				stderr.trim() ||
-					`Native protocol session exited ${closed.code ?? closed.signal ?? "unknown"}.`
-			);
-		}
+	} catch (cause) {
+		invocationFailure = cause;
 	}
+	child.stdin.end();
+	const closed = await close;
+	if (processErrorMessage !== undefined) throw new Error(processErrorMessage);
+	if (closed.code !== 0) {
+		throw new Error(
+			stderr.trim() ||
+				`Native protocol session exited ${closed.code ?? closed.signal ?? "unknown"}.`
+		);
+	}
+	if (invocationFailure !== undefined) throw invocationFailure;
+	if (result === undefined)
+		throw new Error("Native protocol session produced no benchmark result.");
+	return result;
 }
 
 function processWorkingSetBytes(pid: number | undefined): number | undefined {
@@ -539,6 +542,7 @@ function measureMemory(options: MemoryHelperOptions): MemoryMeasurement {
 		throw commandFailure(process.execPath, [benchmarkScript, "--memory-helper"], result);
 	}
 	try {
+		// SAFETY: the memory helper in this file emits the MemoryMeasurement JSON contract.
 		return JSON.parse(result.stdout) as MemoryMeasurement;
 	} catch (cause) {
 		throw new Error(`Memory helper returned invalid JSON: ${String(cause)}`);
@@ -592,12 +596,14 @@ function measureScenario(options: ScenarioOptions): BenchmarkScenario {
 		command: [options.command, ...options.arguments],
 		distribution: distribution(samples),
 		id: options.id,
-		...(options.memory === true && collectMemory ? { memory: measureMemory(options) } : {}),
+		...(options.memory === true && collectMemory
+			? { memory: measureMemory(options) }
+			: undefined),
 		notes: options.notes,
 		runs: options.runs,
 		warmups: options.warmups,
 		workload: options.workload,
-		...(observed === undefined ? {} : { observed })
+		...(observed === undefined ? undefined : { observed })
 	};
 }
 
@@ -629,6 +635,7 @@ function observeCommandletLevelParse(output: string): ScenarioObservation {
 
 function parseJsonOutput(label: string, output: string): ParsedBenchmarkOutput {
 	try {
+		// SAFETY: benchmark child processes emit the ParsedBenchmarkOutput contract consumed here.
 		return JSON.parse(output) as ParsedBenchmarkOutput;
 	} catch (cause) {
 		throw new Error(`${label} returned invalid JSON: ${String(cause)}`);
@@ -767,7 +774,7 @@ function capture(command: string, arguments_: string[]): string {
 	return result.stdout.trim();
 }
 
-function fixtureStatistics(directory: string): { bytes: number; packages: number } {
+function fixtureStatistics(directory: string) {
 	let packages = 0;
 	let bytes = 0;
 	const visit = (current: string): void => {
@@ -791,6 +798,7 @@ function fixtureStatistics(directory: string): { bytes: number; packages: number
 function engineVersion(engineRoot: string): EngineVersion | undefined {
 	const versionPath = join(engineRoot, "Engine", "Build", "Build.version");
 	if (!existsSync(versionPath)) return undefined;
+	// SAFETY: Build.version is an Unreal-owned file with these numeric version fields.
 	const version = JSON.parse(readFileSync(versionPath, "utf8")) as {
 		MajorVersion: number;
 		MinorVersion: number;
@@ -1297,6 +1305,7 @@ async function main(): Promise<void> {
 
 	let unreal: BenchmarkResult["unreal"];
 	if (options.unreal) {
+		// SAFETY: the repository fixture contract owns and verifies this engine version object.
 		const fixtureContract = JSON.parse(readFileSync(fixtureContractPath, "utf8")) as {
 			engine: Pick<EngineVersion, "major" | "minor">;
 		};
@@ -1383,7 +1392,7 @@ async function main(): Promise<void> {
 		git: gitContext(),
 		machine: machineContext(),
 		scenarios,
-		...(unreal === undefined ? {} : { unreal })
+		...(unreal === undefined ? undefined : { unreal })
 	};
 
 	if (options.output !== undefined) writeResult(options.output, result);
@@ -1399,6 +1408,7 @@ async function main(): Promise<void> {
 
 if (process.argv[2] === "--memory-helper") {
 	try {
+		// SAFETY: the parent process serializes MemoryHelperOptions into this private helper argument.
 		const payload = JSON.parse(
 			Buffer.from(process.argv[3] ?? "", "base64url").toString("utf8")
 		) as MemoryHelperOptions;

@@ -26,19 +26,20 @@ import {
 	type MapHistoryDiagnostic,
 	type MapHistoryProgress,
 	type MapHistorySnapshot,
-	type PerforceChangeNumber,
-	type PerforceDepotPath,
+	PerforceChangeNumber,
+	PerforceDepotPath,
 	type PerforceFastMapHistory,
 	type PerforceFastMapHistoryQuery,
 	type PerforceMapHistory,
 	type PerforceMapHistoryQuery,
 	type PerforceMapRevision,
 	type PerforcePackageRevision,
-	type SavedPackageChangeEvidence
+	type SavedPackageChangeEvidence,
+	ProjectRelativeMapPath
 } from "./schema.js";
 import { selectSubmittedChanges } from "./submitted-change-selection.js";
 
-export interface MapHistoryShape {
+export interface MapHistoryApi {
 	readonly progress: () => Effect.Effect<MapHistoryProgress>;
 	readonly readPerforceMapHistory: (
 		query: PerforceMapHistoryQuery
@@ -48,8 +49,11 @@ export interface MapHistoryShape {
 	) => Effect.Effect<PerforceFastMapHistory, MapHistoryError>;
 }
 
+/** @deprecated Use `MapHistoryApi`. */
+export type MapHistoryShape = MapHistoryApi;
+
 /** The Perforce-first Map History workflow. It owns no credentials or source-control policy. */
-export class MapHistory extends Context.Service<MapHistory, MapHistoryShape>()(
+export class MapHistory extends Context.Service<MapHistory, MapHistoryApi>()(
 	"@ue-shed/map-history/MapHistory"
 ) {}
 
@@ -106,7 +110,7 @@ function packageChangeEvidence(
 		action: change.action,
 		afterRevision: change.afterRevision,
 		beforeRevision: change.beforeRevision,
-		depotPath: change.depotPath as PerforceDepotPath,
+		depotPath: PerforceDepotPath.make(change.depotPath),
 		packageName: change.packageName
 	}));
 }
@@ -122,7 +126,7 @@ function packageRevisionEvidence(
 		if (file.revision === null || file.revision <= 0) return Effect.fail(evidenceError(file));
 		evidence.push({
 			action: file.action,
-			depotPath: file.depotPath as PerforceDepotPath,
+			depotPath: PerforceDepotPath.make(file.depotPath),
 			revision: file.revision
 		});
 	}
@@ -232,7 +236,7 @@ function snapshotOf(world: SavedWorld, scope: ResolvedPerforceMapScope): MapHist
 		completeness: world.completeness,
 		diagnostics: world.diagnostics,
 		mapPackage: world.authority.mapPackage,
-		mapPath: scope.mapProjectRelativePath as MapHistorySnapshot["mapPath"],
+		mapPath: ProjectRelativeMapPath.make(scope.mapProjectRelativePath),
 		sourceKind: world.sourceKind,
 		summary: world.summary
 	};
@@ -363,10 +367,10 @@ function reconstructScopedMapHistory(options: {
 			const revisionDiagnostics = [...current.diagnostics, ...snapshotDiff.diagnostics];
 			revisions.push({
 				...(selected.description === undefined
-					? {}
+					? undefined
 					: { description: selected.description }),
-				...(selected.user === undefined ? {} : { user: selected.user }),
-				change: selected.change as PerforceChangeNumber,
+				...(selected.user === undefined ? undefined : { user: selected.user }),
+				change: PerforceChangeNumber.make(selected.change),
 				changes: snapshotDiff.changes,
 				completeness: current.completeness,
 				diagnostics: revisionDiagnostics,
@@ -387,18 +391,18 @@ function reconstructScopedMapHistory(options: {
 				selection.baseline === undefined
 					? { status: "map_not_yet_created" as const }
 					: {
-							change: selection.baseline.change as PerforceChangeNumber,
+							change: PerforceChangeNumber.make(selection.baseline.change),
 							status: "available" as const
 						},
 			completeness,
 			diagnostics: deduplicateDiagnostics(diagnostics),
 			...(scope.externalActorDepotRoot === undefined
-				? {}
-				: { externalActorDepotRoot: scope.externalActorDepotRoot as PerforceDepotPath }),
-			mapDepotPath: (lineage.locations.at(-1) ?? scope).mapDepotPath as PerforceDepotPath,
-			...(rangeStartSnapshot === undefined ? {} : { rangeStartSnapshot }),
+				? undefined
+				: { externalActorDepotRoot: PerforceDepotPath.make(scope.externalActorDepotRoot) }),
+			mapDepotPath: PerforceDepotPath.make((lineage.locations.at(-1) ?? scope).mapDepotPath),
+			...(rangeStartSnapshot === undefined ? undefined : { rangeStartSnapshot }),
 			...(previous === undefined || previousScope === undefined
-				? {}
+				? undefined
 				: { rangeEndSnapshot: snapshotOf(previous, previousScope) }),
 			revisions
 		};
@@ -521,7 +525,7 @@ export const mapHistoryLiveLayer = Layer.provide(
 	Layer.merge(AssetReaderLive, perforceHistorySourceLayer())
 );
 
-export function makeMapHistoryTestLayer(service: MapHistoryShape): Layer.Layer<MapHistory> {
+export function makeMapHistoryTestLayer(service: MapHistoryApi): Layer.Layer<MapHistory> {
 	return Layer.succeed(MapHistory, MapHistory.of(service));
 }
 

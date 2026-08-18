@@ -82,13 +82,22 @@ interface OwnershipRecord {
 const ownershipFile = ".ue-shed-plugin-install.json";
 const sha256Pattern = /^[a-f0-9]{64}$/u;
 const generatedPluginDirectories = new Set(["binaries", "intermediate"]);
+const JsonObject = Schema.Record(Schema.String, Schema.Json);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const OwnershipRecordDocument = Schema.Struct({
+	artifactSha256: Schema.String,
+	files: Schema.Record(Schema.String, Schema.String),
+	plugins: Schema.Array(Schema.String),
+	releaseVersion: Schema.String,
+	schemaVersion: Schema.Literal(1)
+});
+
+function isRecord(value: Schema.Json): value is Schema.JsonObject {
+	return Schema.is(JsonObject)(value);
+}
 
 function fail(message: string): never {
 	throw new Error(message);
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isGeneratedPluginPath(
@@ -104,7 +113,7 @@ function isGeneratedPluginPath(
 	);
 }
 
-function parseManifest(value: unknown): PluginReleaseManifest {
+function parseManifest(value: Schema.Json): PluginReleaseManifest {
 	try {
 		return Effect.runSync(validatePluginBundleManifest(value));
 	} catch (cause) {
@@ -117,9 +126,9 @@ function parseManifest(value: unknown): PluginReleaseManifest {
 
 async function readManifest(path: string): Promise<PluginReleaseManifest> {
 	const resolved = resolve(path);
-	let parsed: unknown;
+	let parsed: Schema.Json;
 	try {
-		parsed = JSON.parse(await readFile(resolved, "utf8")) as unknown;
+		parsed = decodeJson(JSON.parse(await readFile(resolved, "utf8")));
 	} catch (cause) {
 		fail(`Could not read plugin manifest ${resolved}: ${String(cause)}`);
 	}
@@ -211,41 +220,28 @@ async function ensureDirectory(path: string): Promise<void> {
 	await mkdir(path, { recursive: true });
 }
 
-async function readJsonRecord(path: string): Promise<Readonly<Record<string, unknown>>> {
+async function readJsonRecord(path: string): Promise<Schema.JsonObject> {
 	try {
-		const value: unknown = JSON.parse(await readFile(path, "utf8"));
-		if (!isRecord(value)) fail(`Expected JSON object in ${path}.`);
-		return value;
+		return Schema.decodeUnknownSync(JsonObject)(JSON.parse(await readFile(path, "utf8")));
 	} catch (cause) {
 		fail(`Could not read JSON file ${path}: ${String(cause)}`);
 	}
 }
 
-function parseOwnership(value: Readonly<Record<string, unknown>>, path: string): OwnershipRecord {
-	if (value.schemaVersion !== 1) fail(`Unsupported plugin ownership record in ${path}.`);
-	const artifactSha256 = value.artifactSha256;
-	const releaseVersion = value.releaseVersion;
-	const plugins = value.plugins;
-	const files = value.files;
+function parseOwnership(value: Schema.JsonObject, path: string): OwnershipRecord {
+	let ownership: Schema.Schema.Type<typeof OwnershipRecordDocument>;
+	try {
+		ownership = Schema.decodeUnknownSync(OwnershipRecordDocument)(value);
+	} catch {
+		return fail(`Malformed plugin ownership record in ${path}.`);
+	}
 	if (
-		typeof artifactSha256 !== "string" ||
-		!sha256Pattern.test(artifactSha256) ||
-		typeof releaseVersion !== "string" ||
-		!Array.isArray(plugins) ||
-		plugins.some((plugin) => typeof plugin !== "string") ||
-		!isRecord(files) ||
-		Object.values(files).some(
-			(digest) => typeof digest !== "string" || !sha256Pattern.test(digest)
-		)
-	)
-		fail(`Malformed plugin ownership record in ${path}.`);
-	return {
-		artifactSha256,
-		files: files as Readonly<Record<string, string>>,
-		plugins: plugins as readonly string[],
-		releaseVersion,
-		schemaVersion: 1
-	};
+		!sha256Pattern.test(ownership.artifactSha256) ||
+		Object.values(ownership.files).some((digest) => !sha256Pattern.test(digest))
+	) {
+		return fail(`Malformed plugin ownership record in ${path}.`);
+	}
+	return ownership;
 }
 
 async function assertOwnedFilesUnmodified(
@@ -317,9 +313,9 @@ async function updateProjectFile(
 	previouslyOwnedPluginNames: readonly string[]
 ): Promise<{ readonly original: string; readonly updated: string }> {
 	const original = await readFile(projectFile, "utf8");
-	let parsed: unknown;
+	let parsed: Schema.Json;
 	try {
-		parsed = JSON.parse(original) as unknown;
+		parsed = decodeJson(JSON.parse(original));
 	} catch (cause) {
 		fail(`Project file is not valid JSON: ${projectFile} (${String(cause)})`);
 	}
@@ -339,7 +335,7 @@ async function updateProjectFile(
 			: []
 	).filter(
 		(item) =>
-			typeof item.Name !== "string" ||
+			!Schema.is(Schema.String)(item.Name) ||
 			!previouslyOwnedPlugins.has(item.Name) ||
 			requestedPlugins.has(item.Name)
 	);

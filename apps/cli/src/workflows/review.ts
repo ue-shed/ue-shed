@@ -47,7 +47,8 @@ export const runReviewSetValidate = Effect.fn("Cli.workflow.review_set_validate"
 
 function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError> {
 	return Effect.tryPromise({
-		try: async () => JSON.parse(await readFile(path, "utf8")) as unknown,
+		try: async () =>
+			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
 		catch: (cause) =>
 			new CliCommandError({
 				message: `Could not read JSON document ${path}: ${String(cause)}`
@@ -117,7 +118,9 @@ export const runReviewPolicies = Effect.fn("Cli.workflow.review_policies")(
 						path: command.reviewSetPath,
 						policy,
 						viewId: ReviewViewId.make(command.viewId),
-						...(overrides === undefined ? {} : { visibilityOverrides: overrides })
+						...(overrides === undefined
+							? undefined
+							: { visibilityOverrides: overrides })
 					});
 					return yield* printJson({
 						policyId: policy.id,
@@ -424,7 +427,7 @@ export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
 									cause: {
 										type: "external_automation",
 										...(command.correlationId === undefined
-											? {}
+											? undefined
 											: { correlationId: command.correlationId })
 									},
 									id: CaptureInvocationId.make(yield* ids.generate()),
@@ -432,7 +435,7 @@ export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
 								});
 					const run = yield* capture.captureSet({
 						...command,
-						...(invocation === undefined ? {} : { invocation })
+						...(invocation === undefined ? undefined : { invocation })
 					});
 					yield* printJson(run);
 					if (run.status !== "completed") yield* runtime.setExitCode(1);

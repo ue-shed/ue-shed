@@ -56,7 +56,7 @@ export class WorkbenchProjectUnavailable extends Schema.TaggedErrorClass<Workben
 	}
 ) {}
 
-export interface WorkbenchProjectShape {
+export interface WorkbenchProjectApi {
 	/** Fold only one domain's bounded Project Index pages into explicit package candidates. */
 	readonly candidates: (
 		kind: WorkbenchProjectCandidateKind
@@ -81,7 +81,7 @@ export interface WorkbenchProjectShape {
 	readonly savedTables: () => Effect.Effect<SavedTableCatalogValue, WorkbenchProjectUnavailable>;
 }
 
-export class WorkbenchProject extends Context.Service<WorkbenchProject, WorkbenchProjectShape>()(
+export class WorkbenchProject extends Context.Service<WorkbenchProject, WorkbenchProjectApi>()(
 	"@ue-shed/workbench/WorkbenchProject"
 ) {}
 
@@ -180,7 +180,7 @@ export const WorkbenchProjectLive = Layer.effect(
 						expectedGeneration: summary.generation,
 						limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 						projectId: summary.projectId,
-						...(cursor === undefined ? {} : { cursor })
+						...(cursor === undefined ? undefined : { cursor })
 					})
 				);
 				const paths = maps
@@ -204,10 +204,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			summary: ProjectIndexSummary,
 			kind: WorkbenchProjectCandidateKind
 		) {
-			const byKind: Record<
-				WorkbenchProjectCandidateKind,
-				readonly ((cursor: ProjectIndexCursor | undefined) => ProjectIndexQuery)[]
-			> = {
+			const byKind = {
 				enhanced_input: [
 					(cursor) =>
 						ProjectIndexQuery.cases.ClassPrefixes.make({
@@ -215,7 +212,7 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [ENHANCED_INPUT_CLASS_PREFIX],
-							...(cursor === undefined ? {} : { cursor })
+							...(cursor === undefined ? undefined : { cursor })
 						}),
 					(cursor) =>
 						ProjectIndexQuery.cases.ClassNameSuffixes.make({
@@ -223,7 +220,7 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES],
-							...(cursor === undefined ? {} : { cursor })
+							...(cursor === undefined ? undefined : { cursor })
 						})
 				],
 				game_text: [
@@ -233,7 +230,7 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [STRING_TABLE_CLASS],
-							...(cursor === undefined ? {} : { cursor })
+							...(cursor === undefined ? undefined : { cursor })
 						}),
 					(cursor) =>
 						ProjectIndexQuery.cases.SerializedNames.make({
@@ -241,7 +238,7 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [TEXT_PROPERTY_NAME],
-							...(cursor === undefined ? {} : { cursor })
+							...(cursor === undefined ? undefined : { cursor })
 						})
 				],
 				saved_tables: [
@@ -251,7 +248,7 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [...SAVED_TABLE_SCAN_CLASSES],
-							...(cursor === undefined ? {} : { cursor })
+							...(cursor === undefined ? undefined : { cursor })
 						})
 				],
 				texture: [
@@ -261,10 +258,13 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [TEXTURE_CLASS],
-							...(cursor === undefined ? {} : { cursor })
+							...(cursor === undefined ? undefined : { cursor })
 						})
 				]
-			};
+			} satisfies Record<
+				WorkbenchProjectCandidateKind,
+				readonly ((cursor: ProjectIndexCursor | undefined) => ProjectIndexQuery)[]
+			>;
 			const factories: readonly ((
 				cursor: ProjectIndexCursor | undefined
 			) => ProjectIndexQuery)[] = byKind[kind];
@@ -561,7 +561,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			return yield* Ref.get(projectIndexProgress);
 		});
 
-		const choose: WorkbenchProjectShape["choose"] = () =>
+		const choose: WorkbenchProjectApi["choose"] = () =>
 			Effect.gen(function* () {
 				const choice = yield* dialog.chooseDirectory({
 					title: "Choose an Unreal project for Workbench"
@@ -750,14 +750,14 @@ export const WorkbenchProjectLive = Layer.effect(
 	})
 );
 
-export type WorkbenchProjectTestShape = Omit<
-	WorkbenchProjectShape,
+export type WorkbenchProjectTestApi = Omit<
+	WorkbenchProjectApi,
 	"candidates" | "progress" | "selectedProject"
 > &
-	Partial<Pick<WorkbenchProjectShape, "candidates" | "progress" | "selectedProject">>;
+	Partial<Pick<WorkbenchProjectApi, "candidates" | "progress" | "selectedProject">>;
 
 export function makeWorkbenchProjectTestLayer(
-	service: WorkbenchProjectTestShape
+	service: WorkbenchProjectTestApi
 ): Layer.Layer<WorkbenchProject> {
 	return Layer.succeed(
 		WorkbenchProject,

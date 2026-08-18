@@ -10,7 +10,7 @@ import {
 	ConfigFileAccess,
 	ConfigFileAccessError,
 	ConfigFileAccessLive,
-	type ConfigFileAccessShape
+	type ConfigFileAccessApi
 } from "./file-access.js";
 import { ConfigExplorer, ConfigExplorerLive, ConfigExplorerNodeLive } from "./service.js";
 import {
@@ -39,9 +39,9 @@ const unavailableEngine = makeEngineInstallationDiscoveryTestLayer(() =>
 
 function fileAccessWith(
 	readText: (
-		base: ConfigFileAccessShape,
+		base: ConfigFileAccessApi,
 		path: string
-	) => ReturnType<ConfigFileAccessShape["readText"]>
+	) => ReturnType<ConfigFileAccessApi["readText"]>
 ) {
 	return Layer.effect(
 		ConfigFileAccess,

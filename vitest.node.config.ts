@@ -4,7 +4,7 @@ export default defineProject({
 	test: {
 		environment: "node",
 		exclude: [...configDefaults.exclude, "**/*.component.test.tsx", "apps/workbench/e2e/**"],
-		include: ["{apps,extensions,fixtures,packages}/**/*.{test,spec}.{ts,tsx}"],
+		include: ["{apps,extensions,fixtures,packages,tools}/**/*.{test,spec}.{ts,tsx}"],
 		name: "node"
 	}
 });

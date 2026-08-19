@@ -4,7 +4,8 @@
 
 ### Patch Changes
 
-- @ue-shed/unreal-connection@0.3.0
+- Updated dependencies [bf27d37]
+    - @ue-shed/unreal-connection@0.3.0
     - @ue-shed/observability@0.3.0
 
 ## 0.2.0

@@ -2,6 +2,12 @@
 
 ## 0.3.0
 
+### Minor Changes
+
+- bf27d37: Ship the Windows x64 `uasset` executable with saved-world version 2 output, including
+  finite effective transforms, direct root-component attachment evidence, and explicit
+  transform-resolution failures.
+
 ## 0.2.0
 
 ### Patch Changes

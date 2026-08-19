@@ -430,12 +430,12 @@ export async function checkDomainServices(root: string = repositoryRoot) {
 			"packages/cameras/src/review-capture.ts: view capture must use Effect.forEach concurrency"
 		);
 	}
-	if (!capture.includes("discardStaging")) {
+	if (!capture.includes("attempt.discard")) {
 		failures.push(
-			"packages/cameras/src/review-capture.ts: capture must discard staging on non-promotion exits"
+			"packages/cameras/src/review-capture.ts: capture must release its prepared attempt"
 		);
 	}
-	const finalizeRun = capture.indexOf(".finalizeRun(");
+	const finalizeRun = capture.indexOf("attempt.finalize(");
 	if (
 		finalizeRun === -1 ||
 		!capture.slice(finalizeRun, finalizeRun + 400).includes("Effect.uninterruptible")

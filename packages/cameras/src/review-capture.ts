@@ -1,16 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
 	makeRemoteControlClient,
 	RemoteControlClient,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
-import { Clock, Context, Effect, Layer, Ref, Schema } from "effect";
+import { Clock, Context, Effect, Layer, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
 import {
 	ReviewRepository,
-	captureRunsRoot,
-	isPathWithin,
+	projectLocalReviewCaptureDestination,
+	ReviewArtifactSourceRejected,
+	type ReviewCaptureAttempt,
+	type ReviewCaptureDestination,
 	type ReviewRepositoryApi,
 	type ReviewStorageError
 } from "./review-repository.js";
@@ -95,6 +97,11 @@ export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<Review
 
 export interface CaptureReviewSetOptions {
 	readonly concurrency?: ReviewCaptureConcurrency;
+	/**
+	 * Final Capture Run storage. Omit this to publish beneath
+	 * `<project>/.ue-shed/review/runs` through the project-local adapter.
+	 */
+	readonly destination?: ReviewCaptureDestination;
 	readonly endpoint: string;
 	/**
 	 * A validated request from a person or an external caller. Scheduling remains outside Map Review.
@@ -215,12 +222,12 @@ function durableClearCompanion(
 }
 
 function captureOneView(args: {
+	readonly attempt: ReviewCaptureAttempt;
 	readonly capturePort: ReviewCapturePortApi;
 	readonly ids: ReviewIdGeneratorApi;
-	readonly repository: ReviewRepositoryApi;
+	readonly projectRoot: string;
 	readonly reviewSet: ReviewSet;
 	readonly runId: typeof CaptureRunId.Type;
-	readonly stagingRoot: string;
 	readonly unrealStagingRoot: string;
 	readonly view: ReviewSet["views"][number];
 }): Effect.Effect<ViewResult, ReviewStorageError> {
@@ -312,28 +319,14 @@ function captureOneView(args: {
 			};
 		}
 		const responseArtifacts = stagedArtifacts(response);
-		if (
-			responseArtifacts.some(
-				(artifact) => !isPathWithin(args.unrealStagingRoot, artifact.stagingPath)
-			)
-		) {
-			return {
-				code: "capture_staging_path_rejected",
-				message: "Unreal returned a capture path outside the project review staging root.",
-				recovery: "Verify the connected project and editor capability version.",
-				retrySafe: false,
-				status: "failed" as const,
-				viewId: args.view.id,
-				viewRevision: args.view.revision
-			};
-		}
-
 		const artifacts = yield* Effect.forEach(responseArtifacts, (artifact) => {
 			const relativePath = `views/${args.view.id}/${artifact.variant}.png`;
-			return args.repository
+			return args.attempt
 				.storeArtifact({
-					destinationPath: join(args.stagingRoot, ...relativePath.split("/")),
-					sourcePath: artifact.stagingPath
+					relativePath,
+					sourceAuthorizationRoot: args.projectRoot,
+					sourcePath: artifact.stagingPath,
+					sourceRoot: args.unrealStagingRoot
 				})
 				.pipe(
 					Effect.map((stored) => ({
@@ -347,7 +340,22 @@ function captureOneView(args: {
 						width: response.width
 					}))
 				);
-		});
+		}).pipe(
+			Effect.catchTag("ReviewArtifactSourceRejected", (cause: ReviewArtifactSourceRejected) =>
+				Effect.succeed(cause)
+			)
+		);
+		if (artifacts instanceof ReviewArtifactSourceRejected) {
+			return {
+				code: "capture_staging_path_rejected",
+				message: artifacts.message,
+				recovery: "Verify the connected project and editor capability version.",
+				retrySafe: false,
+				status: "failed" as const,
+				viewId: args.view.id,
+				viewRevision: args.view.revision
+			};
+		}
 		const result = {
 			artifacts,
 			captureDurationMs: response.captureDurationMs,
@@ -373,8 +381,8 @@ function captureOneView(args: {
 			visibilityPolicy,
 			visibility: durableVisibility(response)
 		};
-		yield* args.repository.writeRunDocument({
-			path: join(args.stagingRoot, "views", args.view.id, "result.json"),
+		yield* args.attempt.writeDocument({
+			relativePath: `views/${args.view.id}/result.json`,
 			value: result
 		});
 		return result;
@@ -425,86 +433,72 @@ function captureReviewSetWith(args: {
 				})
 			);
 		}
-		const startedAt = isoNow(yield* Clock.currentTimeMillis);
-		const root = captureRunsRoot(args.options.projectRoot);
-		const stagingRoot = join(root, `.staging-${runId}`);
-		const finalRoot = join(root, runId);
-		const unrealStagingRoot = resolve(
-			args.options.projectRoot,
-			"Saved",
-			"UEShed",
-			"ReviewStaging"
-		);
-		const promoted = yield* Ref.make(false);
-
-		yield* args.repository.prepareRun({ root, stagingRoot });
-
-		return yield* Effect.gen(function* () {
-			const results = yield* Effect.forEach(
-				views,
-				(view) =>
-					captureOneView({
-						capturePort: args.capturePort,
-						ids: args.ids,
-						repository: args.repository,
-						reviewSet,
-						runId,
-						stagingRoot,
-						unrealStagingRoot,
-						view
-					}),
-				{ concurrency }
-			);
-
-			const hardFailures = results.filter((result) => result.status === "failed").length;
-			const clearFailures = results.filter(
-				(result) =>
-					result.status === "captured" && result.clearCompanion.status === "failed"
-			).length;
-			const run = yield* decodeCaptureRun({
-				completedAt: isoNow(yield* Clock.currentTimeMillis),
-				contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
-				id: runId,
-				invocation,
-				project: reviewSet.project,
-				results,
-				reviewSetId: reviewSet.id,
-				startedAt,
-				status:
-					hardFailures === results.length
-						? "failed"
-						: hardFailures > 0 || clearFailures > 0
-							? "completed_with_failures"
-							: "completed"
-			}).pipe(
-				Effect.mapError(
-					(cause) =>
-						new ReviewCaptureRunError({
-							message: String(cause),
-							operation: "finalize",
-							recovery: "Inspect the generated Capture Run values and retry.",
-							runId
-						})
-				)
-			);
-
-			return yield* args.repository
-				.finalizeRun({ finalRoot, run, stagingRoot })
-				.pipe(
-					Effect.andThen(Ref.set(promoted, true)),
-					Effect.as(run),
-					Effect.uninterruptible
-				);
-		}).pipe(
-			Effect.onExit((exit) =>
+		const destination =
+			args.options.destination ??
+			projectLocalReviewCaptureDestination(args.options.projectRoot);
+		const projectRoot = resolve(args.options.projectRoot);
+		const unrealStagingRoot = resolve(projectRoot, "Saved", "UEShed", "ReviewStaging");
+		return yield* Effect.acquireUseRelease(
+			destination.prepare(runId),
+			(attempt) =>
 				Effect.gen(function* () {
-					if (yield* Ref.get(promoted)) return;
-					yield* args.repository
-						.discardStaging(stagingRoot)
-						.pipe(Effect.uninterruptible, Effect.ignore);
-					void exit;
-				})
-			)
+					const startedAt = isoNow(yield* Clock.currentTimeMillis);
+					const results = yield* Effect.forEach(
+						views,
+						(view) =>
+							captureOneView({
+								attempt,
+								capturePort: args.capturePort,
+								ids: args.ids,
+								projectRoot,
+								reviewSet,
+								runId,
+								unrealStagingRoot,
+								view
+							}),
+						{ concurrency }
+					);
+
+					const hardFailures = results.filter(
+						(result) => result.status === "failed"
+					).length;
+					const clearFailures = results.filter(
+						(result) =>
+							result.status === "captured" &&
+							result.clearCompanion.status === "failed"
+					).length;
+					const run = yield* decodeCaptureRun({
+						completedAt: isoNow(yield* Clock.currentTimeMillis),
+						contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
+						id: runId,
+						invocation,
+						project: reviewSet.project,
+						results,
+						reviewSetId: reviewSet.id,
+						startedAt,
+						status:
+							hardFailures === results.length
+								? "failed"
+								: hardFailures > 0 || clearFailures > 0
+									? "completed_with_failures"
+									: "completed"
+					}).pipe(
+						Effect.mapError(
+							(cause) =>
+								new ReviewCaptureRunError({
+									message: String(cause),
+									operation: "finalize",
+									recovery: "Inspect the generated Capture Run values and retry.",
+									runId
+								})
+						)
+					);
+
+					return yield* attempt
+						.finalize(run)
+						.pipe(Effect.as(run), Effect.uninterruptible);
+				}),
+			(attempt) => attempt.discard().pipe(Effect.ignore)
 		);
 	}).pipe(
 		Effect.withSpan("camera.review.run.capture", {

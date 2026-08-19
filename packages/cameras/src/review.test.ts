@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { Deferred, Effect, Fiber, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	ReviewCapture,
@@ -14,19 +14,22 @@ import {
 import {
 	captureRunPath,
 	captureRunsRoot,
+	callerOwnedReviewCaptureDestination,
 	isPathWithin,
 	listCaptureRuns,
 	loadCaptureRun,
 	loadReviewSet,
-	ReviewRepository,
+	projectLocalReviewCaptureDestination,
 	ReviewRepositoryLive,
-	saveReviewSet
+	saveReviewSet,
+	type ReviewCaptureDestination
 } from "./review-repository.js";
 import { applyCandidateOverrides, generateFramingCandidates } from "./review-framing.js";
 import {
 	CaptureProfileId,
 	CaptureInvocation,
 	CaptureInvocationId,
+	CaptureRunId,
 	ReviewSetId,
 	ReviewViewId,
 	VisibilityClassificationThresholds,
@@ -94,6 +97,7 @@ function fixtureReviewSet(): ReviewSet {
 
 function runCapture(
 	options: {
+		readonly destination?: ReviewCaptureDestination;
 		readonly invocation?: CaptureInvocation;
 		readonly projectRoot: string;
 		readonly reviewSetPath: string;
@@ -108,6 +112,9 @@ function runCapture(
 				endpoint: "http://127.0.0.1:30001",
 				projectRoot: options.projectRoot,
 				reviewSetPath: options.reviewSetPath,
+				...(options.destination === undefined
+					? undefined
+					: { destination: options.destination }),
 				...(options.invocation === undefined
 					? undefined
 					: { invocation: options.invocation }),
@@ -120,6 +127,70 @@ function runCapture(
 			Effect.provide(ReviewRepositoryLive)
 		)
 	);
+}
+
+function successfulCapturePort(args: {
+	readonly beforeCapture?: () => Effect.Effect<void>;
+	readonly png: Uint8Array;
+	readonly projectRoot: string;
+}): ReviewCapturePortApi {
+	return {
+		capture: (request) =>
+			Effect.gen(function* () {
+				if (args.beforeCapture !== undefined) yield* args.beforeCapture();
+				const stagingPath = join(
+					args.projectRoot,
+					"Saved",
+					"UEShed",
+					"ReviewStaging",
+					request.operationId,
+					request.viewId,
+					"pure.png"
+				);
+				yield* Effect.promise(async () => {
+					await mkdir(dirname(stagingPath), { recursive: true });
+					await writeFile(stagingPath, args.png);
+				});
+				return {
+					captureDurationMs: 1,
+					clearCompanion: { status: "not_requested" as const },
+					contract: request.contract,
+					effectiveWorldPose:
+						request.viewpoint.kind === "world_fixed"
+							? request.viewpoint.approvedPose
+							: request.viewpoint.relativePose,
+					height: request.resolution.height,
+					mapPackageDirtyAfter: false,
+					mapPackageDirtyBefore: false,
+					mapPath: request.expectedMapPath,
+					operationId: request.operationId,
+					resolvedSubject:
+						request.subject.kind === "actor_path"
+							? {
+									...request.subject,
+									transform: {
+										location: { x: 0, y: 0, z: 0 },
+										rotation: { pitch: 0, roll: 0, yaw: 0 }
+									}
+								}
+							: request.subject,
+					stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
+					status: "captured" as const,
+					subjectProjection: {
+						margins: { bottom: 0.1, left: 0.1, right: 0.1, top: 0.1 },
+						normalizedBounds: { maxX: 0.9, maxY: 0.9, minX: 0.1, minY: 0.1 },
+						status: "projected" as const,
+						viewportStatus: "fully_within_viewport" as const
+					},
+					viewId: request.viewId,
+					visibility: {
+						reason: "Fixture capture is not assessed.",
+						status: "not_assessed" as const
+					},
+					width: request.resolution.width
+				};
+			})
+	};
 }
 
 describe("Map Review contracts", () => {
@@ -796,6 +867,195 @@ describe("durable capture loop", () => {
 		]);
 	});
 
+	it("publishes beneath an existing caller-owned root without writing a project-local run", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-caller-project-"));
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-caller-runs-"));
+		temporaryDirectories.push(projectRoot, destinationRoot);
+		const reviewSetPath = join(projectRoot, "set.json");
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		const destination = callerOwnedReviewCaptureDestination(destinationRoot);
+		const ids = ["run-caller", "invocation-caller", "operation-caller"];
+		const png = new Uint8Array([137, 80, 78, 71, 7]);
+
+		const run = await runCapture(
+			{ destination, projectRoot, reviewSetPath },
+			successfulCapturePort({ png, projectRoot }),
+			() => ids.shift()!
+		);
+
+		expect(run.status).toBe("completed");
+		await expect(access(destination.runDocumentPath(run.id))).resolves.toBeUndefined();
+		await expect(access(captureRunPath(projectRoot, run.id))).rejects.toThrow();
+		expect(
+			new Uint8Array(
+				await readFile(
+					join(destinationRoot, run.id, "views", "structure-context", "pure.png")
+				)
+			)
+		).toEqual(png);
+	});
+
+	it("rejects an incompatible caller-owned root before invoking Unreal", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-invalid-root-"));
+		temporaryDirectories.push(projectRoot);
+		const reviewSetPath = join(projectRoot, "set.json");
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		let captureCalls = 0;
+		const ids = ["run-invalid-root", "invocation-invalid-root", "operation-invalid-root"];
+
+		await expect(
+			runCapture(
+				{
+					destination: callerOwnedReviewCaptureDestination("relative-capture-runs"),
+					projectRoot,
+					reviewSetPath
+				},
+				successfulCapturePort({
+					beforeCapture: () => Effect.sync(() => void (captureCalls += 1)),
+					png: new Uint8Array([1]),
+					projectRoot
+				}),
+				() => ids.shift()!
+			)
+		).rejects.toMatchObject({ operation: "prepare_run" });
+		expect(captureCalls).toBe(0);
+	});
+
+	it("rejects deterministic replay before a second Unreal capture", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-replay-project-"));
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-replay-runs-"));
+		temporaryDirectories.push(projectRoot, destinationRoot);
+		const reviewSetPath = join(projectRoot, "set.json");
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		let captureCalls = 0;
+		const port = successfulCapturePort({
+			beforeCapture: () => Effect.sync(() => void (captureCalls += 1)),
+			png: new Uint8Array([2]),
+			projectRoot
+		});
+		const destination = callerOwnedReviewCaptureDestination(destinationRoot);
+		const firstIds = ["run-replay", "invocation-replay-1", "operation-replay-1"];
+		await runCapture(
+			{ destination, projectRoot, reviewSetPath },
+			port,
+			() => firstIds.shift()!
+		);
+		const replayIds = ["run-replay", "invocation-replay-2", "operation-replay-2"];
+
+		await expect(
+			runCapture({ destination, projectRoot, reviewSetPath }, port, () => replayIds.shift()!)
+		).rejects.toMatchObject({ operation: "prepare_run" });
+		expect(captureCalls).toBe(1);
+		await expect(access(join(destinationRoot, ".staging-run-replay"))).rejects.toThrow();
+	});
+
+	it("keeps traversal and junction escapes outside a prepared attempt", async () => {
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-contained-"));
+		const outsideRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-outside-"));
+		temporaryDirectories.push(destinationRoot, outsideRoot);
+		const destination = callerOwnedReviewCaptureDestination(destinationRoot);
+		const traversalAttempt = await Effect.runPromise(
+			destination.prepare(CaptureRunId.make("run-traversal"))
+		);
+		await expect(
+			Effect.runPromise(
+				traversalAttempt.writeDocument({ relativePath: "../escape.json", value: {} })
+			)
+		).rejects.toMatchObject({ operation: "write_run" });
+		await Effect.runPromise(traversalAttempt.discard());
+
+		const reparseAttempt = await Effect.runPromise(
+			destination.prepare(CaptureRunId.make("run-reparse"))
+		);
+		const stagingRoot = join(destinationRoot, ".staging-run-reparse");
+		await symlink(outsideRoot, join(stagingRoot, "views"), "junction");
+		await expect(
+			Effect.runPromise(
+				reparseAttempt.writeDocument({ relativePath: "views/result.json", value: {} })
+			)
+		).rejects.toMatchObject({ operation: "write_run" });
+		await expect(access(join(outsideRoot, "result.json"))).rejects.toThrow();
+		await Effect.runPromise(reparseAttempt.discard());
+
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-source-project-"));
+		temporaryDirectories.push(projectRoot);
+		const stagingParent = join(projectRoot, "Saved", "UEShed");
+		await mkdir(stagingParent, { recursive: true });
+		await writeFile(join(outsideRoot, "pure.png"), new Uint8Array([4]));
+		const linkedStagingRoot = join(stagingParent, "ReviewStaging");
+		await symlink(outsideRoot, linkedStagingRoot, "junction");
+		const sourceAttempt = await Effect.runPromise(
+			destination.prepare(CaptureRunId.make("run-source-reparse"))
+		);
+		await expect(
+			Effect.runPromise(
+				sourceAttempt.storeArtifact({
+					relativePath: "views/view/pure.png",
+					sourceAuthorizationRoot: projectRoot,
+					sourcePath: join(linkedStagingRoot, "pure.png"),
+					sourceRoot: linkedStagingRoot
+				})
+			)
+		).rejects.toMatchObject({ _tag: "ReviewArtifactSourceRejected" });
+		await Effect.runPromise(sourceAttempt.discard());
+	});
+
+	it("cleans a caller-owned attempt when capture is cancelled", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-cancel-project-"));
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-cancel-runs-"));
+		temporaryDirectories.push(projectRoot, destinationRoot);
+		const reviewSetPath = join(projectRoot, "set.json");
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet: fixtureReviewSet() }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		const captureStarted = await Effect.runPromise(Deferred.make<void>());
+		const neverCapture = await Effect.runPromise(Deferred.make<void>());
+		const destination = callerOwnedReviewCaptureDestination(destinationRoot);
+		const port = successfulCapturePort({
+			beforeCapture: () =>
+				Effect.gen(function* () {
+					yield* Deferred.succeed(captureStarted, undefined);
+					yield* Deferred.await(neverCapture);
+				}),
+			png: new Uint8Array([3]),
+			projectRoot
+		});
+		const ids = ["run-cancelled", "invocation-cancelled", "operation-cancelled"];
+		const capture = Effect.flatMap(ReviewCapture, (service) =>
+			service.captureSet({
+				destination,
+				endpoint: "unused",
+				projectRoot,
+				reviewSetPath
+			})
+		).pipe(
+			Effect.provide(ReviewCaptureLive),
+			Effect.provide(reviewCapturePortLayer(port)),
+			Effect.provide(reviewIdGeneratorLayer(() => ids.shift()!)),
+			Effect.provide(ReviewRepositoryLive)
+		);
+		const fiber = Effect.runFork(capture);
+		await Effect.runPromise(Deferred.await(captureStarted));
+		await Effect.runPromise(Fiber.interrupt(fiber));
+
+		await expect(access(join(destinationRoot, ".staging-run-cancelled"))).rejects.toThrow();
+		await expect(access(join(destinationRoot, "run-cancelled"))).rejects.toThrow();
+	});
+
 	it("stores an optional Clear companion and keeps Pure on a typed Clear failure", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-clear-"));
 		temporaryDirectories.push(projectRoot);
@@ -1136,22 +1396,24 @@ describe("durable capture loop", () => {
 					catch: (cause) => cause
 				})
 		};
-		const repository = await Effect.runPromise(
-			Effect.gen(function* () {
-				return yield* ReviewRepository;
-			}).pipe(Effect.provide(ReviewRepositoryLive))
-		);
 		const promotionStarted = await Effect.runPromise(Deferred.make<void>());
 		const releasePromotion = await Effect.runPromise(Deferred.make<void>());
-		const gatedRepository = ReviewRepository.of({
-			...repository,
-			finalizeRun: (args) =>
-				Effect.gen(function* () {
-					yield* Deferred.succeed(promotionStarted, undefined);
-					yield* Deferred.await(releasePromotion);
-					yield* repository.finalizeRun(args);
-				})
-		});
+		const baseDestination = projectLocalReviewCaptureDestination(projectRoot);
+		const gatedDestination: ReviewCaptureDestination = {
+			...baseDestination,
+			prepare: (runId) =>
+				baseDestination.prepare(runId).pipe(
+					Effect.map((attempt) => ({
+						...attempt,
+						finalize: (run) =>
+							Effect.gen(function* () {
+								yield* Deferred.succeed(promotionStarted, undefined);
+								yield* Deferred.await(releasePromotion);
+								yield* attempt.finalize(run);
+							})
+					}))
+				)
+		};
 		const ids = ["run-promotion", "invocation-promotion", "operation-promotion"];
 		const makeId = () => {
 			const id = ids.shift();
@@ -1160,6 +1422,7 @@ describe("durable capture loop", () => {
 		};
 		const capture = Effect.flatMap(ReviewCapture, (service) =>
 			service.captureSet({
+				destination: gatedDestination,
 				endpoint: "unused",
 				projectRoot,
 				reviewSetPath
@@ -1168,7 +1431,7 @@ describe("durable capture loop", () => {
 			Effect.provide(ReviewCaptureLive),
 			Effect.provide(reviewCapturePortLayer(port)),
 			Effect.provide(reviewIdGeneratorLayer(makeId)),
-			Effect.provide(Layer.succeed(ReviewRepository, gatedRepository))
+			Effect.provide(ReviewRepositoryLive)
 		);
 		const captureFiber = Effect.runFork(capture);
 		await Effect.runPromise(Deferred.await(promotionStarted));

@@ -15,6 +15,7 @@ Node.js 22.14 or newer is required. Stable entry points:
 import {
 	ReviewCapture,
 	ReviewRepository,
+	callerOwnedReviewCaptureDestination,
 	decodeReviewSet,
 	generateFramingCandidates
 } from "@ue-shed/cameras";
@@ -37,6 +38,10 @@ session-tuning, and approval APIs remain usable from the CLI without Workbench.
 The durable loop supports approved perspective poses, actor-path subjects, Pure PNG captures, honest
 per-view failures, and atomic run publication. Review Sets normally live in
 `.ue-shed/review/sets`; generated runs live in `.ue-shed/review/runs` and remain local by default.
+Trusted hosts can pass `callerOwnedReviewCaptureDestination(existingAbsoluteRoot)` to one capture.
+The adapter validates and exclusively creates the attempt before Unreal runs, owns contained
+artifact ingestion and atomic publication, and rejects existing run identities and reparse-point
+escapes. Unreal still stages only beneath the project's `Saved/UEShed/ReviewStaging` tree.
 The language-neutral editor wire contract is under
 `packages/protocol/contracts/cameras/review/v1`. Keep it green with
 `pnpm --filter @ue-shed/cameras contract:check`.

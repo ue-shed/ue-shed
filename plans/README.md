@@ -27,6 +27,10 @@ table and the archive index.
 
 ## Notes for active work
 
+- Plan 046 completed and is archived under
+  [`archive/046-niagara-preview.md`](archive/046-niagara-preview.md) after versioned contracts, a
+  source-only UE 5.7 plugin, immutable host publication, CLI composition, stock-plugin bundle
+  metadata, and live rendering of an engine-shipped Niagara system passed.
 - Plan 045 completed and is archived under
   [`archive/045-project-custodian-read-only-slice.md`](archive/045-project-custodian-read-only-slice.md)
   after the schema-owned read-only scanner, safety policies, CLI, Workbench ledger, browser layout

@@ -36,6 +36,7 @@ interface PluginDescriptor {
 	readonly id: string;
 	readonly version: string;
 	readonly dependencies: readonly string[];
+	readonly engineDependencies: readonly string[];
 	readonly descriptorPath: string;
 }
 
@@ -57,6 +58,10 @@ interface BuildPluginBundleOptions {
 export const MAP_REVIEW_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedCameras"]);
 /** Exact Unreal plugin graph for the headless Observatory host. */
 export const OBSERVATORY_PLUGIN_IDS = Object.freeze(["UEShedObservatory"]);
+/** Exact Unreal plugin graph for the headless Niagara preview capability. */
+export const NIAGARA_PLUGIN_IDS = Object.freeze(["UEShedNiagara"]);
+
+const supportedEnginePluginIds = new Set(["EnhancedInput", "Niagara"]);
 
 const ignoredDirectoryNames = new Set([
 	".git",
@@ -254,18 +259,25 @@ async function readDescriptors({
 			throw new Error(
 				`Plugin descriptor ${directory}.uplugin must declare VersionName or Version.`
 			);
-		const dependencies = [
+		const declaredDependencies = [
 			...new Set(
 				(descriptor.Plugins ?? [])
 					.map((dependency) => dependency.Name)
 					.filter((dependency): dependency is string => dependency !== undefined)
 			)
 		].sort();
+		const dependencies = declaredDependencies.filter(
+			(dependency) => !supportedEnginePluginIds.has(dependency)
+		);
+		const engineDependencies = declaredDependencies.filter((dependency) =>
+			supportedEnginePluginIds.has(dependency)
+		);
 		descriptors.push({
 			directory,
 			id: descriptor.Name ?? directory,
 			version,
 			dependencies,
+			engineDependencies,
 			descriptorPath: `${directory}/${directory}.uplugin`
 		});
 	}
@@ -489,12 +501,13 @@ export async function buildPluginBundle({
 			releaseVersion,
 			unreal: unrealRange,
 			plugins: descriptors.map(
-				({ id, version, directory, descriptorPath, dependencies }) => ({
+				({ id, version, directory, descriptorPath, dependencies, engineDependencies }) => ({
 					id,
 					version,
 					descriptorPath,
 					directory,
-					dependencies
+					dependencies,
+					engineDependencies
 				})
 			),
 			artifact: {

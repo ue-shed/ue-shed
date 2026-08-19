@@ -59,8 +59,8 @@ pub mod windows {
     };
     use windows_sys::Win32::System::SystemServices::JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO;
     use windows_sys::Win32::System::Threading::{
-        CREATE_SUSPENDED, CreateProcessW, GetExitCodeProcess, INFINITE, PROCESS_INFORMATION,
-        ResumeThread, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
+        CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, GetExitCodeProcess, INFINITE,
+        PROCESS_INFORMATION, ResumeThread, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
     };
 
     const SUPERVISOR_TERMINATION_EXIT_CODE: u32 = 0xe000_0001;
@@ -232,7 +232,7 @@ pub mod windows {
                     null(),
                     null(),
                     0,
-                    CREATE_SUSPENDED,
+                    CREATE_SUSPENDED | CREATE_NO_WINDOW,
                     null(),
                     cwd.as_ptr(),
                     &startup,

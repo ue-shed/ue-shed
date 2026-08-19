@@ -79,3 +79,16 @@ UE Shed supplies generic SavedWorld, Map Capture, and Capture Run primitives;
 it does not own or persist MB Map Observations. MB Map Observation is distinct
 from optional Perforce-backed Map History and World Log, and from live
 actor/camera observation in Observatory.
+
+## Niagara preview
+
+### Niagara Preview Run
+
+An immutable, portable PNG frame sequence captured from one saved Niagara System through its Baker
+camera and timing. A run records requested and effective settings, engine provenance, resolved
+camera, alpha policy, per-frame timing and hashes, and an honest terminal outcome. It is external
+evidence: it never modifies the Niagara System or claims pixel identity across different GPUs.
+
+The Unreal producer stages render truth beneath the project Saved directory. A headless host
+validates and atomically publishes the Niagara Preview Run; an HTML player, sprite sheet, or video
+is a derived representation rather than the authoritative run.

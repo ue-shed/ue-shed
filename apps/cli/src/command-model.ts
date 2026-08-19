@@ -247,6 +247,21 @@ export const CliCommand = Schema.TaggedUnion({
 		tilesPath: Schema.optionalKey(Schema.String)
 	},
 	MapCaptureRuns: { planId: Schema.String, ...Project },
+	NiagaraPreview: {
+		captureMode: Schema.optionalKey(Schema.Literals(["component_only", "full_scene"])),
+		durationSeconds: Schema.optionalKey(Schema.Number),
+		engineRoot: Schema.optionalKey(Schema.String),
+		frameCount: Schema.optionalKey(PositiveInt),
+		height: Schema.optionalKey(PositiveInt),
+		outputRoot: Schema.optionalKey(Schema.String),
+		pluginDescriptor: Schema.optionalKey(Schema.String),
+		projectDescriptor: Schema.String,
+		runId: Schema.optionalKey(Schema.String),
+		simulationFramesPerSecond: Schema.optionalKey(PositiveInt),
+		startSeconds: Schema.optionalKey(Schema.Number),
+		systemObjectPath: Schema.String,
+		width: Schema.optionalKey(PositiveInt)
+	},
 	PluginsList: { manifestPath: Schema.String },
 	PluginsVerify: { artifactPath: Schema.optionalKey(Schema.String), manifestPath: Schema.String },
 	PluginsInstall: {

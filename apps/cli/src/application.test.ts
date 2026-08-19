@@ -63,6 +63,7 @@ it.effect("executes the public plugin list command through the CLI runtime", () 
 							dependencies: [],
 							descriptorPath: "UEShedCore/UEShedCore.uplugin",
 							directory: "UEShedCore",
+							engineDependencies: [],
 							id: "UEShedCore",
 							version: "0.1.0"
 						}

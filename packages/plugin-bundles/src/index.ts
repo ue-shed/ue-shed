@@ -64,6 +64,7 @@ export const PluginBundlePlugin = Schema.Struct({
 	dependencies: Schema.Array(PluginId),
 	descriptorPath: SafeRelativePath,
 	directory: SafeIdentifier,
+	engineDependencies: Schema.Array(PluginId),
 	id: PluginId,
 	version: PluginVersion
 });
@@ -240,6 +241,28 @@ function validateGraph(
 					)
 				);
 			}
+		}
+		const engineDependencies = new Set<PluginId>();
+		for (const dependency of plugin.engineDependencies) {
+			if (engineDependencies.has(dependency)) {
+				return Effect.fail(
+					validationError(
+						"duplicate_dependency",
+						`Plugin ${plugin.id} declares engine dependency ${dependency} more than once.`,
+						"List each engine plugin dependency once."
+					)
+				);
+			}
+			if (dependencies.has(dependency)) {
+				return Effect.fail(
+					validationError(
+						"duplicate_dependency",
+						`Plugin ${plugin.id} declares ${dependency} as both a bundled and engine dependency.`,
+						"Classify each dependency as either bundled or engine-provided."
+					)
+				);
+			}
+			engineDependencies.add(dependency);
 		}
 	}
 

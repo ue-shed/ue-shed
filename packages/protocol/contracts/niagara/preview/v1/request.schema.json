@@ -1,0 +1,26 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/niagara/preview/v1/request.schema.json",
+	"type": "object",
+	"required": ["contract", "runId", "settings", "systemObjectPath"],
+	"properties": {
+		"contract": {
+			"type": "object",
+			"required": ["name", "version"],
+			"properties": {
+				"name": { "const": "ue-shed-niagara-preview-request" },
+				"version": {
+					"type": "object",
+					"required": ["major", "minor"],
+					"properties": { "major": { "const": 1 }, "minor": { "const": 0 } },
+					"additionalProperties": false
+				}
+			},
+			"additionalProperties": false
+		},
+		"runId": { "$ref": "common.schema.json#/$defs/runId" },
+		"settings": { "$ref": "common.schema.json#/$defs/settings" },
+		"systemObjectPath": { "$ref": "common.schema.json#/$defs/systemObjectPath" }
+	},
+	"additionalProperties": false
+}

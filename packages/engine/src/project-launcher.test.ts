@@ -9,9 +9,19 @@ import {
 	UnrealProjectLauncher,
 	UnrealProjectLauncherLive,
 	makeUnrealProjectProcessTestLayer,
+	unrealEditorCommandletExecutable,
 	unrealProjectLaunchArguments,
 	type UnrealProjectProcessLaunchOptions
 } from "./project-launcher.js";
+
+it("resolves platform commandlet executable paths", () => {
+	expect(unrealEditorCommandletExecutable("C:/UE", "win32")).toBe(
+		join("C:/UE", "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe")
+	);
+	expect(unrealEditorCommandletExecutable("/UE", "linux")).toBe(
+		join("/UE", "Engine", "Binaries", "Linux", "UnrealEditor-Cmd")
+	);
+});
 
 it("builds normal and plugin launch arguments without a shell", () => {
 	expect(

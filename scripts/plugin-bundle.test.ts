@@ -7,6 +7,7 @@ import test from "node:test";
 import {
 	buildPluginBundle,
 	MAP_REVIEW_PLUGIN_IDS,
+	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS
 } from "./plugin-bundle.ts";
 
@@ -49,6 +50,18 @@ async function createFixture() {
 		})
 	);
 	await writeFixtureFile(pluginRoot, "UEShedBeta/Source/Beta.cpp", "source\n");
+	await writeFixtureFile(
+		pluginRoot,
+		"UEShedNiagara/UEShedNiagara.uplugin",
+		JSON.stringify({
+			FileVersion: 3,
+			Version: 1,
+			VersionName: "0.3.0",
+			Name: "UEShedNiagara",
+			Plugins: [{ Name: "Niagara", Enabled: true }]
+		})
+	);
+	await writeFixtureFile(pluginRoot, "UEShedNiagara/Source/Niagara.cpp", "source\n");
 	await writeFixtureFile(pluginRoot, "UEShedScenarios/README.md", "Roadmap only\n");
 	return { root, pluginRoot };
 }
@@ -95,14 +108,31 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 		assert.equal(first.manifest.artifact.sha256, second.manifest.artifact.sha256);
 		assert.equal(first.manifest.artifact.bytes, firstArchive.byteLength);
 		assert.deepEqual(
-			first.manifest.plugins.map(({ id, version, dependencies }) => ({
+			first.manifest.plugins.map(({ id, version, dependencies, engineDependencies }) => ({
 				id,
 				version,
-				dependencies
+				dependencies,
+				engineDependencies
 			})),
 			[
-				{ id: "UEShedAlpha", version: "0.1.0", dependencies: [] },
-				{ id: "UEShedBeta", version: "0.2.0", dependencies: ["UEShedAlpha"] }
+				{
+					id: "UEShedAlpha",
+					version: "0.1.0",
+					dependencies: [],
+					engineDependencies: []
+				},
+				{
+					id: "UEShedBeta",
+					version: "0.2.0",
+					dependencies: ["UEShedAlpha"],
+					engineDependencies: []
+				},
+				{
+					id: "UEShedNiagara",
+					version: "0.3.0",
+					dependencies: [],
+					engineDependencies: ["Niagara"]
+				}
 			]
 		);
 		assert.equal(first.manifest.provenance.candidateManifest.version, "0.1.0-rc.1");
@@ -165,6 +195,34 @@ test("rejects Cameras without Core in a Map Review selection", async () => {
 		);
 	} finally {
 		await rm(output, { recursive: true, force: true });
+	}
+});
+
+test("separates Niagara's stock engine dependency from the bundle graph", async () => {
+	const fixture = await createFixture();
+	const output = join(fixture.root, "output");
+	try {
+		const result = await buildPluginBundle({
+			output,
+			releaseVersion: "0.1.0-rc.2",
+			pluginRoot: fixture.pluginRoot,
+			licensePath: join(fixture.root, "LICENSE"),
+			requestedPlugins: [...NIAGARA_PLUGIN_IDS],
+			unreal: { minimum: "5.7", maximum: "5.7" }
+		});
+		assert.deepEqual(
+			result.manifest.plugins.map(({ id, dependencies, engineDependencies }) => ({
+				id,
+				dependencies,
+				engineDependencies
+			})),
+			[{ id: "UEShedNiagara", dependencies: [], engineDependencies: ["Niagara"] }]
+		);
+		assert.ok(
+			archiveEntries(result.archivePath).some((entry) => entry.includes("UEShedNiagara/"))
+		);
+	} finally {
+		await rm(fixture.root, { recursive: true, force: true });
 	}
 });
 

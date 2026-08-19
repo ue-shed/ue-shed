@@ -494,9 +494,8 @@ function captureReviewSetWith(args: {
 						)
 					);
 
-					return yield* attempt
-						.finalize(run)
-						.pipe(Effect.as(run), Effect.uninterruptible);
+					const finalized = attempt.finalize(run).pipe(Effect.uninterruptible);
+					return yield* finalized.pipe(Effect.as(run));
 				}),
 			(attempt) => attempt.discard().pipe(Effect.ignore)
 		);

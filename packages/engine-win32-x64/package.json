@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/engine-win32-x64",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Windows x64 Job Object supervisor for scoped UE Shed editor sessions",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {

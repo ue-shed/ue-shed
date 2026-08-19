@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/game-text",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Headless saved-package corpus discovery and search for Unreal Engine text.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -42,7 +42,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/unreal-assets": "workspace:0.2.0"
+		"@ue-shed/unreal-assets": "workspace:0.3.0"
 	},
 	"devDependencies": {
 		"effect": "catalog:"

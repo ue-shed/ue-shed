@@ -1,5 +1,7 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

@@ -1,5 +1,20 @@
 # @ue-shed/cameras
 
+## 0.3.0
+
+### Minor Changes
+
+- a087286: Add caller-owned Review Capture and Map Capture destination adapters while retaining project-local
+  Capture Runs as the default. Prepared attempts now own containment, exclusive creation, artifact
+  ingestion, atomic publication, retained partial Map Capture attempts, and cancellation cleanup.
+
+### Patch Changes
+
+- Updated dependencies [bf27d37]
+    - @ue-shed/protocol@0.3.0
+    - @ue-shed/unreal-connection@0.3.0
+    - @ue-shed/observability@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

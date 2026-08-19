@@ -23,8 +23,20 @@ run. Unreal never receives the caller's destination path. Failed or interrupted 
 appear in completed-run discovery.
 
 The v1 render budget bounds dimensions, frame count, total pixels, start time, duration, and
-simulation rate. A missing Baker camera, unavailable rendering RHI, failed asset/shader compilation,
-empty output, and invalid producer receipt remain distinguishable failures with recovery guidance.
+simulation rate. Invalid requests, unavailable rendering, missing systems or Baker cameras,
+compilation failures, capture failures, and invalid producer receipts remain distinguishable with
+recovery guidance. Commandlet exit codes 10 and 20–24 carry the producer failure identity to the
+host; unknown exits remain generic process failures. Empty or nearly empty output is a diagnostic
+because an intentionally empty frame can be valid at the start or end of an effect.
+
+| Exit | Typed host failure      | Meaning                                      |
+| ---: | ----------------------- | -------------------------------------------- |
+|   10 | `invalid_request`       | Invocation, request, or override was invalid |
+|   20 | `rendering_unavailable` | Commandlet rendering was unavailable         |
+|   21 | `system_unavailable`    | The requested Niagara System did not load    |
+|   22 | `baker_camera_missing`  | No valid saved Baker camera was available    |
+|   23 | `compilation_failed`    | The Niagara System was not runnable          |
+|   24 | `capture_failed`        | Staging, capture, or receipt writing failed  |
 
 ## Authority and limitations
 

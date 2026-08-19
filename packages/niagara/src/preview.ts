@@ -15,6 +15,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { inflateSync } from "node:zlib";
 import {
 	EngineInstallationDiscovery,
 	EngineInstallationDiscoveryLive,
@@ -61,6 +62,11 @@ export class NiagaraPreviewError extends Schema.TaggedErrorClass<NiagaraPreviewE
 			"engine_discovery_failed",
 			"commandlet_unavailable",
 			"plugin_unavailable",
+			"rendering_unavailable",
+			"system_unavailable",
+			"baker_camera_missing",
+			"compilation_failed",
+			"capture_failed",
 			"process_failed",
 			"process_timeout",
 			"receipt_missing",
@@ -124,6 +130,25 @@ function settingsMatch(left: NiagaraPreviewSettings, right: NiagaraPreviewSettin
 	);
 }
 
+function requestedSettingsMatchEffective(
+	requested: NiagaraPreviewSettings,
+	effective: NiagaraPreviewProducerReceipt["effectiveSettings"]
+): boolean {
+	const approximatelyEqual = (left: number, right: number) => Math.abs(left - right) <= 0.0001;
+	return (
+		(requested.captureMode === undefined || requested.captureMode === effective.captureMode) &&
+		(requested.durationSeconds === undefined ||
+			approximatelyEqual(requested.durationSeconds, effective.durationSeconds)) &&
+		(requested.frameCount === undefined || requested.frameCount === effective.frameCount) &&
+		(requested.height === undefined || requested.height === effective.height) &&
+		(requested.simulationFramesPerSecond === undefined ||
+			requested.simulationFramesPerSecond === effective.simulationFramesPerSecond) &&
+		(requested.startSeconds === undefined ||
+			approximatelyEqual(requested.startSeconds, effective.startSeconds)) &&
+		(requested.width === undefined || requested.width === effective.width)
+	);
+}
+
 function pathContained(root: string, candidate: string): boolean {
 	const child = relative(root, candidate);
 	return (
@@ -139,13 +164,92 @@ interface PngDimensions {
 	readonly width: number;
 }
 
+function pngCrc32(bytes: Uint8Array): number {
+	let crc = 0xffffffff;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let bit = 0; bit < 8; bit += 1) {
+			crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+		}
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+}
+
 function pngDimensions(bytes: Uint8Array): PngDimensions {
 	const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-	if (bytes.byteLength < 24 || signature.some((value, index) => bytes[index] !== value)) {
+	if (bytes.byteLength < 45 || signature.some((value, index) => bytes[index] !== value)) {
 		throw new Error("not a PNG");
 	}
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-	return { width: view.getUint32(16), height: view.getUint32(20) };
+	let offset = signature.length;
+	let dimensions: PngDimensions | undefined;
+	let sawImageData = false;
+	let sawImageEnd = false;
+	const imageData: Uint8Array[] = [];
+	while (offset < bytes.byteLength) {
+		if (bytes.byteLength - offset < 12) throw new Error("truncated PNG chunk");
+		const length = view.getUint32(offset);
+		const dataStart = offset + 8;
+		const dataEnd = dataStart + length;
+		const chunkEnd = dataEnd + 4;
+		if (dataEnd < dataStart || chunkEnd > bytes.byteLength) {
+			throw new Error("truncated PNG chunk data");
+		}
+		const type = String.fromCharCode(
+			bytes[offset + 4] ?? 0,
+			bytes[offset + 5] ?? 0,
+			bytes[offset + 6] ?? 0,
+			bytes[offset + 7] ?? 0
+		);
+		if (pngCrc32(bytes.subarray(offset + 4, dataEnd)) !== view.getUint32(dataEnd)) {
+			throw new Error("invalid PNG chunk checksum");
+		}
+		if (type === "IHDR") {
+			if (offset !== 8 || length !== 13 || dimensions !== undefined) {
+				throw new Error("invalid PNG header chunk");
+			}
+			const width = view.getUint32(dataStart);
+			const height = view.getUint32(dataStart + 4);
+			if (
+				width === 0 ||
+				height === 0 ||
+				bytes[dataStart + 8] !== 8 ||
+				bytes[dataStart + 9] !== 6 ||
+				bytes[dataStart + 10] !== 0 ||
+				bytes[dataStart + 11] !== 0 ||
+				bytes[dataStart + 12] !== 0
+			) {
+				throw new Error("unsupported PNG pixel format");
+			}
+			dimensions = { height, width };
+		} else if (type === "IDAT") {
+			if (dimensions === undefined || sawImageEnd) throw new Error("invalid PNG image data");
+			sawImageData = true;
+			imageData.push(bytes.subarray(dataStart, dataEnd));
+		} else if (type === "IEND") {
+			if (length !== 0 || dimensions === undefined || !sawImageData) {
+				throw new Error("invalid PNG end chunk");
+			}
+			sawImageEnd = true;
+			if (chunkEnd !== bytes.byteLength) throw new Error("trailing PNG data");
+		} else if ((bytes[offset + 4] ?? 0) >= 65 && (bytes[offset + 4] ?? 0) <= 90) {
+			throw new Error("unsupported critical PNG chunk");
+		}
+		offset = chunkEnd;
+	}
+	if (dimensions === undefined || !sawImageData || !sawImageEnd) {
+		throw new Error("incomplete PNG");
+	}
+	const rowBytes = dimensions.width * 4 + 1;
+	const expectedBytes = rowBytes * dimensions.height;
+	const inflated = inflateSync(Buffer.concat(imageData.map((chunk) => Buffer.from(chunk))), {
+		maxOutputLength: expectedBytes + 1
+	});
+	if (inflated.byteLength !== expectedBytes) throw new Error("invalid PNG image byte length");
+	for (let row = 0; row < dimensions.height; row += 1) {
+		if ((inflated[row * rowBytes] ?? 5) > 4) throw new Error("invalid PNG row filter");
+	}
+	return dimensions;
 }
 
 function isoTimestamp(milliseconds: number): string {
@@ -220,6 +324,18 @@ function validateReceipt(
 		);
 	}
 	const effective = receipt.effectiveSettings;
+	if (!requestedSettingsMatchEffective(request.settings, effective)) {
+		return Effect.fail(
+			previewError(
+				"receipt_invalid",
+				"capture",
+				"The producer ignored one or more requested Niagara preview overrides.",
+				"Update the UEShedNiagara producer so requested settings match effective output.",
+				false,
+				request.runId
+			)
+		);
+	}
 	if (
 		receipt.frames.length !== effective.frameCount ||
 		effective.frameCount * effective.width * effective.height > MAXIMUM_TOTAL_PIXELS
@@ -452,13 +568,19 @@ function validateArtifacts(options: {
 	});
 }
 
-function publishRun(options: {
+interface PublishRunOptions {
 	readonly artifacts: NiagaraPreviewRunManifestValue["artifacts"];
+	readonly cleanupStaging?: ((path: string) => Effect.Effect<void, unknown>) | undefined;
 	readonly generatedAtUtc: string;
 	readonly outputRoot: string;
 	readonly receipt: NiagaraPreviewProducerReceipt;
 	readonly stagingRoot: string;
-}): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
+}
+
+/** @internal Exported from this module only for deterministic publication tests. */
+export function publishRun(
+	options: PublishRunOptions
+): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
 	return Effect.gen(function* () {
 		const manifest = yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)({
 			alphaPolicy: options.receipt.alphaPolicy,
@@ -543,9 +665,106 @@ function publishRun(options: {
 			}),
 			publishFailure
 		);
-		yield* Effect.promise(() => rm(options.stagingRoot, { force: true, recursive: true }));
+		const cleanupStaging =
+			options.cleanupStaging ??
+			((path: string) => Effect.promise(() => rm(path, { force: true, recursive: true })));
+		// The rename above is the commit point. Cleanup must never turn a visible completed run
+		// into a reported failure that encourages an unsafe retry.
+		yield* cleanupStaging(options.stagingRoot).pipe(
+			Effect.ignore({
+				log: "Warn",
+				message: `Niagara Preview Run ${options.receipt.runId} committed, but staging cleanup failed.`
+			})
+		);
 		return { manifest, manifestPath: join(finalRoot, "manifest.json") };
 	});
+}
+
+interface CommandletFailure {
+	readonly code: NiagaraPreviewError["code"];
+	readonly message: string;
+	readonly recovery: string;
+	readonly retrySafe: boolean;
+}
+
+const commandletFailures = new Map<number, CommandletFailure>([
+	[
+		10,
+		{
+			code: "invalid_request",
+			message: "The Niagara preview commandlet rejected its invocation or request.",
+			recovery: "Update the host and UEShedNiagara plugin together, then retry.",
+			retrySafe: false
+		}
+	],
+	[
+		20,
+		{
+			code: "rendering_unavailable",
+			message: "The Niagara preview commandlet could not access a rendering-capable RHI.",
+			recovery: "Run with commandlet rendering enabled and without -nullrhi.",
+			retrySafe: false
+		}
+	],
+	[
+		21,
+		{
+			code: "system_unavailable",
+			message: "The requested Niagara System could not be loaded.",
+			recovery: "Verify the mounted object path and required project plugins, then retry.",
+			retrySafe: false
+		}
+	],
+	[
+		22,
+		{
+			code: "baker_camera_missing",
+			message: "The requested Niagara System has no valid saved Baker camera.",
+			recovery: "Save a valid Baker camera on the Niagara System, then retry.",
+			retrySafe: false
+		}
+	],
+	[
+		23,
+		{
+			code: "compilation_failed",
+			message: "The requested Niagara System failed to compile into a runnable state.",
+			recovery:
+				"Resolve Niagara script or shader compilation errors, save the asset, and retry.",
+			retrySafe: false
+		}
+	],
+	[
+		24,
+		{
+			code: "capture_failed",
+			message:
+				"The Niagara preview commandlet could not stage or capture the requested frames.",
+			recovery: "Inspect the Unreal log for rendering or filesystem diagnostics, then retry.",
+			retrySafe: true
+		}
+	]
+]);
+
+function commandletExitError(exitCode: number | null, runId: string): NiagaraPreviewError {
+	const known = exitCode === null ? undefined : commandletFailures.get(exitCode);
+	return known === undefined
+		? previewError(
+				"process_failed",
+				"capture",
+				`The Niagara preview commandlet exited with ${exitCode ?? "no exit code"}.`,
+				"Inspect the Unreal log, confirm UEShedNiagara is enabled, and retry.",
+				true,
+				runId
+			)
+		: previewError(
+				known.code,
+				"capture",
+				known.message,
+				known.recovery,
+				known.retrySafe,
+				runId
+			);
 }
 
 export const NiagaraPreviewLive = Layer.effect(
@@ -727,15 +946,18 @@ export const NiagaraPreviewLive = Layer.effect(
 						)
 				})
 			);
-			if (exit.kind !== "exited" || exit.exitCode !== 0) {
+			if (exit.kind !== "exited") {
 				return yield* previewError(
 					"process_failed",
 					"capture",
-					`The Niagara preview commandlet exited with ${exit.exitCode ?? "no exit code"}.`,
-					"Inspect the Unreal log, confirm UEShedNiagara is enabled, and retry.",
+					"The Niagara preview commandlet was terminated before it completed.",
+					"Inspect the Unreal log and retry when the host can keep the commandlet alive.",
 					true,
 					request.runId
 				);
+			}
+			if (exit.exitCode !== 0) {
+				return yield* commandletExitError(exit.exitCode, request.runId);
 			}
 			const stagingRoot = join(
 				projectRoot,

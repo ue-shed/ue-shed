@@ -25,6 +25,12 @@ constexpr int64 MaximumTotalPixels = 268435456;
 constexpr float MaximumStartSeconds = 3600.0f;
 constexpr float MaximumDurationSeconds = 600.0f;
 constexpr int32 MaximumSimulationFramesPerSecond = 480;
+constexpr int32 ExitInvalidRequest = 10;
+constexpr int32 ExitRenderingUnavailable = 20;
+constexpr int32 ExitSystemUnavailable = 21;
+constexpr int32 ExitBakerCameraMissing = 22;
+constexpr int32 ExitCompilationFailed = 23;
+constexpr int32 ExitCaptureFailed = 24;
 
 bool IsLowerHex(TCHAR Character)
 {
@@ -104,7 +110,6 @@ void ApplySavedBakerDefaults(
 	Options.DurationSeconds = Settings.DurationSeconds;
 	Options.SimulationFramesPerSecond = Settings.FramesPerSecond;
 	Options.FrameCount = Settings.FramesPerDimension.X * Settings.FramesPerDimension.Y;
-	Options.bRenderComponentOnly = Settings.bRenderComponentOnly;
 
 	for (UNiagaraBakerOutput* Output : Settings.Outputs)
 	{
@@ -273,7 +278,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 	if (!IsAllowCommandletRendering())
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("-AllowCommandletRendering is required."));
-		return 1;
+		return ExitRenderingUnavailable;
 	}
 
 	FString RequestArgument;
@@ -284,7 +289,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 			LogUEShedNiagaraPreview,
 			Error,
 			TEXT("Usage: -run=UEShedNiagaraPreview -Request=<json> -AllowCommandletRendering"));
-		return 1;
+		return ExitInvalidRequest;
 	}
 	const FString RequestPath = FPaths::ConvertRelativePathToFull(RequestArgument);
 	FUEShedNiagaraPreviewOptions Options;
@@ -292,7 +297,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 	if (!ReadRequest(RequestPath, Options, Error))
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Invalid request: %s"), *Error);
-		return 1;
+		return ExitInvalidRequest;
 	}
 
 	UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, *Options.SystemObjectPath);
@@ -303,7 +308,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 			Error,
 			TEXT("Failed to load Niagara System '%s'."),
 			*Options.SystemObjectPath);
-		return 1;
+		return ExitSystemUnavailable;
 	}
 	UNiagaraBakerSettings* BakerSettings = System->GetBakerSettings();
 	if (!BakerSettings || BakerSettings->CameraSettings.IsEmpty())
@@ -313,13 +318,23 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 			Error,
 			TEXT("Niagara System '%s' has no valid saved Baker camera."),
 			*Options.SystemObjectPath);
-		return 1;
+		return ExitBakerCameraMissing;
+	}
+	System->WaitForCompilationComplete(true, false);
+	if (!System->IsReadyToRun())
+	{
+		UE_LOG(
+			LogUEShedNiagaraPreview,
+			Error,
+			TEXT("Niagara System '%s' failed to compile into a runnable state."),
+			*Options.SystemObjectPath);
+		return ExitCompilationFailed;
 	}
 	ApplySavedBakerDefaults(*BakerSettings, Options);
 	if (!ApplyRequestSettings(Options.RequestedSettings, Options, Error))
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Invalid settings: %s"), *Error);
-		return 1;
+		return ExitInvalidRequest;
 	}
 
 	Options.OutputDirectory = FPaths::Combine(
@@ -335,7 +350,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 			Error,
 			TEXT("Run staging already exists: %s"),
 			*Options.OutputDirectory);
-		return 1;
+		return ExitCaptureFailed;
 	}
 	const FString FramesDirectory = FPaths::Combine(Options.OutputDirectory, TEXT("frames"));
 	if (!IFileManager::Get().MakeDirectory(*FramesDirectory, true))
@@ -345,7 +360,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 			Error,
 			TEXT("Failed to create contained staging: %s"),
 			*FramesDirectory);
-		return 1;
+		return ExitCaptureFailed;
 	}
 
 	UE_LOG(
@@ -363,7 +378,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 	if (!Capture.Initialize(System, Options, Error))
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Initialization failed: %s"), *Error);
-		return 1;
+		return ExitCaptureFailed;
 	}
 
 	const float FrameIntervalSeconds =
@@ -379,7 +394,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 		if (!Capture.CaptureFrame(FrameIndex, AbsoluteTime, FramePath, Frame, Error))
 		{
 			UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Capture failed: %s"), *Error);
-			return 1;
+			return ExitCaptureFailed;
 		}
 		Frames.Add(MoveTemp(Frame));
 	}
@@ -390,7 +405,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 	if (!Capture.WriteProducerReceipt(ReceiptPath, Frames, Error))
 	{
 		UE_LOG(LogUEShedNiagaraPreview, Error, TEXT("Receipt failed: %s"), *Error);
-		return 1;
+		return ExitCaptureFailed;
 	}
 
 	UE_LOG(

@@ -70,7 +70,6 @@ try {
 			pluginDescriptor,
 			projectDescriptor,
 			settings: {
-				captureMode: "component_only",
 				durationSeconds: 1,
 				frameCount: 2,
 				height: 64,
@@ -87,6 +86,9 @@ try {
 	}
 	if (!outcome.manifest.artifacts.some((frame) => frame.nonTransparentPixelFraction > 0)) {
 		throw new Error("Niagara conformance produced no visible pixels.");
+	}
+	if (outcome.manifest.effectiveSettings.captureMode !== "component_only") {
+		throw new Error("Niagara conformance did not preserve component-only default capture.");
 	}
 	console.log(
 		`Niagara trusted conformance passed with ${outcome.manifest.artifacts.length} hashed frames on Unreal ${outcome.manifest.producer.engineVersion}.`

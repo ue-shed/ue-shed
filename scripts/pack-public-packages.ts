@@ -58,6 +58,7 @@ export const WASM_PACKAGE_NAME = "@ue-shed/uasset-inspection-wasm";
 export const GAME_TEXT_PACKAGE_NAME = "@ue-shed/game-text";
 export const MAP_HISTORY_PACKAGE_NAME = "@ue-shed/map-history";
 export const ENGINE_PACKAGE_NAME = "@ue-shed/engine";
+export const ENGINE_WINDOWS_PACKAGE_NAME = "@ue-shed/engine-win32-x64";
 export const CONFIG_EXPLORER_PACKAGE_NAME = "@ue-shed/config-explorer";
 export const PROJECT_CUSTODIAN_PACKAGE_NAME = "@ue-shed/project-custodian";
 /**
@@ -70,6 +71,7 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: "@ue-shed/observability", directory: "packages/observability" },
 	{ name: "@ue-shed/unreal-connection", directory: "packages/unreal-connection" },
 	{ name: ENGINE_PACKAGE_NAME, directory: "packages/engine" },
+	{ name: ENGINE_WINDOWS_PACKAGE_NAME, directory: "packages/engine-win32-x64" },
 	{ name: "@ue-shed/cameras", directory: "packages/cameras" },
 	{ name: "@ue-shed/observatory", directory: "packages/observatory" },
 	{ name: WASM_PACKAGE_NAME, directory: "packages/uasset-inspection-wasm" },
@@ -94,6 +96,7 @@ const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
 const exactEffectVersion = "4.0.0-beta.98";
 const exactUnrealRcVersion = "0.5.3";
 const exactTrashVersion = "10.1.1";
+const WINDOWS_GNU_TARGET = "x86_64-pc-windows-gnu";
 
 function packedPath(path: string) {
 	return `package/${path.replace(/^\.\//u, "")}`;
@@ -386,6 +389,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	const observability = byName.get("@ue-shed/observability");
 	const unrealConnection = byName.get("@ue-shed/unreal-connection");
 	const engine = byName.get(ENGINE_PACKAGE_NAME);
+	const engineWindows = byName.get(ENGINE_WINDOWS_PACKAGE_NAME);
 	const cameras = byName.get("@ue-shed/cameras");
 	const observatory = byName.get("@ue-shed/observatory");
 	const wasm = byName.get(WASM_PACKAGE_NAME);
@@ -412,6 +416,20 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactInternalDependency(engine, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(engine, "@ue-shed/unreal-connection", byName, failures);
 	requireExactDependency(engine, "effect", exactEffectVersion, failures);
+	const enginePlatformVersion =
+		engine?.optionalDependencies?.[ENGINE_WINDOWS_PACKAGE_NAME] ??
+		engine?.dependencies?.[ENGINE_WINDOWS_PACKAGE_NAME];
+	if (enginePlatformVersion !== engineWindows?.version) {
+		failures.push(
+			`${ENGINE_PACKAGE_NAME} must pin its Windows package ${engineWindows?.version}`
+		);
+	}
+	if (JSON.stringify(engineWindows?.os) !== JSON.stringify(["win32"])) {
+		failures.push(`${ENGINE_WINDOWS_PACKAGE_NAME} must declare os [win32]`);
+	}
+	if (JSON.stringify(engineWindows?.cpu) !== JSON.stringify(["x64"])) {
+		failures.push(`${ENGINE_WINDOWS_PACKAGE_NAME} must declare cpu [x64]`);
+	}
 	requireExactInternalDependency(cameras, "@ue-shed/observability", byName, failures);
 	requireExactInternalDependency(cameras, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(cameras, "@ue-shed/unreal-connection", byName, failures);
@@ -495,17 +513,49 @@ export async function packPublicPackages({
 	await ensureEmptyOutput(outputDirectory);
 	await assertPublicPackageSet();
 	if (build) {
-		run("cargo", ["build", "--locked", "--release", "-p", "uasset-io"]);
+		const windowsTarget = process.platform === "win32" ? undefined : WINDOWS_GNU_TARGET;
+		const nativeBuildArgs = [
+			"build",
+			"--locked",
+			"--release",
+			...(windowsTarget === undefined ? [] : ["--target", windowsTarget]),
+			"-p",
+			"uasset-io",
+			"-p",
+			"engine-process-supervisor"
+		];
+		run("cargo", nativeBuildArgs);
+		const cargoTargetDirectory = process.env.CARGO_TARGET_DIR
+			? resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
+			: join(repositoryRoot, "target");
+		const nativeReleaseDirectory = join(
+			cargoTargetDirectory,
+			...(windowsTarget === undefined ? [] : [windowsTarget]),
+			"release"
+		);
+		const assembleArgs = (packageName: string, executableName: string) => [
+			"--filter",
+			packageName,
+			"assemble",
+			"--",
+			"--source",
+			join(nativeReleaseDirectory, executableName),
+			...(process.platform === "win32" ? [] : ["--skip-version-check"])
+		];
 		run(executable("pnpm"), ["--filter", "@ue-shed/protocol", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observability", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);
 		run(executable("pnpm"), ["--filter", ENGINE_PACKAGE_NAME, "build"]);
+		run(
+			executable("pnpm"),
+			assembleArgs(ENGINE_WINDOWS_PACKAGE_NAME, "ue-shed-process-supervisor.exe")
+		);
 		run(executable("pnpm"), ["--filter", "@ue-shed/cameras", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observatory", "build"]);
 		run(executable("pnpm"), ["--filter", WASM_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
 		run(executable("pnpm"), ["--filter", MAP_HISTORY_PACKAGE_NAME, "build"]);
-		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
+		run(executable("pnpm"), assembleArgs("@ue-shed/uasset-win32-x64", "uasset.exe"));
 		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", CONFIG_EXPLORER_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", PROJECT_CUSTODIAN_PACKAGE_NAME, "build"]);
@@ -529,6 +579,12 @@ export async function packPublicPackages({
 			expectedVersion: workspaceManifest.version,
 			files
 		});
+		if (
+			workspacePackage.name === ENGINE_WINDOWS_PACKAGE_NAME &&
+			!files.includes("package/bin/ue-shed-process-supervisor.exe")
+		) {
+			failures.push(`${ENGINE_WINDOWS_PACKAGE_NAME} must contain its Job Object supervisor`);
+		}
 		if (failures.length > 0) {
 			throw new Error(
 				`${workspacePackage.name} pack validation failed:\n- ${failures.join("\n- ")}`

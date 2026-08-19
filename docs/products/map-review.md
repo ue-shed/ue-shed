@@ -488,6 +488,11 @@ comparison costs are measured.
 Writing is staged and atomically finalized. An interrupted staging directory is recoverable or
 discardable but is not listed as a completed run. Review append operations use their own atomicity
 and corruption detection; downstream centralized systems may map them to another storage model.
+The project-local adapter publishes beneath `.ue-shed/review/runs` by default. A trusted host may
+instead select an existing absolute caller-owned Capture Run root; that destination adapter owns
+exclusive attempt creation, containment, reparse-point checks, artifact ingestion, publication, and
+cleanup. Unreal still receives no host output path and stages only beneath
+`Saved/UEShed/ReviewStaging`.
 
 Define narrow storage ports rather than a generic database abstraction:
 

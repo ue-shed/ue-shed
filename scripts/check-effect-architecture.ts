@@ -75,6 +75,9 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/scripts/benchmark-compact-text.ts",
 	"extensions/data-authoring/adoption/consumer/server/src/index.ts",
 	"packages/cameras/src/index.ts",
+	// Capture destinations own the Node filesystem promise boundary; callers receive only
+	// Effect-shaped attempts with typed storage failures.
+	"packages/cameras/src/capture-destination.ts",
 	"packages/cameras/src/review-repository.ts",
 	"packages/authoring-sdk/src/index.ts",
 	// The synthetic benchmark invokes Playwright as its foreign child-process adapter.
@@ -85,6 +88,9 @@ const approvedPromiseAdapters = new Set([
 	// process seam; callers consume only Effect and Stream operations.
 	"packages/unreal-assets/src/project-index-process.ts",
 	"packages/unreal-assets/src/scan-target.ts",
+	// The supervised process adapter bridges Node's child-process completion promise once; the
+	// session and process-tree services expose only scoped Effect operations.
+	"packages/engine/src/supervised-editor-session.ts",
 	// Project Custodian owns Node filesystem promises in one cancellable scan adapter.
 	"packages/project-custodian/src/node-scanner.ts",
 	// Project Custodian owns process inspection, filesystem mutation, OS Trash, and durable
@@ -135,7 +141,10 @@ const approvedResourceAdapters = new Set([
 	"packages/unreal-assets/src/protocol-transport.ts",
 	// The engine launcher owns the detached Unreal Editor spawn boundary; its Effect.callback
 	// cancellation finalizer terminates a child that has not completed startup.
-	"packages/engine/src/project-launcher.ts"
+	"packages/engine/src/project-launcher.ts",
+	// The supervised launcher owns its child-process listeners, POSIX process group, and bounded
+	// exit polling inside Effect callbacks and a scoped acquire/release session.
+	"packages/engine/src/supervised-editor-session.ts"
 ]);
 const operationlessServices = new Set(["apps/workbench/src/main/workbench-config.ts"]);
 const externalServiceEvidence = new Map([
@@ -430,12 +439,12 @@ export async function checkDomainServices(root: string = repositoryRoot) {
 			"packages/cameras/src/review-capture.ts: view capture must use Effect.forEach concurrency"
 		);
 	}
-	if (!capture.includes("discardStaging")) {
+	if (!capture.includes("attempt.discard")) {
 		failures.push(
-			"packages/cameras/src/review-capture.ts: capture must discard staging on non-promotion exits"
+			"packages/cameras/src/review-capture.ts: capture must release its prepared attempt"
 		);
 	}
-	const finalizeRun = capture.indexOf(".finalizeRun(");
+	const finalizeRun = capture.indexOf("attempt.finalize(");
 	if (
 		finalizeRun === -1 ||
 		!capture.slice(finalizeRun, finalizeRun + 400).includes("Effect.uninterruptible")

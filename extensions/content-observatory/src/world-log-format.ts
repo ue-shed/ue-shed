@@ -32,8 +32,12 @@ export function changeDetail(change: MapChange): string {
 			return `${shortClass(change.before.classPath)} → ${shortClass(change.after.classPath)}`;
 		case "actor_package_changed":
 			return `${change.before.packageName} → ${change.after.packageName}`;
-		case "actor_position_resolution_changed":
-			return `${change.beforePosition.status} → ${change.afterPosition.status}`;
+		case "actor_attachment_changed":
+			return "Saved root-component attachment changed";
+		case "actor_transform_changed":
+			return "Effective rotation or scale changed";
+		case "actor_transform_resolution_changed":
+			return `${change.beforeTransform.status} → ${change.afterTransform.status}`;
 		case "snapshot_coverage_changed":
 			return `${change.before.completeness} → ${change.after.completeness}`;
 	}

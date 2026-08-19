@@ -5919,10 +5919,11 @@
 							"properties": {
 								"major": {
 									"type": "number",
-									"enum": [1]
+									"enum": [2]
 								},
 								"minor": {
-									"type": "integer"
+									"type": "number",
+									"enum": [0]
 								}
 							},
 							"required": ["major", "minor"],
@@ -5972,6 +5973,29 @@
 							"actorPath": {
 								"type": "string"
 							},
+							"attachment": {
+								"type": "object",
+								"properties": {
+									"componentPath": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											}
+										]
+									},
+									"parentComponentPath": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											}
+										]
+									}
+								},
+								"required": ["componentPath", "parentComponentPath"],
+								"additionalProperties": false
+							},
 							"classPath": {
 								"type": "string"
 							},
@@ -5981,7 +6005,7 @@
 							"packageName": {
 								"type": "string"
 							},
-							"position": {
+							"transform": {
 								"anyOf": [
 									{
 										"type": "object",
@@ -5998,7 +6022,12 @@
 										"type": "object",
 										"properties": {
 											"parentPath": {
-												"type": "string"
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													}
+												]
 											},
 											"status": {
 												"type": "string",
@@ -6012,7 +6041,12 @@
 										"type": "object",
 										"properties": {
 											"componentPath": {
-												"type": "string"
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													}
+												]
 											},
 											"status": {
 												"type": "string",
@@ -6026,7 +6060,12 @@
 										"type": "object",
 										"properties": {
 											"componentPath": {
-												"type": "string"
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													}
+												]
 											},
 											"status": {
 												"type": "string",
@@ -6040,7 +6079,12 @@
 										"type": "object",
 										"properties": {
 											"componentPath": {
-												"type": "string"
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													}
+												]
 											},
 											"status": {
 												"type": "string",
@@ -6053,65 +6097,71 @@
 									{
 										"type": "object",
 										"properties": {
+											"componentPath": {
+												"type": "string",
+												"allOf": [
+													{
+														"minLength": 1
+													}
+												]
+											},
+											"status": {
+												"type": "string",
+												"enum": ["non_finite_transform"]
+											}
+										},
+										"required": ["componentPath", "status"],
+										"additionalProperties": false
+									},
+									{
+										"type": "object",
+										"properties": {
 											"location": {
 												"type": "object",
 												"properties": {
 													"x": {
-														"anyOf": [
-															{
-																"type": "number"
-															},
-															{
-																"type": "string",
-																"enum": ["NaN"]
-															},
-															{
-																"type": "string",
-																"enum": ["Infinity"]
-															},
-															{
-																"type": "string",
-																"enum": ["-Infinity"]
-															}
-														]
+														"type": "number"
 													},
 													"y": {
-														"anyOf": [
-															{
-																"type": "number"
-															},
-															{
-																"type": "string",
-																"enum": ["NaN"]
-															},
-															{
-																"type": "string",
-																"enum": ["Infinity"]
-															},
-															{
-																"type": "string",
-																"enum": ["-Infinity"]
-															}
-														]
+														"type": "number"
 													},
 													"z": {
-														"anyOf": [
-															{
-																"type": "number"
-															},
-															{
-																"type": "string",
-																"enum": ["NaN"]
-															},
-															{
-																"type": "string",
-																"enum": ["Infinity"]
-															},
-															{
-																"type": "string",
-																"enum": ["-Infinity"]
-															}
-														]
+														"type": "number"
+													}
+												},
+												"required": ["x", "y", "z"],
+												"additionalProperties": false
+											},
+											"rotation": {
+												"type": "object",
+												"properties": {
+													"w": {
+														"type": "number"
+													},
+													"x": {
+														"type": "number"
+													},
+													"y": {
+														"type": "number"
+													},
+													"z": {
+														"type": "number"
+													}
+												},
+												"required": ["w", "x", "y", "z"],
+												"additionalProperties": false
+											},
+											"scale": {
+												"type": "object",
+												"properties": {
+													"x": {
+														"type": "number"
+													},
+													"y": {
+														"type": "number"
+													},
+													"z": {
+														"type": "number"
 													}
 												},
 												"required": ["x", "y", "z"],
@@ -6122,13 +6172,13 @@
 												"enum": ["resolved"]
 											}
 										},
-										"required": ["location", "status"],
+										"required": ["location", "rotation", "scale", "status"],
 										"additionalProperties": false
 									}
 								]
 							}
 						},
-						"required": ["actorPath", "classPath", "packageName", "position"],
+						"required": ["actorPath", "classPath", "packageName", "transform"],
 						"additionalProperties": false
 					}
 				},

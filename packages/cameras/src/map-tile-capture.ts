@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import {
 	makeRemoteControlClient,
 	RemoteControlClient,
@@ -18,10 +18,10 @@ import { CAMERAS_PACKAGE_VERSION } from "./version.js";
 import {
 	MapCaptureRepository,
 	MapCaptureRepositoryLive,
-	mapCaptureAttemptsRoot,
-	mapCaptureRoot,
-	mapCaptureRunsRoot,
+	MapCaptureArtifactSourceRejected,
+	projectLocalMapCaptureDestination,
 	validateMapCaptureProjectRoot,
+	type MapCaptureDestination,
 	type MapCaptureRepositoryApi,
 	type MapCaptureStorageError
 } from "./map-tile-repository.js";
@@ -142,6 +142,11 @@ export function inspectMapCapturePlan(
 export interface RunMapCaptureOptions {
 	readonly captureBackend?: MapCaptureBackend;
 	readonly correlationId?: string;
+	/**
+	 * Final and retained-attempt storage. Omit this to use
+	 * `<project>/.ue-shed/map-capture`.
+	 */
+	readonly destination?: MapCaptureDestination;
 	readonly endpoint: string;
 	readonly levels?: ReadonlyArray<number>;
 	readonly onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>;
@@ -380,18 +385,14 @@ function runMapCaptureWith(args: {
 						})
 				)
 			);
-			const startedAt = isoNow(yield* Clock.currentTimeMillis);
-			const root = mapCaptureRoot(projectRoot);
-			const stagingRoot = join(root, `.staging-${runId}`);
-			const finalRoot = join(mapCaptureRunsRoot(projectRoot, plan.id), runId);
-			const attemptRoot = join(mapCaptureAttemptsRoot(projectRoot, plan.id), runId);
+			const destination =
+				args.options.destination ?? projectLocalMapCaptureDestination(projectRoot);
 			const unrealStagingRoot = resolve(projectRoot, "Saved", "UEShed", "MapTileStaging");
-			yield* args.repository.prepare({ root, stagingRoot });
+			const attempt = yield* destination.prepare({ planId: plan.id, runId });
 			yield* Effect.addFinalizer(() =>
-				args.repository
-					.discardStaging({ stagingRoot })
-					.pipe(Effect.orElseSucceed(() => undefined))
+				attempt.discard().pipe(Effect.orElseSucceed(() => undefined))
 			);
+			const startedAt = isoNow(yield* Clock.currentTimeMillis);
 
 			const captured: Array<MapTilePyramidManifestValue["tiles"][number]> = [];
 			const failures: Array<MapTilePyramidManifestValue["failures"][number]> = [];
@@ -487,34 +488,33 @@ function runMapCaptureWith(args: {
 								});
 								continue;
 							}
-							const normalizedStagingRoot = resolve(unrealStagingRoot);
-							const normalizedSource = resolve(result.stagedPath);
-							const sourceRelativePath = relative(
-								normalizedStagingRoot,
-								normalizedSource
-							);
-							if (
-								sourceRelativePath === "" ||
-								sourceRelativePath === ".." ||
-								sourceRelativePath.startsWith(`..${sep}`) ||
-								isAbsolute(sourceRelativePath)
-							) {
+							const relativePath = mapTileRelativePath(key);
+							const stored = yield* attempt
+								.storeTile({
+									relativePath,
+									sourceAuthorizationRoot: projectRoot,
+									sourcePath: result.stagedPath,
+									sourceRoot: unrealStagingRoot
+								})
+								.pipe(
+									Effect.catchTag(
+										"MapCaptureArtifactSourceRejected",
+										(cause: MapCaptureArtifactSourceRejected) =>
+											Effect.succeed(cause)
+									)
+								);
+							if (stored instanceof MapCaptureArtifactSourceRejected) {
 								failures.push({
 									failure: captureFailure({
 										code: "write_failed",
-										message:
-											"Editor returned a staged path outside Saved/UEShed/MapTileStaging.",
+										message: stored.message,
 										retrySafe: false
 									}),
 									key
 								});
 								continue;
 							}
-							const relativePath = mapTileRelativePath(key);
-							const bytes = yield* args.repository.storeTile({
-								destinationPath: join(stagingRoot, ...relativePath.split("/")),
-								sourcePath: normalizedSource
-							});
+							const bytes = stored;
 							const dimensions = yield* Effect.try({
 								try: () => readPngDimensions(bytes),
 								catch: (cause) =>
@@ -654,19 +654,15 @@ function runMapCaptureWith(args: {
 				)
 			);
 			if (manifest.state === "complete") {
-				yield* args.repository
-					.finalize({ finalRoot, manifest, stagingRoot })
-					.pipe(Effect.uninterruptible);
+				const manifestPath = yield* attempt.publish(manifest).pipe(Effect.uninterruptible);
 				return {
 					manifest,
-					manifestPath: join(finalRoot, "manifest.json"),
+					manifestPath,
 					published: true
 				};
 			}
-			yield* args.repository
-				.quarantine({ attemptRoot, manifest, stagingRoot })
-				.pipe(Effect.uninterruptible);
-			return { manifest, manifestPath: join(attemptRoot, "manifest.json"), published: false };
+			const manifestPath = yield* attempt.retain(manifest).pipe(Effect.uninterruptible);
+			return { manifest, manifestPath, published: false };
 		}).pipe(
 			Effect.withSpan("camera.map_tile.run", {
 				attributes: {

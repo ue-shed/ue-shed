@@ -1,0 +1,37 @@
+{
+	"name": "@ue-shed/engine-win32-x64",
+	"version": "0.2.0",
+	"description": "Windows x64 Job Object supervisor for scoped UE Shed editor sessions",
+	"homepage": "https://github.com/ue-shed/ue-shed#readme",
+	"bugs": {
+		"url": "https://github.com/ue-shed/ue-shed/issues"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ue-shed/ue-shed.git",
+		"directory": "packages/engine-win32-x64"
+	},
+	"files": [
+		"bin/ue-shed-process-supervisor.exe",
+		"LICENSE",
+		"README.md"
+	],
+	"os": [
+		"win32"
+	],
+	"cpu": [
+		"x64"
+	],
+	"exports": {
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"assemble": "node ./scripts/assemble.mts",
+		"prepack": "pnpm run assemble",
+		"test": "node --test"
+	}
+}

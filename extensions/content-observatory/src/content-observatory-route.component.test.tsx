@@ -21,6 +21,15 @@ afterAll(() => runtime.dispose());
 
 type CompletedContentObservatoryState = Extract<ContentObservatoryState, { status: "complete" }>;
 
+function resolvedTransform(x: number, y: number, z: number) {
+	return {
+		location: { x, y, z },
+		rotation: { w: 1, x: 0, y: 0, z: 0 },
+		scale: { x: 1, y: 1, z: 1 },
+		status: "resolved" as const
+	};
+}
+
 Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
 	configurable: true,
 	value: () => ({
@@ -85,7 +94,7 @@ function completeState(): CompletedContentObservatoryState {
 						classPath: "/Script/Game.Npc",
 						label: "Departed NPC",
 						packageName: "/Game/Actors/Departed",
-						position: { location: { x: -50, y: -60, z: 0 }, status: "resolved" }
+						transform: resolvedTransform(-50, -60, 0)
 					},
 					{
 						actorGuid: "actor-ground",
@@ -93,7 +102,7 @@ function completeState(): CompletedContentObservatoryState {
 						classPath: "/Script/Engine.StaticMeshActor",
 						label: "Old ground",
 						packageName: "/Game/Actors/Ground",
-						position: { location: { x: 100, y: 200, z: 0 }, status: "resolved" }
+						transform: resolvedTransform(100, 200, 0)
 					}
 				],
 				completeness: "complete",
@@ -116,7 +125,7 @@ function completeState(): CompletedContentObservatoryState {
 						classPath: "/Script/Engine.PointLight",
 						label: "Key lamp",
 						packageName: "/Game/Actors/KeyLamp",
-						position: { location: { x: 10, y: 20, z: 30 }, status: "resolved" }
+						transform: resolvedTransform(10, 20, 30)
 					},
 					{
 						actorGuid: "actor-ground",
@@ -124,7 +133,7 @@ function completeState(): CompletedContentObservatoryState {
 						classPath: "/Script/Engine.StaticMeshActor",
 						label: "Ground mesh",
 						packageName: "/Game/Actors/Ground",
-						position: { location: { x: 100, y: 200, z: 0 }, status: "resolved" }
+						transform: resolvedTransform(100, 200, 0)
 					}
 				],
 				completeness: "complete",
@@ -150,10 +159,7 @@ function completeState(): CompletedContentObservatoryState {
 								classPath: "/Script/Engine.PointLight",
 								label: "Key lamp",
 								packageName: "/Game/Actors/KeyLamp",
-								position: {
-									location: { x: 10, y: 20, z: 30 },
-									status: "resolved"
-								}
+								transform: resolvedTransform(10, 20, 30)
 							},
 							identity: { actorGuid: "actor-key-lamp", kind: "actor_guid" },
 							kind: "actor_added"
@@ -165,10 +171,7 @@ function completeState(): CompletedContentObservatoryState {
 								classPath: "/Script/Engine.StaticMeshActor",
 								label: "Ground mesh",
 								packageName: "/Game/Actors/Ground",
-								position: {
-									location: { x: 100, y: 200, z: 0 },
-									status: "resolved"
-								}
+								transform: resolvedTransform(100, 200, 0)
 							},
 							before: {
 								actorGuid: "actor-ground",
@@ -176,10 +179,7 @@ function completeState(): CompletedContentObservatoryState {
 								classPath: "/Script/Engine.StaticMeshActor",
 								label: "Old ground",
 								packageName: "/Game/Actors/Ground",
-								position: {
-									location: { x: 100, y: 200, z: 0 },
-									status: "resolved"
-								}
+								transform: resolvedTransform(100, 200, 0)
 							},
 							identity: { actorGuid: "actor-ground", kind: "actor_guid" },
 							kind: "actor_label_changed"
@@ -192,10 +192,7 @@ function completeState(): CompletedContentObservatoryState {
 								classPath: "/Script/Game.Npc",
 								label: "Departed NPC",
 								packageName: "/Game/Actors/Departed",
-								position: {
-									location: { x: -50, y: -60, z: 0 },
-									status: "resolved"
-								}
+								transform: resolvedTransform(-50, -60, 0)
 							},
 							identity: { actorGuid: "actor-departed", kind: "actor_guid" },
 							kind: "actor_removed"
@@ -227,7 +224,7 @@ function completeState(): CompletedContentObservatoryState {
 					]
 				}
 			],
-			schemaVersion: 1
+			schemaVersion: 2
 		}
 	}) as CompletedContentObservatoryState;
 }
@@ -366,7 +363,7 @@ describe("ContentObservatoryRoute", () => {
 		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
 			authority: { kind: "project_files", mapPackage: currentWorld.mapPackage },
 			completeness: currentWorld.completeness,
-			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 			diagnostics: currentWorld.diagnostics,
 			mapPath: currentWorld.mapPath,
 			actors: currentWorld.actors,
@@ -424,7 +421,7 @@ describe("ContentObservatoryRoute", () => {
 			classPath: "/Script/Game.Npc",
 			label: "North NPC",
 			packageName: "/Game/Maps/L_MapHistoryWorld",
-			position: { location: { x: 10, y: 20, z: 0 }, status: "resolved" as const }
+			transform: resolvedTransform(10, 20, 0)
 		};
 		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
 			maps,
@@ -434,7 +431,7 @@ describe("ContentObservatoryRoute", () => {
 		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
 			completeness: "complete",
-			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 			diagnostics: [],
 			mapPath: selectedMap.mapPath,
 			actors: [actor],
@@ -521,7 +518,7 @@ describe("ContentObservatoryRoute", () => {
 		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
 			completeness: "complete",
-			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 			diagnostics: [],
 			mapPath: selectedMap.mapPath,
 			actors: [
@@ -531,7 +528,7 @@ describe("ContentObservatoryRoute", () => {
 					classPath: "/Script/Game.Npc",
 					label: "North NPC",
 					packageName: "/Game/Maps/L_MapHistoryWorld",
-					position: { location: { x: 10, y: 20, z: 0 }, status: "resolved" as const }
+					transform: resolvedTransform(10, 20, 0)
 				}
 			],
 			sourceKind: "level",

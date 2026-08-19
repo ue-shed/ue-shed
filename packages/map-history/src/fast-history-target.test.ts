@@ -20,7 +20,12 @@ const eastActor: SavedWorld["actors"][number] = {
 	classPath: "/Script/Engine.StaticMeshActor",
 	label: "East Marker",
 	packageName: eastPackage,
-	position: { location: { x: 900, y: -320, z: 200 }, status: "resolved" }
+	transform: {
+		location: { x: 900, y: -320, z: 200 },
+		rotation: { w: 1, x: 0, y: 0, z: 0 },
+		scale: { x: 1, y: 1, z: 1 },
+		status: "resolved"
+	}
 };
 
 const worldPartitionScope: ResolvedPerforceMapScope = {
@@ -42,7 +47,7 @@ function world(actors: SavedWorld["actors"]): SavedWorld {
 		authority: { kind: "project_files", mapPackage: worldPartitionScope.mapPackageName },
 		actors,
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		externalActorRoot:
 			"C:/Project/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld",

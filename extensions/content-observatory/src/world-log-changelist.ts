@@ -54,15 +54,15 @@ function pointForActor(input: {
 	readonly opacity?: number;
 	readonly selectionKey: string;
 }): PointMapPoint | undefined {
-	if (input.actor.position.status !== "resolved") return undefined;
+	if (input.actor.transform.status !== "resolved") return undefined;
 	return {
 		className: input.actor.classPath,
 		color: input.color,
 		key: input.key,
 		...(input.opacity === undefined ? undefined : { opacity: input.opacity }),
 		selectionKey: input.selectionKey,
-		x: input.actor.position.location.x,
-		y: input.actor.position.location.y
+		x: input.actor.transform.location.x,
+		y: input.actor.transform.location.y
 	};
 }
 
@@ -78,7 +78,9 @@ function actorEvidence(
 		case "actor_label_changed":
 		case "actor_class_changed":
 		case "actor_package_changed":
-		case "actor_position_resolution_changed":
+		case "actor_attachment_changed":
+		case "actor_transform_changed":
+		case "actor_transform_resolution_changed":
 			return { after: change.after, before: change.before };
 		case "snapshot_coverage_changed":
 			return undefined;
@@ -126,7 +128,7 @@ export function worldLogChangelistMapOverlay(
 			continue;
 		}
 		points.push(after);
-		if (tone !== "moved" || evidence.before?.position.status !== "resolved") continue;
+		if (tone !== "moved" || evidence.before?.transform.status !== "resolved") continue;
 		const before = pointForActor({
 			actor: evidence.before,
 			color: worldLogChangelistToneColor(tone),

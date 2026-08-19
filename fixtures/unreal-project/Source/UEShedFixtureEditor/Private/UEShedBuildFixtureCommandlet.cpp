@@ -2496,6 +2496,8 @@ bool GenerateCameraMap()
 		bool bHasReviewOccluder = false;
 		bool bHasAtmosphere = false;
 		bool bAllCamerasBound = true;
+		AUEShedFixtureMover* NestedAttachmentChild = nullptr;
+		AUEShedFixtureMover* NestedAttachmentParent = nullptr;
 		for (AActor* Actor : World->PersistentLevel->Actors)
 		{
 			if (Actor == nullptr) continue;
@@ -2504,12 +2506,14 @@ bool GenerateCameraMap()
 			bHasTranslucentReviewSubject = bHasTranslucentReviewSubject
 				|| Actor->GetFName() == TEXT("ReviewTranslucentSubject");
 			bHasReviewOccluder = bHasReviewOccluder || Actor->GetFName() == TEXT("ReviewOccluder");
-			if (const AUEShedFixtureMover* Mover = Cast<AUEShedFixtureMover>(Actor))
+			if (AUEShedFixtureMover* Mover = Cast<AUEShedFixtureMover>(Actor))
 			{
 				++ExistingMovers;
 				StationaryMovers += Mover->IsA<AUEShedFixtureStationary>() ? 1 : 0;
 				FlyingMovers += Mover->IsA<AUEShedFixtureFlying>() ? 1 : 0;
 				IntermittentMovers += Mover->IsA<AUEShedFixtureIntermittent>() ? 1 : 0;
+				if (Mover->LogicalIndex == 0) NestedAttachmentChild = Mover;
+				if (Mover->LogicalIndex == 1) NestedAttachmentParent = Mover;
 				bMoverMotionsMatch = bMoverMotionsMatch
 					&& (!Mover->IsA<AUEShedFixtureStationary>()
 						|| Mover->Motion == EUEShedFixtureMotion::Stationary)
@@ -2534,6 +2538,14 @@ bool GenerateCameraMap()
 			&& bFamiliesMatch
 			&& bMoverMotionsMatch)
 		{
+			if (NestedAttachmentChild == nullptr || NestedAttachmentParent == nullptr) return false;
+			if (NestedAttachmentChild->GetAttachParentActor() != NestedAttachmentParent)
+			{
+				NestedAttachmentChild->AttachToActor(
+					NestedAttachmentParent, FAttachmentTransformRules::KeepWorldTransform);
+				Package->MarkPackageDirty();
+				if (!SaveAsset(Package, World)) return false;
+			}
 			UE_LOG(LogTemp, Display, TEXT("Camera fixture map already matches its contract"));
 			return true;
 		}
@@ -2699,6 +2711,7 @@ bool GenerateCameraMap()
 		Mover->SetActorLabel(FString::Printf(TEXT("%s %04d"), MotionFamilyLabel(Motion), Index + 1));
 		Movers.Add(Mover);
 	}
+	Movers[0]->AttachToActor(Movers[1], FAttachmentTransformRules::KeepWorldTransform);
 
 	for (int32 Index = 0; Index < CameraFixtureCount; ++Index)
 	{
@@ -2747,6 +2760,7 @@ bool VerifyCameraMap()
 	bool bHasTranslucentReviewSubject = false;
 	bool bHasReviewOccluder = false;
 	bool bHasAtmosphere = false;
+	bool bHasNestedMoverAttachment = false;
 	for (AActor* Actor : World->PersistentLevel->Actors)
 	{
 		if (Actor == nullptr) continue;
@@ -2761,6 +2775,11 @@ bool VerifyCameraMap()
 			StationaryMovers += Mover->IsA<AUEShedFixtureStationary>() ? 1 : 0;
 			FlyingMovers += Mover->IsA<AUEShedFixtureFlying>() ? 1 : 0;
 			IntermittentMovers += Mover->IsA<AUEShedFixtureIntermittent>() ? 1 : 0;
+			const AUEShedFixtureMover* ParentMover =
+				Cast<AUEShedFixtureMover>(Mover->GetAttachParentActor());
+			bHasNestedMoverAttachment = bHasNestedMoverAttachment
+				|| (Mover->LogicalIndex == 0 && ParentMover != nullptr
+					&& ParentMover->LogicalIndex == 1);
 			bMoverMotionsMatch = bMoverMotionsMatch
 				&& (!Mover->IsA<AUEShedFixtureStationary>()
 					|| Mover->Motion == EUEShedFixtureMotion::Stationary)
@@ -2786,6 +2805,7 @@ bool VerifyCameraMap()
 	return Movers == ObservationMoverCount && Cameras == CameraFixtureCount
 		&& BoundCameras == CameraFixtureCount && bHasReviewSubject && bHasTranslucentReviewSubject
 		&& bHasReviewOccluder && bHasAtmosphere
+		&& bHasNestedMoverAttachment
 		&& StationaryMovers == StationaryMoverCount && FlyingMovers == FlyingMoverCount
 		&& IntermittentMovers == IntermittentMoverCount && bMoverMotionsMatch;
 }

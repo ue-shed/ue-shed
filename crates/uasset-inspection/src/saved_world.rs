@@ -3,7 +3,7 @@
 //! This module deliberately consumes the generic tagged-property model rather than adding a
 //! level-specific decoder. A world-partition actor package is an ordinary classic package; this
 //! projection answers the narrower product question: which saved actors have a resolvable world
-//! position while the Unreal editor is closed?
+//! transform while the Unreal editor is closed?
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -50,6 +50,10 @@ impl SavedWorldVector {
             z: self.z + other.z,
         }
     }
+
+    fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
 }
 
 impl From<&VectorValue> for SavedWorldVector {
@@ -62,7 +66,7 @@ impl From<&VectorValue> for SavedWorldVector {
     }
 }
 
-/// The saved portion of a scene component transform needed to resolve actor positions.
+/// The saved portion of a scene component transform needed to resolve actor transforms.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SavedWorldComponentFragment {
     pub attach_parent: Option<ObjectPath>,
@@ -89,6 +93,10 @@ impl SavedWorldRotator {
         yaw: 0.0,
         roll: 0.0,
     };
+
+    fn is_finite(self) -> bool {
+        self.pitch.is_finite() && self.yaw.is_finite() && self.roll.is_finite()
+    }
 }
 
 impl From<&RotatorValue> for SavedWorldRotator {
@@ -119,27 +127,53 @@ pub struct SavedWorldPackageFragment {
     pub package_name: String,
 }
 
-/// One saved actor with its best available world-position result.
+/// A direct saved attachment between an actor root component and its parent component.
+///
+/// Component paths are exposed because the saved package proves them directly. This deliberately
+/// does not infer which actor, if any, owns the parent component.
 #[derive(Clone, Debug, PartialEq)]
-pub struct SavedWorldActorPosition {
+pub struct SavedWorldAttachment {
+    pub component_path: ObjectPath,
+    pub parent_component_path: ObjectPath,
+}
+
+/// One saved actor with its best available transform and attachment evidence.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedWorldActorEvidence {
     pub actor_guid: Option<Guid>,
     pub actor_path: ObjectPath,
+    pub attachment: Option<SavedWorldAttachment>,
     pub class_path: ObjectPath,
     pub label: Option<String>,
     /// The external actor package which contains this actor's serialized export.
     pub package_name: String,
-    pub position: SavedWorldPosition,
+    pub transform: SavedWorldTransform,
 }
 
 /// The result of resolving an actor's root component through saved attachments.
 #[derive(Clone, Debug, PartialEq)]
-pub enum SavedWorldPosition {
-    Resolved { location: SavedWorldVector },
+pub enum SavedWorldTransform {
+    Resolved {
+        location: SavedWorldVector,
+        rotation: SavedWorldQuaternion,
+        scale: SavedWorldVector,
+    },
     MissingRootComponent,
-    MissingAttachmentParent { parent_path: ObjectPath },
-    AttachmentCycle { component_path: ObjectPath },
-    AmbiguousComponentPath { component_path: ObjectPath },
-    UnsupportedAbsoluteTransform { component_path: ObjectPath },
+    MissingAttachmentParent {
+        parent_path: ObjectPath,
+    },
+    AttachmentCycle {
+        component_path: ObjectPath,
+    },
+    AmbiguousComponentPath {
+        component_path: ObjectPath,
+    },
+    UnsupportedAbsoluteTransform {
+        component_path: ObjectPath,
+    },
+    NonFiniteTransform {
+        component_path: ObjectPath,
+    },
 }
 
 /// Projects generic decoded UObjects from one package into actor and component fragments.
@@ -192,16 +226,16 @@ pub fn project_saved_world_package(
     }
 }
 
-/// Resolves root-component locations across a set of saved external-actor packages.
+/// Resolves root-component transforms across a set of saved level or external-actor packages.
 ///
 /// This follows Unreal's `NewRelativeTransform * ParentToWorld` position rule. Absolute rotation
 /// and scale require the engine's `FTransform` matrix/decomposition behavior once attachments are
 /// involved, so they are deliberately reported instead of approximated. Absolute location is safe
 /// to resolve because Unreal copies its translation directly from the relative transform.
 #[must_use]
-pub fn resolve_saved_world_positions(
+pub fn resolve_saved_world_actors(
     fragments: &[SavedWorldPackageFragment],
-) -> Vec<SavedWorldActorPosition> {
+) -> Vec<SavedWorldActorEvidence> {
     let mut components = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
     for component in fragments.iter().flat_map(|fragment| &fragment.components) {
@@ -212,18 +246,30 @@ pub fn resolve_saved_world_positions(
     }
 
     let mut cache = BTreeMap::new();
-    let mut positions = Vec::new();
+    let mut actors = Vec::new();
     for fragment in fragments {
         for actor in &fragment.actors {
-            let position = match actor.root_component.as_ref() {
-                None => SavedWorldPosition::MissingRootComponent,
+            let attachment = actor.root_component.as_ref().and_then(|root_component| {
+                if duplicates.contains(root_component.as_str()) {
+                    return None;
+                }
+                components
+                    .get(root_component.as_str())
+                    .and_then(|component| component.attach_parent.as_ref())
+                    .map(|parent_component| SavedWorldAttachment {
+                        component_path: root_component.clone(),
+                        parent_component_path: parent_component.clone(),
+                    })
+            });
+            let transform = match actor.root_component.as_ref() {
+                None => SavedWorldTransform::MissingRootComponent,
                 Some(root_component) if duplicates.contains(root_component.as_str()) => {
-                    SavedWorldPosition::AmbiguousComponentPath {
+                    SavedWorldTransform::AmbiguousComponentPath {
                         component_path: root_component.clone(),
                     }
                 }
                 Some(root_component) if !components.contains_key(root_component.as_str()) => {
-                    SavedWorldPosition::MissingRootComponent
+                    SavedWorldTransform::MissingRootComponent
                 }
                 Some(root_component) => match resolve_component(
                     root_component.as_str(),
@@ -232,34 +278,40 @@ pub fn resolve_saved_world_positions(
                     &mut cache,
                     &mut BTreeSet::new(),
                 ) {
-                    Ok(transform) => SavedWorldPosition::Resolved {
+                    Ok(transform) => SavedWorldTransform::Resolved {
                         location: transform.location,
+                        rotation: transform.rotation,
+                        scale: transform.scale,
                     },
                     Err(ComponentResolution::MissingParent(parent_path)) => {
-                        SavedWorldPosition::MissingAttachmentParent { parent_path }
+                        SavedWorldTransform::MissingAttachmentParent { parent_path }
                     }
                     Err(ComponentResolution::Cycle(component_path)) => {
-                        SavedWorldPosition::AttachmentCycle { component_path }
+                        SavedWorldTransform::AttachmentCycle { component_path }
                     }
                     Err(ComponentResolution::Ambiguous(component_path)) => {
-                        SavedWorldPosition::AmbiguousComponentPath { component_path }
+                        SavedWorldTransform::AmbiguousComponentPath { component_path }
                     }
                     Err(ComponentResolution::UnsupportedAbsoluteTransform(component_path)) => {
-                        SavedWorldPosition::UnsupportedAbsoluteTransform { component_path }
+                        SavedWorldTransform::UnsupportedAbsoluteTransform { component_path }
+                    }
+                    Err(ComponentResolution::NonFinite(component_path)) => {
+                        SavedWorldTransform::NonFiniteTransform { component_path }
                     }
                 },
             };
-            positions.push(SavedWorldActorPosition {
+            actors.push(SavedWorldActorEvidence {
                 actor_guid: actor.actor_guid,
                 actor_path: actor.actor_path.clone(),
+                attachment,
                 class_path: actor.class_path.clone(),
                 label: actor.label.clone(),
                 package_name: fragment.package_name.clone(),
-                position,
+                transform,
             });
         }
     }
-    positions
+    actors
 }
 
 #[derive(Clone, Debug)]
@@ -267,14 +319,21 @@ enum ComponentResolution {
     Ambiguous(ObjectPath),
     Cycle(ObjectPath),
     MissingParent(ObjectPath),
+    NonFinite(ObjectPath),
     UnsupportedAbsoluteTransform(ObjectPath),
 }
 
 #[derive(Clone, Copy, Debug)]
 struct ComponentTransform {
     location: SavedWorldVector,
-    rotation: Quaternion,
+    rotation: SavedWorldQuaternion,
     scale: SavedWorldVector,
+}
+
+impl ComponentTransform {
+    fn is_finite(self) -> bool {
+        self.location.is_finite() && self.rotation.is_finite() && self.scale.is_finite()
+    }
 }
 
 fn resolve_component(
@@ -297,9 +356,17 @@ fn resolve_component(
         let component = components
             .get(path)
             .ok_or_else(|| ComponentResolution::MissingParent(ObjectPath::new(path)))?;
+        if !component.relative_location.is_finite()
+            || !component.relative_rotation.is_finite()
+            || !component.relative_scale.is_finite()
+        {
+            return Err(ComponentResolution::NonFinite(
+                component.object_path.clone(),
+            ));
+        }
         let relative = ComponentTransform {
             location: component.relative_location,
-            rotation: Quaternion::from_rotator(component.relative_rotation),
+            rotation: SavedWorldQuaternion::from_rotator(component.relative_rotation),
             scale: component.relative_scale,
         };
         let Some(parent_path) = component.attach_parent.as_ref() else {
@@ -317,7 +384,7 @@ fn resolve_component(
             cache,
             resolving,
         )?;
-        Ok(ComponentTransform {
+        let transform = ComponentTransform {
             location: if component.absolute_location {
                 relative.location
             } else {
@@ -328,22 +395,28 @@ fn resolve_component(
             },
             rotation: parent.rotation.multiply(relative.rotation),
             scale: parent.scale.component_mul(relative.scale),
-        })
+        };
+        if !transform.is_finite() {
+            return Err(ComponentResolution::NonFinite(
+                component.object_path.clone(),
+            ));
+        }
+        Ok(transform)
     })();
     resolving.remove(path);
     cache.insert(path.to_owned(), result.clone());
     result
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Quaternion {
-    x: f64,
-    y: f64,
-    z: f64,
-    w: f64,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SavedWorldQuaternion {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub w: f64,
 }
 
-impl Quaternion {
+impl SavedWorldQuaternion {
     fn from_rotator(rotator: SavedWorldRotator) -> Self {
         let to_radians = std::f64::consts::PI / 360.0;
         let (pitch_sin, pitch_cos) = (rotator.pitch * to_radians).sin_cos();
@@ -364,6 +437,10 @@ impl Quaternion {
             z: self.w * other.z + self.x * other.y - self.y * other.x + self.z * other.w,
             w: self.w * other.w - self.x * other.x - self.y * other.y - self.z * other.z,
         }
+    }
+
+    fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite() && self.w.is_finite()
     }
 
     fn rotate(self, value: SavedWorldVector) -> SavedWorldVector {
@@ -496,4 +573,261 @@ fn guid_property(package: &Package, properties: &PropertyStream, name: &str) -> 
         return None;
     };
     (!value.is_zero()).then_some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actor(path: &str, root_component: Option<&str>) -> SavedWorldActorFragment {
+        SavedWorldActorFragment {
+            actor_guid: None,
+            actor_path: ObjectPath::new(path),
+            class_path: ObjectPath::new("/Script/Engine.Actor"),
+            label: None,
+            root_component: root_component.map(ObjectPath::new),
+        }
+    }
+
+    fn component(
+        path: &str,
+        parent: Option<&str>,
+        location: SavedWorldVector,
+        rotation: SavedWorldRotator,
+        scale: SavedWorldVector,
+    ) -> SavedWorldComponentFragment {
+        SavedWorldComponentFragment {
+            attach_parent: parent.map(ObjectPath::new),
+            absolute_location: false,
+            absolute_rotation: false,
+            absolute_scale: false,
+            object_path: ObjectPath::new(path),
+            relative_location: location,
+            relative_rotation: rotation,
+            relative_scale: scale,
+        }
+    }
+
+    fn fragment(
+        actors: Vec<SavedWorldActorFragment>,
+        components: Vec<SavedWorldComponentFragment>,
+    ) -> SavedWorldPackageFragment {
+        SavedWorldPackageFragment {
+            actors,
+            components,
+            package_name: "/Game/Maps/Fixture".to_owned(),
+        }
+    }
+
+    #[test]
+    fn nested_attachments_compose_effective_transform_and_direct_attachment() {
+        let parent = component(
+            "Parent",
+            None,
+            SavedWorldVector {
+                x: 100.0,
+                y: 200.0,
+                z: 300.0,
+            },
+            SavedWorldRotator {
+                pitch: 0.0,
+                yaw: 90.0,
+                roll: 0.0,
+            },
+            SavedWorldVector {
+                x: 2.0,
+                y: 2.0,
+                z: 2.0,
+            },
+        );
+        let middle = component(
+            "Middle",
+            Some("Parent"),
+            SavedWorldVector {
+                x: 10.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            SavedWorldRotator::ZERO,
+            SavedWorldVector {
+                x: 0.5,
+                y: 1.0,
+                z: 1.0,
+            },
+        );
+        let child = component(
+            "Child",
+            Some("Middle"),
+            SavedWorldVector {
+                x: 5.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            SavedWorldRotator::ZERO,
+            SavedWorldVector {
+                x: 3.0,
+                y: 4.0,
+                z: 5.0,
+            },
+        );
+        let fragments = [fragment(
+            vec![actor("NestedActor", Some("Child"))],
+            vec![parent, middle, child],
+        )];
+
+        let first = resolve_saved_world_actors(&fragments);
+        let second = resolve_saved_world_actors(&fragments);
+        assert_eq!(
+            first, second,
+            "saved actor order and evidence are deterministic"
+        );
+        assert_eq!(
+            first[0].attachment,
+            Some(SavedWorldAttachment {
+                component_path: ObjectPath::new("Child"),
+                parent_component_path: ObjectPath::new("Middle"),
+            })
+        );
+        let SavedWorldTransform::Resolved {
+            location,
+            rotation,
+            scale,
+        } = first[0].transform
+        else {
+            panic!("nested transform must resolve")
+        };
+        assert!((location.x - 100.0).abs() < 1e-9);
+        assert!((location.y - 225.0).abs() < 1e-9);
+        assert!((location.z - 300.0).abs() < 1e-9);
+        assert!((rotation.w - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-9);
+        assert!((rotation.z - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-9);
+        assert_eq!(
+            scale,
+            SavedWorldVector {
+                x: 3.0,
+                y: 8.0,
+                z: 10.0,
+            }
+        );
+    }
+
+    #[test]
+    fn transform_failures_remain_explicit_and_never_become_identity() {
+        let mut unsupported = component(
+            "Unsupported",
+            Some("StableParent"),
+            SavedWorldVector::ZERO,
+            SavedWorldRotator::ZERO,
+            SavedWorldVector::ONE,
+        );
+        unsupported.absolute_rotation = true;
+        let fragments = [
+            fragment(vec![actor("MissingRoot", None)], vec![]),
+            fragment(
+                vec![actor("MissingParent", Some("MissingParentRoot"))],
+                vec![component(
+                    "MissingParentRoot",
+                    Some("Absent"),
+                    SavedWorldVector::ZERO,
+                    SavedWorldRotator::ZERO,
+                    SavedWorldVector::ONE,
+                )],
+            ),
+            fragment(
+                vec![actor("Cycle", Some("CycleA"))],
+                vec![
+                    component(
+                        "CycleA",
+                        Some("CycleB"),
+                        SavedWorldVector::ZERO,
+                        SavedWorldRotator::ZERO,
+                        SavedWorldVector::ONE,
+                    ),
+                    component(
+                        "CycleB",
+                        Some("CycleA"),
+                        SavedWorldVector::ZERO,
+                        SavedWorldRotator::ZERO,
+                        SavedWorldVector::ONE,
+                    ),
+                ],
+            ),
+            fragment(
+                vec![actor("Ambiguous", Some("Duplicate"))],
+                vec![component(
+                    "Duplicate",
+                    None,
+                    SavedWorldVector::ZERO,
+                    SavedWorldRotator::ZERO,
+                    SavedWorldVector::ONE,
+                )],
+            ),
+            fragment(
+                vec![],
+                vec![component(
+                    "Duplicate",
+                    None,
+                    SavedWorldVector::ZERO,
+                    SavedWorldRotator::ZERO,
+                    SavedWorldVector::ONE,
+                )],
+            ),
+            fragment(
+                vec![actor("Unsupported", Some("Unsupported"))],
+                vec![
+                    component(
+                        "StableParent",
+                        None,
+                        SavedWorldVector::ZERO,
+                        SavedWorldRotator::ZERO,
+                        SavedWorldVector::ONE,
+                    ),
+                    unsupported,
+                ],
+            ),
+            fragment(
+                vec![actor("NonFinite", Some("NonFinite"))],
+                vec![component(
+                    "NonFinite",
+                    None,
+                    SavedWorldVector::ZERO,
+                    SavedWorldRotator::ZERO,
+                    SavedWorldVector {
+                        x: f64::NAN,
+                        y: 1.0,
+                        z: 1.0,
+                    },
+                )],
+            ),
+        ];
+
+        let evidence: BTreeMap<_, _> = resolve_saved_world_actors(&fragments)
+            .into_iter()
+            .map(|actor| (actor.actor_path.to_string(), actor.transform))
+            .collect();
+        assert!(matches!(
+            evidence["MissingRoot"],
+            SavedWorldTransform::MissingRootComponent
+        ));
+        assert!(matches!(
+            evidence["MissingParent"],
+            SavedWorldTransform::MissingAttachmentParent { .. }
+        ));
+        assert!(matches!(
+            evidence["Cycle"],
+            SavedWorldTransform::AttachmentCycle { .. }
+        ));
+        assert!(matches!(
+            evidence["Ambiguous"],
+            SavedWorldTransform::AmbiguousComponentPath { .. }
+        ));
+        assert!(matches!(
+            evidence["Unsupported"],
+            SavedWorldTransform::UnsupportedAbsoluteTransform { .. }
+        ));
+        assert!(matches!(
+            evidence["NonFinite"],
+            SavedWorldTransform::NonFiniteTransform { .. }
+        ));
+    }
 }

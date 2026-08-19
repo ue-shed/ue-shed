@@ -12,8 +12,8 @@ use uasset_inspection::projection::{
     project_texture_asset,
 };
 use uasset_inspection::saved_world::{
-    SavedWorldActorPosition, SavedWorldPackageFragment, SavedWorldPosition,
-    project_saved_world_package, resolve_saved_world_positions,
+    SavedWorldActorEvidence, SavedWorldPackageFragment, SavedWorldTransform,
+    project_saved_world_package, resolve_saved_world_actors,
 };
 use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
@@ -32,11 +32,12 @@ use crate::protocol_result::{
     SavedAssetProjectionDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary,
     SavedAssetTextCoverageGap, SavedAssetTextExtractionEvent, SavedAssetTextOccurrence,
     SavedAssetTextureExtractionEvent, SavedAssetTextureRecord, SavedWorld, SavedWorldActor,
-    SavedWorldAuthority, SavedWorldContract, SavedWorldContractName, SavedWorldContractVersion,
-    SavedWorldDiagnostic, SavedWorldPosition as WireWorldPosition, SavedWorldSourceKind,
-    SavedWorldSummary, SavedWorldVector, ScanSummaryDepth, TextCoverageGapReason,
-    TextExtractionIdentity, TextExtractionLocation, TextUnresolvedReason, TextureDimensions,
-    TextureEvidence, TextureEvidenceSource, TextureUnavailableReason,
+    SavedWorldAttachment, SavedWorldAuthority, SavedWorldContract, SavedWorldContractName,
+    SavedWorldContractVersion, SavedWorldDiagnostic, SavedWorldQuaternion, SavedWorldSourceKind,
+    SavedWorldSummary, SavedWorldTransform as WireWorldTransform, SavedWorldVector,
+    ScanSummaryDepth, TextCoverageGapReason, TextExtractionIdentity, TextExtractionLocation,
+    TextUnresolvedReason, TextureDimensions, TextureEvidence, TextureEvidenceSource,
+    TextureUnavailableReason,
 };
 
 const SCHEMA_VERSION: u8 = 8;
@@ -1568,11 +1569,11 @@ where
         }
     }
     checkpoint(cancellation, "inspection")?;
-    let positions = resolve_saved_world_positions(&fragments);
+    let actors = resolve_saved_world_actors(&fragments);
     checkpoint(cancellation, "inspection")?;
-    let resolved_actors = positions
+    let resolved_actors = actors
         .iter()
-        .filter(|position| matches!(position.position, SavedWorldPosition::Resolved { .. }))
+        .filter(|actor| matches!(actor.transform, SavedWorldTransform::Resolved { .. }))
         .count() as u64;
     let diagnostics = diagnostic_counts
         .into_iter()
@@ -1596,7 +1597,7 @@ where
         },
         contract: SavedWorldContract {
             name: SavedWorldContractName,
-            version: SavedWorldContractVersion { major: 1, minor: 1 },
+            version: SavedWorldContractVersion { major: 2, minor: 0 },
         },
         diagnostics,
         external_actor_root: roots
@@ -1605,7 +1606,7 @@ where
             .map(|path| path.to_string_lossy().into_owned()),
         map_path: roots.map_path.to_string_lossy().into_owned(),
         source_kind: roots.source.kind(),
-        actors: positions.into_iter().map(saved_world_actor).collect(),
+        actors: actors.into_iter().map(saved_world_actor).collect(),
         summary: SavedWorldSummary {
             failed_packages,
             partial_packages,
@@ -1805,44 +1806,68 @@ fn read_saved_world_package(
     })
 }
 
-fn saved_world_actor(position: SavedWorldActorPosition) -> SavedWorldActor {
+fn saved_world_actor(actor: SavedWorldActorEvidence) -> SavedWorldActor {
     SavedWorldActor {
-        actor_guid: position.actor_guid.map(|guid| guid.to_string()),
-        actor_path: position.actor_path.to_string(),
-        class_path: position.class_path.to_string(),
-        label: position.label,
-        package_name: position.package_name,
-        position: saved_world_position(position.position),
+        actor_guid: actor.actor_guid.map(|guid| guid.to_string()),
+        actor_path: actor.actor_path.to_string(),
+        attachment: actor.attachment.map(|attachment| SavedWorldAttachment {
+            component_path: attachment.component_path.to_string(),
+            parent_component_path: attachment.parent_component_path.to_string(),
+        }),
+        class_path: actor.class_path.to_string(),
+        label: actor.label,
+        package_name: actor.package_name,
+        transform: saved_world_transform(actor.transform),
     }
 }
 
-fn saved_world_position(position: SavedWorldPosition) -> WireWorldPosition {
-    match position {
-        SavedWorldPosition::Resolved { location } => WireWorldPosition::Resolved {
+fn saved_world_transform(transform: SavedWorldTransform) -> WireWorldTransform {
+    match transform {
+        SavedWorldTransform::Resolved {
+            location,
+            rotation,
+            scale,
+        } => WireWorldTransform::Resolved {
             location: SavedWorldVector {
                 x: location.x,
                 y: location.y,
                 z: location.z,
             },
+            rotation: SavedWorldQuaternion {
+                w: rotation.w,
+                x: rotation.x,
+                y: rotation.y,
+                z: rotation.z,
+            },
+            scale: SavedWorldVector {
+                x: scale.x,
+                y: scale.y,
+                z: scale.z,
+            },
         },
-        SavedWorldPosition::MissingRootComponent => WireWorldPosition::MissingRootComponent,
-        SavedWorldPosition::MissingAttachmentParent { parent_path } => {
-            WireWorldPosition::MissingAttachmentParent {
+        SavedWorldTransform::MissingRootComponent => WireWorldTransform::MissingRootComponent,
+        SavedWorldTransform::MissingAttachmentParent { parent_path } => {
+            WireWorldTransform::MissingAttachmentParent {
                 parent_path: parent_path.to_string(),
             }
         }
-        SavedWorldPosition::AttachmentCycle { component_path } => {
-            WireWorldPosition::AttachmentCycle {
+        SavedWorldTransform::AttachmentCycle { component_path } => {
+            WireWorldTransform::AttachmentCycle {
                 component_path: component_path.to_string(),
             }
         }
-        SavedWorldPosition::AmbiguousComponentPath { component_path } => {
-            WireWorldPosition::AmbiguousComponentPath {
+        SavedWorldTransform::AmbiguousComponentPath { component_path } => {
+            WireWorldTransform::AmbiguousComponentPath {
                 component_path: component_path.to_string(),
             }
         }
-        SavedWorldPosition::UnsupportedAbsoluteTransform { component_path } => {
-            WireWorldPosition::UnsupportedAbsoluteTransform {
+        SavedWorldTransform::UnsupportedAbsoluteTransform { component_path } => {
+            WireWorldTransform::UnsupportedAbsoluteTransform {
+                component_path: component_path.to_string(),
+            }
+        }
+        SavedWorldTransform::NonFiniteTransform { component_path } => {
+            WireWorldTransform::NonFiniteTransform {
                 component_path: component_path.to_string(),
             }
         }
@@ -1863,7 +1888,9 @@ impl SchemaProvider for EmptySchemas {
 
 #[cfg(test)]
 mod tests {
-    use super::scan_header_cache_needs_write;
+    use super::{saved_world_with_cancellation, scan_header_cache_needs_write};
+    use crate::cancellation::CancellationToken;
+    use crate::protocol::Request;
 
     #[test]
     fn exact_header_cache_hit_is_a_no_op() {
@@ -1877,5 +1904,30 @@ mod tests {
         assert!(scan_header_cache_needs_write(true, 10, 10, 11, 10));
         assert!(scan_header_cache_needs_write(true, 11, 11, 10, 10));
         assert!(scan_header_cache_needs_write(true, 11, 10, 10, 10));
+    }
+
+    #[test]
+    fn saved_world_honors_cancellation_before_filesystem_discovery() {
+        let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/unreal-project");
+        let request: Request = serde_json::from_value(serde_json::json!({
+            "contract": { "name": "uasset-io", "version": { "major": 1, "minor": 0 } },
+            "limits": { "concurrency": 1 },
+            "operation": {
+                "kind": "saved_world",
+                "projectRoot": project_root.to_string_lossy(),
+                "mapPath": "Content/Fixture/Offline/L_OfflineWorld.umap"
+            },
+            "requestId": "cancelled-saved-world"
+        }))
+        .expect("saved-world request");
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+
+        let failure = saved_world_with_cancellation(&request, &cancellation)
+            .expect_err("pre-cancelled saved-world inspection");
+        assert_eq!(failure.code, "cancelled");
+        assert!(failure.message.contains("discovery"));
+        assert!(failure.retry_safe);
     }
 }

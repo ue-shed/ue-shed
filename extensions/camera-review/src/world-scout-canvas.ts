@@ -193,8 +193,8 @@ export class WorldScoutRetainedStore {
 	 */
 	installSavedWorld(world: SavedWorld): void {
 		const resolved = world.actors.flatMap((actor) =>
-			actor.position.status === "resolved"
-				? [{ actor, location: actor.position.location }]
+			actor.transform.status === "resolved"
+				? [{ actor, location: actor.transform.location }]
 				: []
 		);
 		this.ensureCapacity(resolved.length);

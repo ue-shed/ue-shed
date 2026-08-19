@@ -13,6 +13,11 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { Context, Effect, Layer, Schema } from "effect";
 import {
+	CaptureArtifactSourceRejected,
+	makeFilesystemCaptureDestination,
+	type FilesystemCaptureDestination
+} from "./capture-destination.js";
+import {
 	decodeMapCapturePlan,
 	MapTilePyramidManifest,
 	type MapCapturePlan,
@@ -39,6 +44,15 @@ export class MapCaptureStorageError extends Schema.TaggedErrorClass<MapCaptureSt
 		]),
 		path: Schema.String,
 		recovery: Schema.String
+	}
+) {}
+
+export class MapCaptureArtifactSourceRejected extends Schema.TaggedErrorClass<MapCaptureArtifactSourceRejected>()(
+	"MapCaptureArtifactSourceRejected",
+	{
+		message: Schema.String,
+		path: Schema.String,
+		root: Schema.String
 	}
 ) {}
 
@@ -83,6 +97,194 @@ export function mapCaptureAttemptsRoot(projectRoot: string, planId?: string): st
 	return planId === undefined
 		? join(mapCaptureRoot(projectRoot), "attempts")
 		: join(mapCaptureRoot(projectRoot), "attempts", planId);
+}
+
+export interface MapCaptureAttempt {
+	readonly discard: () => Effect.Effect<void, MapCaptureStorageError>;
+	readonly publish: (
+		manifest: MapTilePyramidManifestValue
+	) => Effect.Effect<string, MapCaptureStorageError>;
+	readonly retain: (
+		manifest: MapTilePyramidManifestValue
+	) => Effect.Effect<string, MapCaptureStorageError>;
+	readonly storeTile: (args: {
+		readonly relativePath: string;
+		readonly sourceAuthorizationRoot: string;
+		readonly sourcePath: string;
+		readonly sourceRoot: string;
+	}) => Effect.Effect<Uint8Array, MapCaptureArtifactSourceRejected | MapCaptureStorageError>;
+}
+
+export interface MapCaptureDestination {
+	readonly prepare: (args: {
+		readonly planId: MapCapturePlan["id"];
+		readonly runId: MapTilePyramidManifestValue["runId"];
+	}) => Effect.Effect<MapCaptureAttempt, MapCaptureStorageError>;
+	readonly runManifestPath: (args: {
+		readonly planId: MapCapturePlan["id"];
+		readonly runId: MapTilePyramidManifestValue["runId"];
+	}) => string;
+}
+
+function mapDestinationStorageError(args: {
+	readonly cause: { readonly message: string; readonly path: string };
+	readonly operation: MapCaptureStorageError["operation"];
+	readonly recovery: string;
+}): MapCaptureStorageError {
+	return new MapCaptureStorageError({
+		message: args.cause.message,
+		operation: args.operation,
+		path: args.cause.path,
+		recovery: args.recovery
+	});
+}
+
+function mapCaptureDestination(filesystem: FilesystemCaptureDestination): MapCaptureDestination {
+	const completedDestination = (planId: string, runId: string) => `runs/${planId}/${runId}`;
+	const retainedDestination = (planId: string, runId: string) => `attempts/${planId}/${runId}`;
+	return {
+		prepare: Effect.fn("MapCaptureDestination.prepare")(function* (args) {
+			const attempt = yield* filesystem
+				.prepare({
+					attemptName: `.staging-${args.runId}`,
+					reservedDestinations: [
+						completedDestination(args.planId, args.runId),
+						retainedDestination(args.planId, args.runId)
+					]
+				})
+				.pipe(
+					Effect.mapError((cause) =>
+						mapDestinationStorageError({
+							cause,
+							operation: "prepare",
+							recovery:
+								"Choose a new run identity or inspect the existing map-capture attempt."
+						})
+					)
+				);
+			const promote = (
+				manifest: MapTilePyramidManifestValue,
+				relativeDestination: string,
+				operation: "finalize" | "quarantine"
+			) =>
+				attempt
+					.promote({
+						documentName: "manifest.json",
+						documentValue: manifest,
+						relativeDestination
+					})
+					.pipe(
+						Effect.mapError((cause) =>
+							mapDestinationStorageError({
+								cause,
+								operation,
+								recovery:
+									operation === "finalize"
+										? "Inspect the staged run and retry atomic finalization."
+										: "Inspect the staged run and retry retaining the partial attempt."
+							})
+						)
+					);
+			return {
+				discard: () =>
+					attempt.discard().pipe(
+						Effect.mapError((cause) =>
+							mapDestinationStorageError({
+								cause,
+								operation: "discard_staging",
+								recovery: "Remove the owned staging attempt manually if it remains."
+							})
+						)
+					),
+				publish: (manifest) =>
+					manifest.state === "complete"
+						? promote(
+								manifest,
+								completedDestination(args.planId, args.runId),
+								"finalize"
+							)
+						: Effect.fail(
+								new MapCaptureStorageError({
+									message:
+										"Only exhaustive successful Map Capture runs can publish.",
+									operation: "finalize",
+									path: filesystem.documentPath(
+										completedDestination(args.planId, args.runId),
+										"manifest.json"
+									),
+									recovery: "Retain non-complete runs as attempts instead."
+								})
+							),
+				retain: (manifest) =>
+					manifest.state !== "complete"
+						? promote(
+								manifest,
+								retainedDestination(args.planId, args.runId),
+								"quarantine"
+							)
+						: Effect.fail(
+								new MapCaptureStorageError({
+									message:
+										"Complete Map Capture runs must publish, not remain attempts.",
+									operation: "quarantine",
+									path: filesystem.documentPath(
+										retainedDestination(args.planId, args.runId),
+										"manifest.json"
+									),
+									recovery: "Publish the exhaustive successful run."
+								})
+							),
+				storeTile: (input) =>
+					attempt.storeArtifact(input).pipe(
+						Effect.map((stored) => stored.bytes),
+						Effect.mapError((cause) =>
+							cause instanceof CaptureArtifactSourceRejected
+								? new MapCaptureArtifactSourceRejected({
+										message: cause.message,
+										path: cause.path,
+										root: cause.root
+									})
+								: mapDestinationStorageError({
+										cause,
+										operation: "store_tile",
+										recovery:
+											"Check contained Unreal staging and capture destination permissions."
+									})
+						)
+					)
+			} satisfies MapCaptureAttempt;
+		}),
+		runManifestPath: (args) =>
+			filesystem.documentPath(completedDestination(args.planId, args.runId), "manifest.json")
+	};
+}
+
+/** The compatibility adapter beneath `<project>/.ue-shed/map-capture`. */
+export function projectLocalMapCaptureDestination(projectRoot: string): MapCaptureDestination {
+	const absoluteProjectRoot = resolve(projectRoot);
+	return mapCaptureDestination(
+		makeFilesystemCaptureDestination({
+			authorizationRoot: absoluteProjectRoot,
+			createRoot: true,
+			destinationRoot: mapCaptureRoot(absoluteProjectRoot),
+			recovery: "Check that the project and its map-capture directory are writable.",
+			rejectAuthorizationRootLink: false
+		})
+	);
+}
+
+/** A trusted-host adapter rooted at one existing absolute caller-owned directory. */
+export function callerOwnedMapCaptureDestination(root: string): MapCaptureDestination {
+	return mapCaptureDestination(
+		makeFilesystemCaptureDestination({
+			authorizationRoot: root,
+			createRoot: false,
+			destinationRoot: root,
+			recovery:
+				"Select an existing absolute directory that the caller authorizes for Map Capture runs.",
+			rejectAuthorizationRootLink: true
+		})
+	);
 }
 
 export function validateMapCaptureProjectRoot(

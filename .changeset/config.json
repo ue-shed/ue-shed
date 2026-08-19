@@ -8,6 +8,7 @@
 			"@ue-shed/observability",
 			"@ue-shed/unreal-connection",
 			"@ue-shed/engine",
+			"@ue-shed/engine-win32-x64",
 			"@ue-shed/cameras",
 			"@ue-shed/observatory",
 			"@ue-shed/uasset-inspection-wasm",

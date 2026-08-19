@@ -71,7 +71,7 @@ effectIt.effect("routes a map-targeted saved-world read through the AssetReader 
 		const savedWorld: SavedWorld = {
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
 			completeness: "complete",
-			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 			diagnostics: [],
 			externalActorRoot: "C:/Fixture/Content/__ExternalActors__/Maps/L_Example",
 			mapPath: "C:/Fixture/Content/Maps/L_Example.umap",

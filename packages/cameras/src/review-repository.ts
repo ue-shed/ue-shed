@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
 	copyFile,
+	lstat,
 	mkdir,
 	open,
 	readFile,
 	readdir,
+	realpath,
 	rename,
 	rm,
 	stat,
@@ -45,6 +47,15 @@ export class ReviewStorageError extends Schema.TaggedErrorClass<ReviewStorageErr
 		]),
 		path: Schema.String,
 		recovery: Schema.String
+	}
+) {}
+
+export class ReviewArtifactSourceRejected extends Schema.TaggedErrorClass<ReviewArtifactSourceRejected>()(
+	"ReviewArtifactSourceRejected",
+	{
+		message: Schema.String,
+		path: Schema.String,
+		root: Schema.String
 	}
 ) {}
 
@@ -289,6 +300,338 @@ export function createReviewSetFromTemplate(args: {
 
 export function captureRunsRoot(projectRoot: string): string {
 	return resolve(projectRoot, DEFAULT_REVIEW_ROOT, "runs");
+}
+
+export interface ReviewCaptureAttempt {
+	readonly discard: () => Effect.Effect<void, ReviewStorageError>;
+	readonly finalize: (run: CaptureRun) => Effect.Effect<void, ReviewStorageError>;
+	readonly storeArtifact: (args: {
+		readonly relativePath: string;
+		readonly sourceAuthorizationRoot: string;
+		readonly sourcePath: string;
+		readonly sourceRoot: string;
+	}) => Effect.Effect<
+		{ readonly bytes: Uint8Array; readonly size: number },
+		ReviewArtifactSourceRejected | ReviewStorageError
+	>;
+	readonly writeDocument: (args: {
+		readonly relativePath: string;
+		readonly value: unknown;
+	}) => Effect.Effect<void, ReviewStorageError>;
+}
+
+export interface ReviewCaptureDestination {
+	readonly prepare: (
+		runId: CaptureRun["id"]
+	) => Effect.Effect<ReviewCaptureAttempt, ReviewStorageError>;
+	readonly runDocumentPath: (runId: CaptureRun["id"]) => string;
+}
+
+interface FilesystemReviewCaptureDestinationOptions {
+	readonly authorizationRoot: string;
+	readonly createRoot: boolean;
+	readonly destinationRoot: string;
+	readonly rejectAuthorizationRootLink: boolean;
+	readonly recovery: string;
+}
+
+function isPathWithinOrSame(root: string, path: string): boolean {
+	const child = relative(resolve(root), resolve(path));
+	return child === "" || (!child.startsWith(`..${sep}`) && child !== ".." && !isAbsolute(child));
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await lstat(path);
+		return true;
+	} catch (cause) {
+		if (hasErrorCode(cause, "ENOENT")) return false;
+		throw cause;
+	}
+}
+
+function destinationStorageError(args: {
+	readonly cause: unknown;
+	readonly operation: ReviewStorageError["operation"];
+	readonly path: string;
+	readonly recovery: string;
+}): ReviewStorageError {
+	return new ReviewStorageError({
+		message: String(args.cause),
+		operation: args.operation,
+		path: args.path,
+		recovery: args.recovery
+	});
+}
+
+async function prepareDestinationRoot(
+	options: FilesystemReviewCaptureDestinationOptions
+): Promise<string> {
+	if (!isAbsolute(options.authorizationRoot)) {
+		throw new Error("The authorized Capture Run root must be absolute.");
+	}
+	const authorizationEntry = await lstat(options.authorizationRoot);
+	if (!authorizationEntry.isDirectory()) {
+		throw new Error("The authorized Capture Run root must be an existing directory.");
+	}
+	if (options.rejectAuthorizationRootLink && authorizationEntry.isSymbolicLink()) {
+		throw new Error("A caller-owned Capture Run root cannot be a symbolic link or junction.");
+	}
+	const canonicalAuthorizationRoot = await realpath(options.authorizationRoot);
+	if (options.createRoot) {
+		if (!isPathWithinOrSame(options.authorizationRoot, options.destinationRoot)) {
+			throw new Error("The Capture Run destination is outside its authorized root.");
+		}
+		const missing: string[] = [];
+		let existing = options.destinationRoot;
+		while (!(await pathExists(existing))) {
+			missing.push(existing);
+			const parent = dirname(existing);
+			if (parent === existing) throw new Error("No existing destination ancestor was found.");
+			existing = parent;
+		}
+		const canonicalExisting = await realpath(existing);
+		if (!isPathWithinOrSame(canonicalAuthorizationRoot, canonicalExisting)) {
+			throw new Error(
+				"The Capture Run destination escapes through an existing reparse point."
+			);
+		}
+		for (const directory of missing.reverse()) {
+			await mkdir(directory);
+			const canonicalDirectory = await realpath(directory);
+			if (!isPathWithinOrSame(canonicalAuthorizationRoot, canonicalDirectory)) {
+				throw new Error(
+					"The Capture Run destination escaped while creating its directory."
+				);
+			}
+		}
+	}
+	const destinationEntry = await lstat(options.destinationRoot);
+	if (!destinationEntry.isDirectory()) {
+		throw new Error("The Capture Run destination must be a directory.");
+	}
+	const canonicalDestinationRoot = await realpath(options.destinationRoot);
+	if (!isPathWithinOrSame(canonicalAuthorizationRoot, canonicalDestinationRoot)) {
+		throw new Error(
+			"The Capture Run destination escapes its authorized root through a reparse point."
+		);
+	}
+	return canonicalDestinationRoot;
+}
+
+async function containedAttemptPath(args: {
+	readonly attemptRoot: string;
+	readonly relativePath: string;
+}): Promise<string> {
+	if (isAbsolute(args.relativePath)) {
+		throw new Error("Capture Run paths must be relative.");
+	}
+	const destinationPath = resolve(args.attemptRoot, args.relativePath);
+	if (!isPathWithin(args.attemptRoot, destinationPath)) {
+		throw new Error("The Capture Run path escapes its prepared attempt.");
+	}
+	const parentPath = dirname(destinationPath);
+	const parentSegments = relative(args.attemptRoot, parentPath);
+	let canonicalParent = args.attemptRoot;
+	for (const segment of parentSegments === "" ? [] : parentSegments.split(sep)) {
+		const candidate = join(canonicalParent, segment);
+		if (!(await pathExists(candidate))) await mkdir(candidate);
+		canonicalParent = await realpath(candidate);
+		if (!isPathWithinOrSame(args.attemptRoot, canonicalParent)) {
+			throw new Error("The Capture Run path escapes through a symbolic link or junction.");
+		}
+	}
+	return join(canonicalParent, basename(destinationPath));
+}
+
+async function authorizedArtifactSource(args: {
+	readonly sourceAuthorizationRoot: string;
+	readonly sourcePath: string;
+	readonly sourceRoot: string;
+}): Promise<string | undefined> {
+	if (!isAbsolute(args.sourceRoot) || !isAbsolute(args.sourcePath)) return undefined;
+	try {
+		const canonicalAuthorizationRoot = await realpath(args.sourceAuthorizationRoot);
+		const canonicalRoot = await realpath(args.sourceRoot);
+		const canonicalSource = await realpath(args.sourcePath);
+		return isPathWithin(canonicalAuthorizationRoot, canonicalRoot) &&
+			isPathWithin(canonicalRoot, canonicalSource)
+			? canonicalSource
+			: undefined;
+	} catch (cause) {
+		if (hasErrorCode(cause, "ENOENT")) return undefined;
+		throw cause;
+	}
+}
+
+function filesystemReviewCaptureDestination(
+	options: FilesystemReviewCaptureDestinationOptions
+): ReviewCaptureDestination {
+	const prepare = Effect.fn("ReviewCaptureDestination.prepare")(function* (
+		runId: CaptureRun["id"]
+	) {
+		const destinationRoot = yield* Effect.tryPromise({
+			try: () => prepareDestinationRoot(options),
+			catch: (cause) =>
+				destinationStorageError({
+					cause,
+					operation: "prepare_run",
+					path: options.destinationRoot,
+					recovery: options.recovery
+				})
+		});
+		const stagingRoot = join(destinationRoot, `.staging-${runId}`);
+		const finalRoot = join(destinationRoot, runId);
+		yield* Effect.tryPromise({
+			try: async () => {
+				if (await pathExists(finalRoot)) {
+					throw new Error(`Capture Run ${runId} already exists.`);
+				}
+				await mkdir(stagingRoot);
+			},
+			catch: (cause) =>
+				destinationStorageError({
+					cause,
+					operation: "prepare_run",
+					path: stagingRoot,
+					recovery: "Choose a new Capture Run identity or inspect the existing attempt."
+				})
+		});
+
+		const discard = Effect.fn("ReviewCaptureAttempt.discard")(function* () {
+			yield* Effect.tryPromise({
+				try: () => rm(stagingRoot, { force: true, recursive: true }),
+				catch: (cause) =>
+					destinationStorageError({
+						cause,
+						operation: "discard_staging",
+						path: stagingRoot,
+						recovery: "Remove the owned .staging-* attempt manually if it remains."
+					})
+			});
+		});
+		const writeDocument = Effect.fn("ReviewCaptureAttempt.writeDocument")(function* (args: {
+			readonly relativePath: string;
+			readonly value: unknown;
+		}) {
+			yield* Effect.tryPromise({
+				try: async () => {
+					const path = await containedAttemptPath({
+						attemptRoot: stagingRoot,
+						relativePath: args.relativePath
+					});
+					await writeJsonAtomically(path, args.value);
+				},
+				catch: (cause) =>
+					destinationStorageError({
+						cause,
+						operation: "write_run",
+						path: stagingRoot,
+						recovery: "Check the Capture Run destination and retry the attempt."
+					})
+			});
+		});
+		const storeArtifact = Effect.fn("ReviewCaptureAttempt.storeArtifact")(function* (args: {
+			readonly relativePath: string;
+			readonly sourceAuthorizationRoot: string;
+			readonly sourcePath: string;
+			readonly sourceRoot: string;
+		}) {
+			const sourcePath = yield* Effect.tryPromise({
+				try: () => authorizedArtifactSource(args),
+				catch: (cause) =>
+					destinationStorageError({
+						cause,
+						operation: "store_artifact",
+						path: args.sourcePath,
+						recovery: "Inspect Unreal staging and retry the capture."
+					})
+			});
+			if (sourcePath === undefined) {
+				return yield* Effect.fail(
+					new ReviewArtifactSourceRejected({
+						message: "Unreal returned an artifact outside its authorized staging root.",
+						path: args.sourcePath,
+						root: args.sourceRoot
+					})
+				);
+			}
+			return yield* Effect.tryPromise({
+				try: async () => {
+					const destinationPath = await containedAttemptPath({
+						attemptRoot: stagingRoot,
+						relativePath: args.relativePath
+					});
+					const handle = await open(destinationPath, "wx");
+					try {
+						const bytes = await readFile(sourcePath);
+						await handle.writeFile(bytes);
+						await handle.sync();
+						await unlink(sourcePath).catch(() => undefined);
+						return { bytes: new Uint8Array(bytes), size: bytes.byteLength };
+					} finally {
+						await handle.close();
+					}
+				},
+				catch: (cause) =>
+					destinationStorageError({
+						cause,
+						operation: "store_artifact",
+						path: stagingRoot,
+						recovery: "Check Unreal staging and Capture Run destination permissions."
+					})
+			});
+		});
+		const finalize = Effect.fn("ReviewCaptureAttempt.finalize")(function* (run: CaptureRun) {
+			yield* Effect.tryPromise({
+				try: async () => {
+					if (await pathExists(finalRoot)) {
+						throw new Error(`Capture Run ${runId} already exists.`);
+					}
+					await writeJsonAtomically(join(stagingRoot, "run.json"), run);
+					await rename(stagingRoot, finalRoot);
+				},
+				catch: (cause) =>
+					destinationStorageError({
+						cause,
+						operation: "finalize_run",
+						path: stagingRoot,
+						recovery: "Inspect the staged Capture Run and retry finalization safely."
+					})
+			});
+		});
+		return { discard, finalize, storeArtifact, writeDocument } satisfies ReviewCaptureAttempt;
+	});
+	return {
+		prepare,
+		runDocumentPath: (runId) => join(options.destinationRoot, runId, "run.json")
+	};
+}
+
+/** The compatibility adapter that publishes beneath `<project>/.ue-shed/review/runs`. */
+export function projectLocalReviewCaptureDestination(
+	projectRoot: string
+): ReviewCaptureDestination {
+	const absoluteProjectRoot = resolve(projectRoot);
+	return filesystemReviewCaptureDestination({
+		authorizationRoot: absoluteProjectRoot,
+		createRoot: true,
+		destinationRoot: captureRunsRoot(absoluteProjectRoot),
+		recovery: "Check that the project and its review directory are writable.",
+		rejectAuthorizationRootLink: false
+	});
+}
+
+/** A trusted-host adapter for one existing, absolute, caller-authorized Capture Run root. */
+export function callerOwnedReviewCaptureDestination(root: string): ReviewCaptureDestination {
+	return filesystemReviewCaptureDestination({
+		authorizationRoot: root,
+		createRoot: false,
+		destinationRoot: root,
+		recovery:
+			"Select an existing absolute directory that the caller authorizes for Capture Runs.",
+		rejectAuthorizationRootLink: true
+	});
 }
 
 function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {

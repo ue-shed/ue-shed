@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { it as effectIt } from "@effect/vitest";
@@ -14,13 +14,15 @@ import {
 import {
 	MapCaptureRepository,
 	MapCaptureRepositoryLive,
+	callerOwnedMapCaptureDestination,
 	mapCaptureAttemptsRoot,
 	mapCaptureRoot,
 	mapCaptureRunsRoot,
-	type MapCaptureRepositoryApi
+	projectLocalMapCaptureDestination,
+	type MapCaptureDestination
 } from "./map-tile-repository.js";
 import { mapTileKeyId, mapTileRelativePath } from "./map-tile-pyramid.js";
-import type { MapCaptureBackend } from "./map-tile-schema.js";
+import { MapCapturePlanId, MapCaptureRunId, type MapCaptureBackend } from "./map-tile-schema.js";
 
 const temporaryRoots: string[] = [];
 
@@ -85,11 +87,13 @@ function runWithPort(
 	levels?: ReadonlyArray<number>,
 	onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>,
 	repositoryLayer: Layer.Layer<MapCaptureRepository> = MapCaptureRepositoryLive,
-	captureBackend?: MapCaptureBackend
+	captureBackend?: MapCaptureBackend,
+	destination?: MapCaptureDestination
 ) {
 	return Effect.flatMap(MapCapture, (capture) =>
 		capture.run({
 			...(captureBackend === undefined ? undefined : { captureBackend }),
+			...(destination === undefined ? undefined : { destination }),
 			endpoint: "http://127.0.0.1:30010",
 			...(levels === undefined ? undefined : { levels }),
 			...(onProgress === undefined ? undefined : { onProgress }),
@@ -102,6 +106,57 @@ function runWithPort(
 		Effect.provide(repositoryLayer),
 		Effect.provide(mapTileCapturePortLayer(port))
 	);
+}
+
+function successfulPort(args: {
+	readonly beforeCapture?: () => Effect.Effect<void>;
+	readonly projectRoot: string;
+}): MapTileCapturePortApi {
+	return {
+		capture: (request) =>
+			Effect.gen(function* () {
+				if (args.beforeCapture !== undefined) yield* args.beforeCapture();
+				const results = yield* Effect.forEach(request.tiles, (tile) =>
+					Effect.promise(async () => {
+						const relativePath = mapTileRelativePath(tile.key);
+						const stagedPath = resolve(
+							args.projectRoot,
+							"Saved/UEShed/MapTileStaging/test-run",
+							...relativePath.split("/")
+						);
+						await mkdir(dirname(stagedPath), { recursive: true });
+						await writeFile(stagedPath, fakePng(64));
+						return {
+							bytes: 24,
+							captureDurationMs: 1,
+							height: 64,
+							key: tile.key,
+							stagedPath,
+							status: "captured" as const,
+							width: 64
+						};
+					})
+				);
+				return {
+					actualMapPath: "/Game/Test/Map",
+					contract: {
+						name: "ue-shed-map-tile-capture" as const,
+						version: { major: 1 as const, minor: 0 as const }
+					},
+					correlationId: request.correlationId,
+					dirtyState: { after: false, before: false },
+					durationMs: results.length,
+					operationId: request.operationId,
+					results,
+					status: "completed" as const,
+					tileCounts: {
+						failed: 0,
+						requested: results.length,
+						succeeded: results.length
+					}
+				};
+			})
+	};
 }
 
 describe("map capture orchestration", () => {
@@ -161,6 +216,105 @@ describe("map capture orchestration", () => {
 			{ failedTiles: 0, phase: "capturing", processedTiles: 1, totalTiles: 1 },
 			{ failedTiles: 0, phase: "publishing", processedTiles: 1, totalTiles: 1 }
 		]);
+	});
+
+	it("publishes an exhaustive run beneath a caller-owned destination", async () => {
+		const project = await fixtureProject(1);
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-caller-runs-"));
+		temporaryRoots.push(destinationRoot);
+		const destination = callerOwnedMapCaptureDestination(destinationRoot);
+
+		const outcome = await Effect.runPromise(
+			runWithPort(
+				project,
+				successfulPort({ projectRoot: project.projectRoot }),
+				undefined,
+				undefined,
+				MapCaptureRepositoryLive,
+				undefined,
+				destination
+			)
+		);
+
+		expect(outcome.published).toBe(true);
+		expect(outcome.manifestPath).toBe(
+			join(destinationRoot, "runs", "test-plan", "test-run", "manifest.json")
+		);
+		await expect(access(outcome.manifestPath)).resolves.toBeUndefined();
+		await expect(
+			access(join(mapCaptureRunsRoot(project.projectRoot, "test-plan"), "test-run"))
+		).rejects.toThrow();
+	});
+
+	it("rejects an invalid caller-owned destination before invoking Unreal", async () => {
+		const project = await fixtureProject(1);
+		let captureCalls = 0;
+
+		await expect(
+			Effect.runPromise(
+				runWithPort(
+					project,
+					successfulPort({
+						beforeCapture: () => Effect.sync(() => void (captureCalls += 1)),
+						projectRoot: project.projectRoot
+					}),
+					undefined,
+					undefined,
+					MapCaptureRepositoryLive,
+					undefined,
+					callerOwnedMapCaptureDestination("relative-map-runs")
+				)
+			)
+		).rejects.toMatchObject({ operation: "prepare" });
+		expect(captureCalls).toBe(0);
+	});
+
+	it("rejects a project-local destination that escapes through a junction before writing", async () => {
+		const project = await fixtureProject(1);
+		const outsideRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-root-escape-"));
+		temporaryRoots.push(outsideRoot);
+		await symlink(outsideRoot, join(project.projectRoot, ".ue-shed"), "junction");
+		let captureCalls = 0;
+
+		await expect(
+			Effect.runPromise(
+				runWithPort(
+					project,
+					successfulPort({
+						beforeCapture: () => Effect.sync(() => void (captureCalls += 1)),
+						projectRoot: project.projectRoot
+					})
+				)
+			)
+		).rejects.toMatchObject({ operation: "prepare" });
+		expect(captureCalls).toBe(0);
+		await expect(access(join(outsideRoot, "map-capture"))).rejects.toThrow();
+	});
+
+	it("rejects a caller-owned replay before a second Unreal capture", async () => {
+		const project = await fixtureProject(1);
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-replay-"));
+		temporaryRoots.push(destinationRoot);
+		const destination = callerOwnedMapCaptureDestination(destinationRoot);
+		let captureCalls = 0;
+		const port = successfulPort({
+			beforeCapture: () => Effect.sync(() => void (captureCalls += 1)),
+			projectRoot: project.projectRoot
+		});
+		const run = () =>
+			runWithPort(
+				project,
+				port,
+				undefined,
+				undefined,
+				MapCaptureRepositoryLive,
+				undefined,
+				destination
+			);
+		await Effect.runPromise(run());
+		await expect(Effect.runPromise(run())).rejects.toMatchObject({ operation: "prepare" });
+		expect(captureCalls).toBe(1);
+		await expect(access(join(destinationRoot, ".staging-test-run"))).rejects.toThrow();
 	});
 
 	it("sends complete zoom levels to the experimental viewport backend", async () => {
@@ -280,6 +434,135 @@ describe("map capture orchestration", () => {
 		);
 	});
 
+	it("retains partial and cancelled manifests beneath a caller-owned attempts tree", async () => {
+		const project = await fixtureProject(2);
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-caller-attempts-"));
+		temporaryRoots.push(destinationRoot);
+		const destination = callerOwnedMapCaptureDestination(destinationRoot);
+		const partial = await Effect.runPromise(
+			runWithPort(
+				project,
+				successfulPort({ projectRoot: project.projectRoot }),
+				[0],
+				undefined,
+				MapCaptureRepositoryLive,
+				undefined,
+				destination
+			)
+		);
+		expect(partial.manifest.state).toBe("partial");
+		expect(partial.manifestPath).toBe(
+			join(destinationRoot, "attempts", "test-plan", "test-run", "manifest.json")
+		);
+
+		const cancelledRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-caller-cancelled-"));
+		temporaryRoots.push(cancelledRoot);
+		const completedPort = successfulPort({ projectRoot: project.projectRoot });
+		const cancelledPort: MapTileCapturePortApi = {
+			capture: (request) =>
+				completedPort.capture(request).pipe(
+					Effect.map((response) => ({
+						...response,
+						failure: {
+							code: "cancelled" as const,
+							message: "Fixture cancellation",
+							recovery: "Resume with a new run identity.",
+							retrySafe: true
+						},
+						status: "cancelled" as const
+					}))
+				)
+		};
+		const cancelled = await Effect.runPromise(
+			runWithPort(
+				project,
+				cancelledPort,
+				undefined,
+				undefined,
+				MapCaptureRepositoryLive,
+				undefined,
+				callerOwnedMapCaptureDestination(cancelledRoot)
+			)
+		);
+		expect(cancelled.manifest.state).toBe("cancelled");
+		expect(cancelled.published).toBe(false);
+		await expect(access(cancelled.manifestPath)).resolves.toBeUndefined();
+	});
+
+	it("prevents traversal and junction escape inside a caller-owned Map Capture attempt", async () => {
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-contained-"));
+		const outsideRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-outside-"));
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-source-project-"));
+		temporaryRoots.push(destinationRoot, outsideRoot, projectRoot);
+		const destination = callerOwnedMapCaptureDestination(destinationRoot);
+		const attempt = await Effect.runPromise(
+			destination.prepare({
+				planId: MapCapturePlanId.make("test-plan"),
+				runId: MapCaptureRunId.make("test-run")
+			})
+		);
+		const stagingRoot = join(destinationRoot, ".staging-test-run");
+		await symlink(outsideRoot, join(stagingRoot, "Z00"), "junction");
+		const sourceRoot = join(projectRoot, "Saved", "UEShed", "MapTileStaging");
+		const sourcePath = join(sourceRoot, "pure.png");
+		await mkdir(sourceRoot, { recursive: true });
+		await writeFile(sourcePath, fakePng(64));
+		await expect(
+			Effect.runPromise(
+				attempt.storeTile({
+					relativePath: "../escape.png",
+					sourceAuthorizationRoot: projectRoot,
+					sourcePath,
+					sourceRoot
+				})
+			)
+		).rejects.toMatchObject({ operation: "store_tile" });
+		await expect(
+			Effect.runPromise(
+				attempt.storeTile({
+					relativePath: "Z00/new/R000_C000.png",
+					sourceAuthorizationRoot: projectRoot,
+					sourcePath,
+					sourceRoot
+				})
+			)
+		).rejects.toMatchObject({ operation: "store_tile" });
+		await expect(access(join(outsideRoot, "new"))).rejects.toThrow();
+		await Effect.runPromise(attempt.discard());
+	});
+
+	it("cleans a caller-owned attempt when host capture is interrupted", async () => {
+		const project = await fixtureProject(1);
+		const destinationRoot = await mkdtemp(join(tmpdir(), "ue-shed-map-interrupted-"));
+		temporaryRoots.push(destinationRoot);
+		const captureStarted = await Effect.runPromise(Deferred.make<void>());
+		const neverCapture = await Effect.runPromise(Deferred.make<void>());
+		const port = successfulPort({
+			beforeCapture: () =>
+				Effect.gen(function* () {
+					yield* Deferred.succeed(captureStarted, undefined);
+					yield* Deferred.await(neverCapture);
+				}),
+			projectRoot: project.projectRoot
+		});
+		const run = runWithPort(
+			project,
+			port,
+			undefined,
+			undefined,
+			MapCaptureRepositoryLive,
+			undefined,
+			callerOwnedMapCaptureDestination(destinationRoot)
+		);
+		const fiber = Effect.runFork(run);
+		await Effect.runPromise(Deferred.await(captureStarted));
+		await Effect.runPromise(Fiber.interrupt(fiber));
+		await expect(access(join(destinationRoot, ".staging-test-run"))).rejects.toThrow();
+		await expect(
+			access(join(destinationRoot, "runs", "test-plan", "test-run"))
+		).rejects.toThrow();
+	});
+
 	it("rejects an editor artifact outside the contained staging root", async () => {
 		const project = await fixtureProject(1);
 		const port: MapTileCapturePortApi = {
@@ -341,24 +624,24 @@ describe("map capture orchestration", () => {
 			const requestedKeys: string[] = [];
 			let captureCalls = 0;
 			let blockFirstStore = true;
-			const repositoryLayer = Layer.effect(
-				MapCaptureRepository,
-				Effect.gen(function* () {
-					const delegate = yield* MapCaptureRepository;
-					const service: MapCaptureRepositoryApi = {
-						...delegate,
-						storeTile: (input) => {
-							if (!blockFirstStore) return delegate.storeTile(input);
-							blockFirstStore = false;
-							return Deferred.succeed(firstStoreStarted, undefined).pipe(
-								Effect.andThen(Deferred.await(releaseFirstStore)),
-								Effect.andThen(delegate.storeTile(input))
-							);
-						}
-					};
-					return MapCaptureRepository.of(service);
-				})
-			).pipe(Layer.provide(MapCaptureRepositoryLive));
+			const baseDestination = projectLocalMapCaptureDestination(project.projectRoot);
+			const destination: MapCaptureDestination = {
+				...baseDestination,
+				prepare: (input) =>
+					baseDestination.prepare(input).pipe(
+						Effect.map((attempt) => ({
+							...attempt,
+							storeTile: (tile) => {
+								if (!blockFirstStore) return attempt.storeTile(tile);
+								blockFirstStore = false;
+								return Deferred.succeed(firstStoreStarted, undefined).pipe(
+									Effect.andThen(Deferred.await(releaseFirstStore)),
+									Effect.andThen(attempt.storeTile(tile))
+								);
+							}
+						}))
+					)
+			};
 			const port: MapTileCapturePortApi = {
 				capture: (request) =>
 					Effect.gen(function* () {
@@ -413,7 +696,9 @@ describe("map capture orchestration", () => {
 				port,
 				undefined,
 				undefined,
-				repositoryLayer
+				MapCaptureRepositoryLive,
+				undefined,
+				destination
 			).pipe(Effect.forkScoped);
 			yield* Deferred.await(firstStoreStarted);
 			yield* Deferred.await(secondCaptureStarted).pipe(

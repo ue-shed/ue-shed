@@ -27,8 +27,10 @@ import {
 `readSavedWorld` invokes the map-targeted `uasset saved-world` operation. Unlike a project scan, it
 reads a conventional level's single `.umap` or, for World Partition, only the selected map's
 `__ExternalActors__` subtree. The returned catalog carries saved-package authority, actor
-package/object identity, class and label evidence, plus a position-resolution status. It can be
-partial when unrelated exports fail to decode while actor positions remain usable.
+package/object identity, class and label evidence, plus a transform-resolution status. It can be
+partial when unrelated exports fail to decode while actor transforms remain usable. Contract v2
+exposes finite effective location, quaternion rotation, and scale plus direct root-component
+attachment paths without inferring parent actor ownership.
 
 ```ts
 const world =
@@ -38,7 +40,7 @@ const world =
 		projectRoot
 	});
 
-const positionedActors = world.actors.filter((actor) => actor.position.status === "resolved");
+const transformedActors = world.actors.filter((actor) => actor.transform.status === "resolved");
 ```
 
 This is saved disk state, not a live Observatory snapshot: bounds, Focus in Unreal, Follow, and

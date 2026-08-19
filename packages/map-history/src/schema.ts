@@ -1,4 +1,4 @@
-import { SavedWorldActor, SavedWorldPosition, SavedWorldVector } from "@ue-shed/protocol";
+import { SavedWorldActor, SavedWorldTransform, SavedWorldVector } from "@ue-shed/protocol";
 import { DateTime, Schema } from "effect";
 
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
@@ -146,10 +146,20 @@ export const MapChange = Schema.Union([
 		...ActorTransition
 	}),
 	Schema.Struct({
-		kind: Schema.Literal("actor_position_resolution_changed"),
+		kind: Schema.Literal("actor_attachment_changed"),
+		...ActorTransition
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("actor_transform_changed"),
 		...ActorTransition,
-		beforePosition: SavedWorldPosition,
-		afterPosition: SavedWorldPosition
+		beforeTransform: SavedWorldTransform,
+		afterTransform: SavedWorldTransform
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("actor_transform_resolution_changed"),
+		...ActorTransition,
+		beforeTransform: SavedWorldTransform,
+		afterTransform: SavedWorldTransform
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("snapshot_coverage_changed"),
@@ -254,7 +264,7 @@ export const MapHistoryRangeEndSnapshot = MapHistorySnapshot;
 export type MapHistoryRangeEndSnapshot = MapHistorySnapshot;
 
 export const PerforceMapHistory = Schema.Struct({
-	schemaVersion: Schema.Literal(1),
+	schemaVersion: Schema.Literal(2),
 	query: PerforceMapHistoryQuery,
 	mapDepotPath: PerforceDepotPath,
 	externalActorDepotRoot: Schema.optionalKey(PerforceDepotPath),
@@ -311,7 +321,7 @@ export const FastHistoryTargetedCoverage = Schema.Struct({
 export type FastHistoryTargetedCoverage = Schema.Schema.Type<typeof FastHistoryTargetedCoverage>;
 
 export const PerforceFastMapHistory = Schema.Struct({
-	schemaVersion: Schema.Literal(1),
+	schemaVersion: Schema.Literal(2),
 	mode: Schema.Literal("fast"),
 	query: PerforceFastMapHistoryQuery,
 	coverage: FastHistoryTargetedCoverage,

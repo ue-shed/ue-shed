@@ -90,7 +90,9 @@ function actorEvidenceFromChange(change: MapChange): SavedWorldActor | undefined
 		case "actor_label_changed":
 		case "actor_class_changed":
 		case "actor_package_changed":
-		case "actor_position_resolution_changed":
+		case "actor_attachment_changed":
+		case "actor_transform_changed":
+		case "actor_transform_resolution_changed":
 			return change.after;
 		case "snapshot_coverage_changed":
 			return undefined;
@@ -217,9 +219,9 @@ export function worldLogActorMatchesViewFilters(
 		return false;
 	if (filters.presence === "present" && !actor.presentAtRangeEnd) return false;
 	if (filters.presence === "removed" && actor.presentAtRangeEnd) return false;
-	if (filters.resolution === "resolved" && actor.actor.position.status !== "resolved")
+	if (filters.resolution === "resolved" && actor.actor.transform.status !== "resolved")
 		return false;
-	if (filters.resolution === "unresolved" && actor.actor.position.status === "resolved")
+	if (filters.resolution === "unresolved" && actor.actor.transform.status === "resolved")
 		return false;
 	return worldLogActorMatchesQuery(actor, filters.query);
 }
@@ -243,14 +245,14 @@ export interface WorldLogMapBounds {
 
 export function worldLogMapBounds(actors: readonly WorldLogActor[]): WorldLogMapBounds | undefined {
 	const resolved = actors.filter(
-		(entry) => entry.presentAtRangeEnd && entry.actor.position.status === "resolved"
+		(entry) => entry.presentAtRangeEnd && entry.actor.transform.status === "resolved"
 	);
 	if (resolved.length === 0) return undefined;
 	const xs = resolved.map((entry) =>
-		entry.actor.position.status === "resolved" ? entry.actor.position.location.x : 0
+		entry.actor.transform.status === "resolved" ? entry.actor.transform.location.x : 0
 	);
 	const ys = resolved.map((entry) =>
-		entry.actor.position.status === "resolved" ? entry.actor.position.location.y : 0
+		entry.actor.transform.status === "resolved" ? entry.actor.transform.location.y : 0
 	);
 	const minX = Math.min(...xs);
 	const maxX = Math.max(...xs);

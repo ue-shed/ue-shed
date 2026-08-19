@@ -148,13 +148,13 @@ export function WorldLogScene(props: {
 	);
 	const basePoints = createMemo<readonly PointMapPoint[]>(() =>
 		plottedActors().flatMap(({ actor, frameActor }) => {
-			if (frameActor.position.status !== "resolved") return [];
+			if (frameActor.transform.status !== "resolved") return [];
 			return [
 				{
 					className: shortClass(frameActor.classPath),
 					key: actor.key,
-					x: frameActor.position.location.x,
-					y: frameActor.position.location.y
+					x: frameActor.transform.location.x,
+					y: frameActor.transform.location.y
 				}
 			];
 		})
@@ -191,8 +191,8 @@ export function WorldLogScene(props: {
 		return actor === undefined ? undefined : frameActorsByKey().get(actor.key);
 	});
 	const selectedActorPosition = createMemo(() => {
-		const position = selectedActorAtFrame()?.position;
-		return position?.status === "resolved" ? point(position.location) : undefined;
+		const transform = selectedActorAtFrame()?.transform;
+		return transform?.status === "resolved" ? point(transform.location) : undefined;
 	});
 	const selectedActorEvents = createMemo(() => selectedActor()?.events ?? []);
 	const selectedActorMovements = createMemo(() =>
@@ -201,8 +201,9 @@ export function WorldLogScene(props: {
 	const frameResolvedActorCount = createMemo(() => {
 		const view = props.view;
 		return view.kind === "history"
-			? view.frame.actors.filter((actor) => actor.actor.position.status === "resolved").length
-			: view.world.actors.filter((actor) => actor.position.status === "resolved").length;
+			? view.frame.actors.filter((actor) => actor.actor.transform.status === "resolved")
+					.length
+			: view.world.actors.filter((actor) => actor.transform.status === "resolved").length;
 	});
 	const frameActorCount = createMemo(() => {
 		const view = props.view;
@@ -540,7 +541,7 @@ export function WorldLogScene(props: {
 										<dd>
 											{selectedActorAtFrame() === undefined
 												? "NOT PRESENT"
-												: selectedActorAtFrame()!.position.status ===
+												: selectedActorAtFrame()!.transform.status ===
 													  "resolved"
 													? "RESOLVED"
 													: "UNRESOLVED"}

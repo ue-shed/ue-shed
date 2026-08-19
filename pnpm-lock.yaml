@@ -679,6 +679,12 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
+    optionalDependencies:
+      '@ue-shed/engine-win32-x64':
+        specifier: workspace:0.2.0
+        version: link:../engine-win32-x64
+
+  packages/engine-win32-x64: {}
 
   packages/enhanced-input:
     dependencies:

@@ -59,7 +59,9 @@ The first actor projection contains:
 - object and package identity;
 - class;
 - label;
-- resolved saved root-component position or an explicit resolution failure; and
+- finite effective root-component location, quaternion rotation, and scale or an explicit
+  resolution failure;
+- direct root-component attachment paths without inferred parent actor ownership; and
 - package/snapshot completeness diagnostics.
 
 The result retains renderer-safe saved-actor snapshots immediately before the bounded range and at
@@ -69,6 +71,10 @@ inside the requested range has no range-start snapshot and is represented by the
 `map_not_yet_created` baseline state. Consumers can replay the semantic changelist transitions from
 that start state into discrete 2D actor-map frames without reconstructing or scanning Perforce
 again.
+
+The persisted Map History schema is v2 because it embeds saved-world contract v2 actors. It records
+attachment changes, effective rotation/scale changes, and transform-resolution changes explicitly;
+location changes retain the existing `actor_moved` vocabulary.
 
 World Log's World lens defaults to the saved state after the last submitted changelist and can
 scrub locally to range start or the exact saved state after any in-range changelist. It never
@@ -91,7 +97,7 @@ Selecting an actor from that diff preserves the selected changelist.
 The completed Deep History corpus has an actor lens built from stable identity across its
 range-start snapshot, range-end snapshot, and semantic revisions. Its **View Filters** are local:
 field-qualified `label:`, `class:`, `path:`, `package:`, and `guid:` terms can be combined with
-changed, present/removed, position-resolution, and class controls without a Perforce request.
+changed, present/removed, transform-resolution, and class controls without a Perforce request.
 
 Actors removed before range end remain searchable and inspectable. Their lifecycle and semantic
 event ledger retain the submitted changelists that explain their removal. A movement trail is shown
@@ -105,7 +111,9 @@ The first semantic change vocabulary is:
 - actor label changed;
 - actor class changed;
 - actor package/object path changed when GUID continuity proves the actor;
-- actor position-resolution state changed; and
+- actor attachment changed;
+- actor effective rotation or scale changed;
+- actor transform-resolution state changed; and
 - snapshot coverage changed.
 
 A relevant package revision may contain a serialized change outside this projection. Such a revision

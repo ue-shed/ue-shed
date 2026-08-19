@@ -20,7 +20,7 @@ function savedWorld(mapPath: string): SavedWorld {
 	return {
 		authority: { kind: "project_files", mapPackage },
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		externalActorRoot: "Content/__ExternalActors__",
 		mapPath,
@@ -31,14 +31,24 @@ function savedWorld(mapPath: string): SavedWorld {
 				classPath: "/Script/Engine.PointLight",
 				label: "Key light",
 				packageName: "/Game/Actors/KeyLight",
-				position: { location: { x: 100, y: 200, z: 300 }, status: "resolved" }
+				transform: {
+					location: { x: 100, y: 200, z: 300 },
+					rotation: { w: 1, x: 0, y: 0, z: 0 },
+					scale: { x: 1, y: 1, z: 1 },
+					status: "resolved"
+				}
 			},
 			{
 				actorPath: `${mapPackage}.${mapPath.includes("DemoArena") ? "ArenaMesh" : "WorldMesh"}`,
 				classPath: "/Script/Engine.StaticMeshActor",
 				label: "Ground mesh",
 				packageName: "/Game/Actors/GroundMesh",
-				position: { location: { x: 400, y: 500, z: 600 }, status: "resolved" }
+				transform: {
+					location: { x: 400, y: 500, z: 600 },
+					rotation: { w: 1, x: 0, y: 0, z: 0 },
+					scale: { x: 1, y: 1, z: 1 },
+					status: "resolved"
+				}
 			}
 		],
 		summary: {

@@ -47,7 +47,7 @@ function world(actors: SavedWorld["actors"]): SavedWorld {
 	return {
 		authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		externalActorRoot,
 		mapPath,
@@ -68,7 +68,12 @@ const actor: SavedWorld["actors"][number] = {
 	classPath: "/Script/Engine.Actor",
 	label: "Actor One",
 	packageName: "/Game/__ExternalActors__/Maps/L_Example/A/Actor",
-	position: { location: { x: 10, y: 20, z: 30 }, status: "resolved" }
+	transform: {
+		location: { x: 10, y: 20, z: 30 },
+		rotation: { w: 1, x: 0, y: 0, z: 0 },
+		scale: { x: 1, y: 1, z: 1 },
+		status: "resolved"
+	}
 };
 
 function readerLayer(observedHistoricalRoots: string[]) {
@@ -218,7 +223,7 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 				selectedMapPath === mapPath ? "/Game/Maps/L_Example" : "/Game/Relocated/L_Example"
 		},
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		mapPath: selectedMapPath,
 		sourceKind: "level",

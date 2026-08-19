@@ -19,6 +19,14 @@ build associations on Windows; non-Windows and unregistered custom installs use
 `EditorPlaySession` controls PIE/Simulate, and `EditorWorldControl` safely opens an editor map.
 Arbitrary OS-process-to-endpoint correlation is not claimed in this release.
 
+`SupervisedEditorSession` is a separate caller-owned launch path for bounded one-shot work. It
+validates explicit project and plugin descriptors before launch, owns a process tree inside
+an Effect scope, and reports readiness only after the expected Remote Control capability manifest
+answers. POSIX uses a detached process group; Windows uses a private kill-on-close Job Object via
+the optional `@ue-shed/engine-win32-x64` package. Scope release, failure, or cancellation terminates
+only that owned process tree. The
+existing `UnrealProjectLauncher` remains detached for interactive use.
+
 ## License
 
 MIT. Unreal Engine is a trademark of Epic Games, Inc. This project is not affiliated with or

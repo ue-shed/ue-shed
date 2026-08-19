@@ -33,7 +33,7 @@ function world(
 	return {
 		authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		...(externalActorRoot === undefined ? undefined : { externalActorRoot }),
 		mapPath: "Content/Maps/L_Example.umap",

@@ -5,7 +5,7 @@
 	"exports": 16527,
 	"classes": 29,
 	"engineWrittenTags": 72261,
-	"decodedProperties": 68159,
+	"decodedProperties": 68165,
 	"undecodedByClass": {},
 	"postLoadMutatedByClass": {
 		"/Script/Engine.MaterialInstanceDynamic": ["BasePropertyOverrides"]

@@ -174,6 +174,19 @@ describe("Map History playback", () => {
 		expect(mapHistoryPlaybackMatchesRangeEnd({ history: result })).toBe(true);
 	});
 
+	it("matches parser-equivalent full-turn rotations at the range end", () => {
+		const before = actor();
+		const after = actor({
+			transform: {
+				...resolvedTransform(),
+				rotation: { w: -1, x: 0, y: 0, z: 1.2246467991473532e-16 }
+			}
+		});
+		const result = history({ end: [after], revisions: [], start: [before] });
+
+		expect(mapHistoryPlaybackMatchesRangeEnd({ history: result })).toBe(true);
+	});
+
 	it("applies and reverts a changelist without mutating the prior state", () => {
 		const before = actor();
 		const after = actor({ label: "Renamed" });

@@ -7,6 +7,7 @@ import type {
 import type { ActorIdentity, MapChange, MapHistoryDiagnostic, MapSnapshotDiff } from "./schema.js";
 
 const ZERO_GUID = /^0{8}-0{8}-0{8}-0{8}$/;
+const QUATERNION_ORIENTATION_DOT_TOLERANCE = 1e-12;
 
 export function actorIdentityOf(actor: SavedWorldActor): ActorIdentity {
 	if (actor.actorGuid !== undefined && !ZERO_GUID.test(actor.actorGuid)) {
@@ -94,16 +95,34 @@ function savedWorldRotationsEqual(
 	beforeRotation: SavedWorldQuaternion,
 	afterRotation: SavedWorldQuaternion
 ): boolean {
-	return (
-		(beforeRotation.w === afterRotation.w &&
-			beforeRotation.x === afterRotation.x &&
-			beforeRotation.y === afterRotation.y &&
-			beforeRotation.z === afterRotation.z) ||
-		(beforeRotation.w === -afterRotation.w &&
-			beforeRotation.x === -afterRotation.x &&
-			beforeRotation.y === -afterRotation.y &&
-			beforeRotation.z === -afterRotation.z)
+	if (
+		beforeRotation.w === afterRotation.w &&
+		beforeRotation.x === afterRotation.x &&
+		beforeRotation.y === afterRotation.y &&
+		beforeRotation.z === afterRotation.z
+	)
+		return true;
+
+	const beforeMagnitude = Math.hypot(
+		beforeRotation.w,
+		beforeRotation.x,
+		beforeRotation.y,
+		beforeRotation.z
 	);
+	const afterMagnitude = Math.hypot(
+		afterRotation.w,
+		afterRotation.x,
+		afterRotation.y,
+		afterRotation.z
+	);
+	if (beforeMagnitude === 0 || afterMagnitude === 0) return false;
+
+	const normalizedDot =
+		(beforeRotation.w / beforeMagnitude) * (afterRotation.w / afterMagnitude) +
+		(beforeRotation.x / beforeMagnitude) * (afterRotation.x / afterMagnitude) +
+		(beforeRotation.y / beforeMagnitude) * (afterRotation.y / afterMagnitude) +
+		(beforeRotation.z / beforeMagnitude) * (afterRotation.z / afterMagnitude);
+	return 1 - Math.min(1, Math.abs(normalizedDot)) <= QUATERNION_ORIENTATION_DOT_TOLERANCE;
 }
 
 function effectiveRotationOrScaleChanged(before: SavedWorldActor, after: SavedWorldActor): boolean {

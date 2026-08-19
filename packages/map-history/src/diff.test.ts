@@ -167,6 +167,35 @@ describe("diffSavedWorldSnapshots", () => {
 		expect(result.changes).toEqual([]);
 	});
 
+	it("does not report parser-emitted full-turn residuals as transform changes", () => {
+		const before = actor();
+		const after = actor({
+			transform: {
+				...resolvedTransform(),
+				rotation: { w: -1, x: 0, y: 0, z: 1.2246467991473532e-16 }
+			}
+		});
+
+		const result = diffSavedWorldSnapshots(world([before]), world([after]));
+
+		expect(result.changes).toEqual([]);
+	});
+
+	it("reports genuinely different rotations outside the orientation tolerance", () => {
+		const halfAngle = (0.01 * Math.PI) / 360;
+		const before = actor();
+		const after = actor({
+			transform: {
+				...resolvedTransform(),
+				rotation: { w: Math.cos(halfAngle), x: 0, y: 0, z: Math.sin(halfAngle) }
+			}
+		});
+
+		const result = diffSavedWorldSnapshots(world([before]), world([after]));
+
+		expect(result.changes.map((change) => change.kind)).toEqual(["actor_transform_changed"]);
+	});
+
 	it("does not invent removals from an incomplete later snapshot", () => {
 		const result = diffSavedWorldSnapshots(world([actor()]), world([], "partial"));
 

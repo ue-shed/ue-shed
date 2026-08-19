@@ -357,6 +357,18 @@ function processExists(pid: number): boolean {
 	}
 }
 
+async function processIsRunning(pid: number): Promise<boolean> {
+	if (process.platform !== "linux") return processExists(pid);
+	try {
+		const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+		const commandEnd = stat.lastIndexOf(")");
+		return commandEnd !== -1 && stat.slice(commandEnd + 2).trimStart()[0] !== "Z";
+	} catch (cause) {
+		if (Schema.is(ErrorWithCode)(cause) && cause.code === "ENOENT") return false;
+		throw cause;
+	}
+}
+
 describe("owned process trees", () => {
 	it("reports a real natural exit deterministically", async () => {
 		const outcome = await Effect.runPromise(
@@ -372,6 +384,41 @@ describe("owned process trees", () => {
 			}).pipe(Effect.provide(OwnedProcessTreeLive))
 		);
 		expect(outcome).toEqual({ exitCode: 7, kind: "exited", signal: null });
+	});
+
+	it("completes a natural root exit only after its descendant is terminated", async () => {
+		const base = await mkdtemp(join(tmpdir(), "ue-shed-process-tree-natural-"));
+		const evidencePath = join(base, "pids.json");
+		const fixturePath = fileURLToPath(
+			new URL("./test-fixtures/owned-process-tree.mjs", import.meta.url)
+		);
+		const evidenceChanged = new Promise<void>((complete) => {
+			const watcher = watch(base, (_event, filename) => {
+				if (filename !== "pids.json") return;
+				watcher.close();
+				complete();
+			});
+		});
+		const handle = await Effect.runPromise(
+			Effect.flatMap(OwnedProcessTree, (processes) =>
+				processes.launch({
+					args: [fixturePath, "parent-exits", evidencePath],
+					cwd: base,
+					executable: process.execPath,
+					terminationTimeout: Duration.seconds(5)
+				})
+			).pipe(Effect.provide(OwnedProcessTreeLive))
+		);
+		await evidenceChanged;
+		const evidence = Schema.decodeUnknownSync(ProcessTreeEvidence)(
+			JSON.parse(await readFile(evidencePath, "utf8"))
+		);
+		const outcome = await Effect.runPromise(handle.awaitExit);
+
+		expect(outcome).toEqual({ exitCode: 0, kind: "exited", signal: null });
+		expect(await processIsRunning(evidence.parentPid)).toBe(false);
+		expect(await processIsRunning(evidence.childPid)).toBe(false);
+		await rm(base, { force: true, recursive: true });
 	});
 
 	it("terminates a real parent and descendant fixture on scope release", async () => {
@@ -410,8 +457,8 @@ describe("owned process trees", () => {
 		const evidence = Schema.decodeUnknownSync(ProcessTreeEvidence)(
 			JSON.parse(await readFile(evidencePath, "utf8"))
 		);
-		expect(processExists(evidence.parentPid)).toBe(false);
-		expect(processExists(evidence.childPid)).toBe(false);
+		expect(await processIsRunning(evidence.parentPid)).toBe(false);
+		expect(await processIsRunning(evidence.childPid)).toBe(false);
 		await rm(base, { force: true, recursive: true });
 	});
 });

@@ -1,6 +1,6 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
-import { access } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { CompanionCapabilityManifest } from "@ue-shed/protocol";
 import { Context, Duration, Effect, Exit, Layer, Option, Schema, type Scope } from "effect";
@@ -205,15 +205,6 @@ function errorCode(cause: unknown): string | undefined {
 	return Schema.is(ErrorWithCode)(cause) ? cause.code : undefined;
 }
 
-function processGroupExists(pid: number): boolean {
-	try {
-		process.kill(-pid, 0);
-		return true;
-	} catch (cause) {
-		return errorCode(cause) !== "ESRCH";
-	}
-}
-
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
 	try {
 		process.kill(-pid, signal);
@@ -222,19 +213,59 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
 	}
 }
 
-function waitForProcessGroupExit(pid: number): Effect.Effect<void> {
-	return Effect.callback<void>((resume) => {
-		if (!processGroupExists(pid)) {
-			resume(Effect.void);
-			return;
+function linuxProcessState(stat: string) {
+	const commandEnd = stat.lastIndexOf(")");
+	if (commandEnd === -1)
+		throw new Error("A Linux process stat record has no command terminator.");
+	const fields = stat
+		.slice(commandEnd + 2)
+		.trim()
+		.split(/\s+/u);
+	const state = fields[0];
+	const group = Number(fields[2]);
+	if (state === undefined || !Number.isSafeInteger(group)) {
+		throw new Error("A Linux process stat record has invalid state or process-group fields.");
+	}
+	return { group, state };
+}
+
+async function processGroupHasLiveMembers(pid: number): Promise<boolean> {
+	if (process.platform !== "linux") {
+		const processTable = await new Promise<string>((resolveTable, rejectTable) => {
+			execFile(
+				"ps",
+				["-A", "-o", "pgid=,stat="],
+				{ encoding: "utf8", maxBuffer: 1_048_576, windowsHide: true },
+				(cause, stdout) => {
+					if (cause !== null) rejectTable(cause);
+					else resolveTable(stdout);
+				}
+			);
+		});
+		return processTable.split(/\r?\n/u).some((line) => {
+			const [group, state] = line.trim().split(/\s+/u);
+			return Number(group) === pid && state !== undefined && !state.startsWith("Z");
+		});
+	}
+	const entries = await readdir("/proc", { withFileTypes: true });
+	for (const entry of entries) {
+		if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) continue;
+		try {
+			const processState = linuxProcessState(
+				await readFile(`/proc/${entry.name}/stat`, "utf8")
+			);
+			if (processState.group === pid && processState.state !== "Z") return true;
+		} catch (cause) {
+			if (errorCode(cause) !== "ENOENT" && errorCode(cause) !== "ESRCH") throw cause;
 		}
-		const interval = setInterval(() => {
-			if (processGroupExists(pid)) return;
-			clearInterval(interval);
-			resume(Effect.void);
-		}, 10);
-		return Effect.sync(() => clearInterval(interval));
-	});
+	}
+	return false;
+}
+
+async function waitForProcessGroupExit(pid: number): Promise<void> {
+	while (await processGroupHasLiveMembers(pid)) {
+		await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 10));
+	}
 }
 
 function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSessionError> {
@@ -433,17 +464,39 @@ function makePosixHandle(
 		);
 	}
 	let requestedReason: OwnedProcessTerminationReason | undefined;
-	const exited = new Promise<OwnedProcessExit>((complete) => {
-		child.once("close", (code, signal) => complete(rawExit(code, signal, requestedReason)));
+	let treeCompleted = false;
+	const rootExited = new Promise<{
+		readonly code: number | null;
+		readonly signal: string | null;
+	}>((complete) => {
+		child.once("close", (code, signal) => complete({ code, signal }));
+	});
+	const treeExited = rootExited.then(async ({ code, signal }) => {
+		if (await processGroupHasLiveMembers(pid)) signalProcessGroup(pid, "SIGKILL");
+		await waitForProcessGroupExit(pid);
+		treeCompleted = true;
+		return rawExit(code, signal, requestedReason);
 	});
 	child.on("error", () => undefined);
-	const awaitExit = Effect.promise(() => exited);
+	const awaitExit = Effect.tryPromise({
+		try: () => treeExited,
+		catch: (cause) =>
+			sessionError(
+				"process_tree_supervision_unavailable",
+				"operation",
+				`Could not inspect owned process group ${pid}: ${String(cause)}`,
+				"Install a readable procfs or terminate the owned editor process group manually."
+			)
+	});
 	const terminate = Effect.fn("OwnedProcessTree.terminate")(function* (
 		reason: OwnedProcessTerminationReason
 	) {
+		if (treeCompleted) return yield* awaitExit;
 		requestedReason ??= reason;
-		yield* Effect.try({
-			try: () => signalProcessGroup(pid, "SIGKILL"),
+		yield* Effect.tryPromise({
+			try: async () => {
+				if (await processGroupHasLiveMembers(pid)) signalProcessGroup(pid, "SIGKILL");
+			},
 			catch: (cause) =>
 				sessionError(
 					"termination_failed",
@@ -453,9 +506,7 @@ function makePosixHandle(
 					true
 				)
 		});
-		const completed = yield* Effect.all([awaitExit, waitForProcessGroupExit(pid)]).pipe(
-			Effect.timeoutOption(terminationTimeout)
-		);
+		const completed = yield* awaitExit.pipe(Effect.timeoutOption(terminationTimeout));
 		if (Option.isNone(completed)) {
 			return yield* sessionError(
 				"termination_failed",
@@ -465,8 +516,7 @@ function makePosixHandle(
 				true
 			);
 		}
-		const outcome = completed.value[0];
-		return rawExit(outcome.exitCode, outcome.signal, requestedReason);
+		return completed.value;
 	});
 	return { awaitExit, pid, terminate };
 }

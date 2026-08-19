@@ -1,7 +1,7 @@
 ---
-"@ue-shed/protocol": major
-"@ue-shed/unreal-assets": major
-"@ue-shed/map-history": major
+"@ue-shed/protocol": minor
+"@ue-shed/unreal-assets": minor
+"@ue-shed/map-history": minor
 ---
 
 Version the saved-world projection to v2 with finite effective location, quaternion rotation, scale,

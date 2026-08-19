@@ -983,10 +983,10 @@ describe("durable capture loop", () => {
 		await symlink(outsideRoot, join(stagingRoot, "views"), "junction");
 		await expect(
 			Effect.runPromise(
-				reparseAttempt.writeDocument({ relativePath: "views/result.json", value: {} })
+				reparseAttempt.writeDocument({ relativePath: "views/new/result.json", value: {} })
 			)
 		).rejects.toMatchObject({ operation: "write_run" });
-		await expect(access(join(outsideRoot, "result.json"))).rejects.toThrow();
+		await expect(access(join(outsideRoot, "new"))).rejects.toThrow();
 		await Effect.runPromise(reparseAttempt.discard());
 
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-source-project-"));

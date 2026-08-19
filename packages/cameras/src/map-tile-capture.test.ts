@@ -520,14 +520,14 @@ describe("map capture orchestration", () => {
 		await expect(
 			Effect.runPromise(
 				attempt.storeTile({
-					relativePath: "Z00/R000_C000.png",
+					relativePath: "Z00/new/R000_C000.png",
 					sourceAuthorizationRoot: projectRoot,
 					sourcePath,
 					sourceRoot
 				})
 			)
 		).rejects.toMatchObject({ operation: "store_tile" });
-		await expect(access(join(outsideRoot, "R000_C000.png"))).rejects.toThrow();
+		await expect(access(join(outsideRoot, "new"))).rejects.toThrow();
 		await Effect.runPromise(attempt.discard());
 	});
 

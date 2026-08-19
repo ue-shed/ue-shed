@@ -430,10 +430,16 @@ async function containedAttemptPath(args: {
 	if (!isPathWithin(args.attemptRoot, destinationPath)) {
 		throw new Error("The Capture Run path escapes its prepared attempt.");
 	}
-	await mkdir(dirname(destinationPath), { recursive: true });
-	const canonicalParent = await realpath(dirname(destinationPath));
-	if (!isPathWithinOrSame(args.attemptRoot, canonicalParent)) {
-		throw new Error("The Capture Run path escapes through a symbolic link or junction.");
+	const parentPath = dirname(destinationPath);
+	const parentSegments = relative(args.attemptRoot, parentPath);
+	let canonicalParent = args.attemptRoot;
+	for (const segment of parentSegments === "" ? [] : parentSegments.split(sep)) {
+		const candidate = join(canonicalParent, segment);
+		if (!(await pathExists(candidate))) await mkdir(candidate);
+		canonicalParent = await realpath(candidate);
+		if (!isPathWithinOrSame(args.attemptRoot, canonicalParent)) {
+			throw new Error("The Capture Run path escapes through a symbolic link or junction.");
+		}
 	}
 	return join(canonicalParent, basename(destinationPath));
 }

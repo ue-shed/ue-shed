@@ -180,12 +180,18 @@ async function containedPath(args: {
 	if (!isPathWithin(args.root, destinationPath)) {
 		throw new Error("The capture destination path escapes its authorized root.");
 	}
-	if (args.allowExistingParent) await mkdir(dirname(destinationPath), { recursive: true });
-	const canonicalParent = await realpath(dirname(destinationPath));
-	if (!isPathWithinOrSame(args.root, canonicalParent)) {
-		throw new Error(
-			"The capture destination path escapes through a symbolic link or junction."
-		);
+	const parentPath = dirname(destinationPath);
+	const parentSegments = relative(args.root, parentPath);
+	let canonicalParent = args.root;
+	for (const segment of parentSegments === "" ? [] : parentSegments.split(sep)) {
+		const candidate = join(canonicalParent, segment);
+		if (args.allowExistingParent && !(await pathExists(candidate))) await mkdir(candidate);
+		canonicalParent = await realpath(candidate);
+		if (!isPathWithinOrSame(args.root, canonicalParent)) {
+			throw new Error(
+				"The capture destination path escapes through a symbolic link or junction."
+			);
+		}
 	}
 	return join(canonicalParent, basename(destinationPath));
 }

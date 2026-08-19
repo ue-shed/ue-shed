@@ -112,6 +112,7 @@ packages/
   observatory/                 # Actor discovery and live state
   cameras/                     # Camera definitions, observation, and review
   scenarios/                   # Interactive scenario execution
+  niagara/                     # Headless Niagara preview runs
 extensions/
   rc-explorer/                 # Stock Remote Control inspection
   data-authoring/              # First-party authoring product
@@ -125,6 +126,7 @@ unreal/Plugins/
   UEShedObservatory/           # Actor registry and bounded live state
   UEShedCameras/               # Camera capture and review capabilities
   UEShedScenarios/             # Scenario definitions and execution
+  UEShedNiagara/               # Editor-only Niagara preview capture
 fixtures/unreal-project/       # Generic, reproducible integration fixture
 docs/                          # Product, protocol, architecture, and contribution docs
 ```
@@ -218,6 +220,7 @@ The suite is therefore separately enabled:
 | `UEShedObservatory` | Actor catalog, stable identity, bounded snapshots, demand-driven transform stream |
 | `UEShedCameras`     | Camera definition metadata, capture, and review artifacts                         |
 | `UEShedScenarios`   | Scenario discovery, parameterization, execution, and results                      |
+| `UEShedNiagara`     | Editor-only deterministic Niagara preview capture and staging                     |
 
 Saved-package authoring, `UEShedCore`, `UEShedAuthoring`, `UEShedObservatory`, and `UEShedCameras`
 are already exercised by shipped workflows. `UEShedScenarios` now exposes one separately enabled,

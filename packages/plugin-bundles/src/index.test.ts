@@ -23,6 +23,7 @@ const validManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
 			dependencies: [],
 			descriptorPath: "UEShedCore/UEShedCore.uplugin",
 			directory: "UEShedCore",
+			engineDependencies: [],
 			id: "UEShedCore",
 			version: "0.1.0"
 		},
@@ -30,6 +31,7 @@ const validManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
 			dependencies: ["UEShedCore"],
 			descriptorPath: "UEShedAuthoring/UEShedAuthoring.uplugin",
 			directory: "UEShedAuthoring",
+			engineDependencies: [],
 			id: "UEShedAuthoring",
 			version: "0.1.0"
 		}

@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.3.0",
+	"FriendlyName": "UE Shed Niagara",
+	"Description": "Editor-only deterministic Niagara preview capture and contained staging.",
+	"Category": "UE Shed",
+	"EnabledByDefault": false,
+	"CanContainContent": false,
+	"Plugins": [
+		{
+			"Name": "Niagara",
+			"Enabled": true
+		}
+	],
+	"Modules": [
+		{
+			"Name": "UEShedNiagaraEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

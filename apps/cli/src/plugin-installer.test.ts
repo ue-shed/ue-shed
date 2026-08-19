@@ -52,6 +52,7 @@ async function makeFixture(): Promise<{
 					dependencies: [],
 					descriptorPath: "UEShedCore/UEShedCore.uplugin",
 					directory: "UEShedCore",
+					engineDependencies: [],
 					id: "UEShedCore",
 					version: "0.1.0"
 				},
@@ -59,6 +60,7 @@ async function makeFixture(): Promise<{
 					dependencies: [],
 					descriptorPath: "UEShedRetired/UEShedRetired.uplugin",
 					directory: "UEShedRetired",
+					engineDependencies: [],
 					id: "UEShedRetired",
 					version: "0.1.0"
 				}

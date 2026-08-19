@@ -61,6 +61,7 @@ export const ENGINE_PACKAGE_NAME = "@ue-shed/engine";
 export const ENGINE_WINDOWS_PACKAGE_NAME = "@ue-shed/engine-win32-x64";
 export const CONFIG_EXPLORER_PACKAGE_NAME = "@ue-shed/config-explorer";
 export const PROJECT_CUSTODIAN_PACKAGE_NAME = "@ue-shed/project-custodian";
+export const NIAGARA_PACKAGE_NAME = "@ue-shed/niagara";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Every entry belongs to the synchronized public suite. Applications, extensions, UI packages,
@@ -81,7 +82,8 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: "@ue-shed/uasset", directory: "packages/uasset" },
 	{ name: GAME_TEXT_PACKAGE_NAME, directory: "packages/game-text" },
 	{ name: CONFIG_EXPLORER_PACKAGE_NAME, directory: "packages/config-explorer" },
-	{ name: PROJECT_CUSTODIAN_PACKAGE_NAME, directory: "packages/project-custodian" }
+	{ name: PROJECT_CUSTODIAN_PACKAGE_NAME, directory: "packages/project-custodian" },
+	{ name: NIAGARA_PACKAGE_NAME, directory: "packages/niagara" }
 ];
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -400,6 +402,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	const mapHistory = byName.get(MAP_HISTORY_PACKAGE_NAME);
 	const configExplorer = byName.get(CONFIG_EXPLORER_PACKAGE_NAME);
 	const projectCustodian = byName.get(PROJECT_CUSTODIAN_PACKAGE_NAME);
+	const niagara = byName.get(NIAGARA_PACKAGE_NAME);
 	for (const entry of manifests) {
 		if (entry.manifest.version !== PUBLIC_VERSION) {
 			failures.push(
@@ -449,6 +452,8 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactDependency(configExplorer, "effect", exactEffectVersion, failures);
 	requireExactDependency(projectCustodian, "effect", exactEffectVersion, failures);
 	requireExactDependency(projectCustodian, "trash", exactTrashVersion, failures);
+	requireExactInternalDependency(niagara, ENGINE_PACKAGE_NAME, byName, failures);
+	requireExactDependency(niagara, "effect", exactEffectVersion, failures);
 	for (const dependencyField of [
 		"dependencies",
 		"optionalDependencies",
@@ -559,6 +564,7 @@ export async function packPublicPackages({
 		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", CONFIG_EXPLORER_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", PROJECT_CUSTODIAN_PACKAGE_NAME, "build"]);
+		run(executable("pnpm"), ["--filter", NIAGARA_PACKAGE_NAME, "build"]);
 	}
 	const packed: PackedPackage[] = [];
 	for (const workspacePackage of PUBLIC_PACKAGES) {

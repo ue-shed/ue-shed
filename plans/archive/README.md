@@ -42,3 +42,4 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 | [042](042-project-authored-game-text-quality.md)              | Add project-authored Game Text quality rules                         | DONE — CLI and Workbench gates verified     |
 | [044](044-map-tile-pyramid.md)                                | Capture generic top-down map tile pyramids                           | DONE — portable and UE 5.7 capture verified |
 | [045](045-project-custodian-read-only-slice.md)               | Inventory and plan reclaimable Unreal workspace storage              | DONE — read-only CLI and Workbench verified |
+| [046](046-niagara-preview.md)                                 | Publish portable Niagara preview runs                                | DONE — portable and UE 5.7 render verified  |

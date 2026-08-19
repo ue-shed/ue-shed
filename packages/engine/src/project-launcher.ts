@@ -108,6 +108,19 @@ export function unrealEditorExecutable(engineRoot: string, platform = process.pl
 	return join(engineRoot, "Engine", "Binaries", "Linux", "UnrealEditor");
 }
 
+export function unrealEditorCommandletExecutable(
+	engineRoot: string,
+	platform = process.platform
+): string {
+	if (platform === "win32") {
+		return join(engineRoot, "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe");
+	}
+	if (platform === "darwin") {
+		return join(engineRoot, "Engine", "Binaries", "Mac", "UnrealEditor-Cmd");
+	}
+	return join(engineRoot, "Engine", "Binaries", "Linux", "UnrealEditor-Cmd");
+}
+
 export function unrealRemoteControlArguments(
 	plugins: readonly UnrealLaunchPlugin[],
 	httpPort: number

@@ -18,7 +18,8 @@
 			"@ue-shed/uasset",
 			"@ue-shed/game-text",
 			"@ue-shed/config-explorer",
-			"@ue-shed/project-custodian"
+			"@ue-shed/project-custodian",
+			"@ue-shed/niagara"
 		]
 	],
 	"linked": [],

@@ -1,0 +1,96 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/niagara/preview/v1/common.schema.json",
+	"$defs": {
+		"runId": {
+			"type": "string",
+			"pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+		},
+		"systemObjectPath": {
+			"type": "string",
+			"maxLength": 1024,
+			"pattern": "^/[A-Za-z0-9_]+/[A-Za-z0-9_./-]+\\.[A-Za-z0-9_]+$"
+		},
+		"settings": {
+			"type": "object",
+			"properties": {
+				"captureMode": { "enum": ["component_only", "full_scene"] },
+				"durationSeconds": { "type": "number", "minimum": 0.001, "maximum": 600 },
+				"frameCount": { "type": "integer", "minimum": 1, "maximum": 512 },
+				"height": { "type": "integer", "minimum": 1, "maximum": 4096 },
+				"simulationFramesPerSecond": { "type": "integer", "minimum": 1, "maximum": 480 },
+				"startSeconds": { "type": "number", "minimum": 0, "maximum": 3600 },
+				"width": { "type": "integer", "minimum": 1, "maximum": 4096 }
+			},
+			"additionalProperties": false
+		},
+		"effectiveSettings": {
+			"type": "object",
+			"required": [
+				"captureMode",
+				"durationSeconds",
+				"frameCount",
+				"frameIntervalSeconds",
+				"height",
+				"playbackFramesPerSecond",
+				"simulationFramesPerSecond",
+				"startSeconds",
+				"width"
+			],
+			"properties": {
+				"captureMode": { "enum": ["component_only", "full_scene"] },
+				"durationSeconds": { "type": "number", "minimum": 0.001, "maximum": 600 },
+				"frameCount": { "type": "integer", "minimum": 1, "maximum": 512 },
+				"frameIntervalSeconds": { "type": "number", "exclusiveMinimum": 0 },
+				"height": { "type": "integer", "minimum": 1, "maximum": 4096 },
+				"playbackFramesPerSecond": { "type": "number", "exclusiveMinimum": 0 },
+				"simulationFramesPerSecond": { "type": "integer", "minimum": 1, "maximum": 480 },
+				"startSeconds": { "type": "number", "minimum": 0, "maximum": 3600 },
+				"width": { "type": "integer", "minimum": 1, "maximum": 4096 }
+			},
+			"additionalProperties": false
+		},
+		"camera": {
+			"type": "object",
+			"required": [
+				"aspectRatio",
+				"fieldOfViewDegrees",
+				"location",
+				"orthoWidth",
+				"projection",
+				"rotation",
+				"usesCustomAspectRatio"
+			],
+			"properties": {
+				"aspectRatio": { "type": "number", "exclusiveMinimum": 0 },
+				"fieldOfViewDegrees": { "type": "number", "minimum": 0, "maximum": 180 },
+				"location": { "$ref": "#/$defs/vector" },
+				"orthoWidth": { "type": "number", "minimum": 0 },
+				"projection": { "enum": ["orthographic", "perspective"] },
+				"rotation": { "$ref": "#/$defs/rotator" },
+				"usesCustomAspectRatio": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		},
+		"vector": {
+			"type": "object",
+			"required": ["x", "y", "z"],
+			"properties": {
+				"x": { "type": "number" },
+				"y": { "type": "number" },
+				"z": { "type": "number" }
+			},
+			"additionalProperties": false
+		},
+		"rotator": {
+			"type": "object",
+			"required": ["pitch", "roll", "yaw"],
+			"properties": {
+				"pitch": { "type": "number" },
+				"roll": { "type": "number" },
+				"yaw": { "type": "number" }
+			},
+			"additionalProperties": false
+		}
+	}
+}

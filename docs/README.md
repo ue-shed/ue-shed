@@ -45,6 +45,7 @@ there; do not invent a second status source in docs.
 | [game-text.md](products/game-text.md)                     | Saved text corpus and quality review |
 | [scenario-studio.md](products/scenario-studio.md)         | Live PIE scenario execution          |
 | [project-custodian.md](products/project-custodian.md)     | Reclaimable Unreal workspace storage |
+| [niagara-preview.md](products/niagara-preview.md)         | Portable Niagara preview evidence    |
 
 ## Decisions
 

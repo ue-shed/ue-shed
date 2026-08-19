@@ -76,6 +76,22 @@ function producerReceipt(
 	request: NiagaraPreviewProducerRequest,
 	effectiveOverrides: Partial<NiagaraPreviewProducerReceipt["effectiveSettings"]> = {}
 ) {
+	const requested = request.settings;
+	const effectiveBase = {
+		captureMode: requested.captureMode ?? ("component_only" as const),
+		durationSeconds: Math.fround(requested.durationSeconds ?? 1),
+		frameCount: requested.frameCount ?? 2,
+		height: requested.height ?? 64,
+		simulationFramesPerSecond: requested.simulationFramesPerSecond ?? 60,
+		startSeconds: Math.fround(requested.startSeconds ?? 0),
+		width: requested.width ?? 64
+	};
+	const effectiveSettings = {
+		...effectiveBase,
+		frameIntervalSeconds: effectiveBase.durationSeconds / effectiveBase.frameCount,
+		playbackFramesPerSecond: effectiveBase.frameCount / effectiveBase.durationSeconds,
+		...effectiveOverrides
+	};
 	return {
 		alphaPolicy: "scene_opacity_or_emissive_coverage_v1",
 		camera: {
@@ -92,18 +108,7 @@ function producerReceipt(
 			name: "ue-shed-niagara-preview-receipt",
 			version: { major: 1, minor: 0 }
 		},
-		effectiveSettings: {
-			captureMode: "component_only",
-			durationSeconds: 1,
-			frameCount: 2,
-			frameIntervalSeconds: 0.5,
-			height: 64,
-			playbackFramesPerSecond: 2,
-			simulationFramesPerSecond: 60,
-			startSeconds: 0,
-			width: 64,
-			...effectiveOverrides
-		},
+		effectiveSettings,
 		engineVersion: "5.7.2-test",
 		frames: [
 			{
@@ -111,14 +116,14 @@ function producerReceipt(
 				maximumRgb: 1,
 				nonTransparentPixelFraction: 0.1,
 				relativePath: "frames/frame_0000.png",
-				timeSeconds: 0
+				timeSeconds: effectiveSettings.startSeconds
 			},
 			{
 				index: 1,
 				maximumRgb: 0.5,
 				nonTransparentPixelFraction: 0.2,
 				relativePath: "frames/frame_0001.png",
-				timeSeconds: 0.5
+				timeSeconds: effectiveSettings.startSeconds + effectiveSettings.frameIntervalSeconds
 			}
 		],
 		generatedAtUtc: "2026-08-20T00:00:00.000Z",
@@ -129,7 +134,7 @@ function producerReceipt(
 	};
 }
 
-it.effect("publishes a validated immutable run through a supervised commandlet", () =>
+it.effect("publishes a run with high-range binary32 timing through a supervised commandlet", () =>
 	Effect.gen(function* () {
 		const root = yield* Effect.acquireRelease(
 			Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-niagara-test-"))),
@@ -202,13 +207,14 @@ it.effect("publishes a validated immutable run through a supervised commandlet",
 					frameCount: 2,
 					height: 64,
 					simulationFramesPerSecond: 60,
-					startSeconds: 0,
+					startSeconds: 3000.00012,
 					width: 64
 				},
 				systemObjectPath
 			})
 		).pipe(Effect.provide(NiagaraPreviewLive), Effect.provide(dependencies));
 		expect(outcome.manifest.artifacts).toHaveLength(2);
+		expect(outcome.manifest.effectiveSettings.startSeconds).toBe(Math.fround(3000.00012));
 		expect(outcome.manifest.artifacts[0]?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
 		expect(
 			JSON.parse(yield* Effect.promise(() => readFile(outcome.manifestPath, "utf8")))

@@ -134,17 +134,18 @@ function requestedSettingsMatchEffective(
 	requested: NiagaraPreviewSettings,
 	effective: NiagaraPreviewProducerReceipt["effectiveSettings"]
 ): boolean {
-	const approximatelyEqual = (left: number, right: number) => Math.abs(left - right) <= 0.0001;
+	const producerFloatMatches = (requestedValue: number, effectiveValue: number) =>
+		Math.fround(requestedValue) === Math.fround(effectiveValue);
 	return (
 		(requested.captureMode === undefined || requested.captureMode === effective.captureMode) &&
 		(requested.durationSeconds === undefined ||
-			approximatelyEqual(requested.durationSeconds, effective.durationSeconds)) &&
+			producerFloatMatches(requested.durationSeconds, effective.durationSeconds)) &&
 		(requested.frameCount === undefined || requested.frameCount === effective.frameCount) &&
 		(requested.height === undefined || requested.height === effective.height) &&
 		(requested.simulationFramesPerSecond === undefined ||
 			requested.simulationFramesPerSecond === effective.simulationFramesPerSecond) &&
 		(requested.startSeconds === undefined ||
-			approximatelyEqual(requested.startSeconds, effective.startSeconds)) &&
+			producerFloatMatches(requested.startSeconds, effective.startSeconds)) &&
 		(requested.width === undefined || requested.width === effective.width)
 	);
 }

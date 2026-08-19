@@ -8,7 +8,9 @@
 #include "Misc/Paths.h"
 #include "NiagaraBakerOutputTexture2D.h"
 #include "NiagaraBakerSettings.h"
+#include "NiagaraScript.h"
 #include "NiagaraSystem.h"
+#include "NiagaraSystemImpl.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "UEShedNiagaraCapture.h"
@@ -58,6 +60,18 @@ bool IsRunId(const FString& Value)
 		}
 	}
 	return true;
+}
+
+bool HasCompilationErrors(const UNiagaraSystem& System)
+{
+	bool bHasCompilationErrors = false;
+	System.ForEachScript(
+		[&bHasCompilationErrors](UNiagaraScript* Script)
+		{
+			bHasCompilationErrors |= Script
+				&& Script->GetLastCompileStatus() == ENiagaraScriptCompileStatus::NCS_Error;
+		});
+	return bHasCompilationErrors;
 }
 
 bool ReadIntegerOverride(
@@ -321,7 +335,7 @@ int32 UUEShedNiagaraPreviewCommandlet::Main(const FString& Params)
 		return ExitBakerCameraMissing;
 	}
 	System->WaitForCompilationComplete(true, false);
-	if (!System->IsReadyToRun())
+	if (HasCompilationErrors(*System))
 	{
 		UE_LOG(
 			LogUEShedNiagaraPreview,

@@ -1,5 +1,19 @@
 # @ue-shed/engine
 
+## 0.3.0
+
+### Minor Changes
+
+- 70ef061: Add an Effect-scoped supervised Unreal Editor session with validated launch inputs, capability-based
+  readiness, typed exit outcomes, caller-owned POSIX process-group teardown, and a Windows x64 native
+  supervisor that assigns the suspended editor to a private kill-on-close Job Object before resuming it.
+
+### Patch Changes
+
+- Updated dependencies [bf27d37]
+    - @ue-shed/protocol@0.3.0
+    - @ue-shed/unreal-connection@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

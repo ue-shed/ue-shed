@@ -1,5 +1,18 @@
 # @ue-shed/unreal-assets
 
+## 0.3.0
+
+### Minor Changes
+
+- bf27d37: Version the saved-world projection to v2 with finite effective location, quaternion rotation, scale,
+  and direct root-component attachment evidence. Map History schema v2 records the new actor shape and
+  distinguishes attachment, effective-transform, and transform-resolution changes.
+
+### Patch Changes
+
+- Updated dependencies [bf27d37]
+    - @ue-shed/protocol@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

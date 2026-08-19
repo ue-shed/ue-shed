@@ -1,5 +1,12 @@
 # @ue-shed/game-text
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [bf27d37]
+    - @ue-shed/unreal-assets@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

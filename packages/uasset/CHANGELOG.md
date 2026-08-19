@@ -1,5 +1,13 @@
 # @ue-shed/uasset
 
+## 0.3.0
+
+### Minor Changes
+
+- bf27d37: Advance `uasset saved-world` output to the version 2 wire contract with finite effective
+  location, quaternion rotation, scale, direct root-component attachment evidence, and explicit
+  transform-resolution failures.
+
 ## 0.2.0
 
 ### Patch Changes

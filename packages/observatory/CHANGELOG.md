@@ -1,5 +1,13 @@
 # @ue-shed/observatory
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [bf27d37]
+    - @ue-shed/unreal-connection@0.3.0
+    - @ue-shed/observability@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes

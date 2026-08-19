@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/uasset-inspection-wasm",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Browser and Node WebAssembly UAsset inspection for bounded package bytes",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {

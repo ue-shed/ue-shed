@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/cameras",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Headless Map Review schemas, framing, capture orchestration, and camera transports.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -45,9 +45,9 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/observability": "workspace:0.2.0",
-		"@ue-shed/protocol": "workspace:0.2.0",
-		"@ue-shed/unreal-connection": "workspace:0.2.0",
+		"@ue-shed/observability": "workspace:0.3.0",
+		"@ue-shed/protocol": "workspace:0.3.0",
+		"@ue-shed/unreal-connection": "workspace:0.3.0",
 		"effect": "catalog:"
 	},
 	"engines": {

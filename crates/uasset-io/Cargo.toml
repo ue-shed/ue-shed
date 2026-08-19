@@ -1,6 +1,6 @@
 [package]
 name = "uasset-io"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Filesystem and process-facing IO for Unreal Engine asset inspection"

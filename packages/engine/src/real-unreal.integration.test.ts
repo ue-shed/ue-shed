@@ -1,5 +1,5 @@
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
-import { Effect, Layer, Schedule } from "effect";
+import { Effect, Layer, Schedule, Schema } from "effect";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EditorConnectionLive } from "./editor-connection.js";
@@ -78,10 +78,11 @@ describe.skipIf(!enabled)("real Unreal editor play-session lifecycle", () => {
 });
 
 const supervisedEngineRoot = process.env.UE_SHED_ENGINE_ROOT ?? "";
+const supervisedCorePlugin = process.env.UE_SHED_CORE_PLUGIN_DESCRIPTOR ?? "";
 const supervisedEnabled =
-	process.platform !== "win32" &&
 	process.env.UE_SHED_UNREAL_SUPERVISED_SESSION_INTEGRATION === "1" &&
-	supervisedEngineRoot.length > 0;
+	supervisedEngineRoot.length > 0 &&
+	supervisedCorePlugin.length > 0;
 const supervisedLive = SupervisedEditorSessionLive.pipe(
 	Layer.provide(
 		Layer.mergeAll(
@@ -93,9 +94,9 @@ const supervisedLive = SupervisedEditorSessionLive.pipe(
 );
 
 describe.skipIf(!supervisedEnabled)("real supervised Unreal editor lifecycle", () => {
-	it("reaches the UEShedCore capability manifest and tears down its process group", async () => {
+	it("reaches the UEShedCore capability manifest and tears down its process tree", async () => {
 		const projectDescriptor = resolve("fixtures/unreal-project/UEShedFixture.uproject");
-		const pluginDescriptor = resolve("unreal/Plugins/UEShedCore/UEShedCore.uplugin");
+		const pluginDescriptor = resolve(supervisedCorePlugin);
 		const program = Effect.scoped(
 			Effect.gen(function* () {
 				const sessions = yield* SupervisedEditorSession;
@@ -114,8 +115,21 @@ describe.skipIf(!supervisedEnabled)("real supervised Unreal editor lifecycle", (
 					projectName: "UEShedFixture",
 					schemaVersion: 1
 				});
+				return session.pid;
 			})
 		).pipe(Effect.provide(supervisedLive));
-		await Effect.runPromise(program);
-	});
+		const pid = await Effect.runPromise(program);
+		expect(processExists(pid)).toBe(false);
+	}, 240_000);
 });
+
+const ErrorWithCode = Schema.Struct({ code: Schema.String });
+
+function processExists(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (cause) {
+		return !Schema.is(ErrorWithCode)(cause) || cause.code !== "ESRCH";
+	}
+}

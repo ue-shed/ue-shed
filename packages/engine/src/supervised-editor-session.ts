@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import { access } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { CompanionCapabilityManifest } from "@ue-shed/protocol";
 import { Context, Duration, Effect, Exit, Layer, Option, Schema, type Scope } from "effect";
 import {
@@ -22,6 +23,17 @@ const BoundedString = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
 const BoundedCapability = Schema.NonEmptyString.check(Schema.isMaxLength(256));
 const HttpPort = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65_534 }));
 const Milliseconds = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3_600_000 }));
+const WindowsExitCode = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 }));
+const SupervisorMessage = Schema.Union([
+	Schema.Struct({
+		pid: Schema.Int.check(Schema.isGreaterThan(0)),
+		type: Schema.Literal("started")
+	}),
+	Schema.Struct({ exitCode: WindowsExitCode, type: Schema.Literal("exited") })
+]);
+type SupervisorMessage = typeof SupervisorMessage.Type;
+const WINDOWS_SUPERVISOR_PACKAGE = "@ue-shed/engine-win32-x64";
+const SUPERVISOR_OUTPUT_LIMIT = 16_384;
 
 export const SupervisedEditorSessionRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(BoundedString),
@@ -68,6 +80,7 @@ export class SupervisedEditorSessionError extends Schema.TaggedErrorClass<Superv
 			"plugin_missing",
 			"process_tree_supervision_unavailable",
 			"spawn_failed",
+			"supervisor_failed",
 			"process_exited",
 			"readiness_failed",
 			"capability_unavailable",
@@ -88,7 +101,7 @@ export interface OwnedProcessTreeLaunchOptions {
 }
 
 export interface OwnedProcessTreeHandle {
-	readonly awaitExit: Effect.Effect<OwnedProcessExit>;
+	readonly awaitExit: Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 	readonly pid: number;
 	readonly terminate: (
 		reason: OwnedProcessTerminationReason
@@ -106,7 +119,7 @@ export class OwnedProcessTree extends Context.Service<OwnedProcessTree, OwnedPro
 ) {}
 
 export interface SupervisedEditorSessionHandle {
-	readonly awaitExit: Effect.Effect<OwnedProcessExit>;
+	readonly awaitExit: Effect.Effect<OwnedProcessExit, SupervisedEditorSessionError>;
 	readonly engineRoot: string;
 	readonly executable: string;
 	readonly manifest: CompanionCapabilityManifest;
@@ -224,6 +237,188 @@ function waitForProcessGroupExit(pid: number): Effect.Effect<void> {
 	});
 }
 
+function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSessionError> {
+	return Effect.tryPromise({
+		try: async () => {
+			const require = createRequire(import.meta.url);
+			const packageManifest = require.resolve(`${WINDOWS_SUPERVISOR_PACKAGE}/package.json`);
+			const executable = join(
+				dirname(packageManifest),
+				"bin",
+				"ue-shed-process-supervisor.exe"
+			);
+			await access(executable);
+			return executable;
+		},
+		catch: (cause) =>
+			sessionError(
+				"process_tree_supervision_unavailable",
+				"launch",
+				`The Windows Job Object supervisor is unavailable: ${String(cause)}`,
+				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`
+			)
+	});
+}
+
+type SupervisorCompletion =
+	| { readonly exit: OwnedProcessExit; readonly ok: true }
+	| { readonly error: SupervisedEditorSessionError; readonly ok: false };
+
+function makeWindowsHandle(
+	helper: ChildProcess,
+	pid: number,
+	completion: Promise<SupervisorCompletion>,
+	terminationTimeout: Duration.Input,
+	setRequestedReason: (reason: OwnedProcessTerminationReason) => void
+): OwnedProcessTreeHandle {
+	const awaitExit = Effect.promise(() => completion).pipe(
+		Effect.flatMap((result) =>
+			result.ok ? Effect.succeed(result.exit) : Effect.fail(result.error)
+		)
+	);
+	const terminate = Effect.fn("OwnedProcessTree.terminate")(function* (
+		reason: OwnedProcessTerminationReason
+	) {
+		setRequestedReason(reason);
+		yield* Effect.try({
+			try: () => helper.stdin?.end(),
+			catch: (cause) =>
+				sessionError(
+					"termination_failed",
+					"termination",
+					`Could not request termination of owned Windows Job Object ${pid}: ${String(cause)}`,
+					"Terminate the owned editor process tree manually before retrying.",
+					true
+				)
+		});
+		const completed = yield* awaitExit.pipe(Effect.timeoutOption(terminationTimeout));
+		if (Option.isNone(completed)) {
+			return yield* sessionError(
+				"termination_failed",
+				"termination",
+				`Owned Windows Job Object ${pid} did not terminate before the deadline.`,
+				"Terminate the remaining owned process tree manually before retrying.",
+				true
+			);
+		}
+		return completed.value;
+	});
+	return { awaitExit, pid, terminate };
+}
+
+function launchWindowsProcessTree(
+	supervisor: string,
+	options: OwnedProcessTreeLaunchOptions
+): Effect.Effect<OwnedProcessTreeHandle, SupervisedEditorSessionError> {
+	return Effect.callback<OwnedProcessTreeHandle, SupervisedEditorSessionError>((resume) => {
+		const helper = spawn(
+			supervisor,
+			["--cwd", options.cwd, "--", options.executable, ...options.args],
+			{
+				detached: false,
+				shell: false,
+				stdio: ["pipe", "pipe", "pipe"],
+				windowsHide: true
+			}
+		);
+		let launched = false;
+		let settled = false;
+		let requestedReason: OwnedProcessTerminationReason | undefined;
+		let stdout = "";
+		let stderr = "";
+		let finishCompletion: (completion: SupervisorCompletion) => void = () => undefined;
+		const completion = new Promise<SupervisorCompletion>((complete) => {
+			finishCompletion = complete;
+		});
+		const supervisorFailure = (message: string) =>
+			sessionError(
+				"supervisor_failed",
+				launched ? "operation" : "launch",
+				message,
+				"Inspect the supervisor error and editor logs, then retry.",
+				true
+			);
+		const fail = (message: string) => {
+			if (settled) return;
+			settled = true;
+			const error = supervisorFailure(message);
+			if (launched) finishCompletion({ error, ok: false });
+			else resume(Effect.fail(error));
+		};
+		const processMessage = (message: SupervisorMessage) => {
+			if (message.type === "started") {
+				if (launched) {
+					fail("The Windows supervisor reported more than one process start.");
+					return;
+				}
+				launched = true;
+				resume(
+					Effect.succeed(
+						makeWindowsHandle(
+							helper,
+							message.pid,
+							completion,
+							options.terminationTimeout,
+							(reason) => {
+								requestedReason ??= reason;
+							}
+						)
+					)
+				);
+				return;
+			}
+			if (!launched) {
+				fail("The Windows supervisor reported process exit before process start.");
+				return;
+			}
+			if (settled) return;
+			settled = true;
+			finishCompletion({ exit: rawExit(message.exitCode, null, requestedReason), ok: true });
+		};
+		helper.stdout?.setEncoding("utf8");
+		helper.stdout?.on("data", (chunk: string) => {
+			stdout += chunk;
+			if (stdout.length > SUPERVISOR_OUTPUT_LIMIT) {
+				fail("The Windows supervisor exceeded its bounded protocol output.");
+				helper.stdin?.end();
+				return;
+			}
+			for (;;) {
+				const newline = stdout.indexOf("\n");
+				if (newline === -1) break;
+				const line = stdout.slice(0, newline).trim();
+				stdout = stdout.slice(newline + 1);
+				if (line.length === 0) continue;
+				try {
+					processMessage(Schema.decodeUnknownSync(SupervisorMessage)(JSON.parse(line)));
+				} catch (cause) {
+					fail(
+						`The Windows supervisor emitted an invalid protocol message: ${String(cause)}`
+					);
+					helper.stdin?.end();
+				}
+			}
+		});
+		helper.stderr?.setEncoding("utf8");
+		helper.stderr?.on("data", (chunk: string) => {
+			if (stderr.length >= SUPERVISOR_OUTPUT_LIMIT) return;
+			stderr = `${stderr}${chunk}`.slice(0, SUPERVISOR_OUTPUT_LIMIT);
+		});
+		helper.on("error", (cause) =>
+			fail(`Could not start the Windows supervisor: ${cause.message}`)
+		);
+		helper.on("close", (code) => {
+			if (settled) return;
+			const detail = stderr.trim().length > 0 ? `: ${stderr.trim()}` : "";
+			fail(`The Windows supervisor exited with code ${String(code)}${detail}`);
+		});
+		return Effect.sync(() => {
+			if (launched || settled) return;
+			helper.stdin?.end();
+		});
+	});
+}
+
 function makePosixHandle(
 	child: ChildProcess,
 	terminationTimeout: Duration.Input
@@ -281,13 +476,8 @@ export const OwnedProcessTreeLive = Layer.succeed(
 	OwnedProcessTree.of({
 		launch: Effect.fn("OwnedProcessTree.launch")((options) => {
 			if (process.platform === "win32") {
-				return Effect.fail(
-					sessionError(
-						"process_tree_supervision_unavailable",
-						"launch",
-						"Windows process-tree ownership requires a kill-on-close Job Object.",
-						"Provide a native launcher that creates the editor suspended, assigns it to an owned Job Object, then resumes it."
-					)
+				return Effect.flatMap(windowsSupervisorExecutable(), (supervisor) =>
+					launchWindowsProcessTree(supervisor, options)
 				);
 			}
 			return Effect.callback<OwnedProcessTreeHandle, SupervisedEditorSessionError>(

@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const [, , mode, evidencePath] = process.argv;
 
 if (mode === "child") {
 	setInterval(() => undefined, 60_000);
 } else if (mode === "parent" && evidencePath) {
-	const child = spawn(process.execPath, [new URL(import.meta.url).pathname, "child"], {
+	const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "child"], {
 		detached: false,
 		stdio: "ignore"
 	});

@@ -406,6 +406,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-process-supervisor"
+version = "0.2.0"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

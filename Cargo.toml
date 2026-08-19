@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/uasset-parser", "crates/uasset-inspection", "crates/uasset-io"]
+members = ["crates/*"]
 exclude = ["crates/uasset-inspection-wasm"]
 resolver = "3"
 

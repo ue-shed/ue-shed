@@ -342,24 +342,6 @@ it.effect("rejects a missing required capability after real readiness", () =>
 	})
 );
 
-it.effect("reports the Windows Job Object requirement before spawning", () =>
-	Effect.gen(function* () {
-		if (process.platform !== "win32") return;
-		const error = yield* Effect.flip(
-			Effect.flatMap(OwnedProcessTree, (processes) =>
-				processes.launch({
-					args: [],
-					cwd: process.cwd(),
-					executable: process.execPath,
-					terminationTimeout: Duration.seconds(1)
-				})
-			).pipe(Effect.provide(OwnedProcessTreeLive))
-		);
-		expect(error.code).toBe("process_tree_supervision_unavailable");
-		expect(error.message).toContain("Job Object");
-	})
-);
-
 const ErrorWithCode = Schema.Struct({ code: Schema.String });
 const ProcessTreeEvidence = Schema.Struct({
 	childPid: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -375,9 +357,27 @@ function processExists(pid: number): boolean {
 	}
 }
 
-describe.skipIf(process.platform === "win32")("owned POSIX process groups", () => {
+describe("owned process trees", () => {
+	it("reports a real natural exit deterministically", async () => {
+		const outcome = await Effect.runPromise(
+			Effect.gen(function* () {
+				const processes = yield* OwnedProcessTree;
+				const handle = yield* processes.launch({
+					args: ["-e", "process.exit(7)"],
+					cwd: process.cwd(),
+					executable: process.execPath,
+					terminationTimeout: Duration.seconds(5)
+				});
+				return yield* handle.awaitExit;
+			}).pipe(Effect.provide(OwnedProcessTreeLive))
+		);
+		expect(outcome).toEqual({ exitCode: 7, kind: "exited", signal: null });
+	});
+
 	it("terminates a real parent and descendant fixture on scope release", async () => {
-		const root = await mkdtemp(join(tmpdir(), "ue-shed-process-tree-"));
+		const base = await mkdtemp(join(tmpdir(), "ue-shed-process-tree-"));
+		const root = join(base, "path with spaces");
+		await mkdir(root);
 		const evidencePath = join(root, "pids.json");
 		const fixturePath = fileURLToPath(
 			new URL("./test-fixtures/owned-process-tree.mjs", import.meta.url)
@@ -412,6 +412,6 @@ describe.skipIf(process.platform === "win32")("owned POSIX process groups", () =
 		);
 		expect(processExists(evidence.parentPid)).toBe(false);
 		expect(processExists(evidence.childPid)).toBe(false);
-		await rm(root, { force: true, recursive: true });
+		await rm(base, { force: true, recursive: true });
 	});
 });

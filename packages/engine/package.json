@@ -43,6 +43,9 @@
 	"devDependencies": {
 		"@effect/vitest": "catalog:"
 	},
+	"optionalDependencies": {
+		"@ue-shed/engine-win32-x64": "workspace:0.2.0"
+	},
 	"engines": {
 		"node": ">=22.14.0"
 	}

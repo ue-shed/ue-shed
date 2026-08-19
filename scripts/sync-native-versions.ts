@@ -7,6 +7,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checkOnly = process.argv.includes("--check");
 const publicPackagePaths = PUBLIC_PACKAGES.map(({ directory }) => `${directory}/package.json`);
 const cargoManifestPaths = [
+	"crates/engine-process-supervisor/Cargo.toml",
 	"crates/uasset-parser/Cargo.toml",
 	"crates/uasset-inspection/Cargo.toml",
 	"crates/uasset-io/Cargo.toml",
@@ -15,7 +16,7 @@ const cargoManifestPaths = [
 const cargoLocks = [
 	{
 		path: "Cargo.lock",
-		crates: ["uasset-parser", "uasset-inspection", "uasset-io"]
+		crates: ["engine-process-supervisor", "uasset-parser", "uasset-inspection", "uasset-io"]
 	},
 	{
 		path: "crates/uasset-inspection-wasm/Cargo.lock",

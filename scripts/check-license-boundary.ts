@@ -47,7 +47,7 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	licensed("ISC", "rustls-webpki untrusted"),
 	licensed(
 		"MIT",
-		"atoi bytes cfg_aliases comfy-table crossterm crossterm_winapi crunchy duckdb libduckdb-sys libm nix redox_syscall simd-adler32 slab strum strum_macros uasset-inspection uasset-io uasset-parser zip zmij"
+		"atoi bytes cfg_aliases comfy-table crossterm crossterm_winapi crunchy duckdb engine-process-supervisor libduckdb-sys libm nix redox_syscall simd-adler32 slab strum strum_macros uasset-inspection uasset-io uasset-parser zip zmij"
 	),
 	licensed(
 		"MIT OR Apache-2.0",

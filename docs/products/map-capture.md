@@ -81,6 +81,11 @@ control and capture workflows.
 The host validates every staged path, hashes each PNG, writes a neutral manifest, and atomically
 renames a staging run only when every requested tile is present and valid. Partial, failed, and
 cancelled attempts retain truthful failures but never appear in completed-run discovery.
+The default destination adapter owns the project-local `.ue-shed/map-capture` tree. A trusted host
+may select an existing absolute caller-owned root instead; complete runs publish beneath its `runs`
+tree and non-complete attempts beneath its `attempts` tree. The adapter owns exclusive creation,
+containment and reparse-point checks, atomic promotion, and cleanup. No host destination is added to
+the Unreal request.
 
 Capture progress is reported from completed host batches rather than estimated by a timer. The
 Workbench route correlates events to the active operation and presents opening-map, tile capture,

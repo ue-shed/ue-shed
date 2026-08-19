@@ -378,7 +378,34 @@ async function prepareDestinationRoot(
 		throw new Error("A caller-owned Capture Run root cannot be a symbolic link or junction.");
 	}
 	const canonicalAuthorizationRoot = await realpath(options.authorizationRoot);
-	if (options.createRoot) await mkdir(options.destinationRoot, { recursive: true });
+	if (options.createRoot) {
+		if (!isPathWithinOrSame(options.authorizationRoot, options.destinationRoot)) {
+			throw new Error("The Capture Run destination is outside its authorized root.");
+		}
+		const missing: string[] = [];
+		let existing = options.destinationRoot;
+		while (!(await pathExists(existing))) {
+			missing.push(existing);
+			const parent = dirname(existing);
+			if (parent === existing) throw new Error("No existing destination ancestor was found.");
+			existing = parent;
+		}
+		const canonicalExisting = await realpath(existing);
+		if (!isPathWithinOrSame(canonicalAuthorizationRoot, canonicalExisting)) {
+			throw new Error(
+				"The Capture Run destination escapes through an existing reparse point."
+			);
+		}
+		for (const directory of missing.reverse()) {
+			await mkdir(directory);
+			const canonicalDirectory = await realpath(directory);
+			if (!isPathWithinOrSame(canonicalAuthorizationRoot, canonicalDirectory)) {
+				throw new Error(
+					"The Capture Run destination escaped while creating its directory."
+				);
+			}
+		}
+	}
 	const destinationEntry = await lstat(options.destinationRoot);
 	if (!destinationEntry.isDirectory()) {
 		throw new Error("The Capture Run destination must be a directory.");

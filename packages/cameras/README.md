@@ -59,6 +59,9 @@ bounded orthographic editor capture, and immutable hashed manifests without chan
 `Saved/UEShed/MapTileStaging`. Plans independently control fog and volumetric fog and can retain
 natural Unreal LOD behavior or provide one scene-capture LOD distance scale per zoom level. Capture
 Z is placement only and never selects an LOD.
+Trusted hosts may instead pass `callerOwnedMapCaptureDestination(existingAbsoluteRoot)`. Complete
+runs publish beneath its `runs` tree, while partial and cancelled manifests remain beneath its
+`attempts` tree; both retain the same containment, exclusive-creation, and atomic-promotion rules.
 
 Review Capture and Map Capture outputs are portable local evidence. Downstream products may
 correlate their stable identities and hashes externally; this package does not own an MB Map

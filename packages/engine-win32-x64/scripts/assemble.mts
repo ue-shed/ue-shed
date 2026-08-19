@@ -71,7 +71,8 @@ function valueAfter(flag: string) {
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const destination = assemble({
 		source: valueAfter("--source"),
-		destination: valueAfter("--destination")
+		destination: valueAfter("--destination"),
+		verifyVersion: !process.argv.includes("--skip-version-check")
 	});
 	process.stdout.write(`${destination}\n`);
 }

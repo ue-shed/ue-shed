@@ -96,6 +96,7 @@ const canonicalRepository = "git+https://github.com/ue-shed/ue-shed.git";
 const exactEffectVersion = "4.0.0-beta.98";
 const exactUnrealRcVersion = "0.5.3";
 const exactTrashVersion = "10.1.1";
+const WINDOWS_GNU_TARGET = "x86_64-pc-windows-gnu";
 
 function packedPath(path: string) {
 	return `package/${path.replace(/^\.\//u, "")}`;
@@ -512,19 +513,49 @@ export async function packPublicPackages({
 	await ensureEmptyOutput(outputDirectory);
 	await assertPublicPackageSet();
 	if (build) {
-		run("cargo", ["build", "--locked", "--release", "-p", "uasset-io"]);
-		run("cargo", ["build", "--locked", "--release", "-p", "engine-process-supervisor"]);
+		const windowsTarget = process.platform === "win32" ? undefined : WINDOWS_GNU_TARGET;
+		const nativeBuildArgs = [
+			"build",
+			"--locked",
+			"--release",
+			...(windowsTarget === undefined ? [] : ["--target", windowsTarget]),
+			"-p",
+			"uasset-io",
+			"-p",
+			"engine-process-supervisor"
+		];
+		run("cargo", nativeBuildArgs);
+		const cargoTargetDirectory = process.env.CARGO_TARGET_DIR
+			? resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
+			: join(repositoryRoot, "target");
+		const nativeReleaseDirectory = join(
+			cargoTargetDirectory,
+			...(windowsTarget === undefined ? [] : [windowsTarget]),
+			"release"
+		);
+		const assembleArgs = (packageName: string, executableName: string) => [
+			"--filter",
+			packageName,
+			"assemble",
+			"--",
+			"--source",
+			join(nativeReleaseDirectory, executableName),
+			...(process.platform === "win32" ? [] : ["--skip-version-check"])
+		];
 		run(executable("pnpm"), ["--filter", "@ue-shed/protocol", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observability", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);
 		run(executable("pnpm"), ["--filter", ENGINE_PACKAGE_NAME, "build"]);
-		run(executable("pnpm"), ["--filter", ENGINE_WINDOWS_PACKAGE_NAME, "assemble"]);
+		run(
+			executable("pnpm"),
+			assembleArgs(ENGINE_WINDOWS_PACKAGE_NAME, "ue-shed-process-supervisor.exe")
+		);
 		run(executable("pnpm"), ["--filter", "@ue-shed/cameras", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observatory", "build"]);
 		run(executable("pnpm"), ["--filter", WASM_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-assets", "build"]);
 		run(executable("pnpm"), ["--filter", MAP_HISTORY_PACKAGE_NAME, "build"]);
-		run(executable("pnpm"), ["--filter", "@ue-shed/uasset-win32-x64", "assemble"]);
+		run(executable("pnpm"), assembleArgs("@ue-shed/uasset-win32-x64", "uasset.exe"));
 		run(executable("pnpm"), ["--filter", GAME_TEXT_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", CONFIG_EXPLORER_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", PROJECT_CUSTODIAN_PACKAGE_NAME, "build"]);

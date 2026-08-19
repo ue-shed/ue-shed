@@ -38,8 +38,13 @@ jobs:
             - name: Install Rust
               run: |
                   rustup toolchain install stable --profile minimal --no-self-update
-                  rustup target add wasm32-unknown-unknown
+                  rustup target add wasm32-unknown-unknown x86_64-pc-windows-gnu
                   cargo install wasm-pack --locked --version 0.14.0
+
+            - name: Install Windows cross-linker
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --yes gcc-mingw-w64-x86-64
 
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
@@ -93,8 +98,13 @@ jobs:
             - name: Install Rust
               run: |
                   rustup toolchain install stable --profile minimal --no-self-update
-                  rustup target add wasm32-unknown-unknown
+                  rustup target add wasm32-unknown-unknown x86_64-pc-windows-gnu
                   cargo install wasm-pack --locked --version 0.14.0
+
+            - name: Install Windows cross-linker
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --yes gcc-mingw-w64-x86-64
 
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile --config.engine-strict=false

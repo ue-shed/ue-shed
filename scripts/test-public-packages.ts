@@ -178,8 +178,16 @@ try {
 		assert.equal(packageEntry.sha256, packedEntry.sha256);
 		assert.equal(packageEntry.bytes, packedEntry.bytes);
 	}
-	const dependencyEntries = Object.fromEntries(
+	const packageLocators = Object.fromEntries(
 		packed.map((entry) => [entry.name, `file:${entry.path.replaceAll("\\", "/")}`])
+	);
+	const dependencyEntries = Object.fromEntries(
+		packed
+			.filter(
+				(entry) =>
+					entry.manifest.os === undefined || entry.manifest.os.includes(process.platform)
+			)
+			.map((entry) => [entry.name, `file:${entry.path.replaceAll("\\", "/")}`])
 	);
 	await writeFile(
 		join(consumerDirectory, "package.json"),
@@ -198,7 +206,7 @@ try {
 		)}\n`,
 		"utf8"
 	);
-	const overrideLines = Object.entries(dependencyEntries).map(
+	const overrideLines = Object.entries(packageLocators).map(
 		([name, locator]) => `  "${name}": "${locator}"`
 	);
 	await writeFile(
@@ -373,87 +381,126 @@ try {
 			`Public suite offline consumer returned ${JSON.stringify(mapReviewStatus)}.`
 		);
 	}
-	const version = run(executable("pnpm"), ["exec", "uasset", "--version"], consumerDirectory, {
-		env: consumerEnvironment
-	});
-	const uassetVersion = packed.find((entry) => entry.name === "@ue-shed/uasset")?.manifest
-		.version;
-	if (version !== `uasset ${uassetVersion}`) {
-		throw new Error(`Packed CLI returned ${JSON.stringify(version)}.`);
-	}
-	const fixtureDirectory = join(consumerDirectory, "fixture");
-	await mkdir(fixtureDirectory);
-	const fixturePath = join(fixtureDirectory, "DT_Scalars.uasset");
-	await copyFile(
-		join(
-			repositoryRoot,
-			"fixtures",
-			"unreal-project",
-			"Content",
-			"Fixture",
-			"Authoring",
-			"DT_Scalars.uasset"
-		),
-		fixturePath
-	);
-	const inspectionRaw = run(
-		executable("pnpm"),
-		["exec", "uasset", "inspect", fixturePath, "--format", "json"],
-		consumerDirectory,
-		{ env: consumerEnvironment }
-	);
-	const inspection = JSON.parse(inspectionRaw);
-	if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== "DataTable") {
-		throw new Error("Packed CLI did not produce the stable DataTable inspection contract.");
-	}
-	const gameTextProject = join(consumerDirectory, "game-text-project");
-	const gameTextContent = join(gameTextProject, "Content", "Fixture", "Text");
-	await mkdir(dirname(gameTextContent), { recursive: true });
-	await cp(
-		join(repositoryRoot, "fixtures", "unreal-project", "Content", "Fixture", "Text"),
-		gameTextContent,
-		{ recursive: true }
-	);
-	const gameTextConsumerScript = join(consumerDirectory, "verify-game-text.mjs");
-	await writeFile(
-		gameTextConsumerScript,
-		`${[
-			"import { resolve } from 'node:path';",
-			"import { Effect } from 'effect';",
-			"import { resolveUassetExecutable } from '@ue-shed/uasset';",
-			"import { assetReaderLayer } from '@ue-shed/unreal-assets';",
-			"import { scanTextCorpus } from '@ue-shed/game-text';",
-			"import { textCorpusQuery } from '@ue-shed/game-text/browser';",
-			"const corpus = await Effect.runPromise(",
-			"  scanTextCorpus({ projectRoot: resolve('./game-text-project') }).pipe(",
-			"    Effect.provide(assetReaderLayer({ executable: resolveUassetExecutable() }))",
-			"  )",
-			");",
-			"if (corpus.coverage.discoveredPackages !== 2 || corpus.coverage.textUnits < 1) {",
-			"  throw new Error('packed Game Text scan did not account for the fixture');",
-			"}",
-			"const query = textCorpusQuery(corpus);",
-			"const summary = query.summary();",
-			"if (summary.coverage.textUnits !== corpus.coverage.textUnits) {",
-			"  throw new Error('packed Game Text summary lost corpus coverage');",
-			"}",
-			"const page = query.search({ capability: 'all', pageSize: 50, query: '' });",
-			"if (page.total < 1 || page.units.length < 1) {",
-			"  throw new Error('packed Game Text search returned no fixture text');",
-			"}",
-			"const focus = query.focus({ id: page.units[0].id, pageSize: 50 });",
-			"if (focus === undefined || focus.totalOccurrences < 1) {",
-			"  throw new Error('packed Game Text focus returned no occurrence evidence');",
-			"}",
-			"console.log('game-text-packed-ok');"
-		].join("\n")}\n`,
-		"utf8"
-	);
-	const gameTextStatus = run(process.execPath, [gameTextConsumerScript], consumerDirectory, {
-		env: consumerEnvironment
-	});
-	if (gameTextStatus !== "game-text-packed-ok") {
-		throw new Error(`Game Text packed consumer returned ${JSON.stringify(gameTextStatus)}.`);
+	let nativeEvidence: string;
+	if (process.platform === "win32") {
+		const version = run(
+			executable("pnpm"),
+			["exec", "uasset", "--version"],
+			consumerDirectory,
+			{
+				env: consumerEnvironment
+			}
+		);
+		const uassetVersion = packed.find((entry) => entry.name === "@ue-shed/uasset")?.manifest
+			.version;
+		if (version !== `uasset ${uassetVersion}`) {
+			throw new Error(`Packed CLI returned ${JSON.stringify(version)}.`);
+		}
+		nativeEvidence = version;
+		const fixtureDirectory = join(consumerDirectory, "fixture");
+		await mkdir(fixtureDirectory);
+		const fixturePath = join(fixtureDirectory, "DT_Scalars.uasset");
+		await copyFile(
+			join(
+				repositoryRoot,
+				"fixtures",
+				"unreal-project",
+				"Content",
+				"Fixture",
+				"Authoring",
+				"DT_Scalars.uasset"
+			),
+			fixturePath
+		);
+		const inspectionRaw = run(
+			executable("pnpm"),
+			["exec", "uasset", "inspect", fixturePath, "--format", "json"],
+			consumerDirectory,
+			{ env: consumerEnvironment }
+		);
+		const inspection = JSON.parse(inspectionRaw);
+		if (inspection.schema_version !== 8 || inspection.assets?.[0]?.kind !== "DataTable") {
+			throw new Error("Packed CLI did not produce the stable DataTable inspection contract.");
+		}
+		const gameTextProject = join(consumerDirectory, "game-text-project");
+		const gameTextContent = join(gameTextProject, "Content", "Fixture", "Text");
+		await mkdir(dirname(gameTextContent), { recursive: true });
+		await cp(
+			join(repositoryRoot, "fixtures", "unreal-project", "Content", "Fixture", "Text"),
+			gameTextContent,
+			{ recursive: true }
+		);
+		const gameTextConsumerScript = join(consumerDirectory, "verify-game-text.mjs");
+		await writeFile(
+			gameTextConsumerScript,
+			`${[
+				"import { resolve } from 'node:path';",
+				"import { Effect } from 'effect';",
+				"import { resolveUassetExecutable } from '@ue-shed/uasset';",
+				"import { assetReaderLayer } from '@ue-shed/unreal-assets';",
+				"import { scanTextCorpus } from '@ue-shed/game-text';",
+				"import { textCorpusQuery } from '@ue-shed/game-text/browser';",
+				"const corpus = await Effect.runPromise(",
+				"  scanTextCorpus({ projectRoot: resolve('./game-text-project') }).pipe(",
+				"    Effect.provide(assetReaderLayer({ executable: resolveUassetExecutable() }))",
+				"  )",
+				");",
+				"if (corpus.coverage.discoveredPackages !== 2 || corpus.coverage.textUnits < 1) {",
+				"  throw new Error('packed Game Text scan did not account for the fixture');",
+				"}",
+				"const query = textCorpusQuery(corpus);",
+				"const summary = query.summary();",
+				"if (summary.coverage.textUnits !== corpus.coverage.textUnits) {",
+				"  throw new Error('packed Game Text summary lost corpus coverage');",
+				"}",
+				"const page = query.search({ capability: 'all', pageSize: 50, query: '' });",
+				"if (page.total < 1 || page.units.length < 1) {",
+				"  throw new Error('packed Game Text search returned no fixture text');",
+				"}",
+				"const focus = query.focus({ id: page.units[0].id, pageSize: 50 });",
+				"if (focus === undefined || focus.totalOccurrences < 1) {",
+				"  throw new Error('packed Game Text focus returned no occurrence evidence');",
+				"}",
+				"console.log('game-text-packed-ok');"
+			].join("\n")}\n`,
+			"utf8"
+		);
+		const gameTextStatus = run(process.execPath, [gameTextConsumerScript], consumerDirectory, {
+			env: consumerEnvironment
+		});
+		if (gameTextStatus !== "game-text-packed-ok") {
+			throw new Error(
+				`Game Text packed consumer returned ${JSON.stringify(gameTextStatus)}.`
+			);
+		}
+	} else {
+		const unsupportedPlatformScript = join(consumerDirectory, "verify-uasset-platform.mjs");
+		await writeFile(
+			unsupportedPlatformScript,
+			`${[
+				"import { platformPackageName } from '@ue-shed/uasset';",
+				"try {",
+				"  platformPackageName();",
+				"  throw new Error('unsupported host unexpectedly resolved a native package');",
+				"} catch (cause) {",
+				"  if (cause?.code !== 'UE_SHED_UASSET_UNSUPPORTED_PLATFORM') throw cause;",
+				"}",
+				"console.log('uasset-platform-guard-ok');"
+			].join("\n")}\n`,
+			"utf8"
+		);
+		const platformStatus = run(
+			process.execPath,
+			[unsupportedPlatformScript],
+			consumerDirectory,
+			{ env: consumerEnvironment }
+		);
+		if (platformStatus !== "uasset-platform-guard-ok") {
+			throw new Error(
+				`Packed uasset platform guard returned ${JSON.stringify(platformStatus)}.`
+			);
+		}
+		nativeEvidence = platformStatus;
 	}
 	const mapHistoryConsumerScript = join(consumerDirectory, "verify-map-history.mjs");
 	await writeFile(
@@ -549,7 +596,7 @@ try {
 		}
 	}
 	console.log(
-		`Public package conformance passed: ${packed.length} tarballs, clean offline consumer, ${version}.`
+		`Public package conformance passed: ${packed.length} tarballs, clean offline consumer, ${nativeEvidence}.`
 	);
 } finally {
 	await rm(temporaryRoot, { recursive: true, force: true });

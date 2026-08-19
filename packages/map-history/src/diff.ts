@@ -1,4 +1,9 @@
-import type { SavedWorld, SavedWorldActor, SavedWorldTransform } from "@ue-shed/protocol";
+import type {
+	SavedWorld,
+	SavedWorldActor,
+	SavedWorldQuaternion,
+	SavedWorldTransform
+} from "@ue-shed/protocol";
 import type { ActorIdentity, MapChange, MapHistoryDiagnostic, MapSnapshotDiff } from "./schema.js";
 
 const ZERO_GUID = /^0{8}-0{8}-0{8}-0{8}$/;
@@ -58,10 +63,7 @@ export function savedWorldTransformsEqual(
 				before.location.x === after.location.x &&
 				before.location.y === after.location.y &&
 				before.location.z === after.location.z &&
-				before.rotation.w === after.rotation.w &&
-				before.rotation.x === after.rotation.x &&
-				before.rotation.y === after.rotation.y &&
-				before.rotation.z === after.rotation.z &&
+				savedWorldRotationsEqual(before.rotation, after.rotation) &&
 				before.scale.x === after.scale.x &&
 				before.scale.y === after.scale.y &&
 				before.scale.z === after.scale.z
@@ -88,14 +90,27 @@ function savedWorldAttachmentsEqual(before: SavedWorldActor, after: SavedWorldAc
 	);
 }
 
+function savedWorldRotationsEqual(
+	beforeRotation: SavedWorldQuaternion,
+	afterRotation: SavedWorldQuaternion
+): boolean {
+	return (
+		(beforeRotation.w === afterRotation.w &&
+			beforeRotation.x === afterRotation.x &&
+			beforeRotation.y === afterRotation.y &&
+			beforeRotation.z === afterRotation.z) ||
+		(beforeRotation.w === -afterRotation.w &&
+			beforeRotation.x === -afterRotation.x &&
+			beforeRotation.y === -afterRotation.y &&
+			beforeRotation.z === -afterRotation.z)
+	);
+}
+
 function effectiveRotationOrScaleChanged(before: SavedWorldActor, after: SavedWorldActor): boolean {
 	if (before.transform.status !== "resolved" || after.transform.status !== "resolved")
 		return false;
 	return (
-		before.transform.rotation.w !== after.transform.rotation.w ||
-		before.transform.rotation.x !== after.transform.rotation.x ||
-		before.transform.rotation.y !== after.transform.rotation.y ||
-		before.transform.rotation.z !== after.transform.rotation.z ||
+		!savedWorldRotationsEqual(before.transform.rotation, after.transform.rotation) ||
 		before.transform.scale.x !== after.transform.scale.x ||
 		before.transform.scale.y !== after.transform.scale.y ||
 		before.transform.scale.z !== after.transform.scale.z

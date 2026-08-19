@@ -148,6 +148,25 @@ describe("diffSavedWorldSnapshots", () => {
 		]);
 	});
 
+	it("does not report antipodal quaternion representations as transform changes", () => {
+		const before = actor({
+			transform: {
+				...resolvedTransform(),
+				rotation: { w: 0.5, x: -0.5, y: 0.5, z: -0.5 }
+			}
+		});
+		const after = actor({
+			transform: {
+				...resolvedTransform(),
+				rotation: { w: -0.5, x: 0.5, y: -0.5, z: 0.5 }
+			}
+		});
+
+		const result = diffSavedWorldSnapshots(world([before]), world([after]));
+
+		expect(result.changes).toEqual([]);
+	});
+
 	it("does not invent removals from an incomplete later snapshot", () => {
 		const result = diffSavedWorldSnapshots(world([actor()]), world([], "partial"));
 

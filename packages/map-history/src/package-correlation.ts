@@ -18,7 +18,9 @@ function actorPackagesForChange(change: MapChange): readonly string[] {
 		case "actor_label_changed":
 		case "actor_class_changed":
 		case "actor_package_changed":
-		case "actor_position_resolution_changed":
+		case "actor_attachment_changed":
+		case "actor_transform_changed":
+		case "actor_transform_resolution_changed":
 			return [change.before.packageName, change.after.packageName];
 		case "snapshot_coverage_changed":
 			return [];

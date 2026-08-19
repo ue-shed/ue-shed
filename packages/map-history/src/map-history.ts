@@ -430,7 +430,7 @@ function readPerforceMapHistoryWorkflow(
 		return {
 			...body,
 			query,
-			schemaVersion: 1 as const
+			schemaVersion: 2 as const
 		};
 	})();
 }
@@ -458,7 +458,7 @@ function readPerforceFastMapHistoryWorkflow(
 			coverage: resolved.coverage,
 			mode: "fast" as const,
 			query,
-			schemaVersion: 1 as const
+			schemaVersion: 2 as const
 		};
 	})();
 }

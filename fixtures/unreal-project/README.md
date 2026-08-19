@@ -92,15 +92,16 @@ can validate and reproduce them.
     - **UEShedFixtureStationary** — 3,278 slate cubes that stay put (tick disabled in PIE)
     - **UEShedFixtureFlying** — 409 cyan spheres on airborne orbits
     - **UEShedFixtureIntermittent** — 409 amber cylinders that cycle visibility
-- 32 camera sources bound to the first 32 movers (unchanged camera-load schedule max)
+- 32 camera sources bound to the first 32 movers (unchanged camera-load schedule max). Camera 01's
+  mover is attached to the next mover, providing a conventional-level nested attachment chain.
 
 ## Offline Map Review map
 
 `/Game/Fixture/Offline/L_OfflineWorld` is a tiny World Partition map committed with six external
 actor packages. It is deliberately separate from the live camera map: the showcase reads its map
 package and exact `Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld` subtree from disk,
-including an attached actor whose resolved location depends on its parent transform. It needs no
-editor, Remote Control endpoint, or fixture plugin capability.
+including a direct cross-package attachment whose resolved location and scale depend on its parent
+transform. It needs no editor, Remote Control endpoint, or fixture plugin capability.
 
 `pnpm showcase` exposes this map and the ordinary `L_CameraLoad` level in Map Review through
 `UE_SHED_SAVED_WORLD_MAPS`. This keeps the World Partition sample visible while also proving that

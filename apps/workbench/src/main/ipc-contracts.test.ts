@@ -573,7 +573,7 @@ const validResultByChannel = {
 	"content-observatory:targets": {
 		authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap",
 		actors: [],
@@ -634,7 +634,7 @@ const validResultByChannel = {
 	"map-review:saved-world": {
 		authority: { kind: "project_files", mapPackage: "/Game/Fixture/Offline/L_OfflineWorld" },
 		completeness: "complete",
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		externalActorRoot: "Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld",
 		mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap",

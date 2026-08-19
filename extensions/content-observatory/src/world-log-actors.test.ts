@@ -27,7 +27,12 @@ function actor(input: {
 		classPath: input.classPath ?? "/Script/Game.Npc",
 		label: input.label,
 		packageName: `/Game/Actors/${input.label}`,
-		position: { location: { x: input.x, y: input.y, z: 0 }, status: "resolved" as const }
+		transform: {
+			location: { x: input.x, y: input.y, z: 0 },
+			rotation: { w: 1, x: 0, y: 0, z: 0 },
+			scale: { x: 1, y: 1, z: 1 },
+			status: "resolved" as const
+		}
 	};
 }
 
@@ -55,7 +60,7 @@ describe("World Log actor projection", () => {
 			actors: [lamp],
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
 			completeness: "complete",
-			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 			diagnostics: [],
 			mapPackage: "/Game/Maps/L_Example",
 			mapPath: "Content/Maps/L_Example.umap",
@@ -137,7 +142,7 @@ describe("World Log actor projection", () => {
 					unclassifiedPackageChanges: []
 				}
 			],
-			schemaVersion: 1
+			schemaVersion: 2
 		});
 
 		const actors = collectWorldLogActors(history);

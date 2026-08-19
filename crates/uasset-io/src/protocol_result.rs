@@ -870,18 +870,20 @@ pub struct SavedWorldActor {
     pub actor_guid: Option<String>,
     #[serde(rename = "actorPath")]
     pub actor_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<SavedWorldAttachment>,
     #[serde(rename = "classPath")]
     pub class_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(rename = "packageName")]
     pub package_name: String,
-    pub position: SavedWorldPosition,
+    pub transform: SavedWorldTransform,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "status", deny_unknown_fields)]
-pub enum SavedWorldPosition {
+pub enum SavedWorldTransform {
     #[serde(rename = "missing_root_component")]
     MissingRootComponent,
     #[serde(rename = "missing_attachment_parent")]
@@ -904,13 +906,40 @@ pub enum SavedWorldPosition {
         #[serde(rename = "componentPath")]
         component_path: String,
     },
+    #[serde(rename = "non_finite_transform")]
+    NonFiniteTransform {
+        #[serde(rename = "componentPath")]
+        component_path: String,
+    },
     #[serde(rename = "resolved")]
-    Resolved { location: SavedWorldVector },
+    Resolved {
+        location: SavedWorldVector,
+        rotation: SavedWorldQuaternion,
+        scale: SavedWorldVector,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SavedWorldAttachment {
+    #[serde(rename = "componentPath")]
+    pub component_path: String,
+    #[serde(rename = "parentComponentPath")]
+    pub parent_component_path: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SavedWorldVector {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SavedWorldQuaternion {
+    pub w: f64,
     pub x: f64,
     pub y: f64,
     pub z: f64,

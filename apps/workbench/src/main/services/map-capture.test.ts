@@ -161,7 +161,7 @@ it.effect("loads saved actors for the capture map through the shared asset reade
 			completeness: "complete" as const,
 			contract: {
 				name: "unreal-saved-world" as const,
-				version: { major: 1 as const, minor: 0 }
+				version: { major: 2 as const, minor: 0 as const }
 			},
 			diagnostics: [],
 			mapPath: "Content/Maps/L_City.umap",
@@ -172,7 +172,12 @@ it.effect("loads saved actors for the capture map through the shared asset reade
 					classPath: "/Script/Engine.StaticMeshActor",
 					label: "Center",
 					packageName: "/Game/Maps/L_City",
-					position: { location: { x: 10, y: 20, z: 30 }, status: "resolved" as const }
+					transform: {
+						location: { x: 10, y: 20, z: 30 },
+						rotation: { w: 1, x: 0, y: 0, z: 0 },
+						scale: { x: 1, y: 1, z: 1 },
+						status: "resolved" as const
+					}
 				}
 			],
 			summary: {

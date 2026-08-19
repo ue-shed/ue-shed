@@ -42,8 +42,8 @@ function isInsideCapture(
 	actor: SavedWorldActor,
 	bounds: MapTilePyramidManifestValue["grid"]["snappedBounds"]
 ): boolean {
-	if (actor.position.status !== "resolved") return false;
-	const { x, y } = actor.position.location;
+	if (actor.transform.status !== "resolved") return false;
+	const { x, y } = actor.transform.location;
 	return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
 }
 
@@ -72,7 +72,7 @@ export function MapCaptureActorWorkspace(props: {
 	const actors = createMemo(() => readyWorld()?.actors ?? []);
 	const explorerItems = createMemo<readonly ActorExplorerItem[]>(() =>
 		actors().map((actor) => {
-			const resolved = actor.position.status === "resolved";
+			const resolved = actor.transform.status === "resolved";
 			const inside = isInsideCapture(actor, props.manifest.grid.snappedBounds);
 			return {
 				badges: [
@@ -86,8 +86,8 @@ export function MapCaptureActorWorkspace(props: {
 				packageName: actor.packageName,
 				path: actor.actorPath,
 				secondary: resolved
-					? `${actor.position.location.x.toLocaleString()}, ${actor.position.location.y.toLocaleString()} UU`
-					: actor.position.status,
+					? `${actor.transform.location.x.toLocaleString()}, ${actor.transform.location.y.toLocaleString()} UU`
+					: actor.transform.status,
 				searchFields: {
 					class: actor.classPath,
 					guid: actor.actorGuid,
@@ -114,7 +114,7 @@ export function MapCaptureActorWorkspace(props: {
 	});
 	const markers = createMemo<readonly MapTileActorMarker[]>(() =>
 		actors().flatMap((actor) => {
-			if (actor.position.status !== "resolved") return [];
+			if (actor.transform.status !== "resolved") return [];
 			const item = explorerItemsByKey().get(actorKey(actor));
 			if (item === undefined || !actorExplorerMatches(item, filters())) return [];
 			return [
@@ -122,14 +122,14 @@ export function MapCaptureActorWorkspace(props: {
 					className: actor.classPath,
 					key: actorKey(actor),
 					label: actorLabel(actor),
-					worldX: actor.position.location.x,
-					worldY: actor.position.location.y
+					worldX: actor.transform.location.x,
+					worldY: actor.transform.location.y
 				}
 			];
 		})
 	);
 	const resolvedCount = createMemo(
-		() => actors().filter((actor) => actor.position.status === "resolved").length
+		() => actors().filter((actor) => actor.transform.status === "resolved").length
 	);
 	const insideCount = createMemo(
 		() =>

@@ -27,7 +27,10 @@ const manifest = Effect.runSync(
 const world = {
 	authority: { kind: "project_files" as const, mapPackage: manifest.project.mapPath },
 	completeness: "complete" as const,
-	contract: { name: "unreal-saved-world" as const, version: { major: 1 as const, minor: 0 } },
+	contract: {
+		name: "unreal-saved-world" as const,
+		version: { major: 2 as const, minor: 0 as const }
+	},
 	diagnostics: [],
 	mapPath: "Content/Fixture/Cameras/L_CameraLoad.umap",
 	sourceKind: "level" as const,
@@ -37,21 +40,31 @@ const world = {
 			classPath: "/Script/Engine.StaticMeshActor",
 			label: "Inside",
 			packageName: "/Game/Fixture/Cameras/L_CameraLoad",
-			position: { location: { x: 128, y: 128, z: 0 }, status: "resolved" as const }
+			transform: {
+				location: { x: 128, y: 128, z: 0 },
+				rotation: { w: 1, x: 0, y: 0, z: 0 },
+				scale: { x: 1, y: 1, z: 1 },
+				status: "resolved" as const
+			}
 		},
 		{
 			actorPath: "/Game/Fixture/Cameras/L_CameraLoad.Outside",
 			classPath: "/Script/Engine.PointLight",
 			label: "Outside",
 			packageName: "/Game/Fixture/Cameras/L_CameraLoad",
-			position: { location: { x: 512, y: 512, z: 0 }, status: "resolved" as const }
+			transform: {
+				location: { x: 512, y: 512, z: 0 },
+				rotation: { w: 1, x: 0, y: 0, z: 0 },
+				scale: { x: 1, y: 1, z: 1 },
+				status: "resolved" as const
+			}
 		},
 		{
 			actorPath: "/Game/Fixture/Cameras/L_CameraLoad.Unresolved",
 			classPath: "/Script/Engine.StaticMeshActor",
 			label: "Unresolved",
 			packageName: "/Game/Fixture/Cameras/L_CameraLoad",
-			position: { status: "missing_root_component" as const }
+			transform: { status: "missing_root_component" as const }
 		}
 	],
 	summary: {

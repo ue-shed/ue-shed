@@ -75,7 +75,7 @@ describe("world scout canvas store", () => {
 				mapPackage: "/Game/Fixture/Offline/L_OfflineWorld"
 			},
 			completeness: "partial",
-			contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 			diagnostics: [],
 			externalActorRoot: "Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld",
 			mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap",
@@ -88,14 +88,19 @@ describe("world scout canvas store", () => {
 					classPath: "/Script/Engine.StaticMeshActor",
 					label: "Offline Hub",
 					packageName: "/Game/__ExternalActors__/Fixture/Offline/L_OfflineWorld/Hub",
-					position: { location: { x: 120, y: -80, z: 40 }, status: "resolved" }
+					transform: {
+						location: { x: 120, y: -80, z: 40 },
+						rotation: { w: 1, x: 0, y: 0, z: 0 },
+						scale: { x: 1, y: 1, z: 1 },
+						status: "resolved"
+					}
 				},
 				{
 					actorPath:
 						"/Game/Fixture/Offline/L_OfflineWorld.L_OfflineWorld:PersistentLevel.Missing",
 					classPath: "/Script/Engine.StaticMeshActor",
 					packageName: "/Game/__ExternalActors__/Fixture/Offline/L_OfflineWorld/Missing",
-					position: { status: "missing_root_component" }
+					transform: { status: "missing_root_component" }
 				}
 			],
 			summary: {

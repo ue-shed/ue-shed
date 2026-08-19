@@ -2,6 +2,15 @@ import type { SavedWorld, SavedWorldActor } from "@ue-shed/protocol";
 import { describe, expect, it } from "vitest";
 import { diffSavedWorldSnapshots } from "./diff.js";
 
+function resolvedTransform(location = { x: 1, y: 2, z: 3 }) {
+	return {
+		location,
+		rotation: { w: 1, x: 0, y: 0, z: 0 },
+		scale: { x: 1, y: 1, z: 1 },
+		status: "resolved" as const
+	};
+}
+
 function actor(overrides: Partial<SavedWorldActor> = {}): SavedWorldActor {
 	return {
 		actorGuid: "00000001-00000002-00000003-00000004",
@@ -9,7 +18,7 @@ function actor(overrides: Partial<SavedWorldActor> = {}): SavedWorldActor {
 		classPath: "/Script/Engine.StaticMeshActor",
 		label: "Actor",
 		packageName: "/Game/Maps/L_Example",
-		position: { location: { x: 1, y: 2, z: 3 }, status: "resolved" },
+		transform: resolvedTransform(),
 		...overrides
 	};
 }
@@ -27,14 +36,14 @@ function world(
 		actors,
 		authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
 		completeness,
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		mapPath: "Content/Maps/L_Example.umap",
 		sourceKind: "level",
 		summary: {
 			failedPackages: completeness === "partial" ? 1 : 0,
 			partialPackages: 0,
-			resolvedActors: actors.filter((entry) => entry.position.status === "resolved").length,
+			resolvedActors: actors.filter((entry) => entry.transform.status === "resolved").length,
 			scannedPackages: 1
 		}
 	};
@@ -48,7 +57,7 @@ describe("diffSavedWorldSnapshots", () => {
 			classPath: "/Script/Engine.Light",
 			label: "Renamed",
 			packageName: "/Game/__ExternalActors__/Maps/L_Example/A/B/Actor",
-			position: { location: { x: 10, y: 20, z: 30 }, status: "resolved" }
+			transform: resolvedTransform({ x: 10, y: 20, z: 30 })
 		});
 
 		const result = diffSavedWorldSnapshots(world([before]), world([after]));
@@ -76,14 +85,14 @@ describe("diffSavedWorldSnapshots", () => {
 		]);
 	});
 
-	it("reports position resolution and snapshot coverage changes", () => {
+	it("reports transform resolution and snapshot coverage changes", () => {
 		const before = actor();
-		const after = actor({ position: { status: "missing_root_component" } });
+		const after = actor({ transform: { status: "missing_root_component" } });
 
 		const result = diffSavedWorldSnapshots(world([before]), world([after], "partial"));
 
 		expect(result.changes.map((change) => change.kind)).toEqual([
-			"actor_position_resolution_changed",
+			"actor_transform_resolution_changed",
 			"snapshot_coverage_changed"
 		]);
 	});
@@ -105,12 +114,37 @@ describe("diffSavedWorldSnapshots", () => {
 		{
 			componentPath: "/Game/Maps/L_Example.Absolute",
 			status: "unsupported_absolute_transform" as const
+		},
+		{
+			componentPath: "/Game/Maps/L_Example.NonFinite",
+			status: "non_finite_transform" as const
 		}
-	])("reports a transition from resolved to $status", (position) => {
-		const result = diffSavedWorldSnapshots(world([actor()]), world([actor({ position })]));
+	])("reports a transition from resolved to $status", (transform) => {
+		const result = diffSavedWorldSnapshots(world([actor()]), world([actor({ transform })]));
 
 		expect(result.changes.map((change) => change.kind)).toEqual([
-			"actor_position_resolution_changed"
+			"actor_transform_resolution_changed"
+		]);
+	});
+
+	it("reports effective rotation, scale, and direct attachment changes", () => {
+		const before = actor({
+			attachment: { componentPath: "Child", parentComponentPath: "Parent" }
+		});
+		const after = actor({
+			attachment: { componentPath: "Child", parentComponentPath: "OtherParent" },
+			transform: {
+				...resolvedTransform(),
+				rotation: { w: 0, x: 0, y: 0, z: 1 },
+				scale: { x: 2, y: 1, z: 1 }
+			}
+		});
+
+		const result = diffSavedWorldSnapshots(world([before]), world([after]));
+
+		expect(result.changes.map((change) => change.kind)).toEqual([
+			"actor_attachment_changed",
+			"actor_transform_changed"
 		]);
 	});
 

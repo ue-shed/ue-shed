@@ -1,4 +1,4 @@
-import type { SavedWorld, SavedWorldActor, SavedWorldPosition } from "@ue-shed/protocol";
+import type { SavedWorld, SavedWorldActor, SavedWorldTransform } from "@ue-shed/protocol";
 import type { ActorIdentity, MapChange, MapHistoryDiagnostic, MapSnapshotDiff } from "./schema.js";
 
 const ZERO_GUID = /^0{8}-0{8}-0{8}-0{8}$/;
@@ -46,9 +46,9 @@ function indexActors(actors: readonly SavedWorldActor[]): ActorIndex {
 	return { actors: indexed, identities, ambiguous };
 }
 
-export function savedWorldPositionsEqual(
-	before: SavedWorldPosition,
-	after: SavedWorldPosition
+export function savedWorldTransformsEqual(
+	before: SavedWorldTransform,
+	after: SavedWorldTransform
 ): boolean {
 	if (before.status !== after.status) return false;
 	switch (before.status) {
@@ -57,7 +57,14 @@ export function savedWorldPositionsEqual(
 				after.status === "resolved" &&
 				before.location.x === after.location.x &&
 				before.location.y === after.location.y &&
-				before.location.z === after.location.z
+				before.location.z === after.location.z &&
+				before.rotation.w === after.rotation.w &&
+				before.rotation.x === after.rotation.x &&
+				before.rotation.y === after.rotation.y &&
+				before.rotation.z === after.rotation.z &&
+				before.scale.x === after.scale.x &&
+				before.scale.y === after.scale.y &&
+				before.scale.z === after.scale.z
 			);
 		case "missing_attachment_parent":
 			return (
@@ -68,9 +75,31 @@ export function savedWorldPositionsEqual(
 			return true;
 		case "attachment_cycle":
 		case "ambiguous_component_path":
+		case "non_finite_transform":
 		case "unsupported_absolute_transform":
 			return after.status === before.status && before.componentPath === after.componentPath;
 	}
+}
+
+function savedWorldAttachmentsEqual(before: SavedWorldActor, after: SavedWorldActor): boolean {
+	return (
+		before.attachment?.componentPath === after.attachment?.componentPath &&
+		before.attachment?.parentComponentPath === after.attachment?.parentComponentPath
+	);
+}
+
+function effectiveRotationOrScaleChanged(before: SavedWorldActor, after: SavedWorldActor): boolean {
+	if (before.transform.status !== "resolved" || after.transform.status !== "resolved")
+		return false;
+	return (
+		before.transform.rotation.w !== after.transform.rotation.w ||
+		before.transform.rotation.x !== after.transform.rotation.x ||
+		before.transform.rotation.y !== after.transform.rotation.y ||
+		before.transform.rotation.z !== after.transform.rotation.z ||
+		before.transform.scale.x !== after.transform.scale.x ||
+		before.transform.scale.y !== after.transform.scale.y ||
+		before.transform.scale.z !== after.transform.scale.z
+	);
 }
 
 function coverageOf(world: SavedWorld) {
@@ -96,29 +125,42 @@ function compareMatchedActor(
 	if (before.label !== after.label) {
 		changes.push({ after, before, identity, kind: "actor_label_changed" });
 	}
-	if (before.position.status === "resolved" && after.position.status === "resolved") {
+	if (!savedWorldAttachmentsEqual(before, after)) {
+		changes.push({ after, before, identity, kind: "actor_attachment_changed" });
+	}
+	if (before.transform.status === "resolved" && after.transform.status === "resolved") {
 		if (
-			before.position.location.x !== after.position.location.x ||
-			before.position.location.y !== after.position.location.y ||
-			before.position.location.z !== after.position.location.z
+			before.transform.location.x !== after.transform.location.x ||
+			before.transform.location.y !== after.transform.location.y ||
+			before.transform.location.z !== after.transform.location.z
 		) {
 			changes.push({
 				after,
-				afterLocation: after.position.location,
+				afterLocation: after.transform.location,
 				before,
-				beforeLocation: before.position.location,
+				beforeLocation: before.transform.location,
 				identity,
 				kind: "actor_moved"
 			});
 		}
-	} else if (!savedWorldPositionsEqual(before.position, after.position)) {
+		if (effectiveRotationOrScaleChanged(before, after)) {
+			changes.push({
+				after,
+				afterTransform: after.transform,
+				before,
+				beforeTransform: before.transform,
+				identity,
+				kind: "actor_transform_changed"
+			});
+		}
+	} else if (!savedWorldTransformsEqual(before.transform, after.transform)) {
 		changes.push({
 			after,
-			afterPosition: after.position,
+			afterTransform: after.transform,
 			before,
-			beforePosition: before.position,
+			beforeTransform: before.transform,
 			identity,
-			kind: "actor_position_resolution_changed"
+			kind: "actor_transform_resolution_changed"
 		});
 	}
 	return changes;

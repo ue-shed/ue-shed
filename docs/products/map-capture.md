@@ -128,7 +128,7 @@ shared actor explorer.
 
 The viewer reports actors inside the captured bounds separately from all resolved and saved actors.
 Focusing an actor outside the capture pans into an uncovered grid instead of stretching or implying
-imagery beyond the manifest bounds. Actors without resolved positions remain available in the
+imagery beyond the manifest bounds. Actors without resolved transforms remain available in the
 outliner but are not plotted.
 
 This layer is explicitly saved-package authority. It may differ from an older capture or from

@@ -10,17 +10,33 @@
 			"completeness": "complete",
 			"contract": {
 				"name": "unreal-saved-world",
-				"version": { "major": 1, "minor": 0 }
+				"version": { "major": 2, "minor": 0 }
 			},
 			"diagnostics": [],
 			"mapPath": "Content/Maps/Example.umap",
 			"sourceKind": "level",
-			"actors": [],
+			"actors": [
+				{
+					"actorPath": "/Game/Maps/Example.Example:PersistentLevel.Child",
+					"attachment": {
+						"componentPath": "/Game/Maps/Example.Example:PersistentLevel.Child.Root",
+						"parentComponentPath": "/Game/Maps/Example.Example:PersistentLevel.Parent.Root"
+					},
+					"classPath": "/Script/Engine.StaticMeshActor",
+					"packageName": "/Game/Maps/Example",
+					"transform": {
+						"location": { "x": 125.5, "y": -42.25, "z": 0 },
+						"rotation": { "w": 1, "x": 0, "y": 0, "z": 0 },
+						"scale": { "x": 1, "y": 1, "z": 1 },
+						"status": "resolved"
+					}
+				}
+			],
 			"summary": {
 				"failedPackages": 0,
 				"partialPackages": 0,
-				"resolvedActors": 0,
-				"scannedPackages": 0
+				"resolvedActors": 1,
+				"scannedPackages": 1
 			}
 		}
 	}

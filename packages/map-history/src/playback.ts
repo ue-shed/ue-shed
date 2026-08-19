@@ -1,5 +1,5 @@
 import type { SavedWorldActor } from "@ue-shed/protocol";
-import { actorIdentityKey, actorIdentityOf, savedWorldPositionsEqual } from "./diff.js";
+import { actorIdentityKey, actorIdentityOf, savedWorldTransformsEqual } from "./diff.js";
 import type {
 	ActorIdentity,
 	MapHistoryDiagnostic,
@@ -138,7 +138,9 @@ function savedWorldActorsEqual(left: SavedWorldActor, right: SavedWorldActor): b
 		left.classPath === right.classPath &&
 		left.label === right.label &&
 		left.packageName === right.packageName &&
-		savedWorldPositionsEqual(left.position, right.position)
+		savedWorldTransformsEqual(left.transform, right.transform) &&
+		left.attachment?.componentPath === right.attachment?.componentPath &&
+		left.attachment?.parentComponentPath === right.attachment?.parentComponentPath
 	);
 }
 

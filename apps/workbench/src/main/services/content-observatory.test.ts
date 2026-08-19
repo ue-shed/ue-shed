@@ -43,13 +43,13 @@ const history = Schema.decodeUnknownSync(PerforceMapHistory)({
 		range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" }
 	},
 	revisions: [],
-	schemaVersion: 1
+	schemaVersion: 2
 });
 
 const currentWorld: SavedWorld = {
 	authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
 	completeness: "complete",
-	contract: { name: "unreal-saved-world", version: { major: 1, minor: 0 } },
+	contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 	diagnostics: [],
 	mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap",
 	actors: [
@@ -59,7 +59,12 @@ const currentWorld: SavedWorld = {
 			classPath: "/Script/Game.Npc",
 			label: "North NPC",
 			packageName: "/Game/Maps/L_MapHistoryWorld",
-			position: { location: { x: 10, y: 20, z: 0 }, status: "resolved" }
+			transform: {
+				location: { x: 10, y: 20, z: 0 },
+				rotation: { w: 1, x: 0, y: 0, z: 0 },
+				scale: { x: 1, y: 1, z: 1 },
+				status: "resolved"
+			}
 		}
 	],
 	sourceKind: "level",
@@ -130,7 +135,7 @@ const fastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory)({
 		target: fastRequest.target
 	},
 	revisions: [],
-	schemaVersion: 1
+	schemaVersion: 2
 });
 
 function stateLayer(

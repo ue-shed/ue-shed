@@ -61,7 +61,7 @@ describe("Map History schemas", () => {
 			rangeEndSnapshot: snapshot,
 			rangeStartSnapshot: snapshot,
 			revisions: [],
-			schemaVersion: 1
+			schemaVersion: 2
 		};
 		const decoded = Schema.decodeUnknownSync(PerforceMapHistory)(history);
 		const encoded = Schema.encodeSync(PerforceMapHistory)(decoded);
@@ -174,7 +174,7 @@ describe("Map History schemas", () => {
 				}
 			},
 			revisions: [],
-			schemaVersion: 1
+			schemaVersion: 2
 		};
 		const decoded = Schema.decodeUnknownSync(PerforceFastMapHistory)(fastHistory);
 		const encoded = Schema.encodeSync(PerforceFastMapHistory)(decoded);
@@ -223,7 +223,7 @@ describe("Map History schemas", () => {
 					}
 				},
 				revisions: [],
-				schemaVersion: 1
+				schemaVersion: 2
 			})
 		).toThrow();
 	});

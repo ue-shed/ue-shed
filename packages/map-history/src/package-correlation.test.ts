@@ -18,7 +18,12 @@ function actor(overrides: Partial<SavedWorldActor> = {}): SavedWorldActor {
 		classPath: "/Script/Engine.StaticMeshActor",
 		label: "Actor",
 		packageName: MAP_PACKAGE,
-		position: { location: { x: 1, y: 2, z: 3 }, status: "resolved" },
+		transform: {
+			location: { x: 1, y: 2, z: 3 },
+			rotation: { w: 1, x: 0, y: 0, z: 0 },
+			scale: { x: 1, y: 1, z: 1 },
+			status: "resolved"
+		},
 		...overrides
 	};
 }
@@ -31,14 +36,14 @@ function world(
 		actors,
 		authority: { kind: "project_files", mapPackage: MAP_PACKAGE },
 		completeness,
-		contract: { name: "unreal-saved-world", version: { major: 1, minor: 1 } },
+		contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
 		diagnostics: [],
 		mapPath: "Content/Maps/L_Example.umap",
 		sourceKind: "level",
 		summary: {
 			failedPackages: completeness === "partial" ? 1 : 0,
 			partialPackages: 0,
-			resolvedActors: actors.filter((entry) => entry.position.status === "resolved").length,
+			resolvedActors: actors.filter((entry) => entry.transform.status === "resolved").length,
 			scannedPackages: 1
 		}
 	};
@@ -67,7 +72,14 @@ describe("findUnclassifiedPackageChanges", () => {
 	it("recognizes a package explained by a semantic actor change", () => {
 		const before = world([actor()]);
 		const after = world([
-			actor({ position: { location: { x: 10, y: 2, z: 3 }, status: "resolved" } })
+			actor({
+				transform: {
+					location: { x: 10, y: 2, z: 3 },
+					rotation: { w: 1, x: 0, y: 0, z: 0 },
+					scale: { x: 1, y: 1, z: 1 },
+					status: "resolved"
+				}
+			})
 		]);
 		const diff = diffSavedWorldSnapshots(before, after);
 

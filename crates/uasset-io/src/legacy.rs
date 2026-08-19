@@ -853,7 +853,7 @@ Commands:\n\
   inspect     Inspect one package as text or JSON.\n\
   authoring   Emit the typed authoring snapshot for one DataTable package.\n\
   scan        Scan selected project packages, optionally at header depth.\n\
-  saved-world Read one saved map and resolve actor positions.\n\n\
+  saved-world Read one saved map and resolve actor transforms.\n\n\
 Protocol operations use the same native direct executors as these human adapters.\n";
 
 #[cfg(test)]

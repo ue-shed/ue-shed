@@ -10,6 +10,15 @@ import {
 } from "./playback.js";
 import { PerforceMapHistory } from "./schema.js";
 
+function resolvedTransform(location = { x: 1, y: 2, z: 3 }) {
+	return {
+		location,
+		rotation: { w: 1, x: 0, y: 0, z: 0 },
+		scale: { x: 1, y: 1, z: 1 },
+		status: "resolved" as const
+	};
+}
+
 function actor(overrides: Partial<SavedWorldActor> = {}): SavedWorldActor {
 	return {
 		actorGuid: "00000001-00000002-00000003-00000004",
@@ -17,7 +26,7 @@ function actor(overrides: Partial<SavedWorldActor> = {}): SavedWorldActor {
 		classPath: "/Script/Engine.StaticMeshActor",
 		label: "Actor",
 		packageName: "/Game/Maps/L_Example",
-		position: { location: { x: 1, y: 2, z: 3 }, status: "resolved" },
+		transform: resolvedTransform(),
 		...overrides
 	};
 }
@@ -36,7 +45,7 @@ function snapshot(
 		summary: {
 			failedPackages: completeness === "partial" ? 1 : 0,
 			partialPackages: 0,
-			resolvedActors: actors.filter((entry) => entry.position.status === "resolved").length,
+			resolvedActors: actors.filter((entry) => entry.transform.status === "resolved").length,
 			scannedPackages: 1
 		}
 	};
@@ -74,7 +83,7 @@ function history(input: {
 			: { rangeStartSnapshot: snapshot(input.start, input.startCompleteness) }),
 		rangeEndSnapshot: snapshot(input.end, input.endCompleteness),
 		revisions: input.revisions,
-		schemaVersion: 1
+		schemaVersion: 2
 	});
 }
 
@@ -100,7 +109,7 @@ describe("Map History playback", () => {
 		const before = actor();
 		const moved = actor({
 			label: "Moved actor",
-			position: { location: { x: 100, y: 200, z: 300 }, status: "resolved" }
+			transform: resolvedTransform({ x: 100, y: 200, z: 300 })
 		});
 		const arrival = actor({
 			actorGuid: "00000005-00000006-00000007-00000008",
@@ -118,13 +127,13 @@ describe("Map History playback", () => {
 						{
 							after: moved,
 							afterLocation:
-								moved.position.status === "resolved"
-									? moved.position.location
+								moved.transform.status === "resolved"
+									? moved.transform.location
 									: undefined,
 							before,
 							beforeLocation:
-								before.position.status === "resolved"
-									? before.position.location
+								before.transform.status === "resolved"
+									? before.transform.location
 									: undefined,
 							identity,
 							kind: "actor_moved"

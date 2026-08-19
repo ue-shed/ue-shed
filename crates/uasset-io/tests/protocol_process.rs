@@ -397,6 +397,39 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
         one_world["result"]["world"]["summary"]["scannedPackages"],
         1
     );
+    assert_eq!(
+        one_world["result"]["world"]["contract"]["version"],
+        serde_json::json!({ "major": 2, "minor": 0 })
+    );
+    let conventional_actors = one_world["result"]["world"]["actors"]
+        .as_array()
+        .expect("conventional actors");
+    let conventional_camera = conventional_actors
+        .iter()
+        .find(|actor| actor["label"] == "Camera 01")
+        .expect("conventional fixture has an attached camera actor");
+    assert!(
+        conventional_camera["attachment"]["parentComponentPath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("UEShedFixtureStationary_0.Mesh"))
+    );
+    let conventional_parent = conventional_actors
+        .iter()
+        .find(|actor| actor["label"] == "Stationary 0001")
+        .expect("conventional fixture has the camera's parent actor");
+    assert!(
+        conventional_parent["attachment"]["parentComponentPath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("UEShedFixtureStationary_1.Mesh")),
+        "the conventional fixture preserves a nested actor attachment chain"
+    );
+    assert_eq!(conventional_camera["transform"]["status"], "resolved");
+    for field in ["location", "rotation", "scale"] {
+        assert!(
+            conventional_camera["transform"][field].is_object(),
+            "resolved conventional transform has {field}"
+        );
+    }
     assert!(
         one_world["result"]["world"]["summary"]["resolvedActors"]
             .as_u64()
@@ -429,6 +462,52 @@ fn protocol_process_emits_saved_world_with_deterministic_actor_order() {
     assert_eq!(
         one_world["result"]["world"]["actors"],
         many_world["result"]["world"]["actors"]
+    );
+}
+
+#[test]
+fn protocol_process_exposes_world_partition_transform_and_attachment_evidence() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let request = base_request(serde_json::json!({
+        "kind": "saved_world",
+        "projectRoot": project_root.to_string_lossy(),
+        "mapPath": project_root.join("Content/Fixture/Offline/L_OfflineWorld.umap").to_string_lossy()
+    }));
+    let (success, events, stderr) = run_request(request);
+    assert!(success, "World Partition saved world failed: {stderr}");
+    assert_valid_events(&events);
+    let world = events
+        .iter()
+        .find(|event| event["result"]["kind"] == "saved_world")
+        .expect("World Partition saved-world result");
+    let attachment = world["result"]["world"]["actors"]
+        .as_array()
+        .expect("World Partition actors")
+        .iter()
+        .find(|actor| actor["label"] == "Hub Attachment")
+        .expect("attached World Partition actor");
+    assert!(
+        attachment["attachment"]["componentPath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with(".StaticMeshComponent0"))
+    );
+    assert!(
+        attachment["attachment"]["parentComponentPath"]
+            .as_str()
+            .is_some_and(|path| path.ends_with(".StaticMeshComponent0"))
+    );
+    assert_eq!(
+        attachment["transform"]["location"],
+        serde_json::json!({ "x": 1840.0, "y": 590.0, "z": 1080.0 })
+    );
+    assert_eq!(
+        attachment["transform"]["scale"],
+        serde_json::json!({ "x": 2.4, "y": 2.4, "z": 6.0 })
+    );
+    assert_eq!(
+        attachment["transform"]["rotation"],
+        serde_json::json!({ "w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0 })
     );
 }
 

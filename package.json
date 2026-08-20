@@ -37,7 +37,7 @@
 		"showcase:record": "node scripts/record-showcase.ts",
 		"site:media": "node scripts/site-media.ts",
 		"test": "node scripts/test.ts",
-		"test:architecture": "node --test scripts/check-effect-architecture.test.ts scripts/check-license-boundary.test.ts scripts/check-map-history-boundary.test.ts scripts/unreal-project.test.ts",
+		"test:architecture": "node --test scripts/check-effect-architecture.test.ts scripts/check-license-boundary.test.ts scripts/check-map-history-boundary.test.ts scripts/check-plugin-distribution-boundary.test.ts scripts/unreal-project.test.ts",
 		"test:release": "node scripts/sync-native-versions.ts --check && node --test scripts/create-release-candidate.test.ts scripts/plugin-bundle.test.ts",
 		"test:release:packages": "node scripts/test-public-packages.ts",
 		"release:status": "changeset status",

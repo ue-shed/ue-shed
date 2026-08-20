@@ -52,6 +52,7 @@ interface BuildPluginBundleOptions {
 	readonly licensePath?: string | null | undefined;
 	readonly unreal?: Partial<UnrealRange> | undefined;
 	readonly requestedPlugins?: readonly string[] | undefined;
+	readonly releaseAssetStem?: string | undefined;
 }
 
 /** Exact Unreal plugin graph for Plan 028's first Map Review vertical. */
@@ -442,10 +443,17 @@ export async function buildPluginBundle({
 	candidateManifest,
 	licensePath,
 	unreal,
-	requestedPlugins
+	requestedPlugins,
+	releaseAssetStem
 }: BuildPluginBundleOptions) {
 	validateReleaseVersion(releaseVersion);
 	validateCommit(sourceCommit);
+	if (
+		releaseAssetStem !== undefined &&
+		!/^ue-shed-plugins-[a-z0-9.-]+$/u.test(releaseAssetStem)
+	) {
+		throw new Error(`Plugin release asset stem is invalid: ${releaseAssetStem}.`);
+	}
 	const outputDirectory = resolve(output);
 	await ensureEmptyOutput(outputDirectory);
 	const resolvedPluginRoot = resolve(pluginRoot);
@@ -479,7 +487,7 @@ export async function buildPluginBundle({
 	const unrealRange = validateUnrealRange(unreal);
 	const tempRoot = await mkdtemp(join(outputDirectory, ".plugin-bundle-"));
 	try {
-		const archiveName = `ue-shed-plugins-${releaseVersion}.tar.gz`;
+		const archiveName = `${releaseAssetStem ?? `ue-shed-plugins-${releaseVersion}`}.tar.gz`;
 		const archivePath = join(outputDirectory, archiveName);
 		const stageRoot = join(tempRoot, "tree");
 		await mkdir(stageRoot, { recursive: true });
@@ -526,7 +534,10 @@ export async function buildPluginBundle({
 				}
 			}
 		};
-		const manifestName = "plugins.manifest.json";
+		const manifestName =
+			releaseAssetStem === undefined
+				? "plugins.manifest.json"
+				: `${releaseAssetStem}.manifest.json`;
 		const manifestPath = join(outputDirectory, manifestName);
 		await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 		return { manifest, archivePath, manifestPath };

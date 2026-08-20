@@ -1,0 +1,40 @@
+{
+	"schemaVersion": 1,
+	"feature": "plugin-distribution",
+	"mode": "existing-host-package",
+	"description": "Verified immutable UE Shed Unreal plugin acquisition and scoped leasing",
+	"release": {
+		"package": "@ue-shed/plugin-distribution",
+		"versionSource": "package.json",
+		"exactVersionRequired": true,
+		"nativeBinaryBundled": false,
+		"uiBundled": false
+	},
+	"entrypoints": {
+		"host": "@ue-shed/plugin-distribution"
+	},
+	"packageGraph": {
+		"dependencies": {},
+		"peerDependencies": {
+			"effect": "4.0.0-beta.98"
+		},
+		"runtimeProviders": ["PluginReleaseSource", "PluginStore"]
+	},
+	"hostIntegration": {
+		"ownership": "consumer",
+		"requiredSeams": [
+			"exact-release-policy",
+			"caller-owned-cache-root",
+			"scoped-effect-runtime",
+			"supervised-editor-launch"
+		],
+		"forbiddenImports": ["apps/workbench", "electron", "Electroswag", "ManaBreak"]
+	},
+	"conformance": {
+		"sourceCommand": "pnpm test:release:packages",
+		"journey": ["acquire-local", "acquire-http", "reuse-offline", "lease", "prune"],
+		"targetMustVerifyPackagedRuntime": true,
+		"targetMustUseRealHostTransport": true,
+		"targetMustRecordAdoptionReceipt": true
+	}
+}

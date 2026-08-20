@@ -120,6 +120,13 @@ node scripts/plugin-bundle.ts bundle --version <version> `
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 ```
 
+`pnpm release:plugins:map-review` prepares future GitHub Release assets named
+`ue-shed-plugins-map-review-<version>.manifest.json` and
+`ue-shed-plugins-map-review-<version>.tar.gz`. Publish them only from the exact reviewed future
+release commit; do not reconstruct or replace the immutable `0.3.0` release. Trusted hosts consume
+those assets through `@ue-shed/plugin-distribution`, which retains them in a caller-owned cache and
+leases verified absolute descriptor paths without mutating a project.
+
 For a headless Observatory host, select only Observatory:
 
 ```powershell

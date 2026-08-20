@@ -1,6 +1,8 @@
-# `@ue-shed/plugin-bundles`
+# `@ue-shed/plugin-distribution`
 
-Versioned manifest contracts and validation for source-compatible Unreal plugin bundles.
+Verified acquisition, immutable storage, dependency resolution, and scoped leasing for UE Shed
+Unreal plugin distributions. The package is headless and host-neutral: it does not depend on
+Workbench, Electron, a project layout, or a particular release transport.
 
 `PluginBundleManifest` is the boundary contract used by release tooling and the CLI installer. A
 manifest records the release version, supported Unreal range, plugin descriptor graph, artifact

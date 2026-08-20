@@ -19,7 +19,7 @@ import {
 	PluginBundleManifestValidationError,
 	validatePluginBundleManifest,
 	verifyPluginBundleArtifactChecksum
-} from "@ue-shed/plugin-bundles";
+} from "@ue-shed/plugin-distribution";
 import { Effect, Schema } from "effect";
 
 /**

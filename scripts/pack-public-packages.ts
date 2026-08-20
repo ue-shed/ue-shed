@@ -62,6 +62,7 @@ export const ENGINE_WINDOWS_PACKAGE_NAME = "@ue-shed/engine-win32-x64";
 export const CONFIG_EXPLORER_PACKAGE_NAME = "@ue-shed/config-explorer";
 export const PROJECT_CUSTODIAN_PACKAGE_NAME = "@ue-shed/project-custodian";
 export const NIAGARA_PACKAGE_NAME = "@ue-shed/niagara";
+export const PLUGIN_DISTRIBUTION_PACKAGE_NAME = "@ue-shed/plugin-distribution";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Every entry belongs to the synchronized public suite. Applications, extensions, UI packages,
@@ -71,6 +72,10 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
 	{ name: "@ue-shed/observability", directory: "packages/observability" },
 	{ name: "@ue-shed/unreal-connection", directory: "packages/unreal-connection" },
+	{
+		name: PLUGIN_DISTRIBUTION_PACKAGE_NAME,
+		directory: "packages/plugin-distribution"
+	},
 	{ name: ENGINE_PACKAGE_NAME, directory: "packages/engine" },
 	{ name: ENGINE_WINDOWS_PACKAGE_NAME, directory: "packages/engine-win32-x64" },
 	{ name: "@ue-shed/cameras", directory: "packages/cameras" },

@@ -3,6 +3,8 @@ import { Effect, Schema } from "effect";
 import { expect } from "vitest";
 import {
 	PluginBundleManifest,
+	PluginId,
+	resolvePluginBundleDependencies,
 	validatePluginBundleForUnreal,
 	validatePluginBundleManifest,
 	verifyPluginBundleArtifactChecksum
@@ -57,6 +59,24 @@ it.effect("accepts a valid graph, artifact, and candidate provenance", () =>
 	Effect.gen(function* () {
 		const manifest = yield* validatePluginBundleManifest(validManifest);
 		expect(manifest).toEqual(validManifest);
+	})
+);
+
+it.effect("resolves an exact plugin and its transitive dependencies deterministically", () =>
+	Effect.gen(function* () {
+		const resolved = yield* resolvePluginBundleDependencies(validManifest, [
+			PluginId.make("UEShedAuthoring")
+		]);
+		expect(resolved.orderedPluginIds).toEqual(["UEShedCore", "UEShedAuthoring"]);
+	})
+);
+
+it.effect("rejects an unavailable requested plugin", () =>
+	Effect.gen(function* () {
+		const error = yield* resolvePluginBundleDependencies(validManifest, [
+			PluginId.make("UEShedMissing")
+		]).pipe(Effect.flip);
+		expect(error.code).toBe("requested_plugin_unavailable");
 	})
 );
 

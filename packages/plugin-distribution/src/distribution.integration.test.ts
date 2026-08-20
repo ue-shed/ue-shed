@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { expect } from "vitest";
 import {
 	ActiveLeasePreventsPrune,
@@ -176,6 +176,10 @@ function liveLayer(
 	);
 }
 
+function listeningPort(server: ReturnType<typeof createServer>): number {
+	return Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address()).port;
+}
+
 it.effect(
 	"acquires locally, resolves dependencies, reuses offline, and prunes after lease release",
 	() =>
@@ -256,9 +260,7 @@ it.effect("downloads concurrent identical HTTP acquisitions once", () =>
 		yield* Effect.acquireRelease(
 			Effect.callback<number>((resume) => {
 				server.listen(0, "127.0.0.1", () => {
-					const address = server.address();
-					if (address === null || typeof address === "string") return;
-					resume(Effect.succeed(address.port));
+					resume(Effect.succeed(listeningPort(server)));
 				});
 				return Effect.sync(() => {
 					server.close();
@@ -534,9 +536,7 @@ it.effect("rejects a truncated HTTP artifact", () =>
 		yield* Effect.acquireRelease(
 			Effect.callback<number>((resume) => {
 				server.listen(0, "127.0.0.1", () => {
-					const address = server.address();
-					if (address === null || typeof address === "string") return;
-					resume(Effect.succeed(address.port));
+					resume(Effect.succeed(listeningPort(server)));
 				});
 				return Effect.sync(() => server.close());
 			}),
@@ -731,8 +731,14 @@ it.effect("rejects archive traversal and link entries without publishing", () =>
 	Effect.gen(function* () {
 		for (const entries of [
 			[{ body: Buffer.from("escape"), name: "UEShed/Plugins/../../escape.txt" }],
+			[{ body: Buffer.from("escape"), name: "/UEShed/Plugins/escape.txt" }],
+			[{ body: Buffer.from("escape"), name: "C:/UEShed/Plugins/escape.txt" }],
 			[{ name: "UEShed/Plugins/UEShedCore/link", type: "2" as const }],
-			[{ name: "UEShed/Plugins/UEShedCore/link", type: "1" as const }]
+			[{ name: "UEShed/Plugins/UEShedCore/link", type: "1" as const }],
+			[
+				{ body: Buffer.from("left"), name: "UEShed/Plugins/UEShedCore/Case.txt" },
+				{ body: Buffer.from("right"), name: "UEShed/Plugins/UEShedCore/case.txt" }
+			]
 		]) {
 			const source = yield* Effect.promise(() => fixture({ entries }));
 			const layer = liveLayer(

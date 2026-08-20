@@ -22,7 +22,7 @@ const COPY_CHUNK_BYTES = 64 * 1024;
 
 export interface PluginReleaseDocument {
 	readonly bytes: Uint8Array;
-	readonly manifest: unknown;
+	readonly manifest: Schema.Json;
 	readonly provenance: PluginSourceProvenance;
 }
 
@@ -80,7 +80,7 @@ function transport(releaseVersion: string, operation: string, cause: unknown) {
 	});
 }
 
-function parseJson(bytes: Uint8Array, releaseVersion: string): unknown {
+function parseJson(bytes: Uint8Array, releaseVersion: string): Schema.Json {
 	try {
 		return Schema.decodeUnknownSync(Schema.Json)(
 			JSON.parse(Buffer.from(bytes).toString("utf8"))

@@ -1,7 +1,15 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
-import { runPluginsInstall, runPluginsList, runPluginsVerify } from "../workflows/plugins.js";
+import {
+	runPluginsAcquire,
+	runPluginsCacheList,
+	runPluginsCacheVerify,
+	runPluginsInstall,
+	runPluginsList,
+	runPluginsPrune,
+	runPluginsVerify
+} from "../workflows/plugins.js";
 import { optionalFlag, optionalValue } from "./options.js";
 
 const pluginManifestArgument = Argument.string("manifest").pipe(Argument.optional);
@@ -104,7 +112,78 @@ const pluginsInstallCommand = Command.make(
 		})
 ).pipe(Command.withDescription("Install a plugin bundle into a project."));
 
+const pluginsAcquireCommand = Command.make(
+	"acquire",
+	{
+		artifactDigest: optionalFlag("artifact-digest"),
+		cache: Flag.string("cache"),
+		cacheOnly: Flag.boolean("cache-only"),
+		manifestDigest: optionalFlag("manifest-digest"),
+		plugins: Flag.string("plugin").pipe(Flag.atLeast(1)),
+		release: Flag.string("release"),
+		source: Flag.string("source").pipe(Flag.withDefault(".")),
+		unreal: optionalFlag("unreal")
+	},
+	({ artifactDigest, cache, cacheOnly, manifestDigest, plugins, release, source, unreal }) =>
+		Effect.gen(function* () {
+			const artifactDigestValue = optionalValue(artifactDigest);
+			const manifestDigestValue = optionalValue(manifestDigest);
+			const unrealVersion = optionalValue(unreal);
+			return yield* runPluginsAcquire({
+				_tag: "PluginsAcquire",
+				cacheOnly,
+				cacheRoot: cache,
+				pluginIds: plugins,
+				releaseVersion: release,
+				source,
+				...(artifactDigestValue === undefined
+					? undefined
+					: { artifactDigest: artifactDigestValue }),
+				...(manifestDigestValue === undefined
+					? undefined
+					: { manifestDigest: manifestDigestValue }),
+				...(unrealVersion === undefined ? undefined : { unrealVersion })
+			});
+		})
+).pipe(Command.withDescription("Acquire and lease an exact plugin release in a host cache."));
+
+const pluginsCacheListCommand = Command.make(
+	"cache-list",
+	{ cache: Flag.string("cache") },
+	({ cache }) => runPluginsCacheList({ _tag: "PluginsCacheList", cacheRoot: cache })
+).pipe(Command.withDescription("List verified releases in a plugin cache."));
+
+const pluginsCacheVerifyCommand = Command.make(
+	"cache-verify",
+	{ cache: Flag.string("cache"), release: Flag.string("release") },
+	({ cache, release }) =>
+		runPluginsCacheVerify({
+			_tag: "PluginsCacheVerify",
+			cacheRoot: cache,
+			releaseVersion: release
+		})
+).pipe(Command.withDescription("Verify one immutable cached plugin release."));
+
+const pluginsPruneCommand = Command.make(
+	"prune",
+	{ cache: Flag.string("cache"), release: Flag.string("release") },
+	({ cache, release }) =>
+		runPluginsPrune({
+			_tag: "PluginsPrune",
+			cacheRoot: cache,
+			releaseVersion: release
+		})
+).pipe(Command.withDescription("Prune one unleased cached plugin release."));
+
 export const pluginsCommand = Command.make("plugins").pipe(
-	Command.withDescription("Inspect, verify, and install plugin bundles."),
-	Command.withSubcommands([pluginsListCommand, pluginsVerifyCommand, pluginsInstallCommand])
+	Command.withDescription("Acquire, inspect, verify, install, and prune plugin bundles."),
+	Command.withSubcommands([
+		pluginsListCommand,
+		pluginsVerifyCommand,
+		pluginsInstallCommand,
+		pluginsAcquireCommand,
+		pluginsCacheListCommand,
+		pluginsCacheVerifyCommand,
+		pluginsPruneCommand
+	])
 );

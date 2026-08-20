@@ -31,6 +31,7 @@ test("plugin distribution stays independent of product hosts and studio reposito
 			assert.doesNotMatch(source, pattern, `${path} crosses the public package boundary`);
 		}
 	}
+	// SAFETY: this repository-owned package manifest is immediately limited to two optional maps.
 	const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
 		dependencies?: Record<string, string>;
 		peerDependencies?: Record<string, string>;

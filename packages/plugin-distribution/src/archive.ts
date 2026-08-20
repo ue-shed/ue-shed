@@ -109,7 +109,13 @@ function assertTarChecksum(block: Buffer): void {
 }
 
 function safeArchivePath(input: string): string {
-	if (input.length === 0 || /[\u0000-\u001f\u007f]/u.test(input)) {
+	if (
+		input.length === 0 ||
+		[...input].some((character) => {
+			const code = character.codePointAt(0) ?? 0;
+			return code <= 0x1f || code === 0x7f;
+		})
+	) {
 		throw new Error("Plugin archive contains an empty or control-character path.");
 	}
 	const normalized = input.replaceAll("\\", "/").replace(/^\.\//u, "").replace(/\/+$/u, "");
@@ -262,6 +268,7 @@ export async function extractPluginArchiveToDirectory(
 		const gunzip = createReadStream(options.archivePath, { signal: options.signal }).pipe(
 			createGunzip()
 		);
+		// SAFETY: no text encoding is configured, so Node's readable stream yields Buffer chunks.
 		const iterator = gunzip[Symbol.asyncIterator]() as AsyncIterator<Buffer>;
 		const reader = makeByteReader(iterator);
 		const seen = new Set<string>();

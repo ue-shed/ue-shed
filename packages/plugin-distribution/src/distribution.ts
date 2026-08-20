@@ -36,6 +36,7 @@ export interface PluginAcquisitionOptions {
 
 export interface PluginDistributionApi {
 	readonly acquire: (
+		// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This public hostile-input boundary is immediately decoded by PluginAcquisitionRequest.
 		request: unknown,
 		options?: PluginAcquisitionOptions
 	) => Effect.Effect<PluginAcquisitionResult, PluginDistributionError, Scope.Scope>;
@@ -271,6 +272,7 @@ export const pluginDistributionLayer = (
 			});
 
 			const acquire = Effect.fn("PluginDistribution.acquire")(function* (
+				// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This implementation decodes the public hostile-input boundary immediately below.
 				input: unknown,
 				acquisitionOptions: PluginAcquisitionOptions = {}
 			) {
@@ -336,33 +338,24 @@ export const pluginDistributionLayer = (
 					releaseVersion: ensured.release.releaseVersion,
 					resolvedPluginIds: resolved.orderedPluginIds,
 					resolvedPlugins: resolved.plugins,
-					source: ensured.cacheHit
-						? {
-								detail: ensured.release.cachePath,
-								kind: "cache",
-								sourceId: source.sourceId
-							}
-						: ensured.release.source
+					source: ensured.release.source
 				});
 			});
 
 			const listCached = Effect.fn("PluginDistribution.listCached")(() => store.list());
 			const verifyCached = Effect.fn("PluginDistribution.verifyCached")(
 				(releaseVersion: string) =>
-					store
-						.verify(releaseVersion)
-						.pipe(
-							Effect.map(
-								({
-									manifest,
-									artifactPath,
-									manifestPath,
-									pluginsRoot,
-									source,
-									...cached
-								}) => cached
-							)
-						)
+					store.verify(releaseVersion).pipe(
+						Effect.map((release) => ({
+							artifactDigest: release.artifactDigest,
+							cacheIdentity: release.cacheIdentity,
+							cachePath: release.cachePath,
+							manifestDigest: release.manifestDigest,
+							plugins: release.plugins,
+							releaseIdentity: release.releaseIdentity,
+							releaseVersion: release.releaseVersion
+						}))
+					)
 			);
 			const prune = Effect.fn("PluginDistribution.prune")((releaseVersion: string) =>
 				store.prune(releaseVersion)

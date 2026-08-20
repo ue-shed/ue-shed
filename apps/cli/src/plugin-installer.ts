@@ -1,24 +1,26 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-	access,
 	cp,
-	mkdtemp,
+	lstat,
 	mkdir,
+	mkdtemp,
 	readdir,
 	readFile,
 	rename,
 	rm,
 	stat,
-	lstat,
 	writeFile
 } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import {
+	ArtifactDigestMismatch,
 	PluginBundleManifest,
 	PluginBundleManifestValidationError,
+	defaultPluginDistributionLimits,
+	extractPluginArchive,
 	validatePluginBundleManifest,
-	verifyPluginBundleArtifactChecksum
+	verifyPluginArtifact
 } from "@ue-shed/plugin-distribution";
 import { Effect, Schema } from "effect";
 
@@ -133,58 +135,6 @@ async function readManifest(path: string): Promise<PluginReleaseManifest> {
 		fail(`Could not read plugin manifest ${resolved}: ${String(cause)}`);
 	}
 	return parseManifest(parsed);
-}
-
-function runTar(args: readonly string[], cwd?: string): string {
-	const result = spawnSync("tar", args, {
-		cwd,
-		encoding: "utf8",
-		shell: false,
-		windowsHide: true
-	});
-	if (result.error) fail(`Unable to run tar for plugin artifact: ${String(result.error)}`);
-	if (result.status !== 0)
-		fail(
-			`Plugin artifact is not a readable tar archive: ${result.stderr.trim() || "tar failed"}`
-		);
-	return result.stdout;
-}
-
-function safeArchiveEntry(entry: string): string {
-	const normalized = entry.replaceAll("\\", "/").replace(/\/+$/u, "");
-	if (!normalized || normalized === ".") return normalized;
-	if (normalized.startsWith("/") || /^[A-Za-z]:/u.test(normalized))
-		fail(`Plugin artifact contains an absolute path: ${entry}`);
-	if (normalized.split("/").includes(".."))
-		fail(`Plugin artifact contains a parent path: ${entry}`);
-	return normalized;
-}
-
-function validateArchiveEntries(
-	archivePath: string,
-	plugins: readonly PluginManifestEntry[]
-): void {
-	const resolvedArchive = resolve(archivePath);
-	const entries = runTar(["-tzf", basename(resolvedArchive)], dirname(resolvedArchive))
-		.split(/\r?\n/u)
-		.map(safeArchiveEntry)
-		.filter(Boolean);
-	if (entries.length === 0) fail("Plugin artifact archive is empty.");
-	const expectedRoot = "UEShed/Plugins/";
-	for (const entry of entries) {
-		if (
-			entry !== "UEShed" &&
-			entry !== "UEShed/Plugins" &&
-			entry !== "UEShed/LICENSE" &&
-			!entry.startsWith(expectedRoot)
-		)
-			fail(`Plugin artifact entry is outside UEShed/Plugins: ${entry}`);
-	}
-	for (const plugin of plugins) {
-		const prefix = `${expectedRoot}${plugin.directory}/`;
-		if (!entries.some((entry) => entry.startsWith(prefix)))
-			fail(`Plugin artifact does not contain declared plugin ${plugin.id}.`);
-	}
 }
 
 async function digestFile(path: string): Promise<string> {
@@ -363,28 +313,53 @@ async function verifyArtifact(
 	artifactPath: string
 ): Promise<PluginVerificationReport> {
 	const artifact = resolve(artifactPath);
+	let verified;
 	try {
-		await access(artifact);
-	} catch (cause) {
-		fail(`Plugin artifact does not exist: ${artifact} (${String(cause)})`);
-	}
-	const details = await stat(artifact);
-	if (!details.isFile()) fail(`Plugin artifact is not a regular file: ${artifact}`);
-	const digest = await digestFile(artifact);
-	if (details.size !== manifest.artifact.bytes)
-		fail(
-			`Plugin artifact size mismatch: expected ${manifest.artifact.bytes}, received ${details.size}.`
+		verified = await Effect.runPromise(
+			verifyPluginArtifact({
+				artifactPath: artifact,
+				expectedBytes: manifest.artifact.bytes,
+				expectedDigest: manifest.artifact.sha256,
+				limits: defaultPluginDistributionLimits,
+				releaseVersion: manifest.releaseVersion
+			})
 		);
-	try {
-		Effect.runSync(verifyPluginBundleArtifactChecksum(manifest, digest));
 	} catch (cause) {
-		if (cause instanceof PluginBundleManifestValidationError)
-			fail(`${cause.message} Recovery: ${cause.recovery}`);
-		fail(`Plugin artifact checksum validation failed: ${String(cause)}`);
+		const recovery =
+			cause instanceof Object && "recovery" in cause
+				? ` Recovery: ${String(cause.recovery)}`
+				: "";
+		fail(
+			`Plugin artifact ${cause instanceof ArtifactDigestMismatch ? "checksum mismatch" : "verification failed"}: ${String(cause)}.${recovery}`
+		);
 	}
-	validateArchiveEntries(artifact, manifest.plugins);
+	const validationRoot = await mkdtemp(join(tmpdir(), "ue-shed-plugin-verify-"));
+	try {
+		await Effect.runPromise(
+			extractPluginArchive({
+				archivePath: artifact,
+				destination: join(validationRoot, "content"),
+				limits: defaultPluginDistributionLimits,
+				manifest,
+				signal: new AbortController().signal
+			})
+		);
+	} catch (cause) {
+		const recovery =
+			cause instanceof Object && "recovery" in cause
+				? ` Recovery: ${String(cause.recovery)}`
+				: "";
+		fail(`Plugin artifact archive validation failed: ${String(cause)}.${recovery}`);
+	} finally {
+		await rm(validationRoot, { force: true, recursive: true });
+	}
 	return {
-		artifact: { bytes: details.size, path: artifact, sha256: digest, status: "verified" },
+		artifact: {
+			bytes: verified.bytes,
+			path: artifact,
+			sha256: verified.digest.slice("sha256:".length),
+			status: "verified"
+		},
 		manifest: {
 			plugins: manifest.plugins.map((plugin) => plugin.id),
 			releaseVersion: manifest.releaseVersion,
@@ -449,16 +424,25 @@ async function install(options: PluginInstallOptions): Promise<PluginInstallRepo
 		if (destinationExists)
 			await cp(destination, stageDestination, { recursive: true, force: true });
 		const extractionRoot = join(stageRoot, "artifact");
-		await ensureDirectory(extractionRoot);
 		const resolvedArtifact = resolve(artifactPath);
-		const stagedArtifact = join(extractionRoot, ".ue-shed-artifact.tar.gz");
-		await cp(resolvedArtifact, stagedArtifact, { force: true });
 		try {
-			runTar(["-xzf", basename(stagedArtifact)], extractionRoot);
-		} finally {
-			await rm(stagedArtifact, { force: true });
+			await Effect.runPromise(
+				extractPluginArchive({
+					archivePath: resolvedArtifact,
+					destination: extractionRoot,
+					limits: defaultPluginDistributionLimits,
+					manifest,
+					signal: new AbortController().signal
+				})
+			);
+		} catch (cause) {
+			const recovery =
+				cause instanceof Object && "recovery" in cause
+					? ` Recovery: ${String(cause.recovery)}`
+					: "";
+			fail(`Plugin artifact extraction failed: ${String(cause)}.${recovery}`);
 		}
-		const sourceRoot = join(extractionRoot, "UEShed", "Plugins");
+		const sourceRoot = join(extractionRoot, "Plugins");
 		const sourceDetails = await stat(sourceRoot).catch(() => undefined);
 		if (!sourceDetails?.isDirectory())
 			fail("Plugin artifact is missing UEShed/Plugins archive root.");

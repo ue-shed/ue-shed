@@ -268,7 +268,20 @@ export const CliCommand = Schema.TaggedUnion({
 		artifactPath: Schema.optionalKey(Schema.String),
 		manifestPath: Schema.String,
 		...Project
-	}
+	},
+	PluginsAcquire: {
+		artifactDigest: Schema.optionalKey(Schema.String),
+		cacheOnly: Schema.Boolean,
+		cacheRoot: Schema.String,
+		manifestDigest: Schema.optionalKey(Schema.String),
+		pluginIds: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
+		releaseVersion: Schema.String,
+		source: Schema.String,
+		unrealVersion: Schema.optionalKey(Schema.String)
+	},
+	PluginsCacheList: { cacheRoot: Schema.String },
+	PluginsCacheVerify: { cacheRoot: Schema.String, releaseVersion: Schema.String },
+	PluginsPrune: { cacheRoot: Schema.String, releaseVersion: Schema.String }
 });
 
 export type CliCommand = typeof CliCommand.Type;

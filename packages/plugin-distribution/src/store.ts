@@ -765,16 +765,15 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 					Effect.flatMap((versions) =>
 						Effect.forEach(versions, verify, { concurrency: 1 }).pipe(
 							Effect.map((releases) =>
-								releases.map(
-									({
-										manifest,
-										artifactPath,
-										manifestPath,
-										pluginsRoot,
-										source,
-										...cached
-									}) => cached
-								)
+								releases.map((release) => ({
+									artifactDigest: release.artifactDigest,
+									cacheIdentity: release.cacheIdentity,
+									cachePath: release.cachePath,
+									manifestDigest: release.manifestDigest,
+									plugins: release.plugins,
+									releaseIdentity: release.releaseIdentity,
+									releaseVersion: release.releaseVersion
+								}))
 							)
 						)
 					)

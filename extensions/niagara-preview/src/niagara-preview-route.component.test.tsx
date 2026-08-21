@@ -1,9 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { NiagaraPreviewRunManifest } from "@ue-shed/niagara/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { NiagaraPreviewClientApi } from "./niagara-preview-client.js";
+import type {
+	NiagaraPreviewClientApi,
+	NiagaraPreviewFrameResult
+} from "./niagara-preview-client.js";
 import { NiagaraPreviewRoute } from "./niagara-preview-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -73,6 +76,14 @@ const manifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)({
 	runId: "123e4567-e89b-42d3-a456-426614174000",
 	status: "complete",
 	systemObjectPath: "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion"
+});
+
+const onDemandManifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)({
+	...manifest,
+	artifacts: manifest.artifacts.map((artifact) => ({
+		...artifact,
+		bytes: 40 * 1024 * 1024
+	}))
 });
 
 beforeAll(() => {
@@ -151,6 +162,47 @@ describe("NiagaraPreviewRoute", () => {
 		await waitFor(() => expect(screen.getByAltText("Niagara preview frame 1")).toBeDefined(), {
 			timeout: 1_500
 		});
+	});
+
+	it("keeps the latest cached selection when an older on-demand read completes late", async () => {
+		const pendingFrame = await runtime.runPromise(Deferred.make<NiagaraPreviewFrameResult>());
+		const pendingFrameSettled = await runtime.runPromise(Deferred.make<void>());
+		const readyFrame = {
+			bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+			status: "ready"
+		} as const;
+		const client: NiagaraPreviewClientApi = {
+			run: () =>
+				Effect.succeed({
+					manifest: onDemandManifest,
+					manifestPath: "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json",
+					status: "completed"
+				}),
+			frame: ({ relativePath }) =>
+				relativePath.endsWith("0000.png")
+					? Effect.succeed(readyFrame)
+					: Deferred.await(pendingFrame).pipe(
+							Effect.uninterruptible,
+							Effect.ensuring(Deferred.succeed(pendingFrameSettled, undefined))
+						)
+		};
+		renderRoute(client);
+
+		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
+		await screen.findByAltText("Niagara preview frame 0");
+		fireEvent.click(screen.getByRole("button", { name: "Pause preview" }));
+		fireEvent.click(screen.getByRole("button", { name: "Show frame 1" }));
+		await screen.findByText("BUFFERING 02");
+
+		fireEvent.click(screen.getByRole("button", { name: "Show frame 0" }));
+		expect(screen.getByAltText("Niagara preview frame 0")).toBeDefined();
+		expect(screen.queryByText("BUFFERING 02")).toBeNull();
+
+		await runtime.runPromise(Deferred.succeed(pendingFrame, readyFrame));
+		await runtime.runPromise(Deferred.await(pendingFrameSettled));
+		await runtime.runPromise(Effect.yieldNow);
+		expect(screen.getByAltText("Niagara preview frame 0")).toBeDefined();
+		expect(screen.queryByAltText("Niagara preview frame 1")).toBeNull();
 	});
 
 	it("keeps typed producer recovery visible", async () => {

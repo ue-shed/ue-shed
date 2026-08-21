@@ -148,6 +148,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 	): void => {
 		const cached = frameCache.get(artifact.index);
 		if (cached !== undefined) {
+			frameAction.cancel();
 			setBufferingFrameIndex(undefined);
 			setFrameState({ index: artifact.index, status: "ready", url: cached.url });
 			return;

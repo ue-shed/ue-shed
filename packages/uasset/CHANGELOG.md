@@ -2,6 +2,11 @@
 
 ## 0.4.0
 
+### Patch Changes
+
+- Align this unchanged package with the synchronized UE Shed `0.4.0` suite release. There is no
+  direct behavioral change.
+
 ## 0.3.0
 
 ### Minor Changes

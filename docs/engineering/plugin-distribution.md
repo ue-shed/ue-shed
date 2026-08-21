@@ -1,9 +1,9 @@
 # Unreal plugin distribution
 
-`@ue-shed/plugin-distribution` is the public host-neutral boundary for acquiring immutable UE Shed
+`@ue-shed/plugin-distribution` is the public host-neutral boundary for installing immutable UE Shed
 Unreal plugin artifacts. It composes a transport-specific `PluginReleaseSource` with a caller-owned
 filesystem `PluginStore`; `PluginDistribution` owns manifest validation, dependency resolution,
-single-flight acquisition, scoped leases, and explicit pruning.
+single-flight installation, scoped leases, and explicit pruning.
 
 ## Immutable contract
 

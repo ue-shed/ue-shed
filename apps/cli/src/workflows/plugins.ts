@@ -13,7 +13,7 @@ import type { CliCommand } from "../command-model.js";
 type PluginsListCommand = Extract<CliCommand, { readonly _tag: "PluginsList" }>;
 type PluginsVerifyCommand = Extract<CliCommand, { readonly _tag: "PluginsVerify" }>;
 type PluginsInstallCommand = Extract<CliCommand, { readonly _tag: "PluginsInstall" }>;
-type PluginsAcquireCommand = Extract<CliCommand, { readonly _tag: "PluginsAcquire" }>;
+type PluginsCacheInstallCommand = Extract<CliCommand, { readonly _tag: "PluginsCacheInstall" }>;
 type PluginsCacheListCommand = Extract<CliCommand, { readonly _tag: "PluginsCacheList" }>;
 type PluginsCacheVerifyCommand = Extract<CliCommand, { readonly _tag: "PluginsCacheVerify" }>;
 type PluginsPruneCommand = Extract<CliCommand, { readonly _tag: "PluginsPrune" }>;
@@ -74,14 +74,14 @@ export const runPluginsInstall = Effect.fn("Cli.workflow.plugins_install")(
 		)
 );
 
-export const runPluginsAcquire = Effect.fn("Cli.workflow.plugins_acquire")(
-	(command: PluginsAcquireCommand) =>
+export const runPluginsCacheInstall = Effect.fn("Cli.workflow.plugins_cache_install")(
+	(command: PluginsCacheInstallCommand) =>
 		observeCliOperation(
 			command._tag,
 			Effect.scoped(
 				Effect.gen(function* () {
 					const distribution = yield* PluginDistribution;
-					const result = yield* distribution.acquire({
+					const result = yield* distribution.install({
 						releaseVersion: command.releaseVersion,
 						pluginIds: command.pluginIds,
 						networkPolicy: command.cacheOnly ? "cache-only" : "online",

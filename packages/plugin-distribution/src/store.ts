@@ -19,7 +19,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Context, Effect, Layer, Option, Schema, type Scope } from "effect";
 import { extractPluginArchiveToDirectory } from "./archive.js";
 import {
-	AcquisitionCancelled,
+	PluginInstallCancelled,
 	ActiveLeasePreventsPrune,
 	CorruptCacheEntry,
 	ImmutableVersionConflict,
@@ -36,7 +36,7 @@ import {
 	CachedPluginRelease,
 	PluginLease,
 	PluginSourceProvenance,
-	type PluginAcquisitionProgress,
+	type PluginInstallProgress,
 	type PluginDistributionLimits
 } from "./model.js";
 
@@ -103,11 +103,11 @@ export interface PluginStoreApi {
 		readonly manifest: PluginBundleManifest;
 		readonly manifestBytes: Uint8Array;
 		readonly manifestDigest: PluginBundleManifest["artifact"]["sha256"];
-		readonly onProgress?: (progress: PluginAcquisitionProgress) => void;
+		readonly onProgress?: (progress: PluginInstallProgress) => void;
 		readonly source: PluginSourceProvenance;
 	}) => Effect.Effect<
 		StoredPluginRelease,
-		| AcquisitionCancelled
+		| PluginInstallCancelled
 		| CorruptCacheEntry
 		| ImmutableVersionConflict
 		| MalformedOrUnsafeArchive
@@ -146,7 +146,7 @@ function corrupt(releaseVersion: string, cachePath: string, message: string) {
 	return new CorruptCacheEntry({
 		cachePath,
 		message,
-		recovery: "Explicitly prune the corrupt release, then reacquire the exact artifact.",
+		recovery: "Explicitly prune the corrupt release, then reinstall the exact artifact.",
 		releaseVersion,
 		retrySafe: false
 	});
@@ -513,7 +513,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				readonly manifest: PluginBundleManifest;
 				readonly manifestBytes: Uint8Array;
 				readonly manifestDigest: PluginBundleManifest["artifact"]["sha256"];
-				readonly onProgress?: (progress: PluginAcquisitionProgress) => void;
+				readonly onProgress?: (progress: PluginInstallProgress) => void;
 				readonly source: PluginSourceProvenance;
 			}) => {
 				let completion: Promise<StoredPluginRelease> | undefined;
@@ -639,7 +639,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 					},
 					catch: (cause) => {
 						if (
-							cause instanceof AcquisitionCancelled ||
+							cause instanceof PluginInstallCancelled ||
 							cause instanceof CorruptCacheEntry ||
 							cause instanceof ImmutableVersionConflict ||
 							cause instanceof MalformedOrUnsafeArchive

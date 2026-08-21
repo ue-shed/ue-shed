@@ -9,7 +9,7 @@ import { Effect, Layer, Schema } from "effect";
 import { expect } from "vitest";
 import {
 	ActiveLeasePreventsPrune,
-	AcquisitionCancelled,
+	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	CorruptCacheEntry,
 	ImmutableVersionConflict,
@@ -181,7 +181,7 @@ function listeningPort(server: ReturnType<typeof createServer>): number {
 }
 
 it.effect(
-	"acquires locally, resolves dependencies, reuses offline, and prunes after lease release",
+	"installs locally, resolves dependencies, reuses offline, and prunes after lease release",
 	() =>
 		Effect.gen(function* () {
 			const source = yield* Effect.promise(() => fixture());
@@ -193,7 +193,7 @@ it.effect(
 
 			const first = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>
-					distribution.acquire(request(source.releaseVersion))
+					distribution.install(request(source.releaseVersion))
 				)
 			).pipe(Effect.provide(layer));
 			expect(first.cacheHit).toBe(false);
@@ -202,7 +202,7 @@ it.effect(
 
 			const offline = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>
-					distribution.acquire({
+					distribution.install({
 						...request(source.releaseVersion),
 						networkPolicy: "cache-only"
 					})
@@ -213,7 +213,7 @@ it.effect(
 			yield* Effect.scoped(
 				Effect.gen(function* () {
 					const distribution = yield* PluginDistribution;
-					yield* distribution.acquire({
+					yield* distribution.install({
 						...request(source.releaseVersion),
 						networkPolicy: "cache-only"
 					});
@@ -230,7 +230,7 @@ it.effect(
 			const miss = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>
 					distribution
-						.acquire({ ...request(source.releaseVersion), networkPolicy: "cache-only" })
+						.install({ ...request(source.releaseVersion), networkPolicy: "cache-only" })
 						.pipe(Effect.flip)
 				)
 			).pipe(Effect.provide(layer));
@@ -280,14 +280,14 @@ it.effect("downloads concurrent identical HTTP acquisitions once", () =>
 					const distribution = yield* PluginDistribution;
 					const [left, right] = yield* Effect.all(
 						[
-							distribution.acquire(request(source.releaseVersion)),
-							distribution.acquire(request(source.releaseVersion))
+							distribution.install(request(source.releaseVersion)),
+							distribution.install(request(source.releaseVersion))
 						],
 						{ concurrency: "unbounded" }
 					);
 					expect(left.artifactDigest).toBe(right.artifactDigest);
 					expect(artifactRequests).toBe(1);
-					const cached = yield* distribution.acquire({
+					const cached = yield* distribution.install({
 						...request(source.releaseVersion),
 						networkPolicy: "cache-only"
 					});
@@ -315,7 +315,7 @@ it.effect("rejects a pinned artifact digest mismatch", () =>
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
 				distribution
-					.acquire({
+					.install({
 						...request(source.releaseVersion),
 						expectedArtifactSha256: `sha256:${"b".repeat(64)}`
 					})
@@ -342,7 +342,7 @@ it.effect("rejects a pinned manifest digest mismatch", () =>
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
 				distribution
-					.acquire({
+					.install({
 						...request(source.releaseVersion),
 						expectedManifestSha256: `sha256:${"b".repeat(64)}`
 					})
@@ -368,14 +368,14 @@ it.effect("rejects a corrupt cached descriptor instead of repairing it", () =>
 		);
 		const acquired = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(source.releaseVersion))
+				distribution.install(request(source.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
 		yield* Effect.promise(() => writeFile(acquired.descriptorPaths[0]!, "corrupt\n"));
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
 				distribution
-					.acquire({ ...request(source.releaseVersion), networkPolicy: "cache-only" })
+					.install({ ...request(source.releaseVersion), networkPolicy: "cache-only" })
 					.pipe(Effect.flip)
 			)
 		).pipe(Effect.provide(layer));
@@ -399,7 +399,7 @@ it.effect("rejects a Windows junction introduced into a cached release", () =>
 		);
 		const acquired = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(source.releaseVersion))
+				distribution.install(request(source.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
 		const outside = join(source.root, "outside");
@@ -453,7 +453,7 @@ it.effect("cancels during extraction and removes staging", () =>
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
 				distribution
-					.acquire(request(source.releaseVersion), {
+					.install(request(source.releaseVersion), {
 						onProgress: (progress) => {
 							if (progress.phase === "extracting") controller.abort();
 						},
@@ -462,7 +462,7 @@ it.effect("cancels during extraction and removes staging", () =>
 					.pipe(Effect.flip)
 			)
 		).pipe(Effect.provide(layer));
-		expect(error).toBeInstanceOf(AcquisitionCancelled);
+		expect(error).toBeInstanceOf(PluginInstallCancelled);
 		const entries = yield* Effect.promise(() => readdir(cacheRoot));
 		expect(entries.some((entry) => entry.startsWith(".publish-"))).toBe(false);
 	}).pipe(
@@ -503,7 +503,7 @@ it.effect("cancels during download and removes the partial artifact", () =>
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
 				distribution
-					.acquire(request(source.releaseVersion), {
+					.install(request(source.releaseVersion), {
 						onProgress: (progress) => {
 							if (progress.phase === "downloading") controller.abort();
 						},
@@ -512,7 +512,7 @@ it.effect("cancels during download and removes the partial artifact", () =>
 					.pipe(Effect.flip)
 			)
 		).pipe(Effect.provide(layer));
-		expect(error).toBeInstanceOf(AcquisitionCancelled);
+		expect(error).toBeInstanceOf(PluginInstallCancelled);
 		const entries = yield* Effect.promise(() => readdir(cacheRoot));
 		expect(entries.some((entry) => entry.startsWith(".download-"))).toBe(false);
 	}).pipe(
@@ -552,7 +552,7 @@ it.effect("rejects a truncated HTTP artifact", () =>
 				);
 				return Effect.scoped(
 					Effect.flatMap(PluginDistribution, (distribution) =>
-						distribution.acquire(request(source.releaseVersion)).pipe(Effect.flip)
+						distribution.install(request(source.releaseVersion)).pipe(Effect.flip)
 					)
 				).pipe(
 					Effect.provide(layer),
@@ -581,7 +581,7 @@ it.effect("enforces extraction file-count limits", () =>
 		);
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(source.releaseVersion)).pipe(Effect.flip)
+				distribution.install(request(source.releaseVersion)).pipe(Effect.flip)
 			)
 		).pipe(Effect.provide(layer));
 		expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
@@ -605,7 +605,7 @@ it.effect("enforces extracted byte and per-file limits", () =>
 			);
 			const error = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>
-					distribution.acquire(request(source.releaseVersion)).pipe(Effect.flip)
+					distribution.install(request(source.releaseVersion)).pipe(Effect.flip)
 				)
 			).pipe(Effect.provide(layer));
 			expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
@@ -632,7 +632,7 @@ it.effect("rejects release-version disagreement before downloading", () =>
 		);
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(source.releaseVersion)).pipe(Effect.flip)
+				distribution.install(request(source.releaseVersion)).pipe(Effect.flip)
 			)
 		).pipe(Effect.provide(layer));
 		expect(error).toBeInstanceOf(PluginDistributionValidationError);
@@ -660,12 +660,12 @@ it.effect("keeps different releases side by side and deterministically replays a
 		);
 		const first = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(firstSource.releaseVersion))
+				distribution.install(request(firstSource.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
 		yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(secondSource.releaseVersion))
+				distribution.install(request(secondSource.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
 		const releases = yield* Effect.flatMap(PluginDistribution, (distribution) =>
@@ -677,7 +677,7 @@ it.effect("keeps different releases side by side and deterministically replays a
 		).pipe(Effect.provide(layer));
 		const replay = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(firstSource.releaseVersion))
+				distribution.install(request(firstSource.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
 		expect(replay.cacheIdentity).toBe(first.cacheIdentity);
@@ -700,13 +700,13 @@ it.effect("never replaces an existing immutable version", () =>
 		);
 		const acquired = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.acquire(request(source.releaseVersion))
+				distribution.install(request(source.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
 		const error = yield* Effect.scoped(
 			Effect.flatMap(PluginDistribution, (distribution) =>
 				distribution
-					.acquire({
+					.install({
 						...request(source.releaseVersion),
 						expectedArtifactSha256: `sha256:${"d".repeat(64)}`
 					})
@@ -747,7 +747,7 @@ it.effect("rejects archive traversal and link entries without publishing", () =>
 			);
 			const error = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>
-					distribution.acquire(request(source.releaseVersion)).pipe(Effect.flip)
+					distribution.install(request(source.releaseVersion)).pipe(Effect.flip)
 				)
 			).pipe(Effect.provide(layer));
 			expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);

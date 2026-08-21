@@ -65,10 +65,11 @@ afterAll(async () => {
 });
 
 describe("plugin distribution CLI process", () => {
-	it("acquires, inspects, verifies, reuses offline, and prunes an exact release", () => {
-		const acquired = runCliRecord([
+	it("installs, inspects, verifies, reuses offline, and prunes an exact release", () => {
+		const installed = runCliRecord([
 			"plugins",
-			"acquire",
+			"cache",
+			"install",
 			"--cache",
 			cache,
 			"--source",
@@ -80,10 +81,10 @@ describe("plugin distribution CLI process", () => {
 			"--unreal",
 			"5.7"
 		]);
-		expect(acquired.cacheHit).toBe(false);
-		expect(acquired.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
+		expect(installed.cacheHit).toBe(false);
+		expect(installed.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
 
-		const cached = runCli(["plugins", "cache-list", "--cache", cache]);
+		const cached = runCli(["plugins", "cache", "list", "--cache", cache]);
 		expect(cached).toEqual([
 			expect.objectContaining({
 				plugins: expect.arrayContaining(["UEShedCore", "UEShedCameras"]),
@@ -91,13 +92,21 @@ describe("plugin distribution CLI process", () => {
 			})
 		]);
 		expect(
-			runCliRecord(["plugins", "cache-verify", "--cache", cache, "--release", releaseVersion])
-				.releaseVersion
+			runCliRecord([
+				"plugins",
+				"cache",
+				"verify",
+				"--cache",
+				cache,
+				"--release",
+				releaseVersion
+			]).releaseVersion
 		).toBe(releaseVersion);
 
 		const offline = runCliRecord([
 			"plugins",
-			"acquire",
+			"cache",
+			"install",
 			"--cache",
 			cache,
 			"--cache-only",
@@ -111,8 +120,16 @@ describe("plugin distribution CLI process", () => {
 		expect(offline.cacheHit).toBe(true);
 
 		expect(
-			runCliRecord(["plugins", "prune", "--cache", cache, "--release", releaseVersion]).status
+			runCliRecord([
+				"plugins",
+				"cache",
+				"prune",
+				"--cache",
+				cache,
+				"--release",
+				releaseVersion
+			]).status
 		).toBe("pruned");
-		expect(runCli(["plugins", "cache-list", "--cache", cache])).toEqual([]);
+		expect(runCli(["plugins", "cache", "list", "--cache", cache])).toEqual([]);
 	}, 30_000);
 });

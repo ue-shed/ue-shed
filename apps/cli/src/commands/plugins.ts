@@ -2,7 +2,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
 import {
-	runPluginsAcquire,
+	runPluginsCacheInstall,
 	runPluginsCacheList,
 	runPluginsCacheVerify,
 	runPluginsInstall,
@@ -112,8 +112,8 @@ const pluginsInstallCommand = Command.make(
 		})
 ).pipe(Command.withDescription("Install a plugin bundle into a project."));
 
-const pluginsAcquireCommand = Command.make(
-	"acquire",
+const pluginsCacheInstallCommand = Command.make(
+	"install",
 	{
 		artifactDigest: optionalFlag("artifact-digest"),
 		cache: Flag.string("cache"),
@@ -129,8 +129,8 @@ const pluginsAcquireCommand = Command.make(
 			const artifactDigestValue = optionalValue(artifactDigest);
 			const manifestDigestValue = optionalValue(manifestDigest);
 			const unrealVersion = optionalValue(unreal);
-			return yield* runPluginsAcquire({
-				_tag: "PluginsAcquire",
+			return yield* runPluginsCacheInstall({
+				_tag: "PluginsCacheInstall",
 				cacheOnly,
 				cacheRoot: cache,
 				pluginIds: plugins,
@@ -145,16 +145,14 @@ const pluginsAcquireCommand = Command.make(
 				...(unrealVersion === undefined ? undefined : { unrealVersion })
 			});
 		})
-).pipe(Command.withDescription("Acquire and lease an exact plugin release in a host cache."));
+).pipe(Command.withDescription("Install an exact plugin release into a host cache."));
 
-const pluginsCacheListCommand = Command.make(
-	"cache-list",
-	{ cache: Flag.string("cache") },
-	({ cache }) => runPluginsCacheList({ _tag: "PluginsCacheList", cacheRoot: cache })
+const pluginsCacheListCommand = Command.make("list", { cache: Flag.string("cache") }, ({ cache }) =>
+	runPluginsCacheList({ _tag: "PluginsCacheList", cacheRoot: cache })
 ).pipe(Command.withDescription("List verified releases in a plugin cache."));
 
 const pluginsCacheVerifyCommand = Command.make(
-	"cache-verify",
+	"verify",
 	{ cache: Flag.string("cache"), release: Flag.string("release") },
 	({ cache, release }) =>
 		runPluginsCacheVerify({
@@ -175,15 +173,22 @@ const pluginsPruneCommand = Command.make(
 		})
 ).pipe(Command.withDescription("Prune one unleased cached plugin release."));
 
+const pluginsCacheCommand = Command.make("cache").pipe(
+	Command.withDescription("Install, inspect, verify, and prune host-cached plugin releases."),
+	Command.withSubcommands([
+		pluginsCacheInstallCommand,
+		pluginsCacheListCommand,
+		pluginsCacheVerifyCommand,
+		pluginsPruneCommand
+	])
+);
+
 export const pluginsCommand = Command.make("plugins").pipe(
-	Command.withDescription("Acquire, inspect, verify, install, and prune plugin bundles."),
+	Command.withDescription("Inspect and install plugin bundles for projects or host caches."),
 	Command.withSubcommands([
 		pluginsListCommand,
 		pluginsVerifyCommand,
 		pluginsInstallCommand,
-		pluginsAcquireCommand,
-		pluginsCacheListCommand,
-		pluginsCacheVerifyCommand,
-		pluginsPruneCommand
+		pluginsCacheCommand
 	])
 );

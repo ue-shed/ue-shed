@@ -2,7 +2,7 @@
 	"schemaVersion": 1,
 	"feature": "plugin-distribution",
 	"mode": "existing-host-package",
-	"description": "Verified immutable UE Shed Unreal plugin acquisition and scoped leasing",
+	"description": "Verified immutable UE Shed Unreal plugin installation and scoped leasing",
 	"release": {
 		"package": "@ue-shed/plugin-distribution",
 		"versionSource": "package.json",
@@ -32,7 +32,7 @@
 	},
 	"conformance": {
 		"sourceCommand": "pnpm test:release:packages",
-		"journey": ["acquire-local", "acquire-http", "reuse-offline", "lease", "prune"],
+		"journey": ["install-local", "install-http", "reuse-offline", "lease", "prune"],
 		"targetMustVerifyPackagedRuntime": true,
 		"targetMustUseRealHostTransport": true,
 		"targetMustRecordAdoptionReceipt": true

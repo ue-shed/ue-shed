@@ -6,14 +6,14 @@ import { basename, dirname, join, resolve } from "node:path";
 import { URL } from "node:url";
 import { Context, Effect, Layer, Schema } from "effect";
 import {
-	AcquisitionCancelled,
+	PluginInstallCancelled,
 	PluginDistributionValidationError,
 	ReleaseUnavailable,
 	TransportFailure
 } from "./errors.js";
 import type { PluginBundleManifest } from "./manifest.js";
 import type {
-	PluginAcquisitionProgress,
+	PluginInstallProgress,
 	PluginDistributionLimits,
 	PluginSourceProvenance
 } from "./model.js";
@@ -31,17 +31,17 @@ export interface PluginReleaseSourceApi {
 		readonly destination: string;
 		readonly limits: PluginDistributionLimits;
 		readonly manifest: PluginBundleManifest;
-		readonly onProgress?: (progress: PluginAcquisitionProgress) => void;
+		readonly onProgress?: (progress: PluginInstallProgress) => void;
 	}) => Effect.Effect<
 		PluginSourceProvenance,
-		ReleaseUnavailable | TransportFailure | AcquisitionCancelled
+		ReleaseUnavailable | TransportFailure | PluginInstallCancelled
 	>;
 	readonly fetchManifest: (options: {
 		readonly limits: PluginDistributionLimits;
 		readonly releaseVersion: string;
 	}) => Effect.Effect<
 		PluginReleaseDocument,
-		ReleaseUnavailable | TransportFailure | AcquisitionCancelled
+		ReleaseUnavailable | TransportFailure | PluginInstallCancelled
 	>;
 	readonly sourceId: string;
 }
@@ -52,9 +52,9 @@ export class PluginReleaseSource extends Context.Service<
 >()("@ue-shed/plugin-distribution/PluginReleaseSource") {}
 
 function cancelled(releaseVersion: string, stage: string) {
-	return new AcquisitionCancelled({
-		message: `Plugin acquisition was cancelled during ${stage}.`,
-		recovery: "Retry the exact release acquisition when the host is ready.",
+	return new PluginInstallCancelled({
+		message: `Plugin install was cancelled during ${stage}.`,
+		recovery: "Retry installing the exact release when the host is ready.",
 		releaseVersion,
 		retrySafe: true,
 		stage

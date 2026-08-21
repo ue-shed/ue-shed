@@ -5,13 +5,13 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { createGunzip } from "node:zlib";
 import { Effect } from "effect";
 import {
-	AcquisitionCancelled,
+	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	MalformedOrUnsafeArchive,
 	PluginStorageFailure
 } from "./errors.js";
 import type { PluginBundleManifest } from "./manifest.js";
-import type { PluginAcquisitionProgress, PluginDistributionLimits } from "./model.js";
+import type { PluginDistributionLimits, PluginInstallProgress } from "./model.js";
 
 const TAR_BLOCK_BYTES = 512;
 const COPY_CHUNK_BYTES = 64 * 1024;
@@ -35,9 +35,9 @@ interface ByteReader {
 
 function abortError(signal: AbortSignal, releaseVersion: string, stage: string) {
 	return signal.aborted
-		? new AcquisitionCancelled({
-				message: `Plugin acquisition was cancelled during ${stage}.`,
-				recovery: "Retry the exact release acquisition when the host is ready.",
+		? new PluginInstallCancelled({
+				message: `Plugin install was cancelled during ${stage}.`,
+				recovery: "Retry installing the exact release when the host is ready.",
 				releaseVersion,
 				retrySafe: true,
 				stage
@@ -59,7 +59,7 @@ function archiveFailure(releaseVersion: string, message: string, entry?: string)
 	return new MalformedOrUnsafeArchive({
 		...(entry === undefined ? undefined : { entry }),
 		message,
-		recovery: "Discard the artifact and acquire it again from a trusted exact release.",
+		recovery: "Discard the artifact and install it again from a trusted exact release.",
 		releaseVersion,
 		retrySafe: false
 	});
@@ -181,10 +181,10 @@ export const verifyPluginArtifact = (options: {
 	readonly limits: PluginDistributionLimits;
 	readonly releaseVersion: PluginBundleManifest["releaseVersion"];
 	readonly signal?: AbortSignal;
-	readonly onProgress?: (event: PluginAcquisitionProgress) => void;
+	readonly onProgress?: (event: PluginInstallProgress) => void;
 }): Effect.Effect<
 	VerifiedPluginArtifact,
-	AcquisitionCancelled | ArtifactDigestMismatch | PluginStorageFailure
+	PluginInstallCancelled | ArtifactDigestMismatch | PluginStorageFailure
 > =>
 	Effect.tryPromise({
 		try: async (runtimeSignal) => {
@@ -238,7 +238,10 @@ export const verifyPluginArtifact = (options: {
 			return { bytes: details.size, digest, path: resolve(options.artifactPath) };
 		},
 		catch: (cause) => {
-			if (cause instanceof AcquisitionCancelled || cause instanceof ArtifactDigestMismatch) {
+			if (
+				cause instanceof PluginInstallCancelled ||
+				cause instanceof ArtifactDigestMismatch
+			) {
 				return cause;
 			}
 			return (
@@ -256,7 +259,7 @@ export interface ExtractPluginArchiveOptions {
 	readonly limits: PluginDistributionLimits;
 	readonly manifest: PluginBundleManifest;
 	readonly signal: AbortSignal;
-	readonly onProgress?: (event: PluginAcquisitionProgress) => void;
+	readonly onProgress?: (event: PluginInstallProgress) => void;
 }
 
 /** Internal promise adapter used by the filesystem store inside its existing Effect boundary. */
@@ -374,7 +377,7 @@ export async function extractPluginArchiveToDirectory(
 		}
 		return { extractedBytes, fileCount, files };
 	} catch (cause) {
-		if (cause instanceof AcquisitionCancelled) throw cause;
+		if (cause instanceof PluginInstallCancelled) throw cause;
 		throw (
 			abortError(options.signal, options.manifest.releaseVersion, "extraction") ??
 			archiveFailure(
@@ -388,11 +391,11 @@ export async function extractPluginArchiveToDirectory(
 /** Extracts the strict ustar subset emitted by UE Shed without following archive links. */
 export const extractPluginArchive = (
 	options: ExtractPluginArchiveOptions
-): Effect.Effect<ArchiveExtractionReport, AcquisitionCancelled | MalformedOrUnsafeArchive> =>
+): Effect.Effect<ArchiveExtractionReport, PluginInstallCancelled | MalformedOrUnsafeArchive> =>
 	Effect.tryPromise({
 		try: () => extractPluginArchiveToDirectory(options),
 		catch: (cause) =>
-			cause instanceof AcquisitionCancelled || cause instanceof MalformedOrUnsafeArchive
+			cause instanceof PluginInstallCancelled || cause instanceof MalformedOrUnsafeArchive
 				? cause
 				: archiveFailure(
 						options.manifest.releaseVersion,

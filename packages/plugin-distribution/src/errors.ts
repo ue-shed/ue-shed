@@ -61,8 +61,8 @@ export class ImmutableVersionConflict extends Schema.TaggedErrorClass<ImmutableV
 	{ ...ErrorFields, cachePath: Schema.String, releaseVersion: Schema.String }
 ) {}
 
-export class AcquisitionCancelled extends Schema.TaggedErrorClass<AcquisitionCancelled>()(
-	"AcquisitionCancelled",
+export class PluginInstallCancelled extends Schema.TaggedErrorClass<PluginInstallCancelled>()(
+	"PluginInstallCancelled",
 	{ ...ErrorFields, releaseVersion: Schema.String, stage: Schema.String }
 ) {}
 
@@ -101,7 +101,7 @@ export const PluginDistributionError = Schema.Union([
 	MalformedOrUnsafeArchive,
 	CorruptCacheEntry,
 	ImmutableVersionConflict,
-	AcquisitionCancelled,
+	PluginInstallCancelled,
 	ActiveLeasePreventsPrune,
 	TransportFailure,
 	PluginStorageFailure,

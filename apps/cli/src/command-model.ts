@@ -269,7 +269,7 @@ export const CliCommand = Schema.TaggedUnion({
 		manifestPath: Schema.String,
 		...Project
 	},
-	PluginsAcquire: {
+	PluginsCacheInstall: {
 		artifactDigest: Schema.optionalKey(Schema.String),
 		cacheOnly: Schema.Boolean,
 		cacheRoot: Schema.String,

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Cache, Context, Duration, Effect, Layer, Option, Schema, type Scope } from "effect";
 import {
-	AcquisitionCancelled,
+	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	IncompatibleUnrealVersion,
 	ManifestDigestMismatch,
@@ -18,28 +18,28 @@ import {
 	validatePluginBundleManifest
 } from "./manifest.js";
 import {
-	PluginAcquisitionRequest,
-	PluginAcquisitionResult,
+	PluginInstallRequest,
+	PluginInstallResult,
 	defaultPluginDistributionLimits,
 	type CachedPluginRelease,
-	type PluginAcquisitionProgress,
+	type PluginInstallProgress,
 	type PluginDistributionLimits
 } from "./model.js";
 import { PluginReleaseSource } from "./source.js";
 import { PluginStore, type StoredPluginRelease } from "./store.js";
 import { verifyPluginArtifact } from "./archive.js";
 
-export interface PluginAcquisitionOptions {
-	readonly onProgress?: (progress: PluginAcquisitionProgress) => void;
+export interface PluginInstallOptions {
+	readonly onProgress?: (progress: PluginInstallProgress) => void;
 	readonly signal?: AbortSignal;
 }
 
 export interface PluginDistributionApi {
-	readonly acquire: (
-		// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This public hostile-input boundary is immediately decoded by PluginAcquisitionRequest.
+	readonly install: (
+		// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This public hostile-input boundary is immediately decoded by PluginInstallRequest.
 		request: unknown,
-		options?: PluginAcquisitionOptions
-	) => Effect.Effect<PluginAcquisitionResult, PluginDistributionError, Scope.Scope>;
+		options?: PluginInstallOptions
+	) => Effect.Effect<PluginInstallResult, PluginDistributionError, Scope.Scope>;
 	readonly listCached: () => Effect.Effect<
 		ReadonlyArray<CachedPluginRelease>,
 		PluginDistributionError
@@ -67,7 +67,7 @@ function sha256(bytes: Uint8Array) {
 function decodeFailure() {
 	return new PluginDistributionValidationError({
 		field: "request",
-		message: "Plugin acquisition request is invalid.",
+		message: "Plugin install request is invalid.",
 		recovery: "Provide one exact SemVer release and between 1 and 64 valid plugin IDs.",
 		retrySafe: false
 	});
@@ -103,7 +103,7 @@ function mapManifestError(
 	});
 }
 
-function canonicalRequest(request: PluginAcquisitionRequest) {
+function canonicalRequest(request: PluginInstallRequest) {
 	return JSON.stringify({
 		expectedArtifactSha256: request.expectedArtifactSha256,
 		expectedManifestSha256: request.expectedManifestSha256,
@@ -115,16 +115,16 @@ function canonicalRequest(request: PluginAcquisitionRequest) {
 }
 
 function abortEffect(releaseVersion: string, signal: AbortSignal) {
-	return Effect.callback<never, AcquisitionCancelled>((resume) => {
+	return Effect.callback<never, PluginInstallCancelled>((resume) => {
 		const onAbort = () =>
 			resume(
 				Effect.fail(
-					new AcquisitionCancelled({
-						message: "Plugin acquisition was cancelled by the host.",
-						recovery: "Retry the exact release acquisition when the host is ready.",
+					new PluginInstallCancelled({
+						message: "Plugin install was cancelled by the host.",
+						recovery: "Retry installing the exact release when the host is ready.",
 						releaseVersion,
 						retrySafe: true,
-						stage: "acquisition"
+						stage: "install"
 					})
 				)
 			);
@@ -147,18 +147,15 @@ export const pluginDistributionLayer = (
 			const source = yield* PluginReleaseSource;
 			const store = yield* PluginStore;
 			const limits = { ...defaultPluginDistributionLimits, ...options.limits };
-			const subscribers = new Map<
-				string,
-				Set<(progress: PluginAcquisitionProgress) => void>
-			>();
-			const publishProgress = (key: string, progress: PluginAcquisitionProgress) => {
+			const subscribers = new Map<string, Set<(progress: PluginInstallProgress) => void>>();
+			const publishProgress = (key: string, progress: PluginInstallProgress) => {
 				for (const subscriber of subscribers.get(key) ?? []) subscriber(progress);
 			};
 
 			const ensureUncached = Effect.fn("PluginDistribution.ensureUncached")(function* (
 				key: string
 			) {
-				const request = yield* Schema.decodeUnknownEffect(PluginAcquisitionRequest)(
+				const request = yield* Schema.decodeUnknownEffect(PluginInstallRequest)(
 					JSON.parse(key)
 				).pipe(Effect.mapError(decodeFailure));
 				publishProgress(key, {
@@ -179,7 +176,7 @@ export const pluginDistributionLayer = (
 					return yield* new OfflineCacheMiss({
 						message: `Release ${request.releaseVersion} is not present in the verified cache.`,
 						recovery:
-							"Allow network acquisition once or pre-populate this caller-owned cache.",
+							"Allow an online install once or pre-populate this caller-owned cache.",
 						releaseVersion: request.releaseVersion,
 						retrySafe: true
 					});
@@ -266,34 +263,34 @@ export const pluginDistributionLayer = (
 				);
 			});
 
-			const acquisitions = yield* Cache.makeWith(ensureUncached, {
+			const installs = yield* Cache.makeWith(ensureUncached, {
 				capacity: 64,
 				timeToLive: () => Duration.zero
 			});
 
-			const acquire = Effect.fn("PluginDistribution.acquire")(function* (
+			const install = Effect.fn("PluginDistribution.install")(function* (
 				// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This implementation decodes the public hostile-input boundary immediately below.
 				input: unknown,
-				acquisitionOptions: PluginAcquisitionOptions = {}
+				installOptions: PluginInstallOptions = {}
 			) {
-				const request = yield* Schema.decodeUnknownEffect(PluginAcquisitionRequest)(
-					input
-				).pipe(Effect.mapError(decodeFailure));
+				const request = yield* Schema.decodeUnknownEffect(PluginInstallRequest)(input).pipe(
+					Effect.mapError(decodeFailure)
+				);
 				const key = canonicalRequest(request);
-				const subscriber = acquisitionOptions.onProgress;
+				const subscriber = installOptions.onProgress;
 				if (subscriber !== undefined) {
 					const current = subscribers.get(key) ?? new Set();
 					current.add(subscriber);
 					subscribers.set(key, current);
 				}
-				let acquisition = Cache.get(acquisitions, key);
-				if (acquisitionOptions.signal !== undefined) {
-					acquisition = Effect.raceFirst(
-						acquisition,
-						abortEffect(request.releaseVersion, acquisitionOptions.signal)
+				let installation = Cache.get(installs, key);
+				if (installOptions.signal !== undefined) {
+					installation = Effect.raceFirst(
+						installation,
+						abortEffect(request.releaseVersion, installOptions.signal)
 					);
 				}
-				const ensured = yield* acquisition.pipe(
+				const ensured = yield* installation.pipe(
 					Effect.ensuring(
 						Effect.sync(() => {
 							if (subscriber === undefined) return;
@@ -326,7 +323,7 @@ export const pluginDistributionLayer = (
 					phase: "ready",
 					releaseVersion: request.releaseVersion
 				});
-				return PluginAcquisitionResult.make({
+				return PluginInstallResult.make({
 					artifactDigest: ensured.release.artifactDigest,
 					cacheHit: ensured.cacheHit,
 					cacheIdentity: ensured.release.cacheIdentity,
@@ -360,6 +357,6 @@ export const pluginDistributionLayer = (
 			const prune = Effect.fn("PluginDistribution.prune")((releaseVersion: string) =>
 				store.prune(releaseVersion)
 			);
-			return PluginDistribution.of({ acquire, listCached, prune, verifyCached });
+			return PluginDistribution.of({ install, listCached, prune, verifyCached });
 		})
 	);

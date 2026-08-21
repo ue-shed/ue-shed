@@ -16,7 +16,7 @@ input {
 }
 
 button:focus-visible {
-	outline: 2px solid #b7e26d;
+	outline: 2px solid #e4f222;
 	outline-offset: 2px;
 }
 
@@ -29,40 +29,48 @@ p {
 
 h2 {
 	margin-top: 7px;
-	font-family: Georgia, serif;
+	font-family:
+		"Inter",
+		"Inter Variable",
+		"Segoe UI Variable Text",
+		"Segoe UI",
+		system-ui,
+		-apple-system,
+		"Helvetica Neue",
+		Arial,
+		sans-serif;
 	font-size: 20px;
-	font-weight: 400;
+	font-weight: 500;
 }
 
 h3 {
-	color: #727d75;
-	font-size: 8px;
-	font-weight: 600;
-	letter-spacing: 0.13em;
+	color: #62666d;
+	font-size: 11px;
+	font-weight: 500;
 }
 
 p {
 	margin-top: 6px;
-	color: #768078;
-	font-size: 9px;
+	color: #8a8f98;
+	font-size: 12px;
 	line-height: 1.55;
 }
 
 small {
 	display: block;
-	color: #69736c;
-	font-size: 8px;
+	color: #62666d;
+	font-size: 11px;
 	line-height: 1.4;
 }
 
 code {
 	overflow-wrap: anywhere;
-	color: #93a08f;
+	color: #8a8f98;
 	font-family: inherit;
-	font-size: 8px;
+	font-size: 11px;
 }
 
 header > span,
 header > small {
-	letter-spacing: 0.1em;
+	letter-spacing: 0.04em;
 }

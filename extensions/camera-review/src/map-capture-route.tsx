@@ -1260,43 +1260,57 @@ function Toggle(props: {
 }
 
 const styles = stylex.create({
-	page: { minHeight: "calc(100vh - 52px)", backgroundColor: "#0c100e", color: tokens.colorText },
+	page: {
+		minHeight: "calc(100vh - 52px)",
+		backgroundColor: tokens.colorCanvas,
+		color: tokens.colorText
+	},
 	hero: {
 		display: "grid",
 		gridTemplateColumns: "minmax(420px, 1fr) auto",
 		alignItems: "end",
 		gap: 36,
 		padding: "34px 42px 28px",
-		borderBottom: "1px solid #303831",
-		backgroundImage: "linear-gradient(110deg, #152018 0%, #0c100e 55%, #182015 100%)"
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundImage:
+			"linear-gradient(110deg, rgba(255, 255, 255, 0.03) 0%, transparent 55%, rgba(255, 255, 255, 0.02) 100%)"
 	},
-	eyebrow: { margin: 0, color: "#8da87a", fontSize: 9, letterSpacing: ".2em" },
-	title: { margin: "8px 0 0", fontFamily: "Georgia, serif", fontSize: 36, fontWeight: 400 },
+	eyebrow: { margin: 0, color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
+	title: {
+		margin: "8px 0 0",
+		fontFamily: tokens.fontDisplay,
+		fontSize: 24,
+		fontWeight: 590
+	},
 	heroActions: { display: "flex", gap: 8 },
 	layout: { display: "grid", gridTemplateColumns: "430px minmax(0, 1fr)", minHeight: 720 },
 	controls: {
 		maxHeight: "calc(100vh - 170px)",
 		overflowY: "auto",
-		borderRight: "1px solid #303831",
-		backgroundColor: "#111613",
+		borderRight: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
 		padding: 22
 	},
 	panel: {
 		marginBottom: 14,
 		padding: 18,
-		border: "1px solid #303831",
-		backgroundColor: "#151b17"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
 	},
-	emptyPanel: { padding: 28, border: "1px dashed #3d493f", color: "#7e897f" },
-	sectionLabel: { margin: 0, color: "#79867a", fontSize: 8, letterSpacing: ".18em" },
+	emptyPanel: {
+		padding: 28,
+		border: `1px dashed ${tokens.colorBorderStrong}`,
+		color: tokens.colorTextSubtle
+	},
+	sectionLabel: { margin: 0, color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
 	sectionHeading: {
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "center",
 		gap: 12
 	},
-	dirtyFlag: { color: "#758077", fontSize: 8, letterSpacing: ".14em" },
-	dirty: { color: "#e3b65d" },
+	dirtyFlag: { color: tokens.colorTextFaint, fontSize: 11, letterSpacing: 0 },
+	dirty: { color: tokens.colorWarning },
 	fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "14px 0" },
 	captureAreaGrid: {
 		display: "grid",
@@ -1309,9 +1323,9 @@ const styles = stylex.create({
 		gap: 6,
 		marginTop: 12,
 		padding: "9px 10px",
-		backgroundColor: "#101512",
-		color: "#7d897f",
-		fontSize: 8,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		lineHeight: 1.5
 	},
 	outputExtent: {
@@ -1319,35 +1333,35 @@ const styles = stylex.create({
 		gap: 6,
 		marginTop: 12,
 		padding: "9px 10px",
-		borderLeft: "2px solid #d1ae61",
-		backgroundColor: "#101512",
-		color: "#7d897f",
-		fontSize: 8,
+		borderLeft: `2px solid ${tokens.colorWarning}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		lineHeight: 1.5
 	},
 	field: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#778179",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	input: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #3b473d",
-		backgroundColor: "#0c100e",
-		color: "#c7d0c8",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "7px 8px",
-		fontSize: 10
+		fontSize: 13
 	},
 	metrics: {
 		display: "grid",
 		gridTemplateColumns: "repeat(2, 1fr)",
 		gap: 1,
 		marginTop: 16,
-		backgroundColor: "#303831"
+		backgroundColor: tokens.colorBorder
 	},
 	tileGeometryControl: { marginTop: 2 },
 	resolutionReadout: {
@@ -1357,17 +1371,17 @@ const styles = stylex.create({
 		gap: 14,
 		marginTop: 8,
 		padding: "11px 12px",
-		borderLeft: "2px solid #b7e26d",
-		backgroundColor: "#101512",
-		color: "#758077",
-		fontSize: 8
+		borderLeft: `2px solid ${tokens.colorAccent}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	},
 	levelLadder: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
 		gap: 1,
 		marginTop: 4,
-		backgroundColor: "#303831"
+		backgroundColor: tokens.colorBorder
 	},
 	levelStep: {
 		display: "flex",
@@ -1375,49 +1389,49 @@ const styles = stylex.create({
 		gap: 4,
 		minWidth: 0,
 		padding: "9px 8px",
-		backgroundColor: "#101512",
-		color: "#728074",
-		fontSize: 7
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	moreLevels: {
 		gridColumn: "1 / -1",
 		padding: "7px 8px",
-		backgroundColor: "#101512",
-		color: "#788579",
-		fontSize: 7,
-		letterSpacing: ".1em"
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	metric: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 5,
 		padding: 10,
-		backgroundColor: "#101512"
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	select: {
-		border: "1px solid #3b473d",
-		backgroundColor: "#0c100e",
-		color: "#bcc8bd",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "6px 8px",
-		fontSize: 9
+		fontSize: 12
 	},
 	backendField: {
 		display: "grid",
 		gap: 7,
 		marginTop: 15,
 		paddingTop: 13,
-		borderTop: "1px solid #303831",
-		color: "#748077",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	backendNote: {
 		margin: 0,
 		padding: "9px 10px",
-		borderLeft: "2px solid #d2a653",
-		backgroundColor: "#17140e",
-		color: "#b9a878",
-		fontSize: 8,
+		borderLeft: `2px solid ${tokens.colorWarning}`,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 12,
 		letterSpacing: 0,
 		lineHeight: 1.5
 	},
@@ -1434,67 +1448,70 @@ const styles = stylex.create({
 		width: 31,
 		height: 16,
 		borderRadius: 12,
-		backgroundColor: "#384039",
-		boxShadow: "inset 0 0 0 1px #4c554d"
+		backgroundColor: tokens.colorBorderStrong,
+		boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.08)"
 	},
 	switchOn: {
-		backgroundColor: "#8ebd66",
-		boxShadow: "inset 0 0 0 1px #b2db8d, 0 0 12px #8ebd6644"
+		backgroundColor: tokens.colorAccent,
+		boxShadow: "inset 0 0 0 1px rgba(228, 242, 34, 0.35), 0 0 12px rgba(228, 242, 34, 0.27)"
 	},
 	levels: {
 		display: "grid",
 		gap: 8,
 		marginTop: 12,
 		paddingTop: 12,
-		borderTop: "1px solid #303831"
+		borderTop: `1px solid ${tokens.colorBorder}`
 	},
 	validationPanel: {
 		marginBottom: 14,
 		padding: 14,
-		border: "1px solid #713f35",
-		backgroundColor: "#241613",
-		color: "#d58b79",
-		fontSize: 9,
+		border: "1px solid rgba(235, 87, 87, 0.45)",
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 12,
 		lineHeight: 1.5
 	},
 	saveActions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 },
 	actions: { display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 8 },
 	primaryButton: {
 		border: 0,
-		backgroundColor: "#b7e26d",
-		color: "#10140e",
-		padding: "12px 18px",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".1em"
+		backgroundColor: tokens.colorAccent,
+		color: tokens.colorAccentText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: 0
 	},
 	headerButton: {
-		border: "1px solid #536154",
-		backgroundColor: "#172019",
-		color: "#bdc8be",
-		padding: "12px 18px",
-		fontSize: 9,
-		fontWeight: 700,
-		letterSpacing: ".1em"
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: 0
 	},
 	secondaryButton: {
-		border: "1px solid #4b594d",
-		backgroundColor: "#151b17",
-		color: "#aeb9af",
-		padding: 12,
-		fontSize: 9,
-		letterSpacing: ".08em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 12,
+		letterSpacing: 0,
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.5 }
 	},
 	captureButton: {
-		border: "1px solid #b7e26d",
-		backgroundColor: "#26351e",
-		color: "#d9f2b7",
-		padding: 12,
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: {
+			default: "rgba(228, 242, 34, 0.08)",
+			":hover": "rgba(228, 242, 34, 0.12)"
+		},
+		color: tokens.colorTextStrong,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: 0,
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.5 }
 	},
@@ -1502,17 +1519,18 @@ const styles = stylex.create({
 		position: "relative",
 		minWidth: 0,
 		padding: 24,
-		backgroundImage: "radial-gradient(circle at 50% 45%, #26372755, transparent 42%)"
+		backgroundImage:
+			"radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.03), transparent 42%)"
 	},
 	gridPreview: {
 		position: "relative",
 		minHeight: 360,
 		aspectRatio: "16 / 9",
 		overflow: "hidden",
-		border: "1px solid #344037",
-		backgroundColor: "#0e1510",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
-			"linear-gradient(#6f89601b 1px, transparent 1px), linear-gradient(90deg, #6f89601b 1px, transparent 1px)",
+			"linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)",
 		backgroundSize: "48px 48px"
 	},
 	liveCanvas: {
@@ -1521,7 +1539,7 @@ const styles = stylex.create({
 		width: "100%",
 		height: "100%",
 		objectFit: "contain",
-		backgroundColor: "#070b08",
+		backgroundColor: tokens.colorCanvas,
 		imageRendering: "auto"
 	},
 	previewShade: {
@@ -1530,7 +1548,7 @@ const styles = stylex.create({
 		inset: 0,
 		pointerEvents: "none",
 		backgroundImage:
-			"linear-gradient(180deg, #071008b8 0%, transparent 18%, transparent 68%, #071008d9 100%)"
+			"linear-gradient(180deg, rgba(8, 9, 10, 0.72) 0%, transparent 18%, transparent 68%, rgba(8, 9, 10, 0.85) 100%)"
 	},
 	captureBoundary: {
 		position: "absolute",
@@ -1539,25 +1557,25 @@ const styles = stylex.create({
 		top: "50%",
 		transform: "translate(-50%, -50%)",
 		boxSizing: "border-box",
-		border: "1px solid #b7e26d66",
-		boxShadow: "inset 0 0 54px #07100899, 0 0 30px #b7e26d12",
+		border: "1px solid rgba(228, 242, 34, 0.4)",
+		boxShadow: "inset 0 0 54px rgba(8, 9, 10, 0.6), 0 0 30px rgba(228, 242, 34, 0.07)",
 		pointerEvents: "none"
 	},
 	requestedBoundary: {
 		position: "absolute",
 		boxSizing: "border-box",
-		border: "1px dashed #e3b65dcc",
-		boxShadow: "inset 0 0 0 1px #0b0f0c66"
+		border: "1px dashed rgba(242, 153, 74, 0.8)",
+		boxShadow: "inset 0 0 0 1px rgba(8, 9, 10, 0.4)"
 	},
 	requestedBoundaryLabel: {
 		position: "absolute",
 		left: 4,
 		top: 4,
 		padding: "3px 5px",
-		backgroundColor: "#0b0f0cbb",
-		color: "#e3c57f",
-		fontSize: 7,
-		letterSpacing: ".1em",
+		backgroundColor: "rgba(8, 9, 10, 0.73)",
+		color: tokens.colorWarning,
+		fontSize: 11,
+		letterSpacing: 0,
 		whiteSpace: "nowrap"
 	},
 	north: {
@@ -1565,9 +1583,9 @@ const styles = stylex.create({
 		zIndex: 2,
 		top: 18,
 		left: 18,
-		color: "#708174",
-		fontSize: 8,
-		letterSpacing: ".14em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	previewStatus: {
 		position: "absolute",
@@ -1578,25 +1596,25 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 8,
 		padding: "6px 9px",
-		border: "1px solid #536154aa",
-		backgroundColor: "#0a100cdd",
-		color: "#b8c5b9",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		border: "1px solid rgba(56, 59, 63, 0.67)",
+		backgroundColor: "rgba(12, 13, 14, 0.87)",
+		color: tokens.colorText,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	previewPulse: {
 		width: 6,
 		height: 6,
 		borderRadius: 99,
-		backgroundColor: "#d1ae61",
-		boxShadow: "0 0 10px #d1ae61"
+		backgroundColor: tokens.colorWarning,
+		boxShadow: "0 0 10px rgba(242, 153, 74, 0.35)"
 	},
 	previewLive: {
 		width: 6,
 		height: 6,
 		borderRadius: 99,
-		backgroundColor: "#b7e26d",
-		boxShadow: "0 0 11px #b7e26d"
+		backgroundColor: tokens.colorAccent,
+		boxShadow: "0 0 11px rgba(228, 242, 34, 0.35)"
 	},
 	previewFailure: {
 		position: "absolute",
@@ -1606,20 +1624,20 @@ const styles = stylex.create({
 		width: "min(340px, calc(100% - 64px))",
 		transform: "translate(-50%, -50%)",
 		padding: 18,
-		border: "1px solid #765246",
-		backgroundColor: "#160f0ddd",
-		color: "#d6a18f",
-		fontSize: 9,
+		border: "1px solid rgba(235, 87, 87, 0.45)",
+		backgroundColor: "rgba(22, 23, 24, 0.9)",
+		color: tokens.colorDanger,
+		fontSize: 12,
 		lineHeight: 1.5,
 		textAlign: "center"
 	},
 	previewRetry: {
-		border: "1px solid #92705e",
-		backgroundColor: "#241611",
-		color: "#e2b4a0",
-		padding: "7px 11px",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	gridReadout: {
 		position: "absolute",
@@ -1630,9 +1648,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 5,
 		paddingLeft: 14,
-		borderLeft: "2px solid #b7e26d",
-		color: "#8c9c8e",
-		fontSize: 9
+		borderLeft: `2px solid ${tokens.colorAccent}`,
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	},
 	captureProgress: {
 		position: "absolute",
@@ -1641,9 +1659,9 @@ const styles = stylex.create({
 		right: 48,
 		bottom: 82,
 		padding: "15px 17px 13px",
-		border: "1px solid #657956",
-		backgroundColor: "#0d130ff2",
-		boxShadow: "0 16px 48px #00000099, inset 0 0 28px #9acb7208",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: "rgba(15, 16, 17, 0.95)",
+		boxShadow: "0 16px 48px rgba(8, 9, 10, 0.6), inset 0 0 28px rgba(228, 242, 34, 0.03)",
 		backdropFilter: "blur(7px)"
 	},
 	progressHeader: {
@@ -1651,41 +1669,41 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		marginBottom: 10,
-		color: "#cce6b4",
-		fontSize: 9,
-		letterSpacing: ".13em"
+		color: tokens.colorText,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	progressPhase: { display: "flex", alignItems: "center", gap: 9 },
 	progressPulse: {
 		width: 7,
 		height: 7,
 		borderRadius: 999,
-		backgroundColor: "#b7e26d",
-		boxShadow: "0 0 13px #b7e26d"
+		backgroundColor: tokens.colorAccent,
+		boxShadow: "0 0 13px rgba(228, 242, 34, 0.35)"
 	},
 	progressTrack: {
 		height: 8,
 		overflow: "hidden",
-		border: "1px solid #344337",
-		backgroundColor: "#080c09"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	progressFill: {
 		height: "100%",
-		backgroundImage: "linear-gradient(90deg, #678d4d, #b7e26d)",
-		boxShadow: "0 0 16px #b7e26d66",
+		backgroundImage: `linear-gradient(90deg, rgba(228, 242, 34, 0.5), ${tokens.colorAccent})`,
+		boxShadow: "0 0 16px rgba(228, 242, 34, 0.35)",
 		transitionProperty: "width",
-		transitionDuration: "180ms",
+		transitionDuration: tokens.motionStandard,
 		transitionTimingFunction: "ease-out"
 	},
 	progressMeta: {
 		display: "flex",
 		gap: 18,
 		marginTop: 9,
-		color: "#7f9182",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
 	},
-	progressFailures: { color: "#d98268" },
+	progressFailures: { color: tokens.colorDanger },
 	status: {
 		display: "grid",
 		gridTemplateColumns: "80px 1fr minmax(180px, auto)",
@@ -1693,11 +1711,11 @@ const styles = stylex.create({
 		gap: 18,
 		marginTop: 12,
 		padding: "11px 14px",
-		border: "1px solid #303831",
-		color: "#7d887f",
-		fontSize: 9
+		border: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
-	info: { borderLeftColor: "#718178" },
-	success: { borderLeftColor: "#9acb72", color: "#a9c59f" },
-	error: { borderLeftColor: "#d36b52", color: "#cf8b79" }
+	info: { borderLeftColor: tokens.colorBorderStrong },
+	success: { borderLeftColor: tokens.colorSuccess, color: tokens.colorSuccess },
+	error: { borderLeftColor: tokens.colorDanger, color: tokens.colorDanger }
 });

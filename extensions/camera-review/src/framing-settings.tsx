@@ -7,6 +7,7 @@ import {
 	FramingGroup,
 	FramingParameters
 } from "@ue-shed/cameras";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show } from "solid-js";
 import { ScrubbableNumberField } from "./scrubbable-number-field.js";
 
@@ -514,17 +515,21 @@ export function FramingSettings(props: {
 }
 
 const styles = stylex.create({
-	settings: { marginTop: 10, border: "1px solid #39413c", backgroundColor: "#121613" },
+	settings: {
+		marginTop: 10,
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
+	},
 	summary: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "10px 12px",
-		color: "#d5ddd5",
+		color: tokens.colorText,
 		cursor: "pointer",
-		fontSize: 10,
-		fontWeight: 800,
-		letterSpacing: ".12em"
+		fontSize: 12,
+		fontWeight: 590,
+		letterSpacing: 0
 	},
 	settingsBody: { display: "grid", gap: 12, padding: "4px 12px 14px" },
 	settingsIntro: {
@@ -533,19 +538,29 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 12
 	},
-	sectionHint: { margin: 0, color: "#89948c", fontSize: 9, lineHeight: 1.5 },
+	sectionHint: { margin: 0, color: tokens.colorTextSubtle, fontSize: 12, lineHeight: 1.5 },
 	scrubHint: {
 		flexShrink: 0,
-		color: "#8fa65d",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em"
+		color: tokens.colorAccent,
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: 0
 	},
 	globalGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(120px, 1fr))", gap: 8 },
 	groupList: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 },
-	group: { border: "1px solid #303832", backgroundColor: "#0b0e0c", padding: 10 },
+	group: {
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		padding: 10
+	},
 	groupHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
-	enableLabel: { display: "flex", alignItems: "center", gap: 7, color: "#dce2dc", fontSize: 10 },
+	enableLabel: {
+		display: "flex",
+		alignItems: "center",
+		gap: 7,
+		color: tokens.colorText,
+		fontSize: 12
+	},
 	groupGrid: {
 		display: "grid",
 		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -553,25 +568,36 @@ const styles = stylex.create({
 		marginTop: 10
 	},
 	countField: { display: "grid", gridTemplateColumns: "1fr 52px", gap: 6, alignItems: "end" },
-	sliderLabel: { display: "grid", gap: 5, color: "#89948c", fontSize: 8, letterSpacing: ".08em" },
+	sliderLabel: {
+		display: "grid",
+		gap: 5,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
+	},
 	countInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #536056",
-		backgroundColor: "#080a09",
-		color: "#b9f227",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorAccent,
 		padding: "6px 5px",
 		textAlign: "right"
 	},
 	performanceHint: {
 		margin: 0,
-		borderLeft: "2px solid #d6a84c",
+		borderLeft: `2px solid ${tokens.colorWarning}`,
 		padding: "8px 10px",
-		color: "#c9b47c",
-		backgroundColor: "#18150d",
-		fontSize: 10
+		color: tokens.colorWarning,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		fontSize: 12
 	},
-	overridePanel: { display: "grid", gap: 9, borderTop: "1px solid #303832", padding: 12 },
+	overridePanel: {
+		display: "grid",
+		gap: 9,
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		padding: 12
+	},
 	overrideHeader: {
 		display: "flex",
 		alignItems: "end",
@@ -580,12 +606,12 @@ const styles = stylex.create({
 	},
 	overrideIdentity: { display: "grid", gap: 3 },
 	resetButton: {
-		border: "1px solid #526057",
-		backgroundColor: { default: "transparent", ":hover": "#20271f" },
-		color: "#b5beb6",
-		padding: "7px 9px",
-		fontSize: 8,
-		fontWeight: 800,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 11,
+		fontWeight: 500,
 		cursor: { default: "pointer", ":disabled": "default" },
 		opacity: { default: 1, ":disabled": 0.4 }
 	},
@@ -602,12 +628,12 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 7,
 		padding: 9,
-		border: "1px solid #2d352f",
-		backgroundColor: "#0d110e",
-		color: "#7f8c83",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".11em"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: 0
 	},
 	compositionFields: {
 		display: "grid",

@@ -6,6 +6,7 @@ import {
 	type VisibilityPolicy
 } from "@ue-shed/cameras";
 import { createEffectAction } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Schema } from "effect";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { MapReviewClientApi, MapReviewResult } from "./map-review-client.js";
@@ -305,7 +306,11 @@ export function VisibilityPolicySettings(props: {
 }
 
 const styles = stylex.create({
-	panel: { marginTop: 12, border: "1px solid #343a36", backgroundColor: "#111412" },
+	panel: {
+		marginTop: 12,
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
+	},
 	summary: {
 		display: "grid",
 		gridTemplateColumns: "1fr 1fr minmax(180px, .7fr)",
@@ -313,9 +318,14 @@ const styles = stylex.create({
 		alignItems: "center",
 		padding: 14
 	},
-	advanced: { borderTop: "1px solid #343a36", padding: 14 },
+	advanced: { borderTop: `1px solid ${tokens.colorBorder}`, padding: 14 },
 	form: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 },
 	wide: { gridColumn: "1 / -1" },
-	note: { color: "#9ab6b8", fontSize: 11, lineHeight: 1.6 },
-	bulk: { display: "grid", gap: 8, marginTop: 16, border: "1px solid #343a36" }
+	note: { color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.6 },
+	bulk: {
+		display: "grid",
+		gap: 8,
+		marginTop: 16,
+		border: `1px solid ${tokens.colorBorder}`
+	}
 });

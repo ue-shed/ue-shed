@@ -5,6 +5,7 @@ import {
 	pointMapResizeCanvasForDisplay
 } from "@ue-shed/ui/point-map-core";
 import { createEffectAction } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -493,10 +494,10 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateRows: "auto minmax(320px, 1fr) auto",
 		minHeight: 520,
-		backgroundColor: "#0a0f0f",
-		border: "1px solid #324143",
-		color: "#d5e1dd",
-		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace',
+		backgroundColor: tokens.colorSurface,
+		border: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
 		overflow: "hidden"
 	},
 	header: {
@@ -505,31 +506,31 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 24,
 		padding: "14px 18px 12px",
-		borderBottom: "1px solid #324143",
-		backgroundColor: "#101819"
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
 	},
-	eyebrow: { margin: 0, color: "#e0a94f", fontSize: 8, letterSpacing: ".18em" },
+	eyebrow: { margin: 0, color: tokens.colorWarning, fontSize: 11, letterSpacing: 0 },
 	title: {
 		margin: "4px 0 0",
-		fontFamily: '"Bodoni Moda", Georgia, serif',
-		fontSize: 22,
-		fontWeight: 400,
-		letterSpacing: ".02em"
+		fontFamily: tokens.fontDisplay,
+		fontSize: 17,
+		fontWeight: 590,
+		letterSpacing: "-0.01em"
 	},
 	readout: {
 		display: "flex",
 		flexWrap: "wrap",
 		justifyContent: "end",
 		gap: "6px 14px",
-		color: "#72d2ca",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		color: "#02b8cc",
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	surface: {
 		position: "relative",
 		overflow: "hidden",
 		cursor: "grab",
-		backgroundColor: "#111718",
+		backgroundColor: tokens.colorSurfaceInset,
 		userSelect: "none",
 		touchAction: "none"
 	},
@@ -537,9 +538,9 @@ const styles = stylex.create({
 		position: "absolute",
 		inset: 0,
 		backgroundImage:
-			"linear-gradient(#2c3b3d55 1px, transparent 1px), linear-gradient(90deg, #2c3b3d55 1px, transparent 1px)",
+			"linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px)",
 		backgroundSize: "32px 32px",
-		boxShadow: "inset 0 0 120px #000b"
+		boxShadow: "inset 0 0 120px rgba(8, 9, 10, 0.7)"
 	},
 	tile: {
 		position: "absolute",
@@ -563,23 +564,23 @@ const styles = stylex.create({
 		top: "50%",
 		transform: "translate(-50%, -50%)",
 		padding: "10px 14px",
-		border: "1px solid #607172",
-		backgroundColor: "#0a0f0fe6",
-		color: "#e0a94f",
-		fontSize: 9,
-		letterSpacing: ".12em"
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: "rgba(8, 9, 10, 0.9)",
+		color: tokens.colorWarning,
+		fontSize: 11,
+		letterSpacing: 0
 	},
-	axisNorth: { position: "absolute", top: 12, left: 14, color: "#72d2ca", fontSize: 8 },
-	axisEast: { position: "absolute", right: 14, bottom: 12, color: "#72d2ca", fontSize: 8 },
+	axisNorth: { position: "absolute", top: 12, left: 14, color: "#02b8cc", fontSize: 11 },
+	axisEast: { position: "absolute", right: 14, bottom: 12, color: "#02b8cc", fontSize: 11 },
 	footer: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 16,
 		padding: "8px 18px",
-		borderTop: "1px solid #324143",
-		backgroundColor: "#101819",
-		color: "#7f9290",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
 	}
 });

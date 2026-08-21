@@ -9,6 +9,7 @@ import {
 	type ActorExplorerFilters,
 	type ActorExplorerItem
 } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, type Effect } from "effect";
 import { Show, createMemo, createSignal } from "solid-js";
 import type { MapCaptureActorCatalogResult, MapCaptureClientError } from "./map-capture-client.js";
@@ -258,8 +259,8 @@ const styles = stylex.create({
 	workspace: {
 		display: "grid",
 		minWidth: 0,
-		border: "1px solid #324143",
-		backgroundColor: "#0a0f0f"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
 	},
 	toolbar: {
 		display: "grid",
@@ -267,41 +268,44 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 20,
 		padding: "10px 12px 10px 16px",
-		borderBottom: "1px solid #324143",
-		backgroundImage: "linear-gradient(90deg, #111a18, #0b1110)",
-		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace'
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundImage: "linear-gradient(90deg, #101112, #0c0d0e)",
+		fontFamily: tokens.fontMono
 	},
 	toolbarCopy: {
 		display: "flex",
 		alignItems: "baseline",
 		gap: 10,
 		minWidth: 0,
-		color: "#d5e1dd"
+		color: tokens.colorText
 	},
 	coverage: {
 		display: "flex",
 		gap: 13,
-		color: "#708b86",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	toggle: {
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
-		border: "1px solid #425454",
-		backgroundColor: { default: "#111918", ":hover": "#1a2725" },
-		color: "#93a6a2",
-		padding: "8px 10px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
-		cursor: "pointer"
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
+		padding: "5px 12px",
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: 0,
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
 	toggleEnabled: {
-		borderColor: "#9bc862",
-		backgroundColor: { default: "#26371e", ":hover": "#314526" },
-		color: "#dcf5b8"
+		borderColor: tokens.colorAccent,
+		backgroundColor: {
+			default: "rgba(228, 242, 34, 0.08)",
+			":hover": "rgba(228, 242, 34, 0.12)"
+		},
+		color: tokens.colorAccent
 	},
 	toggleDot: {
 		width: 6,
@@ -312,26 +316,26 @@ const styles = stylex.create({
 	},
 	catalogNotice: {
 		padding: "9px 14px",
-		borderBottom: "1px solid #324143",
-		backgroundColor: "#101a18",
-		color: "#d6b469",
-		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace',
-		fontSize: 8,
-		letterSpacing: ".09em"
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorWarning,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	catalogFailure: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: 18,
-		backgroundColor: "#211410",
-		color: "#df9b82"
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger
 	},
-	catalogPartial: { backgroundColor: "#211c10", color: "#d9bd71" },
+	catalogPartial: { backgroundColor: "rgba(242, 153, 74, 0.08)", color: tokens.colorWarning },
 	mapRow: { display: "grid", minWidth: 0 },
 	mapRowWithExplorer: {
 		gridTemplateColumns: "minmax(230px, 300px) minmax(0, 1fr)",
 		gap: 1,
-		backgroundColor: "#324143"
+		backgroundColor: tokens.colorBorder
 	}
 });

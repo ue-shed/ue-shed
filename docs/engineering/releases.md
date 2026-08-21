@@ -81,11 +81,13 @@ pnpm release
 git push --tags
 ```
 
-`pnpm release` reruns the complete gate and delegates dependency-ordered publication and package
-tag creation to Changesets. A new public package uses the same command. Before 1.0, use interactive
-2FA or the narrowest short-lived granular write token and revoke it after verification. Never put a
-token in a command, tracked `.npmrc`, release manifest, or log. Local releases do not claim hosted
-OIDC provenance.
+`pnpm release` reruns the complete gate, then pauses indefinitely at an interactive confirmation.
+No npm request or 2FA challenge begins until the operator presses Enter. After confirmation it
+delegates dependency-ordered publication and package tag creation to Changesets with the same
+terminal attached for immediate npm authentication. A new public package uses the same command.
+The command refuses non-interactive publication. Before 1.0, use interactive 2FA or the narrowest
+short-lived granular write token and revoke it after verification. Never put a token in a command,
+tracked `.npmrc`, release manifest, or log. Local releases do not claim hosted OIDC provenance.
 
 Verify the published package versions and `latest` dist-tags before announcing the release. Never
 unpublish or rebuild an immutable version as recovery. See Changesets' [CLI

@@ -116,15 +116,15 @@ function CameraTile(props: {
 		>
 			<canvas ref={(element) => (canvas = element)} {...stylex.props(styles.canvas)} />
 			<div {...stylex.props(styles.tileTop)}>
-				<span>CAM {String(props.index + 1).padStart(2, "0")}</span>
+				<span>Cam {String(props.index + 1).padStart(2, "0")}</span>
 				<span {...stylex.props(styles.liveDot)}>
-					{props.pipelineMode === "full_pipeline" ? "LIVE" : "ISOLATED"}
+					{props.pipelineMode === "full_pipeline" ? "Live" : "Isolated"}
 				</span>
 			</div>
 			<Show when={!props.frame}>
 				<div {...stylex.props(styles.awaiting)}>
 					<span>
-						{props.pipelineMode === "full_pipeline" ? "NO SIGNAL" : "OUTPUT MUTED"}
+						{props.pipelineMode === "full_pipeline" ? "No signal" : "Output muted"}
 					</span>
 					<small>
 						{props.pipelineMode === "render_only"
@@ -297,9 +297,12 @@ export function CameraLab() {
 	return (
 		<main {...stylex.props(styles.shell)}>
 			<header {...stylex.props(styles.header)}>
-				<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-					Camera lab / Observation systems
-				</nav>
+				<div {...stylex.props(styles.headerTitle)}>
+					<h1 {...stylex.props(styles.title)}>Camera Lab</h1>
+					<p {...stylex.props(styles.titleIntro)}>
+						Schedule many live cameras against one editor and watch the delivery budget.
+					</p>
+				</div>
 				<div {...stylex.props(styles.systemActions)}>
 					<div {...stylex.props(styles.systemState)}>
 						<span {...stylex.props(styles.pulse)} />
@@ -314,8 +317,8 @@ export function CameraLab() {
 							{...stylex.props(styles.launchButton)}
 						>
 							{fixtureLaunch().status === "launching"
-								? "BUILDING + LAUNCHING…"
-								: "LAUNCH CAMERA FIXTURE"}
+								? "Launching fixture…"
+								: "Launch camera fixture"}
 						</button>
 					</Show>
 					<Show when={fixtureLaunch().status === "failed"}>
@@ -330,37 +333,37 @@ export function CameraLab() {
 			</header>
 
 			<section {...stylex.props(styles.instrumentBar)}>
-				<Metric label="AGGREGATE FPS" value={totalFps().toFixed(1)} />
-				<Metric label="PIPE THROUGHPUT" value={`${throughput().toFixed(2)} MB/s`} />
+				<Metric label="Aggregate FPS" value={totalFps().toFixed(1)} />
+				<Metric label="Pipe throughput" value={`${throughput().toFixed(2)} MB/s`} />
 				<Metric
-					label="ELECTRON PRIVATE"
+					label="Electron private"
 					value={`${metrics()?.electronPrivateMemoryMb.toFixed(0) ?? "—"} MB`}
 					warn={(metrics()?.electronPrivateMemoryMb ?? 0) > 2_048}
 				/>
 				<Metric
-					label="GPU PROCESS PRIVATE"
+					label="GPU process private"
 					value={`${metrics()?.gpuProcessPrivateMemoryMb.toFixed(0) ?? "—"} MB`}
 					warn={(metrics()?.gpuProcessPrivateMemoryMb ?? 0) > 1_536}
 				/>
-				<Metric label="HOST FRAMES" value={String(metrics()?.framesReceived ?? 0)} />
+				<Metric label="Host frames" value={String(metrics()?.framesReceived ?? 0)} />
 				<Metric
-					label="EXPERIMENT SCHEDULED"
+					label="Experiment scheduled"
 					value={`${experimentRate(status()?.stats.experimentScheduledCaptures).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="EXPERIMENT RENDERED"
+					label="Experiment rendered"
 					value={`${experimentRate(status()?.stats.experimentRenderedCaptures).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="EXPERIMENT DELIVERED"
+					label="Experiment delivered"
 					value={`${experimentRate(status()?.stats.experimentFramesDelivered).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="EXPERIMENT TICKS"
+					label="Experiment ticks"
 					value={`${experimentRate(status()?.stats.experimentSchedulerTicks).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="SKIP / DROP / REPLACE"
+					label="Skip / drop / replace"
 					value={`${status()?.stats.experimentCadenceIntervalsSkipped ?? 0} / ${status()?.stats.experimentReadbackDrops ?? 0} / ${status()?.stats.experimentTransportReplacements ?? 0}`}
 					warn={
 						(status()?.stats.experimentCadenceIntervalsSkipped ?? 0) > 0 ||
@@ -369,23 +372,23 @@ export function CameraLab() {
 					}
 				/>
 				<Metric
-					label="READBACK ALLOCATIONS"
+					label="Readback allocations"
 					value={`${status()?.stats.experimentReadbackResourcesCreated ?? 0} window · ${status()?.stats.readbackResourcesCreated ?? 0} total`}
 				/>
-				<Metric label="AVG UE BATCH" value={averageCaptureBatch()} />
-				<Metric label="MAX UE BATCH" value={maxCaptureBatch()} />
+				<Metric label="Avg UE batch" value={averageCaptureBatch()} />
+				<Metric label="Max UE batch" value={maxCaptureBatch()} />
 				<Metric
-					label="CADENCE AVG / MAX"
+					label="Cadence avg / max"
 					value={captureCadence()}
 					warn={(status()?.stats.cadenceIntervalsSkipped ?? 0) > 0}
 				/>
 				<Metric
-					label="MALFORMED"
+					label="Malformed"
 					value={String(metrics()?.malformedFrames ?? 0)}
 					warn={(metrics()?.malformedFrames ?? 0) > 0}
 				/>
 				<Metric
-					label="GPU/STAGE DROPS"
+					label="GPU/stage drops"
 					value={String(
 						status()?.stats.readbackDrops ?? frames().get(0)?.readbackDrops ?? 0
 					)}
@@ -434,10 +437,10 @@ export function CameraLab() {
 				</section>
 
 				<aside {...stylex.props(styles.controls)}>
-					<p {...stylex.props(styles.panelLabel)}>CONTROLS</p>
+					<p {...stylex.props(styles.panelLabel)}>Controls</p>
 					<h2 {...stylex.props(styles.panelTitle)}>Camera load</h2>
 					<Slider
-						label="ACTIVE CAMERAS"
+						label="Active cameras"
 						value={config().activeCameraCount}
 						min={1}
 						max={status()?.cameras.length ?? 32}
@@ -454,14 +457,14 @@ export function CameraLab() {
 						}
 					/>
 					<div {...stylex.props(styles.viewMode)}>
-						<span>PIPELINE ISOLATION</span>
+						<span>Pipeline isolation</span>
 						<div>
 							<For
 								each={
 									[
-										["full_pipeline", "FULL"],
-										["render_only", "RENDER"],
-										["schedule_only", "SCHEDULE"]
+										["full_pipeline", "Full"],
+										["render_only", "Render"],
+										["schedule_only", "Schedule"]
 									] as const
 								}
 							>
@@ -484,7 +487,7 @@ export function CameraLab() {
 						</div>
 					</div>
 					<Slider
-						label="FOCUSED RATE"
+						label="Focused rate"
 						value={config().focusedFps}
 						min={1}
 						max={30}
@@ -492,7 +495,7 @@ export function CameraLab() {
 						onInput={(value) => void applyConfig({ ...config(), focusedFps: value })}
 					/>
 					<Slider
-						label="BACKGROUND RATE"
+						label="Background rate"
 						value={config().backgroundFps}
 						min={0.5}
 						max={30}
@@ -501,7 +504,7 @@ export function CameraLab() {
 						onInput={(value) => void applyConfig({ ...config(), backgroundFps: value })}
 					/>
 					<Slider
-						label="CAPTURES / TICK"
+						label="Captures per tick"
 						value={config().captureBudgetPerTick}
 						min={1}
 						max={32}
@@ -511,7 +514,7 @@ export function CameraLab() {
 						}
 					/>
 					<Slider
-						label="DISPLAY BUDGET"
+						label="Display budget"
 						value={presentationBudget()}
 						min={25}
 						max={500}
@@ -525,7 +528,7 @@ export function CameraLab() {
 						}}
 					/>
 					<div {...stylex.props(styles.resolution)}>
-						<span>FRAME SIZE</span>
+						<span>Frame size</span>
 						<div>
 							<For each={resolutionOptions}>
 								{(resolution) => (
@@ -547,7 +550,7 @@ export function CameraLab() {
 						</div>
 					</div>
 					<div {...stylex.props(styles.viewMode)}>
-						<span>RENDER PROFILE</span>
+						<span>Render profile</span>
 						<div>
 							<button
 								type="button"
@@ -563,7 +566,7 @@ export function CameraLab() {
 										styles.modeButtonActive
 								)}
 							>
-								FULL FIDELITY
+								Full fidelity
 							</button>
 							<button
 								type="button"
@@ -581,7 +584,7 @@ export function CameraLab() {
 						</div>
 					</div>
 					<div {...stylex.props(styles.viewMode)}>
-						<span>VIEWPOINT</span>
+						<span>Viewpoint</span>
 						<div>
 							<button
 								type="button"
@@ -605,7 +608,7 @@ export function CameraLab() {
 									config().viewMode === "actor_pov" && styles.modeButtonActive
 								)}
 							>
-								ACTOR POV
+								Actor POV
 							</button>
 						</div>
 					</div>
@@ -614,7 +617,7 @@ export function CameraLab() {
 						onClick={() => void applyConfig({ ...config(), paused: !config().paused })}
 						{...stylex.props(styles.pause)}
 					>
-						{config().paused ? "RESUME CAPTURE" : "PAUSE CAPTURE"}
+						{config().paused ? "Resume capture" : "Pause capture"}
 					</button>
 					<div {...stylex.props(styles.budgetNote)}>
 						<strong>{config().resolution.replace("x", " × ")} · BGRA8</strong>
@@ -703,7 +706,16 @@ const styles = stylex.create({
 		borderBottomWidth: 1,
 		paddingBottom: "16px"
 	},
-	eyebrow: { color: tokens.colorTextMuted, fontFamily: tokens.fontMono, fontSize: 12, margin: 0 },
+	headerTitle: { minWidth: 0, display: "flex", flexDirection: "column", gap: 6 },
+	title: {
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 26,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
+	},
+	titleIntro: { margin: 0, color: tokens.colorTextMuted, fontSize: 14 },
 	systemState: {
 		alignItems: "center",
 		color: tokens.colorText,

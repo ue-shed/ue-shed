@@ -14,6 +14,7 @@ import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
+import type { JSX } from "solid-js";
 import type { ShowcaseContext } from "../main/preload.js";
 import { assetAuditsClient } from "./asset-audits-client.js";
 import { authoringClient } from "./authoring-client.js";
@@ -29,155 +30,166 @@ import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
 import { projectCustodianClient } from "./project-custodian-client.js";
 import { niagaraPreviewClient } from "./niagara-preview-client.js";
+import {
+	IconGamepad,
+	IconGrid,
+	IconHistory,
+	IconImage,
+	IconLayers,
+	IconMap,
+	IconShield,
+	IconSliders,
+	IconSparkles,
+	IconTable,
+	IconTimeline,
+	IconType,
+	IconVideo
+} from "./icons.js";
 
-const routes = [
-	{ href: "#/", label: "Showcase", route: "#/" },
-	{ href: "#/authoring", label: "Data Authoring", route: "#/authoring" },
-	{ href: "#/game-text", label: "Game Text", route: "#/game-text" },
-	{ href: "#/input-atlas", label: "Input Atlas", route: "#/input-atlas" },
-	{ href: "#/config-explorer", label: "Config", route: "#/config-explorer" },
-	{ href: "#/project-custodian", label: "Custodian", route: "#/project-custodian" },
-	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
-	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
-	{ href: "#/map-capture", label: "Map Capture", route: "#/map-capture" },
-	{ href: "#/niagara-preview", label: "Niagara", route: "#/niagara-preview" },
-	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
-	{ href: "#/scenarios", label: "Scenarios", route: "#/scenarios" },
-	{ href: "#/camera-lab", label: "Camera Lab", route: "#/camera-lab" }
-] as const;
+interface NavItem {
+	readonly description?: string;
+	readonly evidence?: string;
+	readonly icon: () => JSX.Element;
+	readonly label: string;
+	readonly route: string;
+}
 
-type Route = (typeof routes)[number]["route"];
+interface NavSection {
+	readonly id: string;
+	readonly items: readonly NavItem[];
+	readonly label: string;
+	readonly note?: string;
+}
 
-const workflowGroups = [
+const navSections: readonly NavSection[] = [
 	{
-		id: "saved",
-		label: "Saved project",
-		requirement: "UNREAL CAN STAY CLOSED",
-		workflows: [
-			{
-				action: "OPEN FX PROOF",
-				description:
-					"Render a saved Niagara Baker view into a portable, hashed PNG frame sequence.",
-				evidence: "niagara",
-				href: "#/niagara-preview",
-				title: "Niagara Preview",
-				tone: "cyan"
-			},
-			{
-				action: "OPEN CUSTODIAN",
-				description:
-					"Inventory regeneratable storage, approve exact targets, then retain a durable cleanup receipt.",
-				evidence: "custodian",
-				href: "#/project-custodian",
-				title: "Project Custodian",
-				tone: "orange"
-			},
-			{
-				action: "OPEN CARTOGRAPHY",
-				description:
-					"Switch to an explicit clean editor map and publish a multiresolution orthographic tile pyramid.",
-				evidence: "map_capture",
-				href: "#/map-capture",
-				title: "Map Capture",
-				tone: "lime"
-			},
-			{
-				action: "OPEN EXPLORER",
-				description:
-					"Explain one saved .ini value through every source line and platform layer.",
-				evidence: "config",
-				href: "#/config-explorer",
-				title: "Config Explorer",
-				tone: "orange"
-			},
-			{
-				action: "OPEN STUDIO",
-				description:
-					"Edit the portable timeline offline, then run Movement Gym against PIE with live status and cancellation.",
-				evidence: "scenarios",
-				href: "#/scenarios",
-				title: "Scenario Studio",
-				tone: "lime"
-			},
-			{
-				action: "OPEN TABLES",
-				description:
-					"Inspect typed rows, draft cell changes, and apply through a live session.",
-				evidence: "data_tables",
-				href: "#/authoring",
-				title: "Data Authoring",
-				tone: "green"
-			},
-			{
-				action: "OPEN ATLAS",
-				description: "Trace contexts, actions, mappings, and contested input chords.",
-				evidence: "enhanced_input",
-				href: "#/input-atlas",
-				title: "Input Atlas",
-				tone: "blue"
-			},
-			{
-				action: "OPEN CORPUS",
-				description: "Find player-facing text and jump back to its package and property.",
-				evidence: "game_text",
-				href: "#/game-text",
-				title: "Game Text",
-				tone: "coral"
-			},
-			{
-				action: "OPEN AUDIT",
-				description:
-					"Run texture rules and inspect the asset evidence behind each finding.",
-				evidence: "textures",
-				href: "#/asset-audits/textures",
-				title: "Texture Audit",
-				tone: "amber"
-			},
-			{
-				action: "OPEN REVIEW",
-				description:
-					"Review saved maps and capture comparison frames when Unreal is available.",
-				evidence: "maps",
-				href: "#/map-review",
-				title: "Map Review",
-				tone: "violet"
-			}
-		]
+		id: "overview",
+		items: [{ icon: IconGrid, label: "Showcase", route: "#/" }],
+		label: "Overview"
 	},
 	{
-		id: "source_control",
-		label: "Source control",
-		requirement: "PERFORCE ON DEMAND",
-		workflows: [
+		id: "inspect",
+		items: [
 			{
-				action: "OPEN WORLD LOG",
-				description: "Read map history, changelists, and the people behind world changes.",
-				evidence: "world_log",
-				href: "#/content-observatory",
-				title: "World Log",
-				tone: "steel"
+				description: "Check texture sizes, groups, and compression against your rules.",
+				evidence: "textures",
+				icon: IconImage,
+				label: "Texture Audit",
+				route: "#/asset-audits/textures"
+			},
+			{
+				description: "Explain any saved .ini value through every override that shaped it.",
+				evidence: "config",
+				icon: IconSliders,
+				label: "Config Explorer",
+				route: "#/config-explorer"
+			},
+			{
+				description: "Decode Enhanced Input mappings, actions, and contested chords.",
+				evidence: "enhanced_input",
+				icon: IconGamepad,
+				label: "Input Atlas",
+				route: "#/input-atlas"
+			},
+			{
+				description: "Find player-facing text down to its source package.",
+				evidence: "game_text",
+				icon: IconType,
+				label: "Game Text",
+				route: "#/game-text"
 			}
-		]
+		],
+		label: "Inspect",
+		note: "Reads saved project files — no editor needed"
+	},
+	{
+		id: "author",
+		items: [
+			{
+				description:
+					"Edit DataTable rows with validation, then apply through a live session.",
+				evidence: "data_tables",
+				icon: IconTable,
+				label: "Data Authoring",
+				route: "#/authoring"
+			},
+			{
+				description: "Draft movement timelines offline, then run them against PIE.",
+				evidence: "scenarios",
+				icon: IconTimeline,
+				label: "Scenario Studio",
+				route: "#/scenarios"
+			},
+			{
+				description: "Inventory regeneratable storage and clean exactly what you approve.",
+				evidence: "custodian",
+				icon: IconShield,
+				label: "Project Custodian",
+				route: "#/project-custodian"
+			}
+		],
+		label: "Author & clean up",
+		note: "Drafts stay offline · applies need a live session"
+	},
+	{
+		id: "capture",
+		items: [
+			{
+				description: "Browse saved actors and compare captured frames when Unreal runs.",
+				evidence: "maps",
+				icon: IconMap,
+				label: "Map Review",
+				route: "#/map-review"
+			},
+			{
+				description: "Publish multiresolution map tiles from a clean editor map.",
+				evidence: "map_capture",
+				icon: IconLayers,
+				label: "Map Capture",
+				route: "#/map-capture"
+			},
+			{
+				description: "Render a saved Niagara Baker view into hashed PNG frames.",
+				evidence: "niagara",
+				icon: IconSparkles,
+				label: "Niagara Preview",
+				route: "#/niagara-preview"
+			}
+		],
+		label: "Capture & review",
+		note: "Plans open offline · captures start Unreal"
+	},
+	{
+		id: "history",
+		items: [
+			{
+				description: "Read map history, changelists, and who changed the world.",
+				evidence: "world_log",
+				icon: IconHistory,
+				label: "World Log",
+				route: "#/content-observatory"
+			}
+		],
+		label: "History",
+		note: "Queries Perforce when opened"
 	},
 	{
 		id: "live",
-		label: "Live editor",
-		requirement: "RUNNING UNREAL SESSION",
-		workflows: [
+		items: [
 			{
-				action: "OPEN LOAD LAB",
-				description:
-					"Change camera count, resolution, and pipeline mode while measuring delivery.",
+				description: "Stress multi-camera capture pipelines against a running editor.",
 				evidence: "cameras",
-				href: "#/camera-lab",
-				title: "Camera Lab",
-				tone: "cyan"
+				icon: IconVideo,
+				label: "Camera Lab",
+				route: "#/camera-lab"
 			}
-		]
+		],
+		label: "Live session",
+		note: "Requires a running Unreal editor"
 	}
-] as const;
+];
 
-type Workflow = (typeof workflowGroups)[number]["workflows"][number];
+type Route = (typeof navSections)[number]["items"][number]["route"];
 
 interface WorkflowEvidence {
 	readonly detail: string;
@@ -198,11 +210,11 @@ function packageLabel(count: number, subject: string): string {
 }
 
 function workflowEvidence(
-	workflow: Workflow,
+	item: NavItem,
 	context: ShowcaseContext | undefined,
 	camera: CameraStatus | undefined
 ): WorkflowEvidence {
-	if (workflow.evidence === "cameras") {
+	if (item.evidence === "cameras") {
 		if (camera === undefined) {
 			return {
 				detail: "Reading camera service",
@@ -211,56 +223,21 @@ function workflowEvidence(
 			};
 		}
 		return {
-			detail: `${camera.config.activeCameraCount} scheduled · ${camera.config.resolution} · ${camera.config.pipelineMode.replaceAll("_", " ")}`,
-			label: camera.stats.pipeConnected ? "Camera pipe connected" : "Unreal is offline",
+			detail: `${camera.config.activeCameraCount} scheduled · ${camera.config.resolution}`,
+			label: camera.stats.pipeConnected ? "Camera pipe connected" : "Waiting for an editor",
 			ready: camera.stats.pipeConnected
-		};
-	}
-	if (workflow.evidence === "map_capture") {
-		return {
-			detail: "Versioned plan · safe map switch · immutable PNG pyramid",
-			label: "Plan inspection works offline · editor on capture",
-			ready: true
-		};
-	}
-	if (workflow.evidence === "niagara") {
-		return {
-			detail: "Saved Baker camera · offscreen commandlet · immutable hashed frames",
-			label: "Selected project · Unreal starts on capture",
-			ready: true
-		};
-	}
-	if (workflow.evidence === "scenarios") {
-		return {
-			detail: "Portable draft + live PIE run console when UEShedScenarios is enabled",
-			label: "Movement Gym · preview or execute",
-			ready: true
-		};
-	}
-	if (workflow.evidence === "config") {
-		return {
-			detail: "PlatformA ⇄ PlatformB · all six earned merge operations",
-			label: "Committed text fixture ready",
-			ready: true
-		};
-	}
-	if (workflow.evidence === "custodian") {
-		return {
-			detail: "Exact target IDs · Trash by default · live revalidation · durable receipt",
-			label: "Guarded cleanup available",
-			ready: true
 		};
 	}
 	if (context === undefined) {
 		return {
 			detail: "Reading Project Index",
-			label: "Loading project evidence…",
+			label: "Loading project…",
 			ready: false
 		};
 	}
 	if (context.project.status === "not_configured") {
 		return {
-			detail: "Use Choose project in the header",
+			detail: "Choose a project to begin",
 			label: "No project selected",
 			ready: false
 		};
@@ -268,18 +245,18 @@ function workflowEvidence(
 	if (context.project.status === "failed") {
 		return {
 			detail: context.project.message,
-			label: "Project Index unavailable",
+			label: "Index unavailable",
 			ready: false
 		};
 	}
-	if (workflow.evidence === "maps") {
+	if (item.evidence === "maps") {
 		return {
-			detail: "Saved review works now · live capture is optional",
+			detail: "Offline review works now · live capture optional",
 			label: `${context.project.mapCount.toLocaleString()} saved map${context.project.mapCount === 1 ? "" : "s"} indexed`,
 			ready: true
 		};
 	}
-	if (workflow.evidence === "world_log") {
+	if (item.evidence === "world_log") {
 		return {
 			detail: "Perforce history is queried when opened",
 			label: `${context.project.mapCount.toLocaleString()} map${context.project.mapCount === 1 ? "" : "s"} ready for history`,
@@ -289,33 +266,68 @@ function workflowEvidence(
 	if (context.project.candidates.status === "failed") {
 		return {
 			detail: context.project.candidates.message,
-			label: "Candidate evidence unavailable",
+			label: "Candidate counts unavailable",
 			ready: false
 		};
 	}
-	if (workflow.evidence === "data_tables") {
+	if (item.evidence === "data_tables") {
 		return {
-			detail: "Header scan only · rows load when opened",
+			detail: "Headers indexed now · rows load when opened",
 			label: packageLabel(context.project.candidates.dataTablePackages, "DataTable"),
 			ready: true
 		};
 	}
-	if (workflow.evidence === "enhanced_input") {
+	if (item.evidence === "enhanced_input") {
 		return {
-			detail: "Mappings are decoded when opened",
+			detail: "Mappings decode when opened",
 			label: packageLabel(context.project.candidates.enhancedInputPackages, "Enhanced Input"),
 			ready: true
 		};
 	}
-	if (workflow.evidence === "game_text") {
+	if (item.evidence === "game_text") {
 		return {
 			detail: "String Tables and serialized FText candidates",
 			label: packageLabel(context.project.candidates.gameTextPackages, "text-bearing"),
 			ready: true
 		};
 	}
+	if (item.evidence === "config") {
+		return {
+			detail: "Committed fixture ready · platform layers compared",
+			label: "Sample query available",
+			ready: true
+		};
+	}
+	if (item.evidence === "scenarios") {
+		return {
+			detail: "Preview drafts offline · execution uses PIE when enabled",
+			label: "Movement Gym workflows",
+			ready: true
+		};
+	}
+	if (item.evidence === "custodian") {
+		return {
+			detail: "Trash by default · live revalidation · durable receipt",
+			label: "Guarded cleanup available",
+			ready: true
+		};
+	}
+	if (item.evidence === "niagara") {
+		return {
+			detail: "Saved Baker view · the commandlet starts Unreal for you",
+			label: "Bake available",
+			ready: true
+		};
+	}
+	if (item.evidence === "map_capture") {
+		return {
+			detail: "Plan inspection works offline · the editor starts for captures",
+			label: "Capture plans versioned",
+			ready: true
+		};
+	}
 	return {
-		detail: context.ruleFile ? "Audit rules configured" : "Choose a rule file in Texture Audit",
+		detail: context.ruleFile ? "Audit rules configured" : "Choose a rule file to begin",
 		label: packageLabel(context.project.candidates.texturePackages, "Texture2D"),
 		ready: context.ruleFile !== undefined
 	};
@@ -324,7 +336,11 @@ function workflowEvidence(
 export function AppShell() {
 	const routeFromLocation = (): Route => {
 		const value = window.location.hash || "#/";
-		return routes.find((route) => route.route === value)?.route ?? "#/";
+		for (const section of navSections) {
+			const match = section.items.find((item) => item.route === value);
+			if (match) return match.route;
+		}
+		return "#/";
 	};
 	const [route, setRoute] = createSignal<Route>(routeFromLocation());
 	const [projectRevision, setProjectRevision] = createSignal(1);
@@ -337,74 +353,92 @@ export function AppShell() {
 	});
 	return (
 		<div {...stylex.props(workbenchDarkTheme, styles.app)}>
-			<nav aria-label="Workbench" {...stylex.props(styles.nav)}>
+			<aside aria-label="Workbench" {...stylex.props(styles.sidebar)}>
 				<a href="#/" {...stylex.props(styles.brand)}>
 					<span {...stylex.props(styles.brandMark)}>UE</span>
-					<span>SHED</span>
+					<span>Shed Workbench</span>
 				</a>
-				<div {...stylex.props(styles.links)}>
-					<For each={routes}>
-						{(item) => (
-							<a
-								href={item.href}
-								aria-current={route() === item.route ? "page" : undefined}
-								{...stylex.props(
-									styles.link,
-									route() === item.route && styles.linkActive
-								)}
-							>
-								{item.label}
-							</a>
+				<nav {...stylex.props(styles.nav)}>
+					<For each={navSections}>
+						{(section) => (
+							<div {...stylex.props(styles.section)}>
+								<p {...stylex.props(styles.sectionLabel)}>{section.label}</p>
+								<div {...stylex.props(styles.sectionItems)}>
+									<For each={section.items}>
+										{(item) => (
+											<a
+												href={item.route}
+												aria-current={
+													route() === item.route ? "page" : undefined
+												}
+												{...stylex.props(
+													styles.item,
+													route() === item.route && styles.itemActive
+												)}
+											>
+												<span {...stylex.props(styles.itemIcon)}>
+													{item.icon()}
+												</span>
+												{item.label}
+											</a>
+										)}
+									</For>
+								</div>
+							</div>
 						)}
 					</For>
-				</div>
-				<ProjectChooser
-					client={workbenchRendererClient}
-					onChosen={() => setProjectRevision((revision) => revision + 1)}
-				/>
-				<EditorSessionTransport client={workbenchRendererClient} />
-				<span {...stylex.props(styles.version)}>0.0.0</span>
-			</nav>
-			<Show when={projectRevision()} keyed>
-				<Switch fallback={<ShowcaseHome />}>
-					<Match when={route() === "#/authoring"}>
-						<AuthoringRoute client={authoringClient} />
-					</Match>
-					<Match when={route() === "#/asset-audits/textures"}>
-						<TextureAuditRoute client={assetAuditsClient} />
-					</Match>
-					<Match when={route() === "#/game-text"}>
-						<GameTextRoute client={gameTextClient} />
-					</Match>
-					<Match when={route() === "#/input-atlas"}>
-						<InputAtlasRoute client={inputAtlasClient} />
-					</Match>
-					<Match when={route() === "#/config-explorer"}>
-						<ConfigExplorerShowcase client={workbenchRendererClient} />
-					</Match>
-					<Match when={route() === "#/project-custodian"}>
-						<ProjectCustodianRoute client={projectCustodianClient} />
-					</Match>
-					<Match when={route() === "#/map-review"}>
-						<MapReviewRoute client={mapReviewClient} />
-					</Match>
-					<Match when={route() === "#/map-capture"}>
-						<MapCaptureRoute client={mapCaptureClient} />
-					</Match>
-					<Match when={route() === "#/niagara-preview"}>
-						<NiagaraPreviewRoute client={niagaraPreviewClient} />
-					</Match>
-					<Match when={route() === "#/content-observatory"}>
-						<ContentObservatoryRoute client={contentObservatoryClient} />
-					</Match>
-					<Match when={route() === "#/scenarios"}>
-						<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
-					</Match>
-					<Match when={route() === "#/camera-lab"}>
-						<CameraLab />
-					</Match>
-				</Switch>
-			</Show>
+				</nav>
+				<footer {...stylex.props(styles.footer)}>
+					<ProjectChooser
+						client={workbenchRendererClient}
+						onChosen={() => setProjectRevision((revision) => revision + 1)}
+					/>
+					<EditorSessionTransport client={workbenchRendererClient} />
+					<span {...stylex.props(styles.version)}>0.0.0</span>
+				</footer>
+			</aside>
+			<div {...stylex.props(styles.content)}>
+				<Show when={projectRevision()} keyed>
+					<Switch fallback={<ShowcaseHome />}>
+						<Match when={route() === "#/authoring"}>
+							<AuthoringRoute client={authoringClient} />
+						</Match>
+						<Match when={route() === "#/asset-audits/textures"}>
+							<TextureAuditRoute client={assetAuditsClient} />
+						</Match>
+						<Match when={route() === "#/game-text"}>
+							<GameTextRoute client={gameTextClient} />
+						</Match>
+						<Match when={route() === "#/input-atlas"}>
+							<InputAtlasRoute client={inputAtlasClient} />
+						</Match>
+						<Match when={route() === "#/config-explorer"}>
+							<ConfigExplorerShowcase client={workbenchRendererClient} />
+						</Match>
+						<Match when={route() === "#/project-custodian"}>
+							<ProjectCustodianRoute client={projectCustodianClient} />
+						</Match>
+						<Match when={route() === "#/map-review"}>
+							<MapReviewRoute client={mapReviewClient} />
+						</Match>
+						<Match when={route() === "#/map-capture"}>
+							<MapCaptureRoute client={mapCaptureClient} />
+						</Match>
+						<Match when={route() === "#/niagara-preview"}>
+							<NiagaraPreviewRoute client={niagaraPreviewClient} />
+						</Match>
+						<Match when={route() === "#/content-observatory"}>
+							<ContentObservatoryRoute client={contentObservatoryClient} />
+						</Match>
+						<Match when={route() === "#/scenarios"}>
+							<ScenarioStudioRoute client={scenarioStudioClient} showDemoGuide />
+						</Match>
+						<Match when={route() === "#/camera-lab"}>
+							<CameraLab />
+						</Match>
+					</Switch>
+				</Show>
+			</div>
 		</div>
 	);
 }
@@ -426,15 +460,10 @@ function ShowcaseHome() {
 	return (
 		<main {...stylex.props(styles.home)}>
 			<header {...stylex.props(styles.hero)}>
-				<div>
-					<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-						Showcase / Workbench
-					</nav>
-					<h1 {...stylex.props(styles.homeTitle)}>Pick the evidence you need.</h1>
-				</div>
+				<h1 {...stylex.props(styles.homeTitle)}>What do you want to do?</h1>
 				<p {...stylex.props(styles.homeIntro)}>
-					Every workflow is listed below. Requirements are explicit; counts come from the
-					selected project.
+					Workbench reads your saved project directly. Most tools answer questions without
+					opening the editor — live sessions start only when a workflow needs Unreal.
 				</p>
 			</header>
 
@@ -463,47 +492,35 @@ function ShowcaseHome() {
 				/>
 			</section>
 
-			<section aria-label="Workbench workflows" {...stylex.props(styles.workflowGroups)}>
-				<For each={workflowGroups}>
-					{(group) => (
-						<section
-							aria-labelledby={`workflow-${group.id}`}
-							{...stylex.props(styles.workflowGroup)}
-						>
-							<header {...stylex.props(styles.groupHeader)}>
-								<h2
-									id={`workflow-${group.id}`}
-									{...stylex.props(styles.groupTitle)}
-								>
-									{group.label}
-								</h2>
-								<span {...stylex.props(styles.groupRequirement)}>
-									{group.requirement}
-								</span>
-							</header>
-							<div {...stylex.props(styles.workflowList)}>
-								<For each={group.workflows}>
-									{(workflow) => (
-										<WorkflowRow
+			<For each={navSections.filter((section) => section.id !== "overview")}>
+				{(section) => (
+					<section aria-label={section.label} {...stylex.props(styles.workflowSection)}>
+						<header {...stylex.props(styles.sectionHeader)}>
+							<h2 {...stylex.props(styles.sectionTitle)}>{section.label}</h2>
+							{section.note === undefined ? null : (
+								<span {...stylex.props(styles.sectionNote)}>{section.note}</span>
+							)}
+						</header>
+						<div {...stylex.props(styles.cardGrid)}>
+							<For each={section.items}>
+								{(item) =>
+									item.description === undefined ? null : (
+										<WorkflowCard
 											evidence={() =>
-												workflowEvidence(
-													workflow,
-													context(),
-													cameraStatus()
-												)
+												workflowEvidence(item, context(), cameraStatus())
 											}
-											workflow={workflow}
+											item={item}
 										/>
-									)}
-								</For>
-							</div>
-						</section>
-					)}
-				</For>
-			</section>
+									)
+								}
+							</For>
+						</div>
+					</section>
+				)}
+			</For>
 
-			<footer {...stylex.props(styles.footer)}>
-				<span>{context()?.health.status ?? "LOADING"}</span>
+			<footer {...stylex.props(styles.homeFooter)}>
+				<span>{context()?.health.status ?? "Loading"}</span>
 				<p>
 					{readyProjectEvidence(context())?.projectRoot ??
 						"Choose any Unreal project directory to begin."}
@@ -529,30 +546,22 @@ function ProjectMetric(props: {
 	);
 }
 
-function WorkflowRow(props: {
+function WorkflowCard(props: {
 	readonly evidence: () => WorkflowEvidence;
-	readonly workflow: Workflow;
+	readonly item: NavItem;
 }) {
 	return (
-		<a href={props.workflow.href} {...stylex.props(styles.workflow)}>
-			<div {...stylex.props(styles.workflowIdentity)}>
-				<h3 {...stylex.props(styles.rowTitle)}>
-					<i
-						aria-hidden="true"
-						{...stylex.props(styles.toneDot, styles[props.workflow.tone])}
-					/>
-					{props.workflow.title}
-				</h3>
-				<p {...stylex.props(styles.rowDescription)}>{props.workflow.description}</p>
-			</div>
-			<div {...stylex.props(styles.evidence)}>
+		<a href={props.item.route} {...stylex.props(styles.card)}>
+			<h3 {...stylex.props(styles.cardTitle)}>{props.item.label}</h3>
+			<p {...stylex.props(styles.cardDescription)}>{props.item.description}</p>
+			<div {...stylex.props(styles.cardFoot)}>
 				<span
 					{...stylex.props(
 						styles.statusDot,
-						props.evidence().ready ? styles.ready : styles.optional
+						props.evidence().ready ? styles.readyDot : styles.pendingDot
 					)}
 				/>
-				<div>
+				<div {...stylex.props(styles.cardEvidence)}>
 					<strong {...stylex.props(styles.evidenceLabel)}>
 						{props.evidence().label}
 					</strong>
@@ -560,16 +569,17 @@ function WorkflowRow(props: {
 						{props.evidence().detail}
 					</small>
 				</div>
+				<span aria-hidden="true" {...stylex.props(styles.cardArrow)}>
+					→
+				</span>
 			</div>
-			<span {...stylex.props(styles.rowAction)}>
-				{props.workflow.action} <b>→</b>
-			</span>
 		</a>
 	);
 }
 
 const styles = stylex.create({
 	app: {
+		display: "flex",
 		minHeight: "100vh",
 		backgroundColor: tokens.colorCanvas,
 		color: tokens.colorText,
@@ -578,33 +588,34 @@ const styles = stylex.create({
 		lineHeight: 1.5,
 		letterSpacing: "-0.005em"
 	},
-	nav: {
-		height: 48,
-		display: "flex",
-		alignItems: "center",
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		backgroundColor: tokens.colorCanvasTranslucent,
+	sidebar: {
 		position: "sticky",
 		top: 0,
-		zIndex: 20,
-		backdropFilter: "blur(10px)"
+		display: "flex",
+		flexDirection: "column",
+		width: 224,
+		height: "100vh",
+		flexShrink: 0,
+		backgroundColor: tokens.colorSurface,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
 	},
 	brand: {
-		height: "100%",
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
-		padding: "0 20px",
+		height: 48,
+		padding: "0 14px",
 		color: tokens.colorTextStrong,
 		textDecoration: "none",
 		fontSize: 13,
 		fontWeight: 600,
 		letterSpacing: "-0.01em",
-		borderRightColor: tokens.colorBorder,
-		borderRightStyle: "solid",
-		borderRightWidth: 1
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		flexShrink: 0
 	},
 	brandMark: {
 		display: "inline-flex",
@@ -615,85 +626,99 @@ const styles = stylex.create({
 		padding: "1px 5px",
 		borderRadius: tokens.radiusBadge,
 		fontSize: 11,
-		fontWeight: 700,
-		letterSpacing: 0
+		fontWeight: 700
 	},
-	links: { display: "flex", alignItems: "center", alignSelf: "stretch", gap: 2 },
-	link: {
+	nav: {
+		flex: "1 1 auto",
+		minHeight: 0,
+		overflowY: "auto",
+		padding: "8px 8px 12px"
+	},
+	section: { display: "flex", flexDirection: "column" },
+	sectionLabel: {
+		margin: 0,
+		padding: "16px 8px 5px",
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	sectionItems: { display: "flex", flexDirection: "column", gap: 1 },
+	item: {
 		display: "flex",
 		alignItems: "center",
-		margin: "8px 0",
-		padding: "0 10px",
+		gap: 9,
+		padding: "5px 8px",
 		borderRadius: tokens.radiusControl,
-		color: { default: tokens.colorTextMuted, ":hover": tokens.colorTextStrong },
-		backgroundColor: {
-			default: "transparent",
-			":hover": "rgba(255, 255, 255, 0.04)"
-		},
+		color: tokens.colorTextMuted,
 		textDecoration: "none",
 		fontSize: 13,
-		letterSpacing: "-0.005em"
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, color"
 	},
-	linkActive: {
+	itemActive: {
 		backgroundColor: "rgba(255, 255, 255, 0.07)",
 		color: tokens.colorTextStrong
 	},
+	itemIcon: {
+		display: "inline-flex",
+		color: "inherit",
+		opacity: 0.85,
+		flexShrink: 0
+	},
+	footer: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 10,
+		padding: "12px",
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		flexShrink: 0
+	},
 	version: {
-		padding: "0 16px",
-		marginLeft: "auto",
 		color: tokens.colorTextFaint,
 		fontFamily: tokens.fontMono,
 		fontSize: 11
 	},
+	content: {
+		flex: "1 1 auto",
+		minWidth: 0
+	},
 	home: {
-		minHeight: "calc(100vh - 48px)",
-		maxWidth: 1200,
+		maxWidth: 1080,
 		margin: "0 auto",
-		padding: "40px 32px 32px",
-		color: tokens.colorText,
-		backgroundImage:
-			"radial-gradient(circle at 88% -4%, rgba(228, 242, 34, 0.06), transparent 26%)"
+		padding: "40px 32px 32px"
 	},
 	hero: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 40,
-		minHeight: 76
-	},
-	eyebrow: {
-		margin: 0,
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 12
+		marginBottom: 28,
+		maxWidth: 560
 	},
 	homeTitle: {
-		margin: "10px 0 0",
+		margin: 0,
 		fontFamily: tokens.fontDisplay,
-		fontSize: 36,
+		fontSize: 30,
 		fontWeight: 590,
 		letterSpacing: "-0.022em",
-		lineHeight: 1.1,
+		lineHeight: 1.15,
 		color: tokens.colorTextStrong
 	},
 	homeIntro: {
-		maxWidth: 400,
-		margin: 0,
+		margin: "10px 0 0",
 		color: tokens.colorTextMuted,
 		fontSize: 14,
 		lineHeight: 1.6
 	},
 	projectStrip: {
 		display: "grid",
-		gridTemplateColumns: "minmax(240px, 1.5fr) repeat(3, minmax(130px, 0.6fr))",
-		margin: "24px 0 28px",
+		gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
 		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusPanel,
 		overflow: "hidden",
 		backgroundColor: tokens.colorSurface,
-		boxShadow: tokens.shadowCard
+		boxShadow: tokens.shadowCard,
+		marginBottom: 36
 	},
 	projectMetric: {
 		display: "flex",
@@ -703,8 +728,7 @@ const styles = stylex.create({
 		padding: "14px 18px",
 		borderRightColor: tokens.colorBorder,
 		borderRightStyle: "solid",
-		borderRightWidth: 1,
-		color: tokens.colorText
+		borderRightWidth: 1
 	},
 	metricLabel: {
 		color: tokens.colorTextSubtle,
@@ -720,140 +744,121 @@ const styles = stylex.create({
 		whiteSpace: "nowrap"
 	},
 	connectedValue: { color: tokens.colorSuccess },
-	workflowGroups: {
+	workflowSection: { marginBottom: 36 },
+	sectionHeader: {
+		display: "flex",
+		alignItems: "baseline",
+		justifyContent: "space-between",
+		gap: 16,
+		paddingBottom: 12,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
+	sectionTitle: {
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 17,
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
+	},
+	sectionNote: {
+		color: tokens.colorTextSubtle,
+		fontSize: 12
+	},
+	cardGrid: {
+		display: "grid",
+		gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+		gap: 10,
+		marginTop: 14
+	},
+	card: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 28
+		gap: 8,
+		minWidth: 0,
+		padding: "14px 16px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: tokens.colorSurface,
+			":hover": tokens.colorSurfaceRaised
+		},
+		boxShadow: tokens.shadowCard,
+		color: "inherit",
+		textDecoration: "none",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, transform",
+		transform: { default: "translateY(0)", ":hover": "translateY(-1px)" }
 	},
-	workflowGroup: { display: "grid", gridTemplateColumns: "200px minmax(0, 1fr)", gap: 20 },
-	groupHeader: {
-		padding: "14px 0",
+	cardTitle: {
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 14,
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
+	},
+	cardDescription: {
+		margin: 0,
+		flexGrow: 1,
+		color: tokens.colorTextMuted,
+		fontSize: 12.5,
+		lineHeight: 1.55
+	},
+	cardFoot: {
+		display: "flex",
+		alignItems: "flex-start",
+		gap: 9,
+		marginTop: 6,
+		paddingTop: 10,
 		borderTopColor: tokens.colorBorder,
 		borderTopStyle: "solid",
 		borderTopWidth: 1
 	},
-	groupTitle: {
-		margin: 0,
-		fontFamily: tokens.fontDisplay,
-		fontSize: 16,
-		fontWeight: 590,
-		letterSpacing: "-0.01em",
-		color: tokens.colorTextStrong
-	},
-	groupRequirement: {
-		display: "block",
-		marginTop: 8,
-		color: tokens.colorTextSubtle,
-		fontFamily: tokens.fontMono,
-		fontSize: 11
-	},
-	workflowList: {
-		display: "flex",
-		flexDirection: "column",
-		borderBottomColor: tokens.colorBorder,
-		borderBottomStyle: "solid",
-		borderBottomWidth: 1,
-		borderRadius: tokens.radiusPanel,
-		overflow: "hidden"
-	},
-	workflow: {
-		position: "relative",
+	statusDot: { width: 7, height: 7, marginTop: 5, borderRadius: "50%", flexShrink: 0 },
+	readyDot: { backgroundColor: tokens.colorSuccess },
+	pendingDot: { backgroundColor: "#383b3f" },
+	cardEvidence: {
 		display: "grid",
-		gridTemplateColumns: "minmax(250px, 1fr) minmax(320px, 1.15fr) 150px",
-		alignItems: "center",
-		gap: 20,
-		minHeight: 76,
-		padding: "14px 18px 14px 20px",
-		borderTopColor: tokens.colorBorder,
-		borderTopStyle: "solid",
-		borderTopWidth: 1,
-		backgroundColor: {
-			default: "transparent",
-			":hover": "rgba(255, 255, 255, 0.02)"
-		},
-		color: tokens.colorText,
-		textDecoration: "none",
-		transitionDuration: tokens.motionFast,
-		transitionProperty: "background-color"
-	},
-	green: { backgroundColor: "#27a644" },
-	amber: { backgroundColor: "#f2994a" },
-	blue: { backgroundColor: "#6366f1" },
-	coral: { backgroundColor: "#eb5757" },
-	orange: { backgroundColor: "#de8033" },
-	violet: { backgroundColor: "#8b5cf6" },
-	steel: { backgroundColor: "#758991" },
-	cyan: { backgroundColor: "#02b8cc" },
-	lime: { backgroundColor: "#c9e81f" },
-	workflowIdentity: { minWidth: 0 },
-	rowTitle: {
-		display: "flex",
-		alignItems: "center",
-		gap: 9,
-		margin: 0,
-		fontFamily: tokens.fontDisplay,
-		fontSize: 15,
-		fontWeight: 590,
-		letterSpacing: "-0.01em",
-		color: tokens.colorTextStrong
-	},
-	toneDot: {
-		flex: "0 0 auto",
-		width: 7,
-		height: 7,
-		borderRadius: "50%"
-	},
-	rowDescription: {
-		margin: "6px 0 0",
-		color: tokens.colorTextMuted,
-		fontSize: 13,
-		lineHeight: 1.55
-	},
-	evidence: {
-		display: "grid",
-		gridTemplateColumns: "7px minmax(0, 1fr)",
-		alignItems: "start",
-		gap: 11,
-		minWidth: 0
+		gap: 2,
+		minWidth: 0,
+		flexGrow: 1
 	},
 	evidenceLabel: {
-		display: "block",
 		overflow: "hidden",
 		color: tokens.colorText,
-		fontSize: 13,
+		fontSize: 12,
 		fontWeight: 500,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	evidenceDetail: {
-		display: "block",
 		overflow: "hidden",
-		marginTop: 4,
 		color: tokens.colorTextSubtle,
 		fontFamily: tokens.fontMono,
 		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	statusDot: { width: 7, height: 7, marginTop: 6, borderRadius: "50%" },
-	ready: { backgroundColor: tokens.colorSuccess },
-	optional: { backgroundColor: "#383b3f" },
-	rowAction: {
-		display: "flex",
-		justifyContent: "space-between",
-		alignItems: "center",
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 11
+	cardArrow: {
+		marginLeft: "auto",
+		color: tokens.colorTextFaint,
+		fontSize: 13,
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "color"
 	},
-	footer: {
-		marginTop: 28,
+	homeFooter: {
+		marginTop: 8,
 		paddingTop: 16,
 		borderTopColor: tokens.colorBorder,
 		borderTopStyle: "solid",
 		borderTopWidth: 1,
 		display: "grid",
-		gridTemplateColumns: "140px 1fr auto",
+		gridTemplateColumns: "auto 1fr auto",
 		alignItems: "center",
 		gap: 16,
 		color: tokens.colorTextSubtle,

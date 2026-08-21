@@ -117,19 +117,15 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 		<main {...stylex.props(styles.route)}>
 			<header {...stylex.props(styles.header)}>
 				<div {...stylex.props(styles.titleBlock)}>
-					<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-						WORKBENCH / CONFIG EXPLORER
-					</nav>
 					<h1 {...stylex.props(styles.title)}>Trace a config value</h1>
 					<p {...stylex.props(styles.intro)}>
 						See the final saved value, the exact .ini lines that produced it, and what
 						changes between platforms.
 					</p>
 				</div>
-				<div {...stylex.props(styles.scopeStamp)}>
-					<strong>SAVED SOURCE</strong>
-					<span>Read-only · runtime overrides excluded</span>
-				</div>
+				<span {...stylex.props(styles.scopeStamp)}>
+					Read-only · runtime overrides excluded
+				</span>
 			</header>
 
 			<section aria-label="Config query workspace" {...stylex.props(styles.workspace)}>
@@ -191,7 +187,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 							</div>
 						</fieldset>
 
-						<span {...stylex.props(styles.readOnly)}>NO FILES ARE MODIFIED</span>
+						<span {...stylex.props(styles.readOnly)}>Read-only</span>
 					</div>
 
 					<div {...stylex.props(styles.fieldGrid)}>
@@ -264,10 +260,10 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 						<button disabled={loading()} type="submit" {...stylex.props(styles.run)}>
 							<span>
 								{loading()
-									? "TRACING…"
+									? "Tracing…"
 									: mode() === "compare"
-										? "COMPARE"
-										: "TRACE VALUE"}
+										? "Compare platforms"
+										: "Trace value"}
 							</span>
 							<small>
 								{mode() === "compare"
@@ -278,7 +274,7 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 					</div>
 
 					<div {...stylex.props(styles.samples)}>
-						<span {...stylex.props(styles.sampleHeading)}>TRY A KNOWN CASE</span>
+						<span {...stylex.props(styles.sampleHeading)}>Examples</span>
 						<div {...stylex.props(styles.sampleList)}>
 							<For each={samples}>
 								{(sample) => (
@@ -339,14 +335,13 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 					<section {...stylex.props(styles.resultBlock)}>
 						<header {...stylex.props(styles.resultHeader)}>
 							<div>
-								<span {...stylex.props(styles.resultLabel)}>RESULT</span>
 								<strong>{resolved.projectName}</strong>
 							</div>
 							<div {...stylex.props(styles.queryReceipt)}>
 								<span>
 									{resolved.source === "selected_project"
-										? "SELECTED PROJECT"
-										: "SAMPLE"}
+										? "Selected project"
+										: "Sample fixture"}
 								</span>
 								<code>
 									[
@@ -394,34 +389,19 @@ const styles = stylex.create({
 		borderBottomWidth: 1
 	},
 	titleBlock: { minWidth: 0 },
-	eyebrow: {
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 12,
-		letterSpacing: "0"
-	},
 	title: {
-		margin: "8px 0 6px",
+		margin: 0,
 		fontFamily: tokens.fontDisplay,
 		fontSize: 26,
 		fontWeight: 590,
 		letterSpacing: "-0.02em",
 		color: tokens.colorTextStrong
 	},
-	intro: { margin: 0, color: tokens.colorTextMuted, fontSize: 14, lineHeight: 1.6 },
+	intro: { margin: "6px 0 0", color: tokens.colorTextMuted, fontSize: 14, lineHeight: 1.6 },
 	scopeStamp: {
-		display: "flex",
-		flexDirection: "column",
-		gap: 3,
 		flexShrink: 0,
-		padding: "10px 14px",
-		borderColor: tokens.colorBorder,
-		borderStyle: "solid",
-		borderWidth: 1,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextSubtle,
-		fontSize: 11
+		fontSize: 12
 	},
 	workspace: {
 		marginTop: 16,
@@ -621,12 +601,6 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorSurfaceRaised,
 		fontSize: 13,
 		color: tokens.colorText
-	},
-	resultLabel: {
-		marginRight: 8,
-		color: tokens.colorTextMuted,
-		fontFamily: tokens.fontMono,
-		fontSize: 11
 	},
 	queryReceipt: {
 		display: "flex",

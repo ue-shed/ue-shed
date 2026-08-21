@@ -98,10 +98,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 
 	const label = () => {
 		const current = project();
-		if (pending()) return "INDEXING PROJECT…";
+		if (pending()) return "Indexing project…";
 		if (current?.status === "ready") return current.project.projectName;
-		if (current?.status === "failed") return "RETRY PROJECT…";
-		return "CHOOSE PROJECT…";
+		if (current?.status === "failed") return "Retry project…";
+		return "Choose project…";
 	};
 	const title = () => {
 		const current = project();
@@ -152,34 +152,41 @@ export function ProjectChooser(props: ProjectChooserProps) {
 				{label()}
 			</button>
 			<Show when={project()?.status === "ready"}>
-				<span {...stylex.props(styles.offline)}>OFFLINE</span>
-				<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
-					<summary {...stylex.props(styles.launchSummary)}>LAUNCH ▾</summary>
-					<div {...stylex.props(styles.launchMenu)}>
-						<button
-							type="button"
-							disabled={launching() !== undefined}
-							onClick={() => launch("ue_shed")}
-							{...stylex.props(styles.launchOption, styles.launchOptionPrimary)}
-						>
-							<strong>
-								{launching() === "ue_shed" ? "PREPARING PLUGINS…" : "WITH UE SHED"}
-							</strong>
-							<span>
-								Core · Authoring · Cameras · Observatory · Asset Audits · Scenarios
-							</span>
-						</button>
-						<button
-							type="button"
-							disabled={launching() !== undefined}
-							onClick={() => launch("normal")}
-							{...stylex.props(styles.launchOption)}
-						>
-							<strong>{launching() === "normal" ? "OPENING…" : "NORMALLY"}</strong>
-							<span>No injected plugins or project changes</span>
-						</button>
-					</div>
-				</details>
+				<div {...stylex.props(styles.launchRow)}>
+					<span {...stylex.props(styles.offline)}>Offline</span>
+					<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
+						<summary {...stylex.props(styles.launchSummary)}>Launch ▾</summary>
+						<div {...stylex.props(styles.launchMenu)}>
+							<button
+								type="button"
+								disabled={launching() !== undefined}
+								onClick={() => launch("ue_shed")}
+								{...stylex.props(styles.launchOption, styles.launchOptionPrimary)}
+							>
+								<strong>
+									{launching() === "ue_shed"
+										? "Preparing plugins…"
+										: "With plugin suite"}
+								</strong>
+								<span>
+									Core · Authoring · Cameras · Observatory · Asset Audits ·
+									Scenarios
+								</span>
+							</button>
+							<button
+								type="button"
+								disabled={launching() !== undefined}
+								onClick={() => launch("normal")}
+								{...stylex.props(styles.launchOption)}
+							>
+								<strong>
+									{launching() === "normal" ? "Opening…" : "Plain editor"}
+								</strong>
+								<span>No injected plugins or project changes</span>
+							</button>
+						</div>
+					</details>
+				</div>
 			</Show>
 			<Show when={failure()} keyed>
 				{(error) => (
@@ -221,8 +228,9 @@ export function ProjectChooser(props: ProjectChooserProps) {
 
 const styles = stylex.create({
 	control: {
-		alignItems: "center",
 		display: "flex",
+		flexDirection: "column",
+		gap: 6,
 		position: "relative"
 	},
 	chooser: {
@@ -235,26 +243,28 @@ const styles = stylex.create({
 			":hover": "rgba(255, 255, 255, 0.04)",
 			":active": "rgba(255, 255, 255, 0.08)"
 		},
-		color: { default: tokens.colorText, ":disabled": tokens.colorTextSubtle },
+		color: { default: tokens.colorTextStrong, ":disabled": tokens.colorTextSubtle },
 		cursor: { default: "pointer", ":disabled": "wait" },
 		fontSize: 12,
 		fontWeight: 500,
-		maxWidth: 200,
+		width: "100%",
 		overflow: "hidden",
 		padding: "6px 10px",
+		textAlign: "left",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	offline: {
-		alignSelf: "stretch",
-		display: "flex",
+	launchRow: {
 		alignItems: "center",
-		color: tokens.colorTextFaint,
-		fontSize: 10,
-		fontWeight: 500,
-		padding: "0 8px"
+		display: "flex",
+		gap: 6
 	},
-	launchControl: { position: "relative" },
+	offline: {
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	launchControl: { marginLeft: "auto", position: "relative" },
 	launchSummary: {
 		alignItems: "center",
 		backgroundColor: {
@@ -268,7 +278,7 @@ const styles = stylex.create({
 		fontWeight: 500,
 		listStyle: "none",
 		borderRadius: tokens.radiusControl,
-		padding: "6px 10px",
+		padding: "4px 8px",
 		whiteSpace: "nowrap"
 	},
 	launchMenu: {
@@ -348,7 +358,7 @@ const styles = stylex.create({
 		flexDirection: "column",
 		fontSize: 12,
 		gap: 5,
-		left: 0,
+		right: 0,
 		lineHeight: 1.5,
 		maxWidth: 420,
 		minWidth: 280,

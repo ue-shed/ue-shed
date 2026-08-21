@@ -25,18 +25,18 @@ export function editorSessionTransportActions(
 	switch (state.status) {
 		case "stopped":
 			return [
-				{ command: "start_play", label: "PLAY", primary: true },
-				{ command: "start_simulate", label: "SIM" }
+				{ command: "start_play", label: "Play", primary: true },
+				{ command: "start_simulate", label: "Sim" }
 			];
 		case "running":
 			return [
-				{ command: "pause", label: "PAUSE" },
-				{ command: "stop", label: "STOP", primary: true }
+				{ command: "pause", label: "Pause" },
+				{ command: "stop", label: "Stop", primary: true }
 			];
 		case "paused":
 			return [
-				{ command: "resume", label: "RESUME", primary: true },
-				{ command: "stop", label: "STOP" }
+				{ command: "resume", label: "Resume", primary: true },
+				{ command: "stop", label: "Stop" }
 			];
 		default:
 			return [];
@@ -44,7 +44,8 @@ export function editorSessionTransportActions(
 }
 
 export function editorSessionTransportLabel(state: EditorSessionTransportState): string {
-	if (state.status === "offline") return "EDITOR OFFLINE";
-	if (state.status === "stopped") return "EDITOR READY";
-	return `${state.mode === "play" ? "PIE" : "SIE"} ${state.status.toUpperCase()}`;
+	if (state.status === "offline") return "Editor offline";
+	if (state.status === "stopped") return "Editor ready";
+	const mode = state.mode === "play" ? "Play" : "Simulate";
+	return `${mode} · ${state.status}`;
 }

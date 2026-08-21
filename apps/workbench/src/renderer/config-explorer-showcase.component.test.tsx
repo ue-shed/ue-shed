@@ -103,7 +103,7 @@ describe("ConfigExplorerShowcase", () => {
 
 		await userEvent.setup().clear(screen.getByLabelText("Config key"));
 		await userEvent.setup().type(screen.getByLabelText("Config key"), "Mode");
-		await userEvent.setup().click(screen.getByRole("button", { name: /^COMPARE/ }));
+		await userEvent.setup().click(screen.getByRole("button", { name: /^Compare platforms/ }));
 
 		expect(requests).toEqual([
 			{
@@ -140,7 +140,7 @@ describe("ConfigExplorerShowcase", () => {
 		renderShowcase({ query: () => Effect.succeed(failed) });
 
 		await userEvent.setup().click(screen.getByRole("button", { name: "Selected project" }));
-		await userEvent.setup().click(screen.getByRole("button", { name: /^COMPARE/ }));
+		await userEvent.setup().click(screen.getByRole("button", { name: /^Compare platforms/ }));
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("No Workbench project is selected");

@@ -99,7 +99,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 		action.run(props.client.executeEditorSessionCommand(command), {
 			onFailure: () => {
 				setPending(false);
-				setMessage("COMMAND FAILED");
+				setMessage("Command failed");
 			},
 			onSuccess: (result) => {
 				setPending(false);
@@ -133,7 +133,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 					:{port() ?? "—"}
 				</summary>
 				<div {...stylex.props(styles.settingsPanel)}>
-					<strong {...stylex.props(styles.settingsTitle)}>SESSION MONITOR PORT</strong>
+					<strong {...stylex.props(styles.settingsTitle)}>Session monitor port</strong>
 					<p {...stylex.props(styles.settingsDetail)}>
 						Workbench will immediately monitor this port for an Unreal Editor session.
 					</p>
@@ -153,7 +153,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 							disabled={settingsPending()}
 							{...stylex.props(styles.applyButton)}
 						>
-							{settingsPending() ? "APPLYING…" : "APPLY"}
+							{settingsPending() ? "Applying…" : "Apply"}
 						</button>
 					</form>
 					<Show when={portMessage()} keyed>
@@ -186,18 +186,11 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 
 const styles = stylex.create({
 	transport: {
-		marginLeft: "auto",
-		height: "100%",
 		display: "flex",
+		flexWrap: "wrap",
 		alignItems: "center",
 		gap: 8,
-		padding: "0 12px",
-		borderLeftColor: tokens.colorBorder,
-		borderLeftStyle: "solid",
-		borderLeftWidth: 1,
-		borderRightColor: tokens.colorBorder,
-		borderRightStyle: "solid",
-		borderRightWidth: 1
+		width: "100%"
 	},
 	lamp: { width: 6, height: 6, borderRadius: "50%", backgroundColor: "#383b3f" },
 	live: { backgroundColor: tokens.colorSuccess, boxShadow: "0 0 8px rgba(76, 183, 130, 0.4)" },
@@ -294,7 +287,7 @@ const styles = stylex.create({
 		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
-	actions: { display: "flex", gap: 4 },
+	actions: { display: "flex", gap: 4, width: "100%" },
 	button: {
 		minWidth: 42,
 		height: 26,

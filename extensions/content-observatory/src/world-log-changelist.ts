@@ -22,10 +22,10 @@ export interface WorldLogChangelistMapOverlay {
 }
 
 const toneColors = {
-	added: "#6ebd88",
-	changed: "#e1b85e",
-	moved: "#73c7d0",
-	removed: "#d77d6a"
+	added: "#4cb782",
+	changed: "#f2994a",
+	moved: "#02b8cc",
+	removed: "#eb5757"
 } satisfies Readonly<Record<WorldLogChangelistTone, string>>;
 
 export function worldLogChangelistToneColor(tone: WorldLogChangelistTone): string {

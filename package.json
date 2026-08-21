@@ -47,6 +47,7 @@
 		"sync:native-versions": "node scripts/sync-native-versions.ts",
 		"release:plugins": "node scripts/release-plugin-bundle.ts full",
 		"release:plugins:map-review": "node scripts/release-plugin-bundle.ts map-review",
+		"release:plugins:niagara": "node scripts/release-plugin-bundle.ts niagara",
 		"record:flow:map-review": "node scripts/record-map-review-flow.ts",
 		"release:plugins:observatory": "node scripts/release-plugin-bundle.ts observatory",
 		"test:adoption:data-authoring": "node scripts/test-data-authoring-adoption.ts",

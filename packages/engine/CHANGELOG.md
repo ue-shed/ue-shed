@@ -1,5 +1,13 @@
 # @ue-shed/engine
 
+## 0.4.0
+
+### Patch Changes
+
+- be0fa20: Add portable headless Niagara preview capture, validation, and atomic publication.
+- @ue-shed/protocol@0.4.0
+    - @ue-shed/unreal-connection@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

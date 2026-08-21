@@ -14,7 +14,12 @@ import {
 import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import { TextCorpusServiceLive } from "@ue-shed/game-text";
-import { EditorPlaySessionLive, EditorWorldControlLive } from "@ue-shed/engine";
+import {
+	EditorPlaySessionLive,
+	EditorWorldControlLive,
+	EngineInstallationDiscoveryLive,
+	OwnedProcessTreeLive
+} from "@ue-shed/engine";
 import { AuthoringClientLive } from "@ue-shed/host";
 import { mapHistoryLiveLayer } from "@ue-shed/map-history";
 import { runtimeObservabilityLayer } from "@ue-shed/observability";
@@ -27,6 +32,7 @@ import {
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { ScenarioRunnerLive } from "@ue-shed/scenarios";
 import { CustodianNodeLive } from "@ue-shed/project-custodian";
+import { NiagaraPreviewLive } from "@ue-shed/niagara";
 import { Effect, Layer } from "effect";
 import { join } from "node:path";
 import { electronAppLayer, ElectronApp, type ElectronAppHost } from "./adapters/electron-app.js";
@@ -48,6 +54,7 @@ import { WorkbenchGameTextLive } from "./services/game-text.js";
 import { WorkbenchInputAtlasLive } from "./services/input-atlas.js";
 import { WorkbenchMapReviewLive } from "./services/map-review.js";
 import { WorkbenchMapCaptureLive } from "./services/map-capture.js";
+import { WorkbenchNiagaraPreviewLive } from "./services/niagara-preview.js";
 import { OfflineTexturePreviewLive } from "./services/offline-texture-preview.js";
 import { ProjectLauncherLive } from "./services/project-launcher.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
@@ -131,12 +138,16 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 			Layer.mergeAll(ElectronDialogLive, EnhancedInputServiceLive, projectIndexLive)
 		)
 	);
+	const niagara = NiagaraPreviewLive.pipe(
+		Layer.provide(Layer.merge(EngineInstallationDiscoveryLive, OwnedProcessTreeLive))
+	);
 	return Layer.mergeAll(
 		ElectronDialogLive,
 		TextureAuditLive,
 		TextCorpusServiceLive,
 		EnhancedInputServiceLive,
 		CustodianNodeLive,
+		niagara,
 		AuthoringCatalogLive,
 		OfflineTexturePreviewLive,
 		ProjectLauncherLive.pipe(Layer.provide(project)),
@@ -178,6 +189,7 @@ function featureLayer(hosts: WorkbenchHosts) {
 		authoringClient,
 		mapReview,
 		WorkbenchMapCaptureLive,
+		WorkbenchNiagaraPreviewLive,
 		contentObservatory,
 		WorkbenchConfigExplorerLive.pipe(Layer.provide(ConfigExplorerNodeLive)),
 		CameraPresentationLive

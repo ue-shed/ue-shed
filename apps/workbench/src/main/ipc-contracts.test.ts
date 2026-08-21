@@ -328,6 +328,27 @@ const validArgsByChannel = {
 			relativePath: "Z00/R000_C000.png"
 		}
 	],
+	"niagara-preview:run": [
+		{
+			settings: {
+				captureMode: "component_only",
+				durationSeconds: 1,
+				frameCount: 12,
+				height: 512,
+				simulationFramesPerSecond: 60,
+				startSeconds: 0,
+				width: 512
+			},
+			systemObjectPath:
+				"/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion"
+		}
+	],
+	"niagara-preview:frame": [
+		{
+			manifestPath: "D:/Projects/Demo/.ue-shed/niagara-preview/runs/run-id/manifest.json",
+			relativePath: "frames/frame_0000.png"
+		}
+	],
 	"map-review:review-sets": [],
 	"map-review:create-review-set": [{ displayName: "Lighting review" }],
 	"map-review:select-review-set": [{ reviewSetId: "lighting-review" }],
@@ -612,6 +633,17 @@ const validResultByChannel = {
 		status: "failed"
 	},
 	"map-capture:tile": { bytes: new Uint8Array([1, 2, 3]), status: "ready" },
+	"niagara-preview:run": {
+		error: {
+			code: "plugin_unavailable",
+			message: "UEShedNiagara is not installed.",
+			recovery: "Install the separately enabled Editor plugin.",
+			retrySafe: false,
+			stage: "validation"
+		},
+		status: "failed"
+	},
+	"niagara-preview:frame": { bytes: new Uint8Array([1, 2, 3]), status: "ready" },
 	"map-review:review-sets": {
 		activeReviewSetId: "fixture-review-set",
 		sets: [
@@ -735,9 +767,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 101 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(101);
-	expect(new Set(invokeChannelNames).size).toBe(101);
+it("registers exactly 103 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(103);
+	expect(new Set(invokeChannelNames).size).toBe(103);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

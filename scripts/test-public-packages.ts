@@ -10,6 +10,7 @@ import {
 	ENGINE_PACKAGE_NAME,
 	GAME_TEXT_PACKAGE_NAME,
 	MAP_HISTORY_PACKAGE_NAME,
+	NIAGARA_PACKAGE_NAME,
 	packPublicPackages,
 	PLUGIN_DISTRIBUTION_PACKAGE_NAME,
 	PUBLIC_PACKAGES,
@@ -70,7 +71,8 @@ try {
 	for (const packageName of [
 		ENGINE_PACKAGE_NAME,
 		CONFIG_EXPLORER_PACKAGE_NAME,
-		PROJECT_CUSTODIAN_PACKAGE_NAME
+		PROJECT_CUSTODIAN_PACKAGE_NAME,
+		NIAGARA_PACKAGE_NAME
 	]) {
 		const entry = packed.find((candidate) => candidate.name === packageName);
 		assert.ok(entry, `the public package graph must contain ${packageName}`);
@@ -291,6 +293,8 @@ try {
 			"import * as reviewContracts from '@ue-shed/cameras/review-contracts';",
 			"import * as observatory from '@ue-shed/observatory';",
 			"import * as presentation from '@ue-shed/observatory/presentation';",
+			"import { NiagaraPreview, runNiagaraPreview } from '@ue-shed/niagara';",
+			"import { NiagaraPreviewRunManifest } from '@ue-shed/niagara/browser';",
 			"import { ConfigExplorer, ConfigExplorerNodeLive, ConfigFamily, ConfigKey, ConfigPlatform, ConfigSection } from '@ue-shed/config-explorer';",
 			"import { ConfigExplanation } from '@ue-shed/config-explorer/browser';",
 			"import { Custodian, CustodianNodeLive } from '@ue-shed/project-custodian';",
@@ -320,6 +324,12 @@ try {
 			"}",
 			"if (typeof cameras.ReviewCapture !== 'function') {",
 			"  throw new Error('bad cameras ReviewCapture');",
+			"}",
+			"if (typeof NiagaraPreview !== 'function' || typeof runNiagaraPreview !== 'function') {",
+			"  throw new Error('bad Niagara service exports');",
+			"}",
+			"if (Schema.decodeUnknownOption(NiagaraPreviewRunManifest)({})._tag !== 'None') {",
+			"  throw new Error('bad Niagara browser manifest schema');",
 			"}",
 			"if (reviewContracts.MapReviewResult === undefined) {",
 			"  throw new Error('bad review-contracts MapReviewResult');",

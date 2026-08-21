@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
 	buildPluginBundle,
 	MAP_REVIEW_PLUGIN_IDS,
+	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS
 } from "./plugin-bundle.ts";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
@@ -15,6 +16,11 @@ const presets = {
 		plugins: MAP_REVIEW_PLUGIN_IDS,
 		stem: `ue-shed-plugins-map-review-${PUBLIC_VERSION}`
 	},
+	niagara: {
+		directory: "plugins-niagara",
+		plugins: NIAGARA_PLUGIN_IDS,
+		stem: `ue-shed-plugins-niagara-${PUBLIC_VERSION}`
+	},
 	observatory: {
 		directory: "plugins-observatory",
 		plugins: OBSERVATORY_PLUGIN_IDS,
@@ -22,8 +28,15 @@ const presets = {
 	}
 } as const;
 
-if (preset !== "full" && preset !== "map-review" && preset !== "observatory") {
-	throw new Error("Usage: node scripts/release-plugin-bundle.ts <full|map-review|observatory>");
+if (
+	preset !== "full" &&
+	preset !== "map-review" &&
+	preset !== "niagara" &&
+	preset !== "observatory"
+) {
+	throw new Error(
+		"Usage: node scripts/release-plugin-bundle.ts <full|map-review|niagara|observatory>"
+	);
 }
 
 const selected = presets[preset];

@@ -27,6 +27,7 @@ import { Clock, Context, Duration, Effect, Layer, Schema } from "effect";
 import {
 	NiagaraPreviewProducerReceipt,
 	NiagaraPreviewProducerRequest,
+	NiagaraPreviewFailure,
 	NiagaraPreviewRunManifest,
 	decodeNiagaraPreviewProducerReceipt,
 	decodeNiagaraPreviewProducerRequest,
@@ -56,31 +57,7 @@ export interface NiagaraPreviewRunOutcome {
 
 export class NiagaraPreviewError extends Schema.TaggedErrorClass<NiagaraPreviewError>()(
 	"NiagaraPreviewError",
-	{
-		code: Schema.Literals([
-			"invalid_request",
-			"engine_discovery_failed",
-			"commandlet_unavailable",
-			"plugin_unavailable",
-			"rendering_unavailable",
-			"system_unavailable",
-			"baker_camera_missing",
-			"compilation_failed",
-			"capture_failed",
-			"process_failed",
-			"process_timeout",
-			"receipt_missing",
-			"receipt_invalid",
-			"artifact_invalid",
-			"run_exists",
-			"publish_failed"
-		]),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		runId: Schema.optionalKey(Schema.String),
-		stage: Schema.Literals(["validation", "capture", "publication"])
-	}
+	NiagaraPreviewFailure.fields
 ) {}
 
 export interface NiagaraPreviewApi {

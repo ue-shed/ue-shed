@@ -65,6 +65,7 @@ try {
 	}
 	runPnpm(["run", "test:uasset-conformance"], environment);
 	runPnpm(["run", "test:unreal-authoring"], environment);
+	runPnpm(["run", "test:unreal-niagara"], environment);
 	runPnpm(["run", "fixture:launch-authoring"], environment);
 	editorPid = ownedEditorPid();
 	await waitForRemoteControl(editorPid);

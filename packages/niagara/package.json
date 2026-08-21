@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/niagara",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "Headless Niagara preview capture, validation, and portable run publication.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -25,6 +25,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
+		},
+		"./browser": {
+			"types": "./dist/browser.d.ts",
+			"import": "./dist/browser.js"
 		}
 	},
 	"publishConfig": {
@@ -37,7 +41,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/engine": "workspace:0.3.0",
+		"@ue-shed/engine": "workspace:0.4.0",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

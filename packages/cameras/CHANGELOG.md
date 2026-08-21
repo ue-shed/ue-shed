@@ -1,5 +1,13 @@
 # @ue-shed/cameras
 
+## 0.4.0
+
+### Patch Changes
+
+- @ue-shed/observability@0.4.0
+    - @ue-shed/protocol@0.4.0
+    - @ue-shed/unreal-connection@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

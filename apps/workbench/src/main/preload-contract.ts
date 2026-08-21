@@ -129,6 +129,10 @@ export const workbenchInvokeChannels = {
 		capture: "map-capture:capture",
 		tile: "map-capture:tile"
 	},
+	niagaraPreview: {
+		run: "niagara-preview:run",
+		frame: "niagara-preview:frame"
+	},
 	configure: "camera:configure",
 	getMetrics: "camera:metrics",
 	getStatus: "camera:status",

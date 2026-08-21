@@ -264,6 +264,10 @@ const workbenchRendererApi = {
 			return () => ipcRenderer.removeListener("map-capture:progress", handler);
 		}
 	},
+	niagaraPreview: {
+		run: (intent) => ipcRenderer.invoke("niagara-preview:run", intent),
+		frame: (intent) => ipcRenderer.invoke("niagara-preview:frame", intent)
+	},
 	configure: (config: CameraScheduleConfig): Promise<CameraStatus> =>
 		ipcRenderer.invoke("camera:configure", config),
 	getMetrics: (): Promise<WorkbenchCameraMetrics> => ipcRenderer.invoke("camera:metrics"),

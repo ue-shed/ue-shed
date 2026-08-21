@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/plugin-distribution",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "Verified installation, immutable storage, and scoped leasing for UE Shed Unreal plugin distributions.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {

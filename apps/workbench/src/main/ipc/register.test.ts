@@ -29,6 +29,7 @@ import { makeWorkbenchGameTextTestLayer } from "../services/game-text.js";
 import { makeWorkbenchInputAtlasTestLayer } from "../services/input-atlas.js";
 import { makeWorkbenchMapReviewTestLayer } from "../services/map-review.js";
 import { makeWorkbenchMapCaptureTestLayer } from "../services/map-capture.js";
+import { makeWorkbenchNiagaraPreviewTestLayer } from "../services/niagara-preview.js";
 import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeWorkbenchCustodianTestLayer } from "../services/project-custodian.js";
@@ -481,6 +482,25 @@ function buildRegistrationLayer(recorder: Recorder) {
 				})
 			)
 	});
+	const niagaraPreview = makeWorkbenchNiagaraPreviewTestLayer({
+		frame: (intent) =>
+			recorder
+				.record(`niagaraPreview.frame:${intent.relativePath}`)
+				.pipe(Effect.as({ bytes: new Uint8Array([1, 2, 3]), status: "ready" as const })),
+		run: (intent) =>
+			recorder.record(`niagaraPreview.run:${intent.systemObjectPath}`).pipe(
+				Effect.as({
+					error: {
+						code: "plugin_unavailable" as const,
+						message: "Plugin unavailable.",
+						recovery: "Install UEShedNiagara.",
+						retrySafe: false,
+						stage: "validation" as const
+					},
+					status: "failed" as const
+				})
+			)
+	});
 
 	const fixtureLauncher = makeFixtureLauncherTestLayer({
 		launch: (mode) =>
@@ -604,6 +624,7 @@ function buildRegistrationLayer(recorder: Recorder) {
 		authoring,
 		mapReview,
 		mapCapture,
+		niagaraPreview,
 		fixtureLauncher,
 		projectLauncher,
 		cameraPresentation,
@@ -643,7 +664,30 @@ it.effect("registers every schema-owned contract channel exactly once", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(101);
+		expect(result).toHaveLength(103);
+	})
+);
+
+it.effect("dispatches Niagara preview runs and manifest-owned frames", () =>
+	Effect.gen(function* () {
+		const systemObjectPath =
+			"/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion";
+		const { recorder } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("niagara-preview:run", {
+					settings: { frameCount: 2, height: 64, width: 64 },
+					systemObjectPath
+				});
+				yield* ipc.invoke("niagara-preview:frame", {
+					manifestPath: "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json",
+					relativePath: "frames/frame_0000.png"
+				});
+			})
+		);
+		expect(yield* recorder.calls()).toEqual([
+			`niagaraPreview.run:${systemObjectPath}`,
+			"niagaraPreview.frame:frames/frame_0000.png"
+		]);
 	})
 );
 

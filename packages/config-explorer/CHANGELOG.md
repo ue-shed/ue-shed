@@ -1,5 +1,12 @@
 # @ue-shed/config-explorer
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [be0fa20]
+    - @ue-shed/engine@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes

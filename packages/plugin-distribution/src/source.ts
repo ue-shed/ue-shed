@@ -123,7 +123,7 @@ async function copyBounded(options: {
 			signal: options.signal
 		})) {
 			if (options.signal.aborted) throw new DOMException("Cancelled", "AbortError");
-			await destination.write(chunk);
+			await destination.writeFile(chunk, { signal: options.signal });
 			completed += chunk.byteLength;
 			options.onChunk(completed, details.size);
 		}

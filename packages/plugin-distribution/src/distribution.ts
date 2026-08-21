@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { Cache, Context, Duration, Effect, Layer, Option, Schema, type Scope } from "effect";
+import { Context, Effect, Fiber, Layer, Option, Schema, Semaphore, type Scope } from "effect";
 import {
 	PluginInstallCancelled,
 	ArtifactDigestMismatch,
@@ -13,9 +13,11 @@ import {
 } from "./errors.js";
 import {
 	PluginBundleManifestValidationError,
+	ReleaseVersion,
 	Sha256Checksum,
 	resolvePluginBundleDependencies,
-	validatePluginBundleManifest
+	validatePluginBundleManifest,
+	type PluginBundleManifest
 } from "./manifest.js";
 import {
 	PluginInstallRequest,
@@ -60,6 +62,11 @@ interface EnsuredRelease {
 	readonly release: StoredPluginRelease;
 }
 
+interface InstallFlight {
+	readonly fiber: Fiber.Fiber<EnsuredRelease, PluginDistributionError>;
+	waiters: number;
+}
+
 function sha256(bytes: Uint8Array) {
 	return Sha256Checksum.make(`sha256:${createHash("sha256").update(bytes).digest("hex")}`);
 }
@@ -71,6 +78,20 @@ function decodeFailure() {
 		recovery: "Provide one exact SemVer release and between 1 and 64 valid plugin IDs.",
 		retrySafe: false
 	});
+}
+
+function decodeReleaseVersion(input: string) {
+	return Schema.decodeUnknownEffect(ReleaseVersion)(input).pipe(
+		Effect.mapError(
+			() =>
+				new PluginDistributionValidationError({
+					field: "releaseVersion",
+					message: "Plugin release version must be an exact semantic version.",
+					recovery: "Provide an exact SemVer release such as 0.4.0.",
+					retrySafe: false
+				})
+		)
+	);
 }
 
 function mapManifestError(
@@ -101,6 +122,22 @@ function mapManifestError(
 		recovery: error.recovery,
 		retrySafe: false
 	});
+}
+
+function validateRequestedManifest(
+	manifest: Schema.Json | PluginBundleManifest,
+	request: PluginInstallRequest
+) {
+	return validatePluginBundleManifest(manifest, {
+		expectedCandidateVersion: request.releaseVersion,
+		...(request.unrealVersion === undefined
+			? undefined
+			: { unrealVersion: request.unrealVersion })
+	}).pipe(
+		Effect.mapError((error) =>
+			mapManifestError(error, request.releaseVersion, request.unrealVersion)
+		)
+	);
 }
 
 function canonicalRequest(request: PluginInstallRequest) {
@@ -146,7 +183,10 @@ export const pluginDistributionLayer = (
 		Effect.gen(function* () {
 			const source = yield* PluginReleaseSource;
 			const store = yield* PluginStore;
+			const layerScope = yield* Effect.scope;
 			const limits = { ...defaultPluginDistributionLimits, ...options.limits };
+			const flightGate = yield* Semaphore.make(1);
+			const flights = new Map<string, InstallFlight>();
 			const subscribers = new Map<string, Set<(progress: PluginInstallProgress) => void>>();
 			const publishProgress = (key: string, progress: PluginInstallProgress) => {
 				for (const subscriber of subscribers.get(key) ?? []) subscriber(progress);
@@ -171,7 +211,10 @@ export const pluginDistributionLayer = (
 						? undefined
 						: { expectedManifestDigest: request.expectedManifestSha256 })
 				});
-				if (Option.isSome(cached)) return { cacheHit: true, release: cached.value };
+				if (Option.isSome(cached)) {
+					yield* validateRequestedManifest(cached.value.manifest, request);
+					return { cacheHit: true, release: cached.value };
+				}
 				if ((request.networkPolicy ?? "online") === "cache-only") {
 					return yield* new OfflineCacheMiss({
 						message: `Release ${request.releaseVersion} is not present in the verified cache.`,
@@ -199,16 +242,7 @@ export const pluginDistributionLayer = (
 						retrySafe: false
 					});
 				}
-				const manifest = yield* validatePluginBundleManifest(document.manifest, {
-					expectedCandidateVersion: request.releaseVersion,
-					...(request.unrealVersion === undefined
-						? undefined
-						: { unrealVersion: request.unrealVersion })
-				}).pipe(
-					Effect.mapError((error) =>
-						mapManifestError(error, request.releaseVersion, request.unrealVersion)
-					)
-				);
+				const manifest = yield* validateRequestedManifest(document.manifest, request);
 				if (manifest.releaseVersion !== request.releaseVersion) {
 					return yield* new PluginDistributionValidationError({
 						field: "releaseVersion",
@@ -263,10 +297,43 @@ export const pluginDistributionLayer = (
 				);
 			});
 
-			const installs = yield* Cache.makeWith(ensureUncached, {
-				capacity: 64,
-				timeToLive: () => Duration.zero
-			});
+			const joinFlight = Effect.fn("PluginDistribution.joinFlight")(
+				(key: string, releaseVersion: string, signal?: AbortSignal) =>
+					Effect.acquireUseRelease(
+						flightGate.withPermits(1)(
+							Effect.gen(function* () {
+								const current = flights.get(key);
+								if (current !== undefined) {
+									current.waiters += 1;
+									return current;
+								}
+								const fiber = yield* ensureUncached(key).pipe(
+									Effect.forkIn(layerScope)
+								);
+								const created: InstallFlight = { fiber, waiters: 1 };
+								flights.set(key, created);
+								return created;
+							})
+						),
+						(flight) => {
+							const joined = Fiber.join(flight.fiber);
+							return signal === undefined
+								? joined
+								: Effect.raceFirst(joined, abortEffect(releaseVersion, signal));
+						},
+						(flight) =>
+							flightGate.withPermits(1)(
+								Effect.gen(function* () {
+									const current = flights.get(key);
+									if (current !== flight) return;
+									current.waiters -= 1;
+									if (current.waiters > 0) return;
+									flights.delete(key);
+									yield* Fiber.interrupt(current.fiber);
+								})
+							)
+					)
+			);
 
 			const install = Effect.fn("PluginDistribution.install")(function* (
 				// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This implementation decodes the public hostile-input boundary immediately below.
@@ -284,14 +351,11 @@ export const pluginDistributionLayer = (
 					subscribers.set(key, current);
 				}
 				return yield* Effect.gen(function* () {
-					let installation = Cache.get(installs, key);
-					if (installOptions.signal !== undefined) {
-						installation = Effect.raceFirst(
-							installation,
-							abortEffect(request.releaseVersion, installOptions.signal)
-						);
-					}
-					const ensured = yield* installation;
+					const ensured = yield* joinFlight(
+						key,
+						request.releaseVersion,
+						installOptions.signal
+					);
 					const resolved = yield* resolvePluginBundleDependencies(
 						ensured.release.manifest,
 						request.pluginIds
@@ -344,7 +408,8 @@ export const pluginDistributionLayer = (
 			const listCached = Effect.fn("PluginDistribution.listCached")(() => store.list());
 			const verifyCached = Effect.fn("PluginDistribution.verifyCached")(
 				(releaseVersion: string) =>
-					store.verify(releaseVersion).pipe(
+					decodeReleaseVersion(releaseVersion).pipe(
+						Effect.flatMap((version) => store.verify(version)),
 						Effect.map((release) => ({
 							artifactDigest: release.artifactDigest,
 							cacheIdentity: release.cacheIdentity,
@@ -357,7 +422,9 @@ export const pluginDistributionLayer = (
 					)
 			);
 			const prune = Effect.fn("PluginDistribution.prune")((releaseVersion: string) =>
-				store.prune(releaseVersion)
+				decodeReleaseVersion(releaseVersion).pipe(
+					Effect.flatMap((version) => store.prune(version))
+				)
 			);
 			return PluginDistribution.of({ install, listCached, prune, verifyCached });
 		})

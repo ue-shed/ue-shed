@@ -24,6 +24,7 @@ import {
 	CorruptCacheEntry,
 	ImmutableVersionConflict,
 	MalformedOrUnsafeArchive,
+	PluginDistributionValidationError,
 	PluginStorageFailure
 } from "./errors.js";
 import {
@@ -78,14 +79,18 @@ export interface PluginStoreApi {
 	readonly cacheRoot: string;
 	readonly createArtifactStage: (
 		releaseVersion: string
-	) => Effect.Effect<{ readonly artifactPath: string }, PluginStorageFailure, Scope.Scope>;
+	) => Effect.Effect<
+		{ readonly artifactPath: string },
+		PluginDistributionValidationError | PluginStorageFailure,
+		Scope.Scope
+	>;
 	readonly find: (options: {
 		readonly expectedArtifactDigest?: string;
 		readonly expectedManifestDigest?: string;
 		readonly releaseVersion: string;
 	}) => Effect.Effect<
 		Option.Option<StoredPluginRelease>,
-		CorruptCacheEntry | ImmutableVersionConflict
+		CorruptCacheEntry | ImmutableVersionConflict | PluginDistributionValidationError
 	>;
 	readonly lease: (
 		release: StoredPluginRelease
@@ -96,7 +101,10 @@ export interface PluginStoreApi {
 	>;
 	readonly prune: (
 		releaseVersion: string
-	) => Effect.Effect<void, ActiveLeasePreventsPrune | PluginStorageFailure>;
+	) => Effect.Effect<
+		void,
+		ActiveLeasePreventsPrune | PluginDistributionValidationError | PluginStorageFailure
+	>;
 	readonly publish: (options: {
 		readonly artifactPath: string;
 		readonly limits: PluginDistributionLimits;
@@ -115,7 +123,7 @@ export interface PluginStoreApi {
 	>;
 	readonly verify: (
 		releaseVersion: string
-	) => Effect.Effect<StoredPluginRelease, CorruptCacheEntry>;
+	) => Effect.Effect<StoredPluginRelease, CorruptCacheEntry | PluginDistributionValidationError>;
 }
 
 export class PluginStore extends Context.Service<PluginStore, PluginStoreApi>()(
@@ -150,6 +158,20 @@ function corrupt(releaseVersion: string, cachePath: string, message: string) {
 		releaseVersion,
 		retrySafe: false
 	});
+}
+
+function decodeReleaseVersion(input: string) {
+	return Schema.decodeUnknownEffect(ReleaseVersion)(input).pipe(
+		Effect.mapError(
+			() =>
+				new PluginDistributionValidationError({
+					field: "releaseVersion",
+					message: "Plugin release version must be an exact semantic version.",
+					recovery: "Provide an exact SemVer release such as 0.4.0.",
+					retrySafe: false
+				})
+		)
+	);
 }
 
 function versionPath(cacheRoot: string, releaseVersion: string) {
@@ -332,12 +354,16 @@ function verifyStored(cacheRoot: string, releaseVersion: string) {
 	);
 }
 
-function processIsAlive(pid: number) {
+type ProcessLiveness = "alive" | "dead" | "indeterminate";
+
+function processLiveness(pid: number): ProcessLiveness {
 	try {
 		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
+		return "alive";
+	} catch (cause) {
+		return cause instanceof Error && "code" in cause && cause.code === "ESRCH"
+			? "dead"
+			: "indeterminate";
 	}
 }
 
@@ -352,9 +378,9 @@ async function activeLeaseFiles(cacheRoot: string, releaseVersion: string) {
 			const record = Schema.decodeUnknownSync(LeaseRecord)(
 				JSON.parse(await readFile(path, "utf8"))
 			);
-			if (record.releaseVersion === releaseVersion && processIsAlive(record.pid))
-				active.push(path);
-			else await rm(path, { force: true });
+			if (record.releaseVersion !== releaseVersion) await rm(path, { force: true });
+			else if (processLiveness(record.pid) === "dead") await rm(path, { force: true });
+			else active.push(path);
 		} catch {
 			await rm(path, { force: true });
 		}
@@ -384,7 +410,7 @@ async function acquireVersionLock<A>(
 				const lock = Schema.decodeUnknownSync(
 					Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) })
 				)(JSON.parse(await readFile(path, "utf8")));
-				if (!processIsAlive(lock.pid)) {
+				if (processLiveness(lock.pid) === "dead") {
 					await rm(path, { force: true });
 					continue;
 				}
@@ -443,7 +469,9 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			}).pipe(Effect.orDie);
 
 			const verify = Effect.fn("PluginStore.verify")((releaseVersion: string) =>
-				verifyStored(cacheRoot, releaseVersion)
+				decodeReleaseVersion(releaseVersion).pipe(
+					Effect.flatMap((version) => verifyStored(cacheRoot, version))
+				)
 			);
 
 			const find = Effect.fn("PluginStore.find")(
@@ -452,59 +480,71 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 					readonly expectedManifestDigest?: string;
 					readonly releaseVersion: string;
 				}) =>
-					Effect.promise(async () => {
-						try {
-							await access(versionPath(cacheRoot, request.releaseVersion));
-							return true;
-						} catch {
-							return false;
-						}
-					}).pipe(
-						Effect.flatMap((exists) =>
-							!exists
-								? Effect.succeed(Option.none<StoredPluginRelease>())
-								: verify(request.releaseVersion).pipe(
-										Effect.flatMap((release) => {
-											const conflict =
-												(request.expectedArtifactDigest !== undefined &&
-													release.artifactDigest !==
-														request.expectedArtifactDigest) ||
-												(request.expectedManifestDigest !== undefined &&
-													release.manifestDigest !==
-														request.expectedManifestDigest);
-											return conflict
-												? Effect.fail(
-														new ImmutableVersionConflict({
-															cachePath: release.cachePath,
-															message: `Release ${request.releaseVersion} already exists with different immutable digests.`,
-															recovery:
-																"Use a different exact release version or explicitly prune the existing unleased entry.",
-															releaseVersion: request.releaseVersion,
-															retrySafe: false
-														})
-													)
-												: Effect.succeed(Option.some(release));
-										})
-									)
+					decodeReleaseVersion(request.releaseVersion).pipe(
+						Effect.flatMap((releaseVersion) =>
+							Effect.promise(async () => {
+								try {
+									await access(versionPath(cacheRoot, releaseVersion));
+									return true;
+								} catch {
+									return false;
+								}
+							}).pipe(
+								Effect.flatMap((exists) =>
+									!exists
+										? Effect.succeed(Option.none<StoredPluginRelease>())
+										: verifyStored(cacheRoot, releaseVersion).pipe(
+												Effect.flatMap((release) => {
+													const conflict =
+														(request.expectedArtifactDigest !==
+															undefined &&
+															release.artifactDigest !==
+																request.expectedArtifactDigest) ||
+														(request.expectedManifestDigest !==
+															undefined &&
+															release.manifestDigest !==
+																request.expectedManifestDigest);
+													return conflict
+														? Effect.fail(
+																new ImmutableVersionConflict({
+																	cachePath: release.cachePath,
+																	message: `Release ${releaseVersion} already exists with different immutable digests.`,
+																	recovery:
+																		"Use a different exact release version or explicitly prune the existing unleased entry.",
+																	releaseVersion,
+																	retrySafe: false
+																})
+															)
+														: Effect.succeed(Option.some(release));
+												})
+											)
+								)
+							)
 						)
 					)
 			);
 
 			const createArtifactStage = Effect.fn("PluginStore.createArtifactStage")(
 				(releaseVersion: string) =>
-					Effect.acquireRelease(
-						Effect.tryPromise({
-							try: async () => {
-								const root = await mkdtemp(join(cacheRoot, ".download-"));
-								return { artifactPath: join(root, artifactFile), root };
-							},
-							catch: (cause) =>
-								storageError(releaseVersion, "Create download staging", cause)
-						}),
-						(stage) =>
-							Effect.promise(() => rm(stage.root, { force: true, recursive: true })),
-						{ interruptible: true }
-					).pipe(Effect.map(({ artifactPath }) => ({ artifactPath })))
+					decodeReleaseVersion(releaseVersion).pipe(
+						Effect.flatMap((version) =>
+							Effect.acquireRelease(
+								Effect.tryPromise({
+									try: async () => {
+										const root = await mkdtemp(join(cacheRoot, ".download-"));
+										return { artifactPath: join(root, artifactFile), root };
+									},
+									catch: (cause) =>
+										storageError(version, "Create download staging", cause)
+								}),
+								(stage) =>
+									Effect.promise(() =>
+										rm(stage.root, { force: true, recursive: true })
+									),
+								{ interruptible: true }
+							).pipe(Effect.map(({ artifactPath }) => ({ artifactPath })))
+						)
+					)
 			);
 
 			const publish = Effect.fn("PluginStore.publish")((request: {
@@ -716,38 +756,42 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			);
 
 			const prune = Effect.fn("PluginStore.prune")((releaseVersion: string) =>
-				Effect.tryPromise({
-					try: (signal) =>
-						acquireVersionLock(cacheRoot, releaseVersion, signal, async () => {
-							await assertDirectoryWithinCache(
-								cacheRoot,
-								join(cacheRoot, "releases")
-							);
-							const active = await activeLeaseFiles(cacheRoot, releaseVersion);
-							if (active.length > 0) {
-								throw new ActiveLeasePreventsPrune({
-									activeLeases: active.length,
-									message: `Release ${releaseVersion} has ${active.length} active lease(s).`,
-									recovery:
-										"Release all scoped consumers before pruning this version.",
-									releaseVersion,
-									retrySafe: true
-								});
-							}
-							await rm(versionPath(cacheRoot, releaseVersion), {
-								force: true,
-								recursive: true
-							});
-							await rm(join(cacheRoot, "leases", releaseVersion), {
-								force: true,
-								recursive: true
-							});
-						}),
-					catch: (cause) =>
-						cause instanceof ActiveLeasePreventsPrune
-							? cause
-							: storageError(releaseVersion, "Prune plugin release", cause)
-				})
+				decodeReleaseVersion(releaseVersion).pipe(
+					Effect.flatMap((version) =>
+						Effect.tryPromise({
+							try: (signal) =>
+								acquireVersionLock(cacheRoot, version, signal, async () => {
+									await assertDirectoryWithinCache(
+										cacheRoot,
+										join(cacheRoot, "releases")
+									);
+									const active = await activeLeaseFiles(cacheRoot, version);
+									if (active.length > 0) {
+										throw new ActiveLeasePreventsPrune({
+											activeLeases: active.length,
+											message: `Release ${version} has ${active.length} active lease(s).`,
+											recovery:
+												"Release all scoped consumers before pruning this version.",
+											releaseVersion: version,
+											retrySafe: true
+										});
+									}
+									await rm(versionPath(cacheRoot, version), {
+										force: true,
+										recursive: true
+									});
+									await rm(join(cacheRoot, "leases", version), {
+										force: true,
+										recursive: true
+									});
+								}),
+							catch: (cause) =>
+								cause instanceof ActiveLeasePreventsPrune
+									? cause
+									: storageError(version, "Prune plugin release", cause)
+						})
+					)
+				)
 			);
 
 			const list = Effect.fn("PluginStore.list")(() =>
@@ -763,7 +807,9 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 					catch: (cause) => storageError("unknown", "List plugin releases", cause)
 				}).pipe(
 					Effect.flatMap((versions) =>
-						Effect.forEach(versions, verify, { concurrency: 1 }).pipe(
+						Effect.forEach(versions, (version) => verifyStored(cacheRoot, version), {
+							concurrency: 1
+						}).pipe(
 							Effect.map((releases) =>
 								releases.map((release) => ({
 									artifactDigest: release.artifactDigest,

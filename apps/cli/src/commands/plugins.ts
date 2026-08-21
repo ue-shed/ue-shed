@@ -1,5 +1,6 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
+import { ReleaseVersion } from "@ue-shed/plugin-distribution";
 import { CliCommandError } from "../cli-runtime.js";
 import {
 	runPluginsCacheInstall,
@@ -16,6 +17,7 @@ const pluginManifestArgument = Argument.string("manifest").pipe(Argument.optiona
 const pluginManifestFlag = optionalFlag("manifest");
 const pluginArtifactFlag = optionalFlag("artifact");
 const pluginProjectFlag = optionalFlag("project");
+const pluginReleaseFlag = Flag.string("release").pipe(Flag.withSchema(ReleaseVersion));
 
 function resolvePluginPath(
 	positional: Option.Option<string>,
@@ -120,7 +122,7 @@ const pluginsCacheInstallCommand = Command.make(
 		cacheOnly: Flag.boolean("cache-only"),
 		manifestDigest: optionalFlag("manifest-digest"),
 		plugins: Flag.string("plugin").pipe(Flag.atLeast(1)),
-		release: Flag.string("release"),
+		release: pluginReleaseFlag,
 		source: Flag.string("source").pipe(Flag.withDefault(".")),
 		unreal: optionalFlag("unreal")
 	},
@@ -153,7 +155,7 @@ const pluginsCacheListCommand = Command.make("list", { cache: Flag.string("cache
 
 const pluginsCacheVerifyCommand = Command.make(
 	"verify",
-	{ cache: Flag.string("cache"), release: Flag.string("release") },
+	{ cache: Flag.string("cache"), release: pluginReleaseFlag },
 	({ cache, release }) =>
 		runPluginsCacheVerify({
 			_tag: "PluginsCacheVerify",
@@ -164,7 +166,7 @@ const pluginsCacheVerifyCommand = Command.make(
 
 const pluginsPruneCommand = Command.make(
 	"prune",
-	{ cache: Flag.string("cache"), release: Flag.string("release") },
+	{ cache: Flag.string("cache"), release: pluginReleaseFlag },
 	({ cache, release }) =>
 		runPluginsPrune({
 			_tag: "PluginsPrune",

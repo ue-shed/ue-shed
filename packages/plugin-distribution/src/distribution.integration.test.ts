@@ -1,17 +1,27 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { copyFile, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+	copyFile,
+	mkdir,
+	mkdtemp,
+	readFile,
+	readdir,
+	rm,
+	symlink,
+	writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Schema } from "effect";
-import { expect } from "vitest";
+import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { expect, vi } from "vitest";
 import {
 	ActiveLeasePreventsPrune,
 	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	CorruptCacheEntry,
+	IncompatibleUnrealVersion,
 	ImmutableVersionConflict,
 	ManifestDigestMismatch,
 	MalformedOrUnsafeArchive,
@@ -20,6 +30,7 @@ import {
 	PluginDistributionValidationError,
 	type PluginDistributionLimits,
 	PluginReleaseSource,
+	PluginStore,
 	httpPluginReleaseSourceLayer,
 	localPluginReleaseSourceLayer,
 	pluginDistributionLayer,
@@ -310,6 +321,198 @@ it.effect("downloads concurrent identical HTTP acquisitions once", () =>
 				}).pipe(Effect.provide(layer), Effect.scoped);
 			})
 		);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("cancelling the lookup owner does not cancel another identical waiter", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const artifactRequested = yield* Deferred.make<void>();
+		const releaseArtifact = yield* Deferred.make<void>();
+		let artifactRequests = 0;
+		const server = createServer((incoming, response) => {
+			const path = incoming.url?.slice(1) ?? "";
+			if (path.endsWith(".json")) {
+				response.writeHead(200, { "content-length": source.manifestBytes.byteLength });
+				response.end(source.manifestBytes);
+				return;
+			}
+			artifactRequests += 1;
+			response.writeHead(200, { "content-length": source.archive.byteLength });
+			Effect.runFork(Deferred.succeed(artifactRequested, undefined));
+			void Effect.runPromise(Deferred.await(releaseArtifact)).then(() => {
+				response.end(source.archive);
+			});
+		});
+		yield* Effect.acquireRelease(
+			Effect.callback<number>((resume) => {
+				server.listen(0, "127.0.0.1", () => resume(Effect.succeed(listeningPort(server))));
+				return Effect.sync(() => server.close());
+			}),
+			() =>
+				Deferred.succeed(releaseArtifact, undefined).pipe(
+					Effect.andThen(
+						Effect.callback<void>((resume) => {
+							server.close(() => resume(Effect.void));
+						})
+					)
+				)
+		).pipe(
+			Effect.flatMap((port) => {
+				const layer = liveLayer(
+					httpPluginReleaseSourceLayer({ baseUrl: `http://127.0.0.1:${port}/` }),
+					join(source.root, "cancelled-owner-cache")
+				);
+				return Effect.scoped(
+					Effect.gen(function* () {
+						const distribution = yield* PluginDistribution;
+						const ownerController = new AbortController();
+						const owner = yield* distribution
+							.install(request(source.releaseVersion), {
+								signal: ownerController.signal
+							})
+							.pipe(Effect.forkChild);
+						yield* Deferred.await(artifactRequested);
+						const waiter = yield* distribution
+							.install(request(source.releaseVersion), {
+								onProgress: (progress) => {
+									if (progress.phase === "downloading") ownerController.abort();
+								}
+							})
+							.pipe(Effect.forkChild);
+						yield* Effect.yieldNow;
+						yield* Deferred.succeed(releaseArtifact, undefined);
+						const ownerError = yield* Fiber.join(owner).pipe(Effect.flip);
+						const installed = yield* Fiber.join(waiter);
+						expect(ownerError).toBeInstanceOf(PluginInstallCancelled);
+						expect(installed.cacheHit).toBe(false);
+						expect(artifactRequests).toBe(1);
+					}).pipe(Effect.provide(layer))
+				);
+			})
+		);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("revalidates Unreal compatibility when reusing a cached release", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			join(source.root, "compatibility-cache")
+		);
+		yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install(request(source.releaseVersion))
+			)
+		).pipe(Effect.provide(layer));
+		const error = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution
+					.install({
+						...request(source.releaseVersion),
+						networkPolicy: "cache-only",
+						unrealVersion: "5.8"
+					})
+					.pipe(Effect.flip)
+			)
+		).pipe(Effect.provide(layer));
+		expect(error).toBeInstanceOf(IncompatibleUnrealVersion);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("rejects traversal-like release versions before any cache filesystem operation", () =>
+	Effect.gen(function* () {
+		const cacheRoot = yield* Effect.promise(async () => {
+			const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-prune-boundary-"));
+			roots.push(root);
+			return root;
+		});
+		const sentinel = join(cacheRoot, "sentinel.txt");
+		yield* Effect.promise(() => writeFile(sentinel, "preserve me\n"));
+		for (const releaseVersion of ["..", "0.4.0/../.."]) {
+			const [pruneError, verifyError] = yield* Effect.flatMap(PluginStore, (store) =>
+				Effect.all([
+					store.prune(releaseVersion).pipe(Effect.flip),
+					store.verify(releaseVersion).pipe(Effect.flip)
+				])
+			).pipe(Effect.provide(pluginStoreLayer({ cacheRoot })));
+			expect(pruneError).toBeInstanceOf(PluginDistributionValidationError);
+			expect(verifyError).toBeInstanceOf(PluginDistributionValidationError);
+		}
+		expect(yield* Effect.promise(() => readFile(sentinel, "utf8"))).toBe("preserve me\n");
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("preserves a lease when process liveness is indeterminate", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const cacheRoot = join(source.root, "indeterminate-lease-cache");
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			cacheRoot
+		);
+		yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install(request(source.releaseVersion))
+			)
+		).pipe(Effect.provide(layer));
+		const foreignPid = 2_147_483_000;
+		yield* Effect.promise(async () => {
+			const leases = join(cacheRoot, "leases", source.releaseVersion);
+			await mkdir(leases, { recursive: true });
+			await writeFile(
+				join(leases, "foreign.json"),
+				JSON.stringify({
+					createdAt: new Date(0).toISOString(),
+					identity: "foreign",
+					pid: foreignPid,
+					releaseVersion: source.releaseVersion,
+					schemaVersion: 1
+				})
+			);
+		});
+		const originalKill = process.kill;
+		const kill = vi.spyOn(process, "kill").mockImplementation((pid) => {
+			if (pid === foreignPid) {
+				const error = new Error("Operation not permitted");
+				Object.defineProperty(error, "code", { value: "EPERM" });
+				throw error;
+			}
+			return originalKill(pid, 0);
+		});
+		const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution.prune(source.releaseVersion).pipe(Effect.flip)
+		).pipe(Effect.provide(layer), Effect.ensuring(Effect.sync(() => kill.mockRestore())));
+		expect(error).toBeInstanceOf(ActiveLeasePreventsPrune);
+		const verified = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution.verifyCached(source.releaseVersion)
+		).pipe(Effect.provide(layer));
+		expect(verified.releaseVersion).toBe(source.releaseVersion);
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {

@@ -347,7 +347,7 @@ export async function extractPluginArchiveToDirectory(
 							"extraction"
 						);
 						if (currentCancellation !== undefined) throw currentCancellation;
-						await handle.write(chunk);
+						await handle.writeFile(chunk, { signal: options.signal });
 						hash.update(chunk);
 						remaining -= chunk.byteLength;
 						options.onProgress?.({

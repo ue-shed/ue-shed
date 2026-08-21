@@ -53,6 +53,11 @@ const approvedRuntimeExits = new Set([
 const approvedPromiseAdapters = new Set([
 	// The CLI plugin installer owns filesystem/archive promises behind an Effect boundary.
 	"apps/cli/src/plugin-installer.ts",
+	// Plugin distribution isolates Node archive, HTTP, and immutable-cache promises behind typed
+	// Effect services. Public acquisition, store, source, lease, and prune APIs remain Effect-shaped.
+	"packages/plugin-distribution/src/archive.ts",
+	"packages/plugin-distribution/src/source.ts",
+	"packages/plugin-distribution/src/store.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",
 	"apps/workbench/src/main/adapters/electron-ipc.ts",
 	// The shared preload contract describes Electron's Promise-returning renderer bridge; the
@@ -141,6 +146,11 @@ const approvedResourceAdapters = new Set([
 	"packages/ui/src/point-map.tsx",
 	// The actor feed owns its named-pipe server and per-connection sockets through Effect.acquireRelease.
 	"packages/observatory/src/actor-feed.ts",
+	// Plugin distribution owns AbortSignal listeners, lock polling, and lease files through
+	// Effect.callback / acquireRelease finalizers at its Node adapter boundary.
+	"packages/plugin-distribution/src/distribution.ts",
+	"packages/plugin-distribution/src/source.ts",
+	"packages/plugin-distribution/src/store.ts",
 	// The saved-asset protocol transport owns and cancels the bounded native child process.
 	"packages/unreal-assets/src/protocol-transport.ts",
 	// The engine launcher owns the detached Unreal Editor spawn boundary; its Effect.callback

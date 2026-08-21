@@ -418,3 +418,68 @@ export const compareUnrealVersions = (left: string, right: string): number | und
 
 export const validatePluginManifest = validatePluginBundleManifest;
 export const decodePluginManifest = decodePluginBundleManifest;
+
+export const ResolvedPluginGraph = Schema.Struct({
+	orderedPluginIds: Schema.Array(PluginId),
+	plugins: Schema.Array(PluginBundlePlugin),
+	requestedPluginIds: Schema.Array(PluginId)
+});
+export type ResolvedPluginGraph = typeof ResolvedPluginGraph.Type;
+
+export class PluginDependencyResolutionError extends Schema.TaggedErrorClass<PluginDependencyResolutionError>()(
+	"PluginDependencyResolutionError",
+	{
+		code: Schema.Literals(["duplicate_requested_plugin", "requested_plugin_unavailable"]),
+		message: Schema.String,
+		recovery: Schema.String
+	}
+) {}
+
+/** Resolves the requested plugin closure in deterministic dependency-first order. */
+export const resolvePluginBundleDependencies = (
+	manifest: PluginBundleManifest,
+	requestedPluginIds: readonly PluginId[]
+): Effect.Effect<ResolvedPluginGraph, PluginDependencyResolutionError> =>
+	Effect.gen(function* () {
+		const requested = [...requestedPluginIds];
+		const requestedSet = new Set<PluginId>();
+		for (const pluginId of requested) {
+			if (requestedSet.has(pluginId)) {
+				return yield* new PluginDependencyResolutionError({
+					code: "duplicate_requested_plugin",
+					message: `Plugin ${pluginId} was requested more than once.`,
+					recovery: "Request each plugin ID once."
+				});
+			}
+			requestedSet.add(pluginId);
+		}
+
+		const pluginsById = new Map(manifest.plugins.map((plugin) => [plugin.id, plugin]));
+		for (const pluginId of requested) {
+			if (!pluginsById.has(pluginId)) {
+				return yield* new PluginDependencyResolutionError({
+					code: "requested_plugin_unavailable",
+					message: `Plugin ${pluginId} is not present in release ${manifest.releaseVersion}.`,
+					recovery: "Choose a plugin ID declared by the exact release manifest."
+				});
+			}
+		}
+
+		const visited = new Set<PluginId>();
+		const ordered: PluginBundlePlugin[] = [];
+		const visit = (pluginId: PluginId): void => {
+			if (visited.has(pluginId)) return;
+			const plugin = pluginsById.get(pluginId);
+			if (plugin === undefined) return;
+			for (const dependency of [...plugin.dependencies].sort()) visit(dependency);
+			visited.add(pluginId);
+			ordered.push(plugin);
+		};
+		for (const pluginId of [...requested].sort()) visit(pluginId);
+
+		return ResolvedPluginGraph.make({
+			orderedPluginIds: ordered.map((plugin) => plugin.id),
+			plugins: ordered,
+			requestedPluginIds: requested
+		});
+	});

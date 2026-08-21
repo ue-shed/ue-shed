@@ -7,6 +7,7 @@
 			"@ue-shed/protocol",
 			"@ue-shed/observability",
 			"@ue-shed/unreal-connection",
+			"@ue-shed/plugin-distribution",
 			"@ue-shed/engine",
 			"@ue-shed/engine-win32-x64",
 			"@ue-shed/cameras",

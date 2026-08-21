@@ -1,5 +1,6 @@
 import { AuthoringValue } from "@ue-shed/protocol";
 import { CustodianExecutionMode, CustodianTargetId } from "@ue-shed/project-custodian";
+import { ReleaseVersion } from "@ue-shed/plugin-distribution";
 import { Schema } from "effect";
 
 const Project = { projectRoot: Schema.String };
@@ -268,7 +269,20 @@ export const CliCommand = Schema.TaggedUnion({
 		artifactPath: Schema.optionalKey(Schema.String),
 		manifestPath: Schema.String,
 		...Project
-	}
+	},
+	PluginsCacheInstall: {
+		artifactDigest: Schema.optionalKey(Schema.String),
+		cacheOnly: Schema.Boolean,
+		cacheRoot: Schema.String,
+		manifestDigest: Schema.optionalKey(Schema.String),
+		pluginIds: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
+		releaseVersion: ReleaseVersion,
+		source: Schema.String,
+		unrealVersion: Schema.optionalKey(Schema.String)
+	},
+	PluginsCacheList: { cacheRoot: Schema.String },
+	PluginsCacheVerify: { cacheRoot: Schema.String, releaseVersion: ReleaseVersion },
+	PluginsPrune: { cacheRoot: Schema.String, releaseVersion: ReleaseVersion }
 });
 
 export type CliCommand = typeof CliCommand.Type;

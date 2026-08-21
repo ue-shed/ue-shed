@@ -30,6 +30,7 @@ on:
                     - "@ue-shed/config-explorer"
                     - "@ue-shed/project-custodian"
                     - "@ue-shed/niagara"
+                    - "@ue-shed/plugin-distribution"
 
 permissions:
     contents: read

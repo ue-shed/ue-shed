@@ -270,6 +270,8 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorCanvas,
 		color: tokens.colorText,
 		fontFamily: tokens.fontBody,
+		fontSize: 13,
+		lineHeight: 1.5,
 		padding: 16
 	},
 	scopeBar: {
@@ -277,18 +279,18 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: 20,
-		marginBottom: 10,
-		padding: "0 2px 10px",
+		marginBottom: 12,
+		padding: "0 2px 12px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 9,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 12,
+		color: tokens.colorTextMuted
 	},
 	scopeIdentity: { display: "flex", gap: 8 },
 	scopeNote: { color: tokens.colorTextFaint },
 	panel: {
 		minWidth: 0,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
 	panelCompact: { minWidth: 0 },
@@ -304,28 +306,34 @@ const styles = stylex.create({
 	platform: {
 		margin: 0,
 		fontFamily: tokens.fontDisplay,
-		fontSize: 21,
-		fontWeight: 400
+		fontSize: 17,
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
 	},
 	coordinate: {
 		display: "block",
 		marginTop: 4,
 		overflow: "hidden",
-		color: tokens.colorTextFaint,
-		fontSize: 9,
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	coverage: {
 		flexShrink: 0,
-		padding: "5px 7px",
-		border: `1px solid ${tokens.colorSuccess}`,
+		padding: "3px 8px",
+		borderRadius: tokens.radiusPill,
+		backgroundColor: "rgba(76, 183, 130, 0.12)",
 		color: tokens.colorSuccess,
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 11,
+		fontWeight: 500
 	},
-	coveragePartial: { borderColor: tokens.colorWarningStrong, color: tokens.colorWarningStrong },
+	coveragePartial: {
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
+		color: tokens.colorWarning
+	},
 	valuePlate: {
 		display: "flex",
 		flexDirection: "column",
@@ -335,42 +343,43 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	valueLabel: {
-		color: tokens.colorTextFaint,
-		fontSize: 8,
-		letterSpacing: ".12em",
-		textTransform: "uppercase"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	value: {
 		marginTop: 8,
-		color: tokens.colorWarning,
-		fontFamily: tokens.fontBody,
-		fontSize: "clamp(16px, 2vw, 23px)",
-		lineHeight: 1.3,
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontMono,
+		fontSize: "clamp(15px, 2vw, 21px)",
+		fontWeight: 500,
+		lineHeight: 1.35,
 		overflowWrap: "anywhere"
 	},
 	stats: {
 		display: "flex",
 		flexWrap: "wrap",
 		gap: 16,
-		padding: "9px 16px",
+		padding: "10px 16px",
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextSubtle,
-		fontSize: 9
+		fontSize: 12
 	},
-	issueStat: { color: tokens.colorWarningStrong },
+	issueStat: { color: tokens.colorWarning },
 	exceptions: {
 		padding: "10px 16px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#241814"
+		backgroundColor: "rgba(242, 153, 74, 0.05)"
 	},
 	sectionHeading: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 16,
 		marginBottom: 7,
-		color: tokens.colorWarningStrong,
-		fontSize: 9
+		color: tokens.colorWarning,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	exception: {
 		display: "grid",
@@ -378,7 +387,7 @@ const styles = stylex.create({
 		gap: 10,
 		padding: "3px 0",
 		color: tokens.colorTextMuted,
-		fontSize: 9
+		fontSize: 12
 	},
 	trace: { padding: "14px 16px 6px" },
 	traceHeader: {
@@ -388,8 +397,8 @@ const styles = stylex.create({
 		gap: 18,
 		paddingBottom: 9
 	},
-	kicker: { color: tokens.colorWarningStrong, fontSize: 8, letterSpacing: ".13em" },
-	traceLegend: { color: tokens.colorTextFaint, fontSize: 8 },
+	kicker: { color: tokens.colorTextMuted, fontSize: 11, fontWeight: 500 },
+	traceLegend: { color: tokens.colorTextFaint, fontSize: 11 },
 	timeline: { margin: 0, padding: 0, listStyle: "none" },
 	contribution: {
 		display: "grid",
@@ -400,50 +409,52 @@ const styles = stylex.create({
 		padding: "5px 8px",
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		borderLeft: "2px solid transparent",
-		color: tokens.colorTextMuted
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	contributionEffective: {
-		borderLeftColor: tokens.colorWarningStrong,
-		backgroundColor: "#d7894a0d",
-		color: tokens.colorText
+		borderLeftColor: tokens.colorAccent,
+		backgroundColor: tokens.colorAccentWash,
+		color: tokens.colorTextStrong
 	},
-	sequence: { color: tokens.colorTextFaint, fontSize: 8 },
+	sequence: { color: tokens.colorTextFaint, fontFamily: tokens.fontMono, fontSize: 11 },
 	contributionSource: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 3,
 		minWidth: 0,
-		fontSize: 8
+		fontSize: 12
 	},
 	operation: {
 		justifySelf: "start",
-		padding: "3px 5px",
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorTextSubtle,
-		fontSize: 7,
-		letterSpacing: ".05em",
-		textTransform: "uppercase"
+		width: "fit-content",
+		padding: "2px 6px",
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: "rgba(255, 255, 255, 0.05)",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	contributionEffect: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 3,
 		minWidth: 0,
-		fontSize: 8
+		fontSize: 12
 	},
 	survival: {
 		justifySelf: "end",
 		color: tokens.colorTextFaint,
-		fontSize: 7,
-		letterSpacing: ".05em"
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
-	survivalActive: { color: tokens.colorWarningStrong },
+	survivalActive: { color: tokens.colorWarning },
 	disclosures: { display: "grid", gridTemplateColumns: "1fr 1fr" },
 	ledger: {
 		padding: "10px 16px",
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextSubtle,
-		fontSize: 8
+		fontSize: 12
 	},
 	ledgerBody: { display: "flex", flexDirection: "column", gap: 7, padding: "10px 0 2px" },
 	ledgerRow: { display: "grid", gap: 10, gridTemplateColumns: "74px minmax(0, 1fr)" },
@@ -453,13 +464,12 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: 20,
-		marginBottom: 10,
-		padding: "10px 13px",
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderLeft: `3px solid ${tokens.colorWarningStrong}`,
-		backgroundColor: tokens.colorSurfaceRaised,
-		fontSize: 8,
-		letterSpacing: ".08em"
+		marginBottom: 12,
+		padding: "10px 14px",
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		fontSize: 12
 	},
 	compareIdentity: { display: "flex", alignItems: "center", gap: 9 },
 	coverageComparison: { color: tokens.colorTextSubtle },

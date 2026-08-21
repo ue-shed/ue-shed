@@ -469,9 +469,9 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 
 const styles = stylex.create({
 	shell: {
-		border: "1px solid #39403b",
-		backgroundColor: "#0d100e",
-		boxShadow: "inset 0 1px #ffffff05"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
+		boxShadow: tokens.shadowCard
 	},
 	heading: {
 		display: "flex",
@@ -480,27 +480,33 @@ const styles = stylex.create({
 		flexWrap: "wrap",
 		gap: 24,
 		padding: "22px 24px",
-		borderBottom: "1px solid #303632",
-		backgroundImage: "linear-gradient(115deg, #171c18 0%, #0d100e 58%)"
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundImage: "linear-gradient(115deg, #161718 0%, #0f1011 58%)"
 	},
-	eyebrow: { color: "#839274", fontSize: 7, letterSpacing: ".16em" },
+	eyebrow: { color: tokens.colorTextFaint, fontSize: 11, letterSpacing: ".01em" },
 	title: {
 		margin: "7px 0 5px",
-		color: "#e0e5dd",
-		fontFamily: "Georgia, serif",
-		fontSize: 25,
-		fontWeight: 400
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 24,
+		fontWeight: 590
 	},
-	description: { maxWidth: 680, margin: 0, color: "#7e8880", fontSize: 10, lineHeight: 1.6 },
+	description: {
+		maxWidth: 680,
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.6
+	},
 	readOnlyStamp: {
 		minWidth: 132,
 		display: "grid",
 		gridTemplateColumns: "24px 1fr",
 		alignItems: "center",
 		gap: "2px 8px",
-		border: "1px solid #685a3d",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
+		border: "1px solid rgba(242, 153, 74, 0.35)",
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
 		padding: "10px 12px"
 	},
 	controls: {
@@ -512,37 +518,37 @@ const styles = stylex.create({
 		alignItems: "end",
 		gap: 12,
 		padding: 14,
-		borderBottom: "1px solid #303632"
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	control: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#849087",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	select: {
 		width: "100%",
-		border: "1px solid #3a443c",
-		borderRadius: 0,
-		backgroundColor: "#090c0a",
-		color: "#d9e0d9",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "9px 10px",
-		fontSize: 10
+		fontSize: 13
 	},
 	editButton: {
 		height: 36,
-		border: "1px solid #536456",
-		backgroundColor: { default: "#172019", ":hover": "#223026" },
-		color: "#dce5dc",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
 		cursor: "pointer",
 		padding: "0 13px",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 12,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	switchboard: {
 		display: "grid",
@@ -550,8 +556,8 @@ const styles = stylex.create({
 			default: "180px minmax(0, 1fr)",
 			"@media (max-width: 700px)": "1fr"
 		},
-		borderBottom: "1px solid #303632",
-		backgroundColor: "#101411"
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	switchboardHeading: {
 		display: "flex",
@@ -559,17 +565,17 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 12,
 		padding: 14,
-		borderRight: "1px solid #303632"
+		borderRight: `1px solid ${tokens.colorBorder}`
 	},
 	switchboardActions: { display: "flex", gap: 6 },
 	minorButton: {
-		border: "1px solid #39413b",
-		backgroundColor: { default: "#111512", ":hover": "#202720" },
-		color: "#9da89f",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		padding: "5px 7px",
-		fontSize: 7,
-		textTransform: "uppercase"
+		fontSize: 11,
+		textTransform: "none"
 	},
 	tableToggles: {
 		display: "flex",
@@ -583,14 +589,14 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) auto",
 		alignItems: "center",
-		border: "1px solid #303632",
-		borderTop: "2px solid #414943",
-		backgroundColor: "#0b0e0c",
+		border: `1px solid ${tokens.colorBorder}`,
+		borderTop: `2px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
 		opacity: 0.55
 	},
 	tableToggleVisible: {
 		borderTopColor: tokens.colorAccent,
-		backgroundColor: "#151b16",
+		backgroundColor: tokens.colorSurfaceRaised,
 		opacity: 1
 	},
 	toggleLabel: {
@@ -604,21 +610,25 @@ const styles = stylex.create({
 	isolateButton: {
 		alignSelf: "stretch",
 		border: 0,
-		borderLeft: "1px solid #303632",
-		backgroundColor: { default: "transparent", ":hover": "#202720" },
-		color: "#829087",
+		borderLeft: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		padding: "0 8px",
-		fontSize: 7,
-		textTransform: "uppercase"
+		fontSize: 11,
+		textTransform: "none"
 	},
 	notice: {
 		padding: "8px 14px",
-		borderBottom: "1px solid #3d493f",
-		color: "#93a196",
-		fontSize: 9
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
-	noticeError: { borderColor: "#665337", backgroundColor: "#1a1710", color: "#d6a363" },
+	noticeError: {
+		borderColor: "rgba(242, 153, 74, 0.35)",
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning
+	},
 	empty: {
 		minHeight: 260,
 		display: "flex",
@@ -626,39 +636,42 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 8,
-		color: "#737d75",
-		fontSize: 10
+		color: tokens.colorTextMuted,
+		fontSize: 13
 	},
 	matrixWrap: { width: "100%", overflow: "auto", maxHeight: "calc(100vh - 405px)" },
 	matrix: {
 		width: "max-content",
 		minWidth: "100%",
 		borderCollapse: "collapse",
-		color: "#b9c1ba",
-		fontSize: 9
+		color: tokens.colorText,
+		fontSize: 12
 	},
 	linkHeading: {
 		position: "sticky",
 		left: 0,
 		zIndex: 3,
 		minWidth: 150,
-		borderRight: "2px solid #495149",
-		backgroundColor: "#111512",
-		color: "#8d998f",
-		letterSpacing: ".12em"
+		borderRight: `2px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextSubtle,
+		letterSpacing: ".01em"
 	},
 	groupHeading: {
 		minWidth: 180,
 		padding: "11px 12px",
-		borderLeft: "1px solid #303632",
-		color: "#dce3d8",
+		borderLeft: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextStrong,
 		textAlign: "left",
-		fontFamily: "Georgia, serif",
+		fontFamily: tokens.fontDisplay,
 		fontSize: 15,
-		fontWeight: 400
+		fontWeight: 500
 	},
-	sourceHeading: { borderTop: `2px solid ${tokens.colorAccent}`, backgroundColor: "#141b15" },
-	targetHeading: { borderTop: "2px solid #6e8da0", backgroundColor: "#12181b" },
+	sourceHeading: {
+		borderTop: `2px solid ${tokens.colorAccent}`,
+		backgroundColor: tokens.colorSurfaceRaised
+	},
+	targetHeading: { borderTop: "2px solid #02b8cc", backgroundColor: tokens.colorSurface },
 	linkCell: {
 		position: "sticky",
 		left: 0,
@@ -666,12 +679,12 @@ const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		gap: 4,
-		borderRight: "2px solid #495149",
-		borderBottom: "1px solid #2a302c",
-		backgroundColor: "#111512",
-		color: "#d4dcd4",
+		borderRight: `2px solid ${tokens.colorBorderStrong}`,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorText,
 		padding: "9px 11px",
 		textAlign: "left"
 	},
-	rowName: { color: "#dce3d8", fontWeight: 600 }
+	rowName: { color: tokens.colorTextStrong, fontWeight: 590 }
 });

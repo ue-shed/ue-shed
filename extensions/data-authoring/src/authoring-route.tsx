@@ -1951,10 +1951,10 @@ const styles = stylex.create({
 		alignItems: "center",
 		color: tokens.colorTextMuted,
 		display: "flex",
-		fontSize: 9,
+		fontSize: 11,
 		gap: tokens.space2,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	page: {
 		minHeight: "calc(100vh - 52px)",
@@ -1984,38 +1984,38 @@ const styles = stylex.create({
 	},
 	emptyState: {
 		minHeight: 360,
-		border: "1px solid #343a36",
-		backgroundColor: "#111412",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 12,
-		color: "#879088",
+		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
 	errorState: {
 		minHeight: 280,
-		border: "1px solid #704a3c",
-		backgroundColor: "#1b1210",
+		border: "1px solid rgba(235, 87, 87, 0.35)",
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 10,
-		color: "#d7a08b",
+		color: tokens.colorDanger,
 		fontSize: 11
 	},
 	inlineButton: {
 		marginTop: 8,
-		border: "1px solid #58614e",
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorAccent,
 		padding: "8px 12px",
 		cursor: "pointer",
-		fontSize: 9,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 12,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	pulse: {
 		width: 8,
@@ -2027,25 +2027,25 @@ const styles = stylex.create({
 	viewTabs: {
 		display: "flex",
 		alignItems: "center",
-		border: "1px solid #39403b",
-		backgroundColor: "#0e110f",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
 		padding: 4
 	},
 	viewTab: {
 		border: 0,
 		borderBottom: "2px solid transparent",
-		backgroundColor: { default: "transparent", ":hover": "#171d18" },
-		color: "#78827a",
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		padding: "9px 13px",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+		fontSize: 12,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	viewTabActive: {
 		borderBottomColor: tokens.colorAccent,
-		backgroundColor: "#171d18",
-		color: "#dce3d8"
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	manifest: {
 		display: "grid",
@@ -2055,8 +2055,8 @@ const styles = stylex.create({
 				"minmax(220px, 1.4fr) repeat(3, minmax(65px, .35fr)) minmax(160px, .8fr)",
 			"@media (max-width: 700px)": "repeat(3, minmax(0, 1fr))"
 		},
-		border: "1px solid #39403b",
-		backgroundColor: "#111412"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
 	},
 	assetIdentity: {
 		display: "flex",
@@ -2065,13 +2065,13 @@ const styles = stylex.create({
 		gap: 5,
 		padding: "14px 16px"
 	},
-	assetBadge: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".14em" },
+	assetBadge: { color: tokens.colorAccent, fontSize: 12, letterSpacing: ".01em" },
 	metric: {
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "center",
 		padding: "10px 15px",
-		borderLeft: "1px solid #303632",
+		borderLeft: `1px solid ${tokens.colorBorder}`,
 		gap: 4
 	},
 	readOnlyFlag: {
@@ -2080,38 +2080,38 @@ const styles = stylex.create({
 		gridColumn: { default: "auto", "@media (max-width: 700px)": "1 / -1" },
 		gap: 10,
 		padding: "10px 15px",
-		borderLeft: "1px solid #303632",
-		color: "#d6a363"
+		borderLeft: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorWarning
 	},
 	draftState: { minWidth: 0, display: "flex", flexDirection: "column", gap: 4 },
-	draftStateDetail: { color: "#9b8060", fontSize: 8, lineHeight: 1.35 },
+	draftStateDetail: { color: tokens.colorTextSubtle, fontSize: 11, lineHeight: 1.35 },
 	diagnostics: {
 		display: "flex",
 		gap: 16,
 		padding: "10px 14px",
-		border: "1px solid #665337",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		fontSize: 9
+		border: "1px solid rgba(242, 153, 74, 0.35)",
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 12
 	},
 	replacementNotice: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "9px 12px",
-		border: "1px solid #665337",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		fontSize: 9
+		border: "1px solid rgba(242, 153, 74, 0.35)",
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 12
 	},
 	noticeDismiss: {
 		border: 0,
 		backgroundColor: "transparent",
-		color: "#d6a363",
+		color: tokens.colorWarning,
 		cursor: "pointer",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 11,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	contentGrid: {
 		display: "grid",
@@ -2123,8 +2123,8 @@ const styles = stylex.create({
 	},
 	catalog: {
 		minHeight: 480,
-		border: "1px solid #39403b",
-		backgroundColor: "#0e110f",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
 	},
 	catalogHeading: {
@@ -2133,44 +2133,49 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "0 12px",
-		borderBottom: "1px solid #303632"
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	catalogTitle: { display: "flex", flexDirection: "column", gap: 4 },
-	catalogEyebrow: { color: "#718073", fontSize: 7, letterSpacing: ".14em" },
-	catalogName: { color: "#d9ded7", fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 400 },
+	catalogEyebrow: { color: tokens.colorTextFaint, fontSize: 11, letterSpacing: ".01em" },
+	catalogName: {
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 17,
+		fontWeight: 500
+	},
 	catalogRefresh: {
 		width: 28,
 		height: 28,
-		border: "1px solid #39413b",
-		backgroundColor: { default: "transparent", ":hover": "#202720" },
-		color: "#9dab9e",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer"
 	},
 	catalogSearch: {
 		width: "calc(100% - 20px)",
 		margin: 10,
-		border: "1px solid #343b36",
-		backgroundColor: "#090b0a",
-		color: "#e0e5dd",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "8px 9px",
 		outlineColor: tokens.colorAccent,
-		fontSize: 9
+		fontSize: 13
 	},
-	catalogStatus: { padding: 14, color: "#737d75", fontSize: 9, lineHeight: 1.6 },
+	catalogStatus: { padding: 14, color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
 	catalogProgressBlock: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 8,
 		padding: 14,
-		color: "#737d75",
-		fontSize: 9,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
 		lineHeight: 1.4
 	},
 	catalogProgressLabel: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 8,
-		color: "#9dab9e"
+		color: tokens.colorText
 	},
 	catalogProgress: {
 		width: "100%",
@@ -2180,7 +2185,7 @@ const styles = stylex.create({
 	catalogList: {
 		maxHeight: "calc(100vh - 350px)",
 		overflowY: "auto",
-		borderTop: "1px solid #252b27"
+		borderTop: `1px solid ${tokens.colorBorder}`
 	},
 	catalogItem: {
 		width: "100%",
@@ -2189,14 +2194,14 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: 5,
 		border: 0,
-		borderBottom: "1px solid #252b27",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
 		borderLeft: "3px solid transparent",
-		backgroundColor: { default: "transparent", ":hover": "#171d18" },
-		color: "#b8c0b8",
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
 		padding: "11px 10px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontSize: 10
+		fontSize: 12
 	},
 	catalogItemActive: {
 		borderLeftColor: tokens.colorAccent,
@@ -2208,21 +2213,21 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	catalogItemKind: { color: "#68736a", fontSize: 7, letterSpacing: ".1em" },
+	catalogItemKind: { color: tokens.colorTextFaint, fontSize: 11, letterSpacing: ".01em" },
 	catalogDivergence: {
-		color: "#d6a363",
-		fontSize: 7,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		color: tokens.colorWarning,
+		fontSize: 11,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	catalogWarning: {
-		borderBottom: "1px solid #665337",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		fontSize: 7,
-		letterSpacing: ".08em",
+		borderBottom: "1px solid rgba(242, 153, 74, 0.35)",
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 11,
+		letterSpacing: ".01em",
 		padding: "8px 10px",
-		textTransform: "uppercase"
+		textTransform: "none"
 	},
 	sessionShelf: {
 		minHeight: 0,
@@ -2234,21 +2239,21 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "10px 11px 7px",
-		color: "#718073",
-		fontSize: 7,
-		letterSpacing: ".14em"
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		letterSpacing: ".01em"
 	},
 	pendingSaveHeading: {
-		borderTop: "1px solid #303632",
-		color: "#d6a363",
-		fontSize: 7,
-		letterSpacing: ".12em",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorWarning,
+		fontSize: 11,
+		letterSpacing: ".01em",
 		padding: "12px 11px 7px"
 	},
 	draftItem: {
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) 28px",
-		borderTop: "1px solid #252b27"
+		borderTop: `1px solid ${tokens.colorBorder}`
 	},
 	draftOpen: {
 		minWidth: 0,
@@ -2257,21 +2262,25 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: 4,
 		border: 0,
-		backgroundColor: { default: "transparent", ":hover": "#171d18" },
-		color: "#b8c0b8",
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
 		padding: "9px 10px",
 		textAlign: "left",
 		cursor: "pointer"
 	},
 	draftDiscard: {
 		border: 0,
-		borderLeft: "1px solid #252b27",
-		backgroundColor: { default: "transparent", ":hover": "#351c19" },
-		color: "#9e6d63",
+		borderLeft: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(235, 87, 87, 0.12)" },
+		color: tokens.colorDanger,
 		cursor: "pointer",
 		fontSize: 15
 	},
-	sheet: { minWidth: 0, border: "1px solid #39403b", backgroundColor: "#101311" },
+	sheet: {
+		minWidth: 0,
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
+	},
 	sheetTools: {
 		minHeight: 48,
 		display: "flex",
@@ -2279,26 +2288,32 @@ const styles = stylex.create({
 		flexWrap: "wrap",
 		gap: 6,
 		padding: "8px 10px",
-		borderBottom: "1px solid #303632"
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	searchWrap: { display: "flex", alignItems: "center", gap: 9, color: "#707a72", fontSize: 8 },
+	searchWrap: {
+		display: "flex",
+		alignItems: "center",
+		gap: 9,
+		color: tokens.colorTextMuted,
+		fontSize: 11
+	},
 	search: {
 		width: { default: 250, "@media (max-width: 700px)": "100%" },
-		border: "1px solid #39413b",
-		backgroundColor: "#090b0a",
-		color: "#e0e5dd",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "8px 10px",
 		outlineColor: tokens.colorAccent
 	},
-	visibleCount: { color: "#89938c", fontSize: 8, letterSpacing: ".08em" },
+	visibleCount: { color: tokens.colorTextMuted, fontSize: 11, letterSpacing: ".01em" },
 	rowStruct: {
 		marginLeft: "auto",
 		maxWidth: 360,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#58615a",
-		fontSize: 8
+		color: tokens.colorTextFaint,
+		fontSize: 11
 	},
 	rowActions: {
 		width: "100%",
@@ -2306,18 +2321,22 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 6,
 		paddingTop: 7,
-		borderTop: "1px solid #252b27"
+		borderTop: `1px solid ${tokens.colorBorder}`
 	},
 	sheetAction: {
-		border: "1px solid #39413b",
-		backgroundColor: { default: "#111512", ":hover": "#202720", ":disabled": "#101210" },
-		color: { default: "#aeb9af", ":disabled": "#4d554f" },
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		fontSize: 8,
+		fontSize: 12,
 		padding: "6px 9px",
-		textTransform: "uppercase"
+		textTransform: "none"
 	},
-	dangerAction: { color: "#d18b7e" },
+	dangerAction: { color: tokens.colorDanger },
 	inspector: {
 		minHeight: 480,
 		borderColor: tokens.colorBorderStrong,
@@ -2331,29 +2350,29 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
 		margin: "-20px -20px 20px",
-		borderBottom: "1px solid #333a35"
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	inspectorTab: {
 		border: 0,
 		borderBottom: "2px solid transparent",
-		backgroundColor: { default: "#0e110f", ":hover": "#171d18" },
-		color: "#78827a",
+		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		padding: "12px 8px",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+		fontSize: 12,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
-	inspectorTabActive: { borderBottomColor: tokens.colorAccent, color: "#dce3d8" },
-	inspectorEmpty: { color: "#727a74", fontSize: 10, lineHeight: 1.6 },
-	inspectorKicker: { color: "#8fa080", fontSize: 8, letterSpacing: ".15em" },
+	inspectorTabActive: { borderBottomColor: tokens.colorAccent, color: tokens.colorTextStrong },
+	inspectorEmpty: { color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
+	inspectorKicker: { color: tokens.colorTextMuted, fontSize: 11, letterSpacing: ".01em" },
 	inspectorTitle: {
 		margin: "12px 0 5px",
-		fontFamily: "Georgia, serif",
-		fontSize: 28,
-		fontWeight: 400
+		fontFamily: tokens.fontDisplay,
+		fontSize: 22,
+		fontWeight: 590
 	},
-	inspectorPath: { margin: 0, color: "#6f7871", fontSize: 9 },
+	inspectorPath: { margin: 0, color: tokens.colorTextSubtle, fontSize: 12 },
 	valueHero: {
 		marginTop: 22,
 		minHeight: 120,
@@ -2364,8 +2383,8 @@ const styles = stylex.create({
 		borderLeftColor: tokens.colorAccent,
 		borderLeftStyle: "solid",
 		borderLeftWidth: 3,
-		backgroundColor: "#0b0e0c",
-		color: "#dfe4dc",
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
 		wordBreak: "break-word"
 	},
 	detailList: { display: "flex", flexDirection: "column", gap: 0, marginTop: 18 },
@@ -2374,18 +2393,18 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 4,
 		padding: "9px 0",
-		borderBottom: "1px solid #292f2b",
-		fontSize: 9,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		fontSize: 12,
 		wordBreak: "break-word"
 	},
-	detailLabel: { color: "#6f7871", fontSize: 7, letterSpacing: ".1em" },
+	detailLabel: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: ".01em" },
 	referencePicker: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 12,
 		marginTop: 20,
 		padding: "14px 0 0",
-		borderTop: "1px solid #39413b"
+		borderTop: `1px solid ${tokens.colorBorder}`
 	},
 	referenceHeading: {
 		display: "flex",
@@ -2395,29 +2414,29 @@ const styles = stylex.create({
 	},
 	referenceStatus: {
 		padding: "3px 6px",
-		border: "1px solid #39463d",
-		backgroundColor: "#0b100c",
-		color: tokens.colorAccent,
-		fontSize: 7,
-		letterSpacing: ".08em"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: "rgba(255, 255, 255, 0.05)",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".01em"
 	},
 	referenceField: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#aab4ab",
-		fontSize: 8,
-		letterSpacing: ".06em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	referenceSelect: {
 		width: "100%",
-		border: "1px solid #3a443c",
-		borderRadius: 0,
-		backgroundColor: "#0a0e0b",
-		color: "#d9e0d9",
-		fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-		fontSize: 10,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 13,
 		padding: "9px 10px"
 	},
 	referenceMessage: {
@@ -2426,37 +2445,41 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 8,
 		padding: "9px 10px",
-		borderLeft: "2px solid #667368",
-		backgroundColor: "#0b0f0c",
-		color: "#89938b",
-		fontSize: 8,
+		borderLeft: `2px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
 		lineHeight: 1.45
 	},
-	referenceError: { borderLeftColor: "#a86f61", color: "#d39b8d" },
+	referenceError: { borderLeftColor: tokens.colorDanger, color: tokens.colorDanger },
 	referenceRetry: {
 		border: 0,
 		backgroundColor: "transparent",
 		color: tokens.colorAccent,
 		cursor: "pointer",
-		fontSize: 8,
-		textTransform: "uppercase"
+		fontSize: 12,
+		textTransform: "none"
 	},
 	referenceStage: {
-		border: "1px solid #536456",
-		backgroundColor: { default: "#172019", ":hover": "#223026", ":disabled": "#101310" },
-		color: { default: "#dce5dc", ":disabled": "#505851" },
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		fontSize: 8,
-		letterSpacing: ".09em",
+		fontSize: 12,
+		letterSpacing: ".01em",
 		padding: "9px 12px",
-		textTransform: "uppercase"
+		textTransform: "none"
 	},
 	reviewSummary: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
 		paddingBottom: 16,
-		borderBottom: "1px solid #333a35"
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	reviewList: { maxHeight: "calc(100vh - 410px)", overflowY: "auto" },
 	reviewChange: {
@@ -2464,17 +2487,17 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 5,
 		padding: "11px 0",
-		borderBottom: "1px solid #292f2b",
-		fontSize: 9
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		fontSize: 12
 	},
 	reviewDiagnostic: {
 		display: "grid",
 		gridTemplateColumns: "54px 1fr",
 		gap: 8,
 		padding: "9px 0",
-		borderTop: "1px solid #665337",
-		color: "#d6a363",
-		fontSize: 8,
+		borderTop: "1px solid rgba(242, 153, 74, 0.35)",
+		color: tokens.colorWarning,
+		fontSize: 12,
 		lineHeight: 1.45
 	},
 	rowEditorBackdrop: {
@@ -2483,44 +2506,44 @@ const styles = stylex.create({
 		zIndex: 20,
 		display: "grid",
 		placeItems: "center",
-		backgroundColor: "#050706cc"
+		backgroundColor: "rgba(8, 9, 10, 0.8)"
 	},
 	rowEditor: {
 		width: "min(420px, calc(100vw - 40px))",
 		display: "flex",
 		flexDirection: "column",
 		gap: 18,
-		border: "1px solid #566159",
-		backgroundColor: "#111512",
-		boxShadow: "0 24px 80px #00000088",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceRaised,
+		boxShadow: tokens.shadowOverlay,
 		padding: 22
 	},
 	rowEditorLabel: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 8,
-		color: "#879088",
-		fontSize: 9,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".01em",
+		textTransform: "none"
 	},
 	rowEditorInput: {
-		border: "1px solid #465047",
-		backgroundColor: "#090b0a",
-		color: "#e0e5dd",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "10px 11px",
 		outlineColor: tokens.colorAccent,
 		fontSize: 12
 	},
 	rowEditorActions: { display: "flex", justifyContent: "flex-end", gap: 8 },
 	dialogButton: {
-		border: "1px solid #465047",
-		backgroundColor: { default: "#151a16", ":hover": "#202720" },
-		color: "#b8c0b8",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
 		cursor: "pointer",
 		padding: "8px 11px",
-		fontSize: 9,
-		textTransform: "uppercase"
+		fontSize: 12,
+		textTransform: "none"
 	},
-	dialogPrimary: { borderColor: "#8cad57", color: "#c8ef87" }
+	dialogPrimary: { borderColor: tokens.colorAccent, color: tokens.colorAccent }
 });

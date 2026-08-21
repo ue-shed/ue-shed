@@ -335,7 +335,7 @@ const styles = stylex.create({
 		position: "fixed",
 		inset: 0,
 		zIndex: 82,
-		backgroundColor: "#030504c7",
+		backgroundColor: "rgba(8, 9, 10, 0.78)",
 		backdropFilter: "blur(4px)",
 		display: "flex",
 		justifyContent: "flex-start"
@@ -343,9 +343,9 @@ const styles = stylex.create({
 	drawer: {
 		width: "min(760px, 96vw)",
 		height: "100%",
-		backgroundColor: "#0d100e",
-		borderRight: "1px solid #4a554b",
-		boxShadow: "28px 0 90px #000b",
+		backgroundColor: tokens.colorSurface,
+		borderRight: `1px solid ${tokens.colorBorder}`,
+		boxShadow: tokens.shadowOverlay,
 		display: "grid",
 		gridTemplateRows: "auto minmax(0, 1fr)",
 		color: tokens.colorText
@@ -356,23 +356,23 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		alignItems: "flex-start",
 		padding: "28px 30px 24px",
-		borderBottom: "1px solid #343b36",
-		backgroundImage: "linear-gradient(115deg, #171d18 0%, #0d100e 68%)"
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundImage: "linear-gradient(115deg, #161718 0%, #0f1011 68%)"
 	},
-	kicker: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".16em" },
+	kicker: { color: tokens.colorAccent, fontSize: 11, letterSpacing: ".04em" },
 	title: {
 		margin: "8px 0 5px",
-		fontFamily: "Georgia, serif",
-		fontWeight: 400,
-		fontSize: 30
+		fontFamily: tokens.fontDisplay,
+		fontWeight: 590,
+		fontSize: 26
 	},
-	subtitle: { margin: 0, color: "#89938c", fontSize: 11 },
+	subtitle: { margin: 0, color: tokens.colorTextMuted, fontSize: 11 },
 	close: {
 		width: 34,
 		height: 34,
-		border: "1px solid #424b44",
-		backgroundColor: { default: "transparent", ":hover": "#222923" },
-		color: "#96a099",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		fontSize: 21,
 		cursor: "pointer"
 	},
@@ -384,7 +384,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 10,
-		color: "#7f8982",
+		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
 	sectionHeading: {
@@ -392,9 +392,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		alignItems: "baseline",
 		marginBottom: 10,
-		color: "#707a73",
-		fontSize: 8,
-		letterSpacing: ".14em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	setList: { display: "grid", gap: 8 },
 	setCard: {
@@ -404,21 +404,21 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 13,
 		padding: "0 14px",
-		border: "1px solid #333b35",
-		backgroundColor: "#131714"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
 	},
 	setCardActive: {
-		borderColor: "#78856d",
-		backgroundColor: "#192019",
-		boxShadow: "inset 3px 0 #b9f227"
+		borderColor: tokens.colorBorderStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.05)",
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
-	setIndex: { color: tokens.colorAccent, fontFamily: "Georgia, serif", fontSize: 21 },
+	setIndex: { color: tokens.colorAccent, fontFamily: tokens.fontMono, fontSize: 21 },
 	setCopy: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		fontSize: 10
+		fontSize: 11
 	},
 	setTitle: {
 		display: "flex",
@@ -427,49 +427,53 @@ const styles = stylex.create({
 	},
 	activeBadge: {
 		padding: "2px 5px",
-		border: "1px solid #7b8a69",
+		border: "1px solid rgba(228, 242, 34, 0.4)",
 		color: tokens.colorAccent,
-		fontSize: 7,
-		letterSpacing: ".12em"
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	openButton: {
 		minWidth: 88,
 		height: 32,
-		border: "1px solid #68745f",
-		backgroundColor: { default: "transparent", ":hover": "#252c25", ":disabled": "#171b18" },
-		color: { default: "#b9c1ba", ":disabled": "#626a64" },
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: { default: "pointer", ":disabled": "default" }
 	},
 	empty: {
 		padding: 24,
-		border: "1px dashed #3b433d",
-		color: "#778179",
-		fontSize: 10
+		border: `1px dashed ${tokens.colorBorder}`,
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	createPanel: {
 		marginTop: 28,
 		padding: 20,
-		border: "1px solid #3b433d",
-		borderLeft: "3px solid #899881",
-		backgroundColor: "#151a16",
+		border: `1px solid ${tokens.colorBorder}`,
+		borderLeft: `3px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: tokens.colorSurface,
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) minmax(260px, .85fr)",
 		gap: 24,
-		fontSize: 10,
-		color: "#89938c"
+		fontSize: 12,
+		color: tokens.colorTextMuted
 	},
 	createLabel: {
 		display: "block",
 		marginBottom: 7,
 		color: tokens.colorAccent,
-		fontSize: 8,
-		letterSpacing: ".14em"
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	createForm: { display: "flex", alignItems: "flex-end", gap: 8 },
-	createHint: { gridColumn: "1 / -1", color: "#c8966f" },
+	createHint: { gridColumn: "1 / -1", color: tokens.colorWarning },
 	failure: {
 		minHeight: 220,
 		display: "flex",
@@ -477,17 +481,17 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		justifyContent: "center",
 		gap: 10,
-		color: "#dc9278"
+		color: tokens.colorDanger
 	},
 	operationFailure: {
 		marginTop: 16,
 		padding: 14,
-		border: "1px solid #7e5547",
-		backgroundColor: "#241713",
+		border: "1px solid rgba(235, 87, 87, 0.4)",
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#e2a087",
-		fontSize: 10
+		color: tokens.colorDanger,
+		fontSize: 12
 	}
 });

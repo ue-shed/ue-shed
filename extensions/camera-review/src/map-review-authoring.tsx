@@ -6,6 +6,7 @@ import {
 	type FramingParameters
 } from "@ue-shed/cameras";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Schedule, Stream } from "effect";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
@@ -1225,8 +1226,8 @@ export function MapReviewAuthoring(props: {
 const styles = stylex.create({
 	authoringDesk: {
 		marginTop: 8,
-		border: "1px solid #39413c",
-		backgroundColor: "#101311"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface
 	},
 	authoringHeader: {
 		display: "flex",
@@ -1234,7 +1235,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 16,
 		padding: "8px 12px",
-		borderBottom: "1px solid #303632"
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	headerSubject: {
 		display: "flex",
@@ -1242,22 +1243,22 @@ const styles = stylex.create({
 		gap: 10,
 		minWidth: 0,
 		flex: 1,
-		color: "#c5cbc4",
+		color: tokens.colorText,
 		fontSize: 12
 	},
 	headerLabel: {
 		flexShrink: 0,
-		color: "#7e8881",
-		fontSize: 9,
-		letterSpacing: ".1em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	headerPath: {
 		minWidth: 0,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#7e8881",
-		fontSize: 10
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	headerActions: {
 		display: "flex",
@@ -1267,13 +1268,13 @@ const styles = stylex.create({
 	},
 	generateButton: {
 		flexShrink: 0,
-		border: "1px solid #899881",
-		backgroundColor: { default: "transparent", ":hover": "#20271f" },
-		color: "#d8ded7",
-		padding: "8px 12px",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".11em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: { default: "pointer", ":disabled": "wait" }
 	},
 	fpsControl: {
@@ -1281,35 +1282,35 @@ const styles = stylex.create({
 		gap: 4,
 		alignItems: "center",
 		minWidth: 140,
-		color: "#9aa59a",
-		fontSize: 8,
-		fontWeight: 700,
-		letterSpacing: ".1em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em"
 	},
 	fallbackMode: {
 		padding: "6px 8px",
-		border: "1px solid #725240",
-		backgroundColor: "#1a110d",
-		color: "#e6a37d",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em"
+		border: "1px solid rgba(242, 153, 74, 0.4)",
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em"
 	},
 	authoringError: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
 		padding: "10px 12px",
-		color: "#e9967b"
+		color: tokens.colorDanger
 	},
 	mapMismatch: {
 		display: "grid",
 		gap: 12,
 		padding: "14px 16px",
-		borderTop: "1px solid #5d382e",
-		borderBottom: "1px solid #5d382e",
-		backgroundColor: "#17100d",
-		color: "#e9967b"
+		borderTop: "1px solid rgba(235, 87, 87, 0.35)",
+		borderBottom: "1px solid rgba(235, 87, 87, 0.35)",
+		backgroundColor: "rgba(235, 87, 87, 0.06)",
+		color: tokens.colorDanger
 	},
 	mapMismatchHeading: {
 		display: "flex",
@@ -1327,41 +1328,41 @@ const styles = stylex.create({
 		gap: 4,
 		minWidth: 0,
 		padding: 10,
-		border: "1px solid #382924",
-		backgroundColor: "#0e0b09"
+		border: "1px solid rgba(235, 87, 87, 0.25)",
+		backgroundColor: tokens.colorSurfaceInset
 	},
-	mapMismatchLabel: { color: "#92766d", fontSize: 8, letterSpacing: ".1em" },
-	mapMismatchName: { color: "#e6d5cf", fontSize: 11 },
+	mapMismatchLabel: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: ".04em" },
+	mapMismatchName: { color: tokens.colorTextStrong, fontSize: 11 },
 	mapMismatchPath: {
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#b68d80",
-		fontSize: 9
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	},
-	matchingSetHint: { color: "#b9f227", fontSize: 10 },
+	matchingSetHint: { color: tokens.colorAccent, fontSize: 11 },
 	mapMismatchActions: {
 		display: "flex",
 		gap: 8
 	},
 	mapMismatchButton: {
-		border: "1px solid #8b5b4c",
-		backgroundColor: { default: "transparent", ":hover": "#2c1913" },
-		color: "#efb29e",
-		padding: "8px 11px",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	mapMismatchPrimaryButton: {
-		border: "1px solid #b9f227",
-		backgroundColor: { default: "#b9f227", ":hover": "#cdfc53" },
-		color: "#10130c",
-		padding: "8px 11px",
-		fontSize: 9,
-		fontWeight: 900,
-		letterSpacing: ".08em",
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	authoringBody: { padding: 10 },
@@ -1372,15 +1373,18 @@ const styles = stylex.create({
 	},
 	candidateCard: {
 		position: "relative",
-		border: "1px solid #303732",
-		backgroundColor: "#090b0a"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset
 	},
-	candidateSelected: { borderColor: "#b9f227", boxShadow: "0 0 0 1px #b9f227" },
+	candidateSelected: {
+		borderColor: tokens.colorAccent,
+		boxShadow: `0 0 0 1px ${tokens.colorAccent}`
+	},
 	candidateSelect: {
 		width: "100%",
 		border: 0,
 		backgroundColor: "transparent",
-		color: "#dce1dc",
+		color: tokens.colorText,
 		textAlign: "left",
 		padding: 0,
 		cursor: "pointer"
@@ -1394,12 +1398,13 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 5,
 		padding: 12,
-		color: "#9d7062",
-		backgroundImage: "repeating-linear-gradient(-45deg,#111,#111 8px,#161916 8px,#161916 9px)"
+		color: tokens.colorTextSubtle,
+		backgroundImage:
+			"repeating-linear-gradient(-45deg,#0c0d0e,#0c0d0e 8px,#161718 8px,#161718 9px)"
 	},
 	candidateIndex: {
-		color: "#b9f227",
-		fontSize: 9
+		color: tokens.colorAccent,
+		fontSize: 11
 	},
 	candidateMeta: {
 		display: "grid",
@@ -1412,10 +1417,10 @@ const styles = stylex.create({
 		position: "absolute",
 		top: 6,
 		right: 6,
-		border: "1px solid #606861",
-		backgroundColor: "#0b0d0bcc",
-		color: "#abb2ac",
-		fontSize: 7,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: "rgba(12, 13, 14, 0.85)",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
 		padding: "5px 6px",
 		cursor: "pointer"
 	},
@@ -1428,8 +1433,8 @@ const styles = stylex.create({
 		gap: 18,
 		marginTop: 10,
 		padding: 16,
-		border: "1px solid #39413c",
-		backgroundColor: "#171b18"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceRaised
 	},
 	poseHeading: {
 		display: "flex",
@@ -1438,10 +1443,10 @@ const styles = stylex.create({
 		gap: 12
 	},
 	poseScrubHint: {
-		color: "#8fa65d",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em"
 	},
 	poseGrid: {
 		display: "grid",
@@ -1451,27 +1456,32 @@ const styles = stylex.create({
 		},
 		gap: 8
 	},
-	poseHint: { display: "block", marginBottom: 10, color: "#89948c", lineHeight: 1.45 },
+	poseHint: {
+		display: "block",
+		marginBottom: 10,
+		color: tokens.colorTextMuted,
+		lineHeight: 1.45
+	},
 	poseGroup: {
 		display: "grid",
 		alignContent: "start",
 		gap: 7,
 		padding: 9,
-		border: "1px solid #303832",
-		backgroundColor: "#0d110e"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	positionGroup: {
 		gridRow: { default: "1 / span 2", "@media (max-width: 700px)": "auto" }
 	},
-	lensGroup: { borderTopColor: "#b9f227" },
+	lensGroup: { borderTopColor: tokens.colorAccent },
 	poseGroupHeader: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: 8,
-		color: "#c8d0c9",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		color: tokens.colorText,
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	positionFields: {
 		display: "grid",
@@ -1486,23 +1496,26 @@ const styles = stylex.create({
 	poseInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #465048",
-		backgroundColor: "#0b0e0c",
-		color: "#edf1ed",
+		border: {
+			default: `1px solid ${tokens.colorBorderStrong}`,
+			":focus": `1px solid ${tokens.colorTextSubtle}`
+		},
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
 		padding: "7px 8px",
 		fontFamily: "inherit",
-		fontSize: 10,
-		outline: { ":focus": "1px solid #b9f227" }
+		fontSize: 12,
+		outline: { ":focus": "none" }
 	},
 	reasonField: { display: "grid", gap: 5, marginTop: 10 },
 	diagnosticList: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 4,
-		color: "#d3d9d2",
+		color: tokens.colorText,
 		lineHeight: 1.35
 	},
-	reframeNotice: { color: "#e4aa79", lineHeight: 1.35 },
+	reframeNotice: { color: tokens.colorWarning, lineHeight: 1.35 },
 	approveColumn: {
 		display: "flex",
 		flexDirection: "column",
@@ -1511,12 +1524,16 @@ const styles = stylex.create({
 		fontSize: 8
 	},
 	keepButton: {
-		border: "1px solid #b9f227",
-		backgroundColor: { default: "#b9f227", ":hover": "#d1ff53", ":disabled": "#526130" },
-		color: "#10130c",
-		fontWeight: 900,
-		padding: 12,
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: {
+			default: tokens.colorAccent,
+			":hover": tokens.colorAccentStrong,
+			":disabled": "rgba(228, 242, 34, 0.5)"
+		},
+		color: tokens.colorAccentText,
+		fontWeight: 500,
+		padding: "5px 12px",
 		cursor: { default: "pointer", ":disabled": "wait" }
 	},
-	savedMark: { color: "#b9f227", letterSpacing: ".09em" }
+	savedMark: { color: tokens.colorAccent, letterSpacing: ".04em" }
 });

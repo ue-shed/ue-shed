@@ -13,6 +13,7 @@ import {
 	createEffectSubscription,
 	type ActorExplorerFilters
 } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Effect } from "effect";
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { MapReviewClientApi, MapReviewWorldObservation } from "./map-review-client.js";
@@ -906,27 +907,32 @@ const styles = stylex.create({
 	scout: {
 		minWidth: 0,
 		maxWidth: "100%",
-		border: "1px solid #384039",
-		backgroundColor: "#0a0d0b",
-		boxShadow: "inset 4px 0 #b9f227"
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
+		boxShadow: `inset 4px 0 ${tokens.colorAccent}`
 	},
 	header: {
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "end",
 		padding: "20px 22px",
-		borderBottom: "1px solid #303632",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
 		minWidth: 0
 	},
-	eyebrow: { margin: "0 0 8px", color: "#89938c", fontSize: 9, letterSpacing: ".16em" },
-	title: { margin: 0, fontFamily: "Georgia, serif", fontWeight: 400, fontSize: 28 },
+	eyebrow: {
+		margin: "0 0 8px",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".04em"
+	},
+	title: { margin: 0, fontFamily: tokens.fontDisplay, fontWeight: 590, fontSize: 26 },
 	worldStatus: {
 		display: "grid",
 		gridTemplateColumns: "8px auto",
 		gap: "3px 8px",
 		alignItems: "center",
 		textAlign: "right",
-		fontSize: 8,
+		fontSize: 11,
 		minWidth: 0,
 		maxWidth: "42vw"
 	},
@@ -934,16 +940,21 @@ const styles = stylex.create({
 		width: 6,
 		height: 6,
 		borderRadius: "50%",
-		backgroundColor: "#b9f227",
-		boxShadow: "0 0 10px #b9f277"
+		backgroundColor: tokens.colorSuccess,
+		boxShadow: "0 0 8px rgba(76, 183, 130, 0.35)"
 	},
 	worldStatusCode: {
-		color: "#7d8780",
+		color: tokens.colorTextSubtle,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	sampleAge: { gridColumn: "2", color: "#657068", fontSize: 7, letterSpacing: ".1em" },
+	sampleAge: {
+		gridColumn: "2",
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		letterSpacing: ".04em"
+	},
 	offline: {
 		minHeight: 410,
 		display: "flex",
@@ -955,16 +966,16 @@ const styles = stylex.create({
 			"linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)",
 		backgroundSize: "32px 32px"
 	},
-	offlineReticle: { color: "#b9f227", fontSize: 40 },
+	offlineReticle: { color: tokens.colorAccent, fontSize: 40 },
 	connectButton: {
 		marginTop: 14,
-		border: "1px solid #b9f227",
-		backgroundColor: { default: "#b9f227", ":hover": "#d4ff62" },
-		color: "#11150d",
-		padding: "11px 16px",
-		fontWeight: 900,
-		fontSize: 9,
-		letterSpacing: ".1em",
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		padding: "5px 12px",
+		fontWeight: 500,
+		fontSize: 12,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	tools: {
@@ -972,28 +983,28 @@ const styles = stylex.create({
 		gap: 12,
 		alignItems: "end",
 		padding: "12px 14px",
-		borderBottom: "1px solid #303632",
-		backgroundColor: "#111512",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
 		minWidth: 0,
 		gridTemplateColumns: {
 			default: "minmax(0, 1fr) 180px",
 			"@media (max-width: 600px)": "1fr"
 		}
 	},
-	sampleMeta: { display: "grid", textAlign: "right", color: "#7f8882", fontSize: 8 },
+	sampleMeta: { display: "grid", textAlign: "right", color: tokens.colorTextMuted, fontSize: 11 },
 	rateControl: {
 		display: "grid",
 		gridTemplateColumns: "1fr auto",
 		gap: "5px 10px",
 		alignItems: "center",
-		color: "#879188",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	rateSlider: {
 		gridColumn: "1 / -1",
 		width: "100%",
-		accentColor: "#b9f227",
+		accentColor: tokens.colorAccent,
 		cursor: "ew-resize"
 	},
 	workspace: {
@@ -1011,7 +1022,7 @@ const styles = stylex.create({
 		aspectRatio: "2 / 1",
 		width: "100%",
 		overflow: "hidden",
-		backgroundColor: "#0c100d",
+		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
 			"linear-gradient(#a7b2aa12 1px,transparent 1px),linear-gradient(90deg,#a7b2aa12 1px,transparent 1px),linear-gradient(#a7b2aa08 1px,transparent 1px),linear-gradient(90deg,#a7b2aa08 1px,transparent 1px)",
 		backgroundSize: "80px 80px,80px 80px,16px 16px,16px 16px",
@@ -1024,7 +1035,7 @@ const styles = stylex.create({
 		height: "calc(100% - 56px)",
 		cursor: "crosshair",
 		touchAction: "none",
-		outline: { ":focus": "1px solid #ffffff" }
+		outline: { ":focus": `1px solid ${tokens.colorTextSubtle}` }
 	},
 	resetView: {
 		position: "absolute",
@@ -1032,13 +1043,16 @@ const styles = stylex.create({
 		left: "50%",
 		transform: "translateX(-50%)",
 		zIndex: 2,
-		border: "1px solid #3a433c",
-		backgroundColor: { default: "#111512cc", ":hover": "#1a211c" },
-		color: "#9aa49c",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: {
+			default: "rgba(15, 16, 17, 0.85)",
+			":hover": "rgba(255, 255, 255, 0.06)"
+		},
+		color: tokens.colorTextMuted,
 		padding: "4px 8px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	liveRegion: {
@@ -1053,16 +1067,16 @@ const styles = stylex.create({
 		position: "absolute",
 		top: 12,
 		left: 14,
-		color: "#b9f227",
-		fontSize: 9,
-		letterSpacing: ".12em"
+		color: tokens.colorAccent,
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	extentLabel: {
 		position: "absolute",
 		top: 34,
 		right: 14,
-		color: "#667069",
-		fontSize: 8,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		zIndex: 2
 	},
 	zoomControl: {
@@ -1074,87 +1088,103 @@ const styles = stylex.create({
 		gridTemplateColumns: "auto minmax(88px, 120px) auto",
 		gap: "4px 8px",
 		alignItems: "center",
-		color: "#879188",
-		fontSize: 7,
-		letterSpacing: ".1em",
-		backgroundColor: "#111512cc",
-		border: "1px solid #3a433c",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".04em",
+		backgroundColor: "rgba(15, 16, 17, 0.85)",
+		border: `1px solid ${tokens.colorBorderStrong}`,
 		padding: "4px 8px"
 	},
 	zoomSlider: {
 		width: "100%",
-		accentColor: "#b9f227",
+		accentColor: tokens.colorAccent,
 		cursor: "ew-resize"
 	},
 	clearSelection: {
-		border: "1px solid #3a433c",
-		backgroundColor: { default: "transparent", ":hover": "#1a211c" },
-		color: "#9aa49c",
-		padding: "10px 12px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
-	axisX: { position: "absolute", right: 12, bottom: 10, color: "#59625c", fontSize: 7 },
+	axisX: {
+		position: "absolute",
+		right: 12,
+		bottom: 10,
+		color: tokens.colorTextFaint,
+		fontSize: 11
+	},
 	axisY: {
 		position: "absolute",
 		left: 8,
 		bottom: 46,
-		color: "#59625c",
-		fontSize: 7,
+		color: tokens.colorTextFaint,
+		fontSize: 11,
 		transform: "rotate(-90deg)",
 		transformOrigin: "left bottom"
 	},
 	inspector: {
 		borderLeft: {
-			default: "1px solid #303632",
+			default: `1px solid ${tokens.colorBorder}`,
 			"@media (max-width: 900px)": 0
 		},
 		borderTop: {
 			default: 0,
-			"@media (max-width: 900px)": "1px solid #303632"
+			"@media (max-width: 900px)": `1px solid ${tokens.colorBorder}`
 		},
-		backgroundColor: "#111512",
+		backgroundColor: tokens.colorSurface,
 		padding: 18,
 		minWidth: 0
 	},
-	noSelection: { marginTop: 80, color: "#778078", textAlign: "center", fontSize: 9 },
+	noSelection: {
+		marginTop: 80,
+		color: tokens.colorTextSubtle,
+		textAlign: "center",
+		fontSize: 11
+	},
 	actorDetails: { display: "flex", flexDirection: "column", gap: 8 },
-	actorDetailsHeading: { margin: 0, fontFamily: "Georgia, serif", fontSize: 24, fontWeight: 400 },
+	actorDetailsHeading: {
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 24,
+		fontWeight: 590
+	},
 	coordinates: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", marginTop: 18 },
 	actorActions: { display: "grid", gap: 7, marginTop: 16 },
 	goToButton: {
-		border: "1px solid #b9f227",
-		backgroundColor: { default: "#b9f227", ":hover": "#d4ff62" },
-		color: "#10130c",
-		padding: "11px 12px",
-		fontSize: 9,
-		fontWeight: 900,
-		letterSpacing: ".1em",
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	followButton: {
-		border: "1px solid #566058",
-		backgroundColor: { default: "transparent", ":hover": "#202721" },
-		color: "#aeb7b0",
-		padding: "10px 12px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".09em",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	followButtonActive: {
-		borderColor: "#b9f227",
-		backgroundColor: "#1c2612",
-		color: "#b9f227"
+		borderColor: tokens.colorAccent,
+		backgroundColor: "rgba(228, 242, 34, 0.08)",
+		color: tokens.colorAccent
 	},
 	focusedCopy: {
 		marginTop: 16,
-		borderTop: "1px solid #3c443e",
+		borderTop: `1px solid ${tokens.colorBorder}`,
 		paddingTop: 12,
-		color: "#b9f227",
-		fontSize: 8,
-		letterSpacing: ".09em"
+		color: tokens.colorAccent,
+		fontSize: 11,
+		letterSpacing: ".04em"
 	}
 });

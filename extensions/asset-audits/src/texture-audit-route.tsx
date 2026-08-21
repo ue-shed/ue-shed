@@ -687,7 +687,7 @@ const styles = stylex.create({
 		color: tokens.colorText,
 		padding: "34px 40px 44px",
 		backgroundImage:
-			"radial-gradient(circle at 14% -10%, #2b2c244d 0, transparent 34%), linear-gradient(#ffffff05 1px, transparent 1px)",
+			"radial-gradient(circle at 14% -10%, rgba(208, 214, 224, 0.04) 0, transparent 34%), linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px)",
 		backgroundSize: "auto, 100% 28px"
 	},
 	emptyState: {
@@ -697,12 +697,12 @@ const styles = stylex.create({
 		justifyContent: "center",
 		gap: 12,
 		color: tokens.colorTextMuted,
-		border: "1px dashed #474941"
+		border: `1px dashed ${tokens.colorBorderStrong}`
 	},
 	errorState: {
 		padding: 24,
-		border: "1px solid #b7604f",
-		color: "#efb2a6",
+		border: `1px solid ${tokens.colorDanger}`,
+		color: tokens.colorDanger,
 		display: "flex",
 		flexDirection: "column",
 		gap: 8
@@ -712,34 +712,34 @@ const styles = stylex.create({
 		height: 8,
 		borderRadius: "50%",
 		backgroundColor: tokens.colorWarningStrong,
-		boxShadow: "0 0 18px #d7894a"
+		boxShadow: "0 0 18px rgba(242, 153, 74, 0.35)"
 	},
 	workspace: { display: "flex", flexDirection: "column", gap: 14 },
 	coverage: {
 		display: "grid",
 		gridTemplateColumns: "1.8fr repeat(4, 1fr) 1fr",
-		border: "1px solid #3d3f39",
+		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurface
 	},
 	coverageStatus: {
 		padding: "14px 16px",
-		borderLeft: "3px solid #6ea889",
+		borderLeft: `3px solid ${tokens.colorSuccess}`,
 		display: "flex",
 		flexDirection: "column",
 		gap: 5
 	},
-	coveragePartial: { borderLeftColor: "#d7894a" },
+	coveragePartial: { borderLeftColor: tokens.colorWarning },
 	coverageItem: {
 		padding: "13px 15px",
-		borderLeft: "1px solid #353731",
+		borderLeft: `1px solid ${tokens.colorBorder}`,
 		display: "flex",
 		flexDirection: "column",
 		gap: 3
 	},
 	findingCount: {
 		padding: "13px 15px",
-		backgroundColor: "#3b231b",
-		color: "#efa46e",
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
+		color: tokens.colorWarning,
 		display: "flex",
 		flexDirection: "column"
 	},
@@ -748,17 +748,21 @@ const styles = stylex.create({
 		gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
 		gap: 10
 	},
-	distribution: { backgroundColor: "#141615", border: "1px solid #343631", minHeight: 164 },
+	distribution: {
+		backgroundColor: tokens.colorSurface,
+		border: `1px solid ${tokens.colorBorder}`,
+		minHeight: 164
+	},
 	panelHeading: {
 		padding: "10px 12px",
-		borderBottom: "1px solid #343631",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
 		display: "flex",
 		justifyContent: "space-between",
 		fontSize: 11,
-		textTransform: "uppercase",
-		letterSpacing: "0.08em"
+		textTransform: "none",
+		letterSpacing: 0
 	},
-	panelMeta: { color: "#686b64" },
+	panelMeta: { color: tokens.colorTextSubtle },
 	bars: { padding: "8px 10px" },
 	barRow: {
 		width: "100%",
@@ -766,57 +770,67 @@ const styles = stylex.create({
 		gridTemplateColumns: "minmax(82px, 1.1fr) 1fr 24px",
 		alignItems: "center",
 		gap: 8,
-		color: "#aeb0a8",
-		backgroundColor: { default: "transparent", ":hover": "#232622" },
+		color: tokens.colorText,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		border: 0,
 		padding: "5px 3px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontSize: 10
+		fontSize: 12
 	},
-	barRowActive: { color: "#f0a66e", backgroundColor: "#2e241d" },
+	barRowActive: { color: tokens.colorWarning, backgroundColor: "rgba(255, 255, 255, 0.07)" },
 	barLabel: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-	barTrack: { height: 4, backgroundColor: "#292b27", display: "block" },
-	barFill: { height: "100%", display: "block", backgroundColor: "#8c9987" },
+	barTrack: { height: 4, backgroundColor: tokens.colorSurfaceInset, display: "block" },
+	barFill: { height: "100%", display: "block", backgroundColor: tokens.colorTextSubtle },
 	lowerGrid: {
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) 330px",
 		gap: 10,
 		minHeight: 350
 	},
-	sheet: { border: "1px solid #383a35", backgroundColor: "#121413", overflow: "hidden" },
+	sheet: {
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
+	},
 	sheetTools: {
 		display: "flex",
 		gap: 10,
 		padding: 10,
-		borderBottom: "1px solid #383a35",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
 		alignItems: "center"
 	},
 	search: {
 		minWidth: 260,
 		flexGrow: 1,
-		backgroundColor: "#090b0a",
-		color: "#e6e3d9",
-		border: "1px solid #41433d",
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		border: `1px solid ${tokens.colorBorderStrong}`,
 		padding: "8px 10px",
-		outlineColor: "#d7894a"
+		outlineColor: tokens.colorTextSubtle
 	},
-	toggle: { fontSize: 10, color: "#b0b2aa", display: "flex", gap: 6, whiteSpace: "nowrap" },
+	toggle: {
+		fontSize: 12,
+		color: tokens.colorTextMuted,
+		display: "flex",
+		gap: 6,
+		whiteSpace: "nowrap"
+	},
 	clearButton: {
-		fontSize: 10,
+		fontSize: 12,
 		border: 0,
 		backgroundColor: "transparent",
-		color: "#d7894a",
+		color: tokens.colorWarning,
 		cursor: "pointer"
 	},
 	tableHeader: {
 		display: "grid",
 		gridTemplateColumns: "2fr 0.75fr 1fr 1.1fr",
 		padding: "8px 12px",
-		color: "#6e716a",
-		fontSize: 9,
-		letterSpacing: "0.12em",
-		textTransform: "uppercase"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0,
+		textTransform: "none"
 	},
 	tableRow: {
 		width: "100%",
@@ -825,36 +839,39 @@ const styles = stylex.create({
 		alignItems: "center",
 		padding: "10px 12px",
 		border: 0,
-		borderTop: "1px solid #292b27",
-		color: "#c8c8c0",
-		backgroundColor: { default: "transparent", ":hover": "#1b1e1b" },
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorText,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		textAlign: "left",
 		cursor: "pointer",
-		fontSize: 10
+		fontSize: 13
 	},
-	tableRowSelected: { backgroundColor: "#282a25", boxShadow: "inset 3px 0 #d7894a" },
+	tableRowSelected: {
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+	},
 	objectCell: { minWidth: 0, display: "flex", flexDirection: "column", gap: 3 },
 	objectName: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 	filePath: {
-		color: "#696c65",
+		color: tokens.colorTextFaint,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		fontSize: 8
+		fontSize: 11
 	},
-	warningText: { color: "#e89a62" },
-	noRows: { padding: 30, color: "#74776f", textAlign: "center" },
+	warningText: { color: tokens.colorWarning },
+	noRows: { padding: 30, color: tokens.colorTextMuted, textAlign: "center" },
 	inspector: {
-		border: "1px solid #3e403a",
-		backgroundColor: "#191b19",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceRaised,
 		padding: 18,
 		overflow: "hidden"
 	},
-	inspectorKicker: { color: "#d7894a", letterSpacing: "0.15em", fontSize: 9 },
+	inspectorKicker: { color: tokens.colorTextSubtle, letterSpacing: 0, fontSize: 11 },
 	inspectorTitle: {
-		fontFamily: "Georgia, serif",
-		fontWeight: 400,
-		fontSize: 23,
+		fontFamily: tokens.fontDisplay,
+		fontWeight: 590,
+		fontSize: 17,
 		margin: "7px 0 4px",
 		overflowWrap: "anywhere"
 	},
@@ -862,8 +879,8 @@ const styles = stylex.create({
 		position: "relative",
 		minHeight: 188,
 		margin: "16px 0 12px",
-		border: "1px solid #3f413b",
-		backgroundColor: "#090b0a",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden",
 		display: "grid",
 		placeItems: "center"
@@ -880,11 +897,11 @@ const styles = stylex.create({
 		left: 8,
 		bottom: 8,
 		padding: "5px 7px",
-		backgroundColor: "#0b0d0dd9",
-		border: "1px solid #4d5148",
-		color: "#b9c5b5",
-		fontSize: 9,
-		letterSpacing: "0.1em"
+		backgroundColor: "rgba(8, 9, 10, 0.85)",
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: 0
 	},
 	previewEmpty: {
 		padding: 20,
@@ -893,31 +910,36 @@ const styles = stylex.create({
 		alignItems: "center",
 		textAlign: "center",
 		gap: 9,
-		color: "#858981",
-		fontSize: 11
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	launchButton: {
 		marginTop: 4,
 		padding: "9px 12px",
-		border: "1px solid #b86f3d",
-		backgroundColor: { default: "#2f2119", ":hover": "#3b281d" },
-		color: "#efaa76",
-		fontWeight: 700,
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		fontWeight: 500,
 		cursor: "pointer",
 		transition: "transform 140ms cubic-bezier(0.23, 1, 0.32, 1)",
 		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
-	launchError: { color: "#d98172", lineHeight: 1.4 },
-	objectPath: { color: "#777a73", fontSize: 9, overflowWrap: "anywhere", margin: 0 },
+	launchError: { color: "rgba(235, 87, 87, 0.9)", lineHeight: 1.4 },
+	objectPath: {
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		overflowWrap: "anywhere",
+		margin: 0
+	},
 	dimensionHero: {
 		margin: "19px 0",
 		padding: "15px 0",
-		borderTop: "1px solid #393b36",
-		borderBottom: "1px solid #393b36",
+		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
 		display: "flex",
 		alignItems: "baseline",
 		gap: 8,
-		color: "#dedbd2",
+		color: tokens.colorTextStrong,
 		fontSize: 13
 	},
 	evidenceList: { display: "flex", flexDirection: "column" },
@@ -925,22 +947,27 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "1fr 1.2fr 0.8fr",
 		padding: "7px 0",
-		borderBottom: "1px solid #2e302c",
-		fontSize: 9
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		fontSize: 12
 	},
-	evidenceLabel: { color: "#74776f" },
-	evidenceValue: { color: "#dbd8ce", overflowWrap: "anywhere" },
-	evidenceSource: { color: "#8e9189", textAlign: "right" },
+	evidenceLabel: { color: tokens.colorTextSubtle },
+	evidenceValue: { color: tokens.colorText, overflowWrap: "anywhere" },
+	evidenceSource: { color: tokens.colorTextMuted, textAlign: "right" },
 	findingCard: {
 		marginTop: 14,
 		padding: 12,
-		border: "1px solid #6e412d",
-		backgroundColor: "#2c1d17",
+		border: "1px solid rgba(242, 153, 74, 0.35)",
+		backgroundColor: "rgba(242, 153, 74, 0.1)",
 		display: "flex",
 		flexDirection: "column",
 		gap: 5,
-		color: "#e8aa7c",
-		fontSize: 9
+		color: tokens.colorWarning,
+		fontSize: 12
 	},
-	diagnostics: { padding: 10, color: "#d79866", border: "1px solid #68442e", fontSize: 10 }
+	diagnostics: {
+		padding: 10,
+		color: tokens.colorWarning,
+		border: "1px solid rgba(242, 153, 74, 0.3)",
+		fontSize: 12
+	}
 });

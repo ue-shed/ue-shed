@@ -1098,7 +1098,7 @@ const styles = stylex.create({
 		minHeight: "calc(100vh - 52px)",
 		padding: "12px 16px 16px",
 		color: tokens.colorText,
-		backgroundColor: "#10110f"
+		backgroundColor: tokens.colorCanvas
 	},
 	header: {
 		display: "flex",
@@ -1109,25 +1109,25 @@ const styles = stylex.create({
 		marginBottom: 8
 	},
 	heading: { minWidth: 0 },
-	breadcrumb: { color: tokens.colorTextFaint, fontSize: 8 },
+	breadcrumb: { color: tokens.colorTextFaint, fontSize: 11 },
 	titleRow: { display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 },
-	title: { margin: "2px 0 0", fontSize: 18, fontWeight: 600, letterSpacing: 0 },
+	title: { margin: "2px 0 0", fontSize: 22, fontWeight: 590, letterSpacing: "-0.02em" },
 	subtitle: {
 		overflow: "hidden",
 		color: tokens.colorTextMuted,
-		fontSize: 9,
+		fontSize: 13,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	rescanButton: {
 		flexShrink: 0,
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "6px 10px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		fontSize: 12,
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
 	},
 	empty: {
@@ -1142,7 +1142,7 @@ const styles = stylex.create({
 		display: "grid",
 		placeItems: "center",
 		border: `1px solid ${tokens.colorDanger}`,
-		color: "#efb2a6"
+		color: tokens.colorDanger
 	},
 	bench: {
 		display: "grid",
@@ -1155,22 +1155,22 @@ const styles = stylex.create({
 	scopeRail: {
 		minWidth: 0,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#141613",
+		backgroundColor: tokens.colorSurface,
 		overflowX: "hidden",
 		overflowY: "auto"
 	},
 	auditSummary: { padding: 10, borderBottom: `1px solid ${tokens.colorBorder}` },
 	summaryFinding: { display: "flex", alignItems: "baseline", gap: 6, marginBottom: 9 },
 	summaryCount: { color: tokens.colorTextStrong, fontSize: 17, lineHeight: 1 },
-	summaryUnit: { color: tokens.colorTextMuted, fontSize: 8 },
+	summaryUnit: { color: tokens.colorTextMuted, fontSize: 11 },
 	summaryFacts: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5, margin: 0 },
 	summaryFact: { minWidth: 0 },
-	summaryTerm: { color: tokens.colorTextFaint, fontSize: 7 },
+	summaryTerm: { color: tokens.colorTextFaint, fontSize: 11 },
 	summaryValue: {
 		overflow: "hidden",
 		margin: "2px 0 0",
 		color: tokens.colorText,
-		fontSize: 8,
+		fontSize: 12,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
@@ -1179,7 +1179,7 @@ const styles = stylex.create({
 		overflow: "hidden",
 		marginTop: 8,
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
@@ -1189,21 +1189,21 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#1c1f1a" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "8px 10px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 9
+		fontSize: 12
 	},
-	filterActive: { backgroundColor: "#2b2118", color: "#f0cfaa" },
+	filterActive: { backgroundColor: "rgba(255, 255, 255, 0.07)", color: tokens.colorTextStrong },
 	facetList: { paddingBottom: 8 },
 	facet: { padding: "8px 8px 3px", borderBottom: `1px solid ${tokens.colorBorder}` },
 	facetTitle: {
 		margin: "0 5px 4px",
 		color: tokens.colorTextMuted,
-		fontSize: 9,
-		fontWeight: 600
+		fontSize: 11,
+		fontWeight: 500
 	},
 	facetButton: {
 		width: "100%",
@@ -1211,12 +1211,12 @@ const styles = stylex.create({
 		gridTemplateColumns: "minmax(0, 1fr) auto",
 		gap: "2px 8px",
 		border: 0,
-		backgroundColor: { default: "transparent", ":hover": "#1c1f1a" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "4px 5px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
+		fontSize: 12,
 		textAlign: "left"
 	},
 	facetOptionLabel: {
@@ -1224,21 +1224,26 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	facetCount: { fontSize: 8, fontWeight: 500 },
-	facetBar: { gridColumn: "1 / -1", width: "100%", height: 2, accentColor: "#8a7253" },
+	facetCount: { fontSize: 11, fontWeight: 500 },
+	facetBar: {
+		gridColumn: "1 / -1",
+		width: "100%",
+		height: 2,
+		accentColor: tokens.colorTextSubtle
+	},
 	catalog: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121411",
+		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
 	},
 	catalogHeader: {
 		display: "flex",
 		alignItems: "center",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#171916"
+		backgroundColor: tokens.colorSurfaceRaised
 	},
 	search: {
 		display: "flex",
@@ -1256,16 +1261,16 @@ const styles = stylex.create({
 		padding: "8px",
 		outline: "none",
 		fontFamily: tokens.fontBody,
-		fontSize: 9
+		fontSize: 13
 	},
-	resultCount: { padding: "0 9px", color: tokens.colorTextFaint, fontSize: 8 },
+	resultCount: { padding: "0 9px", color: tokens.colorTextFaint, fontSize: 11 },
 	columnLabels: {
 		display: "grid",
 		gridTemplateColumns: "1fr 128px",
 		padding: "5px 10px 5px 48px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextFaint,
-		fontSize: 8
+		fontSize: 11
 	},
 	assetList: { flex: 1, overflowX: "hidden", overflowY: "auto" },
 	assetRow: {
@@ -1276,7 +1281,7 @@ const styles = stylex.create({
 		gap: 8,
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#1a1d18" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		padding: "6px 8px",
 		cursor: "pointer",
@@ -1285,8 +1290,8 @@ const styles = stylex.create({
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
 	},
 	assetRowActive: {
-		backgroundColor: "#252017",
-		boxShadow: `inset 3px 0 ${tokens.colorWarningStrong}`
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
 	rowPreview: {
 		display: "grid",
@@ -1296,51 +1301,51 @@ const styles = stylex.create({
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextFaint,
-		fontSize: 8
+		fontSize: 11
 	},
 	rowPreviewImage: { width: "100%", height: "100%", objectFit: "cover" },
 	assetIdentity: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0 },
 	assetName: {
 		overflow: "hidden",
-		fontSize: 10,
-		fontWeight: 600,
+		fontSize: 13,
+		fontWeight: 500,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	assetPath: {
 		overflow: "hidden",
 		color: tokens.colorTextFaint,
-		fontSize: 7,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	rowEvidence: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0 },
-	rowDimensions: { fontSize: 9, fontWeight: 500, whiteSpace: "nowrap" },
+	rowDimensions: { fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" },
 	rowGroup: {
 		overflow: "hidden",
 		color: tokens.colorTextFaint,
-		fontSize: 7,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	rowStatus: { display: "grid", placeItems: "center", width: 22, height: 22, fontSize: 8 },
-	rowWarning: { backgroundColor: "#392519", color: "#f2bd86" },
-	rowPass: { backgroundColor: "#1b281a", color: "#9fca8a" },
-	noResults: { margin: "auto", padding: 30, color: tokens.colorTextMuted, fontSize: 9 },
+	rowStatus: { display: "grid", placeItems: "center", width: 22, height: 22, fontSize: 11 },
+	rowWarning: { backgroundColor: "rgba(242, 153, 74, 0.12)", color: tokens.colorWarning },
+	rowPass: { backgroundColor: "rgba(76, 183, 130, 0.12)", color: tokens.colorSuccess },
+	noResults: { margin: "auto", padding: 30, color: tokens.colorTextMuted, fontSize: 12 },
 	nextPage: {
 		border: 0,
 		borderTop: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#171916", ":hover": tokens.colorSurfaceHover },
+		backgroundColor: { default: tokens.colorSurfaceRaised, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorTextMuted,
 		padding: 8,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 9
+		fontSize: 12
 	},
 	investigation: {
 		minWidth: 0,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#141613",
+		backgroundColor: tokens.colorSurface,
 		overflowX: "hidden",
 		overflowY: "auto"
 	},
@@ -1360,15 +1365,15 @@ const styles = stylex.create({
 		gap: 12,
 		padding: "8px 10px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#171916f5"
+		backgroundColor: tokens.colorCanvasTranslucent
 	},
 	selectedIdentity: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
-	selectedKicker: { color: tokens.colorTextFaint, fontSize: 7 },
+	selectedKicker: { color: tokens.colorTextFaint, fontSize: 11 },
 	selectedName: {
 		overflow: "hidden",
 		margin: 0,
-		fontSize: 14,
-		fontWeight: 600,
+		fontSize: 17,
+		fontWeight: 590,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
@@ -1376,19 +1381,19 @@ const styles = stylex.create({
 		display: "block",
 		overflow: "hidden",
 		color: tokens.colorTextMuted,
-		fontSize: 7,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	primaryAction: {
 		flexShrink: 0,
-		border: `1px solid ${tokens.colorWarningStrong}`,
-		backgroundColor: { default: "#2b2118", ":hover": "#38291d" },
-		color: "#f0cfaa",
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
 		padding: "6px 9px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 8
+		fontSize: 12
 	},
 	secondaryAction: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
@@ -1397,13 +1402,13 @@ const styles = stylex.create({
 		padding: "5px 8px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 8
+		fontSize: 12
 	},
 	locateMessage: {
 		margin: 0,
 		padding: "5px 10px",
 		color: tokens.colorWarningStrong,
-		fontSize: 8
+		fontSize: 11
 	},
 	selectedOverview: {
 		display: "grid",
@@ -1426,9 +1431,9 @@ const styles = stylex.create({
 		right: 5,
 		bottom: 5,
 		padding: "2px 5px",
-		backgroundColor: "#0c0e0cd9",
+		backgroundColor: "rgba(12, 13, 14, 0.85)",
 		color: tokens.colorTextMuted,
-		fontSize: 8
+		fontSize: 11
 	},
 	previewUnavailable: {
 		display: "flex",
@@ -1437,7 +1442,7 @@ const styles = stylex.create({
 		gap: 7,
 		padding: 14,
 		color: tokens.colorTextMuted,
-		fontSize: 8,
+		fontSize: 12,
 		textAlign: "center"
 	},
 	whyPanel: { border: `1px solid ${tokens.colorBorder}`, minWidth: 0 },
@@ -1447,32 +1452,32 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		padding: "6px 8px",
 		color: tokens.colorTextMuted,
-		fontSize: 8
+		fontSize: 11
 	},
 	noFinding: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 5,
 		padding: 12,
-		color: "#9fca8a",
-		fontSize: 9
+		color: tokens.colorSuccess,
+		fontSize: 12
 	},
-	finding: { padding: 9, borderTop: `1px solid ${tokens.colorBorder}`, fontSize: 9 },
+	finding: { padding: 9, borderTop: `1px solid ${tokens.colorBorder}`, fontSize: 12 },
 	findingTitle: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 8,
 		color: tokens.colorWarningStrong
 	},
-	findingSeverity: { fontSize: 8, textTransform: "capitalize" },
+	findingSeverity: { fontSize: 11, textTransform: "capitalize" },
 	findingRule: {
 		overflow: "hidden",
 		color: tokens.colorTextMuted,
-		fontSize: 7,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	findingExplanation: { margin: "6px 0", color: tokens.colorText, fontSize: 8, lineHeight: 1.4 },
+	findingExplanation: { margin: "6px 0", color: tokens.colorText, fontSize: 12, lineHeight: 1.4 },
 	findingValues: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 5 },
 	findingValueGroup: {
 		display: "flex",
@@ -1481,7 +1486,7 @@ const styles = stylex.create({
 		padding: 6,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextMuted,
-		fontSize: 8
+		fontSize: 12
 	},
 	comparisonPanel: { margin: "0 8px 8px", border: `1px solid ${tokens.colorBorder}` },
 	sectionHeader: {
@@ -1493,31 +1498,31 @@ const styles = stylex.create({
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	comparisonIdentity: { minWidth: 0 },
-	comparisonTitle: { margin: 0, color: tokens.colorTextMuted, fontSize: 8, fontWeight: 500 },
+	comparisonTitle: { margin: 0, color: tokens.colorTextMuted, fontSize: 11, fontWeight: 500 },
 	comparisonLabel: {
 		display: "block",
 		overflow: "hidden",
 		maxWidth: 300,
 		marginTop: 2,
 		color: tokens.colorTextStrong,
-		fontSize: 10,
+		fontSize: 13,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	comparisonTabs: { display: "flex", gap: 4 },
 	comparisonTab: {
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#1c1f1a" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "4px 6px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 8
+		fontSize: 12
 	},
 	comparisonTabActive: {
-		borderColor: tokens.colorWarningStrong,
-		backgroundColor: "#2b2118",
-		color: "#f0cfaa"
+		borderColor: tokens.colorBorderStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	comparisonMetrics: {
 		display: "grid",
@@ -1539,19 +1544,19 @@ const styles = stylex.create({
 		minWidth: 0,
 		padding: "8px 9px"
 	},
-	metricLabel: { color: tokens.colorTextFaint, fontSize: 7 },
+	metricLabel: { color: tokens.colorTextFaint, fontSize: 11 },
 	metricValue: {
 		overflow: "hidden",
 		fontSize: 11,
-		fontWeight: 600,
+		fontWeight: 500,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	metricDetail: { color: tokens.colorTextMuted, fontSize: 8, lineHeight: 1.35 },
+	metricDetail: { color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.35 },
 	peerList: { padding: 7 },
 	peerHeader: { display: "flex", alignItems: "baseline", gap: 7, padding: "0 4px 5px" },
-	peerTitle: { color: tokens.colorTextMuted, fontSize: 8 },
-	peerSubtitle: { color: tokens.colorTextFaint, fontSize: 7 },
+	peerTitle: { color: tokens.colorTextMuted, fontSize: 11 },
+	peerSubtitle: { color: tokens.colorTextFaint, fontSize: 11 },
 	peerRow: {
 		width: "100%",
 		display: "grid",
@@ -1560,7 +1565,7 @@ const styles = stylex.create({
 		gap: 8,
 		border: 0,
 		borderTop: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#1c1f1a" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		padding: "6px 5px",
 		cursor: "pointer",
@@ -1570,7 +1575,7 @@ const styles = stylex.create({
 	peerIdentity: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
 	peerName: {
 		overflow: "hidden",
-		fontSize: 9,
+		fontSize: 12,
 		fontWeight: 500,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
@@ -1578,18 +1583,18 @@ const styles = stylex.create({
 	peerPath: {
 		overflow: "hidden",
 		color: tokens.colorTextFaint,
-		fontSize: 7,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	peerDimensions: { fontSize: 8, fontWeight: 500, whiteSpace: "nowrap" },
+	peerDimensions: { fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" },
 	peerStatus: {
 		color: tokens.colorTextMuted,
-		fontSize: 8,
+		fontSize: 11,
 		fontStyle: "normal",
 		textAlign: "right"
 	},
-	noPeers: { margin: 0, padding: 10, color: tokens.colorTextMuted, fontSize: 8 },
+	noPeers: { margin: 0, padding: 10, color: tokens.colorTextMuted, fontSize: 11 },
 	evidencePanel: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
@@ -1605,12 +1610,12 @@ const styles = stylex.create({
 		padding: "7px 8px",
 		borderRight: `1px solid ${tokens.colorBorder}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 8
+		fontSize: 12
 	},
-	evidenceLabel: { color: tokens.colorTextFaint, fontSize: 7 },
+	evidenceLabel: { color: tokens.colorTextFaint, fontSize: 11 },
 	evidenceData: {
 		overflow: "hidden",
-		fontSize: 8,
+		fontSize: 12,
 		fontWeight: 500,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
@@ -1618,7 +1623,7 @@ const styles = stylex.create({
 	evidenceDetail: {
 		overflow: "hidden",
 		color: tokens.colorTextMuted,
-		fontSize: 7,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	}

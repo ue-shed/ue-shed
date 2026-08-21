@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "engine-process-supervisor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "windows-sys 0.61.2",
 ]
@@ -1237,7 +1237,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-inspection"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1246,7 +1246,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-io"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atomic-write-file",
  "duckdb",
@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-parser"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",

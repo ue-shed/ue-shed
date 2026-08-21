@@ -29,6 +29,7 @@ on:
                     - "@ue-shed/engine-win32-x64"
                     - "@ue-shed/config-explorer"
                     - "@ue-shed/project-custodian"
+                    - "@ue-shed/niagara"
 
 permissions:
     contents: read
@@ -139,24 +140,11 @@ jobs:
               env:
                   CANDIDATE_VERSION: ${{ inputs.version }}
               run: |
-                  packages=(
-                    "release/npm/ue-shed-protocol-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-observability-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-unreal-connection-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-engine-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-engine-win32-x64-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-cameras-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-observatory-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-uasset-inspection-wasm-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-uasset-win32-x64-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-unreal-assets-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-map-history-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-uasset-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-game-text-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-config-explorer-$CANDIDATE_VERSION.tgz"
-                    "release/npm/ue-shed-project-custodian-$CANDIDATE_VERSION.tgz"
-                  )
-                  for package in "${packages[@]}"; do
+                  node --input-type=module --eval '
+                    import { readFileSync } from "node:fs";
+                    const manifest = JSON.parse(readFileSync("release/npm/packages-manifest.json", "utf8"));
+                    for (const entry of manifest.packages) console.log(`release/npm/${entry.filename}`);
+                  ' | while IFS= read -r package; do
                     npm publish "$package" --dry-run --access public --tag next
                   done
 

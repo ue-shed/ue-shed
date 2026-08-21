@@ -6,6 +6,16 @@ UE Shed Niagara Preview turns one saved `UNiagaraSystem` into a portable, immuta
 sequence without modifying project content. The public `@ue-shed/niagara` module and CLI own the
 workflow; Workbench is optional.
 
+Workbench composes the same public service at `#/niagara-preview`. The route accepts one explicit
+system object path and bounded render settings, displays the typed producer recovery when capture
+is refused, and reads back only manifest-owned frames whose byte length and SHA-256 still match the
+immutable run. It adds presentation and project selection, not a second capture implementation.
+
+Completed sequences autoplay on a loop at the manifest playback rate. Play, pause, restart, and
+timeline selection are renderer-only review controls: they never mutate the source Niagara System
+or the immutable capture evidence. Normal sequences are preloaded into a bounded 64 MB frame cache;
+larger runs retain the same controls and load verified frames on demand.
+
 The first slice uses the system's saved Baker camera and timing, with bounded explicit overrides.
 It advances desired age deterministically inside an isolated preview scene, captures straight-alpha
 sRGB frames, and records the effective camera and timing. Deterministic timing does not imply

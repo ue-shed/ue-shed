@@ -263,6 +263,9 @@ importers:
       '@ue-shed/extension-input-atlas':
         specifier: workspace:*
         version: link:../../extensions/input-atlas
+      '@ue-shed/extension-niagara-preview':
+        specifier: workspace:*
+        version: link:../../extensions/niagara-preview
       '@ue-shed/extension-project-custodian':
         specifier: workspace:*
         version: link:../../extensions/project-custodian
@@ -278,6 +281,9 @@ importers:
       '@ue-shed/map-history':
         specifier: workspace:*
         version: link:../../packages/map-history
+      '@ue-shed/niagara':
+        specifier: workspace:*
+        version: link:../../packages/niagara
       '@ue-shed/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -533,6 +539,27 @@ importers:
         specifier: 'catalog:'
         version: 1.9.14
 
+  extensions/niagara-preview:
+    dependencies:
+      '@stylexjs/stylex':
+        specifier: 'catalog:'
+        version: 0.19.0
+      '@ue-shed/niagara':
+        specifier: workspace:*
+        version: link:../../packages/niagara
+      '@ue-shed/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@ue-shed/ui-theme':
+        specifier: workspace:*
+        version: link:../../packages/ui-theme
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
+      solid-js:
+        specifier: 'catalog:'
+        version: 1.9.14
+
   extensions/project-custodian:
     dependencies:
       '@stylexjs/stylex':
@@ -642,13 +669,13 @@ importers:
   packages/cameras:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../observability
       '@ue-shed/protocol':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -657,7 +684,7 @@ importers:
   packages/config-explorer:
     dependencies:
       '@ue-shed/engine':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../engine
       effect:
         specifier: 'catalog:'
@@ -670,10 +697,10 @@ importers:
   packages/engine:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../protocol
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -684,7 +711,7 @@ importers:
         version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
     optionalDependencies:
       '@ue-shed/engine-win32-x64':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../engine-win32-x64
 
   packages/engine-win32-x64: {}
@@ -701,7 +728,7 @@ importers:
   packages/game-text:
     dependencies:
       '@ue-shed/unreal-assets':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../unreal-assets
     devDependencies:
       effect:
@@ -739,10 +766,10 @@ importers:
   packages/map-history:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../protocol
       '@ue-shed/unreal-assets':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../unreal-assets
       effect:
         specifier: 'catalog:'
@@ -758,7 +785,7 @@ importers:
   packages/niagara:
     dependencies:
       '@ue-shed/engine':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../engine
       effect:
         specifier: 'catalog:'
@@ -811,10 +838,10 @@ importers:
   packages/observatory:
     dependencies:
       '@ue-shed/observability':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../observability
       '@ue-shed/unreal-connection':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../unreal-connection
       effect:
         specifier: 'catalog:'
@@ -871,7 +898,7 @@ importers:
   packages/uasset:
     optionalDependencies:
       '@ue-shed/uasset-win32-x64':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../uasset-win32-x64
 
   packages/uasset-inspection-wasm: {}
@@ -902,7 +929,7 @@ importers:
   packages/unreal-assets:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../protocol
       effect:
         specifier: 'catalog:'
@@ -915,7 +942,7 @@ importers:
   packages/unreal-connection:
     dependencies:
       '@ue-shed/protocol':
-        specifier: workspace:0.3.0
+        specifier: workspace:0.4.0
         version: link:../protocol
       effect:
         specifier: 'catalog:'

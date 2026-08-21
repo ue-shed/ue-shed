@@ -6,6 +6,7 @@ export type WorkbenchRoute =
 	| "Game Text"
 	| "Input Atlas"
 	| "Map Review"
+	| "Niagara"
 	| "Texture Audit"
 	| "Camera Lab"
 	| "Config"
@@ -37,6 +38,7 @@ export class WorkbenchPage {
 			"Game Text",
 			"Texture Audit",
 			"Map Review",
+			"Niagara Preview",
 			"World Log",
 			"Camera Lab"
 		]) {

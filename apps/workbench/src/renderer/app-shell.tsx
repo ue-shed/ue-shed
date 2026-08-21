@@ -9,6 +9,7 @@ import { TextureAuditRoute } from "@ue-shed/extension-asset-audits";
 import { MapCaptureRoute, MapReviewRoute } from "@ue-shed/extension-camera-review";
 import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory";
 import { ProjectCustodianRoute } from "@ue-shed/extension-project-custodian";
+import { NiagaraPreviewRoute } from "@ue-shed/extension-niagara-preview";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
@@ -27,6 +28,7 @@ import { scenarioStudioClient } from "./scenario-studio-client.js";
 import { EditorSessionTransport } from "./editor-session-transport.js";
 import { ProjectChooser } from "./project-chooser.js";
 import { projectCustodianClient } from "./project-custodian-client.js";
+import { niagaraPreviewClient } from "./niagara-preview-client.js";
 
 const routes = [
 	{ href: "#/", label: "Showcase", route: "#/" },
@@ -38,6 +40,7 @@ const routes = [
 	{ href: "#/asset-audits/textures", label: "Texture Audit", route: "#/asset-audits/textures" },
 	{ href: "#/map-review", label: "Map Review", route: "#/map-review" },
 	{ href: "#/map-capture", label: "Map Capture", route: "#/map-capture" },
+	{ href: "#/niagara-preview", label: "Niagara", route: "#/niagara-preview" },
 	{ href: "#/content-observatory", label: "World Log", route: "#/content-observatory" },
 	{ href: "#/scenarios", label: "Scenarios", route: "#/scenarios" },
 	{ href: "#/camera-lab", label: "Camera Lab", route: "#/camera-lab" }
@@ -51,6 +54,15 @@ const workflowGroups = [
 		label: "Saved project",
 		requirement: "UNREAL CAN STAY CLOSED",
 		workflows: [
+			{
+				action: "OPEN FX PROOF",
+				description:
+					"Render a saved Niagara Baker view into a portable, hashed PNG frame sequence.",
+				evidence: "niagara",
+				href: "#/niagara-preview",
+				title: "Niagara Preview",
+				tone: "cyan"
+			},
 			{
 				action: "OPEN CUSTODIAN",
 				description:
@@ -208,6 +220,13 @@ function workflowEvidence(
 		return {
 			detail: "Versioned plan · safe map switch · immutable PNG pyramid",
 			label: "Plan inspection works offline · editor on capture",
+			ready: true
+		};
+	}
+	if (workflow.evidence === "niagara") {
+		return {
+			detail: "Saved Baker camera · offscreen commandlet · immutable hashed frames",
+			label: "Selected project · Unreal starts on capture",
 			ready: true
 		};
 	}
@@ -371,6 +390,9 @@ export function AppShell() {
 					</Match>
 					<Match when={route() === "#/map-capture"}>
 						<MapCaptureRoute client={mapCaptureClient} />
+					</Match>
+					<Match when={route() === "#/niagara-preview"}>
+						<NiagaraPreviewRoute client={niagaraPreviewClient} />
 					</Match>
 					<Match when={route() === "#/content-observatory"}>
 						<ContentObservatoryRoute client={contentObservatoryClient} />

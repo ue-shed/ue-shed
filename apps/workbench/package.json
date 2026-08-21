@@ -5,7 +5,7 @@
 	"type": "module",
 	"main": "dist/main/main.js",
 	"scripts": {
-		"build": "tsup && vite build",
+		"build": "tsup && node --check dist/main/main.js && vite build",
 		"start": "electron .",
 		"typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit"
 	},
@@ -26,11 +26,13 @@
 		"@ue-shed/extension-data-authoring": "workspace:*",
 		"@ue-shed/extension-game-text": "workspace:*",
 		"@ue-shed/extension-input-atlas": "workspace:*",
+		"@ue-shed/extension-niagara-preview": "workspace:*",
 		"@ue-shed/extension-project-custodian": "workspace:*",
 		"@ue-shed/extension-scenarios": "workspace:*",
 		"@ue-shed/game-text": "workspace:*",
 		"@ue-shed/host": "workspace:*",
 		"@ue-shed/map-history": "workspace:*",
+		"@ue-shed/niagara": "workspace:*",
 		"@ue-shed/observability": "workspace:*",
 		"@ue-shed/observatory": "workspace:*",
 		"@ue-shed/project-custodian": "workspace:*",

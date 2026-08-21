@@ -8,12 +8,18 @@ product-extension styles. Workbench may select a theme but must not repair exten
 CSS overrides.
 
 Workbench opens on a showcase catalog for the implemented proving slices: DataTable authoring,
-Texture Asset Audit, Game Text, Map Review, Camera Load Lab, and the Perforce-first **World Log**.
+Texture Asset Audit, Game Text, Map Review, Niagara Preview, Camera Load Lab, and the Perforce-first
+**World Log**.
 The catalog exposes each slice's runtime mode and readiness instead of assuming Unreal is running.
 Camera Load Lab can drive and observe up to 32 camera sources while presenting eight tiles at once
 behind an independent display-byte budget. The editor status in the header shows the Remote Control
 port Workbench is monitoring; its adjacent port control changes that target immediately and saves
 the choice on the device.
+
+Niagara Preview is available at `#/niagara-preview`. It runs the public `@ue-shed/niagara` service
+against the selected project and returns only validated run metadata and manifest-owned PNG bytes to
+the renderer. The separately enabled `UEShedNiagara` Editor plugin remains the Unreal capability
+boundary.
 
 World Log is a map-scoped historical view. It requires `UE_SHED_PROJECT_ROOT` and normal Perforce
 configuration only when the user starts a bounded history query. Opening Workbench, opening the

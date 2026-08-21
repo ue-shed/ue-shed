@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig([
 	{
 		banner: {
-			js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);'
+			js: 'import { createRequire as createWorkbenchRequire } from "node:module"; const require = createWorkbenchRequire(import.meta.url);'
 		},
 		clean: false,
 		entry: ["src/main/main.ts"],

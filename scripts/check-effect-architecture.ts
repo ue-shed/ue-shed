@@ -67,6 +67,7 @@ const approvedPromiseAdapters = new Set([
 	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-capture-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
+	"apps/workbench/src/renderer/niagara-preview-client.ts",
 	"apps/workbench/src/renderer/project-custodian-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts",
 	// The opt-in benchmark isolates marker validation and reversible mutations in one filesystem adapter.
@@ -127,6 +128,9 @@ const approvedResourceAdapters = new Set([
 	"apps/workbench/src/renderer/index.tsx",
 	// World Log owns one bounded status-poll timer through Solid cleanup while a query is running.
 	"extensions/content-observatory/src/content-observatory-route.tsx",
+	// Niagara Preview owns one frame-advance timer through a Solid reactive cleanup. Each frame
+	// change, pause, recapture, and route teardown cancels the prior timer.
+	"extensions/niagara-preview/src/niagara-preview-route.tsx",
 	// The static-site Observatory mock owns its display-only timers through Solid cleanup.
 	"apps/site/src/showcase/ObservatoryMock.tsx",
 	// The copied adoption host owns its browser runtime lifecycle at the foreign framework boundary.
@@ -204,6 +208,7 @@ const rendererTransportFiles = new Set([
 	"apps/workbench/src/renderer/input-atlas-client.ts",
 	"apps/workbench/src/renderer/map-capture-client.ts",
 	"apps/workbench/src/renderer/map-review-client.ts",
+	"apps/workbench/src/renderer/niagara-preview-client.ts",
 	"apps/workbench/src/renderer/project-custodian-client.ts",
 	"apps/workbench/src/renderer/scenario-studio-client.ts",
 	"apps/workbench/src/renderer/workbench-client.ts"

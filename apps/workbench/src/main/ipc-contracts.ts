@@ -113,6 +113,12 @@ import {
 	CustodianRunResult
 } from "@ue-shed/extension-project-custodian/client";
 import { CustodianProposalId } from "@ue-shed/project-custodian/browser";
+import {
+	NiagaraPreviewFrameIntent,
+	NiagaraPreviewFrameResult,
+	NiagaraPreviewIntent,
+	NiagaraPreviewRunResult
+} from "@ue-shed/extension-niagara-preview/client";
 import { Schema, SchemaGetter } from "effect";
 import {
 	ProjectLaunchMode,
@@ -813,6 +819,16 @@ export const invokeContracts = {
 		channel: "map-capture:tile",
 		args: Schema.Tuple([MapCaptureTileIntent]),
 		result: MapCaptureTileResult
+	}),
+	"niagara-preview:run": invoke({
+		channel: "niagara-preview:run",
+		args: Schema.Tuple([NiagaraPreviewIntent]),
+		result: NiagaraPreviewRunResult
+	}),
+	"niagara-preview:frame": invoke({
+		channel: "niagara-preview:frame",
+		args: Schema.Tuple([NiagaraPreviewFrameIntent]),
+		result: NiagaraPreviewFrameResult
 	}),
 	"map-review:review-sets": invoke({
 		channel: "map-review:review-sets",

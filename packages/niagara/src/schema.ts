@@ -130,6 +130,33 @@ export const NiagaraPreviewDiagnostic = Schema.Struct({
 });
 export type NiagaraPreviewDiagnostic = typeof NiagaraPreviewDiagnostic.Type;
 
+export const NiagaraPreviewFailure = Schema.Struct({
+	code: Schema.Literals([
+		"invalid_request",
+		"engine_discovery_failed",
+		"commandlet_unavailable",
+		"plugin_unavailable",
+		"rendering_unavailable",
+		"system_unavailable",
+		"baker_camera_missing",
+		"compilation_failed",
+		"capture_failed",
+		"process_failed",
+		"process_timeout",
+		"receipt_missing",
+		"receipt_invalid",
+		"artifact_invalid",
+		"run_exists",
+		"publish_failed"
+	]),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	runId: Schema.optionalKey(Schema.String),
+	stage: Schema.Literals(["validation", "capture", "publication"])
+});
+export interface NiagaraPreviewFailure extends Schema.Schema.Type<typeof NiagaraPreviewFailure> {}
+
 export const NiagaraPreviewRunManifest = Schema.Struct({
 	alphaPolicy: NiagaraPreviewProducerReceipt.fields.alphaPolicy,
 	artifacts: Schema.Array(NiagaraPreviewArtifact).check(Schema.isMinLength(1)),

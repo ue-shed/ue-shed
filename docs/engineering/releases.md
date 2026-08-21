@@ -128,6 +128,13 @@ node scripts/plugin-bundle.ts bundle --version <version> `
 pnpm ue-shed plugins verify out/plugins-observatory/plugins.manifest.json
 ```
 
+For Niagara Preview, select only its separately enabled Editor plugin:
+
+```powershell
+pnpm release:plugins:niagara
+pnpm ue-shed plugins verify out/releases/<version>/plugins-niagara/plugins.manifest.json
+```
+
 Installation is project-scoped under `Plugins/UEShed`. It refuses checksum failures, unsupported
 graphs, modified installer-owned files, and unrelated existing content at that destination. Game
 Text requires no Unreal plugin.

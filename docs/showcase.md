@@ -355,6 +355,32 @@ The lab connects automatically and reports scheduler, render/readback, transport
 measurements separately. If you already have a process listening on the configured fixture endpoint,
 the launcher reuses it rather than starting another Unreal process.
 
+## Demo 11: Niagara Preview
+
+Niagara Preview runs independently of an open editor. It starts an offscreen Unreal commandlet,
+uses the saved Niagara Baker camera, and publishes an immutable PNG sequence beneath the selected
+project's `.ue-shed/niagara-preview` directory.
+
+For a source checkout, first run the trusted Niagara gate once. This builds the process supervisor,
+stages the `UEShedNiagara` Editor plugin for the fixture's engine version, and proves the same public
+capture service used by Workbench:
+
+```powershell
+pnpm test:unreal-niagara
+pnpm showcase
+```
+
+Choose **Niagara** from the Workbench nav or **Niagara Preview** from the showcase catalog. The
+fixture opens with Unreal's engine-shipped Simple Explosion system selected, so choose **Capture
+preview**. The first run may spend time compiling shaders. When publication completes, the verified
+PNG sequence plays on a loop at its exported frame rate. Use play, pause, restart, or the coverage
+timeline while inspecting the effective dimensions, timing, engine version, camera, diagnostics,
+and manifest path.
+
+For another project, install `UEShedNiagara` beneath that project or stage a matching plugin build
+through the normal UE Shed plugin workflow. The route never modifies the source Niagara System and
+never reads a PNG that is outside the selected project's run root or no longer matches its manifest.
+
 ## Using another project
 
 The launcher defaults are only showcase presets. Override them with environment variables:

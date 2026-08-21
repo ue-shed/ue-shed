@@ -29,36 +29,48 @@ export function Button(props: ButtonProps) {
 
 const styles = stylex.create({
 	base: {
+		alignItems: "center",
+		justifyContent: "center",
 		borderRadius: tokens.radiusControl,
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 10,
-		fontWeight: 700,
-		letterSpacing: ".08em",
-		padding: "10px 15px",
-		textTransform: "uppercase",
-		transitionDuration: tokens.motionFast,
-		transitionProperty: "background-color, border-color, color"
-	},
-	primary: {
-		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
-		borderColor: tokens.colorAccent,
 		borderStyle: "solid",
 		borderWidth: 1,
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		fontFamily: tokens.fontBody,
+		fontSize: 13,
+		fontWeight: 500,
+		letterSpacing: "-0.005em",
+		lineHeight: 1.35,
+		padding: "5px 12px",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity",
+		transitionTimingFunction: "ease",
+		opacity: { default: 1, ":disabled": 0.5 }
+	},
+	primary: {
+		backgroundColor: {
+			default: tokens.colorAccent,
+			":hover": tokens.colorAccentStrong,
+			":active": "#d3e01f"
+		},
+		borderColor: "transparent",
 		color: tokens.colorAccentText
 	},
 	quiet: {
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":active": "rgba(255, 255, 255, 0.08)"
+		},
 		borderColor: "transparent",
-		borderStyle: "solid",
-		borderWidth: 1,
 		color: tokens.colorTextMuted
 	},
 	secondary: {
-		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
-		borderColor: tokens.colorBorderInteractive,
-		borderStyle: "solid",
-		borderWidth: 1,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":active": "rgba(255, 255, 255, 0.08)"
+		},
+		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
 		color: tokens.colorText
 	}
 });

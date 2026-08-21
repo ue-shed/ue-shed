@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js";
 
 export interface SavedMapPickerOption {
@@ -277,12 +278,11 @@ const styles = stylex.create({
 	picker: {
 		position: "relative",
 		display: "grid",
-		gap: 5,
+		gap: 6,
 		minWidth: 220,
-		color: "#9aa8a8",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".12em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	label: { display: "block" },
 	backdrop: {
@@ -299,39 +299,46 @@ const styles = stylex.create({
 		width: "100%",
 		minWidth: 220,
 		boxSizing: "border-box",
-		border: "1px solid #445155",
-		backgroundColor: "#0a0e0f",
-		color: "#e2e8e4",
+		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "8px 10px",
-		fontFamily: "monospace",
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
 		textAlign: "left",
-		outline: { default: "none", ":focus-visible": "1px solid #73c7d0" },
+		outline: "none",
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.55 }
 	},
-	triggerOpen: { borderColor: "#73c7d0", boxShadow: "0 0 0 1px #73c7d033" },
+	triggerOpen: {
+		borderColor: tokens.colorTextSubtle,
+		boxShadow: "0 0 0 1px rgba(138, 143, 152, 0.2)"
+	},
 	triggerText: {
 		display: "grid",
 		minWidth: 0,
-		gap: 3,
-		letterSpacing: 0
+		gap: 3
 	},
 	triggerPrimary: {
 		overflow: "hidden",
-		fontSize: 10,
-		fontWeight: 700,
+		fontSize: 12,
+		fontWeight: 500,
+		color: tokens.colorTextStrong,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	triggerSecondary: {
 		overflow: "hidden",
-		color: "#718083",
-		fontSize: 8,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		fontWeight: 400,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	chevron: { color: "#73c7d0", fontSize: 14, transform: "translateY(-1px)" },
+	chevron: { color: tokens.colorTextFaint, fontSize: 14, transform: "translateY(-1px)" },
 	chevronOpen: { transform: "rotate(180deg) translateY(-1px)" },
 	dropdown: {
 		position: "absolute",
@@ -341,74 +348,101 @@ const styles = stylex.create({
 		width: "max(100%, 340px)",
 		maxWidth: "calc(100vw - 40px)",
 		boxSizing: "border-box",
-		border: "1px solid #445155",
-		backgroundColor: "#0a0e0f",
-		boxShadow: "0 18px 44px #00000088"
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		boxShadow: tokens.shadowOverlay
 	},
 	searchShell: {
 		display: "flex",
 		alignItems: "center",
 		gap: 7,
 		padding: 8,
-		borderBottom: "1px solid #2b3639",
-		backgroundColor: "#101719"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderTopLeftRadius: tokens.radiusControl,
+		borderTopRightRadius: tokens.radiusControl
 	},
-	searchIcon: { color: "#73c7d0", fontSize: 14, fontWeight: 400 },
+	searchIcon: { color: tokens.colorTextFaint, fontSize: 13, fontWeight: 400 },
 	searchInput: {
 		width: "100%",
 		minWidth: 0,
 		boxSizing: "border-box",
 		border: 0,
 		backgroundColor: "transparent",
-		color: "#e2e8e4",
+		color: tokens.colorTextStrong,
 		padding: "5px 2px",
-		fontFamily: "monospace",
-		fontSize: 10,
-		outline: "none",
-		letterSpacing: 0
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		fontWeight: 400,
+		outline: "none"
 	},
-	options: { maxHeight: 276, overflowY: "auto", padding: 5 },
+	options: { maxHeight: 276, overflowY: "auto", padding: 4 },
 	option: {
 		display: "grid",
-		gap: 4,
+		gap: 3,
 		padding: "8px 9px",
+		borderRadius: tokens.radiusBadge,
 		borderLeft: "2px solid transparent",
-		color: "#d9e1df",
+		color: tokens.colorText,
 		cursor: "pointer",
-		letterSpacing: 0
+		fontSize: 12
 	},
-	optionLabel: { fontSize: 10, fontWeight: 700 },
+	optionLabel: { fontSize: 12, fontWeight: 500 },
 	optionPath: {
 		overflow: "hidden",
-		color: "#718083",
-		fontFamily: "monospace",
-		fontSize: 8,
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		fontWeight: 400,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	optionPathSelected: { color: "#80aeb2" },
-	optionActive: { backgroundColor: "#172326", borderLeftColor: "#73c7d0" },
-	optionSelected: { color: "#a8e3e8" },
-	customOption: { marginTop: 4, borderTop: "1px solid #2b3639" },
+	optionPathSelected: { color: tokens.colorTextMuted },
+	optionActive: {
+		backgroundColor: "rgba(255, 255, 255, 0.04)"
+	},
+	optionSelected: {
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		borderLeftColor: tokens.colorAccent,
+		color: tokens.colorTextStrong
+	},
+	customOption: {
+		marginTop: 4,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
+	},
 	empty: {
 		margin: 0,
 		padding: "13px 9px",
-		color: "#718083",
-		fontSize: 8,
-		fontWeight: 700,
-		letterSpacing: ".08em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 400
 	},
-	customPath: { display: "grid", gap: 5, color: "#879294", fontSize: 8, letterSpacing: ".1em" },
+	customPath: {
+		display: "grid",
+		gap: 6,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
+	},
 	customInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #445155",
-		backgroundColor: "#0a0e0f",
-		color: "#e2e8e4",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
 		padding: "8px 9px",
-		fontFamily: "monospace",
-		fontSize: 10,
-		outline: { default: "none", ":focus": "1px solid #e1b85e" }
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		outline: { default: "none", ":focus": `1px solid ${tokens.colorTextSubtle}` }
 	}
 });

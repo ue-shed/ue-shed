@@ -375,79 +375,112 @@ export function ConfigExplorerShowcase(props: ConfigExplorerShowcaseProps) {
 
 const styles = stylex.create({
 	route: {
-		minHeight: "calc(100vh - 52px)",
+		minHeight: "calc(100vh - 48px)",
 		boxSizing: "border-box",
 		backgroundColor: tokens.colorCanvas,
-		backgroundImage: "radial-gradient(circle at 86% -10%, #d4552d14, transparent 27%)",
 		color: tokens.colorText,
-		padding: "20px 24px 34px"
+		padding: "24px 32px 40px",
+		maxWidth: 1200,
+		margin: "0 auto"
 	},
 	header: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: 30,
-		padding: "0 2px 14px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		padding: "4px 2px 16px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	titleBlock: { minWidth: 0 },
-	eyebrow: { color: tokens.colorWarningStrong, fontSize: 8, letterSpacing: ".16em" },
+	eyebrow: {
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		letterSpacing: "0"
+	},
 	title: {
-		margin: "6px 0 3px",
+		margin: "8px 0 6px",
 		fontFamily: tokens.fontDisplay,
 		fontSize: 26,
-		fontWeight: 400,
-		letterSpacing: "-.02em"
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
 	},
-	intro: { margin: 0, color: tokens.colorTextMuted, fontSize: 10, lineHeight: 1.5 },
+	intro: { margin: 0, color: tokens.colorTextMuted, fontSize: 14, lineHeight: 1.6 },
 	scopeStamp: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 3,
 		flexShrink: 0,
-		padding: "8px 11px",
-		borderLeft: `2px solid ${tokens.colorWarningStrong}`,
+		padding: "10px 14px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
-		color: tokens.colorTextFaint,
-		fontSize: 8,
-		letterSpacing: ".07em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	workspace: {
-		marginTop: 10,
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: tokens.colorSurface
+		marginTop: 16,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
+		boxShadow: tokens.shadowCard,
+		overflow: "hidden"
 	},
-	queryPanel: { padding: 13 },
+	queryPanel: { padding: 16 },
 	queryOptions: {
 		display: "grid",
 		gridTemplateColumns: "minmax(250px, .8fr) minmax(330px, 1.1fr) auto",
 		alignItems: "end",
-		gap: 10,
-		paddingBottom: 11,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		gap: 12,
+		paddingBottom: 14,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	segmentField: { minWidth: 0, margin: 0, padding: 0, border: 0, fontSize: 8 },
-	segments: { display: "flex", gap: 1, marginTop: 5, backgroundColor: tokens.colorBorder },
+	segmentField: { minWidth: 0, margin: 0, padding: 0, border: 0 },
+	segments: {
+		display: "flex",
+		gap: 2,
+		marginTop: 6,
+		padding: 2,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset
+	},
 	segment: {
 		flex: 1,
 		minHeight: 30,
-		padding: "6px 9px",
+		padding: "6px 10px",
 		border: 0,
-		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorTextSubtle,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.05)"
+		},
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		transitionProperty: "transform, background-color, color",
+		fontSize: 12,
+		fontWeight: 500,
+		transitionProperty: "background-color, color, transform",
 		transitionDuration: tokens.motionFast,
 		transform: { default: "scale(1)", ":active": "scale(.98)" }
 	},
-	segmentActive: { backgroundColor: tokens.colorWarningStrong, color: "#fff8ec" },
+	segmentActive: {
+		backgroundColor: "rgba(255, 255, 255, 0.1)",
+		color: tokens.colorTextStrong
+	},
 	readOnly: {
-		paddingBottom: 7,
+		paddingBottom: 8,
 		color: tokens.colorTextFaint,
-		fontSize: 7,
-		letterSpacing: ".1em"
+		fontSize: 11,
+		fontWeight: 500
 	},
 	fieldGrid: {
 		display: "grid",
@@ -455,20 +488,31 @@ const styles = stylex.create({
 			"minmax(90px, .48fr) minmax(190px, 1.35fr) minmax(130px, .8fr) minmax(105px, .62fr) minmax(105px, .62fr) minmax(130px, .72fr)",
 		gap: 8,
 		alignItems: "end",
-		marginTop: 11
+		marginTop: 14
 	},
-	field: { display: "flex", flexDirection: "column", gap: 5, minWidth: 0, fontSize: 8 },
+	field: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		minWidth: 0,
+		fontSize: 11,
+		fontWeight: 500,
+		color: tokens.colorTextMuted
+	},
 	input: {
 		width: "100%",
 		height: 34,
 		boxSizing: "border-box",
-		padding: "7px 8px",
-		border: `1px solid ${tokens.colorBorderInteractive}`,
-		outline: { default: "none", ":focus": `1px solid ${tokens.colorWarningStrong}` },
+		padding: "7px 10px",
+		borderColor: { default: tokens.colorBorderStrong, ":focus": tokens.colorTextSubtle },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		outline: "none",
 		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorText,
+		color: tokens.colorTextStrong,
 		fontFamily: tokens.fontBody,
-		fontSize: 9
+		fontSize: 13
 	},
 	run: {
 		gridColumn: "-2 / -1",
@@ -476,91 +520,128 @@ const styles = stylex.create({
 		flexDirection: "column",
 		justifyContent: "center",
 		alignItems: "start",
-		gap: 3,
+		gap: 2,
 		height: 34,
-		padding: "5px 10px",
-		border: `1px solid ${tokens.colorWarningStrong}`,
+		padding: "4px 12px",
+		border: 0,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
-			default: tokens.colorWarningStrong,
-			":hover": "#e08b54",
-			":disabled": "#70452d"
+			default: tokens.colorAccent,
+			":hover": tokens.colorAccentStrong,
+			":active": "#d3e01f",
+			":disabled": tokens.colorAccent
 		},
-		color: "#fff8ec",
-		cursor: "pointer",
+		color: tokens.colorAccentText,
+		cursor: { default: "pointer", ":disabled": "wait" },
+		opacity: { default: 1, ":disabled": 0.55 },
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		letterSpacing: ".08em",
-		transitionProperty: "transform, background-color",
+		fontSize: 13,
+		fontWeight: 600,
+		transitionProperty: "background-color, transform",
 		transitionDuration: tokens.motionFast,
 		transform: { default: "scale(1)", ":active": "scale(.98)" }
 	},
-	samples: { display: "flex", alignItems: "center", gap: 12, marginTop: 11 },
+	samples: { display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap" },
 	sampleHeading: {
 		flexShrink: 0,
 		color: tokens.colorTextFaint,
-		fontSize: 7,
-		letterSpacing: ".1em"
+		fontSize: 11,
+		fontWeight: 500
 	},
-	sampleList: { display: "flex", flexWrap: "wrap", gap: 5 },
+	sampleList: { display: "flex", flexWrap: "wrap", gap: 6 },
 	sampleButton: {
 		display: "flex",
 		alignItems: "center",
 		gap: 7,
-		padding: "6px 8px",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
+		padding: "5px 11px",
+		border: 0,
+		borderRadius: tokens.radiusPill,
+		backgroundColor: {
+			default: "rgba(255, 255, 255, 0.04)",
+			":hover": "rgba(255, 255, 255, 0.08)"
+		},
 		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		transitionProperty: "transform, background-color",
-		transitionDuration: tokens.motionFast,
-		transform: { default: "scale(1)", ":active": "scale(.98)" }
+		fontSize: 12
 	},
 	state: {
 		display: "flex",
 		alignItems: "center",
 		gap: 12,
 		minHeight: 54,
-		marginTop: 10,
-		padding: "10px 14px",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		marginTop: 16,
+		padding: "12px 16px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
-		fontSize: 9
+		fontSize: 13,
+		color: tokens.colorTextMuted
 	},
-	failure: { justifyContent: "space-between", borderLeft: `3px solid ${tokens.colorDanger}` },
+	failure: {
+		justifyContent: "space-between",
+		backgroundColor: "rgba(235, 87, 87, 0.07)",
+		borderColor: "rgba(235, 87, 87, 0.35)"
+	},
 	pulse: {
 		width: 7,
 		height: 7,
+		flexShrink: 0,
 		borderRadius: "50%",
 		backgroundColor: tokens.colorWarning,
-		boxShadow: "0 0 0 5px #d6a3631c"
+		boxShadow: "0 0 0 5px rgba(242, 153, 74, 0.1)"
 	},
 	retry: {
-		padding: "7px 10px",
-		border: `1px solid ${tokens.colorWarningStrong}`,
-		backgroundColor: "transparent",
-		color: tokens.colorWarning,
-		cursor: "pointer"
+		padding: "7px 12px",
+		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		cursor: "pointer",
+		fontSize: 12,
+		fontWeight: 500
 	},
-	resultBlock: { marginTop: 10 },
+	resultBlock: { marginTop: 16 },
 	resultHeader: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		gap: 18,
-		padding: "8px 12px",
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderBottom: 0,
+		padding: "10px 14px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderBottomWidth: 0,
+		borderTopLeftRadius: tokens.radiusControl,
+		borderTopRightRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceRaised,
-		fontSize: 9
+		fontSize: 13,
+		color: tokens.colorText
 	},
 	resultLabel: {
-		marginRight: 9,
-		color: tokens.colorWarningStrong,
-		fontSize: 7,
-		letterSpacing: ".1em"
+		marginRight: 8,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
-	queryReceipt: { display: "flex", alignItems: "center", gap: 12, color: tokens.colorTextFaint },
-	evidence: { overflow: "hidden", border: `1px solid ${tokens.colorBorderStrong}` }
+	queryReceipt: {
+		display: "flex",
+		alignItems: "center",
+		gap: 12,
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
+	},
+	evidence: {
+		overflow: "hidden",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderBottomLeftRadius: tokens.radiusControl,
+		borderBottomRightRadius: tokens.radiusControl
+	}
 });

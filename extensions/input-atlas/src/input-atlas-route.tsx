@@ -541,8 +541,8 @@ const styles = stylex.create({
 		height: 7,
 		width: 7
 	},
-	projectName: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 700 },
-	projectPath: { color: tokens.colorTextFaint, fontSize: 10, overflowWrap: "anywhere" },
+	projectName: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 590 },
+	projectPath: { color: tokens.colorTextFaint, fontSize: 11, overflowWrap: "anywhere" },
 	progressTrack: {
 		backgroundColor: tokens.colorSurfaceInset,
 		borderRadius: tokens.radiusControl,
@@ -587,8 +587,8 @@ const styles = stylex.create({
 	},
 	contextChip: {
 		alignItems: "center",
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
-		borderColor: tokens.colorBorderInteractive,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		borderColor: tokens.colorBorderStrong,
 		borderRadius: tokens.radiusControl,
 		borderStyle: "solid",
 		borderWidth: 1,
@@ -596,21 +596,22 @@ const styles = stylex.create({
 		cursor: "pointer",
 		display: "inline-flex",
 		fontFamily: tokens.fontBody,
-		fontSize: 10,
+		fontSize: 11,
 		gap: 6,
 		padding: "4px 9px"
 	},
-	contextChipOn: { borderColor: tokens.colorAccent, color: tokens.colorAccent },
-	chipCount: { color: tokens.colorTextFaint, fontSize: 9 },
+	contextChipOn: { borderColor: tokens.colorBorderStrong, color: tokens.colorTextStrong },
+	chipCount: { color: tokens.colorTextFaint, fontSize: 11 },
 	spacer: { flexGrow: 1 },
-	chipQuiet: { color: tokens.colorTextFaint, fontSize: 9, padding: "3px 8px" },
+	chipQuiet: { color: tokens.colorTextFaint, fontSize: 11, padding: "3px 8px" },
 	chipContested: {
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
 		borderColor: tokens.colorWarning,
-		borderRadius: tokens.radiusControl,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorWarning,
-		fontSize: 9,
+		fontSize: 11,
 		padding: "3px 8px"
 	},
 	devices: { display: "flex", flexWrap: "wrap", gap: 20, padding: "16px 0" },
@@ -637,8 +638,8 @@ const styles = stylex.create({
 	controlLabel: {
 		dominantBaseline: "central",
 		fill: tokens.colorTextFaint,
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		pointerEvents: "none",
 		textAnchor: "middle"
 	},
@@ -649,13 +650,13 @@ const styles = stylex.create({
 	cap: {
 		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
 		borderColor: tokens.colorBorderStrong,
-		borderRadius: tokens.radiusControl,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorTextFaint,
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 10,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
 		padding: "8px 6px"
 	},
 	capBound: {
@@ -664,18 +665,13 @@ const styles = stylex.create({
 		color: tokens.colorAccentText
 	},
 	capContested: {
-		backgroundColor: tokens.colorWarning,
-		borderColor: tokens.colorWarningStrong,
-		color: tokens.colorAccentText
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
+		borderColor: tokens.colorWarning,
+		color: tokens.colorWarning
 	},
 	capSelected: { borderColor: tokens.colorTextStrong },
 	otherKeys: { display: "flex", flexDirection: "column", gap: 4, marginTop: 8 },
-	otherLabel: {
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
-	},
+	otherLabel: { color: tokens.colorTextSubtle, fontSize: 11 },
 	detail: {
 		borderTopColor: tokens.colorBorder,
 		borderTopStyle: "solid",
@@ -687,36 +683,31 @@ const styles = stylex.create({
 		paddingTop: 12
 	},
 	detailHead: { alignItems: "center", display: "flex", gap: 8, marginBottom: 2 },
-	detailKey: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 700 },
-	detailDevice: {
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
-	},
-	detailEmpty: { color: tokens.colorTextFaint, fontSize: 10, margin: 0 },
+	detailKey: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 590 },
+	detailDevice: { color: tokens.colorTextSubtle, fontSize: 11 },
+	detailEmpty: { color: tokens.colorTextSubtle, fontSize: 12, margin: 0 },
 	claim: { alignItems: "baseline", display: "flex", flexWrap: "wrap", fontSize: 11, gap: 10 },
 	claimContext: { color: tokens.colorTextMuted, minWidth: 130 },
 	claimAction: { color: tokens.colorTextStrong, minWidth: 130 },
 	claimTags: { display: "flex", flexWrap: "wrap", gap: 4 },
 	tag: {
-		borderColor: tokens.colorBorderInteractive,
-		borderRadius: tokens.radiusControl,
+		borderColor: tokens.colorBorderStrong,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorTextSubtle,
-		fontSize: 9,
+		fontSize: 11,
 		padding: "1px 6px"
 	},
 	tagQuiet: {
 		borderColor: tokens.colorBorder,
-		borderRadius: tokens.radiusControl,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorTextFaint,
-		fontSize: 9,
+		fontSize: 11,
 		padding: "1px 6px"
 	},
-	claimText: { color: tokens.colorTextFaint },
-	footer: { color: tokens.colorTextFaint, fontSize: 10, marginTop: 12 }
+	claimText: { color: tokens.colorTextSubtle },
+	footer: { color: tokens.colorTextFaint, fontSize: 11, marginTop: 12 }
 });

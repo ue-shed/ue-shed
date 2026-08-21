@@ -156,8 +156,10 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 test("selects the exact Map Review Core+Cameras graph without Observatory or UI plugins", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-map-review-plugins-"));
 	try {
+		const releaseAssetStem = "ue-shed-plugins-map-review-0.1.0-rc.2";
 		const result = await buildPluginBundle({
 			output,
+			releaseAssetStem,
 			releaseVersion: "0.1.0-rc.2",
 			requestedPlugins: [...MAP_REVIEW_PLUGIN_IDS],
 			unreal: { minimum: "5.7", maximum: "5.7" }
@@ -169,6 +171,9 @@ test("selects the exact Map Review Core+Cameras graph without Observatory or UI 
 				{ id: "UEShedCore", dependencies: [] }
 			]
 		);
+		assert.equal(basename(result.archivePath), `${releaseAssetStem}.tar.gz`);
+		assert.equal(basename(result.manifestPath), `${releaseAssetStem}.manifest.json`);
+		assert.equal(result.manifest.artifact.path, `${releaseAssetStem}.tar.gz`);
 		const entries = archiveEntries(result.archivePath);
 		assert.ok(entries.some((entry) => entry.includes("UEShedCameras/")));
 		assert.ok(entries.some((entry) => entry.includes("UEShedCore/")));

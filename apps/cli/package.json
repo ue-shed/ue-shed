@@ -19,7 +19,7 @@
 		"@ue-shed/map-history": "workspace:*",
 		"@ue-shed/niagara": "workspace:*",
 		"@ue-shed/observability": "workspace:*",
-		"@ue-shed/plugin-bundles": "workspace:*",
+		"@ue-shed/plugin-distribution": "workspace:*",
 		"@ue-shed/project-custodian": "workspace:*",
 		"@ue-shed/protocol": "workspace:*",
 		"@ue-shed/scenarios": "workspace:*",

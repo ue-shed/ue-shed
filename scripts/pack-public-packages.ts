@@ -62,6 +62,7 @@ export const ENGINE_WINDOWS_PACKAGE_NAME = "@ue-shed/engine-win32-x64";
 export const CONFIG_EXPLORER_PACKAGE_NAME = "@ue-shed/config-explorer";
 export const PROJECT_CUSTODIAN_PACKAGE_NAME = "@ue-shed/project-custodian";
 export const NIAGARA_PACKAGE_NAME = "@ue-shed/niagara";
+export const PLUGIN_DISTRIBUTION_PACKAGE_NAME = "@ue-shed/plugin-distribution";
 /**
  * Exact public npm allowlist for candidate construction and protected publication.
  * Every entry belongs to the synchronized public suite. Applications, extensions, UI packages,
@@ -71,6 +72,10 @@ export const PUBLIC_PACKAGES: readonly PublicPackage[] = [
 	{ name: "@ue-shed/protocol", directory: "packages/protocol" },
 	{ name: "@ue-shed/observability", directory: "packages/observability" },
 	{ name: "@ue-shed/unreal-connection", directory: "packages/unreal-connection" },
+	{
+		name: PLUGIN_DISTRIBUTION_PACKAGE_NAME,
+		directory: "packages/plugin-distribution"
+	},
 	{ name: ENGINE_PACKAGE_NAME, directory: "packages/engine" },
 	{ name: ENGINE_WINDOWS_PACKAGE_NAME, directory: "packages/engine-win32-x64" },
 	{ name: "@ue-shed/cameras", directory: "packages/cameras" },
@@ -316,7 +321,10 @@ export function validatePackedManifest({
 	if (expectedName === WASM_PACKAGE_NAME) {
 		failures.push(...validateWasmPackageManifest({ manifest, files }));
 	}
-	if (expectedName === GAME_TEXT_PACKAGE_NAME) {
+	if (
+		expectedName === GAME_TEXT_PACKAGE_NAME ||
+		expectedName === PLUGIN_DISTRIBUTION_PACKAGE_NAME
+	) {
 		for (const requiredFile of ["package/ADOPTING.md", "package/adoption.manifest.json"]) {
 			if (!files.includes(requiredFile)) failures.push(`archive is missing ${requiredFile}`);
 		}
@@ -390,6 +398,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	const protocol = byName.get("@ue-shed/protocol");
 	const observability = byName.get("@ue-shed/observability");
 	const unrealConnection = byName.get("@ue-shed/unreal-connection");
+	const pluginDistribution = byName.get(PLUGIN_DISTRIBUTION_PACKAGE_NAME);
 	const engine = byName.get(ENGINE_PACKAGE_NAME);
 	const engineWindows = byName.get(ENGINE_WINDOWS_PACKAGE_NAME);
 	const cameras = byName.get("@ue-shed/cameras");
@@ -416,6 +425,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactInternalDependency(unrealConnection, "@ue-shed/protocol", byName, failures);
 	requireExactDependency(unrealConnection, "effect", exactEffectVersion, failures);
 	requireExactDependency(unrealConnection, "unreal-rc", exactUnrealRcVersion, failures);
+	requireExactPeerDependency(pluginDistribution, "effect", exactEffectVersion, failures);
 	requireExactInternalDependency(engine, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(engine, "@ue-shed/unreal-connection", byName, failures);
 	requireExactDependency(engine, "effect", exactEffectVersion, failures);
@@ -550,6 +560,7 @@ export async function packPublicPackages({
 		run(executable("pnpm"), ["--filter", "@ue-shed/protocol", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/observability", "build"]);
 		run(executable("pnpm"), ["--filter", "@ue-shed/unreal-connection", "build"]);
+		run(executable("pnpm"), ["--filter", PLUGIN_DISTRIBUTION_PACKAGE_NAME, "build"]);
 		run(executable("pnpm"), ["--filter", ENGINE_PACKAGE_NAME, "build"]);
 		run(
 			executable("pnpm"),

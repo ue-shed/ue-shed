@@ -1,13 +1,23 @@
 import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
+import { ReleaseVersion } from "@ue-shed/plugin-distribution";
 import { CliCommandError } from "../cli-runtime.js";
-import { runPluginsInstall, runPluginsList, runPluginsVerify } from "../workflows/plugins.js";
+import {
+	runPluginsCacheInstall,
+	runPluginsCacheList,
+	runPluginsCacheVerify,
+	runPluginsInstall,
+	runPluginsList,
+	runPluginsPrune,
+	runPluginsVerify
+} from "../workflows/plugins.js";
 import { optionalFlag, optionalValue } from "./options.js";
 
 const pluginManifestArgument = Argument.string("manifest").pipe(Argument.optional);
 const pluginManifestFlag = optionalFlag("manifest");
 const pluginArtifactFlag = optionalFlag("artifact");
 const pluginProjectFlag = optionalFlag("project");
+const pluginReleaseFlag = Flag.string("release").pipe(Flag.withSchema(ReleaseVersion));
 
 function resolvePluginPath(
 	positional: Option.Option<string>,
@@ -104,7 +114,83 @@ const pluginsInstallCommand = Command.make(
 		})
 ).pipe(Command.withDescription("Install a plugin bundle into a project."));
 
+const pluginsCacheInstallCommand = Command.make(
+	"install",
+	{
+		artifactDigest: optionalFlag("artifact-digest"),
+		cache: Flag.string("cache"),
+		cacheOnly: Flag.boolean("cache-only"),
+		manifestDigest: optionalFlag("manifest-digest"),
+		plugins: Flag.string("plugin").pipe(Flag.atLeast(1)),
+		release: pluginReleaseFlag,
+		source: Flag.string("source").pipe(Flag.withDefault(".")),
+		unreal: optionalFlag("unreal")
+	},
+	({ artifactDigest, cache, cacheOnly, manifestDigest, plugins, release, source, unreal }) =>
+		Effect.gen(function* () {
+			const artifactDigestValue = optionalValue(artifactDigest);
+			const manifestDigestValue = optionalValue(manifestDigest);
+			const unrealVersion = optionalValue(unreal);
+			return yield* runPluginsCacheInstall({
+				_tag: "PluginsCacheInstall",
+				cacheOnly,
+				cacheRoot: cache,
+				pluginIds: plugins,
+				releaseVersion: release,
+				source,
+				...(artifactDigestValue === undefined
+					? undefined
+					: { artifactDigest: artifactDigestValue }),
+				...(manifestDigestValue === undefined
+					? undefined
+					: { manifestDigest: manifestDigestValue }),
+				...(unrealVersion === undefined ? undefined : { unrealVersion })
+			});
+		})
+).pipe(Command.withDescription("Install an exact plugin release into a host cache."));
+
+const pluginsCacheListCommand = Command.make("list", { cache: Flag.string("cache") }, ({ cache }) =>
+	runPluginsCacheList({ _tag: "PluginsCacheList", cacheRoot: cache })
+).pipe(Command.withDescription("List verified releases in a plugin cache."));
+
+const pluginsCacheVerifyCommand = Command.make(
+	"verify",
+	{ cache: Flag.string("cache"), release: pluginReleaseFlag },
+	({ cache, release }) =>
+		runPluginsCacheVerify({
+			_tag: "PluginsCacheVerify",
+			cacheRoot: cache,
+			releaseVersion: release
+		})
+).pipe(Command.withDescription("Verify one immutable cached plugin release."));
+
+const pluginsPruneCommand = Command.make(
+	"prune",
+	{ cache: Flag.string("cache"), release: pluginReleaseFlag },
+	({ cache, release }) =>
+		runPluginsPrune({
+			_tag: "PluginsPrune",
+			cacheRoot: cache,
+			releaseVersion: release
+		})
+).pipe(Command.withDescription("Prune one unleased cached plugin release."));
+
+const pluginsCacheCommand = Command.make("cache").pipe(
+	Command.withDescription("Install, inspect, verify, and prune host-cached plugin releases."),
+	Command.withSubcommands([
+		pluginsCacheInstallCommand,
+		pluginsCacheListCommand,
+		pluginsCacheVerifyCommand,
+		pluginsPruneCommand
+	])
+);
+
 export const pluginsCommand = Command.make("plugins").pipe(
-	Command.withDescription("Inspect, verify, and install plugin bundles."),
-	Command.withSubcommands([pluginsListCommand, pluginsVerifyCommand, pluginsInstallCommand])
+	Command.withDescription("Inspect and install plugin bundles for projects or host caches."),
+	Command.withSubcommands([
+		pluginsListCommand,
+		pluginsVerifyCommand,
+		pluginsInstallCommand,
+		pluginsCacheCommand
+	])
 );

@@ -159,9 +159,9 @@ importers:
       '@ue-shed/observability':
         specifier: workspace:*
         version: link:../../packages/observability
-      '@ue-shed/plugin-bundles':
+      '@ue-shed/plugin-distribution':
         specifier: workspace:*
-        version: link:../../packages/plugin-bundles
+        version: link:../../packages/plugin-distribution
       '@ue-shed/project-custodian':
         specifier: workspace:*
         version: link:../../packages/project-custodian
@@ -820,15 +820,14 @@ importers:
         specifier: 'catalog:'
         version: 4.0.0-beta.98
 
-  packages/plugin-bundles:
-    dependencies:
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-beta.98
+  packages/plugin-distribution:
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.98(effect@4.0.0-beta.98)(vitest@4.1.10)
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.98
 
   packages/project-custodian:
     dependencies:

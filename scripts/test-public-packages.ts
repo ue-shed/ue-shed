@@ -11,6 +11,7 @@ import {
 	GAME_TEXT_PACKAGE_NAME,
 	MAP_HISTORY_PACKAGE_NAME,
 	packPublicPackages,
+	PLUGIN_DISTRIBUTION_PACKAGE_NAME,
 	PUBLIC_PACKAGES,
 	PROJECT_CUSTODIAN_PACKAGE_NAME,
 	WASM_PACKAGE_NAME
@@ -142,6 +143,30 @@ try {
 		"saved-asset-reader"
 	]);
 	assert.ok(gameTextAdoption.capabilities.notRequired.includes("ue-shed-unreal-plugin"));
+	const pluginDistributionEntry = packed.find(
+		(entry) => entry.name === PLUGIN_DISTRIBUTION_PACKAGE_NAME
+	);
+	assert.ok(pluginDistributionEntry, "the public package graph must contain plugin distribution");
+	const pluginDistributionFiles = run(
+		"tar",
+		["-tzf", basename(pluginDistributionEntry.path)],
+		packageDirectory
+	)
+		.split(/\r?\n/u)
+		.filter(Boolean);
+	assert.ok(pluginDistributionFiles.includes("package/ADOPTING.md"));
+	assert.ok(pluginDistributionFiles.includes("package/adoption.manifest.json"));
+	const pluginDistributionAdoption = JSON.parse(
+		run(
+			"tar",
+			["-xOf", basename(pluginDistributionEntry.path), "package/adoption.manifest.json"],
+			packageDirectory
+		)
+	);
+	assert.equal(pluginDistributionAdoption.feature, "plugin-distribution");
+	assert.equal(pluginDistributionAdoption.release.versionSource, "package.json");
+	assert.equal(pluginDistributionAdoption.release.nativeBinaryBundled, false);
+	assert.equal(pluginDistributionAdoption.release.uiBundled, false);
 	const packageChecksums = await readFile(join(packageDirectory, "SHA256SUMS"), "utf8");
 	const checksumRows = packageChecksums
 		.trim()
@@ -260,6 +285,7 @@ try {
 			"import * as assets from '@ue-shed/unreal-assets';",
 			"import * as observability from '@ue-shed/observability';",
 			"import * as connection from '@ue-shed/unreal-connection';",
+			"import * as pluginDistribution from '@ue-shed/plugin-distribution';",
 			"import * as engine from '@ue-shed/engine';",
 			"import * as cameras from '@ue-shed/cameras';",
 			"import * as reviewContracts from '@ue-shed/cameras/review-contracts';",
@@ -275,6 +301,9 @@ try {
 			"}",
 			"if (typeof connection.RemoteControlClient !== 'function') {",
 			"  throw new Error('bad unreal-connection export');",
+			"}",
+			"for (const name of ['PluginDistribution', 'PluginReleaseSource', 'PluginStore', 'pluginDistributionLayer', 'pluginStoreLayer', 'localPluginReleaseSourceLayer', 'httpPluginReleaseSourceLayer']) {",
+			"  if (typeof pluginDistribution[name] !== 'function') throw new Error('bad plugin-distribution export ' + name);",
 			"}",
 			"for (const name of ['UnrealProjectLauncher', 'EditorConnection', 'EditorPlaySession', 'EditorWorldControl']) {",
 			"  if (typeof engine[name] !== 'function') throw new Error('bad engine export ' + name);",

@@ -283,14 +283,53 @@ export const pluginDistributionLayer = (
 					current.add(subscriber);
 					subscribers.set(key, current);
 				}
-				let installation = Cache.get(installs, key);
-				if (installOptions.signal !== undefined) {
-					installation = Effect.raceFirst(
-						installation,
-						abortEffect(request.releaseVersion, installOptions.signal)
+				return yield* Effect.gen(function* () {
+					let installation = Cache.get(installs, key);
+					if (installOptions.signal !== undefined) {
+						installation = Effect.raceFirst(
+							installation,
+							abortEffect(request.releaseVersion, installOptions.signal)
+						);
+					}
+					const ensured = yield* installation;
+					const resolved = yield* resolvePluginBundleDependencies(
+						ensured.release.manifest,
+						request.pluginIds
+					).pipe(
+						Effect.mapError(
+							(error) =>
+								new PluginDistributionValidationError({
+									field: "pluginIds",
+									message: error.message,
+									recovery: error.recovery,
+									retrySafe: false
+								})
+						)
 					);
-				}
-				const ensured = yield* installation.pipe(
+					const lease = yield* store.lease(ensured.release);
+					const descriptorPaths = resolved.plugins.map((plugin) =>
+						resolve(ensured.release.pluginsRoot, ...plugin.descriptorPath.split("/"))
+					);
+					publishProgress(key, {
+						cacheHit: ensured.cacheHit,
+						phase: "ready",
+						releaseVersion: request.releaseVersion
+					});
+					return PluginInstallResult.make({
+						artifactDigest: ensured.release.artifactDigest,
+						cacheHit: ensured.cacheHit,
+						cacheIdentity: ensured.release.cacheIdentity,
+						cachePath: ensured.release.cachePath,
+						descriptorPaths,
+						lease,
+						manifestDigest: ensured.release.manifestDigest,
+						releaseIdentity: ensured.release.releaseIdentity,
+						releaseVersion: ensured.release.releaseVersion,
+						resolvedPluginIds: resolved.orderedPluginIds,
+						resolvedPlugins: resolved.plugins,
+						source: ensured.release.source
+					});
+				}).pipe(
 					Effect.ensuring(
 						Effect.sync(() => {
 							if (subscriber === undefined) return;
@@ -300,43 +339,6 @@ export const pluginDistributionLayer = (
 						})
 					)
 				);
-				const resolved = yield* resolvePluginBundleDependencies(
-					ensured.release.manifest,
-					request.pluginIds
-				).pipe(
-					Effect.mapError(
-						(error) =>
-							new PluginDistributionValidationError({
-								field: "pluginIds",
-								message: error.message,
-								recovery: error.recovery,
-								retrySafe: false
-							})
-					)
-				);
-				const lease = yield* store.lease(ensured.release);
-				const descriptorPaths = resolved.plugins.map((plugin) =>
-					resolve(ensured.release.pluginsRoot, ...plugin.descriptorPath.split("/"))
-				);
-				publishProgress(key, {
-					cacheHit: ensured.cacheHit,
-					phase: "ready",
-					releaseVersion: request.releaseVersion
-				});
-				return PluginInstallResult.make({
-					artifactDigest: ensured.release.artifactDigest,
-					cacheHit: ensured.cacheHit,
-					cacheIdentity: ensured.release.cacheIdentity,
-					cachePath: ensured.release.cachePath,
-					descriptorPaths,
-					lease,
-					manifestDigest: ensured.release.manifestDigest,
-					releaseIdentity: ensured.release.releaseIdentity,
-					releaseVersion: ensured.release.releaseVersion,
-					resolvedPluginIds: resolved.orderedPluginIds,
-					resolvedPlugins: resolved.plugins,
-					source: ensured.release.source
-				});
 			});
 
 			const listCached = Effect.fn("PluginDistribution.listCached")(() => store.list());

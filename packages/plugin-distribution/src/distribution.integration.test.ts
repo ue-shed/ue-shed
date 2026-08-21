@@ -186,6 +186,7 @@ it.effect(
 		Effect.gen(function* () {
 			const source = yield* Effect.promise(() => fixture());
 			const cacheRoot = join(source.root, "cache");
+			const progressPhases: string[] = [];
 			const layer = liveLayer(
 				localPluginReleaseSourceLayer({ directory: source.root }),
 				cacheRoot
@@ -193,12 +194,25 @@ it.effect(
 
 			const first = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>
-					distribution.install(request(source.releaseVersion))
+					distribution.install(request(source.releaseVersion), {
+						onProgress: (progress) => progressPhases.push(progress.phase)
+					})
 				)
 			).pipe(Effect.provide(layer));
 			expect(first.cacheHit).toBe(false);
 			expect(first.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
 			expect(first.descriptorPaths.every((path) => path.includes(cacheRoot))).toBe(true);
+			expect(progressPhases).toEqual(
+				expect.arrayContaining([
+					"resolving",
+					"downloading",
+					"verifying",
+					"extracting",
+					"publishing",
+					"ready"
+				])
+			);
+			expect(progressPhases.at(-1)).toBe("ready");
 
 			const offline = yield* Effect.scoped(
 				Effect.flatMap(PluginDistribution, (distribution) =>

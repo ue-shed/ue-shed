@@ -555,7 +555,7 @@ const styles = stylex.create({
 		height: "calc(100vh - 260px)",
 		minHeight: 430,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	panelHeader: {
@@ -564,7 +564,7 @@ const styles = stylex.create({
 		padding: "8px 9px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 9
+		fontSize: 11
 	},
 	ruleChoice: {
 		display: "flex",
@@ -574,17 +574,20 @@ const styles = stylex.create({
 		padding: "9px 10px",
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#201c19" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorTextMuted,
 		textAlign: "left",
 		cursor: "pointer"
 	},
-	ruleChoiceActive: { backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
+	ruleChoiceActive: {
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: "inset 3px 0 rgba(228, 242, 34, 0.55)"
+	},
 	ruleChoiceMeta: {
 		display: "flex",
 		justifyContent: "space-between",
-		color: "#efaa91",
-		fontSize: 8
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	ruleForm: {
 		display: "flex",
@@ -592,7 +595,7 @@ const styles = stylex.create({
 		height: "calc(100vh - 260px)",
 		minHeight: 430,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311",
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	formHeader: {
@@ -602,20 +605,20 @@ const styles = stylex.create({
 		padding: "12px 14px",
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	formEyebrow: { color: "#e87655", fontSize: 8 },
+	formEyebrow: { color: tokens.colorTextSubtle, fontSize: 11 },
 	formTitle: { margin: "4px 0 0", color: tokens.colorTextStrong, fontSize: 15 },
-	dirtyState: { color: "#e7ab6d", fontSize: 8 },
+	dirtyState: { color: tokens.colorWarning, fontSize: 11 },
 	field: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
 		padding: "12px 14px 0",
 		color: tokens.colorTextMuted,
-		fontSize: 9
+		fontSize: 11
 	},
 	input: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: "#0f0e0d",
+		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
 		padding: "8px 9px",
 		fontSize: 11
@@ -624,15 +627,15 @@ const styles = stylex.create({
 		minHeight: 72,
 		resize: "vertical",
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: "#0f0e0d",
+		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
 		padding: "8px 9px",
 		fontFamily: "inherit",
-		fontSize: 10
+		fontSize: 12
 	},
-	fieldHint: { color: tokens.colorTextFaint, fontSize: 8 },
+	fieldHint: { color: tokens.colorTextFaint, fontSize: 11 },
 	termsHeader: { padding: "12px 14px 0" },
-	checkbox: { display: "flex", alignItems: "center", gap: 7, fontSize: 9 },
+	checkbox: { display: "flex", alignItems: "center", gap: 7, fontSize: 11 },
 	termList: { display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px 0" },
 	termRow: {
 		display: "grid",
@@ -640,14 +643,14 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 6
 	},
-	termKind: { color: "#efaa91", fontSize: 8 },
+	termKind: { color: tokens.colorWarning, fontSize: 11 },
 	inputCompact: {
 		minWidth: 0,
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: "#0f0e0d",
+		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
 		padding: "6px 7px",
-		fontSize: 9
+		fontSize: 12
 	},
 	removeTerm: {
 		border: `1px solid ${tokens.colorBorder}`,
@@ -662,10 +665,10 @@ const styles = stylex.create({
 	},
 	smallButton: {
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "5px 7px",
-		fontSize: 8,
+		fontSize: 11,
 		cursor: "pointer"
 	},
 	actions: {
@@ -677,29 +680,29 @@ const styles = stylex.create({
 		padding: "10px 14px",
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 8
+		fontSize: 11
 	},
 	actionButtons: {
 		display: "flex",
 		gap: 6
 	},
 	actionButton: {
-		border: "1px solid #884a36",
+		border: `1px solid ${tokens.colorBorderStrong}`,
 		backgroundColor: {
-			default: "#382019",
-			":hover": "#4a291f",
-			":disabled": "#1a1816"
+			default: tokens.colorSurface,
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": tokens.colorSurface
 		},
-		color: "#ffd0bf",
+		color: tokens.colorText,
 		padding: "6px 9px",
-		fontSize: 9,
+		fontSize: 12,
 		cursor: { default: "pointer", ":disabled": "default" }
 	},
 	roles: {
 		height: "calc(100vh - 260px)",
 		minHeight: 430,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	roleCard: {
@@ -707,12 +710,12 @@ const styles = stylex.create({
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	roleHeader: { display: "flex", justifyContent: "space-between", gap: 8 },
-	roleTitle: { color: tokens.colorTextStrong, fontSize: 10 },
-	roleCount: { color: "#efaa91", fontSize: 8 },
+	roleTitle: { color: tokens.colorTextStrong, fontSize: 12 },
+	roleCount: { color: tokens.colorTextSubtle, fontSize: 11 },
 	roleDescription: {
 		margin: "6px 0",
 		color: tokens.colorTextMuted,
-		fontSize: 9,
+		fontSize: 11,
 		lineHeight: 1.4
 	},
 	scope: {
@@ -722,8 +725,8 @@ const styles = stylex.create({
 		marginTop: 8,
 		padding: "7px",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#0f0e0d"
+		backgroundColor: tokens.colorSurfaceInset
 	},
-	scopeLabel: { color: tokens.colorTextFaint, fontSize: 7 },
-	scopeMatcher: { color: "#d8d0c8", fontSize: 8, lineHeight: 1.35 }
+	scopeLabel: { color: tokens.colorTextFaint, fontSize: 11 },
+	scopeMatcher: { color: tokens.colorText, fontSize: 11, lineHeight: 1.35 }
 });

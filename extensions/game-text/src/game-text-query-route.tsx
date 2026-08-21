@@ -1033,8 +1033,8 @@ const styles = stylex.create({
 		minHeight: "calc(100vh - 52px)",
 		padding: "16px 22px 22px",
 		color: tokens.colorText,
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		backgroundColor: "#100f0e",
+		fontFamily: tokens.fontBody,
+		backgroundColor: tokens.colorCanvas,
 		backgroundImage: "none"
 	},
 	header: {
@@ -1045,26 +1045,26 @@ const styles = stylex.create({
 		marginBottom: 10
 	},
 	breadcrumb: {
-		color: tokens.colorAccent,
-		fontSize: 8,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		letterSpacing: ".04em"
 	},
 	title: {
 		margin: "3px 0 0",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 19,
-		fontWeight: 600,
-		letterSpacing: 0
+		fontFamily: tokens.fontDisplay,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
 	},
-	subtitle: { margin: "2px 0 0", color: tokens.colorTextMuted, fontSize: 10 },
+	subtitle: { margin: "2px 0 0", color: tokens.colorTextMuted, fontSize: 13 },
 	button: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: "6px 10px",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10,
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
 		letterSpacing: 0,
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
@@ -1072,13 +1072,13 @@ const styles = stylex.create({
 	},
 	headerActions: { display: "flex", alignItems: "center", gap: 6 },
 	qualityButton: {
-		border: "1px solid #884a36",
-		backgroundColor: { default: "#382019", ":hover": "#4a291f" },
-		color: "#ffd0bf",
+		border: `1px solid ${tokens.colorAccent}`,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
 		padding: "6px 10px",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10
+		fontFamily: tokens.fontBody,
+		fontSize: 12
 	},
 	qualitySetup: {
 		display: "flex",
@@ -1090,18 +1090,18 @@ const styles = stylex.create({
 		margin: "48px auto 0",
 		padding: "28px 30px",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311",
-		boxShadow: "inset 3px 0 #e87655",
+		backgroundColor: tokens.colorSurface,
+		boxShadow: `inset 3px 0 ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 10,
+		fontSize: 11,
 		lineHeight: 1.5
 	},
-	qualitySetupEyebrow: { color: "#e87655", fontSize: 8, letterSpacing: ".08em" },
+	qualitySetupEyebrow: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
 	qualitySetupTitle: {
 		margin: "4px 0 0",
 		color: tokens.colorTextStrong,
-		fontSize: 19,
-		fontWeight: 600
+		fontSize: 17,
+		fontWeight: 590
 	},
 	qualitySetupCopy: { maxWidth: 430, margin: 0 },
 	modeTabs: {
@@ -1116,17 +1116,17 @@ const styles = stylex.create({
 		gap: 7,
 		border: 0,
 		borderRight: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#151311", ":hover": "#211d1a" },
+		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "7px 12px",
-		fontSize: 10,
+		fontSize: 12,
 		cursor: "pointer",
-		opacity: { default: 1, ":disabled": 0.45 }
+		opacity: { default: 1, ":disabled": 0.5 }
 	},
 	modeTabActive: {
-		color: "#ffd0bf",
-		backgroundColor: "#2b1d18",
-		boxShadow: "inset 0 -2px #e87655"
+		color: tokens.colorTextStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: "inset 0 -2px rgba(228, 242, 34, 0.8)"
 	},
 	qualityError: {
 		display: "flex",
@@ -1135,8 +1135,8 @@ const styles = stylex.create({
 		marginBottom: 8,
 		padding: "8px 10px",
 		border: `1px solid ${tokens.colorDanger}`,
-		color: "#efaa91",
-		fontSize: 9
+		color: tokens.colorDanger,
+		fontSize: 11
 	},
 	empty: {
 		minHeight: 380,
@@ -1153,14 +1153,14 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 10,
 		border: `1px solid ${tokens.colorDanger}`,
-		color: "#e39b86"
+		color: tokens.colorDanger
 	},
 	workspace: { display: "flex", flexDirection: "column", gap: 8 },
 	coverage: {
 		display: "grid",
 		gridTemplateColumns: "minmax(175px, 1.2fr) repeat(4, minmax(110px, .7fr))",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311e8"
+		backgroundColor: tokens.colorSurface
 	},
 	corpusStatus: {
 		display: "grid",
@@ -1170,14 +1170,14 @@ const styles = stylex.create({
 		padding: "7px 10px",
 		borderRight: `1px solid ${tokens.colorBorder}`
 	},
-	coverageState: { padding: "2px 5px", fontSize: 8, letterSpacing: 0 },
-	complete: { color: "#b9dfa5", backgroundColor: "#1e2a1d" },
-	partial: { color: "#efaa91", backgroundColor: "#382019" },
-	corpusName: { alignSelf: "center", fontSize: 10, fontWeight: 500 },
+	coverageState: { padding: "2px 5px", fontSize: 11, letterSpacing: 0 },
+	complete: { color: tokens.colorSuccess, backgroundColor: "rgba(76, 183, 130, 0.12)" },
+	partial: { color: tokens.colorWarning, backgroundColor: "rgba(242, 153, 74, 0.12)" },
+	corpusName: { alignSelf: "center", fontSize: 12, fontWeight: 500 },
 	corpusDetail: {
 		gridColumn: "1 / -1",
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		letterSpacing: 0
 	},
 	corpusMetric: {
@@ -1187,29 +1187,29 @@ const styles = stylex.create({
 		gap: 3,
 		padding: "7px 10px",
 		borderRight: `1px solid ${tokens.colorBorder}`,
-		fontSize: 8
+		fontSize: 11
 	},
 	metricLabel: {
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		letterSpacing: ".03em"
 	},
-	metricValue: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 600, lineHeight: 1.1 },
+	metricValue: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 590, lineHeight: 1.1 },
 	metricDetail: {
 		gridColumn: "1 / -1",
 		color: tokens.colorTextFaint,
-		fontSize: 8
+		fontSize: 11
 	},
-	gapValue: { color: "#ef805f", fontSize: 12, fontWeight: 600, lineHeight: 1.1 },
+	gapValue: { color: tokens.colorWarning, fontSize: 12, fontWeight: 590, lineHeight: 1.1 },
 	gapMetric: {
 		display: "grid",
 		gridTemplateColumns: "auto 1fr",
 		alignItems: "end",
 		gap: "2px 8px",
 		padding: "7px 10px",
-		fontSize: 8
+		fontSize: 11
 	},
-	gapMetricWarning: { backgroundColor: "#181513", color: "#efaa91" },
+	gapMetricWarning: { backgroundColor: "rgba(242, 153, 74, 0.08)", color: tokens.colorWarning },
 	tools: {
 		display: "flex",
 		alignItems: "stretch",
@@ -1227,8 +1227,8 @@ const styles = stylex.create({
 		color: tokens.colorText,
 		padding: "7px 9px",
 		outline: "none",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 11,
+		fontFamily: tokens.fontBody,
+		fontSize: 13,
 		"::placeholder": { color: tokens.colorTextFaint }
 	},
 	matchCount: {
@@ -1239,27 +1239,27 @@ const styles = stylex.create({
 		padding: "0 12px",
 		borderLeft: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 10
+		fontSize: 11
 	},
 	filters: { display: "flex", borderLeft: `1px solid ${tokens.colorBorder}` },
 	filterButton: {
 		border: 0,
 		borderLeft: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#171513", ":hover": "#28231f" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "7px 9px",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
 		letterSpacing: 0,
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
 	},
 	filterActive: {
-		color: "#ffd0bf",
-		backgroundColor: "#352019",
-		boxShadow: "inset 0 -2px #e87655"
+		color: tokens.colorTextStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: "inset 0 -2px rgba(228, 242, 34, 0.8)"
 	},
 	grid: {
 		display: "grid",
@@ -1272,7 +1272,7 @@ const styles = stylex.create({
 		height: "calc(100vh - 178px)",
 		minHeight: 500,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	railSection: { borderBottom: `1px solid ${tokens.colorBorder}` },
@@ -1281,12 +1281,12 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "8px 9px",
-		fontSize: 10
+		fontSize: 11
 	},
 	railLabel: {
 		padding: "7px 9px 5px",
 		color: tokens.colorTextFaint,
-		fontSize: 9,
+		fontSize: 11,
 		letterSpacing: ".04em"
 	},
 	railMetrics: {
@@ -1298,8 +1298,8 @@ const styles = stylex.create({
 		margin: 0,
 		padding: "7px 9px",
 		borderTop: `1px solid ${tokens.colorBorder}`,
-		color: "#d9a18d",
-		fontSize: 9,
+		color: tokens.colorWarning,
+		fontSize: 11,
 		lineHeight: 1.45
 	},
 	lensList: { display: "flex", flexDirection: "column" },
@@ -1311,16 +1311,20 @@ const styles = stylex.create({
 		width: "100%",
 		border: 0,
 		borderTop: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "7px 9px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
 	},
-	lensActive: { color: "#f2d2c6", backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
+	lensActive: {
+		color: tokens.colorTextStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: "inset 3px 0 rgba(228, 242, 34, 0.55)"
+	},
 	lensCopy: { display: "flex", minWidth: 0, flexDirection: "column", gap: 1 },
 	lensCount: { flexShrink: 0, color: tokens.colorText, fontVariantNumeric: "tabular-nums" },
 	sourceBreakdown: {
@@ -1328,7 +1332,7 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 6,
 		paddingBottom: 9,
-		fontSize: 9,
+		fontSize: 11,
 		color: tokens.colorTextMuted
 	},
 	sourceRow: { display: "flex", justifyContent: "space-between", padding: "0 9px" },
@@ -1336,7 +1340,7 @@ const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
+		backgroundColor: tokens.colorSurface,
 		height: "calc(100vh - 178px)",
 		minHeight: 500,
 		overflow: "auto"
@@ -1351,9 +1355,9 @@ const styles = stylex.create({
 		gap: 10,
 		padding: "7px 9px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#191715f5",
+		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextFaint,
-		fontSize: 9,
+		fontSize: 11,
 		letterSpacing: ".03em"
 	},
 	resultsTitle: { display: "flex", flexDirection: "column", gap: 2 },
@@ -1365,15 +1369,18 @@ const styles = stylex.create({
 		gap: 5,
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#201c19" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		minHeight: 86,
 		padding: "8px 9px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif'
+		fontFamily: tokens.fontBody
 	},
-	resultActive: { backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
+	resultActive: {
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		boxShadow: "inset 3px 0 rgba(228, 242, 34, 0.55)"
+	},
 	resultLead: { display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 },
 	resultText: {
 		display: "block",
@@ -1381,7 +1388,7 @@ const styles = stylex.create({
 		minWidth: 0,
 		color: tokens.colorTextStrong,
 		fontSize: 13,
-		fontWeight: 600,
+		fontWeight: 500,
 		lineHeight: 1.25,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
@@ -1390,19 +1397,19 @@ const styles = stylex.create({
 		display: "block",
 		overflow: "hidden",
 		minWidth: 0,
-		color: "#bbb2a9",
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	rowCounts: { flexShrink: 0, color: tokens.colorTextFaint, fontSize: 9, whiteSpace: "nowrap" },
+	rowCounts: { flexShrink: 0, color: tokens.colorTextFaint, fontSize: 11, whiteSpace: "nowrap" },
 	resultContext: {
 		display: "block",
 		overflow: "hidden",
 		minWidth: 0,
-		color: "#d3cbc3",
-		fontSize: 10,
+		color: tokens.colorText,
+		fontSize: 12,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
@@ -1419,43 +1426,64 @@ const styles = stylex.create({
 		overflow: "hidden",
 		gap: 5,
 		minWidth: 0,
-		fontSize: 9,
+		fontSize: 11,
 		whiteSpace: "nowrap"
 	},
-	sourceAuthority: { padding: "1px 4px", fontSize: 8, fontWeight: 500 },
-	sourceSupported: { color: "#9fca8a", backgroundColor: "#1b281a" },
-	sourceEvidence: { color: "#b7aea5", backgroundColor: "#24201d" },
-	signalRow: { display: "flex", flexWrap: "wrap", gap: 3, color: "#d4a18e", fontSize: 8 },
-	signal: { padding: "1px 4px", backgroundColor: "#30201a", border: "1px solid #533025" },
+	sourceAuthority: { padding: "1px 4px", fontSize: 11, fontWeight: 500 },
+	sourceSupported: { color: tokens.colorSuccess, backgroundColor: "rgba(76, 183, 130, 0.12)" },
+	sourceEvidence: { color: tokens.colorTextMuted, backgroundColor: "rgba(255, 255, 255, 0.05)" },
+	signalRow: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: 3,
+		color: tokens.colorWarning,
+		fontSize: 11
+	},
+	signal: {
+		padding: "1px 4px",
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
+		border: "1px solid rgba(242, 153, 74, 0.25)"
+	},
 	rowActions: { display: "flex", justifyContent: "flex-start", gap: 3, whiteSpace: "nowrap" },
 	rowAction: {
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#181614", ":hover": "#302a25" },
+		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		minWidth: 0,
 		padding: "4px 6px",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
 		lineHeight: 1,
-		opacity: { default: 1, ":disabled": 0.55 },
+		opacity: { default: 1, ":disabled": 0.5 },
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
 	},
-	rowActionSuccess: { color: "#a9d897", borderColor: "#41643a", backgroundColor: "#1b281a" },
-	rowActionFailure: { color: "#efaa91", borderColor: "#754132", backgroundColor: "#382019" },
-	lengthCount: { justifySelf: "center", color: tokens.colorTextMuted, fontSize: 9 },
-	occurrenceCount: { justifySelf: "center", color: "#e9b19d", fontSize: 11 },
-	noMatches: { padding: 40, color: tokens.colorTextMuted, textAlign: "center", fontSize: 10 },
+	rowActionSuccess: {
+		color: tokens.colorSuccess,
+		borderColor: "rgba(76, 183, 130, 0.45)",
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	rowActionFailure: {
+		color: tokens.colorDanger,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		backgroundColor: "rgba(235, 87, 87, 0.1)"
+	},
+	lengthCount: { justifySelf: "center", color: tokens.colorTextMuted, fontSize: 11 },
+	occurrenceCount: { justifySelf: "center", color: tokens.colorWarning, fontSize: 11 },
+	noMatches: { padding: 40, color: tokens.colorTextMuted, textAlign: "center", fontSize: 11 },
 	nextPage: {
 		border: 0,
-		backgroundColor: { default: "#211d1a", ":hover": "#302a25" },
+		backgroundColor: {
+			default: tokens.colorSurfaceRaised,
+			":hover": "rgba(255, 255, 255, 0.04)"
+		},
 		color: tokens.colorTextMuted,
 		padding: 12,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10,
-		letterSpacing: ".08em"
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		letterSpacing: 0
 	},
 	resultsFooter: {
 		position: "sticky",
@@ -1465,14 +1493,14 @@ const styles = stylex.create({
 		marginTop: "auto",
 		padding: "6px 10px",
 		borderTop: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#171513f5",
+		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextFaint,
-		fontSize: 9,
+		fontSize: 11,
 		letterSpacing: 0
 	},
 	focus: {
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311",
+		backgroundColor: tokens.colorSurface,
 		height: "calc(100vh - 178px)",
 		minHeight: 500,
 		overflow: "auto",
@@ -1488,17 +1516,17 @@ const styles = stylex.create({
 	},
 	focusEyebrow: {
 		color: tokens.colorTextFaint,
-		fontSize: 9,
+		fontSize: 11,
 		letterSpacing: ".03em"
 	},
 	focusQuote: {
 		margin: "3px 0 2px",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 20,
-		fontWeight: 600,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 17,
+		fontWeight: 590,
 		lineHeight: 1.3
 	},
-	focusMeta: { display: "flex", gap: 8, color: "#c19382", fontSize: 9 },
+	focusMeta: { display: "flex", gap: 8, color: tokens.colorTextSubtle, fontSize: 11 },
 	focusIdentity: {
 		display: "grid",
 		gridTemplateColumns: "90px minmax(0, 1fr)",
@@ -1508,10 +1536,16 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		fontSize: 9
 	},
-	focusSignals: { display: "flex", flexWrap: "wrap", gap: 4, color: "#e0a58f", fontSize: 9 },
+	focusSignals: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: 4,
+		color: tokens.colorWarning,
+		fontSize: 11
+	},
 	identityDetails: {
 		color: tokens.colorTextMuted,
-		fontSize: 8,
+		fontSize: 11,
 		marginTop: 3
 	},
 	occurrences: { margin: 8, border: `1px solid ${tokens.colorBorder}` },
@@ -1522,7 +1556,7 @@ const styles = stylex.create({
 		padding: "6px 8px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 9,
+		fontSize: 11,
 		letterSpacing: ".03em"
 	},
 	occurrence: {
@@ -1531,7 +1565,7 @@ const styles = stylex.create({
 		gap: 4,
 		padding: "7px 8px",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 10
+		fontSize: 12
 	},
 	occurrenceHeader: {
 		display: "flex",
@@ -1552,34 +1586,34 @@ const styles = stylex.create({
 		minWidth: 0,
 		color: tokens.colorTextMuted
 	},
-	authority: { flexShrink: 0, padding: "2px 5px", fontSize: 8, letterSpacing: 0 },
-	editable: { color: "#9fca8a", backgroundColor: "#1b281a" },
-	readOnly: { color: "#b7aea5", backgroundColor: "#24201d" },
+	authority: { flexShrink: 0, padding: "2px 5px", fontSize: 11, letterSpacing: 0 },
+	editable: { color: tokens.colorSuccess, backgroundColor: "rgba(76, 183, 130, 0.12)" },
+	readOnly: { color: tokens.colorTextMuted, backgroundColor: "rgba(255, 255, 255, 0.05)" },
 	locateButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: { default: "#181614", ":hover": "#302a25" },
+		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "3px 6px",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
-		opacity: { default: 1, ":disabled": 0.55 },
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
+		opacity: { default: 1, ":disabled": 0.5 },
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
 	},
 	locateMessage: {
 		margin: 0,
 		padding: "5px 6px",
-		borderLeft: "2px solid #754132",
-		backgroundColor: "#241915",
-		color: "#efaa91",
-		fontSize: 9,
+		borderLeft: "2px solid rgba(235, 87, 87, 0.5)",
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 11,
 		lineHeight: 1.45
 	},
 	objectPath: {
 		overflow: "hidden",
-		color: "#d8d0c8",
-		fontSize: 9,
+		color: tokens.colorText,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
@@ -1587,16 +1621,16 @@ const styles = stylex.create({
 		display: "block",
 		overflow: "hidden",
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	sourceDetails: {
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		marginTop: 4,
 		paddingTop: 5
 	},
-	diagnostic: { padding: 10, borderBottom: `1px solid ${tokens.colorBorder}`, fontSize: 8 }
+	diagnostic: { padding: 10, borderBottom: `1px solid ${tokens.colorBorder}`, fontSize: 11 }
 });

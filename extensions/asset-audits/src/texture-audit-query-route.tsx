@@ -1122,6 +1122,7 @@ const styles = stylex.create({
 	rescanButton: {
 		flexShrink: 0,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "6px 10px",
@@ -1388,6 +1389,7 @@ const styles = stylex.create({
 	primaryAction: {
 		flexShrink: 0,
 		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
 		padding: "6px 9px",
@@ -1397,6 +1399,7 @@ const styles = stylex.create({
 	},
 	secondaryAction: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: "5px 8px",
@@ -1512,6 +1515,7 @@ const styles = stylex.create({
 	comparisonTabs: { display: "flex", gap: 4 },
 	comparisonTab: {
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "4px 6px",

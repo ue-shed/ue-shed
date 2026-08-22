@@ -2013,6 +2013,7 @@ const styles = stylex.create({
 		color: tokens.colorAccent,
 		padding: "8px 12px",
 		cursor: "pointer",
+		borderRadius: tokens.radiusControl,
 		fontSize: 12,
 		letterSpacing: ".01em",
 		textTransform: "none"
@@ -2045,6 +2046,7 @@ const styles = stylex.create({
 	viewTabActive: {
 		borderBottomColor: tokens.colorAccent,
 		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		borderRadius: tokens.radiusBadge,
 		color: tokens.colorTextStrong
 	},
 	manifest: {
@@ -2332,6 +2334,7 @@ const styles = stylex.create({
 		},
 		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		borderRadius: tokens.radiusControl,
 		fontSize: 12,
 		padding: "6px 9px",
 		textTransform: "none"
@@ -2541,6 +2544,7 @@ const styles = stylex.create({
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		cursor: "pointer",
+		borderRadius: tokens.radiusControl,
 		padding: "8px 11px",
 		fontSize: 12,
 		textTransform: "none"

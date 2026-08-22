@@ -970,6 +970,7 @@ const styles = stylex.create({
 	connectButton: {
 		marginTop: 14,
 		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
 		padding: "5px 12px",
@@ -1156,6 +1157,7 @@ const styles = stylex.create({
 	actorActions: { display: "grid", gap: 7, marginTop: 16 },
 	goToButton: {
 		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
 		padding: "5px 12px",
@@ -1166,6 +1168,7 @@ const styles = stylex.create({
 	},
 	followButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "5px 12px",

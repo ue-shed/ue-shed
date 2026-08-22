@@ -878,6 +878,7 @@ const styles = stylex.create({
 	sourceTabs: { display: "flex", gap: 6, marginTop: 9 },
 	sourceButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusBadge,
 		backgroundColor: {
 			default: "transparent",
 			":hover": "rgba(255, 255, 255, 0.04)",
@@ -897,6 +898,7 @@ const styles = stylex.create({
 	},
 	libraryButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
 			":hover": "rgba(255, 255, 255, 0.04)",
@@ -911,6 +913,7 @@ const styles = stylex.create({
 	},
 	captureButton: {
 		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,

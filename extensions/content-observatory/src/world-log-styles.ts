@@ -439,6 +439,7 @@ export const styles = stylex.create({
 	lensTabActive: {
 		color: tokens.colorTextStrong,
 		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		borderRadius: tokens.radiusBadge,
 		boxShadow: `inset 0 -2px ${tokens.colorAccent}`
 	},
 	investigationFacts: {
@@ -870,6 +871,7 @@ export const styles = stylex.create({
 	},
 	filterButtonActive: {
 		color: tokens.colorTextStrong,
+		borderRadius: tokens.radiusBadge,
 		boxShadow: `inset 0 -2px ${tokens.colorAccent}`
 	},
 	timelineList: { padding: 14 },

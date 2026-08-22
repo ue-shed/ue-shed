@@ -1189,6 +1189,7 @@ const styles = stylex.create({
 		width: 34,
 		height: 34,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
 		cursor: "pointer"
@@ -1416,6 +1417,7 @@ const styles = stylex.create({
 		width: 23,
 		height: 23,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
 		cursor: "pointer"

@@ -1057,6 +1057,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 9,
 		padding: "12px 13px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		listStyle: "none",
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" }
@@ -1294,6 +1295,7 @@ const styles = stylex.create({
 		minHeight: 38,
 		padding: "0 16px",
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		fontSize: 12,
@@ -1310,6 +1312,7 @@ const styles = stylex.create({
 		minHeight: 38,
 		padding: "0 18px",
 		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,
@@ -1325,6 +1328,7 @@ const styles = stylex.create({
 		minHeight: 38,
 		padding: "0 18px",
 		border: `1px solid ${tokens.colorDanger}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorDanger,
 			":hover": "#f47b7b",

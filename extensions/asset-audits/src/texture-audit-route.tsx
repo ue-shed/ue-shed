@@ -814,6 +814,7 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		display: "flex",
 		gap: 6,
+		borderRadius: tokens.radiusBadge,
 		whiteSpace: "nowrap"
 	},
 	clearButton: {
@@ -917,6 +918,7 @@ const styles = stylex.create({
 		marginTop: 4,
 		padding: "9px 12px",
 		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
 		fontWeight: 500,

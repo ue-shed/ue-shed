@@ -525,6 +525,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "10px 12px",
+		borderRadius: tokens.radiusControl,
 		color: tokens.colorText,
 		cursor: "pointer",
 		fontSize: 12,
@@ -607,6 +608,7 @@ const styles = stylex.create({
 	overrideIdentity: { display: "grid", gap: 3 },
 	resetButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "5px 12px",

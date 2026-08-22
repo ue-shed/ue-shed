@@ -811,6 +811,7 @@ const styles = stylex.create({
 	transportButton: {
 		padding: "7px 9px",
 		border: "1px solid #31504d",
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "#09100fe6", ":hover": "#142623" },
 		color: "#78958f",
 		fontFamily: tokens.fontBody,

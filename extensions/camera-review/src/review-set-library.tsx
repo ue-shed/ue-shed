@@ -436,6 +436,7 @@ const styles = stylex.create({
 		minWidth: 88,
 		height: 32,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
 			":hover": "rgba(255, 255, 255, 0.04)",

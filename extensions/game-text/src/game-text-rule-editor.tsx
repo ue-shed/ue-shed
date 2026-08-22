@@ -669,7 +669,8 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		padding: "5px 7px",
 		fontSize: 11,
-		cursor: "pointer"
+		cursor: "pointer",
+		borderRadius: tokens.radiusControl
 	},
 	actions: {
 		display: "flex",
@@ -696,7 +697,8 @@ const styles = stylex.create({
 		color: tokens.colorText,
 		padding: "6px 9px",
 		fontSize: 12,
-		cursor: { default: "pointer", ":disabled": "default" }
+		cursor: { default: "pointer", ":disabled": "default" },
+		borderRadius: tokens.radiusControl
 	},
 	roles: {
 		height: "calc(100vh - 260px)",

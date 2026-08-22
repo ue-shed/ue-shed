@@ -431,6 +431,7 @@ const styles = stylex.create({
 		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "10px 15px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		fontSize: 12,
 		letterSpacing: 0,

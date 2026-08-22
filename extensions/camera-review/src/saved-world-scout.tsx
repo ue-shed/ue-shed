@@ -509,6 +509,7 @@ const styles = stylex.create({
 	},
 	chooseButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
 		borderColor: { default: tokens.colorBorderStrong, ":disabled": tokens.colorBorder },
@@ -557,6 +558,7 @@ const styles = stylex.create({
 	reticle: { color: "#02b8cc", fontSize: 36 },
 	retry: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "5px 12px",

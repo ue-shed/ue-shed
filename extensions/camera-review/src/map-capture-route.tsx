@@ -1441,6 +1441,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		marginTop: 14,
+		borderRadius: tokens.radiusBadge,
 		fontSize: 11
 	},
 	checkbox: { position: "absolute", width: 1, height: 1, opacity: 0 },
@@ -1484,6 +1485,7 @@ const styles = stylex.create({
 	},
 	headerButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "5px 12px",
@@ -1493,6 +1495,7 @@ const styles = stylex.create({
 	},
 	secondaryButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "5px 12px",
@@ -1503,6 +1506,7 @@ const styles = stylex.create({
 	},
 	captureButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "rgba(228, 242, 34, 0.08)",
 			":hover": "rgba(228, 242, 34, 0.12)"
@@ -1633,6 +1637,7 @@ const styles = stylex.create({
 	},
 	previewRetry: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		padding: "5px 12px",

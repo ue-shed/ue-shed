@@ -291,6 +291,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 8,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusBadge,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "5px 12px",
@@ -301,6 +302,7 @@ const styles = stylex.create({
 	},
 	toggleEnabled: {
 		borderColor: tokens.colorAccent,
+		borderRadius: tokens.radiusBadge,
 		backgroundColor: {
 			default: "rgba(228, 242, 34, 0.08)",
 			":hover": "rgba(228, 242, 34, 0.12)"

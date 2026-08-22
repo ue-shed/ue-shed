@@ -1062,6 +1062,7 @@ const styles = stylex.create({
 		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: "6px 10px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
 		fontSize: 12,
@@ -1076,6 +1077,7 @@ const styles = stylex.create({
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
 		padding: "6px 10px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
 		fontSize: 12
@@ -1126,6 +1128,7 @@ const styles = stylex.create({
 	modeTabActive: {
 		color: tokens.colorTextStrong,
 		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		borderRadius: tokens.radiusBadge,
 		boxShadow: "inset 0 -2px rgba(228, 242, 34, 0.8)"
 	},
 	qualityError: {
@@ -1451,6 +1454,7 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		minWidth: 0,
 		padding: "4px 6px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
 		fontSize: 11,
@@ -1594,6 +1598,7 @@ const styles = stylex.create({
 		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "3px 6px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
 		fontSize: 11,

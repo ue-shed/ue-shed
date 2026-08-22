@@ -545,6 +545,7 @@ const styles = stylex.create({
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
 		cursor: "pointer",
+		borderRadius: tokens.radiusControl,
 		padding: "0 13px",
 		fontSize: 12,
 		letterSpacing: ".01em",
@@ -573,6 +574,7 @@ const styles = stylex.create({
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		cursor: "pointer",
+		borderRadius: tokens.radiusControl,
 		padding: "5px 7px",
 		fontSize: 11,
 		textTransform: "none"
@@ -605,6 +607,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 9,
 		padding: "9px 10px",
+		borderRadius: tokens.radiusBadge,
 		cursor: "pointer"
 	},
 	isolateButton: {

@@ -55,8 +55,8 @@ type LocateFeedback =
 
 function locateLabel(feedback: LocateFeedback, objectPath: string, idleLabel: string): string {
 	if (feedback.status === "idle" || feedback.objectPath !== objectPath) return idleLabel;
-	if (feedback.status === "locating") return "Locating…";
-	if (feedback.status === "located") return "Located";
+	if (feedback.status === "locating") return "Opening…";
+	if (feedback.status === "located") return "Opened";
 	if (feedback.status === "failed") return "Failed";
 	if (feedback.reason === "not_connected") return "Unreal offline";
 	if (feedback.reason === "capability_missing") return "Plugin needed";
@@ -66,49 +66,30 @@ function locateLabel(feedback: LocateFeedback, objectPath: string, idleLabel: st
 
 const filters: readonly { readonly value: CapabilityFilter; readonly label: string }[] = [
 	{ value: "all", label: "All text" },
-	{ value: "source_editable", label: "Supported sources" },
-	{ value: "read_only", label: "Evidence only" }
+	{ value: "source_editable", label: "Source editable" },
+	{ value: "read_only", label: "Read only" }
 ];
 
 const reviewLenses: readonly {
 	readonly count: (summary: TextCorpusQuerySummary) => number;
-	readonly detail: string;
 	readonly label: string;
 	readonly value: TextReviewLens;
 }[] = [
-	{
-		count: (summary) => summary.review.all,
-		detail: "All saved game text",
-		label: "All lines",
-		value: "all"
-	},
-	{
-		count: (summary) => summary.review.shared,
-		detail: "Identity used in 2+ places",
-		label: "Shared",
-		value: "shared"
-	},
+	{ count: (summary) => summary.review.all, label: "All text", value: "all" },
+	{ count: (summary) => summary.review.shared, label: "Shared identity", value: "shared" },
 	{
 		count: (summary) => summary.review.duplicateSource,
-		detail: "Same words, different IDs",
 		label: "Duplicate source",
 		value: "duplicate_source"
 	},
 	{
 		count: (summary) => summary.review.long,
-		detail: "40+ source characters",
-		label: "Long lines",
+		label: "Over 40 characters",
 		value: "long"
 	},
-	{
-		count: (summary) => summary.review.unresolved,
-		detail: "No stable namespace and key",
-		label: "Unresolved ID",
-		value: "unresolved"
-	},
+	{ count: (summary) => summary.review.unresolved, label: "Unresolved ID", value: "unresolved" },
 	{
 		count: (summary) => summary.review.conflicting,
-		detail: "One ID, multiple source values",
 		label: "Source conflicts",
 		value: "conflicting"
 	}
@@ -116,11 +97,11 @@ const reviewLenses: readonly {
 
 function signalLabel(signal: TextReviewSignal): string {
 	if (signal === "duplicate_source") return "Duplicate source";
-	if (signal === "evidence_only") return "Evidence only";
+	if (signal === "evidence_only") return "Read only";
 	if (signal === "unresolved") return "Unresolved ID";
 	if (signal === "conflicting") return "Source conflict";
-	if (signal === "shared") return "Shared";
-	return "40+ chars";
+	if (signal === "shared") return "Shared identity";
+	return "Over 40 characters";
 }
 
 function sourceKind(unit: TextUnitSearchResult): string {
@@ -143,6 +124,32 @@ function failure(cause: unknown): Extract<ViewState, { status: "failed" }> {
 	};
 }
 
+function FailureCard(props: {
+	readonly title: string;
+	readonly detail: string | undefined;
+	readonly onRetry: () => void;
+}) {
+	return (
+		<section role="alert" {...stylex.props(styles.failureCard)}>
+			<strong {...stylex.props(styles.failureTitle)}>{props.title}</strong>
+			<p {...stylex.props(styles.failureCopy)}>
+				Try again. If it keeps failing, restart Workbench and verify package versions.
+			</p>
+			<button type="button" onClick={props.onRetry} {...stylex.props(styles.button)}>
+				Retry
+			</button>
+			<Show when={props.detail}>
+				{(detail) => (
+					<details {...stylex.props(styles.technicalDetails)}>
+						<summary {...stylex.props(styles.techSummary)}>Technical details</summary>
+						<pre {...stylex.props(styles.techPre)}>{detail()}</pre>
+					</details>
+				)}
+			</Show>
+		</section>
+	);
+}
+
 function OccurrenceCard(props: {
 	readonly locateFeedback: LocateFeedback;
 	readonly occurrence: TextCorpusFocus["occurrences"][number];
@@ -156,9 +163,9 @@ function OccurrenceCard(props: {
 		<article {...stylex.props(styles.occurrence)}>
 			<header {...stylex.props(styles.occurrenceHeader)}>
 				<div {...stylex.props(styles.contextIdentity)}>
-					<small>{context.kind}</small>
-					<strong>{context.title}</strong>
-					<span>{context.detail}</span>
+					<small {...stylex.props(styles.contextKind)}>{context.kind}</small>
+					<strong {...stylex.props(styles.contextTitle)}>{context.title}</strong>
+					<span {...stylex.props(styles.contextDetail)}>{context.detail}</span>
 				</div>
 				<span {...stylex.props(styles.occurrenceActions)}>
 					<span
@@ -170,19 +177,20 @@ function OccurrenceCard(props: {
 						)}
 					>
 						{props.occurrence.editCapability === "source_editable"
-							? "Supported source"
-							: "Evidence only"}
+							? "Source editable"
+							: "Read only"}
 					</span>
 					<button
 						type="button"
 						disabled={isCurrentLocate() && props.locateFeedback.status === "locating"}
 						onClick={() => props.onLocate(props.occurrence.location.objectPath)}
+						aria-label={`Open package for ${context.title}`}
 						{...stylex.props(styles.locateButton)}
 					>
 						{locateLabel(
 							props.locateFeedback,
 							props.occurrence.location.objectPath,
-							"Locate in Unreal"
+							"Open package"
 						)}
 					</button>
 				</span>
@@ -198,12 +206,13 @@ function OccurrenceCard(props: {
 			>
 				{(feedback) => (
 					<p role="status" {...stylex.props(styles.locateMessage)}>
-						{feedback().message} {feedback().recovery}
+						<strong>Couldn’t open the package.</strong> {feedback().message}{" "}
+						{feedback().recovery}
 					</p>
 				)}
 			</Show>
 			<details {...stylex.props(styles.sourceDetails)}>
-				<summary>Unreal source details</summary>
+				<summary {...stylex.props(styles.detailsSummary)}>Technical details</summary>
 				<code {...stylex.props(styles.objectPath)}>
 					{props.occurrence.location.objectPath}
 				</code>
@@ -377,13 +386,10 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 				detail="Workbench is decoding the packages selected by the project index and preserving every text identity and occurrence."
 			/>
 			<header {...stylex.props(styles.header)}>
-				<div>
-					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-						Game text / {mode() === "quality" ? "Quality review" : "Text browser"}
-					</nav>
-					<h1 {...stylex.props(styles.title)}>Game text workbench</h1>
+				<div {...stylex.props(styles.headerLead)}>
+					<h1 {...stylex.props(styles.title)}>Game text</h1>
 					<p {...stylex.props(styles.subtitle)}>
-						Review source, identity, authored context, and every known use.
+						Find player-facing text and jump straight back to its package and property.
 					</p>
 				</div>
 				<span {...stylex.props(styles.headerActions)}>
@@ -394,24 +400,45 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 			</header>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.empty)}>Reading saved game text…</div>
+					<p role="status" {...stylex.props(styles.loadingLine)}>
+						Loading saved game text…
+					</p>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.empty)}>
-						Choose an Unreal project from the Workbench header.
-					</div>
+					<section {...stylex.props(styles.noticeCard)}>
+						<strong {...stylex.props(styles.noticeTitle)}>
+							No project is configured.
+						</strong>
+						<p {...stylex.props(styles.noticeCopy)}>
+							Choose an Unreal project in the Workbench header, then rescan.
+						</p>
+						<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+							Retry
+						</button>
+					</section>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<div {...stylex.props(styles.empty)}>Project selection cancelled.</div>
+					<section {...stylex.props(styles.noticeCard)}>
+						<strong {...stylex.props(styles.noticeTitle)}>
+							Project selection was cancelled.
+						</strong>
+						<p {...stylex.props(styles.noticeCopy)}>
+							Pick a project to load its saved game text.
+						</p>
+						<button type="button" onClick={refresh} {...stylex.props(styles.button)}>
+							Retry
+						</button>
+					</section>
 				</Match>
 				<Match when={state().status === "failed"}>
 					{(() => {
 						const current = state();
 						return current.status === "failed" ? (
-							<div {...stylex.props(styles.error)}>
-								<strong>{current.error.message}</strong>
-								<span>{current.error.recovery}</span>
-							</div>
+							<FailureCard
+								title="Couldn’t load saved game text."
+								detail={current.error.message}
+								onRetry={refresh}
+							/>
 						) : null;
 					})()}
 				</Match>
@@ -434,7 +461,7 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 											mode() === "corpus" && styles.modeTabActive
 										)}
 									>
-										Text browser
+										Text
 									</button>
 									<button
 										type="button"
@@ -446,18 +473,23 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 											mode() === "quality" && styles.modeTabActive
 										)}
 									>
-										Quality review
+										Quality
 										<Show when={qualitySummary()}>
-											{(quality) => <b>{quality().findingCount}</b>}
+											{(quality) => (
+												<b {...stylex.props(styles.tabCount)}>
+													{quality().findingCount}
+												</b>
+											)}
 										</Show>
 									</button>
 								</div>
 								<Show when={mode() === "quality" ? qualityFailure() : undefined}>
 									{(error) => (
-										<div role="alert" {...stylex.props(styles.qualityError)}>
-											<strong>{error().message}</strong>
-											<span>{error().recovery}</span>
-										</div>
+										<FailureCard
+											title="Couldn’t load the rule file."
+											detail={error().message}
+											onRetry={loadQualityRules}
+										/>
 									)}
 								</Show>
 								<Show
@@ -500,25 +532,19 @@ export function GameTextRoute(props: { readonly client: GameTextClientApi }) {
 												aria-label="Quality rules setup"
 												{...stylex.props(styles.qualitySetup)}
 											>
-												<small
-													{...stylex.props(styles.qualitySetupEyebrow)}
-												>
-													PROJECT-AUTHORED QUALITY
-												</small>
 												<h2 {...stylex.props(styles.qualitySetupTitle)}>
-													Review text against your rules
+													Quality
 												</h2>
 												<p {...stylex.props(styles.qualitySetupCopy)}>
 													Load a rule file to check character limits and
-													terminology across the saved text already shown
-													in Workbench.
+													terminology across the saved text.
 												</p>
 												<button
 													type="button"
 													onClick={loadQualityRules}
 													{...stylex.props(styles.qualityButton)}
 												>
-													Load quality rules
+													Load rules
 												</button>
 											</section>
 										}
@@ -596,23 +622,28 @@ function TextCorpusWorkspace(props: {
 	const coverage = props.summary.coverage;
 	return (
 		<div {...stylex.props(styles.workspace)}>
-			<section aria-label="Search game text" {...stylex.props(styles.tools)}>
-				<div {...stylex.props(styles.searchField)}>
-					<span aria-hidden="true" {...stylex.props(styles.searchGlyph)}>
-						⌕
-					</span>
-					<input
-						autofocus
-						type="search"
-						value={props.query()}
-						onInput={(event) => props.onQuery(event.currentTarget.value)}
-						placeholder="Search exact source wording…"
-						aria-label="Search game text"
-						{...stylex.props(styles.searchInput)}
-					/>
-				</div>
-				<span {...stylex.props(styles.matchCount)}>{props.page().total} matches</span>
-				<div aria-label="Source support" role="group" {...stylex.props(styles.filters)}>
+			<form
+				aria-label="Search game text"
+				onSubmit={(event) => {
+					event.preventDefault();
+					props.onQuery(props.query());
+				}}
+				{...stylex.props(styles.queryBar)}
+			>
+				<input
+					autofocus
+					type="search"
+					value={props.query()}
+					onInput={(event) => props.onQuery(event.currentTarget.value)}
+					placeholder="Search source text…"
+					aria-label="Search game text"
+					{...stylex.props(styles.searchInput)}
+				/>
+				<div
+					aria-label="Filter by source support"
+					role="group"
+					{...stylex.props(styles.filters)}
+				>
 					<For each={filters}>
 						{(filter) => (
 							<button
@@ -629,98 +660,56 @@ function TextCorpusWorkspace(props: {
 						)}
 					</For>
 				</div>
-			</section>
+				<select
+					aria-label="Review lens"
+					value={props.lens()}
+					onChange={(event) => {
+						const chosen = reviewLenses.find(
+							(item) => item.value === event.currentTarget.value
+						);
+						if (chosen !== undefined) props.onLens(chosen.value);
+					}}
+					{...stylex.props(styles.lensSelect)}
+				>
+					<For each={reviewLenses}>
+						{(item) => <option value={item.value}>{item.label}</option>}
+					</For>
+				</select>
+				<button type="submit" {...stylex.props(styles.button)}>
+					Search
+				</button>
+			</form>
+			<p {...stylex.props(styles.statsLine)}>
+				<span>{coverage.textUnits.toLocaleString()} identities</span>
+				<span>{coverage.textOccurrences.toLocaleString()} occurrences</span>
+				<span>
+					{coverage.inspectedPackages}/{coverage.discoveredPackages} packages read
+				</span>
+				<span
+					{...stylex.props(
+						styles.statsState,
+						props.summary.status === "complete" ? styles.complete : styles.partial
+					)}
+				>
+					{props.summary.status === "complete" ? "Complete" : "Partial"}
+				</span>
+				<Show when={coverage.unsupportedTextProperties > 0}>
+					<span {...stylex.props(styles.statsWarning)}>
+						{coverage.unsupportedTextProperties} properties not decoded
+					</span>
+				</Show>
+			</p>
 			<div {...stylex.props(styles.grid)}>
-				<aside aria-label="Review lenses" {...stylex.props(styles.reviewRail)}>
-					<section aria-label="Saved text coverage" {...stylex.props(styles.railSection)}>
-						<header {...stylex.props(styles.railHeader)}>
-							<span>Saved text</span>
-							<strong
-								{...stylex.props(
-									styles.coverageState,
-									props.summary.status === "complete"
-										? styles.complete
-										: styles.partial
-								)}
-							>
-								{props.summary.status === "partial" ? "PARTIAL" : "COMPLETE"}
-							</strong>
-						</header>
-						<div {...stylex.props(styles.railMetrics)}>
-							<CorpusMetric
-								label="Units"
-								value={coverage.textUnits}
-								detail="identities"
-							/>
-							<CorpusMetric
-								label="Uses"
-								value={coverage.textOccurrences}
-								detail={`${coverage.inspectedPackages} packages`}
-							/>
-						</div>
-						<Show when={coverage.unsupportedTextProperties > 0}>
-							<p {...stylex.props(styles.coverageWarning)}>
-								<b>{coverage.unsupportedTextProperties}</b> unsupported text
-								properties remain visible as coverage gaps.
-							</p>
-						</Show>
-					</section>
-					<section {...stylex.props(styles.railSection)}>
-						<header {...stylex.props(styles.railLabel)}>Review queue</header>
-						<div
-							role="group"
-							aria-label="Text review lens"
-							{...stylex.props(styles.lensList)}
-						>
-							<For each={reviewLenses}>
-								{(item) => (
-									<button
-										type="button"
-										aria-pressed={props.lens() === item.value}
-										onClick={() => props.onLens(item.value)}
-										{...stylex.props(
-											styles.lensButton,
-											props.lens() === item.value && styles.lensActive
-										)}
-									>
-										<span {...stylex.props(styles.lensCopy)}>
-											<strong>{item.label}</strong>
-											<small>{item.detail}</small>
-										</span>
-										<b {...stylex.props(styles.lensCount)}>
-											{item.count(props.summary)}
-										</b>
-									</button>
-								)}
-							</For>
-						</div>
-					</section>
-					<section {...stylex.props(styles.sourceBreakdown)}>
-						<header {...stylex.props(styles.railLabel)}>Source evidence</header>
-						<span {...stylex.props(styles.sourceRow)}>
-							String Tables <b>{props.summary.sources.stringTable}</b>
-						</span>
-						<span {...stylex.props(styles.sourceRow)}>
-							DataTables <b>{props.summary.sources.dataTable}</b>
-						</span>
-						<span {...stylex.props(styles.sourceRow)}>
-							Asset properties <b>{props.summary.sources.assetProperty}</b>
-						</span>
-					</section>
-				</aside>
-				<section aria-label="Text units" {...stylex.props(styles.results)}>
+				<section aria-label="Results" {...stylex.props(styles.results)}>
 					<header {...stylex.props(styles.resultsHeader)}>
-						<span {...stylex.props(styles.resultsTitle)}>
-							<strong>Source lines</strong>
-							<small>Unreal identity · Authored context · Primary source</small>
-						</span>
-						<b>{props.page().total}</b>
+						<span {...stylex.props(styles.resultsTitle)}>Results</span>
+						<b {...stylex.props(styles.headerCount)}>{props.page().total}</b>
 					</header>
 					<Show
 						when={props.page().units.length > 0}
 						fallback={
 							<p {...stylex.props(styles.noMatches)}>
-								No text matches this search and authority filter.
+								No matches. Widen the search or clear filters.
 							</p>
 						}
 					>
@@ -765,8 +754,8 @@ function TextCorpusWorkspace(props: {
 												{text}
 											</strong>
 											<span {...stylex.props(styles.rowCounts)}>
-												{unit.wordCount}w · {unit.characterCount}c ·{" "}
-												{unit.occurrenceCount}{" "}
+												{unit.wordCount} words · {unit.characterCount}{" "}
+												characters · {unit.occurrenceCount}{" "}
 												{unit.occurrenceCount === 1 ? "use" : "uses"}
 											</span>
 										</div>
@@ -779,17 +768,19 @@ function TextCorpusWorkspace(props: {
 											{...stylex.props(styles.resultContext)}
 										>
 											<strong>
-												{context?.title ?? "Context unavailable"}
+												{context?.title ?? "No authored context found"}
 											</strong>
 											<small>
 												{" "}
-												· {context?.detail ?? "No decoded source location"}
+												·{" "}
+												{context?.detail ??
+													"This text has no decoded source location"}
 												{preview.additional > 0
 													? ` · +${preview.additional}`
 													: ""}
 											</small>
 										</span>
-										<div {...stylex.props(styles.resultEvidence)}>
+										<div {...stylex.props(styles.resultMeta)}>
 											<code
 												title={identity}
 												{...stylex.props(styles.resultIdentity)}
@@ -803,14 +794,14 @@ function TextCorpusWorkspace(props: {
 														styles.sourceAuthority,
 														preview.context?.editCapability ===
 															"source_editable"
-															? styles.sourceSupported
-															: styles.sourceEvidence
+															? styles.sourceEditable
+															: styles.sourceReadOnly
 													)}
 												>
 													{preview.context?.editCapability ===
 													"source_editable"
-														? "supported"
-														: "evidence"}
+														? "Source editable"
+														: "Read only"}
 												</small>
 											</span>
 										</div>
@@ -840,8 +831,8 @@ function TextCorpusWorkspace(props: {
 												}
 												aria-label={
 													rowLocatePath
-														? `Locate the asset using ${text} in Unreal`
-														: `Show ${unit.occurrenceCount} uses for ${text}`
+														? `Open package for ${text}`
+														: `Show ${unit.occurrenceCount} uses of ${text}`
 												}
 												{...stylex.props(styles.rowAction)}
 											>
@@ -849,7 +840,7 @@ function TextCorpusWorkspace(props: {
 													? locateLabel(
 															props.locateFeedback(),
 															rowLocatePath,
-															"Locate"
+															"Open package"
 														)
 													: "Show uses"}
 											</button>
@@ -908,7 +899,7 @@ function TextCorpusWorkspace(props: {
 						<span>
 							Showing {props.page().units.length} of {props.page().total} matches
 						</span>
-						<span>{coverage.textUnits} text entries</span>
+						<span>{coverage.textUnits.toLocaleString()} text entries</span>
 					</footer>
 				</section>
 				<FocusPanel
@@ -917,20 +908,6 @@ function TextCorpusWorkspace(props: {
 					onLocate={props.onLocate}
 				/>
 			</div>
-		</div>
-	);
-}
-
-function CorpusMetric(props: {
-	readonly detail: string;
-	readonly label: string;
-	readonly value: number;
-}) {
-	return (
-		<div {...stylex.props(styles.corpusMetric)}>
-			<small {...stylex.props(styles.metricLabel)}>{props.label}</small>
-			<strong {...stylex.props(styles.metricValue)}>{props.value.toLocaleString()}</strong>
-			<span {...stylex.props(styles.metricDetail)}>{props.detail}</span>
 		</div>
 	);
 }
@@ -946,16 +923,14 @@ function FocusPanel(props: {
 				when={props.focus}
 				fallback={
 					<p {...stylex.props(styles.focusEmpty)}>
-						Select text to see where it is authored and every known place it occurs.
+						Select a result to see its identity, authored context, and every place it
+						appears.
 					</p>
 				}
 			>
 				{(result) => (
 					<>
 						<header {...stylex.props(styles.focusHeader)}>
-							<small {...stylex.props(styles.focusEyebrow)}>
-								Source under review
-							</small>
 							<blockquote {...stylex.props(styles.focusQuote)}>
 								“{sourceText(result().unit)}”
 							</blockquote>
@@ -968,8 +943,12 @@ function FocusPanel(props: {
 								</span>
 							</div>
 							<div {...stylex.props(styles.focusIdentity)}>
-								<small>Unreal identity</small>
-								<code>{identityLabel(result().unit)}</code>
+								<small {...stylex.props(styles.focusIdentityLabel)}>
+									Unreal identity
+								</small>
+								<code {...stylex.props(styles.focusIdentityValue)}>
+									{identityLabel(result().unit)}
+								</code>
 							</div>
 							<Show when={result().unit.reviewSignals.length > 0}>
 								<div {...stylex.props(styles.focusSignals)}>
@@ -983,13 +962,12 @@ function FocusPanel(props: {
 								</div>
 							</Show>
 						</header>
-						<section
-							aria-label="Text occurrences"
-							{...stylex.props(styles.occurrences)}
-						>
+						<section aria-label="Occurrences" {...stylex.props(styles.occurrences)}>
 							<header {...stylex.props(styles.sectionHeader)}>
-								<span>Authored and gathered context</span>
-								<b>{result().totalOccurrences}</b>
+								<span>Where it appears</span>
+								<b {...stylex.props(styles.headerCount)}>
+									{result().totalOccurrences}
+								</b>
 							</header>
 							<For each={result().occurrences}>
 								{(occurrence) => (
@@ -1003,7 +981,7 @@ function FocusPanel(props: {
 						</section>
 						<Show when={result().diagnostics.length > 0}>
 							<section
-								aria-label="Focused coverage notes"
+								aria-label="Coverage notes"
 								{...stylex.props(styles.diagnostics)}
 							>
 								<header {...stylex.props(styles.sectionHeader)}>
@@ -1013,9 +991,15 @@ function FocusPanel(props: {
 								<For each={result().diagnostics}>
 									{(diagnostic) => (
 										<article {...stylex.props(styles.diagnostic)}>
-											<strong>{diagnostic.code.replaceAll("_", " ")}</strong>
-											<p>{diagnostic.message}</p>
-											<code>{diagnostic.packageFile}</code>
+											<strong {...stylex.props(styles.diagnosticTitle)}>
+												{diagnostic.code.replaceAll("_", " ")}
+											</strong>
+											<p {...stylex.props(styles.diagnosticMessage)}>
+												{diagnostic.message}
+											</p>
+											<code {...stylex.props(styles.diagnosticPackage)}>
+												{diagnostic.packageFile}
+											</code>
 										</article>
 									)}
 								</For>
@@ -1031,315 +1015,303 @@ function FocusPanel(props: {
 const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
-		padding: "16px 22px 22px",
+		padding: `${tokens.space5} ${tokens.space6} ${tokens.space6}`,
 		color: tokens.colorText,
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		backgroundColor: "#100f0e",
+		fontFamily: tokens.fontBody,
+		backgroundColor: tokens.colorCanvas,
 		backgroundImage: "none"
 	},
 	header: {
 		display: "flex",
 		justifyContent: "space-between",
-		alignItems: "center",
-		gap: 24,
-		marginBottom: 10
+		alignItems: "flex-start",
+		gap: tokens.space6,
+		paddingBottom: tokens.space4,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		marginBottom: tokens.space5
 	},
-	breadcrumb: {
-		color: tokens.colorAccent,
-		fontSize: 8,
-		letterSpacing: ".04em"
-	},
+	headerLead: { display: "flex", flexDirection: "column", gap: tokens.space1 },
 	title: {
-		margin: "3px 0 0",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 19,
-		fontWeight: 600,
-		letterSpacing: 0
+		margin: 0,
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
 	},
-	subtitle: { margin: "2px 0 0", color: tokens.colorTextMuted, fontSize: 10 },
+	subtitle: {
+		maxWidth: 560,
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5
+	},
 	button: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
-		padding: "6px 10px",
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10,
-		letterSpacing: 0,
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 500,
+		whiteSpace: "nowrap",
 		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
 		":active": { transform: "scale(.97)" },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
 	},
-	headerActions: { display: "flex", alignItems: "center", gap: 6 },
-	qualityButton: {
-		border: "1px solid #884a36",
-		backgroundColor: { default: "#382019", ":hover": "#4a291f" },
-		color: "#ffd0bf",
-		padding: "6px 10px",
+	headerActions: { display: "flex", alignItems: "center", flexShrink: 0, gap: tokens.space2 },
+	loadingLine: {
+		minHeight: 320,
+		display: "grid",
+		placeItems: "center",
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 13
+	},
+	noticeCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		maxWidth: 520,
+		padding: tokens.space4,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusControl
+	},
+	noticeTitle: { color: tokens.colorTextStrong, fontSize: 14 },
+	noticeCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 13, lineHeight: 1.5 },
+	failureCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		maxWidth: 520,
+		padding: tokens.space4,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusControl
+	},
+	failureTitle: { color: tokens.colorTextStrong, fontSize: 14 },
+	failureCopy: {
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.5
+	},
+	technicalDetails: {
+		width: "100%",
+		color: tokens.colorTextFaint,
+		fontSize: 11
+	},
+	techSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
+	techPre: {
+		margin: `${tokens.space2} 0 0`,
+		padding: tokens.space2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		whiteSpace: "pre-wrap",
+		wordBreak: "break-word"
+	},
+	modeTabs: {
+		display: "flex",
+		alignItems: "stretch",
+		gap: tokens.space1,
+		marginBottom: tokens.space4,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
+	modeTab: {
+		display: "flex",
+		alignItems: "center",
+		gap: tokens.space2,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: "transparent",
+		borderBottomStyle: "solid",
+		borderBottomWidth: 2,
+		backgroundColor: "transparent",
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10
+		fontFamily: tokens.fontBody,
+		fontSize: 13,
+		fontWeight: 500
+	},
+	tabCount: {
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	modeTabActive: {
+		borderBottomColor: tokens.colorAccent,
+		color: tokens.colorTextStrong,
+		backgroundColor: "transparent"
 	},
 	qualitySetup: {
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "flex-start",
-		gap: 10,
-		maxWidth: 560,
-		minHeight: 280,
-		margin: "48px auto 0",
-		padding: "28px 30px",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311",
-		boxShadow: "inset 3px 0 #e87655",
+		gap: tokens.space3,
+		maxWidth: 520,
+		minHeight: 240,
+		margin: `${tokens.space6} auto 0`,
+		padding: tokens.space5,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusControl,
 		color: tokens.colorTextMuted,
-		fontSize: 10,
+		fontSize: 13,
 		lineHeight: 1.5
 	},
-	qualitySetupEyebrow: { color: "#e87655", fontSize: 8, letterSpacing: ".08em" },
 	qualitySetupTitle: {
-		margin: "4px 0 0",
+		margin: 0,
 		color: tokens.colorTextStrong,
-		fontSize: 19,
-		fontWeight: 600
+		fontSize: 16,
+		fontWeight: 590
 	},
 	qualitySetupCopy: { maxWidth: 430, margin: 0 },
-	modeTabs: {
-		display: "flex",
-		alignItems: "stretch",
-		marginBottom: 8,
-		borderBottom: `1px solid ${tokens.colorBorder}`
-	},
-	modeTab: {
-		display: "flex",
-		alignItems: "center",
-		gap: 7,
-		border: 0,
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#151311", ":hover": "#211d1a" },
-		color: tokens.colorTextMuted,
-		padding: "7px 12px",
-		fontSize: 10,
+	qualityButton: {
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
-		opacity: { default: 1, ":disabled": 0.45 }
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 590
 	},
-	modeTabActive: {
-		color: "#ffd0bf",
-		backgroundColor: "#2b1d18",
-		boxShadow: "inset 0 -2px #e87655"
-	},
-	qualityError: {
+	workspace: { display: "flex", flexDirection: "column", gap: tokens.space3 },
+	queryBar: {
 		display: "flex",
-		flexDirection: "column",
-		gap: 3,
-		marginBottom: 8,
-		padding: "8px 10px",
-		border: `1px solid ${tokens.colorDanger}`,
-		color: "#efaa91",
-		fontSize: 9
-	},
-	empty: {
-		minHeight: 380,
-		display: "grid",
-		placeItems: "center",
-		border: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextMuted
-	},
-	error: {
-		minHeight: 300,
-		display: "flex",
-		flexDirection: "column",
-		justifyContent: "center",
+		flexWrap: "wrap",
 		alignItems: "center",
-		gap: 10,
-		border: `1px solid ${tokens.colorDanger}`,
-		color: "#e39b86"
+		gap: tokens.space2,
+		padding: tokens.space2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		borderRadius: tokens.radiusControl
 	},
-	workspace: { display: "flex", flexDirection: "column", gap: 8 },
-	coverage: {
-		display: "grid",
-		gridTemplateColumns: "minmax(175px, 1.2fr) repeat(4, minmax(110px, .7fr))",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311e8"
-	},
-	corpusStatus: {
-		display: "grid",
-		gridTemplateColumns: "auto minmax(0, 1fr)",
-		alignContent: "center",
-		gap: "3px 8px",
-		padding: "7px 10px",
-		borderRight: `1px solid ${tokens.colorBorder}`
-	},
-	coverageState: { padding: "2px 5px", fontSize: 8, letterSpacing: 0 },
-	complete: { color: "#b9dfa5", backgroundColor: "#1e2a1d" },
-	partial: { color: "#efaa91", backgroundColor: "#382019" },
-	corpusName: { alignSelf: "center", fontSize: 10, fontWeight: 500 },
-	corpusDetail: {
-		gridColumn: "1 / -1",
-		color: tokens.colorTextFaint,
-		fontSize: 8,
-		letterSpacing: 0
-	},
-	corpusMetric: {
-		display: "flex",
-		flexDirection: "column",
-		justifyContent: "center",
-		gap: 3,
-		padding: "7px 10px",
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		fontSize: 8
-	},
-	metricLabel: {
-		color: tokens.colorTextFaint,
-		fontSize: 8,
-		letterSpacing: ".03em"
-	},
-	metricValue: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 600, lineHeight: 1.1 },
-	metricDetail: {
-		gridColumn: "1 / -1",
-		color: tokens.colorTextFaint,
-		fontSize: 8
-	},
-	gapValue: { color: "#ef805f", fontSize: 12, fontWeight: 600, lineHeight: 1.1 },
-	gapMetric: {
-		display: "grid",
-		gridTemplateColumns: "auto 1fr",
-		alignItems: "end",
-		gap: "2px 8px",
-		padding: "7px 10px",
-		fontSize: 8
-	},
-	gapMetricWarning: { backgroundColor: "#181513", color: "#efaa91" },
-	tools: {
-		display: "flex",
-		alignItems: "stretch",
-		minHeight: 36,
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurfaceInset
-	},
-	searchField: { display: "flex", alignItems: "center", minWidth: 0, flex: 1 },
-	searchGlyph: { paddingLeft: 10, color: tokens.colorTextFaint, fontSize: 14 },
 	searchInput: {
-		minWidth: 0,
 		flex: 1,
-		border: 0,
-		backgroundColor: "transparent",
-		color: tokens.colorText,
-		padding: "7px 9px",
-		outline: "none",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 11,
-		"::placeholder": { color: tokens.colorTextFaint }
+		minWidth: 220,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextStrong,
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
+		fontFamily: tokens.fontBody,
+		fontSize: 13,
+		borderRadius: tokens.radiusControl,
+		"::placeholder": { color: tokens.colorTextFaint },
+		":focus-visible": { borderColor: tokens.colorAccent }
 	},
-	matchCount: {
-		flexShrink: 0,
-		display: "grid",
-		placeItems: "center",
-		minWidth: 90,
-		padding: "0 12px",
-		borderLeft: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextMuted,
-		fontSize: 10
+	filters: {
+		display: "flex",
+		gap: 2,
+		padding: 2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusControl
 	},
-	filters: { display: "flex", borderLeft: `1px solid ${tokens.colorBorder}` },
 	filterButton: {
-		border: 0,
-		borderLeft: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#171513", ":hover": "#28231f" },
+		borderStyle: "none",
+		borderWidth: 0,
+		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
-		padding: "7px 9px",
+		padding: `${tokens.space1} ${tokens.space2}`,
+		borderRadius: tokens.radiusBadge,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
-		letterSpacing: 0,
-		transition: `transform ${tokens.motionFast} cubic-bezier(.23, 1, .32, 1)`,
-		":active": { transform: "scale(.97)" },
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		transition: `background-color ${tokens.motionFast} ease`
 	},
 	filterActive: {
-		color: "#ffd0bf",
-		backgroundColor: "#352019",
-		boxShadow: "inset 0 -2px #e87655"
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextStrong,
+		fontWeight: 500
 	},
+	lensSelect: {
+		maxWidth: 200,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorText,
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		borderRadius: tokens.radiusControl
+	},
+	statsLine: {
+		display: "flex",
+		flexWrap: "wrap",
+		alignItems: "center",
+		gap: tokens.space4,
+		margin: 0,
+		color: tokens.colorTextFaint,
+		fontSize: 12
+	},
+	statsState: { padding: "1px 6px", borderRadius: tokens.radiusBadge, fontSize: 11 },
+	complete: {
+		color: tokens.colorSuccess,
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	partial: {
+		color: tokens.colorWarning,
+		backgroundColor: "rgba(242, 153, 74, 0.12)"
+	},
+	statsWarning: { color: tokens.colorWarning },
 	grid: {
 		display: "grid",
-		gridTemplateColumns: "206px minmax(360px, 440px) minmax(420px, 1fr)",
-		gap: 8
+		gridTemplateColumns: "minmax(360px, 1fr) minmax(340px, .8fr)",
+		gap: tokens.space3,
+		alignItems: "start"
 	},
-	reviewRail: {
-		display: "flex",
-		flexDirection: "column",
-		height: "calc(100vh - 178px)",
-		minHeight: 500,
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
-		overflow: "auto"
-	},
-	railSection: { borderBottom: `1px solid ${tokens.colorBorder}` },
-	railHeader: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		padding: "8px 9px",
-		fontSize: 10
-	},
-	railLabel: {
-		padding: "7px 9px 5px",
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".04em"
-	},
-	railMetrics: {
-		display: "grid",
-		gridTemplateColumns: "1fr 1fr",
-		borderTop: `1px solid ${tokens.colorBorder}`
-	},
-	coverageWarning: {
-		margin: 0,
-		padding: "7px 9px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		color: "#d9a18d",
-		fontSize: 9,
-		lineHeight: 1.45
-	},
-	lensList: { display: "flex", flexDirection: "column" },
-	lensButton: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 8,
-		width: "100%",
-		border: 0,
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
-		color: tokens.colorTextMuted,
-		padding: "7px 9px",
-		textAlign: "left",
-		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: -2 }
-	},
-	lensActive: { color: "#f2d2c6", backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
-	lensCopy: { display: "flex", minWidth: 0, flexDirection: "column", gap: 1 },
-	lensCount: { flexShrink: 0, color: tokens.colorText, fontVariantNumeric: "tabular-nums" },
-	sourceBreakdown: {
-		display: "flex",
-		flexDirection: "column",
-		gap: 6,
-		paddingBottom: 9,
-		fontSize: 9,
-		color: tokens.colorTextMuted
-	},
-	sourceRow: { display: "flex", justifyContent: "space-between", padding: "0 9px" },
 	results: {
 		display: "flex",
 		flexDirection: "column",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
-		height: "calc(100vh - 178px)",
-		minHeight: 500,
-		overflow: "auto"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		height: "calc(100vh - 300px)",
+		minHeight: 420,
+		overflow: "auto",
+		borderRadius: tokens.radiusControl
 	},
 	resultsHeader: {
 		position: "sticky",
@@ -1348,114 +1320,179 @@ const styles = stylex.create({
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		gap: 10,
-		padding: "7px 9px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#191715f5",
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".03em"
+		gap: tokens.space3,
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		fontSize: 12
 	},
-	resultsTitle: { display: "flex", flexDirection: "column", gap: 2 },
+	resultsTitle: { color: tokens.colorTextStrong, fontWeight: 590 },
+	headerCount: {
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontWeight: 500,
+		fontVariantNumeric: "tabular-nums"
+	},
 	resultRow: {
 		width: "100%",
 		display: "flex",
 		flexDirection: "column",
-		alignItems: "stretch",
-		gap: 5,
-		border: 0,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#201c19" },
+		gap: tokens.space1,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
-		minHeight: 86,
-		padding: "8px 9px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		textAlign: "left",
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif'
+		fontFamily: tokens.fontBody
 	},
-	resultActive: { backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
-	resultLead: { display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 },
+	resultActive: { backgroundColor: "rgba(255, 255, 255, 0.07)" },
+	resultLead: {
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "baseline",
+		gap: tokens.space2
+	},
 	resultText: {
 		display: "block",
 		overflow: "hidden",
 		minWidth: 0,
 		color: tokens.colorTextStrong,
 		fontSize: 13,
-		fontWeight: 600,
-		lineHeight: 1.25,
+		fontWeight: 500,
+		lineHeight: 1.35,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
+	},
+	rowCounts: {
+		flexShrink: 0,
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		fontVariantNumeric: "tabular-nums",
+		whiteSpace: "nowrap"
+	},
+	resultContext: {
+		display: "block",
+		overflow: "hidden",
+		minWidth: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	resultMeta: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: tokens.space2,
+		minWidth: 0
 	},
 	resultIdentity: {
 		display: "block",
 		overflow: "hidden",
 		minWidth: 0,
-		color: "#bbb2a9",
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
-	},
-	rowCounts: { flexShrink: 0, color: tokens.colorTextFaint, fontSize: 9, whiteSpace: "nowrap" },
-	resultContext: {
-		display: "block",
-		overflow: "hidden",
-		minWidth: 0,
-		color: "#d3cbc3",
-		fontSize: 10,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
-	},
-	resultEvidence: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 8,
-		minWidth: 0
 	},
 	resultSource: {
 		display: "flex",
 		alignItems: "center",
-		overflow: "hidden",
-		gap: 5,
-		minWidth: 0,
-		fontSize: 9,
+		flexShrink: 0,
+		gap: tokens.space1,
+		fontSize: 11,
+		color: tokens.colorTextFaint,
 		whiteSpace: "nowrap"
 	},
-	sourceAuthority: { padding: "1px 4px", fontSize: 8, fontWeight: 500 },
-	sourceSupported: { color: "#9fca8a", backgroundColor: "#1b281a" },
-	sourceEvidence: { color: "#b7aea5", backgroundColor: "#24201d" },
-	signalRow: { display: "flex", flexWrap: "wrap", gap: 3, color: "#d4a18e", fontSize: 8 },
-	signal: { padding: "1px 4px", backgroundColor: "#30201a", border: "1px solid #533025" },
-	rowActions: { display: "flex", justifyContent: "flex-start", gap: 3, whiteSpace: "nowrap" },
+	sourceAuthority: {
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	sourceEditable: {
+		color: tokens.colorSuccess,
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	sourceReadOnly: {
+		color: tokens.colorTextMuted,
+		backgroundColor: "rgba(255, 255, 255, 0.05)"
+	},
+	signalRow: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: tokens.space1,
+		fontSize: 11
+	},
+	signal: {
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		color: tokens.colorWarning,
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
+		borderColor: "rgba(242, 153, 74, 0.25)",
+		borderStyle: "solid",
+		borderWidth: 1
+	},
+	rowActions: {
+		display: "flex",
+		justifyContent: "flex-start",
+		gap: tokens.space1,
+		marginTop: tokens.space1,
+		whiteSpace: "nowrap"
+	},
 	rowAction: {
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "#181614", ":hover": "#302a25" },
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceRaised },
 		color: tokens.colorTextMuted,
 		minWidth: 0,
-		padding: "4px 6px",
+		padding: "3px 7px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
-		lineHeight: 1,
-		opacity: { default: 1, ":disabled": 0.55 },
-		":active": { transform: "scale(.97)" },
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
+		lineHeight: 1.4,
+		opacity: { default: 1, ":disabled": 0.5 },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
 	},
-	rowActionSuccess: { color: "#a9d897", borderColor: "#41643a", backgroundColor: "#1b281a" },
-	rowActionFailure: { color: "#efaa91", borderColor: "#754132", backgroundColor: "#382019" },
-	lengthCount: { justifySelf: "center", color: tokens.colorTextMuted, fontSize: 9 },
-	occurrenceCount: { justifySelf: "center", color: "#e9b19d", fontSize: 11 },
-	noMatches: { padding: 40, color: tokens.colorTextMuted, textAlign: "center", fontSize: 10 },
-	nextPage: {
-		border: 0,
-		backgroundColor: { default: "#211d1a", ":hover": "#302a25" },
+	rowActionSuccess: {
+		color: tokens.colorSuccess,
+		borderColor: "rgba(76, 183, 130, 0.45)",
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	rowActionFailure: {
+		color: tokens.colorDanger,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		backgroundColor: "rgba(235, 87, 87, 0.1)"
+	},
+	noMatches: {
+		padding: tokens.space6,
 		color: tokens.colorTextMuted,
-		padding: 12,
+		textAlign: "center",
+		fontSize: 12
+	},
+	nextPage: {
+		borderStyle: "none",
+		borderWidth: 0,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
+		color: tokens.colorTextMuted,
+		padding: tokens.space3,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10,
-		letterSpacing: ".08em"
+		fontFamily: tokens.fontBody,
+		fontSize: 12
 	},
 	resultsFooter: {
 		position: "sticky",
@@ -1463,123 +1500,193 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		marginTop: "auto",
-		padding: "6px 10px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#171513f5",
+		padding: `${tokens.space2} ${tokens.space4}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: 0
+		fontSize: 11
 	},
 	focus: {
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311",
-		height: "calc(100vh - 178px)",
-		minHeight: 500,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		height: "calc(100vh - 300px)",
+		minHeight: 420,
 		overflow: "auto",
-		scrollbarColor: `${tokens.colorBorderStrong} ${tokens.colorSurfaceInset}`
+		borderRadius: tokens.radiusControl
 	},
-	focusEmpty: { padding: 24, color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.6 },
+	focusEmpty: {
+		padding: tokens.space4,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.6
+	},
 	focusHeader: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
-		padding: "9px 11px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
-	},
-	focusEyebrow: {
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".03em"
+		gap: tokens.space2,
+		padding: tokens.space4,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	focusQuote: {
-		margin: "3px 0 2px",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 20,
-		fontWeight: 600,
-		lineHeight: 1.3
+		margin: 0,
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 17,
+		fontWeight: 590,
+		lineHeight: 1.3,
+		letterSpacing: "-0.01em"
 	},
-	focusMeta: { display: "flex", gap: 8, color: "#c19382", fontSize: 9 },
+	focusMeta: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: tokens.space3,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
 	focusIdentity: {
 		display: "grid",
-		gridTemplateColumns: "90px minmax(0, 1fr)",
-		gap: 8,
-		padding: "6px 0",
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextMuted,
-		fontSize: 9
+		gridTemplateColumns: "110px minmax(0, 1fr)",
+		alignItems: "baseline",
+		gap: tokens.space2,
+		paddingTop: tokens.space2,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
-	focusSignals: { display: "flex", flexWrap: "wrap", gap: 4, color: "#e0a58f", fontSize: 9 },
-	identityDetails: {
+	focusIdentityLabel: { color: tokens.colorTextSubtle, fontSize: 11 },
+	focusIdentityValue: {
+		overflow: "hidden",
 		color: tokens.colorTextMuted,
-		fontSize: 8,
-		marginTop: 3
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
 	},
-	occurrences: { margin: 8, border: `1px solid ${tokens.colorBorder}` },
-	diagnostics: { margin: "0 8px 10px", border: `1px solid ${tokens.colorBorder}` },
+	focusSignals: {
+		display: "flex",
+		flexWrap: "wrap",
+		gap: tokens.space1,
+		fontSize: 11
+	},
+	occurrences: {
+		display: "flex",
+		flexDirection: "column",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
+	diagnostics: {
+		display: "flex",
+		flexDirection: "column",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	sectionHeader: {
+		position: "sticky",
+		top: 0,
+		zIndex: 1,
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "6px 8px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		padding: `${tokens.space2} ${tokens.space4}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextMuted,
-		fontSize: 9,
-		letterSpacing: ".03em"
+		fontSize: 11,
+		fontWeight: 500
 	},
 	occurrence: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 4,
-		padding: "7px 8px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 10
+		gap: tokens.space2,
+		padding: tokens.space3,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		fontSize: 12
 	},
 	occurrenceHeader: {
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "start",
-		gap: 12
+		gap: tokens.space3
 	},
 	occurrenceActions: {
 		display: "flex",
 		alignItems: "center",
 		flexShrink: 0,
-		gap: 5
+		gap: tokens.space2
 	},
 	contextIdentity: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 3,
-		minWidth: 0,
-		color: tokens.colorTextMuted
+		gap: 2,
+		minWidth: 0
 	},
-	authority: { flexShrink: 0, padding: "2px 5px", fontSize: 8, letterSpacing: 0 },
-	editable: { color: "#9fca8a", backgroundColor: "#1b281a" },
-	readOnly: { color: "#b7aea5", backgroundColor: "#24201d" },
-	locateButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: { default: "#181614", ":hover": "#302a25" },
+	contextKind: { color: tokens.colorTextFaint, fontSize: 11 },
+	contextTitle: { color: tokens.colorText, fontWeight: 500 },
+	contextDetail: {
 		color: tokens.colorTextMuted,
-		padding: "3px 6px",
+		fontSize: 11,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	authority: {
+		flexShrink: 0,
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		fontSize: 11
+	},
+	editable: {
+		color: tokens.colorSuccess,
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	readOnly: {
+		color: tokens.colorTextMuted,
+		backgroundColor: "rgba(255, 255, 255, 0.05)"
+	},
+	locateButton: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "3px 8px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 9,
-		opacity: { default: 1, ":disabled": 0.55 },
-		":active": { transform: "scale(.97)" },
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
+		opacity: { default: 1, ":disabled": 0.5 },
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 1 }
 	},
 	locateMessage: {
 		margin: 0,
-		padding: "5px 6px",
-		borderLeft: "2px solid #754132",
-		backgroundColor: "#241915",
-		color: "#efaa91",
-		fontSize: 9,
+		padding: tokens.space2,
+		borderColor: "rgba(235, 87, 87, 0.4)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 11,
 		lineHeight: 1.45
 	},
 	objectPath: {
+		display: "block",
 		overflow: "hidden",
-		color: "#d8d0c8",
-		fontSize: 9,
+		marginTop: tokens.space1,
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
@@ -1587,16 +1694,41 @@ const styles = stylex.create({
 		display: "block",
 		overflow: "hidden",
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	sourceDetails: {
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		marginTop: 0,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		paddingTop: tokens.space1,
 		color: tokens.colorTextFaint,
-		fontSize: 8,
-		marginTop: 4,
-		paddingTop: 5
+		fontSize: 11
 	},
-	diagnostic: { padding: 10, borderBottom: `1px solid ${tokens.colorBorder}`, fontSize: 8 }
+	detailsSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
+	diagnostic: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 2,
+		padding: `${tokens.space2} ${tokens.space4}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
+	diagnosticTitle: { color: tokens.colorWarning, textTransform: "capitalize" },
+	diagnosticMessage: {
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		lineHeight: 1.45
+	},
+	diagnosticPackage: {
+		overflow: "hidden",
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	}
 });

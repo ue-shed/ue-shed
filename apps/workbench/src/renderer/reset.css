@@ -12,10 +12,58 @@ body,
 	min-height: 100%;
 	margin: 0;
 }
+html {
+	background-color: #08090a;
+	color-scheme: dark;
+}
 body {
 	min-width: 960px;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
 }
 button,
-input {
+input,
+select,
+textarea {
 	font: inherit;
+	accent-color: #e4f222;
+}
+/*
+ * Strip the user-agent control chrome. Under `color-scheme: dark` an unstyled button keeps a
+ * bright `ButtonBorder` box, so any control the design system does not give an explicit border
+ * would otherwise read as a white outline. StyleX class selectors outrank these element
+ * selectors, so a declared border, background, or colour still wins.
+ */
+button,
+input,
+select,
+textarea {
+	border: 0 solid transparent;
+	background-color: transparent;
+	color: inherit;
+}
+::selection {
+	background-color: rgba(228, 242, 34, 0.28);
+	color: #f7f8f8;
+}
+:focus-visible {
+	outline: 1px solid rgba(208, 214, 224, 0.6);
+	outline-offset: 2px;
+	border-radius: inherit;
+}
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background-color: #23252a;
+	border: 3px solid transparent;
+	border-radius: 999px;
+	background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+	background-color: #383b3f;
 }

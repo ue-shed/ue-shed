@@ -5,7 +5,8 @@ import type {
 	TextOccurrence,
 	TextUnit
 } from "@ue-shed/game-text/browser";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
 import {
@@ -46,11 +47,11 @@ const filters: readonly { readonly value: CapabilityFilter; readonly label: stri
 
 function sourceKind(unit: TextUnit): string {
 	const kinds = new Set(unit.occurrences.map((occurrence) => occurrence.location.kind));
-	if (kinds.size > 1) return "MULTI-SOURCE";
+	if (kinds.size > 1) return "Multiple sources";
 	const kind = kinds.values().next().value;
-	if (kind === "string_table_entry") return "STRING TABLE";
-	if (kind === "data_table_cell") return "DATA TABLE";
-	return "ASSET TEXT";
+	if (kind === "string_table_entry") return "String Table";
+	if (kind === "data_table_cell") return "DataTable";
+	return "Asset property";
 }
 
 function OccurrenceCard(props: { readonly occurrence: TextOccurrence }) {
@@ -67,8 +68,8 @@ function OccurrenceCard(props: { readonly occurrence: TextOccurrence }) {
 					)}
 				>
 					{props.occurrence.editCapability === "source_editable"
-						? "EDITABLE"
-						: "READ ONLY"}
+						? "Source editable"
+						: "Read only"}
 				</span>
 			</div>
 			<p {...stylex.props(styles.objectPath)}>{props.occurrence.location.objectPath}</p>
@@ -126,42 +127,74 @@ export function LegacyGameTextRoute(props: { readonly client: LegacyGameTextClie
 	return (
 		<main {...stylex.props(styles.page)}>
 			<header {...stylex.props(styles.header)}>
-				<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-					Game text / Corpus
-				</nav>
+				<div {...stylex.props(styles.headerLead)}>
+					<h1 {...stylex.props(styles.title)}>Game text</h1>
+					<p {...stylex.props(styles.subtitle)}>
+						Find player-facing text and jump straight back to its package and property.
+					</p>
+				</div>
 				<div {...stylex.props(styles.headerActions)}>
-					<button type="button" onClick={run} {...stylex.props(styles.secondaryButton)}>
+					<Button type="button" onClick={run} tone="secondary">
 						Rescan
-					</button>
+					</Button>
 				</div>
 			</header>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.emptyState)}>
-						<span {...stylex.props(styles.scanMark)}>¶</span> Reading the saved language
-						corpus…
-					</div>
+					<p role="status" {...stylex.props(styles.loadingLine)}>
+						Loading saved game text…
+					</p>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.emptyState)}>
-						<strong>No project is configured.</strong>
-						<span>
-							Choose an Unreal project from the Workbench header, then rescan.
-						</span>
-					</div>
+					<section {...stylex.props(styles.noticeCard)}>
+						<strong {...stylex.props(styles.noticeTitle)}>
+							No project is configured.
+						</strong>
+						<p {...stylex.props(styles.noticeCopy)}>
+							Choose an Unreal project in the Workbench header, then rescan.
+						</p>
+						<Button type="button" onClick={run} tone="secondary">
+							Retry
+						</Button>
+					</section>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<div {...stylex.props(styles.emptyState)}>Project selection cancelled.</div>
+					<section {...stylex.props(styles.noticeCard)}>
+						<strong {...stylex.props(styles.noticeTitle)}>
+							Project selection was cancelled.
+						</strong>
+						<p {...stylex.props(styles.noticeCopy)}>
+							Pick a project to load its saved game text.
+						</p>
+						<Button type="button" onClick={run} tone="secondary">
+							Retry
+						</Button>
+					</section>
 				</Match>
 				<Match when={state().status === "failed"}>
 					{(() => {
 						const current = state();
 						if (current.status !== "failed") return null;
 						return (
-							<div {...stylex.props(styles.errorState)}>
-								<strong>{current.error.message}</strong>
-								<span>{current.error.recovery}</span>
-							</div>
+							<section role="alert" {...stylex.props(styles.failureCard)}>
+								<strong {...stylex.props(styles.failureTitle)}>
+									Couldn’t load saved game text.
+								</strong>
+								<p {...stylex.props(styles.failureCopy)}>
+									{current.error.recovery}
+								</p>
+								<Button type="button" onClick={run} tone="secondary">
+									Retry
+								</Button>
+								<details {...stylex.props(styles.technicalDetails)}>
+									<summary {...stylex.props(styles.techSummary)}>
+										Technical details
+									</summary>
+									<pre {...stylex.props(styles.techPre)}>
+										{current.error.message}
+									</pre>
+								</details>
+							</section>
 						);
 					})()}
 				</Match>
@@ -208,80 +241,91 @@ function CorpusWorkspace(props: {
 						props.corpus.status === "partial" && styles.coveragePartial
 					)}
 				>
-					<span>
-						{props.corpus.status === "partial" ? "QUALIFIED CORPUS" : "COMPLETE CORPUS"}
-					</span>
-					<strong>{coverage.textUnits}</strong>
-					<small>text units</small>
+					<strong {...stylex.props(styles.metricValue)}>
+						{coverage.textUnits.toLocaleString()}
+					</strong>
+					<span>text units</span>
 				</div>
 				<div {...stylex.props(styles.coverageMetric)}>
-					<strong>{coverage.textOccurrences}</strong>
+					<strong {...stylex.props(styles.metricValue)}>
+						{coverage.textOccurrences.toLocaleString()}
+					</strong>
 					<span>occurrences</span>
 				</div>
 				<div {...stylex.props(styles.coverageMetric)}>
-					<strong>
+					<strong {...stylex.props(styles.metricValue)}>
 						{coverage.inspectedPackages}/{coverage.discoveredPackages}
 					</strong>
 					<span>packages read</span>
 				</div>
 				<div {...stylex.props(styles.coverageMetric)}>
-					<strong>{coverage.unsupportedTextProperties}</strong>
-					<span>visible blind spots</span>
+					<strong {...stylex.props(styles.metricValue)}>
+						{coverage.unsupportedTextProperties}
+					</strong>
+					<span>properties not decoded</span>
 				</div>
-				<div {...stylex.props(styles.coverageNote)}>
-					<span>Saved-package evidence</span>
-					<strong>READ ONLY UNTIL AUTHORITY IS PROVEN</strong>
+				<div {...stylex.props(styles.coverageStatus)}>
+					<span
+						{...stylex.props(
+							styles.coverageBadge,
+							props.corpus.status === "complete" ? styles.complete : styles.partial
+						)}
+					>
+						{props.corpus.status === "complete" ? "Complete" : "Partial"}
+					</span>
 				</div>
 			</section>
-			<section {...stylex.props(styles.searchDesk)} aria-label="Search game text">
-				<span {...stylex.props(styles.searchGlyph)}>⌕</span>
+			<form
+				aria-label="Search game text"
+				onSubmit={(event) => event.preventDefault()}
+				{...stylex.props(styles.searchBar)}
+			>
 				<input
 					autofocus
 					type="search"
 					value={props.query}
 					onInput={(event) => props.onQuery(event.currentTarget.value)}
-					placeholder="Search source text, namespace, key, table, row, asset, or property…"
+					placeholder="Search source text…"
 					aria-label="Search game text"
 					{...stylex.props(styles.searchInput)}
 				/>
+				<div
+					aria-label="Filter by source support"
+					role="group"
+					{...stylex.props(styles.filterBar)}
+				>
+					<For each={filters}>
+						{(filter) => (
+							<button
+								type="button"
+								aria-pressed={props.capability === filter.value}
+								onClick={() => props.onCapability(filter.value)}
+								{...stylex.props(
+									styles.filterButton,
+									props.capability === filter.value && styles.filterActive
+								)}
+							>
+								{filter.label}
+							</button>
+						)}
+					</For>
+				</div>
 				<span {...stylex.props(styles.matchCount)}>
-					{props.visible.length} / {coverage.textUnits}
+					{props.visible.length} / {coverage.textUnits.toLocaleString()}
 				</span>
-			</section>
-			<div {...stylex.props(styles.filterBar)}>
-				<For each={filters}>
-					{(filter) => (
-						<button
-							type="button"
-							aria-pressed={props.capability === filter.value}
-							onClick={() => props.onCapability(filter.value)}
-							{...stylex.props(
-								styles.filterButton,
-								props.capability === filter.value && styles.filterActive
-							)}
-						>
-							{filter.label}
-						</button>
-					)}
-				</For>
-				<span {...stylex.props(styles.filterHint)}>SEARCH PRESERVES CORPUS CONTEXT</span>
-			</div>
+			</form>
 			<div {...stylex.props(styles.contentGrid)}>
-				<section aria-label="Text units" {...stylex.props(styles.results)}>
-					<div {...stylex.props(styles.columnHead)}>
-						<span>Source text</span>
-						<span>Identity / evidence</span>
-					</div>
+				<section aria-label="Results" {...stylex.props(styles.results)}>
 					<Show
 						when={props.visible.length > 0}
 						fallback={
-							<div {...stylex.props(styles.noMatches)}>
-								No text matches this search and authority filter.
-							</div>
+							<p {...stylex.props(styles.noMatches)}>
+								No matches. Widen the search or clear filters.
+							</p>
 						}
 					>
 						<For each={props.visible}>
-							{(unit, index) => (
+							{(unit) => (
 								<button
 									type="button"
 									onClick={() => props.onSelect(unit.id)}
@@ -291,9 +335,6 @@ function CorpusWorkspace(props: {
 										props.selected?.id === unit.id && styles.resultActive
 									)}
 								>
-									<span {...stylex.props(styles.resultNumber)}>
-										{String(index() + 1).padStart(2, "0")}
-									</span>
 									<span {...stylex.props(styles.resultCopy)}>
 										<strong>{sourceText(unit) || "Untitled text"}</strong>
 										<small>
@@ -307,7 +348,7 @@ function CorpusWorkspace(props: {
 										<code>
 											{unit.identity.status === "resolved"
 												? unit.identity.key
-												: "UNRESOLVED"}
+												: "Unresolved ID"}
 										</code>
 										<small>
 											{unit.identity.status === "resolved"
@@ -334,7 +375,7 @@ function FocusPanel(props: { readonly corpus: TextCorpus; readonly unit: TextUni
 				when={props.unit}
 				fallback={
 					<p {...stylex.props(styles.focusEmpty)}>
-						Select a text unit to inspect its identity and occurrences.
+						Select a result to see its identity and every place it appears.
 					</p>
 				}
 			>
@@ -347,20 +388,17 @@ function FocusPanel(props: { readonly corpus: TextCorpus; readonly unit: TextUni
 						);
 					return (
 						<>
-							<p {...stylex.props(styles.focusKicker)}>
-								TEXT FOCUS / {sourceKind(unit())}
-							</p>
 							<blockquote {...stylex.props(styles.focusSource)}>
 								“{sourceText(unit())}”
 							</blockquote>
 							<div {...stylex.props(styles.identityCard)}>
-								<span>UNREAL IDENTITY</span>
+								<small>Unreal identity</small>
 								<strong>{identityLabel(unit())}</strong>
 								<code>{unit().id}</code>
 							</div>
 							<div {...stylex.props(styles.sectionHeading)}>
 								<span>Occurrences</span>
-								<strong>{unit().occurrences.length}</strong>
+								<b>{unit().occurrences.length}</b>
 							</div>
 							<div {...stylex.props(styles.occurrenceList)}>
 								<For each={unit().occurrences}>
@@ -368,8 +406,8 @@ function FocusPanel(props: { readonly corpus: TextCorpus; readonly unit: TextUni
 								</For>
 							</div>
 							<Show when={diagnostics().length > 0}>
-								<div {...stylex.props(styles.diagnostic)}>
-									<span>∴ COVERAGE NOTE</span>
+								<div {...stylex.props(styles.diagnosticBlock)}>
+									<span>Notes</span>
 									<For each={diagnostics()}>
 										{(diagnostic) => (
 											<p>
@@ -393,294 +431,391 @@ function FocusPanel(props: { readonly corpus: TextCorpus; readonly unit: TextUni
 const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
-		padding: "30px 34px 44px",
-		color: "#ede9df",
-		backgroundColor: "#11100f",
-		backgroundImage:
-			"linear-gradient(90deg, #ffffff06 1px, transparent 1px), radial-gradient(circle at 78% -10%, #e65f3b18, transparent 34%)",
-		backgroundSize: "46px 46px, auto"
+		padding: `${tokens.space5} ${tokens.space6} ${tokens.space6}`,
+		color: tokens.colorText,
+		fontFamily: tokens.fontBody,
+		backgroundColor: tokens.colorCanvas,
+		backgroundImage: "none"
 	},
 	header: {
 		display: "flex",
-		alignItems: "center",
+		alignItems: "flex-start",
 		justifyContent: "space-between",
-		gap: 40,
-		padding: "4px 2px 16px"
+		gap: tokens.space6,
+		paddingBottom: tokens.space4,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		marginBottom: tokens.space5
 	},
-	eyebrow: {
+	headerLead: { display: "flex", flexDirection: "column", gap: tokens.space1 },
+	title: {
 		margin: 0,
-		color: "#e87655",
-		fontFamily: "Cascadia Mono, Consolas, monospace",
-		fontSize: 9,
-		letterSpacing: ".18em"
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
 	},
-	headerActions: { display: "flex", gap: 8 },
-	primaryButton: {
-		border: "1px solid #e76b49",
-		backgroundColor: { default: "#e76b49", ":hover": "#f47d5d" },
-		color: "#1b0e09",
-		padding: "10px 15px",
-		cursor: "pointer",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+	subtitle: {
+		maxWidth: 560,
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5
 	},
-	secondaryButton: {
-		border: "1px solid #4a4540",
-		backgroundColor: { default: "#191715", ":hover": "#28231f" },
-		color: "#c8c1b6",
-		padding: "10px 15px",
-		cursor: "pointer",
-		fontSize: 9,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+	headerActions: { display: "flex", alignItems: "center", flexShrink: 0, gap: tokens.space2 },
+	loadingLine: {
+		minHeight: 320,
+		display: "grid",
+		placeItems: "center",
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 13
 	},
-	emptyState: {
-		minHeight: 380,
-		border: "1px solid #39342f",
+	noticeCard: {
 		display: "flex",
 		flexDirection: "column",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 13,
-		backgroundColor: "#171513",
-		color: "#9c958b",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		maxWidth: 520,
+		padding: tokens.space4,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface
+	},
+	noticeTitle: { color: tokens.colorTextStrong, fontSize: 14 },
+	noticeCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 13, lineHeight: 1.5 },
+	failureCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		maxWidth: 520,
+		padding: tokens.space4,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface
+	},
+	failureTitle: { color: tokens.colorTextStrong, fontSize: 14 },
+	failureCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 13, lineHeight: 1.5 },
+	technicalDetails: {
+		width: "100%",
+		color: tokens.colorTextFaint,
 		fontSize: 11
 	},
-	scanMark: { fontFamily: "Palatino Linotype, serif", fontSize: 42, color: "#e76b49" },
-	errorState: {
-		minHeight: 300,
-		border: "1px solid #7b4132",
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "center",
-		justifyContent: "center",
-		gap: 10,
-		backgroundColor: "#211512",
-		color: "#e39b86"
+	techSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
+	techPre: {
+		margin: `${tokens.space2} 0 0`,
+		padding: tokens.space2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		whiteSpace: "pre-wrap",
+		wordBreak: "break-word"
 	},
-	workspace: { display: "flex", flexDirection: "column" },
+	workspace: { display: "flex", flexDirection: "column", gap: tokens.space3 },
 	coverage: {
-		minHeight: 76,
 		display: "grid",
-		gridTemplateColumns: "190px repeat(3, minmax(110px, .55fr)) minmax(230px, 1.15fr)",
-		border: "1px solid #3b3631",
-		backgroundColor: "#171513"
+		gridTemplateColumns: "repeat(4, minmax(110px, .6fr)) auto",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	coverageLead: {
-		padding: "12px 15px",
-		display: "grid",
-		gridTemplateColumns: "1fr auto",
-		alignItems: "end",
-		borderTop: "3px solid #728e69"
+		display: "flex",
+		flexDirection: "column",
+		justifyContent: "center",
+		gap: 2,
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderTopColor: tokens.colorSuccess,
+		borderTopStyle: "solid",
+		borderTopWidth: 3
 	},
-	coveragePartial: { borderTopColor: "#e76b49" },
+	coveragePartial: { borderTopColor: tokens.colorWarning },
 	coverageMetric: {
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "center",
-		padding: "12px 16px",
-		borderLeft: "1px solid #332f2b",
-		gap: 4
+		gap: 2,
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1
 	},
-	coverageNote: {
+	coverageStatus: {
 		display: "flex",
-		flexDirection: "column",
-		justifyContent: "center",
-		padding: "12px 16px",
-		borderLeft: "1px solid #332f2b",
-		color: "#756f67",
-		fontSize: 8,
-		gap: 5
-	},
-	searchDesk: {
-		minHeight: 68,
-		display: "grid",
-		gridTemplateColumns: "44px 1fr auto",
 		alignItems: "center",
-		marginTop: 10,
-		border: "1px solid #4c4540",
-		backgroundColor: "#0d0c0b",
-		boxShadow: "0 12px 35px #00000025"
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1
 	},
-	searchGlyph: { color: "#e76b49", textAlign: "center", fontSize: 22 },
+	coverageBadge: {
+		padding: "1px 6px",
+		borderRadius: tokens.radiusBadge,
+		fontSize: 11
+	},
+	metricValue: {
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontMono,
+		fontSize: 13,
+		fontVariantNumeric: "tabular-nums"
+	},
+	complete: {
+		color: tokens.colorSuccess,
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	partial: {
+		color: tokens.colorWarning,
+		backgroundColor: "rgba(242, 153, 74, 0.12)"
+	},
+	searchBar: {
+		display: "flex",
+		flexWrap: "wrap",
+		alignItems: "center",
+		gap: tokens.space2,
+		padding: tokens.space2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset
+	},
 	searchInput: {
-		width: "100%",
-		height: 66,
-		border: 0,
-		backgroundColor: "transparent",
-		color: "#f0ece3",
-		outline: "none",
-		fontFamily: "Palatino Linotype, serif",
-		fontSize: 19,
-		letterSpacing: ".005em",
-		"::placeholder": { color: "#5d5852" }
-	},
-	matchCount: {
-		padding: "0 18px",
-		color: "#817a72",
-		fontFamily: "Cascadia Mono, monospace",
-		fontSize: 9
+		flex: 1,
+		minWidth: 220,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextStrong,
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
+		fontFamily: tokens.fontBody,
+		fontSize: 13,
+		"::placeholder": { color: tokens.colorTextFaint },
+		":focus-visible": { borderColor: tokens.colorAccent }
 	},
 	filterBar: {
-		minHeight: 40,
 		display: "flex",
-		alignItems: "center",
-		border: "1px solid #322e2a",
-		borderTop: 0,
-		backgroundColor: "#151311"
+		gap: 2,
+		padding: 2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface
 	},
 	filterButton: {
-		alignSelf: "stretch",
-		border: 0,
-		borderRight: "1px solid #322e2a",
-		padding: "0 15px",
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
-		color: "#7f786f",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: "transparent",
+		color: tokens.colorTextMuted,
+		padding: `${tokens.space1} ${tokens.space2}`,
 		cursor: "pointer",
-		fontSize: 9,
-		textTransform: "uppercase",
-		letterSpacing: ".08em"
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		transition: `background-color ${tokens.motionFast} ease`
 	},
 	filterActive: {
-		color: "#f0e9df",
-		backgroundColor: "#28211d",
-		boxShadow: "inset 0 -2px #e76b49"
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextStrong,
+		fontWeight: 500
 	},
-	filterHint: {
-		marginLeft: "auto",
-		paddingRight: 14,
-		color: "#514c47",
-		fontFamily: "Cascadia Mono, monospace",
-		fontSize: 8
+	matchCount: {
+		padding: `0 ${tokens.space3}`,
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontVariantNumeric: "tabular-nums",
+		fontSize: 11,
+		whiteSpace: "nowrap"
 	},
 	contentGrid: {
 		display: "grid",
 		gridTemplateColumns: "minmax(520px, 1.45fr) minmax(330px, .72fr)",
-		gap: 10,
-		marginTop: 10
+		gap: tokens.space3,
+		alignItems: "start"
 	},
 	results: {
 		minWidth: 0,
-		border: "1px solid #39342f",
-		backgroundColor: "#151311",
-		maxHeight: "calc(100vh - 348px)",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		maxHeight: "calc(100vh - 320px)",
 		minHeight: 470,
 		overflow: "auto"
 	},
-	columnHead: {
-		position: "sticky",
-		top: 0,
-		zIndex: 2,
-		display: "grid",
-		gridTemplateColumns: "1.1fr .8fr",
-		padding: "11px 55px 10px 52px",
-		backgroundColor: "#201d1a",
-		color: "#746e66",
-		borderBottom: "1px solid #403a35",
-		fontSize: 8,
-		letterSpacing: ".12em",
-		textTransform: "uppercase"
-	},
 	resultRow: {
 		width: "100%",
-		minHeight: 86,
+		minHeight: 72,
 		display: "grid",
-		gridTemplateColumns: "36px minmax(220px, 1.1fr) minmax(190px, .8fr) 20px",
+		gridTemplateColumns: "minmax(220px, 1.2fr) minmax(190px, .8fr) 20px",
 		alignItems: "center",
-		border: 0,
-		borderBottom: "1px solid #2e2a27",
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
-		color: "#d9d3c9",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderRadius: 0,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		color: tokens.colorText,
 		textAlign: "left",
-		cursor: "pointer"
+		cursor: "pointer",
+		fontFamily: tokens.fontBody
 	},
-	resultActive: { backgroundColor: "#2b221e", boxShadow: "inset 3px 0 #e76b49" },
-	resultNumber: {
-		textAlign: "center",
-		color: "#514c46",
-		fontFamily: "Cascadia Mono, monospace",
-		fontSize: 8
-	},
+	resultActive: { backgroundColor: "rgba(255, 255, 255, 0.07)" },
 	resultCopy: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
-		gap: 8,
-		padding: "14px 12px"
+		gap: tokens.space1,
+		padding: `${tokens.space3} ${tokens.space4}`
 	},
 	resultIdentity: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
-		gap: 7,
-		padding: "14px 12px",
-		borderLeft: "1px solid #2d2926"
+		gap: tokens.space1,
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1
 	},
-	chevron: { color: "#6d655f", fontSize: 20 },
-	noMatches: { padding: 50, color: "#777069", textAlign: "center", fontSize: 10 },
+	chevron: { color: tokens.colorTextSubtle, fontSize: 20 },
+	noMatches: {
+		padding: tokens.space6,
+		color: tokens.colorTextMuted,
+		textAlign: "center",
+		fontSize: 12
+	},
 	focus: {
 		minHeight: 470,
-		maxHeight: "calc(100vh - 348px)",
+		maxHeight: "calc(100vh - 320px)",
 		overflow: "auto",
-		border: "1px solid #39342f",
-		backgroundColor: "#191614",
-		padding: 20
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		padding: tokens.space4
 	},
-	focusEmpty: { color: "#756e67", fontSize: 10, lineHeight: 1.6 },
-	focusKicker: { margin: 0, color: "#e76b49", fontSize: 8, letterSpacing: ".15em" },
+	focusEmpty: { margin: 0, color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
 	focusSource: {
-		margin: "19px 0",
-		padding: "8px 0 18px 16px",
-		borderLeft: "2px solid #e76b49",
-		color: "#f0e9df",
-		fontFamily: "Palatino Linotype, serif",
-		fontSize: 28,
-		lineHeight: 1.22
+		margin: `0 0 ${tokens.space3}`,
+		padding: `0 0 ${tokens.space3} ${tokens.space3}`,
+		borderLeftColor: tokens.colorAccent,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 22,
+		fontWeight: 590,
+		lineHeight: 1.25,
+		letterSpacing: "-0.01em"
 	},
 	identityCard: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 7,
-		padding: 14,
-		backgroundColor: "#0f0e0d",
-		border: "1px solid #332f2b",
+		gap: tokens.space1,
+		padding: tokens.space3,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden"
 	},
 	sectionHeading: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		marginTop: 22,
-		paddingBottom: 9,
-		borderBottom: "1px solid #39342f",
-		color: "#8a8279",
-		fontSize: 9,
-		textTransform: "uppercase",
-		letterSpacing: ".1em"
+		marginTop: tokens.space4,
+		paddingBottom: tokens.space2,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
 	},
-	occurrenceList: { display: "flex", flexDirection: "column", gap: 7, marginTop: 9 },
-	occurrence: { padding: 12, border: "1px solid #302c28", backgroundColor: "#13110f" },
+	occurrenceList: {
+		display: "flex",
+		flexDirection: "column",
+		gap: tokens.space2,
+		marginTop: tokens.space2
+	},
+	occurrence: {
+		padding: tokens.space3,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceRaised
+	},
 	occurrenceHeading: {
 		display: "flex",
 		justifyContent: "space-between",
-		gap: 10,
+		gap: tokens.space2,
 		alignItems: "center",
-		fontSize: 9
+		fontSize: 11
 	},
-	authority: { flexShrink: 0, padding: "3px 5px", fontSize: 7, letterSpacing: ".09em" },
-	authorityEditable: { color: "#9fbd90", backgroundColor: "#293226" },
-	authorityReadOnly: { color: "#cda07d", backgroundColor: "#35261e" },
-	objectPath: { margin: "9px 0 5px", color: "#8b847c", fontSize: 8, wordBreak: "break-all" },
-	packagePath: { color: "#56514c", fontSize: 7, wordBreak: "break-all" },
-	diagnostic: {
-		marginTop: 16,
-		padding: 12,
-		border: "1px solid #6b4032",
-		backgroundColor: "#251713",
-		color: "#c88d79",
-		fontSize: 8,
+	authority: {
+		flexShrink: 0,
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		fontSize: 11
+	},
+	authorityEditable: {
+		color: tokens.colorSuccess,
+		backgroundColor: "rgba(76, 183, 130, 0.12)"
+	},
+	authorityReadOnly: {
+		color: tokens.colorTextMuted,
+		backgroundColor: "rgba(255, 255, 255, 0.05)"
+	},
+	objectPath: {
+		margin: `${tokens.space2} 0 ${tokens.space1}`,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		wordBreak: "break-all"
+	},
+	packagePath: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		wordBreak: "break-all"
+	},
+	diagnosticBlock: {
+		marginTop: tokens.space4,
+		padding: tokens.space3,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorWarning,
+		fontSize: 11,
 		lineHeight: 1.5
 	}
 });

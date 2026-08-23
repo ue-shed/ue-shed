@@ -64,17 +64,17 @@ describe("ProjectChooser", () => {
 
 		await userEvent
 			.setup()
-			.click(await screen.findByRole("button", { name: "CHOOSE PROJECT…" }));
+			.click(await screen.findByRole("button", { name: "Choose project…" }));
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("output_limit");
 		expect(alert.textContent).toContain("upgrading the saved-asset worker");
-		expect(screen.getByRole("button", { name: "RETRY PROJECT…" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Retry project…" })).toBeDefined();
 		expect(screen.queryByText("Indexing the selected project")).toBeNull();
 
 		window.dispatchEvent(new Event("focus"));
 		await waitFor(() => expect(screen.getByRole("alert")).toBeDefined());
-		expect(screen.getByRole("button", { name: "RETRY PROJECT…" })).toBeDefined();
+		expect(screen.getByRole("button", { name: "Retry project…" })).toBeDefined();
 	});
 
 	it("clears the prior failure only after a retry starts", async () => {
@@ -85,17 +85,17 @@ describe("ProjectChooser", () => {
 		});
 
 		expect(await screen.findByRole("alert")).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "RETRY PROJECT…" }));
+		await userEvent.setup().click(screen.getByRole("button", { name: "Retry project…" }));
 
 		expect(screen.queryByRole("alert")).toBeNull();
 		expect(
-			screen.getByRole<HTMLButtonElement>("button", { name: "INDEXING PROJECT…" }).disabled
+			screen.getByRole<HTMLButtonElement>("button", { name: "Indexing project…" }).disabled
 		).toBe(true);
 
 		await Effect.runPromise(Deferred.succeed(completion, { status: "cancelled" }));
 		await waitFor(() =>
 			expect(
-				screen.getByRole<HTMLButtonElement>("button", { name: "CHOOSE PROJECT…" }).disabled
+				screen.getByRole<HTMLButtonElement>("button", { name: "Choose project…" }).disabled
 			).toBe(false)
 		);
 	});
@@ -109,7 +109,7 @@ describe("ProjectChooser", () => {
 		expect(
 			(
 				await screen.findByRole<HTMLButtonElement>("button", {
-					name: "CHOOSE PROJECT…"
+					name: "Choose project…"
 				})
 			).disabled
 		).toBe(false);
@@ -126,7 +126,7 @@ describe("ProjectChooser", () => {
 
 		await userEvent
 			.setup()
-			.click(await screen.findByRole("button", { name: "CHOOSE PROJECT…" }));
+			.click(await screen.findByRole("button", { name: "Choose project…" }));
 
 		const button = await screen.findByRole("button", { name: "Fixture" });
 		expect(button.getAttribute("title")).toBe("C:/Projects/Fixture");
@@ -136,10 +136,10 @@ describe("ProjectChooser", () => {
 	it("keeps project selection offline and offers explicit launch modes", async () => {
 		renderChooser({ choose: () => Effect.succeed(ready), current: ready });
 
-		expect(await screen.findByText("OFFLINE")).toBeDefined();
-		await userEvent.setup().click(screen.getByText("LAUNCH ▾"));
-		expect(screen.getByRole("button", { name: /WITH UE SHED/ })).toBeDefined();
-		expect(screen.getByRole("button", { name: /NORMALLY/ })).toBeDefined();
+		expect(await screen.findByText("Offline")).toBeDefined();
+		await userEvent.setup().click(screen.getByText("Launch ▾"));
+		expect(screen.getByRole("button", { name: /With plugin suite/ })).toBeDefined();
+		expect(screen.getByRole("button", { name: /Plain editor/ })).toBeDefined();
 	});
 
 	it("launches the full plugin experience without changing the selected project", async () => {
@@ -160,8 +160,8 @@ describe("ProjectChooser", () => {
 			</EffectRuntimeProvider>
 		));
 
-		await userEvent.setup().click(await screen.findByText("LAUNCH ▾"));
-		await userEvent.setup().click(screen.getByRole("button", { name: /WITH UE SHED/ }));
+		await userEvent.setup().click(await screen.findByText("Launch ▾"));
+		await userEvent.setup().click(screen.getByRole("button", { name: /With plugin suite/ }));
 
 		await waitFor(() => expect(launchProject).toHaveBeenCalledWith("ue_shed"));
 		expect((await screen.findByRole("status")).textContent).toContain("UE Shed plugin suite");

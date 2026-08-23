@@ -184,7 +184,7 @@ export function PointMapCanvas(props: {
 			context.beginPath();
 			context.setLineDash?.(connection.dashed ? [5, 4] : []);
 			context.globalAlpha = pointMapOpacity(connection.opacity);
-			context.strokeStyle = connection.color ?? "#73c7d0";
+			context.strokeStyle = connection.color ?? "#02b8cc";
 			context.lineWidth = 1.5;
 			context.moveTo(from.x, from.y);
 			context.lineTo(to.x, to.y);
@@ -248,7 +248,7 @@ export function PointMapCanvas(props: {
 				context.arc(x, y, normalRadius, 0, Math.PI * 2);
 			}
 			context.globalAlpha = Number(opacity);
-			context.fillStyle = color ?? "#b9f227";
+			context.fillStyle = color ?? "#8b5cf6";
 			context.fill();
 			context.lineWidth = 1;
 			context.strokeStyle = "rgba(255, 255, 255, 0.22)";

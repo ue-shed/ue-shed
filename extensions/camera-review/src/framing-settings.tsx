@@ -7,6 +7,7 @@ import {
 	FramingGroup,
 	FramingParameters
 } from "@ue-shed/cameras";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show } from "solid-js";
 import { ScrubbableNumberField } from "./scrubbable-number-field.js";
 
@@ -60,7 +61,7 @@ function CountField(props: {
 	return (
 		<div {...stylex.props(styles.countField)}>
 			<label {...stylex.props(styles.sliderLabel)}>
-				<span>COUNT</span>
+				<span>Count</span>
 				<input
 					type="range"
 					min={1}
@@ -151,25 +152,24 @@ export function FramingSettings(props: {
 			<details>
 				<summary {...stylex.props(styles.summary)}>
 					<span>VIEW PRESETS + RIG</span>
-					<small>{requestedCount()} GENERATED VIEWS · EDIT ALL</small>
+					<small>{requestedCount()} views generated</small>
 				</summary>
 				<div {...stylex.props(styles.settingsBody)}>
 					<div {...stylex.props(styles.settingsIntro)}>
 						<p {...stylex.props(styles.sectionHint)}>
-							These controls regenerate the full contact sheet. Each enabled group is
-							a preset that produces one or more views.
+							Each enabled group adds a ring or arc of views to the sheet.
 						</p>
 						<span {...stylex.props(styles.scrubHint)}>
-							↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+							↔ drag labels · Shift coarse · Alt fine
 						</span>
 					</div>
 					<div {...stylex.props(styles.globalGrid)}>
 						<ParameterField
-							label="FIELD OF VIEW"
+							label="Field of view"
 							min={5}
 							max={170}
 							scrubStep={0.25}
-							unit="DEG"
+							unit="deg"
 							value={props.parameters.fieldOfViewDegrees}
 							onInput={(fieldOfViewDegrees) =>
 								props.onParametersChange({
@@ -179,12 +179,12 @@ export function FramingSettings(props: {
 							}
 						/>
 						<ParameterField
-							label="FRAME MARGIN"
+							label="Frame margin"
 							min={0}
 							max={0.45}
 							step={0.01}
 							scrubStep={0.002}
-							unit="RATIO"
+							unit="ratio"
 							value={props.parameters.margin}
 							onInput={(margin) =>
 								props.onParametersChange({ ...props.parameters, margin })
@@ -216,7 +216,7 @@ export function FramingSettings(props: {
 											/>
 											<strong>{group.displayName}</strong>
 										</label>
-										<code>{group.pattern.kind.toUpperCase()}</code>
+										<code>{group.pattern.kind}</code>
 									</header>
 									<div {...stylex.props(styles.groupGrid)}>
 										<CountField
@@ -236,10 +236,10 @@ export function FramingSettings(props: {
 											}
 										/>
 										<ParameterField
-											label="DISTANCE"
+											label="Distance"
 											min={0.01}
 											scrubStep={0.01}
-											unit="SCALE"
+											unit="scale"
 											value={group.distanceScale}
 											onInput={(distanceScale) =>
 												props.onParametersChange(
@@ -255,9 +255,9 @@ export function FramingSettings(props: {
 											}
 										/>
 										<ParameterField
-											label="ELEVATION"
+											label="Elevation"
 											scrubStep={0.01}
-											unit="OFFSET"
+											unit="offset"
 											value={group.elevation}
 											onInput={(elevation) =>
 												props.onParametersChange(
@@ -282,9 +282,9 @@ export function FramingSettings(props: {
 											{(pattern) => (
 												<>
 													<ParameterField
-														label="YAW"
+														label="Yaw"
 														scrubStep={0.25}
-														unit="DEG"
+														unit="deg"
 														value={pattern().yawOffsetDegrees}
 														onInput={(yawOffsetDegrees) =>
 															props.onParametersChange(
@@ -307,10 +307,10 @@ export function FramingSettings(props: {
 														}
 													/>
 													<ParameterField
-														label="SPREAD"
+														label="Spread"
 														min={0}
 														scrubStep={0.25}
-														unit="DEG"
+														unit="deg"
 														value={pattern().spreadDegrees}
 														onInput={(spreadDegrees) =>
 															props.onParametersChange(
@@ -344,9 +344,9 @@ export function FramingSettings(props: {
 										>
 											{(pattern) => (
 												<ParameterField
-													label="RING OFFSET"
+													label="Ring offset"
 													scrubStep={0.25}
-													unit="DEG"
+													unit="deg"
 													value={pattern().ringOffsetDegrees}
 													onInput={(ringOffsetDegrees) =>
 														props.onParametersChange(
@@ -379,7 +379,7 @@ export function FramingSettings(props: {
 					<Show when={requestedCount() > showcaseSliderMaximum}>
 						<p role="status" {...stylex.props(styles.performanceHint)}>
 							Large rigs are valid. Live preview may take longer or fall back to
-							individual captures; the durable definition is unchanged.
+							individual captures; saved parameters are unchanged.
 						</p>
 					</Show>
 				</div>
@@ -398,7 +398,7 @@ export function FramingSettings(props: {
 						<>
 							<header {...stylex.props(styles.overrideHeader)}>
 								<div {...stylex.props(styles.overrideIdentity)}>
-									<small>SELECTED VIEW · PER-VIEW OFFSETS</small>
+									<small>Per-view offsets</small>
 									<strong>{candidate().displayName}</strong>
 									<code>{candidate().preset.replaceAll("_", " ")}</code>
 								</div>
@@ -408,16 +408,16 @@ export function FramingSettings(props: {
 									onClick={() => setSelectedOverride(undefined)}
 									{...stylex.props(styles.resetButton)}
 								>
-									RESET OFFSETS
+									Reset view
 								</button>
 							</header>
 							<div {...stylex.props(styles.settingsIntro)}>
 								<p {...stylex.props(styles.sectionHint)}>
-									Blank values inherit the preset. Drag a label to opt in and tune
-									this preview without regenerating the rest of the contact sheet.
+									Blank values inherit the preset. Drag a label to tune this view
+									without regenerating the rest of the sheet.
 								</p>
 								<span {...stylex.props(styles.scrubHint)}>
-									↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+									↔ drag labels · Shift coarse · Alt fine
 								</span>
 							</div>
 							<div {...stylex.props(styles.overrideGrid)}>
@@ -431,7 +431,7 @@ export function FramingSettings(props: {
 											scrubOrigin={selectedGroup()?.distanceScale ?? 1}
 											scrubStep={0.01}
 											min={0.01}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="SCALE"
 											onValueChange={(value) =>
 												updateOverride("distanceScale", value)
@@ -445,7 +445,7 @@ export function FramingSettings(props: {
 											value={selectedOverride()?.elevation}
 											scrubOrigin={selectedGroup()?.elevation ?? 0}
 											scrubStep={0.01}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="OFFSET"
 											onValueChange={(value) =>
 												updateOverride("elevation", value)
@@ -457,7 +457,7 @@ export function FramingSettings(props: {
 											value={selectedOverride()?.yawOffsetDegrees}
 											scrubOrigin={selectedYawOrigin()}
 											scrubStep={0.25}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="DEG"
 											onValueChange={(value) =>
 												updateOverride("yawOffsetDegrees", value)
@@ -478,7 +478,7 @@ export function FramingSettings(props: {
 											scrubStep={0.25}
 											min={5}
 											max={170}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="DEG"
 											onValueChange={(value) =>
 												updateOverride("fieldOfViewDegrees", value)
@@ -495,7 +495,7 @@ export function FramingSettings(props: {
 											step={0.01}
 											min={0}
 											max={0.45}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="RATIO"
 											onValueChange={(value) =>
 												updateOverride("margin", value)
@@ -514,17 +514,24 @@ export function FramingSettings(props: {
 }
 
 const styles = stylex.create({
-	settings: { marginTop: 10, border: "1px solid #39413c", backgroundColor: "#121613" },
+	settings: {
+		marginTop: 10,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
+	},
 	summary: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "10px 12px",
-		color: "#d5ddd5",
+		borderRadius: tokens.radiusControl,
+		color: tokens.colorText,
 		cursor: "pointer",
-		fontSize: 10,
-		fontWeight: 800,
-		letterSpacing: ".12em"
+		fontSize: 12,
+		fontWeight: 590,
+		letterSpacing: 0
 	},
 	settingsBody: { display: "grid", gap: 12, padding: "4px 12px 14px" },
 	settingsIntro: {
@@ -533,19 +540,32 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 12
 	},
-	sectionHint: { margin: 0, color: "#89948c", fontSize: 9, lineHeight: 1.5 },
+	sectionHint: { margin: 0, color: tokens.colorTextSubtle, fontSize: 12, lineHeight: 1.5 },
 	scrubHint: {
 		flexShrink: 0,
-		color: "#8fa65d",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em"
+		color: tokens.colorAccent,
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: 0
 	},
 	globalGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(120px, 1fr))", gap: 8 },
 	groupList: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 },
-	group: { border: "1px solid #303832", backgroundColor: "#0b0e0c", padding: 10 },
+	group: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		padding: 10
+	},
 	groupHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
-	enableLabel: { display: "flex", alignItems: "center", gap: 7, color: "#dce2dc", fontSize: 10 },
+	enableLabel: {
+		display: "flex",
+		alignItems: "center",
+		gap: 7,
+		color: tokens.colorText,
+		fontSize: 12
+	},
 	groupGrid: {
 		display: "grid",
 		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -553,25 +573,42 @@ const styles = stylex.create({
 		marginTop: 10
 	},
 	countField: { display: "grid", gridTemplateColumns: "1fr 52px", gap: 6, alignItems: "end" },
-	sliderLabel: { display: "grid", gap: 5, color: "#89948c", fontSize: 8, letterSpacing: ".08em" },
+	sliderLabel: {
+		display: "grid",
+		gap: 5,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: 0
+	},
 	countInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #536056",
-		backgroundColor: "#080a09",
-		color: "#b9f227",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorAccent,
 		padding: "6px 5px",
 		textAlign: "right"
 	},
 	performanceHint: {
 		margin: 0,
-		borderLeft: "2px solid #d6a84c",
+		borderLeftColor: tokens.colorWarning,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
 		padding: "8px 10px",
-		color: "#c9b47c",
-		backgroundColor: "#18150d",
-		fontSize: 10
+		color: tokens.colorWarning,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		fontSize: 12
 	},
-	overridePanel: { display: "grid", gap: 9, borderTop: "1px solid #303832", padding: 12 },
+	overridePanel: {
+		display: "grid",
+		gap: 9,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		padding: 12
+	},
 	overrideHeader: {
 		display: "flex",
 		alignItems: "end",
@@ -580,12 +617,15 @@ const styles = stylex.create({
 	},
 	overrideIdentity: { display: "grid", gap: 3 },
 	resetButton: {
-		border: "1px solid #526057",
-		backgroundColor: { default: "transparent", ":hover": "#20271f" },
-		color: "#b5beb6",
-		padding: "7px 9px",
-		fontSize: 8,
-		fontWeight: 800,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 11,
+		fontWeight: 500,
 		cursor: { default: "pointer", ":disabled": "default" },
 		opacity: { default: 1, ":disabled": 0.4 }
 	},
@@ -602,12 +642,14 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 7,
 		padding: 9,
-		border: "1px solid #2d352f",
-		backgroundColor: "#0d110e",
-		color: "#7f8c83",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".11em"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	compositionFields: {
 		display: "grid",

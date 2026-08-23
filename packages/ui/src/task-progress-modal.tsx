@@ -47,11 +47,6 @@ export function TaskProgressModal(props: TaskProgressModalProps) {
 					aria-busy="true"
 					{...stylex.props(styles.modal)}
 				>
-					<div {...stylex.props(styles.signal)} aria-hidden="true">
-						<span {...stylex.props(styles.signalBar)} />
-						<span {...stylex.props(styles.signalBar, styles.signalBarSecond)} />
-						<span {...stylex.props(styles.signalBar, styles.signalBarThird)} />
-					</div>
 					<p {...stylex.props(styles.kicker)}>{stageLabel(props.progress)}</p>
 					<h2 id="task-progress-title" {...stylex.props(styles.title)}>
 						{props.title}
@@ -102,82 +97,56 @@ const styles = stylex.create({
 		display: "grid",
 		placeItems: "center",
 		padding: tokens.space5,
-		backgroundColor: tokens.colorCanvasTranslucent,
-		backdropFilter: "blur(7px)"
+		backgroundColor: "rgba(8, 9, 10, 0.72)",
+		backdropFilter: "blur(8px)"
 	},
 	modal: {
-		width: "min(560px, calc(100vw - 48px))",
-		borderColor: tokens.colorBorderStrong,
+		width: "min(520px, calc(100vw - 48px))",
+		borderColor: tokens.colorBorder,
 		borderStyle: "solid",
 		borderWidth: 1,
-		borderTopColor: tokens.colorAccent,
-		borderTopWidth: 3,
 		borderRadius: tokens.radiusPanel,
-		padding: "30px 32px 24px",
-		backgroundColor: tokens.colorSurfaceRaised,
-		boxShadow: "0 28px 90px #00000090",
+		padding: "26px 28px 22px",
+		backgroundColor: tokens.colorSurface,
+		boxShadow: `${tokens.shadowOverlay}, ${tokens.shadowCard}`,
 		color: tokens.colorText
 	},
-	signal: {
-		display: "flex",
-		alignItems: "center",
-		gap: 4,
-		height: 16,
-		marginBottom: tokens.space4
-	},
-	signalBar: {
-		width: 3,
-		height: 14,
-		backgroundColor: tokens.colorAccent,
-		animationName: stylex.keyframes({
-			"0%, 100%": { opacity: 0.28, transform: "scaleY(.45)" },
-			"50%": { opacity: 1, transform: "scaleY(1)" }
-		}),
-		animationDuration: "900ms",
-		animationIterationCount: "infinite",
-		animationTimingFunction: "ease-in-out"
-	},
-	signalBarSecond: { animationDelay: "120ms" },
-	signalBarThird: { animationDelay: "240ms" },
 	kicker: {
 		margin: 0,
-		color: tokens.colorAccent,
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
-		letterSpacing: ".17em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
 	title: {
-		margin: "8px 0 10px",
+		margin: "10px 0 8px",
 		color: tokens.colorTextStrong,
 		fontFamily: tokens.fontDisplay,
-		fontSize: 28,
-		fontWeight: 500,
-		letterSpacing: "-.02em"
+		fontSize: 20,
+		fontWeight: 590,
+		letterSpacing: "-0.012em",
+		lineHeight: 1.3
 	},
 	detail: {
 		maxWidth: 440,
 		margin: 0,
 		color: tokens.colorTextMuted,
 		fontFamily: tokens.fontBody,
-		fontSize: 10,
-		lineHeight: 1.65
+		fontSize: 13,
+		lineHeight: 1.6
 	},
 	track: {
 		position: "relative",
-		height: 8,
-		marginTop: tokens.space5,
+		height: 4,
+		marginTop: tokens.space4,
 		overflow: "hidden",
-		borderColor: tokens.colorBorderStrong,
-		borderStyle: "solid",
-		borderWidth: 1,
-		backgroundColor: tokens.colorSurfaceInset
+		borderRadius: tokens.radiusPill,
+		backgroundColor: "rgba(255, 255, 255, 0.06)"
 	},
 	fill: {
 		display: "block",
 		height: "100%",
+		borderRadius: "inherit",
 		backgroundColor: tokens.colorAccent,
-		boxShadow: "0 0 18px #b7e26d66",
 		transitionDuration: tokens.motionStandard,
 		transitionProperty: "width",
 		transitionTimingFunction: "ease-out"
@@ -197,23 +166,22 @@ const styles = stylex.create({
 		gridTemplateColumns: "auto 1fr auto",
 		alignItems: "baseline",
 		gap: tokens.space3,
-		marginTop: tokens.space3,
+		marginTop: tokens.space2,
 		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		fontSize: 12,
 		color: tokens.colorTextMuted
 	},
 	readoutValue: { color: tokens.colorTextStrong, fontSize: 12 },
-	cacheHits: { color: tokens.colorTextFaint, fontSize: 8 },
+	cacheHits: { color: tokens.colorTextSubtle, fontSize: 11 },
 	locked: {
-		margin: "22px 0 0",
+		margin: "20px 0 0",
 		paddingTop: tokens.space3,
 		borderTopColor: tokens.colorBorder,
 		borderTopStyle: "solid",
 		borderTopWidth: 1,
-		color: tokens.colorTextFaint,
+		color: tokens.colorTextSubtle,
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 11,
+		lineHeight: 1.5
 	}
 });

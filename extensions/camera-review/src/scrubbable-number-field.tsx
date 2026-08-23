@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { createSignal } from "solid-js";
 
 type FieldTone = "neutral" | "x" | "y" | "z";
@@ -185,18 +186,23 @@ const styles = stylex.create({
 		gap: 10,
 		minWidth: 0,
 		padding: "8px 10px",
-		border: "1px solid #364039",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderLeftWidth: 2,
-		backgroundColor: "#0a0d0b",
+		backgroundColor: tokens.colorSurfaceInset,
 		transition:
 			"border-color 120ms cubic-bezier(0.23, 1, 0.32, 1), background-color 120ms cubic-bezier(0.23, 1, 0.32, 1)"
 	},
-	neutral: { borderLeftColor: "#667169" },
+	neutral: { borderLeftColor: tokens.colorTextSubtle },
 	wide: { gridColumn: "1 / -1" },
-	axisX: { borderLeftColor: "#d96262" },
-	axisY: { borderLeftColor: "#78ad5c" },
-	axisZ: { borderLeftColor: "#5c8fc7" },
-	scrubbing: { borderColor: "#b9f227", backgroundColor: "#131a11" },
+	axisX: { borderLeftColor: "#eb5757" },
+	axisY: { borderLeftColor: "#4cb782" },
+	axisZ: { borderLeftColor: "#6366f1" },
+	scrubbing: {
+		borderColor: tokens.colorAccent,
+		backgroundColor: tokens.colorAccentWash
+	},
 	fieldHeader: {
 		display: "flex",
 		alignItems: "center",
@@ -210,34 +216,48 @@ const styles = stylex.create({
 		gap: 6,
 		minWidth: 0,
 		padding: 0,
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		backgroundColor: "transparent",
-		color: { default: "#aeb8b0", ":hover": "#d8e1d9", ":focus-visible": "#b9f227" },
+		color: {
+			default: tokens.colorTextMuted,
+			":hover": tokens.colorTextStrong,
+			":focus-visible": tokens.colorAccent
+		},
 		fontFamily: "inherit",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".09em",
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: 0,
 		cursor: "ew-resize",
 		userSelect: "none",
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		transition: "color 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1)",
 		transform: { default: "scale(1)", ":active": "scale(.97)" }
 	},
-	dragGlyph: { color: "#69756c", fontSize: 11, letterSpacing: 0 },
-	unit: { color: "#626d66", fontSize: 8, letterSpacing: ".08em" },
+	dragGlyph: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
+	unit: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
 	input: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: 0,
-		borderLeft: "1px solid #2b342e",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
 		backgroundColor: "transparent",
-		color: "#edf3ed",
+		color: tokens.colorTextStrong,
 		padding: "4px 2px 4px 10px",
 		fontFamily: "inherit",
 		fontSize: 13,
 		fontVariantNumeric: "tabular-nums",
 		textAlign: "right",
 		appearance: "textfield",
-		outline: "none"
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	}
 });

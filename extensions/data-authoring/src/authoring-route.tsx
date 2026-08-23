@@ -113,9 +113,9 @@ function reviewChangeSummary(change: ReviewChange): string {
 		case "cell_changed":
 			return `${formatAuthoringValue(change.oldValue)} → ${formatAuthoringValue(change.newValue)}`;
 		case "row_added":
-			return `${change.row.fields.length} typed field(s)`;
+			return `${change.row.fields.length} ${change.row.fields.length === 1 ? "field" : "fields"}`;
 		case "row_removed":
-			return "Row and all typed values staged for removal";
+			return "Row and all values will be removed";
 		case "row_renamed":
 			return `${change.oldName} → ${change.newName}`;
 		case "rows_reordered":
@@ -127,8 +127,31 @@ function shortObjectName(objectPath: string): string {
 	return objectPath.slice(objectPath.lastIndexOf("/") + 1).split(".")[0] ?? objectPath;
 }
 
+function sentenceCase(text: string): string {
+	const first = text.charAt(0).toLocaleUpperCase();
+	return first.length > 0 ? `${first}${text.slice(1)}` : text;
+}
+
 function authorityLabel(snapshot: AuthoringTableSnapshot): string {
-	return snapshot.authority.kind === "project_files" ? "SAVED PACKAGE" : "LIVE EDITOR";
+	return snapshot.authority.kind === "project_files" ? "Saved package" : "Live editor";
+}
+
+const noticeInlineLimit = 240;
+
+type NoticeParts = {
+	readonly headline: string;
+	readonly technical: string | undefined;
+};
+
+function noticeParts(text: string): NoticeParts {
+	if (text.length <= noticeInlineLimit && !text.includes("\n")) {
+		return { headline: text, technical: undefined };
+	}
+	const [firstLine] = text.split("\n");
+	return {
+		headline: (firstLine ?? text).slice(0, 160).trim(),
+		technical: text
+	};
 }
 
 function authorityForSnapshot(snapshot: AuthoringTableSnapshot): AuthoringAuthority {
@@ -221,13 +244,13 @@ function RowReferencePicker(props: {
 	return (
 		<section aria-label="Row reference picker" {...stylex.props(styles.referencePicker)}>
 			<div {...stylex.props(styles.referenceHeading)}>
-				<span {...stylex.props(styles.detailLabel)}>RELATIONSHIP TARGET</span>
+				<span {...stylex.props(styles.detailLabel)}>Relationship target</span>
 				<span {...stylex.props(styles.referenceStatus)}>
 					{lookup().status === "loading"
-						? "RESOLVING"
+						? "Resolving…"
 						: lookup().status === "ready"
-							? `${targetRows().length} ROWS`
-							: "UNRESOLVED"}
+							? `${targetRows().length} ${targetRows().length === 1 ? "row" : "rows"}`
+							: "Unresolved"}
 				</span>
 			</div>
 			<label {...stylex.props(styles.referenceField)}>
@@ -343,10 +366,7 @@ function CatalogPanel(props: {
 	return (
 		<nav {...stylex.props(styles.catalog)} aria-label="Project DataTables">
 			<div {...stylex.props(styles.catalogHeading)}>
-				<div {...stylex.props(styles.catalogTitle)}>
-					<span {...stylex.props(styles.catalogEyebrow)}>PROJECT INDEX</span>
-					<strong {...stylex.props(styles.catalogName)}>Tables</strong>
-				</div>
+				<strong {...stylex.props(styles.catalogName)}>Tables</strong>
 				<button
 					type="button"
 					disabled={props.disabled}
@@ -354,7 +374,7 @@ function CatalogPanel(props: {
 					aria-label="Refresh project DataTables"
 					{...stylex.props(styles.catalogRefresh)}
 				>
-					↻
+					Refresh
 				</button>
 			</div>
 			<input
@@ -395,12 +415,12 @@ function CatalogPanel(props: {
 				</Match>
 				<Match when={props.state.status === "not_configured"}>
 					<div {...stylex.props(styles.catalogStatus)}>
-						Configure UE_SHED_PROJECT_ROOT to discover tables.
+						No project root is configured. Set UE_SHED_PROJECT_ROOT to list tables.
 					</div>
 				</Match>
 				<Match when={props.state.status === "failed"}>
 					<div {...stylex.props(styles.catalogStatus)}>
-						Catalog unavailable. The open table is unchanged.
+						Could not load the table list. The open table is unchanged.
 					</div>
 				</Match>
 				<Match when={props.state.status === "ready"}>
@@ -416,7 +436,7 @@ function CatalogPanel(props: {
 						>
 							<div {...stylex.props(styles.catalogWarning)}>
 								{props.state.status === "ready"
-									? `${props.state.diagnostics.length} catalog diagnostic${props.state.diagnostics.length === 1 ? "" : "s"}`
+									? `${props.state.diagnostics.length} catalog ${props.state.diagnostics.length === 1 ? "warning" : "warnings"}`
 									: ""}
 							</div>
 						</Show>
@@ -437,21 +457,23 @@ function CatalogPanel(props: {
 									</span>
 									<small {...stylex.props(styles.catalogItemKind)}>
 										{table.kind === "composite_data_table"
-											? "COMPOSITE"
-											: "DATA TABLE"}
+											? "Composite"
+											: "Data table"}
 										{" · "}
-										{table.authorities.join("+").toUpperCase()}
+										{table.authorities.join("+")}
 									</small>
 									<Show when={table.divergence.length > 0}>
 										<small {...stylex.props(styles.catalogDivergence)}>
-											DIVERGED · {table.divergence.join(", ")}
+											Diverged · {table.divergence.join(", ")}
 										</small>
 									</Show>
 								</button>
 							)}
 						</For>
 						<Show when={tables().length === 0}>
-							<div {...stylex.props(styles.catalogStatus)}>No matching tables.</div>
+							<div {...stylex.props(styles.catalogStatus)}>
+								No tables match this filter. Clear the filter or refresh the list.
+							</div>
 						</Show>
 					</div>
 				</Match>
@@ -504,9 +526,9 @@ function SessionShelf(props: {
 	return (
 		<section {...stylex.props(styles.sessionShelf)} aria-label="Draft sessions">
 			<div {...stylex.props(styles.draftShelfHeading)}>
-				<span>DRAFT SESSIONS</span>
+				<span>Drafts</span>
 				<Show when={props.sessions.status === "ready"}>
-					<small>{drafts().length}</small>
+					<small {...stylex.props(styles.draftCount)}>{drafts().length}</small>
 				</Show>
 			</div>
 			<Show
@@ -514,7 +536,7 @@ function SessionShelf(props: {
 				fallback={
 					<div {...stylex.props(styles.catalogStatus)}>
 						{props.sessions.status === "failed"
-							? "Draft list unavailable. The active table is unchanged."
+							? "Could not load drafts. The active table is unchanged."
 							: "Loading drafts…"}
 					</div>
 				}
@@ -523,18 +545,20 @@ function SessionShelf(props: {
 					{(draft) =>
 						sessionItem(
 							draft,
-							`${draft.commandCount} STAGED CHANGE${draft.commandCount === 1 ? "" : "S"} · ${draft.lifecycle.toUpperCase()}`
+							`${draft.commandCount} ${draft.commandCount === 1 ? "change" : "changes"} · ${sentenceCase(draft.lifecycle)}`
 						)
 					}
 				</For>
 				<Show when={pendingSaves().length > 0}>
-					<div {...stylex.props(styles.pendingSaveHeading)}>UNSAVED LIVE CHANGES</div>
+					<div {...stylex.props(styles.pendingSaveHeading)}>Unsaved live changes</div>
 					<For each={pendingSaves()}>
-						{(session) => sessionItem(session, "SAVED TO EDITOR · DISK SAVE PENDING")}
+						{(session) => sessionItem(session, "Saved to editor · save pending")}
 					</For>
 				</Show>
 				<Show when={drafts().length === 0 && pendingSaves().length === 0}>
-					<div {...stylex.props(styles.catalogStatus)}>No staged drafts.</div>
+					<div {...stylex.props(styles.catalogStatus)}>
+						No drafts. Changes you stage are kept here until you apply or discard them.
+					</div>
 				</Show>
 			</Show>
 		</section>
@@ -578,6 +602,40 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 	const [catalogGeneration, setCatalogGeneration] = createSignal(0);
 	const [attemptedLiveUpgrade, setAttemptedLiveUpgrade] = createSignal<string>();
 	const [rowEditor, setRowEditor] = createSignal<RowEditor>();
+	const canApplyDraft = createMemo(() => {
+		const pipeline = session()?.pipeline;
+		return pipeline !== undefined && pipeline.kind === "draft" && pipeline.canApply;
+	});
+	const canReconcileApply = createMemo(() => {
+		const pipeline = session()?.pipeline;
+		return (
+			pipeline !== undefined &&
+			pipeline.kind === "indeterminate" &&
+			pipeline.operation === "apply"
+		);
+	});
+	const canSavePackages = createMemo(() => {
+		const pipeline = session()?.pipeline;
+		return (
+			pipeline !== undefined &&
+			(pipeline.kind === "applied" ||
+				(pipeline.kind === "indeterminate" && pipeline.operation === "save"))
+		);
+	});
+	const activeTableReadOnly = createMemo(
+		() => readySnapshot()?.table.kind === "composite_data_table"
+	);
+	const applyDraftChanges = () => {
+		const currentSession = session();
+		if (!currentSession) return;
+		if (
+			!window.confirm(
+				`Apply ${currentSession.commandCount} ${currentSession.commandCount === 1 ? "change" : "changes"} to the live editor? Packages are not saved until you choose Save packages.`
+			)
+		)
+			return;
+		runSessionOperation(props.client.applySession(currentSession.sessionId));
+	};
 	const authorityAvailable = (authority: AuthoringAuthority): boolean => {
 		const current = state();
 		if (current.status === "ready" && authorityForSnapshot(current.snapshot) === authority)
@@ -974,11 +1032,13 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 	return (
 		<main {...stylex.props(styles.page)}>
 			<header {...stylex.props(styles.routeHeader)}>
-				<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-					<span>Data authoring</span>
-					<span aria-hidden="true">/</span>
-					<span>Tables</span>
-				</nav>
+				<div {...stylex.props(styles.routeHeading)}>
+					<h1 {...stylex.props(styles.routeTitle)}>Data authoring</h1>
+					<p {...stylex.props(styles.routeIntro)}>
+						Edit DataTable rows with validation, then apply changes through a live
+						session.
+					</p>
+				</div>
 				<div {...stylex.props(styles.routeActions)}>
 					<Show when={state().status === "ready"}>
 						{(() => {
@@ -987,7 +1047,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 							const isLive = current.snapshot.authority.kind === "live_editor";
 							return (
 								<div
-									aria-label="Table authority"
+									aria-label="Table source"
 									role="group"
 									{...stylex.props(styles.authoritySwitch)}
 								>
@@ -997,7 +1057,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											isReplacing() || !isLive || !authorityAvailable("saved")
 										}
 										onClick={() => switchAuthority("saved")}
-										tone={isLive ? "secondary" : "primary"}
+										tone="quiet"
 									>
 										Saved package
 									</Button>
@@ -1007,7 +1067,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											isReplacing() || isLive || !authorityAvailable("live")
 										}
 										onClick={() => switchAuthority("live")}
-										tone={isLive ? "primary" : "secondary"}
+										tone="quiet"
 									>
 										Live editor
 									</Button>
@@ -1017,32 +1077,75 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 					</Show>
 					<Button
 						type="button"
-						tone="primary"
+						tone="secondary"
 						disabled={isReplacing()}
 						onClick={() => {
 							setAuthorityPreference("saved");
 							void load(true);
 						}}
 					>
-						{isReplacing() ? "Opening…" : "Open .uasset"}
+						{isReplacing() ? "Opening…" : "Open table"}
 					</Button>
 					<Button
 						type="button"
+						tone="quiet"
 						disabled={isReplacing()}
 						onClick={() => {
 							setAuthorityPreference("saved");
 							void load(false);
 						}}
 					>
-						Reload preset
+						Reload table
 					</Button>
+					<Show when={canReconcileApply()}>
+						<Button
+							type="button"
+							tone="secondary"
+							disabled={isPersisting() || activeTableReadOnly()}
+							onClick={() => {
+								const currentSession = session();
+								if (!currentSession) return;
+								runSessionOperation(
+									props.client.reconcileSession(currentSession.sessionId)
+								);
+							}}
+						>
+							Check apply status
+						</Button>
+					</Show>
+					<Show when={canSavePackages()}>
+						<Button
+							type="button"
+							tone="secondary"
+							disabled={isPersisting()}
+							onClick={() => {
+								const currentSession = session();
+								if (!currentSession) return;
+								runSessionOperation(
+									props.client.saveSession(currentSession.sessionId)
+								);
+							}}
+						>
+							Save packages
+						</Button>
+					</Show>
+					<Show when={canApplyDraft()}>
+						<Button
+							type="button"
+							tone="primary"
+							disabled={isPersisting() || activeTableReadOnly()}
+							onClick={applyDraftChanges}
+						>
+							Apply changes
+						</Button>
+					</Show>
 				</div>
 			</header>
 
 			<Switch>
 				<Match when={state().status === "loading"}>
 					<div {...stylex.props(styles.emptyState)}>
-						<span {...stylex.props(styles.pulse)} /> Reading typed table snapshot…
+						<span {...stylex.props(styles.pulse)} /> Loading table…
 					</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
@@ -1057,10 +1160,10 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 							state={catalogState()}
 						/>
 						<div {...stylex.props(styles.emptyState)}>
-							<strong>Select a project DataTable.</strong>
+							<strong>No table open.</strong>
 							<span>
-								Choose from the project index or open a package outside the
-								configured root.
+								Choose a DataTable from the list, or open a package outside the
+								configured project root.
 							</span>
 							<button
 								type="button"
@@ -1070,24 +1173,28 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 								}}
 								{...stylex.props(styles.inlineButton)}
 							>
-								Choose .uasset
+								Choose file…
 							</button>
 						</div>
 					</div>
 				</Match>
 				<Match when={state().status === "cancelled"}>
 					<div {...stylex.props(styles.emptyState)}>
-						Selection cancelled. The current table was not replaced.
+						No table was selected. The current table is unchanged.
 					</div>
 				</Match>
 				<Match when={state().status === "failed"}>
 					{(() => {
 						const current = state();
 						if (current.status !== "failed") return null;
+						const parts = noticeParts(current.error.message);
 						return (
 							<div {...stylex.props(styles.errorState)}>
-								<strong>{current.error.message}</strong>
-								<span>{current.error.recovery}</span>
+								<strong>The table did not load.</strong>
+								<span>{parts.headline}</span>
+								<span {...stylex.props(styles.errorRecovery)}>
+									{current.error.recovery}
+								</span>
 								<Show when={current.error.retrySafe}>
 									<button
 										type="button"
@@ -1096,6 +1203,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									>
 										Retry
 									</button>
+								</Show>
+								<Show when={parts.technical}>
+									<details {...stylex.props(styles.technicalDetails)}>
+										<summary>Technical details</summary>
+										<code>{parts.technical}</code>
+									</details>
 								</Show>
 							</div>
 						);
@@ -1135,7 +1248,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 								<div {...stylex.props(styles.workspace)}>
 									<section
 										{...stylex.props(styles.manifest)}
-										aria-label="Table manifest"
+										aria-label="Table summary"
 									>
 										<div {...stylex.props(styles.assetIdentity)}>
 											<span {...stylex.props(styles.assetBadge)}>
@@ -1147,36 +1260,27 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											<small>{snapshot().table.objectPath}</small>
 										</div>
 										<div {...stylex.props(styles.metric)}>
-											<strong>
-												{String(snapshot().table.rows.length).padStart(
-													2,
-													"0"
-												)}
-											</strong>
-											<span>ROWS</span>
+											<strong>{snapshot().table.rows.length}</strong>
+											<span>Rows</span>
 										</div>
 										<div {...stylex.props(styles.metric)}>
-											<strong>
-												{String(columns().length).padStart(2, "0")}
-											</strong>
-											<span>FIELDS</span>
+											<strong>{columns().length}</strong>
+											<span>Fields</span>
 										</div>
 										<div {...stylex.props(styles.metric)}>
-											<strong>{snapshot().completeness.toUpperCase()}</strong>
-											<span>SNAPSHOT</span>
+											<strong>{sentenceCase(snapshot().completeness)}</strong>
+											<span>Snapshot</span>
 										</div>
 										<div {...stylex.props(styles.readOnlyFlag)}>
 											<span>{session()?.dirty ? "●" : "○"}</span>
 											<div {...stylex.props(styles.draftState)}>
 												<strong>
-													{session()?.dirty
-														? "STAGED DRAFT"
-														: "DRAFT READY"}
+													{session()?.dirty ? "Draft" : "Applied"}
 												</strong>
 												<small {...stylex.props(styles.draftStateDetail)}>
 													{session()
-														? `${session()?.commandCount ?? 0} active command(s) · ${session()?.review.validation.errorCount ?? 0} errors`
-														: "Opening persistent session…"}
+														? `${session()?.commandCount ?? 0} ${session()?.commandCount === 1 ? "change" : "changes"} · ${session()?.review.validation.errorCount ?? 0} ${session()?.review.validation.errorCount === 1 ? "error" : "errors"}`
+														: "Opening session…"}
 												</small>
 											</div>
 										</div>
@@ -1184,9 +1288,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 
 									<Show when={snapshot().diagnostics.length > 0}>
 										<section {...stylex.props(styles.diagnostics)}>
-											<strong>
-												{snapshot().diagnostics.length} PACKAGE DIAGNOSTICS
-											</strong>
+											<strong>Package warnings</strong>
 											<For each={snapshot().diagnostics}>
 												{(diagnostic) => <span>{diagnostic.message}</span>}
 											</For>
@@ -1194,7 +1296,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 									</Show>
 									<Show when={readOnlyTable()}>
 										<section {...stylex.props(styles.diagnostics)}>
-											<strong>DERIVED TABLE · READ ONLY</strong>
+											<strong>Read-only table</strong>
 											<span>
 												CompositeDataTable rows come from their parent
 												tables. Open a parent table to make changes.
@@ -1215,9 +1317,24 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 										</div>
 									</Show>
 									<Show when={sessionNotice()}>
-										<div {...stylex.props(styles.replacementNotice)}>
-											<span>{sessionNotice()}</span>
-										</div>
+										{(notice) => {
+											const parts = noticeParts(notice());
+											return (
+												<div {...stylex.props(styles.replacementNotice)}>
+													<span>{parts.headline}</span>
+													<Show when={parts.technical}>
+														<details
+															{...stylex.props(
+																styles.technicalDetails
+															)}
+														>
+															<summary>Technical details</summary>
+															<code>{parts.technical}</code>
+														</details>
+													</Show>
+												</div>
+											);
+										}}
 									</Show>
 									<Show when={rowEditor()}>
 										{(editor) => (
@@ -1230,17 +1347,20 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 													}}
 													{...stylex.props(styles.rowEditor)}
 												>
-													<span {...stylex.props(styles.inspectorKicker)}>
+													<strong
+														{...stylex.props(styles.rowEditorTitle)}
+													>
 														{editor().kind === "add_row"
-															? "ADD ROW"
+															? "Add row"
 															: editor().kind === "duplicate_row"
-																? "DUPLICATE ROW"
-																: "RENAME ROW"}
-													</span>
+																? "Duplicate row"
+																: "Rename row"}
+													</strong>
 													<label {...stylex.props(styles.rowEditorLabel)}>
-														Unreal row name
+														Row name
 														<input
 															autofocus
+															aria-label="Row name"
 															value={editor().value}
 															onInput={(event) =>
 																setRowEditor({
@@ -1289,7 +1409,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 												workspaceMode() === "table" && styles.viewTabActive
 											)}
 										>
-											Canonical table
+											Table
 										</button>
 										<button
 											type="button"
@@ -1302,7 +1422,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 													styles.viewTabActive
 											)}
 										>
-											Relationship view
+											Relationships
 										</button>
 									</div>
 
@@ -1335,24 +1455,21 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											/>
 											<section {...stylex.props(styles.sheet)}>
 												<div {...stylex.props(styles.sheetTools)}>
-													<label {...stylex.props(styles.searchWrap)}>
-														<span>FILTER</span>
-														<input
-															aria-label="Filter table rows"
-															value={query()}
-															onInput={(event) =>
-																setQuery(event.currentTarget.value)
-															}
-															placeholder="Row names and values…"
-															{...stylex.props(styles.search)}
-														/>
-													</label>
+													<input
+														aria-label="Filter table rows"
+														value={query()}
+														onInput={(event) =>
+															setQuery(event.currentTarget.value)
+														}
+														placeholder="Filter rows…"
+														{...stylex.props(styles.search)}
+													/>
 													<span {...stylex.props(styles.visibleCount)}>
 														{visibleRows().length} /{" "}
-														{snapshot().table.rows.length} VISIBLE
+														{snapshot().table.rows.length} rows
 													</span>
 													<span {...stylex.props(styles.rowStruct)}>
-														ROW STRUCT · {snapshot().table.rowStruct}
+														Row struct · {snapshot().table.rowStruct}
 													</span>
 													<Show when={session()}>
 														{(currentSession) => (
@@ -1380,7 +1497,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		styles.sheetAction
 																	)}
 																>
-																	+ Row
+																	Add row
 																</button>
 																<button
 																	type="button"
@@ -1408,7 +1525,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		styles.sheetAction
 																	)}
 																>
-																	Duplicate
+																	Duplicate row
 																</button>
 																<button
 																	type="button"
@@ -1430,7 +1547,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		styles.sheetAction
 																	)}
 																>
-																	Rename
+																	Rename row
 																</button>
 																<button
 																	type="button"
@@ -1448,7 +1565,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																		styles.dangerAction
 																	)}
 																>
-																	Delete
+																	Delete row
 																</button>
 																<button
 																	type="button"
@@ -1526,97 +1643,6 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																>
 																	Redo
 																</button>
-																<Show
-																	when={(() => {
-																		const pipeline =
-																			currentSession()
-																				.pipeline;
-																		return (
-																			pipeline.kind ===
-																				"draft" &&
-																			pipeline.canApply
-																		);
-																	})()}
-																>
-																	<Button
-																		disabled={
-																			isPersisting() ||
-																			readOnlyTable()
-																		}
-																		onClick={() => {
-																			if (
-																				!window.confirm(
-																					`Apply ${currentSession().commandCount} staged command(s) to the live editor? This does not save packages.`
-																				)
-																			)
-																				return;
-																			runSessionOperation(
-																				props.client.applySession(
-																					currentSession()
-																						.sessionId
-																				)
-																			);
-																		}}
-																	>
-																		Apply
-																	</Button>
-																</Show>
-																<Show
-																	when={(() => {
-																		const pipeline =
-																			currentSession()
-																				.pipeline;
-																		return (
-																			pipeline.kind ===
-																				"indeterminate" &&
-																			pipeline.operation ===
-																				"apply"
-																		);
-																	})()}
-																>
-																	<Button
-																		disabled={isPersisting()}
-																		onClick={() =>
-																			runSessionOperation(
-																				props.client.reconcileSession(
-																					currentSession()
-																						.sessionId
-																				)
-																			)
-																		}
-																	>
-																		Reconcile Apply
-																	</Button>
-																</Show>
-																<Show
-																	when={(() => {
-																		const pipeline =
-																			currentSession()
-																				.pipeline;
-																		return (
-																			pipeline.kind ===
-																				"applied" ||
-																			(pipeline.kind ===
-																				"indeterminate" &&
-																				pipeline.operation ===
-																					"save")
-																		);
-																	})()}
-																>
-																	<Button
-																		disabled={isPersisting()}
-																		onClick={() =>
-																			runSessionOperation(
-																				props.client.saveSession(
-																					currentSession()
-																						.sessionId
-																				)
-																			)
-																		}
-																	>
-																		Save packages
-																	</Button>
-																</Show>
 															</div>
 														)}
 													</Show>
@@ -1695,20 +1721,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																	styles.inspectorEmpty
 																)}
 															>
-																Select a typed cell to inspect its
-																value.
+																Select a cell to inspect its value.
 															</div>
 														}
 													>
 														{(target) => (
 															<>
-																<span
-																	{...stylex.props(
-																		styles.inspectorKicker
-																	)}
-																>
-																	CELL EVIDENCE
-																</span>
 																<h2
 																	{...stylex.props(
 																		styles.inspectorTitle
@@ -1732,7 +1750,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																	<small>
 																		{valueSummary(
 																			target().field.value
-																		).toUpperCase()}
+																		)}
 																	</small>
 																	<strong>
 																		{formatAuthoringValue(
@@ -1755,7 +1773,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																				styles.detailLabel
 																			)}
 																		>
-																			UNREAL TYPE
+																			Unreal type
 																		</span>
 																		<strong>
 																			{
@@ -1774,7 +1792,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																				styles.detailLabel
 																			)}
 																		>
-																			VALUE KIND
+																			Value kind
 																		</span>
 																		<strong>
 																			{
@@ -1793,7 +1811,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																				styles.detailLabel
 																			)}
 																		>
-																			ROW IDENTITY
+																			Row key
 																		</span>
 																		<strong>
 																			{target().row.id}
@@ -1837,14 +1855,9 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 												</Show>
 												<Show when={inspectorTab() === "review"}>
 													<div {...stylex.props(styles.reviewSummary)}>
-														<span
-															{...stylex.props(
-																styles.inspectorKicker
-															)}
+														<strong
+															{...stylex.props(styles.reviewTitle)}
 														>
-															SESSION REVIEW
-														</span>
-														<strong>
 															{(session()?.review
 																.activeCommandCount ?? 0) === 0
 																? "No staged changes"
@@ -1855,14 +1868,22 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 														<small>
 															{session()?.review.validation
 																.errorCount ?? 0}{" "}
-															errors ·{" "}
+															{session()?.review.validation
+																.errorCount === 1
+																? "error"
+																: "errors"}{" "}
+															·{" "}
 															{session()?.review.validation
 																.warningCount ?? 0}{" "}
-															warnings ·{" "}
+															{session()?.review.validation
+																.warningCount === 1
+																? "warning"
+																: "warnings"}{" "}
+															·{" "}
 															{session()?.review.commandGroups.filter(
 																(group) => group.active
 															).length ?? 0}{" "}
-															gestures
+															edits
 														</small>
 													</div>
 													<div {...stylex.props(styles.reviewList)}>
@@ -1918,7 +1939,9 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 																)}
 															>
 																<strong>
-																	{diagnostic.severity.toUpperCase()}
+																	{sentenceCase(
+																		diagnostic.severity
+																	)}
 																</strong>
 																<span>{diagnostic.message}</span>
 															</div>
@@ -1947,75 +1970,108 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 }
 
 const styles = stylex.create({
-	breadcrumb: {
-		alignItems: "center",
-		color: tokens.colorTextMuted,
-		display: "flex",
-		fontSize: 9,
-		gap: tokens.space2,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
-	},
 	page: {
 		minHeight: "calc(100vh - 52px)",
 		padding: { default: "32px 36px 42px", "@media (max-width: 700px)": "18px 14px 28px" },
 		color: tokens.colorText,
-		backgroundColor: tokens.colorCanvas,
-		backgroundImage:
-			"linear-gradient(90deg, #ffffff05 1px, transparent 1px), linear-gradient(#ffffff04 1px, transparent 1px)",
-		backgroundSize: "32px 32px"
+		backgroundColor: tokens.colorCanvas
 	},
-	routeActions: { display: "flex", gap: tokens.space2 },
-	authoritySwitch: { display: "flex", gap: 2 },
 	routeHeader: {
-		alignItems: "center",
+		alignItems: "flex-start",
 		display: "flex",
+		flexWrap: "wrap",
 		gap: tokens.space4,
 		justifyContent: "space-between",
-		paddingBottom: 16
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		paddingBottom: tokens.space4,
+		marginBottom: tokens.space5
 	},
+	routeHeading: {
+		minWidth: 0,
+		display: "flex",
+		flexDirection: "column",
+		gap: tokens.space2
+	},
+	routeTitle: {
+		margin: 0,
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		lineHeight: 1.25
+	},
+	routeIntro: {
+		margin: 0,
+		maxWidth: 560,
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5
+	},
+	routeActions: {
+		alignItems: "center",
+		display: "flex",
+		flexWrap: "wrap",
+		gap: tokens.space2
+	},
+	authoritySwitch: { display: "flex", gap: 2 },
 	coldStart: {
 		display: "grid",
 		gridTemplateColumns: {
-			default: "230px minmax(0, 1fr)",
+			default: "240px minmax(0, 1fr)",
 			"@media (max-width: 700px)": "minmax(0, 1fr)"
 		},
-		gap: 10
+		gap: tokens.space3
 	},
 	emptyState: {
 		minHeight: 360,
-		border: "1px solid #343a36",
-		backgroundColor: "#111412",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "center",
 		justifyContent: "center",
-		gap: 12,
-		color: "#879088",
-		fontSize: 11
+		textAlign: "center",
+		gap: tokens.space3,
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.5,
+		padding: tokens.space5
 	},
 	errorState: {
 		minHeight: 280,
-		border: "1px solid #704a3c",
-		backgroundColor: "#1b1210",
+		maxWidth: 560,
+		margin: "0 auto",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "center",
 		justifyContent: "center",
-		gap: 10,
-		color: "#d7a08b",
-		fontSize: 11
+		textAlign: "center",
+		gap: tokens.space2,
+		padding: tokens.space5
 	},
+	errorRecovery: { color: tokens.colorTextMuted, fontSize: 13 },
 	inlineButton: {
-		marginTop: 8,
-		border: "1px solid #58614e",
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorAccent,
-		padding: "8px 12px",
+		marginTop: tokens.space2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "6px 12px",
 		cursor: "pointer",
-		fontSize: 9,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 13
 	},
 	pulse: {
 		width: 8,
@@ -2023,29 +2079,38 @@ const styles = stylex.create({
 		borderRadius: "50%",
 		backgroundColor: tokens.colorAccent
 	},
-	workspace: { display: "flex", flexDirection: "column", gap: 10 },
+	technicalDetails: {
+		width: "100%",
+		maxWidth: 520,
+		marginTop: tokens.space2,
+		textAlign: "left"
+	},
+	workspace: { display: "flex", flexDirection: "column", gap: tokens.space3 },
 	viewTabs: {
 		display: "flex",
 		alignItems: "center",
-		border: "1px solid #39403b",
-		backgroundColor: "#0e110f",
+		width: "fit-content",
+		gap: 2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
 		padding: 4
 	},
 	viewTab: {
-		border: 0,
-		borderBottom: "2px solid transparent",
-		backgroundColor: { default: "transparent", ":hover": "#171d18" },
-		color: "#78827a",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
-		padding: "9px 13px",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+		padding: "6px 12px",
+		fontSize: 13
 	},
 	viewTabActive: {
-		borderBottomColor: tokens.colorAccent,
-		backgroundColor: "#171d18",
-		color: "#dce3d8"
+		backgroundColor: tokens.colorSurfaceHover,
+		color: tokens.colorTextStrong
 	},
 	manifest: {
 		display: "grid",
@@ -2055,148 +2120,193 @@ const styles = stylex.create({
 				"minmax(220px, 1.4fr) repeat(3, minmax(65px, .35fr)) minmax(160px, .8fr)",
 			"@media (max-width: 700px)": "repeat(3, minmax(0, 1fr))"
 		},
-		border: "1px solid #39403b",
-		backgroundColor: "#111412"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	assetIdentity: {
 		display: "flex",
 		flexDirection: "column",
 		gridColumn: { default: "auto", "@media (max-width: 700px)": "1 / -1" },
-		gap: 5,
-		padding: "14px 16px"
+		gap: tokens.space1,
+		padding: "12px 16px"
 	},
-	assetBadge: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".14em" },
+	assetBadge: {
+		width: "fit-content",
+		padding: "1px 8px",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPill,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 11
+	},
 	metric: {
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "center",
-		padding: "10px 15px",
-		borderLeft: "1px solid #303632",
-		gap: 4
+		alignItems: "flex-end",
+		textAlign: "right",
+		gap: 2,
+		padding: "10px 16px",
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1
 	},
 	readOnlyFlag: {
 		display: "flex",
 		alignItems: "center",
 		gridColumn: { default: "auto", "@media (max-width: 700px)": "1 / -1" },
-		gap: 10,
-		padding: "10px 15px",
-		borderLeft: "1px solid #303632",
-		color: "#d6a363"
+		gap: tokens.space2,
+		padding: "10px 16px",
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		color: tokens.colorText
 	},
-	draftState: { minWidth: 0, display: "flex", flexDirection: "column", gap: 4 },
-	draftStateDetail: { color: "#9b8060", fontSize: 8, lineHeight: 1.35 },
+	draftState: { minWidth: 0, display: "flex", flexDirection: "column", gap: 2 },
+	draftStateDetail: { color: tokens.colorTextSubtle, fontSize: 11, lineHeight: 1.35 },
 	diagnostics: {
 		display: "flex",
-		gap: 16,
-		padding: "10px 14px",
-		border: "1px solid #665337",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		fontSize: 9
+		flexWrap: "wrap",
+		alignItems: "baseline",
+		gap: tokens.space4,
+		padding: "10px 16px",
+		borderColor: "rgba(242, 153, 74, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 12
 	},
 	replacementNotice: {
 		display: "flex",
+		flexWrap: "wrap",
 		alignItems: "center",
 		justifyContent: "space-between",
+		gap: tokens.space2,
 		padding: "9px 12px",
-		border: "1px solid #665337",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		fontSize: 9
+		borderColor: "rgba(242, 153, 74, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 12
 	},
 	noticeDismiss: {
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		backgroundColor: "transparent",
-		color: "#d6a363",
+		color: tokens.colorWarning,
 		cursor: "pointer",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 12
 	},
 	contentGrid: {
 		display: "grid",
 		gridTemplateColumns: {
-			default: "230px minmax(0, 1fr) 300px",
+			default: "240px minmax(0, 1fr) 300px",
 			"@media (max-width: 1050px)": "minmax(0, 1fr)"
 		},
-		gap: 10
+		gap: tokens.space3
 	},
 	catalog: {
 		minHeight: 480,
-		border: "1px solid #39403b",
-		backgroundColor: "#0e110f",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
 	},
 	catalogHeading: {
-		height: 58,
+		height: 48,
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "0 12px",
-		borderBottom: "1px solid #303632"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	catalogTitle: { display: "flex", flexDirection: "column", gap: 4 },
-	catalogEyebrow: { color: "#718073", fontSize: 7, letterSpacing: ".14em" },
-	catalogName: { color: "#d9ded7", fontFamily: "Georgia, serif", fontSize: 18, fontWeight: 400 },
+	catalogName: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 600 },
 	catalogRefresh: {
-		width: 28,
-		height: 28,
-		border: "1px solid #39413b",
-		backgroundColor: { default: "transparent", ":hover": "#202720" },
-		color: "#9dab9e",
-		cursor: "pointer"
+		borderStyle: "none",
+		borderWidth: 0,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
+		cursor: "pointer",
+		fontSize: 12,
+		padding: "4px 8px"
 	},
 	catalogSearch: {
-		width: "calc(100% - 20px)",
-		margin: 10,
-		border: "1px solid #343b36",
-		backgroundColor: "#090b0a",
-		color: "#e0e5dd",
-		padding: "8px 9px",
+		boxSizing: "border-box",
+		width: "calc(100% - 24px)",
+		margin: 12,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		padding: "7px 9px",
 		outlineColor: tokens.colorAccent,
-		fontSize: 9
+		fontSize: 13
 	},
-	catalogStatus: { padding: 14, color: "#737d75", fontSize: 9, lineHeight: 1.6 },
+	catalogStatus: { padding: 16, color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
 	catalogProgressBlock: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 8,
-		padding: 14,
-		color: "#737d75",
-		fontSize: 9,
+		padding: 16,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
 		lineHeight: 1.4
 	},
 	catalogProgressLabel: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 8,
-		color: "#9dab9e"
+		color: tokens.colorText
 	},
 	catalogProgress: {
 		width: "100%",
-		height: 5,
+		height: 4,
 		accentColor: tokens.colorAccent
 	},
 	catalogList: {
 		maxHeight: "calc(100vh - 350px)",
 		overflowY: "auto",
-		borderTop: "1px solid #252b27"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	catalogItem: {
 		width: "100%",
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "flex-start",
-		gap: 5,
-		border: 0,
-		borderBottom: "1px solid #252b27",
-		borderLeft: "3px solid transparent",
-		backgroundColor: { default: "transparent", ":hover": "#171d18" },
-		color: "#b8c0b8",
-		padding: "11px 10px",
+		gap: 3,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderLeftColor: "transparent",
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "10px 12px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontSize: 10
+		fontSize: 12
 	},
 	catalogItemActive: {
 		borderLeftColor: tokens.colorAccent,
@@ -2208,184 +2318,232 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	catalogItemKind: { color: "#68736a", fontSize: 7, letterSpacing: ".1em" },
-	catalogDivergence: {
-		color: "#d6a363",
-		fontSize: 7,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
-	},
+	catalogItemKind: { color: tokens.colorTextFaint, fontSize: 11 },
+	catalogDivergence: { color: tokens.colorWarning, fontSize: 11 },
 	catalogWarning: {
-		borderBottom: "1px solid #665337",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		fontSize: 7,
-		letterSpacing: ".08em",
-		padding: "8px 10px",
-		textTransform: "uppercase"
+		borderBottomColor: "rgba(242, 153, 74, 0.35)",
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorWarning,
+		fontSize: 11,
+		padding: "8px 12px"
 	},
 	sessionShelf: {
 		minHeight: 0,
-		margin: "-20px",
+		margin: -24,
 		overflowY: "auto"
 	},
 	draftShelfHeading: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		padding: "10px 11px 7px",
-		color: "#718073",
-		fontSize: 7,
-		letterSpacing: ".14em"
+		padding: "8px 12px 4px",
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 600,
+		letterSpacing: ".02em"
+	},
+	draftCount: {
+		minWidth: 20,
+		textAlign: "right",
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
 	pendingSaveHeading: {
-		borderTop: "1px solid #303632",
-		color: "#d6a363",
-		fontSize: 7,
-		letterSpacing: ".12em",
-		padding: "12px 11px 7px"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		color: tokens.colorWarning,
+		fontSize: 11,
+		fontWeight: 600,
+		padding: "12px 12px 4px"
 	},
 	draftItem: {
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) 28px",
-		borderTop: "1px solid #252b27"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	draftOpen: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "flex-start",
-		gap: 4,
-		border: 0,
-		backgroundColor: { default: "transparent", ":hover": "#171d18" },
-		color: "#b8c0b8",
-		padding: "9px 10px",
+		gap: 2,
+		borderStyle: "none",
+		borderWidth: 0,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "9px 12px",
 		textAlign: "left",
 		cursor: "pointer"
 	},
 	draftDiscard: {
-		border: 0,
-		borderLeft: "1px solid #252b27",
-		backgroundColor: { default: "transparent", ":hover": "#351c19" },
-		color: "#9e6d63",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(235, 87, 87, 0.12)" },
+		color: tokens.colorDanger,
 		cursor: "pointer",
 		fontSize: 15
 	},
-	sheet: { minWidth: 0, border: "1px solid #39403b", backgroundColor: "#101311" },
+	sheet: {
+		minWidth: 0,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
+	},
 	sheetTools: {
-		minHeight: 48,
+		minHeight: 44,
 		display: "flex",
 		alignItems: "center",
 		flexWrap: "wrap",
-		gap: 6,
-		padding: "8px 10px",
-		borderBottom: "1px solid #303632"
+		gap: tokens.space2,
+		padding: "8px 12px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	searchWrap: { display: "flex", alignItems: "center", gap: 9, color: "#707a72", fontSize: 8 },
 	search: {
-		width: { default: 250, "@media (max-width: 700px)": "100%" },
-		border: "1px solid #39413b",
-		backgroundColor: "#090b0a",
-		color: "#e0e5dd",
-		padding: "8px 10px",
-		outlineColor: tokens.colorAccent
+		width: { default: 220, "@media (max-width: 700px)": "100%" },
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		padding: "6px 10px",
+		outlineColor: tokens.colorAccent,
+		fontSize: 13
 	},
-	visibleCount: { color: "#89938c", fontSize: 8, letterSpacing: ".08em" },
+	visibleCount: {
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		textAlign: "right"
+	},
 	rowStruct: {
 		marginLeft: "auto",
 		maxWidth: 360,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#58615a",
-		fontSize: 8
+		color: tokens.colorTextFaint,
+		fontSize: 11
 	},
 	rowActions: {
 		width: "100%",
 		display: "flex",
 		alignItems: "center",
-		gap: 6,
-		paddingTop: 7,
-		borderTop: "1px solid #252b27"
+		flexWrap: "wrap",
+		gap: tokens.space1,
+		paddingTop: 8,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	sheetAction: {
-		border: "1px solid #39413b",
-		backgroundColor: { default: "#111512", ":hover": "#202720", ":disabled": "#101210" },
-		color: { default: "#aeb9af", ":disabled": "#4d554f" },
-		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		fontSize: 8,
-		padding: "6px 9px",
-		textTransform: "uppercase"
-	},
-	dangerAction: { color: "#d18b7e" },
-	inspector: {
-		minHeight: 480,
-		borderColor: tokens.colorBorderStrong,
+		borderColor: "transparent",
 		borderStyle: "solid",
 		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.06)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		fontSize: 12,
+		padding: "5px 8px"
+	},
+	dangerAction: { color: tokens.colorDanger },
+	inspector: {
+		minHeight: 480,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
 		backgroundColor: tokens.colorSurface,
-		padding: 20,
+		padding: 16,
 		overflow: "hidden"
 	},
 	inspectorTabs: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		margin: "-20px -20px 20px",
-		borderBottom: "1px solid #333a35"
+		margin: "-16px -16px 16px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	inspectorTab: {
-		border: 0,
-		borderBottom: "2px solid transparent",
-		backgroundColor: { default: "#0e110f", ":hover": "#171d18" },
-		color: "#78827a",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: "transparent",
+		borderBottomStyle: "solid",
+		borderBottomWidth: 2,
+		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		padding: "12px 8px",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+		fontSize: 12
 	},
-	inspectorTabActive: { borderBottomColor: tokens.colorAccent, color: "#dce3d8" },
-	inspectorEmpty: { color: "#727a74", fontSize: 10, lineHeight: 1.6 },
-	inspectorKicker: { color: "#8fa080", fontSize: 8, letterSpacing: ".15em" },
+	inspectorTabActive: { borderBottomColor: tokens.colorAccent, color: tokens.colorTextStrong },
+	inspectorEmpty: { color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
 	inspectorTitle: {
-		margin: "12px 0 5px",
-		fontFamily: "Georgia, serif",
-		fontSize: 28,
-		fontWeight: 400
+		margin: "0 0 4px",
+		fontFamily: tokens.fontDisplay,
+		fontSize: 18,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
 	},
-	inspectorPath: { margin: 0, color: "#6f7871", fontSize: 9 },
+	inspectorPath: { margin: 0, color: tokens.colorTextSubtle, fontSize: 12 },
 	valueHero: {
-		marginTop: 22,
-		minHeight: 120,
+		marginTop: 16,
+		minHeight: 110,
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "space-between",
-		padding: 16,
+		gap: 8,
+		padding: 12,
 		borderLeftColor: tokens.colorAccent,
 		borderLeftStyle: "solid",
-		borderLeftWidth: 3,
-		backgroundColor: "#0b0e0c",
-		color: "#dfe4dc",
+		borderLeftWidth: 2,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
 		wordBreak: "break-word"
 	},
-	detailList: { display: "flex", flexDirection: "column", gap: 0, marginTop: 18 },
+	detailList: { display: "flex", flexDirection: "column", marginTop: 16 },
 	detailItem: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 4,
 		padding: "9px 0",
-		borderBottom: "1px solid #292f2b",
-		fontSize: 9,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		fontSize: 12,
 		wordBreak: "break-word"
 	},
-	detailLabel: { color: "#6f7871", fontSize: 7, letterSpacing: ".1em" },
+	detailLabel: { color: tokens.colorTextSubtle, fontSize: 11 },
 	referencePicker: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 12,
 		marginTop: 20,
-		padding: "14px 0 0",
-		borderTop: "1px solid #39413b"
+		paddingTop: 14,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	referenceHeading: {
 		display: "flex",
@@ -2394,31 +2552,33 @@ const styles = stylex.create({
 		gap: 8
 	},
 	referenceStatus: {
-		padding: "3px 6px",
-		border: "1px solid #39463d",
-		backgroundColor: "#0b100c",
-		color: tokens.colorAccent,
-		fontSize: 7,
-		letterSpacing: ".08em"
+		padding: "2px 7px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPill,
+		backgroundColor: "rgba(255, 255, 255, 0.05)",
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	},
 	referenceField: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#aab4ab",
-		fontSize: 8,
-		letterSpacing: ".06em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	},
 	referenceSelect: {
 		width: "100%",
-		border: "1px solid #3a443c",
-		borderRadius: 0,
-		backgroundColor: "#0a0e0b",
-		color: "#d9e0d9",
-		fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-		fontSize: 10,
-		padding: "9px 10px"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		padding: "8px 10px"
 	},
 	referenceMessage: {
 		display: "flex",
@@ -2426,55 +2586,70 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 8,
 		padding: "9px 10px",
-		borderLeft: "2px solid #667368",
-		backgroundColor: "#0b0f0c",
-		color: "#89938b",
-		fontSize: 8,
+		borderLeftColor: tokens.colorBorderStrong,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
 		lineHeight: 1.45
 	},
-	referenceError: { borderLeftColor: "#a86f61", color: "#d39b8d" },
+	referenceError: { borderLeftColor: tokens.colorDanger, color: tokens.colorDanger },
 	referenceRetry: {
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		backgroundColor: "transparent",
 		color: tokens.colorAccent,
 		cursor: "pointer",
-		fontSize: 8,
-		textTransform: "uppercase"
+		fontSize: 12
 	},
 	referenceStage: {
-		border: "1px solid #536456",
-		backgroundColor: { default: "#172019", ":hover": "#223026", ":disabled": "#101310" },
-		color: { default: "#dce5dc", ":disabled": "#505851" },
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		fontSize: 8,
-		letterSpacing: ".09em",
-		padding: "9px 12px",
-		textTransform: "uppercase"
+		fontSize: 12,
+		padding: "8px 12px"
 	},
 	reviewSummary: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		paddingBottom: 16,
-		borderBottom: "1px solid #333a35"
+		paddingBottom: 14,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
+	reviewTitle: { fontFamily: tokens.fontDisplay, fontSize: 15, fontWeight: 590 },
 	reviewList: { maxHeight: "calc(100vh - 410px)", overflowY: "auto" },
 	reviewChange: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 5,
 		padding: "11px 0",
-		borderBottom: "1px solid #292f2b",
-		fontSize: 9
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		fontSize: 12
 	},
 	reviewDiagnostic: {
 		display: "grid",
 		gridTemplateColumns: "54px 1fr",
 		gap: 8,
 		padding: "9px 0",
-		borderTop: "1px solid #665337",
-		color: "#d6a363",
-		fontSize: 8,
+		borderTopColor: "rgba(242, 153, 74, 0.35)",
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		color: tokens.colorWarning,
+		fontSize: 12,
 		lineHeight: 1.45
 	},
 	rowEditorBackdrop: {
@@ -2483,44 +2658,55 @@ const styles = stylex.create({
 		zIndex: 20,
 		display: "grid",
 		placeItems: "center",
-		backgroundColor: "#050706cc"
+		backgroundColor: "rgba(8, 9, 10, 0.8)"
 	},
 	rowEditor: {
 		width: "min(420px, calc(100vw - 40px))",
 		display: "flex",
 		flexDirection: "column",
 		gap: 18,
-		border: "1px solid #566159",
-		backgroundColor: "#111512",
-		boxShadow: "0 24px 80px #00000088",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurfaceRaised,
+		boxShadow: tokens.shadowOverlay,
 		padding: 22
 	},
+	rowEditorTitle: { fontFamily: tokens.fontDisplay, fontSize: 16, fontWeight: 590 },
 	rowEditorLabel: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 8,
-		color: "#879088",
-		fontSize: 9,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	rowEditorInput: {
-		border: "1px solid #465047",
-		backgroundColor: "#090b0a",
-		color: "#e0e5dd",
-		padding: "10px 11px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		padding: "9px 11px",
 		outlineColor: tokens.colorAccent,
-		fontSize: 12
+		fontSize: 13
 	},
 	rowEditorActions: { display: "flex", justifyContent: "flex-end", gap: 8 },
 	dialogButton: {
-		border: "1px solid #465047",
-		backgroundColor: { default: "#151a16", ":hover": "#202720" },
-		color: "#b8c0b8",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
 		cursor: "pointer",
-		padding: "8px 11px",
-		fontSize: 9,
-		textTransform: "uppercase"
+		padding: "7px 12px",
+		fontSize: 12
 	},
-	dialogPrimary: { borderColor: "#8cad57", color: "#c8ef87" }
+	dialogPrimary: {
+		borderColor: tokens.colorAccent,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText
+	}
 });

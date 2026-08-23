@@ -98,11 +98,11 @@ describe("MapCaptureRoute", () => {
 			</EffectRuntimeProvider>
 		));
 
-		await userEvent.click(screen.getByRole("button", { name: "OPEN PLAN" }));
+		await userEvent.click(screen.getByRole("button", { name: "Open plan" }));
 		expect(await screen.findByLabelText("Live top-down map framing preview")).toBeDefined();
 		expect(previewedPlanId).toBe("fixture-overview");
-		expect(screen.getByText("EDITOR LIVE")).toBeDefined();
-		expect(screen.getByText("LIVE FRAMING · NOT CAPTURE OUTPUT")).toBeDefined();
+		expect(screen.getByText("Editor live")).toBeDefined();
+		expect(screen.getByText("Live framing · not capture output")).toBeDefined();
 	});
 
 	it("surfaces scoped atmosphere and per-level LOD settings in the capture intent", async () => {
@@ -156,7 +156,7 @@ describe("MapCaptureRoute", () => {
 		));
 
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "OPEN PLAN" }));
+		await user.click(screen.getByRole("button", { name: "Open plan" }));
 		expect(await screen.findByDisplayValue("fixture-overview")).toBeDefined();
 		await user.click(screen.getByRole("combobox", { name: "Map capture target map" }));
 		await user.type(screen.getByRole("searchbox", { name: "Search saved maps" }), "lighting");
@@ -178,7 +178,7 @@ describe("MapCaptureRoute", () => {
 		fireEvent.input(screen.getByRole("spinbutton", { name: /Z1/ }), {
 			target: { value: "1.5" }
 		});
-		await user.click(screen.getByRole("button", { name: "OPEN + CAPTURE" }));
+		await user.click(screen.getByRole("button", { name: "Capture" }));
 
 		await waitFor(() => expect(captured).toBeDefined());
 		expect(captured?.captureBackend).toBe("viewport_high_resolution");
@@ -237,64 +237,64 @@ describe("MapCaptureRoute", () => {
 		));
 
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "NEW PLAN" }));
-		const planId = await screen.findByRole("textbox", { name: "PLAN ID" });
+		await user.click(screen.getByRole("button", { name: "New plan" }));
+		const planId = await screen.findByRole("textbox", { name: "Plan ID" });
 		await user.clear(planId);
 		await user.type(planId, "city-overview");
-		fireEvent.input(screen.getByRole("spinbutton", { name: "CENTER X" }), {
+		fireEvent.input(screen.getByRole("spinbutton", { name: "Center X" }), {
 			target: { value: "2000" }
 		});
-		const centerY = screen.getByRole<HTMLInputElement>("spinbutton", { name: "CENTER Y" });
+		const centerY = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Center Y" });
 		await user.clear(centerY);
 		expect(screen.queryByText("Every world bound must be a finite number.")).toBeNull();
 		await user.tab();
 		expect(centerY.valueAsNumber).toBe(512);
 		await user.clear(centerY);
 		await user.type(centerY, "0");
-		fireEvent.change(screen.getByRole("spinbutton", { name: "SIZE · UU" }), {
+		fireEvent.change(screen.getByRole("spinbutton", { name: "Size · UU" }), {
 			target: { value: "3000" }
 		});
 		expect(screen.getByText(/S 500 · N 3,500 · W -1,500 · E 1,500/)).toBeDefined();
 		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
-		fireEvent.change(screen.getByRole("spinbutton", { name: "TILE SIZE · PX" }), {
+		fireEvent.change(screen.getByRole("spinbutton", { name: "Tile size · PX" }), {
 			target: { value: "2048" }
 		});
 		expect(screen.getByText("2,048 × 2,048 UU")).toBeDefined();
-		expect(screen.getByText("2 × 2 TILES")).toBeDefined();
+		expect(screen.getByText("2 × 2")).toBeDefined();
 		expect(
 			screen.getByRole<HTMLInputElement>("spinbutton", {
-				name: "RESOLUTION · UU/PX"
+				name: "Resolution · UU/PX"
 			}).valueAsNumber
 		).toBe(1);
-		fireEvent.change(screen.getByRole("spinbutton", { name: "TILE SIZE · PX" }), {
+		fireEvent.change(screen.getByRole("spinbutton", { name: "Tile size · PX" }), {
 			target: { value: "512" }
 		});
-		expect(screen.getByText("2 × 2 TILES")).toBeDefined();
+		expect(screen.getByText("2 × 2")).toBeDefined();
 		const baseGrid = screen.getByRole<HTMLInputElement>("spinbutton", {
-			name: "BASE GRID · N × N"
+			name: "Base grid"
 		});
 		fireEvent.change(baseGrid, {
 			target: { value: "4" }
 		});
 		expect(baseGrid.valueAsNumber).toBe(4);
-		expect(screen.getByText("4 × 4 TILES")).toBeDefined();
+		expect(screen.getByText("4 × 4")).toBeDefined();
 		expect(
 			screen.getByRole<HTMLInputElement>("spinbutton", {
-				name: "RESOLUTION · UU/PX"
+				name: "Resolution · UU/PX"
 			}).valueAsNumber
 		).toBe(1.46484375);
-		fireEvent.change(screen.getByRole("spinbutton", { name: "RESOLUTION · UU/PX" }), {
+		fireEvent.change(screen.getByRole("spinbutton", { name: "Resolution · UU/PX" }), {
 			target: { value: "0.5" }
 		});
-		expect(screen.getByText("12 × 12 TILES")).toBeDefined();
+		expect(screen.getByText("12 × 12")).toBeDefined();
 		expect(screen.getByText("256 × 256 UU")).toBeDefined();
 		await user.selectOptions(
 			screen.getByRole("combobox", { name: "Render profile" }),
 			"seam_stable"
 		);
-		expect(screen.getByText(/Project lighting with fixed exposure/)).toBeDefined();
-		expect(screen.getByRole("option", { name: "SCENE CAPTURE DEFAULTS" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "SAVE" }));
+		expect(screen.getByText(/fixed exposure/)).toBeDefined();
+		expect(screen.getByRole("option", { name: "Scene capture defaults" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Save" }));
 
 		await waitFor(() => expect(saved?.plan.id).toBe("city-overview"));
 		expect(saved?.saveAs).toBe(false);
@@ -307,7 +307,7 @@ describe("MapCaptureRoute", () => {
 			minX: 500,
 			minY: -1_500
 		});
-		expect(await screen.findByText(/Saved portable plan/)).toBeDefined();
+		expect(await screen.findByText(/Saved plan to/)).toBeDefined();
 	});
 
 	it("shows actual tile progress and locks capture controls while a run is active", async () => {
@@ -350,9 +350,9 @@ describe("MapCaptureRoute", () => {
 		));
 
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "OPEN PLAN" }));
+		await user.click(screen.getByRole("button", { name: "Open plan" }));
 		await screen.findByDisplayValue("fixture-overview");
-		await user.click(screen.getByRole("button", { name: "OPEN + CAPTURE" }));
+		await user.click(screen.getByRole("button", { name: "Capture" }));
 		await waitFor(() => expect(captured).toBeDefined());
 		Queue.offerUnsafe(progressQueue, {
 			failedTiles: 1,
@@ -366,14 +366,14 @@ describe("MapCaptureRoute", () => {
 			name: "Map capture progress"
 		});
 		await waitFor(() => expect(progressbar.getAttribute("aria-valuenow")).toBe("4"));
-		expect(screen.getByText("4 / 5 PROCESSED")).toBeDefined();
-		expect(screen.getByText("3 CAPTURED")).toBeDefined();
-		expect(screen.getByText("1 FAILED")).toBeDefined();
-		expect(
-			screen.getByRole<HTMLButtonElement>("button", { name: "OPEN + CAPTURE" }).disabled
-		).toBe(true);
-		expect(
-			screen.getByRole<HTMLButtonElement>("button", { name: "OPEN TARGET MAP" }).disabled
-		).toBe(true);
+		expect(screen.getByText("4 / 5 processed")).toBeDefined();
+		expect(screen.getByText("3 captured")).toBeDefined();
+		expect(screen.getByText("1 failed")).toBeDefined();
+		expect(screen.getByRole<HTMLButtonElement>("button", { name: "Capture" }).disabled).toBe(
+			true
+		);
+		expect(screen.getByRole<HTMLButtonElement>("button", { name: "Open map" }).disabled).toBe(
+			true
+		);
 	});
 });

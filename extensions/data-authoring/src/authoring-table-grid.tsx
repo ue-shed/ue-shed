@@ -66,7 +66,10 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 						const row = props.rows[rowIndex];
 						const column = props.columns[columnIndex];
 						return row && column && dirtyCells().has(`${row.id}\u0000${column.name}`)
-							? { background: "#253020", boxShadow: "inset 0 0 0 1px #91bd65" }
+							? {
+									background: tokens.colorAccentWash,
+									boxShadow: "inset 0 0 0 1px rgba(228, 242, 34, 0.55)"
+								}
 							: undefined;
 					},
 					getRowHeaderLabel: (index) => {
@@ -75,7 +78,7 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 						return `${dirtyRows().has(row.id) ? "● " : ""}${row.name}`;
 					},
 					getRowHeaderSublabel: (index) =>
-						dirtyRows().has(props.rows[index]?.id ?? "") ? "DIRTY ROW" : "ROW"
+						dirtyRows().has(props.rows[index]?.id ?? "") ? "edited" : ""
 				}}
 				data={model().data}
 				onOperation={handleOperation}
@@ -99,6 +102,7 @@ const styles = stylex.create({
 		borderWidth: 1,
 		height: "min(68vh, 760px)",
 		minHeight: 420,
+		marginTop: tokens.space2,
 		overflow: "hidden"
 	}
 });

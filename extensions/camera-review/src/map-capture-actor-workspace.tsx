@@ -9,6 +9,7 @@ import {
 	type ActorExplorerFilters,
 	type ActorExplorerItem
 } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, type Effect } from "effect";
 import { Show, createMemo, createSignal } from "solid-js";
 import type { MapCaptureActorCatalogResult, MapCaptureClientError } from "./map-capture-client.js";
@@ -76,8 +77,8 @@ export function MapCaptureActorWorkspace(props: {
 			const inside = isInsideCapture(actor, props.manifest.grid.snappedBounds);
 			return {
 				badges: [
-					...(resolved ? [] : ["UNRESOLVED"]),
-					...(resolved && !inside ? ["OUTSIDE CAPTURE"] : [])
+					...(resolved ? [] : ["Unresolved"]),
+					...(resolved && !inside ? ["Outside capture"] : [])
 				],
 				classLabel: shortClass(actor.classPath),
 				classPath: actor.classPath,
@@ -160,17 +161,17 @@ export function MapCaptureActorWorkspace(props: {
 		<section aria-label="Captured map actor workspace" {...stylex.props(styles.workspace)}>
 			<header {...stylex.props(styles.toolbar)}>
 				<div {...stylex.props(styles.toolbarCopy)}>
-					<span>SAVED-WORLD INDEX</span>
-					<strong>Actors over capture</strong>
+					<strong>Saved actors</strong>
+					<span>Overlay the saved world on the captured tiles.</span>
 				</div>
 				<div {...stylex.props(styles.coverage)}>
 					<Show
 						when={catalog().status === "ready"}
-						fallback={<span>LOADS ON DEMAND</span>}
+						fallback={<span>Loads on demand</span>}
 					>
-						<span>{insideCount().toLocaleString()} INSIDE CAPTURE</span>
-						<span>{resolvedCount().toLocaleString()} RESOLVED</span>
-						<span>{actors().length.toLocaleString()} SAVED</span>
+						<span>{insideCount().toLocaleString()} inside</span>
+						<span>{resolvedCount().toLocaleString()} resolved</span>
+						<span>{actors().length.toLocaleString()} saved</span>
 					</Show>
 				</div>
 				<button
@@ -180,34 +181,38 @@ export function MapCaptureActorWorkspace(props: {
 					{...stylex.props(styles.toggle, enabled() && styles.toggleEnabled)}
 				>
 					<i {...stylex.props(styles.toggleDot)} />
-					SAVED ACTORS {enabled() ? "ON" : "OFF"}
+					Saved actors {enabled() ? "on" : "off"}
 				</button>
 			</header>
 			<Show when={enabled() && catalog().status === "loading"}>
-				<div role="status" {...stylex.props(styles.catalogNotice)}>
-					INDEXING SAVED ACTORS…
+				<div role="status" {...stylex.props(styles.catalogLoading)}>
+					Indexing saved actors…
 				</div>
 			</Show>
 			<Show when={enabled() ? failedCatalog() : undefined}>
 				{(failed) => (
-					<div
-						role="alert"
-						{...stylex.props(styles.catalogNotice, styles.catalogFailure)}
-					>
-						<div>
-							<strong>SAVED ACTORS UNAVAILABLE</strong>
-							<p>{failed().message}</p>
-							<small>{failed().recovery}</small>
+					<div role="alert" {...stylex.props(styles.catalogFailure)}>
+						<div {...stylex.props(styles.failureCopy)}>
+							<strong>Couldn&apos;t load saved actors</strong>
+							<p>{failed().recovery}</p>
+							<details {...stylex.props(styles.technical)}>
+								<summary>Technical details</summary>
+								<code>{failed().message}</code>
+							</details>
 						</div>
-						<button type="button" onClick={loadCatalog}>
-							RETRY
+						<button
+							type="button"
+							onClick={loadCatalog}
+							{...stylex.props(styles.retryButton)}
+						>
+							Retry
 						</button>
 					</div>
 				)}
 			</Show>
 			<Show when={enabled() && readyWorld()?.completeness === "partial"}>
-				<div {...stylex.props(styles.catalogNotice, styles.catalogPartial)}>
-					PARTIAL SAVED-WORLD COVERAGE · SOME ACTOR PACKAGES COULD NOT BE READ
+				<div {...stylex.props(styles.catalogPartial)}>
+					Some actor packages could not be read, so this list may be incomplete.
 				</div>
 			</Show>
 			<div
@@ -225,7 +230,7 @@ export function MapCaptureActorWorkspace(props: {
 						filters={filters()}
 						itemListLabel="Saved actors on captured map"
 						items={explorerItems()}
-						label="CAPTURE OVERLAY"
+						label="Capture overlay"
 						onClassPathsChange={(classPaths) =>
 							setFilters((current) => ({ ...current, classPaths }))
 						}
@@ -258,80 +263,115 @@ const styles = stylex.create({
 	workspace: {
 		display: "grid",
 		minWidth: 0,
-		border: "1px solid #324143",
-		backgroundColor: "#0a0f0f"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	toolbar: {
-		display: "grid",
-		gridTemplateColumns: "minmax(170px, 1fr) auto auto",
+		display: "flex",
 		alignItems: "center",
-		gap: 20,
-		padding: "10px 12px 10px 16px",
-		borderBottom: "1px solid #324143",
-		backgroundImage: "linear-gradient(90deg, #111a18, #0b1110)",
-		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace'
+		justifyContent: "space-between",
+		gap: tokens.space4,
+		padding: `${tokens.space2}px ${tokens.space4}px`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	toolbarCopy: {
 		display: "flex",
 		alignItems: "baseline",
-		gap: 10,
+		gap: tokens.space2,
 		minWidth: 0,
-		color: "#d5e1dd"
+		color: tokens.colorTextStrong,
+		fontSize: 13
 	},
 	coverage: {
 		display: "flex",
-		gap: 13,
-		color: "#708b86",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		gap: tokens.space3,
+		marginLeft: "auto",
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontVariantNumeric: "tabular-nums"
 	},
 	toggle: {
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
-		border: "1px solid #425454",
-		backgroundColor: { default: "#111918", ":hover": "#1a2725" },
-		color: "#93a6a2",
-		padding: "8px 10px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorTextMuted,
+		padding: "4px 10px",
+		fontSize: 12,
+		fontWeight: 500,
 		cursor: "pointer"
 	},
 	toggleEnabled: {
-		borderColor: "#9bc862",
-		backgroundColor: { default: "#26371e", ":hover": "#314526" },
-		color: "#dcf5b8"
+		borderColor: tokens.colorAccent,
+		backgroundColor: { default: tokens.colorAccentWash, ":hover": tokens.colorAccentWash },
+		color: tokens.colorAccent
 	},
 	toggleDot: {
 		width: 6,
 		height: 6,
-		borderRadius: 99,
-		backgroundColor: "currentColor",
-		boxShadow: "0 0 9px currentColor"
+		borderRadius: tokens.radiusPill,
+		backgroundColor: "currentColor"
 	},
-	catalogNotice: {
-		padding: "9px 14px",
-		borderBottom: "1px solid #324143",
-		backgroundColor: "#101a18",
-		color: "#d6b469",
-		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace',
-		fontSize: 8,
-		letterSpacing: ".09em"
+	catalogLoading: {
+		padding: `${tokens.space2}px ${tokens.space4}px`,
+		textAlign: "center",
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	catalogFailure: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 18,
-		backgroundColor: "#211410",
-		color: "#df9b82"
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) auto",
+		alignItems: "start",
+		gap: tokens.space3,
+		margin: tokens.space3,
+		padding: tokens.space3,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 12
 	},
-	catalogPartial: { backgroundColor: "#211c10", color: "#d9bd71" },
+	failureCopy: { display: "grid", gap: tokens.space1 },
+	retryButton: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "4px 12px",
+		fontSize: 12,
+		cursor: "pointer"
+	},
+	technical: {
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
+	catalogPartial: {
+		padding: `${tokens.space2}px ${tokens.space4}px`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorWarning,
+		fontSize: 12
+	},
 	mapRow: { display: "grid", minWidth: 0 },
 	mapRowWithExplorer: {
 		gridTemplateColumns: "minmax(230px, 300px) minmax(0, 1fr)",
 		gap: 1,
-		backgroundColor: "#324143"
+		backgroundColor: tokens.colorBorder
 	}
 });

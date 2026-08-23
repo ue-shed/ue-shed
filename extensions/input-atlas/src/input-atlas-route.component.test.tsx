@@ -87,7 +87,7 @@ describe("InputAtlasRoute interactions", () => {
 		renderRoute();
 		await screen.findByText("SpaceBar");
 		expect(screen.getByText("1 contested")).toBeDefined();
-		expect(screen.getByText("claimed by 2 contexts")).toBeDefined();
+		expect(screen.getByText("Claimed by 2 contexts")).toBeDefined();
 		expect(screen.getByText("IA_Jump")).toBeDefined();
 		expect(screen.getByText("IA_Handbrake")).toBeDefined();
 	});
@@ -120,7 +120,7 @@ describe("InputAtlasRoute interactions", () => {
 
 		await user.click(vehicle);
 		expect(vehicle.getAttribute("aria-pressed")).toBe("false");
-		expect(screen.getByText("no contested keys")).toBeDefined();
+		expect(screen.getByText("No contested keys")).toBeDefined();
 		expect(screen.queryByText("IA_Handbrake")).toBeNull();
 		expect(screen.getByText("IA_Jump")).toBeDefined();
 	});
@@ -136,7 +136,7 @@ describe("InputAtlasRoute interactions", () => {
 
 		expect(vehicle.getAttribute("aria-pressed")).toBe("true");
 		expect(gameplay.getAttribute("aria-pressed")).toBe("false");
-		expect(screen.getByText("no contested keys")).toBeDefined();
+		expect(screen.getByText("No contested keys")).toBeDefined();
 		expect(screen.queryByText("IA_Jump")).toBeNull();
 		expect(screen.getByText("IA_Handbrake")).toBeDefined();
 	});
@@ -163,7 +163,7 @@ describe("InputAtlasRoute interactions", () => {
 	it("says a mapping carried no serialized trigger rather than assuming one", async () => {
 		renderRoute();
 		await screen.findByText("SpaceBar");
-		expect(screen.getAllByText("no trigger").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("No trigger").length).toBeGreaterThan(0);
 	});
 
 	it("surfaces a failed scan with its recovery guidance", async () => {
@@ -179,7 +179,9 @@ describe("InputAtlasRoute interactions", () => {
 					}
 				})
 		});
-		expect(await screen.findByText("Content directory is missing.")).toBeDefined();
+		expect(await screen.findByText("Couldn’t scan this project")).toBeDefined();
+		expect(screen.getByText("Content directory is missing.")).toBeDefined();
 		expect(screen.getByText("Choose an Unreal project directory.")).toBeDefined();
+		expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
 	});
 });

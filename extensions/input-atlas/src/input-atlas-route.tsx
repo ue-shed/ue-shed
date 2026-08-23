@@ -8,7 +8,7 @@ import {
 	type EnhancedInputReport,
 	type EnhancedInputRunResult
 } from "@ue-shed/enhanced-input/browser";
-import { Button, createEffectAction, PageHeader } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
@@ -38,6 +38,28 @@ type ViewState =
 			readonly report: EnhancedInputReport;
 			readonly projectRoot: string;
 	  };
+
+type FailureParts = {
+	readonly summary: string;
+	readonly technical: string | undefined;
+};
+
+// A public error message is one short sentence; a pretty-printed Cause is neither. Show the first
+// line and keep the rest behind a disclosure so a failure never reads as a stack trace.
+function failureParts(message: string): FailureParts {
+	if (message.length <= 160 && !message.includes("\n")) {
+		return { summary: message, technical: undefined };
+	}
+	const [firstLine] = message.split("\n");
+	return {
+		summary: (firstLine ?? message).slice(0, 160).trim(),
+		technical: message
+	};
+}
+
+function plural(count: number, singular: string, pluralForm: string): string {
+	return `${count} ${count === 1 ? singular : pluralForm}`;
+}
 
 // The scan carries an absolute root; the diagram only needs the leaf folder to say "this project".
 function projectName(projectRoot: string): string {
@@ -119,6 +141,11 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		return current === undefined ? undefined : findAtlasKey(current, selectedKey());
 	});
 
+	const failedState = createMemo(() => {
+		const current = state();
+		return current.status === "failed" ? current : undefined;
+	});
+
 	const applyResult = (result: EnhancedInputRunResult) => {
 		if (result.status === "completed") {
 			setState({ status: "ready", report: result.report, projectRoot: result.projectRoot });
@@ -191,27 +218,31 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 
 	return (
 		<section {...stylex.props(styles.page)}>
-			<PageHeader
-				eyebrow="Input Atlas · saved Enhanced Input packages"
-				actions={
-					<>
-						<Button
-							tone="quiet"
-							disabled={state().status === "loading"}
-							onClick={() => run(() => props.client.loadConfiguredProject())}
-						>
-							Rescan
-						</Button>
-						<Button
-							tone="primary"
-							disabled={state().status === "loading"}
-							onClick={() => run(() => props.client.chooseProjectAndScan())}
-						>
-							Choose project…
-						</Button>
-					</>
-				}
-			/>
+			<header {...stylex.props(styles.header)}>
+				<div>
+					<h1 {...stylex.props(styles.title)}>Input atlas</h1>
+					<p {...stylex.props(styles.intro)}>
+						See every key your saved Enhanced Input packages claim, and which mapping
+						contexts fight over the same one.
+					</p>
+				</div>
+				<div {...stylex.props(styles.headerActions)}>
+					<Button
+						tone="quiet"
+						disabled={state().status === "loading"}
+						onClick={() => run(() => props.client.loadConfiguredProject())}
+					>
+						Rescan
+					</Button>
+					<Button
+						tone="primary"
+						disabled={state().status === "loading"}
+						onClick={() => run(() => props.client.chooseProjectAndScan())}
+					>
+						Choose project…
+					</Button>
+				</div>
+			</header>
 
 			<Show when={activeProject()}>
 				{(project) => (
@@ -246,20 +277,37 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 				<Match when={state().status === "cancelled"}>
 					<p {...stylex.props(styles.notice)}>Scan cancelled.</p>
 				</Match>
-				<Match when={state().status === "failed"}>
-					<Show when={state()} keyed>
-						{(current) => (
-							<div {...stylex.props(styles.error)}>
-								<strong>
-									{current.status === "failed" ? current.error.code : ""}
+				<Match when={failedState()}>
+					{(failed) => {
+						const parts = createMemo(() => failureParts(failed().error.message));
+						return (
+							<div role="alert" {...stylex.props(styles.error)}>
+								<strong {...stylex.props(styles.errorTitle)}>
+									Couldn’t scan this project
 								</strong>
-								<p>{current.status === "failed" ? current.error.message : ""}</p>
-								<p {...stylex.props(styles.recovery)}>
-									{current.status === "failed" ? current.error.recovery : ""}
-								</p>
+								<p>{parts().summary}</p>
+								<p {...stylex.props(styles.recovery)}>{failed().error.recovery}</p>
+								<div {...stylex.props(styles.errorActions)}>
+									<Button
+										tone="secondary"
+										onClick={() =>
+											run(() => props.client.loadConfiguredProject())
+										}
+									>
+										Retry
+									</Button>
+								</div>
+								<Show when={parts().technical}>
+									{(technical) => (
+										<details {...stylex.props(styles.errorDetails)}>
+											<summary>Technical details</summary>
+											<code>{technical()}</code>
+										</details>
+									)}
+								</Show>
 							</div>
-						)}
-					</Show>
+						);
+					}}
 				</Match>
 				<Match when={atlas()}>
 					{(current) => (
@@ -298,7 +346,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 									when={current().contestedKeys.length > 0}
 									fallback={
 										<span {...stylex.props(styles.chipQuiet)}>
-											no contested keys
+											No contested keys
 										</span>
 									}
 								>
@@ -308,7 +356,8 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 								</Show>
 								<Show when={current().unreadableMappings > 0}>
 									<span {...stylex.props(styles.chipQuiet)}>
-										{current().unreadableMappings} key(s) not serialized
+										{plural(current().unreadableMappings, "key", "keys")} not
+										serialized
 									</span>
 								</Show>
 							</div>
@@ -423,10 +472,20 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 							<KeyDetail selected={selected()} selectedKey={selectedKey()} />
 
 							<p {...stylex.props(styles.footer)}>
-								{report()?.coverage.mappingContexts} mapping context(s) and{" "}
-								{report()?.coverage.inputActions} action(s) across{" "}
-								{report()?.coverage.inspectedPackages} inspected package(s). Read
-								from saved packages — no editor, no play session.
+								{plural(
+									report()?.coverage.mappingContexts ?? 0,
+									"mapping context",
+									"mapping contexts"
+								)}{" "}
+								and{" "}
+								{plural(report()?.coverage.inputActions ?? 0, "action", "actions")}{" "}
+								across{" "}
+								{plural(
+									report()?.coverage.inspectedPackages ?? 0,
+									"inspected package",
+									"inspected packages"
+								)}
+								. Read from saved packages — no editor, no play session.
 							</p>
 						</>
 					)}
@@ -462,7 +521,7 @@ function KeyDetail(props: {
 							</span>
 							<Show when={props.selected?.contested === true}>
 								<span {...stylex.props(styles.chipContested)}>
-									claimed by {claims().length} contexts
+									Claimed by {claims().length} contexts
 								</span>
 							</Show>
 						</div>
@@ -481,7 +540,7 @@ function KeyDetail(props: {
 											{claim.contextName}
 										</span>
 										<span {...stylex.props(styles.claimAction)}>
-											{claim.actionName ?? "no action"}
+											{claim.actionName ?? "No action"}
 										</span>
 										<span {...stylex.props(styles.claimTags)}>
 											<For each={claim.triggers}>
@@ -498,7 +557,7 @@ function KeyDetail(props: {
 													title="No trigger serialized on this mapping"
 													{...stylex.props(styles.tagQuiet)}
 												>
-													no trigger
+													No trigger
 												</span>
 											</Show>
 											<For each={claim.modifiers}>
@@ -525,6 +584,32 @@ function KeyDetail(props: {
 
 const styles = stylex.create({
 	page: { display: "flex", flexDirection: "column", padding: 20 },
+	header: {
+		alignItems: "flex-start",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		display: "flex",
+		gap: 16,
+		justifyContent: "space-between",
+		marginBottom: 24,
+		paddingBottom: 16
+	},
+	headerActions: { alignItems: "center", display: "flex", gap: tokens.space2 },
+	title: {
+		color: tokens.colorTextStrong,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		margin: 0
+	},
+	intro: {
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5,
+		margin: "4px 0 0",
+		maxWidth: 560
+	},
 	notice: { color: tokens.colorTextMuted, fontSize: 12 },
 	projectBanner: {
 		alignItems: "center",
@@ -541,8 +626,8 @@ const styles = stylex.create({
 		height: 7,
 		width: 7
 	},
-	projectName: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 700 },
-	projectPath: { color: tokens.colorTextFaint, fontSize: 10, overflowWrap: "anywhere" },
+	projectName: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 590 },
+	projectPath: { color: tokens.colorTextFaint, fontSize: 11, overflowWrap: "anywhere" },
 	progressTrack: {
 		backgroundColor: tokens.colorSurfaceInset,
 		borderRadius: tokens.radiusControl,
@@ -574,6 +659,14 @@ const styles = stylex.create({
 		fontSize: 12,
 		padding: 14
 	},
+	errorTitle: { color: tokens.colorTextStrong, fontSize: 14, fontWeight: 590 },
+	errorActions: { display: "flex", gap: tokens.space2, marginTop: 10 },
+	errorDetails: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		marginTop: 10
+	},
 	recovery: { color: tokens.colorTextMuted },
 	toolbar: {
 		alignItems: "center",
@@ -587,8 +680,8 @@ const styles = stylex.create({
 	},
 	contextChip: {
 		alignItems: "center",
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
-		borderColor: tokens.colorBorderInteractive,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		borderColor: tokens.colorBorder,
 		borderRadius: tokens.radiusControl,
 		borderStyle: "solid",
 		borderWidth: 1,
@@ -596,21 +689,22 @@ const styles = stylex.create({
 		cursor: "pointer",
 		display: "inline-flex",
 		fontFamily: tokens.fontBody,
-		fontSize: 10,
+		fontSize: 11,
 		gap: 6,
 		padding: "4px 9px"
 	},
-	contextChipOn: { borderColor: tokens.colorAccent, color: tokens.colorAccent },
-	chipCount: { color: tokens.colorTextFaint, fontSize: 9 },
+	contextChipOn: { borderColor: tokens.colorBorder, color: tokens.colorTextStrong },
+	chipCount: { color: tokens.colorTextFaint, fontSize: 11 },
 	spacer: { flexGrow: 1 },
-	chipQuiet: { color: tokens.colorTextFaint, fontSize: 9, padding: "3px 8px" },
+	chipQuiet: { color: tokens.colorTextFaint, fontSize: 11, padding: "3px 8px" },
 	chipContested: {
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
 		borderColor: tokens.colorWarning,
-		borderRadius: tokens.radiusControl,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorWarning,
-		fontSize: 9,
+		fontSize: 11,
 		padding: "3px 8px"
 	},
 	devices: { display: "flex", flexWrap: "wrap", gap: 20, padding: "16px 0" },
@@ -637,8 +731,8 @@ const styles = stylex.create({
 	controlLabel: {
 		dominantBaseline: "central",
 		fill: tokens.colorTextFaint,
-		fontFamily: tokens.fontBody,
-		fontSize: 9,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		pointerEvents: "none",
 		textAnchor: "middle"
 	},
@@ -649,13 +743,13 @@ const styles = stylex.create({
 	cap: {
 		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
 		borderColor: tokens.colorBorderStrong,
-		borderRadius: tokens.radiusControl,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorTextFaint,
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 10,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
 		padding: "8px 6px"
 	},
 	capBound: {
@@ -664,18 +758,13 @@ const styles = stylex.create({
 		color: tokens.colorAccentText
 	},
 	capContested: {
-		backgroundColor: tokens.colorWarning,
-		borderColor: tokens.colorWarningStrong,
-		color: tokens.colorAccentText
+		backgroundColor: "rgba(242, 153, 74, 0.12)",
+		borderColor: tokens.colorWarning,
+		color: tokens.colorWarning
 	},
 	capSelected: { borderColor: tokens.colorTextStrong },
 	otherKeys: { display: "flex", flexDirection: "column", gap: 4, marginTop: 8 },
-	otherLabel: {
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
-	},
+	otherLabel: { color: tokens.colorTextSubtle, fontSize: 11 },
 	detail: {
 		borderTopColor: tokens.colorBorder,
 		borderTopStyle: "solid",
@@ -687,36 +776,31 @@ const styles = stylex.create({
 		paddingTop: 12
 	},
 	detailHead: { alignItems: "center", display: "flex", gap: 8, marginBottom: 2 },
-	detailKey: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 700 },
-	detailDevice: {
-		color: tokens.colorTextFaint,
-		fontSize: 9,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
-	},
-	detailEmpty: { color: tokens.colorTextFaint, fontSize: 10, margin: 0 },
+	detailKey: { color: tokens.colorTextStrong, fontSize: 12, fontWeight: 590 },
+	detailDevice: { color: tokens.colorTextSubtle, fontSize: 11 },
+	detailEmpty: { color: tokens.colorTextSubtle, fontSize: 12, margin: 0 },
 	claim: { alignItems: "baseline", display: "flex", flexWrap: "wrap", fontSize: 11, gap: 10 },
 	claimContext: { color: tokens.colorTextMuted, minWidth: 130 },
 	claimAction: { color: tokens.colorTextStrong, minWidth: 130 },
 	claimTags: { display: "flex", flexWrap: "wrap", gap: 4 },
 	tag: {
-		borderColor: tokens.colorBorderInteractive,
-		borderRadius: tokens.radiusControl,
+		borderColor: tokens.colorBorderStrong,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorTextSubtle,
-		fontSize: 9,
+		fontSize: 11,
 		padding: "1px 6px"
 	},
 	tagQuiet: {
 		borderColor: tokens.colorBorder,
-		borderRadius: tokens.radiusControl,
+		borderRadius: tokens.radiusBadge,
 		borderStyle: "solid",
 		borderWidth: 1,
 		color: tokens.colorTextFaint,
-		fontSize: 9,
+		fontSize: 11,
 		padding: "1px 6px"
 	},
-	claimText: { color: tokens.colorTextFaint },
-	footer: { color: tokens.colorTextFaint, fontSize: 10, marginTop: 12 }
+	claimText: { color: tokens.colorTextSubtle },
+	footer: { color: tokens.colorTextFaint, fontSize: 11, marginTop: 12 }
 });

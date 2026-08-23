@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import type { ActorIdentity } from "@ue-shed/map-history/contract";
 import { mapHistoryPlaybackFrameAt } from "@ue-shed/map-history/playback";
 import type { SavedWorldActor } from "@ue-shed/protocol";
@@ -186,12 +186,12 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		const target = history.coverage.investigationTarget;
 		return target.kind === "actor"
 			? {
-					detail: "Other actors are outside this result. It does not claim complete map coverage or historical class coverage. Use Deep History when you need the full map.",
-					headline: `This result follows actor ${target.actorPath} only.`
+					detail: "Only this actor is included. Use deep history for full map coverage.",
+					headline: `Following actor ${target.actorPath}.`
 				}
 			: {
-					detail: "Deleted or historically reclassified actors are outside this result. It does not claim complete map coverage or historical class coverage. Use Deep History when you need the full map.",
-					headline: `This result follows ${target.currentActorCount} current actor${target.currentActorCount === 1 ? "" : "s"} of ${target.classPath}.`
+					detail: "Deleted or reclassified actors are not included. Use deep history for full map coverage.",
+					headline: `Following ${target.currentActorCount} current ${target.classPath} actor${target.currentActorCount === 1 ? "" : "s"}.`
 				};
 	});
 	const resultIsStale = createMemo(() => {
@@ -217,6 +217,17 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		return catalog === undefined ? undefined : { kind: "current", world: catalog };
 	});
 
+	const runDisabled = createMemo(() => {
+		const current = readyState();
+		if (current === undefined || current.status === "running") return true;
+		if (mapPath().trim().length === 0) return true;
+		if (mode() === "fast") {
+			return fastTargetKind() === "actor"
+				? targetKey() === undefined
+				: targetClassPath() === undefined;
+		}
+		return false;
+	});
 	const apply = (next: ContentObservatoryState, source: StateUpdateSource = "mutation") => {
 		const shouldApply = source !== "poll" || shouldApplyPolledState(state(), next);
 		if (!shouldApply) return;
@@ -387,33 +398,33 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		<main {...stylex.props(styles.page)}>
 			<header {...stylex.props(styles.header)}>
 				<div>
-					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-						Content Observatory / Saved actor history
-					</nav>
-					<h1 {...stylex.props(styles.title)}>World Log</h1>
-					<p {...stylex.props(styles.headerSubtitle)}>
-						Saved actor history reconstructed at submitted changelists.
+					<h1 {...stylex.props(styles.title)}>World log</h1>
+					<p {...stylex.props(styles.intro)}>
+						Read map history and changelists straight from Perforce.
 					</p>
 				</div>
-				<div {...stylex.props(styles.headerSignal)}>
-					<span />
-					PERFORCE · MAP SCOPED
-				</div>
+				<Show when={readyState()}>
+					<Button disabled={runDisabled()} tone="primary" onClick={run}>
+						Read history
+					</Button>
+				</Show>
 			</header>
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.centerState)}>
-						Opening a bounded map history workspace…
+					<div aria-live="polite" {...stylex.props(styles.centerState)}>
+						Loading…
 					</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
 					<section {...stylex.props(styles.notConfigured)}>
-						<span {...stylex.props(styles.sectionKicker)}>PROJECT REQUIRED</span>
-						<h2>Content Observatory has no project root.</h2>
+						<h2>No project connected</h2>
 						<p>
-							Set <code>UE_SHED_PROJECT_ROOT</code> for the Workbench process, then
-							return to select a map and bounded time range.
+							Set{" "}
+							<code {...stylex.props(styles.notConfiguredCode)}>
+								UE_SHED_PROJECT_ROOT
+							</code>{" "}
+							for the Workbench process, then reload to pick a map and time range.
 						</p>
 					</section>
 				</Match>
@@ -449,29 +460,19 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 								targetLoading={targetLoading()}
 							/>
 							<Show when={targetLoading() && targetCatalog() === undefined}>
-								<section
-									aria-live="polite"
-									{...stylex.props(styles.worldLogTargetLoading)}
-								>
-									<span {...stylex.props(styles.sectionKicker)}>
-										CURRENT SAVED MAP
-									</span>
-									<strong>Reading the selected map…</strong>
-									<p {...stylex.props(styles.worldLogTargetLoadingCopy)}>
-										The current map stays available while history is
-										reconstructed.
-									</p>
-								</section>
+								<p aria-live="polite" {...stylex.props(styles.targetLoadingLine)}>
+									Reading actors in the selected map…
+								</p>
 							</Show>
 							<Show when={completeState()}>
 								{(complete) => (
 									<section
-										aria-label="World Log investigation lenses"
+										aria-label="Result views"
 										{...stylex.props(styles.investigationBar)}
 									>
 										<div
 											role="tablist"
-											aria-label="Investigation lens"
+											aria-label="Result view"
 											{...stylex.props(styles.lensTabs)}
 										>
 											<button
@@ -486,7 +487,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 													lens() === "world" && styles.lensTabActive
 												)}
 											>
-												World state
+												Actors
 											</button>
 											<button
 												type="button"
@@ -505,8 +506,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 										</div>
 										<div {...stylex.props(styles.investigationFacts)}>
 											<span>
-												<b>{complete().history.revisions.length}</b>{" "}
-												submitted CLs
+												<b>{complete().history.revisions.length}</b> CLs
 											</span>
 											<span>
 												<b>{historyCounts()?.semantic ?? 0}</b> actor
@@ -521,7 +521,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 												<b>{historyCounts()?.unclassified ?? 0}</b>{" "}
 												unclassified
 											</span>
-											<span>{complete().history.completeness} coverage</span>
+											<span>{complete().history.completeness}</span>
 										</div>
 									</section>
 								)}
@@ -529,27 +529,28 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 							<Show when={fastCoverageNotice()}>
 								{(notice) => (
 									<section
-										aria-label="Fast History coverage"
-										{...stylex.props(styles.fastCoverageNotice)}
+										aria-label="Fast history coverage"
+										{...stylex.props(styles.noticeCard)}
 									>
-										<span {...stylex.props(styles.sectionKicker)}>
-											FAST HISTORY / TARGETED
-										</span>
-										<strong>{notice().headline}</strong>
+										<strong {...stylex.props(styles.noticeCardStrong)}>
+											{notice().headline}
+										</strong>
 										<p>{notice().detail}</p>
 									</section>
 								)}
 							</Show>
 							<Show when={resultIsStale()}>
 								<section
-									aria-label="Stale World Log result"
-									{...stylex.props(styles.staleResult)}
+									aria-label="Stale result"
+									{...stylex.props(styles.noticeCard)}
 								>
-									<span {...stylex.props(styles.sectionKicker)}>
-										QUERY CHANGED
-									</span>
-									This retained result describes its completed map and time range.
-									Read history again to update it for the current query.
+									<strong {...stylex.props(styles.noticeCardStrong)}>
+										Query changed
+									</strong>
+									<p>
+										This result is for the previous map or time range. Read
+										history again to refresh it.
+									</p>
 								</section>
 							</Show>
 							<Show when={lens() === "world" ? sceneView() : undefined}>
@@ -575,9 +576,6 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 										{...stylex.props(styles.runningState)}
 									>
 										<div>
-											<span {...stylex.props(styles.sectionKicker)}>
-												RECONSTRUCTING
-											</span>
 											<strong>{humanize(running().progress.phase)}</strong>
 											<p>
 												{running().progress.processedChangelists} /{" "}
@@ -598,7 +596,6 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 										</div>
 										<button
 											type="button"
-											disabled={false}
 											onClick={() =>
 												action.run(props.client.cancel(), {
 													onSuccess: apply
@@ -606,23 +603,41 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 											}
 											{...stylex.props(styles.cancelButton)}
 										>
-											CANCEL
+											Cancel
 										</button>
 									</section>
 								)}
 							</Show>
 							<Show when={current().status === "cancelled"}>
 								<div {...stylex.props(styles.notice)}>
-									The historical reconstruction was cancelled and its temporary
-									tree was released.
+									History scan cancelled. The previous result was kept.
 								</div>
 							</Show>
 							<Show when={failedState()}>
 								{(failed) => (
 									<section {...stylex.props(styles.errorState)}>
-										<span>{failed().error.kind}</span>
 										<strong>{failed().error.message}</strong>
-										<p>{failed().error.recovery}</p>
+										<p {...stylex.props(styles.errorRecovery)}>
+											{failed().error.recovery}
+										</p>
+										<div {...stylex.props(styles.errorActions)}>
+											<Button tone="secondary" onClick={run}>
+												Retry
+											</Button>
+										</div>
+										<details {...stylex.props(styles.errorDetails)}>
+											<summary>Technical details</summary>
+											<pre>
+												{JSON.stringify(
+													{
+														kind: failed().error.kind,
+														message: failed().error.message
+													},
+													null,
+													2
+												)}
+											</pre>
+										</details>
 									</section>
 								)}
 							</Show>
@@ -632,9 +647,8 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 										when={playbackFrame()}
 										fallback={
 											<section {...stylex.props(styles.playbackUnavailable)}>
-												The saved-state playback frame is unavailable for
-												this result. Re-run the scan with a playback-capable
-												Map History producer.
+												This result has no replayable saved frames. Read
+												history again to rebuild them.
 											</section>
 										}
 									>

@@ -340,7 +340,10 @@ const styles = stylex.create({
 		flexGrow: 1,
 		fontFamily: tokens.fontBody,
 		fontSize: 11,
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		padding: "3px 6px",
 		width: "100%"
 	},

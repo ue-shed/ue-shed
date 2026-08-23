@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { Schedule, Stream } from "effect";
 import { Show, createSignal, onCleanup, onMount } from "solid-js";
@@ -97,10 +98,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 
 	const label = () => {
 		const current = project();
-		if (pending()) return "INDEXING PROJECT…";
+		if (pending()) return "Indexing project…";
 		if (current?.status === "ready") return current.project.projectName;
-		if (current?.status === "failed") return "RETRY PROJECT…";
-		return "CHOOSE PROJECT…";
+		if (current?.status === "failed") return "Retry project…";
+		return "Choose project…";
 	};
 	const title = () => {
 		const current = project();
@@ -151,34 +152,44 @@ export function ProjectChooser(props: ProjectChooserProps) {
 				{label()}
 			</button>
 			<Show when={project()?.status === "ready"}>
-				<span {...stylex.props(styles.offline)}>OFFLINE</span>
-				<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
-					<summary {...stylex.props(styles.launchSummary)}>LAUNCH ▾</summary>
-					<div {...stylex.props(styles.launchMenu)}>
-						<button
-							type="button"
-							disabled={launching() !== undefined}
-							onClick={() => launch("ue_shed")}
-							{...stylex.props(styles.launchOption, styles.launchOptionPrimary)}
+				<div {...stylex.props(styles.launchRow)}>
+					<span {...stylex.props(styles.offline)}>Offline</span>
+					<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
+						<summary {...stylex.props(styles.launchSummary)}>Launch ▾</summary>
+						<section
+							aria-label="Launch project options"
+							{...stylex.props(styles.launchMenu)}
 						>
-							<strong>
-								{launching() === "ue_shed" ? "PREPARING PLUGINS…" : "WITH UE SHED"}
-							</strong>
-							<span>
-								Core · Authoring · Cameras · Observatory · Asset Audits · Scenarios
-							</span>
-						</button>
-						<button
-							type="button"
-							disabled={launching() !== undefined}
-							onClick={() => launch("normal")}
-							{...stylex.props(styles.launchOption)}
-						>
-							<strong>{launching() === "normal" ? "OPENING…" : "NORMALLY"}</strong>
-							<span>No injected plugins or project changes</span>
-						</button>
-					</div>
-				</details>
+							<button
+								type="button"
+								disabled={launching() !== undefined}
+								onClick={() => launch("ue_shed")}
+								{...stylex.props(styles.launchOption, styles.launchOptionPrimary)}
+							>
+								<strong>
+									{launching() === "ue_shed"
+										? "Preparing plugins…"
+										: "With plugin suite"}
+								</strong>
+								<span>
+									Core · Authoring · Cameras · Observatory · Asset Audits ·
+									Scenarios
+								</span>
+							</button>
+							<button
+								type="button"
+								disabled={launching() !== undefined}
+								onClick={() => launch("normal")}
+								{...stylex.props(styles.launchOption)}
+							>
+								<strong>
+									{launching() === "normal" ? "Opening…" : "Plain editor"}
+								</strong>
+								<span>No injected plugins or project changes</span>
+							</button>
+						</section>
+					</details>
+				</div>
 			</Show>
 			<Show when={failure()} keyed>
 				{(error) => (
@@ -220,93 +231,125 @@ export function ProjectChooser(props: ProjectChooserProps) {
 
 const styles = stylex.create({
 	control: {
-		alignItems: "center",
 		display: "flex",
+		flexDirection: "column",
+		gap: 6,
 		position: "relative"
 	},
 	chooser: {
-		border: "1px solid #a7da45",
-		backgroundColor: { default: "#19220d", ":hover": "#273713", ":disabled": "#13180f" },
-		color: { default: "#d5f59c", ":disabled": "#67704f" },
+		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":active": "rgba(255, 255, 255, 0.08)"
+		},
+		color: { default: tokens.colorTextStrong, ":disabled": tokens.colorTextSubtle },
 		cursor: { default: "pointer", ":disabled": "wait" },
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
-		maxWidth: 180,
+		fontSize: 12,
+		fontWeight: 500,
+		width: "100%",
 		overflow: "hidden",
-		padding: "7px 9px",
+		padding: "6px 10px",
+		textAlign: "left",
 		textOverflow: "ellipsis",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" },
 		whiteSpace: "nowrap"
 	},
-	offline: {
-		alignSelf: "stretch",
-		display: "flex",
+	launchRow: {
 		alignItems: "center",
-		borderBottom: "1px solid #343a36",
-		borderTop: "1px solid #343a36",
-		color: "#69736c",
-		fontSize: 7,
-		fontWeight: 700,
-		letterSpacing: ".12em",
-		padding: "0 7px"
+		display: "flex",
+		gap: 6
 	},
-	launchControl: { position: "relative" },
+	offline: {
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	launchControl: { marginLeft: "auto", position: "relative" },
 	launchSummary: {
 		alignItems: "center",
-		backgroundColor: { default: "#1a1f1c", ":hover": "#242a26" },
-		border: "1px solid #505a53",
-		color: "#c6cdc8",
+		backgroundColor: {
+			default: "rgba(255, 255, 255, 0.05)",
+			":hover": "rgba(255, 255, 255, 0.09)"
+		},
+		color: tokens.colorText,
 		cursor: "pointer",
 		display: "flex",
-		fontSize: 8,
-		fontWeight: 700,
-		letterSpacing: ".08em",
+		fontSize: 12,
+		fontWeight: 500,
 		listStyle: "none",
-		padding: "7px 8px",
+		borderRadius: tokens.radiusControl,
+		padding: "4px 8px",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)" },
 		whiteSpace: "nowrap"
 	},
 	launchMenu: {
-		backgroundColor: "#151916",
-		border: "1px solid #505a53",
-		boxShadow: "0 12px 30px #00000077",
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		boxShadow: tokens.shadowOverlay,
 		display: "grid",
+		gap: 2,
 		minWidth: 310,
-		padding: 5,
+		padding: 4,
 		position: "absolute",
-		right: 0,
-		top: "calc(100% + 7px)",
+		bottom: "calc(100% + 7px)",
+		left: 0,
 		zIndex: 32
 	},
 	launchOption: {
 		alignItems: "flex-start",
 		backgroundColor: {
 			default: "transparent",
-			":hover": "#222824",
+			":hover": "rgba(255, 255, 255, 0.05)",
 			":disabled": "transparent"
 		},
-		border: 0,
-		borderLeft: "2px solid transparent",
-		color: { default: "#cbd2cd", ":disabled": "#646b66" },
+		borderLeftColor: "transparent",
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		borderRadius: tokens.radiusBadge,
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextSubtle },
 		cursor: { default: "pointer", ":disabled": "wait" },
 		display: "flex",
 		flexDirection: "column",
 		fontFamily: "inherit",
-		fontSize: 9,
-		gap: 4,
-		padding: "10px 11px",
-		textAlign: "left"
+		fontSize: 12,
+		gap: 3,
+		padding: "9px 11px",
+		textAlign: "left",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.98)", ":disabled": "scale(1)" }
 	},
-	launchOptionPrimary: { borderLeftColor: "#a7da45" },
+	launchOptionPrimary: {
+		borderLeftColor: tokens.colorAccent,
+		color: tokens.colorTextStrong
+	},
 	launchNotice: {
-		backgroundColor: "#172015",
-		border: "1px solid #607e40",
-		boxShadow: "0 10px 28px #00000066",
-		color: "#cde9a9",
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		boxShadow: tokens.shadowOverlay,
+		color: tokens.colorTextMuted,
 		display: "flex",
 		flexDirection: "column",
-		fontSize: 10,
+		fontSize: 12,
 		gap: 5,
-		lineHeight: 1.4,
+		lineHeight: 1.5,
 		maxWidth: 420,
 		minWidth: 280,
 		padding: "10px 12px",
@@ -315,18 +358,25 @@ const styles = stylex.create({
 		top: "calc(100% + 8px)",
 		zIndex: 31
 	},
-	launchFailure: { backgroundColor: "#251816", borderColor: "#a85545", color: "#f1b8ad" },
+	launchFailure: {
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		borderColor: "rgba(235, 87, 87, 0.35)",
+		color: "#f2a9a1"
+	},
 	failure: {
-		backgroundColor: "#251816",
-		border: "1px solid #a85545",
-		boxShadow: "0 10px 28px #00000066",
-		color: "#f1b8ad",
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		borderColor: "rgba(235, 87, 87, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		boxShadow: tokens.shadowOverlay,
+		color: "#f2a9a1",
 		display: "flex",
 		flexDirection: "column",
-		fontSize: 10,
+		fontSize: 12,
 		gap: 5,
-		left: 0,
-		lineHeight: 1.4,
+		right: 0,
+		lineHeight: 1.5,
 		maxWidth: 420,
 		minWidth: 280,
 		padding: "10px 12px",

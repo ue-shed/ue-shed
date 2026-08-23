@@ -115,24 +115,24 @@ describe("MapCaptureActorWorkspace", () => {
 		));
 
 		expect(loads).toBe(0);
-		await userEvent.click(screen.getByRole("button", { name: "SAVED ACTORS OFF" }));
+		await userEvent.click(screen.getByRole("button", { name: "Saved actors off" }));
 		expect(
 			await screen.findByRole("complementary", {
 				name: "Captured map saved actor explorer"
 			})
 		).toBeDefined();
 		expect(loads).toBe(1);
-		expect(screen.getByText("1 INSIDE CAPTURE")).toBeDefined();
-		expect(screen.getByText("2 RESOLVED")).toBeDefined();
-		expect(screen.getByText("3 SAVED")).toBeDefined();
-		expect(screen.getByText("OUTSIDE CAPTURE")).toBeDefined();
-		expect(screen.getByText("UNRESOLVED")).toBeDefined();
+		expect(screen.getByText("1 inside")).toBeDefined();
+		expect(screen.getByText("2 resolved")).toBeDefined();
+		expect(screen.getByText("3 saved")).toBeDefined();
+		expect(screen.getByText("Outside capture")).toBeDefined();
+		expect(screen.getAllByText("Unresolved").length).toBeGreaterThan(0);
 
 		const inside = screen.getByRole("button", { name: /Inside/ });
 		await userEvent.click(inside);
 		await waitFor(() => expect(inside.getAttribute("aria-pressed")).toBe("true"));
 
-		await userEvent.click(screen.getByRole("button", { name: "SAVED ACTORS ON" }));
+		await userEvent.click(screen.getByRole("button", { name: "Saved actors on" }));
 		expect(
 			screen.queryByRole("complementary", { name: "Captured map saved actor explorer" })
 		).toBeNull();

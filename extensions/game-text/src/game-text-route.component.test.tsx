@@ -17,7 +17,7 @@ import {
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { type GameTextClientApi } from "./game-text-client.js";
+import { GameTextClientError, type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
 
 const corpus: TextCorpus = {
@@ -198,14 +198,14 @@ function renderRoute(client = makeClient()) {
 describe("GameTextRoute interactions", () => {
 	it("uses the Workbench project selection rather than exposing a second chooser", async () => {
 		renderRoute();
-		await screen.findByRole("region", { name: "Text units" });
+		await screen.findByRole("region", { name: "Results" });
 		expect(screen.queryByRole("button", { name: "Choose project" })).toBeNull();
 	});
 
 	it("searches results and moves focus through user-visible controls", async () => {
 		const user = userEvent.setup();
 		renderRoute();
-		const results = await screen.findByRole("region", { name: "Text units" });
+		const results = await screen.findByRole("region", { name: "Results" });
 		const focus = screen.getByRole("complementary", { name: "Text focus" });
 
 		expect(screen.getByRole("complementary", { name: "Text focus" }).textContent).toContain(
@@ -213,12 +213,12 @@ describe("GameTextRoute interactions", () => {
 		);
 		expect(
 			within(results).getByRole("button", {
-				name: "Locate the asset using Continue in Unreal"
+				name: "Open package for Continue"
 			})
 		).toBeDefined();
 		await user.click(
 			within(results).getByRole("button", {
-				name: "Locate the asset using Quit game? in Unreal"
+				name: "Open package for Quit game?"
 			})
 		);
 		expect(focus.textContent).toContain("Quit game?");
@@ -227,15 +227,15 @@ describe("GameTextRoute interactions", () => {
 
 		await user.type(screen.getByRole("searchbox", { name: "Search game text" }), "Continue");
 		await waitFor(() => {
-			const currentResults = screen.getByRole("region", { name: "Text units" });
+			const currentResults = screen.getByRole("region", { name: "Results" });
 			expect(
 				within(currentResults).queryByRole("button", {
-					name: /Locate the asset using Quit game\?/
+					name: /Open package for Quit game\?/
 				})
 			).toBeNull();
 			expect(
 				within(currentResults).getByRole("button", {
-					name: /Locate the asset using Continue/
+					name: /Open package for Continue/
 				})
 			).toBeDefined();
 		});
@@ -263,10 +263,10 @@ describe("GameTextRoute interactions", () => {
 	it("packs identity and useful copy actions into each result", async () => {
 		const user = userEvent.setup();
 		renderRoute();
-		const results = await screen.findByRole("region", { name: "Text units" });
+		const results = await screen.findByRole("region", { name: "Results" });
 
-		expect(within(results).getByText(/Unreal identity/)).toBeDefined();
-		expect(within(results).getByText(/Primary source/)).toBeDefined();
+		expect(screen.getByText("Unreal identity")).toBeDefined();
+		expect(within(results).getByText(/Shared String Table entry/)).toBeDefined();
 		expect(within(results).getByText("UI · Continue")).toBeDefined();
 
 		const copyText = within(results).getByRole("button", {
@@ -287,56 +287,54 @@ describe("GameTextRoute interactions", () => {
 	it("locates a single-use text asset through the live editor capability", async () => {
 		const user = userEvent.setup();
 		renderRoute();
-		const results = await screen.findByRole("region", { name: "Text units" });
+		const results = await screen.findByRole("region", { name: "Results" });
 		const locate = within(results).getByRole("button", {
-			name: "Locate the asset using Continue in Unreal"
+			name: "Open package for Continue"
 		});
 
 		await user.click(locate);
 
-		await waitFor(() => expect(locate.textContent).toBe("Located"));
-		expect(
-			within(screen.getByRole("complementary", { name: "Text focus" })).getByRole("button", {
-				name: "Located"
-			})
-		).toBeDefined();
+		await waitFor(() => expect(locate.textContent).toBe("Opened"));
+		expect(screen.getByRole("complementary", { name: "Text focus" }).textContent).toContain(
+			"Opened"
+		);
 	});
 
 	it("switches between editable and read-only authority filters", async () => {
 		const user = userEvent.setup();
 		renderRoute();
-		await screen.findByRole("region", { name: "Text units" });
-		const readOnly = screen.getByRole("button", { name: "Evidence only" });
+		await screen.findByRole("region", { name: "Results" });
+		const readOnly = screen.getByRole("button", { name: "Read only" });
 
 		await user.click(readOnly);
 		expect(readOnly.getAttribute("aria-pressed")).toBe("true");
 		await waitFor(() => {
-			const currentResults = screen.getByRole("region", { name: "Text units" });
+			const currentResults = screen.getByRole("region", { name: "Results" });
 			expect(
 				within(currentResults).getByRole("button", {
-					name: /Locate the asset using Quit game\?/
+					name: /Open package for Quit game\?/
 				})
 			).toBeDefined();
 			expect(
 				within(currentResults).queryByRole("button", {
-					name: /Locate the asset using Continue/
+					name: /Open package for Continue/
 				})
 			).toBeNull();
 		});
 
-		const editable = screen.getByRole("button", { name: "Supported sources" });
+		const editable = screen.getByRole("button", { name: "Source editable" });
 		await user.click(editable);
 		expect(editable.getAttribute("aria-pressed")).toBe("true");
 		await waitFor(() => {
-			const currentResults = screen.getByRole("region", { name: "Text units" });
+			const currentResults = screen.getByRole("region", { name: "Results" });
 			expect(
 				within(currentResults).getByRole("button", {
-					name: /Locate the asset using Continue/
+					name: /Open package for Continue/
 				})
 			).toBeDefined();
 			expect(
 				within(currentResults).queryByRole("button", {
-					name: /Locate the asset using Quit game\?/
+					name: /Open package for Quit game\?/
 				})
 			).toBeNull();
 		});
@@ -404,6 +402,8 @@ describe("GameTextRoute interactions", () => {
 		});
 		let previewedMaximum = 0;
 		let savedMaximum = 0;
+		let qualitySearchAttempts = 0;
+		let qualityFocusAttempts = 0;
 		const budgetFinding = {
 			actual: "58 characters",
 			expectation: "Maximum 32 characters",
@@ -457,8 +457,18 @@ describe("GameTextRoute interactions", () => {
 					summary: { ...qualitySummary, characterBudgetCount: 0, findingCount: 1 }
 				});
 			},
-			qualitySearch: (request) =>
-				Effect.succeed({
+			qualitySearch: (request) => {
+				qualitySearchAttempts += 1;
+				if (qualitySearchAttempts === 1) {
+					return Effect.fail(
+						new GameTextClientError({
+							cause: "quality search unavailable",
+							operation: "qualitySearch",
+							recovery: "Retry the findings query."
+						})
+					);
+				}
+				return Effect.succeed({
 					page: {
 						findings:
 							request.filter === "character_budget"
@@ -469,9 +479,20 @@ describe("GameTextRoute interactions", () => {
 						total: request.filter === "all" ? 2 : 1
 					},
 					status: "ready" as const
-				}),
-			qualityFocus: (request) =>
-				Effect.succeed({
+				});
+			},
+			qualityFocus: (request) => {
+				qualityFocusAttempts += 1;
+				if (qualityFocusAttempts === 1) {
+					return Effect.fail(
+						new GameTextClientError({
+							cause: "finding detail unavailable",
+							operation: "qualityFocus",
+							recovery: "Retry the selected finding."
+						})
+					);
+				}
+				return Effect.succeed({
 					focus:
 						request.id === budgetFinding.id
 							? {
@@ -524,41 +545,52 @@ describe("GameTextRoute interactions", () => {
 									totalOccurrences: 1
 								},
 					status: "found" as const
-				})
+				});
+			}
 		});
 		renderRoute(qualityClient);
-		await screen.findByRole("region", { name: "Text units" });
+		await screen.findByRole("region", { name: "Results" });
 
-		expect(screen.queryByRole("button", { name: "Load quality rules" })).toBeNull();
-		await user.click(screen.getByRole("tab", { name: "Quality review" }));
+		expect(screen.queryByRole("button", { name: "Load rules" })).toBeNull();
+		await user.click(screen.getByRole("tab", { name: "Quality" }));
 		expect(screen.getByRole("region", { name: "Quality rules setup" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "Load quality rules" }));
-		const findings = await screen.findByRole("region", { name: "Quality findings" });
+		await user.click(screen.getByRole("button", { name: "Load rules" }));
+		expect((await screen.findByRole("alert")).textContent).toContain("Couldn’t load findings.");
+		expect(qualitySearchAttempts).toBe(1);
+		await user.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(qualitySearchAttempts).toBe(2));
+		const findings = await screen.findByRole("region", { name: "Findings" });
 		expect(within(findings).getByText("58 characters")).toBeDefined();
-		expect(screen.getByText("PARTIAL COVERAGE")).toBeDefined();
+		expect(await screen.findByText("Couldn’t load finding details.")).toBeDefined();
+		expect(qualityFocusAttempts).toBe(1);
+		await user.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(qualityFocusAttempts).toBe(2));
+		expect(qualitySearchAttempts).toBe(2);
+		await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+		expect(screen.getByText(/part of the saved text was checked/i)).toBeDefined();
 		expect(screen.getByText(/2 unsupported properties/)).toBeDefined();
-		expect(screen.getByRole("button", { name: "Replace quality rules" })).toBeDefined();
-		expect(
-			screen.getByRole("complementary", { name: "Quality finding detail" }).textContent
-		).toContain("Shorten the prompt while keeping the action clear.");
+		expect(screen.getByRole("button", { name: "Load rules" })).toBeDefined();
+		expect(screen.getByRole("complementary", { name: "Finding detail" }).textContent).toContain(
+			"Shorten the prompt while keeping the action clear."
+		);
 
 		await user.click(screen.getByRole("button", { name: /Terminology/ }));
 		await waitFor(() => expect(within(findings).getByText("“old” at 10–13")).toBeDefined());
 
-		await user.click(screen.getByRole("tab", { name: /Edit rules/ }));
+		await user.click(screen.getByRole("tab", { name: /^Rules/ }));
 		expect(screen.getByText("String Table key starts with Prompt")).toBeDefined();
 		const maximum = screen.getByRole("spinbutton", {
 			name: "Maximum characters for menu.prompt.characters"
 		});
 		await user.clear(maximum);
 		await user.type(maximum, "64");
-		await user.click(screen.getByRole("button", { name: "Preview changes" }));
+		await user.click(screen.getByRole("button", { name: "Preview" }));
 		await waitFor(() => expect(previewedMaximum).toBe(64));
 		expect(screen.getByText(/Changes are not saved yet/)).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "Save rules" }));
+		await user.click(screen.getByRole("button", { name: "Save" }));
 		await waitFor(() => expect(savedMaximum).toBe(64));
 		expect(screen.getByText("Rule file saved.")).toBeDefined();
-		await user.click(screen.getByRole("tab", { name: "Text browser" }));
-		expect(screen.queryByRole("button", { name: "Replace quality rules" })).toBeNull();
+		await user.click(screen.getByRole("tab", { name: "Text" }));
+		expect(screen.queryByRole("button", { name: "Load rules" })).toBeNull();
 	});
 });

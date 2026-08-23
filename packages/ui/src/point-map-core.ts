@@ -1,4 +1,4 @@
-const classColors = ["#b9f227", "#61d5df", "#f4a261", "#e76f8a", "#9a8cff", "#e9c46a"];
+const classColors = ["#8b5cf6", "#02b8cc", "#f2994a", "#4cb782", "#eb5757", "#6366f1"];
 const defaultPaddingRatio = 0.08;
 const viewportExpandSlack = 0.04;
 const viewportShrinkFraction = 0.72;
@@ -83,7 +83,7 @@ export function pointMapClampViewportSize(
 export function pointMapColorForClass(className: string): string {
 	let hash = 0;
 	for (const character of className) hash = (hash * 31 + character.charCodeAt(0)) | 0;
-	return classColors[Math.abs(hash) % classColors.length] ?? "#b9f227";
+	return classColors[Math.abs(hash) % classColors.length] ?? "#8b5cf6";
 }
 
 /**

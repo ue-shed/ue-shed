@@ -13,6 +13,7 @@ import {
 	type PointMapViewState
 } from "@ue-shed/ui/point-map";
 import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { Show, createMemo, createSignal, onMount } from "solid-js";
 import type { MapReviewClientApi } from "./map-review-client.js";
@@ -242,11 +243,10 @@ export function SavedWorldScout(props: {
 		<section aria-label="Saved top-down actor map" {...stylex.props(styles.scout)}>
 			<header {...stylex.props(styles.header)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>SAVED MAP</p>
 					<h2 {...stylex.props(styles.title)}>Actors from project files</h2>
 					<Show when={projectLabel()}>
 						{(label) => (
-							<p {...stylex.props(styles.projectLabel)}>PROJECT · {label()}</p>
+							<p {...stylex.props(styles.projectLabel)}>Project · {label()}</p>
 						)}
 					</Show>
 				</div>
@@ -257,12 +257,12 @@ export function SavedWorldScout(props: {
 						disabled={props.client.chooseProjectAndMaps === undefined}
 						{...stylex.props(styles.chooseButton)}
 					>
-						CHOOSE PROJECT…
+						Choose project
 					</button>
 					<div {...stylex.props(styles.source)}>
 						<span {...stylex.props(styles.sourceDot)} />
-						<strong>PROJECT FILES</strong>
-						<code>{world()?.authority.mapPackage ?? "NOT LOADED"}</code>
+						<strong>Project files</strong>
+						<code>{world()?.authority.mapPackage ?? "not loaded"}</code>
 					</div>
 				</div>
 			</header>
@@ -271,14 +271,24 @@ export function SavedWorldScout(props: {
 				when={world()}
 				fallback={
 					<div {...stylex.props(styles.message)}>
-						<div {...stylex.props(styles.reticle)}>◇</div>
 						<h3>
-							{error() === undefined ? "Reading saved map…" : "Saved map unavailable"}
+							{error() === undefined
+								? "Reading saved map…"
+								: "Couldn't load saved map"}
 						</h3>
 						<p>
-							{error() ??
-								"The selected level or its World Partition external-actor packages are being read from disk."}
+							{error() === undefined
+								? "The selected level and its external actor packages are being read from disk."
+								: "Pick a different project or map, then retry."}
 						</p>
+						<Show when={error()}>
+							{(message) => (
+								<details {...stylex.props(styles.technical)}>
+									<summary>Technical details</summary>
+									<code>{message()}</code>
+								</details>
+							)}
+						</Show>
 						<div {...stylex.props(styles.fallbackActions)}>
 							<Show when={error()}>
 								<button
@@ -286,7 +296,7 @@ export function SavedWorldScout(props: {
 									onClick={loadMaps}
 									{...stylex.props(styles.retry)}
 								>
-									RETRY SAVED MAP
+									Retry
 								</button>
 							</Show>
 							<Show when={props.client.chooseProjectAndMaps !== undefined}>
@@ -295,7 +305,7 @@ export function SavedWorldScout(props: {
 									onClick={chooseProject}
 									{...stylex.props(styles.retry)}
 								>
-									CHOOSE PROJECT…
+									Choose project
 								</button>
 							</Show>
 						</div>
@@ -306,16 +316,18 @@ export function SavedWorldScout(props: {
 					<>
 						<div {...stylex.props(styles.tools)}>
 							<SavedMapPicker
+								label="Map"
 								maps={maps()}
 								mapPath={selectedMapPath() ?? ""}
 								onMapPathChange={selectMap}
 							/>
 							<div {...stylex.props(styles.summary)}>
-								<strong>{visibleCount()}</strong>
-								<span>VISIBLE / {store.count} RESOLVED</span>
+								<strong>
+									{visibleCount()} of {store.count.toLocaleString()} actors
+								</strong>
 								<small>
-									{current().summary.scannedPackages} PACKAGES ·{" "}
-									{current().actors.length - store.count} UNRESOLVED
+									{current().summary.scannedPackages} packages ·{" "}
+									{current().actors.length - store.count} unresolved
 								</small>
 							</div>
 							<div
@@ -324,7 +336,7 @@ export function SavedWorldScout(props: {
 									current().completeness === "partial" && styles.partial
 								)}
 							>
-								{current().completeness === "complete" ? "COMPLETE" : "PARTIAL"}
+								{current().completeness === "complete" ? "Complete" : "Partial"}
 							</div>
 						</div>
 
@@ -335,7 +347,7 @@ export function SavedWorldScout(props: {
 								filters={actorFilters()}
 								itemListLabel="Saved actors"
 								items={actorItems()}
-								label="SAVED ACTORS"
+								label={`Actors · ${store.count.toLocaleString()}`}
 								onClassPathsChange={(classPaths) =>
 									setActorFilters((current) => ({ ...current, classPaths }))
 								}
@@ -352,12 +364,11 @@ export function SavedWorldScout(props: {
 								queryAriaLabel="Find saved actor"
 								selectedClassPath={undefined}
 								selectedKey={selected()?.instanceKey}
-								title="Select an actor to inspect it on the map"
 							/>
 							<div {...stylex.props(styles.mapFrame)}>
 								<div {...stylex.props(styles.north)}>N ↑</div>
 								<label {...stylex.props(styles.zoomControl)}>
-									<span>ZOOM</span>
+									<span>Zoom</span>
 									<input
 										type="range"
 										aria-label="Map zoom"
@@ -378,7 +389,7 @@ export function SavedWorldScout(props: {
 									onClick={() => pointMap?.resetView()}
 									{...stylex.props(styles.reset)}
 								>
-									RESET VIEW
+									Reset view
 								</button>
 								<PointMapCanvas
 									ariaDescribedBy="saved-world-scout-live"
@@ -401,8 +412,8 @@ export function SavedWorldScout(props: {
 								>
 									{liveRegion()}
 								</div>
-								<div {...stylex.props(styles.axisX)}>WORLD X →</div>
-								<div {...stylex.props(styles.axisY)}>WORLD Y →</div>
+								<div {...stylex.props(styles.axisX)}>World X →</div>
+								<div {...stylex.props(styles.axisY)}>World Y →</div>
 							</div>
 
 							<aside {...stylex.props(styles.inspector)}>
@@ -410,17 +421,15 @@ export function SavedWorldScout(props: {
 									when={selected()}
 									fallback={
 										<div {...stylex.props(styles.noSelection)}>
-											<span>SELECT A SAVED POINT</span>
-											<p>
-												Saved packages provide position and identity, not a
-												live editor handle.
-											</p>
+											Select an actor to see its details.
 										</div>
 									}
 								>
 									{(actor) => (
 										<div {...stylex.props(styles.actorDetails)}>
-											<p>SAVED ACTOR</p>
+											<p {...stylex.props(styles.inspectorLabel)}>
+												Saved actor
+											</p>
 											<h3 {...stylex.props(styles.actorName)}>
 												{actor().displayName}
 											</h3>
@@ -441,13 +450,13 @@ export function SavedWorldScout(props: {
 											</dl>
 											<dl {...stylex.props(styles.identity)}>
 												<div>
-													<dt>PACKAGE</dt>
+													<dt>Package</dt>
 													<dd>
 														<code>{actor().packageName ?? "—"}</code>
 													</dd>
 												</div>
 												<div>
-													<dt>ACTOR PATH</dt>
+													<dt>Actor path</dt>
 													<dd>
 														<code>{actor().path}</code>
 													</dd>
@@ -458,11 +467,11 @@ export function SavedWorldScout(props: {
 												onClick={clearSelection}
 												{...stylex.props(styles.clearSelection)}
 											>
-												CLEAR SELECTION
+												Clear selection
 											</button>
 											<p {...stylex.props(styles.offlineCopy)}>
 												Read from saved project files. Open Unreal and
-												switch to Live World to focus or author review
+												switch to Live session to focus actors or author
 												views.
 											</p>
 										</div>
@@ -478,22 +487,30 @@ export function SavedWorldScout(props: {
 }
 
 const styles = stylex.create({
-	scout: { minWidth: 0, border: "1px solid #303a3b", backgroundColor: "#101516", marginTop: 14 },
+	scout: {
+		minWidth: 0,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		marginTop: 14
+	},
 	header: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 18,
 		alignItems: "flex-start",
 		padding: "18px 20px",
-		borderBottom: "1px solid #2c3637"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	eyebrow: { margin: 0, color: "#61d5df", fontSize: 8, fontWeight: 800, letterSpacing: ".16em" },
 	projectLabel: {
 		margin: "6px 0 0",
-		color: "#75e0e8",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".12em"
+		color: "#02b8cc",
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em"
 	},
 	headerActions: {
 		display: "flex",
@@ -502,40 +519,42 @@ const styles = stylex.create({
 		gap: 8
 	},
 	chooseButton: {
-		border: "1px solid #61d5df",
-		backgroundColor: { default: "transparent", ":hover": "#1b3032" },
-		color: { default: "#b9eef2", ":disabled": "#4a5658" },
-		borderColor: { default: "#61d5df", ":disabled": "#33403f" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
+		borderColor: { default: tokens.colorBorder, ":disabled": tokens.colorBorder },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		padding: "7px 10px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em"
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em"
 	},
 	fallbackActions: { display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" },
 	title: {
 		margin: "5px 0 0",
-		color: "#eef7f8",
-		fontFamily: "Georgia, serif",
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
 		fontSize: 23,
-		fontWeight: 400
+		fontWeight: 590
 	},
 	source: {
 		display: "grid",
 		gridTemplateColumns: "auto auto",
 		alignItems: "center",
 		columnGap: 7,
-		color: "#8d9a9c",
-		fontSize: 8,
-		letterSpacing: ".11em",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".04em",
 		textAlign: "right"
 	},
 	sourceDot: {
 		width: 7,
 		height: 7,
 		borderRadius: "50%",
-		backgroundColor: "#61d5df",
-		boxShadow: "0 0 12px #61d5df"
+		backgroundColor: "#02b8cc",
+		boxShadow: "0 0 8px rgba(2, 184, 204, 0.35)"
 	},
 	message: {
 		minHeight: 300,
@@ -545,18 +564,32 @@ const styles = stylex.create({
 		justifyContent: "center",
 		gap: 10,
 		padding: 24,
-		color: "#91a0a2",
+		color: tokens.colorTextMuted,
 		textAlign: "center"
 	},
-	reticle: { color: "#61d5df", fontSize: 36 },
+	technical: {
+		maxWidth: 560,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		textAlign: "left"
+	},
+	inspectorLabel: {
+		margin: 0,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 600
+	},
 	retry: {
-		border: "1px solid #61d5df",
-		backgroundColor: { default: "transparent", ":hover": "#1b3032" },
-		color: "#b9eef2",
-		padding: "10px 12px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	tools: {
@@ -565,26 +598,30 @@ const styles = stylex.create({
 		gap: 10,
 		alignItems: "center",
 		padding: "12px 14px",
-		borderBottom: "1px solid #293233"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	summary: {
 		display: "grid",
 		gap: 1,
 		minWidth: 145,
-		color: "#b8c5c6",
-		fontSize: 7,
-		letterSpacing: ".09em",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".04em",
 		textAlign: "right"
 	},
 	completeness: {
-		border: "1px solid #3f6b70",
-		color: "#75e0e8",
+		borderColor: "#02b8cc",
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: "#02b8cc",
 		padding: "6px 7px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em"
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em"
 	},
-	partial: { borderColor: "#e6a36e", color: "#f2bc8e" },
+	partial: { borderColor: tokens.colorWarning, color: tokens.colorWarning },
 	workspace: {
 		display: "grid",
 		gridTemplateColumns: {
@@ -598,7 +635,7 @@ const styles = stylex.create({
 		aspectRatio: "2 / 1",
 		width: "100%",
 		overflow: "hidden",
-		backgroundColor: "#0c1011",
+		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
 			"linear-gradient(#93a9aa10 1px,transparent 1px),linear-gradient(90deg,#93a9aa10 1px,transparent 1px),linear-gradient(#93a9aa07 1px,transparent 1px),linear-gradient(90deg,#93a9aa07 1px,transparent 1px)",
 		backgroundSize: "80px 80px,80px 80px,16px 16px,16px 16px"
@@ -610,7 +647,7 @@ const styles = stylex.create({
 		height: "calc(100% - 56px)",
 		cursor: "crosshair",
 		touchAction: "none",
-		outline: { ":focus": "1px solid #61d5df" }
+		outline: { ":focus": "1px solid #02b8cc" }
 	},
 	reset: {
 		position: "absolute",
@@ -618,13 +655,18 @@ const styles = stylex.create({
 		left: "50%",
 		transform: "translateX(-50%)",
 		zIndex: 2,
-		border: "1px solid #3b494a",
-		backgroundColor: { default: "#101617d9", ":hover": "#1d2829" },
-		color: "#a7b5b6",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: {
+			default: "rgba(15, 16, 17, 0.85)",
+			":hover": "rgba(255, 255, 255, 0.06)"
+		},
+		color: tokens.colorTextMuted,
 		padding: "4px 8px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		fontSize: 11,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
 	liveRegion: {
@@ -639,16 +681,16 @@ const styles = stylex.create({
 		position: "absolute",
 		top: 12,
 		left: 14,
-		color: "#61d5df",
-		fontSize: 9,
-		letterSpacing: ".12em"
+		color: "#02b8cc",
+		fontSize: 11,
+		letterSpacing: ".04em"
 	},
 	extentLabel: {
 		position: "absolute",
 		top: 34,
 		right: 14,
-		color: "#667476",
-		fontSize: 8,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		zIndex: 2
 	},
 	zoomControl: {
@@ -660,70 +702,91 @@ const styles = stylex.create({
 		gridTemplateColumns: "auto minmax(88px, 120px) auto",
 		gap: "4px 8px",
 		alignItems: "center",
-		color: "#879294",
-		fontSize: 7,
-		letterSpacing: ".1em",
-		backgroundColor: "#101617d9",
-		border: "1px solid #3b494a",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: ".04em",
+		backgroundColor: "rgba(15, 16, 17, 0.85)",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: "4px 8px"
 	},
 	zoomSlider: {
 		width: "100%",
-		accentColor: "#61d5df",
+		accentColor: "#02b8cc",
 		cursor: "ew-resize"
 	},
 	clearSelection: {
 		marginTop: 8,
-		border: "1px solid #3b494a",
-		backgroundColor: { default: "transparent", ":hover": "#1d2829" },
-		color: "#a7b5b6",
-		padding: "10px 12px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
+		padding: "5px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		letterSpacing: ".04em",
 		cursor: "pointer"
 	},
-	axisX: { position: "absolute", right: 12, bottom: 10, color: "#59686a", fontSize: 7 },
+	axisX: {
+		position: "absolute",
+		right: 12,
+		bottom: 10,
+		color: tokens.colorTextFaint,
+		fontSize: 11
+	},
 	axisY: {
 		position: "absolute",
 		left: 8,
 		bottom: 46,
-		color: "#59686a",
-		fontSize: 7,
+		color: tokens.colorTextFaint,
+		fontSize: 11,
 		transform: "rotate(-90deg)",
 		transformOrigin: "left bottom"
 	},
 	inspector: {
-		borderLeft: { default: "1px solid #2d3738", "@media (max-width: 900px)": 0 },
-		borderTop: { default: 0, "@media (max-width: 900px)": "1px solid #2d3738" },
-		backgroundColor: "#111718",
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: { default: 1, "@media (max-width: 900px)": 0 },
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: { default: 0, "@media (max-width: 900px)": 1 },
+		backgroundColor: tokens.colorSurface,
 		padding: 18,
 		minWidth: 0
 	},
-	noSelection: { marginTop: 80, color: "#7f8c8d", textAlign: "center", fontSize: 9 },
+	noSelection: {
+		marginTop: 80,
+		color: tokens.colorTextSubtle,
+		textAlign: "center",
+		fontSize: 12
+	},
 	actorDetails: { display: "flex", flexDirection: "column", gap: 8 },
 	actorName: {
 		margin: 0,
-		color: "#edf6f7",
-		fontFamily: "Georgia, serif",
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
 		fontSize: 24,
-		fontWeight: 400
+		fontWeight: 590
 	},
 	coordinates: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", marginTop: 10 },
 	identity: {
 		display: "grid",
 		gap: 8,
 		marginTop: 10,
-		color: "#a2b0b1",
-		fontSize: 8,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
 		overflowWrap: "anywhere"
 	},
 	offlineCopy: {
 		marginTop: 12,
-		borderTop: "1px solid #354143",
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		paddingTop: 12,
-		color: "#75e0e8",
-		fontSize: 8,
+		color: "#02b8cc",
+		fontSize: 11,
 		letterSpacing: ".05em",
 		lineHeight: 1.5
 	}

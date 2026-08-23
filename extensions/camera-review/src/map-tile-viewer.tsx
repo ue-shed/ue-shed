@@ -5,6 +5,7 @@ import {
 	pointMapResizeCanvasForDisplay
 } from "@ue-shed/ui/point-map-core";
 import { createEffectAction } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -375,20 +376,21 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 	return (
 		<section {...stylex.props(styles.frame)} aria-label="Map tile pyramid viewer">
 			<header {...stylex.props(styles.header)}>
-				<div>
-					<p {...stylex.props(styles.eyebrow)}>
-						CAPTURE PROOF / EXACT{" "}
-						{props.manifest.state === "complete" ? "PUBLISHED" : "ATTEMPT"} PNG
-					</p>
+				<div {...stylex.props(styles.headerCopy)}>
 					<h2 {...stylex.props(styles.title)}>{props.manifest.planId}</h2>
+					<span {...stylex.props(styles.state)}>
+						{props.manifest.state === "complete"
+							? "Published capture"
+							: "Unpublished attempt"}
+					</span>
 				</div>
 				<div {...stylex.props(styles.readout)}>
-					<span>Z{String(selection().level).padStart(2, "0")}</span>
-					<span>{selection().visible.length} VISIBLE</span>
-					<span>{loadingCount()} QUEUED</span>
-					<span>{failed().size} ERRORS</span>
+					<span>Z{selection().level}</span>
+					<span>{selection().visible.length} visible</span>
+					<span>{loadingCount()} loading</span>
+					<span>{failed().size} failed</span>
 					<Show when={(props.actorMarkers?.length ?? 0) > 0}>
-						<span>{props.actorMarkers!.length.toLocaleString()} ACTORS</span>
+						<span>{props.actorMarkers!.length.toLocaleString()} actors</span>
 					</Show>
 				</div>
 			</header>
@@ -472,17 +474,17 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				<Show when={renderTiles().length === 0}>
 					<div {...stylex.props(styles.loading)}>
 						{captureCoverageVisible()
-							? "SEEKING COARSE COVERAGE…"
-							: "OUTSIDE CAPTURE COVERAGE"}
+							? "Loading coarse coverage…"
+							: "Outside capture area"}
 					</div>
 				</Show>
-				<div {...stylex.props(styles.axisNorth)}>+X / NORTH</div>
-				<div {...stylex.props(styles.axisEast)}>+Y / EAST</div>
+				<div {...stylex.props(styles.axisNorth)}>+X north</div>
+				<div {...stylex.props(styles.axisEast)}>+Y east</div>
 			</div>
 			<footer {...stylex.props(styles.footer)}>
-				<span>WUP {grid().levels[selection().level]!.unitsPerPixel.toPrecision(5)}</span>
-				<span>CACHE ≤ {selection().recommendedCacheEntries}</span>
-				<span>DRAG TO PAN · WHEEL TO ZOOM</span>
+				<span>{grid().levels[selection().level]!.unitsPerPixel.toPrecision(5)} UU/PX</span>
+				<span>Cache ≤ {selection().recommendedCacheEntries}</span>
+				<span>Drag to pan · scroll to zoom</span>
 			</footer>
 		</section>
 	);
@@ -493,10 +495,12 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateRows: "auto minmax(320px, 1fr) auto",
 		minHeight: 520,
-		backgroundColor: "#0a0f0f",
-		border: "1px solid #324143",
-		color: "#d5e1dd",
-		fontFamily: '"IBM Plex Mono", "Cascadia Code", monospace',
+		backgroundColor: tokens.colorSurface,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		color: tokens.colorText,
 		overflow: "hidden"
 	},
 	header: {
@@ -504,32 +508,38 @@ const styles = stylex.create({
 		alignItems: "end",
 		justifyContent: "space-between",
 		gap: 24,
-		padding: "14px 18px 12px",
-		borderBottom: "1px solid #324143",
-		backgroundColor: "#101819"
+		padding: `${tokens.space3}px ${tokens.space4}px`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurface
 	},
-	eyebrow: { margin: 0, color: "#e0a94f", fontSize: 8, letterSpacing: ".18em" },
+	headerCopy: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0 },
 	title: {
-		margin: "4px 0 0",
-		fontFamily: '"Bodoni Moda", Georgia, serif',
-		fontSize: 22,
-		fontWeight: 400,
-		letterSpacing: ".02em"
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 17,
+		fontWeight: 590,
+		letterSpacing: "-0.01em"
+	},
+	state: {
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	readout: {
 		display: "flex",
 		flexWrap: "wrap",
 		justifyContent: "end",
 		gap: "6px 14px",
-		color: "#72d2ca",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontVariantNumeric: "tabular-nums"
 	},
 	surface: {
 		position: "relative",
 		overflow: "hidden",
 		cursor: "grab",
-		backgroundColor: "#111718",
+		backgroundColor: tokens.colorSurfaceInset,
 		userSelect: "none",
 		touchAction: "none"
 	},
@@ -537,9 +547,9 @@ const styles = stylex.create({
 		position: "absolute",
 		inset: 0,
 		backgroundImage:
-			"linear-gradient(#2c3b3d55 1px, transparent 1px), linear-gradient(90deg, #2c3b3d55 1px, transparent 1px)",
+			"linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px)",
 		backgroundSize: "32px 32px",
-		boxShadow: "inset 0 0 120px #000b"
+		boxShadow: "inset 0 0 120px rgba(8, 9, 10, 0.7)"
 	},
 	tile: {
 		position: "absolute",
@@ -563,23 +573,39 @@ const styles = stylex.create({
 		top: "50%",
 		transform: "translate(-50%, -50%)",
 		padding: "10px 14px",
-		border: "1px solid #607172",
-		backgroundColor: "#0a0f0fe6",
-		color: "#e0a94f",
-		fontSize: 9,
-		letterSpacing: ".12em"
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(8, 9, 10, 0.9)",
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
-	axisNorth: { position: "absolute", top: 12, left: 14, color: "#72d2ca", fontSize: 8 },
-	axisEast: { position: "absolute", right: 14, bottom: 12, color: "#72d2ca", fontSize: 8 },
+	axisNorth: {
+		position: "absolute",
+		top: 12,
+		left: 14,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
+	axisEast: {
+		position: "absolute",
+		right: 14,
+		bottom: 12,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
 	footer: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 16,
-		padding: "8px 18px",
-		borderTop: "1px solid #324143",
-		backgroundColor: "#101819",
-		color: "#7f9290",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		padding: `${tokens.space2}px ${tokens.space4}px`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontVariantNumeric: "tabular-nums"
 	}
 });

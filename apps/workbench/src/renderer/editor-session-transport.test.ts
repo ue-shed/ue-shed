@@ -22,7 +22,7 @@ describe("editor session transport", () => {
 
 	it("offers pause and stop while PIE is running", () => {
 		const state = { mode: "play", sessionId: "session-1", status: "running" } as const;
-		expect(editorSessionTransportLabel(state)).toBe("PIE RUNNING");
+		expect(editorSessionTransportLabel(state)).toBe("Play · running");
 		expect(editorSessionTransportActions(state).map(({ command }) => command)).toEqual([
 			"pause",
 			"stop"
@@ -31,7 +31,7 @@ describe("editor session transport", () => {
 
 	it("offers resume and stop while a session is paused", () => {
 		const state = { mode: "simulate", sessionId: "session-2", status: "paused" } as const;
-		expect(editorSessionTransportLabel(state)).toBe("SIE PAUSED");
+		expect(editorSessionTransportLabel(state)).toBe("Simulate · paused");
 		expect(editorSessionTransportActions(state).map(({ command }) => command)).toEqual([
 			"resume",
 			"stop"

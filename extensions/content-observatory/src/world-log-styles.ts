@@ -6,117 +6,79 @@ export const styles = stylex.create({
 		minHeight: "calc(100vh - 52px)",
 		boxSizing: "border-box",
 		padding: "14px 22px 24px",
-		backgroundColor: "#100f0e",
+		backgroundColor: tokens.colorCanvas,
 		backgroundImage: "none",
 		color: tokens.colorText,
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif'
+		fontFamily: tokens.fontBody
 	},
 	header: {
 		display: "flex",
-		alignItems: "center",
+		alignItems: "flex-start",
 		justifyContent: "space-between",
-		paddingBottom: 8,
-		borderBottom: "1px solid #2e3432"
+		gap: 16,
+		paddingBottom: 16,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		marginBottom: 24
 	},
-	breadcrumb: {
-		color: "#9aa7a7",
-		fontSize: 9,
-		letterSpacing: ".04em",
-		textTransform: "uppercase"
+	title: {
+		margin: 0,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
 	},
-	title: { margin: "2px 0 0", fontSize: 19, fontWeight: 650, letterSpacing: 0 },
-	headerSubtitle: { margin: "2px 0 0", color: "#85908c", fontSize: 10 },
-	headerSignal: {
-		display: "flex",
-		alignItems: "center",
-		gap: 8,
-		color: "#d7b469",
-		fontSize: 9,
-		letterSpacing: ".06em"
+	intro: {
+		margin: "4px 0 0",
+		maxWidth: 560,
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5
 	},
-	sectionKicker: {
+	sectionLabel: {
 		display: "block",
-		color: "#d7b469",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".15em",
-		textTransform: "uppercase"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	queryPanel: {
 		display: "grid",
-		gridTemplateColumns: "minmax(280px, 1fr) auto minmax(430px, auto)",
+		gridTemplateColumns: "minmax(280px, 1fr) auto auto",
 		alignItems: "end",
-		gap: 10,
-		marginTop: 8,
-		padding: "8px 9px",
-		border: "1px solid #323936",
-		backgroundColor: "#151412"
+		gap: 12,
+		marginTop: 12,
+		padding: 12,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusPanel
 	},
-	queryLead: {
-		gridRow: "span 2",
-		display: "flex",
-		flexDirection: "column",
-		gap: 9,
-		paddingRight: 18,
-		borderRight: "1px solid #334044",
-		color: "#91a0a1",
-		fontSize: 12,
-		lineHeight: 1.55
-	},
-	mapInputLabel: {
-		display: "flex",
-		flexDirection: "column",
-		gap: 7,
-		color: "#aeb7b7",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".1em"
-	},
-	mapInput: {
-		width: "100%",
-		boxSizing: "border-box",
-		border: "1px solid #445155",
-		backgroundColor: "#0a0e0f",
-		color: "#e2e8e4",
-		padding: "10px 11px",
-		fontFamily: "monospace",
-		fontSize: 12,
-		outline: { default: "none", ":focus": "1px solid #e1b85e" }
-	},
-	mapChoices: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: -10 },
-	mapChoice: {
-		border: "1px solid #3c484c",
-		backgroundColor: { default: "transparent", ":hover": "#1b2426" },
-		color: "#9ba9ab",
-		padding: "5px 7px",
-		fontSize: 9,
-		letterSpacing: ".07em",
-		cursor: "pointer"
-	},
-	mapChoiceActive: { borderColor: "#e1b85e", color: "#f0d79c", backgroundColor: "#312819" },
 	historyModes: {
 		display: "flex",
 		alignItems: "center",
 		gap: 5,
 		marginTop: 0,
-		color: "#839092",
-		fontSize: 9,
-		letterSpacing: ".1em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	historyModeButton: {
-		border: "1px solid #39464a",
-		backgroundColor: { default: "transparent", ":hover": "#202a2d" },
-		color: "#9aa6a8",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "7px 8px",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	historyModeButtonActive: {
-		borderColor: "#73c7d0",
-		backgroundColor: "#153034",
-		color: "#b7edf0"
+		borderColor: tokens.colorTextSubtle,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	fastTargetPanel: {
 		gridColumn: "1 / -1",
@@ -124,21 +86,32 @@ export const styles = stylex.create({
 		gridTemplateColumns: "minmax(0, 1fr) auto",
 		gap: "8px 12px",
 		padding: "9px 10px",
-		border: "1px solid #405053",
-		backgroundColor: "#0d1516",
-		color: "#98a8a8",
-		fontSize: 10,
-		lineHeight: 1.45
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.45,
+		borderRadius: tokens.radiusControl
 	},
+	fastTargetIntro: { display: "grid", gap: 2 },
 	loadTargetsButton: {
 		alignSelf: "start",
-		border: "1px solid #73c7d0",
-		backgroundColor: { default: "transparent", ":hover": "#17383b", ":disabled": "#172224" },
-		color: { default: "#b7edf0", ":disabled": "#647678" },
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
+		opacity: { default: 1, ":disabled": 0.5 },
 		padding: "8px 10px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
 	fastTargetModes: {
@@ -146,44 +119,47 @@ export const styles = stylex.create({
 		alignItems: "center",
 		gap: 5,
 		gridColumn: "1 / -1",
-		color: "#839092",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	fastTargetMode: {
-		border: "1px solid #39464a",
-		backgroundColor: { default: "transparent", ":hover": "#202a2d" },
-		color: "#9aa6a8",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "6px 8px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	fastTargetModeActive: {
-		borderColor: "#73c7d0",
-		backgroundColor: "#153034",
-		color: "#b7edf0"
+		borderColor: tokens.colorTextSubtle,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	targetSearchLabel: {
 		display: "grid",
 		gridColumn: "1 / -1",
 		gap: 5,
-		color: "#849596",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	targetSearchInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #405053",
-		backgroundColor: "#0a1011",
-		color: "#e3edeb",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "8px 9px",
-		fontFamily: "monospace",
-		fontSize: 10,
-		outline: { default: "none", ":focus": "1px solid #73c7d0" }
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		borderRadius: tokens.radiusControl,
+		outline: { default: "none", ":focus": `1px solid ${tokens.colorTextSubtle}` }
 	},
 	targetList: {
 		gridColumn: "1 / -1",
@@ -192,21 +168,26 @@ export const styles = stylex.create({
 		listStyle: "none",
 		margin: 0,
 		padding: 0,
-		borderTop: "1px solid #2e3a3c"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	targetRow: {
 		width: "100%",
 		display: "grid",
 		gridTemplateColumns: "minmax(130px, .6fr) minmax(180px, 1fr) minmax(180px, 1.3fr)",
 		gap: 8,
-		border: 0,
-		borderBottom: "1px solid #273336",
-		backgroundColor: { default: "transparent", ":hover": "#1b282a" },
-		color: "#aebcbb",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		color: tokens.colorText,
 		padding: "8px 9px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontSize: 9,
+		fontSize: 12,
 		"@media (max-width: 720px)": { gridTemplateColumns: "1fr" }
 	},
 	targetClassRow: {
@@ -215,66 +196,70 @@ export const styles = stylex.create({
 		gridTemplateColumns: "minmax(0, 1fr) auto",
 		alignItems: "center",
 		gap: 8,
-		border: 0,
-		borderBottom: "1px solid #273336",
-		backgroundColor: { default: "transparent", ":hover": "#1b282a" },
-		color: "#aebcbb",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		color: tokens.colorText,
 		padding: "8px 9px",
 		textAlign: "left",
 		cursor: "pointer",
-		fontSize: 9
+		fontSize: 12
 	},
 	targetRowActive: {
-		backgroundColor: "#263337",
-		color: "#f0f5f1",
-		boxShadow: "inset 2px 0 #e1b85e"
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong,
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
 	targetRowSmall: {
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#718486",
-		fontFamily: "monospace"
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono
 	},
-	targetEmpty: { gridColumn: "1 / -1", margin: 0, color: "#7f9091" },
-	targetError: { gridColumn: "1 / -1", margin: 0, color: "#e9aa97" },
+	targetEmpty: { gridColumn: "1 / -1", margin: 0, color: tokens.colorTextMuted },
+	targetError: { gridColumn: "1 / -1", margin: 0, color: tokens.colorDanger },
 	rangeControls: {
 		display: "flex",
 		alignItems: "center",
-		justifyContent: "flex-end",
 		gap: 5,
-		color: "#839092",
-		fontSize: 9,
-		letterSpacing: ".1em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	rangeButton: {
-		border: "1px solid #39464a",
-		backgroundColor: { default: "transparent", ":hover": "#202a2d" },
-		color: "#9aa6a8",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "7px 8px",
-		fontSize: 9,
+		fontSize: 11,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
-	rangeButtonActive: { borderColor: "#73c7d0", backgroundColor: "#153034", color: "#b7edf0" },
-	runButton: {
-		marginLeft: 8,
-		border: "1px solid #e1b85e",
-		backgroundColor: { default: "#e1b85e", ":hover": "#f1d282", ":disabled": "#5d5131" },
-		color: "#16130c",
-		padding: "8px 11px",
-		fontWeight: 900,
-		fontSize: 9,
-		letterSpacing: ".12em",
-		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	rangeButtonActive: {
+		borderColor: tokens.colorTextSubtle,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	advancedButton: {
-		border: "1px solid #445356",
-		backgroundColor: { default: "transparent", ":hover": "#202b2d", ":disabled": "#171c1d" },
-		color: { default: "#a7b7b7", ":disabled": "#647072" },
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorTextMuted, ":disabled": tokens.colorTextFaint },
+		opacity: { default: 1, ":disabled": 0.5 },
 		padding: "8px 9px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".09em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
 	scanLimits: {
@@ -284,12 +269,13 @@ export const styles = stylex.create({
 		gap: 9,
 		margin: 0,
 		padding: "12px 13px 13px",
-		border: "1px solid #344447",
-		backgroundColor: "#0d1415",
-		color: "#94a5a5",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500,
 		"@media (max-width: 820px)": { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" },
 		"@media (max-width: 480px)": { gridTemplateColumns: "1fr" }
 	},
@@ -297,22 +283,45 @@ export const styles = stylex.create({
 	scanLimitInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #415155",
-		backgroundColor: "#090e0f",
-		color: "#d5e1df",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "7px 8px",
-		fontFamily: "monospace",
-		fontSize: 10,
-		outline: { default: "none", ":focus": "1px solid #73c7d0" }
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		borderRadius: tokens.radiusControl,
+		outline: { default: "none", ":focus": `1px solid ${tokens.colorTextSubtle}` }
 	},
-	centerState: { minHeight: 420, display: "grid", placeItems: "center", color: "#96a2a2" },
+	centerState: {
+		minHeight: 420,
+		display: "grid",
+		placeItems: "center",
+		color: tokens.colorTextMuted
+	},
 	notConfigured: {
-		maxWidth: 620,
-		margin: "70px auto",
-		padding: 28,
-		borderLeft: "3px solid #d7b469",
-		backgroundColor: "#151a1b",
-		color: "#aeb8b9"
+		maxWidth: 560,
+		margin: "72px auto",
+		padding: 24,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorText,
+		borderRadius: tokens.radiusPanel
+	},
+	notConfiguredCode: {
+		padding: "1px 5px",
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceInset
+	},
+	targetLoadingLine: {
+		margin: "12px 0 0",
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	runningState: {
 		marginTop: 14,
@@ -320,188 +329,226 @@ export const styles = stylex.create({
 		justifyContent: "space-between",
 		alignItems: "center",
 		padding: "16px 18px",
-		border: "1px solid #39747b",
-		backgroundColor: "#0e2023",
-		color: "#b7e4e6"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		borderRadius: tokens.radiusPanel
 	},
 	runningSubprogress: {
 		display: "block",
 		marginTop: 6,
-		color: "#86a9ac",
-		fontSize: 9,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
 		letterSpacing: ".04em"
 	},
 	cancelButton: {
-		border: "1px solid #d77d5d",
+		borderColor: tokens.colorDanger,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "transparent",
-		color: "#e39a81",
+		color: tokens.colorDanger,
 		padding: "7px 9px",
-		fontSize: 9,
-		letterSpacing: ".11em",
+		fontSize: 11,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	notice: {
 		marginTop: 14,
 		padding: "12px 14px",
-		border: "1px solid #5d5131",
-		backgroundColor: "#211d12",
-		color: "#d7c184",
-		fontSize: 12
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		borderRadius: tokens.radiusPanel
 	},
-	errorState: {
-		marginTop: 14,
-		padding: 18,
-		border: "1px solid #8e564d",
-		backgroundColor: "#291919",
-		color: "#f1b2a3"
-	},
-	playbackUnavailable: {
-		marginTop: 14,
-		padding: 18,
-		border: "1px solid #8e564d",
-		backgroundColor: "#291919",
-		color: "#f1b2a3",
-		fontSize: 11,
-		lineHeight: 1.5
-	},
-	staleResult: {
-		marginTop: 14,
-		padding: "12px 14px",
-		border: "1px solid #826d3d",
-		backgroundColor: "#211d12",
-		color: "#ddca92",
-		fontSize: 10,
-		lineHeight: 1.5
-	},
-	fastCoverageNotice: {
-		marginTop: 14,
-		padding: "13px 14px",
-		border: "1px solid #826d3d",
-		backgroundColor: "#211d12",
-		color: "#ddca92",
-		fontSize: 10,
-		lineHeight: 1.5
-	},
-	worldLogTargetLoading: {
+	noticeCard: {
 		marginTop: 14,
 		display: "grid",
-		gap: 5,
-		padding: "15px 16px",
-		border: "1px solid #39747b",
-		backgroundColor: "#0e2023",
-		color: "#b7e4e6",
-		fontSize: 11
+		gap: 4,
+		padding: "12px 14px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.5,
+		borderRadius: tokens.radiusPanel
 	},
-	worldLogTargetLoadingCopy: { margin: 0, color: "#86a9ac", fontSize: 10 },
+	noticeCardStrong: { color: tokens.colorText },
+	errorState: {
+		marginTop: 14,
+		display: "grid",
+		gap: 4,
+		padding: 18,
+		borderColor: tokens.colorDanger,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorText,
+		fontSize: 13,
+		borderRadius: tokens.radiusPanel
+	},
+	errorRecovery: {
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.5
+	},
+	errorActions: { marginTop: 4 },
+	errorDetails: { marginTop: 8, color: tokens.colorTextSubtle, fontSize: 11 },
+	playbackUnavailable: {
+		marginTop: 14,
+		padding: "12px 14px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.5,
+		borderRadius: tokens.radiusPanel
+	},
 	investigationBar: {
 		display: "flex",
 		alignItems: "stretch",
 		justifyContent: "space-between",
 		gap: 12,
 		marginTop: 8,
-		border: "1px solid #323936",
-		backgroundColor: "#151412"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusPanel
 	},
 	lensTabs: { display: "flex" },
 	lensTab: {
-		border: 0,
-		borderRight: "1px solid #323936",
-		backgroundColor: { default: "transparent", ":hover": "#22201d" },
-		color: "#929b97",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		color: tokens.colorTextMuted,
 		padding: "8px 12px",
-		fontFamily: '"Segoe UI Variable", "Segoe UI", sans-serif',
-		fontSize: 10,
-		fontWeight: 600,
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 500,
 		cursor: "pointer"
 	},
 	lensTabActive: {
-		color: "#f1ded3",
-		backgroundColor: "#2c201b",
-		boxShadow: "inset 0 -2px #e87655"
+		color: tokens.colorTextStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		borderRadius: tokens.radiusBadge,
+		boxShadow: `inset 0 -2px ${tokens.colorAccent}`
 	},
 	investigationFacts: {
 		display: "flex",
 		alignItems: "center",
 		gap: 14,
 		padding: "0 10px",
-		color: "#7f8985",
-		fontSize: 9,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
 		whiteSpace: "nowrap"
 	},
-	investigationWarning: { color: "#e0a06e" },
+	investigationWarning: { color: tokens.colorWarning },
 	actorAtlasPath: {
 		display: "block",
 		maxWidth: "min(70vw, 720px)",
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#738889",
-		fontSize: 9
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
 	actorAtlas: {
-		marginTop: 8,
-		border: "1px solid #3c4749",
-		backgroundColor: "#0f1516",
-		boxShadow: "inset 3px 0 #73c7d0"
+		marginTop: 12,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusPanel
 	},
 	actorAtlasHeader: {
 		display: "flex",
-		alignItems: "end",
+		alignItems: "flex-start",
 		justifyContent: "space-between",
-		gap: 18,
-		padding: "10px 12px 9px",
-		borderBottom: "1px solid #344043"
+		gap: 12,
+		padding: "10px 14px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
+	atlasTitle: {
+		margin: 0,
+		fontSize: 14,
+		fontWeight: 600,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
 	},
 	snapshotSummary: {
 		display: "grid",
-		gridTemplateColumns: "auto auto",
-		columnGap: 7,
-		alignItems: "baseline",
-		color: "#87a5a8",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textAlign: "right"
+		gap: 2,
+		justifyItems: "end",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		textAlign: "right",
+		whiteSpace: "nowrap"
 	},
 	playbackFrames: {
 		display: "flex",
 		gap: 5,
 		overflowX: "auto",
 		padding: "6px 9px",
-		borderBottom: "1px solid #2e3a3c",
-		backgroundColor: "#0d1415"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	playbackFrameButton: {
 		flexShrink: 0,
-		border: "1px solid #38484b",
-		backgroundColor: { default: "transparent", ":hover": "#1b292b" },
-		color: "#8ea0a1",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "5px 7px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	playbackFrameButtonActive: {
-		borderColor: "#73c7d0",
-		backgroundColor: "#153438",
-		color: "#c4eff0"
+		borderColor: tokens.colorTextSubtle,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	frameNotice: {
 		padding: "8px 14px",
-		borderBottom: "1px solid #2e3a3c",
-		backgroundColor: "#152225",
-		color: "#a9c7c9",
-		fontSize: 9,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
 		lineHeight: 1.5
 	},
-	frameNoticePartial: { backgroundColor: "#2b2215", color: "#e2c185" },
-	frameNoticeUnclassified: { backgroundColor: "#2b1f14", color: "#e2ad75" },
+	frameNoticePartial: { backgroundColor: tokens.colorSurfaceRaised, color: tokens.colorWarning },
+	frameNoticeUnclassified: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorWarning
+	},
 	snapshotUnavailable: {
 		minHeight: 180,
 		display: "grid",
 		placeItems: "center",
 		padding: 24,
-		color: "#839193",
+		color: tokens.colorTextMuted,
 		fontSize: 12,
 		lineHeight: 1.6,
 		textAlign: "center"
@@ -522,76 +569,88 @@ export const styles = stylex.create({
 	},
 	actorOutliner: {
 		minWidth: 0,
-		borderRight: { default: "1px solid #2e3a3c", "@media (max-width: 720px)": 0 },
-		borderBottom: { default: 0, "@media (max-width: 720px)": "1px solid #2e3a3c" },
-		backgroundColor: "#11191a"
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: { default: 1, "@media (max-width: 720px)": 0 },
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: { default: 0, "@media (max-width: 720px)": 1 },
+		backgroundColor: tokens.colorSurface
 	},
 	actorSearch: {
 		display: "grid",
 		gap: 6,
 		padding: 13,
-		color: "#96a6a8",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
 	},
 	actorSearchHelp: {
-		color: "#64777a",
-		fontSize: 8,
-		fontWeight: 500,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 400,
 		letterSpacing: 0,
 		lineHeight: 1.4
 	},
 	actorSearchInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: "1px solid #405053",
-		backgroundColor: "#0a1011",
-		color: "#e3edeb",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "8px 9px",
-		fontFamily: "monospace",
-		fontSize: 10,
-		outline: { default: "none", ":focus": "1px solid #73c7d0" }
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		borderRadius: tokens.radiusControl,
+		outline: { default: "none", ":focus": `1px solid ${tokens.colorTextSubtle}` }
 	},
 	actorFilterBar: {
 		display: "flex",
 		flexWrap: "wrap",
 		gap: 4,
 		padding: "0 13px 11px",
-		borderBottom: "1px solid #2e3a3c"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	actorFilterButton: {
-		border: "1px solid #39484b",
-		backgroundColor: { default: "transparent", ":hover": "#1b282a" },
-		color: "#869597",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "4px 5px",
-		fontSize: 7,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	actorFilterButtonActive: {
-		borderColor: "#73c7d0",
-		backgroundColor: "#163438",
-		color: "#c2eff0"
+		borderColor: tokens.colorTextSubtle,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
 	},
 	actorFilterSelect: {
 		maxWidth: "100%",
-		border: "1px solid #3a4b4d",
-		backgroundColor: "#10191a",
-		color: "#b4c4c4",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
 		padding: "4px 5px",
-		fontFamily: "monospace",
-		fontSize: 8
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		borderRadius: tokens.radiusControl
 	},
 	outlinerCount: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 7,
 		padding: "0 13px 10px",
-		color: "#708185",
-		fontSize: 7,
-		letterSpacing: ".09em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	actorList: {
 		maxHeight: 340,
@@ -599,7 +658,9 @@ export const styles = stylex.create({
 		listStyle: "none",
 		margin: 0,
 		padding: 0,
-		borderTop: "1px solid #2e3a3c"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	actorListItem: { margin: 0, padding: 0 },
 	actorRow: {
@@ -608,48 +669,68 @@ export const styles = stylex.create({
 		gridTemplateColumns: "25px minmax(0, 1fr) auto",
 		alignItems: "center",
 		gap: 8,
-		border: 0,
-		borderBottom: "1px solid #273336",
-		borderLeft: "2px solid transparent",
-		backgroundColor: { default: "transparent", ":hover": "#1b282a" },
-		color: "#b4c0c0",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderLeftColor: "transparent",
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		color: tokens.colorText,
 		padding: "8px 10px",
 		textAlign: "left",
 		cursor: "pointer"
 	},
-	actorRowSelected: { borderLeftColor: "#e1b85e", backgroundColor: "#263337", color: "#f0f5f1" },
+	actorRowSelected: {
+		borderLeftColor: tokens.colorAccent,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		color: tokens.colorTextStrong
+	},
 	actorRowHistorical: { opacity: 0.62 },
 	actorEventCount: {
 		display: "grid",
 		placeItems: "center",
 		width: 20,
 		height: 20,
-		border: "1px solid #416a70",
-		color: "#8ad6dc",
-		fontSize: 8,
-		fontWeight: 800
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusBadge
 	},
-	actorRowCopy: { display: "grid", minWidth: 0, gap: 2, fontSize: 10 },
+	actorRowCopy: { display: "grid", minWidth: 0, gap: 2, fontSize: 12 },
 	pointMapFrame: {
 		position: "relative",
 		height: "100%",
 		minHeight: 360,
 		overflow: "hidden",
-		backgroundColor: "#0a1112",
+		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
-			"radial-gradient(circle at 50% 45%, #2a56542b, transparent 46%), linear-gradient(135deg, #ffffff05 25%, transparent 25%)",
+			"radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.02), transparent 46%), linear-gradient(135deg, rgba(255, 255, 255, 0.02) 25%, transparent 25%)",
 		backgroundSize: "auto, 18px 18px"
 	},
-	pointMap: { width: "100%", height: "100%", minHeight: 360, display: "block", outline: "none" },
+	pointMap: {
+		width: "100%",
+		height: "100%",
+		minHeight: 360,
+		display: "block",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: -2,
+		outlineStyle: "solid",
+		outlineWidth: 1
+	},
 	northMarker: {
 		position: "absolute",
 		top: 12,
 		left: 14,
 		zIndex: 2,
-		color: "#73c7d0",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".12em"
+		color: "#02b8cc",
+		fontSize: 11,
+		fontWeight: 500
 	},
 	pointMapLegend: {
 		position: "absolute",
@@ -660,12 +741,13 @@ export const styles = stylex.create({
 		right: 13,
 		bottom: 12,
 		zIndex: 2,
-		border: "1px solid #3a4a4c",
-		backgroundColor: "#101819df",
-		color: "#a8b8b8",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: "rgba(22, 23, 24, 0.87)",
+		color: tokens.colorTextMuted,
 		padding: "5px 7px",
-		fontSize: 7,
-		letterSpacing: ".08em",
+		fontSize: 11,
 		overflow: "hidden",
 		whiteSpace: "nowrap"
 	},
@@ -679,12 +761,13 @@ export const styles = stylex.create({
 		left: 13,
 		bottom: 12,
 		zIndex: 2,
-		border: "1px solid #806d3c",
-		backgroundColor: "#211d12e8",
-		color: "#ddca92",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: "rgba(22, 23, 24, 0.91)",
+		color: tokens.colorWarning,
 		padding: "5px 7px",
-		fontSize: 7,
-		letterSpacing: ".08em",
+		fontSize: 11,
 		overflow: "hidden"
 	},
 	pointMapClassDot: {
@@ -699,13 +782,15 @@ export const styles = stylex.create({
 		left: "50%",
 		bottom: 12,
 		zIndex: 2,
-		border: "1px solid #445557",
-		backgroundColor: { default: "#10191ad9", ":hover": "#1d2d2e" },
-		color: "#b5c5c4",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "rgba(22, 23, 24, 0.85)", ":hover": "rgba(26, 27, 30, 0.95)" },
+		color: tokens.colorText,
 		padding: "5px 8px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		transform: "translateX(-50%)",
 		cursor: "pointer"
 	},
@@ -714,7 +799,7 @@ export const styles = stylex.create({
 		display: "grid",
 		placeItems: "center",
 		padding: 24,
-		color: "#819193",
+		color: tokens.colorTextMuted,
 		fontSize: 12,
 		textAlign: "center"
 	},
@@ -724,10 +809,14 @@ export const styles = stylex.create({
 		height: "100%",
 		overflowY: "auto",
 		padding: 17,
-		borderLeft: { default: "1px solid #2e3a3c", "@media (max-width: 1020px)": 0 },
-		borderTop: { default: 0, "@media (max-width: 1020px)": "1px solid #2e3a3c" },
-		backgroundColor: "#11191a",
-		color: "#c3cfcd",
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: { default: 1, "@media (max-width: 1020px)": 0 },
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: { default: 0, "@media (max-width: 1020px)": 1 },
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorText,
 		"@media (max-width: 1020px)": { gridColumn: "1 / -1" }
 	},
 	actorInspectorEmpty: {
@@ -735,17 +824,17 @@ export const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		justifyContent: "center",
-		color: "#829193",
-		fontSize: 10,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
 		lineHeight: 1.6
 	},
 	actorFacts: {
 		display: "grid",
 		gap: 8,
 		margin: "17px 0",
-		color: "#a7b7b6",
-		fontSize: 9,
-		fontFamily: "monospace"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontFamily: tokens.fontMono
 	},
 	actorEventSection: { marginTop: 16 },
 	actorEventList: {
@@ -755,9 +844,9 @@ export const styles = stylex.create({
 		margin: "7px 0 0",
 		padding: 0,
 		listStyle: "none",
-		color: "#94a5a5",
-		fontFamily: "monospace",
-		fontSize: 9,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		lineHeight: 1.45
 	},
 	actorEventButton: {
@@ -765,23 +854,31 @@ export const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		gap: 2,
-		border: "1px solid #344346",
-		backgroundColor: { default: "#10191a", ":hover": "#1c2b2d" },
-		color: "#b3c3c2",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: {
+			default: tokens.colorSurfaceInset,
+			":hover": "rgba(255, 255, 255, 0.03)"
+		},
+		color: tokens.colorText,
 		padding: "7px 8px",
 		textAlign: "left",
 		font: "inherit",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	clearActorSelection: {
 		width: "100%",
-		border: "1px solid #496165",
-		backgroundColor: { default: "transparent", ":hover": "#1f2d2f" },
-		color: "#a9cdcf",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "9px 10px",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer"
 	},
 	timelineShell: {
@@ -791,156 +888,206 @@ export const styles = stylex.create({
 		marginTop: 8,
 		"@media (max-width: 900px)": { gridTemplateColumns: "1fr" }
 	},
-	timeline: { border: "1px solid #3c4749", backgroundColor: "#101617" },
+	timeline: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		borderRadius: tokens.radiusPanel
+	},
 	timelineHeader: {
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "start",
-		padding: "17px 18px 14px",
-		borderBottom: "1px solid #374144"
+		padding: "14px 16px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	timelineSubhead: { margin: "5px 0 0", color: "#829193", fontSize: 10, lineHeight: 1.45 },
+	timelineTitle: {
+		margin: 0,
+		fontSize: 15,
+		fontWeight: 600,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
+	},
+	timelineSubhead: {
+		margin: "4px 0 0",
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.45
+	},
 	completePill: {
-		border: "1px solid #619270",
-		color: "#a8dcaf",
+		borderColor: tokens.colorSuccess,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorSuccess,
 		padding: "4px 6px",
-		fontSize: 8,
-		letterSpacing: ".1em",
-		textTransform: "uppercase"
+		fontSize: 11,
+		borderRadius: tokens.radiusBadge
 	},
-	partialPill: { borderColor: "#d59457", color: "#f0c17f" },
+	partialPill: { borderColor: tokens.colorWarning, color: tokens.colorWarning },
 	filters: {
 		display: "flex",
 		gap: 5,
 		overflowX: "auto",
 		padding: "11px 14px",
-		borderBottom: "1px solid #303b3e"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	filterButton: {
 		flexShrink: 0,
-		border: 0,
-		backgroundColor: { default: "transparent", ":hover": "#202a2d" },
-		color: "#859394",
+		borderStyle: "none",
+		borderWidth: 0,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		padding: "5px 6px",
-		fontSize: 8,
-		letterSpacing: ".11em",
+		fontSize: 11,
 		cursor: "pointer"
 	},
-	filterButtonActive: { color: "#f0d79c", boxShadow: "inset 0 -2px #e1b85e" },
-	timelineList: { padding: 14 },
+	filterButtonActive: {
+		color: tokens.colorTextStrong,
+		borderRadius: tokens.radiusBadge,
+		boxShadow: `inset 0 -2px ${tokens.colorAccent}`
+	},
+	timelineList: { padding: "4px 16px" },
 	revision: {
 		display: "grid",
-		gridTemplateColumns: "72px minmax(0, 1fr)",
-		borderBottom: "1px solid #293438",
-		paddingBottom: 11,
-		marginBottom: 11
+		gridTemplateColumns: "minmax(0, 1fr) auto",
+		gap: "8px 16px",
+		padding: "12px 0",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		":last-child": {
+			borderBottomColor: "transparent",
+			borderBottomStyle: "none",
+			borderBottomWidth: 0
+		}
 	},
-	revisionSelected: { marginLeft: -5, paddingLeft: 5, borderLeft: "2px solid #e1b85e" },
-	changeMarker: {
+	revisionSelected: {
+		marginLeft: -6,
+		paddingLeft: 6,
+		borderLeftColor: tokens.colorAccent,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2
+	},
+	revisionMain: { minWidth: 0 },
+	revisionMarker: {
 		display: "grid",
+		justifyItems: "end",
 		alignContent: "start",
-		justifyItems: "start",
-		gap: 5,
-		color: "#738588",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		gap: 3,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
-	changeMarkerLabel: {
-		display: "flex",
-		alignItems: "baseline",
-		gap: 4,
-		whiteSpace: "nowrap"
+	revisionDate: {
+		fontFamily: tokens.fontMono,
+		color: tokens.colorTextMuted,
+		textAlign: "right"
+	},
+	revisionUser: {
+		maxWidth: 180,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		textAlign: "right"
 	},
 	changelistSelect: {
-		marginTop: 3,
-		border: "1px solid #405154",
-		backgroundColor: { default: "transparent", ":hover": "#233033" },
-		color: "#9dacac",
-		padding: "4px 5px",
-		fontSize: 7,
-		fontWeight: 800,
-		letterSpacing: ".08em",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: {
+			default: "rgba(255, 255, 255, 0.05)",
+			":hover": "rgba(255, 255, 255, 0.07)"
+		},
+		color: tokens.colorTextMuted,
+		padding: "4px 6px",
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		fontWeight: 500,
+		borderRadius: tokens.radiusBadge,
 		cursor: "pointer"
 	},
 	changelistSelectActive: {
-		borderColor: "#e1b85e",
-		backgroundColor: "#362d1b",
-		color: "#f2dba4"
-	},
-	revisionBody: { minWidth: 0 },
-	revisionHeader: {
-		display: "grid",
-		gridTemplateColumns: "minmax(180px, .38fr) minmax(0, 1fr)",
-		gap: 10,
-		marginBottom: 7,
-		color: "#9ca9a9",
-		fontSize: 10,
-		minWidth: 0
-	},
-	revisionMeta: {
-		display: "grid",
-		gap: 3,
-		minWidth: 0,
-		color: "#aebbbb"
+		borderColor: tokens.colorAccent,
+		backgroundColor: tokens.colorAccentWash,
+		color: tokens.colorTextStrong
 	},
 	revisionDescription: {
 		minWidth: 0,
 		margin: 0,
-		color: "#9ca9a9",
+		color: tokens.colorText,
 		lineHeight: 1.35,
 		overflowWrap: "anywhere"
 	},
 	revisionSummary: {
-		marginBottom: 8,
-		color: "#718286",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		display: "block",
+		marginTop: 6,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
-	revisionEmpty: { margin: "5px 0", color: "#78888a", fontSize: 9, lineHeight: 1.35 },
+	revisionEmpty: {
+		margin: "5px 0",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		lineHeight: 1.35
+	},
 	changeRow: {
 		width: "100%",
 		display: "grid",
 		gridTemplateColumns: "minmax(92px, .38fr) minmax(120px, .8fr) minmax(0, 1.5fr)",
 		gap: 8,
 		alignItems: "center",
-		border: "1px solid #354145",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderLeftWidth: 3,
-		backgroundColor: { default: "#141c1e", ":hover": "#1c272a" },
-		color: "#a7b2b3",
+		backgroundColor: {
+			default: tokens.colorSurfaceInset,
+			":hover": "rgba(255, 255, 255, 0.03)"
+		},
+		color: tokens.colorText,
 		padding: "9px 10px",
 		marginTop: 5,
 		textAlign: "left",
 		cursor: "pointer",
-		minWidth: 0
+		minWidth: 0,
+		borderRadius: tokens.radiusControl
 	},
-	changeRowSelected: { backgroundColor: "#243034", borderColor: "#e1b85e", color: "#e9efec" },
-	added: { borderLeftColor: "#6ebd88" },
-	removed: { borderLeftColor: "#d77d6a" },
-	changed: { borderLeftColor: "#73c7d0" },
-	warning: { borderLeftColor: "#e1b85e" },
+	changeRowSelected: {
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		borderColor: tokens.colorAccent,
+		color: tokens.colorTextStrong
+	},
+	added: { borderLeftColor: tokens.colorSuccess },
+	removed: { borderLeftColor: tokens.colorDanger },
+	changed: { borderLeftColor: "#02b8cc" },
+	warning: { borderLeftColor: tokens.colorWarning },
 	changeType: {
 		minWidth: 0,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#8ea0a1",
-		fontSize: 8,
-		letterSpacing: ".08em"
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	},
 	changeTitle: {
 		minWidth: 0,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		fontSize: 10
+		fontSize: 12
 	},
 	changeDetail: {
 		minWidth: 0,
 		overflow: "hidden",
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap",
-		color: "#7e9091",
-		fontSize: 9
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
 	},
 	unclassifiedNotice: {
 		display: "grid",
@@ -948,24 +1095,31 @@ export const styles = stylex.create({
 		gap: "4px 8px",
 		marginTop: 8,
 		padding: "10px 11px",
-		border: "1px dashed #a27c45",
-		color: "#dfbd7a",
-		fontSize: 10
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "dashed",
+		borderWidth: 1,
+		color: tokens.colorWarning,
+		fontSize: 12,
+		borderRadius: tokens.radiusControl
 	},
 	unclassifiedNoticeCopy: { gridColumn: "1 / -1", margin: 0, lineHeight: 1.35 },
 	evidencePanel: {
 		alignSelf: "start",
 		position: "sticky",
 		top: 70,
-		border: "1px solid #3b474a",
-		backgroundColor: "#111819",
-		padding: 18
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		padding: 18,
+		borderRadius: tokens.radiusPanel,
+		boxShadow: tokens.shadowCard
 	},
 	evidenceEmpty: {
 		minHeight: 180,
 		display: "flex",
 		alignItems: "center",
-		color: "#849294",
+		color: tokens.colorTextMuted,
 		fontSize: 12,
 		lineHeight: 1.6
 	},
@@ -975,9 +1129,13 @@ export const styles = stylex.create({
 		gap: 7,
 		marginTop: 18,
 		padding: "11px 0",
-		borderTop: "1px solid #344043",
-		borderBottom: "1px solid #344043",
-		color: "#d7e0dd",
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorText,
 		fontSize: 12
 	},
 	evidenceSummary: {
@@ -985,24 +1143,24 @@ export const styles = stylex.create({
 		flexDirection: "column",
 		gap: 4,
 		marginTop: 14,
-		color: "#9ca9a9",
-		fontSize: 10
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	packageList: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 8,
 		margin: "16px 0",
-		color: "#96a4a5",
-		fontFamily: "monospace",
-		fontSize: 10,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
 		minWidth: 0
 	},
 	packageEntry: { minWidth: 0 },
-	packageAction: { display: "block", color: "#d7b469", fontSize: 8, letterSpacing: ".08em" },
+	packageAction: { display: "block", color: tokens.colorWarning, fontSize: 11 },
 	packagePath: {
 		margin: "3px 0 0",
-		color: "#96a4a5",
+		color: tokens.colorTextMuted,
 		overflowWrap: "anywhere",
 		lineHeight: 1.35
 	},
@@ -1010,9 +1168,10 @@ export const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		paddingTop: 12,
-		borderTop: "1px solid #344043",
-		color: "#9ba8a9",
-		fontSize: 9,
-		letterSpacing: ".1em"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		color: tokens.colorTextMuted,
+		fontSize: 11
 	}
 });

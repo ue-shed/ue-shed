@@ -222,17 +222,15 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 		<section aria-label="Relationship view" {...stylex.props(styles.shell)}>
 			<header {...stylex.props(styles.heading)}>
 				<div>
-					<span {...stylex.props(styles.eyebrow)}>READ-ONLY RELATIONSHIP EVIDENCE</span>
-					<h2 {...stylex.props(styles.title)}>Cross-table lens</h2>
+					<h2 {...stylex.props(styles.title)}>Related tables</h2>
 					<p {...stylex.props(styles.description)}>
-						Each column stays attached to its canonical table. Hidden columns remain in
-						the projection; this switchboard only changes what you see.
+						Each column stays with its own table. The toggles below only change what you
+						see here.
 					</p>
 				</div>
 				<div {...stylex.props(styles.readOnlyStamp)}>
-					<span>◇</span>
-					<strong>READ ONLY</strong>
-					<small>NO DRAFT AUTHORITY</small>
+					<strong>Read-only</strong>
+					<small>edit rows in the table view</small>
 				</div>
 			</header>
 
@@ -265,25 +263,23 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 						</Show>
 						<For each={referenceFields()}>{(field) => <option>{field}</option>}</For>
 					</select>
-					<small>{rows().length} source rows in the projection</small>
+					<small>{rows().length} source rows shown</small>
 				</label>
 				<button
 					type="button"
 					onClick={() => props.onOpenForEditing(sourceSnapshot().table.objectPath)}
 					{...stylex.props(styles.editButton)}
 				>
-					Open source editor ↗
+					Open source editor
 				</button>
 			</div>
 
 			<div {...stylex.props(styles.switchboard)}>
 				<div {...stylex.props(styles.switchboardHeading)}>
-					<div>
-						<span {...stylex.props(styles.eyebrow)}>TABLE SWITCHBOARD</span>
-						<strong>
-							{visiblePaths().size} / {participantPaths().length} visible
-						</strong>
-					</div>
+					<span {...stylex.props(styles.switchboardLabel)}>Visible tables</span>
+					<strong {...stylex.props(styles.switchboardCount)}>
+						{visiblePaths().size} / {participantPaths().length}
+					</strong>
 					<div {...stylex.props(styles.switchboardActions)}>
 						<button
 							type="button"
@@ -319,7 +315,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 										}
 									/>
 									<span>
-										<small>{index() === 0 ? "SOURCE" : "TARGET"}</small>
+										<small>{index() === 0 ? "Source" : "Target"}</small>
 										<strong>{shortObjectName(path)}</strong>
 									</span>
 								</label>
@@ -338,23 +334,35 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 			</div>
 
 			<Show when={loadState().status === "loading"}>
-				<div {...stylex.props(styles.notice)}>Resolving referenced tables…</div>
+				<div {...stylex.props(styles.loadingLine)}>Loading referenced tables…</div>
 			</Show>
 			<Show when={loadState().status === "failed"}>
-				<div {...stylex.props(styles.notice, styles.noticeError)}>
-					{(() => {
-						const state = loadState();
-						return state.status === "failed" ? state.message : "Table loading failed.";
-					})()}
-				</div>
+				{(() => {
+					const state = loadState();
+					const message =
+						state.status === "failed"
+							? state.message
+							: "Referenced tables could not be loaded.";
+					const [firstLine] = message.split("\n");
+					return (
+						<div {...stylex.props(styles.noticeError)}>
+							<strong>Some tables did not load.</strong>
+							<span>{firstLine?.slice(0, 160) ?? message}</span>
+							<details {...stylex.props(styles.technicalDetails)}>
+								<summary>Technical details</summary>
+								<code>{message}</code>
+							</details>
+						</div>
+					);
+				})()}
 			</Show>
 
 			<Show
 				when={referenceFields().length > 0}
 				fallback={
 					<div {...stylex.props(styles.empty)}>
-						<strong>No row-reference field found.</strong>
-						<span>Choose another source table from the project index above.</span>
+						<strong>No row-reference field on this table.</strong>
+						<span>Pick another source table to follow its relationships.</span>
 					</div>
 				}
 			>
@@ -362,8 +370,8 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 					when={groups().length > 0}
 					fallback={
 						<div {...stylex.props(styles.empty)}>
-							<strong>All participating tables are hidden.</strong>
-							<span>Use Show all or reveal one table in the switchboard.</span>
+							<strong>All tables are hidden.</strong>
+							<span>Show all, or turn one table back on above.</span>
 						</div>
 					}
 				>
@@ -372,7 +380,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 							<thead>
 								<tr>
 									<th rowSpan={2} {...stylex.props(styles.linkHeading)}>
-										LINK
+										Link
 									</th>
 									<For each={groups()}>
 										{(group) => (
@@ -395,13 +403,25 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 									<For each={groups()}>
 										{(group) => (
 											<>
-												<th>ROW</th>
+												<th {...stylex.props(styles.columnHeading)}>Row</th>
 												<Show
 													when={group.snapshot}
-													fallback={<th>STATUS</th>}
+													fallback={
+														<th {...stylex.props(styles.columnHeading)}>
+															Status
+														</th>
+													}
 												>
 													<For each={group.columns}>
-														{(column) => <th>{column}</th>}
+														{(column) => (
+															<th
+																{...stylex.props(
+																	styles.columnHeading
+																)}
+															>
+																{column}
+															</th>
+														)}
 													</For>
 												</Show>
 											</>
@@ -417,7 +437,7 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 												<strong>{row.source.rowName}</strong>
 												<small data-status={row.status}>
 													{row.status === "resolved"
-														? "↗ resolved"
+														? "resolved"
 														: row.reason}
 												</small>
 											</th>
@@ -469,39 +489,50 @@ export function AuthoringCombinedView(props: CombinedViewProps) {
 
 const styles = stylex.create({
 	shell: {
-		border: "1px solid #39403b",
-		backgroundColor: "#0d100e",
-		boxShadow: "inset 0 1px #ffffff05"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	heading: {
 		display: "flex",
 		alignItems: "flex-start",
 		justifyContent: "space-between",
 		flexWrap: "wrap",
-		gap: 24,
-		padding: "22px 24px",
-		borderBottom: "1px solid #303632",
-		backgroundImage: "linear-gradient(115deg, #171c18 0%, #0d100e 58%)"
+		gap: tokens.space4,
+		padding: "16px 20px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	eyebrow: { color: "#839274", fontSize: 7, letterSpacing: ".16em" },
 	title: {
-		margin: "7px 0 5px",
-		color: "#e0e5dd",
-		fontFamily: "Georgia, serif",
-		fontSize: 25,
-		fontWeight: 400
+		margin: "0 0 6px",
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 18,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
 	},
-	description: { maxWidth: 680, margin: 0, color: "#7e8880", fontSize: 10, lineHeight: 1.6 },
+	description: {
+		maxWidth: 560,
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.5
+	},
 	readOnlyStamp: {
-		minWidth: 132,
-		display: "grid",
-		gridTemplateColumns: "24px 1fr",
-		alignItems: "center",
-		gap: "2px 8px",
-		border: "1px solid #685a3d",
-		backgroundColor: "#1a1710",
-		color: "#d6a363",
-		padding: "10px 12px"
+		display: "flex",
+		flexDirection: "column",
+		gap: 2,
+		width: "fit-content",
+		padding: "6px 12px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	controls: {
 		display: "grid",
@@ -510,39 +541,42 @@ const styles = stylex.create({
 			"@media (max-width: 800px)": "1fr"
 		},
 		alignItems: "end",
-		gap: 12,
-		padding: 14,
-		borderBottom: "1px solid #303632"
+		gap: tokens.space3,
+		padding: 12,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	control: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#849087",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	select: {
 		width: "100%",
-		border: "1px solid #3a443c",
-		borderRadius: 0,
-		backgroundColor: "#090c0a",
-		color: "#d9e0d9",
-		padding: "9px 10px",
-		fontSize: 10
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText,
+		padding: "8px 10px",
+		fontSize: 13
 	},
 	editButton: {
-		height: 36,
-		border: "1px solid #536456",
-		backgroundColor: { default: "#172019", ":hover": "#223026" },
-		color: "#dce5dc",
+		height: 34,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
 		cursor: "pointer",
-		padding: "0 13px",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		padding: "0 12px",
+		fontSize: 12
 	},
 	switchboard: {
 		display: "grid",
@@ -550,26 +584,38 @@ const styles = stylex.create({
 			default: "180px minmax(0, 1fr)",
 			"@media (max-width: 700px)": "1fr"
 		},
-		borderBottom: "1px solid #303632",
-		backgroundColor: "#101411"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	switchboardHeading: {
 		display: "flex",
 		flexDirection: "column",
-		justifyContent: "space-between",
-		gap: 12,
-		padding: 14,
-		borderRight: "1px solid #303632"
+		gap: 8,
+		padding: 12,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
+	switchboardLabel: { color: tokens.colorTextSubtle, fontSize: 11, fontWeight: 600 },
+	switchboardCount: {
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		textAlign: "right"
 	},
 	switchboardActions: { display: "flex", gap: 6 },
 	minorButton: {
-		border: "1px solid #39413b",
-		backgroundColor: { default: "#111512", ":hover": "#202720" },
-		color: "#9da89f",
+		borderColor: "transparent",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.06)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
-		padding: "5px 7px",
-		fontSize: 7,
-		textTransform: "uppercase"
+		padding: "4px 8px",
+		fontSize: 11
 	},
 	tableToggles: {
 		display: "flex",
@@ -583,14 +629,20 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) auto",
 		alignItems: "center",
-		border: "1px solid #303632",
-		borderTop: "2px solid #414943",
-		backgroundColor: "#0b0e0c",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 2,
+		backgroundColor: tokens.colorSurfaceInset,
+		overflow: "hidden",
 		opacity: 0.55
 	},
 	tableToggleVisible: {
 		borderTopColor: tokens.colorAccent,
-		backgroundColor: "#151b16",
+		backgroundColor: tokens.colorSurfaceRaised,
 		opacity: 1
 	},
 	toggleLabel: {
@@ -603,62 +655,111 @@ const styles = stylex.create({
 	},
 	isolateButton: {
 		alignSelf: "stretch",
-		border: 0,
-		borderLeft: "1px solid #303632",
-		backgroundColor: { default: "transparent", ":hover": "#202720" },
-		color: "#829087",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		padding: "0 8px",
-		fontSize: 7,
-		textTransform: "uppercase"
+		fontSize: 11
 	},
-	notice: {
-		padding: "8px 14px",
-		borderBottom: "1px solid #3d493f",
-		color: "#93a196",
-		fontSize: 9
+	loadingLine: {
+		textAlign: "center",
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		padding: "12px 0"
 	},
-	noticeError: { borderColor: "#665337", backgroundColor: "#1a1710", color: "#d6a363" },
+	noticeError: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 6,
+		margin: 12,
+		padding: "10px 14px",
+		borderColor: "rgba(235, 87, 87, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 12
+	},
+	technicalDetails: { fontSize: 12 },
 	empty: {
 		minHeight: 260,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "center",
 		justifyContent: "center",
-		gap: 8,
-		color: "#737d75",
-		fontSize: 10
+		textAlign: "center",
+		gap: 6,
+		color: tokens.colorTextMuted,
+		fontSize: 13
 	},
 	matrixWrap: { width: "100%", overflow: "auto", maxHeight: "calc(100vh - 405px)" },
 	matrix: {
 		width: "max-content",
 		minWidth: "100%",
 		borderCollapse: "collapse",
-		color: "#b9c1ba",
-		fontSize: 9
+		color: tokens.colorText,
+		fontSize: 12
 	},
 	linkHeading: {
 		position: "sticky",
 		left: 0,
 		zIndex: 3,
 		minWidth: 150,
-		borderRight: "2px solid #495149",
-		backgroundColor: "#111512",
-		color: "#8d998f",
-		letterSpacing: ".12em"
+		padding: "8px 11px",
+		borderRightColor: tokens.colorBorderStrong,
+		borderRightStyle: "solid",
+		borderRightWidth: 2,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 600,
+		textAlign: "left"
+	},
+	columnHeading: {
+		padding: "7px 11px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500,
+		textAlign: "left"
 	},
 	groupHeading: {
 		minWidth: 180,
-		padding: "11px 12px",
-		borderLeft: "1px solid #303632",
-		color: "#dce3d8",
+		padding: "10px 12px",
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		color: tokens.colorTextStrong,
 		textAlign: "left",
-		fontFamily: "Georgia, serif",
-		fontSize: 15,
-		fontWeight: 400
+		fontFamily: tokens.fontDisplay,
+		fontSize: 13,
+		fontWeight: 600,
+		lineHeight: 1.3
 	},
-	sourceHeading: { borderTop: `2px solid ${tokens.colorAccent}`, backgroundColor: "#141b15" },
-	targetHeading: { borderTop: "2px solid #6e8da0", backgroundColor: "#12181b" },
+	sourceHeading: {
+		borderTopColor: tokens.colorAccent,
+		borderTopStyle: "solid",
+		borderTopWidth: 2,
+		backgroundColor: tokens.colorSurfaceRaised
+	},
+	targetHeading: {
+		borderTopColor: "#02b8cc",
+		borderTopStyle: "solid",
+		borderTopWidth: 2,
+		backgroundColor: tokens.colorSurface
+	},
 	linkCell: {
 		position: "sticky",
 		left: 0,
@@ -666,12 +767,16 @@ const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		gap: 4,
-		borderRight: "2px solid #495149",
-		borderBottom: "1px solid #2a302c",
-		backgroundColor: "#111512",
-		color: "#d4dcd4",
+		borderRightColor: tokens.colorBorderStrong,
+		borderRightStyle: "solid",
+		borderRightWidth: 2,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorText,
 		padding: "9px 11px",
 		textAlign: "left"
 	},
-	rowName: { color: "#dce3d8", fontWeight: 600 }
+	rowName: { color: tokens.colorTextStrong, fontWeight: 590 }
 });

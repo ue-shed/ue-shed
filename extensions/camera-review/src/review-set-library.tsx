@@ -96,11 +96,8 @@ export function ReviewSetLibrary(props: {
 			>
 				<header {...stylex.props(styles.header)}>
 					<div>
-						<span {...stylex.props(styles.kicker)}>
-							MAP REVIEW / PORTABLE DEFINITIONS
-						</span>
 						<h2 id="review-set-library-title" {...stylex.props(styles.title)}>
-							Review Set library
+							Review sets
 						</h2>
 						<p {...stylex.props(styles.subtitle)}>
 							Move between focused collections without changing the Unreal map.
@@ -108,7 +105,7 @@ export function ReviewSetLibrary(props: {
 					</div>
 					<button
 						type="button"
-						aria-label="Close Review Set library"
+						aria-label="Close review sets"
 						onClick={props.onClose}
 						{...stylex.props(styles.close)}
 					>
@@ -119,12 +116,12 @@ export function ReviewSetLibrary(props: {
 				<div {...stylex.props(styles.body)}>
 					<Switch>
 						<Match when={state().status === "loading"}>
-							<div {...stylex.props(styles.centerState)}>Indexing Review Sets…</div>
+							<div {...stylex.props(styles.centerState)}>Loading review sets…</div>
 						</Match>
 						<Match when={state().status === "not_configured"}>
 							<div {...stylex.props(styles.centerState)}>
 								<strong>No project selected</strong>
-								<span>Choose a project before opening its Review Set library.</span>
+								<span>Choose a project before opening its review sets.</span>
 							</div>
 						</Match>
 						<Match when={state().status === "failed"}>
@@ -133,11 +130,21 @@ export function ReviewSetLibrary(props: {
 								if (current.status !== "failed") return null;
 								return (
 									<div role="alert" {...stylex.props(styles.failure)}>
-										<strong>{current.error.message}</strong>
+										<strong {...stylex.props(styles.failureTitle)}>
+											Couldn't load review sets
+										</strong>
 										<span>{current.error.recovery}</span>
-										<button type="button" onClick={load}>
-											RETRY
+										<button
+											type="button"
+											onClick={load}
+											{...stylex.props(styles.retry)}
+										>
+											Retry
 										</button>
+										<details {...stylex.props(styles.technical)}>
+											<summary>Technical details</summary>
+											<code>{current.error.message}</code>
+										</details>
 									</div>
 								);
 							})()}
@@ -148,16 +155,15 @@ export function ReviewSetLibrary(props: {
 								if (current.status !== "ready") return null;
 								return (
 									<>
-										<section aria-label="Available Review Sets">
+										<section aria-label="Available sets">
 											<div {...stylex.props(styles.sectionHeading)}>
-												<span>AVAILABLE SETS</span>
-												<strong>{current.sets.length}</strong>
+												<span>Sets · {current.sets.length}</span>
 											</div>
 											<Show
 												when={current.sets.length > 0}
 												fallback={
 													<div {...stylex.props(styles.empty)}>
-														No Review Sets have been saved for this
+														No review sets have been saved for this
 														project yet.
 													</div>
 												}
@@ -206,7 +212,7 @@ export function ReviewSetLibrary(props: {
 																						styles.activeBadge
 																					)}
 																				>
-																					ACTIVE
+																					Active
 																				</span>
 																			</Show>
 																		</div>
@@ -215,11 +221,10 @@ export function ReviewSetLibrary(props: {
 																		</code>
 																		<small>
 																			{reviewSet.viewCount}{" "}
-																			APPROVED{" "}
 																			{reviewSet.viewCount ===
 																			1
-																				? "VIEW"
-																				: "VIEWS"}
+																				? "view"
+																				: "views"}
 																		</small>
 																	</div>
 																	<button
@@ -238,10 +243,10 @@ export function ReviewSetLibrary(props: {
 																	>
 																		{workingId() ===
 																		reviewSet.id
-																			? "OPENING…"
+																			? "Opening…"
 																			: active()
-																				? "OPEN"
-																				: "OPEN SET"}
+																				? "Open"
+																				: "Open set"}
 																	</button>
 																</article>
 															);
@@ -252,17 +257,16 @@ export function ReviewSetLibrary(props: {
 										</section>
 
 										<section
-											aria-label="Create Review Set"
+											aria-label="Create a set"
 											{...stylex.props(styles.createPanel)}
 										>
 											<div>
-												<span {...stylex.props(styles.createLabel)}>
-													NEW COLLECTION
-												</span>
-												<strong>Create an empty sibling set</strong>
+												<strong {...stylex.props(styles.createTitle)}>
+													Create an empty set
+												</strong>
 												<p>
-													Reuses the active set’s map, capture profiles,
-													and visibility policies—never its Views.
+													Reuses the active set's map, capture profiles,
+													and visibility policies—never its views.
 												</p>
 											</div>
 											<form
@@ -273,9 +277,9 @@ export function ReviewSetLibrary(props: {
 												{...stylex.props(styles.createForm)}
 											>
 												<label>
-													<span>SET NAME</span>
+													<span>Name</span>
 													<input
-														aria-label="New Review Set name"
+														aria-label="New review set name"
 														maxLength={80}
 														placeholder="Lighting review"
 														value={displayName()}
@@ -299,14 +303,14 @@ export function ReviewSetLibrary(props: {
 													}
 												>
 													{workingId() === "create"
-														? "CREATING…"
-														: "CREATE + OPEN"}
+														? "Creating…"
+														: "Create and open"}
 												</button>
 											</form>
 											<Show when={!props.canCreate}>
 												<small {...stylex.props(styles.createHint)}>
-													Open an existing set or keep the first View
-													before creating a sibling.
+													Open an existing set or add a first view before
+													creating a sibling.
 												</small>
 											</Show>
 										</section>
@@ -319,8 +323,14 @@ export function ReviewSetLibrary(props: {
 					<Show when={operationFailure()}>
 						{(failure) => (
 							<div role="alert" {...stylex.props(styles.operationFailure)}>
-								<strong>{failure().message}</strong>
+								<strong {...stylex.props(styles.failureTitle)}>
+									Couldn't finish that operation
+								</strong>
 								<span>{failure().recovery}</span>
+								<details {...stylex.props(styles.technical)}>
+									<summary>Technical details</summary>
+									<code>{failure().message}</code>
+								</details>
 							</div>
 						)}
 					</Show>
@@ -335,7 +345,7 @@ const styles = stylex.create({
 		position: "fixed",
 		inset: 0,
 		zIndex: 82,
-		backgroundColor: "#030504c7",
+		backgroundColor: "rgba(8, 9, 10, 0.78)",
 		backdropFilter: "blur(4px)",
 		display: "flex",
 		justifyContent: "flex-start"
@@ -343,36 +353,39 @@ const styles = stylex.create({
 	drawer: {
 		width: "min(760px, 96vw)",
 		height: "100%",
-		backgroundColor: "#0d100e",
-		borderRight: "1px solid #4a554b",
-		boxShadow: "28px 0 90px #000b",
+		backgroundColor: tokens.colorSurface,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		boxShadow: tokens.shadowOverlay,
 		display: "grid",
 		gridTemplateRows: "auto minmax(0, 1fr)",
 		color: tokens.colorText
 	},
 	header: {
-		minHeight: 136,
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "flex-start",
-		padding: "28px 30px 24px",
-		borderBottom: "1px solid #343b36",
-		backgroundImage: "linear-gradient(115deg, #171d18 0%, #0d100e 68%)"
+		gap: 18,
+		padding: `${tokens.space5}px ${tokens.space5}px ${tokens.space4}px`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	kicker: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".16em" },
-	title: {
-		margin: "8px 0 5px",
-		fontFamily: "Georgia, serif",
-		fontWeight: 400,
-		fontSize: 30
+	title: { margin: 0, fontFamily: tokens.fontDisplay, fontWeight: 590, fontSize: 22 },
+	subtitle: {
+		margin: "6px 0 0",
+		color: tokens.colorTextMuted,
+		fontSize: 13
 	},
-	subtitle: { margin: 0, color: "#89938c", fontSize: 11 },
 	close: {
 		width: 34,
 		height: 34,
-		border: "1px solid #424b44",
-		backgroundColor: { default: "transparent", ":hover": "#222923" },
-		color: "#96a099",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		fontSize: 21,
 		cursor: "pointer"
 	},
@@ -384,7 +397,7 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 10,
-		color: "#7f8982",
+		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
 	sectionHeading: {
@@ -392,9 +405,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		alignItems: "baseline",
 		marginBottom: 10,
-		color: "#707a73",
-		fontSize: 8,
-		letterSpacing: ".14em"
+		color: tokens.colorTextStrong,
+		fontSize: 12,
+		fontWeight: 600
 	},
 	setList: { display: "grid", gap: 8 },
 	setCard: {
@@ -404,21 +417,24 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 13,
 		padding: "0 14px",
-		border: "1px solid #333b35",
-		backgroundColor: "#131714"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface
 	},
 	setCardActive: {
-		borderColor: "#78856d",
-		backgroundColor: "#192019",
-		boxShadow: "inset 3px 0 #b9f227"
+		borderColor: tokens.colorBorderStrong,
+		backgroundColor: "rgba(255, 255, 255, 0.05)",
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
-	setIndex: { color: tokens.colorAccent, fontFamily: "Georgia, serif", fontSize: 21 },
+	setIndex: { color: tokens.colorAccent, fontFamily: tokens.fontMono, fontSize: 21 },
 	setCopy: {
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		fontSize: 10
+		fontSize: 11
 	},
 	setTitle: {
 		display: "flex",
@@ -426,68 +442,107 @@ const styles = stylex.create({
 		gap: 9
 	},
 	activeBadge: {
-		padding: "2px 5px",
-		border: "1px solid #7b8a69",
+		padding: "2px 6px",
+		borderRadius: tokens.radiusBadge,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: tokens.colorAccent,
-		fontSize: 7,
-		letterSpacing: ".12em"
+		fontSize: 11,
+		fontWeight: 500
 	},
 	openButton: {
 		minWidth: 88,
 		height: 32,
-		border: "1px solid #68745f",
-		backgroundColor: { default: "transparent", ":hover": "#252c25", ":disabled": "#171b18" },
-		color: { default: "#b9c1ba", ":disabled": "#626a64" },
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".1em",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
+		fontSize: 12,
+		fontWeight: 500,
 		cursor: { default: "pointer", ":disabled": "default" }
 	},
 	empty: {
-		padding: 24,
-		border: "1px dashed #3b433d",
-		color: "#778179",
-		fontSize: 10
+		padding: tokens.space5,
+		borderColor: tokens.colorBorder,
+		borderStyle: "dashed",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	createPanel: {
 		marginTop: 28,
 		padding: 20,
-		border: "1px solid #3b433d",
-		borderLeft: "3px solid #899881",
-		backgroundColor: "#151a16",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderLeftColor: tokens.colorBorderStrong,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
+		backgroundColor: tokens.colorSurface,
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) minmax(260px, .85fr)",
 		gap: 24,
-		fontSize: 10,
-		color: "#89938c"
+		fontSize: 12,
+		color: tokens.colorTextMuted
 	},
-	createLabel: {
+	createTitle: {
 		display: "block",
-		marginBottom: 7,
-		color: tokens.colorAccent,
-		fontSize: 8,
-		letterSpacing: ".14em"
+		marginBottom: 6,
+		color: tokens.colorTextStrong
 	},
 	createForm: { display: "flex", alignItems: "flex-end", gap: 8 },
-	createHint: { gridColumn: "1 / -1", color: "#c8966f" },
+	createHint: { gridColumn: "1 / -1", color: tokens.colorWarning },
+	retry: {
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "6px 12px",
+		fontSize: 12,
+		fontWeight: 500,
+		cursor: "pointer"
+	},
 	failure: {
-		minHeight: 220,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "flex-start",
-		justifyContent: "center",
-		gap: 10,
-		color: "#dc9278"
+		gap: tokens.space3,
+		padding: tokens.space5,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextMuted
+	},
+	failureTitle: { color: tokens.colorTextStrong, fontSize: 15, fontWeight: 600 },
+	technical: {
+		alignSelf: "stretch",
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	operationFailure: {
 		marginTop: 16,
 		padding: 14,
-		border: "1px solid #7e5547",
-		backgroundColor: "#241713",
+		borderColor: "rgba(235, 87, 87, 0.4)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		display: "flex",
 		flexDirection: "column",
 		gap: 6,
-		color: "#e2a087",
-		fontSize: 10
+		color: tokens.colorDanger,
+		fontSize: 12
 	}
 });

@@ -63,7 +63,14 @@ for (const entry of [...manifest.copy.kernel, ...manifest.copy.owned]) await cop
 if (accent !== undefined) {
 	const themePath = join(targetRoot, "packages", "ui-theme", "src", "themes.stylex.ts");
 	const theme = await readFile(themePath, "utf8");
-	const divergentTheme = theme.replace('colorAccent: "#b7e26d"', `colorAccent: "${accent}"`);
+	const currentAccent = /colorAccent:\s*"(#[0-9a-fA-F]{6})"/.exec(theme)?.[1];
+	if (currentAccent === undefined || currentAccent === accent) {
+		fail("could not find the applied theme accent to replace");
+	}
+	const divergentTheme = theme.replace(
+		`colorAccent: "${currentAccent}"`,
+		`colorAccent: "${accent}"`
+	);
 	if (divergentTheme === theme) fail("could not find the applied theme accent to replace");
 	await writeFile(themePath, divergentTheme);
 }

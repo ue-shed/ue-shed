@@ -19,18 +19,18 @@ export function PageHeader(props: PageHeaderProps) {
 }
 
 const styles = stylex.create({
-	actions: { display: "flex", gap: tokens.space2 },
+	actions: { display: "flex", alignItems: "center", gap: tokens.space2 },
 	eyebrow: {
 		color: tokens.colorTextMuted,
-		fontSize: 9,
-		letterSpacing: ".18em",
-		textTransform: "uppercase"
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
 	header: {
 		alignItems: "center",
 		display: "flex",
 		gap: tokens.space6,
 		justifyContent: "space-between",
-		paddingBottom: 16
+		paddingBottom: tokens.space4
 	}
 });

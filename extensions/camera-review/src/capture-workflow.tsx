@@ -16,12 +16,13 @@ type WorkflowState =
 	| { readonly stage: "capturing" }
 	| { readonly stage: "completed"; readonly job: MapReviewCaptureCompletedJob }
 	| {
-			readonly stage: "blocked" | "failed";
 			readonly message: string;
 			readonly recovery: string;
+			readonly stage: "blocked" | "failed";
+			readonly technical?: string;
 	  };
 
-const stageOrder = ["PREPARE", "PREVIEW", "CAPTURE"] as const;
+const stageOrder = ["Prepare", "Preview", "Capture"] as const;
 
 export function CaptureWorkflow(props: {
 	readonly client: MapReviewClientApi;
@@ -57,9 +58,10 @@ export function CaptureWorkflow(props: {
 		action.run(props.client.capture({ viewIds }), {
 			onFailure: (cause) =>
 				setState({
-					message: Cause.pretty(cause),
-					recovery: "Verify the Workbench connection and retry the capture plan.",
-					stage: "failed"
+					message: "Capture did not run.",
+					recovery: "Check the Workbench connection to Unreal, then retry.",
+					stage: "failed",
+					technical: Cause.pretty(cause)
 				}),
 			onSuccess: (result) => {
 				switch (result.status) {
@@ -101,12 +103,9 @@ export function CaptureWorkflow(props: {
 				{...stylex.props(styles.drawer)}
 			>
 				<header {...stylex.props(styles.header)}>
-					<div>
-						<span {...stylex.props(styles.kicker)}>CAPTURE</span>
-						<h2 id="capture-workflow-title" {...stylex.props(styles.title)}>
-							Capture review set
-						</h2>
-					</div>
+					<h2 id="capture-workflow-title" {...stylex.props(styles.title)}>
+						Capture review set
+					</h2>
 					<button
 						type="button"
 						aria-label="Close capture workflow"
@@ -127,7 +126,7 @@ export function CaptureWorkflow(props: {
 									index() <= activeStep() && styles.stepActive
 								)}
 							>
-								<span>{String(index() + 1).padStart(2, "0")}</span>
+								<span>{index() + 1}</span>
 								<strong>{label}</strong>
 							</li>
 						)}
@@ -138,24 +137,21 @@ export function CaptureWorkflow(props: {
 					<Switch>
 						<Match when={state().stage === "prepare"}>
 							<section aria-label="Prepare capture" {...stylex.props(styles.stage)}>
-								<p {...stylex.props(styles.stageNumber)}>01 / PREPARE</p>
 								<h3 {...stylex.props(styles.stageTitle)}>Confirm what will run</h3>
 								<p {...stylex.props(styles.copy)}>
-									Captures approved Review Set poses to PNG on disk. Does not save
-									or modify the Unreal map.
+									Captures the approved views to PNG files on disk. The Unreal map
+									is not saved or modified.
 								</p>
 								<dl {...stylex.props(styles.facts)}>
 									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>
-											Execution context
-										</dt>
+										<dt {...stylex.props(styles.factLabel)}>Runs in</dt>
 										<dd {...stylex.props(styles.factValue)}>
 											<span {...stylex.props(styles.contextDot)} />
-											Editor World
+											Editor world
 										</dd>
 									</div>
 									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>Review Set</dt>
+										<dt {...stylex.props(styles.factLabel)}>Review set</dt>
 										<dd {...stylex.props(styles.factValue)}>
 											{props.review.reviewSet.displayName}
 										</dd>
@@ -167,17 +163,20 @@ export function CaptureWorkflow(props: {
 										</dd>
 									</div>
 									<div {...stylex.props(styles.fact)}>
-										<dt {...stylex.props(styles.factLabel)}>Approved views</dt>
+										<dt {...stylex.props(styles.factLabel)}>Views</dt>
 										<dd {...stylex.props(styles.factValue)}>
 											{props.review.reviewSet.viewCount}
 										</dd>
 									</div>
 								</dl>
 								<div {...stylex.props(styles.distinction)}>
-									<span>PREVIEW</span>
-									<p>Pick which views to include. Nothing is written yet.</p>
-									<span>CAPTURE</span>
-									<p>Writes a run folder with PNG artifacts under .ue-shed.</p>
+									<p>
+										Preview picks which views to include; nothing is written
+										yet.
+									</p>
+									<p>
+										Capture writes a run folder with PNG files under .ue-shed.
+									</p>
 								</div>
 							</section>
 						</Match>
@@ -187,17 +186,18 @@ export function CaptureWorkflow(props: {
 								aria-label="Preview capture plan"
 								{...stylex.props(styles.stage)}
 							>
-								<p {...stylex.props(styles.stageNumber)}>02 / PREVIEW</p>
 								<h3 {...stylex.props(styles.stageTitle)}>
-									Review the capture plan.
+									Review the capture plan
 								</h3>
 								<p {...stylex.props(styles.copy)}>
-									Inspect coverage and resolution before Unreal renders.
-									Deselecting a view changes only this run—not the Review Set.
+									Check coverage and resolution before Unreal renders. Deselecting
+									a view changes only this run, not the review set.
 								</p>
 								<div {...stylex.props(styles.planSummary)}>
 									<strong>{selectedViews().length}</strong>
-									<span>OF {props.review.reviewSet.viewCount} VIEWS ARMED</span>
+									<span>
+										of {props.review.reviewSet.viewCount} views selected
+									</span>
 								</div>
 								<ul {...stylex.props(styles.viewList)}>
 									<For each={props.review.reviewSet.views}>
@@ -222,15 +222,15 @@ export function CaptureWorkflow(props: {
 														<strong>{view.displayName}</strong>
 														<small>
 															{view.resolution.width} ×{" "}
-															{view.resolution.height} / APPROVED POSE
+															{view.resolution.height} · approved pose
 														</small>
 														<small>
-															PROFILE{" "}
+															Profile{" "}
 															{view.captureProfileId ??
-																"PROJECT DEFAULT"}{" "}
-															/ POLICY{" "}
+																"project default"}{" "}
+															· Policy{" "}
 															{view.visibilityPolicy?.name ??
-																"PROJECT DEFAULT"}
+																"project default"}
 														</small>
 													</span>
 												</label>
@@ -240,7 +240,7 @@ export function CaptureWorkflow(props: {
 								</ul>
 								<Show when={selectedIds().length === 0}>
 									<p role="alert" {...stylex.props(styles.warning)}>
-										Select at least one approved view to continue.
+										Select at least one view to continue.
 									</p>
 								</Show>
 							</section>
@@ -253,18 +253,17 @@ export function CaptureWorkflow(props: {
 								{...stylex.props(styles.captureStage)}
 							>
 								<div {...stylex.props(styles.aperture)} />
-								<p {...stylex.props(styles.stageNumber)}>03 / CAPTURE</p>
 								<h3 {...stylex.props(styles.stageTitle)}>Capturing in Unreal</h3>
 								<p>
-									{selectedIds().length} approved{" "}
+									{selectedIds().length}{" "}
 									{selectedIds().length === 1 ? "view" : "views"} in this run.
 								</p>
 								<div {...stylex.props(styles.progressTrack)}>
 									<span {...stylex.props(styles.progressFill)} />
 								</div>
 								<small>
-									Capture is synchronous in this version. Keep Workbench and
-									Unreal open.
+									Capture runs synchronously. Keep Workbench and Unreal open until
+									it finishes.
 								</small>
 							</section>
 						</Match>
@@ -279,31 +278,28 @@ export function CaptureWorkflow(props: {
 										aria-live="polite"
 										{...stylex.props(styles.stage)}
 									>
-										<p {...stylex.props(styles.stageNumber)}>
-											03 / CAPTURE COMPLETE
-										</p>
 										<h3 {...stylex.props(styles.stageTitle)}>
 											Capture finished
 										</h3>
 										<p {...stylex.props(styles.copy)}>
-											The new run is listed in capture history for this Review
-											Set.
+											The new run is listed in the capture history for this
+											review set.
 										</p>
 										<div {...stylex.props(styles.resultGrid)}>
 											<div {...stylex.props(styles.result)}>
 												<strong>{current.job.successfulViews}</strong>
-												<span>CAPTURED</span>
+												<span>Captured</span>
 											</div>
 											<div {...stylex.props(styles.result)}>
 												<strong>{current.job.failedViews}</strong>
-												<span>FAILED</span>
+												<span>Failed</span>
 											</div>
 											<div {...stylex.props(styles.result)}>
 												<strong>
 													{current.job.progress.completedViews}/
 													{current.job.progress.totalViews}
 												</strong>
-												<span>PROCESSED</span>
+												<span>Processed</span>
 											</div>
 										</div>
 										<code {...stylex.props(styles.runId)}>
@@ -321,11 +317,21 @@ export function CaptureWorkflow(props: {
 									return null;
 								return (
 									<section role="alert" {...stylex.props(styles.failure)}>
-										<p {...stylex.props(styles.stageNumber)}>
-											CAPTURE NOT STARTED
-										</p>
-										<h3>{current.message}</h3>
-										<p>{current.recovery}</p>
+										<h3 {...stylex.props(styles.failureTitle)}>
+											{current.stage === "blocked"
+												? "Capture blocked"
+												: "Capture failed"}
+										</h3>
+										<p {...stylex.props(styles.copy)}>{current.message}</p>
+										<p {...stylex.props(styles.recovery)}>{current.recovery}</p>
+										<Show when={current.technical}>
+											{(technical) => (
+												<details {...stylex.props(styles.technical)}>
+													<summary>Technical details</summary>
+													<code>{technical()}</code>
+												</details>
+											)}
+										</Show>
 									</section>
 								);
 							})()}
@@ -340,7 +346,7 @@ export function CaptureWorkflow(props: {
 							onClick={props.onClose}
 							{...stylex.props(styles.secondary)}
 						>
-							CANCEL
+							Cancel
 						</button>
 						<button
 							type="button"
@@ -356,7 +362,7 @@ export function CaptureWorkflow(props: {
 							onClick={() => setState({ stage: "prepare" })}
 							{...stylex.props(styles.secondary)}
 						>
-							← BACK
+							← Back
 						</button>
 						<button
 							type="button"
@@ -383,14 +389,14 @@ export function CaptureWorkflow(props: {
 							onClick={() => setState({ stage: "prepare" })}
 							{...stylex.props(styles.secondary)}
 						>
-							REVIEW SETUP
+							Review setup
 						</button>
 						<button
 							type="button"
 							onClick={props.onClose}
 							{...stylex.props(styles.primary)}
 						>
-							CLOSE
+							Close
 						</button>
 					</Show>
 				</footer>
@@ -404,7 +410,7 @@ const styles = stylex.create({
 		position: "fixed",
 		inset: 0,
 		zIndex: 80,
-		backgroundColor: "#030504b8",
+		backgroundColor: "rgba(8, 9, 10, 0.72)",
 		backdropFilter: "blur(3px)",
 		display: "flex",
 		justifyContent: "flex-end"
@@ -412,29 +418,35 @@ const styles = stylex.create({
 	drawer: {
 		width: "min(570px, 94vw)",
 		height: "100%",
-		backgroundColor: "#101311",
-		borderLeft: "1px solid #465047",
-		boxShadow: "-28px 0 80px #000a",
+		backgroundColor: tokens.colorSurface,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		boxShadow: "-28px 0 80px rgba(8, 9, 10, 0.7)",
 		display: "grid",
 		gridTemplateRows: "auto auto minmax(0, 1fr) auto",
 		color: tokens.colorText
 	},
 	header: {
-		minHeight: 94,
+		minHeight: 76,
 		display: "flex",
 		justifyContent: "space-between",
-		alignItems: "flex-start",
-		padding: "22px 24px 18px",
-		borderBottom: "1px solid #343b36"
+		alignItems: "center",
+		padding: `${tokens.space4}px ${tokens.space5}px`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	kicker: { color: tokens.colorAccent, fontSize: 8, letterSpacing: ".16em" },
-	title: { margin: "7px 0 0", fontFamily: "Georgia, serif", fontWeight: 400, fontSize: 23 },
+	title: { margin: 0, fontFamily: tokens.fontDisplay, fontWeight: 590, fontSize: 20 },
 	close: {
 		width: 32,
 		height: 32,
-		border: "1px solid #3d453f",
-		backgroundColor: "transparent",
-		color: "#8e9891",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		fontSize: 20,
 		cursor: "pointer"
 	},
@@ -444,42 +456,53 @@ const styles = stylex.create({
 		padding: 0,
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		borderBottom: "1px solid #343b36"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	step: {
-		padding: "12px 16px",
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		display: "flex",
 		gap: 8,
-		color: "#56605a",
-		fontSize: 8,
-		letterSpacing: ".12em",
-		borderRight: "1px solid #2d332f"
+		alignItems: "baseline",
+		color: tokens.colorTextFaint,
+		fontSize: 12,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
 	},
-	stepActive: { color: tokens.colorAccent, boxShadow: "inset 0 -2px #b9f227" },
+	stepActive: { color: tokens.colorAccent, boxShadow: `inset 0 -2px ${tokens.colorAccent}` },
 	body: { overflowY: "auto" },
-	stage: { padding: "30px 26px" },
-	stageNumber: { color: tokens.colorAccent, fontSize: 9, letterSpacing: ".16em" },
+	stage: { padding: `${tokens.space5}px ${tokens.space5}px` },
 	stageTitle: {
-		margin: "8px 0 10px",
-		fontFamily: "Georgia, serif",
-		fontWeight: 400,
-		fontSize: 28
+		margin: `0 0 ${tokens.space2}px`,
+		fontFamily: tokens.fontDisplay,
+		fontWeight: 590,
+		fontSize: 17
 	},
-	copy: { color: "#8f9992", lineHeight: 1.7, fontSize: 11 },
-	facts: { margin: "24px 0", border: "1px solid #363e38" },
+	copy: { margin: 0, color: tokens.colorTextMuted, lineHeight: 1.6, fontSize: 13 },
+	facts: {
+		margin: `${tokens.space4}px 0`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl
+	},
 	fact: {
 		minHeight: 42,
 		display: "grid",
 		gridTemplateColumns: "140px 1fr",
 		alignItems: "center",
-		borderBottom: "1px solid #2f3631",
-		padding: "0 13px"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		padding: `0 ${tokens.space3}px`
 	},
-	factLabel: { color: "#68736b", fontSize: 8, letterSpacing: ".1em", textTransform: "uppercase" },
+	factLabel: { color: tokens.colorTextSubtle, fontSize: 11, fontWeight: 500 },
 	factValue: {
 		margin: 0,
-		color: "#c5cbc6",
-		fontSize: 10,
+		color: tokens.colorText,
+		fontSize: 13,
 		overflow: "hidden",
 		textOverflow: "ellipsis"
 	},
@@ -490,30 +513,43 @@ const styles = stylex.create({
 		marginRight: 7,
 		borderRadius: "50%",
 		backgroundColor: tokens.colorAccent,
-		boxShadow: "0 0 8px #b9f22777"
+		boxShadow: "0 0 8px rgba(228, 242, 34, 0.35)"
 	},
 	distinction: {
 		display: "grid",
-		gridTemplateColumns: "80px 1fr",
-		gap: "8px 14px",
-		padding: 16,
-		borderLeft: "2px solid #68745f",
-		backgroundColor: "#171b18",
-		fontSize: 10,
-		color: "#8f9992"
+		gap: 8,
+		marginTop: tokens.space4,
+		padding: tokens.space3,
+		borderLeftColor: tokens.colorBorderStrong,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		backgroundColor: tokens.colorSurfaceInset,
+		fontSize: 12,
+		lineHeight: 1.55,
+		color: tokens.colorTextMuted
 	},
 	planSummary: {
 		display: "flex",
 		alignItems: "baseline",
 		gap: 10,
-		margin: "20px 0 12px",
-		color: "#768078",
-		fontSize: 9,
-		letterSpacing: ".12em"
+		margin: `${tokens.space4}px 0 ${tokens.space3}px`,
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	viewList: { listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 7 },
-	view: { border: "1px solid #353c37", backgroundColor: "#141714", opacity: 0.55 },
-	viewSelected: { borderColor: "#66725f", backgroundColor: "#1b201b", opacity: 1 },
+	view: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		opacity: 0.55
+	},
+	viewSelected: {
+		borderColor: tokens.colorBorder,
+		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		opacity: 1
+	},
 	viewLabel: {
 		minHeight: 62,
 		display: "grid",
@@ -523,15 +559,14 @@ const styles = stylex.create({
 		padding: "0 13px",
 		cursor: "pointer"
 	},
-	viewIndex: { color: tokens.colorAccent, fontFamily: "Georgia, serif", fontSize: 19 },
+	viewIndex: { color: tokens.colorAccent, fontFamily: tokens.fontMono, fontSize: 15 },
 	viewCopy: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 5,
-		fontSize: 10,
-		letterSpacing: ".04em"
+		fontSize: 12
 	},
-	warning: { color: "#e0a36d", fontSize: 10 },
+	warning: { color: tokens.colorWarning, fontSize: 12 },
 	captureStage: {
 		minHeight: "100%",
 		display: "flex",
@@ -540,17 +575,19 @@ const styles = stylex.create({
 		justifyContent: "center",
 		textAlign: "center",
 		padding: 30,
-		color: "#89938c"
+		color: tokens.colorTextMuted
 	},
 	aperture: {
 		width: 78,
 		height: 78,
 		position: "relative",
 		marginBottom: 20,
-		border: "1px solid #52604d",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderTopColor: tokens.colorAccent,
 		borderRadius: "50%",
-		boxShadow: "inset 0 0 28px #b9f2270d",
+		boxShadow: "inset 0 0 28px rgba(228, 242, 34, 0.05)",
 		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
 		animationDuration: "2.4s",
 		animationIterationCount: "infinite",
@@ -560,7 +597,7 @@ const styles = stylex.create({
 		width: "70%",
 		height: 2,
 		margin: "22px 0",
-		backgroundColor: "#303730",
+		backgroundColor: tokens.colorBorder,
 		overflow: "hidden"
 	},
 	progressFill: {
@@ -579,8 +616,11 @@ const styles = stylex.create({
 	resultGrid: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		border: "1px solid #39413b",
-		margin: "24px 0"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		margin: `${tokens.space4}px 0`
 	},
 	result: {
 		minHeight: 82,
@@ -589,47 +629,71 @@ const styles = stylex.create({
 		justifyContent: "center",
 		alignItems: "center",
 		gap: 7,
-		borderRight: "1px solid #343b36",
-		color: "#778179",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	runId: {
 		display: "block",
-		padding: 12,
-		border: "1px dashed #3c453e",
-		color: "#778179",
-		fontSize: 10
+		padding: tokens.space3,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "dashed",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
-	failure: { padding: 30, color: "#df9278" },
+	failure: {
+		display: "grid",
+		gap: tokens.space2,
+		padding: `${tokens.space5}px ${tokens.space5}px`,
+		color: tokens.colorDanger,
+		fontSize: 13,
+		lineHeight: 1.55
+	},
+	failureTitle: { margin: 0, fontSize: 16, fontWeight: 590 },
+	recovery: { margin: 0, color: tokens.colorTextMuted },
+	technical: { alignSelf: "start", color: tokens.colorTextSubtle, fontSize: 11 },
 	footer: {
 		minHeight: 70,
 		padding: "14px 20px",
-		borderTop: "1px solid #343b36",
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		display: "flex",
 		justifyContent: "flex-end",
 		gap: 8,
-		backgroundColor: "#0c0f0d"
+		backgroundColor: tokens.colorCanvas
 	},
 	secondary: {
 		minHeight: 38,
-		padding: "0 16px",
-		border: "1px solid #414943",
-		backgroundColor: "transparent",
-		color: "#9aa39d",
-		fontSize: 9,
-		letterSpacing: ".11em",
-		cursor: "pointer"
+		padding: "5px 12px",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorText,
+		fontSize: 13,
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
 	primary: {
 		minHeight: 38,
-		padding: "0 18px",
-		border: "1px solid #b9f227",
-		backgroundColor: { default: "#b9f227", ":hover": "#d0ff4f", ":disabled": "#4e5a34" },
-		color: "#10130c",
-		fontWeight: 800,
-		fontSize: 9,
-		letterSpacing: ".11em",
-		cursor: "pointer"
+		padding: "5px 12px",
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: tokens.colorAccent,
+			":hover": tokens.colorAccentStrong,
+			":disabled": tokens.colorBorderStrong
+		},
+		color: tokens.colorAccentText,
+		fontWeight: 500,
+		fontSize: 13,
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	}
 });

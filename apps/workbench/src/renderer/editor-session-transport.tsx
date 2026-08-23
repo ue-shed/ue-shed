@@ -99,7 +99,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 		action.run(props.client.executeEditorSessionCommand(command), {
 			onFailure: () => {
 				setPending(false);
-				setMessage("COMMAND FAILED");
+				setMessage("Command failed");
 			},
 			onSuccess: (result) => {
 				setPending(false);
@@ -132,8 +132,11 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 				>
 					:{port() ?? "—"}
 				</summary>
-				<div {...stylex.props(styles.settingsPanel)}>
-					<strong {...stylex.props(styles.settingsTitle)}>SESSION MONITOR PORT</strong>
+				<section
+					aria-label="Session monitor settings"
+					{...stylex.props(styles.settingsPanel)}
+				>
+					<strong {...stylex.props(styles.settingsTitle)}>Session monitor port</strong>
 					<p {...stylex.props(styles.settingsDetail)}>
 						Workbench will immediately monitor this port for an Unreal Editor session.
 					</p>
@@ -153,7 +156,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 							disabled={settingsPending()}
 							{...stylex.props(styles.applyButton)}
 						>
-							{settingsPending() ? "APPLYING…" : "APPLY"}
+							{settingsPending() ? "Applying…" : "Apply"}
 						</button>
 					</form>
 					<Show when={portMessage()} keyed>
@@ -164,7 +167,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 						)}
 					</Show>
 					<small {...stylex.props(styles.storageNote)}>Saved on this device.</small>
-				</div>
+				</section>
 			</details>
 			<div {...stylex.props(styles.actions)}>
 				<For each={actions()}>
@@ -186,112 +189,142 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 
 const styles = stylex.create({
 	transport: {
-		marginLeft: "auto",
-		height: "100%",
 		display: "flex",
+		flexWrap: "wrap",
 		alignItems: "center",
-		gap: 7,
-		padding: "0 10px",
-		borderLeft: `1px solid ${tokens.colorBorder}`,
-		borderRight: `1px solid ${tokens.colorBorder}`
+		gap: 8,
+		width: "100%"
 	},
-	lamp: { width: 6, height: 6, borderRadius: "50%", backgroundColor: "#59615b" },
-	live: { backgroundColor: tokens.colorAccent, boxShadow: "0 0 8px #b8ff5566" },
-	paused: { backgroundColor: "#d89a53", boxShadow: "0 0 8px #d89a5355" },
+	lamp: { width: 6, height: 6, borderRadius: "50%", backgroundColor: "#383b3f" },
+	live: { backgroundColor: tokens.colorSuccess, boxShadow: "0 0 8px rgba(76, 183, 130, 0.4)" },
+	paused: {
+		backgroundColor: tokens.colorWarning,
+		boxShadow: "0 0 8px rgba(242, 153, 74, 0.3)"
+	},
 	label: {
 		minWidth: 78,
-		color: tokens.colorTextSubtle,
-		fontSize: 8,
-		letterSpacing: ".09em",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500,
 		whiteSpace: "nowrap"
 	},
 	settings: { position: "relative" },
 	settingsSummary: {
-		padding: "5px 4px",
-		color: { default: "#79827c", ":hover": tokens.colorAccent },
+		padding: "4px 6px",
+		borderRadius: tokens.radiusBadge,
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorTextStrong },
 		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		letterSpacing: ".04em",
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		listStyle: "none",
 		whiteSpace: "nowrap"
 	},
 	settingsPanel: {
 		position: "absolute",
-		right: 0,
-		top: "calc(100% + 13px)",
+		bottom: "calc(100% + 14px)",
+		left: 0,
 		zIndex: 40,
-		width: 286,
-		padding: 14,
-		border: `1px solid ${tokens.colorBorder}`,
-		borderTopColor: tokens.colorAccent,
-		backgroundColor: "#121614",
-		boxShadow: "0 16px 38px #00000088"
+		width: 300,
+		padding: 16,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceRaised,
+		boxShadow: tokens.shadowOverlay
 	},
 	settingsTitle: {
-		color: tokens.colorText,
-		fontSize: 9,
-		letterSpacing: ".12em"
+		color: tokens.colorTextStrong,
+		fontSize: 12,
+		fontWeight: 590,
+		letterSpacing: "-0.005em"
 	},
 	settingsDetail: {
-		margin: "7px 0 11px",
-		color: tokens.colorTextSubtle,
-		fontSize: 9,
-		lineHeight: 1.5
+		margin: "8px 0 12px",
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.55
 	},
-	portForm: { display: "grid", gridTemplateColumns: "1fr auto", gap: 6 },
+	portForm: { display: "grid", gridTemplateColumns: "1fr auto", gap: 8 },
 	portInput: {
 		minWidth: 0,
 		height: 30,
-		padding: "0 9px",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#0b0e0c",
-		color: tokens.colorText,
-		fontFamily: tokens.fontBody,
-		fontSize: 11,
-		outlineColor: tokens.colorAccent
+		padding: "0 10px",
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorTextSubtle },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	},
 	applyButton: {
 		height: 30,
-		padding: "0 10px",
-		border: `1px solid ${tokens.colorAccent}`,
-		backgroundColor: { default: "#19220d", ":hover": "#273713" },
-		color: tokens.colorAccent,
+		padding: "0 12px",
+		borderColor: { default: tokens.colorBorder, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)",
+			":active": "rgba(255, 255, 255, 0.08)"
+		},
+		color: tokens.colorText,
 		cursor: { default: "pointer", ":disabled": "wait" },
-		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".08em"
+		fontSize: 12,
+		fontWeight: 500,
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	portMessage: {
 		display: "block",
 		marginTop: 8,
-		color: "#f1b8ad",
-		fontSize: 8,
-		lineHeight: 1.4
+		color: "#f2a9a1",
+		fontSize: 11,
+		lineHeight: 1.45
 	},
 	storageNote: {
 		display: "block",
-		marginTop: 9,
-		color: "#667068",
-		fontSize: 8
+		marginTop: 10,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
-	actions: { display: "flex", gap: 3 },
+	actions: { display: "flex", gap: 4, width: "100%" },
 	button: {
 		minWidth: 42,
-		height: 24,
-		padding: "0 7px",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#242a26" },
-		color: tokens.colorTextSubtle,
+		height: 26,
+		padding: "0 9px",
+		borderColor: { default: tokens.colorBorder, ":hover": tokens.colorBorder },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorText },
 		fontFamily: tokens.fontBody,
-		fontSize: 8,
-		letterSpacing: ".08em",
+		fontSize: 11,
+		fontWeight: 500,
 		cursor: { default: "pointer", ":disabled": "wait" },
-		opacity: { default: 1, ":disabled": 0.45 }
+		opacity: { default: 1, ":disabled": 0.45 },
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	primary: {
-		borderColor: tokens.colorAccent,
-		color: tokens.colorAccent
+		borderColor: "rgba(228, 242, 34, 0.45)",
+		color: tokens.colorAccent,
+		":hover": {
+			backgroundColor: tokens.colorAccentWash,
+			borderColor: "rgba(228, 242, 34, 0.7)",
+			color: tokens.colorAccent
+		}
 	}
 });

@@ -21,6 +21,14 @@ const filters: readonly { readonly label: string; readonly value: TextQualityFil
 	{ label: "Terminology", value: "terminology" }
 ];
 
+type QualityWorkspaceFailure =
+	| { readonly operation: "search"; readonly cause: string }
+	| {
+			readonly operation: "focus";
+			readonly cause: string;
+			readonly findingId: TextQualityFindingSummary["id"];
+	  };
+
 function expectation(focus: TextQualityFocus): string {
 	if (focus.kind === "character_budget") {
 		return `Maximum ${focus.expectation.maximumCharacters} characters`;
@@ -51,7 +59,7 @@ export function GameTextQualityWorkspace(props: {
 	const [page, setPage] = createSignal<TextQualitySearchPage>({ findings: [], total: 0 });
 	const [selectedId, setSelectedId] = createSignal<TextQualityFindingSummary["id"]>();
 	const [focus, setFocus] = createSignal<TextQualityFocus>();
-	const [failure, setFailure] = createSignal<string>();
+	const [failure, setFailure] = createSignal<QualityWorkspaceFailure>();
 	const [surface, setSurface] = createSignal<"findings" | "rules">("findings");
 	let searchGeneration = 0;
 	let focusGeneration = 0;
@@ -60,10 +68,15 @@ export function GameTextQualityWorkspace(props: {
 		const generation = ++focusGeneration;
 		focusAction.run(props.client.qualityFocus({ id, pageSize: 50 }), {
 			onFailure: (cause) => {
-				if (generation === focusGeneration) setFailure(String(cause));
+				if (generation === focusGeneration) {
+					setFailure({ operation: "focus", cause: String(cause), findingId: id });
+				}
 			},
 			onSuccess: (result) => {
 				if (generation !== focusGeneration) return;
+				setFailure((current) =>
+					current?.operation === "focus" && current.findingId === id ? undefined : current
+				);
 				setFocus(result.status === "found" ? result.focus : undefined);
 			}
 		});
@@ -73,11 +86,13 @@ export function GameTextQualityWorkspace(props: {
 		const generation = ++searchGeneration;
 		searchAction.run(props.client.qualitySearch({ filter: nextFilter, pageSize: 50 }), {
 			onFailure: (cause) => {
-				if (generation === searchGeneration) setFailure(String(cause));
+				if (generation === searchGeneration) {
+					setFailure({ operation: "search", cause: String(cause) });
+				}
 			},
 			onSuccess: (result) => {
 				if (generation !== searchGeneration || result.status !== "ready") return;
-				setFailure(undefined);
+				setFailure((current) => (current?.operation === "search" ? undefined : current));
 				setPage(result.page);
 				const next =
 					result.page.findings.find((finding) => finding.id === selectedId()) ??
@@ -101,49 +116,51 @@ export function GameTextQualityWorkspace(props: {
 		<div {...stylex.props(styles.workspace)}>
 			<section aria-label="Quality summary" {...stylex.props(styles.summaryStrip)}>
 				<div {...stylex.props(styles.summaryLead)}>
-					<span {...stylex.props(styles.summaryLeadHeader)}>
-						<small>PROJECT-AUTHORED REVIEW</small>
-						<button
-							type="button"
-							onClick={props.onReplaceRules}
-							{...stylex.props(styles.replaceRules)}
-						>
-							Replace quality rules
-						</button>
-					</span>
 					<strong {...stylex.props(styles.summaryValue)}>
 						{props.summary.findingCount.toLocaleString()}{" "}
 						{props.summary.findingCount === 1 ? "finding" : "findings"}
 					</strong>
-					<span>Rule document v{props.summary.ruleDocumentVersion}</span>
+					<span>Rule file v{props.summary.ruleDocumentVersion}</span>
+					<button
+						type="button"
+						onClick={props.onReplaceRules}
+						{...stylex.props(styles.replaceRules)}
+					>
+						Load rules
+					</button>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Budgets</small>
+					<small>Character budgets</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.characterBudgetCount}
 					</strong>
-					<span>character limits</span>
+					<span>{props.summary.rules.length} rules total</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
 					<small>Terminology</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.terminologyCount}
 					</strong>
-					<span>forbidden · preferred</span>
+					<span>forbidden and preferred terms</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Scoped roles</small>
+					<small>Roles</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.roles.length}
 					</strong>
-					<span>{props.summary.rules.length} rules</span>
+					<span>scoped to this project</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Saved text coverage</small>
-					<strong {...stylex.props(styles.metricValue)}>
+					<small>Saved text</small>
+					<strong
+						{...stylex.props(
+							styles.metricValue,
+							props.summary.status === "complete" && styles.complete
+						)}
+					>
 						{props.summary.status === "complete" ? "Complete" : "Partial"}
 					</strong>
-					<span>{coverage().inspectedPackages} inspected packages</span>
+					<span>{coverage().inspectedPackages} packages read</span>
 				</div>
 			</section>
 			<div
@@ -158,7 +175,7 @@ export function GameTextQualityWorkspace(props: {
 					onClick={() => setSurface("findings")}
 					{...stylex.props(styles.tab, surface() === "findings" && styles.tabActive)}
 				>
-					Findings <b>{props.summary.findingCount}</b>
+					Findings <b {...stylex.props(styles.tabCount)}>{props.summary.findingCount}</b>
 				</button>
 				<button
 					type="button"
@@ -167,14 +184,38 @@ export function GameTextQualityWorkspace(props: {
 					onClick={() => setSurface("rules")}
 					{...stylex.props(styles.tab, surface() === "rules" && styles.tabActive)}
 				>
-					Edit rules <b>{props.document.rules.length}</b>
+					Rules <b {...stylex.props(styles.tabCount)}>{props.document.rules.length}</b>
 				</button>
 			</div>
 			<Show when={failure()}>
-				{(message) => (
-					<p role="alert" {...stylex.props(styles.error)}>
-						{message()}
-					</p>
+				{(issue) => (
+					<section role="alert" {...stylex.props(styles.errorCard)}>
+						<strong {...stylex.props(styles.errorTitle)}>
+							{issue().operation === "search"
+								? "Couldn’t load findings."
+								: "Couldn’t load finding details."}
+						</strong>
+						<p {...stylex.props(styles.errorCopy)}>
+							Try again. If it keeps failing, restart Workbench.
+						</p>
+						<button
+							type="button"
+							onClick={() => {
+								const current = issue();
+								if (current.operation === "search") requestPage();
+								else requestFocus(current.findingId);
+							}}
+							{...stylex.props(styles.retryButton)}
+						>
+							Retry
+						</button>
+						<details {...stylex.props(styles.errorDetails)}>
+							<summary {...stylex.props(styles.techSummary)}>
+								Technical details
+							</summary>
+							<pre {...stylex.props(styles.techPre)}>{issue().cause}</pre>
+						</details>
+					</section>
 				)}
 			</Show>
 			<Show
@@ -191,7 +232,7 @@ export function GameTextQualityWorkspace(props: {
 				<div {...stylex.props(styles.grid)}>
 					<aside aria-label="Quality filters" {...stylex.props(styles.rail)}>
 						<header {...stylex.props(styles.railHeader)}>
-							<span>Finding queue</span>
+							<span>Filters</span>
 							<b>{props.summary.findingCount}</b>
 						</header>
 						<div role="group" aria-label="Finding type">
@@ -210,7 +251,7 @@ export function GameTextQualityWorkspace(props: {
 										)}
 									>
 										<span>{item.label}</span>
-										<b>
+										<b {...stylex.props(styles.filterCount)}>
 											{item.value === "all"
 												? props.summary.findingCount
 												: item.value === "character_budget"
@@ -222,21 +263,25 @@ export function GameTextQualityWorkspace(props: {
 							</For>
 						</div>
 						<section {...stylex.props(styles.railSection)}>
-							<header>Role matches</header>
+							<header {...stylex.props(styles.railSectionTitle)}>Role matches</header>
 							<For each={props.summary.roles}>
 								{(role) => (
 									<span {...stylex.props(styles.roleRow)}>
-										<code>{role.role}</code>
-										<b>{role.matchedTextUnits}</b>
+										<code {...stylex.props(styles.roleRowCode)}>
+											{role.role}
+										</code>
+										<b {...stylex.props(styles.filterCount)}>
+											{role.matchedTextUnits}
+										</b>
 									</span>
 								)}
 							</For>
 						</section>
 						<section {...stylex.props(styles.coverage)}>
-							<strong>
+							<strong {...stylex.props(styles.coverageTitle)}>
 								{props.summary.status === "complete"
-									? "ALL TEXT CHECKED"
-									: "PARTIAL COVERAGE"}
+									? "All saved text checked."
+									: "Only part of the saved text was checked."}
 							</strong>
 							<span>{coverage().textOccurrences} known occurrences</span>
 							<Show
@@ -246,7 +291,7 @@ export function GameTextQualityWorkspace(props: {
 									coverage().partialPackages > 0
 								}
 							>
-								<p>
+								<p {...stylex.props(styles.coverageDetail)}>
 									{coverage().unsupportedTextProperties} unsupported properties ·{" "}
 									{coverage().partialPackages} partial ·{" "}
 									{coverage().failedPackages} failed
@@ -254,15 +299,17 @@ export function GameTextQualityWorkspace(props: {
 							</Show>
 						</section>
 					</aside>
-					<section aria-label="Quality findings" {...stylex.props(styles.findings)}>
+					<section aria-label="Findings" {...stylex.props(styles.findings)}>
 						<header {...stylex.props(styles.listHeader)}>
-							<span>Explainable findings</span>
-							<b>{page().total}</b>
+							<span>Findings</span>
+							<b {...stylex.props(styles.count)}>{page().total}</b>
 						</header>
 						<Show
 							when={page().findings.length > 0}
 							fallback={
-								<p {...stylex.props(styles.empty)}>No findings for this filter.</p>
+								<p {...stylex.props(styles.empty)}>
+									No findings here. Widen the filter or fix the flagged text.
+								</p>
 							}
 						>
 							<For each={page().findings}>
@@ -284,8 +331,8 @@ export function GameTextQualityWorkspace(props: {
 										<span {...stylex.props(styles.findingMeta)}>
 											<b {...stylex.props(styles.kind)}>
 												{finding.kind === "character_budget"
-													? "BUDGET"
-													: "TERM"}
+													? "Budget"
+													: "Term"}
 											</b>
 											<code>{finding.role}</code>
 											<span>{finding.ruleId}</span>
@@ -304,22 +351,22 @@ export function GameTextQualityWorkspace(props: {
 							</For>
 						</Show>
 					</section>
-					<aside aria-label="Quality finding detail" {...stylex.props(styles.detail)}>
+					<aside aria-label="Finding detail" {...stylex.props(styles.detail)}>
 						<Show
 							when={focus()}
 							fallback={
 								<p {...stylex.props(styles.empty)}>
-									Select a finding to inspect its evidence.
+									Select a finding to see what was flagged and where it appears.
 								</p>
 							}
 						>
 							{(finding) => (
 								<>
 									<header {...stylex.props(styles.detailHeader)}>
-										<span {...stylex.props(styles.detailEyebrow)}>
+										<span {...stylex.props(styles.detailKind)}>
 											{finding().kind === "character_budget"
-												? "CHARACTER BUDGET"
-												: "TERMINOLOGY"}
+												? "Character budget"
+												: "Terminology"}
 										</span>
 										<blockquote {...stylex.props(styles.detailQuote)}>
 											“{finding().sourceExcerpt}”
@@ -331,7 +378,7 @@ export function GameTextQualityWorkspace(props: {
 									<section {...stylex.props(styles.explanation)}>
 										<div {...stylex.props(styles.explanationCell)}>
 											<small {...stylex.props(styles.explanationLabel)}>
-												ACTUAL
+												Observed
 											</small>
 											<strong {...stylex.props(styles.explanationValue)}>
 												{actual(finding())}
@@ -339,7 +386,7 @@ export function GameTextQualityWorkspace(props: {
 										</div>
 										<div {...stylex.props(styles.explanationCell)}>
 											<small {...stylex.props(styles.explanationLabel)}>
-												EXPECTED
+												Expected
 											</small>
 											<strong {...stylex.props(styles.explanationValue)}>
 												{expectation(finding())}
@@ -347,7 +394,7 @@ export function GameTextQualityWorkspace(props: {
 										</div>
 										<div {...stylex.props(styles.explanationCell)}>
 											<small {...stylex.props(styles.explanationLabel)}>
-												RECOVERY
+												How to fix
 											</small>
 											<strong {...stylex.props(styles.explanationValue)}>
 												{finding().recovery}
@@ -356,8 +403,10 @@ export function GameTextQualityWorkspace(props: {
 									</section>
 									<section {...stylex.props(styles.evidence)}>
 										<header {...stylex.props(styles.evidenceHeader)}>
-											<span>Affected occurrences</span>
-											<b>{finding().totalOccurrences}</b>
+											<span>Occurrences</span>
+											<b {...stylex.props(styles.count)}>
+												{finding().totalOccurrences}
+											</b>
 										</header>
 										<For each={finding().affectedOccurrences}>
 											{(occurrence) => {
@@ -402,125 +451,237 @@ export function GameTextQualityWorkspace(props: {
 }
 
 const styles = stylex.create({
-	workspace: { display: "flex", flexDirection: "column", gap: 8 },
+	workspace: { display: "flex", flexDirection: "column", gap: tokens.space3 },
 	summaryStrip: {
 		display: "grid",
 		gridTemplateColumns: "1.35fr repeat(4, minmax(120px, .75fr))",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	summaryLead: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 3,
-		padding: "8px 11px",
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		gap: tokens.space1,
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextMuted,
-		fontSize: 9
-	},
-	summaryLeadHeader: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 8
+		fontSize: 12
 	},
 	replaceRules: {
-		border: "1px solid #884a36",
-		backgroundColor: { default: "#382019", ":hover": "#4a291f" },
-		color: "#ffd0bf",
-		padding: "3px 6px",
+		alignSelf: "flex-start",
+		marginTop: tokens.space1,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: `${tokens.space1} ${tokens.space2}`,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
-		fontSize: 8,
+		fontSize: 11,
 		whiteSpace: "nowrap"
 	},
 	metric: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 2,
-		padding: "8px 10px",
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextFaint,
-		fontSize: 8
+		fontSize: 11
 	},
-	summaryValue: { color: tokens.colorTextStrong, fontSize: 14, lineHeight: 1.2 },
+	summaryValue: { color: tokens.colorTextStrong, fontSize: 15, lineHeight: 1.2 },
 	metricValue: { color: tokens.colorTextStrong, fontSize: 13, lineHeight: 1.2 },
+	complete: { color: tokens.colorSuccess },
 	tabs: {
 		display: "flex",
-		border: `1px solid ${tokens.colorBorder}`,
-		borderTop: 0,
-		backgroundColor: "#121110"
+		gap: tokens.space4,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	tab: {
 		display: "flex",
 		alignItems: "center",
-		gap: 7,
-		padding: "6px 10px",
-		border: 0,
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
+		gap: tokens.space2,
+		padding: `${tokens.space2} 0`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: "transparent",
+		borderBottomStyle: "solid",
+		borderBottomWidth: 2,
+		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
-		fontSize: 9,
+		fontSize: 13,
+		fontWeight: 500,
 		cursor: "pointer"
 	},
-	tabActive: { color: "#ffd0bf", backgroundColor: "#2b1d18" },
+	tabActive: {
+		borderBottomColor: tokens.colorAccent,
+		color: tokens.colorTextStrong
+	},
+	tabCount: {
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	count: {
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontWeight: 500,
+		fontVariantNumeric: "tabular-nums"
+	},
+	errorCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		padding: tokens.space4,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface
+	},
+	errorTitle: { color: tokens.colorTextStrong, fontSize: 14 },
+	errorCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 13 },
+	errorDetails: {
+		color: tokens.colorTextFaint,
+		fontSize: 11
+	},
+	techSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
+	techPre: {
+		margin: `${tokens.space2} 0 0`,
+		maxWidth: 640,
+		padding: tokens.space2,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		whiteSpace: "pre-wrap",
+		wordBreak: "break-word"
+	},
+	retryButton: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: `${tokens.space1} ${tokens.space3}`,
+		borderRadius: tokens.radiusControl,
+		cursor: "pointer",
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 500
+	},
 	grid: {
 		display: "grid",
-		gridTemplateColumns: "206px minmax(390px, 470px) minmax(440px, 1fr)",
-		gap: 8
+		gridTemplateColumns: "206px minmax(360px, 440px) minmax(400px, 1fr)",
+		gap: tokens.space3,
+		alignItems: "start"
 	},
 	rail: {
 		display: "flex",
 		flexDirection: "column",
-		height: "calc(100vh - 220px)",
-		minHeight: 470,
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
+		height: "calc(100vh - 260px)",
+		minHeight: 420,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	railHeader: {
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "8px 9px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 10
+		padding: `${tokens.space3} ${tokens.space3}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorTextStrong,
+		fontWeight: 590,
+		fontSize: 12
 	},
 	filter: {
 		display: "flex",
 		justifyContent: "space-between",
 		width: "100%",
-		border: 0,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#211d1a" },
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
 		color: tokens.colorTextMuted,
-		padding: "8px 9px",
-		fontSize: 9,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		fontSize: 12,
 		textAlign: "left",
 		cursor: "pointer"
 	},
-	filterActive: {
-		color: "#f2d2c6",
-		backgroundColor: "#2b1d18",
-		boxShadow: "inset 3px 0 #e87655"
+	filterCount: {
+		fontFamily: tokens.fontMono,
+		fontVariantNumeric: "tabular-nums",
+		color: tokens.colorTextFaint
 	},
-	railSection: { display: "flex", flexDirection: "column", gap: 6, padding: "9px", fontSize: 9 },
-	roleRow: { display: "flex", justifyContent: "space-between", color: tokens.colorTextMuted },
+	filterActive: {
+		color: tokens.colorTextStrong,
+		backgroundColor: tokens.colorSurfaceHover,
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+	},
+	railSection: {
+		display: "flex",
+		flexDirection: "column",
+		gap: tokens.space2,
+		padding: tokens.space3,
+		fontSize: 11
+	},
+	railSectionTitle: { color: tokens.colorTextSubtle, fontSize: 11, fontWeight: 500 },
+	roleRowCode: { fontFamily: tokens.fontMono, fontSize: 11 },
+	roleRow: {
+		display: "flex",
+		justifyContent: "space-between",
+		color: tokens.colorTextMuted
+	},
 	coverage: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 4,
+		gap: tokens.space1,
 		marginTop: "auto",
-		padding: 9,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		padding: tokens.space3,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorTextMuted,
-		fontSize: 9
+		fontSize: 11,
+		lineHeight: 1.45
 	},
+	coverageTitle: { color: tokens.colorText, fontWeight: 500 },
+	coverageDetail: { margin: 0, color: tokens.colorWarning },
 	findings: {
 		display: "flex",
 		flexDirection: "column",
-		height: "calc(100vh - 220px)",
-		minHeight: 470,
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#121110",
+		height: "calc(100vh - 260px)",
+		minHeight: 420,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	listHeader: {
@@ -529,112 +690,160 @@ const styles = stylex.create({
 		zIndex: 1,
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "8px 9px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#191715f5",
-		fontSize: 9
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextStrong,
+		fontWeight: 590,
+		fontSize: 12
 	},
 	finding: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
+		gap: tokens.space1,
 		width: "100%",
-		border: 0,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "#201c19" },
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
 		color: tokens.colorText,
-		padding: "9px 10px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		textAlign: "left",
 		cursor: "pointer"
 	},
-	findingActive: { backgroundColor: "#2b1d18", boxShadow: "inset 3px 0 #e87655" },
+	findingActive: {
+		backgroundColor: tokens.colorSurfaceHover,
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
+	},
 	findingMeta: {
 		display: "flex",
 		alignItems: "center",
-		gap: 7,
+		gap: tokens.space2,
 		color: tokens.colorTextFaint,
-		fontSize: 8
+		fontSize: 11
 	},
-	kind: { padding: "2px 4px", color: "#efaa91", backgroundColor: "#382019" },
-	source: { overflow: "hidden", fontSize: 13, textOverflow: "ellipsis", whiteSpace: "nowrap" },
-	actual: { color: "#d7a18d", fontSize: 9 },
-	expected: { color: tokens.colorTextMuted, fontSize: 9 },
+	kind: {
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		color: tokens.colorTextMuted,
+		backgroundColor: "rgba(255, 255, 255, 0.05)"
+	},
+	source: {
+		overflow: "hidden",
+		color: tokens.colorTextStrong,
+		fontSize: 13,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	actual: { color: tokens.colorWarning, fontSize: 11 },
+	expected: { color: tokens.colorTextMuted, fontSize: 11 },
 	detail: {
-		height: "calc(100vh - 220px)",
-		minHeight: 470,
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: "#151311",
+		height: "calc(100vh - 260px)",
+		minHeight: 420,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	detailHeader: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 6,
-		padding: "12px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		gap: tokens.space2,
+		padding: tokens.space4,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	detailEyebrow: { color: "#e87655", fontSize: 9, letterSpacing: ".08em" },
+	detailKind: { color: tokens.colorTextSubtle, fontSize: 11 },
 	detailQuote: {
-		margin: "2px 0",
+		margin: 0,
 		color: tokens.colorTextStrong,
-		fontSize: 20,
-		fontWeight: 600,
-		lineHeight: 1.3
+		fontSize: 17,
+		fontWeight: 590,
+		lineHeight: 1.3,
+		letterSpacing: "-0.01em"
 	},
-	detailId: { color: "#d2cac2", fontSize: 10 },
+	detailId: {
+		overflow: "hidden",
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
 	explanation: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	explanationCell: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
+		gap: tokens.space1,
 		minWidth: 0,
-		padding: "10px 11px",
-		borderRight: `1px solid ${tokens.colorBorder}`
+		padding: `${tokens.space3} ${tokens.space4}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
 	},
-	explanationLabel: { color: tokens.colorTextFaint, fontSize: 8, letterSpacing: ".06em" },
-	explanationValue: { color: tokens.colorText, fontSize: 11, fontWeight: 600, lineHeight: 1.4 },
-	evidence: { margin: 10, border: `1px solid ${tokens.colorBorder}` },
+	explanationLabel: { color: tokens.colorTextFaint, fontSize: 11 },
+	explanationValue: {
+		color: tokens.colorText,
+		fontSize: 11,
+		fontWeight: 500,
+		lineHeight: 1.4
+	},
+	evidence: {
+		margin: tokens.space3,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		overflow: "hidden"
+	},
 	evidenceHeader: {
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "7px 9px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextMuted,
-		fontSize: 9
+		fontSize: 11
 	},
 	evidenceRow: {
 		display: "flex",
 		flexDirection: "column",
 		gap: 3,
-		padding: "8px 9px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		padding: `${tokens.space2} ${tokens.space3}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	evidenceTitle: { color: tokens.colorTextStrong, fontSize: 11 },
-	evidenceDetail: { color: tokens.colorTextMuted, fontSize: 9 },
+	evidenceDetail: { color: tokens.colorTextMuted, fontSize: 11 },
 	evidencePath: {
 		overflow: "hidden",
-		color: "#d8d0c8",
-		fontSize: 9,
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
 	evidencePackage: {
 		overflow: "hidden",
 		color: tokens.colorTextFaint,
-		fontSize: 8,
+		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	empty: { padding: 24, color: tokens.colorTextMuted, fontSize: 10 },
-	error: {
-		margin: 0,
-		padding: 8,
-		border: `1px solid ${tokens.colorDanger}`,
-		color: "#efaa91",
-		fontSize: 9
-	}
+	empty: { padding: tokens.space4, color: tokens.colorTextMuted, fontSize: 12 }
 });

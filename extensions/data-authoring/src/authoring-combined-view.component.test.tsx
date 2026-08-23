@@ -123,11 +123,11 @@ describe("AuthoringCombinedView", () => {
 		expect(screen.getByRole("columnheader", { name: /targetDT_Right/i })).toBeDefined();
 
 		await userEvent.setup().click(screen.getByRole("button", { name: "Hide all" }));
-		expect(await screen.findByText("All participating tables are hidden.")).toBeDefined();
+		expect(await screen.findByText("All tables are hidden.")).toBeDefined();
 		await userEvent.setup().click(screen.getByRole("button", { name: "Show all" }));
 		expect(screen.getByRole("columnheader", { name: /sourceDT_Left/i })).toBeDefined();
 
-		await userEvent.setup().click(screen.getByRole("button", { name: "Open source editor ↗" }));
+		await userEvent.setup().click(screen.getByRole("button", { name: "Open source editor" }));
 		expect(onOpenForEditing).toHaveBeenCalledWith(sourcePath);
 	});
 });

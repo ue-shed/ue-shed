@@ -116,15 +116,15 @@ function CameraTile(props: {
 		>
 			<canvas ref={(element) => (canvas = element)} {...stylex.props(styles.canvas)} />
 			<div {...stylex.props(styles.tileTop)}>
-				<span>CAM {String(props.index + 1).padStart(2, "0")}</span>
+				<span>Cam {String(props.index + 1).padStart(2, "0")}</span>
 				<span {...stylex.props(styles.liveDot)}>
-					{props.pipelineMode === "full_pipeline" ? "LIVE" : "ISOLATED"}
+					{props.pipelineMode === "full_pipeline" ? "Live" : "Isolated"}
 				</span>
 			</div>
 			<Show when={!props.frame}>
 				<div {...stylex.props(styles.awaiting)}>
 					<span>
-						{props.pipelineMode === "full_pipeline" ? "NO SIGNAL" : "OUTPUT MUTED"}
+						{props.pipelineMode === "full_pipeline" ? "No signal" : "Output muted"}
 					</span>
 					<small>
 						{props.pipelineMode === "render_only"
@@ -297,9 +297,12 @@ export function CameraLab() {
 	return (
 		<main {...stylex.props(styles.shell)}>
 			<header {...stylex.props(styles.header)}>
-				<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-					Camera lab / Observation systems
-				</nav>
+				<div {...stylex.props(styles.headerTitle)}>
+					<h1 {...stylex.props(styles.title)}>Camera Lab</h1>
+					<p {...stylex.props(styles.titleIntro)}>
+						Schedule many live cameras against one editor and watch the delivery budget.
+					</p>
+				</div>
 				<div {...stylex.props(styles.systemActions)}>
 					<div {...stylex.props(styles.systemState)}>
 						<span {...stylex.props(styles.pulse)} />
@@ -314,8 +317,8 @@ export function CameraLab() {
 							{...stylex.props(styles.launchButton)}
 						>
 							{fixtureLaunch().status === "launching"
-								? "BUILDING + LAUNCHING…"
-								: "LAUNCH CAMERA FIXTURE"}
+								? "Launching fixture…"
+								: "Launch camera fixture"}
 						</button>
 					</Show>
 					<Show when={fixtureLaunch().status === "failed"}>
@@ -330,37 +333,37 @@ export function CameraLab() {
 			</header>
 
 			<section {...stylex.props(styles.instrumentBar)}>
-				<Metric label="AGGREGATE FPS" value={totalFps().toFixed(1)} />
-				<Metric label="PIPE THROUGHPUT" value={`${throughput().toFixed(2)} MB/s`} />
+				<Metric label="Aggregate FPS" value={totalFps().toFixed(1)} />
+				<Metric label="Pipe throughput" value={`${throughput().toFixed(2)} MB/s`} />
 				<Metric
-					label="ELECTRON PRIVATE"
+					label="Electron private"
 					value={`${metrics()?.electronPrivateMemoryMb.toFixed(0) ?? "—"} MB`}
 					warn={(metrics()?.electronPrivateMemoryMb ?? 0) > 2_048}
 				/>
 				<Metric
-					label="GPU PROCESS PRIVATE"
+					label="GPU process private"
 					value={`${metrics()?.gpuProcessPrivateMemoryMb.toFixed(0) ?? "—"} MB`}
 					warn={(metrics()?.gpuProcessPrivateMemoryMb ?? 0) > 1_536}
 				/>
-				<Metric label="HOST FRAMES" value={String(metrics()?.framesReceived ?? 0)} />
+				<Metric label="Host frames" value={String(metrics()?.framesReceived ?? 0)} />
 				<Metric
-					label="EXPERIMENT SCHEDULED"
+					label="Experiment scheduled"
 					value={`${experimentRate(status()?.stats.experimentScheduledCaptures).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="EXPERIMENT RENDERED"
+					label="Experiment rendered"
 					value={`${experimentRate(status()?.stats.experimentRenderedCaptures).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="EXPERIMENT DELIVERED"
+					label="Experiment delivered"
 					value={`${experimentRate(status()?.stats.experimentFramesDelivered).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="EXPERIMENT TICKS"
+					label="Experiment ticks"
 					value={`${experimentRate(status()?.stats.experimentSchedulerTicks).toFixed(1)} /s`}
 				/>
 				<Metric
-					label="SKIP / DROP / REPLACE"
+					label="Skip / drop / replace"
 					value={`${status()?.stats.experimentCadenceIntervalsSkipped ?? 0} / ${status()?.stats.experimentReadbackDrops ?? 0} / ${status()?.stats.experimentTransportReplacements ?? 0}`}
 					warn={
 						(status()?.stats.experimentCadenceIntervalsSkipped ?? 0) > 0 ||
@@ -369,23 +372,23 @@ export function CameraLab() {
 					}
 				/>
 				<Metric
-					label="READBACK ALLOCATIONS"
+					label="Readback allocations"
 					value={`${status()?.stats.experimentReadbackResourcesCreated ?? 0} window · ${status()?.stats.readbackResourcesCreated ?? 0} total`}
 				/>
-				<Metric label="AVG UE BATCH" value={averageCaptureBatch()} />
-				<Metric label="MAX UE BATCH" value={maxCaptureBatch()} />
+				<Metric label="Avg UE batch" value={averageCaptureBatch()} />
+				<Metric label="Max UE batch" value={maxCaptureBatch()} />
 				<Metric
-					label="CADENCE AVG / MAX"
+					label="Cadence avg / max"
 					value={captureCadence()}
 					warn={(status()?.stats.cadenceIntervalsSkipped ?? 0) > 0}
 				/>
 				<Metric
-					label="MALFORMED"
+					label="Malformed"
 					value={String(metrics()?.malformedFrames ?? 0)}
 					warn={(metrics()?.malformedFrames ?? 0) > 0}
 				/>
 				<Metric
-					label="GPU/STAGE DROPS"
+					label="GPU/stage drops"
 					value={String(
 						status()?.stats.readbackDrops ?? frames().get(0)?.readbackDrops ?? 0
 					)}
@@ -434,10 +437,10 @@ export function CameraLab() {
 				</section>
 
 				<aside {...stylex.props(styles.controls)}>
-					<p {...stylex.props(styles.panelLabel)}>CONTROLS</p>
+					<p {...stylex.props(styles.panelLabel)}>Controls</p>
 					<h2 {...stylex.props(styles.panelTitle)}>Camera load</h2>
 					<Slider
-						label="ACTIVE CAMERAS"
+						label="Active cameras"
 						value={config().activeCameraCount}
 						min={1}
 						max={status()?.cameras.length ?? 32}
@@ -454,14 +457,14 @@ export function CameraLab() {
 						}
 					/>
 					<div {...stylex.props(styles.viewMode)}>
-						<span>PIPELINE ISOLATION</span>
+						<span>Pipeline isolation</span>
 						<div>
 							<For
 								each={
 									[
-										["full_pipeline", "FULL"],
-										["render_only", "RENDER"],
-										["schedule_only", "SCHEDULE"]
+										["full_pipeline", "Full"],
+										["render_only", "Render"],
+										["schedule_only", "Schedule"]
 									] as const
 								}
 							>
@@ -484,7 +487,7 @@ export function CameraLab() {
 						</div>
 					</div>
 					<Slider
-						label="FOCUSED RATE"
+						label="Focused rate"
 						value={config().focusedFps}
 						min={1}
 						max={30}
@@ -492,7 +495,7 @@ export function CameraLab() {
 						onInput={(value) => void applyConfig({ ...config(), focusedFps: value })}
 					/>
 					<Slider
-						label="BACKGROUND RATE"
+						label="Background rate"
 						value={config().backgroundFps}
 						min={0.5}
 						max={30}
@@ -501,7 +504,7 @@ export function CameraLab() {
 						onInput={(value) => void applyConfig({ ...config(), backgroundFps: value })}
 					/>
 					<Slider
-						label="CAPTURES / TICK"
+						label="Captures per tick"
 						value={config().captureBudgetPerTick}
 						min={1}
 						max={32}
@@ -511,7 +514,7 @@ export function CameraLab() {
 						}
 					/>
 					<Slider
-						label="DISPLAY BUDGET"
+						label="Display budget"
 						value={presentationBudget()}
 						min={25}
 						max={500}
@@ -525,7 +528,7 @@ export function CameraLab() {
 						}}
 					/>
 					<div {...stylex.props(styles.resolution)}>
-						<span>FRAME SIZE</span>
+						<span>Frame size</span>
 						<div>
 							<For each={resolutionOptions}>
 								{(resolution) => (
@@ -547,7 +550,7 @@ export function CameraLab() {
 						</div>
 					</div>
 					<div {...stylex.props(styles.viewMode)}>
-						<span>RENDER PROFILE</span>
+						<span>Render profile</span>
 						<div>
 							<button
 								type="button"
@@ -563,7 +566,7 @@ export function CameraLab() {
 										styles.modeButtonActive
 								)}
 							>
-								FULL FIDELITY
+								Full fidelity
 							</button>
 							<button
 								type="button"
@@ -581,7 +584,7 @@ export function CameraLab() {
 						</div>
 					</div>
 					<div {...stylex.props(styles.viewMode)}>
-						<span>VIEWPOINT</span>
+						<span>Viewpoint</span>
 						<div>
 							<button
 								type="button"
@@ -605,7 +608,7 @@ export function CameraLab() {
 									config().viewMode === "actor_pov" && styles.modeButtonActive
 								)}
 							>
-								ACTOR POV
+								Actor POV
 							</button>
 						</div>
 					</div>
@@ -614,7 +617,7 @@ export function CameraLab() {
 						onClick={() => void applyConfig({ ...config(), paused: !config().paused })}
 						{...stylex.props(styles.pause)}
 					>
-						{config().paused ? "RESUME CAPTURE" : "PAUSE CAPTURE"}
+						{config().paused ? "Resume capture" : "Pause capture"}
 					</button>
 					<div {...stylex.props(styles.budgetNote)}>
 						<strong>{config().resolution.replace("x", " × ")} · BGRA8</strong>
@@ -688,28 +691,38 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorCanvas,
 		color: tokens.colorText,
 		fontFamily: tokens.fontBody,
+		fontSize: 13,
 		backgroundImage:
-			"linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px)",
+			"linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px)",
 		backgroundSize: "24px 24px",
-		padding: "24px 28px 30px"
+		padding: "24px 28px 32px"
 	},
 	header: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		borderBottomColor: tokens.colorBorderStrong,
+		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1,
-		paddingBottom: "18px"
+		paddingBottom: "16px"
 	},
-	eyebrow: { color: "#8f9992", fontSize: "10px", letterSpacing: "0.2em", margin: 0 },
+	headerTitle: { minWidth: 0, display: "flex", flexDirection: "column", gap: 6 },
+	title: {
+		margin: 0,
+		fontFamily: tokens.fontDisplay,
+		fontSize: 26,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
+	},
+	titleIntro: { margin: 0, color: tokens.colorTextMuted, fontSize: 14 },
 	systemState: {
 		alignItems: "center",
-		color: "#b8c2ba",
+		color: tokens.colorText,
 		display: "flex",
-		fontSize: "11px",
-		gap: "9px",
-		textTransform: "uppercase"
+		fontSize: 12,
+		fontWeight: 500,
+		gap: "9px"
 	},
 	systemActions: {
 		display: "flex",
@@ -719,25 +732,28 @@ const styles = stylex.create({
 		maxWidth: 520
 	},
 	launchButton: {
-		padding: "9px 13px",
-		border: "1px solid #46d0ac",
-		backgroundColor: { default: "#102a25", ":hover": "#16362f" },
-		color: "#74e6c4",
-		fontFamily: "monospace",
-		fontSize: 10,
-		fontWeight: 700,
-		letterSpacing: "0.08em",
+		padding: "7px 12px",
+		borderColor: "rgba(228, 242, 34, 0.45)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorAccentWash },
+		color: tokens.colorAccent,
+		fontSize: 13,
+		fontWeight: 500,
 		cursor: "pointer",
-		transition: "transform 140ms cubic-bezier(0.23, 1, 0.32, 1)",
+		transitionProperty: "background-color, transform",
+		transitionDuration: tokens.motionFast,
+		transitionTimingFunction: tokens.motionEaseOut,
 		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
-	launchError: { color: "#ff8b7b", fontFamily: "monospace", textAlign: "right" },
+	launchError: { color: "#f2a9a1", textAlign: "right", fontSize: 12 },
 	pulse: {
 		width: "7px",
 		height: "7px",
 		borderRadius: "50%",
-		backgroundColor: tokens.colorAccentStrong,
-		boxShadow: "0 0 14px #b9f227"
+		backgroundColor: tokens.colorSuccess,
+		boxShadow: "0 0 10px rgba(76, 183, 130, 0.4)"
 	},
 	instrumentBar: {
 		display: "grid",
@@ -747,16 +763,18 @@ const styles = stylex.create({
 		borderBottomWidth: 1
 	},
 	metric: {
-		borderRight: "1px solid #303532",
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		padding: "13px 14px",
 		display: "flex",
 		flexDirection: "column",
 		gap: "5px",
-		color: "#7d8780",
-		fontSize: "9px",
-		letterSpacing: ".12em"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500
 	},
-	metricWarn: { backgroundColor: "rgba(255, 110, 54, .1)", color: "#ff8c62" },
+	metricWarn: { backgroundColor: "rgba(235, 87, 87, 0.07)", color: "#f2a9a1" },
 	workspace: {
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) 276px",
@@ -768,20 +786,22 @@ const styles = stylex.create({
 	tile: {
 		width: "100%",
 		aspectRatio: "16/9",
-		border: "1px solid #303633",
+		borderColor: { default: tokens.colorBorder, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: 0,
-		backgroundColor: "#101313",
-		color: "#eef1eb",
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextStrong,
 		position: "relative",
 		overflow: "hidden",
 		cursor: "pointer",
 		textAlign: "left",
-		transition: "border-color 160ms ease, transform 160ms ease",
-		":hover": { borderColor: "#717c74", transform: "translateY(-1px)" }
+		transition: "border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease",
+		":hover": { borderColor: "#4a4e54", transform: "translateY(-1px)" }
 	},
 	tileFocused: {
-		borderColor: "#b9f227",
-		boxShadow: "inset 0 0 0 1px #b9f227, 0 0 24px rgba(185,242,39,.08)"
+		borderColor: "rgba(228, 242, 34, 0.65)",
+		boxShadow: `inset 0 0 0 1px rgba(228, 242, 34, 0.25), ${tokens.shadowOverlay}`
 	},
 	canvas: { width: "100%", height: "100%", display: "block", objectFit: "cover" },
 	tileTop: {
@@ -792,10 +812,11 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: "9px 10px",
-		fontSize: "10px",
-		backgroundImage: "linear-gradient(#080a0acc, transparent)"
+		fontFamily: tokens.fontMono,
+		fontSize: "11px",
+		backgroundImage: "linear-gradient(rgba(8, 9, 10, 0.82), transparent)"
 	},
-	liveDot: { color: "#b9f227", letterSpacing: ".12em" },
+	liveDot: { color: tokens.colorAccent },
 	awaiting: {
 		position: "absolute",
 		inset: 0,
@@ -804,130 +825,163 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "center",
 		gap: "8px",
-		color: "#778079",
+		color: tokens.colorTextSubtle,
 		backgroundImage:
-			"repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(255,255,255,.018) 8px, rgba(255,255,255,.018) 9px)",
-		fontSize: "12px",
-		letterSpacing: ".15em"
+			"repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(255,255,255,.015) 8px, rgba(255,255,255,.015) 9px)",
+		fontFamily: tokens.fontMono,
+		fontSize: "11px",
+		letterSpacing: ".08em"
 	},
 	tileStats: {
 		display: "grid",
 		gridTemplateColumns: "repeat(4, 1fr)",
-		color: "#869088",
-		border: "1px solid #292e2b",
-		borderTop: 0,
-		fontSize: "9px",
+		color: tokens.colorTextSubtle,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderTopWidth: 0,
+		fontFamily: tokens.fontMono,
+		fontSize: "11px",
 		padding: "7px 9px",
 		gap: "8px"
 	},
 	controls: {
-		border: "1px solid #343a36",
-		backgroundColor: "#111413",
-		padding: "18px",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusPanel,
+		backgroundColor: tokens.colorSurface,
+		boxShadow: tokens.shadowCard,
+		padding: "16px",
 		alignSelf: "start",
 		position: "sticky",
-		top: "18px"
+		top: "16px"
 	},
-	panelLabel: { color: "#b9f227", fontSize: "9px", letterSpacing: ".18em", margin: "0 0 7px" },
-	panelTitle: { fontSize: "18px", fontWeight: 500, lineHeight: 1.25, margin: "0 0 24px" },
+	panelLabel: {
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: "11px",
+		margin: "0 0 6px"
+	},
+	panelTitle: {
+		fontSize: "17px",
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		lineHeight: 1.25,
+		margin: "0 0 22px",
+		color: tokens.colorTextStrong
+	},
 	slider: {
 		display: "flex",
 		flexDirection: "column",
 		gap: "10px",
-		marginBottom: "21px",
-		color: "#aab2ac",
-		fontSize: "10px",
-		letterSpacing: ".08em"
+		marginBottom: "20px",
+		color: tokens.colorTextMuted,
+		fontSize: "11px",
+		fontWeight: 500
 	},
 	viewMode: {
 		display: "flex",
 		flexDirection: "column",
 		gap: "9px",
 		marginBottom: "20px",
-		color: "#aab2ac",
-		fontSize: "10px",
-		letterSpacing: ".08em"
+		color: tokens.colorTextMuted,
+		fontSize: "11px",
+		fontWeight: 500
 	},
 	resolution: {
 		display: "flex",
 		flexDirection: "column",
 		gap: "9px",
 		marginBottom: "20px",
-		color: "#aab2ac",
-		fontSize: "10px",
-		letterSpacing: ".08em"
+		color: tokens.colorTextMuted,
+		fontSize: "11px",
+		fontWeight: 500
 	},
 	resolutionButton: {
 		width: "25%",
-		border: "1px solid #3a413d",
-		backgroundColor: "transparent",
-		color: "#7f8982",
+		borderColor: { default: tokens.colorBorder, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorTextStrong },
 		padding: "8px 2px",
 		cursor: "pointer",
-		fontSize: "8px",
-		":hover": { color: "#e8ebe5", borderColor: "#717c74" }
+		fontSize: "11px",
+		fontWeight: 500
 	},
 	modeButton: {
 		width: "50%",
-		border: "1px solid #3a413d",
-		backgroundColor: "transparent",
-		color: "#7f8982",
+		borderColor: { default: tokens.colorBorder, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorTextStrong },
 		padding: "9px 5px",
 		cursor: "pointer",
-		fontSize: "9px",
-		":hover": { color: "#e8ebe5", borderColor: "#717c74" }
+		fontSize: "11px",
+		fontWeight: 500
 	},
 	pipelineButton: {
 		width: "33.333%",
-		border: "1px solid #3a413d",
-		backgroundColor: "transparent",
-		color: "#7f8982",
+		borderColor: { default: tokens.colorBorder, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: { default: tokens.colorTextMuted, ":hover": tokens.colorTextStrong },
 		padding: "9px 2px",
 		cursor: "pointer",
-		fontSize: "8px",
-		":hover": { color: "#e8ebe5", borderColor: "#717c74" }
+		fontSize: "11px",
+		fontWeight: 500
 	},
 	modeButtonActive: {
-		color: "#0b0d0d",
-		backgroundColor: "#b9f227",
-		borderColor: "#b9f227",
-		":hover": { color: "#0b0d0d", borderColor: "#b9f227" }
+		backgroundColor: "rgba(255, 255, 255, 0.08)",
+		borderColor: "#4a4e54",
+		color: tokens.colorTextStrong,
+		":hover": { backgroundColor: "rgba(255, 255, 255, 0.08)", color: tokens.colorTextStrong }
 	},
 	pause: {
 		width: "100%",
-		border: "1px solid #b9f227",
-		color: "#b9f227",
-		backgroundColor: "transparent",
-		padding: "11px",
+		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorText,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.04)"
+		},
+		padding: "10px",
 		cursor: "pointer",
-		fontSize: "10px",
-		letterSpacing: ".12em",
-		":hover": { backgroundColor: "rgba(185,242,39,.08)" }
+		fontSize: "12px",
+		fontWeight: 500
 	},
 	budgetNote: {
 		display: "flex",
 		flexDirection: "column",
 		gap: "6px",
-		borderTop: "1px solid #323834",
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		marginTop: "20px",
 		paddingTop: "16px",
-		color: "#7f8982",
-		fontSize: "10px"
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: "11px"
 	},
 	legend: {
 		display: "flex",
 		flexDirection: "column",
 		gap: "8px",
 		marginTop: "18px",
-		color: "#7f8982",
-		fontSize: "9px"
+		color: tokens.colorTextSubtle,
+		fontSize: "11px"
 	},
 	legendGood: {
 		display: "inline-block",
 		width: "7px",
 		height: "7px",
 		borderRadius: "50%",
-		backgroundColor: "#b9f227",
+		backgroundColor: tokens.colorSuccess,
 		marginRight: "7px"
 	},
 	legendWarn: {
@@ -935,7 +989,7 @@ const styles = stylex.create({
 		width: "7px",
 		height: "7px",
 		borderRadius: "50%",
-		backgroundColor: "#ff713b",
+		backgroundColor: tokens.colorWarning,
 		marginRight: "7px"
 	}
 });

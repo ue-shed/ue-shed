@@ -196,7 +196,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			await expect(page.getByRole("region", { name: "Review set status" })).toContainText(
 				"Fixture Structure"
 			);
-			const history = page.getByRole("region", { name: "Capture history" });
+			const history = page.getByRole("region", { name: "Runs" });
 			const initialRuns = history.getByRole("button");
 			const initialRunCount = await initialRuns.count();
 			const successfulRuns = initialRuns.filter({ hasText: "completed" });
@@ -225,7 +225,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await expect(selectedCapture).toContainText("PURE / ORDINARY WORLD");
+						await expect(selectedCapture).toContainText("Natural");
 						await expect(initialImage).toBeVisible();
 					},
 					description: "The latest immutable Pure capture is our visual baseline.",
@@ -238,7 +238,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: "CAPTURE SET" }).click();
+						await page!.getByRole("button", { name: "Capture set" }).click();
 						await expect(history.getByRole("button")).toHaveCount(initialRunCount + 1, {
 							timeout: 120_000
 						});
@@ -286,20 +286,20 @@ test(`records the ${journey} Workbench journey`, async ({
 			await startScreencast();
 			await startTracing();
 			const queryPanel = page.getByRole("region", { name: "Map history query" });
-			const targetPanel = page.getByRole("region", { name: "Fast History target" });
+			const targetPanel = page.getByRole("region", { name: "Fast history target" });
 			const targetExplorer = targetPanel.getByRole("region", {
-				name: "Fast History actor explorer"
+				name: "Fast history targets"
 			});
 			const investigation = page.getByRole("region", {
-				name: "World Log investigation lenses"
+				name: "Result views"
 			});
-			const coverage = page.getByRole("region", { name: "Fast History coverage" });
+			const coverage = page.getByRole("region", { name: "Fast history coverage" });
 			chapters.push(
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("World Log");
 						await expect(
-							page!.getByRole("heading", { name: "World Log" })
+							page!.getByRole("heading", { name: "World log" })
 						).toBeVisible();
 						const savedMap = page!.getByRole("combobox", { name: "Saved map" });
 						const fixtureMapPath = await savedMap
@@ -308,10 +308,12 @@ test(`records the ${journey} Workbench journey`, async ({
 							.getAttribute("value");
 						expect(fixtureMapPath).toBeTruthy();
 						await savedMap.selectOption(fixtureMapPath!);
-						await page!.getByRole("button", { name: "FAST HISTORY" }).click();
-						await expect(queryPanel).toContainText("FAST HISTORY TARGET");
+						await page!.getByRole("button", { name: "Fast history" }).click();
+						await expect(queryPanel).toContainText(
+							"Target one current actor or class."
+						);
 						const actorTargets = targetPanel.getByRole("list", {
-							name: "Current actor targets"
+							name: "Actor targets"
 						});
 						await expect(actorTargets).toBeVisible();
 						const firstActor = actorTargets.locator("button[aria-pressed]").first();
@@ -331,13 +333,13 @@ test(`records the ${journey} Workbench journey`, async ({
 				await recordChapter({
 					action: async () => {
 						await expect(
-							targetPanel.getByRole("list", { name: "Current actor targets" })
+							targetPanel.getByRole("list", { name: "Actor targets" })
 						).toBeVisible();
 						await targetPanel
-							.getByRole("button", { name: "ACTOR CLASS", exact: true })
+							.getByRole("button", { name: "Actor class", exact: true })
 							.click();
 						await expect(
-							targetPanel.getByRole("list", { name: "Current actor members" })
+							targetPanel.getByRole("list", { name: "Class members" })
 						).toBeVisible();
 						await targetExplorer
 							.getByRole("button", { name: "Toggle actor class filters" })
@@ -361,12 +363,12 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await page!.getByRole("button", { name: /READ FAST HISTORY/ }).click();
-						await expect(investigation).toContainText("submitted CLs", {
+						await page!.getByRole("button", { name: "Read history" }).click();
+						await expect(investigation).toContainText("CLs", {
 							timeout: 120_000
 						});
 						await expect(coverage).toBeVisible();
-						await expect(coverage).toContainText("FAST HISTORY / TARGETED");
+						await expect(coverage).toContainText("Following");
 						await expect(coverage).toContainText("current actor");
 						await expect(coverage).toContainText(
 							"Deleted or historically reclassified actors are outside this result"
@@ -388,20 +390,20 @@ test(`records the ${journey} Workbench journey`, async ({
 			const outliner = page.getByRole("complementary", { name: "Saved actor outliner" });
 			const savedActors = outliner.getByRole("list", { name: "Saved actors" });
 			const actorSearch = outliner.getByRole("textbox", {
-				name: "Find World Log actor"
+				name: "Find an actor"
 			});
 			const timeline = page.getByRole("region", { name: "History timeline" });
 			const evidence = page.getByRole("complementary", {
-				name: "Selected changelist evidence"
+				name: "Changelist details"
 			});
-			const worldStateLens = page.getByRole("tab", { name: "World state" });
+			const worldStateLens = page.getByRole("tab", { name: "Actors" });
 			const changelistLens = page.getByRole("tab", { name: "Changelists" });
 			chapters.push(
 				await recordChapter({
 					action: async () => {
 						await workbench.openRoute("World Log");
 						await expect(
-							page!.getByRole("heading", { name: "World Log" })
+							page!.getByRole("heading", { name: "World log" })
 						).toBeVisible();
 						const savedMap = page!.getByRole("combobox", { name: "Saved map" });
 						const fixtureMapPath = await savedMap
@@ -410,10 +412,10 @@ test(`records the ${journey} Workbench journey`, async ({
 							.getAttribute("value");
 						expect(fixtureMapPath).toBeTruthy();
 						await savedMap.selectOption(fixtureMapPath!);
-						await page!.getByRole("button", { name: /READ DEEP HISTORY/ }).click();
+						await page!.getByRole("button", { name: "Read history" }).click();
 						await expect(
-							page!.getByRole("region", { name: "World Log investigation lenses" })
-						).toContainText("submitted CLs", {
+							page!.getByRole("region", { name: "Result views" })
+						).toContainText("CLs", {
 							timeout: 120_000
 						});
 						await expect(worldStateLens).toHaveAttribute("aria-selected", "true");
@@ -482,7 +484,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							name: "Selected saved actor"
 						});
 						await expect(selectedActor).toContainText("East Marker");
-						await expect(selectedActor).toContainText("MOVEMENT TRAIL");
+						await expect(selectedActor).toContainText("Movement");
 					},
 					description:
 						"Selecting a row selects the same actor on the point map and inspector, then focuses the map on it.",
@@ -499,8 +501,8 @@ test(`records the ${journey} Workbench journey`, async ({
 						await changelistLens.click();
 						await expect(changelistLens).toHaveAttribute("aria-selected", "true");
 						await timeline
-							.getByRole("toolbar", { name: "Change View Filter" })
-							.getByRole("button", { name: "LABEL CHANGED" })
+							.getByRole("toolbar", { name: "Change filters" })
+							.getByRole("button", { name: "Label changed" })
 							.click();
 						const labelChange = timeline
 							.getByRole("button", {
@@ -530,16 +532,16 @@ test(`records the ${journey} Workbench journey`, async ({
 							.getByRole("button", { name: /new saved actor/i })
 							.click();
 						await worldStateLens.click();
-						await expect(selectedActor).toContainText("AT FRAME");
+						await expect(selectedActor).toContainText("Present");
 						await expect(
-							page!.getByRole("heading", { name: /AFTER CL \d+ point map/ })
+							page!.getByRole("heading", { name: /^After CL \d+$/ })
 						).toBeVisible();
 						await page!
-							.getByRole("navigation", { name: "Saved state scrubber" })
+							.getByRole("navigation", { name: "Frames" })
 							.getByRole("button", { name: /Show state after CL/ })
 							.last()
 							.click();
-						await expect(selectedActor).toContainText("NOT PRESENT");
+						await expect(selectedActor).toContainText("Not at frame");
 					},
 					description:
 						"The scrubber shows an actor before its removal and confirms that it is absent later.",
@@ -557,7 +559,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							.getByRole("button", { name: /Select changelist/ })
 							.last()
 							.click();
-						await expect(evidence).toContainText("UNCLASSIFIED PACKAGE EVIDENCE");
+						await expect(evidence).toContainText("Unclassified packages");
 					},
 					description:
 						"The final changelist retains package edits that cannot be safely explained as actor changes.",
@@ -615,7 +617,7 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
-						await cleanup.getByRole("button", { name: "CREATE PROPOSAL →" }).click();
+						await cleanup.getByRole("button", { name: "Create proposal" }).click();
 						await expect(
 							cleanup.getByRole("region", { name: "Approve cleanup proposal" })
 						).toBeVisible();
@@ -635,7 +637,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						if (phrase === null)
 							throw new Error("Custodian approval phrase is missing");
 						await cleanup.getByRole("textbox").fill(phrase);
-						await cleanup.getByRole("button", { name: "MOVE TO TRASH" }).click();
+						await cleanup.getByRole("button", { name: "Move to Trash" }).click();
 						await expect(
 							cleanup.getByRole("region", { name: "Cleanup result" })
 						).toContainText("Cleanup finished");
@@ -651,7 +653,7 @@ test(`records the ${journey} Workbench journey`, async ({
 		} else if (journey === "config-explorer") {
 			await startScreencast();
 			await startTracing();
-			const evidence = page.getByRole("region", { name: "Config Explorer evidence" });
+			const evidence = page.getByRole("region", { name: "Comparison" });
 
 			chapters.push(
 				await recordChapter({
@@ -660,11 +662,11 @@ test(`records the ${journey} Workbench journey`, async ({
 						await workbench.openRoute("Config");
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })
-						).toContainText("CONFIG EXPLORER");
+						).toContainText("Config Explorer");
 						await page!.getByLabel("Config key").fill("Entries");
-						await page!.getByRole("button", { name: /^COMPARE/ }).click();
+						await page!.getByRole("button", { name: "Compare" }).click();
 						await expect(
-							evidence.getByText("VALUE DIVERGES", { exact: true })
+							evidence.getByText("Value diverges", { exact: true })
 						).toBeVisible();
 						await expect(
 							page!.getByRole("region", { name: "Platform config comparison" })
@@ -816,7 +818,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toBeVisible();
 						await expect(
-							page!.getByRole("region", { name: "Table manifest" })
+							page!.getByRole("region", { name: "Table summary" })
 						).toContainText("DT_Scalars");
 					},
 					description: "Open a typed DataTable directly from its saved package.",
@@ -835,12 +837,12 @@ test(`records the ${journey} Workbench journey`, async ({
 						).toBeVisible();
 						await expect(
 							page!.getByRole("complementary", {
-								name: "Audit scope and distributions"
+								name: "Facets"
 							})
 						).toContainText(/textures/i);
-						await expect(
-							page!.getByRole("article", { name: "Texture investigation" })
-						).toContainText("Compared with");
+						await expect(page!.getByRole("article", { name: "Asset" })).toContainText(
+							"Comparison"
+						);
 						await page!
 							.getByRole("button", { name: /Generate \d+ saved previews/ })
 							.click();
@@ -851,7 +853,7 @@ test(`records the ${journey} Workbench journey`, async ({
 							}
 						);
 						await page!
-							.getByRole("region", { name: "Texture records" })
+							.getByRole("region", { name: "Results" })
 							.getByRole("button", { name: /T_Audit_UI_2048x1024/ })
 							.click();
 						await expect(page!.getByLabel("Preview authority")).toHaveText(
@@ -876,18 +878,18 @@ test(`records the ${journey} Workbench journey`, async ({
 						await page!
 							.getByRole("searchbox", { name: "Search game text" })
 							.fill("Hold to skip");
-						await expect(
-							page!.getByRole("region", { name: "Text units" })
-						).toContainText("Hold to skip");
+						await expect(page!.getByRole("region", { name: "Results" })).toContainText(
+							"Hold to skip"
+						);
 						await expect(
 							page!.getByRole("complementary", { name: "Text focus" })
 						).toContainText("2 uses");
 						await page!.getByRole("searchbox", { name: "Search game text" }).fill("");
-						await expect(
-							page!.getByRole("region", { name: "Text units" })
-						).toContainText("Showing 32 of 32 matches");
+						await expect(page!.getByRole("region", { name: "Results" })).toContainText(
+							"Showing 32 of 32 matches"
+						);
 						await page!
-							.getByRole("region", { name: "Text units" })
+							.getByRole("region", { name: "Results" })
 							.locator('[aria-current="true"]')
 							.scrollIntoViewIfNeeded();
 					},
@@ -906,7 +908,7 @@ test(`records the ${journey} Workbench journey`, async ({
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })
 						).toContainText("Config Explorer");
-						await expect(page!.getByRole("status")).toContainText("VALUE DIVERGES");
+						await expect(page!.getByRole("status")).toContainText("Value diverges");
 						await expect(
 							page!.getByRole("region", { name: "Platform config comparison" })
 						).toContainText("PlatformA");

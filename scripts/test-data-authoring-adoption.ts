@@ -248,11 +248,17 @@ if (initialCss.length === 0) fail("initial production stylex.css is empty");
 
 const themePath = join(targetRoot, "packages", "ui-theme", "src", "themes.stylex.ts");
 const initialTheme = await readFile(themePath, "utf8");
-const divergentTheme = initialTheme.replace('colorAccent: "#b7e26d"', 'colorAccent: "#ff6b6b"');
-if (divergentTheme === initialTheme) fail("could not find the single applied accent to diverge");
-await writeFile(themePath, divergentTheme);
+const initialAccent = /colorAccent:\s*"(#[0-9a-fA-F]{6})"/.exec(initialTheme)?.[1];
+const divergentAccent = "#ff6b6b";
+if (initialAccent === undefined || initialAccent === divergentAccent) {
+	fail("could not find the single applied accent to diverge");
+}
+await writeFile(
+	themePath,
+	initialTheme.replace(`colorAccent: "${initialAccent}"`, `colorAccent: "${divergentAccent}"`)
+);
 
-runPnpm(["verify", "--", "--expected-accent=#ff6b6b"]);
+runPnpm(["verify", "--", `--expected-accent=${divergentAccent}`]);
 const divergentCss = await readFile(cssPath, "utf8");
 if (digest(divergentCss) === digest(initialCss))
 	fail("theme divergence did not change production CSS");

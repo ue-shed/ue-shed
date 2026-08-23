@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
+import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { workbenchDarkTheme } from "@ue-shed/ui-theme/themes.stylex.js";
 import { Layer, ManagedRuntime } from "effect";
 import { render } from "solid-js/web";
@@ -29,44 +30,49 @@ const mountPreview = () =>
 	);
 
 const styles = stylex.create({
-	shell: { minHeight: "100vh", backgroundColor: "#0a0c0c", color: "#e8ebe5" },
+	shell: { minHeight: "100vh", backgroundColor: tokens.colorCanvas, color: tokens.colorText },
 	nav: {
 		height: 52,
 		display: "flex",
 		alignItems: "center",
-		borderBottom: "1px solid #303632",
-		backgroundColor: "#0b0d0d",
-		fontFamily: '"Cascadia Mono", Consolas, monospace'
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		fontFamily: tokens.fontBody
 	},
 	brandMark: {
 		marginLeft: 20,
 		padding: "4px 5px",
-		backgroundColor: "#b7e26d",
-		color: "#10140d",
-		fontSize: 10,
-		fontWeight: 800
+		backgroundColor: tokens.colorAccent,
+		color: tokens.colorAccentText,
+		fontSize: 11,
+		fontWeight: 590
 	},
-	brand: { marginLeft: 9, fontSize: 11, letterSpacing: ".14em" },
+	brand: { marginLeft: 9, fontSize: 11 },
 	navItem: {
 		height: "100%",
 		display: "flex",
 		alignItems: "center",
 		marginLeft: 28,
 		padding: "0 18px",
-		borderRight: "1px solid #252a27",
-		borderBottom: "2px solid #b7e26d",
-		borderLeft: "1px solid #252a27",
-		color: "#dfe4dd",
-		fontSize: 9,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		borderBottomColor: tokens.colorAccent,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 2,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		color: tokens.colorText,
+		fontSize: 11
 	},
 	previewLabel: {
 		marginLeft: "auto",
 		marginRight: 20,
-		color: "#586159",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		color: tokens.colorTextFaint,
+		fontSize: 11
 	}
 });
 

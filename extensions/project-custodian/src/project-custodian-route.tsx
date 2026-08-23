@@ -9,7 +9,7 @@ import type {
 	CustodianTargetId,
 	CustodianTarget
 } from "@ue-shed/project-custodian/browser";
-import { Button, createEffectAction, PageHeader } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
@@ -36,6 +36,29 @@ type CleanupState =
 	| { readonly stage: "executing"; readonly proposal: CustodianProposal }
 	| { readonly stage: "result"; readonly receipt: CustodianReceipt }
 	| { readonly stage: "failed"; readonly error: CustodianPublicError };
+
+type FailureParts = {
+	readonly summary: string;
+	readonly technical: string | undefined;
+};
+
+// A public error is one sentence; a pretty-printed Cause is not. Show the first line and keep the
+// rest behind a disclosure so a failure never reads as a stack trace.
+function failureParts(message: string): FailureParts {
+	if (message.length <= 160 && !message.includes("\n")) {
+		return { summary: message, technical: undefined };
+	}
+	const [firstLine] = message.split("\n");
+	return { summary: (firstLine ?? message).slice(0, 160).trim(), technical: message };
+}
+
+function capitalize(value: string): string {
+	return value.replace(/^./u, (character) => character.toLocaleUpperCase());
+}
+
+function plural(count: number, singular: string, pluralForm: string): string {
+	return `${count} ${count === 1 ? singular : pluralForm}`;
+}
 
 function humanBytes(bytes: number): string {
 	const units = ["B", "KB", "MB", "GB", "TB"] as const;
@@ -121,37 +144,46 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 		});
 	};
 
+	const failedState = createMemo(() => {
+		const current = state();
+		return current.status === "failed" ? current : undefined;
+	});
+
 	onMount(() => run(() => props.client.configuredScan()));
 
 	return (
 		<main {...stylex.props(styles.page)}>
-			<PageHeader
-				eyebrow="Project Custodian · storage evidence"
-				actions={
-					<>
-						<Button
-							tone="quiet"
-							disabled={state().status === "loading" || report() === undefined}
-							onClick={() => run(() => props.client.configuredScan())}
-						>
-							Rescan
-						</Button>
-						<Button
-							tone="primary"
-							disabled={state().status === "loading"}
-							onClick={() => run(() => props.client.chooseAndScan())}
-						>
-							Choose scan root…
-						</Button>
-					</>
-				}
-			/>
+			<header {...stylex.props(styles.header)}>
+				<div>
+					<h1 {...stylex.props(styles.title)}>Project custodian</h1>
+					<p {...stylex.props(styles.intro)}>
+						Find the rebuildable Unreal output eating your disk, and reclaim it through
+						a cleanup you review and approve first.
+					</p>
+				</div>
+				<div {...stylex.props(styles.headerActions)}>
+					<Button
+						tone="quiet"
+						disabled={state().status === "loading" || report() === undefined}
+						onClick={() => run(() => props.client.configuredScan())}
+					>
+						Rescan
+					</Button>
+					<Button
+						tone="primary"
+						disabled={state().status === "loading"}
+						onClick={() => run(() => props.client.chooseAndScan())}
+					>
+						Choose scan root…
+					</Button>
+				</div>
+			</header>
 
 			<div {...stylex.props(styles.safetyRail)}>
-				<span {...stylex.props(styles.safetyMark)}>GUARDED CLEANUP</span>
+				<span {...stylex.props(styles.safetyMark)}>Guarded cleanup</span>
 				<span>
-					Every run creates a durable proposal, requires its exact approval phrase, and
-					revalidates targets before Trash or permanent deletion.
+					Nothing is removed until you approve a written proposal by phrase, and every
+					target is rechecked immediately before it moves.
 				</span>
 			</div>
 
@@ -163,15 +195,14 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<EmptyState index="00" title="Reading the rebuildable layer.">
-						Walking known Unreal output directories and resolving safety policy.
-						Authored content is never a candidate.
-					</EmptyState>
+					<p aria-live="polite" {...stylex.props(styles.loadingLine)}>
+						Reading Unreal output directories under the scan root…
+					</p>
 				</Match>
 				<Match when={state().status === "not_configured" || state().status === "cancelled"}>
-					<EmptyState index="01" title="Name the ground to inspect.">
-						Choose a project, engine directory, or parent folder. The scan never expands
-						beyond that root.
+					<EmptyState title="Choose a scan root">
+						Point at a project, an engine directory, or a folder holding several. The
+						scan never looks outside the root you name.
 						<div {...stylex.props(styles.emptyAction)}>
 							<Button
 								tone="primary"
@@ -182,26 +213,37 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 						</div>
 					</EmptyState>
 				</Match>
-				<Match when={state().status === "failed"}>
-					<Show when={state()} keyed>
-						{(current: ViewState) => (
-							<section {...stylex.props(styles.error)}>
-								<span>
-									{current.status === "failed" ? current.error.code : "failed"}
-								</span>
-								<h1>
-									{current.status === "failed"
-										? current.error.message
-										: "Scan failed."}
-								</h1>
-								<p>
-									{current.status === "failed"
-										? current.error.recovery
-										: "Retry."}
+				<Match when={failedState()}>
+					{(failed) => {
+						const parts = createMemo(() => failureParts(failed().error.message));
+						return (
+							<section role="alert" {...stylex.props(styles.error)}>
+								<strong {...stylex.props(styles.errorTitle)}>
+									Couldn’t scan that root
+								</strong>
+								<p {...stylex.props(styles.errorMessage)}>{parts().summary}</p>
+								<p {...stylex.props(styles.errorRecovery)}>
+									{failed().error.recovery}
 								</p>
+								<div {...stylex.props(styles.errorActions)}>
+									<Button
+										tone="secondary"
+										onClick={() => run(() => props.client.configuredScan())}
+									>
+										Retry
+									</Button>
+								</div>
+								<Show when={parts().technical}>
+									{(technical) => (
+										<details {...stylex.props(styles.errorDetails)}>
+											<summary>Technical details</summary>
+											<code>{technical()}</code>
+										</details>
+									)}
+								</Show>
 							</section>
-						)}
-					</Show>
+						);
+					}}
 				</Match>
 				<Match when={report()}>
 					{(current: Accessor<CustodianReport>) => (
@@ -228,14 +270,9 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 	);
 }
 
-function EmptyState(props: {
-	readonly index: string;
-	readonly title: string;
-	readonly children: JSX.Element;
-}) {
+function EmptyState(props: { readonly title: string; readonly children: JSX.Element }) {
 	return (
 		<section {...stylex.props(styles.empty)}>
-			<span {...stylex.props(styles.emptyIndex)}>{props.index}</span>
 			<h1>{props.title}</h1>
 			<div {...stylex.props(styles.emptyCopy)}>{props.children}</div>
 		</section>
@@ -275,7 +312,7 @@ function CustodianLedger(props: {
 
 			<section aria-label="Disk pressure" {...stylex.props(styles.pressure)}>
 				<div {...stylex.props(styles.pressureHead)}>
-					<span>VOLUME PRESSURE</span>
+					<span>Disk pressure</span>
 					<strong>
 						{humanBytes(props.report.freeBytes)} free /{" "}
 						{humanBytes(props.report.plan.thresholdBytes)} target
@@ -294,8 +331,8 @@ function CustodianLedger(props: {
 			<div {...stylex.props(styles.columns)}>
 				<section aria-label="Custodian inventory" {...stylex.props(styles.inventory)}>
 					<SectionHeader
-						left={"INVENTORY / " + props.inventory.length.toString().padStart(2, "0")}
-						right={leaf(props.report.root)}
+						left="Inventory"
+						right={`${plural(props.inventory.length, "item", "items")} in ${leaf(props.report.root)}`}
 					/>
 					<Show
 						when={props.inventory.length > 0}
@@ -305,16 +342,14 @@ function CustodianLedger(props: {
 							</p>
 						}
 					>
-						<For each={props.inventory}>
-							{(item, index) => <InventoryRow item={item} index={index()} />}
-						</For>
+						<For each={props.inventory}>{(item) => <InventoryRow item={item} />}</For>
 					</Show>
 				</section>
 
 				<aside aria-label="Dry-run plan" {...stylex.props(styles.plan)}>
 					<SectionHeader
-						left="DRY-RUN QUEUE"
-						right={props.report.plan.items.length.toString().padStart(2, "0")}
+						left="Dry-run queue"
+						right={plural(props.report.plan.items.length, "item", "items")}
 					/>
 					<Show
 						when={props.report.plan.items.length > 0}
@@ -327,12 +362,12 @@ function CustodianLedger(props: {
 						<For each={props.report.plan.items}>
 							{(item, index) => (
 								<div {...stylex.props(styles.planItem)}>
-									<span {...stylex.props(styles.planOrder)}>
-										{String(index() + 1).padStart(2, "0")}
-									</span>
+									<span {...stylex.props(styles.planOrder)}>{index() + 1}</span>
 									<div>
 										<strong>{item.name}</strong>
-										<small>{item.targets.length} known targets</small>
+										<small>
+											{plural(item.targets.length, "target", "targets")}
+										</small>
 									</div>
 									<b>{humanBytes(item.bytes)}</b>
 								</div>
@@ -341,9 +376,9 @@ function CustodianLedger(props: {
 					</Show>
 					<footer {...stylex.props(styles.planFooter)}>
 						<div>
-							<span>EXECUTION</span>
+							<span>Cleanup</span>
 							<strong>
-								{props.report.plan.items.length > 0 ? "AVAILABLE" : "NO QUEUE"}
+								{props.report.plan.items.length > 0 ? "Ready" : "Nothing queued"}
 							</strong>
 						</div>
 						<Button
@@ -357,8 +392,8 @@ function CustodianLedger(props: {
 				</aside>
 			</div>
 			<footer {...stylex.props(styles.provenance)}>
-				Measured {new Date(props.report.measuredAt).toLocaleString()} · explicit root{" "}
-				{props.report.root} · authored directories excluded by construction
+				Measured {new Date(props.report.measuredAt).toLocaleString()} under{" "}
+				{props.report.root}. Authored directories are never scanned.
 			</footer>
 		</>
 	);
@@ -366,13 +401,10 @@ function CustodianLedger(props: {
 
 function planExplanation(report: CustodianReport): string {
 	if (report.plan.status === "pressure_satisfied")
-		return "Pressure threshold satisfied. Inventory remains visible; the automatic queue is empty.";
+		return "You have enough free space, so nothing is queued. The inventory below still shows what could be reclaimed.";
 	if (report.plan.status === "nothing_eligible")
-		return "No eligible rebuildable output is old enough to queue.";
-	return (
-		report.plan.items.length +
-		" largest item(s) would restore the configured free-space target."
-	);
+		return "No rebuildable output is old enough to queue yet.";
+	return `The ${plural(report.plan.items.length, "largest item", "largest items")} would bring you back to the free-space target.`;
 }
 
 function Metric(props: { readonly label: string; readonly value: string }) {
@@ -393,7 +425,7 @@ function SectionHeader(props: { readonly left: string; readonly right: string })
 	);
 }
 
-function InventoryRow(props: { readonly item: InventoryItem; readonly index: number }) {
+function InventoryRow(props: { readonly item: InventoryItem }) {
 	const status = () =>
 		props.item.kind === "project"
 			? eligibilityLabel(props.item)
@@ -401,16 +433,13 @@ function InventoryRow(props: { readonly item: InventoryItem; readonly index: num
 	return (
 		<details {...stylex.props(styles.row)}>
 			<summary {...stylex.props(styles.rowSummary)}>
-				<span {...stylex.props(styles.rowIndex)}>
-					{String(props.index + 1).padStart(2, "0")}
-				</span>
 				<span
 					{...stylex.props(
 						styles.kind,
 						props.item.kind === "engine" && styles.engineKind
 					)}
 				>
-					{props.item.kind === "project" ? "PROJECT" : "ENGINE"}
+					{props.item.kind === "project" ? "Project" : "Engine"}
 				</span>
 				<span {...stylex.props(styles.identity)}>
 					<strong>{props.item.name}</strong>
@@ -424,7 +453,7 @@ function InventoryRow(props: { readonly item: InventoryItem; readonly index: num
 				<For each={props.item.refusals}>
 					{(entry) => (
 						<div {...stylex.props(styles.refusal)}>
-							<span>LOCKED</span>
+							<span>Locked</span>
 							<strong>{entry.relativePath}</strong>
 							<small>{entry.reason}</small>
 						</div>
@@ -442,7 +471,7 @@ function TargetRow(props: { readonly target: CustodianTarget }) {
 		];
 	return (
 		<div {...stylex.props(styles.target)}>
-			<span {...stylex.props(styles.risk, riskStyle())}>{props.target.risk}</span>
+			<span {...stylex.props(styles.risk, riskStyle())}>{capitalize(props.target.risk)}</span>
 			<div>
 				<strong>{props.target.relativePath}</strong>
 				<small>{props.target.rebuildCost}</small>
@@ -497,7 +526,7 @@ function CleanupWorkflow(props: {
 	const clientFailure = (cause: Cause.Cause<unknown>): CustodianPublicError => ({
 		code: "execution_failed",
 		message: Cause.pretty(cause),
-		recovery: "Restart Workbench, rescan the root, and inspect durable cleanup records.",
+		recovery: "Restart Workbench, rescan the root, and check the cleanup log for what ran.",
 		retrySafe: false
 	});
 	const prepare = () => {
@@ -556,8 +585,10 @@ function CleanupWorkflow(props: {
 			>
 				<header {...stylex.props(styles.workflowHeader)}>
 					<div>
-						<span {...stylex.props(styles.workflowKicker)}>DESTRUCTIVE BOUNDARY</span>
 						<h2 id="custodian-cleanup-title">Review cleanup</h2>
+						<span {...stylex.props(styles.workflowKicker)}>
+							Nothing moves until you approve the exact phrase.
+						</span>
 					</div>
 					<button
 						type="button"
@@ -571,7 +602,7 @@ function CleanupWorkflow(props: {
 				</header>
 
 				<ol aria-label="Cleanup workflow progress" {...stylex.props(styles.workflowSteps)}>
-					<For each={["SELECT", "APPROVE", "EXECUTE"] as const}>
+					<For each={["Select", "Approve", "Execute"] as const}>
 						{(label, index) => (
 							<li
 								{...stylex.props(
@@ -579,7 +610,6 @@ function CleanupWorkflow(props: {
 									index() <= step() && styles.workflowStepActive
 								)}
 							>
-								<span>{String(index() + 1).padStart(2, "0")}</span>
 								<strong>{label}</strong>
 							</li>
 						)}
@@ -593,12 +623,10 @@ function CleanupWorkflow(props: {
 								aria-label="Select cleanup targets"
 								{...stylex.props(styles.workflowStage)}
 							>
-								<p {...stylex.props(styles.workflowIndex)}>01 / SELECT TARGETS</p>
-								<h3>Choose the rebuildable layer to reclaim.</h3>
+								<h3>Choose what to reclaim</h3>
 								<p {...stylex.props(styles.workflowCopy)}>
-									The proposal records exact target IDs and measured bytes.
-									Authored Content, Source, Config, project roots, and save games
-									cannot enter this list.
+									Only rebuildable output can appear here. Content, Source,
+									Config, project roots, and save games are never candidates.
 								</p>
 								<div {...stylex.props(styles.modeGrid)}>
 									<label
@@ -677,14 +705,11 @@ function CleanupWorkflow(props: {
 										aria-label="Approve cleanup proposal"
 										{...stylex.props(styles.workflowStage)}
 									>
-										<p {...stylex.props(styles.workflowIndex)}>
-											02 / APPROVE PROPOSAL
-										</p>
-										<h3>The plan is now durable.</h3>
+										<h3>Nothing has moved yet</h3>
 										<p {...stylex.props(styles.workflowCopy)}>
-											Nothing has moved yet. The executor will rescan every
-											target, refuse drift, and refuse while any Unreal Editor
-											is running.
+											The cleanup rechecks every target before it runs, stops
+											if anything changed since the scan, and refuses to run
+											while an Unreal Editor is open.
 										</p>
 										<dl {...stylex.props(styles.proposalFacts)}>
 											<div {...stylex.props(styles.proposalFact)}>
@@ -744,13 +769,12 @@ function CleanupWorkflow(props: {
 								{...stylex.props(styles.executing)}
 							>
 								<span {...stylex.props(styles.executionPulse)} />
-								<p {...stylex.props(styles.workflowIndex)}>03 / EXECUTE</p>
 								<h3>
 									{cancelRequested()
-										? "Cancelling remaining targets…"
-										: "Revalidating, then reclaiming."}
+										? "Cancelling the remaining targets…"
+										: "Rechecking, then reclaiming…"}
 								</h3>
-								<p>Each completed target is appended to the durable event log.</p>
+								<p>Each finished target is written to the cleanup log.</p>
 							</section>
 						</Match>
 
@@ -768,11 +792,19 @@ function CleanupWorkflow(props: {
 								if (current.stage !== "failed") return null;
 								return (
 									<section role="alert" {...stylex.props(styles.workflowFailure)}>
-										<p {...stylex.props(styles.workflowIndex)}>
-											CLEANUP FAILED
+										<h3>Couldn’t finish the cleanup</h3>
+										<p>{failureParts(current.error.message).summary}</p>
+										<p {...stylex.props(styles.workflowCopy)}>
+											{current.error.recovery}
 										</p>
-										<h3>{current.error.message}</h3>
-										<p>{current.error.recovery}</p>
+										<Show when={failureParts(current.error.message).technical}>
+											{(technical) => (
+												<details {...stylex.props(styles.errorDetails)}>
+													<summary>Technical details</summary>
+													<code>{technical()}</code>
+												</details>
+											)}
+										</Show>
 									</section>
 								);
 							})()}
@@ -787,10 +819,11 @@ function CleanupWorkflow(props: {
 							onClick={props.onClose}
 							{...stylex.props(styles.secondaryAction)}
 						>
-							CANCEL
+							Cancel
 						</button>
 						<span {...stylex.props(styles.selectionTotal)}>
-							{selectedIds().length} TARGETS · {humanBytes(selectedBytes())}
+							{plural(selectedIds().length, "target", "targets")} ·{" "}
+							{humanBytes(selectedBytes())}
 						</span>
 						<button
 							type="button"
@@ -798,7 +831,7 @@ function CleanupWorkflow(props: {
 							onClick={prepare}
 							{...stylex.props(styles.primaryAction)}
 						>
-							{state().stage === "preparing" ? "CREATING…" : "CREATE PROPOSAL →"}
+							{state().stage === "preparing" ? "Creating…" : "Create proposal"}
 						</button>
 					</Show>
 					<Show when={state().stage === "approve"}>
@@ -812,7 +845,7 @@ function CleanupWorkflow(props: {
 										onClick={props.onClose}
 										{...stylex.props(styles.secondaryAction)}
 									>
-										CLOSE
+										Close
 									</button>
 									<button
 										type="button"
@@ -821,8 +854,8 @@ function CleanupWorkflow(props: {
 										{...stylex.props(styles.dangerAction)}
 									>
 										{current.proposal.mode === "trash"
-											? "MOVE TO TRASH"
-											: "DELETE PERMANENTLY"}
+											? "Move to Trash"
+											: "Delete permanently"}
 									</button>
 								</>
 							);
@@ -839,7 +872,7 @@ function CleanupWorkflow(props: {
 									onClick={() => cancel(current.proposal)}
 									{...stylex.props(styles.secondaryAction)}
 								>
-									CANCEL REMAINING
+									Cancel remaining
 								</button>
 							);
 						})()}
@@ -850,7 +883,7 @@ function CleanupWorkflow(props: {
 							onClick={props.onFinished}
 							{...stylex.props(styles.primaryAction)}
 						>
-							DONE · RESCAN
+							Rescan
 						</button>
 					</Show>
 				</footer>
@@ -866,15 +899,14 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 			aria-live="polite"
 			{...stylex.props(styles.workflowStage)}
 		>
-			<p {...stylex.props(styles.workflowIndex)}>03 / {props.receipt.status.toUpperCase()}</p>
 			<h3>
 				{props.receipt.status === "completed"
-					? "Cleanup finished with durable evidence."
+					? "Cleanup finished"
 					: props.receipt.status === "refused"
-						? "Cleanup was refused before mutation."
+						? "Cleanup was refused before anything moved"
 						: props.receipt.status === "cancelled"
-							? "Remaining targets were cancelled."
-							: "Cleanup completed partially."}
+							? "The remaining targets were cancelled"
+							: "Cleanup finished partially"}
 			</h3>
 			<Show when={props.receipt.refusal} keyed>
 				{(refusal) => (
@@ -893,31 +925,33 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 							).length
 						}
 					</strong>
-					<span>PROCESSED</span>
+					<span>Processed</span>
 				</div>
 				<div {...stylex.props(styles.resultDatum)}>
 					<strong>{humanBytes(props.receipt.processedBytes)}</strong>
-					<span>{props.receipt.mode === "trash" ? "MOVED" : "DELETED"}</span>
+					<span>{props.receipt.mode === "trash" ? "Moved" : "Deleted"}</span>
 				</div>
 				<div {...stylex.props(styles.resultDatum)}>
 					<strong>
 						{props.receipt.entries.filter(({ status }) => status === "failed").length}
 					</strong>
-					<span>FAILED</span>
+					<span>Failed</span>
 				</div>
 			</div>
 			<ul {...stylex.props(styles.receiptEntries)}>
 				<For each={props.receipt.entries}>
 					{(entry) => (
 						<li {...stylex.props(styles.receiptEntry)}>
-							<span>{entry.status.toUpperCase()}</span>
+							<span>{capitalize(entry.status)}</span>
 							<strong>{entry.relativePath}</strong>
 							<small>{entry.message ?? humanBytes(entry.bytes)}</small>
 						</li>
 					)}
 				</For>
 			</ul>
-			<p {...stylex.props(styles.receiptPath)}>Receipt · {props.receipt.receiptPath}</p>
+			<p {...stylex.props(styles.receiptPath)}>
+				Cleanup record · {props.receipt.receiptPath}
+			</p>
 		</section>
 	);
 }
@@ -931,9 +965,9 @@ const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
 		padding: "24px 30px 34px",
-		backgroundColor: "#0d100f",
+		backgroundColor: tokens.colorCanvas,
 		backgroundImage:
-			"linear-gradient(#88908708 1px, transparent 1px), linear-gradient(90deg, #88908708 1px, transparent 1px)",
+			"linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)",
 		backgroundSize: "24px 24px",
 		color: tokens.colorText
 	},
@@ -943,19 +977,69 @@ const styles = stylex.create({
 		gap: 12,
 		margin: "10px 0 18px",
 		padding: "9px 12px",
-		borderLeft: "3px solid #7bc8b2",
-		backgroundColor: "#101a17e6",
-		color: "#9db0a9",
-		fontSize: 10,
+		borderLeftColor: tokens.colorSuccess,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
 		letterSpacing: ".03em"
 	},
-	safetyMark: { color: "#9be2cd", fontWeight: 800, letterSpacing: ".14em" },
-	loading: { height: 2, overflow: "hidden", backgroundColor: "#28302d" },
+	safetyMark: { color: tokens.colorSuccess, fontWeight: 590, letterSpacing: "0" },
+	header: {
+		alignItems: "flex-start",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		display: "flex",
+		gap: tokens.space4,
+		justifyContent: "space-between",
+		marginBottom: tokens.space4,
+		paddingBottom: tokens.space4
+	},
+	headerActions: { alignItems: "center", display: "flex", gap: tokens.space2 },
+	title: {
+		color: tokens.colorTextStrong,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		margin: 0
+	},
+	intro: {
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5,
+		margin: "4px 0 0",
+		maxWidth: 560
+	},
+	loadingLine: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		padding: "56px 0",
+		textAlign: "center"
+	},
+	errorTitle: { color: tokens.colorTextStrong, fontSize: 17, fontWeight: 590 },
+	errorMessage: { fontSize: 13, lineHeight: 1.6, margin: "8px 0 0" },
+	errorRecovery: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.6,
+		margin: "6px 0 0"
+	},
+	errorActions: { display: "flex", gap: tokens.space2, marginTop: tokens.space3 },
+	errorDetails: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		marginTop: tokens.space3,
+		whiteSpace: "pre-wrap"
+	},
+	loading: { height: 2, overflow: "hidden", backgroundColor: tokens.colorBorder },
 	loadingBar: {
 		display: "block",
 		width: "24%",
 		height: "100%",
-		backgroundColor: "#e39b54",
+		backgroundColor: tokens.colorWarning,
 		animationName: sweep,
 		animationDuration: "1.2s",
 		animationIterationCount: "infinite",
@@ -966,71 +1050,91 @@ const styles = stylex.create({
 		maxWidth: 670,
 		margin: "72px auto",
 		padding: "30px 0 30px 88px",
-		borderTop: "1px solid #3b433f",
-		borderBottom: "1px solid #3b433f"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	emptyIndex: {
 		position: "absolute",
 		left: 0,
 		top: 30,
-		color: "#e39b54",
-		fontFamily: "Georgia, serif",
-		fontSize: 34
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 26
 	},
-	emptyCopy: { color: "#8b9690", fontSize: 11, lineHeight: 1.7 },
+	emptyCopy: { color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.7 },
 	emptyAction: { marginTop: 18 },
 	error: {
 		maxWidth: 780,
 		margin: "50px auto",
 		padding: 24,
-		border: "1px solid #874d45",
-		backgroundColor: "#1e1210"
+		borderColor: "rgba(235, 87, 87, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: "rgba(235, 87, 87, 0.08)"
 	},
 	summary: {
 		display: "grid",
 		gridTemplateColumns: "minmax(290px, 1.5fr) repeat(3, minmax(130px, .7fr))",
-		border: "1px solid #353d39",
-		backgroundColor: "#111513f2"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
 	},
-	heroMetric: { padding: "18px 22px", borderRight: "1px solid #353d39" },
-	metric: { padding: "18px", borderRight: "1px solid #353d39" },
+	heroMetric: {
+		padding: "18px 22px",
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
+	metric: {
+		padding: "18px",
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
 	metricLabel: {
 		display: "block",
 		marginBottom: 8,
-		color: "#6e7973",
-		fontSize: 8,
-		letterSpacing: ".14em",
-		textTransform: "uppercase"
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: "0",
+		textTransform: "none"
 	},
-	metricNote: { display: "block", marginTop: 7, color: "#728078", fontSize: 9 },
+	metricNote: { display: "block", marginTop: 7, color: tokens.colorTextMuted, fontSize: 11 },
 	pressure: {
 		marginTop: 12,
 		padding: "13px 16px",
-		border: "1px solid #303834",
-		backgroundColor: "#0f1311e6"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
 	},
 	pressureHead: {
 		display: "flex",
 		justifyContent: "space-between",
-		color: "#758079",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
 	pressureTrack: {
 		position: "relative",
 		height: 7,
 		marginTop: 11,
-		backgroundColor: "#232a27",
+		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden"
 	},
-	pressureFill: { display: "block", height: "100%", backgroundColor: "#76bda9" },
+	pressureFill: { display: "block", height: "100%", backgroundColor: tokens.colorSuccess },
 	threshold: {
 		position: "absolute",
 		right: 0,
 		top: -2,
 		width: 2,
 		height: 11,
-		backgroundColor: "#e39b54"
+		backgroundColor: tokens.colorWarning
 	},
 	columns: {
 		display: "grid",
@@ -1038,56 +1142,84 @@ const styles = stylex.create({
 		gap: 12,
 		marginTop: 12
 	},
-	inventory: { border: "1px solid #343c38", backgroundColor: "#111513f2" },
-	plan: { border: "1px solid #343c38", backgroundColor: "#121614f2" },
+	inventory: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
+	},
+	plan: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
+	},
 	sectionHeader: {
 		display: "flex",
 		justifyContent: "space-between",
 		padding: "10px 13px",
-		borderBottom: "1px solid #343c38",
-		color: "#718078",
-		fontSize: 8,
-		letterSpacing: ".13em"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
-	noRows: { padding: 18, color: "#748078", fontSize: 10, lineHeight: 1.6 },
-	row: { borderBottom: "1px solid #2b322f" },
+	noRows: { padding: 18, color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
+	row: {
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	rowSummary: {
 		display: "grid",
 		gridTemplateColumns: "30px 58px minmax(0, 1fr) 88px 88px",
 		alignItems: "center",
 		gap: 9,
 		padding: "12px 13px",
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		listStyle: "none",
-		backgroundColor: { default: "transparent", ":hover": "#18201ce6" }
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" }
 	},
-	rowIndex: { color: "#4c5650", fontFamily: "Georgia, serif", fontSize: 13 },
-	kind: { color: "#e2a669", fontSize: 7, fontWeight: 800, letterSpacing: ".12em" },
-	engineKind: { color: "#7bc8b2" },
+	rowIndex: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 13
+	},
+	kind: {
+		color: tokens.colorWarning,
+		fontSize: 11,
+		fontWeight: 590,
+		letterSpacing: "0"
+	},
+	engineKind: { color: "#02b8cc" },
 	identity: { minWidth: 0, overflow: "hidden" },
-	rowStatus: { color: "#77827b", fontSize: 8, textTransform: "uppercase" },
-	rowBytes: { color: "#dce3de", fontSize: 11, textAlign: "right" },
-	targets: { padding: "0 13px 10px 110px", backgroundColor: "#0c100eee" },
+	rowStatus: { color: tokens.colorTextMuted, fontSize: 11, textTransform: "none" },
+	rowBytes: { color: tokens.colorTextStrong, fontSize: 11, textAlign: "right" },
+	targets: { padding: "0 13px 10px 110px", backgroundColor: tokens.colorSurfaceInset },
 	target: {
 		display: "grid",
 		gridTemplateColumns: "48px minmax(0, 1fr) 72px",
 		alignItems: "center",
 		gap: 10,
 		padding: "9px 0",
-		borderBottom: "1px dotted #303733"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "dotted",
+		borderBottomWidth: 1
 	},
-	risk: { fontSize: 7, letterSpacing: ".08em", textTransform: "uppercase" },
-	low: { color: "#7bc8b2" },
-	medium: { color: "#d3bd72" },
-	high: { color: "#e39b54" },
-	critical: { color: "#e26d5c" },
+	risk: { fontSize: 11, letterSpacing: "0", textTransform: "none" },
+	low: { color: tokens.colorSuccess },
+	medium: { color: tokens.colorWarning },
+	high: { color: tokens.colorWarningStrong },
+	critical: { color: tokens.colorDanger },
 	refusal: {
 		display: "grid",
 		gridTemplateColumns: "48px 150px minmax(0, 1fr)",
 		gap: 10,
 		padding: "9px 0",
-		color: "#936a63",
-		fontSize: 8
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	planItem: {
 		display: "grid",
@@ -1095,9 +1227,11 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 10,
 		padding: "13px",
-		borderBottom: "1px solid #2e3531"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	planOrder: { color: "#e39b54", fontFamily: "Georgia, serif", fontSize: 16 },
+	planOrder: { color: tokens.colorWarning, fontFamily: tokens.fontMono, fontSize: 16 },
 	planFooter: {
 		display: "flex",
 		justifyContent: "space-between",
@@ -1105,10 +1239,12 @@ const styles = stylex.create({
 		gap: 10,
 		margin: 12,
 		paddingTop: 12,
-		borderTop: "1px solid #3b433f",
-		color: "#7b8780",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
 	workflowScrim: {
 		position: "fixed",
@@ -1116,7 +1252,7 @@ const styles = stylex.create({
 		zIndex: 90,
 		display: "flex",
 		justifyContent: "flex-end",
-		backgroundColor: "#030403c7",
+		backgroundColor: "rgba(8, 9, 10, 0.78)",
 		backdropFilter: "blur(4px)"
 	},
 	workflow: {
@@ -1124,9 +1260,11 @@ const styles = stylex.create({
 		height: "100%",
 		display: "grid",
 		gridTemplateRows: "auto auto minmax(0, 1fr) auto",
-		borderLeft: "1px solid #58463a",
-		backgroundColor: "#101311",
-		boxShadow: "-30px 0 90px #000c",
+		borderLeftColor: tokens.colorBorderStrong,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
+		backgroundColor: tokens.colorSurfaceRaised,
+		boxShadow: tokens.shadowOverlay,
 		color: tokens.colorText
 	},
 	workflowHeader: {
@@ -1135,20 +1273,24 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		justifyContent: "space-between",
 		padding: "22px 24px 18px",
-		borderBottom: "1px solid #3c3934"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	workflowKicker: {
-		color: "#e39b54",
-		fontSize: 8,
-		fontWeight: 800,
-		letterSpacing: ".16em"
+		color: tokens.colorDanger,
+		fontSize: 11,
+		fontWeight: 590,
+		letterSpacing: "0"
 	},
 	workflowClose: {
 		width: 32,
 		height: 32,
-		border: "1px solid #4b4943",
-		backgroundColor: { default: "transparent", ":hover": "#28251f" },
-		color: "#9d9a91",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
 		fontSize: 20,
 		cursor: "pointer"
 	},
@@ -1158,22 +1300,29 @@ const styles = stylex.create({
 		padding: 0,
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		borderBottom: "1px solid #3c3934"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	workflowStep: {
 		display: "flex",
 		gap: 8,
 		padding: "12px 16px",
-		borderRight: "1px solid #302e2a",
-		color: "#615f59",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
-	workflowStepActive: { color: "#e3a66c", boxShadow: "inset 0 -2px #e39b54" },
+	workflowStepActive: {
+		color: tokens.colorTextStrong,
+		boxShadow: `inset 0 -2px ${tokens.colorAccent}`
+	},
 	workflowBody: { overflowY: "auto" },
 	workflowStage: { padding: "28px 26px 34px" },
-	workflowIndex: { color: "#e39b54", fontSize: 9, letterSpacing: ".16em" },
-	workflowCopy: { color: "#929a94", fontSize: 11, lineHeight: 1.7 },
+	workflowIndex: { color: tokens.colorWarning, fontSize: 11, letterSpacing: "0" },
+	workflowCopy: { color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.7 },
 	modeGrid: {
 		display: "grid",
 		gridTemplateColumns: "1fr 1fr",
@@ -1187,17 +1336,27 @@ const styles = stylex.create({
 		alignContent: "center",
 		gap: "5px 8px",
 		padding: 13,
-		border: "1px solid #3b403c",
-		backgroundColor: "#151916",
-		color: "#c2c9c4",
-		fontSize: 10,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorText,
+		fontSize: 12,
 		cursor: "pointer"
 	},
 	modeCopy: { minWidth: 0, display: "flex", flexDirection: "column", gap: 6, lineHeight: 1.45 },
-	modeSelected: { borderColor: "#72bda7", backgroundColor: "#14201c" },
-	modeDanger: { borderColor: "#a95b4e", backgroundColor: "#211512" },
+	modeSelected: { borderColor: tokens.colorAccent, backgroundColor: tokens.colorAccentWash },
+	modeDanger: {
+		borderColor: tokens.colorDanger,
+		backgroundColor: "rgba(235, 87, 87, 0.10)"
+	},
 	cleanupTargets: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 },
-	cleanupTarget: { border: "1px solid #343a36", backgroundColor: "#131714" },
+	cleanupTarget: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset
+	},
 	cleanupTargetLabel: {
 		minHeight: 62,
 		display: "grid",
@@ -1208,20 +1367,31 @@ const styles = stylex.create({
 		cursor: "pointer"
 	},
 	cleanupTargetCopy: { minWidth: 0, display: "flex", flexDirection: "column", gap: 5 },
-	proposalFacts: { margin: "22px 0", border: "1px solid #3a3e3a" },
+	proposalFacts: {
+		margin: "22px 0",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1
+	},
 	proposalFact: {
 		minHeight: 42,
 		display: "grid",
 		gridTemplateColumns: "120px minmax(0, 1fr)",
 		alignItems: "center",
 		padding: "0 13px",
-		borderBottom: "1px solid #303531"
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
-	proposalFactLabel: { color: "#707972", fontSize: 8, letterSpacing: ".11em" },
+	proposalFactLabel: {
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: "0"
+	},
 	proposalFactValue: {
 		margin: 0,
-		color: "#c5cbc6",
-		fontSize: 10,
+		color: tokens.colorText,
+		fontSize: 12,
 		overflow: "hidden",
 		textOverflow: "ellipsis"
 	},
@@ -1229,11 +1399,13 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 8,
 		padding: 16,
-		borderLeft: "3px solid #e39b54",
-		backgroundColor: "#1c1915",
-		color: "#9ea39f",
-		fontSize: 9,
-		letterSpacing: ".08em"
+		borderLeftColor: tokens.colorWarning,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
+		backgroundColor: "rgba(242, 153, 74, 0.08)",
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
 	executing: {
 		minHeight: "100%",
@@ -1243,21 +1415,23 @@ const styles = stylex.create({
 		justifyContent: "center",
 		padding: 30,
 		textAlign: "center",
-		color: "#929a94"
+		color: tokens.colorTextMuted
 	},
 	executionPulse: {
 		width: 74,
 		height: 74,
 		marginBottom: 20,
-		border: "1px solid #5b4c40",
-		borderTopColor: "#e39b54",
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderTopColor: tokens.colorWarning,
 		borderRadius: "50%",
 		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
 		animationDuration: "1.8s",
 		animationIterationCount: "infinite",
 		animationTimingFunction: "linear"
 	},
-	workflowFailure: { padding: 28, color: "#e3937f" },
+	workflowFailure: { padding: 28, color: tokens.colorDanger },
 	workflowFooter: {
 		minHeight: 72,
 		display: "flex",
@@ -1265,55 +1439,95 @@ const styles = stylex.create({
 		justifyContent: "flex-end",
 		gap: 9,
 		padding: "14px 20px",
-		borderTop: "1px solid #393833",
-		backgroundColor: "#0c0e0c"
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset
 	},
 	secondaryAction: {
 		minHeight: 38,
 		padding: "0 16px",
-		border: "1px solid #464943",
-		backgroundColor: { default: "transparent", ":hover": "#1a1e1a" },
-		color: "#a0a59f",
-		fontSize: 9,
-		letterSpacing: ".11em",
-		cursor: "pointer"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		letterSpacing: "0",
+		cursor: "pointer",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
-	selectionTotal: { marginRight: "auto", color: "#757d77", fontSize: 8, letterSpacing: ".1em" },
+	selectionTotal: {
+		marginRight: "auto",
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		letterSpacing: "0"
+	},
 	primaryAction: {
 		minHeight: 38,
 		padding: "0 18px",
-		border: "1px solid #74c1aa",
-		backgroundColor: { default: "#74c1aa", ":hover": "#92dbc6", ":disabled": "#354d46" },
-		color: "#0d1713",
-		fontSize: 9,
-		fontWeight: 800,
-		letterSpacing: ".11em",
-		cursor: "pointer"
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: tokens.colorAccent,
+			":hover": tokens.colorAccentStrong,
+			":disabled": "rgba(228, 242, 34, 0.25)"
+		},
+		color: tokens.colorAccentText,
+		fontSize: 12,
+		fontWeight: 590,
+		letterSpacing: "0",
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	dangerAction: {
 		minHeight: 38,
 		padding: "0 18px",
-		border: "1px solid #e26d5c",
-		backgroundColor: { default: "#e26d5c", ":hover": "#f48776", ":disabled": "#5a3732" },
-		color: "#1b0c09",
-		fontSize: 9,
-		fontWeight: 900,
-		letterSpacing: ".11em",
-		cursor: "pointer"
+		borderColor: tokens.colorDanger,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: tokens.colorDanger,
+			":hover": "#f47b7b",
+			":disabled": "rgba(235, 87, 87, 0.25)"
+		},
+		color: "#160707",
+		fontSize: 12,
+		fontWeight: 590,
+		letterSpacing: "0",
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	receiptRefusal: {
 		margin: "18px 0",
 		padding: 15,
-		borderLeft: "3px solid #e26d5c",
-		backgroundColor: "#211411",
-		color: "#dd978b",
-		fontSize: 10
+		borderLeftColor: tokens.colorDanger,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
+		backgroundColor: "rgba(235, 87, 87, 0.10)",
+		color: tokens.colorDanger,
+		fontSize: 12
 	},
 	resultSummary: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
 		margin: "22px 0",
-		border: "1px solid #39413c"
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1
 	},
 	resultDatum: {
 		minHeight: 78,
@@ -1322,10 +1536,12 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 7,
-		borderRight: "1px solid #333a35",
-		color: "#7e8881",
-		fontSize: 8,
-		letterSpacing: ".1em"
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		letterSpacing: "0"
 	},
 	receiptEntries: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 5 },
 	receiptEntry: {
@@ -1333,15 +1549,22 @@ const styles = stylex.create({
 		gridTemplateColumns: "72px minmax(0, 1fr) auto",
 		gap: 10,
 		padding: "10px 12px",
-		border: "1px solid #343a36",
-		backgroundColor: "#141815",
-		fontSize: 9
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurfaceInset,
+		fontSize: 12
 	},
-	receiptPath: { marginTop: 18, color: "#606963", fontSize: 8, overflowWrap: "anywhere" },
+	receiptPath: {
+		marginTop: 18,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		overflowWrap: "anywhere"
+	},
 	provenance: {
 		marginTop: 12,
-		color: "#535d57",
-		fontSize: 8,
+		color: tokens.colorTextFaint,
+		fontSize: 11,
 		letterSpacing: ".04em",
 		overflowWrap: "anywhere"
 	}

@@ -46,7 +46,7 @@ describe("TextureAuditRoute", () => {
 		));
 		expect(await screen.findByText("No project configured.")).toBeDefined();
 		expect(screen.queryByRole("button", { name: "Choose project" })).toBeNull();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Rescan saved assets" }));
+		await userEvent.setup().click(screen.getByRole("button", { name: "Rescan assets" }));
 		expect(rescans).toBe(2);
 	});
 
@@ -218,7 +218,7 @@ describe("TextureAuditRoute", () => {
 			</EffectRuntimeProvider>
 		));
 
-		const generate = await screen.findByRole("button", { name: "Generate saved preview" });
+		const generate = await screen.findByRole("button", { name: "Generate preview" });
 		expect(offlineRequests).toBe(0);
 		await userEvent.setup().click(generate);
 		expect(await screen.findByText("Saved asset")).toBeDefined();

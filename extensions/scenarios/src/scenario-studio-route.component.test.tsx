@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@solidjs/testing-library";
+import { cleanup, render, screen, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
@@ -55,7 +55,7 @@ describe("ScenarioStudioRoute", () => {
 		renderRoute();
 
 		expect(screen.getByText("The Broken Bridge")).toBeDefined();
-		expect(screen.getByText("LIVE INPUT NOT BLOCKED")).toBeDefined();
+		expect(screen.getByText("Live input not blocked")).toBeDefined();
 		expect(screen.getByText("Moved 120 ms earlier than the recorded take.")).toBeDefined();
 
 		await user.click(screen.getByRole("button", { name: "Nudge later" }));
@@ -66,7 +66,7 @@ describe("ScenarioStudioRoute", () => {
 	it("shows saved captures and run differences", async () => {
 		renderRoute();
 
-		expect(screen.getByText("RUN RESULTS")).toBeDefined();
+		expect(screen.getByText("Run results")).toBeDefined();
 		expect(screen.getByText("Jump happened 120 ms late")).toBeDefined();
 		expect(screen.getByText("2 found")).toBeDefined();
 	});
@@ -77,9 +77,9 @@ describe("ScenarioStudioRoute", () => {
 
 		await screen.findByDisplayValue(liveHandle.endpoint);
 		expect(screen.getByRole("region", { name: "Movement Gym demo guide" })).toBeDefined();
-		expect(screen.getAllByText("LIVE SLICE")).toHaveLength(2);
+		expect(screen.getAllByText("Runs live")).toHaveLength(2);
 		// Three preview-only lanes plus the current top-level PREVIEW ONLY runtime state.
-		expect(screen.getAllByText("PREVIEW ONLY")).toHaveLength(4);
+		expect(screen.getAllByText("Preview only")).toHaveLength(4);
 		expect(screen.getByText(`pnpm ue-shed scenarios run ${liveHandle.endpoint}`)).toBeDefined();
 
 		const input = screen.getByLabelText("Remote Control endpoint");
@@ -95,9 +95,9 @@ describe("ScenarioStudioRoute", () => {
 		renderRoute(client);
 
 		await screen.findByDisplayValue(liveHandle.endpoint);
-		await user.click(screen.getByRole("button", { name: "RUN IN UNREAL" }));
+		await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
 
-		expect(await screen.findByText("LIVE RESULT")).toBeDefined();
+		expect(await screen.findByText("Live result")).toBeDefined();
 		expect(screen.getByText("Structured PIE result")).toBeDefined();
 	});
 
@@ -132,12 +132,13 @@ describe("ScenarioStudioRoute", () => {
 		);
 
 		await screen.findByDisplayValue(liveHandle.endpoint);
-		await user.click(screen.getByRole("button", { name: "RUN IN UNREAL" }));
+		await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
 
-		expect(await screen.findByText("INPUT RESTORED")).toBeDefined();
-		expect(screen.getAllByText("world state")).toHaveLength(2);
-		expect(screen.getByText(/bounded producer evidence/)).toBeDefined();
-		expect(screen.queryByText("CAPTURED · PLAYER CAMERA")).toBeNull();
+		expect(await screen.findByText("Input restored")).toBeDefined();
+		expect(screen.getByText("World state")).toBeDefined();
+		expect(screen.getByText("world state")).toBeDefined();
+		expect(screen.getByText(/recorded by the run/)).toBeDefined();
+		expect(screen.queryByText("Player camera")).toBeNull();
 	});
 
 	it("shows capability recovery without claiming live input was blocked", async () => {
@@ -156,11 +157,11 @@ describe("ScenarioStudioRoute", () => {
 		renderRoute(client);
 
 		await screen.findByDisplayValue(liveHandle.endpoint);
-		await user.click(screen.getByRole("button", { name: "RUN IN UNREAL" }));
+		await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
 
-		expect(await screen.findByText("RUN FAILED")).toBeDefined();
+		expect(await screen.findByText("Run failed")).toBeDefined();
 		expect(screen.getByText(/Enable UEShedScenarios and reconnect/)).toBeDefined();
-		expect(screen.getByText("LIVE INPUT NOT BLOCKED")).toBeDefined();
+		expect(screen.getByText("Live input not blocked")).toBeDefined();
 	});
 
 	it("uses the selected endpoint and exposes the producer waiting state", async () => {
@@ -186,11 +187,11 @@ describe("ScenarioStudioRoute", () => {
 		const input = await screen.findByLabelText("Remote Control endpoint");
 		await user.clear(input);
 		await user.type(input, "http://fixture:30123");
-		await user.click(screen.getByRole("button", { name: "RUN IN UNREAL" }));
+		await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
 
-		expect(await screen.findByText("WAITING")).toBeDefined();
+		expect(await screen.findByText("Waiting")).toBeDefined();
 		expect(screen.getByText("00:04.10 game time")).toBeDefined();
-		expect(screen.getByText("ISOLATION ACTIVE")).toBeDefined();
+		expect(screen.getByText("Isolation active")).toBeDefined();
 		expect(selectedEndpoint).toBe("http://fixture:30123");
 	});
 
@@ -212,9 +213,10 @@ describe("ScenarioStudioRoute", () => {
 		renderRoute(client);
 
 		await screen.findByDisplayValue(liveHandle.endpoint);
-		await user.click(screen.getByRole("button", { name: "RUN IN UNREAL" }));
-		await user.click(await screen.findByRole("button", { name: "CANCEL RUN" }));
+		await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
+		await user.click(await screen.findByRole("button", { name: "Cancel run" }));
 
-		expect(await screen.findByText("CANCELLED")).toBeDefined();
+		const results = await screen.findByRole("region", { name: "Run results" });
+		expect(within(results).getByText("Cancelled")).toBeDefined();
 	});
 });

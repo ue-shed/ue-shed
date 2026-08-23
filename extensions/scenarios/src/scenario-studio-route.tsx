@@ -61,24 +61,24 @@ interface DragState {
 const TIME_TICKS = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000] as const;
 const DEMO_STEPS = [
 	{
-		copy: "Green lanes run; gray lanes stay preview-only.",
-		label: "AUTHOR",
-		title: "Inspect the intent"
+		copy: "Green lanes run in Unreal; gray lanes stay preview-only.",
+		label: "Author",
+		title: "Read the scenario"
 	},
 	{
 		copy: "Start UE 5.7 PIE through the public runner.",
-		label: "EXECUTE",
+		label: "Execute",
 		title: "Run Movement Gym"
 	},
 	{
-		copy: "Isolation · game time · landing wait · cache probe.",
-		label: "VERIFY",
-		title: "Follow live proof"
+		copy: "Isolation, game time, the landing wait, and the cache probe.",
+		label: "Verify",
+		title: "Follow the live run"
 	},
 	{
-		copy: "Read the receipt; repeat the same run from the CLI.",
-		label: "HEADLESS",
-		title: "Prove portability"
+		copy: "Read the result, then repeat the same run from the CLI.",
+		label: "Headless",
+		title: "Repeat it anywhere"
 	}
 ] as const;
 
@@ -132,10 +132,29 @@ function trackKindLabel(track: ScenarioTrack): string {
 	}
 }
 
-function trackLiveSupport(track: ScenarioTrack): "LIVE SLICE" | "PREVIEW ONLY" {
+function trackLiveSupport(track: ScenarioTrack): "Runs live" | "Preview only" {
 	return track.kind === "semantic_actions" || track.kind === "world_conditions"
-		? "LIVE SLICE"
-		: "PREVIEW ONLY";
+		? "Runs live"
+		: "Preview only";
+}
+
+function capitalize(value: string): string {
+	return value.replace(/^./u, (character) => character.toLocaleUpperCase());
+}
+
+type FailureParts = {
+	readonly summary: string;
+	readonly technical: string | undefined;
+};
+
+// A producer failure carries either one sentence or a pretty-printed Cause. Show the first line and
+// keep the rest behind a disclosure so a failed run never reads as a stack trace.
+function failureParts(message: string): FailureParts {
+	if (message.length <= 160 && !message.includes("\n")) {
+		return { summary: message, technical: undefined };
+	}
+	const [firstLine] = message.split("\n");
+	return { summary: (firstLine ?? message).slice(0, 160).trim(), technical: message };
 }
 
 function clipDetail(clip: ScenarioClip): string {
@@ -457,10 +476,8 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 				<div {...stylex.props(styles.documentIdentity)}>
 					<span {...stylex.props(styles.scenarioGlyph)}>SCN</span>
 					<div>
-						<div {...stylex.props(styles.breadcrumb)}>
-							SCENARIOS / MOVEMENT GYM / DRAFT 04
-						</div>
-						<h1 {...stylex.props(styles.title)}>{document().title}</h1>
+						<h1 {...stylex.props(styles.title)}>Scenario Studio</h1>
+						<div {...stylex.props(styles.documentName)}>{document().title}</div>
 					</div>
 				</div>
 				<div {...stylex.props(styles.transport)}>
@@ -496,7 +513,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 							demoGuideOpen() && styles.demoGuideToggleActive
 						)}
 					>
-						DEMO GUIDE
+						Demo guide
 					</button>
 					<span
 						{...stylex.props(
@@ -509,25 +526,25 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 						<strong>
 							{liveRunState().status === "terminal"
 								? activeRun().status === "completed_with_divergence"
-									? "DIVERGENCE"
+									? "Differences found"
 									: activeRun().status === "cancelled"
-										? "CANCELLED"
+										? "Cancelled"
 										: activeRun().status === "failed"
-											? "RUN FAILED"
-											: "LIVE RESULT"
+											? "Run failed"
+											: "Live result"
 								: liveRunState().status === "connecting"
-									? "NEGOTIATING / PREPARING PIE"
+									? "Starting PIE…"
 									: liveRunState().status === "active"
-										? liveProducerState()?.toUpperCase()
+										? capitalize(liveProducerState() ?? "")
 										: liveRunState().status === "cancelling"
-											? "CANCELLING"
+											? "Cancelling…"
 											: liveRunState().status === "unavailable"
-												? "RUN FAILED"
-												: "PREVIEW ONLY"}
+												? "Run failed"
+												: "Preview only"}
 						</strong>
 						<small>
 							{liveRunState().status === "unavailable"
-								? liveFailureMessage()
+								? "The run console below has the details"
 								: props.client === undefined
 									? "Unreal client not provided"
 									: liveRunState().status === "terminal"
@@ -542,7 +559,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 
 			<section aria-label="Live execution controls" {...stylex.props(styles.runConsole)}>
 				<label {...stylex.props(styles.endpointField)}>
-					<span>REMOTE CONTROL ENDPOINT</span>
+					<span>Remote Control endpoint</span>
 					<input
 						aria-label="Remote Control endpoint"
 						disabled={liveBusy()}
@@ -554,26 +571,26 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 					/>
 				</label>
 				<div aria-label="Live run lifecycle" {...stylex.props(styles.lifecycle)}>
-					<For each={["CONNECT", "ISOLATE", "RUN", "WAIT", "RESULT"]}>
+					<For each={["Connect", "Isolate", "Run", "Wait", "Result"]}>
 						{(phase) => (
 							<span
 								{...stylex.props(
 									styles.lifecyclePhase,
-									((phase === "CONNECT" &&
+									((phase === "Connect" &&
 										liveRunState().status === "connecting") ||
-										(phase === "ISOLATE" &&
+										(phase === "Isolate" &&
 											liveRunState().status === "active" &&
 											["accepted", "isolating"].includes(
 												liveProducerState() ?? "accepted"
 											)) ||
-										(phase === "RUN" &&
+										(phase === "Run" &&
 											((liveRunState().status === "active" &&
 												liveProducerState() === "running") ||
 												liveRunState().status === "cancelling")) ||
-										(phase === "WAIT" &&
+										(phase === "Wait" &&
 											liveRunState().status === "active" &&
 											liveProducerState() === "waiting") ||
-										(phase === "RESULT" &&
+										(phase === "Result" &&
 											liveRunState().status === "terminal")) &&
 										styles.lifecycleCurrent
 								)}
@@ -586,7 +603,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 				<div {...stylex.props(styles.runActions)}>
 					<Show when={liveRunState().status === "active"}>
 						<button onClick={cancelLive} {...stylex.props(styles.cancelRunButton)}>
-							CANCEL RUN
+							Cancel run
 						</button>
 					</Show>
 					<button
@@ -597,22 +614,43 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 						{...stylex.props(styles.liveRunButton)}
 					>
 						{liveRunState().status === "connecting"
-							? "STARTING…"
+							? "Starting…"
 							: liveRunState().status === "cancelling"
-								? "CANCELLING…"
+								? "Cancelling…"
 								: liveRunState().status === "active"
-									? "RUNNING"
-									: "RUN IN UNREAL"}
+									? "Running"
+									: "Run in Unreal"}
 					</button>
 				</div>
 			</section>
 
+			<Show when={liveFailureMessage()}>
+				{(message) => {
+					const parts = createMemo(() => failureParts(message()));
+					return (
+						<section role="alert" {...stylex.props(styles.runFailure)}>
+							<strong {...stylex.props(styles.runFailureTitle)}>
+								Couldn’t run this scenario in Unreal
+							</strong>
+							<p {...stylex.props(styles.runFailureMessage)}>{parts().summary}</p>
+							<Show when={parts().technical}>
+								{(technical) => (
+									<details {...stylex.props(styles.runFailureDetails)}>
+										<summary>Technical details</summary>
+										<code>{technical()}</code>
+									</details>
+								)}
+							</Show>
+						</section>
+					);
+				}}
+			</Show>
+
 			<Show when={demoGuideOpen()}>
 				<section aria-label="Movement Gym demo guide" {...stylex.props(styles.demoGuide)}>
 					<header {...stylex.props(styles.demoGuideHeading)}>
-						<span {...stylex.props(styles.sectionKicker)}>LIVE PROOF</span>
-						<strong>MOVEMENT GYM</strong>
-						<small>One portable scenario · two public clients</small>
+						<strong>Movement Gym</strong>
+						<small>One scenario, run from the Workbench or the CLI</small>
 					</header>
 					<ol {...stylex.props(styles.demoSteps)}>
 						<For each={DEMO_STEPS}>
@@ -626,7 +664,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 									)}
 								>
 									<span {...stylex.props(styles.demoStepNumber)}>
-										{String(index() + 1).padStart(2, "0")}
+										{index() + 1}
 									</span>
 									<div {...stylex.props(styles.demoStepBody)}>
 										<small {...stylex.props(styles.demoStepLabel)}>
@@ -642,7 +680,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 						</For>
 					</ol>
 					<div {...stylex.props(styles.headlessHandoff)}>
-						<span>SAME PUBLIC RUNNER</span>
+						<span>Same runner, headless</span>
 						<code {...stylex.props(styles.headlessCommand)}>{headlessCommand()}</code>
 					</div>
 				</section>
@@ -651,7 +689,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 			<section {...stylex.props(styles.workspace)}>
 				<aside aria-label="Scenario takes" {...stylex.props(styles.takeRail)}>
 					<div {...stylex.props(styles.railHeading)}>
-						<span>TAKES</span>
+						<span>Takes</span>
 						<button aria-label="Add take" {...stylex.props(styles.addButton)}>
 							+
 						</button>
@@ -679,7 +717,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 									>
 										{run.divergences.length > 0
 											? `${run.divergences.length} changed`
-											: "CLEAN"}
+											: "Clean"}
 									</span>
 								</button>
 							)}
@@ -690,21 +728,21 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 								<strong>Edited draft</strong>
 								<small>not run</small>
 							</span>
-							<span {...stylex.props(styles.runState)}>DIRTY</span>
+							<span {...stylex.props(styles.runState)}>Unsaved</span>
 						</button>
 					</div>
 
 					<div {...stylex.props(styles.documentFacts)}>
 						<div {...stylex.props(styles.fact)}>
-							<span>MAP</span>
+							<span>Map</span>
 							<strong>L_MovementGym</strong>
 						</div>
 						<div {...stylex.props(styles.fact)}>
-							<span>TIME</span>
+							<span>Clock</span>
 							<strong>Game time</strong>
 						</div>
 						<div {...stylex.props(styles.fact)}>
-							<span>SEED</span>
+							<span>Seed</span>
 							<strong>{document().seed}</strong>
 						</div>
 						<div {...stylex.props(styles.isolationFact)}>
@@ -714,13 +752,13 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 									{liveRunState().status === "terminal" &&
 									activeRun().inputIsolation?.established &&
 									activeRun().inputIsolation?.restored
-										? "ISOLATION VERIFIED"
+										? "Isolation verified"
 										: liveRunState().status === "active" ||
 											  liveRunState().status === "cancelling"
-											? "ISOLATION ACTIVE"
+											? "Isolation active"
 											: liveRunState().status === "connecting"
-												? "ISOLATION REQUIRED"
-												: "LIVE INPUT NOT BLOCKED"}
+												? "Isolation required"
+												: "Live input not blocked"}
 								</strong>
 								<small>
 									{liveRunState().status === "terminal" &&
@@ -739,7 +777,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 				<section aria-label="Scenario timeline" {...stylex.props(styles.timelinePanel)}>
 					<header {...stylex.props(styles.timelineHeader)}>
 						<div>
-							<span {...stylex.props(styles.sectionKicker)}>SCENARIO TIMELINE</span>
+							<h2 {...stylex.props(styles.sectionTitle)}>Timeline</h2>
 							<p>{document().description}</p>
 						</div>
 						<div {...stylex.props(styles.timelineTools)}>
@@ -766,7 +804,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 					<div {...stylex.props(styles.timelineScroller)}>
 						<div style={{ width: `${timelineScale() * 100}%`, "min-width": "900px" }}>
 							<div {...stylex.props(styles.rulerRow)}>
-								<div {...stylex.props(styles.rulerLabel)}>GAME TIME</div>
+								<div {...stylex.props(styles.rulerLabel)}>Game time</div>
 								<div {...stylex.props(styles.ruler)}>
 									<For each={TIME_TICKS}>
 										{(tick) => (
@@ -809,7 +847,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 														{...stylex.props(
 															styles.trackSupport,
 															trackLiveSupport(track) ===
-																"LIVE SLICE" &&
+																"Runs live" &&
 																styles.trackSupportLive
 														)}
 													>
@@ -932,7 +970,6 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 						{(clip) => (
 							<>
 								<header {...stylex.props(styles.inspectorHeader)}>
-									<span {...stylex.props(styles.sectionKicker)}>SELECTION</span>
 									<span {...stylex.props(styles.clipType)}>
 										{clipKindLabel(clip)}
 									</span>
@@ -941,7 +978,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 								</header>
 
 								<section {...stylex.props(styles.inspectorSection)}>
-									<h3>TIMING</h3>
+									<h3>Timing</h3>
 									<div {...stylex.props(styles.timingControl)}>
 										<button
 											aria-label="Nudge earlier"
@@ -961,7 +998,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 								</section>
 
 								<section {...stylex.props(styles.inspectorSection)}>
-									<h3>INPUT HANDLING</h3>
+									<h3>Input handling</h3>
 									<div {...stylex.props(styles.layerFlow)}>
 										<span>{sourceLayer(clip)}</span>
 										<b>→</b>
@@ -984,7 +1021,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 								>
 									{(action) => (
 										<section {...stylex.props(styles.inspectorSection)}>
-											<h3>INPUT VALUES</h3>
+											<h3>Input values</h3>
 											<div {...stylex.props(styles.keyframeList)}>
 												<For each={action.keyframes}>
 													{(keyframe) => (
@@ -1013,17 +1050,16 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 
 			<section aria-label="Run results" {...stylex.props(styles.evidenceDesk)}>
 				<div {...stylex.props(styles.evidenceHeading)}>
-					<span {...stylex.props(styles.sectionKicker)}>RUN RESULTS</span>
-					<h2>At {formatTime(playheadMs())}</h2>
-					<p>Bounded captures and game checks from this run.</p>
+					<h2 {...stylex.props(styles.sectionTitle)}>Run results</h2>
+					<p>Captures and game checks from this run, at {formatTime(playheadMs())}.</p>
 					<Show when={liveRunState().status === "terminal"}>
 						<div {...stylex.props(styles.runReceiptSummary)}>
-							<span>{activeRun().status.replaceAll("_", " ")}</span>
+							<span>{capitalize(activeRun().status.replaceAll("_", " "))}</span>
 							<strong>UE {activeRun().engineVersion}</strong>
 							<small>
 								{activeRun().inputIsolation?.restored
-									? "INPUT RESTORED"
-									: "RESTORE NOT PROVEN"}
+									? "Input restored"
+									: "Restore not proven"}
 							</small>
 						</div>
 					</Show>
@@ -1033,9 +1069,11 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 						when={presentedEvidence()}
 						fallback={
 							<div {...stylex.props(styles.emptyEvidence)}>
-								<span>NO PRODUCER EVIDENCE</span>
-								<strong>Nothing was fabricated.</strong>
-								<p>This run returned no capture at the selected point.</p>
+								<strong>No capture here</strong>
+								<p>
+									This run recorded nothing at the selected point. Move the
+									playhead to a capture marker to see one.
+								</p>
 							</div>
 						}
 						keyed
@@ -1046,12 +1084,16 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 								fallback={
 									<div {...stylex.props(styles.structuredEvidence)}>
 										<div {...stylex.props(styles.structuredEvidenceTopline)}>
-											<span>{evidence.type.replaceAll("_", " ")}</span>
+											<span>
+												{capitalize(evidence.type.replaceAll("_", " "))}
+											</span>
 											<time>{formatTime(evidence.atMs)}</time>
 										</div>
 										<strong>{evidence.label}</strong>
 										<p>{evidence.summary}</p>
-										<small>{evidence.status} · bounded producer evidence</small>
+										<small>
+											{capitalize(evidence.status)} · recorded by the run
+										</small>
 									</div>
 								}
 							>
@@ -1059,9 +1101,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 									<div {...stylex.props(styles.frameHorizon)} />
 									<div {...stylex.props(styles.frameBridge)} />
 									<div {...stylex.props(styles.framePawn)}>↑</div>
-									<span {...stylex.props(styles.frameBadge)}>
-										CAPTURED · PLAYER CAMERA
-									</span>
+									<span {...stylex.props(styles.frameBadge)}>Player camera</span>
 									<span {...stylex.props(styles.frameTime)}>
 										{formatTime(evidence.atMs)}
 									</span>
@@ -1076,7 +1116,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 				</div>
 				<div {...stylex.props(styles.observationList)}>
 					<header>
-						<span>CAPTURES</span>
+						<span>Captures</span>
 						<small>{activeRun().evidence.length} saved</small>
 					</header>
 					<For each={activeRun().evidence}>
@@ -1102,7 +1142,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 				</div>
 				<div {...stylex.props(styles.divergenceLedger)}>
 					<header>
-						<span>DIFFERENCES</span>
+						<span>Differences</span>
 						<small>{activeRun().divergences.length} found</small>
 					</header>
 					<Show
@@ -1133,7 +1173,7 @@ export function ScenarioStudioRoute(props: ScenarioStudioRouteProps) {
 			</section>
 
 			<footer {...stylex.props(styles.statusBar)}>
-				<span>SCHEMA v{document().schemaVersion}</span>
+				<span>Schema v{document().schemaVersion}</span>
 				<span>{clipsInScenario(document()).length} timeline items</span>
 				<span>{document().checkpoints.length} saved restart points</span>
 				<code>{document().mapPath}</code>
@@ -1176,9 +1216,9 @@ const styles = stylex.create({
 		fontWeight: 590,
 		clipPath: "polygon(0 0, 82% 0, 100% 18%, 100% 100%, 0 100%)"
 	},
-	breadcrumb: { color: tokens.colorTextSubtle, fontSize: 11 },
+	documentName: { color: tokens.colorTextMuted, fontSize: 12, marginTop: 2 },
 	title: {
-		margin: "4px 0 0",
+		margin: 0,
 		fontFamily: tokens.fontDisplay,
 		fontSize: 17,
 		fontWeight: 590,
@@ -1477,7 +1517,36 @@ const styles = stylex.create({
 		padding: "0 18px",
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	sectionKicker: { color: tokens.colorTextSubtle, fontSize: 11 },
+	sectionTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 15,
+		fontWeight: 590,
+		letterSpacing: "-.01em",
+		margin: 0
+	},
+	runFailure: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorText,
+		padding: "14px 18px"
+	},
+	runFailureTitle: { color: tokens.colorTextStrong, fontSize: 14, fontWeight: 590 },
+	runFailureMessage: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.55,
+		margin: "4px 0 0",
+		maxWidth: 720
+	},
+	runFailureDetails: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		marginTop: tokens.space2,
+		whiteSpace: "pre-wrap"
+	},
 	timelineTools: {
 		display: "flex",
 		alignItems: "center",

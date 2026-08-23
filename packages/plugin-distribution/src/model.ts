@@ -6,12 +6,14 @@ import {
 	Sha256Checksum,
 	UnrealVersion
 } from "./manifest.js";
+import { PluginVariantIdentity, PluginVariantRequest } from "./variant.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const BoundedPath = NonEmptyString.check(Schema.isMaxLength(32_767));
 const ByteCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 export const PluginInstallRequest = Schema.Struct({
+	artifact: Schema.optionalKey(PluginVariantRequest),
 	expectedArtifactSha256: Schema.optional(Sha256Checksum),
 	expectedManifestSha256: Schema.optional(Sha256Checksum),
 	networkPolicy: Schema.optional(Schema.Literals(["online", "cache-only"])),
@@ -61,11 +63,13 @@ export type PluginSourceProvenance = typeof PluginSourceProvenance.Type;
 export const PluginLease = Schema.Struct({
 	cachePath: BoundedPath,
 	identity: NonEmptyString,
-	releaseVersion: ReleaseVersion
+	releaseVersion: ReleaseVersion,
+	variantIdentity: PluginVariantIdentity
 });
 export type PluginLease = typeof PluginLease.Type;
 
 export const PluginInstallResult = Schema.Struct({
+	artifactKind: Schema.Literals(["source", "compiled"]),
 	artifactDigest: Sha256Checksum,
 	cacheHit: Schema.Boolean,
 	cacheIdentity: NonEmptyString,
@@ -77,18 +81,21 @@ export const PluginInstallResult = Schema.Struct({
 	releaseVersion: ReleaseVersion,
 	resolvedPluginIds: Schema.Array(PluginId),
 	resolvedPlugins: Schema.Array(PluginBundlePlugin),
-	source: PluginSourceProvenance
+	source: PluginSourceProvenance,
+	variantIdentity: PluginVariantIdentity
 });
 export type PluginInstallResult = typeof PluginInstallResult.Type;
 
 export const CachedPluginRelease = Schema.Struct({
+	artifactKind: Schema.Literals(["source", "compiled"]),
 	artifactDigest: Sha256Checksum,
 	cacheIdentity: NonEmptyString,
 	cachePath: BoundedPath,
 	manifestDigest: Sha256Checksum,
 	plugins: Schema.Array(PluginId),
 	releaseIdentity: NonEmptyString,
-	releaseVersion: ReleaseVersion
+	releaseVersion: ReleaseVersion,
+	variantIdentity: PluginVariantIdentity
 });
 export type CachedPluginRelease = typeof CachedPluginRelease.Type;
 

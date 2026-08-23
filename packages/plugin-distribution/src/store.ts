@@ -40,6 +40,7 @@ import {
 	type PluginInstallProgress,
 	type PluginDistributionLimits
 } from "./model.js";
+import { derivePluginVariantIdentity, pluginBundleKind } from "./variant.js";
 
 const metadataFile = ".ue-shed-distribution.json";
 const manifestFile = "plugins.manifest.json";
@@ -309,7 +310,12 @@ function storedRelease(
 	basic: Awaited<ReturnType<typeof readStoredBasic>>,
 	manifest: PluginBundleManifest
 ): StoredPluginRelease {
+	const variantIdentity = derivePluginVariantIdentity({
+		manifest,
+		manifestDigest: basic.metadata.manifestDigest
+	});
 	return {
+		artifactKind: pluginBundleKind(manifest),
 		artifactDigest: basic.metadata.artifactDigest,
 		artifactPath: basic.artifactPath,
 		cacheIdentity: basic.metadata.cacheIdentity,
@@ -321,7 +327,8 @@ function storedRelease(
 		pluginsRoot: join(basic.contentRoot, "Plugins"),
 		releaseIdentity: basic.metadata.releaseIdentity,
 		releaseVersion: manifest.releaseVersion,
-		source: basic.metadata.source
+		source: basic.metadata.source,
+		variantIdentity
 	};
 }
 
@@ -741,7 +748,8 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 										lease: PluginLease.make({
 											cachePath: release.cachePath,
 											identity,
-											releaseVersion: release.releaseVersion
+											releaseVersion: release.releaseVersion,
+											variantIdentity: release.variantIdentity
 										}),
 										path
 									};
@@ -812,13 +820,15 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						}).pipe(
 							Effect.map((releases) =>
 								releases.map((release) => ({
+									artifactKind: release.artifactKind,
 									artifactDigest: release.artifactDigest,
 									cacheIdentity: release.cacheIdentity,
 									cachePath: release.cachePath,
 									manifestDigest: release.manifestDigest,
 									plugins: release.plugins,
 									releaseIdentity: release.releaseIdentity,
-									releaseVersion: release.releaseVersion
+									releaseVersion: release.releaseVersion,
+									variantIdentity: release.variantIdentity
 								}))
 							)
 						)

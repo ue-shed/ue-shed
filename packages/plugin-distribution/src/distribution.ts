@@ -380,6 +380,7 @@ export const pluginDistributionLayer = (
 						releaseVersion: request.releaseVersion
 					});
 					return PluginInstallResult.make({
+						artifactKind: ensured.release.artifactKind,
 						artifactDigest: ensured.release.artifactDigest,
 						cacheHit: ensured.cacheHit,
 						cacheIdentity: ensured.release.cacheIdentity,
@@ -391,7 +392,8 @@ export const pluginDistributionLayer = (
 						releaseVersion: ensured.release.releaseVersion,
 						resolvedPluginIds: resolved.orderedPluginIds,
 						resolvedPlugins: resolved.plugins,
-						source: ensured.release.source
+						source: ensured.release.source,
+						variantIdentity: ensured.release.variantIdentity
 					});
 				}).pipe(
 					Effect.ensuring(
@@ -411,13 +413,15 @@ export const pluginDistributionLayer = (
 					decodeReleaseVersion(releaseVersion).pipe(
 						Effect.flatMap((version) => store.verify(version)),
 						Effect.map((release) => ({
+							artifactKind: release.artifactKind,
 							artifactDigest: release.artifactDigest,
 							cacheIdentity: release.cacheIdentity,
 							cachePath: release.cachePath,
 							manifestDigest: release.manifestDigest,
 							plugins: release.plugins,
 							releaseIdentity: release.releaseIdentity,
-							releaseVersion: release.releaseVersion
+							releaseVersion: release.releaseVersion,
+							variantIdentity: release.variantIdentity
 						}))
 					)
 			);

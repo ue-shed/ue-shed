@@ -11,3 +11,4 @@ export * from "./manifest.js";
 export * from "./model.js";
 export * from "./source.js";
 export * from "./store.js";
+export * from "./variant.js";

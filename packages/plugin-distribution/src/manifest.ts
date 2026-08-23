@@ -51,7 +51,7 @@ export const GitCommit = NonEmptyString.check(Schema.isPattern(CommitPattern)).p
 );
 export type GitCommit = Schema.Schema.Type<typeof GitCommit>;
 
-export const PluginBundleSchemaVersion = Schema.Literal(1);
+export const PluginBundleSchemaVersion = Schema.Literals([1, 2]);
 export type PluginBundleSchemaVersion = Schema.Schema.Type<typeof PluginBundleSchemaVersion>;
 
 export const UnrealVersionRange = Schema.Struct({
@@ -70,17 +70,45 @@ export const PluginBundlePlugin = Schema.Struct({
 });
 export type PluginBundlePlugin = Schema.Schema.Type<typeof PluginBundlePlugin>;
 
-export const PluginBundleArtifactKind = Schema.Literals(["plugin-source", "unreal-plugin-source"]);
+export const PluginBundleSourceArtifactKind = Schema.Literals([
+	"plugin-source",
+	"unreal-plugin-source"
+]);
+export type PluginBundleSourceArtifactKind = typeof PluginBundleSourceArtifactKind.Type;
+
+export const PluginBundleCompiledArtifactKind = Schema.Literal("unreal-editor-plugin-binary");
+export type PluginBundleCompiledArtifactKind = typeof PluginBundleCompiledArtifactKind.Type;
+
+export const PluginBundleArtifactKind = Schema.Union([
+	PluginBundleSourceArtifactKind,
+	PluginBundleCompiledArtifactKind
+]);
 export type PluginBundleArtifactKind = Schema.Schema.Type<typeof PluginBundleArtifactKind>;
 
-export const PluginBundleArtifact = Schema.Struct({
+const PluginBundleArtifactFields = {
 	bytes: Schema.Int.check(Schema.isGreaterThan(0)),
 	id: PluginArtifactId,
-	kind: PluginBundleArtifactKind,
 	path: SafeRelativePath,
 	sha256: Sha256Checksum
+};
+
+export const PluginBundleSourceArtifact = Schema.Struct({
+	...PluginBundleArtifactFields,
+	kind: PluginBundleSourceArtifactKind
 });
-export type PluginBundleArtifact = Schema.Schema.Type<typeof PluginBundleArtifact>;
+export type PluginBundleSourceArtifact = typeof PluginBundleSourceArtifact.Type;
+
+export const PluginBundleCompiledArtifact = Schema.Struct({
+	...PluginBundleArtifactFields,
+	kind: PluginBundleCompiledArtifactKind
+});
+export type PluginBundleCompiledArtifact = typeof PluginBundleCompiledArtifact.Type;
+
+export const PluginBundleArtifact = Schema.Union([
+	PluginBundleSourceArtifact,
+	PluginBundleCompiledArtifact
+]);
+export type PluginBundleArtifact = typeof PluginBundleArtifact.Type;
 
 export const CandidateManifestReference = Schema.Struct({
 	manifestPath: SafeRelativePath,
@@ -102,15 +130,100 @@ export const PluginBundleProvenance = Schema.Struct({
 });
 export type PluginBundleProvenance = Schema.Schema.Type<typeof PluginBundleProvenance>;
 
-export const PluginBundleManifest = Schema.Struct({
-	artifact: PluginBundleArtifact,
+export const EngineBuildId = NonEmptyString.check(Schema.isMaxLength(256)).pipe(
+	Schema.brand("EngineBuildId")
+);
+export type EngineBuildId = typeof EngineBuildId.Type;
+
+export const UnrealPlatform = SafeIdentifier.pipe(Schema.brand("UnrealPlatform"));
+export type UnrealPlatform = typeof UnrealPlatform.Type;
+
+export const UnrealArchitecture = SafeIdentifier.pipe(Schema.brand("UnrealArchitecture"));
+export type UnrealArchitecture = typeof UnrealArchitecture.Type;
+
+export const PluginBuildTarget = Schema.Literal("UnrealEditor");
+export type PluginBuildTarget = typeof PluginBuildTarget.Type;
+
+export const PluginBuildConfiguration = Schema.Literal("Development");
+export type PluginBuildConfiguration = typeof PluginBuildConfiguration.Type;
+
+export const CompiledPluginCompatibility = Schema.Struct({
+	architecture: UnrealArchitecture,
+	configuration: PluginBuildConfiguration,
+	engineBuildId: EngineBuildId,
+	engineSourceCommit: Schema.optionalKey(GitCommit),
+	kind: Schema.Literal("compiled"),
+	platform: UnrealPlatform,
+	target: PluginBuildTarget,
+	unrealVersion: UnrealVersion
+});
+export type CompiledPluginCompatibility = typeof CompiledPluginCompatibility.Type;
+
+export const SourcePluginCompatibility = Schema.Struct({
+	kind: Schema.Literal("source"),
+	unrealVersionRange: UnrealVersionRange
+});
+export type SourcePluginCompatibility = typeof SourcePluginCompatibility.Type;
+
+export const PluginCompilerProvenance = Schema.Struct({
+	compiler: NonEmptyString,
+	compilerVersion: NonEmptyString,
+	targetTriple: Schema.optionalKey(NonEmptyString),
+	toolchain: NonEmptyString,
+	toolchainVersion: NonEmptyString
+});
+export type PluginCompilerProvenance = typeof PluginCompilerProvenance.Type;
+
+export const CompiledPluginBuildProvenance = Schema.Struct({
+	builder: NonEmptyString,
+	builderVersion: NonEmptyString,
+	compiler: PluginCompilerProvenance,
+	invocationSha256: Sha256Checksum,
+	requestedPluginIds: Schema.Array(PluginId).check(Schema.isMinLength(1)),
+	resolvedPluginIds: Schema.Array(PluginId).check(Schema.isMinLength(1)),
+	sourceArtifactSha256: Sha256Checksum,
+	sourceManifestSha256: Sha256Checksum
+});
+export type CompiledPluginBuildProvenance = typeof CompiledPluginBuildProvenance.Type;
+
+const PluginBundleManifestCommonFields = {
 	plugins: Schema.Array(PluginBundlePlugin).check(Schema.isMinLength(1)),
 	provenance: PluginBundleProvenance,
-	releaseVersion: ReleaseVersion,
-	schemaVersion: PluginBundleSchemaVersion,
+	releaseVersion: ReleaseVersion
+};
+
+/** The exact source-only schema published by UE Shed 0.4.0. */
+export const SourcePluginBundleManifestV1 = Schema.Struct({
+	...PluginBundleManifestCommonFields,
+	artifact: PluginBundleSourceArtifact,
+	schemaVersion: Schema.Literal(1),
 	unreal: UnrealVersionRange
 });
-export type PluginBundleManifest = Schema.Schema.Type<typeof PluginBundleManifest>;
+export type SourcePluginBundleManifestV1 = typeof SourcePluginBundleManifestV1.Type;
+
+export const SourcePluginBundleManifestV2 = Schema.Struct({
+	...PluginBundleManifestCommonFields,
+	artifact: PluginBundleSourceArtifact,
+	compatibility: SourcePluginCompatibility,
+	schemaVersion: Schema.Literal(2)
+});
+export type SourcePluginBundleManifestV2 = typeof SourcePluginBundleManifestV2.Type;
+
+export const CompiledPluginBundleManifestV2 = Schema.Struct({
+	...PluginBundleManifestCommonFields,
+	artifact: PluginBundleCompiledArtifact,
+	build: CompiledPluginBuildProvenance,
+	compatibility: CompiledPluginCompatibility,
+	schemaVersion: Schema.Literal(2)
+});
+export type CompiledPluginBundleManifestV2 = typeof CompiledPluginBundleManifestV2.Type;
+
+export const PluginBundleManifest = Schema.Union([
+	SourcePluginBundleManifestV1,
+	SourcePluginBundleManifestV2,
+	CompiledPluginBundleManifestV2
+]);
+export type PluginBundleManifest = typeof PluginBundleManifest.Type;
 
 /** Short aliases for consumers that refer to the release manifest as a plugin manifest. */
 export const PluginManifest = PluginBundleManifest;
@@ -131,6 +244,8 @@ export const PluginBundleManifestValidationCode = Schema.Literals([
 	"invalid_checksum",
 	"missing_dependency",
 	"cyclic_dependency",
+	"compiled_graph_mismatch",
+	"compiled_identity_mismatch",
 	"provenance_mismatch",
 	"unsupported_unreal"
 ]);
@@ -187,9 +302,33 @@ function compareVersions(left: string, right: string): number | undefined {
 	return 0;
 }
 
+function sourceUnrealRange(
+	manifest: SourcePluginBundleManifestV1 | SourcePluginBundleManifestV2
+): UnrealVersionRange {
+	return manifest.schemaVersion === 1
+		? manifest.unreal
+		: manifest.compatibility.unrealVersionRange;
+}
+
+export function isCompiledPluginBundleManifest(
+	manifest: PluginBundleManifest
+): manifest is CompiledPluginBundleManifestV2 {
+	return manifest.schemaVersion === 2 && manifest.artifact.kind === "unreal-editor-plugin-binary";
+}
+
+export function isSourcePluginBundleManifest(
+	manifest: PluginBundleManifest
+): manifest is SourcePluginBundleManifestV1 | SourcePluginBundleManifestV2 {
+	return !isCompiledPluginBundleManifest(manifest);
+}
+
 function isSupportedUnrealVersion(manifest: PluginBundleManifest, engineVersion: string): boolean {
-	const minimum = compareVersions(engineVersion, manifest.unreal.minimum);
-	const maximum = compareVersions(engineVersion, manifest.unreal.maximum);
+	if (isCompiledPluginBundleManifest(manifest)) {
+		return compareVersions(engineVersion, manifest.compatibility.unrealVersion) === 0;
+	}
+	const range = sourceUnrealRange(manifest);
+	const minimum = compareVersions(engineVersion, range.minimum);
+	const maximum = compareVersions(engineVersion, range.maximum);
 	return minimum !== undefined && maximum !== undefined && minimum >= 0 && maximum <= 0;
 }
 
@@ -308,13 +447,29 @@ export const validatePluginBundleManifestValue = (
 	options: PluginBundleManifestValidationOptions = {}
 ): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
 	Effect.gen(function* () {
-		const rangeOrder = compareVersions(manifest.unreal.minimum, manifest.unreal.maximum);
-		if (rangeOrder === undefined || rangeOrder > 0) {
+		if (isSourcePluginBundleManifest(manifest)) {
+			const range = sourceUnrealRange(manifest);
+			const rangeOrder = compareVersions(range.minimum, range.maximum);
+			if (rangeOrder === undefined || rangeOrder > 0) {
+				yield* Effect.fail(
+					validationError(
+						"invalid_unreal_range",
+						`Unreal compatibility range ${range.minimum}..${range.maximum} is invalid.`,
+						"Set minimum to a version less than or equal to maximum."
+					)
+				);
+			}
+		}
+
+		if (
+			isCompiledPluginBundleManifest(manifest) &&
+			manifest.build.sourceArtifactSha256 === manifest.artifact.sha256
+		) {
 			yield* Effect.fail(
 				validationError(
-					"invalid_unreal_range",
-					`Unreal compatibility range ${manifest.unreal.minimum}..${manifest.unreal.maximum} is invalid.`,
-					"Set minimum to a version less than or equal to maximum."
+					"compiled_identity_mismatch",
+					"Compiled artifact digest contradicts its source artifact digest.",
+					"Record the portable source bundle digest separately from the compiled archive digest."
 				)
 			);
 		}
@@ -344,14 +499,43 @@ export const validatePluginBundleManifestValue = (
 
 		yield* validateGraph(manifest);
 
+		if (isCompiledPluginBundleManifest(manifest)) {
+			const resolved = yield* resolvePluginBundleDependencies(
+				manifest,
+				manifest.build.requestedPluginIds
+			).pipe(
+				Effect.mapError((error) =>
+					validationError("compiled_graph_mismatch", error.message, error.recovery)
+				)
+			);
+			if (
+				JSON.stringify(resolved.orderedPluginIds) !==
+				JSON.stringify(manifest.build.resolvedPluginIds)
+			) {
+				yield* Effect.fail(
+					validationError(
+						"compiled_graph_mismatch",
+						"Compiled artifact resolved plugin graph does not match its manifest graph.",
+						"Rebuild the artifact from the exact requested dependency graph."
+					)
+				);
+			}
+		}
+
 		if (
 			options.unrealVersion !== undefined &&
 			!isSupportedUnrealVersion(manifest, options.unrealVersion)
 		) {
+			const supported = isCompiledPluginBundleManifest(manifest)
+				? manifest.compatibility.unrealVersion
+				: (() => {
+						const range = sourceUnrealRange(manifest);
+						return `${range.minimum}..${range.maximum}`;
+					})();
 			yield* Effect.fail(
 				validationError(
 					"unsupported_unreal",
-					`Unreal ${options.unrealVersion} is outside the supported range ${manifest.unreal.minimum}..${manifest.unreal.maximum}.`,
+					`Unreal ${options.unrealVersion} is incompatible with ${supported}.`,
 					"Use a supported Unreal Engine version or select a compatible plugin release."
 				)
 			);
@@ -368,7 +552,7 @@ export const validatePluginBundleManifest = <Input>(
 	input: Input,
 	options: PluginBundleManifestValidationOptions = {}
 ): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
-	Schema.decodeUnknownEffect(PluginBundleManifest)(input).pipe(
+	Schema.decodeUnknownEffect(PluginBundleManifest)(input, { onExcessProperty: "error" }).pipe(
 		Effect.mapError(() =>
 			validationError(
 				"schema_invalid",

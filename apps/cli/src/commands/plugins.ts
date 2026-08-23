@@ -2,6 +2,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Effect, Option } from "effect";
 import {
 	EngineBuildId,
+	GitCommit,
 	PluginVariantIdentity,
 	ReleaseVersion,
 	UnrealArchitecture,
@@ -30,6 +31,10 @@ const pluginReleaseFlag = Flag.string("release").pipe(Flag.withSchema(ReleaseVer
 const pluginUnrealFlag = Flag.string("unreal").pipe(Flag.withSchema(UnrealVersion), Flag.optional);
 const pluginBuildIdFlag = Flag.string("build-id").pipe(
 	Flag.withSchema(EngineBuildId),
+	Flag.optional
+);
+const pluginEngineSourceCommitFlag = Flag.string("engine-source-commit").pipe(
+	Flag.withSchema(GitCommit),
 	Flag.optional
 );
 const pluginVariantFlag = Flag.string("variant").pipe(
@@ -140,7 +145,7 @@ const pluginsBuildCommand = Command.make(
 		compiler: Flag.string("compiler"),
 		compilerVersion: Flag.string("compiler-version"),
 		engineRoot: Flag.string("engine"),
-		engineSourceCommit: optionalFlag("engine-source-commit"),
+		engineSourceCommit: pluginEngineSourceCommitFlag,
 		maximumBuildSeconds: positiveIntegerFlag(
 			"maximum-build-seconds",
 			"maximum build seconds must be positive"
@@ -195,6 +200,7 @@ const pluginsCacheInstallCommand = Command.make(
 		buildId: pluginBuildIdFlag,
 		cache: Flag.string("cache"),
 		cacheOnly: Flag.boolean("cache-only"),
+		engineSourceCommit: pluginEngineSourceCommitFlag,
 		kind: Flag.choice("kind", ["source", "compiled"]).pipe(Flag.withDefault("source")),
 		manifestDigest: optionalFlag("manifest-digest"),
 		platform: Flag.string("platform").pipe(
@@ -212,6 +218,7 @@ const pluginsCacheInstallCommand = Command.make(
 		buildId,
 		cache,
 		cacheOnly,
+		engineSourceCommit,
 		kind,
 		manifestDigest,
 		platform,
@@ -223,6 +230,7 @@ const pluginsCacheInstallCommand = Command.make(
 		Effect.gen(function* () {
 			const artifactDigestValue = optionalValue(artifactDigest);
 			const buildIdValue = optionalValue(buildId);
+			const engineSourceCommitValue = optionalValue(engineSourceCommit);
 			const manifestDigestValue = optionalValue(manifestDigest);
 			const unrealVersion = optionalValue(unreal);
 			if (
@@ -243,6 +251,13 @@ const pluginsCacheInstallCommand = Command.make(
 					})
 				);
 			}
+			if (kind === "source" && engineSourceCommitValue !== undefined) {
+				return yield* Effect.fail(
+					new CliCommandError({
+						message: "source cache installs do not accept --engine-source-commit"
+					})
+				);
+			}
 			return yield* runPluginsCacheInstall({
 				_tag: "PluginsCacheInstall",
 				artifact:
@@ -251,6 +266,9 @@ const pluginsCacheInstallCommand = Command.make(
 								architecture,
 								configuration: "Development",
 								engineBuildId: buildIdValue!,
+								...(engineSourceCommitValue === undefined
+									? undefined
+									: { engineSourceCommit: engineSourceCommitValue }),
 								kind,
 								platform,
 								target: "UnrealEditor",

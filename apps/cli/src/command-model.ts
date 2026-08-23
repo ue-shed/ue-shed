@@ -1,6 +1,7 @@
 import { AuthoringValue } from "@ue-shed/protocol";
 import { CustodianExecutionMode, CustodianTargetId } from "@ue-shed/project-custodian";
 import {
+	GitCommit,
 	PluginVariantIdentity,
 	PluginVariantRequest,
 	ReleaseVersion
@@ -280,7 +281,7 @@ export const CliCommand = Schema.TaggedUnion({
 		compiler: Schema.String,
 		compilerVersion: Schema.String,
 		engineRoot: Schema.String,
-		engineSourceCommit: Schema.optionalKey(Schema.String),
+		engineSourceCommit: Schema.optionalKey(GitCommit),
 		maximumBuildSeconds: PositiveInt,
 		outputDirectory: Schema.String,
 		platform: Schema.String,

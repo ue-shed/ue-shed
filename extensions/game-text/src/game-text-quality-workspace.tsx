@@ -101,49 +101,51 @@ export function GameTextQualityWorkspace(props: {
 		<div {...stylex.props(styles.workspace)}>
 			<section aria-label="Quality summary" {...stylex.props(styles.summaryStrip)}>
 				<div {...stylex.props(styles.summaryLead)}>
-					<span {...stylex.props(styles.summaryLeadHeader)}>
-						<small>PROJECT-AUTHORED REVIEW</small>
-						<button
-							type="button"
-							onClick={props.onReplaceRules}
-							{...stylex.props(styles.replaceRules)}
-						>
-							Replace quality rules
-						</button>
-					</span>
 					<strong {...stylex.props(styles.summaryValue)}>
 						{props.summary.findingCount.toLocaleString()}{" "}
 						{props.summary.findingCount === 1 ? "finding" : "findings"}
 					</strong>
-					<span>Rule document v{props.summary.ruleDocumentVersion}</span>
+					<span>Rule file v{props.summary.ruleDocumentVersion}</span>
+					<button
+						type="button"
+						onClick={props.onReplaceRules}
+						{...stylex.props(styles.replaceRules)}
+					>
+						Load rules
+					</button>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Budgets</small>
+					<small>Character budgets</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.characterBudgetCount}
 					</strong>
-					<span>character limits</span>
+					<span>{props.summary.rules.length} rules total</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
 					<small>Terminology</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.terminologyCount}
 					</strong>
-					<span>forbidden · preferred</span>
+					<span>forbidden and preferred terms</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Scoped roles</small>
+					<small>Roles</small>
 					<strong {...stylex.props(styles.metricValue)}>
 						{props.summary.roles.length}
 					</strong>
-					<span>{props.summary.rules.length} rules</span>
+					<span>scoped to this project</span>
 				</div>
 				<div {...stylex.props(styles.metric)}>
-					<small>Saved text coverage</small>
-					<strong {...stylex.props(styles.metricValue)}>
+					<small>Saved text</small>
+					<strong
+						{...stylex.props(
+							styles.metricValue,
+							props.summary.status === "complete" && styles.complete
+						)}
+					>
 						{props.summary.status === "complete" ? "Complete" : "Partial"}
 					</strong>
-					<span>{coverage().inspectedPackages} inspected packages</span>
+					<span>{coverage().inspectedPackages} packages read</span>
 				</div>
 			</section>
 			<div
@@ -158,7 +160,7 @@ export function GameTextQualityWorkspace(props: {
 					onClick={() => setSurface("findings")}
 					{...stylex.props(styles.tab, surface() === "findings" && styles.tabActive)}
 				>
-					Findings <b>{props.summary.findingCount}</b>
+					Findings <b {...stylex.props(styles.tabCount)}>{props.summary.findingCount}</b>
 				</button>
 				<button
 					type="button"
@@ -167,14 +169,32 @@ export function GameTextQualityWorkspace(props: {
 					onClick={() => setSurface("rules")}
 					{...stylex.props(styles.tab, surface() === "rules" && styles.tabActive)}
 				>
-					Edit rules <b>{props.document.rules.length}</b>
+					Rules <b {...stylex.props(styles.tabCount)}>{props.document.rules.length}</b>
 				</button>
 			</div>
 			<Show when={failure()}>
 				{(message) => (
-					<p role="alert" {...stylex.props(styles.error)}>
-						{message()}
-					</p>
+					<section role="alert" {...stylex.props(styles.errorCard)}>
+						<strong {...stylex.props(styles.errorTitle)}>
+							Couldn’t load findings.
+						</strong>
+						<p {...stylex.props(styles.errorCopy)}>
+							Try again. If it keeps failing, restart Workbench.
+						</p>
+						<button
+							type="button"
+							onClick={() => requestPage()}
+							{...stylex.props(styles.retryButton)}
+						>
+							Retry
+						</button>
+						<details {...stylex.props(styles.errorDetails)}>
+							<summary {...stylex.props(styles.techSummary)}>
+								Technical details
+							</summary>
+							<pre {...stylex.props(styles.techPre)}>{message()}</pre>
+						</details>
+					</section>
 				)}
 			</Show>
 			<Show
@@ -191,7 +211,7 @@ export function GameTextQualityWorkspace(props: {
 				<div {...stylex.props(styles.grid)}>
 					<aside aria-label="Quality filters" {...stylex.props(styles.rail)}>
 						<header {...stylex.props(styles.railHeader)}>
-							<span>Finding queue</span>
+							<span>Filters</span>
 							<b>{props.summary.findingCount}</b>
 						</header>
 						<div role="group" aria-label="Finding type">
@@ -210,7 +230,7 @@ export function GameTextQualityWorkspace(props: {
 										)}
 									>
 										<span>{item.label}</span>
-										<b>
+										<b {...stylex.props(styles.filterCount)}>
 											{item.value === "all"
 												? props.summary.findingCount
 												: item.value === "character_budget"
@@ -222,21 +242,25 @@ export function GameTextQualityWorkspace(props: {
 							</For>
 						</div>
 						<section {...stylex.props(styles.railSection)}>
-							<header>Role matches</header>
+							<header {...stylex.props(styles.railSectionTitle)}>Role matches</header>
 							<For each={props.summary.roles}>
 								{(role) => (
 									<span {...stylex.props(styles.roleRow)}>
-										<code>{role.role}</code>
-										<b>{role.matchedTextUnits}</b>
+										<code {...stylex.props(styles.roleRowCode)}>
+											{role.role}
+										</code>
+										<b {...stylex.props(styles.filterCount)}>
+											{role.matchedTextUnits}
+										</b>
 									</span>
 								)}
 							</For>
 						</section>
 						<section {...stylex.props(styles.coverage)}>
-							<strong>
+							<strong {...stylex.props(styles.coverageTitle)}>
 								{props.summary.status === "complete"
-									? "ALL TEXT CHECKED"
-									: "PARTIAL COVERAGE"}
+									? "All saved text checked."
+									: "Only part of the saved text was checked."}
 							</strong>
 							<span>{coverage().textOccurrences} known occurrences</span>
 							<Show
@@ -246,7 +270,7 @@ export function GameTextQualityWorkspace(props: {
 									coverage().partialPackages > 0
 								}
 							>
-								<p>
+								<p {...stylex.props(styles.coverageDetail)}>
 									{coverage().unsupportedTextProperties} unsupported properties ·{" "}
 									{coverage().partialPackages} partial ·{" "}
 									{coverage().failedPackages} failed
@@ -254,15 +278,17 @@ export function GameTextQualityWorkspace(props: {
 							</Show>
 						</section>
 					</aside>
-					<section aria-label="Quality findings" {...stylex.props(styles.findings)}>
+					<section aria-label="Findings" {...stylex.props(styles.findings)}>
 						<header {...stylex.props(styles.listHeader)}>
-							<span>Explainable findings</span>
-							<b>{page().total}</b>
+							<span>Findings</span>
+							<b {...stylex.props(styles.count)}>{page().total}</b>
 						</header>
 						<Show
 							when={page().findings.length > 0}
 							fallback={
-								<p {...stylex.props(styles.empty)}>No findings for this filter.</p>
+								<p {...stylex.props(styles.empty)}>
+									No findings here. Widen the filter or fix the flagged text.
+								</p>
 							}
 						>
 							<For each={page().findings}>
@@ -284,8 +310,8 @@ export function GameTextQualityWorkspace(props: {
 										<span {...stylex.props(styles.findingMeta)}>
 											<b {...stylex.props(styles.kind)}>
 												{finding.kind === "character_budget"
-													? "BUDGET"
-													: "TERM"}
+													? "Budget"
+													: "Term"}
 											</b>
 											<code>{finding.role}</code>
 											<span>{finding.ruleId}</span>
@@ -304,22 +330,22 @@ export function GameTextQualityWorkspace(props: {
 							</For>
 						</Show>
 					</section>
-					<aside aria-label="Quality finding detail" {...stylex.props(styles.detail)}>
+					<aside aria-label="Finding detail" {...stylex.props(styles.detail)}>
 						<Show
 							when={focus()}
 							fallback={
 								<p {...stylex.props(styles.empty)}>
-									Select a finding to inspect its evidence.
+									Select a finding to see what was flagged and where it appears.
 								</p>
 							}
 						>
 							{(finding) => (
 								<>
 									<header {...stylex.props(styles.detailHeader)}>
-										<span {...stylex.props(styles.detailEyebrow)}>
+										<span {...stylex.props(styles.detailKind)}>
 											{finding().kind === "character_budget"
-												? "CHARACTER BUDGET"
-												: "TERMINOLOGY"}
+												? "Character budget"
+												: "Terminology"}
 										</span>
 										<blockquote {...stylex.props(styles.detailQuote)}>
 											“{finding().sourceExcerpt}”
@@ -331,7 +357,7 @@ export function GameTextQualityWorkspace(props: {
 									<section {...stylex.props(styles.explanation)}>
 										<div {...stylex.props(styles.explanationCell)}>
 											<small {...stylex.props(styles.explanationLabel)}>
-												ACTUAL
+												Observed
 											</small>
 											<strong {...stylex.props(styles.explanationValue)}>
 												{actual(finding())}
@@ -339,7 +365,7 @@ export function GameTextQualityWorkspace(props: {
 										</div>
 										<div {...stylex.props(styles.explanationCell)}>
 											<small {...stylex.props(styles.explanationLabel)}>
-												EXPECTED
+												Expected
 											</small>
 											<strong {...stylex.props(styles.explanationValue)}>
 												{expectation(finding())}
@@ -347,7 +373,7 @@ export function GameTextQualityWorkspace(props: {
 										</div>
 										<div {...stylex.props(styles.explanationCell)}>
 											<small {...stylex.props(styles.explanationLabel)}>
-												RECOVERY
+												How to fix
 											</small>
 											<strong {...stylex.props(styles.explanationValue)}>
 												{finding().recovery}
@@ -356,8 +382,10 @@ export function GameTextQualityWorkspace(props: {
 									</section>
 									<section {...stylex.props(styles.evidence)}>
 										<header {...stylex.props(styles.evidenceHeader)}>
-											<span>Affected occurrences</span>
-											<b>{finding().totalOccurrences}</b>
+											<span>Occurrences</span>
+											<b {...stylex.props(styles.count)}>
+												{finding().totalOccurrences}
+											</b>
 										</header>
 										<For each={finding().affectedOccurrences}>
 											{(occurrence) => {
@@ -402,33 +430,32 @@ export function GameTextQualityWorkspace(props: {
 }
 
 const styles = stylex.create({
-	workspace: { display: "flex", flexDirection: "column", gap: 8 },
+	workspace: { display: "flex", flexDirection: "column", gap: tokens.space3 },
 	summaryStrip: {
 		display: "grid",
 		gridTemplateColumns: "1.35fr repeat(4, minmax(120px, .75fr))",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurface
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	summaryLead: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 3,
-		padding: "8px 11px",
+		gap: tokens.space1,
+		padding: `${tokens.space3} ${tokens.space4}`,
 		borderRight: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 11
-	},
-	summaryLeadHeader: {
-		display: "flex",
-		alignItems: "center",
-		justifyContent: "space-between",
-		gap: 8
+		fontSize: 12
 	},
 	replaceRules: {
+		alignSelf: "flex-start",
+		marginTop: tokens.space1,
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
-		padding: "3px 6px",
+		padding: `${tokens.space1} ${tokens.space2}`,
+		borderRadius: tokens.radiusControl,
 		cursor: "pointer",
 		fontSize: 11,
 		whiteSpace: "nowrap"
@@ -437,52 +464,114 @@ const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		gap: 2,
-		padding: "8px 10px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		borderRight: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextFaint,
 		fontSize: 11
 	},
 	summaryValue: { color: tokens.colorTextStrong, fontSize: 15, lineHeight: 1.2 },
 	metricValue: { color: tokens.colorTextStrong, fontSize: 13, lineHeight: 1.2 },
+	complete: { color: tokens.colorSuccess },
 	tabs: {
 		display: "flex",
-		border: `1px solid ${tokens.colorBorder}`,
-		borderTop: 0,
-		backgroundColor: tokens.colorSurface
+		gap: tokens.space4,
+		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	tab: {
 		display: "flex",
 		alignItems: "center",
-		gap: 7,
-		padding: "6px 10px",
+		gap: tokens.space2,
+		padding: `${tokens.space2} 0`,
 		border: 0,
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		borderBottom: "2px solid transparent",
+		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
-		fontSize: 12,
+		fontSize: 13,
+		fontWeight: 500,
 		cursor: "pointer"
 	},
-	tabActive: { color: tokens.colorTextStrong, backgroundColor: "rgba(255, 255, 255, 0.07)" },
+	tabActive: {
+		borderBottomColor: tokens.colorAccent,
+		color: tokens.colorTextStrong
+	},
+	tabCount: {
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	count: {
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontWeight: 500,
+		fontVariantNumeric: "tabular-nums"
+	},
+	errorCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		padding: tokens.space4,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface
+	},
+	errorTitle: { color: tokens.colorTextStrong, fontSize: 14 },
+	errorCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 13 },
+	errorDetails: {
+		color: tokens.colorTextFaint,
+		fontSize: 11
+	},
+	techSummary: { cursor: "pointer", color: tokens.colorTextSubtle },
+	techPre: {
+		margin: `${tokens.space2} 0 0`,
+		maxWidth: 640,
+		padding: tokens.space2,
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		whiteSpace: "pre-wrap",
+		wordBreak: "break-word"
+	},
+	retryButton: {
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: `${tokens.space1} ${tokens.space3}`,
+		borderRadius: tokens.radiusControl,
+		cursor: "pointer",
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 500
+	},
 	grid: {
 		display: "grid",
-		gridTemplateColumns: "206px minmax(390px, 470px) minmax(440px, 1fr)",
-		gap: 8
+		gridTemplateColumns: "206px minmax(360px, 440px) minmax(400px, 1fr)",
+		gap: tokens.space3,
+		alignItems: "start"
 	},
 	rail: {
 		display: "flex",
 		flexDirection: "column",
-		height: "calc(100vh - 220px)",
-		minHeight: 470,
+		height: "calc(100vh - 260px)",
+		minHeight: 420,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	railHeader: {
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "8px 9px",
+		padding: `${tokens.space3} ${tokens.space3}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		fontSize: 11
+		color: tokens.colorTextStrong,
+		fontWeight: 590,
+		fontSize: 12
 	},
 	filter: {
 		display: "flex",
@@ -490,36 +579,57 @@ const styles = stylex.create({
 		width: "100%",
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
 		color: tokens.colorTextMuted,
-		padding: "8px 9px",
+		padding: `${tokens.space2} ${tokens.space3}`,
 		fontSize: 12,
 		textAlign: "left",
 		cursor: "pointer"
 	},
+	filterCount: {
+		fontFamily: tokens.fontMono,
+		fontVariantNumeric: "tabular-nums",
+		color: tokens.colorTextFaint
+	},
 	filterActive: {
 		color: tokens.colorTextStrong,
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		boxShadow: "inset 3px 0 rgba(228, 242, 34, 0.55)"
+		backgroundColor: tokens.colorSurfaceHover,
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
-	railSection: { display: "flex", flexDirection: "column", gap: 6, padding: "9px", fontSize: 11 },
-	roleRow: { display: "flex", justifyContent: "space-between", color: tokens.colorTextMuted },
+	railSection: {
+		display: "flex",
+		flexDirection: "column",
+		gap: tokens.space2,
+		padding: tokens.space3,
+		fontSize: 11
+	},
+	railSectionTitle: { color: tokens.colorTextSubtle, fontSize: 11, fontWeight: 500 },
+	roleRowCode: { fontFamily: tokens.fontMono, fontSize: 11 },
+	roleRow: {
+		display: "flex",
+		justifyContent: "space-between",
+		color: tokens.colorTextMuted
+	},
 	coverage: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 4,
+		gap: tokens.space1,
 		marginTop: "auto",
-		padding: 9,
+		padding: tokens.space3,
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
-		fontSize: 11
+		fontSize: 11,
+		lineHeight: 1.45
 	},
+	coverageTitle: { color: tokens.colorText, fontWeight: 500 },
+	coverageDetail: { margin: 0, color: tokens.colorWarning },
 	findings: {
 		display: "flex",
 		flexDirection: "column",
-		height: "calc(100vh - 220px)",
-		minHeight: 470,
+		height: "calc(100vh - 260px)",
+		minHeight: 420,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
@@ -529,66 +639,84 @@ const styles = stylex.create({
 		zIndex: 1,
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "8px 9px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurfaceRaised,
-		fontSize: 11
+		color: tokens.colorTextStrong,
+		fontWeight: 590,
+		fontSize: 12
 	},
 	finding: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
+		gap: tokens.space1,
 		width: "100%",
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
 		color: tokens.colorText,
-		padding: "9px 10px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		textAlign: "left",
 		cursor: "pointer"
 	},
 	findingActive: {
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		boxShadow: "inset 3px 0 rgba(228, 242, 34, 0.55)"
+		backgroundColor: tokens.colorSurfaceHover,
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
 	findingMeta: {
 		display: "flex",
 		alignItems: "center",
-		gap: 7,
+		gap: tokens.space2,
 		color: tokens.colorTextFaint,
 		fontSize: 11
 	},
 	kind: {
-		padding: "2px 4px",
+		padding: "1px 5px",
+		borderRadius: tokens.radiusBadge,
 		color: tokens.colorTextMuted,
 		backgroundColor: "rgba(255, 255, 255, 0.05)"
 	},
-	source: { overflow: "hidden", fontSize: 13, textOverflow: "ellipsis", whiteSpace: "nowrap" },
+	source: {
+		overflow: "hidden",
+		color: tokens.colorTextStrong,
+		fontSize: 13,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
 	actual: { color: tokens.colorWarning, fontSize: 11 },
 	expected: { color: tokens.colorTextMuted, fontSize: 11 },
 	detail: {
-		height: "calc(100vh - 220px)",
-		minHeight: 470,
+		height: "calc(100vh - 260px)",
+		minHeight: 420,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	detailHeader: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 6,
-		padding: "12px",
+		gap: tokens.space2,
+		padding: tokens.space4,
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	detailEyebrow: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
+	detailKind: { color: tokens.colorTextSubtle, fontSize: 11 },
 	detailQuote: {
-		margin: "2px 0",
+		margin: 0,
 		color: tokens.colorTextStrong,
 		fontSize: 17,
 		fontWeight: 590,
-		lineHeight: 1.3
+		lineHeight: 1.3,
+		letterSpacing: "-0.01em"
 	},
-	detailId: { color: tokens.colorTextMuted, fontSize: 11 },
+	detailId: {
+		overflow: "hidden",
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
 	explanation: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
@@ -597,18 +725,28 @@ const styles = stylex.create({
 	explanationCell: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
+		gap: tokens.space1,
 		minWidth: 0,
-		padding: "10px 11px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		borderRight: `1px solid ${tokens.colorBorder}`
 	},
-	explanationLabel: { color: tokens.colorTextFaint, fontSize: 11, letterSpacing: 0 },
-	explanationValue: { color: tokens.colorText, fontSize: 11, fontWeight: 500, lineHeight: 1.4 },
-	evidence: { margin: 10, border: `1px solid ${tokens.colorBorder}` },
+	explanationLabel: { color: tokens.colorTextFaint, fontSize: 11 },
+	explanationValue: {
+		color: tokens.colorText,
+		fontSize: 11,
+		fontWeight: 500,
+		lineHeight: 1.4
+	},
+	evidence: {
+		margin: tokens.space3,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		overflow: "hidden"
+	},
 	evidenceHeader: {
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "7px 9px",
+		padding: `${tokens.space2} ${tokens.space3}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
 		fontSize: 11
@@ -617,7 +755,7 @@ const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		gap: 3,
-		padding: "8px 9px",
+		padding: `${tokens.space2} ${tokens.space3}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	evidenceTitle: { color: tokens.colorTextStrong, fontSize: 11 },
@@ -625,6 +763,7 @@ const styles = stylex.create({
 	evidencePath: {
 		overflow: "hidden",
 		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
 		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
@@ -636,12 +775,5 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	empty: { padding: 24, color: tokens.colorTextMuted, fontSize: 11 },
-	error: {
-		margin: 0,
-		padding: 8,
-		border: `1px solid ${tokens.colorDanger}`,
-		color: tokens.colorDanger,
-		fontSize: 11
-	}
+	empty: { padding: tokens.space4, color: tokens.colorTextMuted, fontSize: 12 }
 });

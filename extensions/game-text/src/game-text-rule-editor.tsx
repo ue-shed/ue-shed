@@ -194,8 +194,8 @@ export function GameTextRuleEditor(props: {
 		<div {...stylex.props(styles.editor)}>
 			<aside aria-label="Quality rule list" {...stylex.props(styles.ruleList)}>
 				<header {...stylex.props(styles.panelHeader)}>
-					<span>RULE SET</span>
-					<b>{draft().rules.length}</b>
+					<span>Rules</span>
+					<b {...stylex.props(styles.panelCount)}>{draft().rules.length}</b>
 				</header>
 				<For each={draft().rules}>
 					{(rule) => (
@@ -209,8 +209,10 @@ export function GameTextRuleEditor(props: {
 							)}
 						>
 							<span {...stylex.props(styles.ruleChoiceMeta)}>
-								<b>{rule.kind === "character_budget" ? "BUDGET" : "TERMS"}</b>
-								<em>{findingCount(rule.id)}</em>
+								<b>{rule.kind === "character_budget" ? "Budget" : "Terms"}</b>
+								<em {...stylex.props(styles.panelCount)}>
+									{findingCount(rule.id)}
+								</em>
 							</span>
 							<strong>{rule.id}</strong>
 							<small>Role · {rule.role}</small>
@@ -224,12 +226,9 @@ export function GameTextRuleEditor(props: {
 					{(rule) => (
 						<>
 							<header {...stylex.props(styles.formHeader)}>
-								<div>
-									<small {...stylex.props(styles.formEyebrow)}>EDIT RULE</small>
-									<h3 {...stylex.props(styles.formTitle)}>{rule().id}</h3>
-								</div>
+								<h3 {...stylex.props(styles.formTitle)}>{rule().id}</h3>
 								<span {...stylex.props(styles.dirtyState)}>
-									{dirty() ? "UNSAVED CHANGES" : "SAVED FILE"}
+									{dirty() ? "Unsaved changes" : "Saved"}
 								</span>
 							</header>
 							<Show when={selectedBudgetRule()}>
@@ -289,8 +288,8 @@ export function GameTextRuleEditor(props: {
 											<div {...stylex.props(styles.termRow)}>
 												<b {...stylex.props(styles.termKind)}>
 													{term.kind === "forbidden"
-														? "FORBIDDEN"
-														: "PREFERRED"}
+														? "Forbidden"
+														: "Preferred"}
 												</b>
 												<input
 													aria-label={`${term.kind === "forbidden" ? "Forbidden" : "Preferred"} term ${index() + 1}`}
@@ -409,7 +408,7 @@ export function GameTextRuleEditor(props: {
 											)
 										}
 									>
-										+ Forbidden term
+										Add forbidden term
 									</button>
 									<button
 										type="button"
@@ -434,7 +433,7 @@ export function GameTextRuleEditor(props: {
 											)
 										}
 									>
-										+ Preferred term
+										Add preferred term
 									</button>
 								</div>
 							</Show>
@@ -469,7 +468,7 @@ export function GameTextRuleEditor(props: {
 							{(() => {
 								const current = feedback();
 								return current.status === "failed" ? (
-									<span role="alert">
+									<span role="alert" {...stylex.props(styles.failedFeedback)}>
 										{current.message} {current.recovery}
 									</span>
 								) : null;
@@ -486,7 +485,7 @@ export function GameTextRuleEditor(props: {
 							onClick={() => run("preview")}
 							{...stylex.props(styles.actionButton)}
 						>
-							Preview changes
+							Preview
 						</button>
 						<button
 							type="button"
@@ -494,7 +493,7 @@ export function GameTextRuleEditor(props: {
 							onClick={() => run("save")}
 							{...stylex.props(styles.actionButton)}
 						>
-							Save rules
+							Save
 						</button>
 					</div>
 				</footer>
@@ -502,8 +501,8 @@ export function GameTextRuleEditor(props: {
 
 			<aside aria-label="Quality role scopes" {...stylex.props(styles.roles)}>
 				<header {...stylex.props(styles.panelHeader)}>
-					<span>ROLES &amp; MATCHING</span>
-					<b>{draft().roles.length}</b>
+					<span>Roles</span>
+					<b {...stylex.props(styles.panelCount)}>{draft().roles.length}</b>
 				</header>
 				<For each={draft().roles}>
 					{(role) => (
@@ -525,7 +524,7 @@ export function GameTextRuleEditor(props: {
 								{(scope, scopeIndex) => (
 									<section {...stylex.props(styles.scope)}>
 										<small {...stylex.props(styles.scopeLabel)}>
-											SCOPE {scopeIndex() + 1} · ALL MUST MATCH
+											Scope {scopeIndex() + 1} · all must match
 										</small>
 										<For each={scope.matchers}>
 											{(matcher) => (
@@ -549,29 +548,38 @@ const styles = stylex.create({
 	editor: {
 		display: "grid",
 		gridTemplateColumns: "230px minmax(480px, 1fr) 300px",
-		gap: 8
+		gap: tokens.space2
 	},
 	ruleList: {
 		height: "calc(100vh - 260px)",
 		minHeight: 430,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	panelHeader: {
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "8px 9px",
+		alignItems: "center",
+		padding: `${tokens.space2} ${tokens.space3}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextMuted,
-		fontSize: 11
+		color: tokens.colorTextStrong,
+		fontWeight: 590,
+		fontSize: 12
+	},
+	panelCount: {
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontStyle: "normal",
+		fontVariantNumeric: "tabular-nums"
 	},
 	ruleChoice: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
+		gap: tokens.space1,
 		width: "100%",
-		padding: "9px 10px",
+		padding: `${tokens.space2} ${tokens.space3}`,
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
@@ -581,7 +589,7 @@ const styles = stylex.create({
 	},
 	ruleChoiceActive: {
 		backgroundColor: "rgba(255, 255, 255, 0.07)",
-		boxShadow: "inset 3px 0 rgba(228, 242, 34, 0.55)"
+		boxShadow: `inset 2px 0 ${tokens.colorAccent}`
 	},
 	ruleChoiceMeta: {
 		display: "flex",
@@ -595,127 +603,189 @@ const styles = stylex.create({
 		height: "calc(100vh - 260px)",
 		minHeight: 430,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	formHeader: {
 		display: "flex",
-		alignItems: "flex-start",
+		alignItems: "center",
 		justifyContent: "space-between",
-		padding: "12px 14px",
+		gap: tokens.space3,
+		padding: `${tokens.space3} ${tokens.space4}`,
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	formEyebrow: { color: tokens.colorTextSubtle, fontSize: 11 },
-	formTitle: { margin: "4px 0 0", color: tokens.colorTextStrong, fontSize: 15 },
-	dirtyState: { color: tokens.colorWarning, fontSize: 11 },
+	formTitle: {
+		margin: 0,
+		overflow: "hidden",
+		color: tokens.colorTextStrong,
+		fontSize: 15,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	dirtyState: {
+		flexShrink: 0,
+		color: tokens.colorWarning,
+		fontSize: 11
+	},
 	field: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 6,
-		padding: "12px 14px 0",
+		gap: tokens.space1,
+		padding: `${tokens.space3} ${tokens.space4} 0`,
 		color: tokens.colorTextMuted,
-		fontSize: 11
+		fontSize: 12
 	},
 	input: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
-		padding: "8px 9px",
-		fontSize: 11
+		padding: `${tokens.space2} ${tokens.space2}`,
+		fontSize: 12,
+		":focus-visible": { borderColor: tokens.colorAccent }
 	},
 	textarea: {
 		minHeight: 72,
 		resize: "vertical",
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
-		padding: "8px 9px",
+		padding: tokens.space2,
 		fontFamily: "inherit",
-		fontSize: 12
+		fontSize: 12,
+		lineHeight: 1.45,
+		":focus-visible": { borderColor: tokens.colorAccent }
 	},
 	fieldHint: { color: tokens.colorTextFaint, fontSize: 11 },
-	termsHeader: { padding: "12px 14px 0" },
-	checkbox: { display: "flex", alignItems: "center", gap: 7, fontSize: 11 },
-	termList: { display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px 0" },
+	termsHeader: { padding: `${tokens.space3} ${tokens.space4} 0` },
+	checkbox: {
+		display: "flex",
+		alignItems: "center",
+		gap: tokens.space2,
+		color: tokens.colorTextMuted,
+		fontSize: 12
+	},
+	termList: {
+		display: "flex",
+		flexDirection: "column",
+		gap: tokens.space1,
+		padding: `${tokens.space2} ${tokens.space4} 0`
+	},
 	termRow: {
 		display: "grid",
 		gridTemplateColumns: "70px minmax(130px, .8fr) minmax(150px, 1fr) 26px",
 		alignItems: "center",
-		gap: 6
+		gap: tokens.space1
 	},
 	termKind: { color: tokens.colorWarning, fontSize: 11 },
 	inputCompact: {
 		minWidth: 0,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
-		padding: "6px 7px",
-		fontSize: 12
+		padding: `${tokens.space1} ${tokens.space2}`,
+		fontSize: 12,
+		":focus-visible": { borderColor: tokens.colorAccent }
 	},
 	removeTerm: {
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
-		cursor: "pointer"
+		cursor: "pointer",
+		":hover": { backgroundColor: "rgba(255, 255, 255, 0.04)" }
 	},
 	addTerms: {
 		display: "flex",
-		gap: 6,
-		padding: "8px 14px 0"
+		gap: tokens.space1,
+		padding: `${tokens.space2} ${tokens.space4} 0`
 	},
 	smallButton: {
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		color: tokens.colorTextMuted,
-		padding: "5px 7px",
+		color: tokens.colorText,
+		padding: `${tokens.space1} ${tokens.space2}`,
 		fontSize: 11,
-		cursor: "pointer",
-		borderRadius: tokens.radiusControl
+		cursor: "pointer"
+	},
+	failedFeedback: {
+		display: "block",
+		maxWidth: 480,
+		padding: `${tokens.space1} ${tokens.space2}`,
+		border: `1px solid rgba(235, 87, 87, 0.4)`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 11,
+		lineHeight: 1.45
 	},
 	actions: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		gap: 12,
+		gap: tokens.space3,
 		marginTop: "auto",
-		padding: "10px 14px",
+		padding: `${tokens.space3} ${tokens.space4}`,
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
 	actionButtons: {
 		display: "flex",
-		gap: 6
+		flexShrink: 0,
+		gap: tokens.space1
 	},
 	actionButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorSurface,
 			":hover": "rgba(255, 255, 255, 0.04)",
 			":disabled": tokens.colorSurface
 		},
 		color: tokens.colorText,
-		padding: "6px 9px",
+		padding: `${tokens.space1} ${tokens.space3}`,
 		fontSize: 12,
-		cursor: { default: "pointer", ":disabled": "default" },
-		borderRadius: tokens.radiusControl
+		fontWeight: 500,
+		cursor: { default: "pointer", ":disabled": "default" }
 	},
 	roles: {
 		height: "calc(100vh - 260px)",
 		minHeight: 430,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
 	},
 	roleCard: {
-		padding: "10px",
+		padding: tokens.space3,
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	roleHeader: { display: "flex", justifyContent: "space-between", gap: 8 },
-	roleTitle: { color: tokens.colorTextStrong, fontSize: 12 },
-	roleCount: { color: tokens.colorTextSubtle, fontSize: 11 },
+	roleHeader: {
+		display: "flex",
+		justifyContent: "space-between",
+		gap: tokens.space2
+	},
+	roleTitle: {
+		overflow: "hidden",
+		color: tokens.colorTextStrong,
+		fontSize: 12,
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	roleCount: {
+		flexShrink: 0,
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		fontVariantNumeric: "tabular-nums"
+	},
 	roleDescription: {
-		margin: "6px 0",
+		margin: `${tokens.space1} 0`,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
 		lineHeight: 1.4
@@ -723,10 +793,11 @@ const styles = stylex.create({
 	scope: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 4,
-		marginTop: 8,
-		padding: "7px",
+		gap: tokens.space1,
+		marginTop: tokens.space2,
+		padding: tokens.space2,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	scopeLabel: { color: tokens.colorTextFaint, fontSize: 11 },

@@ -754,7 +754,12 @@ const styles = stylex.create({
 		borderTopWidth: 2,
 		backgroundColor: tokens.colorSurfaceRaised
 	},
-	targetHeading: { borderTop: "2px solid #02b8cc", backgroundColor: tokens.colorSurface },
+	targetHeading: {
+		borderTopColor: "#02b8cc",
+		borderTopStyle: "solid",
+		borderTopWidth: 2,
+		backgroundColor: tokens.colorSurface
+	},
 	linkCell: {
 		position: "sticky",
 		left: 0,

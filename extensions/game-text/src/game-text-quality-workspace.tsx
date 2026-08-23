@@ -21,6 +21,14 @@ const filters: readonly { readonly label: string; readonly value: TextQualityFil
 	{ label: "Terminology", value: "terminology" }
 ];
 
+type QualityWorkspaceFailure =
+	| { readonly operation: "search"; readonly cause: string }
+	| {
+			readonly operation: "focus";
+			readonly cause: string;
+			readonly findingId: TextQualityFindingSummary["id"];
+	  };
+
 function expectation(focus: TextQualityFocus): string {
 	if (focus.kind === "character_budget") {
 		return `Maximum ${focus.expectation.maximumCharacters} characters`;
@@ -51,7 +59,7 @@ export function GameTextQualityWorkspace(props: {
 	const [page, setPage] = createSignal<TextQualitySearchPage>({ findings: [], total: 0 });
 	const [selectedId, setSelectedId] = createSignal<TextQualityFindingSummary["id"]>();
 	const [focus, setFocus] = createSignal<TextQualityFocus>();
-	const [failure, setFailure] = createSignal<string>();
+	const [failure, setFailure] = createSignal<QualityWorkspaceFailure>();
 	const [surface, setSurface] = createSignal<"findings" | "rules">("findings");
 	let searchGeneration = 0;
 	let focusGeneration = 0;
@@ -60,10 +68,15 @@ export function GameTextQualityWorkspace(props: {
 		const generation = ++focusGeneration;
 		focusAction.run(props.client.qualityFocus({ id, pageSize: 50 }), {
 			onFailure: (cause) => {
-				if (generation === focusGeneration) setFailure(String(cause));
+				if (generation === focusGeneration) {
+					setFailure({ operation: "focus", cause: String(cause), findingId: id });
+				}
 			},
 			onSuccess: (result) => {
 				if (generation !== focusGeneration) return;
+				setFailure((current) =>
+					current?.operation === "focus" && current.findingId === id ? undefined : current
+				);
 				setFocus(result.status === "found" ? result.focus : undefined);
 			}
 		});
@@ -73,11 +86,13 @@ export function GameTextQualityWorkspace(props: {
 		const generation = ++searchGeneration;
 		searchAction.run(props.client.qualitySearch({ filter: nextFilter, pageSize: 50 }), {
 			onFailure: (cause) => {
-				if (generation === searchGeneration) setFailure(String(cause));
+				if (generation === searchGeneration) {
+					setFailure({ operation: "search", cause: String(cause) });
+				}
 			},
 			onSuccess: (result) => {
 				if (generation !== searchGeneration || result.status !== "ready") return;
-				setFailure(undefined);
+				setFailure((current) => (current?.operation === "search" ? undefined : current));
 				setPage(result.page);
 				const next =
 					result.page.findings.find((finding) => finding.id === selectedId()) ??
@@ -173,17 +188,23 @@ export function GameTextQualityWorkspace(props: {
 				</button>
 			</div>
 			<Show when={failure()}>
-				{(message) => (
+				{(issue) => (
 					<section role="alert" {...stylex.props(styles.errorCard)}>
 						<strong {...stylex.props(styles.errorTitle)}>
-							Couldn’t load findings.
+							{issue().operation === "search"
+								? "Couldn’t load findings."
+								: "Couldn’t load finding details."}
 						</strong>
 						<p {...stylex.props(styles.errorCopy)}>
 							Try again. If it keeps failing, restart Workbench.
 						</p>
 						<button
 							type="button"
-							onClick={() => requestPage()}
+							onClick={() => {
+								const current = issue();
+								if (current.operation === "search") requestPage();
+								else requestFocus(current.findingId);
+							}}
 							{...stylex.props(styles.retryButton)}
 						>
 							Retry
@@ -192,7 +213,7 @@ export function GameTextQualityWorkspace(props: {
 							<summary {...stylex.props(styles.techSummary)}>
 								Technical details
 							</summary>
-							<pre {...stylex.props(styles.techPre)}>{message()}</pre>
+							<pre {...stylex.props(styles.techPre)}>{issue().cause}</pre>
 						</details>
 					</section>
 				)}

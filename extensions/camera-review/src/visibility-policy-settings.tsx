@@ -379,7 +379,12 @@ const styles = stylex.create({
 	},
 	fact: { display: "grid", gap: 4 },
 	viewPicker: { display: "grid", gap: 4 },
-	advanced: { borderTop: `1px solid ${tokens.colorBorder}`, padding: tokens.space3 },
+	advanced: {
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		padding: tokens.space3
+	},
 	form: {
 		display: "grid",
 		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",

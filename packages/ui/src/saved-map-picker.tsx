@@ -309,7 +309,10 @@ const styles = stylex.create({
 		fontFamily: tokens.fontMono,
 		fontSize: 12,
 		textAlign: "left",
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.55 }
 	},
@@ -380,7 +383,10 @@ const styles = stylex.create({
 		fontFamily: tokens.fontMono,
 		fontSize: 12,
 		fontWeight: 400,
-		outline: "none"
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	},
 	options: { maxHeight: 276, overflowY: "auto", padding: 4 },
 	option: {

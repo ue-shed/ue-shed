@@ -156,7 +156,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 					<span {...stylex.props(styles.offline)}>Offline</span>
 					<details ref={setLaunchMenu} {...stylex.props(styles.launchControl)}>
 						<summary {...stylex.props(styles.launchSummary)}>Launch ▾</summary>
-						<div {...stylex.props(styles.launchMenu)}>
+						<section
+							aria-label="Launch project options"
+							{...stylex.props(styles.launchMenu)}
+						>
 							<button
 								type="button"
 								disabled={launching() !== undefined}
@@ -184,7 +187,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 								</strong>
 								<span>No injected plugins or project changes</span>
 							</button>
-						</div>
+						</section>
 					</details>
 				</div>
 			</Show>
@@ -301,8 +304,8 @@ const styles = stylex.create({
 		minWidth: 310,
 		padding: 4,
 		position: "absolute",
-		right: 0,
-		top: "calc(100% + 7px)",
+		bottom: "calc(100% + 7px)",
+		left: 0,
 		zIndex: 32
 	},
 	launchOption: {

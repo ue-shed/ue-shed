@@ -34,6 +34,33 @@ test("flags every per-side border shorthand", () => {
 	);
 });
 
+test("flags a compact shorthand declaration", () => {
+	const source =
+		"const styles = stylex.create({ card: { border: '1px solid red', color: 'white' } });";
+	assert.deepEqual(findDroppedShorthands("compact.tsx", source), [
+		{
+			file: "compact.tsx",
+			line: 1,
+			property: "border",
+			text: source
+		}
+	]);
+});
+
+test("ignores StyleX call decoys in strings and comments", () => {
+	const source = [
+		"const styles = stylex.create({ card: { color: 'white' } });",
+		"const decoy = \"stylex.create({ card: { border: '1px solid red' } })\";",
+		"// stylex.keyframes({ from: { border: '1px solid red' } });"
+	].join("\n");
+	assert.deepEqual(findDroppedShorthands("decoy.tsx", source), []);
+});
+
+test("flags compact shorthands in stylex.keyframes", () => {
+	const source = "const pulse = stylex.keyframes({ from: { borderTop: '1px solid red' } });";
+	assert.equal(findDroppedShorthands("motion.ts", source)[0]?.property, "borderTop");
+});
+
 test("accepts the longhands that StyleX does emit", () => {
 	const source = [
 		"const styles = stylex.create({",

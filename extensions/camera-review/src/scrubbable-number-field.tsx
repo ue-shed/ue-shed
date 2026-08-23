@@ -230,7 +230,10 @@ const styles = stylex.create({
 		letterSpacing: 0,
 		cursor: "ew-resize",
 		userSelect: "none",
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		transition: "color 120ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1)",
 		transform: { default: "scale(1)", ":active": "scale(.97)" }
 	},
@@ -252,6 +255,9 @@ const styles = stylex.create({
 		fontVariantNumeric: "tabular-nums",
 		textAlign: "right",
 		appearance: "textfield",
-		outline: "none"
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	}
 });

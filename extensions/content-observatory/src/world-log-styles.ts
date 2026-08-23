@@ -713,7 +713,16 @@ export const styles = stylex.create({
 			"radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.02), transparent 46%), linear-gradient(135deg, rgba(255, 255, 255, 0.02) 25%, transparent 25%)",
 		backgroundSize: "auto, 18px 18px"
 	},
-	pointMap: { width: "100%", height: "100%", minHeight: 360, display: "block", outline: "none" },
+	pointMap: {
+		width: "100%",
+		height: "100%",
+		minHeight: 360,
+		display: "block",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: -2,
+		outlineStyle: "solid",
+		outlineWidth: 1
+	},
 	northMarker: {
 		position: "absolute",
 		top: 12,
@@ -951,7 +960,11 @@ export const styles = stylex.create({
 		borderBottomColor: tokens.colorBorder,
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1,
-		":last-child": { borderBottom: 0 }
+		":last-child": {
+			borderBottomColor: "transparent",
+			borderBottomStyle: "none",
+			borderBottomWidth: 0
+		}
 	},
 	revisionSelected: {
 		marginLeft: -6,

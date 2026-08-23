@@ -761,7 +761,10 @@ const styles = stylex.create({
 		fontFamily: tokens.fontBody,
 		fontSize: 13,
 		minWidth: 0,
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		padding: "7px 9px",
 		width: "100%"
 	},

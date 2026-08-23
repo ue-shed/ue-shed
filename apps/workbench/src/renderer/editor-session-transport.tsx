@@ -132,7 +132,10 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 				>
 					:{port() ?? "—"}
 				</summary>
-				<div {...stylex.props(styles.settingsPanel)}>
+				<section
+					aria-label="Session monitor settings"
+					{...stylex.props(styles.settingsPanel)}
+				>
 					<strong {...stylex.props(styles.settingsTitle)}>Session monitor port</strong>
 					<p {...stylex.props(styles.settingsDetail)}>
 						Workbench will immediately monitor this port for an Unreal Editor session.
@@ -164,7 +167,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 						)}
 					</Show>
 					<small {...stylex.props(styles.storageNote)}>Saved on this device.</small>
-				</div>
+				</section>
 			</details>
 			<div {...stylex.props(styles.actions)}>
 				<For each={actions()}>
@@ -218,8 +221,8 @@ const styles = stylex.create({
 	},
 	settingsPanel: {
 		position: "absolute",
-		right: 0,
-		top: "calc(100% + 14px)",
+		bottom: "calc(100% + 14px)",
+		left: 0,
 		zIndex: 40,
 		width: 300,
 		padding: 16,
@@ -255,7 +258,10 @@ const styles = stylex.create({
 		color: tokens.colorTextStrong,
 		fontFamily: tokens.fontMono,
 		fontSize: 12,
-		outline: "none"
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	},
 	applyButton: {
 		height: 30,

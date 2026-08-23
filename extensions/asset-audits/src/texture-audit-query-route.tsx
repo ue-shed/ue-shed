@@ -1271,7 +1271,12 @@ const styles = stylex.create({
 		fontSize: 12,
 		fontWeight: 600
 	},
-	auditSummary: { padding: tokens.space2, borderBottom: `1px solid ${tokens.colorBorder}` },
+	auditSummary: {
+		padding: tokens.space2,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	summaryFinding: { display: "flex", alignItems: "baseline", gap: 6, marginBottom: 9 },
 	summaryCount: { color: tokens.colorTextStrong, fontSize: 17, lineHeight: 1 },
 	summaryUnit: { color: tokens.colorTextMuted, fontSize: 11 },
@@ -1320,7 +1325,12 @@ const styles = stylex.create({
 		fontWeight: 400
 	},
 	facetList: { paddingBottom: 8 },
-	facet: { padding: "8px 8px 3px", borderBottom: `1px solid ${tokens.colorBorder}` },
+	facet: {
+		padding: "8px 8px 3px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	facetTitle: {
 		margin: "0 5px 4px",
 		color: tokens.colorTextMuted,
@@ -1393,7 +1403,10 @@ const styles = stylex.create({
 		backgroundColor: "transparent",
 		color: tokens.colorText,
 		padding: "8px",
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		fontFamily: tokens.fontBody,
 		fontSize: 13
 	},
@@ -1622,7 +1635,13 @@ const styles = stylex.create({
 		color: tokens.colorSuccess,
 		fontSize: 12
 	},
-	finding: { padding: tokens.space2, borderTop: `1px solid ${tokens.colorBorder}`, fontSize: 12 },
+	finding: {
+		padding: tokens.space2,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		fontSize: 12
+	},
 	findingTitle: {
 		display: "flex",
 		justifyContent: "space-between",

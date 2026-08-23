@@ -1084,8 +1084,18 @@ const styles = stylex.create({
 		borderWidth: 1,
 		backgroundColor: tokens.colorSurface
 	},
-	heroMetric: { padding: "18px 22px", borderRight: `1px solid ${tokens.colorBorder}` },
-	metric: { padding: "18px", borderRight: `1px solid ${tokens.colorBorder}` },
+	heroMetric: {
+		padding: "18px 22px",
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
+	metric: {
+		padding: "18px",
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
 	metricLabel: {
 		display: "block",
 		marginBottom: 8,
@@ -1132,8 +1142,18 @@ const styles = stylex.create({
 		gap: 12,
 		marginTop: 12
 	},
-	inventory: { border: `1px solid ${tokens.colorBorder}`, backgroundColor: tokens.colorSurface },
-	plan: { border: `1px solid ${tokens.colorBorder}`, backgroundColor: tokens.colorSurface },
+	inventory: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
+	},
+	plan: {
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		backgroundColor: tokens.colorSurface
+	},
 	sectionHeader: {
 		display: "flex",
 		justifyContent: "space-between",
@@ -1146,7 +1166,11 @@ const styles = stylex.create({
 		letterSpacing: "0"
 	},
 	noRows: { padding: 18, color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.6 },
-	row: { borderBottom: `1px solid ${tokens.colorBorder}` },
+	row: {
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	rowSummary: {
 		display: "grid",
 		gridTemplateColumns: "30px 58px minmax(0, 1fr) 88px 88px",
@@ -1343,7 +1367,12 @@ const styles = stylex.create({
 		cursor: "pointer"
 	},
 	cleanupTargetCopy: { minWidth: 0, display: "flex", flexDirection: "column", gap: 5 },
-	proposalFacts: { margin: "22px 0", border: `1px solid ${tokens.colorBorder}` },
+	proposalFacts: {
+		margin: "22px 0",
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1
+	},
 	proposalFact: {
 		minHeight: 42,
 		display: "grid",

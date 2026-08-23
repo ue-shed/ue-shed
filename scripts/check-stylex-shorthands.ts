@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 /**
  * StyleX resolves styles with `property-specificity`, and that resolver refuses these shorthands.
@@ -32,54 +33,57 @@ export interface ShorthandFinding {
 	readonly text: string;
 }
 
-const declaration = new RegExp(`^[\\t ]*(${droppedShorthands.join("|")})\\s*:`);
+const droppedShorthandSet = new Set<string>(droppedShorthands);
 
-/**
- * Spans covering the argument list of every `callee(...)` in `source`.
- *
- * The same shorthand in a plain `style={{ ... }}` prop is ordinary CSS and works, so only the text
- * inside a StyleX call is a finding.
- */
-function calleeSpans(source: string, callee: string): readonly (readonly [number, number])[] {
-	const spans: (readonly [number, number])[] = [];
-	const needle = `${callee}(`;
-	let index = source.indexOf(needle);
-	while (index !== -1) {
-		let cursor = index + needle.length;
-		let depth = 1;
-		while (cursor < source.length && depth > 0) {
-			const character = source[cursor];
-			if (character === "(" || character === "[" || character === "{") depth += 1;
-			else if (character === ")" || character === "]" || character === "}") depth -= 1;
-			cursor += 1;
-		}
-		spans.push([index, cursor] as const);
-		index = source.indexOf(needle, cursor);
-	}
-	return spans;
+function propertyName(name: ts.PropertyName): string | undefined {
+	return ts.isIdentifier(name) || ts.isStringLiteralLike(name) ? name.text : undefined;
+}
+
+function isStylexDeclaration(node: ts.Node): node is ts.CallExpression {
+	return (
+		ts.isCallExpression(node) &&
+		ts.isPropertyAccessExpression(node.expression) &&
+		ts.isIdentifier(node.expression.expression) &&
+		node.expression.expression.text === "stylex" &&
+		(node.expression.name.text === "create" || node.expression.name.text === "keyframes")
+	);
 }
 
 export function findDroppedShorthands(file: string, source: string): readonly ShorthandFinding[] {
-	const spans = [
-		...calleeSpans(source, "stylex.create"),
-		...calleeSpans(source, "stylex.keyframes")
-	];
-	if (spans.length === 0) return [];
+	const sourceFile = ts.createSourceFile(
+		file,
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+	);
 	const findings: ShorthandFinding[] = [];
-	let offset = 0;
 	const lines = source.split("\n");
-	for (const [index, line] of lines.entries()) {
-		const match = declaration.exec(line);
-		if (match && spans.some(([start, end]) => offset >= start && offset < end)) {
-			findings.push({
-				file,
-				line: index + 1,
-				property: match[1] ?? "",
-				text: line.trim()
-			});
+	const inspectDeclaration = (node: ts.Node): void => {
+		if (ts.isPropertyAssignment(node)) {
+			const property = propertyName(node.name);
+			if (property && droppedShorthandSet.has(property)) {
+				const position = sourceFile.getLineAndCharacterOfPosition(
+					node.name.getStart(sourceFile)
+				);
+				findings.push({
+					file,
+					line: position.line + 1,
+					property,
+					text: lines[position.line]?.trim() ?? property
+				});
+			}
 		}
-		offset += line.length + 1;
-	}
+		ts.forEachChild(node, inspectDeclaration);
+	};
+	const visit = (node: ts.Node): void => {
+		if (isStylexDeclaration(node)) {
+			for (const argument of node.arguments) inspectDeclaration(argument);
+			return;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(sourceFile);
 	return findings;
 }
 

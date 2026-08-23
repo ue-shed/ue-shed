@@ -1613,7 +1613,12 @@ const styles = stylex.create({
 		color: tokens.colorTextFaint,
 		fontSize: 11
 	},
-	ruler: { position: "relative", borderBottom: `1px solid ${tokens.colorBorder}` },
+	ruler: {
+		position: "relative",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	tick: {
 		position: "absolute",
 		top: 0,
@@ -1762,9 +1767,19 @@ const styles = stylex.create({
 		borderLeftWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
-	inspectorHeader: { padding: "18px", borderBottom: `1px solid ${tokens.colorBorder}` },
+	inspectorHeader: {
+		padding: "18px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	clipType: { float: "right", color: tokens.colorTextSubtle, fontSize: 11 },
-	inspectorSection: { padding: "15px 18px", borderBottom: `1px solid ${tokens.colorBorder}` },
+	inspectorSection: {
+		padding: "15px 18px",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
+	},
 	timingControl: {
 		display: "grid",
 		gridTemplateColumns: "34px 1fr 34px",
@@ -1796,7 +1811,12 @@ const styles = stylex.create({
 		minHeight: 236,
 		backgroundColor: tokens.colorSurfaceInset
 	},
-	evidenceHeading: { padding: "20px 16px", borderRight: `1px solid ${tokens.colorBorder}` },
+	evidenceHeading: {
+		padding: "20px 16px",
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
 	runReceiptSummary: {
 		display: "flex",
 		flexDirection: "column",
@@ -1811,7 +1831,12 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
-	frameCard: { padding: 14, borderRight: `1px solid ${tokens.colorBorder}` },
+	frameCard: {
+		padding: 14,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
 	structuredEvidence: {
 		display: "flex",
 		flexDirection: "column",
@@ -1902,7 +1927,11 @@ const styles = stylex.create({
 		fontSize: 11
 	},
 	frameCaption: { marginTop: 9 },
-	observationList: { borderRight: `1px solid ${tokens.colorBorder}` },
+	observationList: {
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
+	},
 	observation: {
 		display: "grid",
 		gridTemplateColumns: "30px 1fr auto",

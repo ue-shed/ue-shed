@@ -17,7 +17,7 @@ import {
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { type GameTextClientApi } from "./game-text-client.js";
+import { GameTextClientError, type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute } from "./game-text-query-route.js";
 
 const corpus: TextCorpus = {
@@ -402,6 +402,8 @@ describe("GameTextRoute interactions", () => {
 		});
 		let previewedMaximum = 0;
 		let savedMaximum = 0;
+		let qualitySearchAttempts = 0;
+		let qualityFocusAttempts = 0;
 		const budgetFinding = {
 			actual: "58 characters",
 			expectation: "Maximum 32 characters",
@@ -455,8 +457,18 @@ describe("GameTextRoute interactions", () => {
 					summary: { ...qualitySummary, characterBudgetCount: 0, findingCount: 1 }
 				});
 			},
-			qualitySearch: (request) =>
-				Effect.succeed({
+			qualitySearch: (request) => {
+				qualitySearchAttempts += 1;
+				if (qualitySearchAttempts === 1) {
+					return Effect.fail(
+						new GameTextClientError({
+							cause: "quality search unavailable",
+							operation: "qualitySearch",
+							recovery: "Retry the findings query."
+						})
+					);
+				}
+				return Effect.succeed({
 					page: {
 						findings:
 							request.filter === "character_budget"
@@ -467,9 +479,20 @@ describe("GameTextRoute interactions", () => {
 						total: request.filter === "all" ? 2 : 1
 					},
 					status: "ready" as const
-				}),
-			qualityFocus: (request) =>
-				Effect.succeed({
+				});
+			},
+			qualityFocus: (request) => {
+				qualityFocusAttempts += 1;
+				if (qualityFocusAttempts === 1) {
+					return Effect.fail(
+						new GameTextClientError({
+							cause: "finding detail unavailable",
+							operation: "qualityFocus",
+							recovery: "Retry the selected finding."
+						})
+					);
+				}
+				return Effect.succeed({
 					focus:
 						request.id === budgetFinding.id
 							? {
@@ -522,7 +545,8 @@ describe("GameTextRoute interactions", () => {
 									totalOccurrences: 1
 								},
 					status: "found" as const
-				})
+				});
+			}
 		});
 		renderRoute(qualityClient);
 		await screen.findByRole("region", { name: "Results" });
@@ -531,8 +555,18 @@ describe("GameTextRoute interactions", () => {
 		await user.click(screen.getByRole("tab", { name: "Quality" }));
 		expect(screen.getByRole("region", { name: "Quality rules setup" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "Load rules" }));
+		expect((await screen.findByRole("alert")).textContent).toContain("Couldn’t load findings.");
+		expect(qualitySearchAttempts).toBe(1);
+		await user.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(qualitySearchAttempts).toBe(2));
 		const findings = await screen.findByRole("region", { name: "Findings" });
 		expect(within(findings).getByText("58 characters")).toBeDefined();
+		expect(await screen.findByText("Couldn’t load finding details.")).toBeDefined();
+		expect(qualityFocusAttempts).toBe(1);
+		await user.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(qualityFocusAttempts).toBe(2));
+		expect(qualitySearchAttempts).toBe(2);
+		await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 		expect(screen.getByText(/part of the saved text was checked/i)).toBeDefined();
 		expect(screen.getByText(/2 unsupported properties/)).toBeDefined();
 		expect(screen.getByRole("button", { name: "Load rules" })).toBeDefined();

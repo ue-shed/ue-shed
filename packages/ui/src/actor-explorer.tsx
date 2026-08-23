@@ -510,7 +510,10 @@ const styles = stylex.create({
 		padding: "7px 9px",
 		fontFamily: tokens.fontMono,
 		fontSize: 12,
-		outline: "none"
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	},
 	classMenu: { position: "relative", flex: "0 0 auto", zIndex: 4 },
 	classFilters: {

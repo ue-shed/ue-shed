@@ -1535,7 +1535,10 @@ const styles = stylex.create({
 		padding: "7px 8px",
 		fontFamily: "inherit",
 		fontSize: 12,
-		outline: { ":focus": "none" }
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1
 	},
 	reasonField: { display: "grid", gap: 5, marginTop: 10 },
 	diagnosticList: {

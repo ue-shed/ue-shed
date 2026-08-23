@@ -424,7 +424,14 @@ const styles = stylex.create({
 		borderBottomStyle: "solid",
 		borderBottomWidth: 1
 	},
-	segmentField: { minWidth: 0, margin: 0, padding: 0, border: 0 },
+	segmentField: {
+		minWidth: 0,
+		margin: 0,
+		padding: 0,
+		borderColor: "transparent",
+		borderStyle: "none",
+		borderWidth: 0
+	},
 	segments: {
 		display: "flex",
 		gap: 2,
@@ -489,7 +496,10 @@ const styles = stylex.create({
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
-		outline: "none",
+		outlineColor: { default: "transparent", ":focus-visible": tokens.colorTextMuted },
+		outlineOffset: 2,
+		outlineStyle: "solid",
+		outlineWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
 		fontFamily: tokens.fontBody,

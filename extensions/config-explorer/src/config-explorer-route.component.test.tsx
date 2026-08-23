@@ -62,7 +62,7 @@ afterEach(cleanup);
 describe("ConfigExplorerRoute", () => {
 	it("renders supplied evidence and labels the saved-source authority boundary", () => {
 		render(() => <ConfigExplorerRoute result={explanation("PlatformA", true)} />);
-		expect(screen.getByText(/SAVED SOURCE.*NO RUNTIME AUTHORITY/su)).toBeDefined();
+		expect(screen.getByText(/Saved source.*no runtime authority/su)).toBeDefined();
 		expect(screen.getByText("partial coverage")).toBeDefined();
 		expect(screen.getAllByText("unsupported").length).toBeGreaterThan(0);
 		expect(screen.getByLabelText("effect survives")).toBeDefined();
@@ -83,7 +83,20 @@ describe("ConfigExplorerRoute", () => {
 		const region = screen.getByRole("region", { name: "Platform config comparison" });
 		expect(within(region).getByRole("heading", { name: "PlatformA" })).toBeDefined();
 		expect(within(region).getByRole("heading", { name: "PlatformB" })).toBeDefined();
-		expect(screen.getByText("VALUE DIVERGES")).toBeDefined();
+		expect(screen.getByText("Value diverges")).toBeDefined();
+		expect(screen.getByText("Coverage aligned")).toBeDefined();
+		cleanup();
+
+		const matching = Schema.decodeUnknownSync(ConfigComparison)({
+			schemaVersion: 1,
+			status: "same",
+			left: explanation("PlatformA"),
+			right: explanation("PlatformA"),
+			valueChanged: false,
+			coverageChanged: false
+		});
+		render(() => <ConfigExplorerRoute result={matching} />);
+		expect(screen.getByText("Values match")).toBeDefined();
 	});
 
 	it("keeps missing and explicit-empty values semantically distinct", () => {
@@ -93,7 +106,7 @@ describe("ConfigExplorerRoute", () => {
 			effectiveValue: { kind: "missing" }
 		});
 		render(() => <ConfigExplorerRoute result={missing} />);
-		expect(screen.getByText("MISSING")).toBeDefined();
+		expect(screen.getByText("Missing")).toBeDefined();
 		cleanup();
 
 		const empty = Schema.decodeUnknownSync(ConfigExplanation)({

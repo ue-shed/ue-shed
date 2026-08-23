@@ -78,7 +78,7 @@ export function AuthoringTableGrid(props: AuthoringTableGridProps) {
 						return `${dirtyRows().has(row.id) ? "● " : ""}${row.name}`;
 					},
 					getRowHeaderSublabel: (index) =>
-						dirtyRows().has(props.rows[index]?.id ?? "") ? "DIRTY ROW" : "ROW"
+						dirtyRows().has(props.rows[index]?.id ?? "") ? "edited" : ""
 				}}
 				data={model().data}
 				onOperation={handleOperation}
@@ -102,6 +102,7 @@ const styles = stylex.create({
 		borderWidth: 1,
 		height: "min(68vh, 760px)",
 		minHeight: 420,
+		marginTop: tokens.space2,
 		overflow: "hidden"
 	}
 });

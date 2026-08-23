@@ -288,7 +288,7 @@ describe("AuthoringRoute", () => {
 		);
 		const catalogList = screen.getByRole("region", { name: "Project DataTable list" });
 		catalogList.scrollTop = 96;
-		await user.click(screen.getByRole("button", { name: /^DT_Second.*DATA TABLE/ }));
+		await user.click(screen.getByRole("button", { name: /^DT_Second.*Data table/ }));
 		await waitFor(() => expect(screen.getByText(secondPath)).toBeDefined());
 		expect(screen.getByRole("region", { name: "Project DataTable list" })).toBe(catalogList);
 		expect(catalogList.scrollTop).toBe(96);
@@ -370,10 +370,10 @@ describe("AuthoringRoute", () => {
 		));
 
 		await userEvent.setup().click(await screen.findByRole("button", { name: "Sessions" }));
-		expect(await screen.findByText("DRAFT SESSIONS")).toBeDefined();
-		expect(screen.getByText("1 STAGED CHANGE · OPEN")).toBeDefined();
-		expect(screen.getByText("UNSAVED LIVE CHANGES")).toBeDefined();
-		expect(screen.getByText("SAVED TO EDITOR · DISK SAVE PENDING")).toBeDefined();
+		expect(await screen.findByText("Drafts")).toBeDefined();
+		expect(screen.getByText("1 change · Open")).toBeDefined();
+		expect(screen.getByText("Unsaved live changes")).toBeDefined();
+		expect(screen.getByText("Saved to editor · save pending")).toBeDefined();
 		expect(screen.queryByText("DT_Inert")).toBeNull();
 	});
 
@@ -426,13 +426,13 @@ describe("AuthoringRoute", () => {
 				<AuthoringRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		await userEvent.setup().click(await screen.findByRole("button", { name: "Apply" }));
+		await userEvent.setup().click(await screen.findByRole("button", { name: "Apply changes" }));
 		expect(
 			await screen.findByText(
 				/Apply rejected: CompositeDataTable rows are derived and cannot be mutated directly/
 			)
 		).toBeDefined();
-		expect(screen.getByText("STAGED DRAFT")).toBeDefined();
+		expect(screen.getByText("Draft")).toBeDefined();
 		confirm.mockRestore();
 	});
 
@@ -473,8 +473,8 @@ describe("AuthoringRoute", () => {
 				<AuthoringRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		expect(await screen.findByText("DERIVED TABLE · READ ONLY")).toBeDefined();
-		expect(screen.getByRole("button", { name: "+ Row" }).hasAttribute("disabled")).toBe(true);
+		expect(await screen.findByText("Read-only table")).toBeDefined();
+		expect(screen.getByRole("button", { name: "Add row" }).hasAttribute("disabled")).toBe(true);
 	});
 	it("keeps the expandable route responsive when table selection is cancelled", async () => {
 		let selections = 0;
@@ -513,10 +513,10 @@ describe("AuthoringRoute", () => {
 				<AuthoringRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		expect(await screen.findByText("Select a project DataTable.")).toBeDefined();
-		await userEvent.setup().click(screen.getByRole("button", { name: "Choose .uasset" }));
+		expect(await screen.findByText("No table open.")).toBeDefined();
+		await userEvent.setup().click(screen.getByRole("button", { name: "Choose file…" }));
 		expect(
-			await screen.findByText("Selection cancelled. The current table was not replaced.")
+			await screen.findByText("No table was selected. The current table is unchanged.")
 		).toBeDefined();
 		expect(selections).toBe(1);
 	});
@@ -628,8 +628,8 @@ describe("AuthoringRoute", () => {
 			</EffectRuntimeProvider>
 		));
 		const user = userEvent.setup();
-		await user.click(await screen.findByRole("button", { name: "+ Row" }));
-		const rowName = screen.getByRole("textbox", { name: "Unreal row name" });
+		await user.click(await screen.findByRole("button", { name: "Add row" }));
+		const rowName = screen.getByRole("textbox", { name: "Row name" });
 		await user.clear(rowName);
 		await user.type(rowName, "Bravo");
 		await user.click(screen.getByRole("button", { name: "Stage row" }));
@@ -640,7 +640,7 @@ describe("AuthoringRoute", () => {
 			sessionId: "session-1",
 			tableObjectPath: snapshot.table.objectPath
 		});
-		await user.click(screen.getByRole("button", { name: "Duplicate" }));
+		await user.click(screen.getByRole("button", { name: "Duplicate row" }));
 		await user.click(screen.getByRole("button", { name: "Stage row" }));
 		expect(intents).toContainEqual({
 			atIndex: 1,
@@ -650,8 +650,8 @@ describe("AuthoringRoute", () => {
 			sourceRowId: "row:Alpha",
 			tableObjectPath: snapshot.table.objectPath
 		});
-		await user.click(screen.getByRole("button", { name: "Rename" }));
-		const renamed = screen.getByRole("textbox", { name: "Unreal row name" });
+		await user.click(screen.getByRole("button", { name: "Rename row" }));
+		const renamed = screen.getByRole("textbox", { name: "Row name" });
 		await user.clear(renamed);
 		await user.type(renamed, "AlphaRenamed");
 		await user.click(screen.getByRole("button", { name: "Stage row" }));
@@ -670,7 +670,7 @@ describe("AuthoringRoute", () => {
 			tableObjectPath: snapshot.table.objectPath
 		});
 		const deleteConfirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-		await user.click(screen.getByRole("button", { name: "Delete" }));
+		await user.click(screen.getByRole("button", { name: "Delete row" }));
 		expect(intents).toContainEqual({
 			kind: "remove_row",
 			rowId: "row:Alpha",
@@ -682,7 +682,7 @@ describe("AuthoringRoute", () => {
 		expect(await screen.findByText("Alpha.Count")).toBeDefined();
 		expect(screen.getByText("1 → 2")).toBeDefined();
 		const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-		await user.click(screen.getByRole("button", { name: "Reload preset" }));
+		await user.click(screen.getByRole("button", { name: "Reload table" }));
 		expect(confirm).toHaveBeenCalled();
 		expect(screen.getByText(snapshot.table.objectPath)).toBeDefined();
 		confirm.mockRestore();

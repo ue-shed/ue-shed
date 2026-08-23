@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { Button, PageHeader, createEffectAction } from "@ue-shed/ui";
+import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
 	filterTextureReport,
@@ -58,6 +58,10 @@ function shortName(objectPath: string): string {
 	return objectPath.slice(objectPath.lastIndexOf("/") + 1).split(".")[0] ?? objectPath;
 }
 
+function severityLabel(severity: "warning" | "error"): string {
+	return severity === "error" ? "Fail" : "Warning";
+}
+
 type DisplayEvidence = TextureRecord["compression"] | TextureRecord["sRGB"];
 
 function evidenceLabel(evidence: DisplayEvidence): string {
@@ -85,7 +89,7 @@ function DimensionsHero(props: { readonly dimensions: TextureRecord["dimensions"
 			<strong>{props.dimensions.value.width}</strong>
 			<span>×</span>
 			<strong>{props.dimensions.value.height}</strong>
-			<small>source pixels · serialized</small>
+			<small>source pixels</small>
 		</>
 	);
 }
@@ -99,10 +103,9 @@ function Distribution(props: {
 }) {
 	const maximum = () => Math.max(1, ...props.buckets.map((bucket) => bucket.count));
 	return (
-		<section {...stylex.props(styles.distribution)} aria-label={`${props.title} distribution`}>
+		<section {...stylex.props(styles.distribution)} aria-label={`${props.title} facets`}>
 			<div {...stylex.props(styles.panelHeading)}>
 				<span>{props.title}</span>
-				<span {...stylex.props(styles.panelMeta)}>CORPUS</span>
 			</div>
 			<div {...stylex.props(styles.bars)}>
 				<For each={props.buckets}>
@@ -127,7 +130,9 @@ function Distribution(props: {
 										}}
 									/>
 								</span>
-								<strong>{String(bucket.count).padStart(2, "0")}</strong>
+								<strong {...stylex.props(styles.countMono)}>
+									{String(bucket.count).padStart(2, "0")}
+								</strong>
 							</button>
 						);
 					}}
@@ -221,30 +226,34 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 
 	return (
 		<main {...stylex.props(styles.page)}>
-			<PageHeader
-				eyebrow="Asset audits / Texture audit"
-				actions={
-					<Button type="button" onClick={run}>
-						Rescan
-					</Button>
-				}
-			/>
+			<header {...stylex.props(styles.header)}>
+				<div {...stylex.props(styles.heading)}>
+					<h1 {...stylex.props(styles.title)}>Texture audit</h1>
+					<p {...stylex.props(styles.intro)}>
+						Check saved textures against your size, group, and compression rules.
+					</p>
+				</div>
+				<button type="button" onClick={run} {...stylex.props(styles.primaryButton)}>
+					Rescan assets
+				</button>
+			</header>
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.emptyState)}>
-						<span {...stylex.props(styles.pulse)} /> Inspecting saved packages…
+					<div {...stylex.props(styles.centerState)}>
+						<span aria-hidden="true" {...stylex.props(styles.spinnerDot)} />
+						Running the texture audit…
 					</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.emptyState)}>
+					<div {...stylex.props(styles.noticeCard)}>
 						<strong>No project configured.</strong> Choose a project from the Workbench
-						header, then rescan this audit.
+						header, then select Retry.
 					</div>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<div {...stylex.props(styles.emptyState)}>
-						Selection cancelled. No scan was started.
+					<div {...stylex.props(styles.noticeCard)}>
+						Project selection was cancelled. No scan was started.
 					</div>
 				</Match>
 				<Match when={state().status === "failed"}>
@@ -252,10 +261,29 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 						const current = state();
 						if (current.status !== "failed") return null;
 						return (
-							<div {...stylex.props(styles.errorState)}>
-								<strong>{current.result.error.message}</strong>
-								<span>{current.result.error.recovery}</span>
-							</div>
+							<section role="alert" {...stylex.props(styles.failureCard)}>
+								<strong {...stylex.props(styles.failureTitle)}>
+									Couldn&apos;t run the audit
+								</strong>
+								<span {...stylex.props(styles.failureRecovery)}>
+									{current.result.error.recovery}
+								</span>
+								<button
+									type="button"
+									onClick={run}
+									{...stylex.props(styles.secondaryButton)}
+								>
+									Retry
+								</button>
+								<details {...stylex.props(styles.technicalDetails)}>
+									<summary {...stylex.props(styles.technicalSummary)}>
+										Technical details
+									</summary>
+									<code {...stylex.props(styles.technicalCode)}>
+										{current.result.error.message}
+									</code>
+								</details>
+							</section>
 						);
 					})()}
 				</Match>
@@ -296,10 +324,10 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 											report.status === "partial" && styles.coveragePartial
 										)}
 									>
-										<span>
-											{report.status === "complete" ? "COMPLETE" : "PARTIAL"}
-										</span>
 										<strong>{report.ruleSetName}</strong>
+										<span>
+											{report.status === "complete" ? "Complete" : "Partial"}
+										</span>
 									</div>
 									<For
 										each={
@@ -308,7 +336,7 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 												["Inspected", report.coverage.inspectedPackages],
 												["Textures", report.coverage.textureAssets],
 												[
-													"Partial / failed",
+													"Skipped",
 													report.coverage.partialPackages +
 														report.coverage.failedPackages
 												]
@@ -317,14 +345,18 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 									>
 										{([label, value]) => (
 											<div {...stylex.props(styles.coverageItem)}>
-												<strong>{String(value).padStart(2, "0")}</strong>
+												<strong {...stylex.props(styles.countMono)}>
+													{String(value).padStart(2, "0")}
+												</strong>
 												<span>{label}</span>
 											</div>
 										)}
 									</For>
 									<div {...stylex.props(styles.findingCount)}>
-										<strong>{report.findings.length}</strong>
-										<span>WARNINGS</span>
+										<strong {...stylex.props(styles.countMono)}>
+											{report.findings.length}
+										</strong>
+										<span>Findings</span>
 									</div>
 								</section>
 
@@ -358,7 +390,7 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 										onSelect={(next) => setSelection(next)}
 									/>
 									<Distribution
-										title="Color evidence"
+										title="Color space"
 										kind="sRGB"
 										buckets={report.distributions.sRGB}
 										active={selection()}
@@ -399,16 +431,16 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 											</Show>
 										</div>
 										<div {...stylex.props(styles.tableHeader)}>
-											<span>Object</span>
-											<span>Source</span>
+											<span>Asset</span>
+											<span>Dimensions</span>
 											<span>Group</span>
-											<span>Finding</span>
+											<span>Status</span>
 										</div>
 										<Show
 											when={visible().length > 0}
 											fallback={
 												<div {...stylex.props(styles.noRows)}>
-													No Texture2D assets match this view.
+													No textures match this view.
 												</div>
 											}
 										>
@@ -458,10 +490,15 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 															</span>
 															<span
 																{...stylex.props(
+																	styles.rowStatus,
 																	finding && styles.warningText
 																)}
 															>
-																{finding ? finding.ruleId : "Clear"}
+																{finding
+																	? severityLabel(
+																			finding.severity
+																		)
+																	: "Pass"}
 															</span>
 														</button>
 													);
@@ -475,21 +512,21 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 											when={selected()}
 											fallback={
 												<div {...stylex.props(styles.noRows)}>
-													Select a texture to inspect evidence.
+													Select a texture to inspect its properties.
 												</div>
 											}
 										>
 											{(record) => (
 												<>
-													<div {...stylex.props(styles.inspectorKicker)}>
-														SELECTED ASSET
-													</div>
 													<h2 {...stylex.props(styles.inspectorTitle)}>
 														{shortName(record().objectPath)}
 													</h2>
-													<p {...stylex.props(styles.objectPath)}>
+													<code
+														title={record().objectPath}
+														{...stylex.props(styles.objectPath)}
+													>
 														{record().objectPath}
-													</p>
+													</code>
 													<div {...stylex.props(styles.previewFrame)}>
 														<Switch>
 															<Match
@@ -503,11 +540,12 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 																	)}
 																>
 																	<span
+																		aria-hidden="true"
 																		{...stylex.props(
-																			styles.pulse
+																			styles.spinnerDot
 																		)}
 																	/>
-																	Decoding in Unreal…
+																	Decoding preview…
 																</div>
 															</Match>
 															<Match
@@ -536,7 +574,7 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 																					styles.previewBadge
 																				)}
 																			>
-																				LIVE EDITOR ·{" "}
+																				Live editor ·{" "}
 																				{
 																					current.preview
 																						.width
@@ -563,7 +601,7 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 																	)}
 																>
 																	<strong>
-																		Live preview is offline.
+																		No live preview.
 																	</strong>
 																	<span>
 																		{(() => {
@@ -587,17 +625,30 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 																		)}
 																	>
 																		{launching()
-																			? "Launching fixture…"
-																			: "Launch Unreal for preview"}
+																			? "Launching…"
+																			: "Launch Unreal"}
 																	</button>
 																	<Show when={launchFailure()}>
-																		<small
+																		<details
 																			{...stylex.props(
-																				styles.launchError
+																				styles.technicalDetails
 																			)}
 																		>
-																			{launchFailure()}
-																		</small>
+																			<summary
+																				{...stylex.props(
+																					styles.technicalSummary
+																				)}
+																			>
+																				Technical details
+																			</summary>
+																			<code
+																				{...stylex.props(
+																					styles.technicalCode
+																				)}
+																			>
+																				{launchFailure()}
+																			</code>
+																		</details>
 																	</Show>
 																</div>
 															</Match>
@@ -643,8 +694,15 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 																	styles.findingCard
 																)}
 															>
-																<span>
-																	WARNING · {finding.ruleId}
+																<span
+																	{...stylex.props(
+																		styles.findingSeverity
+																	)}
+																>
+																	{severityLabel(
+																		finding.severity
+																	)}{" "}
+																	· {finding.ruleId}
 																</span>
 																<strong>
 																	{finding.explanation}
@@ -667,8 +725,9 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 								</div>
 								<Show when={report.diagnostics.length > 0}>
 									<div {...stylex.props(styles.diagnostics)}>
-										{report.diagnostics.length} package diagnostics retained ·
-										report is partial
+										{report.diagnostics.length}{" "}
+										{report.diagnostics.length === 1 ? "package" : "packages"}{" "}
+										skipped · coverage is partial
 									</div>
 								</Show>
 							</div>
@@ -685,59 +744,157 @@ const styles = stylex.create({
 		minHeight: "100vh",
 		backgroundColor: tokens.colorCanvas,
 		color: tokens.colorText,
-		padding: "34px 40px 44px",
-		backgroundImage:
-			"radial-gradient(circle at 14% -10%, rgba(208, 214, 224, 0.04) 0, transparent 34%), linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px)",
-		backgroundSize: "auto, 100% 28px"
+		padding: `${tokens.space5} ${tokens.space6} ${tokens.space6}`,
+		fontFamily: tokens.fontBody
 	},
-	emptyState: {
+	header: {
+		display: "flex",
+		alignItems: "flex-start",
+		justifyContent: "space-between",
+		gap: tokens.space5,
+		paddingBottom: tokens.space4,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		marginBottom: tokens.space5
+	},
+	heading: { minWidth: 0 },
+	title: {
+		margin: 0,
+		color: tokens.colorTextStrong,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
+	},
+	intro: {
+		maxWidth: 560,
+		margin: "6px 0 0",
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.45
+	},
+	primaryButton: {
+		flexShrink: 0,
+		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		padding: "7px 12px",
+		cursor: "pointer",
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 500,
+		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
+	},
+	secondaryButton: {
+		flexShrink: 0,
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "6px 10px",
+		cursor: "pointer",
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
+	},
+	centerState: {
 		minHeight: 430,
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "center",
-		gap: 12,
+		gap: tokens.space2,
 		color: tokens.colorTextMuted,
-		border: `1px dashed ${tokens.colorBorderStrong}`
+		fontSize: 13
 	},
-	errorState: {
-		padding: 24,
-		border: `1px solid ${tokens.colorDanger}`,
-		color: tokens.colorDanger,
-		display: "flex",
-		flexDirection: "column",
-		gap: 8
-	},
-	pulse: {
+	spinnerDot: {
 		width: 8,
 		height: 8,
 		borderRadius: "50%",
-		backgroundColor: tokens.colorWarningStrong,
-		boxShadow: "0 0 18px rgba(242, 153, 74, 0.35)"
+		backgroundColor: tokens.colorAccent
 	},
-	workspace: { display: "flex", flexDirection: "column", gap: 14 },
+	noticeCard: {
+		display: "grid",
+		placeItems: "center",
+		minHeight: 430,
+		border: `1px dashed ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextMuted
+	},
+	failureCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		maxWidth: 560,
+		margin: `${tokens.space6} auto 0`,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		padding: tokens.space5
+	},
+	failureTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 15,
+		fontWeight: 600
+	},
+	failureRecovery: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.45
+	},
+	technicalDetails: {
+		width: "100%",
+		marginTop: tokens.space1
+	},
+	technicalSummary: {
+		color: tokens.colorTextFaint,
+		cursor: "pointer",
+		fontSize: 12
+	},
+	technicalCode: {
+		display: "block",
+		overflow: "auto",
+		marginTop: tokens.space2,
+		padding: tokens.space2,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		lineHeight: 1.45,
+		whiteSpace: "pre-wrap"
+	},
+	countMono: {
+		fontFamily: tokens.fontMono,
+		fontWeight: 400
+	},
+	workspace: { display: "flex", flexDirection: "column", gap: tokens.space4 },
 	coverage: {
 		display: "grid",
 		gridTemplateColumns: "1.8fr repeat(4, 1fr) 1fr",
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurface
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
 	coverageStatus: {
-		padding: "14px 16px",
+		padding: "12px 16px",
 		borderLeft: `3px solid ${tokens.colorSuccess}`,
 		display: "flex",
-		flexDirection: "column",
-		gap: 5
+		flexDirection: "column-reverse",
+		gap: tokens.space1
 	},
 	coveragePartial: { borderLeftColor: tokens.colorWarning },
 	coverageItem: {
-		padding: "13px 15px",
+		padding: "11px 14px",
 		borderLeft: `1px solid ${tokens.colorBorder}`,
 		display: "flex",
 		flexDirection: "column",
 		gap: 3
 	},
 	findingCount: {
-		padding: "13px 15px",
+		padding: "11px 14px",
 		backgroundColor: "rgba(242, 153, 74, 0.12)",
 		color: tokens.colorWarning,
 		display: "flex",
@@ -746,12 +903,14 @@ const styles = stylex.create({
 	distributionGrid: {
 		display: "grid",
 		gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-		gap: 10
+		gap: tokens.space2
 	},
 	distribution: {
 		backgroundColor: tokens.colorSurface,
 		border: `1px solid ${tokens.colorBorder}`,
-		minHeight: 164
+		borderRadius: tokens.radiusControl,
+		minHeight: 164,
+		overflow: "hidden"
 	},
 	panelHeading: {
 		padding: "10px 12px",
@@ -762,7 +921,6 @@ const styles = stylex.create({
 		textTransform: "none",
 		letterSpacing: 0
 	},
-	panelMeta: { color: tokens.colorTextSubtle },
 	bars: { padding: "8px 10px" },
 	barRow: {
 		width: "100%",
@@ -785,11 +943,12 @@ const styles = stylex.create({
 	lowerGrid: {
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) 330px",
-		gap: 10,
+		gap: tokens.space2,
 		minHeight: 350
 	},
 	sheet: {
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
 	},
@@ -864,16 +1023,16 @@ const styles = stylex.create({
 	noRows: { padding: 30, color: tokens.colorTextMuted, textAlign: "center" },
 	inspector: {
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceRaised,
-		padding: 18,
+		padding: tokens.space4,
 		overflow: "hidden"
 	},
-	inspectorKicker: { color: tokens.colorTextSubtle, letterSpacing: 0, fontSize: 11 },
 	inspectorTitle: {
 		fontFamily: tokens.fontDisplay,
 		fontWeight: 590,
 		fontSize: 17,
-		margin: "7px 0 4px",
+		margin: "0 0 4px",
 		overflowWrap: "anywhere"
 	},
 	previewFrame: {
@@ -926,12 +1085,18 @@ const styles = stylex.create({
 		transition: "transform 140ms cubic-bezier(0.23, 1, 0.32, 1)",
 		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
-	launchError: { color: "rgba(235, 87, 87, 0.9)", lineHeight: 1.4 },
 	objectPath: {
+		display: "block",
+		overflow: "hidden",
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
-		overflowWrap: "anywhere",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
 		margin: 0
+	},
+	rowStatus: {
+		color: tokens.colorSuccess,
+		fontSize: 12
 	},
 	dimensionHero: {
 		margin: "19px 0",
@@ -956,9 +1121,10 @@ const styles = stylex.create({
 	evidenceValue: { color: tokens.colorText, overflowWrap: "anywhere" },
 	evidenceSource: { color: tokens.colorTextMuted, textAlign: "right" },
 	findingCard: {
-		marginTop: 14,
-		padding: 12,
+		marginTop: tokens.space3,
+		padding: tokens.space3,
 		border: "1px solid rgba(242, 153, 74, 0.35)",
+		borderRadius: tokens.radiusBadge,
 		backgroundColor: "rgba(242, 153, 74, 0.1)",
 		display: "flex",
 		flexDirection: "column",
@@ -966,10 +1132,13 @@ const styles = stylex.create({
 		color: tokens.colorWarning,
 		fontSize: 12
 	},
+	findingSeverity: { fontSize: 11 },
 	diagnostics: {
-		padding: 10,
-		color: tokens.colorWarning,
-		border: "1px solid rgba(242, 153, 74, 0.3)",
+		padding: tokens.space2 + 2,
+		color: tokens.colorTextMuted,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
 		fontSize: 12
 	}
 });

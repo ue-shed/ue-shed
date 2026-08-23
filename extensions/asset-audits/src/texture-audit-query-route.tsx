@@ -65,7 +65,7 @@ function evidenceLabel(evidence: TextureRecord["compression"] | TextureRecord["s
 
 function evidenceReason(evidence: TextureRecord["compression"] | TextureRecord["sRGB"]): string {
 	return evidence.status === "available"
-		? `${evidence.source} evidence`
+		? `From ${evidence.source}`
 		: evidence.reason.replaceAll("_", " ");
 }
 
@@ -91,6 +91,10 @@ function comparisonKindLabel(kind: ComparisonKind): string {
 	if (kind === "texture_group") return "Texture group";
 	if (kind === "folder") return "Folder";
 	return "Project";
+}
+
+function severityLabel(severity: "warning" | "error"): string {
+	return severity === "error" ? "Fail" : "Warning";
 }
 
 function failure(cause: unknown): Extract<ViewState, { status: "failed" }> {
@@ -126,8 +130,8 @@ export function savedPreviewBatchPaths(
 }
 
 function savedPreviewBatchLabel(count: number, loading: boolean): string {
-	if (count === 1) return loading ? "Generating saved preview…" : "Generate saved preview";
-	return loading ? `Generating ${count} saved previews…` : `Generate ${count} saved previews`;
+	if (count === 1) return loading ? "Generating preview…" : "Generate preview";
+	return loading ? `Generating ${count} previews…` : `Generate ${count} previews`;
 }
 
 /** Bounded query presentation; full texture records remain in the Workbench main process. */
@@ -328,41 +332,67 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 			<TaskProgressModal
 				open={state().status === "loading"}
 				progress={progress()}
-				title="Building the texture audit"
-				detail="Workbench is decoding Texture2D packages and evaluating their saved evidence against the active rule set."
+				title="Running the texture audit"
+				detail="Workbench is decoding Texture2D packages and checking them against your rule set."
 			/>
 			<header {...stylex.props(styles.header)}>
 				<div {...stylex.props(styles.heading)}>
-					<nav aria-label="Breadcrumb" {...stylex.props(styles.breadcrumb)}>
-						Asset audits / Texture audit
-					</nav>
-					<div {...stylex.props(styles.titleRow)}>
-						<h1 {...stylex.props(styles.title)}>Texture investigation</h1>
-						<span {...stylex.props(styles.subtitle)}>
-							Find an outlier, compare it with its peers, then hand it back to Unreal.
-						</span>
-					</div>
+					<h1 {...stylex.props(styles.title)}>Texture audit</h1>
+					<p {...stylex.props(styles.intro)}>
+						Check saved textures against your size, group, and compression rules.
+					</p>
 				</div>
-				<button type="button" onClick={refresh} {...stylex.props(styles.rescanButton)}>
-					Rescan saved assets
+				<button type="button" onClick={refresh} {...stylex.props(styles.primaryButton)}>
+					Rescan assets
 				</button>
 			</header>
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<div {...stylex.props(styles.empty)}>Reading Texture2D evidence…</div>
+					<div {...stylex.props(styles.centerState)}>
+						<span aria-hidden="true" {...stylex.props(styles.spinnerDot)} />
+						Running the texture audit…
+					</div>
 				</Match>
 				<Match when={state().status === "not_configured"}>
-					<div {...stylex.props(styles.empty)}>No project configured.</div>
+					<div {...stylex.props(styles.noticeCard)}>
+						<strong>No project configured.</strong> Choose a project in the Workbench
+						header, then select Retry.
+					</div>
 				</Match>
 				<Match when={state().status === "cancelled"}>
-					<div {...stylex.props(styles.empty)}>Project selection cancelled.</div>
+					<div {...stylex.props(styles.noticeCard)}>
+						Project selection was cancelled. No scan was started.
+					</div>
 				</Match>
 				<Match when={state().status === "failed"}>
 					{(() => {
 						const current = state();
-						return current.status === "failed" ? (
-							<div {...stylex.props(styles.error)}>{current.error.message}</div>
-						) : null;
+						if (current.status !== "failed") return null;
+						return (
+							<section role="alert" {...stylex.props(styles.failureCard)}>
+								<strong {...stylex.props(styles.failureTitle)}>
+									Couldn&apos;t run the audit
+								</strong>
+								<span {...stylex.props(styles.failureRecovery)}>
+									{current.error.recovery}
+								</span>
+								<button
+									type="button"
+									onClick={refresh}
+									{...stylex.props(styles.secondaryButton)}
+								>
+									Retry
+								</button>
+								<details {...stylex.props(styles.technicalDetails)}>
+									<summary {...stylex.props(styles.technicalSummary)}>
+										Technical details
+									</summary>
+									<code {...stylex.props(styles.technicalCode)}>
+										{current.error.message}
+									</code>
+								</details>
+							</section>
+						);
 					})()}
 				</Match>
 				<Match when={state().status === "ready"}>
@@ -384,10 +414,7 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 										requestPage();
 									}}
 								/>
-								<section
-									aria-label="Texture records"
-									{...stylex.props(styles.catalog)}
-								>
+								<section aria-label="Results" {...stylex.props(styles.catalog)}>
 									<header {...stylex.props(styles.catalogHeader)}>
 										<label {...stylex.props(styles.search)}>
 											<span aria-hidden="true">⌕</span>
@@ -408,7 +435,7 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 									</header>
 									<div {...stylex.props(styles.columnLabels)}>
 										<span>Asset</span>
-										<span>Saved evidence</span>
+										<span>Dimensions</span>
 									</div>
 									<div {...stylex.props(styles.assetList)}>
 										<For each={current.page.records}>
@@ -518,7 +545,7 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 												onClick={() => requestPage(cursor())}
 												{...stylex.props(styles.nextPage)}
 											>
-												Next 100 textures
+												Load more
 											</button>
 										)}
 									</Show>
@@ -569,11 +596,12 @@ function ScopeRail(props: {
 		["Maximum dimension", "maximumDimension", props.summary.distributions.maximumDimension],
 		["Texture group", "textureGroup", props.summary.distributions.textureGroup],
 		["Compression", "compression", props.summary.distributions.compression],
-		["Color evidence", "sRGB", props.summary.distributions.sRGB]
+		["Color space", "sRGB", props.summary.distributions.sRGB]
 	];
 	return (
-		<aside aria-label="Audit scope and distributions" {...stylex.props(styles.scopeRail)}>
+		<aside aria-label="Facets" {...stylex.props(styles.scopeRail)}>
 			<section {...stylex.props(styles.auditSummary)}>
+				<h2 {...stylex.props(styles.railTitle)}>Overview</h2>
 				<div {...stylex.props(styles.summaryFinding)}>
 					<strong {...stylex.props(styles.summaryCount)}>
 						{props.summary.findingCount.toLocaleString()}
@@ -596,7 +624,7 @@ function ScopeRail(props: {
 						</dd>
 					</div>
 					<div {...stylex.props(styles.summaryFact)}>
-						<dt {...stylex.props(styles.summaryTerm)}>Diagnostics</dt>
+						<dt {...stylex.props(styles.summaryTerm)}>Skipped</dt>
 						<dd {...stylex.props(styles.summaryValue)}>
 							{props.summary.diagnosticCount.toLocaleString()}
 						</dd>
@@ -613,8 +641,9 @@ function ScopeRail(props: {
 				{...stylex.props(styles.findingsFilter, props.findingsOnly && styles.filterActive)}
 			>
 				<span>Findings only</span>
-				<b>{props.summary.findingCount}</b>
+				<b {...stylex.props(styles.findingsCount)}>{props.summary.findingCount}</b>
 			</button>
+			<h2 {...stylex.props(styles.railTitle)}>Facets</h2>
 			<div {...stylex.props(styles.facetList)}>
 				<For each={facets}>
 					{([label, kind, buckets]) => {
@@ -688,13 +717,13 @@ function InvestigationPane(props: {
 		| undefined;
 }) {
 	return (
-		<article aria-label="Texture investigation" {...stylex.props(styles.investigation)}>
+		<article aria-label="Asset" {...stylex.props(styles.investigation)}>
 			<Show
 				when={props.record}
 				fallback={
 					<div {...stylex.props(styles.investigationEmpty)}>
 						<strong>Select a texture</strong>
-						<span>Its rule evidence and project peers will appear here.</span>
+						<span>Its rule results and cohort peers will appear here.</span>
 					</div>
 				}
 			>
@@ -704,9 +733,6 @@ function InvestigationPane(props: {
 						<>
 							<header {...stylex.props(styles.investigationHeader)}>
 								<div {...stylex.props(styles.selectedIdentity)}>
-									<small {...stylex.props(styles.selectedKicker)}>
-										Selected texture
-									</small>
 									<h2 {...stylex.props(styles.selectedName)}>
 										{shortName(item().objectPath)}
 									</h2>
@@ -722,7 +748,10 @@ function InvestigationPane(props: {
 									aria-label={`Locate ${shortName(item().objectPath)} in Unreal`}
 									disabled={props.locating}
 									onClick={() => props.onLocate(item().objectPath)}
-									{...stylex.props(styles.primaryAction)}
+									{...stylex.props(
+										styles.secondaryButton,
+										props.locating && styles.buttonBusy
+									)}
 								>
 									{locateLabel(props.locateFeedback, item().objectPath)}
 								</button>
@@ -743,7 +772,7 @@ function InvestigationPane(props: {
 												<strong>
 													{props.unavailablePreview?.reason ===
 													"offline_unavailable"
-														? "Saved preview unavailable"
+														? "No preview available"
 														: "No preview loaded"}
 												</strong>
 												<span>
@@ -754,7 +783,11 @@ function InvestigationPane(props: {
 													type="button"
 													disabled={props.offlinePreviewLoading}
 													onClick={props.onGeneratePreview}
-													{...stylex.props(styles.secondaryAction)}
+													{...stylex.props(
+														styles.secondaryButton,
+														props.offlinePreviewLoading &&
+															styles.buttonBusy
+													)}
 												>
 													{savedPreviewBatchLabel(
 														props.offlineBatchCount,
@@ -783,23 +816,19 @@ function InvestigationPane(props: {
 										)}
 									</Show>
 								</div>
-								<section
-									aria-label="Why this texture is flagged"
-									{...stylex.props(styles.whyPanel)}
-								>
+								<section aria-label="Findings" {...stylex.props(styles.whyPanel)}>
 									<header {...stylex.props(styles.whyHeader)}>
-										<span>Why this texture</span>
-										<b>{current().findings.length}</b>
+										<span>Findings</span>
+										<b {...stylex.props(styles.whyCount)}>
+											{current().findings.length}
+										</b>
 									</header>
 									<Show
 										when={current().findings.length > 0}
 										fallback={
 											<div {...stylex.props(styles.noFinding)}>
-												<strong>No active rule findings</strong>
-												<span>
-													Use the cohort comparison before treating this
-													asset as normal.
-												</span>
+												<strong>No findings.</strong>
+												<span>Every texture passes your rules.</span>
 											</div>
 										}
 									>
@@ -809,10 +838,13 @@ function InvestigationPane(props: {
 													<div {...stylex.props(styles.findingTitle)}>
 														<span
 															{...stylex.props(
-																styles.findingSeverity
+																styles.findingSeverity,
+																finding.severity === "error"
+																	? styles.findingSeverityFail
+																	: styles.findingSeverityWarning
 															)}
 														>
-															{finding.severity}
+															{severityLabel(finding.severity)}
 														</span>
 														<code {...stylex.props(styles.findingRule)}>
 															{finding.ruleId}
@@ -844,7 +876,7 @@ function InvestigationPane(props: {
 								<header {...stylex.props(styles.sectionHeader)}>
 									<div {...stylex.props(styles.comparisonIdentity)}>
 										<h3 {...stylex.props(styles.comparisonTitle)}>
-											Compared with
+											Comparison
 										</h3>
 										<span
 											title={props.comparison?.label}
@@ -912,11 +944,10 @@ function InvestigationPane(props: {
 											<div {...stylex.props(styles.peerList)}>
 												<header {...stylex.props(styles.peerHeader)}>
 													<span {...stylex.props(styles.peerTitle)}>
-														Representative peers
+														Peers
 													</span>
 													<small {...stylex.props(styles.peerSubtitle)}>
-														Closest to the cohort median or selected
-														value
+														Closest to the cohort median
 													</small>
 												</header>
 												<For each={comparison().peers}>
@@ -963,7 +994,7 @@ function InvestigationPane(props: {
 																{...stylex.props(styles.peerStatus)}
 															>
 																{peer.findingCount > 0
-																	? `${peer.findingCount} finding`
+																	? `${peer.findingCount} finding${peer.findingCount === 1 ? "" : "s"}`
 																	: "Pass"}
 															</em>
 														</button>
@@ -980,7 +1011,7 @@ function InvestigationPane(props: {
 								</Show>
 							</section>
 							<section
-								aria-label="Saved texture evidence"
+								aria-label="Texture properties"
 								{...stylex.props(styles.evidencePanel)}
 							>
 								<EvidenceValue
@@ -1096,34 +1127,52 @@ function FindingValues(props: {
 const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
-		padding: "12px 16px 16px",
+		padding: `${tokens.space3} ${tokens.space5}`,
 		color: tokens.colorText,
 		backgroundColor: tokens.colorCanvas
 	},
 	header: {
 		display: "flex",
-		alignItems: "center",
+		alignItems: "flex-start",
 		justifyContent: "space-between",
-		gap: 20,
-		minHeight: 46,
-		marginBottom: 8
+		gap: tokens.space5,
+		paddingBottom: tokens.space4,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		marginBottom: tokens.space5
 	},
 	heading: { minWidth: 0 },
-	breadcrumb: { color: tokens.colorTextFaint, fontSize: 11 },
-	titleRow: { display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 },
-	title: { margin: "2px 0 0", fontSize: 22, fontWeight: 590, letterSpacing: "-0.02em" },
-	subtitle: {
-		overflow: "hidden",
-		color: tokens.colorTextMuted,
-		fontSize: 13,
-		textOverflow: "ellipsis",
-		whiteSpace: "nowrap"
+	title: {
+		margin: 0,
+		color: tokens.colorTextStrong,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em"
 	},
-	rescanButton: {
+	intro: {
+		maxWidth: 560,
+		margin: "6px 0 0",
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.45
+	},
+	primaryButton: {
+		flexShrink: 0,
+		border: `1px solid ${tokens.colorAccent}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
+		color: tokens.colorAccentText,
+		padding: "7px 12px",
+		cursor: "pointer",
+		fontFamily: tokens.fontBody,
+		fontSize: 12,
+		fontWeight: 500,
+		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
+	},
+	secondaryButton: {
 		flexShrink: 0,
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: "6px 10px",
 		cursor: "pointer",
@@ -1131,19 +1180,78 @@ const styles = stylex.create({
 		fontSize: 12,
 		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
 	},
-	empty: {
+	buttonBusy: {
+		color: tokens.colorTextMuted,
+		cursor: "default"
+	},
+	centerState: {
 		minHeight: 430,
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "center",
+		gap: tokens.space2,
+		color: tokens.colorTextMuted,
+		fontSize: 13
+	},
+	spinnerDot: {
+		width: 8,
+		height: 8,
+		borderRadius: "50%",
+		backgroundColor: tokens.colorAccent
+	},
+	noticeCard: {
 		display: "grid",
 		placeItems: "center",
+		minHeight: 430,
 		border: `1px dashed ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted
 	},
-	error: {
-		minHeight: 300,
-		display: "grid",
-		placeItems: "center",
-		border: `1px solid ${tokens.colorDanger}`,
-		color: tokens.colorDanger
+	failureCard: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		maxWidth: 560,
+		margin: `${tokens.space6} auto 0`,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		padding: tokens.space5
+	},
+	failureTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 15,
+		fontWeight: 600
+	},
+	failureRecovery: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.45
+	},
+	technicalDetails: {
+		width: "100%",
+		marginTop: tokens.space1
+	},
+	technicalSummary: {
+		color: tokens.colorTextFaint,
+		cursor: "pointer",
+		fontSize: 12
+	},
+	technicalCode: {
+		display: "block",
+		overflow: "auto",
+		marginTop: tokens.space2,
+		padding: tokens.space2,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		lineHeight: 1.45,
+		whiteSpace: "pre-wrap"
 	},
 	bench: {
 		display: "grid",
@@ -1156,11 +1264,19 @@ const styles = stylex.create({
 	scopeRail: {
 		minWidth: 0,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflowX: "hidden",
 		overflowY: "auto"
 	},
-	auditSummary: { padding: 10, borderBottom: `1px solid ${tokens.colorBorder}` },
+	railTitle: {
+		margin: 0,
+		padding: `${tokens.space2} ${tokens.space2} ${tokens.space1}`,
+		color: tokens.colorTextStrong,
+		fontSize: 12,
+		fontWeight: 600
+	},
+	auditSummary: { padding: tokens.space2, borderBottom: `1px solid ${tokens.colorBorder}` },
 	summaryFinding: { display: "flex", alignItems: "baseline", gap: 6, marginBottom: 9 },
 	summaryCount: { color: tokens.colorTextStrong, fontSize: 17, lineHeight: 1 },
 	summaryUnit: { color: tokens.colorTextMuted, fontSize: 11 },
@@ -1188,16 +1304,23 @@ const styles = stylex.create({
 		width: "100%",
 		display: "flex",
 		justifyContent: "space-between",
+		alignItems: "center",
 		border: 0,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorTextMuted,
-		padding: "8px 10px",
+		padding: "8px 8px",
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
 		fontSize: 12
 	},
 	filterActive: { backgroundColor: "rgba(255, 255, 255, 0.07)", color: tokens.colorTextStrong },
+	findingsCount: {
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		fontWeight: 400
+	},
 	facetList: { paddingBottom: 8 },
 	facet: { padding: "8px 8px 3px", borderBottom: `1px solid ${tokens.colorBorder}` },
 	facetTitle: {
@@ -1225,7 +1348,12 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	facetCount: { fontSize: 11, fontWeight: 500 },
+	facetCount: {
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		fontWeight: 400
+	},
 	facetBar: {
 		gridColumn: "1 / -1",
 		width: "100%",
@@ -1237,6 +1365,7 @@ const styles = stylex.create({
 		display: "flex",
 		flexDirection: "column",
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
 	},
@@ -1264,7 +1393,12 @@ const styles = stylex.create({
 		fontFamily: tokens.fontBody,
 		fontSize: 13
 	},
-	resultCount: { padding: "0 9px", color: tokens.colorTextFaint, fontSize: 11 },
+	resultCount: {
+		padding: "0 9px",
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
+	},
 	columnLabels: {
 		display: "grid",
 		gridTemplateColumns: "1fr 128px",
@@ -1329,7 +1463,15 @@ const styles = stylex.create({
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
 	},
-	rowStatus: { display: "grid", placeItems: "center", width: 22, height: 22, fontSize: 11 },
+	rowStatus: {
+		display: "grid",
+		placeItems: "center",
+		width: 22,
+		height: 22,
+		borderRadius: tokens.radiusBadge,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
+	},
 	rowWarning: { backgroundColor: "rgba(242, 153, 74, 0.12)", color: tokens.colorWarning },
 	rowPass: { backgroundColor: "rgba(76, 183, 130, 0.12)", color: tokens.colorSuccess },
 	noResults: { margin: "auto", padding: 30, color: tokens.colorTextMuted, fontSize: 12 },
@@ -1346,6 +1488,7 @@ const styles = stylex.create({
 	investigation: {
 		minWidth: 0,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflowX: "hidden",
 		overflowY: "auto"
@@ -1353,6 +1496,7 @@ const styles = stylex.create({
 	investigationEmpty: {
 		display: "grid",
 		placeItems: "center",
+		gap: tokens.space1,
 		minHeight: 400,
 		color: tokens.colorTextMuted
 	},
@@ -1369,7 +1513,6 @@ const styles = stylex.create({
 		backgroundColor: tokens.colorCanvasTranslucent
 	},
 	selectedIdentity: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
-	selectedKicker: { color: tokens.colorTextFaint, fontSize: 11 },
 	selectedName: {
 		overflow: "hidden",
 		margin: 0,
@@ -1385,27 +1528,6 @@ const styles = stylex.create({
 		fontSize: 11,
 		textOverflow: "ellipsis",
 		whiteSpace: "nowrap"
-	},
-	primaryAction: {
-		flexShrink: 0,
-		border: `1px solid ${tokens.colorAccent}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
-		color: tokens.colorAccentText,
-		padding: "6px 9px",
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12
-	},
-	secondaryAction: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorText,
-		padding: "5px 8px",
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12
 	},
 	locateMessage: {
 		margin: 0,
@@ -1448,31 +1570,54 @@ const styles = stylex.create({
 		fontSize: 12,
 		textAlign: "center"
 	},
-	whyPanel: { border: `1px solid ${tokens.colorBorder}`, minWidth: 0 },
+	whyPanel: {
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
+		minWidth: 0,
+		overflow: "hidden"
+	},
 	whyHeader: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "6px 8px",
+		borderBottom: `1px solid ${tokens.colorBorder}`,
 		color: tokens.colorTextMuted,
+		fontSize: 11
+	},
+	whyCount: {
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
 		fontSize: 11
 	},
 	noFinding: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
-		padding: 12,
+		gap: tokens.space1,
+		padding: tokens.space3,
 		color: tokens.colorSuccess,
 		fontSize: 12
 	},
-	finding: { padding: 9, borderTop: `1px solid ${tokens.colorBorder}`, fontSize: 12 },
+	finding: { padding: tokens.space2, borderTop: `1px solid ${tokens.colorBorder}`, fontSize: 12 },
 	findingTitle: {
 		display: "flex",
 		justifyContent: "space-between",
-		gap: 8,
-		color: tokens.colorWarningStrong
+		gap: tokens.space2
 	},
-	findingSeverity: { fontSize: 11, textTransform: "capitalize" },
+	findingSeverity: {
+		flexShrink: 0,
+		padding: "1px 6px",
+		borderRadius: tokens.radiusPill,
+		backgroundColor: "rgba(242, 153, 74, 0.14)",
+		color: tokens.colorWarning,
+		fontSize: 11,
+		lineHeight: 1.5
+	},
+	findingSeverityFail: {
+		backgroundColor: "rgba(235, 87, 87, 0.14)",
+		color: tokens.colorDanger
+	},
+	findingSeverityWarning: {},
 	findingRule: {
 		overflow: "hidden",
 		color: tokens.colorTextMuted,
@@ -1491,7 +1636,12 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		fontSize: 12
 	},
-	comparisonPanel: { margin: "0 8px 8px", border: `1px solid ${tokens.colorBorder}` },
+	comparisonPanel: {
+		margin: `0 ${tokens.space2} ${tokens.space2}`,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
+		overflow: "hidden"
+	},
 	sectionHeader: {
 		display: "flex",
 		justifyContent: "space-between",
@@ -1501,7 +1651,12 @@ const styles = stylex.create({
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	comparisonIdentity: { minWidth: 0 },
-	comparisonTitle: { margin: 0, color: tokens.colorTextMuted, fontSize: 11, fontWeight: 500 },
+	comparisonTitle: {
+		margin: 0,
+		color: tokens.colorTextStrong,
+		fontSize: 13,
+		fontWeight: 600
+	},
 	comparisonLabel: {
 		display: "block",
 		overflow: "hidden",
@@ -1602,9 +1757,10 @@ const styles = stylex.create({
 	evidencePanel: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-		margin: "0 8px 10px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		borderLeft: `1px solid ${tokens.colorBorder}`
+		margin: `0 ${tokens.space2} ${tokens.space2}`,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
+		overflow: "hidden"
 	},
 	evidenceValue: {
 		display: "flex",

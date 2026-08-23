@@ -2,7 +2,7 @@
 	"schemaVersion": 1,
 	"feature": "plugin-distribution",
 	"mode": "existing-host-package",
-	"description": "Verified immutable UE Shed Unreal plugin installation and scoped leasing",
+	"description": "Exact source and compiled Unreal plugin acquisition, building, caching, and scoped leasing",
 	"release": {
 		"package": "@ue-shed/plugin-distribution",
 		"versionSource": "package.json",
@@ -14,17 +14,21 @@
 		"host": "@ue-shed/plugin-distribution"
 	},
 	"packageGraph": {
-		"dependencies": {},
+		"dependencies": {
+			"@ue-shed/engine": "0.4.0"
+		},
 		"peerDependencies": {
 			"effect": "4.0.0-beta.98"
 		},
-		"runtimeProviders": ["PluginReleaseSource", "PluginStore"]
+		"runtimeProviders": ["PluginReleaseSource", "PluginStore", "OwnedProcessTree"]
 	},
 	"hostIntegration": {
 		"ownership": "consumer",
 		"requiredSeams": [
 			"exact-release-policy",
 			"caller-owned-cache-root",
+			"exact-engine-build-identity",
+			"caller-owned-build-output",
 			"scoped-effect-runtime",
 			"supervised-editor-launch"
 		],
@@ -32,7 +36,14 @@
 	},
 	"conformance": {
 		"sourceCommand": "pnpm test:release:packages",
-		"journey": ["install-local", "install-http", "reuse-offline", "lease", "prune"],
+		"journey": [
+			"build-compiled-graph",
+			"install-local",
+			"install-http",
+			"reuse-offline",
+			"lease-exact-variant",
+			"prune-exact-variant"
+		],
 		"targetMustVerifyPackagedRuntime": true,
 		"targetMustUseRealHostTransport": true,
 		"targetMustRecordAdoptionReceipt": true

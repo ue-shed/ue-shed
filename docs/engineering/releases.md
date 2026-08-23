@@ -122,12 +122,21 @@ node scripts/plugin-bundle.ts bundle --version <version> `
 pnpm ue-shed plugins verify out/plugins-map-review/plugins.manifest.json
 ```
 
-`pnpm release:plugins:map-review` prepares future GitHub Release assets named
+`pnpm release:plugins:map-review` now requires `--candidate-manifest`, `--commit`, and `--ref`; its
+public integrity gate rejects local refs, placeholder digests, shortened commits, version drift,
+missing assets, and digest drift. It prepares future GitHub Release assets named
 `ue-shed-plugins-map-review-<version>.manifest.json` and
 `ue-shed-plugins-map-review-<version>.tar.gz`. Publish them only from the exact reviewed future
-release commit; do not reconstruct or replace the immutable `0.3.0` release. Trusted hosts consume
+release commit. Do not reconstruct or replace an existing immutable release, including the
+source-only `0.4.0` package release. Trusted hosts consume
 those assets through `@ue-shed/plugin-distribution`, which retains them in a caller-owned cache and
 leases verified absolute descriptor paths without mutating a project.
+
+Compiled variants are downstream build products, not a side effect of acquisition. See
+[Plugin distribution](plugin-distribution.md) for the exact `plugins build` command, BuildId
+contract, immutable variant naming, and hosting boundary. A public compiled artifact inherits a
+fully pinned source manifest; output derived from `ref: "local"` or an all-zero candidate digest is
+local evidence only and cannot pass the release gate.
 
 For a headless Observatory host, select only Observatory:
 

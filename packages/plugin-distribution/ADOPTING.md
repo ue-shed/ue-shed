@@ -4,20 +4,28 @@ Read [`adoption.manifest.json`](adoption.manifest.json) first. Install one exact
 suite version and compose the package only in a trusted Node process.
 
 1. Choose a caller-owned absolute cache root and its retention policy.
-2. Provide one source layer: local artifacts, direct immutable HTTP assets, or the GitHub Release
-   adapter.
-3. Provide `pluginStoreLayer({ cacheRoot })` and `pluginDistributionLayer()` once for the host
+2. Choose source or a compiled variant explicitly. A compiled request must use the host editor's
+   exact Unreal version, `.modules` BuildId, platform, architecture, target, and configuration.
+3. Provide one source layer: local artifacts, direct immutable HTTP assets, GitHub Release, or a
+   host-owned internal-registry adapter.
+4. Provide `pluginStoreLayer({ cacheRoot })` and `pluginDistributionLayer()` once for the host
    runtime.
-4. Install an exact release and requested plugin IDs inside the same Effect scope as the supervised
+5. Install an exact release and requested plugin IDs inside the same Effect scope as the supervised
    Unreal editor session. Pass the returned absolute descriptor paths to `@ue-shed/engine`.
-5. Keep runtime capability requirements separate. Negotiate them after Unreal is ready through
+6. Keep runtime capability requirements separate. Negotiate them after Unreal is ready through
    `@ue-shed/engine` / `@ue-shed/unreal-connection`.
-6. Surface `PluginInstallProgress` and tagged errors without parsing messages. Support an
+7. Surface `PluginInstallProgress` and tagged errors without parsing messages. Support an
    explicit cache-only policy and explicit pruning.
+
+Building is separate from installation. A trusted downstream build host may invoke
+`CompiledPluginBuilder` or `ue-shed plugins build` with an explicit engine, pinned source artifact,
+caller-owned output directory, and compiler provenance, then sign and host the immutable result.
+UE Shed never receives the proprietary engine or registry credentials.
 
 The adopting host owns cache location, update policy, user presentation, and mapping product
 capabilities to UE Shed plugin IDs. Do not copy Workbench code, install into `<Project>/Plugins`, use
-floating releases, or close the install scope while Unreal still uses a descriptor.
+floating releases, allow binary-to-source fallback, or close the install scope while Unreal still
+uses a descriptor.
 
 Verify the packed consumer with `pnpm test:release:packages`, then prove installation and supervised
 launch through the adopting host's real packaged transport.

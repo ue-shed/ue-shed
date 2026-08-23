@@ -9,7 +9,7 @@ import type {
 	CustodianTargetId,
 	CustodianTarget
 } from "@ue-shed/project-custodian/browser";
-import { Button, createEffectAction, PageHeader } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import { createMemo, createSignal, For, Match, onMount, Show, Switch } from "solid-js";
@@ -36,6 +36,29 @@ type CleanupState =
 	| { readonly stage: "executing"; readonly proposal: CustodianProposal }
 	| { readonly stage: "result"; readonly receipt: CustodianReceipt }
 	| { readonly stage: "failed"; readonly error: CustodianPublicError };
+
+type FailureParts = {
+	readonly summary: string;
+	readonly technical: string | undefined;
+};
+
+// A public error is one sentence; a pretty-printed Cause is not. Show the first line and keep the
+// rest behind a disclosure so a failure never reads as a stack trace.
+function failureParts(message: string): FailureParts {
+	if (message.length <= 160 && !message.includes("\n")) {
+		return { summary: message, technical: undefined };
+	}
+	const [firstLine] = message.split("\n");
+	return { summary: (firstLine ?? message).slice(0, 160).trim(), technical: message };
+}
+
+function capitalize(value: string): string {
+	return value.replace(/^./u, (character) => character.toLocaleUpperCase());
+}
+
+function plural(count: number, singular: string, pluralForm: string): string {
+	return `${count} ${count === 1 ? singular : pluralForm}`;
+}
 
 function humanBytes(bytes: number): string {
 	const units = ["B", "KB", "MB", "GB", "TB"] as const;
@@ -121,37 +144,46 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 		});
 	};
 
+	const failedState = createMemo(() => {
+		const current = state();
+		return current.status === "failed" ? current : undefined;
+	});
+
 	onMount(() => run(() => props.client.configuredScan()));
 
 	return (
 		<main {...stylex.props(styles.page)}>
-			<PageHeader
-				eyebrow="Project Custodian · storage evidence"
-				actions={
-					<>
-						<Button
-							tone="quiet"
-							disabled={state().status === "loading" || report() === undefined}
-							onClick={() => run(() => props.client.configuredScan())}
-						>
-							Rescan
-						</Button>
-						<Button
-							tone="primary"
-							disabled={state().status === "loading"}
-							onClick={() => run(() => props.client.chooseAndScan())}
-						>
-							Choose scan root…
-						</Button>
-					</>
-				}
-			/>
+			<header {...stylex.props(styles.header)}>
+				<div>
+					<h1 {...stylex.props(styles.title)}>Project custodian</h1>
+					<p {...stylex.props(styles.intro)}>
+						Find the rebuildable Unreal output eating your disk, and reclaim it through
+						a cleanup you review and approve first.
+					</p>
+				</div>
+				<div {...stylex.props(styles.headerActions)}>
+					<Button
+						tone="quiet"
+						disabled={state().status === "loading" || report() === undefined}
+						onClick={() => run(() => props.client.configuredScan())}
+					>
+						Rescan
+					</Button>
+					<Button
+						tone="primary"
+						disabled={state().status === "loading"}
+						onClick={() => run(() => props.client.chooseAndScan())}
+					>
+						Choose scan root…
+					</Button>
+				</div>
+			</header>
 
 			<div {...stylex.props(styles.safetyRail)}>
-				<span {...stylex.props(styles.safetyMark)}>GUARDED CLEANUP</span>
+				<span {...stylex.props(styles.safetyMark)}>Guarded cleanup</span>
 				<span>
-					Every run creates a durable proposal, requires its exact approval phrase, and
-					revalidates targets before Trash or permanent deletion.
+					Nothing is removed until you approve a written proposal by phrase, and every
+					target is rechecked immediately before it moves.
 				</span>
 			</div>
 
@@ -163,15 +195,14 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 
 			<Switch>
 				<Match when={state().status === "loading"}>
-					<EmptyState index="00" title="Reading the rebuildable layer.">
-						Walking known Unreal output directories and resolving safety policy.
-						Authored content is never a candidate.
-					</EmptyState>
+					<p aria-live="polite" {...stylex.props(styles.loadingLine)}>
+						Reading Unreal output directories under the scan root…
+					</p>
 				</Match>
 				<Match when={state().status === "not_configured" || state().status === "cancelled"}>
-					<EmptyState index="01" title="Name the ground to inspect.">
-						Choose a project, engine directory, or parent folder. The scan never expands
-						beyond that root.
+					<EmptyState title="Choose a scan root">
+						Point at a project, an engine directory, or a folder holding several. The
+						scan never looks outside the root you name.
 						<div {...stylex.props(styles.emptyAction)}>
 							<Button
 								tone="primary"
@@ -182,26 +213,37 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 						</div>
 					</EmptyState>
 				</Match>
-				<Match when={state().status === "failed"}>
-					<Show when={state()} keyed>
-						{(current: ViewState) => (
-							<section {...stylex.props(styles.error)}>
-								<span>
-									{current.status === "failed" ? current.error.code : "failed"}
-								</span>
-								<h1>
-									{current.status === "failed"
-										? current.error.message
-										: "Scan failed."}
-								</h1>
-								<p>
-									{current.status === "failed"
-										? current.error.recovery
-										: "Retry."}
+				<Match when={failedState()}>
+					{(failed) => {
+						const parts = createMemo(() => failureParts(failed().error.message));
+						return (
+							<section role="alert" {...stylex.props(styles.error)}>
+								<strong {...stylex.props(styles.errorTitle)}>
+									Couldn’t scan that root
+								</strong>
+								<p {...stylex.props(styles.errorMessage)}>{parts().summary}</p>
+								<p {...stylex.props(styles.errorRecovery)}>
+									{failed().error.recovery}
 								</p>
+								<div {...stylex.props(styles.errorActions)}>
+									<Button
+										tone="secondary"
+										onClick={() => run(() => props.client.configuredScan())}
+									>
+										Retry
+									</Button>
+								</div>
+								<Show when={parts().technical}>
+									{(technical) => (
+										<details {...stylex.props(styles.errorDetails)}>
+											<summary>Technical details</summary>
+											<code>{technical()}</code>
+										</details>
+									)}
+								</Show>
 							</section>
-						)}
-					</Show>
+						);
+					}}
 				</Match>
 				<Match when={report()}>
 					{(current: Accessor<CustodianReport>) => (
@@ -228,14 +270,9 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 	);
 }
 
-function EmptyState(props: {
-	readonly index: string;
-	readonly title: string;
-	readonly children: JSX.Element;
-}) {
+function EmptyState(props: { readonly title: string; readonly children: JSX.Element }) {
 	return (
 		<section {...stylex.props(styles.empty)}>
-			<span {...stylex.props(styles.emptyIndex)}>{props.index}</span>
 			<h1>{props.title}</h1>
 			<div {...stylex.props(styles.emptyCopy)}>{props.children}</div>
 		</section>
@@ -275,7 +312,7 @@ function CustodianLedger(props: {
 
 			<section aria-label="Disk pressure" {...stylex.props(styles.pressure)}>
 				<div {...stylex.props(styles.pressureHead)}>
-					<span>VOLUME PRESSURE</span>
+					<span>Disk pressure</span>
 					<strong>
 						{humanBytes(props.report.freeBytes)} free /{" "}
 						{humanBytes(props.report.plan.thresholdBytes)} target
@@ -294,8 +331,8 @@ function CustodianLedger(props: {
 			<div {...stylex.props(styles.columns)}>
 				<section aria-label="Custodian inventory" {...stylex.props(styles.inventory)}>
 					<SectionHeader
-						left={"INVENTORY / " + props.inventory.length.toString().padStart(2, "0")}
-						right={leaf(props.report.root)}
+						left="Inventory"
+						right={`${plural(props.inventory.length, "item", "items")} in ${leaf(props.report.root)}`}
 					/>
 					<Show
 						when={props.inventory.length > 0}
@@ -305,16 +342,14 @@ function CustodianLedger(props: {
 							</p>
 						}
 					>
-						<For each={props.inventory}>
-							{(item, index) => <InventoryRow item={item} index={index()} />}
-						</For>
+						<For each={props.inventory}>{(item) => <InventoryRow item={item} />}</For>
 					</Show>
 				</section>
 
 				<aside aria-label="Dry-run plan" {...stylex.props(styles.plan)}>
 					<SectionHeader
-						left="DRY-RUN QUEUE"
-						right={props.report.plan.items.length.toString().padStart(2, "0")}
+						left="Dry-run queue"
+						right={plural(props.report.plan.items.length, "item", "items")}
 					/>
 					<Show
 						when={props.report.plan.items.length > 0}
@@ -327,12 +362,12 @@ function CustodianLedger(props: {
 						<For each={props.report.plan.items}>
 							{(item, index) => (
 								<div {...stylex.props(styles.planItem)}>
-									<span {...stylex.props(styles.planOrder)}>
-										{String(index() + 1).padStart(2, "0")}
-									</span>
+									<span {...stylex.props(styles.planOrder)}>{index() + 1}</span>
 									<div>
 										<strong>{item.name}</strong>
-										<small>{item.targets.length} known targets</small>
+										<small>
+											{plural(item.targets.length, "target", "targets")}
+										</small>
 									</div>
 									<b>{humanBytes(item.bytes)}</b>
 								</div>
@@ -341,9 +376,9 @@ function CustodianLedger(props: {
 					</Show>
 					<footer {...stylex.props(styles.planFooter)}>
 						<div>
-							<span>EXECUTION</span>
+							<span>Cleanup</span>
 							<strong>
-								{props.report.plan.items.length > 0 ? "AVAILABLE" : "NO QUEUE"}
+								{props.report.plan.items.length > 0 ? "Ready" : "Nothing queued"}
 							</strong>
 						</div>
 						<Button
@@ -357,8 +392,8 @@ function CustodianLedger(props: {
 				</aside>
 			</div>
 			<footer {...stylex.props(styles.provenance)}>
-				Measured {new Date(props.report.measuredAt).toLocaleString()} · explicit root{" "}
-				{props.report.root} · authored directories excluded by construction
+				Measured {new Date(props.report.measuredAt).toLocaleString()} under{" "}
+				{props.report.root}. Authored directories are never scanned.
 			</footer>
 		</>
 	);
@@ -366,13 +401,10 @@ function CustodianLedger(props: {
 
 function planExplanation(report: CustodianReport): string {
 	if (report.plan.status === "pressure_satisfied")
-		return "Pressure threshold satisfied. Inventory remains visible; the automatic queue is empty.";
+		return "You have enough free space, so nothing is queued. The inventory below still shows what could be reclaimed.";
 	if (report.plan.status === "nothing_eligible")
-		return "No eligible rebuildable output is old enough to queue.";
-	return (
-		report.plan.items.length +
-		" largest item(s) would restore the configured free-space target."
-	);
+		return "No rebuildable output is old enough to queue yet.";
+	return `The ${plural(report.plan.items.length, "largest item", "largest items")} would bring you back to the free-space target.`;
 }
 
 function Metric(props: { readonly label: string; readonly value: string }) {
@@ -393,7 +425,7 @@ function SectionHeader(props: { readonly left: string; readonly right: string })
 	);
 }
 
-function InventoryRow(props: { readonly item: InventoryItem; readonly index: number }) {
+function InventoryRow(props: { readonly item: InventoryItem }) {
 	const status = () =>
 		props.item.kind === "project"
 			? eligibilityLabel(props.item)
@@ -401,16 +433,13 @@ function InventoryRow(props: { readonly item: InventoryItem; readonly index: num
 	return (
 		<details {...stylex.props(styles.row)}>
 			<summary {...stylex.props(styles.rowSummary)}>
-				<span {...stylex.props(styles.rowIndex)}>
-					{String(props.index + 1).padStart(2, "0")}
-				</span>
 				<span
 					{...stylex.props(
 						styles.kind,
 						props.item.kind === "engine" && styles.engineKind
 					)}
 				>
-					{props.item.kind === "project" ? "PROJECT" : "ENGINE"}
+					{props.item.kind === "project" ? "Project" : "Engine"}
 				</span>
 				<span {...stylex.props(styles.identity)}>
 					<strong>{props.item.name}</strong>
@@ -424,7 +453,7 @@ function InventoryRow(props: { readonly item: InventoryItem; readonly index: num
 				<For each={props.item.refusals}>
 					{(entry) => (
 						<div {...stylex.props(styles.refusal)}>
-							<span>LOCKED</span>
+							<span>Locked</span>
 							<strong>{entry.relativePath}</strong>
 							<small>{entry.reason}</small>
 						</div>
@@ -442,7 +471,7 @@ function TargetRow(props: { readonly target: CustodianTarget }) {
 		];
 	return (
 		<div {...stylex.props(styles.target)}>
-			<span {...stylex.props(styles.risk, riskStyle())}>{props.target.risk}</span>
+			<span {...stylex.props(styles.risk, riskStyle())}>{capitalize(props.target.risk)}</span>
 			<div>
 				<strong>{props.target.relativePath}</strong>
 				<small>{props.target.rebuildCost}</small>
@@ -497,7 +526,7 @@ function CleanupWorkflow(props: {
 	const clientFailure = (cause: Cause.Cause<unknown>): CustodianPublicError => ({
 		code: "execution_failed",
 		message: Cause.pretty(cause),
-		recovery: "Restart Workbench, rescan the root, and inspect durable cleanup records.",
+		recovery: "Restart Workbench, rescan the root, and check the cleanup log for what ran.",
 		retrySafe: false
 	});
 	const prepare = () => {
@@ -556,8 +585,10 @@ function CleanupWorkflow(props: {
 			>
 				<header {...stylex.props(styles.workflowHeader)}>
 					<div>
-						<span {...stylex.props(styles.workflowKicker)}>DESTRUCTIVE BOUNDARY</span>
 						<h2 id="custodian-cleanup-title">Review cleanup</h2>
+						<span {...stylex.props(styles.workflowKicker)}>
+							Nothing moves until you approve the exact phrase.
+						</span>
 					</div>
 					<button
 						type="button"
@@ -571,7 +602,7 @@ function CleanupWorkflow(props: {
 				</header>
 
 				<ol aria-label="Cleanup workflow progress" {...stylex.props(styles.workflowSteps)}>
-					<For each={["SELECT", "APPROVE", "EXECUTE"] as const}>
+					<For each={["Select", "Approve", "Execute"] as const}>
 						{(label, index) => (
 							<li
 								{...stylex.props(
@@ -579,7 +610,6 @@ function CleanupWorkflow(props: {
 									index() <= step() && styles.workflowStepActive
 								)}
 							>
-								<span>{String(index() + 1).padStart(2, "0")}</span>
 								<strong>{label}</strong>
 							</li>
 						)}
@@ -593,12 +623,10 @@ function CleanupWorkflow(props: {
 								aria-label="Select cleanup targets"
 								{...stylex.props(styles.workflowStage)}
 							>
-								<p {...stylex.props(styles.workflowIndex)}>01 / SELECT TARGETS</p>
-								<h3>Choose the rebuildable layer to reclaim.</h3>
+								<h3>Choose what to reclaim</h3>
 								<p {...stylex.props(styles.workflowCopy)}>
-									The proposal records exact target IDs and measured bytes.
-									Authored Content, Source, Config, project roots, and save games
-									cannot enter this list.
+									Only rebuildable output can appear here. Content, Source,
+									Config, project roots, and save games are never candidates.
 								</p>
 								<div {...stylex.props(styles.modeGrid)}>
 									<label
@@ -677,14 +705,11 @@ function CleanupWorkflow(props: {
 										aria-label="Approve cleanup proposal"
 										{...stylex.props(styles.workflowStage)}
 									>
-										<p {...stylex.props(styles.workflowIndex)}>
-											02 / APPROVE PROPOSAL
-										</p>
-										<h3>The plan is now durable.</h3>
+										<h3>Nothing has moved yet</h3>
 										<p {...stylex.props(styles.workflowCopy)}>
-											Nothing has moved yet. The executor will rescan every
-											target, refuse drift, and refuse while any Unreal Editor
-											is running.
+											The cleanup rechecks every target before it runs, stops
+											if anything changed since the scan, and refuses to run
+											while an Unreal Editor is open.
 										</p>
 										<dl {...stylex.props(styles.proposalFacts)}>
 											<div {...stylex.props(styles.proposalFact)}>
@@ -744,13 +769,12 @@ function CleanupWorkflow(props: {
 								{...stylex.props(styles.executing)}
 							>
 								<span {...stylex.props(styles.executionPulse)} />
-								<p {...stylex.props(styles.workflowIndex)}>03 / EXECUTE</p>
 								<h3>
 									{cancelRequested()
-										? "Cancelling remaining targets…"
-										: "Revalidating, then reclaiming."}
+										? "Cancelling the remaining targets…"
+										: "Rechecking, then reclaiming…"}
 								</h3>
-								<p>Each completed target is appended to the durable event log.</p>
+								<p>Each finished target is written to the cleanup log.</p>
 							</section>
 						</Match>
 
@@ -768,11 +792,19 @@ function CleanupWorkflow(props: {
 								if (current.stage !== "failed") return null;
 								return (
 									<section role="alert" {...stylex.props(styles.workflowFailure)}>
-										<p {...stylex.props(styles.workflowIndex)}>
-											CLEANUP FAILED
+										<h3>Couldn’t finish the cleanup</h3>
+										<p>{failureParts(current.error.message).summary}</p>
+										<p {...stylex.props(styles.workflowCopy)}>
+											{current.error.recovery}
 										</p>
-										<h3>{current.error.message}</h3>
-										<p>{current.error.recovery}</p>
+										<Show when={failureParts(current.error.message).technical}>
+											{(technical) => (
+												<details {...stylex.props(styles.errorDetails)}>
+													<summary>Technical details</summary>
+													<code>{technical()}</code>
+												</details>
+											)}
+										</Show>
 									</section>
 								);
 							})()}
@@ -787,10 +819,11 @@ function CleanupWorkflow(props: {
 							onClick={props.onClose}
 							{...stylex.props(styles.secondaryAction)}
 						>
-							CANCEL
+							Cancel
 						</button>
 						<span {...stylex.props(styles.selectionTotal)}>
-							{selectedIds().length} TARGETS · {humanBytes(selectedBytes())}
+							{plural(selectedIds().length, "target", "targets")} ·{" "}
+							{humanBytes(selectedBytes())}
 						</span>
 						<button
 							type="button"
@@ -798,7 +831,7 @@ function CleanupWorkflow(props: {
 							onClick={prepare}
 							{...stylex.props(styles.primaryAction)}
 						>
-							{state().stage === "preparing" ? "CREATING…" : "CREATE PROPOSAL →"}
+							{state().stage === "preparing" ? "Creating…" : "Create proposal"}
 						</button>
 					</Show>
 					<Show when={state().stage === "approve"}>
@@ -812,7 +845,7 @@ function CleanupWorkflow(props: {
 										onClick={props.onClose}
 										{...stylex.props(styles.secondaryAction)}
 									>
-										CLOSE
+										Close
 									</button>
 									<button
 										type="button"
@@ -821,8 +854,8 @@ function CleanupWorkflow(props: {
 										{...stylex.props(styles.dangerAction)}
 									>
 										{current.proposal.mode === "trash"
-											? "MOVE TO TRASH"
-											: "DELETE PERMANENTLY"}
+											? "Move to Trash"
+											: "Delete permanently"}
 									</button>
 								</>
 							);
@@ -839,7 +872,7 @@ function CleanupWorkflow(props: {
 									onClick={() => cancel(current.proposal)}
 									{...stylex.props(styles.secondaryAction)}
 								>
-									CANCEL REMAINING
+									Cancel remaining
 								</button>
 							);
 						})()}
@@ -850,7 +883,7 @@ function CleanupWorkflow(props: {
 							onClick={props.onFinished}
 							{...stylex.props(styles.primaryAction)}
 						>
-							DONE · RESCAN
+							Rescan
 						</button>
 					</Show>
 				</footer>
@@ -866,15 +899,14 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 			aria-live="polite"
 			{...stylex.props(styles.workflowStage)}
 		>
-			<p {...stylex.props(styles.workflowIndex)}>03 / {props.receipt.status.toUpperCase()}</p>
 			<h3>
 				{props.receipt.status === "completed"
-					? "Cleanup finished with durable evidence."
+					? "Cleanup finished"
 					: props.receipt.status === "refused"
-						? "Cleanup was refused before mutation."
+						? "Cleanup was refused before anything moved"
 						: props.receipt.status === "cancelled"
-							? "Remaining targets were cancelled."
-							: "Cleanup completed partially."}
+							? "The remaining targets were cancelled"
+							: "Cleanup finished partially"}
 			</h3>
 			<Show when={props.receipt.refusal} keyed>
 				{(refusal) => (
@@ -893,31 +925,33 @@ function CleanupResult(props: { readonly receipt: CustodianReceipt }) {
 							).length
 						}
 					</strong>
-					<span>PROCESSED</span>
+					<span>Processed</span>
 				</div>
 				<div {...stylex.props(styles.resultDatum)}>
 					<strong>{humanBytes(props.receipt.processedBytes)}</strong>
-					<span>{props.receipt.mode === "trash" ? "MOVED" : "DELETED"}</span>
+					<span>{props.receipt.mode === "trash" ? "Moved" : "Deleted"}</span>
 				</div>
 				<div {...stylex.props(styles.resultDatum)}>
 					<strong>
 						{props.receipt.entries.filter(({ status }) => status === "failed").length}
 					</strong>
-					<span>FAILED</span>
+					<span>Failed</span>
 				</div>
 			</div>
 			<ul {...stylex.props(styles.receiptEntries)}>
 				<For each={props.receipt.entries}>
 					{(entry) => (
 						<li {...stylex.props(styles.receiptEntry)}>
-							<span>{entry.status.toUpperCase()}</span>
+							<span>{capitalize(entry.status)}</span>
 							<strong>{entry.relativePath}</strong>
 							<small>{entry.message ?? humanBytes(entry.bytes)}</small>
 						</li>
 					)}
 				</For>
 			</ul>
-			<p {...stylex.props(styles.receiptPath)}>Receipt · {props.receipt.receiptPath}</p>
+			<p {...stylex.props(styles.receiptPath)}>
+				Cleanup record · {props.receipt.receiptPath}
+			</p>
 		</section>
 	);
 }
@@ -950,6 +984,54 @@ const styles = stylex.create({
 		letterSpacing: ".03em"
 	},
 	safetyMark: { color: tokens.colorSuccess, fontWeight: 590, letterSpacing: "0" },
+	header: {
+		alignItems: "flex-start",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		display: "flex",
+		gap: tokens.space4,
+		justifyContent: "space-between",
+		marginBottom: tokens.space4,
+		paddingBottom: tokens.space4
+	},
+	headerActions: { alignItems: "center", display: "flex", gap: tokens.space2 },
+	title: {
+		color: tokens.colorTextStrong,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		margin: 0
+	},
+	intro: {
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5,
+		margin: "4px 0 0",
+		maxWidth: 560
+	},
+	loadingLine: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		padding: "56px 0",
+		textAlign: "center"
+	},
+	errorTitle: { color: tokens.colorTextStrong, fontSize: 17, fontWeight: 590 },
+	errorMessage: { fontSize: 13, lineHeight: 1.6, margin: "8px 0 0" },
+	errorRecovery: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.6,
+		margin: "6px 0 0"
+	},
+	errorActions: { display: "flex", gap: tokens.space2, marginTop: tokens.space3 },
+	errorDetails: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		marginTop: tokens.space3,
+		whiteSpace: "pre-wrap"
+	},
 	loading: { height: 2, overflow: "hidden", backgroundColor: tokens.colorBorder },
 	loadingBar: {
 		display: "block",

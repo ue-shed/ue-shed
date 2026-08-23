@@ -128,8 +128,8 @@ describe("ProjectCustodianRoute", () => {
 				<ProjectCustodianRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		await screen.findByRole("heading", { name: "Name the ground to inspect." });
-		expect(screen.getByText("GUARDED CLEANUP")).toBeDefined();
+		await screen.findByRole("heading", { name: "Choose a scan root" });
+		expect(screen.getByText("Guarded cleanup")).toBeDefined();
 		expect(screen.queryByRole("button", { name: /delete|clean|apply/iu })).toBeNull();
 
 		fireEvent.click(screen.getAllByRole("button", { name: "Choose scan root…" })[0]!);
@@ -151,7 +151,7 @@ describe("ProjectCustodianRoute", () => {
 
 		await screen.findByRole("region", { name: "Storage summary" });
 		expect(screen.getAllByText("Lyra")).toHaveLength(2);
-		expect(screen.getByText("AVAILABLE")).toBeDefined();
+		expect(screen.getByText("Ready")).toBeDefined();
 		expect(screen.getByRole("button", { name: "Review cleanup…" })).toBeDefined();
 	});
 
@@ -231,10 +231,10 @@ describe("ProjectCustodianRoute", () => {
 		await screen.findByRole("button", { name: "Review cleanup…" });
 		fireEvent.click(screen.getByRole("button", { name: "Review cleanup…" }));
 		await screen.findByRole("dialog", { name: "Review cleanup" });
-		fireEvent.click(screen.getByRole("button", { name: "CREATE PROPOSAL →" }));
+		fireEvent.click(screen.getByRole("button", { name: "Create proposal" }));
 		await waitFor(() => expect(prepared).toBe(1));
 		await screen.findByRole("region", { name: "Approve cleanup proposal" });
-		const executeButton = screen.getByRole("button", { name: "MOVE TO TRASH" });
+		const executeButton = screen.getByRole("button", { name: "Move to Trash" });
 		expect(executeButton).toHaveProperty("disabled", true);
 		fireEvent.input(screen.getByRole("textbox"), {
 			target: { value: proposal.approvalPhrase }
@@ -243,6 +243,6 @@ describe("ProjectCustodianRoute", () => {
 		fireEvent.click(executeButton);
 		await waitFor(() => expect(executed).toBe(1));
 		await screen.findByRole("region", { name: "Cleanup result" });
-		expect(screen.getByText("Cleanup finished with durable evidence.")).toBeDefined();
+		expect(screen.getByText("Cleanup finished")).toBeDefined();
 	});
 });

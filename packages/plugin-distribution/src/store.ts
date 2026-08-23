@@ -282,7 +282,11 @@ async function assertRegularCacheFile(path: string): Promise<void> {
 	}
 }
 
-async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: string) {
+async function assertStoredRootWithinCache(
+	cacheRoot: string,
+	releaseVersion: string,
+	root: string
+): Promise<void> {
 	const details = await lstat(root);
 	if (!details.isDirectory() || details.isSymbolicLink()) {
 		throw corrupt(releaseVersion, root, "Cached release is not a regular directory.");
@@ -293,6 +297,10 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: 
 	if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
 		throw corrupt(releaseVersion, root, "Cached release escapes its configured root.");
 	}
+}
+
+async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: string) {
+	await assertStoredRootWithinCache(cacheRoot, releaseVersion, root);
 	let metadata: StoredMetadata;
 	try {
 		await assertRegularCacheFile(join(root, metadataFile));
@@ -451,6 +459,26 @@ async function storedLocations(cacheRoot: string, releaseVersion: string): Promi
 	return locations.sort();
 }
 
+async function exactStoredLocation(
+	cacheRoot: string,
+	reference: PluginVariantReference
+): Promise<string | undefined> {
+	for (const location of [
+		variantPath(cacheRoot, reference.releaseVersion, reference.variantIdentity),
+		versionPath(cacheRoot, reference.releaseVersion)
+	]) {
+		try {
+			await lstat(location);
+			return location;
+		} catch (cause) {
+			if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") {
+				throw cause;
+			}
+		}
+	}
+	return undefined;
+}
+
 function allStored(cacheRoot: string, releaseVersion: string) {
 	return Effect.tryPromise({
 		try: () => storedLocations(cacheRoot, releaseVersion),
@@ -602,34 +630,54 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				catch: (cause) => storageError("unknown", "Create plugin cache root", cause)
 			}).pipe(Effect.orDie);
 
+			const decodeVariantReference = (reference: PluginVariantReference) =>
+				Schema.decodeUnknownEffect(PluginVariantReference)(reference, {
+					onExcessProperty: "error"
+				}).pipe(
+					Effect.mapError(
+						() =>
+							new PluginDistributionValidationError({
+								field: "variantIdentity",
+								message: "Cached plugin variant reference is invalid.",
+								recovery: "Use an exact reference returned by install or list.",
+								retrySafe: false
+							})
+					)
+				);
+
+			const missingExactVariant = (reference: PluginVariantReference) =>
+				new PluginDistributionValidationError({
+					field: "variantIdentity",
+					message: `Cached plugin variant ${reference.variantIdentity} does not exist for release ${reference.releaseVersion}.`,
+					recovery: "Install the exact variant or use a reference returned by list.",
+					retrySafe: false
+				});
+
 			const resolveReference = Effect.fn("PluginStore.resolveReference")((
 				reference: string | PluginVariantReference
 			) => {
 				const exactVariant = (decoded: PluginVariantReference) =>
-					allStored(cacheRoot, decoded.releaseVersion).pipe(
-						Effect.flatMap((releases) => {
-							const matching = releases.filter(
-								(release) => release.variantIdentity === decoded.variantIdentity
-							);
-							if (matching.length === 1 && matching[0] !== undefined) {
-								return Effect.succeed(matching[0]);
-							}
-							return Effect.fail(
-								new PluginDistributionValidationError({
-									field: "variantIdentity",
-									message:
-										matching.length === 0
-											? `Cached plugin variant ${decoded.variantIdentity} does not exist for release ${decoded.releaseVersion}.`
-											: `Cached plugin variant ${decoded.variantIdentity} is ambiguous for release ${decoded.releaseVersion}.`,
-									recovery:
-										matching.length === 0
-											? "Install the exact variant or use a reference returned by list."
-											: "Remove the duplicate cache entry after confirming that no active lease uses it.",
-									retrySafe: false
-								})
-							);
-						})
-					);
+					Effect.gen(function* () {
+						const location = yield* Effect.tryPromise({
+							try: () => exactStoredLocation(cacheRoot, decoded),
+							catch: (cause) =>
+								storageError(
+									decoded.releaseVersion,
+									"Locate exact plugin variant",
+									cause
+								)
+						});
+						if (location === undefined) return yield* missingExactVariant(decoded);
+						const release = yield* verifyStored(
+							cacheRoot,
+							decoded.releaseVersion,
+							location
+						);
+						if (release.variantIdentity !== decoded.variantIdentity) {
+							return yield* missingExactVariant(decoded);
+						}
+						return release;
+					});
 				if (Schema.is(Schema.String)(reference)) {
 					return decodeReleaseVersion(reference).pipe(
 						Effect.flatMap((releaseVersion) => allStored(cacheRoot, releaseVersion)),
@@ -652,20 +700,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						})
 					);
 				}
-				return Schema.decodeUnknownEffect(PluginVariantReference)(reference, {
-					onExcessProperty: "error"
-				}).pipe(
-					Effect.mapError(
-						() =>
-							new PluginDistributionValidationError({
-								field: "variantIdentity",
-								message: "Cached plugin variant reference is invalid.",
-								recovery: "Use an exact reference returned by install or list.",
-								retrySafe: false
-							})
-					),
-					Effect.flatMap(exactVariant)
-				);
+				return decodeVariantReference(reference).pipe(Effect.flatMap(exactVariant));
 			});
 
 			const verify = Effect.fn("PluginStore.verify")(
@@ -969,9 +1004,49 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				).pipe(Effect.map(({ lease }) => lease))
 			);
 
+			type PruneTarget = {
+				readonly cachePath: string;
+				readonly releaseVersion: ReleaseVersion;
+				readonly variantIdentity: PluginVariantIdentity;
+			};
+			const resolvePruneTarget = (
+				reference: string | PluginVariantReference
+			): Effect.Effect<
+				PruneTarget,
+				CorruptCacheEntry | PluginDistributionValidationError | PluginStorageFailure
+			> => {
+				if (Schema.is(Schema.String)(reference)) {
+					return resolveReference(reference).pipe(
+						Effect.map((release) => ({
+							cachePath: release.cachePath,
+							releaseVersion: release.releaseVersion,
+							variantIdentity: release.variantIdentity
+						}))
+					);
+				}
+				return Effect.gen(function* () {
+					const decoded = yield* decodeVariantReference(reference);
+					const cachePath = yield* Effect.tryPromise({
+						try: () => exactStoredLocation(cacheRoot, decoded),
+						catch: (cause) =>
+							storageError(
+								decoded.releaseVersion,
+								"Locate exact plugin variant for pruning",
+								cause
+							)
+					});
+					if (cachePath === undefined) return yield* missingExactVariant(decoded);
+					return {
+						cachePath,
+						releaseVersion: decoded.releaseVersion,
+						variantIdentity: decoded.variantIdentity
+					};
+				});
+			};
+
 			const prune = Effect.fn("PluginStore.prune")(
 				(reference: string | PluginVariantReference) =>
-					resolveReference(reference).pipe(
+					resolvePruneTarget(reference).pipe(
 						Effect.flatMap((release) =>
 							Effect.tryPromise({
 								try: (signal) =>
@@ -980,6 +1055,11 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 										release.variantIdentity,
 										signal,
 										async () => {
+											await assertStoredRootWithinCache(
+												cacheRoot,
+												release.releaseVersion,
+												release.cachePath
+											);
 											const active = await activeLeaseFiles(
 												cacheRoot,
 												release.releaseVersion,
@@ -1011,7 +1091,8 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 										}
 									),
 								catch: (cause) =>
-									cause instanceof ActiveLeasePreventsPrune
+									cause instanceof ActiveLeasePreventsPrune ||
+									cause instanceof CorruptCacheEntry
 										? cause
 										: storageError(
 												release.releaseVersion,

@@ -12,6 +12,7 @@ import {
 } from "./errors.js";
 import {
 	EngineBuildId,
+	PluginId,
 	isCompiledPluginBundleManifest,
 	type PluginBundleManifest
 } from "./manifest.js";
@@ -22,7 +23,10 @@ const COPY_CHUNK_BYTES = 64 * 1024;
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
 const UnrealModuleManifestEvidence = Schema.Struct({
 	BuildId: EngineBuildId,
-	Modules: Schema.Record(Schema.String, Schema.String)
+	Modules: Schema.Record(PluginId, Schema.String)
+});
+const UnrealPluginDescriptorEvidence = Schema.Struct({
+	Modules: Schema.optionalKey(Schema.Array(Schema.Struct({ Name: PluginId })))
 });
 
 export interface VerifiedPluginArtifact {
@@ -394,6 +398,14 @@ export async function extractPluginArchiveToDirectory(
 			const binaryExtension =
 				platform === "Win64" ? ".dll" : platform === "Mac" ? ".dylib" : ".so";
 			for (const plugin of options.manifest.plugins) {
+				const descriptorPath = `Plugins/${plugin.descriptorPath}`;
+				const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptorEvidence)(
+					JSON.parse(await readFile(resolve(options.destination, descriptorPath), "utf8"))
+				);
+				const declaredModules = new Set(
+					(descriptor.Modules ?? []).map((module) => module.Name)
+				);
+				const evidencedModules = new Set<string>();
 				const binaryRoot = `Plugins/${plugin.directory}/Binaries/${platform}/`;
 				const paths = Object.keys(files).filter((path) => path.startsWith(binaryRoot));
 				const modulePaths = paths.filter((path) => path.endsWith(".modules"));
@@ -414,6 +426,9 @@ export async function extractPluginArchiveToDirectory(
 							`.modules BuildId ${evidence.BuildId} does not match ${options.manifest.compatibility.engineBuildId}: ${modulePath}`
 						);
 					}
+					for (const moduleId of Object.keys(evidence.Modules)) {
+						evidencedModules.add(moduleId);
+					}
 					const products = Object.values(evidence.Modules);
 					if (products.length === 0) {
 						throw new Error(
@@ -432,6 +447,14 @@ export async function extractPluginArchiveToDirectory(
 							);
 						}
 					}
+				}
+				const missingModules = [...declaredModules].filter(
+					(moduleId) => !evidencedModules.has(moduleId)
+				);
+				if (missingModules.length > 0) {
+					throw new Error(
+						`Compiled plugin ${plugin.id} has no .modules evidence for descriptor module(s): ${missingModules.join(", ")}.`
+					);
 				}
 			}
 		}

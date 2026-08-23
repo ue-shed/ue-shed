@@ -263,6 +263,7 @@ afterEach(async () => {
 describe("compiled plugin builder", () => {
 	it("publishes only a validated dependency-first compiled graph", async () => {
 		const source = await fixture();
+		const engineSourceCommit = "b".repeat(40);
 		const layer = builderLayer((options) =>
 			Effect.promise(async () => {
 				await writeFakeUatProducts(options);
@@ -270,13 +271,17 @@ describe("compiled plugin builder", () => {
 			})
 		);
 		const result = await Effect.runPromise(
-			Effect.flatMap(CompiledPluginBuilder, (builder) => builder.build(source.request)).pipe(
-				Effect.provide(layer)
-			)
+			Effect.flatMap(CompiledPluginBuilder, (builder) =>
+				builder.build({
+					...source.request,
+					artifact: { ...source.request.artifact, engineSourceCommit }
+				})
+			).pipe(Effect.provide(layer))
 		);
 		expect(result.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
 		expect(result.manifest.build.requestedPluginIds).toEqual(["UEShedCameras"]);
 		expect(result.manifest.compatibility.engineBuildId).toBe("47537391");
+		expect(result.manifest.compatibility.engineSourceCommit).toBe(engineSourceCommit);
 		expect((await readFile(result.artifactPath)).byteLength).toBeGreaterThan(0);
 		expect(await readdir(source.request.outputDirectory)).toEqual([
 			result.outputPath.split(/[/\\]/u).at(-1)
@@ -301,6 +306,30 @@ describe("compiled plugin builder", () => {
 			).pipe(Effect.provide(layer))
 		);
 		expect(error._tag).toBe("InvalidCompiledPluginBuild");
+		expect(launches).toBe(0);
+	});
+
+	it("rejects malformed engine source provenance before launching UAT", async () => {
+		const source = await fixture();
+		let launches = 0;
+		const layer = builderLayer(() => {
+			launches += 1;
+			return Effect.succeed(completedHandle(0));
+		});
+		const error = await Effect.runPromise(
+			Effect.flatMap(CompiledPluginBuilder, (builder) =>
+				builder
+					.build({
+						...source.request,
+						artifact: {
+							...source.request.artifact,
+							engineSourceCommit: "short-commit"
+						}
+					})
+					.pipe(Effect.flip)
+			).pipe(Effect.provide(layer))
+		);
+		expect(error).toBeInstanceOf(InvalidCompiledPluginBuild);
 		expect(launches).toBe(0);
 	});
 

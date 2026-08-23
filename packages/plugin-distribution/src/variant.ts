@@ -1,12 +1,9 @@
 import { createHash } from "node:crypto";
 import { Schema } from "effect";
 import {
-	EngineBuildId,
-	PluginBuildConfiguration,
-	PluginBuildTarget,
+	CompiledPluginCompatibility,
+	ReleaseVersion,
 	Sha256Checksum,
-	UnrealArchitecture,
-	UnrealPlatform,
 	UnrealVersion,
 	isCompiledPluginBundleManifest,
 	isPluginBundleUnrealVersionSupported,
@@ -25,13 +22,14 @@ export const SourcePluginVariantRequest = Schema.Struct({
 export type SourcePluginVariantRequest = typeof SourcePluginVariantRequest.Type;
 
 export const CompiledPluginVariantRequest = Schema.Struct({
-	architecture: UnrealArchitecture,
-	configuration: PluginBuildConfiguration,
-	engineBuildId: EngineBuildId,
-	kind: Schema.Literal("compiled"),
-	platform: UnrealPlatform,
-	target: PluginBuildTarget,
-	unrealVersion: UnrealVersion
+	architecture: CompiledPluginCompatibility.fields.architecture,
+	configuration: CompiledPluginCompatibility.fields.configuration,
+	engineBuildId: CompiledPluginCompatibility.fields.engineBuildId,
+	engineSourceCommit: CompiledPluginCompatibility.fields.engineSourceCommit,
+	kind: CompiledPluginCompatibility.fields.kind,
+	platform: CompiledPluginCompatibility.fields.platform,
+	target: CompiledPluginCompatibility.fields.target,
+	unrealVersion: CompiledPluginCompatibility.fields.unrealVersion
 });
 export type CompiledPluginVariantRequest = typeof CompiledPluginVariantRequest.Type;
 
@@ -42,7 +40,7 @@ export const PluginVariantRequest = Schema.Union([
 export type PluginVariantRequest = typeof PluginVariantRequest.Type;
 
 export const PluginVariantReference = Schema.Struct({
-	releaseVersion: Schema.String,
+	releaseVersion: ReleaseVersion,
 	variantIdentity: PluginVariantIdentity
 });
 export type PluginVariantReference = typeof PluginVariantReference.Type;
@@ -67,6 +65,8 @@ export function pluginVariantMatches(
 	return (
 		compatibility.unrealVersion === request.unrealVersion &&
 		compatibility.engineBuildId === request.engineBuildId &&
+		(request.engineSourceCommit === undefined ||
+			compatibility.engineSourceCommit === request.engineSourceCommit) &&
 		compatibility.platform === request.platform &&
 		compatibility.architecture === request.architecture &&
 		compatibility.target === request.target &&

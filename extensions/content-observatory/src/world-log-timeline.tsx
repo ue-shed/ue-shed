@@ -21,6 +21,11 @@ import { styles } from "./world-log-styles.js";
 
 export type WorldLogChangeFilter = "all" | MapChange["kind"];
 
+const changeFilterLabel = (filter: WorldLogChangeFilter): string =>
+	filter === "all"
+		? "All"
+		: humanize(filter.replace("actor_", "")).replace(/^./, (c) => c.toUpperCase());
+
 export function WorldLogTimeline(props: {
 	readonly actorKey: string | undefined;
 	readonly filter: WorldLogChangeFilter;
@@ -51,11 +56,9 @@ export function WorldLogTimeline(props: {
 			<section aria-label="History timeline" {...stylex.props(styles.timeline)}>
 				<header {...stylex.props(styles.timelineHeader)}>
 					<div>
-						<span {...stylex.props(styles.sectionKicker)}>SUBMITTED RECORD</span>
-						<h2>{totalChanges()} map actor changes</h2>
+						<h2 {...stylex.props(styles.timelineTitle)}>Timeline</h2>
 						<p {...stylex.props(styles.timelineSubhead)}>
-							Select a changelist for its full-map diff. View Filters keep every
-							submitted changelist selectable.
+							{totalChanges()} map actor changes
 						</p>
 					</div>
 					<span
@@ -67,11 +70,7 @@ export function WorldLogTimeline(props: {
 						{props.history.completeness}
 					</span>
 				</header>
-				<div
-					role="toolbar"
-					aria-label="Change View Filter"
-					{...stylex.props(styles.filters)}
-				>
+				<div role="toolbar" aria-label="Change filters" {...stylex.props(styles.filters)}>
 					<For
 						each={
 							[
@@ -93,7 +92,7 @@ export function WorldLogTimeline(props: {
 									props.filter === filter && styles.filterButtonActive
 								)}
 							>
-								{filter === "all" ? "ALL" : humanize(filter.replace("actor_", ""))}
+								{changeFilterLabel(filter)}
 							</button>
 						)}
 					</For>
@@ -141,48 +140,17 @@ export function WorldLogTimeline(props: {
 											styles.revisionSelected
 									)}
 								>
-									<div {...stylex.props(styles.changeMarker)}>
-										<span {...stylex.props(styles.changeMarkerLabel)}>
-											<span>CL</span>
-											<strong>{revision.change}</strong>
+									<div {...stylex.props(styles.revisionMain)}>
+										<p {...stylex.props(styles.revisionDescription)}>
+											{revision.description ?? "No description."}
+										</p>
+										<span {...stylex.props(styles.revisionSummary)}>
+											{revision.changes.length} actor changes ·{" "}
+											{revision.files.length} packages
+											{revision.unclassifiedPackageChanges.length > 0
+												? ` · ${revision.unclassifiedPackageChanges.length} unclassified`
+												: ""}
 										</span>
-										<button
-											type="button"
-											aria-label={`Select changelist ${revision.change}`}
-											aria-pressed={selectedRevision()}
-											onClick={() =>
-												props.onSelectChangelist(revisionIndex())
-											}
-											{...stylex.props(
-												styles.changelistSelect,
-												props.selectedChangelist !== undefined &&
-													props.selectedChangelist.revision ===
-														revisionIndex() &&
-													styles.changelistSelectActive
-											)}
-										>
-											SELECT
-										</button>
-									</div>
-									<div {...stylex.props(styles.revisionBody)}>
-										<header {...stylex.props(styles.revisionHeader)}>
-											<div {...stylex.props(styles.revisionMeta)}>
-												<strong>
-													{revision.user ?? "unknown submitter"}
-												</strong>
-												<span>{formatSubmittedAt(revision)}</span>
-											</div>
-											<p {...stylex.props(styles.revisionDescription)}>
-												{revision.description ??
-													"No changelist description."}
-											</p>
-										</header>
-										<div {...stylex.props(styles.revisionSummary)}>
-											{revision.changes.length} semantic /{" "}
-											{revision.files.length} package /{" "}
-											{revision.unclassifiedPackageChanges.length}{" "}
-											unclassified
-										</div>
 										<For each={listedChanges()}>
 											{({ change, changeIndex }) => (
 												<button
@@ -222,8 +190,8 @@ export function WorldLogTimeline(props: {
 										</For>
 										<Show when={listedChanges().length === 0}>
 											<p {...stylex.props(styles.revisionEmpty)}>
-												No matching actor change. Select this changelist to
-												inspect the full diff.
+												No matching actor changes. Select the changelist to
+												see its full diff.
 											</p>
 										</Show>
 										<Show
@@ -234,18 +202,45 @@ export function WorldLogTimeline(props: {
 											}
 										>
 											<div {...stylex.props(styles.unclassifiedNotice)}>
-												<span>UNCLASSIFIED PACKAGE EVIDENCE</span>
+												<span {...stylex.props(styles.sectionLabel)}>
+													Unclassified packages
+												</span>
 												<strong>
 													{selectedRevision()
 														? revision.unclassifiedPackageChanges.length
 														: filteredUnclassified().length}
 												</strong>
 												<p {...stylex.props(styles.unclassifiedNoticeCopy)}>
-													Changed bytes were retained because this
-													projection cannot explain them as actor changes.
+													These package changes could not be mapped to
+													actor events.
 												</p>
 											</div>
 										</Show>
+									</div>
+									<div {...stylex.props(styles.revisionMarker)}>
+										<button
+											type="button"
+											aria-label={`Select changelist ${revision.change}`}
+											aria-pressed={selectedRevision()}
+											onClick={() =>
+												props.onSelectChangelist(revisionIndex())
+											}
+											{...stylex.props(
+												styles.changelistSelect,
+												props.selectedChangelist !== undefined &&
+													props.selectedChangelist.revision ===
+														revisionIndex() &&
+													styles.changelistSelectActive
+											)}
+										>
+											CL {revision.change}
+										</button>
+										<time {...stylex.props(styles.revisionDate)}>
+											{formatSubmittedAt(revision)}
+										</time>
+										<span {...stylex.props(styles.revisionUser)}>
+											{revision.user ?? "Unknown user"}
+										</span>
 									</div>
 								</article>
 							);
@@ -272,26 +267,24 @@ function WorldLogEvidencePanel(props: {
 			: revision()!.changes[props.selected.changeIndex];
 	});
 	return (
-		<aside aria-label="Selected changelist evidence" {...stylex.props(styles.evidencePanel)}>
+		<aside aria-label="Changelist details" {...stylex.props(styles.evidencePanel)}>
 			<header>
-				<span {...stylex.props(styles.sectionKicker)}>EVIDENCE LEDGER</span>
 				<h2>
-					{revision() === undefined ? "Select a changelist" : `CL ${revision()!.change}`}
+					{revision() === undefined ? "Changelist details" : `CL ${revision()!.change}`}
 				</h2>
 			</header>
 			<Show
 				when={revision()}
 				fallback={
 					<p {...stylex.props(styles.evidenceEmpty)}>
-						Choose a submitted changelist to see its semantic, package, and unclassified
-						evidence.
+						Select a changelist in the timeline to see its actor changes and files.
 					</p>
 				}
 			>
 				{(selectedRevision) => (
 					<>
 						<div {...stylex.props(styles.evidenceSummary)}>
-							<strong>{selectedRevision().changes.length} semantic changes</strong>
+							<strong>{selectedRevision().changes.length} actor changes</strong>
 							<span>{selectedRevision().files.length} package revisions</span>
 							<span>
 								{selectedRevision().unclassifiedPackageChanges.length} unclassified
@@ -321,13 +314,14 @@ function WorldLogEvidencePanel(props: {
 						</dl>
 						<Show when={selectedRevision().unclassifiedPackageChanges.length > 0}>
 							<div {...stylex.props(styles.unclassifiedNotice)}>
-								<span>UNCLASSIFIED PACKAGE EVIDENCE</span>
+								<span {...stylex.props(styles.sectionLabel)}>
+									Unclassified packages
+								</span>
 								<strong>
 									{selectedRevision().unclassifiedPackageChanges.length}
 								</strong>
 								<p {...stylex.props(styles.unclassifiedNoticeCopy)}>
-									The evidence is retained in this diff because no safe actor
-									explanation was available.
+									No safe actor explanation was available for these changes.
 								</p>
 							</div>
 						</Show>
@@ -335,11 +329,11 @@ function WorldLogEvidencePanel(props: {
 				)}
 			</Show>
 			<footer {...stylex.props(styles.coverageFooter)}>
-				<span>BASELINE</span>
+				<span>Baseline</span>
 				<strong>
 					{props.history.baseline.status === "available"
 						? `CL ${props.history.baseline.change}`
-						: "map not yet created"}
+						: "Map not yet created"}
 				</strong>
 			</footer>
 		</aside>

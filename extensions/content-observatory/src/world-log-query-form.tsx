@@ -119,7 +119,7 @@ export function WorldLogQueryForm(props: {
 						props.mode === "deep" && styles.historyModeButtonActive
 					)}
 				>
-					DEEP HISTORY
+					Deep history
 				</button>
 				<button
 					type="button"
@@ -131,15 +131,14 @@ export function WorldLogQueryForm(props: {
 						props.mode === "fast" && styles.historyModeButtonActive
 					)}
 				>
-					FAST HISTORY
+					Fast history
 				</button>
 			</div>
 			<Show when={props.mode === "fast"}>
-				<section aria-label="Fast History target" {...stylex.props(styles.fastTargetPanel)}>
-					<div>
-						<span {...stylex.props(styles.sectionKicker)}>FAST HISTORY TARGET</span>
+				<section aria-label="Fast history target" {...stylex.props(styles.fastTargetPanel)}>
+					<div {...stylex.props(styles.fastTargetIntro)}>
 						<strong>Target one current actor or class.</strong>
-						<p>The list is local. Perforce is read only when you run Fast History.</p>
+						<p>The list is local. Perforce is read only when you run the scan.</p>
 					</div>
 					<button
 						type="button"
@@ -152,14 +151,14 @@ export function WorldLogQueryForm(props: {
 						{...stylex.props(styles.loadTargetsButton)}
 					>
 						{props.targetLoading
-							? "LOADING ACTORS…"
+							? "Loading…"
 							: props.targetActors.length > 0
-								? "REFRESH ACTORS"
-								: "LOAD ACTORS"}
+								? "Refresh actors"
+								: "Load actors"}
 					</button>
 					<div
 						role="group"
-						aria-label="Fast History target kind"
+						aria-label="Fast history target kind"
 						{...stylex.props(styles.fastTargetModes)}
 					>
 						<button
@@ -172,7 +171,7 @@ export function WorldLogQueryForm(props: {
 								props.fastTargetKind === "actor" && styles.fastTargetModeActive
 							)}
 						>
-							ACTOR
+							Actor
 						</button>
 						<button
 							type="button"
@@ -185,24 +184,22 @@ export function WorldLogQueryForm(props: {
 									styles.fastTargetModeActive
 							)}
 						>
-							ACTOR CLASS
+							Actor class
 						</button>
 					</div>
 					<Show when={props.targetActors.length > 0 || props.targetLoading}>
 						<ActorExplorer
-							ariaLabel="Fast History actor explorer"
+							ariaLabel="Fast history targets"
 							classMode={props.fastTargetKind === "actor_class" ? "target" : "filter"}
 							classOptions={classTargets()}
 							density="compact"
 							disabled={props.disabled || props.targetLoading}
 							filters={targetFilters()}
 							itemListLabel={
-								props.fastTargetKind === "actor"
-									? "Current actor targets"
-									: "Current actor members"
+								props.fastTargetKind === "actor" ? "Actor targets" : "Class members"
 							}
 							items={targetItems()}
-							label="FAST HISTORY TARGET ACTORS"
+							label="Targets"
 							onClassPathsChange={(classPaths) =>
 								setTargetFilters((current) => ({ ...current, classPaths }))
 							}
@@ -212,9 +209,7 @@ export function WorldLogQueryForm(props: {
 								if (props.fastTargetKind === "actor") props.onTargetChange(key);
 							}}
 							queryAriaLabel={
-								props.fastTargetKind === "actor"
-									? "Find current actor"
-									: "Find actor class"
+								props.fastTargetKind === "actor" ? "Find an actor" : "Find a class"
 							}
 							selectedClassPath={props.targetClassPath}
 							selectedKey={props.targetKey}
@@ -242,8 +237,7 @@ export function WorldLogQueryForm(props: {
 						}
 					>
 						<p {...stylex.props(styles.targetEmpty)}>
-							No current{" "}
-							{props.fastTargetKind === "actor" ? "actors" : "actor classes"} match
+							No {props.fastTargetKind === "actor" ? "actors" : "actor classes"} match
 							that search.
 						</p>
 					</Show>
@@ -255,7 +249,7 @@ export function WorldLogQueryForm(props: {
 				</section>
 			</Show>
 			<div {...stylex.props(styles.rangeControls)}>
-				<span>LOOK BACK</span>
+				<span>Range</span>
 				<For each={[1, 7, 30]}>
 					{(days) => (
 						<button
@@ -268,26 +262,10 @@ export function WorldLogQueryForm(props: {
 								days === props.rangeDays && styles.rangeButtonActive
 							)}
 						>
-							{days}D
+							{days} day{days === 1 ? "" : "s"}
 						</button>
 					)}
 				</For>
-				<button
-					type="button"
-					disabled={
-						props.disabled ||
-						props.mapPath.trim().length === 0 ||
-						(props.mode === "fast" &&
-							(props.fastTargetKind === "actor"
-								? props.targetKey === undefined
-								: props.targetClassPath === undefined))
-					}
-					onClick={props.onRun}
-					{...stylex.props(styles.runButton)}
-				>
-					{props.mode === "fast" ? "READ FAST HISTORY" : "READ DEEP HISTORY"}{" "}
-					<span>↗</span>
-				</button>
 				<button
 					type="button"
 					disabled={props.disabled}
@@ -296,19 +274,19 @@ export function WorldLogQueryForm(props: {
 					onClick={() => setAdvancedOpen((current) => !current)}
 					{...stylex.props(styles.advancedButton)}
 				>
-					ADVANCED LIMITS
+					Advanced limits
 				</button>
 			</div>
 			<Show when={advancedOpen()}>
 				<fieldset
 					id="world-log-scan-limits"
-					aria-label="Advanced scan limits"
+					aria-label="Advanced limits"
 					disabled={props.disabled}
 					{...stylex.props(styles.scanLimits)}
 				>
-					<legend>SCAN BOUNDS</legend>
+					<legend>Limits</legend>
 					<label {...stylex.props(styles.scanLimitLabel)}>
-						<span>CHANGE LISTS</span>
+						<span>Max changelists</span>
 						<input
 							type="number"
 							min="1"
@@ -320,7 +298,7 @@ export function WorldLogQueryForm(props: {
 						/>
 					</label>
 					<label {...stylex.props(styles.scanLimitLabel)}>
-						<span>PACKAGES</span>
+						<span>Packages</span>
 						<input
 							type="number"
 							min="1"
@@ -330,7 +308,7 @@ export function WorldLogQueryForm(props: {
 						/>
 					</label>
 					<label {...stylex.props(styles.scanLimitLabel)}>
-						<span>MATERIALIZED FILES</span>
+						<span>Materialized files</span>
 						<input
 							type="number"
 							min="1"
@@ -342,7 +320,7 @@ export function WorldLogQueryForm(props: {
 						/>
 					</label>
 					<label {...stylex.props(styles.scanLimitLabel)}>
-						<span>CONCURRENCY</span>
+						<span>Concurrency</span>
 						<input
 							type="number"
 							min="1"
@@ -354,7 +332,7 @@ export function WorldLogQueryForm(props: {
 						/>
 					</label>
 					<label {...stylex.props(styles.scanLimitLabel)}>
-						<span>MAX DURATION (MS)</span>
+						<span>Max duration (ms)</span>
 						<input
 							type="number"
 							min="1"

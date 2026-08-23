@@ -285,7 +285,7 @@ describe("ContentObservatoryRoute", () => {
 				<ContentObservatoryRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		expect(await screen.findByText("Content Observatory has no project root.")).toBeDefined();
+		expect(await screen.findByRole("heading", { name: "No project connected" })).toBeDefined();
 		expect(screen.getByText("UE_SHED_PROJECT_ROOT")).toBeDefined();
 	});
 
@@ -341,11 +341,11 @@ describe("ContentObservatoryRoute", () => {
 		));
 		const user = userEvent.setup();
 		await screen.findByRole("combobox", { name: "Saved map" });
-		expect(screen.queryByLabelText("Advanced scan limits")).toBeNull();
-		await user.click(screen.getByRole("button", { name: "ADVANCED LIMITS" }));
-		await user.clear(screen.getByLabelText("CHANGE LISTS"));
-		await user.type(screen.getByLabelText("CHANGE LISTS"), "12");
-		await user.click(screen.getByRole("button", { name: /read deep history/i }));
+		expect(screen.queryByLabelText("Advanced limits")).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Advanced limits" }));
+		await user.clear(screen.getByLabelText("Max changelists"));
+		await user.type(screen.getByLabelText("Max changelists"), "12");
+		await user.click(screen.getByRole("button", { name: "Read history" }));
 		expect(received?.mapPath).toBe("Content/Fixture/History/L_MapHistoryWorld.umap");
 		expect(received?.limits.maxChangelists).toBe(12);
 		expect(await screen.findByText("listing changes")).toBeDefined();
@@ -391,12 +391,10 @@ describe("ContentObservatoryRoute", () => {
 		expect(
 			screen.getAllByRole("application", { name: "Top-down saved actor points map" })
 		).toHaveLength(1);
-		expect(
-			screen.getByRole("heading", { name: "CURRENT SAVED STATE point map" })
-		).toBeDefined();
+		expect(screen.getByRole("heading", { name: "Current map" })).toBeDefined();
 
-		await user.click(screen.getByRole("button", { name: /READ DEEP HISTORY/ }));
-		await screen.findByRole("heading", { name: "AFTER CL 11 point map" });
+		await user.click(screen.getByRole("button", { name: "Read history" }));
+		await screen.findByRole("heading", { name: "After CL 11" });
 
 		expect(screen.getByRole("application", { name: "Top-down saved actor points map" })).toBe(
 			pointMap
@@ -488,12 +486,12 @@ describe("ContentObservatoryRoute", () => {
 		const user = userEvent.setup();
 		await screen.findByRole("combobox", { name: "Saved map" });
 		expect(
-			screen.getByRole("button", { name: "DEEP HISTORY" }).getAttribute("aria-pressed")
+			screen.getByRole("button", { name: "Deep history" }).getAttribute("aria-pressed")
 		).toBe("true");
-		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
-		const targetExplorer = screen.getByRole("region", { name: "Fast History actor explorer" });
+		await user.click(screen.getByRole("button", { name: "Fast history" }));
+		const targetExplorer = screen.getByRole("region", { name: "Fast history targets" });
 		await user.click(within(targetExplorer).getByRole("button", { name: /North NPC/ }));
-		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
+		await user.click(screen.getByRole("button", { name: "Read history" }));
 		expect(received?.mode).toBe("fast");
 		expect(received?.mode).toBe("fast");
 		if (received?.mode === "fast" && received.target.kind === "actor") {
@@ -555,9 +553,9 @@ describe("ContentObservatoryRoute", () => {
 		));
 		const user = userEvent.setup();
 		await screen.findByRole("combobox", { name: "Saved map" });
-		await user.click(screen.getByRole("button", { name: "FAST HISTORY" }));
-		await user.click(screen.getByRole("button", { name: "ACTOR CLASS" }));
-		const targetExplorer = screen.getByRole("region", { name: "Fast History actor explorer" });
+		await user.click(screen.getByRole("button", { name: "Fast history" }));
+		await user.click(screen.getByRole("button", { name: "Actor class" }));
+		const targetExplorer = screen.getByRole("region", { name: "Fast history targets" });
 		await user.click(
 			within(targetExplorer).getByRole("button", {
 				name: "Toggle actor class filters"
@@ -569,7 +567,7 @@ describe("ContentObservatoryRoute", () => {
 				{ name: /Npc/ }
 			)
 		);
-		await user.click(screen.getByRole("button", { name: /READ FAST HISTORY/ }));
+		await user.click(screen.getByRole("button", { name: "Read history" }));
 		expect(received?.mode).toBe("fast");
 		if (received?.mode === "fast") {
 			expect(received.target).toEqual({ classPath: "/Script/Game.Npc", kind: "actor_class" });
@@ -588,13 +586,9 @@ describe("ContentObservatoryRoute", () => {
 				<ContentObservatoryRoute client={client} />
 			</EffectRuntimeProvider>
 		));
-		await screen.findByRole("region", { name: "Fast History coverage" });
-		expect(
-			screen.getByText("This result follows 1 current actor of /Script/Game.Npc.")
-		).toBeDefined();
-		expect(
-			screen.getByText(/Deleted or historically reclassified actors are outside this result/)
-		).toBeDefined();
+		await screen.findByRole("region", { name: "Fast history coverage" });
+		expect(screen.getByText("Following 1 current /Script/Game.Npc actor.")).toBeDefined();
+		expect(screen.getByText(/Deleted or reclassified actors are not included/)).toBeDefined();
 	});
 
 	it("uses the point map and outliner to narrow changelist evidence to one saved actor", async () => {
@@ -622,9 +616,9 @@ describe("ContentObservatoryRoute", () => {
 		await user.click(screen.getByRole("tab", { name: "Changelists" }));
 		expect(await screen.findByText("3 map actor changes")).toBeDefined();
 		expect(screen.getByRole("button", { name: "Select changelist 11" })).toBeDefined();
-		await user.click(screen.getByRole("tab", { name: "World state" }));
+		await user.click(screen.getByRole("tab", { name: "Actors" }));
 
-		const actorSearch = screen.getByRole("textbox", { name: "Find World Log actor" });
+		const actorSearch = screen.getByRole("textbox", { name: "Find an actor" });
 		await user.clear(actorSearch);
 		await user.type(actorSearch, "staticmesh");
 		const outliner = screen.getByRole("complementary", { name: "Saved actor outliner" });
@@ -652,10 +646,10 @@ describe("ContentObservatoryRoute", () => {
 
 		expect(await screen.findByText("3 map actor changes")).toBeDefined();
 		const evidence = screen.getByRole("complementary", {
-			name: "Selected changelist evidence"
+			name: "Changelist details"
 		});
 		expect(within(evidence).getByRole("heading", { name: "CL 10" })).toBeDefined();
-		await user.click(screen.getByRole("tab", { name: "World state" }));
+		await user.click(screen.getByRole("tab", { name: "Actors" }));
 		expect(screen.getByRole("heading", { name: "Key lamp" })).toBeDefined();
 		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
 	});
@@ -675,15 +669,15 @@ describe("ContentObservatoryRoute", () => {
 		const user = userEvent.setup();
 		await user.click(screen.getByRole("tab", { name: "Changelists" }));
 		await user.click(screen.getByRole("button", { name: "Select changelist 10" }));
-		await user.click(screen.getByRole("tab", { name: "World state" }));
+		await user.click(screen.getByRole("tab", { name: "Actors" }));
 		const pointMap = await screen.findByRole("application", {
 			name: "Top-down saved actor points map"
 		});
-		expect(screen.getByText("CL 10 DIFF OVERLAY")).toBeDefined();
+		expect(screen.getByText("CL 10 diff")).toBeDefined();
 		pointMap.focus();
 		await user.keyboard("{ArrowRight}");
 
-		expect(screen.getByText("CL 10 DIFF OVERLAY")).toBeDefined();
+		expect(screen.getByText("CL 10 diff")).toBeDefined();
 		await user.click(screen.getByRole("tab", { name: "Changelists" }));
 		expect(screen.getByRole("button", { name: "Select changelist 11" })).toBeDefined();
 	});
@@ -702,7 +696,7 @@ describe("ContentObservatoryRoute", () => {
 		));
 		const user = userEvent.setup();
 		const outliner = screen.getByRole("complementary", { name: "Saved actor outliner" });
-		const actorSearch = screen.getByRole("textbox", { name: "Find World Log actor" });
+		const actorSearch = screen.getByRole("textbox", { name: "Find an actor" });
 		await user.type(actorSearch, "class:pointlight");
 		expect(within(outliner).getByRole("button", { name: /key lamp/i })).toBeDefined();
 		expect(within(outliner).queryByRole("button", { name: /ground mesh/i })).toBeNull();
@@ -713,10 +707,10 @@ describe("ContentObservatoryRoute", () => {
 		await user.click(within(inspector).getByRole("button", { name: /CL 10.*key lamp/i }));
 
 		const evidence = await screen.findByRole("complementary", {
-			name: "Selected changelist evidence"
+			name: "Changelist details"
 		});
 		expect(within(evidence).getByRole("heading", { name: "CL 10" })).toBeDefined();
-		await user.click(screen.getByRole("tab", { name: "World state" }));
+		await user.click(screen.getByRole("tab", { name: "Actors" }));
 		expect(await screen.findByLabelText("Selected changelist map overlay")).toBeDefined();
 	});
 
@@ -734,17 +728,14 @@ describe("ContentObservatoryRoute", () => {
 		));
 		const user = userEvent.setup();
 		const outliner = screen.getByRole("complementary", { name: "Saved actor outliner" });
-		await user.type(
-			screen.getByRole("textbox", { name: "Find World Log actor" }),
-			"label:departed"
-		);
+		await user.type(screen.getByRole("textbox", { name: "Find an actor" }), "label:departed");
 		const departed = within(outliner).getByRole("button", { name: /departed npc/i });
-		expect(within(departed).getByText("REMOVED")).toBeDefined();
+		expect(within(departed).getByText("Removed")).toBeDefined();
 		await user.click(departed);
 
 		const inspector = screen.getByRole("complementary", { name: "Selected saved actor" });
 		expect(within(inspector).getByText("removed in range")).toBeDefined();
-		expect(within(inspector).getByText("REMOVED")).toBeDefined();
+		expect(within(inspector).getByText("Removed")).toBeDefined();
 	});
 
 	it("replays discrete saved actor frames without another history request", async () => {
@@ -763,25 +754,23 @@ describe("ContentObservatoryRoute", () => {
 		await screen.findByRole("application", { name: "Top-down saved actor points map" });
 
 		await user.click(screen.getByRole("button", { name: "Show state at range start" }));
-		expect(screen.getByRole("heading", { name: "RANGE START point map" })).toBeDefined();
+		expect(screen.getByRole("heading", { name: "Range start" })).toBeDefined();
 		const outliner = screen.getByRole("complementary", { name: "Saved actor outliner" });
 		await user.click(within(outliner).getByRole("button", { name: /old ground/i }));
 
 		const inspector = screen.getByRole("complementary", { name: "Selected saved actor" });
 		expect(within(inspector).getByRole("heading", { name: "Old ground" })).toBeDefined();
-		expect(within(inspector).getByText("RANGE START")).toBeDefined();
-		expect(within(inspector).getByText("AT FRAME")).toBeDefined();
+		expect(within(inspector).getByText("Range start")).toBeDefined();
+		expect(within(inspector).getByText("At frame").nextElementSibling?.textContent).toBe(
+			"Present"
+		);
 
 		await user.click(screen.getByRole("button", { name: "Show state after CL 10" }));
 		expect(within(inspector).getByRole("heading", { name: "Ground mesh" })).toBeDefined();
-		expect(within(inspector).getByText("AFTER CL 10")).toBeDefined();
+		expect(within(inspector).getByText("After CL 10")).toBeDefined();
 
 		await user.click(screen.getByRole("button", { name: "Show state after CL 11" }));
-		expect(
-			screen.getByText(
-				"1 unclassified package change at this frame. Their changed bytes remain in the changelist evidence ledger."
-			)
-		).toBeDefined();
+		expect(screen.getByText("1 unclassified package change at this frame.")).toBeDefined();
 	});
 
 	it("retains and labels a completed result when its map query becomes stale", async () => {
@@ -798,7 +787,7 @@ describe("ContentObservatoryRoute", () => {
 		));
 		const user = userEvent.setup();
 		await screen.findByRole("application", { name: "Top-down saved actor points map" });
-		expect(screen.queryByLabelText("Stale World Log result")).toBeNull();
+		expect(screen.queryByLabelText("Stale result")).toBeNull();
 
 		const mapPicker = screen.getByRole("combobox", { name: "Saved map" });
 		await user.click(mapPicker);
@@ -809,8 +798,8 @@ describe("ContentObservatoryRoute", () => {
 			"Content/Maps/L_Other.umap"
 		);
 
-		expect(screen.getByLabelText("Stale World Log result")).toBeDefined();
-		expect(screen.getByRole("heading", { name: "AFTER CL 11 point map" })).toBeDefined();
+		expect(screen.getByLabelText("Stale result")).toBeDefined();
+		expect(screen.getByRole("heading", { name: "After CL 11" })).toBeDefined();
 	});
 
 	it("labels partial and empty saved frames without presenting them as failures", async () => {
@@ -840,7 +829,7 @@ describe("ContentObservatoryRoute", () => {
 		await user.click(screen.getByRole("button", { name: "Show state after CL 10" }));
 		expect(
 			screen.getByText(
-				"Partial saved-world coverage at this frame. Actor state is limited to the packages that could be read."
+				"Partial coverage at this frame. Actor state is limited to the packages that could be read."
 			)
 		).toBeDefined();
 		cleanup();
@@ -870,7 +859,7 @@ describe("ContentObservatoryRoute", () => {
 		));
 		expect(
 			await screen.findByText(
-				"This range begins before the map was created. The empty state is a saved baseline, not a failed reconstruction."
+				"This range begins before the map existed. There is no saved state to show at this frame."
 			)
 		).toBeDefined();
 	});

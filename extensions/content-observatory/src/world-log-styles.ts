@@ -13,87 +13,43 @@ export const styles = stylex.create({
 	},
 	header: {
 		display: "flex",
-		alignItems: "center",
+		alignItems: "flex-start",
 		justifyContent: "space-between",
-		paddingBottom: 8,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		gap: 16,
+		paddingBottom: 16,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		marginBottom: 24
 	},
-	breadcrumb: {
+	title: {
+		margin: 0,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
+	},
+	intro: {
+		margin: "4px 0 0",
+		maxWidth: 560,
 		color: tokens.colorTextMuted,
-		fontSize: 11,
-		letterSpacing: ".04em"
+		fontSize: 14,
+		lineHeight: 1.5
 	},
-	title: { margin: "2px 0 0", fontSize: 22, fontWeight: 590, letterSpacing: "-0.02em" },
-	headerSubtitle: { margin: "2px 0 0", color: tokens.colorTextMuted, fontSize: 12 },
-	headerSignal: {
-		display: "flex",
-		alignItems: "center",
-		gap: 8,
-		color: tokens.colorWarning,
-		fontSize: 11
-	},
-	sectionKicker: {
+	sectionLabel: {
 		display: "block",
-		color: tokens.colorWarning,
+		color: tokens.colorTextSubtle,
 		fontSize: 11,
 		fontWeight: 500
 	},
 	queryPanel: {
 		display: "grid",
-		gridTemplateColumns: "minmax(280px, 1fr) auto minmax(430px, auto)",
+		gridTemplateColumns: "minmax(280px, 1fr) auto auto",
 		alignItems: "end",
-		gap: 10,
-		marginTop: 8,
-		padding: "8px 9px",
+		gap: 12,
+		marginTop: 12,
+		padding: 12,
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurface,
 		borderRadius: tokens.radiusPanel
-	},
-	queryLead: {
-		gridRow: "span 2",
-		display: "flex",
-		flexDirection: "column",
-		gap: 9,
-		paddingRight: 18,
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextMuted,
-		fontSize: 12,
-		lineHeight: 1.55
-	},
-	mapInputLabel: {
-		display: "flex",
-		flexDirection: "column",
-		gap: 7,
-		color: tokens.colorTextMuted,
-		fontSize: 11,
-		fontWeight: 500
-	},
-	mapInput: {
-		width: "100%",
-		boxSizing: "border-box",
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorText,
-		padding: "10px 11px",
-		fontFamily: tokens.fontMono,
-		fontSize: 12,
-		borderRadius: tokens.radiusControl,
-		outline: { default: "none", ":focus": `1px solid ${tokens.colorTextSubtle}` }
-	},
-	mapChoices: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: -10 },
-	mapChoice: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		color: tokens.colorTextMuted,
-		padding: "5px 7px",
-		fontSize: 11,
-		borderRadius: tokens.radiusControl,
-		cursor: "pointer"
-	},
-	mapChoiceActive: {
-		borderColor: tokens.colorTextSubtle,
-		color: tokens.colorTextStrong,
-		backgroundColor: "rgba(255, 255, 255, 0.07)"
 	},
 	historyModes: {
 		display: "flex",
@@ -128,8 +84,10 @@ export const styles = stylex.create({
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextMuted,
 		fontSize: 12,
-		lineHeight: 1.45
+		lineHeight: 1.45,
+		borderRadius: tokens.radiusControl
 	},
+	fastTargetIntro: { display: "grid", gap: 2 },
 	loadTargetsButton: {
 		alignSelf: "start",
 		border: `1px solid ${tokens.colorBorderStrong}`,
@@ -245,7 +203,6 @@ export const styles = stylex.create({
 	rangeControls: {
 		display: "flex",
 		alignItems: "center",
-		justifyContent: "flex-end",
 		gap: 5,
 		color: tokens.colorTextSubtle,
 		fontSize: 11
@@ -263,18 +220,6 @@ export const styles = stylex.create({
 		borderColor: tokens.colorTextSubtle,
 		backgroundColor: "rgba(255, 255, 255, 0.07)",
 		color: tokens.colorTextStrong
-	},
-	runButton: {
-		marginLeft: 8,
-		border: `1px solid ${tokens.colorAccent}`,
-		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
-		color: tokens.colorAccentText,
-		opacity: { default: 1, ":disabled": 0.5 },
-		padding: "8px 11px",
-		fontWeight: 500,
-		fontSize: 12,
-		borderRadius: tokens.radiusControl,
-		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
 	advancedButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
@@ -326,13 +271,25 @@ export const styles = stylex.create({
 		color: tokens.colorTextMuted
 	},
 	notConfigured: {
-		maxWidth: 620,
-		margin: "70px auto",
-		padding: 28,
-		borderLeft: `3px solid ${tokens.colorWarning}`,
+		maxWidth: 560,
+		margin: "72px auto",
+		padding: 24,
+		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorText,
 		borderRadius: tokens.radiusPanel
+	},
+	notConfiguredCode: {
+		padding: "1px 5px",
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: tokens.colorSurfaceInset
+	},
+	targetLoadingLine: {
+		margin: "12px 0 0",
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	runningState: {
 		marginTop: 14,
@@ -366,54 +323,52 @@ export const styles = stylex.create({
 		padding: "12px 14px",
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorWarning,
-		fontSize: 13
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		borderRadius: tokens.radiusPanel
 	},
+	noticeCard: {
+		marginTop: 14,
+		display: "grid",
+		gap: 4,
+		padding: "12px 14px",
+		border: `1px solid ${tokens.colorBorder}`,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.5,
+		borderRadius: tokens.radiusPanel
+	},
+	noticeCardStrong: { color: tokens.colorText },
 	errorState: {
 		marginTop: 14,
+		display: "grid",
+		gap: 4,
 		padding: 18,
 		border: `1px solid ${tokens.colorDanger}`,
 		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorDanger
+		color: tokens.colorText,
+		fontSize: 13,
+		borderRadius: tokens.radiusPanel
 	},
-	playbackUnavailable: {
-		marginTop: 14,
-		padding: 18,
-		border: `1px solid ${tokens.colorDanger}`,
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorDanger,
-		fontSize: 11,
+	errorRecovery: {
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
 		lineHeight: 1.5
 	},
-	staleResult: {
+	errorActions: { marginTop: 4 },
+	errorDetails: { marginTop: 8, color: tokens.colorTextSubtle, fontSize: 11 },
+	playbackUnavailable: {
 		marginTop: 14,
 		padding: "12px 14px",
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorWarning,
+		color: tokens.colorTextMuted,
 		fontSize: 12,
-		lineHeight: 1.5
+		lineHeight: 1.5,
+		borderRadius: tokens.radiusPanel
 	},
-	fastCoverageNotice: {
-		marginTop: 14,
-		padding: "13px 14px",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorWarning,
-		fontSize: 12,
-		lineHeight: 1.5
-	},
-	worldLogTargetLoading: {
-		marginTop: 14,
-		display: "grid",
-		gap: 5,
-		padding: "15px 16px",
-		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorText,
-		fontSize: 11
-	},
-	worldLogTargetLoadingCopy: { margin: 0, color: tokens.colorTextMuted, fontSize: 12 },
 	investigationBar: {
 		display: "flex",
 		alignItems: "stretch",
@@ -463,28 +418,34 @@ export const styles = stylex.create({
 		fontSize: 11
 	},
 	actorAtlas: {
-		marginTop: 8,
+		marginTop: 12,
 		border: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurface,
-		boxShadow: `inset 3px 0 ${tokens.colorAccent}`,
 		borderRadius: tokens.radiusPanel
 	},
 	actorAtlasHeader: {
 		display: "flex",
-		alignItems: "end",
+		alignItems: "flex-start",
 		justifyContent: "space-between",
-		gap: 18,
-		padding: "10px 12px 9px",
+		gap: 12,
+		padding: "10px 14px",
 		borderBottom: `1px solid ${tokens.colorBorder}`
+	},
+	atlasTitle: {
+		margin: 0,
+		fontSize: 14,
+		fontWeight: 600,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
 	},
 	snapshotSummary: {
 		display: "grid",
-		gridTemplateColumns: "auto auto",
-		columnGap: 7,
-		alignItems: "baseline",
+		gap: 2,
+		justifyItems: "end",
 		color: tokens.colorTextMuted,
 		fontSize: 11,
-		textAlign: "right"
+		textAlign: "right",
+		whiteSpace: "nowrap"
 	},
 	playbackFrames: {
 		display: "flex",
@@ -836,11 +797,18 @@ export const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "start",
-		padding: "17px 18px 14px",
+		padding: "14px 16px",
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
+	timelineTitle: {
+		margin: 0,
+		fontSize: 15,
+		fontWeight: 600,
+		letterSpacing: "-0.01em",
+		color: tokens.colorTextStrong
+	},
 	timelineSubhead: {
-		margin: "5px 0 0",
+		margin: "4px 0 0",
 		color: tokens.colorTextMuted,
 		fontSize: 12,
 		lineHeight: 1.45
@@ -874,43 +842,49 @@ export const styles = stylex.create({
 		borderRadius: tokens.radiusBadge,
 		boxShadow: `inset 0 -2px ${tokens.colorAccent}`
 	},
-	timelineList: { padding: 14 },
+	timelineList: { padding: "4px 16px" },
 	revision: {
 		display: "grid",
-		gridTemplateColumns: "72px minmax(0, 1fr)",
+		gridTemplateColumns: "minmax(0, 1fr) auto",
+		gap: "8px 16px",
+		padding: "12px 0",
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		paddingBottom: 11,
-		marginBottom: 11
+		":last-child": { borderBottom: 0 }
 	},
 	revisionSelected: {
-		marginLeft: -5,
-		paddingLeft: 5,
+		marginLeft: -6,
+		paddingLeft: 6,
 		borderLeft: `2px solid ${tokens.colorAccent}`
 	},
-	changeMarker: {
+	revisionMain: { minWidth: 0 },
+	revisionMarker: {
 		display: "grid",
+		justifyItems: "end",
 		alignContent: "start",
-		justifyItems: "start",
-		gap: 5,
+		gap: 3,
 		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
-	changeMarkerLabel: {
-		display: "flex",
-		alignItems: "baseline",
-		gap: 4,
+	revisionDate: {
 		fontFamily: tokens.fontMono,
-		whiteSpace: "nowrap"
+		color: tokens.colorTextMuted,
+		textAlign: "right"
+	},
+	revisionUser: {
+		maxWidth: 180,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		textAlign: "right"
 	},
 	changelistSelect: {
-		marginTop: 3,
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		backgroundColor: {
 			default: "rgba(255, 255, 255, 0.05)",
 			":hover": "rgba(255, 255, 255, 0.07)"
 		},
 		color: tokens.colorTextMuted,
-		padding: "4px 5px",
+		padding: "4px 6px",
 		fontFamily: tokens.fontMono,
 		fontSize: 11,
 		fontWeight: 500,
@@ -922,23 +896,6 @@ export const styles = stylex.create({
 		backgroundColor: tokens.colorAccentWash,
 		color: tokens.colorTextStrong
 	},
-	revisionBody: { minWidth: 0 },
-	revisionHeader: {
-		display: "grid",
-		gridTemplateColumns: "minmax(180px, .38fr) minmax(0, 1fr)",
-		gap: 10,
-		marginBottom: 7,
-		color: tokens.colorTextMuted,
-		fontSize: 12,
-		minWidth: 0
-	},
-	revisionMeta: {
-		display: "grid",
-		gap: 3,
-		minWidth: 0,
-		color: tokens.colorText,
-		fontFamily: tokens.fontMono
-	},
 	revisionDescription: {
 		minWidth: 0,
 		margin: 0,
@@ -947,7 +904,8 @@ export const styles = stylex.create({
 		overflowWrap: "anywhere"
 	},
 	revisionSummary: {
-		marginBottom: 8,
+		display: "block",
+		marginTop: 6,
 		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},

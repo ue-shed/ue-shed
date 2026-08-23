@@ -53,8 +53,10 @@ function actorTitle(actor: WorldLogActor["actor"]): string {
 }
 
 function historyFrameTitle(frame: MapHistoryPlaybackFrame): string {
-	return frame.kind === "range_start" ? "RANGE START" : `AFTER CL ${frame.revision.change}`;
+	return frame.kind === "range_start" ? "Range start" : `After CL ${frame.revision.change}`;
 }
+
+const cap = (value: string): string => value.replace(/^./, (c) => c.toUpperCase());
 
 function movementTrail(event: WorldLogActorEvent): string | undefined {
 	if (event.change.kind !== "actor_moved") return undefined;
@@ -119,8 +121,8 @@ export function WorldLogScene(props: {
 			return {
 				badges: isHistory()
 					? [
-							...(actor.presentAtRangeEnd ? [] : ["REMOVED"]),
-							...(actorAtFrame === undefined ? ["NOT AT FRAME"] : [])
+							...(actor.presentAtRangeEnd ? [] : ["Removed"]),
+							...(actorAtFrame === undefined ? ["Not at frame"] : [])
 						]
 					: [],
 				classLabel: shortClass(displayActor.classPath),
@@ -210,7 +212,7 @@ export function WorldLogScene(props: {
 		return view.kind === "history" ? view.frame.actors.length : view.world.actors.length;
 	});
 	const frameTitle = createMemo(() =>
-		props.view.kind === "history" ? historyFrameTitle(props.view.frame) : "CURRENT SAVED STATE"
+		props.view.kind === "history" ? historyFrameTitle(props.view.frame) : "Current map"
 	);
 	const mapPath = createMemo(() =>
 		props.view.kind === "history" ? props.view.history.query.mapPath : props.view.world.mapPath
@@ -253,7 +255,7 @@ export function WorldLogScene(props: {
 					viewFilters().changedOnly && styles.actorFilterButtonActive
 				)}
 			>
-				CHANGED
+				Changed
 			</button>
 			<For each={["all", "present", "removed"] as const}>
 				{(presence) => (
@@ -266,7 +268,7 @@ export function WorldLogScene(props: {
 							viewFilters().presence === presence && styles.actorFilterButtonActive
 						)}
 					>
-						{presence.toUpperCase()}
+						{cap(presence)}
 					</button>
 				)}
 			</For>
@@ -282,7 +284,7 @@ export function WorldLogScene(props: {
 								styles.actorFilterButtonActive
 						)}
 					>
-						{resolution === "all" ? "ANY POSITION" : resolution.toUpperCase()}
+						{resolution === "all" ? "Any position" : cap(resolution)}
 					</button>
 				)}
 			</For>
@@ -293,24 +295,22 @@ export function WorldLogScene(props: {
 		<section aria-label="Saved actor point map" {...stylex.props(styles.actorAtlas)}>
 			<header {...stylex.props(styles.actorAtlasHeader)}>
 				<div>
-					<span {...stylex.props(styles.sectionKicker)}>
-						{isHistory() ? "SAVED ACTOR HISTORY" : "CURRENT SAVED MAP"}
-					</span>
-					<h2>{frameTitle()} point map</h2>
+					<h2 {...stylex.props(styles.atlasTitle)}>{frameTitle()}</h2>
 					<code {...stylex.props(styles.actorAtlasPath)}>{mapPath()}</code>
 				</div>
 				<div {...stylex.props(styles.snapshotSummary)}>
-					<strong>{frameResolvedActorCount().toLocaleString()}</strong>
-					<span>{isHistory() ? "RESOLVED AT FRAME" : "RESOLVED ACTORS"}</span>
+					<span>
+						<b>{frameResolvedActorCount().toLocaleString()}</b> resolved actors
+					</span>
 					<small>
 						{isHistory()
-							? `${frameCompleteness().toUpperCase()} COVERAGE`
-							: `${frameActorCount().toLocaleString()} ACTORS · ${frameCompleteness().toUpperCase()}`}
+							? `${frameCompleteness()} coverage at this frame`
+							: `${frameActorCount().toLocaleString()} actors · ${frameCompleteness()}`}
 					</small>
 				</div>
 			</header>
 			<Show when={historyView()}>
-				<nav aria-label="Saved state scrubber" {...stylex.props(styles.playbackFrames)}>
+				<nav aria-label="Frames" {...stylex.props(styles.playbackFrames)}>
 					<button
 						type="button"
 						aria-label="Show state at range start"
@@ -324,7 +324,7 @@ export function WorldLogScene(props: {
 								styles.playbackFrameButtonActive
 						)}
 					>
-						RANGE START
+						Range start
 					</button>
 					<For each={historyView()?.history.revisions ?? []}>
 						{(revision, revisionIndex) => (
@@ -348,7 +348,7 @@ export function WorldLogScene(props: {
 										styles.playbackFrameButtonActive
 								)}
 							>
-								AFTER CL {revision.change}
+								After CL {revision.change}
 							</button>
 						)}
 					</For>
@@ -356,21 +356,20 @@ export function WorldLogScene(props: {
 			</Show>
 			<Show when={frameHasNoMap()}>
 				<div {...stylex.props(styles.frameNotice)}>
-					This range begins before the map was created. The empty state is a saved
-					baseline, not a failed reconstruction.
+					This range begins before the map existed. There is no saved state to show at
+					this frame.
 				</div>
 			</Show>
 			<Show when={frameCompleteness() === "partial"}>
 				<div {...stylex.props(styles.frameNotice, styles.frameNoticePartial)}>
-					Partial saved-world coverage at this frame. Actor state is limited to the
-					packages that could be read.
+					Partial coverage at this frame. Actor state is limited to the packages that
+					could be read.
 				</div>
 			</Show>
 			<Show when={unclassifiedPackageChangeCount() > 0}>
 				<div {...stylex.props(styles.frameNotice, styles.frameNoticeUnclassified)}>
 					{unclassifiedPackageChangeCount()} unclassified package change
-					{unclassifiedPackageChangeCount() === 1 ? "" : "s"} at this frame. Their changed
-					bytes remain in the changelist evidence ledger.
+					{unclassifiedPackageChangeCount() === 1 ? "" : "s"} at this frame.
 				</div>
 			</Show>
 			<div {...stylex.props(styles.actorAtlasWorkspace)}>
@@ -387,7 +386,7 @@ export function WorldLogScene(props: {
 					filters={actorFilters()}
 					itemListLabel="Saved actors"
 					items={explorerItems()}
-					label="ACTOR VIEW FILTERS"
+					label="Filters"
 					onClassPathsChange={(classPaths) =>
 						setViewFilters((current) => ({
 							...current,
@@ -399,13 +398,11 @@ export function WorldLogScene(props: {
 					}
 					onFocus={(key) => pointMap?.focusKey(key)}
 					onSelect={selectActor}
-					queryAriaLabel="Find World Log actor"
+					queryAriaLabel="Find an actor"
 					role="complementary"
 					selectedClassPath={undefined}
 					selectedKey={props.selectedActorKey}
-					title={
-						isHistory() ? "Actors in this history range" : "Actors in current saved map"
-					}
+					title={isHistory() ? "Actors in this range" : "Actors in the current map"}
 				/>
 				<div {...stylex.props(styles.pointMapFrame)}>
 					<div {...stylex.props(styles.northMarker)}>N ↑</div>
@@ -432,7 +429,7 @@ export function WorldLogScene(props: {
 									aria-label="Selected changelist map overlay"
 									{...stylex.props(styles.pointMapOverlayLegend)}
 								>
-									<strong>CL {revision().change} DIFF OVERLAY</strong>
+									<strong>CL {revision().change} diff</strong>
 									<For each={changelistTones}>
 										{(tone) => (
 											<span>
@@ -443,7 +440,7 @@ export function WorldLogScene(props: {
 															worldLogChangelistToneColor(tone)
 													}}
 												/>
-												{tone.toUpperCase()} <b>{summary()?.[tone] ?? 0}</b>
+												{cap(tone)} <b>{summary()?.[tone] ?? 0}</b>
 											</span>
 										)}
 									</For>
@@ -455,9 +452,7 @@ export function WorldLogScene(props: {
 						when={plottedPoints().length > 0}
 						fallback={
 							<div {...stylex.props(styles.noResolvedActors)}>
-								No saved actors with resolved positions match this view filter at
-								this
-								{isHistory() ? " submitted state." : " current saved state."}
+								No actors with resolved positions match these filters at this frame.
 							</div>
 						}
 					>
@@ -480,7 +475,7 @@ export function WorldLogScene(props: {
 						onClick={() => pointMap?.resetView()}
 						{...stylex.props(styles.pointMapReset)}
 					>
-						RESET VIEW
+						Reset view
 					</button>
 				</div>
 				<aside aria-label="Selected saved actor" {...stylex.props(styles.actorInspector)}>
@@ -488,69 +483,64 @@ export function WorldLogScene(props: {
 						when={selectedActor()}
 						fallback={
 							<div {...stylex.props(styles.actorInspectorEmpty)}>
-								<span>SELECT A POINT</span>
+								<strong>No actor selected</strong>
 								<p>
-									Choose an actor from the map or outliner to inspect its saved
-									state.
+									Choose a point on the map or a row in the outliner to inspect
+									its saved state.
 								</p>
 							</div>
 						}
 					>
 						{(actor) => (
 							<>
-								<span {...stylex.props(styles.sectionKicker)}>
-									{isHistory() ? "ACTOR HISTORY" : "CURRENT SAVED ACTOR"}
-								</span>
 								<h3>{actorTitle(selectedActorAtFrame() ?? actor().actor)}</h3>
 								<code>{(selectedActorAtFrame() ?? actor().actor).classPath}</code>
 								<dl {...stylex.props(styles.actorFacts)}>
 									<div>
-										<dt>EVENTS</dt>
+										<dt>Events</dt>
 										<dd>{actor().changeCount}</dd>
 									</div>
 									<div>
-										<dt>FRAME</dt>
+										<dt>Frame</dt>
 										<dd>{frameTitle()}</dd>
 									</div>
 									<div>
-										<dt>{isHistory() ? "FRAME STATUS" : "STATE"}</dt>
+										<dt>{isHistory() ? "At frame" : "Presence"}</dt>
 										<dd>
 											{isHistory()
 												? selectedActorAtFrame() === undefined
-													? "NOT PRESENT"
-													: "AT FRAME"
-												: "CURRENT SAVED"}
+													? "Not at frame"
+													: "Present"
+												: "Current"}
 										</dd>
 									</div>
 									<Show when={isHistory()}>
 										<div>
-											<dt>RANGE-END STATUS</dt>
+											<dt>Range end</dt>
 											<dd>
-												{actor().presentAtRangeEnd
-													? "AT RANGE END"
-													: "REMOVED"}
+												{actor().presentAtRangeEnd ? "Present" : "Removed"}
 											</dd>
 										</div>
 										<div>
-											<dt>LIFECYCLE</dt>
+											<dt>Lifecycle</dt>
 											<dd>{humanize(worldLogActorLifecycle(actor()))}</dd>
 										</div>
 									</Show>
 									<div>
-										<dt>RESOLUTION</dt>
+										<dt>Position</dt>
 										<dd>
 											{selectedActorAtFrame() === undefined
-												? "NOT PRESENT"
+												? "Not at frame"
 												: selectedActorAtFrame()!.transform.status ===
 													  "resolved"
-													? "RESOLVED"
-													: "UNRESOLVED"}
+													? "Resolved"
+													: "Unresolved"}
 										</dd>
 									</div>
 									<Show when={selectedActorPosition()}>
 										{(position) => (
 											<div>
-												<dt>POSITION AT FRAME</dt>
+												<dt>Position at frame</dt>
 												<dd>{position()}</dd>
 											</div>
 										)}
@@ -558,9 +548,7 @@ export function WorldLogScene(props: {
 								</dl>
 								<Show when={selectedActorMovements().length > 0}>
 									<section {...stylex.props(styles.actorEventSection)}>
-										<span {...stylex.props(styles.sectionKicker)}>
-											MOVEMENT TRAIL
-										</span>
+										<span {...stylex.props(styles.sectionLabel)}>Movement</span>
 										<ol {...stylex.props(styles.actorEventList)}>
 											<For each={selectedActorMovements()}>
 												{(event) => (
@@ -577,20 +565,15 @@ export function WorldLogScene(props: {
 									when={isHistory()}
 									fallback={
 										<section {...stylex.props(styles.actorEventSection)}>
-											<span {...stylex.props(styles.sectionKicker)}>
-												MAP RECORD
-											</span>
 											<p>
-												This is the actor state read directly from the
-												selected saved map.
+												This is the actor's state read from the current
+												saved map.
 											</p>
 										</section>
 									}
 								>
 									<section {...stylex.props(styles.actorEventSection)}>
-										<span {...stylex.props(styles.sectionKicker)}>
-											SEMANTIC EVENTS
-										</span>
+										<span {...stylex.props(styles.sectionLabel)}>Events</span>
 										<ol {...stylex.props(styles.actorEventList)}>
 											<For each={selectedActorEvents()}>
 												{(event) => (
@@ -634,7 +617,7 @@ export function WorldLogScene(props: {
 									}
 									{...stylex.props(styles.clearActorSelection)}
 								>
-									CLEAR ACTOR FILTER
+									Clear selection
 								</button>
 							</>
 						)}

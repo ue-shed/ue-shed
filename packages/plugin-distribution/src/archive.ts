@@ -1,21 +1,29 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { createGunzip } from "node:zlib";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
 	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	MalformedOrUnsafeArchive,
 	PluginStorageFailure
 } from "./errors.js";
-import type { PluginBundleManifest } from "./manifest.js";
+import {
+	EngineBuildId,
+	isCompiledPluginBundleManifest,
+	type PluginBundleManifest
+} from "./manifest.js";
 import type { PluginDistributionLimits, PluginInstallProgress } from "./model.js";
 
 const TAR_BLOCK_BYTES = 512;
 const COPY_CHUNK_BYTES = 64 * 1024;
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+const UnrealModuleManifestEvidence = Schema.Struct({
+	BuildId: EngineBuildId,
+	Modules: Schema.Record(Schema.String, Schema.String)
+});
 
 export interface VerifiedPluginArtifact {
 	readonly bytes: number;
@@ -373,6 +381,34 @@ export async function extractPluginArchiveToDirectory(
 			const descriptor = `Plugins/${plugin.descriptorPath}`;
 			if (files[descriptor] === undefined) {
 				throw new Error(`Plugin archive is missing descriptor ${plugin.descriptorPath}.`);
+			}
+		}
+		if (isCompiledPluginBundleManifest(options.manifest)) {
+			const platform = options.manifest.compatibility.platform;
+			const binaryExtension =
+				platform === "Win64" ? ".dll" : platform === "Mac" ? ".dylib" : ".so";
+			for (const plugin of options.manifest.plugins) {
+				const binaryRoot = `Plugins/${plugin.directory}/Binaries/${platform}/`;
+				const paths = Object.keys(files).filter((path) => path.startsWith(binaryRoot));
+				const modulePaths = paths.filter((path) => path.endsWith(".modules"));
+				if (modulePaths.length === 0) {
+					throw new Error(`Compiled plugin ${plugin.id} is missing .modules evidence.`);
+				}
+				if (!paths.some((path) => path.toLowerCase().endsWith(binaryExtension))) {
+					throw new Error(
+						`Compiled plugin ${plugin.id} is missing a ${binaryExtension} binary.`
+					);
+				}
+				for (const modulePath of modulePaths) {
+					const evidence = Schema.decodeUnknownSync(UnrealModuleManifestEvidence)(
+						JSON.parse(await readFile(resolve(options.destination, modulePath), "utf8"))
+					);
+					if (evidence.BuildId !== options.manifest.compatibility.engineBuildId) {
+						throw new Error(
+							`.modules BuildId ${evidence.BuildId} does not match ${options.manifest.compatibility.engineBuildId}: ${modulePath}`
+						);
+					}
+				}
 			}
 		}
 		return { extractedBytes, fileCount, files };

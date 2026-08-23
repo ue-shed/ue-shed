@@ -26,6 +26,20 @@ export class IncompatibleUnrealVersion extends Schema.TaggedErrorClass<Incompati
 	{ ...ErrorFields, releaseVersion: Schema.String, unrealVersion: Schema.String }
 ) {}
 
+export class CompatiblePluginBuildUnavailable extends Schema.TaggedErrorClass<CompatiblePluginBuildUnavailable>()(
+	"CompatiblePluginBuildUnavailable",
+	{
+		...ErrorFields,
+		architecture: Schema.String,
+		configuration: Schema.String,
+		engineBuildId: Schema.String,
+		platform: Schema.String,
+		releaseVersion: Schema.String,
+		target: Schema.String,
+		unrealVersion: Schema.String
+	}
+) {}
+
 export class ManifestDigestMismatch extends Schema.TaggedErrorClass<ManifestDigestMismatch>()(
 	"ManifestDigestMismatch",
 	{
@@ -96,6 +110,7 @@ export const PluginDistributionError = Schema.Union([
 	OfflineCacheMiss,
 	UnsupportedManifestVersion,
 	IncompatibleUnrealVersion,
+	CompatiblePluginBuildUnavailable,
 	ManifestDigestMismatch,
 	ArtifactDigestMismatch,
 	MalformedOrUnsafeArchive,

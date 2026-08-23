@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, stat } from "node:fs/promises";
 import { get as httpGet, type IncomingMessage } from "node:http";
@@ -11,12 +12,13 @@ import {
 	ReleaseUnavailable,
 	TransportFailure
 } from "./errors.js";
-import type { PluginBundleManifest } from "./manifest.js";
+import { isCompiledPluginBundleManifest, type PluginBundleManifest } from "./manifest.js";
 import type {
 	PluginInstallProgress,
 	PluginDistributionLimits,
 	PluginSourceProvenance
 } from "./model.js";
+import type { PluginVariantRequest } from "./variant.js";
 
 const COPY_CHUNK_BYTES = 64 * 1024;
 
@@ -37,6 +39,7 @@ export interface PluginReleaseSourceApi {
 		ReleaseUnavailable | TransportFailure | PluginInstallCancelled
 	>;
 	readonly fetchManifest: (options: {
+		readonly artifact: PluginVariantRequest;
 		readonly limits: PluginDistributionLimits;
 		readonly releaseVersion: string;
 	}) => Effect.Effect<
@@ -146,6 +149,39 @@ export function mapReviewPluginReleaseAssetNames(releaseVersion: string) {
 	} as const;
 }
 
+function compiledAssetStem(releaseVersion: string, request: PluginVariantRequest) {
+	if (request.kind === "source") return `ue-shed-plugins-${releaseVersion}`;
+	const buildId = createHash("sha256").update(request.engineBuildId).digest("hex").slice(0, 16);
+	return [
+		"ue-shed-plugins",
+		releaseVersion,
+		"unrealeditor",
+		request.platform.toLowerCase(),
+		request.architecture.toLowerCase(),
+		request.unrealVersion,
+		`build-${buildId}`,
+		"development"
+	].join("-");
+}
+
+export function variantPluginReleaseAssetNames(
+	releaseVersion: string,
+	request: PluginVariantRequest
+) {
+	const stem = compiledAssetStem(releaseVersion, request);
+	return { artifact: `${stem}.tar.gz`, manifest: `${stem}.manifest.json` } as const;
+}
+
+export function mapReviewVariantPluginReleaseAssetNames(
+	releaseVersion: string,
+	request: PluginVariantRequest
+) {
+	if (request.kind === "source") return mapReviewPluginReleaseAssetNames(releaseVersion);
+	const generic = compiledAssetStem(releaseVersion, request);
+	const stem = generic.replace("ue-shed-plugins-", "ue-shed-plugins-map-review-");
+	return { artifact: `${stem}.tar.gz`, manifest: `${stem}.manifest.json` } as const;
+}
+
 export interface LocalPluginReleaseSourceOptions {
 	readonly artifactPath?: string;
 	readonly directory?: string;
@@ -167,7 +203,10 @@ export const localPluginReleaseSourceLayer = (
 							options.manifestPath ??
 								join(
 									options.directory ?? ".",
-									pluginReleaseAssetNames(request.releaseVersion).manifest
+									variantPluginReleaseAssetNames(
+										request.releaseVersion,
+										request.artifact
+									).manifest
 								)
 						);
 						const bytes = await readBounded(
@@ -283,7 +322,10 @@ async function readHttpBody(response: IncomingMessage, maximumBytes: number, sig
 }
 
 export interface HttpPluginReleaseSourceOptions {
-	readonly assetNames?: (releaseVersion: string) => {
+	readonly assetNames?: (
+		releaseVersion: string,
+		artifact: PluginVariantRequest
+	) => {
 		readonly artifact: string;
 		readonly manifest: string;
 	};
@@ -300,8 +342,15 @@ export const httpPluginReleaseSourceLayer = (
 		options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`
 	);
 	const sourceId = options.sourceId ?? baseUrl.origin;
-	const assetUrl = (releaseVersion: string, kind: "artifact" | "manifest") => {
-		const names = (options.assetNames ?? pluginReleaseAssetNames)(releaseVersion);
+	const assetUrl = (
+		releaseVersion: string,
+		artifact: PluginVariantRequest,
+		kind: "artifact" | "manifest"
+	) => {
+		const names = (options.assetNames ?? variantPluginReleaseAssetNames)(
+			releaseVersion,
+			artifact
+		);
 		const directory = options.releaseDirectory?.(releaseVersion) ?? "";
 		return new URL(`${directory.length > 0 ? `${directory}/` : ""}${names[kind]}`, baseUrl);
 	};
@@ -317,7 +366,7 @@ export const httpPluginReleaseSourceLayer = (
 			fetchManifest: Effect.fn("PluginReleaseSource.http.fetchManifest")((request) =>
 				Effect.tryPromise({
 					try: async (signal) => {
-						const url = assetUrl(request.releaseVersion, "manifest");
+						const url = assetUrl(request.releaseVersion, request.artifact, "manifest");
 						const { response } = await httpResponse(url, signal);
 						if (response.statusCode !== 200) {
 							response.resume();
@@ -353,7 +402,18 @@ export const httpPluginReleaseSourceLayer = (
 			fetchArtifact: Effect.fn("PluginReleaseSource.http.fetchArtifact")((request) =>
 				Effect.tryPromise({
 					try: async (signal) => {
-						const url = assetUrl(request.manifest.releaseVersion, "artifact");
+						const artifact = isCompiledPluginBundleManifest(request.manifest)
+							? {
+									architecture: request.manifest.compatibility.architecture,
+									configuration: request.manifest.compatibility.configuration,
+									engineBuildId: request.manifest.compatibility.engineBuildId,
+									kind: "compiled" as const,
+									platform: request.manifest.compatibility.platform,
+									target: request.manifest.compatibility.target,
+									unrealVersion: request.manifest.compatibility.unrealVersion
+								}
+							: { kind: "source" as const };
+						const url = assetUrl(request.manifest.releaseVersion, artifact, "artifact");
 						const { response } = await httpResponse(url, signal);
 						if (response.statusCode !== 200) {
 							response.resume();
@@ -421,7 +481,7 @@ export const githubReleaseSourceLayer = (options: {
 	readonly sourceId?: string;
 }): Layer.Layer<PluginReleaseSource> =>
 	httpPluginReleaseSourceLayer({
-		assetNames: mapReviewPluginReleaseAssetNames,
+		assetNames: mapReviewVariantPluginReleaseAssetNames,
 		baseUrl: `https://github.com/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repository)}/releases/download/`,
 		kind: "github",
 		releaseDirectory: (releaseVersion) => `v${releaseVersion}`,

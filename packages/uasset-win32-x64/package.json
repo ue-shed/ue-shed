@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/uasset-win32-x64",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"description": "Windows x64 native artifact for the UE Shed saved-asset parser",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {

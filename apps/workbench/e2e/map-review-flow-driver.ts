@@ -336,7 +336,7 @@ export async function createMapReviewFlowHarness(args: {
 					);
 				}
 				await current.openRoute("Map Review");
-				await current.page.getByRole("tab", { name: "LIVE WORLD" }).click();
+				await current.page.getByRole("tab", { name: "Live session" }).click();
 				await expect(current.page.getByText("Map Review Flow Gallery")).toBeVisible({
 					timeout: 60_000
 				});
@@ -345,11 +345,11 @@ export async function createMapReviewFlowHarness(args: {
 		selectSubject: () =>
 			step("selectSubject", async () => {
 				const page = currentWorkbench().page;
-				const stop = page.getByRole("button", { exact: true, name: "STOP" });
+				const stop = page.getByRole("button", { exact: true, name: "Stop" });
 				if (!(await stop.isVisible())) {
-					await page.getByRole("button", { exact: true, name: "PLAY" }).click();
+					await page.getByRole("button", { exact: true, name: "Play" }).click();
 				}
-				await expect(page.getByRole("button", { exact: true, name: "STOP" })).toBeVisible({
+				await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeVisible({
 					timeout: 30_000
 				});
 				await selectActor(compoundSubject);
@@ -554,18 +554,18 @@ export async function createMapReviewFlowHarness(args: {
 			step("loadView", async () => {
 				const current = currentWorkbench();
 				await current.openRoute("Map Review");
-				await current.page.getByRole("tab", { name: "LIVE WORLD" }).click();
+				await current.page.getByRole("tab", { name: "Live session" }).click();
 				const saved = Schema.decodeUnknownSync(ReviewSet)(
 					await readOnlyJson(reviewSetPath)
 				);
 				const status = current.page.getByRole("region", { name: "Review set status" });
 				await expect(status).toContainText("Map Review Flow Gallery", { timeout: 60_000 });
 				await expect(status).toContainText(String(saved.views.length));
-				const stop = current.page.getByRole("button", { exact: true, name: "STOP" });
+				const stop = current.page.getByRole("button", { exact: true, name: "Stop" });
 				if (await stop.isVisible()) {
 					await stop.click();
 					await expect(
-						current.page.getByRole("button", { exact: true, name: "PLAY" })
+						current.page.getByRole("button", { exact: true, name: "Play" })
 					).toBeVisible({ timeout: 30_000 });
 				}
 				return {

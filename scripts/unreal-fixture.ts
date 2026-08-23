@@ -184,6 +184,7 @@ function launchAuthoring(tools: UnrealEngineTools, pluginDescriptors: readonly s
 			process.env.UE_SHED_FIXTURE_AUTHORING_MAP ?? "/Game/Fixture/Cameras/L_CameraLoad",
 			...pluginDescriptors.map((descriptor) => `-PLUGIN=${descriptor}`),
 			...unrealRemoteControlLaunchArguments(ueShedPluginIds, Number(remoteControlPort)),
+			...(process.env.UE_SHED_FIXTURE_UNATTENDED === "1" ? ["-unattended"] : []),
 			"-ini:EditorSettings:[/Script/UnrealEd.EditorPerformanceSettings]:bThrottleCPUWhenNotForeground=False",
 			"-nop4",
 			"-nosplash"

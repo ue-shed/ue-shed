@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-inspection"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -132,7 +132,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-inspection-wasm"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-parser"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",

@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { runPnpm } from "./workbench-tools.ts";
 
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "http://127.0.0.1:30001";
+const remoteControlStartupTimeoutMs = 180_000;
 const lifecycleRoot = mkdtempSync(join(tmpdir(), "ue-shed-check-unreal-"));
 const pidFile = join(lifecycleRoot, "fixture-editor.pid");
 const environment = {
 	...process.env,
 	UE_SHED_FIXTURE_PID_FILE: pidFile,
+	UE_SHED_FIXTURE_UNATTENDED: "1",
 	UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint
 };
 
@@ -24,19 +26,39 @@ async function remoteControlResponds() {
 }
 
 async function waitForRemoteControl(editorPid: number) {
-	const deadline = Date.now() + 120_000;
-	while (Date.now() < deadline) {
-		if (await remoteControlResponds()) return;
-		try {
-			process.kill(editorPid, 0);
-		} catch {
-			throw new Error(
-				`The fixture editor exited before Remote Control started at ${endpoint}.`
-			);
+	const deadline = Date.now() + remoteControlStartupTimeoutMs;
+	const controller = new AbortController();
+	let request: Promise<boolean> | undefined;
+	try {
+		while (Date.now() < deadline) {
+			request ??= fetch(`${endpoint.replace(/\/+$/, "")}/remote/info`, {
+				signal: controller.signal
+			})
+				.then((response) => response.ok)
+				.catch(() => false);
+			const outcome = await Promise.race([
+				request.then((ready) => ({ kind: "response" as const, ready })),
+				new Promise<{ readonly kind: "pending" }>((resolve) =>
+					setTimeout(() => resolve({ kind: "pending" }), 1_000)
+				)
+			]);
+			if (outcome.kind === "response") {
+				request = undefined;
+				if (outcome.ready) return;
+				await new Promise((resolve) => setTimeout(resolve, 1_000));
+			}
+			try {
+				process.kill(editorPid, 0);
+			} catch {
+				throw new Error(
+					`The fixture editor exited before Remote Control started at ${endpoint}.`
+				);
+			}
 		}
-		await new Promise((resolve) => setTimeout(resolve, 1_000));
+	} finally {
+		controller.abort();
 	}
-	throw new Error(`The fixture editor did not start Remote Control at ${endpoint} within 120s.`);
+	throw new Error(`The fixture editor did not start Remote Control at ${endpoint} within 180s.`);
 }
 
 function ownedEditorPid() {

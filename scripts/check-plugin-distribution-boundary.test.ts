@@ -35,9 +35,12 @@ test("plugin distribution stays independent of product hosts and studio reposito
 	}
 	// SAFETY: this repository-owned package manifest is immediately limited to two optional maps.
 	const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as {
+		version: string;
 		dependencies?: Record<string, string>;
 		peerDependencies?: Record<string, string>;
 	};
-	assert.deepEqual(manifest.dependencies ?? {}, { "@ue-shed/engine": "workspace:0.4.0" });
+	assert.deepEqual(manifest.dependencies ?? {}, {
+		"@ue-shed/engine": `workspace:${manifest.version}`
+	});
 	assert.deepEqual(Object.keys(manifest.peerDependencies ?? {}), ["effect"]);
 });

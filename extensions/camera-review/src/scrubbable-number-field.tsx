@@ -199,7 +199,7 @@ const styles = stylex.create({
 	axisZ: { borderLeftColor: "#6366f1" },
 	scrubbing: {
 		borderColor: tokens.colorAccent,
-		backgroundColor: "rgba(228, 242, 34, 0.08)"
+		backgroundColor: tokens.colorAccentWash
 	},
 	fieldHeader: {
 		display: "flex",

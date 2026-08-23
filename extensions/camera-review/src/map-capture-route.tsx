@@ -49,6 +49,11 @@ type LivePreviewState =
 	| { readonly status: "loading" }
 	| { readonly message: string; readonly recovery: string; readonly status: "failed" }
 	| ({ readonly status: "ready" } & Omit<ReadyLivePreview, "status">);
+type Notice = {
+	readonly technical?: string;
+	readonly text: string;
+	readonly tone: "error" | "info" | "success";
+};
 
 function formatMeasurement(value: number): string {
 	return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -61,13 +66,13 @@ function causeMessage(cause: Cause.Cause<unknown>): string {
 function capturePhaseLabel(phase: MapCaptureProgressEvent["phase"]): string {
 	switch (phase) {
 		case "opening_map":
-			return "OPENING TARGET MAP";
+			return "Opening target map";
 		case "capturing":
-			return "CAPTURING TILES";
+			return "Capturing tiles";
 		case "publishing":
-			return "VERIFYING + PUBLISHING";
+			return "Verifying and publishing";
 		case "loading_preview":
-			return "LOADING PREVIEW";
+			return "Loading preview";
 	}
 }
 
@@ -131,10 +136,10 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	const [captureProgress, setCaptureProgress] = createSignal<MapCaptureProgressEvent>();
 	const [livePreview, setLivePreview] = createSignal<LivePreviewState>({ status: "idle" });
 	const [previewRefresh, setPreviewRefresh] = createSignal(0);
-	const [notice, setNotice] = createSignal<{
-		readonly tone: "error" | "info" | "success";
-		readonly text: string;
-	}>({ tone: "info", text: "Create a plan or open a portable plan file to begin." });
+	const [notice, setNotice] = createSignal<Notice>({
+		tone: "info",
+		text: "Create a plan or open a saved plan file to begin."
+	});
 	const validation = createMemo(() => {
 		const current = draft();
 		return current === undefined ? undefined : validateMapCapturePlanDraft(current);
@@ -285,8 +290,8 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 				tone: "success",
 				text:
 					result.source === "new"
-						? "New Map Capture Plan ready to author."
-						: `${result.tileCount.toLocaleString()} deterministic tiles loaded.`
+						? "New plan ready to edit."
+						: `${result.tileCount.toLocaleString()} tiles loaded from the saved plan.`
 			});
 		} else if (result.status === "failed") {
 			setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
@@ -296,15 +301,25 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	function newPlan() {
 		setNotice({ tone: "info", text: "Creating a plan from the selected project…" });
 		newAction.run(props.client.newPlan(), {
-			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
+			onFailure: (cause) =>
+				setNotice({
+					text: "Couldn't create a plan.",
+					technical: causeMessage(cause),
+					tone: "error"
+				}),
 			onSuccess: acceptSelection
 		});
 	}
 
 	function choosePlan() {
-		setNotice({ tone: "info", text: "Reading portable plan…" });
+		setNotice({ tone: "info", text: "Reading plan file…" });
 		chooseAction.run(props.client.choosePlan(), {
-			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
+			onFailure: (cause) =>
+				setNotice({
+					text: "Couldn't read the plan file.",
+					technical: causeMessage(cause),
+					tone: "error"
+				}),
 			onSuccess: acceptSelection
 		});
 	}
@@ -312,7 +327,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	function updateDraft(change: (current: MapCapturePlanDraft) => MapCapturePlanDraft) {
 		setDraft((current) => (current === undefined ? current : change(current)));
 		setCapture(undefined);
-		setNotice({ tone: "info", text: "Plan changed. Validate and save before sharing it." });
+		setNotice({ tone: "info", text: "Plan changed. Save it to share the new version." });
 	}
 
 	function updateRender(
@@ -390,7 +405,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 		const current = plan();
 		if (current === undefined) return;
 		const currentPlanPath = selection()?.planPath;
-		setNotice({ tone: "info", text: saveAs ? "Choosing a plan destination…" : "Saving plan…" });
+		setNotice({ tone: "info", text: saveAs ? "Choosing where to save…" : "Saving plan…" });
 		saveAction.run(
 			props.client.savePlan({
 				plan: current,
@@ -398,7 +413,12 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 				saveAs
 			}),
 			{
-				onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
+				onFailure: (cause) =>
+					setNotice({
+						text: "Couldn't save the plan.",
+						technical: causeMessage(cause),
+						tone: "error"
+					}),
 				onSuccess: (result) => {
 					if (result.status === "failed") {
 						setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
@@ -407,7 +427,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					if (result.status === "cancelled") {
 						setNotice({
 							tone: "info",
-							text: "Save cancelled; the draft is still in memory."
+							text: "Save cancelled; your edits are still here."
 						});
 						return;
 					}
@@ -420,7 +440,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					);
 					setNotice({
 						tone: "success",
-						text: `Saved portable plan to ${result.planPath}.`
+						text: `Saved plan to ${result.planPath}.`
 					});
 				}
 			}
@@ -432,7 +452,12 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 		if (current === undefined) return;
 		setNotice({ tone: "info", text: `Asking Unreal to open ${current.project.mapPath}…` });
 		openAction.run(props.client.openMap(current), {
-			onFailure: (cause) => setNotice({ tone: "error", text: causeMessage(cause) }),
+			onFailure: (cause) =>
+				setNotice({
+					text: "Couldn't open the target map.",
+					technical: causeMessage(cause),
+					tone: "error"
+				}),
 			onSuccess: (result) => {
 				if (result.status === "failed") {
 					setNotice({ tone: "error", text: `${result.message} ${result.recovery}` });
@@ -478,10 +503,10 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 			tone: "info",
 			text:
 				captureBackend() === "viewport_high_resolution"
-					? "Opening the map, then rendering each zoom with Unreal's viewport High Resolution Screenshot…"
+					? "Opening the map, then rendering each zoom with Unreal's viewport high-resolution screenshot…"
 					: openMapFirst
-						? "Safely opening the target map, then capturing bounded batches…"
-						: "Capturing the currently open target map in bounded batches…"
+						? "Opening the target map, then capturing tiles in batches…"
+						: "Capturing the currently open map in batches…"
 		});
 		captureAction.run(
 			props.client.capture({
@@ -494,7 +519,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 				onFailure: (cause) => {
 					setActiveCaptureOperationId(undefined);
 					setCaptureProgress(undefined);
-					setNotice({ tone: "error", text: causeMessage(cause) });
+					setNotice({
+						text: "Capture failed before it could finish.",
+						technical: causeMessage(cause),
+						tone: "error"
+					});
 				},
 				onSuccess: (result) => {
 					setActiveCaptureOperationId(undefined);
@@ -507,8 +536,8 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					setNotice({
 						tone: result.published ? "success" : "error",
 						text: result.published
-							? `Published immutable run ${result.manifest.runId}. Exact tiles load on demand in Capture Proof.`
-							: `Capture remained a ${result.manifest.state} attempt; inspect its failures in Capture Proof.`
+							? `Run ${result.manifest.runId} published. Tiles load on demand below.`
+							: `Capture stayed a ${result.manifest.state} attempt; check failed tiles below.`
 					});
 				}
 			}
@@ -517,21 +546,24 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 
 	return (
 		<main {...stylex.props(styles.page)}>
-			<header {...stylex.props(styles.hero)}>
-				<div>
-					<p {...stylex.props(styles.eyebrow)}>PLAN AUTHORING</p>
-					<h1 {...stylex.props(styles.title)}>Map Capture</h1>
+			<header {...stylex.props(styles.header)}>
+				<div {...stylex.props(styles.headerCopy)}>
+					<h1 {...stylex.props(styles.title)}>Map capture</h1>
+					<p {...stylex.props(styles.subtitle)}>
+						Publish multiresolution tiles of a saved map through a versioned plan.
+					</p>
 				</div>
-				<div {...stylex.props(styles.heroActions)}>
-					<button type="button" onClick={newPlan} {...stylex.props(styles.primaryButton)}>
-						NEW PLAN
+				<div {...stylex.props(styles.headerActions)}>
+					<button type="button" onClick={newPlan} {...stylex.props(styles.quietButton)}>
+						New plan
 					</button>
 					<button
 						type="button"
-						onClick={choosePlan}
-						{...stylex.props(styles.headerButton)}
+						disabled={plan() === undefined || isCapturing()}
+						onClick={() => runCapture(true)}
+						{...stylex.props(styles.primaryButton)}
 					>
-						OPEN PLAN
+						Capture
 					</button>
 				</div>
 			</header>
@@ -541,38 +573,36 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					<Show
 						when={draft()}
 						fallback={
-							<div {...stylex.props(styles.emptyPanel)}>
-								<span>01</span>
-								<strong>CREATE OR OPEN A PLAN</strong>
-							</div>
+							<p {...stylex.props(styles.controlsEmpty)}>
+								No plan yet. Use <strong>New plan</strong> above to start one from
+								the connected project.
+							</p>
 						}
 					>
 						{(current) => (
 							<>
-								<section {...stylex.props(styles.panel)}>
-									<div {...stylex.props(styles.sectionHeading)}>
-										<p {...stylex.props(styles.sectionLabel)}>
-											IDENTITY + TARGET
-										</p>
+								<section {...stylex.props(styles.card)}>
+									<div {...stylex.props(styles.cardHeading)}>
+										<h2 {...stylex.props(styles.sectionTitle)}>Plan</h2>
 										<span
 											{...stylex.props(
 												styles.dirtyFlag,
-												isDirty() && styles.dirty
+												isDirty() && styles.dirtyFlagActive
 											)}
 										>
-											{isDirty() ? "UNSAVED" : "SAVED"}
+											{isDirty() ? "Unsaved" : "Saved"}
 										</span>
 									</div>
 									<div {...stylex.props(styles.fieldGrid)}>
 										<TextField
-											label="PLAN ID"
+											label="Plan ID"
 											value={current().id}
 											onInput={(id) =>
 												updateDraft((value) => ({ ...value, id }))
 											}
 										/>
 										<TextField
-											label="PROJECT ID"
+											label="Project ID"
 											value={current().project.id}
 											onInput={(id) =>
 												updateDraft((value) => ({
@@ -586,7 +616,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										allowCustomPath
 										ariaLabel="Map capture target map"
 										customPathPlaceholder="/Game/Maps/L_MyMap"
-										label="TARGET MAP"
+										label="Target map"
 										maps={mapOptions()}
 										mapPath={current().project.mapPath}
 										onMapPathChange={(mapPath) =>
@@ -596,24 +626,51 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}))
 										}
 									/>
+									<div {...stylex.props(styles.planActions)}>
+										<button
+											type="button"
+											disabled={plan() === undefined || !isDirty()}
+											onClick={() => savePlan(false)}
+											{...stylex.props(styles.quietButton)}
+										>
+											Save
+										</button>
+										<button
+											type="button"
+											disabled={plan() === undefined}
+											onClick={() => savePlan(true)}
+											{...stylex.props(styles.quietButton)}
+										>
+											Save as
+										</button>
+										<button
+											type="button"
+											onClick={choosePlan}
+											{...stylex.props(styles.quietButton)}
+										>
+											Open plan
+										</button>
+									</div>
 								</section>
 
-								<section {...stylex.props(styles.panel)}>
-									<p {...stylex.props(styles.sectionLabel)}>CAPTURE AREA</p>
-									<div {...stylex.props(styles.captureAreaGrid)}>
+								<section {...stylex.props(styles.card)}>
+									<div {...stylex.props(styles.cardHeading)}>
+										<h2 {...stylex.props(styles.sectionTitle)}>Tiles</h2>
+									</div>
+									<div {...stylex.props(styles.fieldGridThree)}>
 										<NumberField
-											label="CENTER X"
+											label="Center X"
 											value={captureCenter()?.x ?? 0}
 											onInput={(x) => updateCaptureCenter("x", x)}
 										/>
 										<NumberField
-											label="CENTER Y"
+											label="Center Y"
 											value={captureCenter()?.y ?? 0}
 											onInput={(y) => updateCaptureCenter("y", y)}
 										/>
 										<NumberField
 											commit
-											label="SIZE · UU"
+											label="Size · UU"
 											min={1}
 											step={100}
 											title="Square capture width and height in Unreal units."
@@ -621,8 +678,8 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											onInput={updateCaptureSize}
 										/>
 									</div>
-									<div {...stylex.props(styles.requestedExtent)}>
-										<small>REQUESTED EDGES</small>
+									<div {...stylex.props(styles.readout)}>
+										<small>Requested edges</small>
 										<code>
 											S {formatMeasurement(current().requestedBounds.minX)} ·
 											N {formatMeasurement(current().requestedBounds.maxX)} ·
@@ -634,10 +691,15 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										{(currentGrid) => {
 											const bounds = () => currentGrid().snappedBounds;
 											return (
-												<div {...stylex.props(styles.outputExtent)}>
-													<small>ACTUAL TILE OUTPUT</small>
+												<div
+													{...stylex.props(
+														styles.readout,
+														styles.readoutAccent
+													)}
+												>
+													<small>Snapped tile output</small>
 													<code>
-														CENTER{" "}
+														Center{" "}
 														{formatMeasurement(
 															(bounds().minX + bounds().maxX) / 2
 														)}
@@ -654,13 +716,13 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											);
 										}}
 									</Show>
-									<div {...stylex.props(styles.metrics)}>
+									<div {...stylex.props(styles.metricsGrid)}>
 										<Metric
-											label="TOTAL TILES"
-											value={grid()?.tileCount ?? "—"}
+											label="Total tiles"
+											value={grid()?.tileCount.toLocaleString() ?? "—"}
 										/>
 										<Metric
-											label="LEVEL 0 IMAGE"
+											label="Level 0 image"
 											value={
 												coarsestLevel() === undefined
 													? "—"
@@ -670,82 +732,72 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 														)} × ${formatMeasurement(
 															coarsestLevel()!.rows *
 																current().tilePixelSize
-														)} PX`
+														)} px`
 											}
 										/>
 									</div>
-									<div {...stylex.props(styles.tileGeometryControl)}>
-										<div {...stylex.props(styles.captureAreaGrid)}>
-											<NumberField
-												commit
-												label="BASE GRID · N × N"
-												min={1}
-												step={1}
-												title="Level 0 tile count on each axis; enter 1, 2, 4, or any positive whole number."
-												value={coarsestLevel()?.rows ?? 1}
-												onInput={(tilesPerAxis) =>
-													updateDraft((value) =>
-														setMapCaptureDraftGridSize(
-															value,
-															tilesPerAxis
-														)
-													)
-												}
-											/>
-											<NumberField
-												commit
-												label="RESOLUTION · UU/PX"
-												min={0.01}
-												step={0.25}
-												title="Level 0 world units per pixel; the same resolution is used on X and Y."
-												value={current().levels.coarsestUnitsPerPixel}
-												onInput={(coarsestUnitsPerPixel) =>
-													updateDraft((value) => ({
-														...value,
-														levels: {
-															...value.levels,
-															coarsestUnitsPerPixel
-														}
-													}))
-												}
-											/>
-											<NumberField
-												commit
-												label="TILE SIZE · PX"
-												min={64}
-												max={4_096}
-												step={64}
-												title="Square PNG size. Changing it preserves tile world coverage by adjusting resolution."
-												value={current().tilePixelSize}
-												onInput={(tilePixelSize) =>
-													updateDraft((value) =>
-														setMapCaptureDraftTileSize(
-															value,
-															tilePixelSize
-														)
-													)
-												}
-											/>
-										</div>
+									<div {...stylex.props(styles.fieldGridThree)}>
+										<NumberField
+											commit
+											label="Base grid"
+											min={1}
+											step={1}
+											title="Level 0 tile count on each axis; enter 1, 2, 4, or any positive whole number."
+											value={coarsestLevel()?.rows ?? 1}
+											onInput={(tilesPerAxis) =>
+												updateDraft((value) =>
+													setMapCaptureDraftGridSize(value, tilesPerAxis)
+												)
+											}
+										/>
+										<NumberField
+											commit
+											label="Resolution · UU/PX"
+											min={0.01}
+											step={0.25}
+											title="Level 0 world units per pixel; the same resolution is used on X and Y."
+											value={current().levels.coarsestUnitsPerPixel}
+											onInput={(coarsestUnitsPerPixel) =>
+												updateDraft((value) => ({
+													...value,
+													levels: {
+														...value.levels,
+														coarsestUnitsPerPixel
+													}
+												}))
+											}
+										/>
+										<NumberField
+											commit
+											label="Tile size · PX"
+											min={64}
+											max={4_096}
+											step={64}
+											title="Square PNG size. Changing it preserves tile world coverage by adjusting resolution."
+											value={current().tilePixelSize}
+											onInput={(tilePixelSize) =>
+												updateDraft((value) =>
+													setMapCaptureDraftTileSize(value, tilePixelSize)
+												)
+											}
+										/>
 									</div>
-									<div {...stylex.props(styles.resolutionReadout)}>
-										<div>
-											<small>EACH LEVEL 0 TILE COVERS</small>
-											<strong>
-												{formatMeasurement(
-													current().tilePixelSize *
-														current().levels.coarsestUnitsPerPixel
-												)}{" "}
-												×{" "}
-												{formatMeasurement(
-													current().tilePixelSize *
-														current().levels.coarsestUnitsPerPixel
-												)}{" "}
-												UU
-											</strong>
-										</div>
+									<div {...stylex.props(styles.readout, styles.readoutAccent)}>
+										<small>Each level 0 tile covers</small>
+										<strong {...stylex.props(styles.readoutStrong)}>
+											{formatMeasurement(
+												current().tilePixelSize *
+													current().levels.coarsestUnitsPerPixel
+											)}{" "}
+											×{" "}
+											{formatMeasurement(
+												current().tilePixelSize *
+													current().levels.coarsestUnitsPerPixel
+											)}{" "}
+											UU
+										</strong>
 										<code>
-											{formatMeasurement(current().tilePixelSize)} PX ×{" "}
+											{formatMeasurement(current().tilePixelSize)} px ×{" "}
 											{formatMeasurement(
 												current().levels.coarsestUnitsPerPixel
 											)}{" "}
@@ -754,7 +806,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									</div>
 									<div {...stylex.props(styles.fieldGrid)}>
 										<NumberField
-											label="SEAM OVERDRAW · PX"
+											label="Seam overdraw · PX"
 											min={0}
 											max={32}
 											step={1}
@@ -765,7 +817,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}
 										/>
 										<NumberField
-											label="ZOOM LEVELS"
+											label="Zoom levels"
 											min={1}
 											max={24}
 											step={1}
@@ -780,11 +832,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 												<div {...stylex.props(styles.levelStep)}>
 													<small>
 														{level.zoom === 0
-															? "LEVEL 0 · WIDEST"
-															: `DETAIL ${level.zoom} · Z${level.zoom}`}
+															? "Z0 · widest"
+															: `Z${level.zoom}`}
 													</small>
 													<strong>
-														{level.rows} × {level.columns} TILES
+														{level.rows} × {level.columns}
 													</strong>
 													<span>
 														{formatMeasurement(level.unitsPerPixel)}{" "}
@@ -795,15 +847,15 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										</For>
 										<Show when={current().levels.count > 3}>
 											<span {...stylex.props(styles.moreLevels)}>
-												+{current().levels.count - 3} FINER LEVELS
+												+{current().levels.count - 3} finer levels
 											</span>
 										</Show>
 									</div>
 								</section>
 
-								<section {...stylex.props(styles.panel)}>
-									<div {...stylex.props(styles.sectionHeading)}>
-										<p {...stylex.props(styles.sectionLabel)}>CAPTURE</p>
+								<section {...stylex.props(styles.card)}>
+									<div {...stylex.props(styles.cardHeading)}>
+										<h2 {...stylex.props(styles.sectionTitle)}>Render</h2>
 										<select
 											aria-label="Render profile"
 											value={current().capture.render.profile}
@@ -817,12 +869,12 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}
 											{...stylex.props(styles.select)}
 										>
-											<option value="full_fidelity">FULL FIDELITY</option>
-											<option value="seam_stable">SEAM STABLE</option>
+											<option value="full_fidelity">Full fidelity</option>
+											<option value="seam_stable">Seam stable</option>
 											<option value="scene_capture_defaults">
-												SCENE CAPTURE DEFAULTS
+												Scene capture defaults
 											</option>
-											<option value="observation">OBSERVATION</option>
+											<option value="observation">Observation</option>
 										</select>
 									</div>
 									<Show
@@ -831,20 +883,20 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											"scene_capture_defaults"
 										}
 									>
-										<p {...stylex.props(styles.backendNote)}>
+										<p {...stylex.props(styles.note)}>
 											Comparison baseline using the previous tiled
 											SceneCapture renderer defaults.
 										</p>
 									</Show>
 									<Show when={current().capture.render.profile === "seam_stable"}>
-										<p {...stylex.props(styles.backendNote)}>
-											Project lighting with fixed exposure, spatial AA, and
+										<p {...stylex.props(styles.note)}>
+											Projects lighting with fixed exposure, spatial AA, and
 											view-independent Lumen fallbacks. Renders 2× then
 											downsamples.
 										</p>
 									</Show>
 									<NumberField
-										label="CAPTURE Z"
+										label="Capture Z"
 										value={current().capture.z}
 										onInput={(z) =>
 											updateDraft((value) => ({
@@ -873,8 +925,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}))
 										}
 									/>
-									<div {...stylex.props(styles.backendField)}>
-										<label for="map-capture-backend">CAPTURE ENGINE</label>
+									<label
+										for="map-capture-backend"
+										{...stylex.props(styles.field, styles.engineField)}
+									>
+										<span>Capture engine</span>
 										<select
 											id="map-capture-backend"
 											aria-label="Capture engine"
@@ -887,28 +942,30 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											{...stylex.props(styles.select)}
 										>
 											<option value="scene_capture_tiles">
-												TILED SCENE CAPTURE
+												Tiled scene capture
 											</option>
 											<option value="viewport_high_resolution">
-												VIEWPORT HIGH RES · EXPERIMENTAL
+												Viewport high resolution · experimental
 											</option>
 										</select>
 										<Show
 											when={captureBackend() === "viewport_high_resolution"}
 										>
-											<p {...stylex.props(styles.backendNote)}>
+											<p {...stylex.props(styles.note)}>
 												Renders one complete zoom through Unreal&apos;s
-												active Level Editor viewport, then cuts that image
-												into tiles. Unreal forces LOD0. Test limit: 8 × 8
-												tiles per zoom.
+												active editor viewport, then cuts that image into
+												tiles. Unreal forces LOD0. Tested limit: 8 × 8 tiles
+												per zoom.
 											</p>
 										</Show>
-									</div>
+									</label>
 								</section>
 
-								<section {...stylex.props(styles.panel)}>
-									<div {...stylex.props(styles.sectionHeading)}>
-										<p {...stylex.props(styles.sectionLabel)}>LOD BY LEVEL</p>
+								<section {...stylex.props(styles.card)}>
+									<div {...stylex.props(styles.cardHeading)}>
+										<h2 {...stylex.props(styles.sectionTitle)}>
+											Detail levels
+										</h2>
 										<select
 											aria-label="LOD policy"
 											value={
@@ -924,9 +981,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}
 											{...stylex.props(styles.select)}
 										>
-											<option value="natural">NATURAL</option>
+											<option value="natural">Natural</option>
 											<option value="per_level_distance_scale">
-												PER LEVEL
+												Per level
 											</option>
 										</select>
 									</div>
@@ -936,7 +993,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											"per_level_distance_scale"
 										}
 									>
-										<div {...stylex.props(styles.levels)}>
+										<div {...stylex.props(styles.levelsGrid)}>
 											<For each={grid()?.grid.levels ?? []}>
 												{(level) => (
 													<NumberField
@@ -961,50 +1018,22 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 								</section>
 
 								<Show when={validation()?.status === "invalid"}>
-									<section {...stylex.props(styles.validationPanel)}>
-										<strong>PLAN NEEDS ATTENTION</strong>
+									<section role="alert" {...stylex.props(styles.validationPanel)}>
+										<strong>Plan needs attention</strong>
 										<For each={validationErrors()}>
 											{(error) => <p>{error}</p>}
 										</For>
 									</section>
 								</Show>
 
-								<div {...stylex.props(styles.saveActions)}>
-									<button
-										type="button"
-										disabled={plan() === undefined || !isDirty()}
-										onClick={() => savePlan(false)}
-										{...stylex.props(styles.secondaryButton)}
-									>
-										SAVE
-									</button>
-									<button
-										type="button"
-										disabled={plan() === undefined}
-										onClick={() => savePlan(true)}
-										{...stylex.props(styles.secondaryButton)}
-									>
-										SAVE AS
-									</button>
-								</div>
-								<div {...stylex.props(styles.actions)}>
-									<button
-										type="button"
-										onClick={openMap}
-										disabled={plan() === undefined || isCapturing()}
-										{...stylex.props(styles.secondaryButton)}
-									>
-										OPEN TARGET MAP
-									</button>
-									<button
-										type="button"
-										onClick={() => runCapture(true)}
-										disabled={plan() === undefined || isCapturing()}
-										{...stylex.props(styles.captureButton)}
-									>
-										OPEN + CAPTURE
-									</button>
-								</div>
+								<button
+									type="button"
+									onClick={openMap}
+									disabled={plan() === undefined || isCapturing()}
+									{...stylex.props(styles.openMapButton)}
+								>
+									Open map
+								</button>
 							</>
 						)}
 					</Show>
@@ -1012,105 +1041,133 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 
 				<section aria-busy={isCapturing()} {...stylex.props(styles.stage)}>
 					<Show
-						when={capture()}
+						when={draft()}
 						fallback={
-							<div {...stylex.props(styles.gridPreview)}>
-								<Show when={readyLivePreview()}>
-									{(preview) => <MapCaptureLiveCanvas preview={preview()} />}
-								</Show>
-								<div {...stylex.props(styles.previewShade)} />
-								<div {...stylex.props(styles.north)}>+X / NORTH</div>
-								<div
-									style={livePreviewBoundary()}
-									{...stylex.props(styles.captureBoundary)}
+							<div {...stylex.props(styles.emptyState)}>
+								<strong>No plan loaded</strong>
+								<span>
+									A plan records which part of the map to capture and how tiles
+									are sized and stacked. Create one from the connected project, or
+									open a saved plan file.
+								</span>
+								<button
+									type="button"
+									onClick={choosePlan}
+									{...stylex.props(styles.quietButton)}
 								>
-									<div
-										style={requestedPreviewBoundary()}
-										{...stylex.props(styles.requestedBoundary)}
-									>
-										<span {...stylex.props(styles.requestedBoundaryLabel)}>
-											REQUESTED AREA
-										</span>
-									</div>
-								</div>
-								<div {...stylex.props(styles.previewStatus)}>
-									<Show when={livePreview().status === "loading"}>
-										<span {...stylex.props(styles.previewPulse)} />
-										<strong>CONNECTING TOP CAMERA</strong>
-									</Show>
-									<Show when={readyLivePreview()}>
-										{(preview) => (
-											<>
-												<span {...stylex.props(styles.previewLive)} />
-												<strong>
-													{preview().previewContext === "editor_live"
-														? "EDITOR LIVE"
-														: "PLAY LIVE"}
-												</strong>
-												<small>LIVE FRAMING · NOT CAPTURE OUTPUT</small>
-											</>
-										)}
-									</Show>
-								</div>
-								<Show when={failedLivePreview()}>
-									{(failed) => (
-										<div {...stylex.props(styles.previewFailure)}>
-											<strong>LIVE FRAMING UNAVAILABLE</strong>
-											<p>{failed().message}</p>
-											<button
-												type="button"
-												onClick={() =>
-													setPreviewRefresh((value) => value + 1)
-												}
-												{...stylex.props(styles.previewRetry)}
-											>
-												RETRY
-											</button>
-										</div>
-									)}
-								</Show>
-								<div {...stylex.props(styles.gridReadout)}>
-									<span>
-										{readyLivePreview()
-											? "SNAPPED CAPTURE EXTENT"
-											: "LIVE PLAN GEOMETRY"}
-									</span>
-									<strong>
-										{grid()?.tileCount.toLocaleString() ?? "—"} TILES
-									</strong>
-									<small>
-										Z0 → Z{Math.max(0, (draft()?.levels.count ?? 1) - 1)}
-									</small>
-								</div>
+									Open plan
+								</button>
 							</div>
 						}
 					>
-						{(completed) => (
-							<MapCaptureActorWorkspace
-								loadActors={() =>
-									props.client.actors(completed().manifest.project.mapPath)
-								}
-								loadTile={(_key, relativePath) =>
-									props.client
-										.tile({
-											manifestPath: completed().manifestPath,
-											relativePath
-										})
-										.pipe(
-											Effect.flatMap((result) =>
-												result.status === "ready"
-													? Effect.succeed(result.bytes)
-													: Effect.fail(
-															new Error(
-																`${result.message} ${result.recovery}`
+						<Show
+							when={capture()}
+							fallback={
+								<div {...stylex.props(styles.gridPreview)}>
+									<Show when={readyLivePreview()}>
+										{(preview) => <MapCaptureLiveCanvas preview={preview()} />}
+									</Show>
+									<div {...stylex.props(styles.previewShade)} />
+									<div {...stylex.props(styles.north)}>+X north</div>
+									<div
+										style={livePreviewBoundary()}
+										{...stylex.props(styles.captureBoundary)}
+									>
+										<div
+											style={requestedPreviewBoundary()}
+											{...stylex.props(styles.requestedBoundary)}
+										>
+											<span {...stylex.props(styles.requestedBoundaryLabel)}>
+												Requested area
+											</span>
+										</div>
+									</div>
+									<div {...stylex.props(styles.previewStatus)}>
+										<Show when={livePreview().status === "loading"}>
+											<span {...stylex.props(styles.previewPulse)} />
+											<strong>Connecting camera…</strong>
+										</Show>
+										<Show when={readyLivePreview()}>
+											{(preview) => (
+												<>
+													<span {...stylex.props(styles.previewLive)} />
+													<strong>
+														{preview().previewContext === "editor_live"
+															? "Editor live"
+															: "Play live"}
+													</strong>
+													<small>Live framing · not capture output</small>
+												</>
+											)}
+										</Show>
+									</div>
+									<Show when={failedLivePreview()}>
+										{(failed) => (
+											<div
+												role="alert"
+												{...stylex.props(styles.previewFailure)}
+											>
+												<strong>Preview unavailable</strong>
+												<p>{failed().recovery}</p>
+												<button
+													type="button"
+													onClick={() =>
+														setPreviewRefresh((value) => value + 1)
+													}
+													{...stylex.props(styles.retryButton)}
+												>
+													Retry
+												</button>
+												<details {...stylex.props(styles.technical)}>
+													<summary>Technical details</summary>
+													<code>{failed().message}</code>
+												</details>
+											</div>
+										)}
+									</Show>
+									<div {...stylex.props(styles.gridReadout)}>
+										<span>
+											{readyLivePreview()
+												? "Snapped capture extent"
+												: "Plan geometry"}
+										</span>
+										<strong>
+											{grid()?.tileCount.toLocaleString() ?? "—"} tiles
+										</strong>
+										<small>
+											Z0 → Z{Math.max(0, (draft()?.levels.count ?? 1) - 1)}
+										</small>
+									</div>
+								</div>
+							}
+						>
+							{(completed) => (
+								<MapCaptureActorWorkspace
+									loadActors={() =>
+										props.client.actors(completed().manifest.project.mapPath)
+									}
+									loadTile={(_key, relativePath) =>
+										props.client
+											.tile({
+												manifestPath: completed().manifestPath,
+												relativePath
+											})
+											.pipe(
+												Effect.flatMap((result) =>
+													result.status === "ready"
+														? Effect.succeed(result.bytes)
+														: Effect.fail(
+																new Error(
+																	`${result.message} ${result.recovery}`
+																)
 															)
-														)
+												)
 											)
-										)
-								}
-								manifest={completed().manifest}
-							/>
-						)}
+									}
+									manifest={completed().manifest}
+								/>
+							)}
+						</Show>
 					</Show>
 					<Show when={captureProgress()}>
 						{(progress) => {
@@ -1149,12 +1206,12 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									<footer {...stylex.props(styles.progressMeta)}>
 										<span>
 											{processed().toLocaleString()} /{" "}
-											{progress().totalTiles.toLocaleString()} PROCESSED
+											{progress().totalTiles.toLocaleString()} processed
 										</span>
-										<span>{capturedTiles().toLocaleString()} CAPTURED</span>
+										<span>{capturedTiles().toLocaleString()} captured</span>
 										<Show when={progress().failedTiles > 0}>
 											<span {...stylex.props(styles.progressFailures)}>
-												{progress().failedTiles.toLocaleString()} FAILED
+												{progress().failedTiles.toLocaleString()} failed
 											</span>
 										</Show>
 									</footer>
@@ -1162,10 +1219,31 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 							);
 						}}
 					</Show>
-					<footer {...stylex.props(styles.status, styles[notice().tone])}>
-						<span>{notice().tone.toUpperCase()}</span>
-						<p>{notice().text}</p>
-						<code>{selection()?.planPath ?? "NEW / NOT YET SAVED"}</code>
+					<footer aria-live="polite" {...stylex.props(styles.statusBar)}>
+						<span
+							{...stylex.props(
+								styles.statusDot,
+								notice().tone === "success"
+									? styles.dotSuccess
+									: notice().tone === "error"
+										? styles.dotError
+										: styles.dotInfo
+							)}
+						/>
+						<div {...stylex.props(styles.statusCopy)}>
+							<p>{notice().text}</p>
+							<Show when={notice().technical}>
+								{(technical) => (
+									<details {...stylex.props(styles.technical)}>
+										<summary>Technical details</summary>
+										<code>{technical()}</code>
+									</details>
+								)}
+							</Show>
+						</div>
+						<code {...stylex.props(styles.statusPath)}>
+							{selection()?.planPath ?? "Not saved yet"}
+						</code>
 					</footer>
 				</section>
 			</div>
@@ -1225,7 +1303,7 @@ function NumberField(props: {
 						props.onInput(event.currentTarget.valueAsNumber);
 					}
 				}}
-				{...stylex.props(styles.input)}
+				{...stylex.props(styles.input, styles.inputMono)}
 			/>
 		</label>
 	);
@@ -1235,7 +1313,7 @@ function Metric(props: { readonly label: string; readonly value: number | string
 	return (
 		<div {...stylex.props(styles.metric)}>
 			<small>{props.label}</small>
-			<strong>{props.value}</strong>
+			<strong {...stylex.props(styles.metricValue)}>{props.value}</strong>
 		</div>
 	);
 }
@@ -1262,269 +1340,280 @@ function Toggle(props: {
 const styles = stylex.create({
 	page: {
 		minHeight: "calc(100vh - 52px)",
+		boxSizing: "border-box",
+		padding: tokens.space5,
 		backgroundColor: tokens.colorCanvas,
 		color: tokens.colorText
 	},
-	hero: {
-		display: "grid",
-		gridTemplateColumns: "minmax(420px, 1fr) auto",
-		alignItems: "end",
-		gap: 36,
-		padding: "34px 42px 28px",
+	header: {
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "flex-start",
+		gap: tokens.space4,
+		paddingBottom: tokens.space4,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
-		backgroundImage:
-			"linear-gradient(110deg, rgba(255, 255, 255, 0.03) 0%, transparent 55%, rgba(255, 255, 255, 0.02) 100%)"
+		marginBottom: tokens.space5
 	},
-	eyebrow: { margin: 0, color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
+	headerCopy: { display: "flex", flexDirection: "column", gap: 6 },
 	title: {
-		margin: "8px 0 0",
-		fontFamily: tokens.fontDisplay,
-		fontSize: 24,
-		fontWeight: 590
+		margin: 0,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
 	},
-	heroActions: { display: "flex", gap: 8 },
-	layout: { display: "grid", gridTemplateColumns: "430px minmax(0, 1fr)", minHeight: 720 },
-	controls: {
-		maxHeight: "calc(100vh - 170px)",
-		overflowY: "auto",
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurface,
-		padding: 22
+	subtitle: {
+		margin: 0,
+		maxWidth: 560,
+		fontSize: 14,
+		lineHeight: 1.45,
+		color: tokens.colorTextMuted
 	},
-	panel: {
-		marginBottom: 14,
-		padding: 18,
+	headerActions: { display: "flex", alignItems: "center", gap: tokens.space2 },
+	layout: {
+		display: "grid",
+		gridTemplateColumns: "410px minmax(0, 1fr)",
+		gap: tokens.space5,
+		alignItems: "start"
+	},
+	controls: { display: "grid", minWidth: 0, gap: tokens.space3 },
+	controlsEmpty: {
+		margin: 0,
+		padding: tokens.space4,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.5
+	},
+	card: {
+		display: "grid",
+		gap: tokens.space3,
+		padding: tokens.space4,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
-	emptyPanel: {
-		padding: 28,
-		border: `1px dashed ${tokens.colorBorderStrong}`,
-		color: tokens.colorTextSubtle
-	},
-	sectionLabel: { margin: 0, color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: 0 },
-	sectionHeading: {
+	cardHeading: {
 		display: "flex",
 		justifyContent: "space-between",
 		alignItems: "center",
-		gap: 12
+		gap: tokens.space3,
+		minHeight: 28
 	},
-	dirtyFlag: { color: tokens.colorTextFaint, fontSize: 11, letterSpacing: 0 },
-	dirty: { color: tokens.colorWarning },
-	fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, margin: "14px 0" },
-	captureAreaGrid: {
+	sectionTitle: {
+		margin: 0,
+		fontSize: 13,
+		fontWeight: 600,
+		color: tokens.colorTextStrong
+	},
+	dirtyFlag: {
+		padding: "1px 8px",
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusBadge,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 500
+	},
+	dirtyFlagActive: {
+		borderColor: tokens.colorWarning,
+		color: tokens.colorWarning
+	},
+	fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: tokens.space2 },
+	fieldGridThree: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-		gap: 10,
-		marginTop: 14
-	},
-	requestedExtent: {
-		display: "grid",
-		gap: 6,
-		marginTop: 12,
-		padding: "9px 10px",
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextSubtle,
-		fontSize: 11,
-		lineHeight: 1.5
-	},
-	outputExtent: {
-		display: "grid",
-		gap: 6,
-		marginTop: 12,
-		padding: "9px 10px",
-		borderLeft: `2px solid ${tokens.colorWarning}`,
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextSubtle,
-		fontSize: 11,
-		lineHeight: 1.5
+		gap: tokens.space2
 	},
 	field: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 6,
+		gap: 4,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
-		letterSpacing: 0
+		fontWeight: 500
 	},
 	input: {
 		width: "100%",
 		boxSizing: "border-box",
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorText,
-		padding: "7px 8px",
+		padding: "6px 9px",
 		fontSize: 13
 	},
-	metrics: {
-		display: "grid",
-		gridTemplateColumns: "repeat(2, 1fr)",
-		gap: 1,
-		marginTop: 16,
-		backgroundColor: tokens.colorBorder
+	inputMono: {
+		fontFamily: tokens.fontMono,
+		fontVariantNumeric: "tabular-nums"
 	},
-	tileGeometryControl: { marginTop: 2 },
-	resolutionReadout: {
-		display: "flex",
-		alignItems: "end",
-		justifyContent: "space-between",
-		gap: 14,
-		marginTop: 8,
-		padding: "11px 12px",
-		borderLeft: `2px solid ${tokens.colorAccent}`,
+	select: {
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextMuted,
-		fontSize: 11
+		color: tokens.colorText,
+		padding: "5px 8px",
+		fontSize: 12
 	},
-	levelLadder: {
+	readout: {
 		display: "grid",
-		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-		gap: 1,
-		marginTop: 4,
-		backgroundColor: tokens.colorBorder
-	},
-	levelStep: {
-		display: "flex",
-		flexDirection: "column",
 		gap: 4,
-		minWidth: 0,
-		padding: "9px 8px",
+		marginTop: tokens.space1,
+		padding: "8px 10px",
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextSubtle,
-		fontSize: 11
+		color: tokens.colorTextSubtle
 	},
-	moreLevels: {
-		gridColumn: "1 / -1",
-		padding: "7px 8px",
-		backgroundColor: tokens.colorSurfaceInset,
-		color: tokens.colorTextSubtle,
-		fontSize: 11,
-		letterSpacing: 0
+	readoutAccent: { boxShadow: `inset 2px 0 0 ${tokens.colorAccent}` },
+	readoutStrong: {
+		color: tokens.colorText,
+		fontFamily: tokens.fontMono,
+		fontSize: 12,
+		fontWeight: 600
+	},
+	metricsGrid: {
+		display: "grid",
+		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+		gap: tokens.space2
 	},
 	metric: {
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
-		padding: 10,
-		backgroundColor: tokens.colorSurfaceInset
-	},
-	select: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		gap: 3,
+		padding: "8px 10px",
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle
+	},
+	metricValue: {
 		color: tokens.colorText,
-		padding: "6px 8px",
-		fontSize: 12
+		fontFamily: tokens.fontMono,
+		fontSize: 13
 	},
-	backendField: {
+	levelLadder: {
 		display: "grid",
-		gap: 7,
-		marginTop: 15,
-		paddingTop: 13,
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextSubtle,
-		fontSize: 11,
-		letterSpacing: 0
+		gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+		gap: tokens.space2
 	},
-	backendNote: {
+	levelStep: {
+		display: "flex",
+		flexDirection: "column",
+		gap: 3,
+		minWidth: 0,
+		padding: "8px 10px",
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle
+	},
+	moreLevels: {
+		gridColumn: "1 / -1",
+		padding: "7px 10px",
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
+	note: {
 		margin: 0,
-		padding: "9px 10px",
-		borderLeft: `2px solid ${tokens.colorWarning}`,
-		backgroundColor: "rgba(242, 153, 74, 0.08)",
-		color: tokens.colorWarning,
+		padding: `${tokens.space2}px ${tokens.space3}px`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorAccentWash,
+		color: tokens.colorTextMuted,
 		fontSize: 12,
-		letterSpacing: 0,
 		lineHeight: 1.5
 	},
+	engineField: { marginTop: tokens.space1 },
+	levelsGrid: { display: "grid", gap: tokens.space2 },
 	toggle: {
 		position: "relative",
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		marginTop: 14,
-		borderRadius: tokens.radiusBadge,
-		fontSize: 11
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
 	checkbox: { position: "absolute", width: 1, height: 1, opacity: 0 },
 	switchTrack: {
-		width: 31,
+		width: 30,
 		height: 16,
-		borderRadius: 12,
+		borderRadius: tokens.radiusPill,
 		backgroundColor: tokens.colorBorderStrong,
-		boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.08)"
+		transitionProperty: "background-color",
+		transitionDuration: tokens.motionFast
 	},
-	switchOn: {
-		backgroundColor: tokens.colorAccent,
-		boxShadow: "inset 0 0 0 1px rgba(228, 242, 34, 0.35), 0 0 12px rgba(228, 242, 34, 0.27)"
-	},
-	levels: {
-		display: "grid",
-		gap: 8,
-		marginTop: 12,
-		paddingTop: 12,
-		borderTop: `1px solid ${tokens.colorBorder}`
-	},
+	switchOn: { backgroundColor: tokens.colorAccent },
 	validationPanel: {
-		marginBottom: 14,
-		padding: 14,
-		border: "1px solid rgba(235, 87, 87, 0.45)",
+		display: "grid",
+		gap: tokens.space2,
+		padding: tokens.space3,
+		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		color: tokens.colorDanger,
 		fontSize: 12,
 		lineHeight: 1.5
 	},
-	saveActions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 },
-	actions: { display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 8 },
-	primaryButton: {
-		border: 0,
-		backgroundColor: tokens.colorAccent,
-		color: tokens.colorAccentText,
-		padding: "5px 12px",
-		fontSize: 12,
-		fontWeight: 500,
-		letterSpacing: 0
-	},
-	headerButton: {
+	planActions: { display: "flex", gap: tokens.space2 },
+	openMapButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
-		padding: "5px 12px",
-		fontSize: 12,
-		fontWeight: 500,
-		letterSpacing: 0
-	},
-	secondaryButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		color: tokens.colorText,
-		padding: "5px 12px",
-		fontSize: 12,
-		letterSpacing: 0,
+		padding: "7px 12px",
+		fontSize: 13,
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.5 }
 	},
-	captureButton: {
+	quietButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "6px 12px",
+		fontSize: 13,
+		fontWeight: 500,
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		opacity: { default: 1, ":disabled": 0.5 }
+	},
+	primaryButton: {
+		border: `1px solid ${tokens.colorAccent}`,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
-			default: "rgba(228, 242, 34, 0.08)",
-			":hover": "rgba(228, 242, 34, 0.12)"
+			default: tokens.colorAccent,
+			":hover": tokens.colorAccentStrong,
+			":disabled": tokens.colorAccentWash
 		},
-		color: tokens.colorTextStrong,
-		padding: "5px 12px",
-		fontSize: 12,
-		fontWeight: 500,
-		letterSpacing: 0,
-		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		opacity: { default: 1, ":disabled": 0.5 }
+		color: { default: tokens.colorAccentText, ":disabled": tokens.colorAccent },
+		padding: "6px 14px",
+		fontWeight: 600,
+		fontSize: 13,
+		cursor: { default: "pointer", ":disabled": "wait" },
+		transition: `transform ${tokens.motionStandard} cubic-bezier(.23,1,.32,1)`,
+		transform: { default: "scale(1)", ":active": "scale(.97)" }
 	},
-	stage: {
-		position: "relative",
-		minWidth: 0,
-		padding: 24,
-		backgroundImage:
-			"radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.03), transparent 42%)"
+	retryButton: {
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "4px 12px",
+		fontSize: 12,
+		cursor: "pointer"
+	},
+	stage: { position: "relative", minWidth: 0, display: "grid", gap: tokens.space3 },
+	emptyState: {
+		minHeight: 420,
+		display: "flex",
+		flexDirection: "column",
+		justifyContent: "center",
+		alignItems: "center",
+		gap: tokens.space3,
+		padding: tokens.space6,
+		border: `1px dashed ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		textAlign: "center"
 	},
 	gridPreview: {
 		position: "relative",
@@ -1532,6 +1621,7 @@ const styles = stylex.create({
 		aspectRatio: "16 / 9",
 		overflow: "hidden",
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
 			"linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)",
@@ -1575,84 +1665,82 @@ const styles = stylex.create({
 		position: "absolute",
 		left: 4,
 		top: 4,
-		padding: "3px 5px",
+		padding: "2px 6px",
+		borderRadius: tokens.radiusBadge,
 		backgroundColor: "rgba(8, 9, 10, 0.73)",
 		color: tokens.colorWarning,
 		fontSize: 11,
-		letterSpacing: 0,
 		whiteSpace: "nowrap"
 	},
 	north: {
 		position: "absolute",
 		zIndex: 2,
-		top: 18,
-		left: 18,
+		top: tokens.space3,
+		left: tokens.space4,
 		color: tokens.colorTextSubtle,
-		fontSize: 11,
-		letterSpacing: 0
+		fontSize: 11
 	},
 	previewStatus: {
 		position: "absolute",
 		zIndex: 2,
-		top: 17,
-		right: 18,
+		top: tokens.space3,
+		right: tokens.space4,
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
-		padding: "6px 9px",
-		border: "1px solid rgba(56, 59, 63, 0.67)",
+		padding: "5px 10px",
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(12, 13, 14, 0.87)",
 		color: tokens.colorText,
-		fontSize: 11,
-		letterSpacing: 0
+		fontSize: 11
 	},
 	previewPulse: {
 		width: 6,
 		height: 6,
-		borderRadius: 99,
-		backgroundColor: tokens.colorWarning,
-		boxShadow: "0 0 10px rgba(242, 153, 74, 0.35)"
+		borderRadius: tokens.radiusPill,
+		backgroundColor: tokens.colorWarning
 	},
 	previewLive: {
 		width: 6,
 		height: 6,
-		borderRadius: 99,
-		backgroundColor: tokens.colorAccent,
-		boxShadow: "0 0 11px rgba(228, 242, 34, 0.35)"
+		borderRadius: tokens.radiusPill,
+		backgroundColor: tokens.colorAccent
 	},
 	previewFailure: {
 		position: "absolute",
 		zIndex: 2,
 		left: "50%",
 		top: "50%",
-		width: "min(340px, calc(100% - 64px))",
+		width: "min(360px, calc(100% - 64px))",
 		transform: "translate(-50%, -50%)",
-		padding: 18,
-		border: "1px solid rgba(235, 87, 87, 0.45)",
-		backgroundColor: "rgba(22, 23, 24, 0.9)",
-		color: tokens.colorDanger,
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "flex-start",
+		gap: tokens.space2,
+		padding: tokens.space4,
+		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextMuted,
 		fontSize: 12,
 		lineHeight: 1.5,
-		textAlign: "center"
+		textAlign: "left"
 	},
-	previewRetry: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		color: tokens.colorText,
-		padding: "5px 12px",
-		fontSize: 11,
-		letterSpacing: 0
+	technical: {
+		alignSelf: "stretch",
+		color: tokens.colorTextSubtle,
+		fontSize: 12
 	},
 	gridReadout: {
 		position: "absolute",
 		zIndex: 2,
-		left: 28,
-		bottom: 26,
+		left: tokens.space4,
+		bottom: tokens.space4,
 		display: "flex",
 		flexDirection: "column",
-		gap: 5,
-		paddingLeft: 14,
+		gap: 3,
+		paddingLeft: 10,
 		borderLeft: `2px solid ${tokens.colorAccent}`,
 		color: tokens.colorTextMuted,
 		fontSize: 11
@@ -1660,67 +1748,90 @@ const styles = stylex.create({
 	captureProgress: {
 		position: "absolute",
 		zIndex: 2,
-		left: 48,
-		right: 48,
-		bottom: 82,
-		padding: "15px 17px 13px",
+		left: tokens.space6,
+		right: tokens.space6,
+		bottom: 76,
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(15, 16, 17, 0.95)",
-		boxShadow: "0 16px 48px rgba(8, 9, 10, 0.6), inset 0 0 28px rgba(228, 242, 34, 0.03)",
+		boxShadow: tokens.shadowOverlay,
 		backdropFilter: "blur(7px)"
 	},
 	progressHeader: {
 		display: "flex",
 		alignItems: "center",
 		justifyContent: "space-between",
-		marginBottom: 10,
+		marginBottom: tokens.space2,
 		color: tokens.colorText,
-		fontSize: 11,
-		letterSpacing: 0
+		fontSize: 12
 	},
-	progressPhase: { display: "flex", alignItems: "center", gap: 9 },
+	progressPhase: { display: "flex", alignItems: "center", gap: 8 },
 	progressPulse: {
 		width: 7,
 		height: 7,
-		borderRadius: 999,
-		backgroundColor: tokens.colorAccent,
-		boxShadow: "0 0 13px rgba(228, 242, 34, 0.35)"
+		borderRadius: tokens.radiusPill,
+		backgroundColor: tokens.colorAccent
 	},
 	progressTrack: {
-		height: 8,
+		height: 6,
 		overflow: "hidden",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusPill,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	progressFill: {
 		height: "100%",
-		backgroundImage: `linear-gradient(90deg, rgba(228, 242, 34, 0.5), ${tokens.colorAccent})`,
-		boxShadow: "0 0 16px rgba(228, 242, 34, 0.35)",
+		borderRadius: tokens.radiusPill,
+		backgroundColor: tokens.colorAccent,
 		transitionProperty: "width",
 		transitionDuration: tokens.motionStandard,
 		transitionTimingFunction: "ease-out"
 	},
 	progressMeta: {
 		display: "flex",
-		gap: 18,
-		marginTop: 9,
+		gap: tokens.space4,
+		marginTop: tokens.space2,
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
-		letterSpacing: 0
+		fontVariantNumeric: "tabular-nums"
 	},
 	progressFailures: { color: tokens.colorDanger },
-	status: {
-		display: "grid",
-		gridTemplateColumns: "80px 1fr minmax(180px, auto)",
-		alignItems: "center",
-		gap: 18,
-		marginTop: 12,
-		padding: "11px 14px",
+	statusBar: {
+		display: "flex",
+		alignItems: "flex-start",
+		gap: tokens.space3,
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		border: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextSubtle,
-		fontSize: 11
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextMuted,
+		fontSize: 13
 	},
-	info: { borderLeftColor: tokens.colorBorderStrong },
-	success: { borderLeftColor: tokens.colorSuccess, color: tokens.colorSuccess },
-	error: { borderLeftColor: tokens.colorDanger, color: tokens.colorDanger }
+	statusDot: {
+		flexShrink: 0,
+		width: 8,
+		height: 8,
+		marginTop: 5,
+		borderRadius: tokens.radiusPill,
+		backgroundColor: "currentColor"
+	},
+	dotInfo: { color: tokens.colorTextSubtle },
+	dotSuccess: { color: tokens.colorSuccess },
+	dotError: { color: tokens.colorDanger },
+	statusCopy: {
+		flex: 1,
+		minWidth: 0,
+		display: "grid",
+		gap: tokens.space1
+	},
+	statusPath: {
+		flexShrink: 0,
+		maxWidth: 280,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap",
+		color: tokens.colorTextSubtle,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
+	}
 });

@@ -15,6 +15,11 @@ type ReadyReview = Extract<MapReviewResult, { status: "ready" }>;
 type AssessmentMethod = VisibilityPolicy["assessment"]["method"];
 type LowAction = VisibilityPolicy["onLowVisibility"]["action"];
 type OutputMode = "natural_only" | "natural_and_clear";
+type PolicyNotice = {
+	readonly technical?: string;
+	readonly text: string;
+	readonly tone: "error" | "success";
+};
 
 const decodeAssessmentMethod = Schema.decodeUnknownSync(
 	Schema.Literals(["automatic", "depth_compare", "ray_samples", "subject_mask"])
@@ -64,7 +69,7 @@ export function VisibilityPolicySettings(props: {
 	const [neverHide, setNeverHide] = createSignal("");
 	const [bulkIds, setBulkIds] = createSignal<ReadonlyArray<string>>([]);
 	const [confirmBulk, setConfirmBulk] = createSignal(false);
-	const [message, setMessage] = createSignal<string>();
+	const [message, setMessage] = createSignal<PolicyNotice>();
 
 	createEffect(() => {
 		const view = selectedView();
@@ -89,14 +94,16 @@ export function VisibilityPolicySettings(props: {
 	const applyResult = (result: MapReviewResult) => {
 		if (result.status === "ready") {
 			props.onUpdated(result);
-			setMessage("Visibility policy saved.");
+			setMessage({ text: "Visibility policy saved.", tone: "success" });
 			return;
 		}
-		setMessage(
-			result.status === "failed"
-				? `${result.error.message} ${result.error.recovery}`
-				: "The policy change could not be applied in the current review state."
-		);
+		setMessage({
+			text:
+				result.status === "failed"
+					? `${result.error.message} ${result.error.recovery}`
+					: "The policy change could not be applied in the current review state.",
+			tone: "error"
+		});
 	};
 
 	const saveReplacement = () => {
@@ -129,7 +136,12 @@ export function VisibilityPolicySettings(props: {
 		action.run(
 			props.client.replaceVisibilityPolicy({ policy, viewId: view.id, visibilityOverrides }),
 			{
-				onFailure: (cause) => setMessage(Cause.pretty(cause)),
+				onFailure: (cause) =>
+					setMessage({
+						text: "Couldn't save the policy.",
+						technical: Cause.pretty(cause),
+						tone: "error"
+					}),
 				onSuccess: applyResult
 			}
 		);
@@ -143,7 +155,12 @@ export function VisibilityPolicySettings(props: {
 		action.run(
 			props.client.applyVisibilityPolicy({ policyId: policy.id, viewIds: bulkIds() }),
 			{
-				onFailure: (cause) => setMessage(Cause.pretty(cause)),
+				onFailure: (cause) =>
+					setMessage({
+						text: "Couldn't apply the policy.",
+						technical: Cause.pretty(cause),
+						tone: "error"
+					}),
 				onSuccess: applyResult
 			}
 		);
@@ -152,24 +169,31 @@ export function VisibilityPolicySettings(props: {
 	return (
 		<section aria-label="Capture and visibility settings" {...stylex.props(styles.panel)}>
 			<div {...stylex.props(styles.summary)}>
-				<div>
-					<span>CAPTURE / VISIBILITY</span>
-					<strong>{selectedView()?.captureProfileId ?? "Project default profile"}</strong>
+				<div {...stylex.props(styles.fact)}>
+					<span>Profile</span>
+					<strong>{selectedView()?.captureProfileId ?? "Project default"}</strong>
 				</div>
-				<div>
-					<span>POLICY</span>
+				<div {...stylex.props(styles.fact)}>
+					<span>Policy</span>
 					<strong>{selectedView()?.visibilityPolicy?.name ?? "Project default"}</strong>
 				</div>
-				<select value={viewId()} onChange={(event) => setViewId(event.currentTarget.value)}>
-					<For each={props.review.reviewSet.views}>
-						{(view) => <option value={view.id}>Configure: {view.displayName}</option>}
-					</For>
-				</select>
+				<label {...stylex.props(styles.viewPicker)}>
+					<span>View</span>
+					<select
+						aria-label="View to configure"
+						value={viewId()}
+						onChange={(event) => setViewId(event.currentTarget.value)}
+					>
+						<For each={props.review.reviewSet.views}>
+							{(view) => <option value={view.id}>{view.displayName}</option>}
+						</For>
+					</select>
+				</label>
 			</div>
 			<details {...stylex.props(styles.advanced)}>
-				<summary>Advanced visibility settings</summary>
+				<summary>Visibility settings</summary>
 				<div {...stylex.props(styles.form)}>
-					<label>
+					<label {...stylex.props(styles.field)}>
 						Assessment method
 						<select
 							value={assessment()}
@@ -183,7 +207,7 @@ export function VisibilityPolicySettings(props: {
 							<option value="subject_mask">Subject mask</option>
 						</select>
 					</label>
-					<label>
+					<label {...stylex.props(styles.field)}>
 						Low visibility action
 						<select
 							value={lowAction()}
@@ -191,12 +215,12 @@ export function VisibilityPolicySettings(props: {
 								setLowAction(decodeLowAction(event.currentTarget.value))
 							}
 						>
-							<option value="record">Record</option>
+							<option value="record">Record only</option>
 							<option value="warn">Warn</option>
-							<option value="fail">Fail</option>
+							<option value="fail">Fail the view</option>
 						</select>
 					</label>
-					<label>
+					<label {...stylex.props(styles.field)}>
 						Threshold (0–1)
 						<input
 							type="number"
@@ -208,7 +232,7 @@ export function VisibilityPolicySettings(props: {
 							onInput={(event) => setThreshold(event.currentTarget.value)}
 						/>
 					</label>
-					<label>
+					<label {...stylex.props(styles.field)}>
 						Output
 						<select
 							value={outputMode()}
@@ -217,11 +241,11 @@ export function VisibilityPolicySettings(props: {
 							}
 						>
 							<option value="natural_only">Natural only</option>
-							<option value="natural_and_clear">Natural + Clear</option>
+							<option value="natural_and_clear">Natural + clear</option>
 						</select>
 					</label>
 					<Show when={outputMode() === "natural_and_clear"}>
-						<label>
+						<label {...stylex.props(styles.field)}>
 							Clear strategy
 							<select
 								value={strategy()}
@@ -230,20 +254,20 @@ export function VisibilityPolicySettings(props: {
 								}
 							>
 								<option value="isolate_target">Isolate target</option>
-								<option value="hide_explicit">Hide explicit objects</option>
-								<option disabled>Detected occluders — unsupported</option>
+								<option value="hide_explicit">Hide listed objects</option>
+								<option disabled>Detected occluders — unavailable</option>
 							</select>
 						</label>
 					</Show>
-					<label {...stylex.props(styles.wide)}>
-						Hide in Clear actor paths, one per line
+					<label {...stylex.props(styles.field, styles.wide)}>
+						Hide in clear — actor paths, one per line
 						<textarea
 							value={hideInClear()}
 							onInput={(event) => setHideInClear(event.currentTarget.value)}
 						/>
 					</label>
-					<label {...stylex.props(styles.wide)}>
-						Never hide actor paths, one per line
+					<label {...stylex.props(styles.field, styles.wide)}>
+						Never hide — actor paths, one per line
 						<textarea
 							value={neverHide()}
 							onInput={(event) => setNeverHide(event.currentTarget.value)}
@@ -251,18 +275,18 @@ export function VisibilityPolicySettings(props: {
 					</label>
 				</div>
 				<p {...stylex.props(styles.note)}>
-					Detected-occluder hiding is unavailable: render-truthful depth evidence cannot
-					safely identify which actor to modify. Explicit object paths remain inspectable
-					and reversible.
+					Hiding detected occluders is not supported: depth evidence cannot safely
+					identify which actor to change. Listed object paths stay reviewable and
+					reversible.
 				</p>
-				<button type="button" onClick={saveReplacement}>
-					SAVE AS NEW PRESET FOR THIS VIEW
+				<button type="button" onClick={saveReplacement} {...stylex.props(styles.primary)}>
+					Save preset for this view
 				</button>
 				<fieldset {...stylex.props(styles.bulk)}>
-					<legend>Apply current preset to other Views</legend>
+					<legend>Apply current preset to other views</legend>
 					<For each={props.review.reviewSet.views.filter((view) => view.id !== viewId())}>
 						{(view) => (
-							<label>
+							<label {...stylex.props(styles.bulkChoice)}>
 								<input
 									type="checkbox"
 									checked={bulkIds().includes(view.id)}
@@ -285,21 +309,52 @@ export function VisibilityPolicySettings(props: {
 								type="button"
 								disabled={bulkIds().length === 0}
 								onClick={() => setConfirmBulk(true)}
+								{...stylex.props(styles.quietButton)}
 							>
-								REVIEW BULK APPLY
+								Review changes
 							</button>
 						}
 					>
-						<p>Apply to: {bulkIds().join(", ")}</p>
-						<button type="button" onClick={applyBulk}>
-							CONFIRM APPLY
+						<p {...stylex.props(styles.bulkTargets)}>
+							Apply to: {bulkIds().join(", ")}
+						</p>
+						<button
+							type="button"
+							onClick={applyBulk}
+							{...stylex.props(styles.quietButton)}
+						>
+							Apply
 						</button>
-						<button type="button" onClick={() => setConfirmBulk(false)}>
-							CANCEL
+						<button
+							type="button"
+							onClick={() => setConfirmBulk(false)}
+							{...stylex.props(styles.quietButton)}
+						>
+							Cancel
 						</button>
 					</Show>
 				</fieldset>
-				<Show when={message()}>{(value) => <p role="status">{value()}</p>}</Show>
+				<Show when={message()}>
+					{(value) => (
+						<p
+							role={value().tone === "error" ? "alert" : "status"}
+							{...stylex.props(
+								styles.message,
+								value().tone === "success" && styles.messageSuccess
+							)}
+						>
+							{value().text}
+							<Show when={value().technical}>
+								{(technical) => (
+									<details {...stylex.props(styles.technical)}>
+										<summary>Technical details</summary>
+										<code>{technical()}</code>
+									</details>
+								)}
+							</Show>
+						</p>
+					)}
+				</Show>
 			</details>
 		</section>
 	);
@@ -307,25 +362,103 @@ export function VisibilityPolicySettings(props: {
 
 const styles = stylex.create({
 	panel: {
-		marginTop: 12,
+		marginTop: tokens.space3,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurface
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorText
 	},
 	summary: {
 		display: "grid",
 		gridTemplateColumns: "1fr 1fr minmax(180px, .7fr)",
-		gap: 16,
-		alignItems: "center",
-		padding: 14
+		gap: tokens.space4,
+		alignItems: "end",
+		padding: tokens.space3
 	},
-	advanced: { borderTop: `1px solid ${tokens.colorBorder}`, padding: 14 },
-	form: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 },
+	fact: { display: "grid", gap: 4 },
+	viewPicker: { display: "grid", gap: 4 },
+	advanced: { borderTop: `1px solid ${tokens.colorBorder}`, padding: tokens.space3 },
+	form: {
+		display: "grid",
+		gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+		gap: tokens.space3
+	},
+	field: {
+		display: "grid",
+		gap: 4,
+		color: tokens.colorTextMuted,
+		fontSize: 11,
+		fontWeight: 500
+	},
 	wide: { gridColumn: "1 / -1" },
-	note: { color: tokens.colorTextMuted, fontSize: 11, lineHeight: 1.6 },
+	note: {
+		margin: `${tokens.space3}px 0`,
+		padding: `${tokens.space2}px ${tokens.space3}px`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.5
+	},
+	primary: {
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "6px 12px",
+		fontSize: 13,
+		fontWeight: 500,
+		cursor: "pointer"
+	},
+	quietButton: {
+		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		color: tokens.colorText,
+		padding: "5px 10px",
+		fontSize: 12,
+		fontWeight: 500,
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		opacity: { default: 1, ":disabled": 0.5 }
+	},
 	bulk: {
 		display: "grid",
-		gap: 8,
-		marginTop: 16,
-		border: `1px solid ${tokens.colorBorder}`
-	}
+		justifyContent: "start",
+		gap: tokens.space2,
+		marginTop: tokens.space4,
+		padding: tokens.space3,
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl
+	},
+	bulkChoice: {
+		display: "flex",
+		alignItems: "center",
+		gap: tokens.space2,
+		fontSize: 13
+	},
+	bulkTargets: {
+		margin: 0,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11
+	},
+	message: {
+		position: "relative",
+		display: "grid",
+		gap: tokens.space2,
+		margin: `${tokens.space3}px 0 0`,
+		padding: tokens.space3,
+		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: "rgba(235, 87, 87, 0.08)",
+		color: tokens.colorDanger,
+		fontSize: 12,
+		lineHeight: 1.5
+	},
+	messageSuccess: {
+		borderColor: tokens.colorSuccess,
+		backgroundColor: tokens.colorSurfaceInset,
+		color: tokens.colorText
+	},
+	technical: { color: tokens.colorTextSubtle, fontSize: 11 }
 });

@@ -376,20 +376,21 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 	return (
 		<section {...stylex.props(styles.frame)} aria-label="Map tile pyramid viewer">
 			<header {...stylex.props(styles.header)}>
-				<div>
-					<p {...stylex.props(styles.eyebrow)}>
-						CAPTURE PROOF / EXACT{" "}
-						{props.manifest.state === "complete" ? "PUBLISHED" : "ATTEMPT"} PNG
-					</p>
+				<div {...stylex.props(styles.headerCopy)}>
 					<h2 {...stylex.props(styles.title)}>{props.manifest.planId}</h2>
+					<span {...stylex.props(styles.state)}>
+						{props.manifest.state === "complete"
+							? "Published capture"
+							: "Unpublished attempt"}
+					</span>
 				</div>
 				<div {...stylex.props(styles.readout)}>
-					<span>Z{String(selection().level).padStart(2, "0")}</span>
-					<span>{selection().visible.length} VISIBLE</span>
-					<span>{loadingCount()} QUEUED</span>
-					<span>{failed().size} ERRORS</span>
+					<span>Z{selection().level}</span>
+					<span>{selection().visible.length} visible</span>
+					<span>{loadingCount()} loading</span>
+					<span>{failed().size} failed</span>
 					<Show when={(props.actorMarkers?.length ?? 0) > 0}>
-						<span>{props.actorMarkers!.length.toLocaleString()} ACTORS</span>
+						<span>{props.actorMarkers!.length.toLocaleString()} actors</span>
 					</Show>
 				</div>
 			</header>
@@ -473,17 +474,17 @@ export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
 				<Show when={renderTiles().length === 0}>
 					<div {...stylex.props(styles.loading)}>
 						{captureCoverageVisible()
-							? "SEEKING COARSE COVERAGE…"
-							: "OUTSIDE CAPTURE COVERAGE"}
+							? "Loading coarse coverage…"
+							: "Outside capture area"}
 					</div>
 				</Show>
-				<div {...stylex.props(styles.axisNorth)}>+X / NORTH</div>
-				<div {...stylex.props(styles.axisEast)}>+Y / EAST</div>
+				<div {...stylex.props(styles.axisNorth)}>+X north</div>
+				<div {...stylex.props(styles.axisEast)}>+Y east</div>
 			</div>
 			<footer {...stylex.props(styles.footer)}>
-				<span>WUP {grid().levels[selection().level]!.unitsPerPixel.toPrecision(5)}</span>
-				<span>CACHE ≤ {selection().recommendedCacheEntries}</span>
-				<span>DRAG TO PAN · WHEEL TO ZOOM</span>
+				<span>{grid().levels[selection().level]!.unitsPerPixel.toPrecision(5)} UU/PX</span>
+				<span>Cache ≤ {selection().recommendedCacheEntries}</span>
+				<span>Drag to pan · scroll to zoom</span>
 			</footer>
 		</section>
 	);
@@ -496,8 +497,8 @@ const styles = stylex.create({
 		minHeight: 520,
 		backgroundColor: tokens.colorSurface,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		color: tokens.colorText,
-		fontFamily: tokens.fontMono,
 		overflow: "hidden"
 	},
 	header: {
@@ -505,26 +506,30 @@ const styles = stylex.create({
 		alignItems: "end",
 		justifyContent: "space-between",
 		gap: 24,
-		padding: "14px 18px 12px",
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		borderBottom: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurface
 	},
-	eyebrow: { margin: 0, color: tokens.colorWarning, fontSize: 11, letterSpacing: 0 },
+	headerCopy: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0 },
 	title: {
-		margin: "4px 0 0",
+		margin: 0,
 		fontFamily: tokens.fontDisplay,
 		fontSize: 17,
 		fontWeight: 590,
 		letterSpacing: "-0.01em"
+	},
+	state: {
+		color: tokens.colorTextSubtle,
+		fontSize: 11
 	},
 	readout: {
 		display: "flex",
 		flexWrap: "wrap",
 		justifyContent: "end",
 		gap: "6px 14px",
-		color: "#02b8cc",
+		color: tokens.colorTextSubtle,
 		fontSize: 11,
-		letterSpacing: 0
+		fontVariantNumeric: "tabular-nums"
 	},
 	surface: {
 		position: "relative",
@@ -565,22 +570,34 @@ const styles = stylex.create({
 		transform: "translate(-50%, -50%)",
 		padding: "10px 14px",
 		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(8, 9, 10, 0.9)",
-		color: tokens.colorWarning,
-		fontSize: 11,
-		letterSpacing: 0
+		color: tokens.colorTextMuted,
+		fontSize: 12
 	},
-	axisNorth: { position: "absolute", top: 12, left: 14, color: "#02b8cc", fontSize: 11 },
-	axisEast: { position: "absolute", right: 14, bottom: 12, color: "#02b8cc", fontSize: 11 },
+	axisNorth: {
+		position: "absolute",
+		top: 12,
+		left: 14,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
+	axisEast: {
+		position: "absolute",
+		right: 14,
+		bottom: 12,
+		color: tokens.colorTextSubtle,
+		fontSize: 11
+	},
 	footer: {
 		display: "flex",
 		justifyContent: "space-between",
 		gap: 16,
-		padding: "8px 18px",
+		padding: `${tokens.space2}px ${tokens.space4}px`,
 		borderTop: `1px solid ${tokens.colorBorder}`,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
-		letterSpacing: 0
+		fontVariantNumeric: "tabular-nums"
 	}
 });

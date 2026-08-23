@@ -61,7 +61,7 @@ function CountField(props: {
 	return (
 		<div {...stylex.props(styles.countField)}>
 			<label {...stylex.props(styles.sliderLabel)}>
-				<span>COUNT</span>
+				<span>Count</span>
 				<input
 					type="range"
 					min={1}
@@ -152,25 +152,24 @@ export function FramingSettings(props: {
 			<details>
 				<summary {...stylex.props(styles.summary)}>
 					<span>VIEW PRESETS + RIG</span>
-					<small>{requestedCount()} GENERATED VIEWS · EDIT ALL</small>
+					<small>{requestedCount()} views generated</small>
 				</summary>
 				<div {...stylex.props(styles.settingsBody)}>
 					<div {...stylex.props(styles.settingsIntro)}>
 						<p {...stylex.props(styles.sectionHint)}>
-							These controls regenerate the full contact sheet. Each enabled group is
-							a preset that produces one or more views.
+							Each enabled group adds a ring or arc of views to the sheet.
 						</p>
 						<span {...stylex.props(styles.scrubHint)}>
-							↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+							↔ drag labels · Shift coarse · Alt fine
 						</span>
 					</div>
 					<div {...stylex.props(styles.globalGrid)}>
 						<ParameterField
-							label="FIELD OF VIEW"
+							label="Field of view"
 							min={5}
 							max={170}
 							scrubStep={0.25}
-							unit="DEG"
+							unit="deg"
 							value={props.parameters.fieldOfViewDegrees}
 							onInput={(fieldOfViewDegrees) =>
 								props.onParametersChange({
@@ -180,12 +179,12 @@ export function FramingSettings(props: {
 							}
 						/>
 						<ParameterField
-							label="FRAME MARGIN"
+							label="Frame margin"
 							min={0}
 							max={0.45}
 							step={0.01}
 							scrubStep={0.002}
-							unit="RATIO"
+							unit="ratio"
 							value={props.parameters.margin}
 							onInput={(margin) =>
 								props.onParametersChange({ ...props.parameters, margin })
@@ -217,7 +216,7 @@ export function FramingSettings(props: {
 											/>
 											<strong>{group.displayName}</strong>
 										</label>
-										<code>{group.pattern.kind.toUpperCase()}</code>
+										<code>{group.pattern.kind}</code>
 									</header>
 									<div {...stylex.props(styles.groupGrid)}>
 										<CountField
@@ -237,10 +236,10 @@ export function FramingSettings(props: {
 											}
 										/>
 										<ParameterField
-											label="DISTANCE"
+											label="Distance"
 											min={0.01}
 											scrubStep={0.01}
-											unit="SCALE"
+											unit="scale"
 											value={group.distanceScale}
 											onInput={(distanceScale) =>
 												props.onParametersChange(
@@ -256,9 +255,9 @@ export function FramingSettings(props: {
 											}
 										/>
 										<ParameterField
-											label="ELEVATION"
+											label="Elevation"
 											scrubStep={0.01}
-											unit="OFFSET"
+											unit="offset"
 											value={group.elevation}
 											onInput={(elevation) =>
 												props.onParametersChange(
@@ -283,9 +282,9 @@ export function FramingSettings(props: {
 											{(pattern) => (
 												<>
 													<ParameterField
-														label="YAW"
+														label="Yaw"
 														scrubStep={0.25}
-														unit="DEG"
+														unit="deg"
 														value={pattern().yawOffsetDegrees}
 														onInput={(yawOffsetDegrees) =>
 															props.onParametersChange(
@@ -308,10 +307,10 @@ export function FramingSettings(props: {
 														}
 													/>
 													<ParameterField
-														label="SPREAD"
+														label="Spread"
 														min={0}
 														scrubStep={0.25}
-														unit="DEG"
+														unit="deg"
 														value={pattern().spreadDegrees}
 														onInput={(spreadDegrees) =>
 															props.onParametersChange(
@@ -345,9 +344,9 @@ export function FramingSettings(props: {
 										>
 											{(pattern) => (
 												<ParameterField
-													label="RING OFFSET"
+													label="Ring offset"
 													scrubStep={0.25}
-													unit="DEG"
+													unit="deg"
 													value={pattern().ringOffsetDegrees}
 													onInput={(ringOffsetDegrees) =>
 														props.onParametersChange(
@@ -380,7 +379,7 @@ export function FramingSettings(props: {
 					<Show when={requestedCount() > showcaseSliderMaximum}>
 						<p role="status" {...stylex.props(styles.performanceHint)}>
 							Large rigs are valid. Live preview may take longer or fall back to
-							individual captures; the durable definition is unchanged.
+							individual captures; saved parameters are unchanged.
 						</p>
 					</Show>
 				</div>
@@ -399,7 +398,7 @@ export function FramingSettings(props: {
 						<>
 							<header {...stylex.props(styles.overrideHeader)}>
 								<div {...stylex.props(styles.overrideIdentity)}>
-									<small>SELECTED VIEW · PER-VIEW OFFSETS</small>
+									<small>Per-view offsets</small>
 									<strong>{candidate().displayName}</strong>
 									<code>{candidate().preset.replaceAll("_", " ")}</code>
 								</div>
@@ -409,16 +408,16 @@ export function FramingSettings(props: {
 									onClick={() => setSelectedOverride(undefined)}
 									{...stylex.props(styles.resetButton)}
 								>
-									RESET OFFSETS
+									Reset view
 								</button>
 							</header>
 							<div {...stylex.props(styles.settingsIntro)}>
 								<p {...stylex.props(styles.sectionHint)}>
-									Blank values inherit the preset. Drag a label to opt in and tune
-									this preview without regenerating the rest of the contact sheet.
+									Blank values inherit the preset. Drag a label to tune this view
+									without regenerating the rest of the sheet.
 								</p>
 								<span {...stylex.props(styles.scrubHint)}>
-									↔ DRAG LABELS · SHIFT COARSE · ALT FINE
+									↔ drag labels · Shift coarse · Alt fine
 								</span>
 							</div>
 							<div {...stylex.props(styles.overrideGrid)}>
@@ -432,7 +431,7 @@ export function FramingSettings(props: {
 											scrubOrigin={selectedGroup()?.distanceScale ?? 1}
 											scrubStep={0.01}
 											min={0.01}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="SCALE"
 											onValueChange={(value) =>
 												updateOverride("distanceScale", value)
@@ -446,7 +445,7 @@ export function FramingSettings(props: {
 											value={selectedOverride()?.elevation}
 											scrubOrigin={selectedGroup()?.elevation ?? 0}
 											scrubStep={0.01}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="OFFSET"
 											onValueChange={(value) =>
 												updateOverride("elevation", value)
@@ -458,7 +457,7 @@ export function FramingSettings(props: {
 											value={selectedOverride()?.yawOffsetDegrees}
 											scrubOrigin={selectedYawOrigin()}
 											scrubStep={0.25}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="DEG"
 											onValueChange={(value) =>
 												updateOverride("yawOffsetDegrees", value)
@@ -479,7 +478,7 @@ export function FramingSettings(props: {
 											scrubStep={0.25}
 											min={5}
 											max={170}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="DEG"
 											onValueChange={(value) =>
 												updateOverride("fieldOfViewDegrees", value)
@@ -496,7 +495,7 @@ export function FramingSettings(props: {
 											step={0.01}
 											min={0}
 											max={0.45}
-											placeholder="INHERIT"
+											placeholder="Inherit"
 											unit="RATIO"
 											onValueChange={(value) =>
 												updateOverride("margin", value)
@@ -551,6 +550,7 @@ const styles = stylex.create({
 	groupList: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 },
 	group: {
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		padding: 10
 	},
@@ -631,11 +631,11 @@ const styles = stylex.create({
 		gap: 7,
 		padding: 9,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
-		fontWeight: 500,
-		letterSpacing: 0
+		fontWeight: 500
 	},
 	compositionFields: {
 		display: "grid",

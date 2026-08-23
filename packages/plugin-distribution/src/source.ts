@@ -160,6 +160,9 @@ function compiledAssetStem(releaseVersion: string, request: PluginVariantRequest
 		request.architecture.toLowerCase(),
 		request.unrealVersion,
 		`build-${buildId}`,
+		...(request.engineSourceCommit === undefined
+			? []
+			: [`commit-${request.engineSourceCommit}`]),
 		"development"
 	].join("-");
 }
@@ -403,15 +406,7 @@ export const httpPluginReleaseSourceLayer = (
 				Effect.tryPromise({
 					try: async (signal) => {
 						const artifact = isCompiledPluginBundleManifest(request.manifest)
-							? {
-									architecture: request.manifest.compatibility.architecture,
-									configuration: request.manifest.compatibility.configuration,
-									engineBuildId: request.manifest.compatibility.engineBuildId,
-									kind: "compiled" as const,
-									platform: request.manifest.compatibility.platform,
-									target: request.manifest.compatibility.target,
-									unrealVersion: request.manifest.compatibility.unrealVersion
-								}
+							? request.manifest.compatibility
 							: { kind: "source" as const };
 						const url = assetUrl(request.manifest.releaseVersion, artifact, "artifact");
 						const { response } = await httpResponse(url, signal);

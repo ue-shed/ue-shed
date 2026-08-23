@@ -31,6 +31,7 @@ import {
 	OfflineCacheMiss,
 	PluginDistribution,
 	PluginDistributionValidationError,
+	PluginVariantIdentity,
 	type PluginVariantReference,
 	type PluginDistributionLimits,
 	PluginReleaseSource,
@@ -176,13 +177,14 @@ async function compiledFixture(
 	source: Awaited<ReturnType<typeof fixture>>,
 	options: {
 		readonly buildId: string;
+		readonly engineSourceCommit?: string;
 		readonly missingModuleProduct?: boolean;
 		readonly modulesBuildId?: string;
 		readonly omitModules?: boolean;
 		readonly unrelatedModuleMapping?: boolean;
 	}
 ) {
-	const artifact = Schema.decodeUnknownSync(CompiledPluginVariantRequest)({
+	const artifactWithoutCommit = {
 		architecture: "x64",
 		configuration: "Development",
 		engineBuildId: options.buildId,
@@ -190,7 +192,12 @@ async function compiledFixture(
 		platform: "Win64",
 		target: "UnrealEditor",
 		unrealVersion: "5.7"
-	});
+	} as const;
+	const artifact = Schema.decodeUnknownSync(CompiledPluginVariantRequest)(
+		options.engineSourceCommit === undefined
+			? artifactWithoutCommit
+			: { ...artifactWithoutCommit, engineSourceCommit: options.engineSourceCommit }
+	);
 	const names = variantPluginReleaseAssetNames(source.releaseVersion, artifact);
 	const modulesBuildId = options.modulesBuildId ?? options.buildId;
 	const archive = tarArchive(
@@ -386,7 +393,7 @@ it.effect("stores source and multiple exact compiled variants for one release", 
 	)
 );
 
-it.effect("verifies and prunes an exact reference returned for a legacy source cache", () =>
+it.effect("prunes only the matching legacy reference after recoverable content corruption", () =>
 	Effect.gen(function* () {
 		const source = yield* Effect.promise(() => fixture());
 		const cacheRoot = join(source.root, "legacy-reference-cache");
@@ -431,6 +438,26 @@ it.effect("verifies and prunes an exact reference returned for a legacy source c
 			store.verify(exactReference)
 		).pipe(Effect.provide(pluginStoreLayer({ cacheRoot })));
 		expect(verified.cachePath).toBe(legacyRoot);
+		yield* Effect.promise(() =>
+			writeFile(
+				join(legacyRoot, "content", "Plugins", "UEShedCore", "UEShedCore.uplugin"),
+				"corrupt\n"
+			)
+		);
+		const replacement = acquired.variantIdentity.endsWith("0") ? "1" : "0";
+		const mismatchedReference: PluginVariantReference = {
+			releaseVersion: acquired.releaseVersion,
+			variantIdentity: PluginVariantIdentity.make(
+				`${acquired.variantIdentity.slice(0, -1)}${replacement}`
+			)
+		};
+		const mismatch = yield* Effect.flatMap(PluginStore, (store) =>
+			store.prune(mismatchedReference).pipe(Effect.flip)
+		).pipe(Effect.provide(pluginStoreLayer({ cacheRoot })));
+		expect(mismatch).toBeInstanceOf(PluginDistributionValidationError);
+		expect(yield* Effect.promise(() => readdir(legacyRoot))).toContain(
+			".ue-shed-distribution.json"
+		);
 		yield* Effect.flatMap(PluginStore, (store) => store.prune(exactReference)).pipe(
 			Effect.provide(pluginStoreLayer({ cacheRoot }))
 		);
@@ -828,6 +855,104 @@ it.effect("downloads concurrent identical HTTP acquisitions once", () =>
 					expect(artifactRequests).toBe(1);
 				}).pipe(Effect.provide(layer), Effect.scoped);
 			})
+		);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("addresses engine-commit-distinct compiled variants over HTTP", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const first = yield* Effect.promise(() =>
+			compiledFixture(source, {
+				buildId: "47537391",
+				engineSourceCommit: "1".repeat(40)
+			})
+		);
+		const second = yield* Effect.promise(() =>
+			compiledFixture(source, {
+				buildId: "47537391",
+				engineSourceCommit: "2".repeat(40)
+			})
+		);
+		const firstNames = variantPluginReleaseAssetNames(source.releaseVersion, first.artifact);
+		const secondNames = variantPluginReleaseAssetNames(source.releaseVersion, second.artifact);
+		expect(firstNames).not.toEqual(secondNames);
+		const assets = yield* Effect.promise(
+			async () =>
+				new Map<string, Buffer>([
+					[firstNames.artifact, await readFile(first.archivePath)],
+					[firstNames.manifest, first.manifestBytes],
+					[secondNames.artifact, await readFile(second.archivePath)],
+					[secondNames.manifest, second.manifestBytes]
+				])
+		);
+		const requested: string[] = [];
+		const server = createServer((incoming, response) => {
+			const path = incoming.url?.slice(1) ?? "";
+			requested.push(path);
+			const body = assets.get(path);
+			if (body === undefined) {
+				response.writeHead(404);
+				response.end();
+				return;
+			}
+			response.writeHead(200, { "content-length": body.byteLength });
+			response.end(body);
+		});
+		yield* Effect.acquireRelease(
+			Effect.callback<number>((resume) => {
+				server.listen(0, "127.0.0.1", () => resume(Effect.succeed(listeningPort(server))));
+				return Effect.sync(() => server.close());
+			}),
+			() =>
+				Effect.callback<void>((resume) => {
+					server.close(() => resume(Effect.void));
+				})
+		).pipe(
+			Effect.flatMap((port) =>
+				Effect.gen(function* () {
+					const distribution = yield* PluginDistribution;
+					const installedFirst = yield* distribution.install({
+						artifact: first.artifact,
+						networkPolicy: "online",
+						pluginIds: ["UEShedCameras"],
+						releaseVersion: source.releaseVersion
+					});
+					const installedSecond = yield* distribution.install({
+						artifact: second.artifact,
+						networkPolicy: "online",
+						pluginIds: ["UEShedCameras"],
+						releaseVersion: source.releaseVersion
+					});
+					expect(installedFirst.variantIdentity).not.toBe(
+						installedSecond.variantIdentity
+					);
+				}).pipe(
+					Effect.provide(
+						liveLayer(
+							httpPluginReleaseSourceLayer({
+								baseUrl: `http://127.0.0.1:${port}/`
+							}),
+							join(source.root, "commit-distinct-http-cache")
+						)
+					),
+					Effect.scoped
+				)
+			)
+		);
+		expect(requested.sort()).toEqual(
+			[
+				firstNames.artifact,
+				firstNames.manifest,
+				secondNames.artifact,
+				secondNames.manifest
+			].sort()
 		);
 	}).pipe(
 		Effect.ensuring(

@@ -299,7 +299,7 @@ async function assertStoredRootWithinCache(
 	}
 }
 
-async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: string) {
+async function readStoredManifest(cacheRoot: string, releaseVersion: string, root: string) {
 	await assertStoredRootWithinCache(cacheRoot, releaseVersion, root);
 	let metadata: StoredMetadata;
 	try {
@@ -328,12 +328,8 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: 
 		);
 	}
 	const manifestPath = join(root, manifestFile);
-	const artifactPath = join(root, artifactFile);
 	await assertRegularCacheFile(manifestPath).catch((cause) => {
 		throw corrupt(releaseVersion, root, `Cached release manifest is unsafe: ${String(cause)}`);
-	});
-	await assertRegularCacheFile(artifactPath).catch((cause) => {
-		throw corrupt(releaseVersion, root, `Cached release artifact is unsafe: ${String(cause)}`);
 	});
 	const manifestBytes = await readFile(manifestPath);
 	if (digestBytes(manifestBytes) !== metadata.manifestDigest) {
@@ -341,22 +337,6 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: 
 			releaseVersion,
 			root,
 			"Cached release manifest digest does not match metadata."
-		);
-	}
-	const artifactDetails = await stat(artifactPath);
-	if (
-		artifactDetails.size !== metadata.artifactBytes ||
-		(await digestFile(artifactPath)) !== metadata.artifactDigest
-	) {
-		throw corrupt(releaseVersion, root, "Cached release artifact is truncated or corrupt.");
-	}
-	const contentRoot = join(root, "content");
-	const actualFiles = await walkRegularFiles(contentRoot);
-	if (JSON.stringify(actualFiles) !== JSON.stringify(metadata.files)) {
-		throw corrupt(
-			releaseVersion,
-			root,
-			"Cached extracted files do not match immutable metadata."
 		);
 	}
 	let manifest: unknown;
@@ -367,7 +347,32 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: 
 	} catch (cause) {
 		throw corrupt(releaseVersion, root, `Cached manifest JSON is malformed: ${String(cause)}`);
 	}
-	return { artifactPath, contentRoot, manifest, manifestPath, metadata, root };
+	return { manifest, manifestPath, metadata, root };
+}
+
+async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: string) {
+	const storedManifest = await readStoredManifest(cacheRoot, releaseVersion, root);
+	const artifactPath = join(root, artifactFile);
+	await assertRegularCacheFile(artifactPath).catch((cause) => {
+		throw corrupt(releaseVersion, root, `Cached release artifact is unsafe: ${String(cause)}`);
+	});
+	const artifactDetails = await stat(artifactPath);
+	if (
+		artifactDetails.size !== storedManifest.metadata.artifactBytes ||
+		(await digestFile(artifactPath)) !== storedManifest.metadata.artifactDigest
+	) {
+		throw corrupt(releaseVersion, root, "Cached release artifact is truncated or corrupt.");
+	}
+	const contentRoot = join(root, "content");
+	const actualFiles = await walkRegularFiles(contentRoot);
+	if (JSON.stringify(actualFiles) !== JSON.stringify(storedManifest.metadata.files)) {
+		throw corrupt(
+			releaseVersion,
+			root,
+			"Cached extracted files do not match immutable metadata."
+		);
+	}
+	return { artifactPath, contentRoot, ...storedManifest };
 }
 
 function storedRelease(
@@ -436,6 +441,40 @@ function verifyStored(cacheRoot: string, releaseVersion: string, root: string) {
 	);
 }
 
+function verifyStoredVariantIdentity(cacheRoot: string, releaseVersion: string, root: string) {
+	return Effect.tryPromise({
+		try: () => readStoredManifest(cacheRoot, releaseVersion, root),
+		catch: (cause) =>
+			cause instanceof CorruptCacheEntry
+				? cause
+				: corrupt(
+						releaseVersion,
+						root,
+						`Cached release identity cannot be recovered: ${String(cause)}`
+					)
+	}).pipe(
+		Effect.flatMap((stored) =>
+			validatePluginBundleManifest(stored.manifest, {
+				expectedCandidateVersion: releaseVersion
+			}).pipe(
+				Effect.mapError((cause) =>
+					corrupt(
+						releaseVersion,
+						stored.root,
+						`Cached manifest is invalid: ${cause.message}`
+					)
+				),
+				Effect.map((manifest) =>
+					derivePluginVariantIdentity({
+						manifest,
+						manifestDigest: stored.metadata.manifestDigest
+					})
+				)
+			)
+		)
+	);
+}
+
 async function storedLocations(cacheRoot: string, releaseVersion: string): Promise<string[]> {
 	const locations: string[] = [];
 	const legacy = versionPath(cacheRoot, releaseVersion);
@@ -463,20 +502,32 @@ async function exactStoredLocation(
 	cacheRoot: string,
 	reference: PluginVariantReference
 ): Promise<string | undefined> {
-	for (const location of [
-		variantPath(cacheRoot, reference.releaseVersion, reference.variantIdentity),
-		versionPath(cacheRoot, reference.releaseVersion)
-	]) {
-		try {
-			await lstat(location);
-			return location;
-		} catch (cause) {
-			if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") {
-				throw cause;
-			}
+	const location = variantPath(cacheRoot, reference.releaseVersion, reference.variantIdentity);
+	try {
+		await lstat(location);
+		return location;
+	} catch (cause) {
+		if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") {
+			throw cause;
 		}
 	}
 	return undefined;
+}
+
+async function legacyStoredLocation(
+	cacheRoot: string,
+	releaseVersion: string
+): Promise<string | undefined> {
+	const location = versionPath(cacheRoot, releaseVersion);
+	try {
+		await lstat(location);
+		return location;
+	} catch (cause) {
+		if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") {
+			throw cause;
+		}
+		return undefined;
+	}
 }
 
 function allStored(cacheRoot: string, releaseVersion: string) {
@@ -658,7 +709,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			) => {
 				const exactVariant = (decoded: PluginVariantReference) =>
 					Effect.gen(function* () {
-						const location = yield* Effect.tryPromise({
+						const exactLocation = yield* Effect.tryPromise({
 							try: () => exactStoredLocation(cacheRoot, decoded),
 							catch: (cause) =>
 								storageError(
@@ -667,6 +718,17 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 									cause
 								)
 						});
+						const location =
+							exactLocation ??
+							(yield* Effect.tryPromise({
+								try: () => legacyStoredLocation(cacheRoot, decoded.releaseVersion),
+								catch: (cause) =>
+									storageError(
+										decoded.releaseVersion,
+										"Locate legacy plugin variant",
+										cause
+									)
+							}));
 						if (location === undefined) return yield* missingExactVariant(decoded);
 						const release = yield* verifyStored(
 							cacheRoot,
@@ -1026,7 +1088,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				}
 				return Effect.gen(function* () {
 					const decoded = yield* decodeVariantReference(reference);
-					const cachePath = yield* Effect.tryPromise({
+					const exactPath = yield* Effect.tryPromise({
 						try: () => exactStoredLocation(cacheRoot, decoded),
 						catch: (cause) =>
 							storageError(
@@ -1035,9 +1097,33 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 								cause
 							)
 					});
-					if (cachePath === undefined) return yield* missingExactVariant(decoded);
+					if (exactPath !== undefined) {
+						return {
+							cachePath: exactPath,
+							releaseVersion: decoded.releaseVersion,
+							variantIdentity: decoded.variantIdentity
+						};
+					}
+					const legacyPath = yield* Effect.tryPromise({
+						try: () => legacyStoredLocation(cacheRoot, decoded.releaseVersion),
+						catch: (cause) =>
+							storageError(
+								decoded.releaseVersion,
+								"Locate legacy plugin variant for pruning",
+								cause
+							)
+					});
+					if (legacyPath === undefined) return yield* missingExactVariant(decoded);
+					const legacyIdentity = yield* verifyStoredVariantIdentity(
+						cacheRoot,
+						decoded.releaseVersion,
+						legacyPath
+					);
+					if (legacyIdentity !== decoded.variantIdentity) {
+						return yield* missingExactVariant(decoded);
+					}
 					return {
-						cachePath,
+						cachePath: legacyPath,
 						releaseVersion: decoded.releaseVersion,
 						variantIdentity: decoded.variantIdentity
 					};

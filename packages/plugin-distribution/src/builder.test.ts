@@ -17,6 +17,7 @@ import {
 	InvalidCompiledPluginBuild,
 	compiledPluginBuilderLayer
 } from "./builder.js";
+import { variantPluginReleaseAssetNames } from "./source.js";
 
 interface TarEntry {
 	readonly body: Uint8Array;
@@ -282,6 +283,12 @@ describe("compiled plugin builder", () => {
 		expect(result.manifest.build.requestedPluginIds).toEqual(["UEShedCameras"]);
 		expect(result.manifest.compatibility.engineBuildId).toBe("47537391");
 		expect(result.manifest.compatibility.engineSourceCommit).toBe(engineSourceCommit);
+		expect(result.manifest.artifact.path).toBe(
+			variantPluginReleaseAssetNames(
+				result.manifest.releaseVersion,
+				result.manifest.compatibility
+			).artifact
+		);
 		expect((await readFile(result.artifactPath)).byteLength).toBeGreaterThan(0);
 		expect(await readdir(source.request.outputDirectory)).toEqual([
 			result.outputPath.split(/[/\\]/u).at(-1)

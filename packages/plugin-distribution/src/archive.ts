@@ -275,6 +275,12 @@ export async function extractPluginArchiveToDirectory(
 	options: ExtractPluginArchiveOptions
 ): Promise<ArchiveExtractionReport> {
 	try {
+		const initialCancellation = abortError(
+			options.signal,
+			options.manifest.releaseVersion,
+			"extraction"
+		);
+		if (initialCancellation !== undefined) throw initialCancellation;
 		await mkdir(options.destination);
 		const gunzip = createReadStream(options.archivePath, { signal: options.signal }).pipe(
 			createGunzip()
@@ -407,6 +413,24 @@ export async function extractPluginArchiveToDirectory(
 						throw new Error(
 							`.modules BuildId ${evidence.BuildId} does not match ${options.manifest.compatibility.engineBuildId}: ${modulePath}`
 						);
+					}
+					const products = Object.values(evidence.Modules);
+					if (products.length === 0) {
+						throw new Error(
+							`Compiled plugin ${plugin.id} has empty .modules evidence.`
+						);
+					}
+					for (const product of products) {
+						const normalizedProduct = safeArchivePath(product);
+						const productPath = `${binaryRoot}${normalizedProduct}`;
+						if (
+							!normalizedProduct.toLowerCase().endsWith(binaryExtension) ||
+							files[productPath] === undefined
+						) {
+							throw new Error(
+								`.modules product ${product} is not an extracted ${binaryExtension} binary beneath ${binaryRoot}: ${modulePath}`
+							);
+						}
 					}
 				}
 			}

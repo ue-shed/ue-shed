@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
 	cp,
 	lstat,
@@ -12,10 +13,13 @@ import {
 	writeFile
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { gzipSync, type ZlibOptions } from "node:zlib";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createGzip, type ZlibOptions } from "node:zlib";
 import { OwnedProcessTree, type OwnedProcessExit } from "@ue-shed/engine";
 import { Context, Duration, Effect, Layer, Schema } from "effect";
 import { extractPluginArchive, verifyPluginArtifact } from "./archive.js";
+import { PluginInstallCancelled } from "./errors.js";
 import {
 	CompiledPluginBundleManifestV2,
 	PluginBundlePlugin,
@@ -91,7 +95,20 @@ export type CompiledPluginBuilderError = typeof CompiledPluginBuilderError.Type;
 
 export interface CompiledPluginBuildOptions {
 	readonly limits?: Partial<PluginDistributionLimits>;
+	readonly onProgress?: (progress: CompiledPluginBuildProgress) => void;
 	readonly signal?: AbortSignal;
+}
+
+export type CompiledPluginBuildStage =
+	| "archive"
+	| "build"
+	| "publication"
+	| "source-extraction"
+	| "source-verification"
+	| "validation";
+
+export interface CompiledPluginBuildProgress {
+	readonly stage: CompiledPluginBuildStage;
 }
 
 export interface CompiledPluginBuilderApi {
@@ -137,6 +154,24 @@ function invalid(stage: string, message: string, recovery: string) {
 	return new InvalidCompiledPluginBuild({ message, recovery, retrySafe: false, stage });
 }
 
+function cancelled(stage: CompiledPluginBuildStage) {
+	return new CompiledPluginBuildCancelled({
+		message: `Compiled plugin build was cancelled during ${stage}.`,
+		recovery: "Retry the exact build; no output was published.",
+		retrySafe: true,
+		stage
+	});
+}
+
+function pluginArtifactBuildError(
+	stage: "source-extraction" | "source-verification" | "validation",
+	cause: PluginInstallCancelled | { readonly message: string; readonly recovery: string }
+) {
+	return cause instanceof PluginInstallCancelled
+		? cancelled(stage)
+		: invalid(stage, cause.message, cause.recovery);
+}
+
 function within(parent: string, child: string) {
 	const fromParent = relative(resolve(parent), resolve(child));
 	return fromParent !== ".." && !fromParent.startsWith(`..${sep}`) && !isAbsolute(fromParent);
@@ -172,58 +207,143 @@ function writeOctal(block: Buffer, offset: number, length: number, value: number
 	block[offset + length - 1] = 0;
 }
 
-async function walkFiles(root: string, directory = root): Promise<string[]> {
-	const files: string[] = [];
-	for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) =>
-		left.name.localeCompare(right.name)
-	)) {
-		const path = join(directory, entry.name);
-		const details = await lstat(path);
-		if (details.isSymbolicLink()) throw new Error(`Build output contains a link: ${path}`);
-		if (details.isDirectory()) files.push(...(await walkFiles(root, path)));
-		else if (details.isFile()) files.push(relative(root, path).replaceAll(sep, "/"));
-		else throw new Error(`Build output contains an unsupported filesystem entry: ${path}`);
-	}
+interface ArchiveFile {
+	readonly relativePath: string;
+	readonly size: number;
+}
+
+async function walkFiles(options: {
+	readonly limits: PluginDistributionLimits;
+	readonly root: string;
+	readonly signal: AbortSignal;
+}): Promise<readonly ArchiveFile[]> {
+	const files: ArchiveFile[] = [];
+	let extractedBytes = 0;
+	const visit = async (directory: string): Promise<void> => {
+		if (options.signal.aborted) throw cancelled("archive");
+		for (const entry of (await readdir(directory, { withFileTypes: true })).sort(
+			(left, right) => left.name.localeCompare(right.name)
+		)) {
+			if (options.signal.aborted) throw cancelled("archive");
+			const path = join(directory, entry.name);
+			const details = await lstat(path);
+			if (details.isSymbolicLink()) throw new Error(`Build output contains a link: ${path}`);
+			if (details.isDirectory()) {
+				await visit(path);
+			} else if (details.isFile()) {
+				if (details.size > options.limits.maximumFileBytes) {
+					throw new Error(`Build output file exceeds the file-size limit: ${path}`);
+				}
+				extractedBytes += details.size;
+				if (extractedBytes > options.limits.maximumExtractedBytes) {
+					throw new Error("Build output exceeds the configured extracted-byte limit.");
+				}
+				files.push({
+					relativePath: relative(options.root, path).replaceAll(sep, "/"),
+					size: details.size
+				});
+				if (files.length > options.limits.maximumFileCount) {
+					throw new Error("Build output exceeds the configured file-count limit.");
+				}
+			} else {
+				throw new Error(`Build output contains an unsupported filesystem entry: ${path}`);
+			}
+		}
+	};
+	await visit(options.root);
 	return files;
 }
 
-async function writeDeterministicArchive(root: string, destination: string) {
-	const blocks: Buffer[] = [];
-	for (const relativePath of await walkFiles(root)) {
-		const archivePath = `UEShed/${relativePath}`;
-		const body = await readFile(join(root, ...relativePath.split("/")));
-		let name = archivePath;
-		let prefix = "";
-		if (Buffer.byteLength(name) > 100) {
-			const splitAt = archivePath.lastIndexOf("/", archivePath.length - 101);
-			if (splitAt <= 0) throw new Error(`Archive path is too long: ${archivePath}`);
-			prefix = archivePath.slice(0, splitAt);
-			name = archivePath.slice(splitAt + 1);
-			if (Buffer.byteLength(name) > 100 || Buffer.byteLength(prefix) > 155)
-				throw new Error(`Archive path is too long: ${archivePath}`);
+async function writeDeterministicArchive(options: {
+	readonly destination: string;
+	readonly limits: PluginDistributionLimits;
+	readonly root: string;
+	readonly signal: AbortSignal;
+}) {
+	const files = await walkFiles(options);
+	async function* tarBlocks() {
+		for (const file of files) {
+			if (options.signal.aborted) throw cancelled("archive");
+			const archivePath = `UEShed/${file.relativePath}`;
+			let name = archivePath;
+			let prefix = "";
+			if (Buffer.byteLength(name) > 100) {
+				const splitAt = archivePath.lastIndexOf("/", archivePath.length - 101);
+				if (splitAt <= 0) throw new Error(`Archive path is too long: ${archivePath}`);
+				prefix = archivePath.slice(0, splitAt);
+				name = archivePath.slice(splitAt + 1);
+				if (Buffer.byteLength(name) > 100 || Buffer.byteLength(prefix) > 155)
+					throw new Error(`Archive path is too long: ${archivePath}`);
+			}
+			const header = Buffer.alloc(512);
+			header.write(name, 0, 100, "utf8");
+			writeOctal(header, 100, 8, 0o644);
+			writeOctal(header, 108, 8, 0);
+			writeOctal(header, 116, 8, 0);
+			writeOctal(header, 124, 12, file.size);
+			writeOctal(header, 136, 12, 0);
+			header.fill(32, 148, 156);
+			header[156] = "0".charCodeAt(0);
+			header.write("ustar\0", 257, 6, "ascii");
+			header.write("00", 263, 2, "ascii");
+			header.write(prefix, 345, 155, "utf8");
+			let checksum = 0;
+			for (const byte of header) checksum += byte;
+			writeOctal(header, 148, 8, checksum);
+			yield header;
+			let streamedBytes = 0;
+			for await (const chunk of createReadStream(
+				join(options.root, ...file.relativePath.split("/")),
+				{
+					highWaterMark: 64 * 1024,
+					signal: options.signal
+				}
+			)) {
+				if (options.signal.aborted) throw cancelled("archive");
+				streamedBytes += chunk.byteLength;
+				if (streamedBytes > file.size) {
+					throw new Error(`Build output changed while archiving: ${file.relativePath}`);
+				}
+				yield chunk;
+			}
+			if (streamedBytes !== file.size) {
+				throw new Error(`Build output changed while archiving: ${file.relativePath}`);
+			}
+			const padding = (512 - (file.size % 512)) % 512;
+			if (padding > 0) yield Buffer.alloc(padding);
 		}
-		const header = Buffer.alloc(512);
-		header.write(name, 0, 100, "utf8");
-		writeOctal(header, 100, 8, 0o644);
-		writeOctal(header, 108, 8, 0);
-		writeOctal(header, 116, 8, 0);
-		writeOctal(header, 124, 12, body.byteLength);
-		writeOctal(header, 136, 12, 0);
-		header.fill(32, 148, 156);
-		header[156] = "0".charCodeAt(0);
-		header.write("ustar\0", 257, 6, "ascii");
-		header.write("00", 263, 2, "ascii");
-		header.write(prefix, 345, 155, "utf8");
-		let checksum = 0;
-		for (const byte of header) checksum += byte;
-		writeOctal(header, 148, 8, checksum);
-		blocks.push(header, body);
-		const padding = (512 - (body.byteLength % 512)) % 512;
-		if (padding > 0) blocks.push(Buffer.alloc(padding));
+		yield Buffer.alloc(1024);
 	}
-	blocks.push(Buffer.alloc(1024));
+
+	const hash = createHash("sha256");
+	let artifactBytes = 0;
+	const limiter = new Transform({
+		transform(chunk: Buffer, _encoding, callback) {
+			if (options.signal.aborted) {
+				callback(cancelled("archive"));
+				return;
+			}
+			artifactBytes += chunk.byteLength;
+			if (artifactBytes > options.limits.maximumArtifactBytes) {
+				callback(new Error("Compiled archive exceeds the artifact-size limit."));
+				return;
+			}
+			hash.update(chunk);
+			callback(undefined, chunk);
+		}
+	});
 	const gzipOptions: ZlibOptions & { readonly mtime: number } = { level: 9, mtime: 0 };
-	await writeFile(destination, gzipSync(Buffer.concat(blocks), gzipOptions));
+	await pipeline(
+		Readable.from(tarBlocks()),
+		createGzip(gzipOptions),
+		limiter,
+		createWriteStream(options.destination, { flags: "wx" }),
+		{ signal: options.signal }
+	);
+	return {
+		bytes: artifactBytes,
+		digest: Sha256Checksum.make(`sha256:${hash.digest("hex")}`)
+	};
 }
 
 async function prepareAggregatePlugin(options: {
@@ -341,17 +461,7 @@ async function composeCompiledGraph(options: {
 
 function abortBuild(signal: AbortSignal) {
 	return Effect.callback<never, CompiledPluginBuildCancelled>((resume) => {
-		const cancel = () =>
-			resume(
-				Effect.fail(
-					new CompiledPluginBuildCancelled({
-						message: "Compiled plugin build was cancelled.",
-						recovery: "Retry the exact build; no output was published.",
-						retrySafe: true,
-						stage: "build"
-					})
-				)
-			);
+		const cancel = () => resume(Effect.fail(cancelled("build")));
 		if (signal.aborted) cancel();
 		else signal.addEventListener("abort", cancel, { once: true });
 		return Effect.sync(() => signal.removeEventListener("abort", cancel));
@@ -401,6 +511,8 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 					)
 				);
 				const limits = { ...defaultPluginDistributionLimits, ...options.limits };
+				const buildSignal = options.signal ?? new AbortController().signal;
+				if (buildSignal.aborted) return yield* cancelled("validation");
 				return yield* Effect.scoped(
 					Effect.gen(function* () {
 						const outputRoot = resolve(request.outputDirectory);
@@ -532,19 +644,19 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							(state) =>
 								Effect.gen(function* () {
 									const extracted = join(state.stage, "source");
+									yield* Effect.sync(() =>
+										options.onProgress?.({ stage: "source-verification" })
+									);
 									yield* verifyPluginArtifact({
 										artifactPath: sourceArtifactPath,
 										expectedBytes: state.sourceManifest.artifact.bytes,
 										expectedDigest: state.sourceManifest.artifact.sha256,
 										limits,
-										releaseVersion: state.sourceManifest.releaseVersion
+										releaseVersion: state.sourceManifest.releaseVersion,
+										signal: buildSignal
 									}).pipe(
 										Effect.mapError((cause) =>
-											invalid(
-												"source-verification",
-												cause.message,
-												cause.recovery
-											)
+											pluginArtifactBuildError("source-verification", cause)
 										)
 									);
 									yield* extractPluginArchive({
@@ -552,14 +664,12 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										destination: extracted,
 										limits,
 										manifest: state.sourceManifest,
-										signal: options.signal ?? new AbortController().signal
+										onProgress: () =>
+											options.onProgress?.({ stage: "source-extraction" }),
+										signal: buildSignal
 									}).pipe(
 										Effect.mapError((cause) =>
-											invalid(
-												"source-extraction",
-												cause.message,
-												cause.recovery
-											)
+											pluginArtifactBuildError("source-extraction", cause)
 										)
 									);
 									const aggregate = yield* Effect.tryPromise({
@@ -588,6 +698,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										"-UTF8Output",
 										"-Unattended"
 									];
+									yield* Effect.sync(() =>
+										options.onProgress?.({ stage: "build" })
+									);
+									if (buildSignal.aborted) return yield* cancelled("build");
 									const handle = yield* processes
 										.launch({
 											args: uatArguments,
@@ -608,7 +722,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 													? owned.awaitExit
 													: Effect.raceFirst(
 															owned.awaitExit,
-															abortBuild(options.signal)
+															abortBuild(buildSignal)
 														);
 											return awaited.pipe(
 												Effect.mapError((cause) =>
@@ -641,6 +755,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										});
 									}
 									yield* validateExit(completed.value);
+									if (buildSignal.aborted) return yield* cancelled("validation");
 									const graphRoot = join(state.stage, "compiled-tree");
 									yield* Effect.tryPromise({
 										try: () =>
@@ -653,12 +768,17 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 												root: graphRoot
 											}),
 										catch: (cause) =>
-											invalid(
-												"validation",
-												`RunUAT output is invalid: ${String(cause)}`,
-												"Inspect UAT products and rebuild; invalid output is never published."
-											)
+											buildSignal.aborted
+												? cancelled("validation")
+												: invalid(
+														"validation",
+														`RunUAT output is invalid: ${String(cause)}`,
+														"Inspect UAT products and rebuild; invalid output is never published."
+													)
 									});
+									yield* Effect.sync(() =>
+										options.onProgress?.({ stage: "archive" })
+									);
 									const names = variantPluginReleaseAssetNames(
 										state.sourceManifest.releaseVersion,
 										request.artifact
@@ -674,28 +794,33 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											)
 									});
 									const artifactPath = join(publishStage, names.artifact);
-									yield* Effect.tryPromise({
+									const artifact = yield* Effect.tryPromise({
 										try: () =>
-											writeDeterministicArchive(graphRoot, artifactPath),
+											writeDeterministicArchive({
+												destination: artifactPath,
+												limits,
+												root: graphRoot,
+												signal: buildSignal
+											}),
 										catch: (cause) =>
-											invalid(
-												"archive",
-												`Could not create compiled archive: ${String(cause)}`,
-												"Check output limits and retry."
-											)
+											cause instanceof CompiledPluginBuildCancelled ||
+											buildSignal.aborted
+												? cancelled("archive")
+												: invalid(
+														"archive",
+														`Could not create compiled archive: ${String(cause)}`,
+														"Check output limits and retry."
+													)
 									});
-									const artifactBytes = yield* Effect.promise(() =>
-										readFile(artifactPath)
-									);
 									const manifest = yield* Schema.decodeUnknownEffect(
 										CompiledPluginBundleManifestV2
 									)({
 										artifact: {
-											bytes: artifactBytes.byteLength,
+											bytes: artifact.bytes,
 											id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
 											kind: "unreal-editor-plugin-binary",
 											path: names.artifact,
-											sha256: sha256(artifactBytes)
+											sha256: artifact.digest
 										},
 										build: {
 											builder: "@ue-shed/plugin-distribution",
@@ -750,12 +875,18 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										destination: validationRoot,
 										limits,
 										manifest,
-										signal: options.signal ?? new AbortController().signal
+										onProgress: () =>
+											options.onProgress?.({ stage: "validation" }),
+										signal: buildSignal
 									}).pipe(
 										Effect.mapError((cause) =>
-											invalid("validation", cause.message, cause.recovery)
+											pluginArtifactBuildError("validation", cause)
 										)
 									);
+									yield* Effect.sync(() =>
+										options.onProgress?.({ stage: "publication" })
+									);
+									if (buildSignal.aborted) return yield* cancelled("publication");
 									const outputPath = join(
 										outputRoot,
 										names.artifact.replace(/\.tar\.gz$/u, "")
@@ -778,11 +909,13 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											}
 										},
 										catch: (cause) =>
-											invalid(
-												"publication",
-												String(cause),
-												"Choose a new empty immutable output identity."
-											)
+											buildSignal.aborted
+												? cancelled("publication")
+												: invalid(
+														"publication",
+														String(cause),
+														"Choose a new empty immutable output identity."
+													)
 									});
 									return CompiledPluginBuildResult.make({
 										artifactPath: join(outputPath, names.artifact),

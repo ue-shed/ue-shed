@@ -605,6 +605,31 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			const resolveReference = Effect.fn("PluginStore.resolveReference")((
 				reference: string | PluginVariantReference
 			) => {
+				const exactVariant = (decoded: PluginVariantReference) =>
+					allStored(cacheRoot, decoded.releaseVersion).pipe(
+						Effect.flatMap((releases) => {
+							const matching = releases.filter(
+								(release) => release.variantIdentity === decoded.variantIdentity
+							);
+							if (matching.length === 1 && matching[0] !== undefined) {
+								return Effect.succeed(matching[0]);
+							}
+							return Effect.fail(
+								new PluginDistributionValidationError({
+									field: "variantIdentity",
+									message:
+										matching.length === 0
+											? `Cached plugin variant ${decoded.variantIdentity} does not exist for release ${decoded.releaseVersion}.`
+											: `Cached plugin variant ${decoded.variantIdentity} is ambiguous for release ${decoded.releaseVersion}.`,
+									recovery:
+										matching.length === 0
+											? "Install the exact variant or use a reference returned by list."
+											: "Remove the duplicate cache entry after confirming that no active lease uses it.",
+									retrySafe: false
+								})
+							);
+						})
+					);
 				if (Schema.is(Schema.String)(reference)) {
 					return decodeReleaseVersion(reference).pipe(
 						Effect.flatMap((releaseVersion) => allStored(cacheRoot, releaseVersion)),
@@ -639,13 +664,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 								retrySafe: false
 							})
 					),
-					Effect.flatMap((decoded) =>
-						verifyStored(
-							cacheRoot,
-							decoded.releaseVersion,
-							variantPath(cacheRoot, decoded.releaseVersion, decoded.variantIdentity)
-						)
-					)
+					Effect.flatMap(exactVariant)
 				);
 			});
 

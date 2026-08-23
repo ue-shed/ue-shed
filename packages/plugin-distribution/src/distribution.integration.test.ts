@@ -6,6 +6,7 @@ import {
 	mkdtemp,
 	readFile,
 	readdir,
+	rename,
 	rm,
 	symlink,
 	writeFile
@@ -175,6 +176,7 @@ async function compiledFixture(
 	source: Awaited<ReturnType<typeof fixture>>,
 	options: {
 		readonly buildId: string;
+		readonly missingModuleProduct?: boolean;
 		readonly modulesBuildId?: string;
 		readonly omitModules?: boolean;
 	}
@@ -206,7 +208,11 @@ async function compiledFixture(
 						body: Buffer.from(
 							JSON.stringify({
 								BuildId: modulesBuildId,
-								Modules: { UEShedCore: "UnrealEditor-UEShedCore.dll" }
+								Modules: {
+									UEShedCore: options.missingModuleProduct
+										? "UnrealEditor-UEShedCore-Missing.dll"
+										: "UnrealEditor-UEShedCore.dll"
+								}
 							})
 						),
 						name: "UEShed/Plugins/UEShedCore/Binaries/Win64/UnrealEditor.modules"
@@ -368,6 +374,64 @@ it.effect("stores source and multiple exact compiled variants for one release", 
 			)
 		).pipe(Effect.provide(layer));
 		expect(replay.variantIdentity).toBe(first.variantIdentity);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("verifies and prunes an exact reference returned for a legacy source cache", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const cacheRoot = join(source.root, "legacy-reference-cache");
+		const distributionLayer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			cacheRoot
+		);
+		const acquired = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install({
+					artifact: { kind: "source" },
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+			)
+		).pipe(Effect.provide(distributionLayer));
+		const legacyRoot = join(cacheRoot, "releases", source.releaseVersion);
+		yield* Effect.promise(async () => {
+			await mkdir(join(cacheRoot, "releases"), { recursive: true });
+			await rename(acquired.cachePath, legacyRoot);
+			const metadataPath = join(legacyRoot, ".ue-shed-distribution.json");
+			const metadata = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+				JSON.parse(await readFile(metadataPath, "utf8"))
+			);
+			const {
+				artifactKind: _artifactKind,
+				variantIdentity: _variantIdentity,
+				...legacy
+			} = metadata;
+			await writeFile(
+				metadataPath,
+				`${JSON.stringify({ ...legacy, schemaVersion: 1 }, null, "\t")}\n`
+			);
+		});
+
+		const exactReference: PluginVariantReference = {
+			releaseVersion: acquired.releaseVersion,
+			variantIdentity: acquired.variantIdentity
+		};
+		const verified = yield* Effect.flatMap(PluginStore, (store) =>
+			store.verify(exactReference)
+		).pipe(Effect.provide(pluginStoreLayer({ cacheRoot })));
+		expect(verified.cachePath).toBe(legacyRoot);
+		yield* Effect.flatMap(PluginStore, (store) => store.prune(exactReference)).pipe(
+			Effect.provide(pluginStoreLayer({ cacheRoot }))
+		);
+		expect(yield* Effect.promise(() => readdir(join(cacheRoot, "releases")))).toEqual([]);
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {
@@ -551,6 +615,40 @@ it.effect("rejects compiled bundles with missing .modules evidence", () =>
 		).pipe(Effect.provide(layer));
 		expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
 		expect(error.message).toContain(".modules");
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("rejects a .modules product that is absent despite an unrelated DLL", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const compiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "47537391", missingModuleProduct: true })
+		);
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({
+				artifactPath: compiled.archivePath,
+				manifestPath: compiled.manifestPath
+			}),
+			join(source.root, "missing-module-product-cache")
+		);
+		const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution
+				.install({
+					artifact: compiled.artifact,
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+				.pipe(Effect.flip)
+		).pipe(Effect.provide(layer));
+		expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
+		expect(error.message).toContain("UnrealEditor-UEShedCore-Missing.dll");
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {

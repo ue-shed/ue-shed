@@ -14,6 +14,7 @@ import {
 	CompiledPluginBuildCancelled,
 	CompiledPluginBuildFailed,
 	CompiledPluginBuilder,
+	InvalidCompiledPluginBuild,
 	compiledPluginBuilderLayer
 } from "./builder.js";
 
@@ -215,7 +216,10 @@ async function fixture() {
 	};
 }
 
-async function writeFakeUatProducts(options: OwnedProcessTreeLaunchOptions) {
+async function writeFakeUatProducts(
+	options: OwnedProcessTreeLaunchOptions,
+	settings: { readonly binaryBytes?: number } = {}
+) {
 	const packageArgument = options.args.find((argument) => argument.startsWith("-Package="));
 	if (packageArgument === undefined) throw new Error("Builder omitted -Package.");
 	const binaries = join(packageArgument.slice("-Package=".length), "Binaries", "Win64");
@@ -229,7 +233,12 @@ async function writeFakeUatProducts(options: OwnedProcessTreeLaunchOptions) {
 	};
 	await writeFile(join(binaries, "UnrealEditor.modules"), JSON.stringify(modules));
 	for (const binary of Object.values(modules.Modules))
-		await writeFile(join(binaries, binary), `compiled ${binary}\n`);
+		await writeFile(
+			join(binaries, binary),
+			settings.binaryBytes === undefined
+				? `compiled ${binary}\n`
+				: Buffer.alloc(settings.binaryBytes, 0x41)
+		);
 }
 
 function completedHandle(exitCode: number): OwnedProcessTreeHandle {
@@ -338,6 +347,84 @@ describe("compiled plugin builder", () => {
 		const error = await Effect.runPromise(Fiber.join(fiber).pipe(Effect.flip));
 		await Effect.runPromise(Deferred.await(terminated));
 		expect(error).toBeInstanceOf(CompiledPluginBuildCancelled);
+		expect(await readdir(source.request.outputDirectory)).toEqual([]);
+	});
+
+	it("preserves cancellation during source extraction and cleans the stage", async () => {
+		const source = await fixture();
+		const controller = new AbortController();
+		let launches = 0;
+		const error = await Effect.runPromise(
+			Effect.flatMap(CompiledPluginBuilder, (builder) =>
+				builder
+					.build(source.request, {
+						onProgress: ({ stage }) => {
+							if (stage === "source-extraction") controller.abort();
+						},
+						signal: controller.signal
+					})
+					.pipe(Effect.flip)
+			).pipe(
+				Effect.provide(
+					builderLayer(() => {
+						launches += 1;
+						return Effect.succeed(completedHandle(0));
+					})
+				)
+			)
+		);
+		expect(error).toBeInstanceOf(CompiledPluginBuildCancelled);
+		expect(error.stage).toBe("source-extraction");
+		expect(launches).toBe(0);
+		expect(await readdir(source.request.outputDirectory)).toEqual([]);
+	});
+
+	it("preserves cancellation during final validation and publishes nothing", async () => {
+		const source = await fixture();
+		const controller = new AbortController();
+		const layer = builderLayer((options) =>
+			Effect.promise(async () => {
+				await writeFakeUatProducts(options);
+				return completedHandle(0);
+			})
+		);
+		const error = await Effect.runPromise(
+			Effect.flatMap(CompiledPluginBuilder, (builder) =>
+				builder
+					.build(source.request, {
+						onProgress: ({ stage }) => {
+							if (stage === "validation") controller.abort();
+						},
+						signal: controller.signal
+					})
+					.pipe(Effect.flip)
+			).pipe(Effect.provide(layer))
+		);
+		expect(error).toBeInstanceOf(CompiledPluginBuildCancelled);
+		expect(error.stage).toBe("validation");
+		expect(await readdir(source.request.outputDirectory)).toEqual([]);
+	});
+
+	it("rejects oversized compiled products before allocating archive bodies", async () => {
+		const source = await fixture();
+		const layer = builderLayer((options) =>
+			Effect.promise(async () => {
+				await writeFakeUatProducts(options, { binaryBytes: 2_048 });
+				return completedHandle(0);
+			})
+		);
+		const error = await Effect.runPromise(
+			Effect.flatMap(CompiledPluginBuilder, (builder) =>
+				builder
+					.build(source.request, {
+						limits: { maximumFileBytes: 1_024 }
+					})
+					.pipe(Effect.flip)
+			).pipe(Effect.provide(layer))
+		);
+		expect(error).toBeInstanceOf(InvalidCompiledPluginBuild);
+		expect(error.stage).toBe("archive");
+		expect(error.message).toContain("file-size limit");
 		expect(await readdir(source.request.outputDirectory)).toEqual([]);
 	});
 });

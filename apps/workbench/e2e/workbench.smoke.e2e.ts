@@ -18,20 +18,25 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 	).toBeVisible();
 	await expect(workbench.page.getByText("Scalar_Alpha / Enabled", { exact: true })).toBeVisible();
 	await workbench.page.getByRole("button", { name: "Sessions" }).click();
-	await expect(workbench.page.getByText("No staged drafts.", { exact: true })).toBeVisible();
+	await expect(
+		workbench.page.getByText(
+			"No drafts. Changes you stage are kept here until you apply or discard them.",
+			{ exact: true }
+		)
+	).toBeVisible();
 	await workbench.page.getByRole("button", { name: "Cell" }).click();
-	await workbench.page.getByRole("button", { name: "+ Row" }).click();
+	await workbench.page.getByRole("button", { name: "Add row" }).click();
 	await expect(workbench.page.getByRole("form", { name: "Row name editor" })).toBeVisible();
 	await workbench.page.getByRole("button", { name: "Cancel" }).click();
 	await workbench.page.getByRole("button", { name: /^Review \d+$/ }).click();
-	await expect(workbench.page.getByText("SESSION REVIEW", { exact: true })).toBeVisible();
+	await expect(workbench.page.getByText("No staged changes", { exact: true })).toBeVisible();
 	await workbench.page.screenshot({
 		fullPage: true,
 		path: testInfo.outputPath("data-authoring-review.png")
 	});
 
 	await workbench.openRoute("Map Review");
-	await workbench.page.getByRole("tab", { name: "LIVE WORLD" }).click();
+	await workbench.page.getByRole("tab", { name: "Live session" }).click();
 	await expect(workbench.page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(
 		"Map review / Live world"
 	);
@@ -52,11 +57,11 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 		fullPage: true,
 		path: testInfo.outputPath("map-review-world-scout.png")
 	});
-	await workbench.page.getByRole("button", { name: "CAPTURE SET" }).click();
+	await workbench.page.getByRole("button", { name: "Capture set" }).click();
 	const captureWorkflow = workbench.page.getByRole("dialog", {
 		name: "Capture review set"
 	});
-	await expect(captureWorkflow).toContainText("Editor World");
+	await expect(captureWorkflow).toContainText("Editor world");
 	await captureWorkflow.getByRole("button", { name: "REVIEW CAPTURE PLAN →" }).click();
 	await expect(
 		captureWorkflow.getByRole("region", { name: "Preview capture plan" })
@@ -65,8 +70,8 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 		fullPage: true,
 		path: testInfo.outputPath("map-review-capture-plan.png")
 	});
-	await captureWorkflow.getByRole("button", { name: "← BACK" }).click();
-	await captureWorkflow.getByRole("button", { name: "CANCEL" }).click();
+	await captureWorkflow.getByRole("button", { name: "← Back" }).click();
+	await captureWorkflow.getByRole("button", { name: "Cancel" }).click();
 
 	await workbench.openRoute("Data Authoring");
 	const savedPackage = workbench.page.getByRole("button", { name: "Saved package" });
@@ -75,7 +80,7 @@ test("launches the configured showcase and opens a saved DataTable", async ({
 		.getByRole("navigation", { name: "Project DataTables" })
 		.getByRole("button", { name: /^DT_LargeScalars DATA TABLE/ })
 		.click();
-	await expect(workbench.page.getByText("10000 / 10000 VISIBLE", { exact: true })).toBeVisible({
+	await expect(workbench.page.getByText("10000 / 10000 rows", { exact: true })).toBeVisible({
 		timeout: 60_000
 	});
 });

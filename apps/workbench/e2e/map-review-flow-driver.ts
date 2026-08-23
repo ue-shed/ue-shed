@@ -285,7 +285,7 @@ export async function createMapReviewFlowHarness(args: {
 	const captureCurrentSet = async (): Promise<string> => {
 		const page = currentWorkbench().page;
 		const saved = Schema.decodeUnknownSync(ReviewSet)(await readOnlyJson(reviewSetPath));
-		await page.getByRole("button", { name: "CAPTURE SET" }).click();
+		await page.getByRole("button", { name: "Capture set" }).click();
 		const dialog = page.getByRole("dialog", { name: "Capture review set" });
 		await dialog.getByRole("button", { name: /REVIEW CAPTURE PLAN/ }).click();
 		await dialog
@@ -388,12 +388,12 @@ export async function createMapReviewFlowHarness(args: {
 					.fill(String(contextCameraCount));
 				await framing
 					.locator("label")
-					.filter({ hasText: "FIELD OF VIEW" })
+					.filter({ hasText: "Field of view" })
 					.getByRole("spinbutton")
 					.fill("54");
 				await framing
 					.locator("label")
-					.filter({ hasText: "FRAME MARGIN" })
+					.filter({ hasText: "Frame margin" })
 					.getByRole("spinbutton")
 					.fill("0.12");
 				const candidates = page.getByRole("region", { name: "Framing candidates" });
@@ -642,7 +642,7 @@ export async function createMapReviewFlowHarness(args: {
 				await expect(image).toHaveJSProperty("naturalWidth", 1280);
 				if (collection) {
 					await currentWorkbench()
-						.page.getByRole("button", { name: "COMPARE PREVIOUS RUN" })
+						.page.getByRole("button", { name: "Compare previous run" })
 						.click();
 					await expect(
 						selected.getByRole("img", { name: /Previous run capture/ })
@@ -684,7 +684,7 @@ export async function createMapReviewFlowHarness(args: {
 						width: firstDimensions.width
 					});
 					await expect(
-						currentWorkbench().page.getByRole("region", { name: "Capture history" })
+						currentWorkbench().page.getByRole("region", { name: "Runs" })
 					).toContainText("captured");
 				}
 				return {

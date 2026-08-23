@@ -60,7 +60,7 @@ test("records the real Game Text quality workflow", async ({
 
 		await workbench.expectShowcaseReady();
 		await workbench.openRoute("Game Text");
-		await expect(page.getByRole("region", { name: "Text units" })).toContainText(
+		await expect(page.getByRole("region", { name: "Results" })).toContainText(
 			"Showing 32 of 32 matches"
 		);
 
@@ -95,8 +95,8 @@ test("records the real Game Text quality workflow", async ({
 		await page.getByRole("tab", { name: "Quality review" }).click();
 		await expect(page.getByRole("region", { name: "Quality rules setup" })).toBeVisible();
 		await page.waitForTimeout(1_200);
-		await page.getByRole("button", { name: "Load quality rules" }).click();
-		await expect(page.getByRole("region", { name: "Quality findings" })).toBeVisible();
+		await page.getByRole("button", { name: "Load rules" }).click();
+		await expect(page.getByRole("region", { name: "Findings" })).toBeVisible();
 		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
 			"3 findings"
 		);
@@ -111,13 +111,13 @@ test("records the real Game Text quality workflow", async ({
 		});
 		await maximumCharacters.fill("20");
 		await page.waitForTimeout(900);
-		await page.getByRole("button", { name: "Preview changes" }).click();
+		await page.getByRole("button", { name: "Preview" }).click();
 		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
 			"2 findings"
 		);
 		await expect(page.getByText("Budgets", { exact: true }).locator("..")).toContainText("0");
 		await page.waitForTimeout(1_200);
-		await page.getByRole("button", { name: "Save rules" }).click();
+		await page.getByRole("button", { name: "Save" }).click();
 		await expect(
 			page.getByRole("region", { name: "Selected quality rule" }).getByRole("status")
 		).toContainText("Rule file saved.");
@@ -127,23 +127,23 @@ test("records the real Game Text quality workflow", async ({
 		const forbiddenTerm = page.getByRole("textbox", { name: "Forbidden term 1" });
 		await forbiddenTerm.fill("pause");
 		await page.waitForTimeout(900);
-		await page.getByRole("button", { name: "Preview changes" }).click();
+		await page.getByRole("button", { name: "Preview" }).click();
 		await expect(page.getByRole("region", { name: "Quality summary" })).toContainText(
 			"1 finding"
 		);
 		await page.waitForTimeout(1_200);
-		await page.getByRole("button", { name: "Save rules" }).click();
+		await page.getByRole("button", { name: "Save" }).click();
 		await expect(
 			page.getByRole("region", { name: "Selected quality rule" }).getByRole("status")
 		).toContainText("Rule file saved.");
 		await page.waitForTimeout(1_300);
 
 		await page.getByRole("tab", { name: /Findings/ }).click();
-		const findings = page.getByRole("region", { name: "Quality findings" });
+		const findings = page.getByRole("region", { name: "Findings" });
 		await expect(findings).toContainText("TERM");
-		await expect(
-			page.getByRole("complementary", { name: "Quality finding detail" })
-		).toContainText("EXPECTED");
+		await expect(page.getByRole("complementary", { name: "Finding detail" })).toContainText(
+			"Expected"
+		);
 		await page.waitForTimeout(1_500);
 		await page.screenshot({ path: testInfo.outputPath("final.png") });
 	} finally {

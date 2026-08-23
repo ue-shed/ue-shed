@@ -88,7 +88,7 @@ describe("ConfigExplorerShowcase", () => {
 			}
 		});
 
-		expect(await screen.findByText("VALUE DIVERGES")).toBeDefined();
+		expect(await screen.findByText("Value diverges")).toBeDefined();
 		expect(requests).toEqual([
 			{
 				family: "Game",

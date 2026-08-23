@@ -37,6 +37,9 @@
 		"prepack": "pnpm run build",
 		"typecheck": "tsc --noEmit"
 	},
+	"dependencies": {
+		"@ue-shed/engine": "workspace:0.4.0"
+	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",
 		"effect": "catalog:"

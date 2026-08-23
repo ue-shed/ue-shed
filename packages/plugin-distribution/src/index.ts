@@ -5,6 +5,7 @@ export {
 	type ExtractPluginArchiveOptions,
 	type VerifiedPluginArtifact
 } from "./archive.js";
+export * from "./builder.js";
 export * from "./distribution.js";
 export * from "./errors.js";
 export * from "./manifest.js";

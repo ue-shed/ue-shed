@@ -1,6 +1,10 @@
 import { AuthoringValue } from "@ue-shed/protocol";
 import { CustodianExecutionMode, CustodianTargetId } from "@ue-shed/project-custodian";
-import { ReleaseVersion } from "@ue-shed/plugin-distribution";
+import {
+	PluginVariantIdentity,
+	PluginVariantRequest,
+	ReleaseVersion
+} from "@ue-shed/plugin-distribution";
 import { Schema } from "effect";
 
 const Project = { projectRoot: Schema.String };
@@ -270,19 +274,47 @@ export const CliCommand = Schema.TaggedUnion({
 		manifestPath: Schema.String,
 		...Project
 	},
+	PluginsBuild: {
+		architecture: Schema.String,
+		buildId: Schema.String,
+		compiler: Schema.String,
+		compilerVersion: Schema.String,
+		engineRoot: Schema.String,
+		engineSourceCommit: Schema.optionalKey(Schema.String),
+		maximumBuildSeconds: PositiveInt,
+		outputDirectory: Schema.String,
+		platform: Schema.String,
+		pluginIds: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
+		sourceArtifactDigest: Schema.String,
+		sourceArtifactPath: Schema.String,
+		sourceManifestDigest: Schema.String,
+		sourceManifestPath: Schema.String,
+		toolchain: Schema.String,
+		toolchainVersion: Schema.String,
+		targetTriple: Schema.optionalKey(Schema.String),
+		unrealVersion: Schema.String
+	},
 	PluginsCacheInstall: {
+		artifact: PluginVariantRequest,
 		artifactDigest: Schema.optionalKey(Schema.String),
 		cacheOnly: Schema.Boolean,
 		cacheRoot: Schema.String,
 		manifestDigest: Schema.optionalKey(Schema.String),
 		pluginIds: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
 		releaseVersion: ReleaseVersion,
-		source: Schema.String,
-		unrealVersion: Schema.optionalKey(Schema.String)
+		source: Schema.String
 	},
 	PluginsCacheList: { cacheRoot: Schema.String },
-	PluginsCacheVerify: { cacheRoot: Schema.String, releaseVersion: ReleaseVersion },
-	PluginsPrune: { cacheRoot: Schema.String, releaseVersion: ReleaseVersion }
+	PluginsCacheVerify: {
+		cacheRoot: Schema.String,
+		releaseVersion: ReleaseVersion,
+		variantIdentity: Schema.optionalKey(PluginVariantIdentity)
+	},
+	PluginsPrune: {
+		cacheRoot: Schema.String,
+		releaseVersion: ReleaseVersion,
+		variantIdentity: Schema.optionalKey(PluginVariantIdentity)
+	}
 });
 
 export type CliCommand = typeof CliCommand.Type;

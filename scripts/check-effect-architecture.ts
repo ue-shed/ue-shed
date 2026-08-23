@@ -56,6 +56,9 @@ const approvedPromiseAdapters = new Set([
 	// Plugin distribution isolates Node archive, HTTP, and immutable-cache promises behind typed
 	// Effect services. Public acquisition, store, source, lease, and prune APIs remain Effect-shaped.
 	"packages/plugin-distribution/src/archive.ts",
+	// The compiled-plugin builder owns staging, canonical archive, and Unreal build-tool promises;
+	// callers receive a typed Effect service and never observe the foreign Promise surface.
+	"packages/plugin-distribution/src/builder.ts",
 	"packages/plugin-distribution/src/source.ts",
 	"packages/plugin-distribution/src/store.ts",
 	"apps/workbench/src/main/adapters/electron-app.ts",
@@ -149,6 +152,9 @@ const approvedResourceAdapters = new Set([
 	// Plugin distribution owns AbortSignal listeners, lock polling, and lease files through
 	// Effect.callback / acquireRelease finalizers at its Node adapter boundary.
 	"packages/plugin-distribution/src/distribution.ts",
+	// Build cancellation owns its AbortSignal listener through Effect.callback's finalizer. UAT/UBT
+	// process-tree ownership remains delegated to the scoped engine supervisor service.
+	"packages/plugin-distribution/src/builder.ts",
 	"packages/plugin-distribution/src/source.ts",
 	"packages/plugin-distribution/src/store.ts",
 	// The saved-asset protocol transport owns and cancels the bounded native child process.

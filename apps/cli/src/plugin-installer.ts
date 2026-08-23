@@ -51,10 +51,16 @@ export interface PluginVerificationReport {
 }
 
 export interface PluginListReport {
+	readonly compatibility: ReturnType<typeof manifestCompatibility>;
 	readonly plugins: readonly PluginManifestEntry[];
 	readonly releaseVersion: string;
 	readonly schemaVersion: number;
-	readonly unreal: PluginReleaseManifest["unreal"];
+}
+
+function manifestCompatibility(manifest: PluginReleaseManifest) {
+	return manifest.schemaVersion === 1
+		? { kind: "source" as const, unrealVersionRange: manifest.unreal }
+		: manifest.compatibility;
 }
 
 export interface PluginInstallOptions {
@@ -569,10 +575,10 @@ export function listPluginManifest(
 ): Effect.Effect<PluginListReport, PluginInstallerError> {
 	return readPluginManifest(path).pipe(
 		Effect.map((manifest) => ({
+			compatibility: manifestCompatibility(manifest),
 			plugins: manifest.plugins,
 			releaseVersion: manifest.releaseVersion,
-			schemaVersion: manifest.schemaVersion,
-			unreal: manifest.unreal
+			schemaVersion: manifest.schemaVersion
 		}))
 	);
 }

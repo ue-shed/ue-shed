@@ -848,6 +848,10 @@ importers:
         version: 4.0.0-beta.98
 
   packages/plugin-distribution:
+    dependencies:
+      '@ue-shed/engine':
+        specifier: workspace:0.4.0
+        version: link:../engine
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'

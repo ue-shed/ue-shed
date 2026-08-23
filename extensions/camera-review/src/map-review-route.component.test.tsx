@@ -305,8 +305,8 @@ describe("MapReviewRoute", () => {
 		expect(screen.getByText("Select an actor, then reframe")).toBeDefined();
 
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "REVIEW SETS" }));
-		await user.click(await screen.findByRole("button", { name: "OPEN SET" }));
+		await user.click(screen.getByRole("button", { name: "Review sets" }));
+		await user.click(await screen.findByRole("button", { name: "Open set" }));
 		expect(selectedReviewSetId).toBe("fixture-review-set");
 		expect(await screen.findByText("Fixture Structure")).toBeDefined();
 	});
@@ -360,13 +360,13 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		await screen.findByText("Fixture Structure");
-		await user.click(screen.getByRole("button", { name: "REVIEW SETS" }));
-		expect(await screen.findByRole("dialog", { name: "Review Set library" })).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "OPEN SET" }));
+		await user.click(screen.getByRole("button", { name: "Review sets" }));
+		expect(await screen.findByRole("dialog", { name: "Review sets" })).toBeDefined();
+		await user.click(screen.getByRole("button", { name: "Open set" }));
 
 		expect(selectedReviewSetId).toBe("lighting-review");
 		expect(await screen.findByText("Lighting review")).toBeDefined();
-		expect(screen.queryByRole("dialog", { name: "Review Set library" })).toBeNull();
+		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
 	});
 
 	it("creates and opens an empty sibling Review Set", async () => {
@@ -399,16 +399,16 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		await screen.findByText("Fixture Structure");
-		await user.click(screen.getByRole("button", { name: "REVIEW SETS" }));
+		await user.click(screen.getByRole("button", { name: "Review sets" }));
 		await user.type(
-			await screen.findByRole("textbox", { name: "New Review Set name" }),
+			await screen.findByRole("textbox", { name: "New review set name" }),
 			"Facade pass"
 		);
-		await user.click(screen.getByRole("button", { name: "CREATE + OPEN" }));
+		await user.click(screen.getByRole("button", { name: "Create and open" }));
 
 		expect(createdName).toBe("Facade pass");
 		expect(await screen.findByText("Facade pass")).toBeDefined();
-		expect(screen.queryByRole("dialog", { name: "Review Set library" })).toBeNull();
+		expect(screen.queryByRole("dialog", { name: "Review sets" })).toBeNull();
 	});
 
 	it("establishes the first durable capture and exposes it in history", async () => {
@@ -457,19 +457,19 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		expect(
-			await screen.findByText("No captures yet. Use Capture Set when you want PNG evidence.")
+			await screen.findByText(
+				"No captures yet. Capture this set to save PNG stills of every view."
+			)
 		).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "CAPTURE SET" }));
+		await user.click(screen.getByRole("button", { name: "Capture set" }));
 		expect(screen.getByRole("dialog", { name: "Capture review set" })).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "REVIEW CAPTURE PLAN →" }));
 		expect(screen.getAllByText("Structure context").length).toBeGreaterThan(0);
 		await user.click(screen.getByRole("button", { name: "CAPTURE 1 VIEW" }));
 		expect(await screen.findByText("Capture finished")).toBeDefined();
 		await user.click(screen.getByRole("button", { name: "DONE" }));
-		expect(await screen.findByText("PURE / ORDINARY WORLD")).toBeDefined();
-		expect(screen.getByRole("region", { name: "Capture history" }).textContent).toContain(
-			"completed"
-		);
+		expect((await screen.findAllByText("Natural")).length).toBeGreaterThan(0);
+		expect(screen.getByRole("region", { name: "Runs" }).textContent).toContain("completed");
 		expect(captures).toBe(1);
 		expect(captureViewIds).toEqual(["structure-context"]);
 	});
@@ -557,11 +557,11 @@ describe("MapReviewRoute", () => {
 		};
 		const user = userEvent.setup();
 		renderRoute(client);
-		expect(await screen.findByText("NATURAL / ORDINARY WORLD")).toBeDefined();
+		expect((await screen.findAllByText("Natural")).length).toBeGreaterThan(0);
 		expect(screen.getByText("42% · depth compare")).toBeDefined();
 		expect(screen.getByText("restored")).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "CLEAR · MODIFIED VISIBILITY" }));
-		expect(screen.getAllByText("CLEAR / MODIFIED VISIBILITY")).toHaveLength(1);
+		await user.click(screen.getByRole("button", { name: "Clear" }));
+		expect(screen.getAllByText("Clear · visibility modified")).toHaveLength(1);
 		expect(screen.getByAltText(/Clear capture with modified visibility/)).toBeDefined();
 	});
 
@@ -671,23 +671,23 @@ describe("MapReviewRoute", () => {
 		const user = userEvent.setup();
 		renderRoute(client);
 		const views = await screen.findByRole("region", { name: "Review views" });
-		expect(views.textContent).toContain("ACTORS IN THIS REVIEW SET");
+		expect(views.textContent).toContain("Views · 2");
 		expect(views.textContent).toContain("Fixture subject");
 		expect(screen.getByRole("region", { name: "Fixture subject views" }).textContent).toContain(
-			"2 VIEWS"
+			"2 views"
 		);
 		expect(views.textContent).toContain("Structure context");
 		expect(views.textContent).toContain("Detail angle");
 		expect(screen.getByText("r2 · current")).toBeDefined();
-		await user.click(screen.getByRole("button", { name: "COMPARE PREVIOUS RUN" }));
+		await user.click(screen.getByRole("button", { name: "Compare previous run" }));
 		expect(screen.getByAltText("Previous run capture of Structure context")).toBeDefined();
-		expect(screen.getByText("PREVIOUS RUN / NATURAL")).toBeDefined();
+		expect(screen.getByText("Previous run")).toBeDefined();
 
 		await user.click(screen.getByRole("button", { name: /Detail angle/ }));
-		const timeline = screen.getByRole("region", { name: "Capture history" });
+		const timeline = screen.getByRole("region", { name: "Runs" });
 		expect(timeline.textContent).toContain("captured");
 		expect(timeline.textContent).toContain("not in run");
-		await user.click(screen.getByRole("button", { name: "REVISE SELECTED VIEW" }));
+		await user.click(screen.getByRole("button", { name: "Revise selected view" }));
 		await user.click(screen.getByRole("button", { name: "REVISE VIEW FROM SELECTED ACTOR" }));
 		expect(authoringIntent).toEqual({
 			destination: { kind: "revise_view", viewId: "detail-angle" }
@@ -814,7 +814,9 @@ describe("MapReviewRoute", () => {
 		};
 		const user = userEvent.setup();
 		renderRoute(client);
-		await screen.findByText("No captures yet. Use Capture Set when you want PNG evidence.");
+		await screen.findByText(
+			"No captures yet. Capture this set to save PNG stills of every view."
+		);
 		await user.click(screen.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" }));
 		expect(await screen.findByText("Review Subject")).toBeDefined();
 		const zScrubber = screen.getByRole("button", { name: "Drag Z to adjust" });

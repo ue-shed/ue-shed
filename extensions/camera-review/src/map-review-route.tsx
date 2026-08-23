@@ -210,44 +210,12 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 				)}
 			</Show>
 			<header {...stylex.props(styles.header)}>
-				<div>
-					<nav aria-label="Breadcrumb" {...stylex.props(styles.eyebrow)}>
-						Map review / {worldSource() === "saved" ? "Saved world" : "Live world"}
-					</nav>
-					<div
-						role="tablist"
-						aria-label="Map data source"
-						{...stylex.props(styles.sourceTabs)}
-					>
-						<button
-							type="button"
-							role="tab"
-							aria-selected={worldSource() === "saved"}
-							disabled={
-								props.client.readSavedWorld === undefined ||
-								props.client.savedWorldMaps === undefined
-							}
-							onClick={() => setWorldSource("saved")}
-							{...stylex.props(
-								styles.sourceButton,
-								worldSource() === "saved" && styles.sourceButtonActive
-							)}
-						>
-							SAVED MAP
-						</button>
-						<button
-							type="button"
-							role="tab"
-							aria-selected={worldSource() === "live"}
-							onClick={() => setWorldSource("live")}
-							{...stylex.props(
-								styles.sourceButton,
-								worldSource() === "live" && styles.sourceButtonActive
-							)}
-						>
-							LIVE WORLD
-						</button>
-					</div>
+				<div {...stylex.props(styles.headerCopy)}>
+					<h1 {...stylex.props(styles.title)}>Map review</h1>
+					<p {...stylex.props(styles.subtitle)}>
+						Browse captured views of your map, compare runs side by side, and keep the
+						framings worth reusing.
+					</p>
 				</div>
 				<div {...stylex.props(styles.headerActions)}>
 					<button
@@ -256,20 +224,87 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 							state().status === "loading" || state().status === "not_configured"
 						}
 						onClick={() => setSetLibraryOpen(true)}
-						{...stylex.props(styles.libraryButton)}
+						{...stylex.props(styles.quietButton)}
 					>
-						REVIEW SETS
+						Review sets
 					</button>
 					<button
 						type="button"
 						disabled={ready() === undefined || worldSource() !== "live"}
 						onClick={() => setCaptureOpen(true)}
-						{...stylex.props(styles.captureButton)}
+						{...stylex.props(styles.primaryButton)}
 					>
-						CAPTURE SET
+						Capture set
 					</button>
 				</div>
 			</header>
+			<div {...stylex.props(styles.toolbar)}>
+				<div
+					role="tablist"
+					aria-label="Map data source"
+					{...stylex.props(styles.sourceTabs)}
+				>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={worldSource() === "saved"}
+						disabled={
+							props.client.readSavedWorld === undefined ||
+							props.client.savedWorldMaps === undefined
+						}
+						onClick={() => setWorldSource("saved")}
+						{...stylex.props(
+							styles.sourceTab,
+							worldSource() === "saved" && styles.sourceTabActive
+						)}
+					>
+						Saved map
+					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={worldSource() === "live"}
+						onClick={() => setWorldSource("live")}
+						{...stylex.props(
+							styles.sourceTab,
+							worldSource() === "live" && styles.sourceTabActive
+						)}
+					>
+						Live session
+					</button>
+				</div>
+				<Show when={ready() !== undefined && worldSource() === "live"}>
+					<div
+						role="group"
+						aria-label="Authoring mode"
+						{...stylex.props(styles.modeGroup)}
+					>
+						<button
+							type="button"
+							aria-pressed={authoringMode() === "append"}
+							onClick={() => setAuthoringMode("append")}
+							{...stylex.props(
+								styles.modeButton,
+								authoringMode() === "append" && styles.modeButtonActive
+							)}
+						>
+							Add another view
+						</button>
+						<button
+							type="button"
+							disabled={selectedView() === undefined}
+							aria-pressed={authoringMode() === "revise"}
+							onClick={() => setAuthoringMode("revise")}
+							{...stylex.props(
+								styles.modeButton,
+								authoringMode() === "revise" && styles.modeButtonActive
+							)}
+						>
+							Revise selected view
+						</button>
+					</div>
+				</Show>
+			</div>
 			<Show
 				when={worldSource() === "saved"}
 				fallback={
@@ -295,8 +330,8 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					<div {...stylex.props(styles.centerState)}>
 						<strong>No review project is configured.</strong>
 						<span>
-							Set UE_SHED_PROJECT_ROOT to a project, then return here to create its
-							first portable Review Set.
+							Set UE_SHED_PROJECT_ROOT to a project folder, then return here to create
+							its first review set.
 						</span>
 					</div>
 				</Match>
@@ -305,9 +340,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						<Show
 							when={worldSource() === "live"}
 							fallback={
-								<div {...stylex.props(styles.offlineReviewNote)}>
-									Saved-map review is ready. Switch to Live World when you want to
-									author or capture Review Views.
+								<div {...stylex.props(styles.offlineNote)}>
+									Saved map review is ready. Switch to Live session to author or
+									capture views.
 								</div>
 							}
 						>
@@ -325,12 +360,22 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						const current = state();
 						if (current.status !== "failed") return null;
 						return (
-							<div {...stylex.props(styles.errorState)}>
-								<strong>{current.error.message}</strong>
+							<div role="alert" {...stylex.props(styles.stateCard)}>
+								<strong {...stylex.props(styles.stateTitle)}>
+									Couldn't load review data
+								</strong>
 								<span>{current.error.recovery}</span>
-								<button type="button" onClick={() => void load()}>
+								<button
+									type="button"
+									onClick={() => void load()}
+									{...stylex.props(styles.quietButton)}
+								>
 									Retry
 								</button>
+								<details {...stylex.props(styles.technical)}>
+									<summary>Technical details</summary>
+									<code>{current.error.message}</code>
+								</details>
 							</div>
 						);
 					})()}
@@ -340,10 +385,16 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 						const current = state();
 						if (current.status !== "blocked") return null;
 						return (
-							<div {...stylex.props(styles.errorState)}>
-								<strong>{current.policy.message}</strong>
+							<div role="alert" {...stylex.props(styles.stateCard)}>
+								<strong {...stylex.props(styles.stateTitle)}>
+									{current.policy.message}
+								</strong>
 								<span>{current.policy.recovery}</span>
-								<button type="button" onClick={() => void load()}>
+								<button
+									type="button"
+									onClick={() => void load()}
+									{...stylex.props(styles.quietButton)}
+								>
 									Return to review
 								</button>
 							</div>
@@ -358,63 +409,44 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								{...stylex.props(styles.statusStrip)}
 							>
 								<div {...stylex.props(styles.setIdentity)}>
-									<span>REVIEW SET</span>
 									<strong>{current().reviewSet.displayName}</strong>
+									<code>{current().reviewSet.mapPath}</code>
 								</div>
-								<div>
+								<div {...stylex.props(styles.stat)}>
 									<strong>{current().reviewSet.viewCount}</strong>
-									<span>approved view</span>
+									<span>
+										{current().reviewSet.viewCount === 1 ? "view" : "views"}
+									</span>
 								</div>
-								<div>
+								<div {...stylex.props(styles.stat)}>
 									<strong>{current().runs.length}</strong>
-									<span>durable runs</span>
+									<span>{current().runs.length === 1 ? "run" : "runs"}</span>
 								</div>
-								<code>{current().reviewSet.mapPath}</code>
 							</section>
-							<Show when={worldSource() === "live"}>
-								<div {...stylex.props(styles.authoringMode)}>
-									<button
-										type="button"
-										aria-pressed={authoringMode() === "append"}
-										onClick={() => setAuthoringMode("append")}
-									>
-										ADD ANOTHER VIEW
-									</button>
-									<button
-										type="button"
-										disabled={selectedView() === undefined}
-										aria-pressed={authoringMode() === "revise"}
-										onClick={() => setAuthoringMode("revise")}
-									>
-										REVISE SELECTED VIEW
-									</button>
-								</div>
-								<Show when={current().reviewSet.id} keyed>
-									<MapReviewAuthoring
-										client={props.client}
-										destination={
-											authoringMode() === "revise" &&
-											selectedViewId() !== undefined
-												? {
-														kind: "revise_view",
-														viewId: selectedViewId()!
-													}
-												: { kind: "append_view" }
-										}
-										focusRequest={focusRequest()}
-										onApproved={load}
-										onChooseReviewSet={() => setSetLibraryOpen(true)}
-									/>
-								</Show>
+							<Show when={worldSource() === "live" && current().reviewSet.id} keyed>
+								<MapReviewAuthoring
+									client={props.client}
+									destination={
+										authoringMode() === "revise" &&
+										selectedViewId() !== undefined
+											? {
+													kind: "revise_view",
+													viewId: selectedViewId()!
+												}
+											: { kind: "append_view" }
+									}
+									focusRequest={focusRequest()}
+									onApproved={load}
+									onChooseReviewSet={() => setSetLibraryOpen(true)}
+								/>
 							</Show>
 
 							<section
 								aria-label="Review views"
 								{...stylex.props(styles.viewNavigator)}
 							>
-								<div {...stylex.props(styles.historyHeading)}>
-									<span>ACTORS IN THIS REVIEW SET</span>
-									<small>CHOOSE AN ACTOR, THEN A VIEW</small>
+								<div {...stylex.props(styles.sectionHeading)}>
+									<span>Views · {current().reviewSet.views.length}</span>
 								</div>
 								<For each={subjectGroups()}>
 									{([subject, views]) => (
@@ -425,7 +457,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 											<div {...stylex.props(styles.subjectIdentity)}>
 												<span {...stylex.props(styles.subjectCount)}>
 													{views.length}{" "}
-													{views.length === 1 ? "VIEW" : "VIEWS"}
+													{views.length === 1 ? "view" : "views"}
 												</span>
 												<strong>
 													{views[0]?.subjectLabel ??
@@ -433,7 +465,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 												</strong>
 												<code>
 													{subject.startsWith("area:")
-														? "ORIENTED AREA"
+														? "oriented area"
 														: subject}
 												</code>
 											</div>
@@ -489,10 +521,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 							<Show
 								when={selected()}
 								fallback={
-									<section {...stylex.props(styles.firstCapture)}>
+									<section
+										aria-label="Captures"
+										{...stylex.props(styles.emptyState)}
+									>
 										<p>
-											No captures yet. Use Capture Set when you want PNG
-											evidence.
+											No captures yet. Capture this set to save PNG stills of
+											every view.
 										</p>
 									</section>
 								}
@@ -506,23 +541,33 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 											<Show when={selectedCapture()}>
 												<div
 													role="group"
-													aria-label="Natural and Clear display"
+													aria-label="Compare captures"
 													{...stylex.props(styles.comparisonControls)}
 												>
 													<button
 														type="button"
 														aria-pressed={comparisonMode() === "pure"}
 														onClick={() => setComparisonMode("pure")}
+														{...stylex.props(
+															styles.comparisonButton,
+															comparisonMode() === "pure" &&
+																styles.comparisonButtonActive
+														)}
 													>
-														NATURAL
+														Natural
 													</button>
 													<button
 														type="button"
 														disabled={clearArtifact() === undefined}
 														aria-pressed={comparisonMode() === "clear"}
 														onClick={() => setComparisonMode("clear")}
+														{...stylex.props(
+															styles.comparisonButton,
+															comparisonMode() === "clear" &&
+																styles.comparisonButtonActive
+														)}
 													>
-														CLEAR · MODIFIED VISIBILITY
+														Clear
 													</button>
 													<button
 														type="button"
@@ -533,8 +578,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 														onClick={() =>
 															setComparisonMode("side_by_side")
 														}
+														{...stylex.props(
+															styles.comparisonButton,
+															comparisonMode() === "side_by_side" &&
+																styles.comparisonButtonActive
+														)}
 													>
-														SIDE BY SIDE
+														Side by side
 													</button>
 													<button
 														type="button"
@@ -545,8 +595,13 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 														onClick={() =>
 															setComparisonMode("previous")
 														}
+														{...stylex.props(
+															styles.comparisonButton,
+															comparisonMode() === "previous" &&
+																styles.comparisonButtonActive
+														)}
 													>
-														COMPARE PREVIOUS RUN
+														Compare previous run
 													</button>
 												</div>
 											</Show>
@@ -569,12 +624,12 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 															>
 																<span>
 																	{selectedFailure() === undefined
-																		? "VIEW NOT INCLUDED IN RUN"
-																		: "VIEW CAPTURE FAILED"}
+																		? "Not captured in this run"
+																		: "View capture failed"}
 																</span>
 																<small>
 																	{selectedFailure()?.message ??
-																		"No result was recorded for this View."}
+																		"No result was recorded for this view."}
 																</small>
 															</div>
 															<div
@@ -582,7 +637,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																	styles.imageChrome
 																)}
 															>
-																<span>PURE / ORDINARY WORLD</span>
+																<span>Natural</span>
 																<code>{run().id}</code>
 															</div>
 														</div>
@@ -602,9 +657,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																		styles.imageChrome
 																	)}
 																>
-																	<span>
-																		NATURAL / ORDINARY WORLD
-																	</span>
+																	<span>Natural</span>
 																	<code>{run().id}</code>
 																</div>
 															</div>
@@ -637,9 +690,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																)}
 															>
 																<span>
-																	CLEAR / MODIFIED VISIBILITY
+																	Clear · visibility modified
 																</span>
-																<code>MATCHED FRAMING</code>
+																<code>matched framing</code>
 															</div>
 														</div>
 													)}
@@ -662,7 +715,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																	styles.imageChrome
 																)}
 															>
-																<span>PREVIOUS RUN / NATURAL</span>
+																<span>Previous run</span>
 																<code>{previous().run.id}</code>
 															</div>
 														</div>
@@ -671,14 +724,14 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 											</div>
 										</div>
 										<aside {...stylex.props(styles.runInspector)}>
-											<p>CAPTURE RUN</p>
+											<p {...stylex.props(styles.inspectorLabel)}>Run</p>
 											<h2>{new Date(run().completedAt).toLocaleString()}</h2>
 											<dl>
 												<Show when={selectedCapture()}>
 													{(capture) => (
 														<>
 															<div>
-																<dt>Cause</dt>
+																<dt>Trigger</dt>
 																<dd>
 																	{capture().cause.type.replaceAll(
 																		"_",
@@ -724,7 +777,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 															>
 																{(revision) => (
 																	<div>
-																		<dt>View revision</dt>
+																		<dt>Revision</dt>
 																		<dd>
 																			{revisionSummary(
 																				revision(),
@@ -742,13 +795,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 																}
 															>
 																<details
-																	{...stylex.props(
-																		styles.explainability
-																	)}
+																	{...stylex.props(styles.notes)}
 																>
-																	<summary>
-																		Explainability
-																	</summary>
+																	<summary>Notes</summary>
 																	<ul>
 																		<For
 																			each={captureExplanations(
@@ -796,10 +845,10 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 								)}
 							</Show>
 
-							<section aria-label="Capture history" {...stylex.props(styles.history)}>
-								<div {...stylex.props(styles.historyHeading)}>
-									<span>VISUAL HISTORY</span>
-									<small>NEWEST FIRST</small>
+							<section aria-label="Runs" {...stylex.props(styles.history)}>
+								<div {...stylex.props(styles.sectionHeading)}>
+									<span>Runs</span>
+									<small>Newest first</small>
 								</div>
 								<div {...stylex.props(styles.runRail)}>
 									<For each={current().runs}>
@@ -859,74 +908,115 @@ const styles = stylex.create({
 		width: "100%",
 		boxSizing: "border-box",
 		overflowX: "hidden",
-		padding: "30px 34px 44px",
+		padding: tokens.space5,
 		backgroundColor: tokens.colorCanvas,
-		backgroundImage:
-			"linear-gradient(#ffffff06 1px, transparent 1px), linear-gradient(90deg, #ffffff06 1px, transparent 1px), radial-gradient(circle at 78% -10%, rgba(228, 242, 34, 0.07), transparent 38%)",
-		backgroundSize: "32px 32px, 32px 32px, auto",
 		color: tokens.colorText
 	},
 	header: {
 		display: "flex",
 		justifyContent: "space-between",
-		alignItems: "center",
-		paddingBottom: 16,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		alignItems: "flex-start",
+		gap: tokens.space4,
+		paddingBottom: tokens.space4,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		marginBottom: tokens.space5
 	},
-	headerActions: { display: "flex", alignItems: "center", gap: 8 },
-	eyebrow: { margin: 0, color: tokens.colorAccent, fontSize: 11, letterSpacing: ".04em" },
-	sourceTabs: { display: "flex", gap: 6, marginTop: 9 },
-	sourceButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusBadge,
-		backgroundColor: {
-			default: "transparent",
-			":hover": "rgba(255, 255, 255, 0.04)",
-			":disabled": tokens.colorSurfaceInset
-		},
-		color: { default: tokens.colorTextMuted, ":disabled": tokens.colorTextFaint },
-		padding: "5px 7px",
-		fontSize: 12,
-		fontWeight: 500,
-		letterSpacing: ".04em",
-		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	headerCopy: { display: "flex", flexDirection: "column", gap: 6 },
+	title: {
+		margin: 0,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		color: tokens.colorTextStrong
 	},
-	sourceButtonActive: {
-		borderColor: "#02b8cc",
-		backgroundColor: tokens.colorSurfaceRaised,
-		color: tokens.colorText
+	subtitle: {
+		margin: 0,
+		maxWidth: 560,
+		fontSize: 14,
+		lineHeight: 1.45,
+		color: tokens.colorTextMuted
 	},
-	libraryButton: {
+	headerActions: { display: "flex", alignItems: "center", gap: tokens.space2 },
+	quietButton: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
-			":hover": "rgba(255, 255, 255, 0.04)",
+			":hover": tokens.colorSurfaceHover,
 			":disabled": "transparent"
 		},
-		color: { default: tokens.colorTextMuted, ":disabled": tokens.colorTextFaint },
-		padding: "5px 12px",
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
+		padding: "6px 12px",
+		fontSize: 13,
 		fontWeight: 500,
-		fontSize: 12,
-		letterSpacing: ".04em",
 		cursor: { default: "pointer", ":disabled": "not-allowed" }
 	},
-	captureButton: {
+	primaryButton: {
 		border: `1px solid ${tokens.colorAccent}`,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorAccent,
 			":hover": tokens.colorAccentStrong,
-			":disabled": "rgba(228, 242, 34, 0.5)"
+			":disabled": tokens.colorAccentWash
 		},
-		color: tokens.colorAccentText,
-		padding: "5px 12px",
+		color: { default: tokens.colorAccentText, ":disabled": tokens.colorAccent },
+		padding: "6px 12px",
 		fontWeight: 500,
-		fontSize: 12,
-		letterSpacing: ".04em",
+		fontSize: 13,
 		cursor: { default: "pointer", ":disabled": "wait" },
 		transition: `transform ${tokens.motionStandard} cubic-bezier(.23,1,.32,1)`,
 		transform: { default: "scale(1)", ":active": "scale(.97)" }
+	},
+	toolbar: {
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "center",
+		gap: tokens.space3,
+		marginBottom: tokens.space4
+	},
+	sourceTabs: { display: "flex", gap: 4 },
+	sourceTab: {
+		border: "1px solid transparent",
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": tokens.colorSurfaceHover,
+			":disabled": "transparent"
+		},
+		color: {
+			default: tokens.colorTextMuted,
+			":active": tokens.colorTextStrong,
+			":disabled": tokens.colorTextFaint
+		},
+		padding: "5px 10px",
+		fontSize: 13,
+		fontWeight: 500,
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	},
+	sourceTabActive: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorderStrong,
+		color: tokens.colorTextStrong
+	},
+	modeGroup: { display: "flex", gap: 4 },
+	modeButton: {
+		border: "1px solid transparent",
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": tokens.colorSurfaceHover,
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorTextMuted, ":disabled": tokens.colorTextFaint },
+		padding: "5px 10px",
+		fontSize: 13,
+		fontWeight: 500,
+		cursor: { default: "pointer", ":disabled": "not-allowed" }
+	},
+	modeButtonActive: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorderStrong,
+		color: tokens.colorTextStrong
 	},
 	centerState: {
 		minHeight: 430,
@@ -935,51 +1025,97 @@ const styles = stylex.create({
 		justifyContent: "center",
 		alignItems: "center",
 		gap: 10,
+		textAlign: "center",
 		color: tokens.colorTextMuted
 	},
-	errorState: {
-		minHeight: 360,
+	stateCard: {
+		width: "min(560px, 100%)",
+		margin: "0 auto",
+		marginTop: tokens.space6,
 		display: "flex",
 		flexDirection: "column",
-		justifyContent: "center",
-		alignItems: "center",
-		gap: 12,
-		color: tokens.colorDanger
-	},
-	workspace: { paddingTop: 14 },
-	setupWorkspace: { paddingTop: 8 },
-	authoringMode: {
-		display: "flex",
-		gap: 6,
-		margin: "12px 0 6px"
-	},
-	offlineReviewNote: {
+		alignItems: "flex-start",
+		gap: tokens.space3,
+		padding: tokens.space5,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		color: tokens.colorTextMuted
+	},
+	stateTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 15,
+		fontWeight: 600
+	},
+	technical: {
+		alignSelf: "stretch",
+		marginTop: tokens.space2,
+		color: tokens.colorTextSubtle,
+		fontSize: 12
+	},
+	setupWorkspace: { paddingTop: tokens.space3 },
+	offlineNote: {
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted,
-		padding: "14px 16px",
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		fontSize: 13
 	},
+	workspace: { paddingTop: 0, display: "grid", gap: tokens.space4 },
 	statusStrip: {
 		display: "grid",
-		gridTemplateColumns: "1.3fr .45fr .45fr 1.4fr",
-		minHeight: 70,
+		gridTemplateColumns: "minmax(0, 2fr) minmax(90px, .5fr) minmax(90px, .5fr)",
+		gap: tokens.space3,
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
-	setIdentity: { borderTop: `3px solid ${tokens.colorAccent}` },
-	stage: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 260px", gap: 12, marginTop: 12 },
-	comparisonControls: {
+	setIdentity: {
+		minWidth: 0,
 		display: "flex",
-		gap: 6,
-		marginBottom: 7
+		flexDirection: "column",
+		gap: 4
 	},
-	comparisonStage: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 7 },
+	stat: {
+		display: "flex",
+		alignItems: "baseline",
+		justifyContent: "flex-end",
+		gap: 6
+	},
+	stage: {
+		display: "grid",
+		gridTemplateColumns: "minmax(0, 1fr) 260px",
+		gap: tokens.space3
+	},
+	comparisonControls: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: tokens.space2 },
+	comparisonButton: {
+		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "transparent",
+			":hover": tokens.colorSurfaceHover,
+			":disabled": "transparent"
+		},
+		color: { default: tokens.colorTextMuted, ":disabled": tokens.colorTextFaint },
+		padding: "4px 10px",
+		fontSize: 12,
+		fontWeight: 500,
+		cursor: { default: "pointer", ":disabled": "default" }
+	},
+	comparisonButtonActive: {
+		borderColor: tokens.colorBorderStrong,
+		backgroundColor: tokens.colorSurfaceRaised,
+		color: tokens.colorTextStrong
+	},
+	comparisonStage: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: tokens.space2 },
 	comparisonStagePaired: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" },
 	imageFrame: {
-		minHeight: 430,
+		minHeight: 380,
 		position: "relative",
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden"
 	},
@@ -991,15 +1127,15 @@ const styles = stylex.create({
 		display: "block"
 	},
 	missingPreview: {
-		minHeight: 430,
+		minHeight: 380,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "center",
 		justifyContent: "center",
-		gap: 9,
-		color: tokens.colorTextSubtle,
-		backgroundImage:
-			"repeating-linear-gradient(-45deg, transparent, transparent 9px, #ffffff06 9px, #ffffff06 10px)"
+		gap: 8,
+		textAlign: "center",
+		padding: tokens.space4,
+		color: tokens.colorTextSubtle
 	},
 	imageChrome: {
 		position: "absolute",
@@ -1008,61 +1144,82 @@ const styles = stylex.create({
 		bottom: 0,
 		display: "flex",
 		justifyContent: "space-between",
-		padding: "12px 14px",
+		padding: `${tokens.space3}px ${tokens.space4}px`,
 		backgroundImage: "linear-gradient(transparent, rgba(8, 9, 10, 0.91))",
-		color: tokens.colorAccent,
-		fontSize: 11,
-		letterSpacing: ".04em"
+		color: tokens.colorText,
+		fontSize: 11
 	},
 	clearFrame: { borderColor: "#02b8cc" },
 	clearChrome: { color: "#02b8cc" },
-	explainability: { margin: "8px 0", color: tokens.colorTextMuted, fontSize: 11 },
+	notes: { margin: `${tokens.space2}px 0`, color: tokens.colorTextMuted, fontSize: 11 },
 	runInspector: {
+		alignSelf: "start",
 		border: `1px solid ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
-		padding: 18
+		padding: tokens.space4
 	},
-	firstCapture: {
-		marginTop: 12,
-		border: `1px solid ${tokens.colorBorder}`,
+	inspectorLabel: {
+		margin: 0,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 600
+	},
+	emptyState: {
+		border: `1px dashed ${tokens.colorBorder}`,
+		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
-		padding: "14px 16px",
+		padding: tokens.space5,
 		color: tokens.colorTextMuted,
-		fontSize: 13
+		fontSize: 13,
+		textAlign: "center"
 	},
 	viewNavigator: {
-		marginTop: 12,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurface
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
+	},
+	sectionHeading: {
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "baseline",
+		padding: `${tokens.space2}px ${tokens.space4}px`,
+		borderBottom: `1px solid ${tokens.colorBorder}`,
+		color: tokens.colorTextStrong,
+		fontSize: 12,
+		fontWeight: 600
 	},
 	subjectGroup: {
 		display: "grid",
 		gridTemplateColumns: "minmax(180px, .55fr) 1.45fr",
-		gap: 12,
-		padding: 12,
+		gap: tokens.space3,
+		padding: tokens.space3,
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
 	subjectIdentity: { display: "grid", alignContent: "start", gap: 4 },
 	subjectCount: {
 		width: "fit-content",
-		padding: "2px 5px",
+		padding: "1px 6px",
+		borderRadius: tokens.radiusBadge,
 		border: `1px solid ${tokens.colorBorderStrong}`,
-		color: tokens.colorAccent,
+		color: tokens.colorTextMuted,
 		fontSize: 11,
-		fontWeight: 500,
-		letterSpacing: ".04em"
+		fontWeight: 500
 	},
-	viewRail: { display: "flex", gap: 7, overflowX: "auto" },
+	viewRail: { display: "flex", gap: tokens.space2, overflowX: "auto" },
 	viewCard: {
 		minWidth: 170,
 		display: "flex",
 		flexDirection: "column",
 		alignItems: "flex-start",
-		gap: 5,
+		gap: 4,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: tokens.colorSurface, ":hover": "rgba(255, 255, 255, 0.03)" },
+		borderRadius: tokens.radiusControl,
+		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorTextMuted,
-		padding: 10,
+		padding: tokens.space2,
+		textAlign: "left",
 		cursor: "pointer"
 	},
 	viewCardActive: {
@@ -1071,35 +1228,27 @@ const styles = stylex.create({
 		color: tokens.colorTextStrong
 	},
 	history: {
-		marginTop: 12,
 		border: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: tokens.colorSurface
+		borderRadius: tokens.radiusControl,
+		backgroundColor: tokens.colorSurface,
+		overflow: "hidden"
 	},
-	historyHeading: {
-		display: "flex",
-		justifyContent: "space-between",
-		padding: "10px 13px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		color: tokens.colorTextSubtle,
-		fontSize: 11,
-		letterSpacing: ".04em"
-	},
-	runRail: { display: "flex", minHeight: 88, overflowX: "auto" },
+	runRail: { display: "flex", minHeight: 80, overflowX: "auto" },
 	runCard: {
 		minWidth: 170,
 		display: "grid",
-		gridTemplateColumns: "30px 1fr",
+		gridTemplateColumns: "28px 1fr",
 		alignItems: "center",
 		border: 0,
 		borderRight: `1px solid ${tokens.colorBorder}`,
-		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorTextMuted,
 		textAlign: "left",
 		cursor: "pointer",
-		padding: 12
+		padding: tokens.space3
 	},
 	runCardActive: {
-		backgroundColor: "rgba(255, 255, 255, 0.07)",
+		backgroundColor: tokens.colorSurfaceRaised,
 		boxShadow: `inset 0 -2px ${tokens.colorAccent}`,
 		color: tokens.colorTextStrong
 	}

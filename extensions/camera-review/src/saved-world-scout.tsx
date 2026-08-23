@@ -243,11 +243,10 @@ export function SavedWorldScout(props: {
 		<section aria-label="Saved top-down actor map" {...stylex.props(styles.scout)}>
 			<header {...stylex.props(styles.header)}>
 				<div>
-					<p {...stylex.props(styles.eyebrow)}>SAVED MAP</p>
 					<h2 {...stylex.props(styles.title)}>Actors from project files</h2>
 					<Show when={projectLabel()}>
 						{(label) => (
-							<p {...stylex.props(styles.projectLabel)}>PROJECT · {label()}</p>
+							<p {...stylex.props(styles.projectLabel)}>Project · {label()}</p>
 						)}
 					</Show>
 				</div>
@@ -258,12 +257,12 @@ export function SavedWorldScout(props: {
 						disabled={props.client.chooseProjectAndMaps === undefined}
 						{...stylex.props(styles.chooseButton)}
 					>
-						CHOOSE PROJECT…
+						Choose project
 					</button>
 					<div {...stylex.props(styles.source)}>
 						<span {...stylex.props(styles.sourceDot)} />
-						<strong>PROJECT FILES</strong>
-						<code>{world()?.authority.mapPackage ?? "NOT LOADED"}</code>
+						<strong>Project files</strong>
+						<code>{world()?.authority.mapPackage ?? "not loaded"}</code>
 					</div>
 				</div>
 			</header>
@@ -272,14 +271,24 @@ export function SavedWorldScout(props: {
 				when={world()}
 				fallback={
 					<div {...stylex.props(styles.message)}>
-						<div {...stylex.props(styles.reticle)}>◇</div>
 						<h3>
-							{error() === undefined ? "Reading saved map…" : "Saved map unavailable"}
+							{error() === undefined
+								? "Reading saved map…"
+								: "Couldn't load saved map"}
 						</h3>
 						<p>
-							{error() ??
-								"The selected level or its World Partition external-actor packages are being read from disk."}
+							{error() === undefined
+								? "The selected level and its external actor packages are being read from disk."
+								: "Pick a different project or map, then retry."}
 						</p>
+						<Show when={error()}>
+							{(message) => (
+								<details {...stylex.props(styles.technical)}>
+									<summary>Technical details</summary>
+									<code>{message()}</code>
+								</details>
+							)}
+						</Show>
 						<div {...stylex.props(styles.fallbackActions)}>
 							<Show when={error()}>
 								<button
@@ -287,7 +296,7 @@ export function SavedWorldScout(props: {
 									onClick={loadMaps}
 									{...stylex.props(styles.retry)}
 								>
-									RETRY SAVED MAP
+									Retry
 								</button>
 							</Show>
 							<Show when={props.client.chooseProjectAndMaps !== undefined}>
@@ -296,7 +305,7 @@ export function SavedWorldScout(props: {
 									onClick={chooseProject}
 									{...stylex.props(styles.retry)}
 								>
-									CHOOSE PROJECT…
+									Choose project
 								</button>
 							</Show>
 						</div>
@@ -307,16 +316,18 @@ export function SavedWorldScout(props: {
 					<>
 						<div {...stylex.props(styles.tools)}>
 							<SavedMapPicker
+								label="Map"
 								maps={maps()}
 								mapPath={selectedMapPath() ?? ""}
 								onMapPathChange={selectMap}
 							/>
 							<div {...stylex.props(styles.summary)}>
-								<strong>{visibleCount()}</strong>
-								<span>VISIBLE / {store.count} RESOLVED</span>
+								<strong>
+									{visibleCount()} of {store.count.toLocaleString()} actors
+								</strong>
 								<small>
-									{current().summary.scannedPackages} PACKAGES ·{" "}
-									{current().actors.length - store.count} UNRESOLVED
+									{current().summary.scannedPackages} packages ·{" "}
+									{current().actors.length - store.count} unresolved
 								</small>
 							</div>
 							<div
@@ -325,7 +336,7 @@ export function SavedWorldScout(props: {
 									current().completeness === "partial" && styles.partial
 								)}
 							>
-								{current().completeness === "complete" ? "COMPLETE" : "PARTIAL"}
+								{current().completeness === "complete" ? "Complete" : "Partial"}
 							</div>
 						</div>
 
@@ -336,7 +347,7 @@ export function SavedWorldScout(props: {
 								filters={actorFilters()}
 								itemListLabel="Saved actors"
 								items={actorItems()}
-								label="SAVED ACTORS"
+								label={`Actors · ${store.count.toLocaleString()}`}
 								onClassPathsChange={(classPaths) =>
 									setActorFilters((current) => ({ ...current, classPaths }))
 								}
@@ -353,12 +364,11 @@ export function SavedWorldScout(props: {
 								queryAriaLabel="Find saved actor"
 								selectedClassPath={undefined}
 								selectedKey={selected()?.instanceKey}
-								title="Select an actor to inspect it on the map"
 							/>
 							<div {...stylex.props(styles.mapFrame)}>
 								<div {...stylex.props(styles.north)}>N ↑</div>
 								<label {...stylex.props(styles.zoomControl)}>
-									<span>ZOOM</span>
+									<span>Zoom</span>
 									<input
 										type="range"
 										aria-label="Map zoom"
@@ -379,7 +389,7 @@ export function SavedWorldScout(props: {
 									onClick={() => pointMap?.resetView()}
 									{...stylex.props(styles.reset)}
 								>
-									RESET VIEW
+									Reset view
 								</button>
 								<PointMapCanvas
 									ariaDescribedBy="saved-world-scout-live"
@@ -402,8 +412,8 @@ export function SavedWorldScout(props: {
 								>
 									{liveRegion()}
 								</div>
-								<div {...stylex.props(styles.axisX)}>WORLD X →</div>
-								<div {...stylex.props(styles.axisY)}>WORLD Y →</div>
+								<div {...stylex.props(styles.axisX)}>World X →</div>
+								<div {...stylex.props(styles.axisY)}>World Y →</div>
 							</div>
 
 							<aside {...stylex.props(styles.inspector)}>
@@ -411,17 +421,15 @@ export function SavedWorldScout(props: {
 									when={selected()}
 									fallback={
 										<div {...stylex.props(styles.noSelection)}>
-											<span>SELECT A SAVED POINT</span>
-											<p>
-												Saved packages provide position and identity, not a
-												live editor handle.
-											</p>
+											Select an actor to see its details.
 										</div>
 									}
 								>
 									{(actor) => (
 										<div {...stylex.props(styles.actorDetails)}>
-											<p>SAVED ACTOR</p>
+											<p {...stylex.props(styles.inspectorLabel)}>
+												Saved actor
+											</p>
 											<h3 {...stylex.props(styles.actorName)}>
 												{actor().displayName}
 											</h3>
@@ -442,13 +450,13 @@ export function SavedWorldScout(props: {
 											</dl>
 											<dl {...stylex.props(styles.identity)}>
 												<div>
-													<dt>PACKAGE</dt>
+													<dt>Package</dt>
 													<dd>
 														<code>{actor().packageName ?? "—"}</code>
 													</dd>
 												</div>
 												<div>
-													<dt>ACTOR PATH</dt>
+													<dt>Actor path</dt>
 													<dd>
 														<code>{actor().path}</code>
 													</dd>
@@ -459,11 +467,11 @@ export function SavedWorldScout(props: {
 												onClick={clearSelection}
 												{...stylex.props(styles.clearSelection)}
 											>
-												CLEAR SELECTION
+												Clear selection
 											</button>
 											<p {...stylex.props(styles.offlineCopy)}>
 												Read from saved project files. Open Unreal and
-												switch to Live World to focus or author review
+												switch to Live session to focus actors or author
 												views.
 											</p>
 										</div>
@@ -493,7 +501,6 @@ const styles = stylex.create({
 		padding: "18px 20px",
 		borderBottom: `1px solid ${tokens.colorBorder}`
 	},
-	eyebrow: { margin: 0, color: "#02b8cc", fontSize: 11, fontWeight: 500, letterSpacing: ".04em" },
 	projectLabel: {
 		margin: "6px 0 0",
 		color: "#02b8cc",
@@ -555,7 +562,18 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		textAlign: "center"
 	},
-	reticle: { color: "#02b8cc", fontSize: 36 },
+	technical: {
+		maxWidth: 560,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		textAlign: "left"
+	},
+	inspectorLabel: {
+		margin: 0,
+		color: tokens.colorTextSubtle,
+		fontSize: 11,
+		fontWeight: 600
+	},
 	retry: {
 		border: `1px solid ${tokens.colorBorderStrong}`,
 		borderRadius: tokens.radiusControl,
@@ -721,7 +739,7 @@ const styles = stylex.create({
 		marginTop: 80,
 		color: tokens.colorTextSubtle,
 		textAlign: "center",
-		fontSize: 11
+		fontSize: 12
 	},
 	actorDetails: { display: "flex", flexDirection: "column", gap: 8 },
 	actorName: {

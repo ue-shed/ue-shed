@@ -125,10 +125,10 @@ describe("NiagaraPreviewRoute", () => {
 		};
 		renderRoute(client);
 
-		expect(screen.getByRole("heading", { name: "Proof, outside the editor." })).toBeDefined();
+		expect(screen.getByRole("heading", { name: "Niagara preview" })).toBeDefined();
 		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
 		await screen.findByAltText("Niagara preview frame 0");
-		expect(screen.getByText("● VERIFIED")).toBeDefined();
+		expect(screen.getByText("Verified")).toBeDefined();
 		expect(screen.getByText("512 × 512")).toBeDefined();
 		expect(selected).toEqual(["frames/frame_0000.png", "frames/frame_0001.png"]);
 		expect(screen.getByRole("button", { name: "Pause preview" })).toBeDefined();
@@ -192,7 +192,7 @@ describe("NiagaraPreviewRoute", () => {
 		await screen.findByAltText("Niagara preview frame 0");
 		fireEvent.click(screen.getByRole("button", { name: "Pause preview" }));
 		fireEvent.click(screen.getByRole("button", { name: "Show frame 1" }));
-		await screen.findByText("BUFFERING 02");
+		await screen.findByText("Buffering 02");
 
 		fireEvent.click(screen.getByRole("button", { name: "Show frame 0" }));
 		expect(screen.getByAltText("Niagara preview frame 0")).toBeDefined();
@@ -223,9 +223,12 @@ describe("NiagaraPreviewRoute", () => {
 		renderRoute(client);
 		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
 		await screen.findByRole("alert");
+		expect(screen.getByText("Couldn’t capture this preview")).toBeDefined();
 		expect(screen.getByText("No valid saved Baker camera was available.")).toBeDefined();
 		expect(
 			screen.getByText("Save a Baker camera on the Niagara System, then retry.")
 		).toBeDefined();
+		expect(screen.getByText("Check the cause below before capturing again.")).toBeDefined();
+		expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 	});
 });

@@ -4,7 +4,7 @@ import type {
 	NiagaraPreviewFailure,
 	NiagaraPreviewRunManifest
 } from "@ue-shed/niagara/browser";
-import { Button, createEffectAction, PageHeader } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Option, Schema } from "effect";
 import {
@@ -56,6 +56,21 @@ function formatSeconds(seconds: number): string {
 	return `${seconds.toFixed(seconds < 10 ? 3 : 2)}s`;
 }
 
+type FailureParts = {
+	readonly summary: string;
+	readonly technical: string | undefined;
+};
+
+// A capture failure carries either one sentence or a pretty-printed Cause. Show the first line and
+// keep the rest behind a disclosure so a failure never reads as a stack trace.
+function failureParts(message: string): FailureParts {
+	if (message.length <= 160 && !message.includes("\n")) {
+		return { summary: message, technical: undefined };
+	}
+	const [firstLine] = message.split("\n");
+	return { summary: (firstLine ?? message).slice(0, 160).trim(), technical: message };
+}
+
 function clientFailure(cause: Cause.Cause<unknown>): NiagaraPreviewFailure {
 	return {
 		code: "process_failed",
@@ -103,6 +118,10 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 	const readyRun = createMemo(() => {
 		const current = state();
 		return current.status === "ready" ? current : undefined;
+	});
+	const failedRun = createMemo(() => {
+		const current = state();
+		return current.status === "failed" ? current : undefined;
 	});
 	const selectedArtifact = createMemo(() => {
 		const current = readyRun();
@@ -283,9 +302,15 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 
 	return (
 		<main {...stylex.props(styles.page)}>
-			<PageHeader
-				eyebrow="Niagara Preview · portable render evidence"
-				actions={
+			<header {...stylex.props(styles.header)}>
+				<div>
+					<h1 {...stylex.props(styles.title)}>Niagara preview</h1>
+					<p {...stylex.props(styles.intro)}>
+						Bake a saved Baker view into a hashed PNG sequence you can scrub and share
+						without opening the editor.
+					</p>
+				</div>
+				<div {...stylex.props(styles.headerActions)}>
 					<Button
 						tone="primary"
 						disabled={Option.isNone(candidateIntent()) || state().status === "running"}
@@ -293,30 +318,21 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 					>
 						{state().status === "running" ? "Rendering…" : "Capture preview"}
 					</Button>
-				}
-			/>
-
-			<section {...stylex.props(styles.hero)}>
-				<div {...stylex.props(styles.heroCopy)}>
-					<span {...stylex.props(styles.sequence)}>FX / FRAME EVIDENCE / 01</span>
-					<h1 {...stylex.props(styles.heroTitle)}>Proof, outside the editor.</h1>
-					<p {...stylex.props(styles.heroDescription)}>
-						Render a saved Niagara Baker view into an immutable, hashed PNG sequence.
-						The source system remains untouched.
-					</p>
 				</div>
-				<div {...stylex.props(styles.promise)}>
-					<span>CAPTURE CONTRACT</span>
-					<strong>STRAIGHT ALPHA · sRGB</strong>
-					<small>Isolated preview scene · deterministic desired age</small>
-				</div>
-			</section>
+			</header>
 
 			<div {...stylex.props(styles.workspace)}>
 				<aside aria-label="Niagara capture settings" {...stylex.props(styles.controls)}>
 					<header {...stylex.props(styles.panelHeader)}>
-						<span>INPUT / SYSTEM</span>
-						<span>{Option.isSome(candidateIntent()) ? "VALID" : "CHECK INPUT"}</span>
+						<h2 {...stylex.props(styles.panelTitle)}>Capture settings</h2>
+						<span
+							{...stylex.props(
+								styles.panelStatus,
+								Option.isNone(candidateIntent()) && styles.panelStatusCheck
+							)}
+						>
+							{Option.isSome(candidateIntent()) ? "Ready" : "Check these values"}
+						</span>
 					</header>
 					<label {...stylex.props(styles.field, styles.systemField)}>
 						<span>Niagara System object path</span>
@@ -332,17 +348,17 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 						<NumberField label="Height" value={height()} onInput={setHeight} />
 						<NumberField label="Frames" value={frameCount()} onInput={setFrameCount} />
 						<NumberField
-							label="Duration · s"
+							label="Duration (s)"
 							value={duration()}
 							onInput={setDuration}
 						/>
 						<NumberField
-							label="Simulation · fps"
+							label="Simulation (fps)"
 							value={simulationFps()}
 							onInput={setSimulationFps}
 						/>
 						<NumberField
-							label="Start · s"
+							label="Start (s)"
 							value={startSeconds()}
 							onInput={setStartSeconds}
 						/>
@@ -365,15 +381,19 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 						</select>
 					</label>
 					<div {...stylex.props(styles.boundaryNote)}>
-						<strong>SEPARATELY ENABLED</strong>
+						<strong {...stylex.props(styles.boundaryTitle)}>Plugin required</strong>
 						<span>
-							The selected project must expose the UEShedNiagara Editor plugin and a
-							render-capable Unreal installation.
+							The selected project must expose the UEShedNiagara editor plugin and a
+							render-capable Unreal install.
 						</span>
 					</div>
+					<p {...stylex.props(styles.contractNote)}>
+						Frames come out straight-alpha sRGB, rendered in an isolated preview scene
+						at a deterministic age. The source system is never modified.
+					</p>
 				</aside>
 
-				<section aria-label="Niagara preview evidence" {...stylex.props(styles.stage)}>
+				<section aria-label="Niagara preview frames" {...stylex.props(styles.stage)}>
 					<Switch>
 						<Match when={state().status === "idle"}>
 							<EmptyStage />
@@ -381,20 +401,17 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 						<Match when={state().status === "running"}>
 							<div role="status" aria-live="polite" {...stylex.props(styles.running)}>
 								<span {...stylex.props(styles.renderOrb)} />
-								<strong>Advancing desired age.</strong>
-								<p>
-									Unreal is compiling and capturing offscreen. The completed run
-									only appears after every artifact validates.
+								<strong {...stylex.props(styles.runningTitle)}>
+									Rendering frames
+								</strong>
+								<p {...stylex.props(styles.runningDetail)}>
+									Unreal is capturing offscreen. Frames appear once every one of
+									them validates.
 								</p>
 							</div>
 						</Match>
-						<Match when={state().status === "failed"}>
-							{(() => {
-								const current = state();
-								return current.status === "failed" ? (
-									<FailurePanel error={current.error} />
-								) : null;
-							})()}
+						<Match when={failedRun()}>
+							{(failed) => <FailurePanel error={failed().error} onRetry={run} />}
 						</Match>
 						<Match when={readyRun()}>
 							{(current) => (
@@ -450,22 +467,46 @@ function EmptyStage() {
 				<i />
 				<i />
 			</div>
-			<span>NO RUN SELECTED</span>
-			<h2>The viewport is waiting for evidence.</h2>
-			<p>Choose a saved system and capture a bounded frame sequence.</p>
+			<h2 {...stylex.props(styles.emptyTitle)}>No frames yet</h2>
+			<p {...stylex.props(styles.emptyDetail)}>
+				Point at a saved Niagara System, choose how many frames you want, and capture a
+				preview.
+			</p>
 		</div>
 	);
 }
 
-function FailurePanel(props: { readonly error: NiagaraPreviewFailure }) {
+function FailurePanel(props: {
+	readonly error: NiagaraPreviewFailure;
+	readonly onRetry: () => void;
+}) {
+	const parts = createMemo(() => failureParts(props.error.message));
 	return (
 		<div role="alert" {...stylex.props(styles.failure)}>
-			<span>
-				{props.error.stage.toUpperCase()} / {props.error.code}
-			</span>
-			<h2>{props.error.message}</h2>
-			<p>{props.error.recovery}</p>
-			<small>{props.error.retrySafe ? "SAFE TO RETRY" : "INSPECT BEFORE RETRY"}</small>
+			<strong {...stylex.props(styles.failureTitle)}>Couldn’t capture this preview</strong>
+			<p {...stylex.props(styles.failureMessage)}>{parts().summary}</p>
+			<p {...stylex.props(styles.failureRecovery)}>{props.error.recovery}</p>
+			<Show
+				when={props.error.retrySafe}
+				fallback={
+					<p {...stylex.props(styles.failureRecovery)}>
+						Check the cause below before capturing again.
+					</p>
+				}
+			>
+				<div {...stylex.props(styles.failureActions)}>
+					<Button tone="secondary" onClick={props.onRetry}>
+						Retry
+					</Button>
+				</div>
+			</Show>
+			<details {...stylex.props(styles.failureDetails)}>
+				<summary>Technical details</summary>
+				<code>
+					{props.error.stage} · {props.error.code}
+					{parts().technical === undefined ? "" : `\n${parts().technical}`}
+				</code>
+			</details>
 		</div>
 	);
 }
@@ -484,11 +525,15 @@ function RunEvidence(props: {
 	return (
 		<div {...stylex.props(styles.evidence)}>
 			<header {...stylex.props(styles.evidenceHeader)}>
-				<div>
-					<span>RUN / {props.run.manifest.runId.slice(0, 8)}</span>
-					<strong>{props.run.manifest.systemObjectPath}</strong>
+				<div {...stylex.props(styles.evidenceIdentity)}>
+					<strong {...stylex.props(styles.evidenceSystem)}>
+						{props.run.manifest.systemObjectPath}
+					</strong>
+					<code {...stylex.props(styles.evidenceRunId)}>
+						Run {props.run.manifest.runId.slice(0, 8)}
+					</code>
 				</div>
-				<span {...stylex.props(styles.verified)}>● VERIFIED</span>
+				<span {...stylex.props(styles.verified)}>Verified</span>
 			</header>
 			<div {...stylex.props(styles.viewer)}>
 				<div {...stylex.props(styles.playbackControls)}>
@@ -502,7 +547,7 @@ function RunEvidence(props: {
 							props.isPlaying && styles.transportActive
 						)}
 					>
-						{props.isPlaying ? "Ⅱ PAUSE" : "▶ PLAY"}
+						{props.isPlaying ? "Pause" : "Play"}
 					</button>
 					<button
 						type="button"
@@ -510,11 +555,11 @@ function RunEvidence(props: {
 						onClick={props.onRestart}
 						{...stylex.props(styles.transportButton)}
 					>
-						↺ RESTART
+						Restart
 					</button>
 					<Show when={props.bufferingFrameIndex !== undefined}>
 						<span {...stylex.props(styles.bufferingReadout)}>
-							BUFFERING{" "}
+							Buffering{" "}
 							{String((props.bufferingFrameIndex ?? 0) + 1).padStart(2, "0")}
 						</span>
 					</Show>
@@ -522,7 +567,7 @@ function RunEvidence(props: {
 				<Switch>
 					<Match when={props.frameState.status === "loading"}>
 						<div role="status" {...stylex.props(styles.frameLoading)}>
-							READING HASHED FRAME
+							Reading frame…
 						</div>
 					</Match>
 					<Match when={props.frameState.status === "failed"}>
@@ -544,8 +589,15 @@ function RunEvidence(props: {
 					</Match>
 				</Switch>
 				<div {...stylex.props(styles.viewerReadout)}>
-					<span>FRAME {String(props.selectedArtifact?.index ?? 0).padStart(4, "0")}</span>
-					<span>{formatSeconds(props.selectedArtifact?.timeSeconds ?? 0)}</span>
+					<span>
+						Frame{" "}
+						<code {...stylex.props(styles.readoutValue)}>
+							{String(props.selectedArtifact?.index ?? 0).padStart(4, "0")}
+						</code>
+					</span>
+					<code {...stylex.props(styles.readoutValue)}>
+						{formatSeconds(props.selectedArtifact?.timeSeconds ?? 0)}
+					</code>
 				</div>
 			</div>
 			<div aria-label="Frame sequence" {...stylex.props(styles.timeline)}>
@@ -590,14 +642,18 @@ function RunEvidence(props: {
 					<For each={props.run.manifest.diagnostics}>
 						{(diagnostic) => (
 							<p>
-								<strong>{diagnostic.code}</strong> · {diagnostic.message}
+								<code {...stylex.props(styles.diagnosticCode)}>
+									{diagnostic.code}
+								</code>{" "}
+								{diagnostic.message}
 							</p>
 						)}
 					</For>
 				</div>
 			</Show>
 			<footer {...stylex.props(styles.manifestPath)}>
-				MANIFEST · {props.run.manifestPath}
+				<span>Manifest</span>
+				<code>{props.run.manifestPath}</code>
 			</footer>
 		</div>
 	);
@@ -607,7 +663,7 @@ function Fact(props: { readonly label: string; readonly value: string }) {
 	return (
 		<div {...stylex.props(styles.fact)}>
 			<span>{props.label}</span>
-			<strong>{props.value}</strong>
+			<strong {...stylex.props(styles.factValue)}>{props.value}</strong>
 		</div>
 	);
 }
@@ -617,278 +673,368 @@ const breathe = stylex.keyframes({ "0%, 100%": { opacity: 0.35 }, "50%": { opaci
 
 const styles = stylex.create({
 	page: {
+		backgroundColor: tokens.colorCanvas,
+		boxSizing: "border-box",
+		color: tokens.colorText,
+		fontFamily: tokens.fontBody,
 		minHeight: "calc(100vh - 52px)",
-		padding: "24px 30px 38px",
-		backgroundColor: "#090c0c",
-		backgroundImage:
-			"radial-gradient(circle at 72% 6%, #17323199 0, transparent 33%), linear-gradient(#60a4a00a 1px, transparent 1px), linear-gradient(90deg, #60a4a00a 1px, transparent 1px)",
-		backgroundSize: "auto, 32px 32px, 32px 32px",
-		color: tokens.colorText
+		padding: "20px 26px 30px"
 	},
-	hero: {
-		display: "grid",
-		gridTemplateColumns: "minmax(0, 1.6fr) minmax(280px, .6fr)",
-		gap: 16,
-		alignItems: "end",
-		padding: "14px 0 24px",
-		borderBottom: "1px solid #31504d"
-	},
-	heroCopy: { maxWidth: 760 },
-	sequence: { color: "#61d4c7", fontSize: 8, fontWeight: 800, letterSpacing: ".22em" },
-	heroTitle: {
-		margin: "9px 0 7px",
-		color: "#e7f2ef",
-		fontFamily: tokens.fontDisplay,
-		fontSize: 38,
-		fontWeight: 400,
-		letterSpacing: "-.035em"
-	},
-	heroDescription: { maxWidth: 620, margin: 0, color: "#829995", fontSize: 10, lineHeight: 1.7 },
-	promise: {
+	header: {
+		alignItems: "flex-start",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		display: "flex",
-		flexDirection: "column",
-		gap: 7,
-		padding: "14px 16px",
-		borderLeft: "2px solid #61d4c7",
-		backgroundColor: "#10201fcf",
-		color: "#789590",
-		fontSize: 8,
-		letterSpacing: ".12em"
+		gap: tokens.space4,
+		justifyContent: "space-between",
+		marginBottom: tokens.space5,
+		paddingBottom: tokens.space4
+	},
+	headerActions: { alignItems: "center", display: "flex", gap: tokens.space2 },
+	title: {
+		color: tokens.colorTextStrong,
+		fontSize: 22,
+		fontWeight: 590,
+		letterSpacing: "-0.02em",
+		margin: 0
+	},
+	intro: {
+		color: tokens.colorTextMuted,
+		fontSize: 14,
+		lineHeight: 1.5,
+		margin: "4px 0 0",
+		maxWidth: 560
 	},
 	workspace: {
 		display: "grid",
-		gridTemplateColumns: "minmax(285px, 340px) minmax(0, 1fr)",
-		gap: 14,
-		marginTop: 14
+		gap: tokens.space4,
+		gridTemplateColumns: "minmax(285px, 340px) minmax(0, 1fr)"
 	},
-	controls: { border: "1px solid #2c4441", backgroundColor: "#0d1312e8" },
+	controls: {
+		backgroundColor: tokens.colorSurface,
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusPanel,
+		borderStyle: "solid",
+		borderWidth: 1,
+		overflow: "hidden"
+	},
 	panelHeader: {
+		alignItems: "center",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		display: "flex",
+		gap: tokens.space2,
 		justifyContent: "space-between",
-		padding: "10px 12px",
-		borderBottom: "1px solid #2c4441",
-		color: "#66847f",
-		fontSize: 8,
-		letterSpacing: ".14em"
+		padding: "12px 14px"
 	},
+	panelTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 15,
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		margin: 0
+	},
+	panelStatus: { color: tokens.colorTextSubtle, fontSize: 11, fontWeight: 500 },
+	panelStatusCheck: { color: tokens.colorWarning },
 	fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr" },
 	field: {
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorTextMuted,
 		display: "grid",
-		gap: 7,
-		padding: 12,
-		borderBottom: "1px solid #21302e",
-		color: "#708984",
-		fontSize: 8,
-		letterSpacing: ".08em",
-		textTransform: "uppercase"
+		fontSize: 11,
+		fontWeight: 500,
+		gap: 6,
+		padding: 12
 	},
 	input: {
-		width: "100%",
-		minWidth: 0,
+		backgroundColor: tokens.colorSurfaceInset,
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorBorderStrong },
+		borderRadius: tokens.radiusControl,
+		borderStyle: "solid",
+		borderWidth: 1,
 		boxSizing: "border-box",
-		padding: "9px 10px",
-		border: "1px solid #2c4441",
-		borderRadius: 0,
-		outline: { default: "none", ":focus": "1px solid #61d4c7" },
-		backgroundColor: "#080d0c",
-		color: "#cae0dc",
+		color: tokens.colorText,
 		fontFamily: tokens.fontBody,
-		fontSize: 9
+		fontSize: 13,
+		minWidth: 0,
+		outline: "none",
+		padding: "7px 9px",
+		width: "100%"
 	},
-	systemField: { paddingTop: 16, paddingBottom: 16 },
+	systemField: { paddingBottom: 14, paddingTop: 14 },
 	boundaryNote: {
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusControl,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorTextMuted,
 		display: "grid",
-		gap: 7,
+		fontSize: 12,
+		gap: 4,
+		lineHeight: 1.5,
 		margin: 12,
-		padding: 12,
-		border: "1px dashed #31504c",
-		color: "#75918b",
-		fontSize: 8,
-		lineHeight: 1.55
+		padding: 12
+	},
+	boundaryTitle: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 590 },
+	contractNote: {
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		lineHeight: 1.55,
+		margin: "0 12px 14px"
 	},
 	stage: {
+		backgroundColor: tokens.colorSurface,
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusPanel,
+		borderStyle: "solid",
+		borderWidth: 1,
 		minHeight: 620,
-		border: "1px solid #2c4441",
-		backgroundColor: "#080b0bea",
 		overflow: "hidden"
 	},
 	emptyStage: {
-		minHeight: 620,
+		alignItems: "center",
+		color: tokens.colorTextMuted,
 		display: "flex",
 		flexDirection: "column",
-		alignItems: "center",
 		justifyContent: "center",
-		color: "#5f7773",
+		minHeight: 620,
+		padding: 36,
 		textAlign: "center"
 	},
+	emptyTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 17,
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		margin: 0
+	},
+	emptyDetail: { fontSize: 13, lineHeight: 1.6, margin: "8px 0 0", maxWidth: 380 },
 	reticle: {
-		position: "relative",
-		width: 126,
-		height: 126,
-		marginBottom: 24,
-		border: "1px solid #29413e",
+		borderColor: tokens.colorBorder,
 		borderRadius: "50%",
-		boxShadow: "0 0 80px #2d77702e"
+		borderStyle: "solid",
+		borderWidth: 1,
+		height: 126,
+		marginBottom: tokens.space5,
+		position: "relative",
+		width: 126
 	},
 	running: {
-		minHeight: 620,
+		alignItems: "center",
+		color: tokens.colorTextMuted,
 		display: "flex",
 		flexDirection: "column",
-		alignItems: "center",
 		justifyContent: "center",
+		minHeight: 620,
 		padding: 36,
-		color: "#77918d",
 		textAlign: "center"
 	},
+	runningTitle: { color: tokens.colorTextStrong, fontSize: 15, fontWeight: 590 },
+	runningDetail: { fontSize: 13, lineHeight: 1.6, margin: "8px 0 0", maxWidth: 380 },
 	renderOrb: {
-		width: 92,
-		height: 92,
-		marginBottom: 26,
-		border: "1px solid #315a55",
-		borderTopColor: "#62dfcf",
-		borderRightColor: "#62dfcf",
-		borderRadius: "50%",
-		boxShadow: "inset 0 0 34px #2fd8c51f, 0 0 64px #2fd8c51f",
-		animationName: orbit,
 		animationDuration: "2.4s",
 		animationIterationCount: "infinite",
-		animationTimingFunction: "linear"
+		animationName: orbit,
+		animationTimingFunction: "linear",
+		borderColor: tokens.colorBorder,
+		borderRadius: "50%",
+		borderStyle: "solid",
+		borderTopColor: tokens.colorAccent,
+		borderWidth: 1,
+		height: 92,
+		marginBottom: tokens.space5,
+		width: 92
 	},
 	failure: {
-		maxWidth: 680,
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusPanel,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorText,
 		margin: "72px auto",
-		padding: 26,
-		borderLeft: "3px solid #d16b5e",
-		backgroundColor: "#211110",
-		color: "#d99a91"
+		maxWidth: 520,
+		padding: 20
+	},
+	failureTitle: { color: tokens.colorTextStrong, fontSize: 15, fontWeight: 590 },
+	failureMessage: { fontSize: 13, lineHeight: 1.6, margin: "6px 0 0" },
+	failureRecovery: {
+		color: tokens.colorTextMuted,
+		fontSize: 13,
+		lineHeight: 1.6,
+		margin: "6px 0 0"
+	},
+	failureActions: { display: "flex", gap: tokens.space2, marginTop: tokens.space3 },
+	failureDetails: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		marginTop: tokens.space3,
+		whiteSpace: "pre-wrap"
 	},
 	evidence: { minHeight: 620 },
 	evidenceHeader: {
+		alignItems: "center",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		display: "flex",
+		gap: tokens.space4,
 		justifyContent: "space-between",
-		alignItems: "center",
-		gap: 18,
-		padding: "13px 16px",
-		borderBottom: "1px solid #2c4441",
-		color: "#6f8c87",
-		fontSize: 8,
-		letterSpacing: ".11em"
+		padding: "12px 16px"
 	},
-	verified: { color: "#70ddca", whiteSpace: "nowrap" },
+	evidenceIdentity: { display: "grid", gap: 3, minWidth: 0 },
+	evidenceSystem: {
+		color: tokens.colorTextStrong,
+		fontSize: 13,
+		fontWeight: 590,
+		overflowWrap: "anywhere"
+	},
+	evidenceRunId: { color: tokens.colorTextFaint, fontFamily: tokens.fontMono, fontSize: 11 },
+	verified: { color: tokens.colorSuccess, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" },
 	viewer: {
-		position: "relative",
-		height: 390,
-		display: "flex",
 		alignItems: "center",
-		justifyContent: "center",
-		backgroundColor: "#050706",
+		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
-			"linear-gradient(45deg, #111918 25%, transparent 25%), linear-gradient(-45deg, #111918 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #111918 75%), linear-gradient(-45deg, transparent 75%, #111918 75%)",
+			"linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%), linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%), linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%)",
+		backgroundPosition: "0 0, 0 9px, 9px -9px, -9px 0",
 		backgroundSize: "18px 18px",
-		backgroundPosition: "0 0, 0 9px, 9px -9px, -9px 0"
+		display: "flex",
+		height: 390,
+		justifyContent: "center",
+		position: "relative"
 	},
 	viewerReadout: {
-		position: "absolute",
-		left: 12,
-		right: 12,
 		bottom: 10,
+		color: tokens.colorTextSubtle,
 		display: "flex",
+		fontSize: 11,
 		justifyContent: "space-between",
-		color: "#63817c",
-		fontSize: 8,
-		letterSpacing: ".14em"
-	},
-	playbackControls: {
-		position: "absolute",
-		top: 10,
 		left: 12,
-		right: 12,
-		zIndex: 1,
-		display: "flex",
+		position: "absolute",
+		right: 12
+	},
+	readoutValue: { color: tokens.colorTextMuted, fontFamily: tokens.fontMono, fontSize: 11 },
+	playbackControls: {
 		alignItems: "center",
-		gap: 6
+		display: "flex",
+		gap: 6,
+		left: 12,
+		position: "absolute",
+		right: 12,
+		top: 10,
+		zIndex: 1
 	},
 	transportButton: {
-		padding: "7px 9px",
-		border: "1px solid #31504d",
+		backgroundColor: {
+			default: tokens.colorSurfaceRaised,
+			":hover": tokens.colorSurfaceHover
+		},
+		borderColor: tokens.colorBorder,
 		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "#09100fe6", ":hover": "#142623" },
-		color: "#78958f",
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorText,
+		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 7,
-		fontWeight: 800,
-		letterSpacing: ".12em",
-		cursor: "pointer"
+		fontSize: 12,
+		fontWeight: 500,
+		padding: "5px 10px"
 	},
-	transportActive: { borderColor: "#4fb9ad", color: "#8be7dc" },
+	transportActive: { borderColor: tokens.colorBorderStrong, color: tokens.colorTextStrong },
 	bufferingReadout: {
-		marginLeft: "auto",
-		color: "#67b7ad",
-		fontSize: 7,
-		letterSpacing: ".14em",
-		animationName: breathe,
 		animationDuration: "1.3s",
-		animationIterationCount: "infinite"
+		animationIterationCount: "infinite",
+		animationName: breathe,
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		marginLeft: "auto"
 	},
-	previewImage: { display: "block", maxWidth: "100%", maxHeight: "100%", objectFit: "contain" },
+	previewImage: { display: "block", maxHeight: "100%", maxWidth: "100%", objectFit: "contain" },
 	frameLoading: {
-		color: "#67b7ad",
-		fontSize: 9,
-		letterSpacing: ".18em",
-		animationName: breathe,
 		animationDuration: "1.3s",
-		animationIterationCount: "infinite"
+		animationIterationCount: "infinite",
+		animationName: breathe,
+		color: tokens.colorTextMuted,
+		fontSize: 13
 	},
-	frameFailure: { padding: 18, color: "#d58275" },
+	frameFailure: { color: tokens.colorDanger, fontSize: 13, padding: 18 },
 	timeline: {
-		height: 72,
-		display: "flex",
 		alignItems: "stretch",
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		display: "flex",
 		gap: 3,
-		padding: "8px 12px",
-		borderTop: "1px solid #263b38",
-		borderBottom: "1px solid #263b38",
-		overflowX: "auto"
+		height: 72,
+		overflowX: "auto",
+		padding: "8px 12px"
 	},
 	frameTick: {
-		minWidth: 30,
+		alignItems: "center",
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		borderColor: "transparent",
+		borderRadius: tokens.radiusBadge,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorTextSubtle,
+		cursor: "pointer",
 		display: "flex",
 		flexDirection: "column",
-		alignItems: "center",
-		justifyContent: "flex-end",
+		fontFamily: tokens.fontMono,
+		fontSize: 10,
 		gap: 4,
-		padding: "3px 4px",
-		border: "1px solid transparent",
-		backgroundColor: { default: "transparent", ":hover": "#13211f" },
-		color: "#55716c",
-		fontSize: 7,
-		cursor: "pointer"
+		justifyContent: "flex-end",
+		minWidth: 30,
+		padding: "3px 4px"
 	},
-	frameTickActive: { borderColor: "#4fb9ad", backgroundColor: "#112421", color: "#86e0d5" },
+	frameTickActive: {
+		backgroundColor: tokens.colorAccentWash,
+		borderColor: tokens.colorAccent,
+		color: tokens.colorTextStrong
+	},
 	facts: {
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		display: "grid",
-		gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-		borderBottom: "1px solid #263b38"
+		gridTemplateColumns: "repeat(6, minmax(0, 1fr))"
 	},
 	fact: {
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		color: tokens.colorTextSubtle,
+		display: "grid",
+		fontSize: 11,
+		gap: 3,
 		minWidth: 0,
-		padding: "11px 12px",
-		borderRight: "1px solid #263b38",
-		color: "#607a75",
-		fontSize: 7,
-		letterSpacing: ".1em"
+		padding: "10px 12px"
 	},
 	diagnostics: {
-		padding: "8px 14px",
-		borderBottom: "1px solid #263b38",
-		color: "#d6a363",
-		fontSize: 8
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		color: tokens.colorWarning,
+		fontSize: 12,
+		padding: "8px 14px"
 	},
+	factValue: { color: tokens.colorTextStrong, fontSize: 13, fontWeight: 500 },
+	diagnosticCode: { fontFamily: tokens.fontMono, fontSize: 11 },
 	manifestPath: {
-		padding: "10px 14px",
-		color: "#415954",
-		fontSize: 7,
-		letterSpacing: ".06em",
-		overflowWrap: "anywhere"
+		color: tokens.colorTextFaint,
+		display: "flex",
+		fontSize: 11,
+		gap: tokens.space2,
+		overflowWrap: "anywhere",
+		padding: "10px 14px"
 	}
 });

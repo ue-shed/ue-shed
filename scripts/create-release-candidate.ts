@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { isJsonString, type JsonValue } from "./json.ts";
 import { packPublicPackages, PUBLIC_VERSION, WASM_PACKAGE_NAME } from "./pack-public-packages.ts";
-import { buildPluginBundle } from "./plugin-bundle.ts";
+import { buildPluginBundle, validatePublicPluginBundle } from "./plugin-bundle.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const candidateVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-rc\.(0|[1-9]\d*)$/;
@@ -353,6 +353,7 @@ export async function createReleaseCandidate({
 		sourceRef: ref,
 		unreal: { maximum: "5.7", minimum: "5.7" }
 	});
+	await validatePublicPluginBundle(pluginBundle);
 	artifacts.push(
 		await artifact(pluginBundle.archivePath, outputDirectory, "unreal-plugin-source"),
 		await artifact(pluginBundle.manifestPath, outputDirectory, "unreal-plugin-manifest")

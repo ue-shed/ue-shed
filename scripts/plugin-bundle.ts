@@ -55,6 +55,56 @@ interface BuildPluginBundleOptions {
 	readonly releaseAssetStem?: string | undefined;
 }
 
+export interface PublicPluginBundleManifest {
+	readonly artifact: { readonly path: string; readonly sha256: string };
+	readonly plugins: ReadonlyArray<{ readonly id: string; readonly version: string }>;
+	readonly provenance: {
+		readonly candidateManifest: { readonly sha256: string; readonly version: string };
+		readonly source: { readonly commit: string; readonly ref: string };
+	};
+	readonly releaseVersion: string;
+}
+
+export async function validatePublicPluginBundle({
+	archivePath,
+	manifest,
+	manifestPath
+}: {
+	readonly archivePath: string;
+	readonly manifest: PublicPluginBundleManifest;
+	readonly manifestPath: string;
+}) {
+	const failures: string[] = [];
+	if (manifest.provenance.source.ref === "local") failures.push("source ref cannot be local");
+	if (!commitPattern.test(manifest.provenance.source.commit))
+		failures.push("source commit must be a full lowercase Git SHA");
+	if (/^sha256:0{64}$/u.test(manifest.provenance.candidateManifest.sha256))
+		failures.push("candidate-manifest digest cannot be all zeroes");
+	if (!/^sha256:[a-f0-9]{64}$/u.test(manifest.provenance.candidateManifest.sha256))
+		failures.push("candidate-manifest digest must be a full lowercase SHA-256");
+	if (manifest.provenance.candidateManifest.version !== manifest.releaseVersion)
+		failures.push("candidate and plugin release versions must match");
+	for (const plugin of manifest.plugins) {
+		if (plugin.version !== manifest.releaseVersion)
+			failures.push(`${plugin.id} descriptor version must be ${manifest.releaseVersion}`);
+	}
+	if (basename(archivePath) !== manifest.artifact.path)
+		failures.push("declared archive path must name the built release asset");
+	for (const [label, path] of [
+		["archive", archivePath],
+		["manifest", manifestPath]
+	] as const) {
+		const details = await stat(path).catch(() => undefined);
+		if (!details?.isFile()) failures.push(`declared ${label} release asset is missing`);
+	}
+	const archiveDigest = await sha256(archivePath).catch(() => undefined);
+	if (archiveDigest !== undefined && `sha256:${archiveDigest}` !== manifest.artifact.sha256)
+		failures.push("declared archive digest does not match the release asset");
+	if (failures.length > 0)
+		throw new Error(`Public plugin release integrity failed:\n- ${failures.join("\n- ")}`);
+	return manifest;
+}
+
 /** Exact Unreal plugin graph for Plan 028's first Map Review vertical. */
 export const MAP_REVIEW_PLUGIN_IDS = Object.freeze(["UEShedCore", "UEShedCameras"]);
 /** Exact Unreal plugin graph for the headless Observatory host. */

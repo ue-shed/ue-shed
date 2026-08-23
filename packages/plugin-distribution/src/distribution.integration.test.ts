@@ -18,6 +18,8 @@ import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { expect, vi } from "vitest";
 import {
 	ActiveLeasePreventsPrune,
+	CompatiblePluginBuildUnavailable,
+	CompiledPluginVariantRequest,
 	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	CorruptCacheEntry,
@@ -28,6 +30,7 @@ import {
 	OfflineCacheMiss,
 	PluginDistribution,
 	PluginDistributionValidationError,
+	type PluginVariantReference,
 	type PluginDistributionLimits,
 	PluginReleaseSource,
 	PluginStore,
@@ -35,7 +38,8 @@ import {
 	localPluginReleaseSourceLayer,
 	pluginDistributionLayer,
 	pluginReleaseAssetNames,
-	pluginStoreLayer
+	pluginStoreLayer,
+	variantPluginReleaseAssetNames
 } from "./index.js";
 
 interface TarEntry {
@@ -167,6 +171,107 @@ async function fixture(
 	};
 }
 
+async function compiledFixture(
+	source: Awaited<ReturnType<typeof fixture>>,
+	options: {
+		readonly buildId: string;
+		readonly modulesBuildId?: string;
+		readonly omitModules?: boolean;
+	}
+) {
+	const artifact = Schema.decodeUnknownSync(CompiledPluginVariantRequest)({
+		architecture: "x64",
+		configuration: "Development",
+		engineBuildId: options.buildId,
+		kind: "compiled",
+		platform: "Win64",
+		target: "UnrealEditor",
+		unrealVersion: "5.7"
+	});
+	const names = variantPluginReleaseAssetNames(source.releaseVersion, artifact);
+	const modulesBuildId = options.modulesBuildId ?? options.buildId;
+	const archive = tarArchive(
+		[
+			{
+				body: Buffer.from('{"FileVersion":3}\n'),
+				name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
+			},
+			{
+				body: Buffer.from(`compiled core ${options.buildId}\n`),
+				name: "UEShed/Plugins/UEShedCore/Binaries/Win64/UnrealEditor-UEShedCore.dll"
+			},
+			options.omitModules
+				? undefined
+				: {
+						body: Buffer.from(
+							JSON.stringify({
+								BuildId: modulesBuildId,
+								Modules: { UEShedCore: "UnrealEditor-UEShedCore.dll" }
+							})
+						),
+						name: "UEShed/Plugins/UEShedCore/Binaries/Win64/UnrealEditor.modules"
+					},
+			{
+				body: Buffer.from('{"FileVersion":3}\n'),
+				name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
+			},
+			{
+				body: Buffer.from(`compiled cameras ${options.buildId}\n`),
+				name: "UEShed/Plugins/UEShedCameras/Binaries/Win64/UnrealEditor-UEShedCameras.dll"
+			},
+			options.omitModules
+				? undefined
+				: {
+						body: Buffer.from(
+							JSON.stringify({
+								BuildId: modulesBuildId,
+								Modules: { UEShedCameras: "UnrealEditor-UEShedCameras.dll" }
+							})
+						),
+						name: "UEShed/Plugins/UEShedCameras/Binaries/Win64/UnrealEditor.modules"
+					}
+		].filter((entry) => entry !== undefined)
+	);
+	const manifest = {
+		artifact: {
+			bytes: archive.byteLength,
+			id: `ue-shed-plugin-compiled-${source.releaseVersion}-${options.buildId}`,
+			kind: "unreal-editor-plugin-binary",
+			path: names.artifact,
+			sha256: digest(archive)
+		},
+		build: {
+			builder: "ue-shed-plugin-builder",
+			builderVersion: "1",
+			compiler: {
+				compiler: "MSVC",
+				compilerVersion: "19.44",
+				toolchain: "Visual Studio",
+				toolchainVersion: "2022"
+			},
+			invocationSha256: `sha256:${"e".repeat(64)}`,
+			requestedPluginIds: ["UEShedCameras"],
+			resolvedPluginIds: ["UEShedCore", "UEShedCameras"],
+			sourceArtifactSha256: source.manifest.artifact.sha256,
+			sourceManifestSha256: source.manifestDigest
+		},
+		compatibility: {
+			...artifact,
+			kind: "compiled"
+		},
+		plugins: source.manifest.plugins,
+		provenance: source.manifest.provenance,
+		releaseVersion: source.releaseVersion,
+		schemaVersion: 2
+	};
+	const manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
+	const archivePath = join(source.root, names.artifact);
+	const manifestPath = join(source.root, names.manifest);
+	await writeFile(archivePath, archive);
+	await writeFile(manifestPath, manifestBytes);
+	return { archivePath, artifact, manifest, manifestBytes, manifestPath };
+}
+
 function request(releaseVersion: string) {
 	return {
 		networkPolicy: "online",
@@ -190,6 +295,270 @@ function liveLayer(
 function listeningPort(server: ReturnType<typeof createServer>): number {
 	return Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address()).port;
 }
+
+it.effect("stores source and multiple exact compiled variants for one release", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const firstCompiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "47537391" })
+		);
+		const secondCompiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "custom-build-2026-08-23" })
+		);
+		const cacheRoot = join(source.root, "variant-cache");
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			cacheRoot
+		);
+		const sourceResult = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install({
+					artifact: { kind: "source" },
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+			)
+		).pipe(Effect.provide(layer));
+		const first = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install({
+					artifact: firstCompiled.artifact,
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+			)
+		).pipe(Effect.provide(layer));
+		const second = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install({
+					artifact: secondCompiled.artifact,
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+			)
+		).pipe(Effect.provide(layer));
+
+		expect(
+			new Set([sourceResult.variantIdentity, first.variantIdentity, second.variantIdentity])
+				.size
+		).toBe(3);
+		expect(first.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
+		expect(first.artifactKind).toBe("compiled");
+		const cached = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution.listCached()
+		).pipe(Effect.provide(layer));
+		expect(cached).toHaveLength(3);
+		expect(cached.map(({ artifactKind }) => artifactKind).sort()).toEqual([
+			"compiled",
+			"compiled",
+			"source"
+		]);
+
+		const replay = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install({
+					artifact: firstCompiled.artifact,
+					networkPolicy: "cache-only",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+			)
+		).pipe(Effect.provide(layer));
+		expect(replay.variantIdentity).toBe(first.variantIdentity);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("rejects incompatible compiled identities before extraction and never falls back", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const compiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "47537391" })
+		);
+		const cacheRoot = join(source.root, "mismatch-cache");
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({
+				artifactPath: compiled.archivePath,
+				manifestPath: compiled.manifestPath
+			}),
+			cacheRoot
+		);
+		const mismatch = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution
+				.install({
+					artifact: { ...compiled.artifact, engineBuildId: "different-build" },
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+				.pipe(Effect.flip)
+		).pipe(Effect.provide(layer));
+		expect(mismatch).toBeInstanceOf(CompatiblePluginBuildUnavailable);
+		for (const incompatibleArtifact of [
+			{ ...compiled.artifact, platform: "Linux" },
+			{ ...compiled.artifact, architecture: "arm64" },
+			{ ...compiled.artifact, target: "OtherTarget" },
+			{ ...compiled.artifact, configuration: "Shipping" }
+		]) {
+			const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution
+					.install({
+						artifact: incompatibleArtifact,
+						networkPolicy: "online",
+						pluginIds: ["UEShedCameras"],
+						releaseVersion: source.releaseVersion
+					})
+					.pipe(Effect.flip)
+			).pipe(Effect.provide(layer));
+			expect([
+				"CompatiblePluginBuildUnavailable",
+				"PluginDistributionValidationError"
+			]).toContain(error._tag);
+		}
+		expect(
+			yield* Effect.promise(() =>
+				readdir(join(cacheRoot, "variants", source.releaseVersion)).catch(() => [])
+			)
+		).toEqual([]);
+
+		const sourceRequest = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution
+				.install({
+					artifact: { kind: "source" },
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+				.pipe(Effect.flip)
+		).pipe(Effect.provide(layer));
+		expect(sourceRequest).toBeInstanceOf(PluginDistributionValidationError);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("an active compiled lease blocks pruning only its exact variant", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const compiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "47537391" })
+		);
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			join(source.root, "exact-lease-cache")
+		);
+		let reference: PluginVariantReference | undefined;
+		yield* Effect.scoped(
+			Effect.gen(function* () {
+				const distribution = yield* PluginDistribution;
+				const acquired = yield* distribution.install({
+					artifact: compiled.artifact,
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				});
+				const exactReference: PluginVariantReference = {
+					releaseVersion: acquired.releaseVersion,
+					variantIdentity: acquired.variantIdentity
+				};
+				reference = exactReference;
+				const error = yield* distribution.prune(exactReference).pipe(Effect.flip);
+				expect(error).toBeInstanceOf(ActiveLeasePreventsPrune);
+			}).pipe(Effect.provide(layer))
+		);
+		if (reference === undefined) return yield* Effect.die("lease reference was not recorded");
+		const releasedReference = reference;
+		yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution.prune(releasedReference)
+		).pipe(Effect.provide(layer));
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("rejects mismatched extracted .modules BuildId evidence", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const compiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "47537391", modulesBuildId: "wrong-build" })
+		);
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({
+				artifactPath: compiled.archivePath,
+				manifestPath: compiled.manifestPath
+			}),
+			join(source.root, "modules-cache")
+		);
+		const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution
+				.install({
+					artifact: compiled.artifact,
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+				.pipe(Effect.flip)
+		).pipe(Effect.provide(layer));
+		expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
+		expect(error.message).toContain("BuildId");
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("rejects compiled bundles with missing .modules evidence", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const compiled = yield* Effect.promise(() =>
+			compiledFixture(source, { buildId: "47537391", omitModules: true })
+		);
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({
+				artifactPath: compiled.archivePath,
+				manifestPath: compiled.manifestPath
+			}),
+			join(source.root, "missing-modules-cache")
+		);
+		const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+			distribution
+				.install({
+					artifact: compiled.artifact,
+					networkPolicy: "online",
+					pluginIds: ["UEShedCameras"],
+					releaseVersion: source.releaseVersion
+				})
+				.pipe(Effect.flip)
+		).pipe(Effect.provide(layer));
+		expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
+		expect(error.message).toContain(".modules");
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
 
 it.effect(
 	"installs locally, resolves dependencies, reuses offline, and prunes after lease release",

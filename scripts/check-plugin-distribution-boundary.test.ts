@@ -23,7 +23,9 @@ test("plugin distribution stays independent of product hosts and studio reposito
 		/from\s+["']electron/iu,
 		/from\s+["'][^"']*electroswag/iu,
 		/from\s+["'][^"']*manabreak/iu,
-		/from\s+["'][^"']*perforce/iu
+		/from\s+["'][^"']*perforce/iu,
+		/from\s+["'][^"']*(?:renderer|workbench|electron)/iu,
+		/from\s+["'](?:solid-js|@stylexjs)/iu
 	];
 	for (const path of await sourceFiles(join(root, "src"))) {
 		const source = await readFile(path, "utf8");
@@ -36,6 +38,6 @@ test("plugin distribution stays independent of product hosts and studio reposito
 		dependencies?: Record<string, string>;
 		peerDependencies?: Record<string, string>;
 	};
-	assert.deepEqual(manifest.dependencies ?? {}, {});
+	assert.deepEqual(manifest.dependencies ?? {}, { "@ue-shed/engine": "workspace:0.4.0" });
 	assert.deepEqual(Object.keys(manifest.peerDependencies ?? {}), ["effect"]);
 });

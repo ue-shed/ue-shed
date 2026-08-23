@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
 import {
+	Button,
 	SavedMapPicker,
 	createEffectAction,
 	createEffectSubscription,
@@ -554,17 +555,17 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					</p>
 				</div>
 				<div {...stylex.props(styles.headerActions)}>
-					<button type="button" onClick={newPlan} {...stylex.props(styles.quietButton)}>
+					<Button type="button" onClick={newPlan} tone="quiet">
 						New plan
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
 						disabled={plan() === undefined || isCapturing()}
 						onClick={() => runCapture(true)}
-						{...stylex.props(styles.primaryButton)}
+						tone="primary"
 					>
 						Capture
-					</button>
+					</Button>
 				</div>
 			</header>
 
@@ -627,29 +628,25 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										}
 									/>
 									<div {...stylex.props(styles.planActions)}>
-										<button
+										<Button
 											type="button"
 											disabled={plan() === undefined || !isDirty()}
 											onClick={() => savePlan(false)}
-											{...stylex.props(styles.quietButton)}
+											tone="quiet"
 										>
 											Save
-										</button>
-										<button
+										</Button>
+										<Button
 											type="button"
 											disabled={plan() === undefined}
 											onClick={() => savePlan(true)}
-											{...stylex.props(styles.quietButton)}
+											tone="quiet"
 										>
 											Save as
-										</button>
-										<button
-											type="button"
-											onClick={choosePlan}
-											{...stylex.props(styles.quietButton)}
-										>
+										</Button>
+										<Button type="button" onClick={choosePlan} tone="quiet">
 											Open plan
-										</button>
+										</Button>
 									</div>
 								</section>
 
@@ -1050,13 +1047,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 									are sized and stacked. Create one from the connected project, or
 									open a saved plan file.
 								</span>
-								<button
-									type="button"
-									onClick={choosePlan}
-									{...stylex.props(styles.quietButton)}
-								>
+								<Button type="button" onClick={choosePlan} tone="quiet">
 									Open plan
-								</button>
+								</Button>
 							</div>
 						}
 					>
@@ -1351,7 +1344,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space4,
 		paddingBottom: tokens.space4,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		marginBottom: tokens.space5
 	},
 	headerCopy: { display: "flex", flexDirection: "column", gap: 6 },
@@ -1380,7 +1375,9 @@ const styles = stylex.create({
 	controlsEmpty: {
 		margin: 0,
 		padding: tokens.space4,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted,
@@ -1391,7 +1388,9 @@ const styles = stylex.create({
 		display: "grid",
 		gap: tokens.space3,
 		padding: tokens.space4,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
@@ -1410,7 +1409,9 @@ const styles = stylex.create({
 	},
 	dirtyFlag: {
 		padding: "1px 8px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusBadge,
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
@@ -1437,7 +1438,9 @@ const styles = stylex.create({
 	input: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorText,
@@ -1449,7 +1452,9 @@ const styles = stylex.create({
 		fontVariantNumeric: "tabular-nums"
 	},
 	select: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorText,
@@ -1547,7 +1552,9 @@ const styles = stylex.create({
 		display: "grid",
 		gap: tokens.space2,
 		padding: tokens.space3,
-		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		color: tokens.colorDanger,
@@ -1556,7 +1563,9 @@ const styles = stylex.create({
 	},
 	planActions: { display: "flex", gap: tokens.space2 },
 	openMapButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
@@ -1565,35 +1574,10 @@ const styles = stylex.create({
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		opacity: { default: 1, ":disabled": 0.5 }
 	},
-	quietButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorText,
-		padding: "6px 12px",
-		fontSize: 13,
-		fontWeight: 500,
-		cursor: { default: "pointer", ":disabled": "not-allowed" },
-		opacity: { default: 1, ":disabled": 0.5 }
-	},
-	primaryButton: {
-		border: `1px solid ${tokens.colorAccent}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: {
-			default: tokens.colorAccent,
-			":hover": tokens.colorAccentStrong,
-			":disabled": tokens.colorAccentWash
-		},
-		color: { default: tokens.colorAccentText, ":disabled": tokens.colorAccent },
-		padding: "6px 14px",
-		fontWeight: 600,
-		fontSize: 13,
-		cursor: { default: "pointer", ":disabled": "wait" },
-		transition: `transform ${tokens.motionStandard} cubic-bezier(.23,1,.32,1)`,
-		transform: { default: "scale(1)", ":active": "scale(.97)" }
-	},
 	retryButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
@@ -1610,7 +1594,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: tokens.space3,
 		padding: tokens.space6,
-		border: `1px dashed ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "dashed",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		textAlign: "center"
@@ -1620,7 +1606,9 @@ const styles = stylex.create({
 		minHeight: 360,
 		aspectRatio: "16 / 9",
 		overflow: "hidden",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		backgroundImage:
@@ -1651,14 +1639,18 @@ const styles = stylex.create({
 		top: "50%",
 		transform: "translate(-50%, -50%)",
 		boxSizing: "border-box",
-		border: "1px solid rgba(228, 242, 34, 0.4)",
+		borderColor: "rgba(228, 242, 34, 0.4)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		boxShadow: "inset 0 0 54px rgba(8, 9, 10, 0.6), 0 0 30px rgba(228, 242, 34, 0.07)",
 		pointerEvents: "none"
 	},
 	requestedBoundary: {
 		position: "absolute",
 		boxSizing: "border-box",
-		border: "1px dashed rgba(242, 153, 74, 0.8)",
+		borderColor: "rgba(242, 153, 74, 0.8)",
+		borderStyle: "dashed",
+		borderWidth: 1,
 		boxShadow: "inset 0 0 0 1px rgba(8, 9, 10, 0.4)"
 	},
 	requestedBoundaryLabel: {
@@ -1689,7 +1681,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 8,
 		padding: "5px 10px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(12, 13, 14, 0.87)",
 		color: tokens.colorText,
@@ -1719,7 +1713,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space2,
 		padding: tokens.space4,
-		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextMuted,
@@ -1741,7 +1737,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 3,
 		paddingLeft: 10,
-		borderLeft: `2px solid ${tokens.colorAccent}`,
+		borderLeftColor: tokens.colorAccent,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
@@ -1752,7 +1750,9 @@ const styles = stylex.create({
 		right: tokens.space6,
 		bottom: 76,
 		padding: `${tokens.space3}px ${tokens.space4}px`,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(15, 16, 17, 0.95)",
 		boxShadow: tokens.shadowOverlay,
@@ -1801,7 +1801,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space3,
 		padding: `${tokens.space3}px ${tokens.space4}px`,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted,

@@ -247,7 +247,7 @@ const styles = stylex.create({
 		minWidth: 0,
 		height: 30,
 		padding: "0 10px",
-		borderColor: { default: tokens.colorBorderStrong, ":focus": tokens.colorTextSubtle },
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorTextSubtle },
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
@@ -260,7 +260,7 @@ const styles = stylex.create({
 	applyButton: {
 		height: 30,
 		padding: "0 12px",
-		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
+		borderColor: { default: tokens.colorBorder, ":hover": "#4a4e54" },
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
@@ -272,7 +272,11 @@ const styles = stylex.create({
 		color: tokens.colorText,
 		cursor: { default: "pointer", ":disabled": "wait" },
 		fontSize: 12,
-		fontWeight: 500
+		fontWeight: 500,
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	portMessage: {
 		display: "block",
@@ -292,7 +296,7 @@ const styles = stylex.create({
 		minWidth: 42,
 		height: 26,
 		padding: "0 9px",
-		borderColor: { default: tokens.colorBorder, ":hover": tokens.colorBorderStrong },
+		borderColor: { default: tokens.colorBorder, ":hover": tokens.colorBorder },
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
@@ -302,7 +306,11 @@ const styles = stylex.create({
 		fontSize: 11,
 		fontWeight: 500,
 		cursor: { default: "pointer", ":disabled": "wait" },
-		opacity: { default: 1, ":disabled": 0.45 }
+		opacity: { default: 1, ":disabled": 0.45 },
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	primary: {
 		borderColor: "rgba(228, 242, 34, 0.45)",

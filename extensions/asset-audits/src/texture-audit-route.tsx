@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import {
 	filterTextureReport,
@@ -233,9 +233,9 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 						Check saved textures against your size, group, and compression rules.
 					</p>
 				</div>
-				<button type="button" onClick={run} {...stylex.props(styles.primaryButton)}>
+				<Button type="button" onClick={run} tone="primary">
 					Rescan assets
-				</button>
+				</Button>
 			</header>
 
 			<Switch>
@@ -268,13 +268,9 @@ export function LegacyTextureAuditRoute(props: { readonly client: LegacyTextureA
 								<span {...stylex.props(styles.failureRecovery)}>
 									{current.result.error.recovery}
 								</span>
-								<button
-									type="button"
-									onClick={run}
-									{...stylex.props(styles.secondaryButton)}
-								>
+								<Button type="button" onClick={run} tone="secondary">
 									Retry
-								</button>
+								</Button>
 								<details {...stylex.props(styles.technicalDetails)}>
 									<summary {...stylex.props(styles.technicalSummary)}>
 										Technical details
@@ -753,7 +749,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: tokens.space5,
 		paddingBottom: tokens.space4,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		marginBottom: tokens.space5
 	},
 	heading: { minWidth: 0 },
@@ -770,31 +768,6 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		fontSize: 14,
 		lineHeight: 1.45
-	},
-	primaryButton: {
-		flexShrink: 0,
-		border: `1px solid ${tokens.colorAccent}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
-		color: tokens.colorAccentText,
-		padding: "7px 12px",
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12,
-		fontWeight: 500,
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
-	},
-	secondaryButton: {
-		flexShrink: 0,
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
-		color: tokens.colorText,
-		padding: "6px 10px",
-		cursor: "pointer",
-		fontFamily: tokens.fontBody,
-		fontSize: 12,
-		":focus-visible": { outline: `2px solid ${tokens.colorAccent}`, outlineOffset: 2 }
 	},
 	centerState: {
 		minHeight: 430,
@@ -815,7 +788,9 @@ const styles = stylex.create({
 		display: "grid",
 		placeItems: "center",
 		minHeight: 430,
-		border: `1px dashed ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "dashed",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted
@@ -827,7 +802,9 @@ const styles = stylex.create({
 		gap: tokens.space2,
 		maxWidth: 560,
 		margin: `${tokens.space6} auto 0`,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		padding: tokens.space5
@@ -856,7 +833,9 @@ const styles = stylex.create({
 		overflow: "auto",
 		marginTop: tokens.space2,
 		padding: tokens.space2,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusBadge,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextMuted,
@@ -873,14 +852,18 @@ const styles = stylex.create({
 	coverage: {
 		display: "grid",
 		gridTemplateColumns: "1.8fr repeat(4, 1fr) 1fr",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
 	},
 	coverageStatus: {
 		padding: "12px 16px",
-		borderLeft: `3px solid ${tokens.colorSuccess}`,
+		borderLeftColor: tokens.colorSuccess,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
 		display: "flex",
 		flexDirection: "column-reverse",
 		gap: tokens.space1
@@ -888,7 +871,9 @@ const styles = stylex.create({
 	coveragePartial: { borderLeftColor: tokens.colorWarning },
 	coverageItem: {
 		padding: "11px 14px",
-		borderLeft: `1px solid ${tokens.colorBorder}`,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
 		display: "flex",
 		flexDirection: "column",
 		gap: 3
@@ -907,14 +892,18 @@ const styles = stylex.create({
 	},
 	distribution: {
 		backgroundColor: tokens.colorSurface,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		minHeight: 164,
 		overflow: "hidden"
 	},
 	panelHeading: {
 		padding: "10px 12px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		display: "flex",
 		justifyContent: "space-between",
 		fontSize: 11,
@@ -930,7 +919,8 @@ const styles = stylex.create({
 		gap: 8,
 		color: tokens.colorText,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		padding: "5px 3px",
 		textAlign: "left",
 		cursor: "pointer",
@@ -947,7 +937,9 @@ const styles = stylex.create({
 		minHeight: 350
 	},
 	sheet: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
@@ -956,7 +948,9 @@ const styles = stylex.create({
 		display: "flex",
 		gap: 10,
 		padding: 10,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		alignItems: "center"
 	},
 	search: {
@@ -964,7 +958,9 @@ const styles = stylex.create({
 		flexGrow: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorText,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: "8px 10px",
 		outlineColor: tokens.colorTextSubtle
 	},
@@ -978,7 +974,8 @@ const styles = stylex.create({
 	},
 	clearButton: {
 		fontSize: 12,
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		backgroundColor: "transparent",
 		color: tokens.colorWarning,
 		cursor: "pointer"
@@ -998,8 +995,11 @@ const styles = stylex.create({
 		gridTemplateColumns: "2fr 0.75fr 1fr 1.1fr",
 		alignItems: "center",
 		padding: "10px 12px",
-		border: 0,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorText,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		textAlign: "left",
@@ -1022,7 +1022,9 @@ const styles = stylex.create({
 	warningText: { color: tokens.colorWarning },
 	noRows: { padding: 30, color: tokens.colorTextMuted, textAlign: "center" },
 	inspector: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceRaised,
 		padding: tokens.space4,
@@ -1039,7 +1041,9 @@ const styles = stylex.create({
 		position: "relative",
 		minHeight: 188,
 		margin: "16px 0 12px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden",
 		display: "grid",
@@ -1058,7 +1062,9 @@ const styles = stylex.create({
 		bottom: 8,
 		padding: "5px 7px",
 		backgroundColor: "rgba(8, 9, 10, 0.85)",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
 		letterSpacing: 0
@@ -1076,7 +1082,9 @@ const styles = stylex.create({
 	launchButton: {
 		marginTop: 4,
 		padding: "9px 12px",
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
@@ -1101,8 +1109,12 @@ const styles = stylex.create({
 	dimensionHero: {
 		margin: "19px 0",
 		padding: "15px 0",
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		display: "flex",
 		alignItems: "baseline",
 		gap: 8,
@@ -1114,7 +1126,9 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "1fr 1.2fr 0.8fr",
 		padding: "7px 0",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		fontSize: 12
 	},
 	evidenceLabel: { color: tokens.colorTextSubtle },
@@ -1123,7 +1137,9 @@ const styles = stylex.create({
 	findingCard: {
 		marginTop: tokens.space3,
 		padding: tokens.space3,
-		border: "1px solid rgba(242, 153, 74, 0.35)",
+		borderColor: "rgba(242, 153, 74, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusBadge,
 		backgroundColor: "rgba(242, 153, 74, 0.1)",
 		display: "flex",
@@ -1136,7 +1152,9 @@ const styles = stylex.create({
 	diagnostics: {
 		padding: tokens.space2 + 2,
 		color: tokens.colorTextMuted,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		fontSize: 12

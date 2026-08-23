@@ -434,7 +434,9 @@ const styles = stylex.create({
 	summaryStrip: {
 		display: "grid",
 		gridTemplateColumns: "1.35fr repeat(4, minmax(120px, .75fr))",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
@@ -444,14 +446,18 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: tokens.space1,
 		padding: `${tokens.space3} ${tokens.space4}`,
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 12
 	},
 	replaceRules: {
 		alignSelf: "flex-start",
 		marginTop: tokens.space1,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: `${tokens.space1} ${tokens.space2}`,
@@ -465,7 +471,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 2,
 		padding: `${tokens.space3} ${tokens.space4}`,
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextFaint,
 		fontSize: 11
 	},
@@ -475,15 +483,20 @@ const styles = stylex.create({
 	tabs: {
 		display: "flex",
 		gap: tokens.space4,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	tab: {
 		display: "flex",
 		alignItems: "center",
 		gap: tokens.space2,
 		padding: `${tokens.space2} 0`,
-		border: 0,
-		borderBottom: "2px solid transparent",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: "transparent",
+		borderBottomStyle: "solid",
+		borderBottomWidth: 2,
 		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
 		fontSize: 13,
@@ -514,7 +527,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space2,
 		padding: tokens.space4,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
@@ -529,7 +544,9 @@ const styles = stylex.create({
 		margin: `${tokens.space2} 0 0`,
 		maxWidth: 640,
 		padding: tokens.space2,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextMuted,
 		fontFamily: tokens.fontMono,
@@ -538,7 +555,9 @@ const styles = stylex.create({
 		wordBreak: "break-word"
 	},
 	retryButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: tokens.colorSurface, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
 		padding: `${tokens.space1} ${tokens.space3}`,
@@ -559,7 +578,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		height: "calc(100vh - 260px)",
 		minHeight: 420,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
@@ -568,7 +589,9 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: `${tokens.space3} ${tokens.space3}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextStrong,
 		fontWeight: 590,
 		fontSize: 12
@@ -577,8 +600,11 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		width: "100%",
-		border: 0,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
 		color: tokens.colorTextMuted,
 		padding: `${tokens.space2} ${tokens.space3}`,
@@ -616,7 +642,9 @@ const styles = stylex.create({
 		gap: tokens.space1,
 		marginTop: "auto",
 		padding: tokens.space3,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
 		lineHeight: 1.45
@@ -628,7 +656,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		height: "calc(100vh - 260px)",
 		minHeight: 420,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
@@ -640,7 +670,9 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: `${tokens.space3} ${tokens.space4}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextStrong,
 		fontWeight: 590,
@@ -651,8 +683,11 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: tokens.space1,
 		width: "100%",
-		border: 0,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceInset },
 		color: tokens.colorText,
 		padding: `${tokens.space3} ${tokens.space4}`,
@@ -688,7 +723,9 @@ const styles = stylex.create({
 	detail: {
 		height: "calc(100vh - 260px)",
 		minHeight: 420,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "auto"
@@ -698,7 +735,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: tokens.space2,
 		padding: tokens.space4,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	detailKind: { color: tokens.colorTextSubtle, fontSize: 11 },
 	detailQuote: {
@@ -720,7 +759,9 @@ const styles = stylex.create({
 	explanation: {
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	explanationCell: {
 		display: "flex",
@@ -728,7 +769,9 @@ const styles = stylex.create({
 		gap: tokens.space1,
 		minWidth: 0,
 		padding: `${tokens.space3} ${tokens.space4}`,
-		borderRight: `1px solid ${tokens.colorBorder}`
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
 	},
 	explanationLabel: { color: tokens.colorTextFaint, fontSize: 11 },
 	explanationValue: {
@@ -739,7 +782,9 @@ const styles = stylex.create({
 	},
 	evidence: {
 		margin: tokens.space3,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		overflow: "hidden"
 	},
@@ -747,7 +792,9 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: `${tokens.space2} ${tokens.space3}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
@@ -756,7 +803,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		gap: 3,
 		padding: `${tokens.space2} ${tokens.space3}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	evidenceTitle: { color: tokens.colorTextStrong, fontSize: 11 },
 	evidenceDetail: { color: tokens.colorTextMuted, fontSize: 11 },

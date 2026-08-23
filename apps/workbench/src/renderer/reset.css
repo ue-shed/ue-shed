@@ -28,6 +28,20 @@ textarea {
 	font: inherit;
 	accent-color: #e4f222;
 }
+/*
+ * Strip the user-agent control chrome. Under `color-scheme: dark` an unstyled button keeps a
+ * bright `ButtonBorder` box, so any control the design system does not give an explicit border
+ * would otherwise read as a white outline. StyleX class selectors outrank these element
+ * selectors, so a declared border, background, or colour still wins.
+ */
+button,
+input,
+select,
+textarea {
+	border: 0 solid transparent;
+	background-color: transparent;
+	color: inherit;
+}
 ::selection {
 	background-color: rgba(228, 242, 34, 0.28);
 	color: #f7f8f8;

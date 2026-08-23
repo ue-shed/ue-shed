@@ -752,7 +752,7 @@ const styles = stylex.create({
 	},
 	input: {
 		backgroundColor: tokens.colorSurfaceInset,
-		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorBorderStrong },
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorBorder },
 		borderRadius: tokens.radiusControl,
 		borderStyle: "solid",
 		borderWidth: 1,
@@ -943,7 +943,11 @@ const styles = stylex.create({
 		fontFamily: tokens.fontBody,
 		fontSize: 12,
 		fontWeight: 500,
-		padding: "5px 10px"
+		padding: "5px 10px",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
 	transportActive: { borderColor: tokens.colorBorderStrong, color: tokens.colorTextStrong },
 	bufferingReadout: {

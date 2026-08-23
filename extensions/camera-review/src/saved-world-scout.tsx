@@ -489,7 +489,9 @@ export function SavedWorldScout(props: {
 const styles = stylex.create({
 	scout: {
 		minWidth: 0,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface,
 		marginTop: 14
 	},
@@ -499,7 +501,9 @@ const styles = stylex.create({
 		gap: 18,
 		alignItems: "flex-start",
 		padding: "18px 20px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	projectLabel: {
 		margin: "6px 0 0",
@@ -515,11 +519,12 @@ const styles = stylex.create({
 		gap: 8
 	},
 	chooseButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
-		borderColor: { default: tokens.colorBorderStrong, ":disabled": tokens.colorBorder },
+		borderColor: { default: tokens.colorBorder, ":disabled": tokens.colorBorder },
 		cursor: { default: "pointer", ":disabled": "not-allowed" },
 		padding: "5px 12px",
 		fontSize: 12,
@@ -575,7 +580,9 @@ const styles = stylex.create({
 		fontWeight: 600
 	},
 	retry: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
@@ -591,7 +598,9 @@ const styles = stylex.create({
 		gap: 10,
 		alignItems: "center",
 		padding: "12px 14px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	summary: {
 		display: "grid",
@@ -603,7 +612,9 @@ const styles = stylex.create({
 		textAlign: "right"
 	},
 	completeness: {
-		border: `1px solid #02b8cc`,
+		borderColor: "#02b8cc",
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: "#02b8cc",
 		padding: "6px 7px",
 		fontSize: 11,
@@ -644,7 +655,9 @@ const styles = stylex.create({
 		left: "50%",
 		transform: "translateX(-50%)",
 		zIndex: 2,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: {
 			default: "rgba(15, 16, 17, 0.85)",
 			":hover": "rgba(255, 255, 255, 0.06)"
@@ -693,7 +706,9 @@ const styles = stylex.create({
 		fontSize: 11,
 		letterSpacing: ".04em",
 		backgroundColor: "rgba(15, 16, 17, 0.85)",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: "4px 8px"
 	},
 	zoomSlider: {
@@ -703,7 +718,9 @@ const styles = stylex.create({
 	},
 	clearSelection: {
 		marginTop: 8,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "5px 12px",
@@ -729,8 +746,12 @@ const styles = stylex.create({
 		transformOrigin: "left bottom"
 	},
 	inspector: {
-		borderLeft: { default: `1px solid ${tokens.colorBorder}`, "@media (max-width: 900px)": 0 },
-		borderTop: { default: 0, "@media (max-width: 900px)": `1px solid ${tokens.colorBorder}` },
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: { default: 1, "@media (max-width: 900px)": 0 },
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: { default: 0, "@media (max-width: 900px)": 1 },
 		backgroundColor: tokens.colorSurface,
 		padding: 18,
 		minWidth: 0
@@ -760,7 +781,9 @@ const styles = stylex.create({
 	},
 	offlineCopy: {
 		marginTop: 12,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		paddingTop: 12,
 		color: "#02b8cc",
 		fontSize: 11,

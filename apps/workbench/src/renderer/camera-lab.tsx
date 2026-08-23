@@ -744,7 +744,8 @@ const styles = stylex.create({
 		cursor: "pointer",
 		transitionProperty: "background-color, transform",
 		transitionDuration: tokens.motionFast,
-		transform: { default: "scale(1)", ":active": "scale(0.98)" }
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
 	launchError: { color: "#f2a9a1", textAlign: "right", fontSize: 12 },
 	pulse: {

@@ -343,7 +343,9 @@ const styles = stylex.create({
 		gap: 20,
 		marginBottom: 14,
 		padding: "0 2px 10px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	scopeIdentity: { display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 },
 	scopeTitle: { fontSize: 13, fontWeight: 590, color: tokens.colorTextStrong },
@@ -353,7 +355,9 @@ const styles = stylex.create({
 		minWidth: 0,
 		display: "flex",
 		flexDirection: "column",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
@@ -363,7 +367,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: 18,
 		padding: "12px 14px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	panelHeaderCompact: { padding: "10px 12px" },
 	platformIdentity: { minWidth: 0 },
@@ -404,7 +410,9 @@ const styles = stylex.create({
 		justifyContent: "center",
 		minHeight: 76,
 		padding: "12px 14px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	valuePlateCompact: { minHeight: 60 },
@@ -424,7 +432,9 @@ const styles = stylex.create({
 		alignItems: "baseline",
 		gap: 14,
 		padding: "9px 14px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontSize: 12
 	},
@@ -438,7 +448,9 @@ const styles = stylex.create({
 	statNumberIssue: { color: tokens.colorWarning },
 	exceptions: {
 		padding: "9px 14px 10px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	exceptionsHeader: { display: "flex", alignItems: "center", gap: 8, marginBottom: 5 },
 	sectionTitle: {
@@ -577,7 +589,9 @@ const styles = stylex.create({
 	},
 	ledger: {
 		padding: "9px 14px 10px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontSize: 12
 	},
@@ -599,7 +613,9 @@ const styles = stylex.create({
 		gap: 12,
 		marginBottom: 12,
 		padding: "8px 12px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		fontSize: 12

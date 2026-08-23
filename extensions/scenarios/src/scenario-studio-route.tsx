@@ -1197,7 +1197,9 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "minmax(320px, 1fr) auto minmax(300px, 1fr)",
 		alignItems: "center",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorCanvasTranslucent,
 		backdropFilter: "blur(16px)",
 		position: "sticky",
@@ -1228,7 +1230,9 @@ const styles = stylex.create({
 	iconButton: {
 		width: 34,
 		height: 34,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
@@ -1238,7 +1242,9 @@ const styles = stylex.create({
 		width: 42,
 		height: 42,
 		marginLeft: 7,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: "50%",
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		boxShadow: "none",
@@ -1247,7 +1253,9 @@ const styles = stylex.create({
 		fontSize: 13
 	},
 	liveRunButton: {
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorAccent,
 		color: tokens.colorAccentText,
 		fontFamily: tokens.fontBody,
@@ -1261,7 +1269,9 @@ const styles = stylex.create({
 		":disabled": { cursor: "default", opacity: 0.5 }
 	},
 	cancelRunButton: {
-		border: `1px solid ${tokens.colorDanger}`,
+		borderColor: tokens.colorDanger,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: {
 			default: "rgba(235, 87, 87, 0.08)",
 			":hover": "rgba(235, 87, 87, 0.14)"
@@ -1295,7 +1305,9 @@ const styles = stylex.create({
 	demoGuideToggle: {
 		marginRight: 4,
 		padding: "6px 8px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "transparent",
 		color: tokens.colorTextSubtle,
 		cursor: "pointer",
@@ -1325,7 +1337,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 20,
 		padding: "0 18px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	endpointField: {
@@ -1340,7 +1354,9 @@ const styles = stylex.create({
 		width: "100%",
 		minWidth: 0,
 		padding: "7px 9px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorText,
 		fontFamily: tokens.fontMono,
@@ -1367,7 +1383,9 @@ const styles = stylex.create({
 			"@media (max-width: 1180px)": "150px minmax(600px, 1fr)"
 		},
 		minHeight: 88,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurface
 	},
 	demoGuideHeading: {
@@ -1376,7 +1394,9 @@ const styles = stylex.create({
 		justifyContent: "center",
 		gap: 4,
 		padding: "14px 18px",
-		borderRight: `1px solid ${tokens.colorBorder}`
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1
 	},
 	demoSteps: {
 		display: "grid",
@@ -1392,7 +1412,9 @@ const styles = stylex.create({
 		gap: 7,
 		minWidth: 0,
 		padding: "12px 10px",
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextFaint
 	},
 	demoStepComplete: { color: tokens.colorTextMuted },
@@ -1437,10 +1459,14 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "196px minmax(680px, 1fr) 268px",
 		minHeight: 530,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	takeRail: {
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	railHeading: {
@@ -1449,14 +1475,18 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "0 14px 0 16px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontSize: 11
 	},
 	addButton: {
 		width: 23,
 		height: 23,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "transparent",
 		color: tokens.colorTextMuted,
@@ -1470,9 +1500,14 @@ const styles = stylex.create({
 		gap: 9,
 		minHeight: 58,
 		padding: "8px 12px",
-		border: 0,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
-		borderLeft: "2px solid transparent",
+		borderStyle: "none",
+		borderWidth: 0,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderLeftColor: "transparent",
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		cursor: "pointer",
@@ -1495,7 +1530,9 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: "8px 0",
-		borderTop: `1px solid ${tokens.colorBorder}`
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1
 	},
 	isolationFact: {
 		display: "flex",
@@ -1504,7 +1541,9 @@ const styles = stylex.create({
 		marginTop: 16,
 		padding: "10px",
 		borderRadius: tokens.radiusPanel,
-		border: "1px solid rgba(228, 242, 34, 0.2)",
+		borderColor: "rgba(228, 242, 34, 0.2)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "rgba(228, 242, 34, 0.03)"
 	},
 	lockMark: { color: tokens.colorAccent, fontSize: 11 },
@@ -1515,7 +1554,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "space-between",
 		padding: "0 18px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	sectionTitle: {
 		color: tokens.colorTextStrong,
@@ -1563,8 +1604,12 @@ const styles = stylex.create({
 		display: "flex",
 		alignItems: "center",
 		paddingLeft: 16,
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextFaint,
 		fontSize: 11
 	},
@@ -1574,7 +1619,9 @@ const styles = stylex.create({
 		top: 0,
 		height: 38,
 		padding: "9px 0 0 6px",
-		borderLeft: `1px solid ${tokens.colorBorder}`,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontFamily: tokens.fontMono,
 		fontSize: 11
@@ -1594,15 +1641,21 @@ const styles = stylex.create({
 		justifyContent: "center",
 		gap: 4,
 		padding: "9px 16px",
-		borderRight: `1px solid ${tokens.colorBorder}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	trackKind: { color: tokens.colorTextFaint, fontSize: 11 },
 	trackMeta: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
 	trackSupport: {
 		padding: "2px 4px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusBadge,
 		color: tokens.colorTextFaint,
 		fontSize: 11
@@ -1615,7 +1668,9 @@ const styles = stylex.create({
 	trackBody: {
 		position: "relative",
 		minHeight: 72,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		overflow: "hidden",
 		cursor: "crosshair"
 	},
@@ -1693,14 +1748,18 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 11,
 		padding: "0 16px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextSubtle,
 		fontSize: 12
 	},
 	seekIcon: { color: tokens.colorAccent, fontSize: 14 },
 	inspector: {
-		borderLeft: `1px solid ${tokens.colorBorder}`,
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	inspectorHeader: { padding: "18px", borderBottom: `1px solid ${tokens.colorBorder}` },
@@ -1724,7 +1783,9 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: "6px 0",
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontFamily: tokens.fontMono,
 		fontSize: 12
@@ -1743,7 +1804,9 @@ const styles = stylex.create({
 		marginTop: 14,
 		padding: "9px 10px",
 		borderRadius: tokens.radiusPanel,
-		border: "1px solid rgba(228, 242, 34, 0.2)",
+		borderColor: "rgba(228, 242, 34, 0.2)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "rgba(228, 242, 34, 0.03)",
 		color: tokens.colorTextMuted,
 		fontSize: 11
@@ -1757,7 +1820,9 @@ const styles = stylex.create({
 		height: 178,
 		padding: "16px 18px",
 		borderRadius: tokens.radiusPanel,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised,
 		boxShadow: `inset 3px 0 ${tokens.colorSuccess}`
 	},
@@ -1775,7 +1840,9 @@ const styles = stylex.create({
 		height: 178,
 		padding: "16px 18px",
 		borderRadius: tokens.radiusPanel,
-		border: `1px dashed ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "dashed",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextSubtle
 	},
@@ -1784,7 +1851,9 @@ const styles = stylex.create({
 		height: 130,
 		overflow: "hidden",
 		borderRadius: tokens.radiusPanel,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised,
 		backgroundImage: "linear-gradient(172deg, #2b493a 0 42%, #18221d 42% 56%, #4b3d2b 56%)"
 	},
@@ -1840,8 +1909,11 @@ const styles = stylex.create({
 		gap: 9,
 		width: "100%",
 		padding: "10px 14px",
-		border: 0,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		cursor: "pointer",
@@ -1853,7 +1925,9 @@ const styles = stylex.create({
 		width: 27,
 		height: 24,
 		borderRadius: tokens.radiusBadge,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11
 	},
@@ -1864,8 +1938,11 @@ const styles = stylex.create({
 		gap: 9,
 		width: "100%",
 		padding: "10px 14px",
-		border: 0,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.03)" },
 		color: tokens.colorText,
 		cursor: "pointer",
@@ -1879,7 +1956,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 24,
 		padding: "0 16px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorTextFaint,
 		fontSize: 11
 	}

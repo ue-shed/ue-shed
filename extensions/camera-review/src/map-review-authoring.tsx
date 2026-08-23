@@ -1226,7 +1226,9 @@ export function MapReviewAuthoring(props: {
 const styles = stylex.create({
 	authoringDesk: {
 		marginTop: 8,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface
 	},
 	authoringHeader: {
@@ -1235,7 +1237,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 16,
 		padding: "8px 12px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	headerSubject: {
 		display: "flex",
@@ -1268,7 +1272,9 @@ const styles = stylex.create({
 	},
 	generateButton: {
 		flexShrink: 0,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
@@ -1290,7 +1296,9 @@ const styles = stylex.create({
 	},
 	fallbackMode: {
 		padding: "6px 8px",
-		border: "1px solid rgba(242, 153, 74, 0.4)",
+		borderColor: "rgba(242, 153, 74, 0.4)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "rgba(242, 153, 74, 0.08)",
 		color: tokens.colorWarning,
 		fontSize: 11,
@@ -1308,8 +1316,12 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 12,
 		padding: "14px 16px",
-		borderTop: "1px solid rgba(235, 87, 87, 0.35)",
-		borderBottom: "1px solid rgba(235, 87, 87, 0.35)",
+		borderTopColor: "rgba(235, 87, 87, 0.35)",
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		borderBottomColor: "rgba(235, 87, 87, 0.35)",
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: "rgba(235, 87, 87, 0.06)",
 		color: tokens.colorDanger
 	},
@@ -1329,7 +1341,9 @@ const styles = stylex.create({
 		gap: 4,
 		minWidth: 0,
 		padding: 10,
-		border: "1px solid rgba(235, 87, 87, 0.25)",
+		borderColor: "rgba(235, 87, 87, 0.25)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	mapMismatchLabel: { color: tokens.colorTextSubtle, fontSize: 11, letterSpacing: ".04em" },
@@ -1347,7 +1361,9 @@ const styles = stylex.create({
 		gap: 8
 	},
 	mapMismatchButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
@@ -1358,7 +1374,9 @@ const styles = stylex.create({
 		cursor: "pointer"
 	},
 	mapMismatchPrimaryButton: {
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
@@ -1376,7 +1394,9 @@ const styles = stylex.create({
 	},
 	candidateCard: {
 		position: "relative",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	candidateSelected: {
@@ -1385,7 +1405,8 @@ const styles = stylex.create({
 	},
 	candidateSelect: {
 		width: "100%",
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		backgroundColor: "transparent",
 		color: tokens.colorText,
 		textAlign: "left",
@@ -1420,7 +1441,9 @@ const styles = stylex.create({
 		position: "absolute",
 		top: 6,
 		right: 6,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusBadge,
 		backgroundColor: "rgba(12, 13, 14, 0.85)",
 		color: tokens.colorTextMuted,
@@ -1437,7 +1460,9 @@ const styles = stylex.create({
 		gap: 18,
 		marginTop: 10,
 		padding: 16,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised
 	},
 	poseHeading: {
@@ -1471,7 +1496,9 @@ const styles = stylex.create({
 		alignContent: "start",
 		gap: 7,
 		padding: 9,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	positionGroup: {
@@ -1500,10 +1527,9 @@ const styles = stylex.create({
 	poseInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: {
-			default: `1px solid ${tokens.colorBorderStrong}`,
-			":focus": `1px solid ${tokens.colorTextSubtle}`
-		},
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorTextSubtle },
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextStrong,
 		padding: "7px 8px",
@@ -1528,7 +1554,9 @@ const styles = stylex.create({
 		fontSize: 8
 	},
 	keepButton: {
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorAccent,

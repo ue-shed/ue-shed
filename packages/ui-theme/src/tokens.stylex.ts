@@ -43,6 +43,7 @@ export const tokens = stylex.defineVars({
 	space6: "32px",
 	motionFast: "120ms",
 	motionStandard: "180ms",
+	motionEaseOut: "cubic-bezier(0.23, 1, 0.32, 1)",
 	shadowOverlay: "0 16px 40px rgba(8, 9, 10, 0.7), 0 4px 12px rgba(8, 9, 10, 0.5)",
 	shadowCard: "rgba(35, 37, 42, 0.6) 0 0 0 1px inset"
 });

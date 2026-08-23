@@ -977,7 +977,9 @@ const styles = stylex.create({
 		gap: 12,
 		margin: "10px 0 18px",
 		padding: "9px 12px",
-		borderLeft: `3px solid ${tokens.colorSuccess}`,
+		borderLeftColor: tokens.colorSuccess,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
@@ -1048,8 +1050,12 @@ const styles = stylex.create({
 		maxWidth: 670,
 		margin: "72px auto",
 		padding: "30px 0 30px 88px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	emptyIndex: {
 		position: "absolute",
@@ -1065,13 +1071,17 @@ const styles = stylex.create({
 		maxWidth: 780,
 		margin: "50px auto",
 		padding: 24,
-		border: "1px solid rgba(235, 87, 87, 0.35)",
+		borderColor: "rgba(235, 87, 87, 0.35)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: "rgba(235, 87, 87, 0.08)"
 	},
 	summary: {
 		display: "grid",
 		gridTemplateColumns: "minmax(290px, 1.5fr) repeat(3, minmax(130px, .7fr))",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface
 	},
 	heroMetric: { padding: "18px 22px", borderRight: `1px solid ${tokens.colorBorder}` },
@@ -1088,7 +1098,9 @@ const styles = stylex.create({
 	pressure: {
 		marginTop: 12,
 		padding: "13px 16px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface
 	},
 	pressureHead: {
@@ -1126,7 +1138,9 @@ const styles = stylex.create({
 		display: "flex",
 		justifyContent: "space-between",
 		padding: "10px 13px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
 		letterSpacing: "0"
@@ -1166,7 +1180,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 10,
 		padding: "9px 0",
-		borderBottom: `1px dotted ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "dotted",
+		borderBottomWidth: 1
 	},
 	risk: { fontSize: 11, letterSpacing: "0", textTransform: "none" },
 	low: { color: tokens.colorSuccess },
@@ -1187,7 +1203,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 10,
 		padding: "13px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	planOrder: { color: tokens.colorWarning, fontFamily: tokens.fontMono, fontSize: 16 },
 	planFooter: {
@@ -1197,7 +1215,9 @@ const styles = stylex.create({
 		gap: 10,
 		margin: 12,
 		paddingTop: 12,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
 		letterSpacing: "0"
@@ -1216,7 +1236,9 @@ const styles = stylex.create({
 		height: "100%",
 		display: "grid",
 		gridTemplateRows: "auto auto minmax(0, 1fr) auto",
-		borderLeft: `1px solid ${tokens.colorBorderStrong}`,
+		borderLeftColor: tokens.colorBorderStrong,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 1,
 		backgroundColor: tokens.colorSurfaceRaised,
 		boxShadow: tokens.shadowOverlay,
 		color: tokens.colorText
@@ -1227,7 +1249,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		justifyContent: "space-between",
 		padding: "22px 24px 18px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	workflowKicker: {
 		color: tokens.colorDanger,
@@ -1238,7 +1262,9 @@ const styles = stylex.create({
 	workflowClose: {
 		width: 32,
 		height: 32,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		fontSize: 20,
@@ -1250,13 +1276,17 @@ const styles = stylex.create({
 		padding: 0,
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	workflowStep: {
 		display: "flex",
 		gap: 8,
 		padding: "12px 16px",
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextSubtle,
 		fontSize: 11,
 		letterSpacing: "0"
@@ -1282,7 +1312,9 @@ const styles = stylex.create({
 		alignContent: "center",
 		gap: "5px 8px",
 		padding: 13,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorText,
 		fontSize: 12,
@@ -1296,7 +1328,9 @@ const styles = stylex.create({
 	},
 	cleanupTargets: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 },
 	cleanupTarget: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	cleanupTargetLabel: {
@@ -1316,7 +1350,9 @@ const styles = stylex.create({
 		gridTemplateColumns: "120px minmax(0, 1fr)",
 		alignItems: "center",
 		padding: "0 13px",
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	proposalFactLabel: {
 		color: tokens.colorTextSubtle,
@@ -1334,7 +1370,9 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 8,
 		padding: 16,
-		borderLeft: `3px solid ${tokens.colorWarning}`,
+		borderLeftColor: tokens.colorWarning,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
 		backgroundColor: "rgba(242, 153, 74, 0.08)",
 		color: tokens.colorTextMuted,
 		fontSize: 11,
@@ -1354,7 +1392,9 @@ const styles = stylex.create({
 		width: 74,
 		height: 74,
 		marginBottom: 20,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderTopColor: tokens.colorWarning,
 		borderRadius: "50%",
 		animationName: stylex.keyframes({ to: { transform: "rotate(360deg)" } }),
@@ -1370,19 +1410,27 @@ const styles = stylex.create({
 		justifyContent: "flex-end",
 		gap: 9,
 		padding: "14px 20px",
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset
 	},
 	secondaryAction: {
 		minHeight: 38,
 		padding: "0 16px",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		fontSize: 12,
 		letterSpacing: "0",
-		cursor: "pointer"
+		cursor: "pointer",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	selectionTotal: {
 		marginRight: "auto",
@@ -1393,7 +1441,9 @@ const styles = stylex.create({
 	primaryAction: {
 		minHeight: 38,
 		padding: "0 18px",
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorAccent,
@@ -1404,12 +1454,18 @@ const styles = stylex.create({
 		fontSize: 12,
 		fontWeight: 590,
 		letterSpacing: "0",
-		cursor: "pointer"
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	dangerAction: {
 		minHeight: 38,
 		padding: "0 18px",
-		border: `1px solid ${tokens.colorDanger}`,
+		borderColor: tokens.colorDanger,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorDanger,
@@ -1420,12 +1476,18 @@ const styles = stylex.create({
 		fontSize: 12,
 		fontWeight: 590,
 		letterSpacing: "0",
-		cursor: "pointer"
+		cursor: { default: "pointer", ":disabled": "not-allowed" },
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" }
 	},
 	receiptRefusal: {
 		margin: "18px 0",
 		padding: 15,
-		borderLeft: `3px solid ${tokens.colorDanger}`,
+		borderLeftColor: tokens.colorDanger,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
 		backgroundColor: "rgba(235, 87, 87, 0.10)",
 		color: tokens.colorDanger,
 		fontSize: 12
@@ -1434,7 +1496,9 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "repeat(3, 1fr)",
 		margin: "22px 0",
-		border: `1px solid ${tokens.colorBorder}`
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1
 	},
 	resultDatum: {
 		minHeight: 78,
@@ -1443,7 +1507,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		justifyContent: "center",
 		gap: 7,
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
 		letterSpacing: "0"
@@ -1454,7 +1520,9 @@ const styles = stylex.create({
 		gridTemplateColumns: "72px minmax(0, 1fr) auto",
 		gap: 10,
 		padding: "10px 12px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		fontSize: 12
 	},

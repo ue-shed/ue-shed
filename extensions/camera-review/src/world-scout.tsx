@@ -907,7 +907,9 @@ const styles = stylex.create({
 	scout: {
 		minWidth: 0,
 		maxWidth: "100%",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface,
 		boxShadow: `inset 4px 0 ${tokens.colorAccent}`
 	},
@@ -916,7 +918,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		alignItems: "end",
 		padding: "20px 22px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		minWidth: 0
 	},
 	eyebrow: {
@@ -969,7 +973,9 @@ const styles = stylex.create({
 	offlineReticle: { color: tokens.colorAccent, fontSize: 40 },
 	connectButton: {
 		marginTop: 14,
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
@@ -984,7 +990,9 @@ const styles = stylex.create({
 		gap: 12,
 		alignItems: "end",
 		padding: "12px 14px",
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurface,
 		minWidth: 0,
 		gridTemplateColumns: {
@@ -1044,7 +1052,9 @@ const styles = stylex.create({
 		left: "50%",
 		transform: "translateX(-50%)",
 		zIndex: 2,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: {
 			default: "rgba(15, 16, 17, 0.85)",
 			":hover": "rgba(255, 255, 255, 0.06)"
@@ -1093,7 +1103,9 @@ const styles = stylex.create({
 		fontSize: 11,
 		letterSpacing: ".04em",
 		backgroundColor: "rgba(15, 16, 17, 0.85)",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		padding: "4px 8px"
 	},
 	zoomSlider: {
@@ -1102,7 +1114,9 @@ const styles = stylex.create({
 		cursor: "ew-resize"
 	},
 	clearSelection: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		padding: "5px 12px",
@@ -1128,14 +1142,12 @@ const styles = stylex.create({
 		transformOrigin: "left bottom"
 	},
 	inspector: {
-		borderLeft: {
-			default: `1px solid ${tokens.colorBorder}`,
-			"@media (max-width: 900px)": 0
-		},
-		borderTop: {
-			default: 0,
-			"@media (max-width: 900px)": `1px solid ${tokens.colorBorder}`
-		},
+		borderLeftColor: tokens.colorBorder,
+		borderLeftStyle: "solid",
+		borderLeftWidth: { default: 1, "@media (max-width: 900px)": 0 },
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: { default: 0, "@media (max-width: 900px)": 1 },
 		backgroundColor: tokens.colorSurface,
 		padding: 18,
 		minWidth: 0
@@ -1156,7 +1168,9 @@ const styles = stylex.create({
 	coordinates: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", marginTop: 18 },
 	actorActions: { display: "grid", gap: 7, marginTop: 16 },
 	goToButton: {
-		border: `1px solid ${tokens.colorAccent}`,
+		borderColor: tokens.colorAccent,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorAccent, ":hover": tokens.colorAccentStrong },
 		color: tokens.colorAccentText,
@@ -1167,7 +1181,9 @@ const styles = stylex.create({
 		cursor: "pointer"
 	},
 	followButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
@@ -1184,7 +1200,9 @@ const styles = stylex.create({
 	},
 	focusedCopy: {
 		marginTop: 16,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		paddingTop: 12,
 		color: tokens.colorAccent,
 		fontSize: 11,

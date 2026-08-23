@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { createEffectAction } from "@ue-shed/ui";
+import { Button, createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
 import {
@@ -218,24 +218,24 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 					</p>
 				</div>
 				<div {...stylex.props(styles.headerActions)}>
-					<button
+					<Button
 						type="button"
 						disabled={
 							state().status === "loading" || state().status === "not_configured"
 						}
 						onClick={() => setSetLibraryOpen(true)}
-						{...stylex.props(styles.quietButton)}
+						tone="quiet"
 					>
 						Review sets
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
 						disabled={ready() === undefined || worldSource() !== "live"}
 						onClick={() => setCaptureOpen(true)}
-						{...stylex.props(styles.primaryButton)}
+						tone="primary"
 					>
 						Capture set
-					</button>
+					</Button>
 				</div>
 			</header>
 			<div {...stylex.props(styles.toolbar)}>
@@ -365,13 +365,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									Couldn't load review data
 								</strong>
 								<span>{current.error.recovery}</span>
-								<button
-									type="button"
-									onClick={() => void load()}
-									{...stylex.props(styles.quietButton)}
-								>
+								<Button type="button" onClick={() => void load()} tone="quiet">
 									Retry
-								</button>
+								</Button>
 								<details {...stylex.props(styles.technical)}>
 									<summary>Technical details</summary>
 									<code>{current.error.message}</code>
@@ -390,13 +386,9 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									{current.policy.message}
 								</strong>
 								<span>{current.policy.recovery}</span>
-								<button
-									type="button"
-									onClick={() => void load()}
-									{...stylex.props(styles.quietButton)}
-								>
+								<Button type="button" onClick={() => void load()} tone="quiet">
 									Return to review
-								</button>
+								</Button>
 							</div>
 						);
 					})()}
@@ -918,7 +910,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space4,
 		paddingBottom: tokens.space4,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		marginBottom: tokens.space5
 	},
 	headerCopy: { display: "flex", flexDirection: "column", gap: 6 },
@@ -937,36 +931,6 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted
 	},
 	headerActions: { display: "flex", alignItems: "center", gap: tokens.space2 },
-	quietButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: {
-			default: "transparent",
-			":hover": tokens.colorSurfaceHover,
-			":disabled": "transparent"
-		},
-		color: { default: tokens.colorText, ":disabled": tokens.colorTextFaint },
-		padding: "6px 12px",
-		fontSize: 13,
-		fontWeight: 500,
-		cursor: { default: "pointer", ":disabled": "not-allowed" }
-	},
-	primaryButton: {
-		border: `1px solid ${tokens.colorAccent}`,
-		borderRadius: tokens.radiusControl,
-		backgroundColor: {
-			default: tokens.colorAccent,
-			":hover": tokens.colorAccentStrong,
-			":disabled": tokens.colorAccentWash
-		},
-		color: { default: tokens.colorAccentText, ":disabled": tokens.colorAccent },
-		padding: "6px 12px",
-		fontWeight: 500,
-		fontSize: 13,
-		cursor: { default: "pointer", ":disabled": "wait" },
-		transition: `transform ${tokens.motionStandard} cubic-bezier(.23,1,.32,1)`,
-		transform: { default: "scale(1)", ":active": "scale(.97)" }
-	},
 	toolbar: {
 		display: "flex",
 		justifyContent: "space-between",
@@ -976,7 +940,9 @@ const styles = stylex.create({
 	},
 	sourceTabs: { display: "flex", gap: 4 },
 	sourceTab: {
-		border: "1px solid transparent",
+		borderColor: "transparent",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
@@ -995,12 +961,14 @@ const styles = stylex.create({
 	},
 	sourceTabActive: {
 		backgroundColor: tokens.colorSurfaceRaised,
-		borderColor: tokens.colorBorderStrong,
+		borderColor: tokens.colorBorder,
 		color: tokens.colorTextStrong
 	},
 	modeGroup: { display: "flex", gap: 4 },
 	modeButton: {
-		border: "1px solid transparent",
+		borderColor: "transparent",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
@@ -1015,7 +983,7 @@ const styles = stylex.create({
 	},
 	modeButtonActive: {
 		backgroundColor: tokens.colorSurfaceRaised,
-		borderColor: tokens.colorBorderStrong,
+		borderColor: tokens.colorBorder,
 		color: tokens.colorTextStrong
 	},
 	centerState: {
@@ -1037,7 +1005,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space3,
 		padding: tokens.space5,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted
@@ -1055,7 +1025,9 @@ const styles = stylex.create({
 	},
 	setupWorkspace: { paddingTop: tokens.space3 },
 	offlineNote: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted,
@@ -1068,7 +1040,9 @@ const styles = stylex.create({
 		gridTemplateColumns: "minmax(0, 2fr) minmax(90px, .5fr) minmax(90px, .5fr)",
 		gap: tokens.space3,
 		padding: `${tokens.space3}px ${tokens.space4}px`,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
@@ -1091,7 +1065,9 @@ const styles = stylex.create({
 	},
 	comparisonControls: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: tokens.space2 },
 	comparisonButton: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
@@ -1105,7 +1081,7 @@ const styles = stylex.create({
 		cursor: { default: "pointer", ":disabled": "default" }
 	},
 	comparisonButtonActive: {
-		borderColor: tokens.colorBorderStrong,
+		borderColor: tokens.colorBorder,
 		backgroundColor: tokens.colorSurfaceRaised,
 		color: tokens.colorTextStrong
 	},
@@ -1114,7 +1090,9 @@ const styles = stylex.create({
 	imageFrame: {
 		minHeight: 380,
 		position: "relative",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		overflow: "hidden"
@@ -1154,7 +1132,9 @@ const styles = stylex.create({
 	notes: { margin: `${tokens.space2}px 0`, color: tokens.colorTextMuted, fontSize: 11 },
 	runInspector: {
 		alignSelf: "start",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		padding: tokens.space4
@@ -1166,7 +1146,9 @@ const styles = stylex.create({
 		fontWeight: 600
 	},
 	emptyState: {
-		border: `1px dashed ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "dashed",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		padding: tokens.space5,
@@ -1175,7 +1157,9 @@ const styles = stylex.create({
 		textAlign: "center"
 	},
 	viewNavigator: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
@@ -1185,7 +1169,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		alignItems: "baseline",
 		padding: `${tokens.space2}px ${tokens.space4}px`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		color: tokens.colorTextStrong,
 		fontSize: 12,
 		fontWeight: 600
@@ -1195,14 +1181,18 @@ const styles = stylex.create({
 		gridTemplateColumns: "minmax(180px, .55fr) 1.45fr",
 		gap: tokens.space3,
 		padding: tokens.space3,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	subjectIdentity: { display: "grid", alignContent: "start", gap: 4 },
 	subjectCount: {
 		width: "fit-content",
 		padding: "1px 6px",
 		borderRadius: tokens.radiusBadge,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: tokens.colorTextMuted,
 		fontSize: 11,
 		fontWeight: 500
@@ -1214,7 +1204,9 @@ const styles = stylex.create({
 		flexDirection: "column",
 		alignItems: "flex-start",
 		gap: 4,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: tokens.colorSurfaceInset, ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorTextMuted,
@@ -1228,7 +1220,9 @@ const styles = stylex.create({
 		color: tokens.colorTextStrong
 	},
 	history: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
@@ -1239,8 +1233,11 @@ const styles = stylex.create({
 		display: "grid",
 		gridTemplateColumns: "28px 1fr",
 		alignItems: "center",
-		border: 0,
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderStyle: "none",
+		borderWidth: 0,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorTextMuted,
 		textAlign: "left",

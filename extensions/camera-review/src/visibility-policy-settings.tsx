@@ -363,7 +363,9 @@ export function VisibilityPolicySettings(props: {
 const styles = stylex.create({
 	panel: {
 		marginTop: tokens.space3,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorText
@@ -401,7 +403,9 @@ const styles = stylex.create({
 		lineHeight: 1.5
 	},
 	primary: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
@@ -411,7 +415,9 @@ const styles = stylex.create({
 		cursor: "pointer"
 	},
 	quietButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
@@ -427,7 +433,9 @@ const styles = stylex.create({
 		gap: tokens.space2,
 		marginTop: tokens.space4,
 		padding: tokens.space3,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl
 	},
 	bulkChoice: {
@@ -448,7 +456,9 @@ const styles = stylex.create({
 		gap: tokens.space2,
 		margin: `${tokens.space3}px 0 0`,
 		padding: tokens.space3,
-		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		color: tokens.colorDanger,

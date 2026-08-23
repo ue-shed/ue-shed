@@ -681,7 +681,7 @@ const styles = stylex.create({
 	contextChip: {
 		alignItems: "center",
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
-		borderColor: tokens.colorBorderStrong,
+		borderColor: tokens.colorBorder,
 		borderRadius: tokens.radiusControl,
 		borderStyle: "solid",
 		borderWidth: 1,
@@ -693,7 +693,7 @@ const styles = stylex.create({
 		gap: 6,
 		padding: "4px 9px"
 	},
-	contextChipOn: { borderColor: tokens.colorBorderStrong, color: tokens.colorTextStrong },
+	contextChipOn: { borderColor: tokens.colorBorder, color: tokens.colorTextStrong },
 	chipCount: { color: tokens.colorTextFaint, fontSize: 11 },
 	spacer: { flexGrow: 1 },
 	chipQuiet: { color: tokens.colorTextFaint, fontSize: 11, padding: "3px 8px" },

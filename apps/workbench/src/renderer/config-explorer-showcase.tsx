@@ -437,7 +437,8 @@ const styles = stylex.create({
 		flex: 1,
 		minHeight: 30,
 		padding: "6px 10px",
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		borderRadius: tokens.radiusBadge,
 		backgroundColor: {
 			default: "transparent",
@@ -484,7 +485,7 @@ const styles = stylex.create({
 		height: 34,
 		boxSizing: "border-box",
 		padding: "7px 10px",
-		borderColor: { default: tokens.colorBorderStrong, ":focus": tokens.colorTextSubtle },
+		borderColor: { default: tokens.colorBorder, ":focus": tokens.colorTextSubtle },
 		borderStyle: "solid",
 		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
@@ -503,7 +504,8 @@ const styles = stylex.create({
 		gap: 2,
 		height: 34,
 		padding: "4px 12px",
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: tokens.colorAccent,
@@ -519,7 +521,8 @@ const styles = stylex.create({
 		fontWeight: 600,
 		transitionProperty: "background-color, transform",
 		transitionDuration: tokens.motionFast,
-		transform: { default: "scale(1)", ":active": "scale(.98)" }
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(.97)", ":disabled": "scale(1)" }
 	},
 	samples: { display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap" },
 	sampleHeading: {
@@ -534,7 +537,8 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 7,
 		padding: "5px 11px",
-		border: 0,
+		borderStyle: "none",
+		borderWidth: 0,
 		borderRadius: tokens.radiusPill,
 		backgroundColor: {
 			default: "rgba(255, 255, 255, 0.04)",
@@ -543,7 +547,11 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		cursor: "pointer",
 		fontFamily: tokens.fontBody,
-		fontSize: 12
+		fontSize: 12,
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, color, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
 	state: {
 		display: "flex",
@@ -583,7 +591,11 @@ const styles = stylex.create({
 		color: tokens.colorText,
 		cursor: "pointer",
 		fontSize: 12,
-		fontWeight: 500
+		fontWeight: 500,
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)" }
 	},
 	resultBlock: { marginTop: 16 },
 	resultHeader: {

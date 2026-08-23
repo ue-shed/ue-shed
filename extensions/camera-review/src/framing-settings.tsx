@@ -516,7 +516,9 @@ export function FramingSettings(props: {
 const styles = stylex.create({
 	settings: {
 		marginTop: 10,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurface
 	},
 	summary: {
@@ -549,7 +551,9 @@ const styles = stylex.create({
 	globalGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(120px, 1fr))", gap: 8 },
 	groupList: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 },
 	group: {
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		padding: 10
@@ -579,7 +583,9 @@ const styles = stylex.create({
 	countInput: {
 		width: "100%",
 		boxSizing: "border-box",
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorAccent,
 		padding: "6px 5px",
@@ -587,7 +593,9 @@ const styles = stylex.create({
 	},
 	performanceHint: {
 		margin: 0,
-		borderLeft: `2px solid ${tokens.colorWarning}`,
+		borderLeftColor: tokens.colorWarning,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
 		padding: "8px 10px",
 		color: tokens.colorWarning,
 		backgroundColor: "rgba(242, 153, 74, 0.08)",
@@ -596,7 +604,9 @@ const styles = stylex.create({
 	overridePanel: {
 		display: "grid",
 		gap: 9,
-		borderTop: `1px solid ${tokens.colorBorder}`,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
 		padding: 12
 	},
 	overrideHeader: {
@@ -607,7 +617,9 @@ const styles = stylex.create({
 	},
 	overrideIdentity: { display: "grid", gap: 3 },
 	resetButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorText,
@@ -630,7 +642,9 @@ const styles = stylex.create({
 		display: "grid",
 		gap: 7,
 		padding: 9,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorTextSubtle,

@@ -263,7 +263,9 @@ const styles = stylex.create({
 	workspace: {
 		display: "grid",
 		minWidth: 0,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		overflow: "hidden"
@@ -274,7 +276,9 @@ const styles = stylex.create({
 		justifyContent: "space-between",
 		gap: tokens.space4,
 		padding: `${tokens.space2}px ${tokens.space4}px`,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	toolbarCopy: {
 		display: "flex",
@@ -296,7 +300,9 @@ const styles = stylex.create({
 		display: "flex",
 		alignItems: "center",
 		gap: 8,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorTextMuted,
@@ -329,7 +335,9 @@ const styles = stylex.create({
 		gap: tokens.space3,
 		margin: tokens.space3,
 		padding: tokens.space3,
-		border: `1px solid rgba(235, 87, 87, 0.45)`,
+		borderColor: "rgba(235, 87, 87, 0.45)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		color: tokens.colorDanger,
@@ -337,7 +345,9 @@ const styles = stylex.create({
 	},
 	failureCopy: { display: "grid", gap: tokens.space1 },
 	retryButton: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
@@ -351,7 +361,9 @@ const styles = stylex.create({
 	},
 	catalogPartial: {
 		padding: `${tokens.space2}px ${tokens.space4}px`,
-		borderBottom: `1px solid ${tokens.colorBorder}`,
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
 		backgroundColor: tokens.colorSurfaceInset,
 		color: tokens.colorWarning,
 		fontSize: 12

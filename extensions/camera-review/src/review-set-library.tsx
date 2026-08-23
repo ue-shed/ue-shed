@@ -354,7 +354,9 @@ const styles = stylex.create({
 		width: "min(760px, 96vw)",
 		height: "100%",
 		backgroundColor: tokens.colorSurface,
-		borderRight: `1px solid ${tokens.colorBorder}`,
+		borderRightColor: tokens.colorBorder,
+		borderRightStyle: "solid",
+		borderRightWidth: 1,
 		boxShadow: tokens.shadowOverlay,
 		display: "grid",
 		gridTemplateRows: "auto minmax(0, 1fr)",
@@ -366,7 +368,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: 18,
 		padding: `${tokens.space5}px ${tokens.space5}px ${tokens.space4}px`,
-		borderBottom: `1px solid ${tokens.colorBorder}`
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1
 	},
 	title: { margin: 0, fontFamily: tokens.fontDisplay, fontWeight: 590, fontSize: 22 },
 	subtitle: {
@@ -377,7 +381,9 @@ const styles = stylex.create({
 	close: {
 		width: 34,
 		height: 34,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		backgroundColor: { default: "transparent", ":hover": "rgba(255, 255, 255, 0.04)" },
 		color: tokens.colorTextMuted,
 		fontSize: 21,
@@ -411,7 +417,9 @@ const styles = stylex.create({
 		alignItems: "center",
 		gap: 13,
 		padding: "0 14px",
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface
 	},
@@ -436,7 +444,9 @@ const styles = stylex.create({
 	activeBadge: {
 		padding: "2px 6px",
 		borderRadius: tokens.radiusBadge,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		color: tokens.colorAccent,
 		fontSize: 11,
 		fontWeight: 500
@@ -444,7 +454,9 @@ const styles = stylex.create({
 	openButton: {
 		minWidth: 88,
 		height: 32,
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: {
 			default: "transparent",
@@ -458,7 +470,9 @@ const styles = stylex.create({
 	},
 	empty: {
 		padding: tokens.space5,
-		border: `1px dashed ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "dashed",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		color: tokens.colorTextSubtle,
 		fontSize: 12
@@ -466,8 +480,12 @@ const styles = stylex.create({
 	createPanel: {
 		marginTop: 28,
 		padding: 20,
-		border: `1px solid ${tokens.colorBorder}`,
-		borderLeft: `3px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderLeftColor: tokens.colorBorderStrong,
+		borderLeftStyle: "solid",
+		borderLeftWidth: 3,
 		backgroundColor: tokens.colorSurface,
 		display: "grid",
 		gridTemplateColumns: "minmax(0, 1fr) minmax(260px, .85fr)",
@@ -483,7 +501,9 @@ const styles = stylex.create({
 	createForm: { display: "flex", alignItems: "flex-end", gap: 8 },
 	createHint: { gridColumn: "1 / -1", color: tokens.colorWarning },
 	retry: {
-		border: `1px solid ${tokens.colorBorderStrong}`,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
 		color: tokens.colorText,
@@ -498,7 +518,9 @@ const styles = stylex.create({
 		alignItems: "flex-start",
 		gap: tokens.space3,
 		padding: tokens.space5,
-		border: `1px solid ${tokens.colorBorder}`,
+		borderColor: tokens.colorBorder,
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: tokens.colorSurface,
 		color: tokens.colorTextMuted
@@ -512,7 +534,9 @@ const styles = stylex.create({
 	operationFailure: {
 		marginTop: 16,
 		padding: 14,
-		border: "1px solid rgba(235, 87, 87, 0.4)",
+		borderColor: "rgba(235, 87, 87, 0.4)",
+		borderStyle: "solid",
+		borderWidth: 1,
 		borderRadius: tokens.radiusControl,
 		backgroundColor: "rgba(235, 87, 87, 0.08)",
 		display: "flex",

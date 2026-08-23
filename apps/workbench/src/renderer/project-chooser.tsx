@@ -252,6 +252,10 @@ const styles = stylex.create({
 		padding: "6px 10px",
 		textAlign: "left",
 		textOverflow: "ellipsis",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" },
 		whiteSpace: "nowrap"
 	},
 	launchRow: {
@@ -279,6 +283,10 @@ const styles = stylex.create({
 		listStyle: "none",
 		borderRadius: tokens.radiusControl,
 		padding: "4px 8px",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.97)" },
 		whiteSpace: "nowrap"
 	},
 	launchMenu: {
@@ -304,7 +312,9 @@ const styles = stylex.create({
 			":hover": "rgba(255, 255, 255, 0.05)",
 			":disabled": "transparent"
 		},
-		borderLeft: "2px solid transparent",
+		borderLeftColor: "transparent",
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
 		borderRadius: tokens.radiusBadge,
 		color: { default: tokens.colorText, ":disabled": tokens.colorTextSubtle },
 		cursor: { default: "pointer", ":disabled": "wait" },
@@ -314,7 +324,11 @@ const styles = stylex.create({
 		fontSize: 12,
 		gap: 3,
 		padding: "9px 11px",
-		textAlign: "left"
+		textAlign: "left",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, opacity, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.98)", ":disabled": "scale(1)" }
 	},
 	launchOptionPrimary: {
 		borderLeftColor: tokens.colorAccent,

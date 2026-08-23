@@ -40,13 +40,21 @@ import {
 	type PluginInstallProgress,
 	type PluginDistributionLimits
 } from "./model.js";
+import {
+	PluginVariantIdentity,
+	PluginVariantReference,
+	derivePluginVariantIdentity,
+	pluginBundleKind,
+	pluginVariantMatches,
+	type PluginVariantRequest
+} from "./variant.js";
 
 const metadataFile = ".ue-shed-distribution.json";
 const manifestFile = "plugins.manifest.json";
 const artifactFile = "plugins.tar.gz";
 const leaseRecordVersion = 1;
 
-const StoredMetadata = Schema.Struct({
+const StoredMetadataV1 = Schema.Struct({
 	artifactBytes: Schema.Int.check(Schema.isGreaterThan(0)),
 	artifactDigest: Sha256Checksum,
 	cacheIdentity: Schema.NonEmptyString,
@@ -57,15 +65,38 @@ const StoredMetadata = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	source: PluginSourceProvenance
 });
+const StoredMetadataV2 = Schema.Struct({
+	artifactBytes: Schema.Int.check(Schema.isGreaterThan(0)),
+	artifactDigest: Sha256Checksum,
+	artifactKind: Schema.Literals(["source", "compiled"]),
+	cacheIdentity: Schema.NonEmptyString,
+	files: Schema.Record(Schema.String, Sha256Checksum),
+	manifestDigest: Sha256Checksum,
+	releaseIdentity: Schema.NonEmptyString,
+	releaseVersion: ReleaseVersion,
+	schemaVersion: Schema.Literal(2),
+	source: PluginSourceProvenance,
+	variantIdentity: PluginVariantIdentity
+});
+const StoredMetadata = Schema.Union([StoredMetadataV1, StoredMetadataV2]);
 type StoredMetadata = typeof StoredMetadata.Type;
 
-const LeaseRecord = Schema.Struct({
+const LeaseRecordV1 = Schema.Struct({
 	createdAt: Schema.String,
 	identity: Schema.NonEmptyString,
 	pid: Schema.Int.check(Schema.isGreaterThan(0)),
 	releaseVersion: ReleaseVersion,
 	schemaVersion: Schema.Literal(leaseRecordVersion)
 });
+const LeaseRecordV2 = Schema.Struct({
+	createdAt: Schema.String,
+	identity: Schema.NonEmptyString,
+	pid: Schema.Int.check(Schema.isGreaterThan(0)),
+	releaseVersion: ReleaseVersion,
+	schemaVersion: Schema.Literal(2),
+	variantIdentity: PluginVariantIdentity
+});
+const LeaseRecord = Schema.Union([LeaseRecordV1, LeaseRecordV2]);
 
 export interface StoredPluginRelease extends CachedPluginRelease {
 	readonly artifactPath: string;
@@ -85,12 +116,16 @@ export interface PluginStoreApi {
 		Scope.Scope
 	>;
 	readonly find: (options: {
+		readonly artifact?: PluginVariantRequest;
 		readonly expectedArtifactDigest?: string;
 		readonly expectedManifestDigest?: string;
 		readonly releaseVersion: string;
 	}) => Effect.Effect<
 		Option.Option<StoredPluginRelease>,
-		CorruptCacheEntry | ImmutableVersionConflict | PluginDistributionValidationError
+		| CorruptCacheEntry
+		| ImmutableVersionConflict
+		| PluginDistributionValidationError
+		| PluginStorageFailure
 	>;
 	readonly lease: (
 		release: StoredPluginRelease
@@ -100,10 +135,13 @@ export interface PluginStoreApi {
 		CorruptCacheEntry | PluginStorageFailure
 	>;
 	readonly prune: (
-		releaseVersion: string
+		reference: string | PluginVariantReference
 	) => Effect.Effect<
 		void,
-		ActiveLeasePreventsPrune | PluginDistributionValidationError | PluginStorageFailure
+		| ActiveLeasePreventsPrune
+		| CorruptCacheEntry
+		| PluginDistributionValidationError
+		| PluginStorageFailure
 	>;
 	readonly publish: (options: {
 		readonly artifactPath: string;
@@ -122,8 +160,11 @@ export interface PluginStoreApi {
 		| PluginStorageFailure
 	>;
 	readonly verify: (
-		releaseVersion: string
-	) => Effect.Effect<StoredPluginRelease, CorruptCacheEntry | PluginDistributionValidationError>;
+		reference: string | PluginVariantReference
+	) => Effect.Effect<
+		StoredPluginRelease,
+		CorruptCacheEntry | PluginDistributionValidationError | PluginStorageFailure
+	>;
 }
 
 export class PluginStore extends Context.Service<PluginStore, PluginStoreApi>()(
@@ -178,8 +219,16 @@ function versionPath(cacheRoot: string, releaseVersion: string) {
 	return join(cacheRoot, "releases", releaseVersion);
 }
 
-function cacheIdentity(releaseVersion: string, manifestDigest: string, artifactDigest: string) {
-	return `${releaseVersion}:${manifestDigest.slice(7, 23)}:${artifactDigest.slice(7, 23)}`;
+function variantsPath(cacheRoot: string, releaseVersion: string) {
+	return join(cacheRoot, "variants", releaseVersion);
+}
+
+function variantPath(
+	cacheRoot: string,
+	releaseVersion: string,
+	variantIdentity: PluginVariantIdentity
+) {
+	return join(variantsPath(cacheRoot, releaseVersion), variantIdentity);
 }
 
 async function walkRegularFiles(root: string): Promise<Record<string, `sha256:${string}`>> {
@@ -233,9 +282,11 @@ async function assertRegularCacheFile(path: string): Promise<void> {
 	}
 }
 
-async function readStoredBasic(cacheRoot: string, releaseVersion: string) {
-	await assertDirectoryWithinCache(cacheRoot, join(cacheRoot, "releases"));
-	const root = versionPath(cacheRoot, releaseVersion);
+async function assertStoredRootWithinCache(
+	cacheRoot: string,
+	releaseVersion: string,
+	root: string
+): Promise<void> {
 	const details = await lstat(root);
 	if (!details.isDirectory() || details.isSymbolicLink()) {
 		throw corrupt(releaseVersion, root, "Cached release is not a regular directory.");
@@ -246,6 +297,10 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string) {
 	if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
 		throw corrupt(releaseVersion, root, "Cached release escapes its configured root.");
 	}
+}
+
+async function readStoredManifest(cacheRoot: string, releaseVersion: string, root: string) {
+	await assertStoredRootWithinCache(cacheRoot, releaseVersion, root);
 	let metadata: StoredMetadata;
 	try {
 		await assertRegularCacheFile(join(root, metadataFile));
@@ -262,13 +317,19 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string) {
 	if (metadata.releaseVersion !== releaseVersion) {
 		throw corrupt(releaseVersion, root, "Cached release metadata has a mismatched version.");
 	}
+	if (
+		metadata.schemaVersion === 2 &&
+		root !== variantPath(cacheRoot, releaseVersion, metadata.variantIdentity)
+	) {
+		throw corrupt(
+			releaseVersion,
+			root,
+			"Cached variant metadata has a mismatched identity path."
+		);
+	}
 	const manifestPath = join(root, manifestFile);
-	const artifactPath = join(root, artifactFile);
 	await assertRegularCacheFile(manifestPath).catch((cause) => {
 		throw corrupt(releaseVersion, root, `Cached release manifest is unsafe: ${String(cause)}`);
-	});
-	await assertRegularCacheFile(artifactPath).catch((cause) => {
-		throw corrupt(releaseVersion, root, `Cached release artifact is unsafe: ${String(cause)}`);
 	});
 	const manifestBytes = await readFile(manifestPath);
 	if (digestBytes(manifestBytes) !== metadata.manifestDigest) {
@@ -276,22 +337,6 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string) {
 			releaseVersion,
 			root,
 			"Cached release manifest digest does not match metadata."
-		);
-	}
-	const artifactDetails = await stat(artifactPath);
-	if (
-		artifactDetails.size !== metadata.artifactBytes ||
-		(await digestFile(artifactPath)) !== metadata.artifactDigest
-	) {
-		throw corrupt(releaseVersion, root, "Cached release artifact is truncated or corrupt.");
-	}
-	const contentRoot = join(root, "content");
-	const actualFiles = await walkRegularFiles(contentRoot);
-	if (JSON.stringify(actualFiles) !== JSON.stringify(metadata.files)) {
-		throw corrupt(
-			releaseVersion,
-			root,
-			"Cached extracted files do not match immutable metadata."
 		);
 	}
 	let manifest: unknown;
@@ -302,14 +347,55 @@ async function readStoredBasic(cacheRoot: string, releaseVersion: string) {
 	} catch (cause) {
 		throw corrupt(releaseVersion, root, `Cached manifest JSON is malformed: ${String(cause)}`);
 	}
-	return { artifactPath, contentRoot, manifest, manifestPath, metadata, root };
+	return { manifest, manifestPath, metadata, root };
+}
+
+async function readStoredBasic(cacheRoot: string, releaseVersion: string, root: string) {
+	const storedManifest = await readStoredManifest(cacheRoot, releaseVersion, root);
+	const artifactPath = join(root, artifactFile);
+	await assertRegularCacheFile(artifactPath).catch((cause) => {
+		throw corrupt(releaseVersion, root, `Cached release artifact is unsafe: ${String(cause)}`);
+	});
+	const artifactDetails = await stat(artifactPath);
+	if (
+		artifactDetails.size !== storedManifest.metadata.artifactBytes ||
+		(await digestFile(artifactPath)) !== storedManifest.metadata.artifactDigest
+	) {
+		throw corrupt(releaseVersion, root, "Cached release artifact is truncated or corrupt.");
+	}
+	const contentRoot = join(root, "content");
+	const actualFiles = await walkRegularFiles(contentRoot);
+	if (JSON.stringify(actualFiles) !== JSON.stringify(storedManifest.metadata.files)) {
+		throw corrupt(
+			releaseVersion,
+			root,
+			"Cached extracted files do not match immutable metadata."
+		);
+	}
+	return { artifactPath, contentRoot, ...storedManifest };
 }
 
 function storedRelease(
 	basic: Awaited<ReturnType<typeof readStoredBasic>>,
 	manifest: PluginBundleManifest
 ): StoredPluginRelease {
+	const variantIdentity = derivePluginVariantIdentity({
+		manifest,
+		manifestDigest: basic.metadata.manifestDigest
+	});
+	if (
+		basic.metadata.schemaVersion === 2 &&
+		(basic.metadata.variantIdentity !== variantIdentity ||
+			basic.metadata.artifactKind !== pluginBundleKind(manifest))
+	) {
+		throw corrupt(
+			manifest.releaseVersion,
+			basic.root,
+			"Cached variant identity does not match its immutable manifest and artifact."
+		);
+	}
 	return {
+		artifactKind: pluginBundleKind(manifest),
 		artifactDigest: basic.metadata.artifactDigest,
 		artifactPath: basic.artifactPath,
 		cacheIdentity: basic.metadata.cacheIdentity,
@@ -321,19 +407,20 @@ function storedRelease(
 		pluginsRoot: join(basic.contentRoot, "Plugins"),
 		releaseIdentity: basic.metadata.releaseIdentity,
 		releaseVersion: manifest.releaseVersion,
-		source: basic.metadata.source
+		source: basic.metadata.source,
+		variantIdentity
 	};
 }
 
-function verifyStored(cacheRoot: string, releaseVersion: string) {
+function verifyStored(cacheRoot: string, releaseVersion: string, root: string) {
 	return Effect.tryPromise({
-		try: () => readStoredBasic(cacheRoot, releaseVersion),
+		try: () => readStoredBasic(cacheRoot, releaseVersion, root),
 		catch: (cause) =>
 			cause instanceof CorruptCacheEntry
 				? cause
 				: corrupt(
 						releaseVersion,
-						versionPath(cacheRoot, releaseVersion),
+						root,
 						`Cached release cannot be verified: ${String(cause)}`
 					)
 	}).pipe(
@@ -354,6 +441,110 @@ function verifyStored(cacheRoot: string, releaseVersion: string) {
 	);
 }
 
+function verifyStoredVariantIdentity(cacheRoot: string, releaseVersion: string, root: string) {
+	return Effect.tryPromise({
+		try: () => readStoredManifest(cacheRoot, releaseVersion, root),
+		catch: (cause) =>
+			cause instanceof CorruptCacheEntry
+				? cause
+				: corrupt(
+						releaseVersion,
+						root,
+						`Cached release identity cannot be recovered: ${String(cause)}`
+					)
+	}).pipe(
+		Effect.flatMap((stored) =>
+			validatePluginBundleManifest(stored.manifest, {
+				expectedCandidateVersion: releaseVersion
+			}).pipe(
+				Effect.mapError((cause) =>
+					corrupt(
+						releaseVersion,
+						stored.root,
+						`Cached manifest is invalid: ${cause.message}`
+					)
+				),
+				Effect.map((manifest) =>
+					derivePluginVariantIdentity({
+						manifest,
+						manifestDigest: stored.metadata.manifestDigest
+					})
+				)
+			)
+		)
+	);
+}
+
+async function storedLocations(cacheRoot: string, releaseVersion: string): Promise<string[]> {
+	const locations: string[] = [];
+	const legacy = versionPath(cacheRoot, releaseVersion);
+	try {
+		await access(join(legacy, metadataFile));
+		locations.push(legacy);
+	} catch {
+		// A missing legacy cache is expected for new variant-only stores.
+	}
+	const root = variantsPath(cacheRoot, releaseVersion);
+	try {
+		const entries = await readdir(root, { withFileTypes: true });
+		for (const entry of entries) {
+			if (entry.isDirectory() && /^pv2-[a-f0-9]{64}$/.test(entry.name)) {
+				locations.push(join(root, entry.name));
+			}
+		}
+	} catch (cause) {
+		if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") throw cause;
+	}
+	return locations.sort();
+}
+
+async function exactStoredLocation(
+	cacheRoot: string,
+	reference: PluginVariantReference
+): Promise<string | undefined> {
+	const location = variantPath(cacheRoot, reference.releaseVersion, reference.variantIdentity);
+	try {
+		await lstat(location);
+		return location;
+	} catch (cause) {
+		if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") {
+			throw cause;
+		}
+	}
+	return undefined;
+}
+
+async function legacyStoredLocation(
+	cacheRoot: string,
+	releaseVersion: string
+): Promise<string | undefined> {
+	const location = versionPath(cacheRoot, releaseVersion);
+	try {
+		await lstat(location);
+		return location;
+	} catch (cause) {
+		if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") {
+			throw cause;
+		}
+		return undefined;
+	}
+}
+
+function allStored(cacheRoot: string, releaseVersion: string) {
+	return Effect.tryPromise({
+		try: () => storedLocations(cacheRoot, releaseVersion),
+		catch: (cause) => storageError(releaseVersion, "List cached plugin variants", cause)
+	}).pipe(
+		Effect.flatMap((locations) =>
+			Effect.forEach(
+				locations,
+				(location) => verifyStored(cacheRoot, releaseVersion, location),
+				{ concurrency: 1 }
+			)
+		)
+	);
+}
+
 type ProcessLiveness = "alive" | "dead" | "indeterminate";
 
 function processLiveness(pid: number): ProcessLiveness {
@@ -367,22 +558,44 @@ function processLiveness(pid: number): ProcessLiveness {
 	}
 }
 
-async function activeLeaseFiles(cacheRoot: string, releaseVersion: string) {
-	const directory = join(cacheRoot, "leases", releaseVersion);
-	await assertDirectoryWithinCache(cacheRoot, directory);
+async function activeLeaseFiles(
+	cacheRoot: string,
+	releaseVersion: string,
+	variantIdentity: PluginVariantIdentity
+) {
+	const legacyDirectory = join(cacheRoot, "leases", releaseVersion);
+	const variantDirectory = join(legacyDirectory, variantIdentity);
+	await assertDirectoryWithinCache(cacheRoot, variantDirectory);
+	const directories = [variantDirectory];
+	try {
+		await access(legacyDirectory);
+		directories.push(legacyDirectory);
+	} catch {
+		// No legacy release-wide leases exist.
+	}
 	const active: string[] = [];
-	for (const entry of await readdir(directory, { withFileTypes: true })) {
-		if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-		const path = join(directory, entry.name);
-		try {
-			const record = Schema.decodeUnknownSync(LeaseRecord)(
-				JSON.parse(await readFile(path, "utf8"))
-			);
-			if (record.releaseVersion !== releaseVersion) await rm(path, { force: true });
-			else if (processLiveness(record.pid) === "dead") await rm(path, { force: true });
-			else active.push(path);
-		} catch {
-			await rm(path, { force: true });
+	for (const directory of directories) {
+		for (const entry of await readdir(directory, { withFileTypes: true })) {
+			if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+			const path = join(directory, entry.name);
+			try {
+				const record = Schema.decodeUnknownSync(LeaseRecord)(
+					JSON.parse(await readFile(path, "utf8"))
+				);
+				const belongsToVariant =
+					record.schemaVersion === 1
+						? directory === legacyDirectory
+						: record.variantIdentity === variantIdentity;
+				if (record.releaseVersion !== releaseVersion || !belongsToVariant) {
+					await rm(path, { force: true });
+				} else if (processLiveness(record.pid) === "dead") {
+					await rm(path, { force: true });
+				} else {
+					active.push(path);
+				}
+			} catch {
+				await rm(path, { force: true });
+			}
 		}
 	}
 	return active;
@@ -461,66 +674,154 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			yield* Effect.tryPromise({
 				try: async () => {
 					await mkdir(cacheRoot, { recursive: true });
-					for (const directory of ["releases", "leases", "locks"]) {
+					for (const directory of ["releases", "variants", "leases", "locks"]) {
 						await assertDirectoryWithinCache(cacheRoot, join(cacheRoot, directory));
 					}
 				},
 				catch: (cause) => storageError("unknown", "Create plugin cache root", cause)
 			}).pipe(Effect.orDie);
 
-			const verify = Effect.fn("PluginStore.verify")((releaseVersion: string) =>
-				decodeReleaseVersion(releaseVersion).pipe(
-					Effect.flatMap((version) => verifyStored(cacheRoot, version))
-				)
+			const decodeVariantReference = (reference: PluginVariantReference) =>
+				Schema.decodeUnknownEffect(PluginVariantReference)(reference, {
+					onExcessProperty: "error"
+				}).pipe(
+					Effect.mapError(
+						() =>
+							new PluginDistributionValidationError({
+								field: "variantIdentity",
+								message: "Cached plugin variant reference is invalid.",
+								recovery: "Use an exact reference returned by install or list.",
+								retrySafe: false
+							})
+					)
+				);
+
+			const missingExactVariant = (reference: PluginVariantReference) =>
+				new PluginDistributionValidationError({
+					field: "variantIdentity",
+					message: `Cached plugin variant ${reference.variantIdentity} does not exist for release ${reference.releaseVersion}.`,
+					recovery: "Install the exact variant or use a reference returned by list.",
+					retrySafe: false
+				});
+
+			const resolveReference = Effect.fn("PluginStore.resolveReference")((
+				reference: string | PluginVariantReference
+			) => {
+				const exactVariant = (decoded: PluginVariantReference) =>
+					Effect.gen(function* () {
+						const exactLocation = yield* Effect.tryPromise({
+							try: () => exactStoredLocation(cacheRoot, decoded),
+							catch: (cause) =>
+								storageError(
+									decoded.releaseVersion,
+									"Locate exact plugin variant",
+									cause
+								)
+						});
+						const location =
+							exactLocation ??
+							(yield* Effect.tryPromise({
+								try: () => legacyStoredLocation(cacheRoot, decoded.releaseVersion),
+								catch: (cause) =>
+									storageError(
+										decoded.releaseVersion,
+										"Locate legacy plugin variant",
+										cause
+									)
+							}));
+						if (location === undefined) return yield* missingExactVariant(decoded);
+						const release = yield* verifyStored(
+							cacheRoot,
+							decoded.releaseVersion,
+							location
+						);
+						if (release.variantIdentity !== decoded.variantIdentity) {
+							return yield* missingExactVariant(decoded);
+						}
+						return release;
+					});
+				if (Schema.is(Schema.String)(reference)) {
+					return decodeReleaseVersion(reference).pipe(
+						Effect.flatMap((releaseVersion) => allStored(cacheRoot, releaseVersion)),
+						Effect.flatMap((releases) => {
+							if (releases.length === 1 && releases[0] !== undefined) {
+								return Effect.succeed(releases[0]);
+							}
+							return Effect.fail(
+								new PluginDistributionValidationError({
+									field: "variantIdentity",
+									message:
+										releases.length === 0
+											? `Release ${reference} has no cached variants.`
+											: `Release ${reference} has multiple cached variants.`,
+									recovery:
+										"Pass the exact releaseVersion and variantIdentity returned by install or list.",
+									retrySafe: false
+								})
+							);
+						})
+					);
+				}
+				return decodeVariantReference(reference).pipe(Effect.flatMap(exactVariant));
+			});
+
+			const verify = Effect.fn("PluginStore.verify")(
+				(reference: string | PluginVariantReference) => resolveReference(reference)
 			);
 
 			const find = Effect.fn("PluginStore.find")(
 				(request: {
+					readonly artifact?: PluginVariantRequest;
 					readonly expectedArtifactDigest?: string;
 					readonly expectedManifestDigest?: string;
 					readonly releaseVersion: string;
 				}) =>
 					decodeReleaseVersion(request.releaseVersion).pipe(
-						Effect.flatMap((releaseVersion) =>
-							Effect.promise(async () => {
-								try {
-									await access(versionPath(cacheRoot, releaseVersion));
-									return true;
-								} catch {
-									return false;
-								}
-							}).pipe(
-								Effect.flatMap((exists) =>
-									!exists
-										? Effect.succeed(Option.none<StoredPluginRelease>())
-										: verifyStored(cacheRoot, releaseVersion).pipe(
-												Effect.flatMap((release) => {
-													const conflict =
-														(request.expectedArtifactDigest !==
-															undefined &&
-															release.artifactDigest !==
-																request.expectedArtifactDigest) ||
-														(request.expectedManifestDigest !==
-															undefined &&
-															release.manifestDigest !==
-																request.expectedManifestDigest);
-													return conflict
-														? Effect.fail(
-																new ImmutableVersionConflict({
-																	cachePath: release.cachePath,
-																	message: `Release ${releaseVersion} already exists with different immutable digests.`,
-																	recovery:
-																		"Use a different exact release version or explicitly prune the existing unleased entry.",
-																	releaseVersion,
-																	retrySafe: false
-																})
-															)
-														: Effect.succeed(Option.some(release));
-												})
-											)
+						Effect.flatMap((releaseVersion) => allStored(cacheRoot, releaseVersion)),
+						Effect.flatMap((releases) => {
+							const artifact: PluginVariantRequest = request.artifact ?? {
+								kind: "source"
+							};
+							const compatible = releases.filter((release) =>
+								artifact.kind === "source"
+									? release.artifactKind === "source"
+									: pluginVariantMatches(release.manifest, artifact)
+							);
+							const selected = compatible
+								.filter(
+									(release) =>
+										(request.expectedArtifactDigest === undefined ||
+											release.artifactDigest ===
+												request.expectedArtifactDigest) &&
+										(request.expectedManifestDigest === undefined ||
+											release.manifestDigest ===
+												request.expectedManifestDigest)
 								)
-							)
-						)
+								.sort((left, right) =>
+									left.variantIdentity.localeCompare(right.variantIdentity)
+								)[0];
+							if (selected !== undefined)
+								return Effect.succeed(Option.some(selected));
+							if (
+								artifact.kind === "source" &&
+								compatible[0] !== undefined &&
+								(request.expectedArtifactDigest !== undefined ||
+									request.expectedManifestDigest !== undefined)
+							) {
+								const existing = compatible[0];
+								return Effect.fail(
+									new ImmutableVersionConflict({
+										cachePath: existing.cachePath,
+										message: `Source release ${request.releaseVersion} already exists with different immutable digests.`,
+										recovery:
+											"Use its exact pinned digests or explicitly prune this source variant.",
+										releaseVersion: request.releaseVersion,
+										retrySafe: false
+									})
+								);
+							}
+							return Effect.succeed(Option.none<StoredPluginRelease>());
+						})
 					)
 			);
 
@@ -556,6 +857,10 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				readonly onProgress?: (progress: PluginInstallProgress) => void;
 				readonly source: PluginSourceProvenance;
 			}) => {
+				const variantIdentity = derivePluginVariantIdentity({
+					manifest: request.manifest,
+					manifestDigest: request.manifestDigest
+				});
 				let completion: Promise<StoredPluginRelease> | undefined;
 				const operation = Effect.tryPromise({
 					try: (signal) => {
@@ -563,19 +868,24 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 							const releaseVersion = request.manifest.releaseVersion;
 							return await acquireVersionLock(
 								cacheRoot,
-								releaseVersion,
+								variantIdentity,
 								signal,
 								async () => {
 									await assertDirectoryWithinCache(
 										cacheRoot,
-										join(cacheRoot, "releases")
+										variantsPath(cacheRoot, releaseVersion)
 									);
-									const destination = versionPath(cacheRoot, releaseVersion);
+									const destination = variantPath(
+										cacheRoot,
+										releaseVersion,
+										variantIdentity
+									);
 									try {
 										await access(destination);
 										const existing = await readStoredBasic(
 											cacheRoot,
-											releaseVersion
+											releaseVersion,
+											destination
 										);
 										if (
 											existing.metadata.manifestDigest ===
@@ -621,14 +931,11 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 										const artifactDigest = await digestFile(
 											request.artifactPath
 										);
-										const identity = cacheIdentity(
-											releaseVersion,
-											request.manifestDigest,
-											artifactDigest
-										);
+										const identity = variantIdentity;
 										const metadata: StoredMetadata = {
 											artifactBytes: artifactDetails.size,
 											artifactDigest: Sha256Checksum.make(artifactDigest),
+											artifactKind: pluginBundleKind(request.manifest),
 											cacheIdentity: identity,
 											files: Object.fromEntries(
 												Object.entries(extraction.files)
@@ -643,8 +950,9 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 											manifestDigest: request.manifestDigest,
 											releaseIdentity: `${request.manifest.provenance.source.commit}:${releaseVersion}`,
 											releaseVersion,
-											schemaVersion: 1,
-											source: request.source
+											schemaVersion: 2,
+											source: request.source,
+											variantIdentity
 										};
 										await writeFile(
 											join(stage, metadataFile),
@@ -714,7 +1022,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						try: (signal) =>
 							acquireVersionLock(
 								cacheRoot,
-								release.releaseVersion,
+								release.variantIdentity,
 								signal,
 								async () => {
 									await access(release.cachePath);
@@ -722,7 +1030,8 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 									const directory = join(
 										cacheRoot,
 										"leases",
-										release.releaseVersion
+										release.releaseVersion,
+										release.variantIdentity
 									);
 									await assertDirectoryWithinCache(cacheRoot, directory);
 									const path = join(directory, `${identity}.json`);
@@ -733,7 +1042,8 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 											identity,
 											pid: process.pid,
 											releaseVersion: release.releaseVersion,
-											schemaVersion: leaseRecordVersion
+											schemaVersion: 2,
+											variantIdentity: release.variantIdentity
 										}),
 										{ encoding: "utf8", flag: "wx" }
 									);
@@ -741,7 +1051,8 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 										lease: PluginLease.make({
 											cachePath: release.cachePath,
 											identity,
-											releaseVersion: release.releaseVersion
+											releaseVersion: release.releaseVersion,
+											variantIdentity: release.variantIdentity
 										}),
 										path
 									};
@@ -755,70 +1066,160 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				).pipe(Effect.map(({ lease }) => lease))
 			);
 
-			const prune = Effect.fn("PluginStore.prune")((releaseVersion: string) =>
-				decodeReleaseVersion(releaseVersion).pipe(
-					Effect.flatMap((version) =>
-						Effect.tryPromise({
-							try: (signal) =>
-								acquireVersionLock(cacheRoot, version, signal, async () => {
-									await assertDirectoryWithinCache(
+			type PruneTarget = {
+				readonly cachePath: string;
+				readonly releaseVersion: ReleaseVersion;
+				readonly variantIdentity: PluginVariantIdentity;
+			};
+			const resolvePruneTarget = (
+				reference: string | PluginVariantReference
+			): Effect.Effect<
+				PruneTarget,
+				CorruptCacheEntry | PluginDistributionValidationError | PluginStorageFailure
+			> => {
+				if (Schema.is(Schema.String)(reference)) {
+					return resolveReference(reference).pipe(
+						Effect.map((release) => ({
+							cachePath: release.cachePath,
+							releaseVersion: release.releaseVersion,
+							variantIdentity: release.variantIdentity
+						}))
+					);
+				}
+				return Effect.gen(function* () {
+					const decoded = yield* decodeVariantReference(reference);
+					const exactPath = yield* Effect.tryPromise({
+						try: () => exactStoredLocation(cacheRoot, decoded),
+						catch: (cause) =>
+							storageError(
+								decoded.releaseVersion,
+								"Locate exact plugin variant for pruning",
+								cause
+							)
+					});
+					if (exactPath !== undefined) {
+						return {
+							cachePath: exactPath,
+							releaseVersion: decoded.releaseVersion,
+							variantIdentity: decoded.variantIdentity
+						};
+					}
+					const legacyPath = yield* Effect.tryPromise({
+						try: () => legacyStoredLocation(cacheRoot, decoded.releaseVersion),
+						catch: (cause) =>
+							storageError(
+								decoded.releaseVersion,
+								"Locate legacy plugin variant for pruning",
+								cause
+							)
+					});
+					if (legacyPath === undefined) return yield* missingExactVariant(decoded);
+					const legacyIdentity = yield* verifyStoredVariantIdentity(
+						cacheRoot,
+						decoded.releaseVersion,
+						legacyPath
+					);
+					if (legacyIdentity !== decoded.variantIdentity) {
+						return yield* missingExactVariant(decoded);
+					}
+					return {
+						cachePath: legacyPath,
+						releaseVersion: decoded.releaseVersion,
+						variantIdentity: decoded.variantIdentity
+					};
+				});
+			};
+
+			const prune = Effect.fn("PluginStore.prune")(
+				(reference: string | PluginVariantReference) =>
+					resolvePruneTarget(reference).pipe(
+						Effect.flatMap((release) =>
+							Effect.tryPromise({
+								try: (signal) =>
+									acquireVersionLock(
 										cacheRoot,
-										join(cacheRoot, "releases")
-									);
-									const active = await activeLeaseFiles(cacheRoot, version);
-									if (active.length > 0) {
-										throw new ActiveLeasePreventsPrune({
-											activeLeases: active.length,
-											message: `Release ${version} has ${active.length} active lease(s).`,
-											recovery:
-												"Release all scoped consumers before pruning this version.",
-											releaseVersion: version,
-											retrySafe: true
-										});
-									}
-									await rm(versionPath(cacheRoot, version), {
-										force: true,
-										recursive: true
-									});
-									await rm(join(cacheRoot, "leases", version), {
-										force: true,
-										recursive: true
-									});
-								}),
-							catch: (cause) =>
-								cause instanceof ActiveLeasePreventsPrune
-									? cause
-									: storageError(version, "Prune plugin release", cause)
-						})
+										release.variantIdentity,
+										signal,
+										async () => {
+											await assertStoredRootWithinCache(
+												cacheRoot,
+												release.releaseVersion,
+												release.cachePath
+											);
+											const active = await activeLeaseFiles(
+												cacheRoot,
+												release.releaseVersion,
+												release.variantIdentity
+											);
+											if (active.length > 0) {
+												throw new ActiveLeasePreventsPrune({
+													activeLeases: active.length,
+													message: `Variant ${release.variantIdentity} has ${active.length} active lease(s).`,
+													recovery:
+														"Release all scoped consumers before pruning this exact variant.",
+													releaseVersion: release.releaseVersion,
+													retrySafe: true
+												});
+											}
+											await rm(release.cachePath, {
+												force: true,
+												recursive: true
+											});
+											await rm(
+												join(
+													cacheRoot,
+													"leases",
+													release.releaseVersion,
+													release.variantIdentity
+												),
+												{ force: true, recursive: true }
+											);
+										}
+									),
+								catch: (cause) =>
+									cause instanceof ActiveLeasePreventsPrune ||
+									cause instanceof CorruptCacheEntry
+										? cause
+										: storageError(
+												release.releaseVersion,
+												"Prune plugin variant",
+												cause
+											)
+							})
+						)
 					)
-				)
 			);
 
 			const list = Effect.fn("PluginStore.list")(() =>
 				Effect.tryPromise({
 					try: async () => {
-						const releasesRoot = join(cacheRoot, "releases");
-						await mkdir(releasesRoot, { recursive: true });
-						return (await readdir(releasesRoot, { withFileTypes: true }))
-							.filter((entry) => entry.isDirectory())
-							.map((entry) => entry.name)
-							.sort();
+						const versions = new Set<string>();
+						for (const directory of ["releases", "variants"]) {
+							const root = join(cacheRoot, directory);
+							await mkdir(root, { recursive: true });
+							for (const entry of await readdir(root, { withFileTypes: true })) {
+								if (entry.isDirectory()) versions.add(entry.name);
+							}
+						}
+						return [...versions].sort();
 					},
 					catch: (cause) => storageError("unknown", "List plugin releases", cause)
 				}).pipe(
 					Effect.flatMap((versions) =>
-						Effect.forEach(versions, (version) => verifyStored(cacheRoot, version), {
+						Effect.forEach(versions, (version) => allStored(cacheRoot, version), {
 							concurrency: 1
 						}).pipe(
 							Effect.map((releases) =>
-								releases.map((release) => ({
+								releases.flat().map((release) => ({
+									artifactKind: release.artifactKind,
 									artifactDigest: release.artifactDigest,
 									cacheIdentity: release.cacheIdentity,
 									cachePath: release.cachePath,
 									manifestDigest: release.manifestDigest,
 									plugins: release.plugins,
 									releaseIdentity: release.releaseIdentity,
-									releaseVersion: release.releaseVersion
+									releaseVersion: release.releaseVersion,
+									variantIdentity: release.variantIdentity
 								}))
 							)
 						)

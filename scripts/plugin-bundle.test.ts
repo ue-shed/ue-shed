@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -8,7 +9,8 @@ import {
 	buildPluginBundle,
 	MAP_REVIEW_PLUGIN_IDS,
 	NIAGARA_PLUGIN_IDS,
-	OBSERVATORY_PLUGIN_IDS
+	OBSERVATORY_PLUGIN_IDS,
+	validatePublicPluginBundle
 } from "./plugin-bundle.ts";
 
 async function writeFixtureFile(root: string, relativePath: string, contents: string) {
@@ -150,6 +152,64 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 		assert.ok(!entries.some((entry) => entry.includes("UEShedScenarios")));
 	} finally {
 		await rm(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("accepts only complete public plugin release provenance and assets", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-public-plugin-gate-"));
+	try {
+		const archivePath = join(output, "ue-shed-plugins-0.5.0.tar.gz");
+		const manifestPath = join(output, "plugins.manifest.json");
+		await writeFile(archivePath, "release bytes\n");
+		await writeFile(manifestPath, "{}\n");
+		const archive = await readFile(archivePath);
+		const manifest = {
+			artifact: {
+				path: basename(archivePath),
+				sha256: `sha256:${createHash("sha256").update(archive).digest("hex")}`
+			},
+			plugins: [{ id: "UEShedCore", version: "0.5.0" }],
+			provenance: {
+				candidateManifest: { sha256: `sha256:${"a".repeat(64)}`, version: "0.5.0" },
+				source: { commit: "b".repeat(40), ref: "refs/tags/v0.5.0" }
+			},
+			releaseVersion: "0.5.0"
+		};
+		assert.equal(
+			await validatePublicPluginBundle({ archivePath, manifest, manifestPath }),
+			manifest
+		);
+	} finally {
+		await rm(output, { recursive: true, force: true });
+	}
+});
+
+test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin assets", async () => {
+	const output = await mkdtemp(join(tmpdir(), "ue-shed-public-plugin-negative-"));
+	try {
+		const archivePath = join(output, "built.tar.gz");
+		await writeFile(archivePath, "wrong bytes\n");
+		await assert.rejects(
+			validatePublicPluginBundle({
+				archivePath,
+				manifestPath: join(output, "missing.manifest.json"),
+				manifest: {
+					artifact: { path: "declared.tar.gz", sha256: `sha256:${"c".repeat(64)}` },
+					plugins: [{ id: "UEShedCore", version: "0.4.0" }],
+					provenance: {
+						candidateManifest: {
+							sha256: `sha256:${"0".repeat(64)}`,
+							version: "0.5.0"
+						},
+						source: { commit: "short", ref: "local" }
+					},
+					releaseVersion: "0.5.0"
+				}
+			}),
+			/local.*full lowercase Git SHA.*all zeroes.*descriptor version.*declared archive path.*missing.*digest/s
+		);
+	} finally {
+		await rm(output, { recursive: true, force: true });
 	}
 });
 

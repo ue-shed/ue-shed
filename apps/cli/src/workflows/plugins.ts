@@ -1,11 +1,14 @@
 import { Effect, Layer } from "effect";
 import {
+	CompiledPluginBuilder,
 	PluginDistribution,
+	compiledPluginBuilderLayer,
 	httpPluginReleaseSourceLayer,
 	localPluginReleaseSourceLayer,
 	pluginDistributionLayer,
 	pluginStoreLayer
 } from "@ue-shed/plugin-distribution";
+import { OwnedProcessTreeLive } from "@ue-shed/engine";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
@@ -17,6 +20,7 @@ type PluginsCacheInstallCommand = Extract<CliCommand, { readonly _tag: "PluginsC
 type PluginsCacheListCommand = Extract<CliCommand, { readonly _tag: "PluginsCacheList" }>;
 type PluginsCacheVerifyCommand = Extract<CliCommand, { readonly _tag: "PluginsCacheVerify" }>;
 type PluginsPruneCommand = Extract<CliCommand, { readonly _tag: "PluginsPrune" }>;
+type PluginsBuildCommand = Extract<CliCommand, { readonly _tag: "PluginsBuild" }>;
 
 function distributionLayer(cacheRoot: string, source: string) {
 	const sourceLayer = /^https?:\/\//u.test(source)
@@ -26,6 +30,48 @@ function distributionLayer(cacheRoot: string, source: string) {
 		Layer.provide(Layer.merge(sourceLayer, pluginStoreLayer({ cacheRoot })))
 	);
 }
+
+const builderLayer = compiledPluginBuilderLayer().pipe(Layer.provide(OwnedProcessTreeLive));
+
+export const runPluginsBuild = Effect.fn("Cli.workflow.plugins_build")(
+	(command: PluginsBuildCommand) =>
+		observeCliOperation(
+			command._tag,
+			Effect.flatMap(CompiledPluginBuilder, (builder) =>
+				builder.build({
+					artifact: {
+						architecture: command.architecture,
+						configuration: "Development",
+						engineBuildId: command.buildId,
+						...(command.engineSourceCommit === undefined
+							? undefined
+							: { engineSourceCommit: command.engineSourceCommit }),
+						kind: "compiled",
+						platform: command.platform,
+						target: "UnrealEditor",
+						unrealVersion: command.unrealVersion
+					},
+					compiler: {
+						compiler: command.compiler,
+						compilerVersion: command.compilerVersion,
+						toolchain: command.toolchain,
+						toolchainVersion: command.toolchainVersion,
+						...(command.targetTriple === undefined
+							? undefined
+							: { targetTriple: command.targetTriple })
+					},
+					engineRoot: command.engineRoot,
+					expectedSourceArtifactSha256: command.sourceArtifactDigest,
+					expectedSourceManifestSha256: command.sourceManifestDigest,
+					maximumBuildSeconds: command.maximumBuildSeconds,
+					outputDirectory: command.outputDirectory,
+					pluginIds: command.pluginIds,
+					sourceArtifactPath: command.sourceArtifactPath,
+					sourceManifestPath: command.sourceManifestPath
+				})
+			).pipe(Effect.flatMap(printJson), Effect.provide(builderLayer))
+		)
+);
 
 export const runPluginsList = Effect.fn("Cli.workflow.plugins_list")(
 	(command: PluginsListCommand) =>
@@ -82,6 +128,7 @@ export const runPluginsCacheInstall = Effect.fn("Cli.workflow.plugins_cache_inst
 				Effect.gen(function* () {
 					const distribution = yield* PluginDistribution;
 					const result = yield* distribution.install({
+						artifact: command.artifact,
 						releaseVersion: command.releaseVersion,
 						pluginIds: command.pluginIds,
 						networkPolicy: command.cacheOnly ? "cache-only" : "online",
@@ -90,10 +137,7 @@ export const runPluginsCacheInstall = Effect.fn("Cli.workflow.plugins_cache_inst
 							: { expectedArtifactSha256: command.artifactDigest }),
 						...(command.manifestDigest === undefined
 							? undefined
-							: { expectedManifestSha256: command.manifestDigest }),
-						...(command.unrealVersion === undefined
-							? undefined
-							: { unrealVersion: command.unrealVersion })
+							: { expectedManifestSha256: command.manifestDigest })
 					});
 					return yield* printJson(result);
 				})
@@ -117,7 +161,14 @@ export const runPluginsCacheVerify = Effect.fn("Cli.workflow.plugins_cache_verif
 		observeCliOperation(
 			command._tag,
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.verifyCached(command.releaseVersion)
+				distribution.verifyCached(
+					command.variantIdentity === undefined
+						? command.releaseVersion
+						: {
+								releaseVersion: command.releaseVersion,
+								variantIdentity: command.variantIdentity
+							}
+				)
 			).pipe(
 				Effect.flatMap(printJson),
 				Effect.provide(distributionLayer(command.cacheRoot, "."))
@@ -130,7 +181,14 @@ export const runPluginsPrune = Effect.fn("Cli.workflow.plugins_prune")(
 		observeCliOperation(
 			command._tag,
 			Effect.flatMap(PluginDistribution, (distribution) =>
-				distribution.prune(command.releaseVersion)
+				distribution.prune(
+					command.variantIdentity === undefined
+						? command.releaseVersion
+						: {
+								releaseVersion: command.releaseVersion,
+								variantIdentity: command.variantIdentity
+							}
+				)
 			).pipe(
 				Effect.andThen(
 					printJson({ releaseVersion: command.releaseVersion, status: "pruned" })

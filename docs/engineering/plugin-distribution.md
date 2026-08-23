@@ -1,43 +1,115 @@
 # Unreal plugin distribution
 
-`@ue-shed/plugin-distribution` is the public host-neutral boundary for installing immutable UE Shed
-Unreal plugin artifacts. It composes a transport-specific `PluginReleaseSource` with a caller-owned
-filesystem `PluginStore`; `PluginDistribution` owns manifest validation, dependency resolution,
-single-flight installation, scoped leases, and explicit pruning.
+`@ue-shed/plugin-distribution` is the public, headless boundary for portable source bundles and
+precompiled Unreal Editor plugin variants. Discovering an external descriptor with `-PLUGIN` does
+not compile it. An unattended host therefore requests a binary built for its exact engine identity;
+building and acquiring are separate operations.
 
-## Immutable contract
+## Ownership boundary
 
-A request selects one exact SemVer release, one or more `UEShed*` plugin IDs, optional expected
-manifest/artifact SHA-256 digests, an optional Unreal version, and either online or cache-only policy.
-The service returns dependency-first resolved plugins and absolute `.uplugin` descriptor paths. It
-does not mutate a `.uproject` or install under `<Project>/Plugins`.
+UE Shed owns portable source releases, versioned artifact contracts, the supervised generic
+builder, exact compatibility selection, verification, immutable caching, scoped leasing, and
+transport seams. A downstream organization owns its proprietary engine, build workers, compiler
+installation, signing, hosting, access policy, and retention policy. Neither manifests nor adapters
+contain organization-specific paths, credentials, schemas, or registry assumptions.
 
-The cache layout is implementation-owned below the configured root:
+## Versioned artifacts
+
+Schema version 1 remains the accepted legacy source contract. Schema version 2 is a strict
+discriminated union:
+
+- `source` records an Unreal version range and a portable source archive;
+- `compiled` records exact Unreal version, engine `BuildId`, platform, architecture,
+  `UnrealEditor`, `Development`, compiler/toolchain provenance, the requested and dependency-first
+  resolved graph, descriptor versions, source pins, repository commit, build invocation digest,
+  and archive/manifest digests.
+
+Unknown schema versions and excess or contradictory source/binary fields are rejected at the
+boundary. Unreal `5.7` alone is never treated as binary compatibility. Extraction also reads each
+plugin's `.modules` file and requires its `BuildId` to equal the outer compatibility identity.
+
+## Selection and immutable cache
+
+Callers request either `{ kind: "source" }` or a complete compiled identity. A compiled miss returns
+`CompatiblePluginBuildUnavailable`; it never falls back to source. A source request never returns a
+binary. Both modes preserve optional exact manifest and archive digest pins and `cache-only` use.
+
+Validated artifacts use a `pv2-<sha256>` identity derived from release, compatibility identity, and
+pinned manifest/archive identity:
 
 ```text
 <cache>/
-  releases/<exact-version>/
+  variants/<release>/<pv2-identity>/
     .ue-shed-distribution.json
     plugins.manifest.json
     plugins.tar.gz
     content/Plugins/<Plugin>/<Plugin>.uplugin
-  leases/<exact-version>/<lease-id>.json
-  locks/<exact-version>.lock
+  leases/<release>/<pv2-identity>/<lease-id>.json
+  locks/<release>/<pv2-identity>.lock
 ```
 
-Every hit revalidates the manifest, archive digest/size, extracted file digests, path containment,
-and entry types. Publication extracts to a random sibling stage and atomically renames it into the
-version path. Existing versions are never overwritten. A lease record is acquired in the caller's
-Effect scope and prevents explicit prune until finalization removes it.
+Source and multiple stock/custom engine variants can coexist for one release. Verify, lease, and
+prune target the exact variant. Existing `releases/<release>` source-only cache entries remain
+readable and verifiable; new acquisitions use `variants/`. A release-only verify or prune remains
+accepted only when it identifies one unambiguous cached variant. Entries are never silently
+repaired, replaced, or mutated.
 
-## Map Review release assets
+## Build a downstream engine variant
 
-The next synchronized suite release should attach these exact assets to GitHub Release tag
-`v<version>`:
+First acquire and pin the exact portable source manifest and archive. On a trusted Windows build
+host with the explicit engine and compiler installed, invoke the builder separately:
 
-- `ue-shed-plugins-map-review-<version>.manifest.json`
-- `ue-shed-plugins-map-review-<version>.tar.gz`
+```powershell
+ue-shed plugins build `
+  --engine C:\Engines\UE_5.7-Custom `
+  --source-manifest C:\input\plugins.manifest.json `
+  --source-artifact C:\input\ue-shed-plugins-<version>.tar.gz `
+  --source-manifest-digest sha256:<manifest> `
+  --source-artifact-digest sha256:<archive> `
+  --output C:\build-output\ue-shed-plugins `
+  --plugin UEShedCameras `
+  --unreal 5.7.4 --build-id <exact-build-id> `
+  --platform Win64 --architecture x64 `
+  --compiler MSVC --compiler-version <version> `
+  --toolchain "Visual Studio" --toolchain-version <version>
+```
 
-The bundle contains `UEShedCore`, `UEShedCameras`, and their source-compatible files. The manifest
-names and checksums the tarball and remains tied to the candidate manifest and source commit. Do not
-reconstruct or replace `0.3.0` assets; build these names only for a future reviewed release.
+The output root is caller-owned and must be outside the engine. On Windows, keep it short enough for
+UBT's action path limit. The builder stages the complete dependency graph, invokes UE 5.7
+AutomationTool's `BuildPlugin` command, supervises the complete process tree, redistributes validated
+products to the original descriptors, and atomically publishes only after re-extracting the final
+archive. Cancellation or failure removes the private stage and publishes nothing.
+
+The manifest's semantic metadata and tar/gzip layout are canonical. Compiler output is not claimed
+to be byte reproducible. Sign the resulting immutable pair according to downstream policy, then
+serve the exact bytes from a local directory, immutable HTTP endpoint, GitHub Release, or an
+internal adapter implementing `PluginReleaseSource`. Asset naming and registry layout stay in that
+adapter; domain logic does not know the registry.
+
+Acquire the hosted variant explicitly:
+
+```powershell
+ue-shed plugins cache install `
+  --cache C:\host-cache\ue-shed `
+  --source https://artifacts.example.invalid/immutable/<release>/ `
+  --release <version> --kind compiled `
+  --unreal 5.7.4 --build-id <exact-build-id> `
+  --platform Win64 --architecture x64 `
+  --plugin UEShedCameras `
+  --manifest-digest sha256:<manifest> `
+  --artifact-digest sha256:<archive>
+```
+
+Keep the returned lease scope open until `@ue-shed/engine` has stopped using the dependency-first
+absolute descriptor paths.
+
+## Release integrity and 0.4.0
+
+`0.4.0` is source-only. Its consumers can continue using the schema-v1 contract and legacy cache;
+there is no published GitHub plugin asset to retrofit, and the release must not be mutated. Binary
+requests require a later release with a real compiled manifest.
+
+Public release gates reject `ref: "local"`, zero candidate-manifest digests, non-full commits,
+package/plugin version disagreement, missing declared assets, and archive digest disagreement.
+Local experimental output with those placeholders is useful only as local evidence and must never
+be signed or hosted as a release.

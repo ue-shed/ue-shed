@@ -3,7 +3,9 @@ import { resolve } from "node:path";
 import { Context, Effect, Fiber, Layer, Option, Schema, Semaphore, type Scope } from "effect";
 import {
 	PluginInstallCancelled,
+	ReleaseUnavailable,
 	ArtifactDigestMismatch,
+	CompatiblePluginBuildUnavailable,
 	IncompatibleUnrealVersion,
 	ManifestDigestMismatch,
 	OfflineCacheMiss,
@@ -13,7 +15,6 @@ import {
 } from "./errors.js";
 import {
 	PluginBundleManifestValidationError,
-	ReleaseVersion,
 	Sha256Checksum,
 	resolvePluginBundleDependencies,
 	validatePluginBundleManifest,
@@ -30,6 +31,11 @@ import {
 import { PluginReleaseSource } from "./source.js";
 import { PluginStore, type StoredPluginRelease } from "./store.js";
 import { verifyPluginArtifact } from "./archive.js";
+import {
+	PluginVariantReference,
+	pluginVariantMatches,
+	type PluginVariantRequest
+} from "./variant.js";
 
 export interface PluginInstallOptions {
 	readonly onProgress?: (progress: PluginInstallProgress) => void;
@@ -46,9 +52,11 @@ export interface PluginDistributionApi {
 		ReadonlyArray<CachedPluginRelease>,
 		PluginDistributionError
 	>;
-	readonly prune: (releaseVersion: string) => Effect.Effect<void, PluginDistributionError>;
+	readonly prune: (
+		reference: string | PluginVariantReference
+	) => Effect.Effect<void, PluginDistributionError>;
 	readonly verifyCached: (
-		releaseVersion: string
+		reference: string | PluginVariantReference
 	) => Effect.Effect<CachedPluginRelease, PluginDistributionError>;
 }
 
@@ -78,20 +86,6 @@ function decodeFailure() {
 		recovery: "Provide one exact SemVer release and between 1 and 64 valid plugin IDs.",
 		retrySafe: false
 	});
-}
-
-function decodeReleaseVersion(input: string) {
-	return Schema.decodeUnknownEffect(ReleaseVersion)(input).pipe(
-		Effect.mapError(
-			() =>
-				new PluginDistributionValidationError({
-					field: "releaseVersion",
-					message: "Plugin release version must be an exact semantic version.",
-					recovery: "Provide an exact SemVer release such as 0.4.0.",
-					retrySafe: false
-				})
-		)
-	);
 }
 
 function mapManifestError(
@@ -127,21 +121,75 @@ function mapManifestError(
 function validateRequestedManifest(
 	manifest: Schema.Json | PluginBundleManifest,
 	request: PluginInstallRequest
-) {
+): Effect.Effect<PluginBundleManifest, PluginDistributionError> {
+	const artifact = requestedArtifact(request);
 	return validatePluginBundleManifest(manifest, {
 		expectedCandidateVersion: request.releaseVersion,
-		...(request.unrealVersion === undefined
-			? undefined
-			: { unrealVersion: request.unrealVersion })
+		...(artifact.kind === "source" && artifact.unrealVersion !== undefined
+			? { unrealVersion: artifact.unrealVersion }
+			: undefined)
 	}).pipe(
-		Effect.mapError((error) =>
-			mapManifestError(error, request.releaseVersion, request.unrealVersion)
+		Effect.mapError(
+			(error): PluginDistributionError =>
+				mapManifestError(error, request.releaseVersion, request.unrealVersion)
+		),
+		Effect.flatMap(
+			(validated): Effect.Effect<PluginBundleManifest, PluginDistributionError> => {
+				if (pluginVariantMatches(validated, artifact)) return Effect.succeed(validated);
+				if (artifact.kind === "compiled") {
+					return Effect.fail(
+						compatibleBuildUnavailable(
+							artifact,
+							request.releaseVersion,
+							`No compiled plugin artifact exactly matches engine BuildId ${artifact.engineBuildId}.`
+						)
+					);
+				}
+				return Effect.fail(
+					new PluginDistributionValidationError({
+						field: "artifact",
+						message:
+							"The selected manifest is compiled, but the caller explicitly requested source.",
+						recovery:
+							"Select a source manifest asset; source requests never use binary artifacts.",
+						retrySafe: false
+					})
+				);
+			}
 		)
 	);
 }
 
+function requestedArtifact(request: PluginInstallRequest): PluginVariantRequest {
+	if (request.artifact !== undefined) return request.artifact;
+	return request.unrealVersion === undefined
+		? { kind: "source" }
+		: { kind: "source", unrealVersion: request.unrealVersion };
+}
+
+function compatibleBuildUnavailable(
+	request: Extract<PluginVariantRequest, { readonly kind: "compiled" }>,
+	releaseVersion: string,
+	message: string
+) {
+	return new CompatiblePluginBuildUnavailable({
+		architecture: request.architecture,
+		configuration: request.configuration,
+		engineBuildId: request.engineBuildId,
+		message,
+		platform: request.platform,
+		recovery:
+			"Build or select a compiled artifact for the exact engine, platform, architecture, target, and configuration.",
+		releaseVersion,
+		retrySafe: false,
+		target: request.target,
+		unrealVersion: request.unrealVersion
+	});
+}
+
 function canonicalRequest(request: PluginInstallRequest) {
 	return JSON.stringify({
+		artifact: requestedArtifact(request),
 		expectedArtifactSha256: request.expectedArtifactSha256,
 		expectedManifestSha256: request.expectedManifestSha256,
 		networkPolicy: request.networkPolicy ?? "online",
@@ -203,6 +251,7 @@ export const pluginDistributionLayer = (
 					releaseVersion: request.releaseVersion
 				});
 				const cached = yield* store.find({
+					artifact: requestedArtifact(request),
 					releaseVersion: request.releaseVersion,
 					...(request.expectedArtifactSha256 === undefined
 						? undefined
@@ -224,10 +273,25 @@ export const pluginDistributionLayer = (
 						retrySafe: true
 					});
 				}
-				const document = yield* source.fetchManifest({
-					limits,
-					releaseVersion: request.releaseVersion
-				});
+				const artifactRequest = requestedArtifact(request);
+				const document = yield* source
+					.fetchManifest({
+						artifact: artifactRequest,
+						limits,
+						releaseVersion: request.releaseVersion
+					})
+					.pipe(
+						Effect.mapError((error) =>
+							artifactRequest.kind === "compiled" &&
+							error instanceof ReleaseUnavailable
+								? compatibleBuildUnavailable(
+										artifactRequest,
+										request.releaseVersion,
+										`No compiled plugin manifest is available for engine BuildId ${artifactRequest.engineBuildId}.`
+									)
+								: error
+						)
+					);
 				const manifestDigest = sha256(document.bytes);
 				if (
 					request.expectedManifestSha256 !== undefined &&
@@ -380,6 +444,7 @@ export const pluginDistributionLayer = (
 						releaseVersion: request.releaseVersion
 					});
 					return PluginInstallResult.make({
+						artifactKind: ensured.release.artifactKind,
 						artifactDigest: ensured.release.artifactDigest,
 						cacheHit: ensured.cacheHit,
 						cacheIdentity: ensured.release.cacheIdentity,
@@ -391,7 +456,8 @@ export const pluginDistributionLayer = (
 						releaseVersion: ensured.release.releaseVersion,
 						resolvedPluginIds: resolved.orderedPluginIds,
 						resolvedPlugins: resolved.plugins,
-						source: ensured.release.source
+						source: ensured.release.source,
+						variantIdentity: ensured.release.variantIdentity
 					});
 				}).pipe(
 					Effect.ensuring(
@@ -407,24 +473,23 @@ export const pluginDistributionLayer = (
 
 			const listCached = Effect.fn("PluginDistribution.listCached")(() => store.list());
 			const verifyCached = Effect.fn("PluginDistribution.verifyCached")(
-				(releaseVersion: string) =>
-					decodeReleaseVersion(releaseVersion).pipe(
-						Effect.flatMap((version) => store.verify(version)),
+				(reference: string | PluginVariantReference) =>
+					store.verify(reference).pipe(
 						Effect.map((release) => ({
+							artifactKind: release.artifactKind,
 							artifactDigest: release.artifactDigest,
 							cacheIdentity: release.cacheIdentity,
 							cachePath: release.cachePath,
 							manifestDigest: release.manifestDigest,
 							plugins: release.plugins,
 							releaseIdentity: release.releaseIdentity,
-							releaseVersion: release.releaseVersion
+							releaseVersion: release.releaseVersion,
+							variantIdentity: release.variantIdentity
 						}))
 					)
 			);
-			const prune = Effect.fn("PluginDistribution.prune")((releaseVersion: string) =>
-				decodeReleaseVersion(releaseVersion).pipe(
-					Effect.flatMap((version) => store.prune(version))
-				)
+			const prune = Effect.fn("PluginDistribution.prune")(
+				(reference: string | PluginVariantReference) => store.prune(reference)
 			);
 			return PluginDistribution.of({ install, listCached, prune, verifyCached });
 		})

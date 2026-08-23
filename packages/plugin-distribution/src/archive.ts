@@ -1,21 +1,33 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { createGunzip } from "node:zlib";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import {
 	PluginInstallCancelled,
 	ArtifactDigestMismatch,
 	MalformedOrUnsafeArchive,
 	PluginStorageFailure
 } from "./errors.js";
-import type { PluginBundleManifest } from "./manifest.js";
+import {
+	EngineBuildId,
+	PluginId,
+	isCompiledPluginBundleManifest,
+	type PluginBundleManifest
+} from "./manifest.js";
 import type { PluginDistributionLimits, PluginInstallProgress } from "./model.js";
 
 const TAR_BLOCK_BYTES = 512;
 const COPY_CHUNK_BYTES = 64 * 1024;
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/iu;
+const UnrealModuleManifestEvidence = Schema.Struct({
+	BuildId: EngineBuildId,
+	Modules: Schema.Record(PluginId, Schema.String)
+});
+const UnrealPluginDescriptorEvidence = Schema.Struct({
+	Modules: Schema.optionalKey(Schema.Array(Schema.Struct({ Name: PluginId })))
+});
 
 export interface VerifiedPluginArtifact {
 	readonly bytes: number;
@@ -267,6 +279,12 @@ export async function extractPluginArchiveToDirectory(
 	options: ExtractPluginArchiveOptions
 ): Promise<ArchiveExtractionReport> {
 	try {
+		const initialCancellation = abortError(
+			options.signal,
+			options.manifest.releaseVersion,
+			"extraction"
+		);
+		if (initialCancellation !== undefined) throw initialCancellation;
 		await mkdir(options.destination);
 		const gunzip = createReadStream(options.archivePath, { signal: options.signal }).pipe(
 			createGunzip()
@@ -373,6 +391,71 @@ export async function extractPluginArchiveToDirectory(
 			const descriptor = `Plugins/${plugin.descriptorPath}`;
 			if (files[descriptor] === undefined) {
 				throw new Error(`Plugin archive is missing descriptor ${plugin.descriptorPath}.`);
+			}
+		}
+		if (isCompiledPluginBundleManifest(options.manifest)) {
+			const platform = options.manifest.compatibility.platform;
+			const binaryExtension =
+				platform === "Win64" ? ".dll" : platform === "Mac" ? ".dylib" : ".so";
+			for (const plugin of options.manifest.plugins) {
+				const descriptorPath = `Plugins/${plugin.descriptorPath}`;
+				const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptorEvidence)(
+					JSON.parse(await readFile(resolve(options.destination, descriptorPath), "utf8"))
+				);
+				const declaredModules = new Set(
+					(descriptor.Modules ?? []).map((module) => module.Name)
+				);
+				const evidencedModules = new Set<string>();
+				const binaryRoot = `Plugins/${plugin.directory}/Binaries/${platform}/`;
+				const paths = Object.keys(files).filter((path) => path.startsWith(binaryRoot));
+				const modulePaths = paths.filter((path) => path.endsWith(".modules"));
+				if (modulePaths.length === 0) {
+					throw new Error(`Compiled plugin ${plugin.id} is missing .modules evidence.`);
+				}
+				if (!paths.some((path) => path.toLowerCase().endsWith(binaryExtension))) {
+					throw new Error(
+						`Compiled plugin ${plugin.id} is missing a ${binaryExtension} binary.`
+					);
+				}
+				for (const modulePath of modulePaths) {
+					const evidence = Schema.decodeUnknownSync(UnrealModuleManifestEvidence)(
+						JSON.parse(await readFile(resolve(options.destination, modulePath), "utf8"))
+					);
+					if (evidence.BuildId !== options.manifest.compatibility.engineBuildId) {
+						throw new Error(
+							`.modules BuildId ${evidence.BuildId} does not match ${options.manifest.compatibility.engineBuildId}: ${modulePath}`
+						);
+					}
+					for (const moduleId of Object.keys(evidence.Modules)) {
+						evidencedModules.add(moduleId);
+					}
+					const products = Object.values(evidence.Modules);
+					if (products.length === 0) {
+						throw new Error(
+							`Compiled plugin ${plugin.id} has empty .modules evidence.`
+						);
+					}
+					for (const product of products) {
+						const normalizedProduct = safeArchivePath(product);
+						const productPath = `${binaryRoot}${normalizedProduct}`;
+						if (
+							!normalizedProduct.toLowerCase().endsWith(binaryExtension) ||
+							files[productPath] === undefined
+						) {
+							throw new Error(
+								`.modules product ${product} is not an extracted ${binaryExtension} binary beneath ${binaryRoot}: ${modulePath}`
+							);
+						}
+					}
+				}
+				const missingModules = [...declaredModules].filter(
+					(moduleId) => !evidencedModules.has(moduleId)
+				);
+				if (missingModules.length > 0) {
+					throw new Error(
+						`Compiled plugin ${plugin.id} has no .modules evidence for descriptor module(s): ${missingModules.join(", ")}.`
+					);
+				}
 			}
 		}
 		return { extractedBytes, fileCount, files };

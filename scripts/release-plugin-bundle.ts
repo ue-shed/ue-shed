@@ -5,10 +5,18 @@ import {
 	NIAGARA_PLUGIN_IDS,
 	OBSERVATORY_PLUGIN_IDS
 } from "./plugin-bundle.ts";
+import { validatePublicPluginBundle } from "./plugin-bundle.ts";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
 
 const repositoryRoot = join(import.meta.dirname, "..");
 const preset = process.argv[2];
+
+function releaseArgument(name: string) {
+	const index = process.argv.indexOf(`--${name}`);
+	const value = index === -1 ? undefined : process.argv[index + 1];
+	if (value === undefined) throw new Error(`Public plugin release requires --${name} <value>.`);
+	return value;
+}
 const presets = {
 	full: { directory: "plugins", plugins: undefined, stem: `ue-shed-plugins-${PUBLIC_VERSION}` },
 	"map-review": {
@@ -40,12 +48,20 @@ if (
 }
 
 const selected = presets[preset];
+const candidateManifest = releaseArgument("candidate-manifest");
+const sourceCommit = releaseArgument("commit");
+const sourceRef = releaseArgument("ref");
 const result = await buildPluginBundle({
+	candidateManifest,
 	output: join(repositoryRoot, "out", "releases", PUBLIC_VERSION, selected.directory),
 	releaseVersion: PUBLIC_VERSION,
 	releaseAssetStem: selected.stem,
-	requestedPlugins: selected.plugins
+	requestedPlugins: selected.plugins,
+	sourceCommit,
+	sourceRef
 });
+
+await validatePublicPluginBundle(result);
 
 console.log(
 	`Built ${result.manifest.plugins.length} Unreal plugin sources for suite ${PUBLIC_VERSION}.`

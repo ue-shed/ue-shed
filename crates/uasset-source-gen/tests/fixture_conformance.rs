@@ -10,6 +10,7 @@ use uasset_parser::schema::{ClassSchema, FieldType, SchemaProvider, SourceModel,
 
 const DATA_ASSET_CLASS: &str = "/Script/UEShedFixture.UEShedFixtureTextAsset";
 const STRING_TABLE_ID: &str = "/Game/Fixture/Text/ST_Game.ST_Game";
+const TEXTURE2D_CLASS: &str = "/Script/Engine.Texture2D";
 
 fn workspace_path(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -415,4 +416,48 @@ fn generated_and_legacy_string_table_semantics_are_identical() {
     assert_eq!(generated, handwritten);
     assert_eq!(generated.namespace, "Fixture.StringTable");
     assert_eq!(generated.entries.len(), 3);
+}
+
+#[test]
+fn generated_and_legacy_generic_texture_semantics_are_identical() {
+    let model = source_model();
+    let legacy = EmptySchemas;
+    let textures = workspace_path("fixtures/unreal-project/Content/Fixture/Audits/Textures");
+    let mut fixtures = fs::read_dir(textures)
+        .expect("texture fixture directory")
+        .map(|entry| entry.expect("texture fixture entry").path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("uasset"))
+        .collect::<Vec<_>>();
+    fixtures.sort();
+    assert_eq!(fixtures.len(), 17, "texture fixture inventory changed");
+
+    for fixture in fixtures {
+        let fixture_name = fixture.file_name().expect("fixture name").to_string_lossy();
+        let (_, generated) = decoded_assets(&fixture, &model);
+        let (_, handwritten) = decoded_assets_with(&fixture, &legacy, false);
+        let generated = generated
+            .into_iter()
+            .find_map(|asset| match asset {
+                DecodedAsset::UObject(object) if object.class_path.as_str() == TEXTURE2D_CLASS => {
+                    Some(object)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{fixture_name} source-modeled Texture2D"));
+        let handwritten = handwritten
+            .into_iter()
+            .find_map(|asset| match asset {
+                DecodedAsset::UObject(object) if object.class_path.as_str() == TEXTURE2D_CLASS => {
+                    Some(object)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{fixture_name} handwritten Texture2D"));
+
+        assert_eq!(generated, handwritten, "{fixture_name} semantic parity");
+        assert!(
+            !generated.tail.is_empty(),
+            "{fixture_name} native tail evidence"
+        );
+    }
 }

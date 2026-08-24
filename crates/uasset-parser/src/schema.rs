@@ -185,6 +185,34 @@ mod tests {
             ]
         );
 
+        let texture = model
+            .find_class(&ObjectPath::new("/Script/Engine.Texture2D"))
+            .expect("generated Texture2D schema");
+        assert_eq!(
+            texture.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+            ]
+        );
+        assert!(model.class_is_a(&texture.path, "/Script/CoreUObject.Object"));
+        for class_path in [
+            "/Script/Engine.StreamableRenderAsset",
+            "/Script/Engine.Texture",
+            "/Script/Engine.Texture2D",
+        ] {
+            let class = model
+                .find_class(&ObjectPath::new(class_path))
+                .expect("generated texture class schema");
+            assert!(
+                class
+                    .fields
+                    .iter()
+                    .all(|field| !matches!(&field.field_type, FieldType::Unknown { .. })),
+                "{class_path} retained an unknown reflected field type"
+            );
+        }
+
         let data_table = model
             .find_class(&ObjectPath::new("/Script/Engine.DataTable"))
             .expect("generated DataTable schema");

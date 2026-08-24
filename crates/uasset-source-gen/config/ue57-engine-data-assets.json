@@ -71,6 +71,35 @@
 			"name": "Engine",
 			"root": "engine_source",
 			"headers": [
+				"Runtime/Engine/Classes/Engine/StreamableRenderAsset.h",
+				"Runtime/Engine/Classes/Engine/Texture.h",
+				"Runtime/Engine/Classes/Engine/Texture2D.h",
+				"Runtime/Engine/Classes/Engine/TextureDefines.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/Texture.cpp",
+				"Runtime/Engine/Private/Texture2D.cpp"
+			],
+			"include_types": [
+				"ETextureAvailability",
+				"ETextureDownscaleOptions",
+				"ETextureMipLoadOptions",
+				"UStreamableRenderAsset",
+				"UTexture",
+				"UTexture2D"
+			]
+		},
+		{
+			"name": "RenderCore",
+			"root": "engine_source",
+			"headers": ["Runtime/RenderCore/Public/VirtualTextureEnum.h"],
+			"sources": [],
+			"include_types": ["EVTProducerPriority"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
 				"Runtime/Engine/Classes/Animation/AnimationAsset.h",
 				"Runtime/Engine/Classes/Animation/AnimSequenceBase.h",
 				"Runtime/Engine/Classes/Animation/AnimSequence.h",

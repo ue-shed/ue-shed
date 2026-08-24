@@ -24,7 +24,8 @@ families:
 - `UAnimSequence`: inherited UObject serialization, `UAnimationAsset::SkeletonGuid`, strip flags,
   the legacy raw-track array boundary, and the uncooked compressed-data gate.
 - Generic `UObject`: source-owned classes with the inherited tagged-property/GUID prefix retain all
-  later class-specific native data as the same opaque byte span as the compatibility decoder.
+  later class-specific native data as the same opaque byte span as the compatibility decoder. The
+  real conformance inventory includes the `UTexture2D` inheritance chain and all 17 texture fixtures.
 
 The conformance test decodes all 12 DataTable fixtures (10,022 rows total) and the fixture DataAsset
 without any raw property values, plus the three-entry StringTable fixture. It also checks every
@@ -47,7 +48,8 @@ AnimSequence comparisons cover the real UE 5.7 fixture, the complete supported u
 and exact malformed or unsupported errors for raw tracks, archive booleans, compressed data, and
 trailing bytes; its public inspection JSON is also identical.
 Generic UObject comparisons cover scalar properties, object GUIDs, arbitrary binary tails, and a
-source-recognized subclass whose later native operations must remain compatibility-opaque.
+source-recognized subclass whose later native operations must remain compatibility-opaque, plus
+exact property/GUID/tail equality across the 17 real `UTexture2D` assets.
 
 The native inspection, project-IO, and WASM paths use the embedded engine-only model. The parser and
 inspection libraries also accept an explicit `SchemaProvider`, allowing a generated project model to

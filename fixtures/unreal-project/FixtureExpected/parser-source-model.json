@@ -1034,6 +1034,88 @@
 			]
 		},
 		{
+			"path": "/Script/Engine.StreamableRenderAsset",
+			"cpp_name": "UStreamableRenderAsset",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "ForceMipLevelsToBeResidentTimestamp",
+					"type": {
+						"kind": "double"
+					}
+				},
+				{
+					"name": "NumCinematicMipLevels",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NoRefStreamingLODBias",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PerQualityLevelInt"
+					}
+				},
+				{
+					"name": "StreamingIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "NeverStream",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bGlobalForceMipLevelsToBeResident",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHasStreamingUpdatePending",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bForceMiplevelsToBeResident",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreStreamingMipBias",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bMarkAsEditorStreamingPool",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseCinematicMipLevels",
+					"type": {
+						"kind": "bool"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
 			"path": "/Script/Engine.StringTable",
 			"cpp_name": "UStringTable",
 			"super_path": "/Script/CoreUObject.Object",
@@ -1047,6 +1129,496 @@
 				},
 				{
 					"kind": "string_table_data"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Texture",
+			"cpp_name": "UTexture",
+			"super_path": "/Script/Engine.StreamableRenderAsset",
+			"fields": [
+				{
+					"name": "Source",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TextureSource"
+					}
+				},
+				{
+					"name": "LightingGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "SourceFilePath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "AdjustBrightness",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustBrightnessCurve",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustVibrance",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustSaturation",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustRGBCurve",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustHue",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustMinAlpha",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "AdjustMaxAlpha",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "CompressionNoAlpha",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressionForceAlpha",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressionNone",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressFinal",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "DeferCompression",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "LossyCompressionAmount",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureLossyCompressionAmount"
+					}
+				},
+				{
+					"name": "OodleTextureSdkVersion",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "MaxTextureSize",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "CompressionQuality",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureCompressionQuality"
+					}
+				},
+				{
+					"name": "CompressionCacheId",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "bDitherMipMapAlpha_DEPRECATED",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bDoScaleMipsForAlphaCoverage",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AlphaCoverageThresholds",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Vector4"
+					}
+				},
+				{
+					"name": "bUseNewMipFilter",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bPreserveBorder",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "bFlipGreenChannel",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "PowerOfTwoMode",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TexturePowerOfTwoSetting::Type"
+					}
+				},
+				{
+					"name": "PaddingColor",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Color"
+					}
+				},
+				{
+					"name": "bPadWithBorderColor",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ResizeDuringBuildX",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "ResizeDuringBuildY",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bChromaKeyTexture",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ChromaKeyThreshold",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "ChromaKeyColor",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.Color"
+					}
+				},
+				{
+					"name": "MipGenSettings",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureMipGenSettings"
+					}
+				},
+				{
+					"name": "CompositeTexture",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.Texture"
+					}
+				},
+				{
+					"name": "CompositeTextureMode",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.CompositeTextureMode"
+					}
+				},
+				{
+					"name": "CompositePower",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "LayerFormatSettings",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.TextureFormatSettings"
+						}
+					}
+				},
+				{
+					"name": "LevelIndex",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "LODBias",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "CompressionSettings",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureCompressionSettings"
+					}
+				},
+				{
+					"name": "Filter",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureFilter"
+					}
+				},
+				{
+					"name": "MipLoadOptions",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureMipLoadOptions"
+					}
+				},
+				{
+					"name": "VirtualTextureStreamingPriority",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/RenderCore.VTProducerPriority"
+					}
+				},
+				{
+					"name": "VirtualTexturePrefetchMips",
+					"type": {
+						"kind": "uint8"
+					}
+				},
+				{
+					"name": "CookPlatformTilingSettings",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureCookPlatformTilingSettings"
+					}
+				},
+				{
+					"name": "bOodlePreserveExtremes",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "LODGroup",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureGroup"
+					}
+				},
+				{
+					"name": "Downscale",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PerPlatformFloat"
+					}
+				},
+				{
+					"name": "DownscaleOptions",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureDownscaleOptions"
+					}
+				},
+				{
+					"name": "Availability",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureAvailability"
+					}
+				},
+				{
+					"name": "SRGB",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNormalizeNormals",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseLegacyGamma",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "SourceColorSettings",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.TextureSourceColorSettings"
+					}
+				},
+				{
+					"name": "bNoTiling",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "VirtualTextureStreaming",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bUseVirtualTextureStreamingPriority",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "CompressionYCoCg",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bNotOfflineProcessed",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bAsyncResourceReleaseHasBeenStarted",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AssetUserData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Texture2D",
+			"cpp_name": "UTexture2D",
+			"super_path": "/Script/Engine.Texture",
+			"fields": [
+				{
+					"name": "FirstResourceMemMip",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "bTemporarilyDisableStreaming",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bHasBeenPaintedInEditor",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "AddressX",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureAddress"
+					}
+				},
+				{
+					"name": "AddressY",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/Engine.TextureAddress"
+					}
+				},
+				{
+					"name": "ImportedSize",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.IntPoint"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
 				}
 			]
 		},

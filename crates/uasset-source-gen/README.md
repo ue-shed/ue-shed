@@ -4,7 +4,8 @@
 It reads reflected declarations and a deliberately small subset of serializer bodies, then emits a
 language-neutral JSON model consumed through `uasset-parser`'s `SchemaProvider` boundary.
 
-The generated model currently proves eight legacy decoded variants across these target families:
+The generated model now proves all nine legacy `DecodedAsset` variants across these target
+families:
 
 - `UDataTable` and `UCompositeDataTable`: inheritance, reflected row schemas, UObject properties and
   GUID footer, and the native row array written by `UDataTable::SaveStructData`.
@@ -22,6 +23,8 @@ The generated model currently proves eight legacy decoded variants across these 
   poses and the later native Skeleton payload remain opaque, matching the compatibility decoder.
 - `UAnimSequence`: inherited UObject serialization, `UAnimationAsset::SkeletonGuid`, strip flags,
   the legacy raw-track array boundary, and the uncooked compressed-data gate.
+- Generic `UObject`: source-owned classes with the inherited tagged-property/GUID prefix retain all
+  later class-specific native data as the same opaque byte span as the compatibility decoder.
 
 The conformance test decodes all 12 DataTable fixtures (10,022 rows total) and the fixture DataAsset
 without any raw property values, plus the three-entry StringTable fixture. It also checks every
@@ -41,13 +44,16 @@ malformed-input boundaries, and do the same for UserDefinedStruct fields and nes
 Skeleton comparisons cover exact bone output, malformed counts, and the intentionally opaque tail.
 AnimSequence comparisons cover the real UE 5.7 fixture, the complete supported uncooked trailer,
 and exact malformed or unsupported errors for raw tracks, archive booleans, compressed data, and
-trailing bytes.
+trailing bytes; its public inspection JSON is also identical.
+Generic UObject comparisons cover scalar properties, object GUIDs, arbitrary binary tails, and a
+source-recognized subclass whose later native operations must remain compatibility-opaque.
 
 The native inspection, project-IO, and WASM paths use the embedded engine-only model. The parser and
 inspection libraries also accept an explicit `SchemaProvider`, allowing a generated project model to
 classify native subclasses without global state. The legacy class-name fallback remains for projects
-that have not supplied source metadata; removing it completely requires a distribution mechanism for
-project-native models.
+that have not supplied source metadata. Thus the generated lane has variant parity with the normal
+parser for source-owned classes, while unmodeled project classes continue through the normal generic
+fallback instead of being rejected.
 
 ## Generate from UE 5.7
 

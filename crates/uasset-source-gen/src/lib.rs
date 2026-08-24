@@ -1356,6 +1356,14 @@ fn parse_field_type(
             class_path: resolve_named_path(inner, module, paths),
         };
     }
+    if let Some(inner) = generic_argument(cpp_type, "TScriptInterface") {
+        let interface_class = inner
+            .strip_prefix('I')
+            .map_or_else(|| inner.to_owned(), |name| format!("U{name}"));
+        return FieldType::Object {
+            class_path: resolve_named_path(&interface_class, module, paths),
+        };
+    }
     if let Some(inner) = generic_argument(cpp_type, "TSoftObjectPtr") {
         return FieldType::SoftObject {
             class_path: resolve_named_path(inner, module, paths),
@@ -1962,6 +1970,17 @@ mod tests {
             ),
             FieldType::Object {
                 class_path: Some(ObjectPath::new("/Script/CoreUObject.UserDefinedStruct"))
+            }
+        );
+        assert_eq!(
+            parse_field_type(
+                "TScriptInterface<IAnimationDataModel>",
+                "Engine",
+                &paths,
+                &enums
+            ),
+            FieldType::Object {
+                class_path: Some(ObjectPath::new("/Script/Engine.AnimationDataModel"))
             }
         );
         assert_eq!(

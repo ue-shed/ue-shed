@@ -1811,6 +1811,19 @@ pub fn decode_modeled_export(
             properties: source.properties,
         })));
     }
+    if is_generic_uobject_class(class_path.as_str()) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::UObject)?;
+        let (properties, mut reader) = decode_uobject_properties(export, context)?;
+        let (object_guid, tail) =
+            consume_uobject_export_footer_lenient(&mut reader, &export.object_path)?;
+        return Ok(Some(DecodedAsset::UObject(DecodedUObject {
+            object_path: export.object_path.clone(),
+            class_path: class_path.clone(),
+            object_guid,
+            properties,
+            tail,
+        })));
+    }
     Ok(None)
 }
 
@@ -2018,6 +2031,7 @@ enum SourcePlanKind {
     Skeleton,
     Struct,
     StringTable,
+    UObject,
 }
 
 fn validate_source_serialization(
@@ -2094,6 +2108,14 @@ fn validate_source_serialization(
                 SerializationOperation::TaggedProperties,
                 SerializationOperation::ObjectGuid,
                 SerializationOperation::StringTableData
+            ]
+        ),
+        SourcePlanKind::UObject => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                ..
             ]
         ),
     };
@@ -3841,6 +3863,38 @@ mod tests {
         object
     }
 
+    fn assert_source_modeled_uobject_parity(
+        export_bytes: &[u8],
+        package: &Package,
+        export: &Export,
+    ) -> DecodedUObject {
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: export_bytes,
+            package,
+            schemas: &legacy_schemas,
+        };
+        let DecodedAsset::UObject(legacy) = UObjectDecoder
+            .decode(export, &legacy_context)
+            .expect("legacy UObject decode")
+        else {
+            panic!("expected legacy UObject decode");
+        };
+        let generated_context = AssetDecodeContext {
+            source: export_bytes,
+            package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::UObject(generated)) =
+            decode_modeled_export(export, &generated_context)
+                .expect("source-modeled UObject decode")
+        else {
+            panic!("expected source-modeled UObject decode");
+        };
+        assert_eq!(generated, legacy);
+        generated
+    }
+
     #[test]
     fn decodes_generic_uobject_with_scalar_properties() {
         let mut properties = Vec::new();
@@ -3865,6 +3919,61 @@ mod tests {
         );
         assert_eq!(object.properties.records.len(), 1);
         assert_eq!(object.properties.records[0].value, PropertyValue::Int(4243));
+    }
+
+    #[test]
+    fn source_modeled_uobject_matches_properties_guid_and_opaque_tail() {
+        let mut properties = Vec::new();
+        write_int_property_tag(&mut properties, 2, 1, 4243);
+        let package = test_package(vec!["None".into(), "IntProperty".into(), "IntValue".into()]);
+
+        let mut guid_bytes = write_uobject_export(0, &properties);
+        push_i32(&mut guid_bytes, 1);
+        for word in [0x1122_3344_u32, 0x5566_7788, 0x99aa_bbcc, 0xddee_ff00] {
+            guid_bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        let guid_export = test_export(
+            guid_bytes.len() as u64,
+            "/Game/Test/O_Guid.O_Guid",
+            "/Script/CoreUObject.Object",
+        );
+        let guid_object = assert_source_modeled_uobject_parity(&guid_bytes, &package, &guid_export);
+        assert_eq!(guid_object.object_guid.expect("object guid").a, 0x1122_3344);
+        assert_eq!(guid_object.tail.len(), 0);
+        assert_eq!(
+            guid_object.properties.records[0].value,
+            PropertyValue::Int(4243)
+        );
+
+        let mut tail_bytes = write_uobject_export(0, &properties);
+        tail_bytes.extend_from_slice(&[0xab; 94]);
+        let tail_export = test_export(
+            tail_bytes.len() as u64,
+            "/Game/Test/O_Tail.O_Tail",
+            "/Script/CoreUObject.Object",
+        );
+        let tail_object = assert_source_modeled_uobject_parity(&tail_bytes, &package, &tail_export);
+        assert!(tail_object.object_guid.is_none());
+        assert_eq!(tail_object.tail.len(), 94);
+    }
+
+    #[test]
+    fn source_modeled_uobject_keeps_recognized_subclass_native_data_opaque() {
+        let package = test_package(vec!["None".into()]);
+        let mut export_bytes = write_uobject_export(0, &[]);
+        push_i32(&mut export_bytes, 0); // UObject footer before UAnimationAsset native data
+        for word in [1_u32, 2, 3, 4] {
+            export_bytes.extend_from_slice(&word.to_le_bytes()); // SkeletonGuid remains opaque
+        }
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/A_Base.A_Base",
+            "/Script/Engine.AnimationAsset",
+        );
+
+        let object = assert_source_modeled_uobject_parity(&export_bytes, &package, &export);
+        assert!(object.object_guid.is_none());
+        assert_eq!(object.tail.len(), 20);
     }
 
     #[test]
@@ -4099,7 +4208,7 @@ mod tests {
         };
         let generated_error = decode_modeled_export(&export, &generated_context)
             .expect_err("generated path rejects trailing bytes");
-        assert_eq!(generated_error.kind(), AssetErrorKind::MalformedData);
-        assert!(generated_error.message().contains("trailing bytes"));
+        assert_eq!(generated_error.kind(), error.kind());
+        assert_eq!(generated_error.message(), error.message());
     }
 }

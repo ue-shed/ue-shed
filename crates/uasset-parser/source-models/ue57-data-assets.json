@@ -330,8 +330,8 @@
 				{
 					"name": "Interpolation",
 					"type": {
-						"kind": "unknown",
-						"cpp_type": "EAnimInterpolationType"
+						"kind": "enum",
+						"path": "/Script/Engine.AnimInterpolationType"
 					}
 				},
 				{
@@ -399,8 +399,8 @@
 				{
 					"name": "StripAnimDataOnDedicatedServer",
 					"type": {
-						"kind": "unknown",
-						"cpp_type": "EStripAnimDataOnDedicatedServerSettings"
+						"kind": "enum",
+						"path": "/Script/Engine.StripAnimDataOnDedicatedServerSettings"
 					}
 				},
 				{
@@ -539,15 +539,15 @@
 				{
 					"name": "DataModelInterface",
 					"type": {
-						"kind": "unknown",
-						"cpp_type": "TScriptInterface<IAnimationDataModel>"
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimationDataModel"
 					}
 				},
 				{
 					"name": "Controller",
 					"type": {
-						"kind": "unknown",
-						"cpp_type": "TScriptInterface<IAnimationDataController>"
+						"kind": "object",
+						"class_path": "/Script/Engine.AnimationDataController"
 					}
 				}
 			],

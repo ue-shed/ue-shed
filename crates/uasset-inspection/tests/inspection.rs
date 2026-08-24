@@ -22,6 +22,9 @@ const STRING_TABLE: &[u8] =
     include_bytes!("../../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset");
 const DATA_TABLE: &[u8] =
     include_bytes!("../../../fixtures/unreal-project/Content/Fixture/Authoring/DT_Text.uasset");
+const ANIMATION: &[u8] = include_bytes!(
+    "../../../fixtures/unreal-project/Content/Fixture/Animation/A_FixtureMotion.uasset"
+);
 const PARITY_FIXTURES: &[(&str, &[u8])] = &[
     (
         "Content/Fixture/Authoring/DT_Scalars.uasset",
@@ -104,9 +107,6 @@ fn typed_inspection_exposes_decoded_values_before_serialization() {
 
 #[test]
 fn real_anim_sequence_consumes_its_native_trailer() {
-    const ANIMATION: &[u8] = include_bytes!(
-        "../../../fixtures/unreal-project/Content/Fixture/Animation/A_FixtureMotion.uasset"
-    );
     let inspection = inspect_bytes(
         "Content/Fixture/Animation/A_FixtureMotion.uasset",
         ANIMATION,
@@ -137,6 +137,21 @@ fn real_anim_sequence_consumes_its_native_trailer() {
                     if value.ends_with(".AnimationSequencerDataModel")
             )
     }));
+}
+
+#[test]
+fn generated_and_legacy_public_anim_sequence_inspections_are_identical() {
+    let path = "Content/Fixture/Animation/A_FixtureMotion.uasset";
+    let generated = serde_json::to_value(
+        inspect_bytes(path, ANIMATION).expect("generated inspection succeeds"),
+    )
+    .expect("generated inspection serializes");
+    let legacy = serde_json::to_value(
+        inspect_bytes_with_schemas(path, ANIMATION, &EmptySchemas)
+            .expect("legacy inspection succeeds"),
+    )
+    .expect("legacy inspection serializes");
+    assert_eq!(generated, legacy);
 }
 
 #[test]

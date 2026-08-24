@@ -73,14 +73,21 @@
 			"headers": [
 				"Runtime/Engine/Classes/Animation/AnimationAsset.h",
 				"Runtime/Engine/Classes/Animation/AnimSequenceBase.h",
-				"Runtime/Engine/Classes/Animation/AnimSequence.h"
+				"Runtime/Engine/Classes/Animation/AnimSequence.h",
+				"Runtime/Engine/Public/Animation/AnimTypes.h"
 			],
 			"sources": [
 				"Runtime/Engine/Private/AnimationAsset.cpp",
 				"Runtime/Engine/Private/Animation/AnimSequenceBase.cpp",
 				"Runtime/Engine/Private/Animation/AnimSequence.cpp"
 			],
-			"include_types": ["UAnimationAsset", "UAnimSequenceBase", "UAnimSequence"]
+			"include_types": [
+				"EAnimInterpolationType",
+				"EStripAnimDataOnDedicatedServerSettings",
+				"UAnimationAsset",
+				"UAnimSequenceBase",
+				"UAnimSequence"
+			]
 		}
 	]
 }

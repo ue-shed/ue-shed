@@ -174,6 +174,17 @@ mod tests {
                 .all(|schema| !schema.path.as_str().contains("Fixture"))
         );
 
+        let object = model
+            .find_class(&ObjectPath::new("/Script/CoreUObject.Object"))
+            .expect("generated UObject schema");
+        assert_eq!(
+            object.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+            ]
+        );
+
         let data_table = model
             .find_class(&ObjectPath::new("/Script/Engine.DataTable"))
             .expect("generated DataTable schema");
@@ -276,5 +287,21 @@ mod tests {
                 SerializationOperation::AnimSequenceUncookedData,
             ]
         );
+        for class_path in [
+            "/Script/Engine.AnimationAsset",
+            "/Script/Engine.AnimSequenceBase",
+            "/Script/Engine.AnimSequence",
+        ] {
+            let class = model
+                .find_class(&ObjectPath::new(class_path))
+                .expect("generated animation class schema");
+            assert!(
+                class
+                    .fields
+                    .iter()
+                    .all(|field| !matches!(&field.field_type, FieldType::Unknown { .. })),
+                "{class_path} retained an unknown reflected field type"
+            );
+        }
     }
 }

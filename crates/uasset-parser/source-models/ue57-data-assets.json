@@ -1,5 +1,5 @@
 {
-	"schema_version": 5,
+	"schema_version": 6,
 	"engine_version": "5.7",
 	"classes": [
 		{
@@ -404,6 +404,171 @@
 				},
 				{
 					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.Skeleton",
+			"cpp_name": "USkeleton",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "BoneTree",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.BoneNode"
+						}
+					}
+				},
+				{
+					"name": "RefLocalPoses_DEPRECATED",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/CoreUObject.Transform"
+						}
+					}
+				},
+				{
+					"name": "PreviewForwardAxis",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/CoreUObject.EAxis"
+					}
+				},
+				{
+					"name": "VirtualBoneGuid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "VirtualBones",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.VirtualBone"
+						}
+					}
+				},
+				{
+					"name": "CompatibleSkeletons",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "soft_object",
+							"class_path": "/Script/Engine.Skeleton"
+						}
+					}
+				},
+				{
+					"name": "bUseRetargetModesFromCompatibleSkeleton",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Sockets",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.SkeletalMeshSocket"
+						}
+					}
+				},
+				{
+					"name": "SmartNames_DEPRECATED",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.SmartNameContainer"
+					}
+				},
+				{
+					"name": "BlendProfiles",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.BlendProfile"
+						}
+					}
+				},
+				{
+					"name": "SlotGroups",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "struct",
+							"path": "/Script/Engine.AnimSlotGroup"
+						}
+					}
+				},
+				{
+					"name": "PreviewSkeletalMesh",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/Engine.SkeletalMesh"
+					}
+				},
+				{
+					"name": "AdditionalPreviewSkeletalMeshes",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/Engine.DataAsset"
+					}
+				},
+				{
+					"name": "AnimationNotifies",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "PreviewAttachedAssetContainer",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.PreviewAssetAttachContainer"
+					}
+				},
+				{
+					"name": "AssetUserData",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				},
+				{
+					"name": "AssetUserDataEditorOnly",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.AssetUserData"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "skeleton_reference_bones"
 				}
 			]
 		},

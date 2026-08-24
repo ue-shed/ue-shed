@@ -115,6 +115,7 @@ enum SerializationFact {
     StructDefinition,
     StructFlags,
     StructDefaultInstance,
+    SkeletonReferenceBones,
     StringTableData,
 }
 
@@ -163,12 +164,14 @@ pub fn generate(
                     }),
             );
             functions.extend(parse_function_bodies(&tokens, &display_path));
+            functions.extend(parse_archive_operator_bodies(&tokens, &display_path));
         }
         for relative_path in &module.sources {
             let (absolute_path, display_path) = resolve_source(module.root, relative_path, roots);
             let source = read_source(&absolute_path)?;
             let tokens = lex(&source)?;
             functions.extend(parse_function_bodies(&tokens, &display_path));
+            functions.extend(parse_archive_operator_bodies(&tokens, &display_path));
         }
     }
 
@@ -191,6 +194,9 @@ pub fn generate(
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::StructDefaultInstance) {
         validate_user_defined_struct_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::SkeletonReferenceBones) {
+        validate_skeleton_serializer(&functions, &mut diagnostics)?;
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::StringTableData) {
         validate_string_table_helper(&functions, &mut diagnostics)?;
@@ -433,13 +439,13 @@ fn parse_reflected_types(tokens: &[Token], module: &str) -> Vec<ReflectedType> {
             index += 1;
             continue;
         };
-        let declaration_keyword = match kind {
-            ReflectedKind::Class | ReflectedKind::Enum => "class",
-            ReflectedKind::Struct => "struct",
-        };
         let Some(keyword_index) = tokens[after_macro..]
             .iter()
-            .position(|token| token.text == declaration_keyword)
+            .position(|token| match kind {
+                ReflectedKind::Class => token.text == "class",
+                ReflectedKind::Struct => token.text == "struct",
+                ReflectedKind::Enum => matches!(token.text.as_str(), "enum" | "namespace"),
+            })
             .map(|offset| after_macro + offset)
         else {
             index = after_macro;
@@ -627,6 +633,48 @@ fn parse_function_bodies(tokens: &[Token], path: &str) -> Vec<FunctionBody> {
     functions
 }
 
+fn parse_archive_operator_bodies(tokens: &[Token], path: &str) -> Vec<FunctionBody> {
+    let mut functions = Vec::new();
+    for index in 0..tokens.len().saturating_sub(3) {
+        if !token_sequence(&tokens[index..], &["operator", "<", "<", "("]) {
+            continue;
+        }
+        let open_paren = index + 3;
+        let Some(close_paren) = matching_token(tokens, open_paren, "(", ")") else {
+            continue;
+        };
+        let Some(target_type) =
+            ["FReferenceSkeleton", "FMeshBoneInfo"]
+                .into_iter()
+                .find(|target| {
+                    tokens[open_paren + 1..close_paren]
+                        .iter()
+                        .any(|token| token.text == *target)
+                })
+        else {
+            continue;
+        };
+        if tokens
+            .get(close_paren + 1)
+            .is_none_or(|token| token.text != "{")
+        {
+            continue;
+        }
+        let open_brace = close_paren + 1;
+        let Some(close_brace) = matching_token(tokens, open_brace, "{", "}") else {
+            continue;
+        };
+        functions.push(FunctionBody {
+            class_name: target_type.to_owned(),
+            function_name: "ArchiveOperator".to_owned(),
+            path: path.to_owned(),
+            line: tokens[index].line,
+            tokens: tokens[open_brace + 1..close_brace].to_vec(),
+        });
+    }
+    functions
+}
+
 fn serializer_facts(functions: &[FunctionBody]) -> BTreeMap<String, Vec<SerializationFact>> {
     functions
         .iter()
@@ -680,6 +728,13 @@ fn serializer_facts(functions: &[FunctionBody]) -> BTreeMap<String, Vec<Serializ
                     && !facts.contains(&SerializationFact::StructDefaultInstance)
                 {
                     facts.push(SerializationFact::StructDefaultInstance);
+                } else if function.class_name == "USkeleton"
+                    && token_sequence(tokens, &["Ar", "<", "<", "ReferenceSkeleton"])
+                    && !facts.contains(&SerializationFact::SkeletonReferenceBones)
+                {
+                    facts.push(SerializationFact::SkeletonReferenceBones);
+                    index += 4;
+                    continue;
                 } else if function.class_name == "UStringTable"
                     && token_sequence(tokens, &["StringTable", "-", ">", "Serialize"])
                 {
@@ -1010,6 +1065,75 @@ fn validate_user_defined_struct_serializer(
     Ok(())
 }
 
+fn validate_skeleton_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions.iter().find(|function| {
+        function.class_name == "USkeleton" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "USkeleton::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["Ar", "<", "<", "ReferenceSkeleton"][..],
+        &["Ar", "<", "<", "NumOfRetargetSources"][..],
+        &["Ar", "<", "<", "Guid"][..],
+        &["SmartNames_DEPRECATED", ".", "Serialize"][..],
+        &["FStripDataFlags", "StripFlags"][..],
+        &["Ar", "<", "<", "ExistingMarkerNames"][..],
+    ];
+    validate_ordered_serializer_shape(serializer, "Skeleton", &required)?;
+
+    let Some(reference_skeleton) = functions.iter().find(|function| {
+        function.class_name == "FReferenceSkeleton" && function.function_name == "ArchiveOperator"
+    }) else {
+        return Err(GeneratorError::new(
+            "FReferenceSkeleton archive operator was not found in the configured sources",
+        ));
+    };
+    let reference_shape = [
+        &["Ar", "<", "<", "F", ".", "RawRefBoneInfo"][..],
+        &["Ar", "<", "<", "F", ".", "RawRefBonePose"][..],
+        &["Ar", "<", "<", "F", ".", "RawNameToIndexMap"][..],
+    ];
+    validate_ordered_serializer_shape(reference_skeleton, "ReferenceSkeleton", &reference_shape)?;
+
+    let Some(bone_info) = functions.iter().find(|function| {
+        function.class_name == "FMeshBoneInfo" && function.function_name == "ArchiveOperator"
+    }) else {
+        return Err(GeneratorError::new(
+            "FMeshBoneInfo archive operator was not found in the configured sources",
+        ));
+    };
+    let bone_shape = [
+        &[
+            "Ar",
+            "<",
+            "<",
+            "F",
+            ".",
+            "Name",
+            "<",
+            "<",
+            "F",
+            ".",
+            "ParentIndex",
+        ][..],
+        &["Ar", "<", "<", "F", ".", "ExportName"][..],
+    ];
+    validate_ordered_serializer_shape(bone_info, "MeshBoneInfo", &bone_shape)?;
+
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized FReferenceSkeleton bone-info prefix; pose and later native data remain compatibility-opaque"
+            .to_owned(),
+    });
+    Ok(())
+}
+
 fn validate_ordered_serializer_shape(
     function: &FunctionBody,
     label: &str,
@@ -1092,6 +1216,9 @@ fn effective_serialization(
                 SerializationFact::StructDefaultInstance => {
                     operations.push(SerializationOperation::StructDefaultInstance);
                 }
+                SerializationFact::SkeletonReferenceBones => {
+                    operations.push(SerializationOperation::SkeletonReferenceBones);
+                }
                 SerializationFact::StringTableData => {
                     operations.push(SerializationOperation::StringTableData);
                 }
@@ -1158,10 +1285,14 @@ fn parse_field_type(
     if let Some(inner) = generic_argument(cpp_type, "TEnumAsByte") {
         let enum_name = inner.strip_prefix("enum").unwrap_or(inner);
         return FieldType::Enum {
-            path: paths
-                .get(enum_name)
-                .cloned()
-                .unwrap_or_else(|| unreal_path(module, enum_name)),
+            path: if enum_name == "EAxis::Type" {
+                ObjectPath::new("/Script/CoreUObject.EAxis")
+            } else {
+                paths
+                    .get(enum_name)
+                    .cloned()
+                    .unwrap_or_else(|| unreal_path(module, enum_name))
+            },
         };
     }
     match cpp_type {
@@ -1179,6 +1310,12 @@ fn parse_field_type(
         "FName" => FieldType::Name,
         "FString" => FieldType::String,
         "FText" => FieldType::Text,
+        "FGuid" => FieldType::Struct {
+            path: ObjectPath::new("/Script/CoreUObject.Guid"),
+        },
+        "FTransform" => FieldType::Struct {
+            path: ObjectPath::new("/Script/CoreUObject.Transform"),
+        },
         "FVector" => FieldType::Struct {
             path: ObjectPath::new("/Script/CoreUObject.Vector"),
         },
@@ -1351,6 +1488,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_unscoped_and_namespaced_enums_without_swallowing_the_next_class() {
+        let source = r#"
+            UENUM()
+            enum EStatus : int { Ready, Error };
+
+            UENUM()
+            namespace EMode { enum Type : int { One, Two }; }
+
+            UCLASS()
+            class UExample : public UObject, public IExample
+            {
+                GENERATED_BODY()
+            };
+        "#;
+        let declarations = parse_reflected_types(&lex(source).expect("lex"), "Fixture");
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|declaration| declaration.cpp_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["EStatus", "EMode", "UExample"]
+        );
+        assert_eq!(declarations[2].super_cpp_name.as_deref(), Some("UObject"));
+    }
+
+    #[test]
     fn recognizes_the_supported_serializer_language_in_order() {
         let source = r#"
             void UObject::Serialize(FStructuredArchive::FRecord Record)
@@ -1392,6 +1555,11 @@ mod tests {
             {
                 Super::Serialize(Record);
                 SerializeItem(Record.EnterField(TEXT("Data")), StructData, nullptr);
+            }
+            void USkeleton::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << ReferenceSkeleton;
             }
         "#;
         let functions = parse_function_bodies(&lex(source).expect("lex"), "DataTable.cpp");
@@ -1441,6 +1609,13 @@ mod tests {
             vec![
                 SerializationFact::Inherit,
                 SerializationFact::StructDefaultInstance
+            ]
+        );
+        assert_eq!(
+            facts["USkeleton"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::SkeletonReferenceBones
             ]
         );
     }
@@ -1568,6 +1743,46 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_the_skeleton_bone_prefix_and_opaque_tail_in_order() {
+        let source = r#"
+            void USkeleton::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << ReferenceSkeleton;
+                Ar << NumOfRetargetSources;
+                Ar << Guid;
+                SmartNames_DEPRECATED.Serialize(Ar, IsTemplate());
+                FStripDataFlags StripFlags(Ar);
+                Ar << ExistingMarkerNames;
+            }
+            FArchive & operator<<(FArchive& Ar, FReferenceSkeleton& F)
+            {
+                Ar << F.RawRefBoneInfo;
+                Ar << F.RawRefBonePose;
+                Ar << F.RawNameToIndexMap;
+                return Ar;
+            }
+            FArchive & operator<<(FArchive& Ar, FMeshBoneInfo& F)
+            {
+                Ar << F.Name << F.ParentIndex;
+                Ar << F.ExportName;
+                return Ar;
+            }
+        "#;
+        let tokens = lex(source).expect("lex");
+        let mut functions = parse_function_bodies(&tokens, "Skeleton.cpp");
+        functions.extend(parse_archive_operator_bodies(
+            &tokens,
+            "ReferenceSkeleton.cpp",
+        ));
+        let mut diagnostics = Vec::new();
+        validate_skeleton_serializer(&functions, &mut diagnostics)
+            .expect("supported Skeleton shape");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("compatibility-opaque"));
+    }
+
+    #[test]
     fn maps_fixture_field_types_without_unknown_fallbacks() {
         let paths = BTreeMap::from([
             (
@@ -1613,6 +1828,24 @@ mod tests {
             parse_field_type("TEnumAsByte<enumERarity>", "Fixture", &paths, &enums),
             FieldType::Enum {
                 path: ObjectPath::new("/Script/Fixture.Rarity")
+            }
+        );
+        assert_eq!(
+            parse_field_type("FTransform", "Engine", &paths, &enums),
+            FieldType::Struct {
+                path: ObjectPath::new("/Script/CoreUObject.Transform")
+            }
+        );
+        assert_eq!(
+            parse_field_type("FGuid", "Engine", &paths, &enums),
+            FieldType::Struct {
+                path: ObjectPath::new("/Script/CoreUObject.Guid")
+            }
+        );
+        assert_eq!(
+            parse_field_type("TEnumAsByte<EAxis::Type>", "Engine", &paths, &enums),
+            FieldType::Enum {
+                path: ObjectPath::new("/Script/CoreUObject.EAxis")
             }
         );
     }

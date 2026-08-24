@@ -1278,38 +1278,7 @@ impl AssetDecoder for SkeletonDecoder {
         // footer) then `Ar << ReferenceSkeleton`.
         let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
 
-        // `FReferenceSkeleton`: `TArray<FMeshBoneInfo>` (FName Name, i32 ParentIndex,
-        // and an editor-only FString ExportName) — the bone pose array and the rest
-        // of the tail are left unparsed.
-        let editor_data_present = !context
-            .package
-            .summary
-            .versions
-            .package_flags
-            .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY);
-        let count_offset = reader.tell();
-        let count = reader.read_i32(&format!("{}.ReferenceSkeleton.Num", export.object_path))?;
-        if count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative reference-skeleton bone count {count} at byte {count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<SkeletonBone>(
-            usize::try_from(count).expect("i32 fits in usize"),
-            if editor_data_present { 16 } else { 12 },
-            &format!("{}.ReferenceSkeleton.Num", export.object_path),
-        )?;
-        let mut bones = Vec::with_capacity(capacity);
-        for index in 0..count {
-            let path = format!("{}.ReferenceSkeleton.Bones[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{path}.Name"))?;
-            let parent_index = reader.read_i32(&format!("{path}.ParentIndex"))?;
-            if editor_data_present {
-                reader.read_fstring(&format!("{path}.ExportName"))?;
-            }
-            bones.push(SkeletonBone { name, parent_index });
-        }
+        let bones = decode_skeleton_reference_bones(&mut reader, context, &export.object_path)?;
 
         Ok(DecodedAsset::Skeleton(DecodedSkeleton {
             object_path: export.object_path.clone(),
@@ -1318,6 +1287,46 @@ impl AssetDecoder for SkeletonDecoder {
             bones,
         }))
     }
+}
+
+fn decode_skeleton_reference_bones(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<Vec<SkeletonBone>, AssetError> {
+    // `FReferenceSkeleton` begins with `TArray<FMeshBoneInfo>` (FName Name,
+    // i32 ParentIndex, and an editor-only FString ExportName). The legacy
+    // contract intentionally stops before RawRefBonePose and later Skeleton data.
+    let editor_data_present = !context
+        .package
+        .summary
+        .versions
+        .package_flags
+        .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY);
+    let count_offset = reader.tell();
+    let count = reader.read_i32(&format!("{object_path}.ReferenceSkeleton.Num"))?;
+    if count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative reference-skeleton bone count {count} at byte {count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<SkeletonBone>(
+        usize::try_from(count).expect("i32 fits in usize"),
+        if editor_data_present { 16 } else { 12 },
+        &format!("{object_path}.ReferenceSkeleton.Num"),
+    )?;
+    let mut bones = Vec::with_capacity(capacity);
+    for index in 0..count {
+        let path = format!("{object_path}.ReferenceSkeleton.Bones[{index}]");
+        let name = reader.read_name_ref(&format!("{path}.Name"))?;
+        let parent_index = reader.read_i32(&format!("{path}.ParentIndex"))?;
+        if editor_data_present {
+            reader.read_fstring(&format!("{path}.ExportName"))?;
+        }
+        bones.push(SkeletonBone { name, parent_index });
+    }
+    Ok(bones)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1710,6 +1719,24 @@ pub fn decode_modeled_export(
             default_values,
         })));
     }
+    if context.schemas.class_is_a(class_path, SKELETON_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Skeleton)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let bones = source.skeleton_bones.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce reference-skeleton bones"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::Skeleton(DecodedSkeleton {
+            object_path: export.object_path.clone(),
+            object_guid: source.object_guid,
+            properties: source.properties,
+            bones,
+        })));
+    }
     if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
         validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
         let source = execute_source_serialization(export, context)?;
@@ -1732,6 +1759,7 @@ struct SourceSerializationOutput {
     struct_fields: Option<Vec<StructField>>,
     struct_flags: Option<u32>,
     struct_default_values: Option<PropertyStream>,
+    skeleton_bones: Option<Vec<SkeletonBone>>,
     string_table: Option<SourceStringTableData>,
 }
 
@@ -1768,6 +1796,7 @@ fn execute_source_serialization(
     let mut struct_fields = None;
     let mut struct_flags = None;
     let mut struct_default_values = None;
+    let mut skeleton_bones = None;
     let mut string_table = None;
     for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
         match operation {
@@ -1821,6 +1850,13 @@ fn execute_source_serialization(
                     &export.object_path,
                 )?);
             }
+            SerializationOperation::SkeletonReferenceBones if skeleton_bones.is_none() => {
+                skeleton_bones = Some(decode_skeleton_reference_bones(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
             SerializationOperation::StringTableData if string_table.is_none() => {
                 string_table = Some(decode_string_table_data(&mut reader, &export.object_path)?);
             }
@@ -1831,12 +1867,16 @@ fn execute_source_serialization(
             | SerializationOperation::StructDefinition
             | SerializationOperation::StructFlags
             | SerializationOperation::StructDefaultInstance
+            | SerializationOperation::SkeletonReferenceBones
             | SerializationOperation::StringTableData => {
                 return Err(unsupported_source_plan(class_path, &schema.serialization));
             }
         }
     }
-    if reader.remaining() != 0 {
+    let preserves_legacy_opaque_tail = schema
+        .serialization
+        .contains(&SerializationOperation::SkeletonReferenceBones);
+    if reader.remaining() != 0 && !preserves_legacy_opaque_tail {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
             format!(
@@ -1856,6 +1896,7 @@ fn execute_source_serialization(
         struct_fields,
         struct_flags,
         struct_default_values,
+        skeleton_bones,
         string_table,
     })
 }
@@ -1876,6 +1917,7 @@ enum SourcePlanKind {
     DataAsset,
     DataTable,
     Enum,
+    Skeleton,
     Struct,
     StringTable,
 }
@@ -1929,6 +1971,14 @@ fn validate_source_serialization(
                 SerializationOperation::StructDefinition,
                 SerializationOperation::StructFlags,
                 SerializationOperation::StructDefaultInstance
+            ]
+        ),
+        SourcePlanKind::Skeleton => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::SkeletonReferenceBones
             ]
         ),
         SourcePlanKind::StringTable => matches!(
@@ -2748,6 +2798,7 @@ mod tests {
         push_i32(&mut export_bytes, 0);
         push_i32(&mut export_bytes, 0); // bone[1].ParentIndex -> root
         push_fstring(&mut export_bytes, "child");
+        export_bytes.extend_from_slice(&[1, 2, 3, 4]); // compatibility-opaque pose/later tail
 
         let package = test_package(bone_names);
         let export = test_export(
@@ -2767,6 +2818,18 @@ mod tests {
         else {
             panic!("expected a Skeleton decode");
         };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::Skeleton(generated)) =
+            decode_modeled_export(&export, &generated_context)
+                .expect("generated Skeleton should decode")
+        else {
+            panic!("expected a generated Skeleton decode");
+        };
+        assert_eq!(generated, skeleton);
         assert_eq!(skeleton.bones.len(), 2);
         assert_eq!(skeleton.bones[0].parent_index, -1);
         assert_eq!(skeleton.bones[1].parent_index, 0);
@@ -2778,6 +2841,37 @@ mod tests {
             package.resolve_name(skeleton.bones[1].name).as_deref(),
             Some("child")
         );
+    }
+
+    #[test]
+    fn source_modeled_skeleton_preserves_negative_bone_count_error() {
+        let mut export_bytes = write_uobject_export(0, &[]);
+        push_i32(&mut export_bytes, 0); // object-guid footer
+        push_i32(&mut export_bytes, -1); // invalid bone count
+        let package = test_package(vec!["None".into()]);
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/SKEL_Test.SKEL_Test",
+            SKELETON_CLASS,
+        );
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+        let legacy = SkeletonDecoder
+            .decode(&export, &legacy_context)
+            .expect_err("legacy path rejects negative bone count");
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects negative bone count");
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     #[test]

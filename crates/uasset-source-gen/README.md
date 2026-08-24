@@ -4,7 +4,7 @@
 It reads reflected declarations and a deliberately small subset of serializer bodies, then emits a
 language-neutral JSON model consumed through `uasset-parser`'s `SchemaProvider` boundary.
 
-The generated model currently proves six legacy decoded variants across these target families:
+The generated model currently proves seven legacy decoded variants across these target families:
 
 - `UDataTable` and `UCompositeDataTable`: inheritance, reflected row schemas, UObject properties and
   GUID footer, and the native row array written by `UDataTable::SaveStructData`.
@@ -18,6 +18,8 @@ The generated model currently proves six legacy decoded variants across these ta
   `FName`/`int64` entry array, and `CppForm`.
 - `UUserDefinedStruct`: inheritance through `UStruct` and `UScriptStruct`, reflected `FProperty`
   fields, script-size markers, non-computed struct flags, and the tagged default instance.
+- `USkeleton`: inherited UObject serialization and the `FReferenceSkeleton` bone-info prefix. Bone
+  poses and the later native Skeleton payload remain opaque, matching the compatibility decoder.
 
 The conformance test decodes all 12 DataTable fixtures (10,022 rows total) and the fixture DataAsset
 without any raw property values, plus the three-entry StringTable fixture. It also checks every
@@ -34,6 +36,7 @@ classification improvement from generic `UObject` to its source-proven `UDataAss
 requiring identical properties, GUID, and object identity. Synthetic differential tests require
 exact generated/legacy equality for CurveTable and UserDefinedEnum, including their supported
 malformed-input boundaries, and do the same for UserDefinedStruct fields and nesting limits.
+Skeleton comparisons cover exact bone output, malformed counts, and the intentionally opaque tail.
 
 The native inspection, project-IO, and WASM paths use the embedded engine-only model. The parser and
 inspection libraries also accept an explicit `SchemaProvider`, allowing a generated project model to

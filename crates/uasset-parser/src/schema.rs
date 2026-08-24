@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::package::ObjectPath;
 
-pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 5;
+pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 6;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StructSchema {
@@ -93,6 +93,7 @@ pub enum SerializationOperation {
     StructDefinition,
     StructFlags,
     StructDefaultInstance,
+    SkeletonReferenceBones,
     StringTableData,
 }
 
@@ -246,6 +247,18 @@ mod tests {
                 SerializationOperation::StructDefinition,
                 SerializationOperation::StructFlags,
                 SerializationOperation::StructDefaultInstance,
+            ]
+        );
+
+        let skeleton = model
+            .find_class(&ObjectPath::new("/Script/Engine.Skeleton"))
+            .expect("generated Skeleton schema");
+        assert_eq!(
+            skeleton.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::SkeletonReferenceBones,
             ]
         );
     }

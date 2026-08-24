@@ -257,6 +257,11 @@ pub struct CurveTableRow {
     pub keys: Vec<CurveKey>,
 }
 
+struct SourceCurveTableData {
+    mode: CurveTableMode,
+    rows: Vec<CurveTableRow>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CurveKey {
     Simple(SimpleCurveKey),
@@ -562,6 +567,7 @@ impl AssetDecoder for CurveTableDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::CurveTable)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
@@ -575,53 +581,7 @@ impl AssetDecoder for CurveTableDecoder {
             ));
         }
 
-        let row_count_offset = reader.tell();
-        let row_count = reader.read_i32(&format!("{}.Rows.Count", export.object_path))?;
-        if row_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative CurveTable row count {row_count} at byte {row_count_offset}"),
-            ));
-        }
-
-        let raw_mode = reader.read_u8(&format!("{}.Mode", export.object_path))?;
-        let mode = match raw_mode {
-            0 => CurveTableMode::Empty,
-            1 => CurveTableMode::SimpleCurves,
-            2 => CurveTableMode::RichCurves,
-            value => {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("unsupported CurveTable mode {value}"),
-                ));
-            }
-        };
-        let capacity = reader.checked_vec_capacity::<CurveTableRow>(
-            usize::try_from(row_count).expect("i32 fits in usize"),
-            16,
-            &format!("{}.Rows.Count", export.object_path),
-        )?;
-        let mut rows = Vec::with_capacity(capacity);
-        for index in 0..row_count {
-            let row_path = format!("{}.Rows[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
-            let stream = read_tagged_property_stream(
-                &mut reader,
-                &context.package.summary.versions,
-                &context.package.names,
-                &format!("{row_path}.Curve"),
-            )?;
-            let keys = match mode {
-                CurveTableMode::Empty => Vec::new(),
-                CurveTableMode::SimpleCurves => {
-                    decode_simple_curve_keys(context.source, context.package, &stream, &row_path)?
-                }
-                CurveTableMode::RichCurves => {
-                    decode_rich_curve_keys(context.source, context.package, &stream, &row_path)?
-                }
-            };
-            rows.push(CurveTableRow { name, keys });
-        }
+        let curve_table = decode_curve_table_data(&mut reader, context, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -636,11 +596,66 @@ impl AssetDecoder for CurveTableDecoder {
 
         Ok(DecodedAsset::CurveTable(DecodedCurveTable {
             object_path: export.object_path.clone(),
-            mode,
+            mode: curve_table.mode,
             properties,
-            rows,
+            rows: curve_table.rows,
         }))
     }
+}
+
+fn decode_curve_table_data(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<SourceCurveTableData, AssetError> {
+    let row_count_offset = reader.tell();
+    let row_count = reader.read_i32(&format!("{object_path}.Rows.Count"))?;
+    if row_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative CurveTable row count {row_count} at byte {row_count_offset}"),
+        ));
+    }
+
+    let raw_mode = reader.read_u8(&format!("{object_path}.Mode"))?;
+    let mode = match raw_mode {
+        0 => CurveTableMode::Empty,
+        1 => CurveTableMode::SimpleCurves,
+        2 => CurveTableMode::RichCurves,
+        value => {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("unsupported CurveTable mode {value}"),
+            ));
+        }
+    };
+    let capacity = reader.checked_vec_capacity::<CurveTableRow>(
+        usize::try_from(row_count).expect("i32 fits in usize"),
+        16,
+        &format!("{object_path}.Rows.Count"),
+    )?;
+    let mut rows = Vec::with_capacity(capacity);
+    for index in 0..row_count {
+        let row_path = format!("{object_path}.Rows[{index}]");
+        let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
+        let stream = read_tagged_property_stream(
+            reader,
+            &context.package.summary.versions,
+            &context.package.names,
+            &format!("{row_path}.Curve"),
+        )?;
+        let keys = match mode {
+            CurveTableMode::Empty => Vec::new(),
+            CurveTableMode::SimpleCurves => {
+                decode_simple_curve_keys(context.source, context.package, &stream, &row_path)?
+            }
+            CurveTableMode::RichCurves => {
+                decode_rich_curve_keys(context.source, context.package, &stream, &row_path)?
+            }
+        };
+        rows.push(CurveTableRow { name, keys });
+    }
+    Ok(SourceCurveTableData { mode, rows })
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -789,6 +804,70 @@ fn decode_string_table_data(
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EnumDecoder;
 
+struct SourceEnumData {
+    cpp_form: EnumCppForm,
+    entries: Vec<EnumEntry>,
+}
+
+fn decode_enum_data(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    properties: &PropertyStream,
+    object_path: &ObjectPath,
+) -> Result<SourceEnumData, AssetError> {
+    // `UEnum::Serialize` writes the names as `int32 Num` followed by
+    // `Num` × (`FName`, `int64`) pairs, then a `uint8 CppForm`.
+    let count_offset = reader.tell();
+    let count = reader.read_i32(&format!("{object_path}.Names.Count"))?;
+    if count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative Enum name count {count} at byte {count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<(NameRef, i64)>(
+        usize::try_from(count).expect("i32 fits in usize"),
+        16,
+        &format!("{object_path}.Names.Count"),
+    )?;
+    let mut raw_entries = Vec::with_capacity(capacity);
+    for index in 0..count {
+        let entry_path = format!("{object_path}.Names[{index}]");
+        let name = reader.read_name_ref(&format!("{entry_path}.Name"))?;
+        let value = reader.read_i64(&format!("{entry_path}.Value"))?;
+        raw_entries.push((name, value));
+    }
+
+    let cpp_form_offset = reader.tell();
+    let raw_form = reader.read_u8(&format!("{object_path}.CppForm"))?;
+    let cpp_form = match raw_form {
+        0 => EnumCppForm::Regular,
+        1 => EnumCppForm::Namespaced,
+        2 => EnumCppForm::EnumClass,
+        value => {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("unsupported Enum CppForm {value} at byte {cpp_form_offset}"),
+            ));
+        }
+    };
+
+    let display_names = display_name_map(context.package, properties);
+    let entries = raw_entries
+        .into_iter()
+        .map(|(name, value)| EnumEntry {
+            name,
+            value,
+            display_name: display_names
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, source)| source.clone()),
+        })
+        .collect();
+
+    Ok(SourceEnumData { cpp_form, entries })
+}
+
 impl AssetDecoder for EnumDecoder {
     fn supports(&self, class_path: &ObjectPath) -> bool {
         class_path.as_str() == USERDEFINEDENUM_CLASS
@@ -822,42 +901,7 @@ impl AssetDecoder for EnumDecoder {
             ));
         }
 
-        // `UEnum::Serialize` writes the names as `int32 Num` followed by
-        // `Num` × (`FName`, `int64`) pairs, then a `uint8 CppForm`.
-        let count_offset = reader.tell();
-        let count = reader.read_i32(&format!("{}.Names.Count", export.object_path))?;
-        if count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative Enum name count {count} at byte {count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<(NameRef, i64)>(
-            usize::try_from(count).expect("i32 fits in usize"),
-            16,
-            &format!("{}.Names.Count", export.object_path),
-        )?;
-        let mut raw_entries = Vec::with_capacity(capacity);
-        for index in 0..count {
-            let entry_path = format!("{}.Names[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{entry_path}.Name"))?;
-            let value = reader.read_i64(&format!("{entry_path}.Value"))?;
-            raw_entries.push((name, value));
-        }
-
-        let cpp_form_offset = reader.tell();
-        let raw_form = reader.read_u8(&format!("{}.CppForm", export.object_path))?;
-        let cpp_form = match raw_form {
-            0 => EnumCppForm::Regular,
-            1 => EnumCppForm::Namespaced,
-            2 => EnumCppForm::EnumClass,
-            value => {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("unsupported Enum CppForm {value} at byte {cpp_form_offset}"),
-                ));
-            }
-        };
+        let data = decode_enum_data(&mut reader, context, &properties, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -870,24 +914,11 @@ impl AssetDecoder for EnumDecoder {
             ));
         }
 
-        let display_names = display_name_map(context.package, &properties);
-        let entries = raw_entries
-            .into_iter()
-            .map(|(name, value)| EnumEntry {
-                name,
-                value,
-                display_name: display_names
-                    .iter()
-                    .find(|(key, _)| *key == name)
-                    .map(|(_, source)| source.clone()),
-            })
-            .collect();
-
         Ok(DecodedAsset::Enum(DecodedEnum {
             object_path: export.object_path.clone(),
-            cpp_form,
+            cpp_form: data.cpp_form,
             properties,
-            entries,
+            entries: data.entries,
         }))
     }
 }
@@ -1514,8 +1545,8 @@ pub fn decode_export(
     Ok(None)
 }
 
-/// Decodes a DataTable, DataAsset, or StringTable only when the supplied source model owns its class
-/// hierarchy and serialization plan.
+/// Decodes a supported asset only when the supplied source model owns its class hierarchy and
+/// serialization plan.
 ///
 /// Returning `Ok(None)` is deliberate: callers can use this as a strict equivalence lane with no
 /// handwritten class-name fallback, while [`decode_export`] retains compatibility for projects
@@ -1563,6 +1594,24 @@ pub fn decode_modeled_export(
             rows,
         })));
     }
+    if context.schemas.class_is_a(class_path, CURVETABLE_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::CurveTable)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let curve_table = source.curve_table.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce CurveTable rows"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::CurveTable(DecodedCurveTable {
+            object_path: export.object_path.clone(),
+            mode: curve_table.mode,
+            properties: source.properties,
+            rows: curve_table.rows,
+        })));
+    }
     if context.schemas.class_is_a(class_path, STRINGTABLE_CLASS) {
         validate_source_serialization(context.schemas, class_path, SourcePlanKind::StringTable)?;
         let mut source = execute_source_serialization(export, context)?;
@@ -1578,6 +1627,27 @@ pub fn decode_modeled_export(
             object_path: export.object_path.clone(),
             namespace: string_table.namespace,
             entries: string_table.entries,
+        })));
+    }
+    if context
+        .schemas
+        .class_is_a(class_path, USERDEFINEDENUM_CLASS)
+    {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Enum)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let enum_data = source.enum_data.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce Enum data"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::Enum(DecodedEnum {
+            object_path: export.object_path.clone(),
+            cpp_form: enum_data.cpp_form,
+            properties: source.properties,
+            entries: enum_data.entries,
         })));
     }
     if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
@@ -1597,6 +1667,8 @@ struct SourceSerializationOutput {
     properties: PropertyStream,
     object_guid: Option<Guid>,
     rows: Option<Vec<DataTableRow>>,
+    curve_table: Option<SourceCurveTableData>,
+    enum_data: Option<SourceEnumData>,
     string_table: Option<SourceStringTableData>,
 }
 
@@ -1628,6 +1700,8 @@ fn execute_source_serialization(
     };
     let mut object_guid = None;
     let mut rows = None;
+    let mut curve_table = None;
+    let mut enum_data = None;
     let mut string_table = None;
     for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
         match operation {
@@ -1649,11 +1723,28 @@ fn execute_source_serialization(
                     &export.object_path,
                 )?);
             }
+            SerializationOperation::CurveTableRows if curve_table.is_none() => {
+                curve_table = Some(decode_curve_table_data(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::EnumData if enum_data.is_none() => {
+                enum_data = Some(decode_enum_data(
+                    &mut reader,
+                    context,
+                    &properties,
+                    &export.object_path,
+                )?);
+            }
             SerializationOperation::StringTableData if string_table.is_none() => {
                 string_table = Some(decode_string_table_data(&mut reader, &export.object_path)?);
             }
             SerializationOperation::TaggedProperties
             | SerializationOperation::DataTableRows { .. }
+            | SerializationOperation::CurveTableRows
+            | SerializationOperation::EnumData
             | SerializationOperation::StringTableData => {
                 return Err(unsupported_source_plan(class_path, &schema.serialization));
             }
@@ -1674,6 +1765,8 @@ fn execute_source_serialization(
         properties,
         object_guid,
         rows,
+        curve_table,
+        enum_data,
         string_table,
     })
 }
@@ -1690,8 +1783,10 @@ fn unsupported_source_plan(
 
 #[derive(Clone, Copy)]
 enum SourcePlanKind {
+    CurveTable,
     DataAsset,
     DataTable,
+    Enum,
     StringTable,
 }
 
@@ -1705,6 +1800,14 @@ fn validate_source_serialization(
     };
     let operations = &schema.serialization;
     let supported = match expected {
+        SourcePlanKind::CurveTable => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::CurveTableRows
+            ]
+        ),
         SourcePlanKind::DataAsset => matches!(
             operations.as_slice(),
             [
@@ -1719,6 +1822,14 @@ fn validate_source_serialization(
                 SerializationOperation::ObjectGuid,
                 SerializationOperation::DataTableRows { row_struct_property }
             ] if row_struct_property == "RowStruct"
+        ),
+        SourcePlanKind::Enum => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::EnumData
+            ]
         ),
         SourcePlanKind::StringTable => matches!(
             operations.as_slice(),
@@ -2204,18 +2315,18 @@ mod tests {
     }
 
     fn decode_curve_table(
-        export_bytes: Vec<u8>,
-        package: Package,
-        export: Export,
+        export_bytes: &[u8],
+        package: &Package,
+        export: &Export,
+        schemas: &dyn SchemaProvider,
     ) -> DecodedCurveTable {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
-            source: &export_bytes,
-            package: &package,
-            schemas: &schemas,
+            source: export_bytes,
+            package,
+            schemas,
         };
         let DecodedAsset::CurveTable(curve_table) = CurveTableDecoder
-            .decode(&export, &context)
+            .decode(export, &context)
             .expect("decode curve table")
         else {
             panic!("expected CurveTable decode");
@@ -2339,15 +2450,19 @@ mod tests {
         bytes
     }
 
-    fn decode_enum(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedEnum {
-        let schemas = EmptySchemas;
+    fn decode_enum(
+        export_bytes: &[u8],
+        package: &Package,
+        export: &Export,
+        schemas: &dyn SchemaProvider,
+    ) -> DecodedEnum {
         let context = AssetDecodeContext {
-            source: &export_bytes,
-            package: &package,
-            schemas: &schemas,
+            source: export_bytes,
+            package,
+            schemas,
         };
-        let DecodedAsset::Enum(decoded_enum) =
-            EnumDecoder.decode(&export, &context).expect("decode enum")
+        let Some(DecodedAsset::Enum(decoded_enum)) =
+            decode_export(export, &context).expect("decode enum")
         else {
             panic!("expected Enum decode");
         };
@@ -2817,7 +2932,12 @@ mod tests {
             CURVETABLE_CLASS,
         );
 
-        let curve_table = decode_curve_table(export_bytes, package, export);
+        let empty_schemas = EmptySchemas;
+        let legacy = decode_curve_table(&export_bytes, &package, &export, &empty_schemas);
+        let generated =
+            decode_curve_table(&export_bytes, &package, &export, embedded_source_model());
+        assert_eq!(generated, legacy);
+        let curve_table = generated;
 
         assert_eq!(curve_table.mode, CurveTableMode::RichCurves);
         assert_eq!(curve_table.rows.len(), 1);
@@ -2836,6 +2956,38 @@ mod tests {
                 leave_tangent_weight: 0.5,
             })]
         );
+    }
+
+    #[test]
+    fn source_modeled_curve_table_preserves_malformed_row_checks() {
+        let mut export_bytes = write_curvetable_export(0, &[], 0, &[]);
+        const ROW_COUNT_OFFSET: usize = 1 + 8 + 4;
+        export_bytes[ROW_COUNT_OFFSET..ROW_COUNT_OFFSET + 4]
+            .copy_from_slice(&(-1_i32).to_le_bytes());
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/CT_Bad.CT_Bad",
+            CURVETABLE_CLASS,
+        );
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &EmptySchemas,
+        };
+        let legacy = CurveTableDecoder
+            .decode(&export, &legacy_context)
+            .expect_err("legacy path rejects negative rows");
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects negative rows");
+
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     #[test]
@@ -2968,7 +3120,10 @@ mod tests {
             USERDEFINEDENUM_CLASS,
         );
 
-        let decoded = decode_enum(export_bytes, package, export);
+        let legacy_schemas = EmptySchemas;
+        let legacy = decode_enum(&export_bytes, &package, &export, &legacy_schemas);
+        let decoded = decode_enum(&export_bytes, &package, &export, embedded_source_model());
+        assert_eq!(decoded, legacy);
 
         assert_eq!(decoded.object_path.as_str(), "/Game/Test/E_Color.E_Color");
         assert_eq!(decoded.cpp_form, EnumCppForm::EnumClass);
@@ -3007,7 +3162,10 @@ mod tests {
             USERDEFINEDENUM_CLASS,
         );
 
-        let decoded = decode_enum(export_bytes, package, export);
+        let legacy_schemas = EmptySchemas;
+        let legacy = decode_enum(&export_bytes, &package, &export, &legacy_schemas);
+        let decoded = decode_enum(&export_bytes, &package, &export, embedded_source_model());
+        assert_eq!(decoded, legacy);
 
         assert_eq!(
             decoded
@@ -3028,18 +3186,27 @@ mod tests {
             "/Game/Test/E_Color.E_Color",
             USERDEFINEDENUM_CLASS,
         );
-        let schemas = EmptySchemas;
-        let context = AssetDecodeContext {
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
+            schemas: &legacy_schemas,
+        };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
         };
 
-        let error = EnumDecoder
-            .decode(&export, &context)
+        let legacy = EnumDecoder
+            .decode(&export, &legacy_context)
             .expect_err("unsupported cpp form");
-        assert_eq!(error.kind(), AssetErrorKind::MalformedData);
-        assert!(error.message().contains("CppForm"));
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated unsupported cpp form");
+        assert_eq!(legacy.kind(), AssetErrorKind::MalformedData);
+        assert!(legacy.message().contains("CppForm"));
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     /// Writes one `FProperty` as `UStruct::SerializeProperties` does: type FName,

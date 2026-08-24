@@ -1,7 +1,46 @@
 {
-	"schema_version": 2,
+	"schema_version": 4,
 	"engine_version": "5.7",
 	"classes": [
+		{
+			"path": "/Script/CoreUObject.Enum",
+			"cpp_name": "UEnum",
+			"super_path": "/Script/CoreUObject.Field",
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "enum_data"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.Field",
+			"cpp_name": "UField",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "Next",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Field"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
 		{
 			"path": "/Script/CoreUObject.Object",
 			"cpp_name": "UObject",
@@ -52,6 +91,37 @@
 				{
 					"kind": "data_table_rows",
 					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.CurveTable",
+			"cpp_name": "UCurveTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "ImportPath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "curve_table_rows"
 				}
 			]
 		},
@@ -216,9 +286,78 @@
 					"kind": "string_table_data"
 				}
 			]
+		},
+		{
+			"path": "/Script/Engine.UserDefinedEnum",
+			"cpp_name": "UUserDefinedEnum",
+			"super_path": "/Script/CoreUObject.Enum",
+			"fields": [
+				{
+					"name": "UniqueNameIndex",
+					"type": {
+						"kind": "uint32"
+					}
+				},
+				{
+					"name": "EnumDescription",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "DisplayNameMap",
+					"type": {
+						"kind": "map",
+						"key": {
+							"kind": "name"
+						},
+						"value": {
+							"kind": "text"
+						}
+					}
+				},
+				{
+					"name": "CachedCookedMetaDataPtr",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.EnumCookedMetaData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "enum_data"
+				}
+			]
 		}
 	],
 	"structs": [
+		{
+			"path": "/Script/Engine.CurveTableRowHandle",
+			"cpp_name": "FCurveTableRowHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "CurveTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.CurveTable"
+					}
+				},
+				{
+					"name": "RowName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
 		{
 			"path": "/Script/Engine.DataTableCategoryHandle",
 			"cpp_name": "FDataTableCategoryHandle",

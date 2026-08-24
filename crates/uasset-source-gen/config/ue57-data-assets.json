@@ -1,5 +1,5 @@
 {
-	"schema_version": 2,
+	"schema_version": 4,
 	"engine_version": "5.7",
 	"modules": [
 		{
@@ -7,6 +7,13 @@
 			"root": "engine_source",
 			"headers": ["Runtime/CoreUObject/Public/UObject/Object.h"],
 			"sources": ["Runtime/CoreUObject/Private/UObject/Obj.cpp"]
+		},
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": ["Runtime/CoreUObject/Public/UObject/Class.h"],
+			"sources": ["Runtime/CoreUObject/Private/UObject/Enum.cpp"],
+			"include_types": ["UField", "UEnum"]
 		},
 		{
 			"name": "Core",
@@ -18,17 +25,26 @@
 			"name": "Engine",
 			"root": "engine_source",
 			"headers": [
+				"Runtime/Engine/Classes/Engine/CurveTable.h",
 				"Runtime/Engine/Classes/Engine/DataAsset.h",
 				"Runtime/Engine/Classes/Engine/DataTable.h",
 				"Runtime/Engine/Classes/Engine/CompositeDataTable.h",
 				"Runtime/Engine/Public/Internationalization/StringTable.h"
 			],
 			"sources": [
+				"Runtime/Engine/Private/CurveTable.cpp",
 				"Runtime/Engine/Private/DataAsset.cpp",
 				"Runtime/Engine/Private/DataTable.cpp",
 				"Runtime/Engine/Private/CompositeDataTable.cpp",
 				"Runtime/Engine/Private/Internationalization/StringTable.cpp"
 			]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": ["Runtime/Engine/Classes/Engine/UserDefinedEnum.h"],
+			"sources": ["Runtime/Engine/Private/UserDefinedEnum.cpp"],
+			"include_types": ["UUserDefinedEnum"]
 		},
 		{
 			"name": "UEShedFixture",

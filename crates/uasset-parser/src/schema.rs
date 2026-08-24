@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::package::ObjectPath;
 
-pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 2;
+pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 4;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StructSchema {
@@ -88,6 +88,8 @@ pub enum SerializationOperation {
     TaggedProperties,
     ObjectGuid,
     DataTableRows { row_struct_property: String },
+    CurveTableRows,
+    EnumData,
     StringTableData,
 }
 
@@ -194,6 +196,18 @@ mod tests {
             "/Script/Engine.DataAsset"
         ));
 
+        let curve_table = model
+            .find_class(&ObjectPath::new("/Script/Engine.CurveTable"))
+            .expect("generated CurveTable schema");
+        assert_eq!(
+            curve_table.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::CurveTableRows,
+            ]
+        );
+
         let string_table = model
             .find_class(&ObjectPath::new("/Script/Engine.StringTable"))
             .expect("generated StringTable schema");
@@ -203,6 +217,18 @@ mod tests {
                 SerializationOperation::TaggedProperties,
                 SerializationOperation::ObjectGuid,
                 SerializationOperation::StringTableData,
+            ]
+        );
+
+        let user_defined_enum = model
+            .find_class(&ObjectPath::new("/Script/Engine.UserDefinedEnum"))
+            .expect("generated UserDefinedEnum schema");
+        assert_eq!(
+            user_defined_enum.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::EnumData,
             ]
         );
     }

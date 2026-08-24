@@ -23,6 +23,8 @@ pub struct ModuleConfig {
     pub root: SourceRoot,
     pub headers: Vec<String>,
     pub sources: Vec<String>,
+    #[serde(default)]
+    pub include_types: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -108,6 +110,8 @@ enum SerializationFact {
     TaggedProperties,
     ObjectGuid,
     DataTableRows,
+    CurveTableRows,
+    EnumData,
     StringTableData,
 }
 
@@ -147,7 +151,14 @@ pub fn generate(
             let (absolute_path, display_path) = resolve_source(module.root, relative_path, roots);
             let source = read_source(&absolute_path)?;
             let tokens = lex(&source)?;
-            reflected.extend(parse_reflected_types(&tokens, &module.name));
+            reflected.extend(
+                parse_reflected_types(&tokens, &module.name)
+                    .into_iter()
+                    .filter(|declaration| {
+                        module.include_types.is_empty()
+                            || module.include_types.contains(&declaration.cpp_name)
+                    }),
+            );
             functions.extend(parse_function_bodies(&tokens, &display_path));
         }
         for relative_path in &module.sources {
@@ -162,6 +173,12 @@ pub fn generate(
     let mut diagnostics = Vec::new();
     if has_serialization_fact(&serializer_facts, SerializationFact::DataTableRows) {
         validate_data_table_helper(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::CurveTableRows) {
+        validate_curve_table_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::EnumData) {
+        validate_enum_serializer(&functions, &mut diagnostics)?;
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::StringTableData) {
         validate_string_table_helper(&functions, &mut diagnostics)?;
@@ -618,6 +635,20 @@ fn serializer_facts(functions: &[FunctionBody]) -> BTreeMap<String, Vec<Serializ
                     facts.push(SerializationFact::ObjectGuid);
                 } else if function.tokens[index].text == "SaveStructData" {
                     facts.push(SerializationFact::DataTableRows);
+                } else if function.class_name == "UCurveTable"
+                    && token_sequence(tokens, &["Ar", "<", "<", "NumRows"])
+                    && !facts.contains(&SerializationFact::CurveTableRows)
+                {
+                    facts.push(SerializationFact::CurveTableRows);
+                    index += 4;
+                    continue;
+                } else if function.class_name == "UEnum"
+                    && token_sequence(tokens, &["Ar", "<", "<", "Num"])
+                    && !facts.contains(&SerializationFact::EnumData)
+                {
+                    facts.push(SerializationFact::EnumData);
+                    index += 4;
+                    continue;
                 } else if function.class_name == "UStringTable"
                     && token_sequence(tokens, &["StringTable", "-", ">", "Serialize"])
                 {
@@ -716,6 +747,120 @@ fn validate_string_table_helper(
     Ok(())
 }
 
+fn validate_curve_table_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions.iter().find(|function| {
+        function.class_name == "UCurveTable" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "UCurveTable::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["Ar", "<", "<", "NumRows"][..],
+        &["Ar", "<", "<", "CurveTableMode"][..],
+        &["Ar", "<", "<", "RowName"][..],
+        &[
+            "FSimpleCurve",
+            ":",
+            ":",
+            "StaticStruct",
+            "(",
+            ")",
+            "-",
+            ">",
+            "SerializeTaggedProperties",
+        ][..],
+        &[
+            "FRichCurve",
+            ":",
+            ":",
+            "StaticStruct",
+            "(",
+            ")",
+            "-",
+            ">",
+            "SerializeTaggedProperties",
+        ][..],
+    ];
+    let mut cursor = 0;
+    for sequence in required {
+        let Some(offset) = serializer.tokens[cursor..]
+            .windows(sequence.len())
+            .position(|tokens| token_sequence(tokens, sequence))
+        else {
+            return Err(GeneratorError::new(format!(
+                "{}:{} does not match the supported CurveTable serializer; missing ordered token sequence {}",
+                serializer.path,
+                serializer.line,
+                sequence.join(" ")
+            )));
+        };
+        cursor += offset + sequence.len();
+    }
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized mode + array<Record{Name: FName, Curve: FSimpleCurve | FRichCurve}>"
+            .to_owned(),
+    });
+    Ok(())
+}
+
+fn validate_enum_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions
+        .iter()
+        .find(|function| function.class_name == "UEnum" && function.function_name == "Serialize")
+    else {
+        return Err(GeneratorError::new(
+            "UEnum::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &[
+            "TArray",
+            "<",
+            "TPair",
+            "<",
+            "FName",
+            ",",
+            "int64",
+            ">",
+            ">",
+            "TempNames",
+        ][..],
+        &["Ar", "<", "<", "Num"][..],
+        &["Ar", "<", "<", "Pair"][..],
+        &["Ar", "<", "<", "EnumTypeByte"][..],
+    ];
+    let mut cursor = 0;
+    for sequence in required {
+        let Some(offset) = serializer.tokens[cursor..]
+            .windows(sequence.len())
+            .position(|tokens| token_sequence(tokens, sequence))
+        else {
+            return Err(GeneratorError::new(format!(
+                "{}:{} does not match the supported Enum serializer; missing ordered token sequence {}",
+                serializer.path,
+                serializer.line,
+                sequence.join(" ")
+            )));
+        };
+        cursor += offset + sequence.len();
+    }
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized array<Record{Name: FName, Value: int64}> + uint8 CppForm".to_owned(),
+    });
+    Ok(())
+}
+
 fn effective_serialization(
     cpp_name: &str,
     declarations: &BTreeMap<String, &ReflectedType>,
@@ -759,6 +904,12 @@ fn effective_serialization(
                     operations.push(SerializationOperation::DataTableRows {
                         row_struct_property: "RowStruct".to_owned(),
                     });
+                }
+                SerializationFact::CurveTableRows => {
+                    operations.push(SerializationOperation::CurveTableRows);
+                }
+                SerializationFact::EnumData => {
+                    operations.push(SerializationOperation::EnumData);
                 }
                 SerializationFact::StringTableData => {
                     operations.push(SerializationOperation::StringTableData);
@@ -1017,10 +1168,20 @@ mod tests {
                 Super::Serialize(Record);
                 if (Ar.IsSaving()) { SaveStructData(Record.EnterField(TEXT("Data"))); }
             }
+            void UCurveTable::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << NumRows;
+            }
             void UStringTable::Serialize(FArchive& Ar)
             {
                 Super::Serialize(Ar);
                 StringTable->Serialize(Ar);
+            }
+            void UEnum::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << Num;
             }
         "#;
         let functions = parse_function_bodies(&lex(source).expect("lex"), "DataTable.cpp");
@@ -1037,11 +1198,22 @@ mod tests {
             vec![SerializationFact::Inherit, SerializationFact::DataTableRows]
         );
         assert_eq!(
+            facts["UCurveTable"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::CurveTableRows
+            ]
+        );
+        assert_eq!(
             facts["UStringTable"],
             vec![
                 SerializationFact::Inherit,
                 SerializationFact::StringTableData
             ]
+        );
+        assert_eq!(
+            facts["UEnum"],
+            vec![SerializationFact::Inherit, SerializationFact::EnumData]
         );
     }
 
@@ -1066,6 +1238,52 @@ mod tests {
             .expect("supported StringTable shape");
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("metadata map"));
+    }
+
+    #[test]
+    fn recognizes_the_curve_table_payload_shape_in_order() {
+        let source = r#"
+            void UCurveTable::Serialize(FArchive& Ar)
+            {
+                int32 NumRows;
+                Ar << NumRows;
+                Ar << CurveTableMode;
+                FName RowName;
+                Ar << RowName;
+                FSimpleCurve::StaticStruct()->SerializeTaggedProperties(Ar, nullptr, nullptr, nullptr);
+                FRichCurve::StaticStruct()->SerializeTaggedProperties(Ar, nullptr, nullptr, nullptr);
+            }
+        "#;
+        let functions = parse_function_bodies(&lex(source).expect("lex"), "CurveTable.cpp");
+        let mut diagnostics = Vec::new();
+        validate_curve_table_serializer(&functions, &mut diagnostics)
+            .expect("supported CurveTable shape");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("FSimpleCurve | FRichCurve"));
+    }
+
+    #[test]
+    fn recognizes_the_enum_payload_shape_in_order() {
+        let source = r#"
+            void UEnum::Serialize(FArchive& Ar)
+            {
+                TArray<TPair<FName, int64>> TempNames;
+                int32 Num = 0;
+                Ar << Num;
+                for (TPair<FName, int64>& Pair : TempNames)
+                {
+                    Ar << Pair;
+                }
+                uint8 EnumTypeByte = (uint8)CppForm;
+                Ar << EnumTypeByte;
+            }
+        "#;
+        let functions = parse_function_bodies(&lex(source).expect("lex"), "Enum.cpp");
+        let mut diagnostics = Vec::new();
+        validate_enum_serializer(&functions, &mut diagnostics).expect("supported Enum shape");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("int64"));
+        assert!(diagnostics[0].message.contains("CppForm"));
     }
 
     #[test]

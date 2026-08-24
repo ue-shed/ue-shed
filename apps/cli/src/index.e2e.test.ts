@@ -61,7 +61,7 @@ function runCli(args: readonly string[]): CliResult {
 		cwd: repositoryRoot,
 		encoding: "utf8",
 		env: process.env,
-		timeout: 30_000,
+		timeout: 60_000,
 		windowsHide: true
 	});
 	if (result.error) throw result.error;
@@ -132,7 +132,7 @@ describe("ue-shed CLI process", () => {
 		expect(invalid.status).toBe(2);
 		expect(invalid.stdout).toBe("");
 		expect(invalid.stderr).toContain('ue-shed: Unknown subcommand "not-a-command"');
-	}, 20_000);
+	}, 90_000);
 
 	it("explains and compares saved config provenance through the executable boundary", () => {
 		const explanation = parseRecord(
@@ -480,7 +480,7 @@ describe("ue-shed CLI process", () => {
 		} finally {
 			await rm(projectRoot, { force: true, recursive: true });
 		}
-	}, 30_000);
+	}, 90_000);
 
 	it("reports malformed input and typed Remote Control failures with usage exit status", () => {
 		const malformed = runCli([

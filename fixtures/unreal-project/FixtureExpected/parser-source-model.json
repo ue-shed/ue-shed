@@ -1,5 +1,5 @@
 {
-	"schema_version": 4,
+	"schema_version": 5,
 	"engine_version": "5.7",
 	"classes": [
 		{
@@ -52,6 +52,143 @@
 				},
 				{
 					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.ScriptStruct",
+			"cpp_name": "UScriptStruct",
+			"super_path": "/Script/CoreUObject.Struct",
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "struct_definition"
+				},
+				{
+					"kind": "struct_flags"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.Struct",
+			"cpp_name": "UStruct",
+			"super_path": "/Script/CoreUObject.Field",
+			"fields": [
+				{
+					"name": "SuperStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Struct"
+					}
+				},
+				{
+					"name": "Children",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Field"
+					}
+				},
+				{
+					"name": "ScriptAndPropertyObjectReferences",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.Object"
+						}
+					}
+				},
+				{
+					"name": "PropertyWrappers",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.PropertyWrapper"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "struct_definition"
+				}
+			]
+		},
+		{
+			"path": "/Script/CoreUObject.UserDefinedStruct",
+			"cpp_name": "UUserDefinedStruct",
+			"super_path": "/Script/CoreUObject.ScriptStruct",
+			"fields": [
+				{
+					"name": "PrimaryStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.UserDefinedStruct"
+					}
+				},
+				{
+					"name": "ErrorMessage",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "EditorData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.Object"
+					}
+				},
+				{
+					"name": "Status",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/CoreUObject.UserDefinedStructureStatus"
+					}
+				},
+				{
+					"name": "Guid",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Guid"
+					}
+				},
+				{
+					"name": "CachedCookedMetaDataPtr",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.StructCookedMetaData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "struct_definition"
+				},
+				{
+					"kind": "struct_flags"
+				},
+				{
+					"kind": "struct_default_instance"
 				}
 			]
 		},

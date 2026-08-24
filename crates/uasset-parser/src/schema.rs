@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::package::ObjectPath;
 
-pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 4;
+pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 5;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StructSchema {
@@ -90,6 +90,9 @@ pub enum SerializationOperation {
     DataTableRows { row_struct_property: String },
     CurveTableRows,
     EnumData,
+    StructDefinition,
+    StructFlags,
+    StructDefaultInstance,
     StringTableData,
 }
 
@@ -229,6 +232,20 @@ mod tests {
                 SerializationOperation::TaggedProperties,
                 SerializationOperation::ObjectGuid,
                 SerializationOperation::EnumData,
+            ]
+        );
+
+        let user_defined_struct = model
+            .find_class(&ObjectPath::new("/Script/CoreUObject.UserDefinedStruct"))
+            .expect("generated UserDefinedStruct schema");
+        assert_eq!(
+            user_defined_struct.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::StructDefinition,
+                SerializationOperation::StructFlags,
+                SerializationOperation::StructDefaultInstance,
             ]
         );
     }

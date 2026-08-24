@@ -1,5 +1,5 @@
 {
-	"schema_version": 4,
+	"schema_version": 5,
 	"engine_version": "5.7",
 	"modules": [
 		{
@@ -12,8 +12,19 @@
 			"name": "CoreUObject",
 			"root": "engine_source",
 			"headers": ["Runtime/CoreUObject/Public/UObject/Class.h"],
-			"sources": ["Runtime/CoreUObject/Private/UObject/Enum.cpp"],
-			"include_types": ["UField", "UEnum"]
+			"sources": [
+				"Runtime/CoreUObject/Private/UObject/Class.cpp",
+				"Runtime/CoreUObject/Private/UObject/Enum.cpp",
+				"Runtime/CoreUObject/Private/UObject/StructScriptLoader.cpp"
+			],
+			"include_types": ["UField", "UEnum", "UStruct", "UScriptStruct"]
+		},
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": ["Runtime/CoreUObject/Public/StructUtils/UserDefinedStruct.h"],
+			"sources": ["Runtime/CoreUObject/Private/StructUtils/UserDefinedStruct.cpp"],
+			"include_types": ["EUserDefinedStructureStatus", "UUserDefinedStruct"]
 		},
 		{
 			"name": "Core",

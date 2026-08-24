@@ -990,68 +990,10 @@ impl AssetDecoder for StructDecoder {
             ));
         }
 
-        // UStruct::Serialize tail. SuperStruct is an FPackageIndex; user structs
-        // have no super, so it is null (0). Children is a TArray<UField*>; user
-        // structs carry their members as ChildProperties (FFields), not UFields.
-        let _super_struct = reader.read_i32(&format!("{}.SuperStruct", export.object_path))?;
-        let child_count = reader.read_i32(&format!("{}.Children.Count", export.object_path))?;
-        for index in 0..child_count.max(0) {
-            reader.read_i32(&format!("{}.Children[{index}]", export.object_path))?;
-        }
-
-        let field_count_offset = reader.tell();
-        let field_count =
-            reader.read_i32(&format!("{}.ChildProperties.Count", export.object_path))?;
-        if field_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative struct field count {field_count} at byte {field_count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<StructField>(
-            usize::try_from(field_count).expect("fits in usize"),
-            1,
-            &format!("{}.ChildProperties.Count", export.object_path),
-        )?;
-        let mut fields = Vec::with_capacity(capacity);
-        for index in 0..field_count {
-            let field_path = format!("{}.ChildProperties[{index}]", export.object_path);
-            if let Some(field) = read_field(&mut reader, context, &field_path)? {
-                fields.push(field);
-            }
-        }
-
-        // UStruct script bytecode: a user struct has none, but honor the markers.
-        let bytecode_size =
-            reader.read_i32(&format!("{}.ScriptBytecodeSize", export.object_path))?;
-        let storage_size = reader.read_i32(&format!("{}.ScriptStorageSize", export.object_path))?;
-        if bytecode_size != 0 || storage_size != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                format!(
-                    "struct {} carries {storage_size} bytes of script bytecode (unsupported)",
-                    export.object_path
-                ),
-            ));
-        }
-
-        // UScriptStruct::Serialize: the non-computed StructFlags.
-        let struct_flags = reader.read_u32(&format!("{}.StructFlags", export.object_path))?;
-
-        // UUserDefinedStruct::Serialize: the default struct instance, serialized
-        // as a tagged-property stream.
-        let mut default_values = read_tagged_property_stream(
-            &mut reader,
-            &context.package.summary.versions,
-            &context.package.names,
-            &format!("{}.DefaultInstance", export.object_path),
-        )?;
-        let decode_context = DecodeContext {
-            package: context.package,
-            versions: &context.package.summary.versions,
-            schemas: context.schemas,
-        };
-        decode_property_stream_values(context.source, &mut default_values, &decode_context)?;
+        let fields = decode_struct_definition(&mut reader, context, &export.object_path)?;
+        let struct_flags = decode_struct_flags(&mut reader, &export.object_path)?;
+        let default_values =
+            decode_struct_default_instance(&mut reader, context, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -1072,6 +1014,86 @@ impl AssetDecoder for StructDecoder {
             default_values,
         }))
     }
+}
+
+fn decode_struct_definition(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<Vec<StructField>, AssetError> {
+    // UStruct::Serialize tail. SuperStruct is an FPackageIndex; user structs
+    // have no super, so it is null (0). Children is a TArray<UField*>; user
+    // structs carry their members as ChildProperties (FFields), not UFields.
+    let _super_struct = reader.read_i32(&format!("{object_path}.SuperStruct"))?;
+    let child_count = reader.read_i32(&format!("{object_path}.Children.Count"))?;
+    for index in 0..child_count.max(0) {
+        reader.read_i32(&format!("{object_path}.Children[{index}]"))?;
+    }
+
+    let field_count_offset = reader.tell();
+    let field_count = reader.read_i32(&format!("{object_path}.ChildProperties.Count"))?;
+    if field_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative struct field count {field_count} at byte {field_count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<StructField>(
+        usize::try_from(field_count).expect("fits in usize"),
+        1,
+        &format!("{object_path}.ChildProperties.Count"),
+    )?;
+    let mut fields = Vec::with_capacity(capacity);
+    for index in 0..field_count {
+        let field_path = format!("{object_path}.ChildProperties[{index}]");
+        if let Some(field) = read_field(reader, context, &field_path)? {
+            fields.push(field);
+        }
+    }
+
+    // FStructScriptLoader reads the bytecode and serialized-storage sizes.
+    // User-defined structs should not carry script, but preserve the legacy
+    // rejection boundary if malformed input claims that they do.
+    let bytecode_size = reader.read_i32(&format!("{object_path}.ScriptBytecodeSize"))?;
+    let storage_size = reader.read_i32(&format!("{object_path}.ScriptStorageSize"))?;
+    if bytecode_size != 0 || storage_size != 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!(
+                "struct {object_path} carries {storage_size} bytes of script bytecode (unsupported)"
+            ),
+        ));
+    }
+    Ok(fields)
+}
+
+fn decode_struct_flags(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<u32, AssetError> {
+    reader
+        .read_u32(&format!("{object_path}.StructFlags"))
+        .map_err(Into::into)
+}
+
+fn decode_struct_default_instance(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<PropertyStream, AssetError> {
+    let mut default_values = read_tagged_property_stream(
+        reader,
+        &context.package.summary.versions,
+        &context.package.names,
+        &format!("{object_path}.DefaultInstance"),
+    )?;
+    let decode_context = DecodeContext {
+        package: context.package,
+        versions: &context.package.summary.versions,
+        schemas: context.schemas,
+    };
+    decode_property_stream_values(context.source, &mut default_values, &decode_context)?;
+    Ok(default_values)
 }
 
 /// Reads one `FField`/`FProperty` as written by `UStruct::SerializeProperties`
@@ -1650,6 +1672,44 @@ pub fn decode_modeled_export(
             entries: enum_data.entries,
         })));
     }
+    if context
+        .schemas
+        .class_is_a(class_path, USERDEFINEDSTRUCT_CLASS)
+    {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Struct)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let fields = source.struct_fields.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce Struct fields"
+                ),
+            )
+        })?;
+        let struct_flags = source.struct_flags.ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce StructFlags"
+                ),
+            )
+        })?;
+        let default_values = source.struct_default_values.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce a default instance"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::Struct(DecodedStruct {
+            object_path: export.object_path.clone(),
+            struct_flags,
+            properties: source.properties,
+            fields,
+            default_values,
+        })));
+    }
     if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
         validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
         let source = execute_source_serialization(export, context)?;
@@ -1669,6 +1729,9 @@ struct SourceSerializationOutput {
     rows: Option<Vec<DataTableRow>>,
     curve_table: Option<SourceCurveTableData>,
     enum_data: Option<SourceEnumData>,
+    struct_fields: Option<Vec<StructField>>,
+    struct_flags: Option<u32>,
+    struct_default_values: Option<PropertyStream>,
     string_table: Option<SourceStringTableData>,
 }
 
@@ -1702,6 +1765,9 @@ fn execute_source_serialization(
     let mut rows = None;
     let mut curve_table = None;
     let mut enum_data = None;
+    let mut struct_fields = None;
+    let mut struct_flags = None;
+    let mut struct_default_values = None;
     let mut string_table = None;
     for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
         match operation {
@@ -1738,6 +1804,23 @@ fn execute_source_serialization(
                     &export.object_path,
                 )?);
             }
+            SerializationOperation::StructDefinition if struct_fields.is_none() => {
+                struct_fields = Some(decode_struct_definition(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::StructFlags if struct_flags.is_none() => {
+                struct_flags = Some(decode_struct_flags(&mut reader, &export.object_path)?);
+            }
+            SerializationOperation::StructDefaultInstance if struct_default_values.is_none() => {
+                struct_default_values = Some(decode_struct_default_instance(
+                    &mut reader,
+                    context,
+                    &export.object_path,
+                )?);
+            }
             SerializationOperation::StringTableData if string_table.is_none() => {
                 string_table = Some(decode_string_table_data(&mut reader, &export.object_path)?);
             }
@@ -1745,6 +1828,9 @@ fn execute_source_serialization(
             | SerializationOperation::DataTableRows { .. }
             | SerializationOperation::CurveTableRows
             | SerializationOperation::EnumData
+            | SerializationOperation::StructDefinition
+            | SerializationOperation::StructFlags
+            | SerializationOperation::StructDefaultInstance
             | SerializationOperation::StringTableData => {
                 return Err(unsupported_source_plan(class_path, &schema.serialization));
             }
@@ -1767,6 +1853,9 @@ fn execute_source_serialization(
         rows,
         curve_table,
         enum_data,
+        struct_fields,
+        struct_flags,
+        struct_default_values,
         string_table,
     })
 }
@@ -1787,6 +1876,7 @@ enum SourcePlanKind {
     DataAsset,
     DataTable,
     Enum,
+    Struct,
     StringTable,
 }
 
@@ -1829,6 +1919,16 @@ fn validate_source_serialization(
                 SerializationOperation::TaggedProperties,
                 SerializationOperation::ObjectGuid,
                 SerializationOperation::EnumData
+            ]
+        ),
+        SourcePlanKind::Struct => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::StructDefinition,
+                SerializationOperation::StructFlags,
+                SerializationOperation::StructDefaultInstance
             ]
         ),
         SourcePlanKind::StringTable => matches!(
@@ -3294,7 +3394,18 @@ mod tests {
             USERDEFINEDSTRUCT_CLASS,
         );
 
-        let decoded = decode_struct(export_bytes, package, export);
+        let decoded = decode_struct(export_bytes.clone(), package.clone(), export.clone());
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::Struct(generated)) =
+            decode_modeled_export(&export, &generated_context).expect("generated Struct decode")
+        else {
+            panic!("expected generated Struct decode");
+        };
+        assert_eq!(generated, decoded);
 
         assert_eq!(decoded.object_path.as_str(), "/Game/Test/S_Test.S_Test");
         assert_eq!(decoded.struct_flags, 0);
@@ -3332,6 +3443,15 @@ mod tests {
             .decode(&export, &context)
             .expect_err("unsupported field type");
         assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects unsupported field type");
+        assert_eq!(generated.kind(), error.kind());
+        assert_eq!(generated.message(), error.message());
     }
 
     #[test]
@@ -3374,6 +3494,15 @@ mod tests {
 
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("depth limit"));
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects excessive field nesting");
+        assert_eq!(generated.kind(), error.kind());
+        assert_eq!(generated.message(), error.message());
     }
 
     #[test]

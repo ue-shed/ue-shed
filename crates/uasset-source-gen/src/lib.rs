@@ -112,6 +112,9 @@ enum SerializationFact {
     DataTableRows,
     CurveTableRows,
     EnumData,
+    StructDefinition,
+    StructFlags,
+    StructDefaultInstance,
     StringTableData,
 }
 
@@ -179,6 +182,15 @@ pub fn generate(
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::EnumData) {
         validate_enum_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::StructDefinition) {
+        validate_struct_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::StructFlags) {
+        validate_script_struct_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::StructDefaultInstance) {
+        validate_user_defined_struct_serializer(&functions, &mut diagnostics)?;
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::StringTableData) {
         validate_string_table_helper(&functions, &mut diagnostics)?;
@@ -595,7 +607,7 @@ fn parse_function_bodies(tokens: &[Token], path: &str) -> Vec<FunctionBody> {
         };
         let Some(open_brace) = tokens[close_paren + 1..]
             .iter()
-            .take(8)
+            .take(64)
             .position(|token| token.text == "{")
             .map(|offset| close_paren + 1 + offset)
         else {
@@ -649,6 +661,25 @@ fn serializer_facts(functions: &[FunctionBody]) -> BTreeMap<String, Vec<Serializ
                     facts.push(SerializationFact::EnumData);
                     index += 4;
                     continue;
+                } else if function.class_name == "UStruct"
+                    && token_sequence(tokens, &["Ar", "<", "<", "SuperStruct"])
+                    && !facts.contains(&SerializationFact::StructDefinition)
+                {
+                    facts.push(SerializationFact::StructDefinition);
+                    index += 4;
+                    continue;
+                } else if function.class_name == "UScriptStruct"
+                    && token_sequence(tokens, &["Ar", "<", "<", "SavedStructFlags"])
+                    && !facts.contains(&SerializationFact::StructFlags)
+                {
+                    facts.push(SerializationFact::StructFlags);
+                    index += 4;
+                    continue;
+                } else if function.class_name == "UUserDefinedStruct"
+                    && function.tokens[index].text == "SerializeItem"
+                    && !facts.contains(&SerializationFact::StructDefaultInstance)
+                {
+                    facts.push(SerializationFact::StructDefaultInstance);
                 } else if function.class_name == "UStringTable"
                     && token_sequence(tokens, &["StringTable", "-", ">", "Serialize"])
                 {
@@ -861,6 +892,147 @@ fn validate_enum_serializer(
     Ok(())
 }
 
+fn validate_struct_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions
+        .iter()
+        .find(|function| function.class_name == "UStruct" && function.function_name == "Serialize")
+    else {
+        return Err(GeneratorError::new(
+            "UStruct::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["Ar", "<", "<", "SuperStruct"][..],
+        &["Ar", "<", "<", "ChildArray"][..],
+        &["SerializeProperties", "(", "Ar", ")"][..],
+        &["FStructScriptLoader", "ScriptLoadHelper"][..],
+        &[
+            "ScriptLoadHelper",
+            ".",
+            "LoadStructWithScript",
+            "(",
+            "this",
+            ",",
+            "Ar",
+        ][..],
+    ];
+    validate_ordered_serializer_shape(serializer, "Struct", &required)?;
+
+    let Some(script_loader) = functions.iter().find(|function| {
+        function.class_name == "FStructScriptLoader"
+            && function.function_name == "FStructScriptLoader"
+    }) else {
+        return Err(GeneratorError::new(
+            "FStructScriptLoader constructor was not found in the configured sources",
+        ));
+    };
+    let script_header = [
+        &["Ar", "<", "<", "BytecodeBufferSize"][..],
+        &["Ar", "<", "<", "SerializedScriptSize"][..],
+    ];
+    validate_ordered_serializer_shape(script_loader, "Struct script header", &script_header)?;
+
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized SuperStruct + UField children + FProperty fields + script header"
+            .to_owned(),
+    });
+    Ok(())
+}
+
+fn validate_script_struct_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions.iter().find(|function| {
+        function.class_name == "UScriptStruct" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "UScriptStruct::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["uint32", "SavedStructFlags"][..],
+        &["Ar", "<", "<", "SavedStructFlags"][..],
+    ];
+    validate_ordered_serializer_shape(serializer, "ScriptStruct", &required)?;
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized uint32 non-computed StructFlags".to_owned(),
+    });
+    Ok(())
+}
+
+fn validate_user_defined_struct_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions.iter().find(|function| {
+        function.class_name == "UUserDefinedStruct" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "UUserDefinedStruct::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &[
+            "UserDefinedStructsStoreDefaultInstance",
+            ")",
+            "{",
+            "if",
+            "(",
+            "EUserDefinedStructureStatus",
+        ][..],
+        &["uint8", "*", "StructData"][..],
+        &[
+            "SerializeItem",
+            "(",
+            "Record",
+            ".",
+            "EnterField",
+            "(",
+            "TEXT",
+            "(",
+            "Data",
+        ][..],
+    ];
+    validate_ordered_serializer_shape(serializer, "UserDefinedStruct", &required)?;
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized tagged default struct instance".to_owned(),
+    });
+    Ok(())
+}
+
+fn validate_ordered_serializer_shape(
+    function: &FunctionBody,
+    label: &str,
+    required: &[&[&str]],
+) -> Result<(), GeneratorError> {
+    let mut cursor = 0;
+    for sequence in required {
+        let Some(offset) = function.tokens[cursor..]
+            .windows(sequence.len())
+            .position(|tokens| token_sequence(tokens, sequence))
+        else {
+            return Err(GeneratorError::new(format!(
+                "{}:{} does not match the supported {label} serializer; missing ordered token sequence {}",
+                function.path,
+                function.line,
+                sequence.join(" ")
+            )));
+        };
+        cursor += offset + sequence.len();
+    }
+    Ok(())
+}
+
 fn effective_serialization(
     cpp_name: &str,
     declarations: &BTreeMap<String, &ReflectedType>,
@@ -911,6 +1083,15 @@ fn effective_serialization(
                 SerializationFact::EnumData => {
                     operations.push(SerializationOperation::EnumData);
                 }
+                SerializationFact::StructDefinition => {
+                    operations.push(SerializationOperation::StructDefinition);
+                }
+                SerializationFact::StructFlags => {
+                    operations.push(SerializationOperation::StructFlags);
+                }
+                SerializationFact::StructDefaultInstance => {
+                    operations.push(SerializationOperation::StructDefaultInstance);
+                }
                 SerializationFact::StringTableData => {
                     operations.push(SerializationOperation::StringTableData);
                 }
@@ -959,6 +1140,11 @@ fn parse_field_type(
             class_path: resolve_named_path(inner, module, paths),
         };
     }
+    if let Some(inner) = generic_argument(cpp_type, "TWeakObjectPtr") {
+        return FieldType::Object {
+            class_path: resolve_named_path(inner, module, paths),
+        };
+    }
     if let Some(inner) = generic_argument(cpp_type, "TSoftObjectPtr") {
         return FieldType::SoftObject {
             class_path: resolve_named_path(inner, module, paths),
@@ -967,6 +1153,15 @@ fn parse_field_type(
     if let Some(inner) = generic_argument(cpp_type, "TSubclassOf") {
         return FieldType::Class {
             class_path: resolve_named_path(inner, module, paths),
+        };
+    }
+    if let Some(inner) = generic_argument(cpp_type, "TEnumAsByte") {
+        let enum_name = inner.strip_prefix("enum").unwrap_or(inner);
+        return FieldType::Enum {
+            path: paths
+                .get(enum_name)
+                .cloned()
+                .unwrap_or_else(|| unreal_path(module, enum_name)),
         };
     }
     match cpp_type {
@@ -1183,6 +1378,21 @@ mod tests {
                 Super::Serialize(Ar);
                 Ar << Num;
             }
+            void UStruct::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << SuperStruct;
+            }
+            void UScriptStruct::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << SavedStructFlags;
+            }
+            void UUserDefinedStruct::Serialize(FStructuredArchive::FRecord Record)
+            {
+                Super::Serialize(Record);
+                SerializeItem(Record.EnterField(TEXT("Data")), StructData, nullptr);
+            }
         "#;
         let functions = parse_function_bodies(&lex(source).expect("lex"), "DataTable.cpp");
         let facts = serializer_facts(&functions);
@@ -1214,6 +1424,24 @@ mod tests {
         assert_eq!(
             facts["UEnum"],
             vec![SerializationFact::Inherit, SerializationFact::EnumData]
+        );
+        assert_eq!(
+            facts["UStruct"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::StructDefinition
+            ]
+        );
+        assert_eq!(
+            facts["UScriptStruct"],
+            vec![SerializationFact::Inherit, SerializationFact::StructFlags]
+        );
+        assert_eq!(
+            facts["UUserDefinedStruct"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::StructDefaultInstance
+            ]
         );
     }
 
@@ -1287,6 +1515,59 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_the_user_defined_struct_payload_shape_in_order() {
+        let source = r#"
+            void UStruct::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << SuperStruct;
+                Ar << ChildArray;
+                SerializeProperties(Ar);
+                FStructScriptLoader ScriptLoadHelper(this, Ar);
+                ScriptLoadHelper.LoadStructWithScript(this, Ar, true);
+            }
+            FStructScriptLoader::FStructScriptLoader(UStruct* Target, FArchive& Ar)
+                : BytecodeBufferSize(0)
+                , SerializedScriptSize(0)
+                , ScriptSerializationOffset(INDEX_NONE)
+            {
+                Ar << BytecodeBufferSize;
+                Ar << SerializedScriptSize;
+            }
+            void UScriptStruct::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                uint32 SavedStructFlags = NonComputedStructFlags;
+                Ar << SavedStructFlags;
+            }
+            void UUserDefinedStruct::Serialize(FStructuredArchive::FRecord Record)
+            {
+                Super::Serialize(Record);
+                if (UnderlyingArchive.CustomVer(FFrameworkObjectVersion::GUID) >=
+                    FFrameworkObjectVersion::UserDefinedStructsStoreDefaultInstance)
+                {
+                    if (EUserDefinedStructureStatus::UDSS_UpToDate == Status)
+                    {
+                        uint8* StructData = DefaultStructInstance.GetStructMemory();
+                        SerializeItem(Record.EnterField(TEXT("Data")), StructData, nullptr);
+                    }
+                }
+            }
+        "#;
+        let functions = parse_function_bodies(&lex(source).expect("lex"), "Struct.cpp");
+        let mut diagnostics = Vec::new();
+        validate_struct_serializer(&functions, &mut diagnostics).expect("supported Struct shape");
+        validate_script_struct_serializer(&functions, &mut diagnostics)
+            .expect("supported ScriptStruct shape");
+        validate_user_defined_struct_serializer(&functions, &mut diagnostics)
+            .expect("supported UserDefinedStruct shape");
+        assert_eq!(diagnostics.len(), 3);
+        assert!(diagnostics[0].message.contains("FProperty fields"));
+        assert!(diagnostics[1].message.contains("StructFlags"));
+        assert!(diagnostics[2].message.contains("default struct instance"));
+    }
+
+    #[test]
     fn maps_fixture_field_types_without_unknown_fallbacks() {
         let paths = BTreeMap::from([
             (
@@ -1296,6 +1577,10 @@ mod tests {
             (
                 "ERarity".to_owned(),
                 ObjectPath::new("/Script/Fixture.Rarity"),
+            ),
+            (
+                "UUserDefinedStruct".to_owned(),
+                ObjectPath::new("/Script/CoreUObject.UserDefinedStruct"),
             ),
         ]);
         let enums = BTreeSet::from(["ERarity".to_owned()]);
@@ -1309,6 +1594,23 @@ mod tests {
         );
         assert_eq!(
             parse_field_type("ERarity", "Fixture", &paths, &enums),
+            FieldType::Enum {
+                path: ObjectPath::new("/Script/Fixture.Rarity")
+            }
+        );
+        assert_eq!(
+            parse_field_type(
+                "TWeakObjectPtr<UUserDefinedStruct>",
+                "CoreUObject",
+                &paths,
+                &enums
+            ),
+            FieldType::Object {
+                class_path: Some(ObjectPath::new("/Script/CoreUObject.UserDefinedStruct"))
+            }
+        );
+        assert_eq!(
+            parse_field_type("TEnumAsByte<enumERarity>", "Fixture", &paths, &enums),
             FieldType::Enum {
                 path: ObjectPath::new("/Script/Fixture.Rarity")
             }

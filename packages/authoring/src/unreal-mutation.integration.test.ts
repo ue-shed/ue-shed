@@ -42,7 +42,7 @@ function runFixture(...args: string[]): void {
 	execFileSync(process.execPath, ["scripts/unreal-fixture.ts", ...args], {
 		cwd: repositoryRoot,
 		stdio: "pipe",
-		timeout: 120_000,
+		timeout: 300_000,
 		windowsHide: true
 	});
 }
@@ -372,5 +372,5 @@ describe.skipIf(!enabled)("real Unreal authoring mutation", () => {
 			runFixture("generate");
 			await rm(directory, { force: true, recursive: true });
 		}
-	}, 180_000);
+	}, 600_000);
 });

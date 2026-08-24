@@ -15,7 +15,7 @@
 	},
 	"packageGraph": {
 		"dependencies": {
-			"@ue-shed/engine": "0.4.0"
+			"@ue-shed/engine": "package.json#dependencies"
 		},
 		"peerDependencies": {
 			"effect": "4.0.0-beta.98"

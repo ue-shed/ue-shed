@@ -169,6 +169,15 @@ try {
 	assert.equal(pluginDistributionAdoption.release.versionSource, "package.json");
 	assert.equal(pluginDistributionAdoption.release.nativeBinaryBundled, false);
 	assert.equal(pluginDistributionAdoption.release.uiBundled, false);
+	assert.equal(
+		pluginDistributionAdoption.packageGraph.dependencies["@ue-shed/engine"],
+		"package.json#dependencies"
+	);
+	assert.equal(
+		pluginDistributionEntry.manifest.dependencies?.["@ue-shed/engine"],
+		pluginDistributionEntry.manifest.version,
+		"the packed adoption dependency must stay on the exact synchronized engine version"
+	);
 	const packageChecksums = await readFile(join(packageDirectory, "SHA256SUMS"), "utf8");
 	const checksumRows = packageChecksums
 		.trim()

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Effect } from "effect";
 import {
 	EngineInstallationDiscovery,
@@ -33,7 +33,7 @@ function run(command: string, args: readonly string[]) {
 function prepareSupervisor() {
 	run("cargo", ["build", "--locked", "-p", "engine-process-supervisor"]);
 	const targetRoot = process.env.CARGO_TARGET_DIR
-		? join(repositoryRoot, process.env.CARGO_TARGET_DIR)
+		? resolve(repositoryRoot, process.env.CARGO_TARGET_DIR)
 		: join(repositoryRoot, "target");
 	run(process.execPath, [
 		join(repositoryRoot, "packages", "engine-win32-x64", "scripts", "assemble.mts"),

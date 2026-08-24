@@ -140,8 +140,8 @@ test("recovers persisted tuning after live subject bounds change", async ({
 		await run(harness.driver.tuneRig());
 		await run(harness.driver.previewCandidate());
 		const authoringPage = harness.page();
-		await authoringPage.getByRole("button", { exact: true, name: "STOP" }).click();
-		await expect(authoringPage.getByRole("button", { exact: true, name: "PLAY" })).toBeVisible({
+		await authoringPage.getByRole("button", { exact: true, name: "Stop" }).click();
+		await expect(authoringPage.getByRole("button", { exact: true, name: "Play" })).toBeVisible({
 			timeout: 30_000
 		});
 		await run(harness.driver.relaunchWorkbench());
@@ -149,7 +149,7 @@ test("recovers persisted tuning after live subject bounds change", async ({
 
 		const page = harness.page();
 		await page.getByRole("link", { exact: true, name: "Map Review" }).click();
-		await page.getByRole("tab", { name: "LIVE WORLD" }).click();
+		await page.getByRole("tab", { name: "Live session" }).click();
 		await expect(
 			page.getByText(/no longer matches the live subject|Reframe before keeping/i)
 		).toBeVisible({ timeout: 60_000 });

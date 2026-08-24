@@ -25,8 +25,9 @@ export type InspectionValue =
 	| {
 			readonly value_kind: "text";
 			readonly value: string;
-			readonly history: "none" | "base";
+			readonly history: "none" | "base" | "string_table";
 			readonly namespace?: string;
+			readonly table_id?: string;
 			readonly key?: string;
 	  }
 	| { readonly value_kind: "vector"; readonly x: number; readonly y: number; readonly z: number }
@@ -156,6 +157,7 @@ export interface TextOccurrence {
 	readonly source: string;
 	readonly identity:
 		| { readonly status: "resolved"; readonly namespace: string; readonly key: string }
+		| { readonly status: "string_table"; readonly table_id: string; readonly key: string }
 		| { readonly status: "unresolved"; readonly reason: "culture_invariant" | "missing_key" };
 	readonly location:
 		| {

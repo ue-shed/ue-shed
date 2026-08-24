@@ -256,7 +256,7 @@ fn decode_typed_value(
         ))),
         "TextProperty" => {
             let path = path.to_string();
-            decode_text_value(payload, &path).map(|text| text.map(PropertyValue::Text))
+            decode_text_value(payload, context, &path).map(|text| text.map(PropertyValue::Text))
         }
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
@@ -896,6 +896,7 @@ fn decode_data_table_row_handle(
 
 fn decode_text_value(
     payload: &mut Reader<'_>,
+    context: &DecodeContext<'_>,
     path: &str,
 ) -> Result<Option<TextValue>, PropertyError> {
     let _flags = payload.read_i32(&format!("{path}.Flags"))?;
@@ -917,6 +918,27 @@ fn decode_text_value(
         return Ok(Some(TextValue {
             source,
             history: TextHistory::Base { namespace, key },
+        }));
+    }
+
+    // `ETextHistoryType::StringTableEntry` is index 11 in UE 5.7. Its
+    // serializer writes an FName table ID followed by an FString-backed
+    // FTextKey. The source/display string belongs to the referenced table and
+    // is intentionally not present in this property payload.
+    if history_type == 11 {
+        let table_id_ref = payload.read_name_ref(&format!("{path}.TableId"))?;
+        let table_id = context.package.resolve_name(table_id_ref).ok_or_else(|| {
+            PropertyError::new(
+                crate::property::PropertyErrorKind::MalformedData,
+                Some(payload.tell().saturating_sub(8)),
+                path,
+                "string-table text has an unresolved table ID",
+            )
+        })?;
+        let key = payload.read_fstring(&format!("{path}.Key"))?;
+        return Ok(Some(TextValue {
+            source: String::new(),
+            history: TextHistory::StringTableEntry { table_id, key },
         }));
     }
 
@@ -1389,6 +1411,32 @@ mod tests {
                 history: TextHistory::Base {
                     namespace: String::new(),
                     key: "deadbeef".to_owned(),
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_string_table_text_payload() {
+        let names = vec![
+            "TextProperty".into(),
+            "/Game/Fixture/Text/ST_Game.ST_Game".into(),
+        ];
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 0); // flags
+        payload.push(11); // StringTableEntry history
+        push_i32(&mut payload, 1); // table ID name index
+        push_i32(&mut payload, 0); // table ID name number
+        push_fstring(&mut payload, "PromptContinue");
+
+        let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
+        assert_eq!(
+            value,
+            PropertyValue::Text(TextValue {
+                source: String::new(),
+                history: TextHistory::StringTableEntry {
+                    table_id: "/Game/Fixture/Text/ST_Game.ST_Game".to_owned(),
+                    key: "PromptContinue".to_owned(),
                 },
             })
         );

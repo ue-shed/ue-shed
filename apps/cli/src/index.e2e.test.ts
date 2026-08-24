@@ -209,8 +209,8 @@ describe("ue-shed CLI process", () => {
 
 		expect(report.schemaVersion).toBe(1);
 		expect(report.ruleDocumentVersion).toBe(1);
-		expect(report.status).toBe("partial");
-		expect(report.coverage.unsupportedTextProperties).toBe(1);
+		expect(report.status).toBe("complete");
+		expect(report.coverage.unsupportedTextProperties).toBe(0);
 		expect(report.findings.length).toBeGreaterThan(0);
 		expect(report.findings.every((finding) => finding.role === "ui.prompt")).toBe(true);
 	}, 30_000);

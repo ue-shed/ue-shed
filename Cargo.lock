@@ -1260,8 +1260,18 @@ dependencies = [
 name = "uasset-parser"
 version = "0.4.0"
 dependencies = [
+ "once_cell",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "uasset-source-gen"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uasset-parser",
 ]
 
 [[package]]

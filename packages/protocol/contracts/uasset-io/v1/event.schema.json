@@ -196,6 +196,30 @@
 					"properties": {
 						"value_kind": {
 							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "table_id", "key"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
 							"enum": ["object_ref"]
 						},
 						"value": {
@@ -925,6 +949,44 @@
 						"value",
 						"history",
 						"namespace",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"table_id",
 						"key",
 						"name",
 						"type"
@@ -1692,6 +1754,30 @@
 					"properties": {
 						"value_kind": {
 							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						}
+					},
+					"required": ["value_kind", "value", "history", "table_id", "key"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
 							"enum": ["object_ref"]
 						},
 						"value": {
@@ -2421,6 +2507,44 @@
 						"value",
 						"history",
 						"namespace",
+						"key",
+						"name",
+						"type"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"value_kind": {
+							"type": "string",
+							"enum": ["text"]
+						},
+						"value": {
+							"type": "string"
+						},
+						"history": {
+							"type": "string",
+							"enum": ["string_table"]
+						},
+						"table_id": {
+							"type": "string"
+						},
+						"key": {
+							"type": "string"
+						},
+						"name": {
+							"type": "string"
+						},
+						"type": {
+							"type": "string"
+						}
+					},
+					"required": [
+						"value_kind",
+						"value",
+						"history",
+						"table_id",
 						"key",
 						"name",
 						"type"
@@ -5027,6 +5151,23 @@
 								}
 							},
 							"required": ["status", "namespace", "key"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["string_table"]
+								},
+								"table_id": {
+									"type": "string"
+								},
+								"key": {
+									"type": "string"
+								}
+							},
+							"required": ["status", "table_id", "key"],
 							"additionalProperties": false
 						},
 						{

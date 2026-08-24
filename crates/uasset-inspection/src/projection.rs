@@ -36,6 +36,7 @@ pub struct TextOccurrence {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum TextIdentity {
     Resolved { namespace: String, key: String },
+    StringTable { table_id: String, key: String },
     Unresolved { reason: TextIdentityReason },
 }
 
@@ -314,6 +315,10 @@ fn identity_for_text(text: &TextValue) -> TextIdentity {
         },
         TextHistory::Base { namespace, key } => TextIdentity::Resolved {
             namespace: namespace.clone(),
+            key: key.clone(),
+        },
+        TextHistory::StringTableEntry { table_id, key } => TextIdentity::StringTable {
+            table_id: table_id.clone(),
             key: key.clone(),
         },
     }

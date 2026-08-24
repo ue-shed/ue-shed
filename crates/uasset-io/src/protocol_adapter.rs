@@ -982,11 +982,13 @@ fn adapt_property_value(
             value,
             history,
             namespace,
+            table_id,
             key,
         } => SavedPropertyValue::Text {
             value,
             history: adapt_text_history(history)?,
             namespace,
+            table_id,
             key,
         },
         Value::Vector { x, y, z } => SavedPropertyValue::Vector {
@@ -1063,6 +1065,7 @@ fn adapt_text_history(history: &'static str) -> Result<TextHistory, String> {
     match history {
         "none" => Ok(TextHistory::None),
         "base" => Ok(TextHistory::Base),
+        "string_table" => Ok(TextHistory::StringTableEntry),
         history => Err(format!("unknown text history {history}")),
     }
 }

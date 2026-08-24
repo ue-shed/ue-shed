@@ -140,7 +140,7 @@ pub fn write_object_property_tag(
 }
 
 /// Builds a synthetic `UDataTable` export serial blob: UObject root properties,
-/// zero data marker, row count, then each row's name and tagged-property stream.
+/// zero UObject-guid marker, row count, then each row's name and tagged-property stream.
 pub fn write_datatable_export(
     none_name_index: i32,
     root_properties: &[u8],
@@ -150,7 +150,7 @@ pub fn write_datatable_export(
     bytes.push(0); // class serialization-control extensions
     bytes.extend_from_slice(root_properties);
     write_property_terminator(&mut bytes, none_name_index);
-    push_i32(&mut bytes, 0); // data marker
+    push_i32(&mut bytes, 0); // UObject object-guid marker
     push_i32(&mut bytes, i32::try_from(rows.len()).expect("fits in i32"));
     for (name_index, row_properties) in rows {
         push_i32(&mut bytes, *name_index);

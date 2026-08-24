@@ -19,7 +19,7 @@ use crate::property::{
     PropertyError, PropertyErrorKind, PropertyStream, PropertyValue, read_tagged_property_stream,
     read_uobject_tagged_property_stream,
 };
-use crate::schema::SchemaProvider;
+use crate::schema::{SchemaProvider, SerializationOperation};
 
 pub struct AssetDecodeContext<'a> {
     pub source: &'a [u8],
@@ -154,6 +154,7 @@ pub struct DecodedUObject {
 pub struct DecodedDataTable {
     pub kind: DataTableKind,
     pub object_path: ObjectPath,
+    pub object_guid: Option<Guid>,
     pub row_struct: Option<ObjectPath>,
     pub parent_tables: Vec<ObjectPath>,
     pub properties: PropertyStream,
@@ -437,16 +438,23 @@ impl AssetDecoder for DataTableDecoder {
                 format!("export {} has no resolved class", export.object_path),
             ));
         };
-        let kind = match class_path.as_str() {
-            DATATABLE_CLASS => DataTableKind::Plain,
-            COMPOSITE_DATATABLE_CLASS => DataTableKind::Composite,
-            _ => {
-                return Err(AssetError::new(
-                    AssetErrorKind::UnsupportedFormat,
-                    format!("unsupported asset class {class_path}"),
-                ));
-            }
+        let kind = if class_path.as_str() == COMPOSITE_DATATABLE_CLASS
+            || context
+                .schemas
+                .class_is_a(class_path, COMPOSITE_DATATABLE_CLASS)
+        {
+            DataTableKind::Composite
+        } else if class_path.as_str() == DATATABLE_CLASS
+            || context.schemas.class_is_a(class_path, DATATABLE_CLASS)
+        {
+            DataTableKind::Plain
+        } else {
+            return Err(AssetError::new(
+                AssetErrorKind::UnsupportedFormat,
+                format!("unsupported asset class {class_path}"),
+            ));
         };
+        validate_source_serialization(context.schemas, class_path, true)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let decode_context = DecodeContext {
@@ -457,46 +465,10 @@ impl AssetDecoder for DataTableDecoder {
         let row_struct = row_struct_path(context.package, &properties);
         let parent_tables = parent_tables_paths(context.package, &properties);
 
-        let data_marker_offset = reader.tell();
-        let data_marker = reader.read_i32(&format!("{}.Data.Marker", export.object_path))?;
-        if data_marker != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!(
-                    "expected DataTable data marker 0 at byte {data_marker_offset}, got {data_marker}"
-                ),
-            ));
-        }
+        let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
 
-        let row_count_offset = reader.tell();
-        let row_count = reader.read_i32(&format!("{}.Rows.Count", export.object_path))?;
-        if row_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!("negative DataTable row count {row_count} at byte {row_count_offset}"),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<DataTableRow>(
-            usize::try_from(row_count).expect("i32 fits in usize"),
-            8,
-            &format!("{}.Rows.Count", export.object_path),
-        )?;
-        let mut rows = Vec::with_capacity(capacity);
-        for index in 0..row_count {
-            let row_path = format!("{}.Rows[{index}]", export.object_path);
-            let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
-            let mut row_properties = read_tagged_property_stream(
-                &mut reader,
-                &context.package.summary.versions,
-                &context.package.names,
-                &format!("{row_path}.Value"),
-            )?;
-            decode_property_stream_values(context.source, &mut row_properties, &decode_context)?;
-            rows.push(DataTableRow {
-                name,
-                properties: row_properties,
-            });
-        }
+        let rows =
+            decode_data_table_rows(&mut reader, context, &decode_context, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -512,6 +484,7 @@ impl AssetDecoder for DataTableDecoder {
         Ok(DecodedAsset::DataTable(DecodedDataTable {
             kind,
             object_path: export.object_path.clone(),
+            object_guid,
             row_struct,
             parent_tables,
             properties,
@@ -524,6 +497,44 @@ impl DataTableDecoder {
     fn supports_class(class_path: &str) -> bool {
         matches!(class_path, DATATABLE_CLASS | COMPOSITE_DATATABLE_CLASS)
     }
+}
+
+fn decode_data_table_rows(
+    reader: &mut crate::archive::Reader<'_>,
+    context: &AssetDecodeContext<'_>,
+    decode_context: &DecodeContext<'_>,
+    object_path: &ObjectPath,
+) -> Result<Vec<DataTableRow>, AssetError> {
+    let row_count_offset = reader.tell();
+    let row_count = reader.read_i32(&format!("{object_path}.Rows.Count"))?;
+    if row_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative DataTable row count {row_count} at byte {row_count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<DataTableRow>(
+        usize::try_from(row_count).expect("i32 fits in usize"),
+        8,
+        &format!("{object_path}.Rows.Count"),
+    )?;
+    let mut rows = Vec::with_capacity(capacity);
+    for index in 0..row_count {
+        let row_path = format!("{object_path}.Rows[{index}]");
+        let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
+        let mut row_properties = read_tagged_property_stream(
+            reader,
+            &context.package.summary.versions,
+            &context.package.names,
+            &format!("{row_path}.Value"),
+        )?;
+        decode_property_stream_values(context.source, &mut row_properties, decode_context)?;
+        rows.push(DataTableRow {
+            name,
+            properties: row_properties,
+        });
+    }
+    Ok(rows)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -651,12 +662,15 @@ impl AssetDecoder for DataAssetDecoder {
                 format!("export {} has no resolved class", export.object_path),
             ));
         };
-        if !is_data_asset_class(class_path.as_str()) {
+        if !is_data_asset_class(class_path.as_str())
+            && !context.schemas.class_is_a(class_path, DATA_ASSET_CLASS)
+        {
             return Err(AssetError::new(
                 AssetErrorKind::UnsupportedFormat,
                 format!("unsupported asset class {class_path}"),
             ));
         }
+        validate_source_serialization(context.schemas, class_path, false)?;
 
         let (properties, class_path, object_guid) =
             decode_uobject_asset_properties(export, context)?;
@@ -1455,6 +1469,10 @@ pub fn decode_export(
         return Ok(None);
     };
 
+    if let Some(decoded) = decode_modeled_export(export, context)? {
+        return Ok(Some(decoded));
+    }
+
     if DataTableDecoder.supports(class_path) {
         return DataTableDecoder.decode(export, context).map(Some);
     }
@@ -1483,6 +1501,192 @@ pub fn decode_export(
         return UObjectDecoder.decode(export, context).map(Some);
     }
     Ok(None)
+}
+
+/// Decodes a DataTable or DataAsset only when the supplied source model owns its class hierarchy
+/// and serialization plan.
+///
+/// Returning `Ok(None)` is deliberate: callers can use this as a strict equivalence lane with no
+/// handwritten class-name fallback, while [`decode_export`] retains compatibility for projects
+/// that have not generated models for their native subclasses.
+pub fn decode_modeled_export(
+    export: &Export,
+    context: &AssetDecodeContext<'_>,
+) -> Result<Option<DecodedAsset>, AssetError> {
+    if export.serial_size == 0 {
+        return Ok(None);
+    }
+    let Some(class_path) = export.class_path.as_ref() else {
+        return Ok(None);
+    };
+    if context.schemas.find_class(class_path).is_none() {
+        return Ok(None);
+    }
+
+    if context.schemas.class_is_a(class_path, DATATABLE_CLASS) {
+        validate_source_serialization(context.schemas, class_path, true)?;
+        let source = execute_source_serialization(export, context)?;
+        let kind = if context
+            .schemas
+            .class_is_a(class_path, COMPOSITE_DATATABLE_CLASS)
+        {
+            DataTableKind::Composite
+        } else {
+            DataTableKind::Plain
+        };
+        let row_struct = row_struct_path(context.package, &source.properties);
+        let parent_tables = parent_tables_paths(context.package, &source.properties);
+        let rows = source.rows.ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!("generated serialization layout for {class_path} did not produce rows"),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::DataTable(DecodedDataTable {
+            kind,
+            object_path: export.object_path.clone(),
+            object_guid: source.object_guid,
+            row_struct,
+            parent_tables,
+            properties: source.properties,
+            rows,
+        })));
+    }
+    if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
+        validate_source_serialization(context.schemas, class_path, false)?;
+        let source = execute_source_serialization(export, context)?;
+        return Ok(Some(DecodedAsset::DataAsset(DecodedDataAsset {
+            object_path: export.object_path.clone(),
+            class_path: class_path.clone(),
+            object_guid: source.object_guid,
+            properties: source.properties,
+        })));
+    }
+    Ok(None)
+}
+
+struct SourceSerializationOutput {
+    properties: PropertyStream,
+    object_guid: Option<Guid>,
+    rows: Option<Vec<DataTableRow>>,
+}
+
+fn execute_source_serialization(
+    export: &Export,
+    context: &AssetDecodeContext<'_>,
+) -> Result<SourceSerializationOutput, AssetError> {
+    let class_path = export.class_path.as_ref().ok_or_else(|| {
+        AssetError::new(
+            AssetErrorKind::UnsupportedFormat,
+            format!("export {} has no resolved class", export.object_path),
+        )
+    })?;
+    let schema = context.schemas.find_class(class_path).ok_or_else(|| {
+        AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!("no generated source model owns {class_path}"),
+        )
+    })?;
+    let Some(SerializationOperation::TaggedProperties) = schema.serialization.first() else {
+        return Err(unsupported_source_plan(class_path, &schema.serialization));
+    };
+
+    let (properties, mut reader) = decode_uobject_properties(export, context)?;
+    let decode_context = DecodeContext {
+        package: context.package,
+        versions: &context.package.summary.versions,
+        schemas: context.schemas,
+    };
+    let mut object_guid = None;
+    let mut rows = None;
+    for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
+        match operation {
+            SerializationOperation::ObjectGuid => {
+                let followed_by_native_data = schema.serialization.get(index + 1).is_some();
+                object_guid = if followed_by_native_data {
+                    consume_inline_object_guid_footer(&mut reader, &export.object_path)?
+                } else {
+                    consume_uobject_export_footer(&mut reader, &export.object_path)?
+                };
+            }
+            SerializationOperation::DataTableRows {
+                row_struct_property,
+            } if row_struct_property == "RowStruct" && rows.is_none() => {
+                rows = Some(decode_data_table_rows(
+                    &mut reader,
+                    context,
+                    &decode_context,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::TaggedProperties
+            | SerializationOperation::DataTableRows { .. } => {
+                return Err(unsupported_source_plan(class_path, &schema.serialization));
+            }
+        }
+    }
+    if reader.remaining() != 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!(
+                "source-modeled export {} left {} trailing bytes",
+                export.object_path,
+                reader.remaining()
+            ),
+        ));
+    }
+
+    Ok(SourceSerializationOutput {
+        properties,
+        object_guid,
+        rows,
+    })
+}
+
+fn unsupported_source_plan(
+    class_path: &ObjectPath,
+    operations: &[SerializationOperation],
+) -> AssetError {
+    AssetError::new(
+        AssetErrorKind::UnsupportedCapability,
+        format!("generated serialization layout for {class_path} is not supported: {operations:?}"),
+    )
+}
+
+fn validate_source_serialization(
+    schemas: &dyn SchemaProvider,
+    class_path: &ObjectPath,
+    expects_data_table_rows: bool,
+) -> Result<(), AssetError> {
+    let Some(schema) = schemas.find_class(class_path) else {
+        return Ok(());
+    };
+    let operations = &schema.serialization;
+    let common_prefix = matches!(
+        operations.as_slice(),
+        [
+            SerializationOperation::TaggedProperties,
+            SerializationOperation::ObjectGuid
+        ] | [
+            SerializationOperation::TaggedProperties,
+            SerializationOperation::ObjectGuid,
+            SerializationOperation::DataTableRows { .. }
+        ]
+    );
+    let has_data_table_rows = matches!(
+        operations.last(),
+        Some(SerializationOperation::DataTableRows { row_struct_property })
+            if row_struct_property == "RowStruct"
+    );
+    if !common_prefix || has_data_table_rows != expects_data_table_rows {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!(
+                "generated serialization layout for {class_path} is not supported: {operations:?}"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn decode_uobject_asset_properties(
@@ -1807,7 +2011,10 @@ mod tests {
     use crate::archive::{ArchiveErrorKind, ArchiveLimits, Reader};
     use crate::package::{test_export, test_import, test_package};
     use crate::property::PropertyValue;
-    use crate::schema::{ClassSchema, SchemaProvider, StructSchema};
+    use crate::schema::{
+        ClassSchema, SchemaProvider, SerializationOperation, SourceModel, StructSchema,
+        embedded_source_model,
+    };
     use crate::test_support::{
         TypeParam, name_ref, push_f32, push_fstring, push_i32, write_datatable_export,
         write_int_property_tag, write_object_array_property_tag, write_object_property_tag,
@@ -1891,6 +2098,16 @@ mod tests {
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("Rows.Count"));
         assert!(error.message().contains("exceeds element limit"));
+
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated_error = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects absurd row count");
+        assert_eq!(generated_error.kind(), error.kind());
+        assert_eq!(generated_error.message(), error.message());
     }
 
     fn decode_datatable(
@@ -2389,11 +2606,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonzero_datatable_data_marker() {
+    fn rejects_invalid_datatable_object_guid_marker() {
         let mut export_bytes = write_datatable_export(0, &[], &[]);
-        // Layout: u8 extensions, None terminator (8 bytes), then i32 data marker.
+        // Layout: u8 extensions, None terminator (8 bytes), then i32 object-guid marker.
         let marker_offset = 1 + 8;
-        export_bytes[marker_offset] = 1;
+        export_bytes[marker_offset] = 2;
 
         let package = test_package(names());
         let export = test_export(
@@ -2410,9 +2627,29 @@ mod tests {
 
         let error = DataTableDecoder
             .decode(&export, &context)
-            .expect_err("nonzero marker");
+            .expect_err("invalid marker");
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
-        assert!(error.message().contains("data marker"));
+        assert!(error.message().contains("object-guid footer marker"));
+    }
+
+    #[test]
+    fn decodes_datatable_object_guid_before_rows() {
+        let mut export_bytes = write_datatable_export(0, &[], &[]);
+        let marker_offset = 1 + 8;
+        export_bytes[marker_offset] = 1;
+        export_bytes.splice(marker_offset + 4..marker_offset + 4, 1_u8..=16);
+
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            "/Script/Engine.DataTable",
+        );
+
+        let datatable = decode_datatable(export_bytes, package, export);
+
+        assert!(datatable.object_guid.is_some());
+        assert!(datatable.rows.is_empty());
     }
 
     #[test]
@@ -2987,6 +3224,136 @@ mod tests {
         assert!(matches!(decoded, DecodedAsset::DataTable(_)));
     }
 
+    #[test]
+    fn embedded_source_model_strictly_decodes_datatable_and_primary_data_asset() {
+        let table_bytes = write_datatable_export(0, &[], &[]);
+        let table_package = test_package(names());
+        let table_export = test_export(
+            table_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            DATATABLE_CLASS,
+        );
+        let table_context = AssetDecodeContext {
+            source: &table_bytes,
+            package: &table_package,
+            schemas: embedded_source_model(),
+        };
+        assert!(matches!(
+            decode_modeled_export(&table_export, &table_context).expect("generated DataTable"),
+            Some(DecodedAsset::DataTable(_))
+        ));
+
+        let data_asset_bytes = write_uobject_export(0, &[]);
+        let data_asset_package = test_package(vec!["None".into()]);
+        let data_asset_export = test_export(
+            data_asset_bytes.len() as u64,
+            "/Game/Test/PDA_Test.PDA_Test",
+            PRIMARY_DATA_ASSET_CLASS,
+        );
+        let data_asset_context = AssetDecodeContext {
+            source: &data_asset_bytes,
+            package: &data_asset_package,
+            schemas: embedded_source_model(),
+        };
+        assert!(matches!(
+            decode_modeled_export(&data_asset_export, &data_asset_context)
+                .expect("generated PrimaryDataAsset"),
+            Some(DecodedAsset::DataAsset(_))
+        ));
+    }
+
+    #[test]
+    fn embedded_and_legacy_primary_data_asset_semantics_are_identical() {
+        let mut properties = Vec::new();
+        write_int_property_tag(&mut properties, 2, 1, 4243);
+        let export_bytes = write_uobject_export(0, &properties);
+        let package = test_package(vec!["None".into(), "IntProperty".into(), "IntValue".into()]);
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/PDA_Test.PDA_Test",
+            PRIMARY_DATA_ASSET_CLASS,
+        );
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+
+        let Some(DecodedAsset::DataAsset(generated)) =
+            decode_modeled_export(&export, &generated_context).expect("generated decode")
+        else {
+            panic!("expected generated DataAsset");
+        };
+        let Some(DecodedAsset::DataAsset(legacy)) =
+            decode_export(&export, &legacy_context).expect("legacy decode")
+        else {
+            panic!("expected legacy DataAsset");
+        };
+        assert_eq!(generated, legacy);
+    }
+
+    #[test]
+    fn source_modeled_datatable_preserves_malformed_input_checks() {
+        let mut export_bytes = write_datatable_export(0, &[], &[]);
+        export_bytes[1 + 8] = 2;
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            DATATABLE_CLASS,
+        );
+        let context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+
+        let error = decode_modeled_export(&export, &context).expect_err("invalid GUID marker");
+        assert_eq!(error.kind(), AssetErrorKind::MalformedData);
+        assert!(error.message().contains("object-guid footer marker"));
+    }
+
+    #[test]
+    fn source_modeled_dispatch_rejects_an_unrecognized_serialization_plan() {
+        let export_bytes = write_datatable_export(0, &[], &[]);
+        let package = test_package(names());
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/DT_Test.DT_Test",
+            DATATABLE_CLASS,
+        );
+        let model = SourceModel {
+            schema_version: 1,
+            engine_version: "test".to_owned(),
+            classes: vec![ClassSchema {
+                path: ObjectPath::new(DATATABLE_CLASS),
+                cpp_name: "UDataTable".to_owned(),
+                super_path: Some(ObjectPath::new("/Script/CoreUObject.Object")),
+                fields: Vec::new(),
+                serialization: vec![
+                    SerializationOperation::TaggedProperties,
+                    SerializationOperation::ObjectGuid,
+                ],
+            }],
+            structs: Vec::new(),
+        };
+        let context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &model,
+        };
+
+        let error = decode_modeled_export(&export, &context).expect_err("unsupported plan");
+        assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
+        assert!(error.message().contains("generated serialization layout"));
+    }
+
     fn decode_data_asset(
         export_bytes: Vec<u8>,
         package: Package,
@@ -3059,5 +3426,15 @@ mod tests {
             .expect_err("trailing bytes");
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("trailing bytes"));
+
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated_error = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated path rejects trailing bytes");
+        assert_eq!(generated_error.kind(), AssetErrorKind::MalformedData);
+        assert!(generated_error.message().contains("trailing bytes"));
     }
 }

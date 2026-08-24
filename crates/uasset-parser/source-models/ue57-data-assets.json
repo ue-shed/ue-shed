@@ -1,0 +1,258 @@
+{
+	"schema_version": 1,
+	"engine_version": "5.7",
+	"classes": [
+		{
+			"path": "/Script/CoreUObject.Object",
+			"cpp_name": "UObject",
+			"super_path": null,
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.CompositeDataTable",
+			"cpp_name": "UCompositeDataTable",
+			"super_path": "/Script/Engine.DataTable",
+			"fields": [
+				{
+					"name": "ParentTables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.DataTable"
+						}
+					}
+				},
+				{
+					"name": "OldParentTables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.DataTable"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "data_table_rows",
+					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataAsset",
+			"cpp_name": "UDataAsset",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "NativeClass",
+					"type": {
+						"kind": "class",
+						"class_path": "/Script/Engine.DataAsset"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTable",
+			"cpp_name": "UDataTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "RowStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.ScriptStruct"
+					}
+				},
+				{
+					"name": "bStripFromClientBuilds",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreExtraFields",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreMissingFields",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bPreserveExistingValues",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ImportKeyField",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "ImportPath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "RowStructName_DEPRECATED",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RowStructPathName",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.TopLevelAssetPath"
+					}
+				},
+				{
+					"name": "RowsSerializedWithTags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "uint8"
+						}
+					}
+				},
+				{
+					"name": "TemporarilyReferencedObjects",
+					"type": {
+						"kind": "set",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.Object"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "data_table_rows",
+					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.PrimaryDataAsset",
+			"cpp_name": "UPrimaryDataAsset",
+			"super_path": "/Script/Engine.DataAsset",
+			"fields": [
+				{
+					"name": "AssetBundleData",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.AssetBundleData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		}
+	],
+	"structs": [
+		{
+			"path": "/Script/Engine.DataTableCategoryHandle",
+			"cpp_name": "FDataTableCategoryHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.DataTable"
+					}
+				},
+				{
+					"name": "ColumnName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RowContents",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTableRowHandle",
+			"cpp_name": "FDataTableRowHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.DataTable"
+					}
+				},
+				{
+					"name": "RowName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.TableRowBase",
+			"cpp_name": "FTableRowBase",
+			"super_path": null,
+			"fields": []
+		}
+	]
+}

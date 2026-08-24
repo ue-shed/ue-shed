@@ -348,9 +348,11 @@ pub enum SavedPropertyValue {
     Text {
         value: String,
         history: TextHistory,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        table_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
     #[serde(rename = "object_ref")]
@@ -400,6 +402,8 @@ pub enum SavedPropertyValue {
 pub enum TextHistory {
     None,
     Base,
+    #[serde(rename = "string_table")]
+    StringTableEntry,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -600,6 +604,8 @@ pub struct SavedAssetTextOccurrence {
 pub enum TextExtractionIdentity {
     #[serde(rename = "resolved")]
     Resolved { namespace: String, key: String },
+    #[serde(rename = "string_table")]
+    StringTable { table_id: String, key: String },
     #[serde(rename = "unresolved")]
     Unresolved { reason: TextUnresolvedReason },
 }

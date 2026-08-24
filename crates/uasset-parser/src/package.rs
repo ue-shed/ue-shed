@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, IoHash, Reader, Span};
 use crate::version::{PackageFlags, VersionContext};
 
@@ -249,7 +251,8 @@ impl PackageIndex {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct ObjectPath(String);
 
 impl ObjectPath {

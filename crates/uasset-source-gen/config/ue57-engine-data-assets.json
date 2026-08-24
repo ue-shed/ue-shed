@@ -1,0 +1,26 @@
+{
+	"schema_version": 1,
+	"engine_version": "5.7",
+	"modules": [
+		{
+			"name": "CoreUObject",
+			"root": "engine_source",
+			"headers": ["Runtime/CoreUObject/Public/UObject/Object.h"],
+			"sources": ["Runtime/CoreUObject/Private/UObject/Obj.cpp"]
+		},
+		{
+			"name": "Engine",
+			"root": "engine_source",
+			"headers": [
+				"Runtime/Engine/Classes/Engine/DataAsset.h",
+				"Runtime/Engine/Classes/Engine/DataTable.h",
+				"Runtime/Engine/Classes/Engine/CompositeDataTable.h"
+			],
+			"sources": [
+				"Runtime/Engine/Private/DataAsset.cpp",
+				"Runtime/Engine/Private/DataTable.cpp",
+				"Runtime/Engine/Private/CompositeDataTable.cpp"
+			]
+		}
+	]
+}

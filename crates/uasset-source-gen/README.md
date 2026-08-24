@@ -1,0 +1,73 @@
+# Unreal source-model experiment
+
+`uasset-source-gen` is a bounded experiment in deriving UAsset parser facts from Unreal C++ source.
+It reads reflected declarations and a deliberately small subset of serializer bodies, then emits a
+language-neutral JSON model consumed through `uasset-parser`'s `SchemaProvider` boundary.
+
+The generated model currently proves two target families:
+
+- `UDataTable` and `UCompositeDataTable`: inheritance, reflected row schemas, UObject properties and
+  GUID footer, and the native row array written by `UDataTable::SaveStructData`.
+- `UDataAsset`: inheritance-based recognition of native subclasses, reflected properties, and the
+  inherited UObject serialization layout.
+
+The conformance test decodes all 12 DataTable fixtures (10,022 rows total) and the fixture DataAsset
+without any raw property values. It also checks every decoded row/property against the type generated
+from the fixture's Unreal declarations. This includes nested structs, enums, containers, object and
+soft-object references, row handles, `FIntPoint`, and localized/string-table `FText` values.
+
+Modeled classes now take a strict source-driven path before compatibility dispatch. That path
+interprets the generated operation list itself and does not call the handwritten DataTable or
+DataAsset adapters. Conformance compares its decoded DT/CDT models and public inspection JSON with
+the compatibility implementation. The fixture DataAsset comparison records the intentional
+classification improvement from generic `UObject` to its source-proven `UDataAsset` subclass while
+requiring identical properties, GUID, and object identity.
+
+The native inspection, project-IO, and WASM paths use the embedded engine-only model. The parser and
+inspection libraries also accept an explicit `SchemaProvider`, allowing a generated project model to
+classify native subclasses without global state. The legacy class-name fallback remains for projects
+that have not supplied source metadata; removing it completely requires a distribution mechanism for
+project-native models.
+
+## Generate from UE 5.7
+
+The engine-only model is embedded by the portable parser and deliberately excludes fixture or
+project declarations:
+
+```powershell
+cargo run -p uasset-source-gen -- generate `
+  --config crates/uasset-source-gen/config/ue57-engine-data-assets.json `
+  --engine-source "C:\Program Files\Epic Games\UE_5.7\Engine\Source" `
+  --workspace . `
+  --output crates/uasset-parser/source-models/ue57-data-assets.json
+```
+
+The wider conformance model adds the generic fixture module so the strict generated lane can prove
+native project subclasses and row structures without placing those declarations in product code:
+
+From the repository root:
+
+```powershell
+cargo run -p uasset-source-gen -- generate `
+  --config crates/uasset-source-gen/config/ue57-data-assets.json `
+  --engine-source "C:\Program Files\Epic Games\UE_5.7\Engine\Source" `
+  --workspace . `
+  --output fixtures/unreal-project/FixtureExpected/parser-source-model.json
+```
+
+Replace `generate` with `check` to fail when the committed model is stale. The engine path is an
+explicit development input; it is not embedded in the generated file or used as a runtime default.
+
+## Deliberate boundaries
+
+This is not a general C++ parser and does not pretend to understand arbitrary engine code. Its lexer
+and recognizers support the source constructs needed by the target types and preserve unrecognized
+field types as explicit `unknown` model entries. Parser dispatch additionally validates the generated
+serialization operation sequence before decoding a modeled class.
+
+Tagged property values remain decoded from the type information serialized in the package, using the
+same bounded codecs in both lanes. Generated declarations validate those values and supply class
+inheritance and native serialization order; they do not override contradictory on-disk evidence.
+
+Only derived declarations, field types, inheritance, and serialization operations are committed.
+Unreal source is read locally and is never copied into the product or generated artifact.

@@ -1,0 +1,505 @@
+{
+	"schema_version": 1,
+	"engine_version": "5.7",
+	"classes": [
+		{
+			"path": "/Script/CoreUObject.Object",
+			"cpp_name": "UObject",
+			"super_path": null,
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.CompositeDataTable",
+			"cpp_name": "UCompositeDataTable",
+			"super_path": "/Script/Engine.DataTable",
+			"fields": [
+				{
+					"name": "ParentTables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.DataTable"
+						}
+					}
+				},
+				{
+					"name": "OldParentTables",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/Engine.DataTable"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "data_table_rows",
+					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataAsset",
+			"cpp_name": "UDataAsset",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "NativeClass",
+					"type": {
+						"kind": "class",
+						"class_path": "/Script/Engine.DataAsset"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTable",
+			"cpp_name": "UDataTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [
+				{
+					"name": "RowStruct",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/CoreUObject.ScriptStruct"
+					}
+				},
+				{
+					"name": "bStripFromClientBuilds",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreExtraFields",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bIgnoreMissingFields",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "bPreserveExistingValues",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "ImportKeyField",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "AssetImportData",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.AssetImportData"
+					}
+				},
+				{
+					"name": "ImportPath_DEPRECATED",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "RowStructName_DEPRECATED",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RowStructPathName",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.TopLevelAssetPath"
+					}
+				},
+				{
+					"name": "RowsSerializedWithTags",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "uint8"
+						}
+					}
+				},
+				{
+					"name": "TemporarilyReferencedObjects",
+					"type": {
+						"kind": "set",
+						"inner": {
+							"kind": "object",
+							"class_path": "/Script/CoreUObject.Object"
+						}
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "data_table_rows",
+					"row_struct_property": "RowStruct"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.PrimaryDataAsset",
+			"cpp_name": "UPrimaryDataAsset",
+			"super_path": "/Script/Engine.DataAsset",
+			"fields": [
+				{
+					"name": "AssetBundleData",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.AssetBundleData"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureTextAsset",
+			"cpp_name": "UUEShedFixtureTextAsset",
+			"super_path": "/Script/Engine.DataAsset",
+			"fields": [
+				{
+					"name": "SharedPrimary",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "SharedSecondary",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "EqualSourceFirst",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "EqualSourceSecond",
+					"type": {
+						"kind": "text"
+					}
+				},
+				{
+					"name": "StringTableReference",
+					"type": {
+						"kind": "text"
+					}
+				}
+			],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				}
+			]
+		}
+	],
+	"structs": [
+		{
+			"path": "/Script/Engine.DataTableCategoryHandle",
+			"cpp_name": "FDataTableCategoryHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.DataTable"
+					}
+				},
+				{
+					"name": "ColumnName",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "RowContents",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.DataTableRowHandle",
+			"cpp_name": "FDataTableRowHandle",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "DataTable",
+					"type": {
+						"kind": "object",
+						"class_path": "/Script/Engine.DataTable"
+					}
+				},
+				{
+					"name": "RowName",
+					"type": {
+						"kind": "name"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.TableRowBase",
+			"cpp_name": "FTableRowBase",
+			"super_path": null,
+			"fields": []
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureAssetReferenceRow",
+			"cpp_name": "FUEShedFixtureAssetReferenceRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Asset",
+					"type": {
+						"kind": "soft_object",
+						"class_path": "/Script/CoreUObject.Object"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureContainerRow",
+			"cpp_name": "FUEShedFixtureContainerRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Sequence",
+					"type": {
+						"kind": "array",
+						"inner": {
+							"kind": "int32"
+						}
+					}
+				},
+				{
+					"name": "Labels",
+					"type": {
+						"kind": "set",
+						"inner": {
+							"kind": "name"
+						}
+					}
+				},
+				{
+					"name": "Weights",
+					"type": {
+						"kind": "map",
+						"key": {
+							"kind": "name"
+						},
+						"value": {
+							"kind": "int32"
+						}
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureEnumRow",
+			"cpp_name": "FUEShedFixtureEnumRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Rarity",
+					"type": {
+						"kind": "enum",
+						"path": "/Script/UEShedFixture.UEShedFixtureRarity"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureLeftReferenceRow",
+			"cpp_name": "FUEShedFixtureLeftReferenceRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Target",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/Engine.DataTableRowHandle"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureNestedValue",
+			"cpp_name": "FUEShedFixtureNestedValue",
+			"super_path": null,
+			"fields": [
+				{
+					"name": "Count",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Label",
+					"type": {
+						"kind": "string"
+					}
+				},
+				{
+					"name": "Offset",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.Vector"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureOpaqueRow",
+			"cpp_name": "FUEShedFixtureOpaqueRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "OpaqueValue",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/CoreUObject.IntPoint"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureRightReferenceRow",
+			"cpp_name": "FUEShedFixtureRightReferenceRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Description",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureScalarsRow",
+			"cpp_name": "FUEShedFixtureScalarsRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Enabled",
+					"type": {
+						"kind": "bool"
+					}
+				},
+				{
+					"name": "Count",
+					"type": {
+						"kind": "int32"
+					}
+				},
+				{
+					"name": "Ratio",
+					"type": {
+						"kind": "float"
+					}
+				},
+				{
+					"name": "Key",
+					"type": {
+						"kind": "name"
+					}
+				},
+				{
+					"name": "Notes",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureStructRow",
+			"cpp_name": "FUEShedFixtureStructRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "Nested",
+					"type": {
+						"kind": "struct",
+						"path": "/Script/UEShedFixture.UEShedFixtureNestedValue"
+					}
+				},
+				{
+					"name": "Label",
+					"type": {
+						"kind": "string"
+					}
+				}
+			]
+		},
+		{
+			"path": "/Script/UEShedFixture.UEShedFixtureTextRow",
+			"cpp_name": "FUEShedFixtureTextRow",
+			"super_path": "/Script/Engine.TableRowBase",
+			"fields": [
+				{
+					"name": "DisplayName",
+					"type": {
+						"kind": "text"
+					}
+				}
+			]
+		}
+	]
+}

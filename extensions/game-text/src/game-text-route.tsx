@@ -346,14 +346,16 @@ function CorpusWorkspace(props: {
 									</span>
 									<span {...stylex.props(styles.resultIdentity)}>
 										<code>
-											{unit.identity.status === "resolved"
+											{unit.identity.status !== "unresolved"
 												? unit.identity.key
 												: "Unresolved ID"}
 										</code>
 										<small>
 											{unit.identity.status === "resolved"
 												? unit.identity.namespace
-												: unit.identity.reason.replaceAll("_", " ")}
+												: unit.identity.status === "string_table"
+													? unit.identity.tableId
+													: unit.identity.reason.replaceAll("_", " ")}
 										</small>
 									</span>
 									<span {...stylex.props(styles.chevron)}>›</span>

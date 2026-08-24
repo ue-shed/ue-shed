@@ -26,6 +26,7 @@
 			"Cargo.lock",
 			"crates/uasset-parser/Cargo.toml",
 			"crates/uasset-parser/LICENSE",
+			"crates/uasset-parser/source-models",
 			"crates/uasset-parser/src",
 			"crates/uasset-inspection/Cargo.toml",
 			"crates/uasset-inspection/src",

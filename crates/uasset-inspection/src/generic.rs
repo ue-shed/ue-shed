@@ -11,13 +11,14 @@ use uasset_parser::package::{
     ObjectPath, PackageError, PackageErrorKind, PackageIndex, TableLocation,
 };
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
+use uasset_parser::schema::{SchemaProvider, embedded_source_model};
 use uasset_parser::{Package, PackageSummary};
 
 mod json;
 
 pub use json::{
     InspectionJsonError, InspectionJsonStatus, inspect_bytes_json, write_inspection_json,
+    write_inspection_json_with_schemas,
 };
 
 pub const SCHEMA_VERSION: u8 = 8;
@@ -35,11 +36,25 @@ where
 /// [`inspect_bytes_json`] and [`inspect_bytes_value`] for the WASM and compatibility adapters;
 /// callers that already have a Rust protocol boundary should consume this result directly.
 pub fn inspect_bytes(path: &str, bytes: &[u8]) -> Result<InspectOutput, Box<ErrorOutput>> {
+    inspect_bytes_with_schemas(path, bytes, embedded_source_model())
+}
+
+/// Decodes one package with an explicit generated source model.
+///
+/// Hosts that generate project-native class metadata can use this without changing package bytes
+/// or relying on parser-global state. Ordinary callers use [`inspect_bytes`]'s embedded engine-only
+/// model.
+pub fn inspect_bytes_with_schemas(
+    path: &str,
+    bytes: &[u8],
+    schemas: &dyn SchemaProvider,
+) -> Result<InspectOutput, Box<ErrorOutput>> {
     match Package::parse(bytes) {
         Ok(package) => Ok(InspectOutput::from_package(
             path.to_owned(),
             bytes,
             &package,
+            schemas,
         )),
         Err(error) => Err(Box::new(ErrorOutput::package(path.to_owned(), &error))),
     }
@@ -122,16 +137,20 @@ impl InspectOutput {
     /// Decodes every export, collecting per-export failures instead of aborting.
     /// A single unsupported or malformed export no longer blanks the whole file;
     /// callers report `status: "partial"` when `decode_errors` is non-empty.
-    fn from_package(path: String, source: &[u8], package: &Package) -> Self {
+    fn from_package(
+        path: String,
+        source: &[u8],
+        package: &Package,
+        schemas: &dyn SchemaProvider,
+    ) -> Self {
         let mut output = Self::from_summary(path, &package.summary);
         if let Some(table) = &mut output.package.soft_object_paths {
             table.parsed_count = package.soft_object_paths.len();
         }
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source,
             package,
-            schemas: &schemas,
+            schemas,
         };
         for export in &package.exports {
             match decode_export(export, &context) {
@@ -181,7 +200,7 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
                 },
                 object_path: datatable.object_path.into_string(),
                 class_path: None,
-                object_guid: None,
+                object_guid: datatable.object_guid.map(|guid| guid.to_string()),
                 row_struct: datatable.row_struct.map(ObjectPath::into_string),
                 parent_tables: datatable
                     .parent_tables
@@ -454,18 +473,6 @@ fn data_asset_kind(class_path: &str) -> &'static str {
     }
 }
 
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-        None
-    }
-}
-
 #[derive(Serialize)]
 pub struct PackageOutput {
     pub name: String,
@@ -647,6 +654,8 @@ pub enum PropertyValueOutput {
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        table_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
     Vector {
@@ -809,12 +818,21 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
             value: text.source,
             history: "none",
             namespace: None,
+            table_id: None,
             key: None,
         },
         TextHistory::Base { namespace, key } => PropertyValueOutput::Text {
             value: text.source,
             history: "base",
             namespace: Some(namespace),
+            table_id: None,
+            key: Some(key),
+        },
+        TextHistory::StringTableEntry { table_id, key } => PropertyValueOutput::Text {
+            value: text.source,
+            history: "string_table",
+            namespace: None,
+            table_id: Some(table_id),
             key: Some(key),
         },
     }

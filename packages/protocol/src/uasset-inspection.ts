@@ -29,6 +29,13 @@ export type SavedPropertyValue =
 			readonly namespace: string;
 			readonly key: string;
 	  }
+	| {
+			readonly value_kind: "text";
+			readonly value: string;
+			readonly history: "string_table";
+			readonly table_id: string;
+			readonly key: string;
+	  }
 	| { readonly value_kind: "object_ref"; readonly value: string | null }
 	| {
 			readonly value_kind: "data_table_row_handle";
@@ -104,6 +111,13 @@ const SavedPropertyValueUnion = Schema.Union([
 		value: Schema.String,
 		history: Schema.Literal("base"),
 		namespace: Schema.String,
+		key: Schema.String
+	}),
+	Schema.Struct({
+		value_kind: Schema.Literal("text"),
+		value: Schema.String,
+		history: Schema.Literal("string_table"),
+		table_id: Schema.String,
 		key: Schema.String
 	}),
 	Schema.Struct({
@@ -453,6 +467,11 @@ const TextExtractionIdentity = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("resolved"),
 		namespace: Schema.String,
+		key: Schema.String
+	}),
+	Schema.Struct({
+		status: Schema.Literal("string_table"),
+		table_id: Schema.String,
 		key: Schema.String
 	}),
 	Schema.Struct({

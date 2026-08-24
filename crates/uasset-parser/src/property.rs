@@ -64,6 +64,7 @@ pub enum RawReason {
 pub enum TextHistory {
     None,
     Base { namespace: String, key: String },
+    StringTableEntry { table_id: String, key: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

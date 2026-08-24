@@ -17,7 +17,7 @@ use uasset_inspection::saved_world::{
 };
 use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
+use uasset_parser::schema::embedded_source_model;
 
 use super::scanner;
 use super::{
@@ -755,11 +755,10 @@ fn project_one_path(
     };
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: &bytes,
         package: &package,
-        schemas: &schemas,
+        schemas: embedded_source_model(),
     };
     let mut results = Vec::new();
     let mut diagnostics = Vec::new();
@@ -883,6 +882,9 @@ fn text_occurrence(
         identity: match occurrence.identity {
             TextIdentity::Resolved { namespace, key } => {
                 TextExtractionIdentity::Resolved { namespace, key }
+            }
+            TextIdentity::StringTable { table_id, key } => {
+                TextExtractionIdentity::StringTable { table_id, key }
             }
             TextIdentity::Unresolved { reason } => TextExtractionIdentity::Unresolved {
                 reason: match reason {
@@ -1780,11 +1782,10 @@ fn read_saved_world_package(
         }
     };
     checkpoint(cancellation, "parsing")?;
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: &source,
         package: &package,
-        schemas: &schemas,
+        schemas: embedded_source_model(),
     };
     let mut decoded = Vec::new();
     let mut partial = false;
@@ -1871,18 +1872,6 @@ fn saved_world_transform(transform: SavedWorldTransform) -> WireWorldTransform {
                 component_path: component_path.to_string(),
             }
         }
-    }
-}
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-        None
     }
 }
 

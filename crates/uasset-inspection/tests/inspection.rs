@@ -1,5 +1,22 @@
+use std::fs;
+use std::path::PathBuf;
+
 use serde_json::Value;
-use uasset_inspection::generic::{inspect_bytes, inspect_bytes_json};
+use uasset_inspection::generic::{inspect_bytes, inspect_bytes_json, inspect_bytes_with_schemas};
+use uasset_parser::package::ObjectPath;
+use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
+
+struct EmptySchemas;
+
+impl SchemaProvider for EmptySchemas {
+    fn find_struct(&self, _path: &ObjectPath) -> Option<&StructSchema> {
+        None
+    }
+
+    fn find_class(&self, _path: &ObjectPath) -> Option<&ClassSchema> {
+        None
+    }
+}
 
 const STRING_TABLE: &[u8] =
     include_bytes!("../../../fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset");
@@ -150,6 +167,40 @@ fn direct_json_matches_the_typed_projection_for_real_fixtures() {
                 first_json_difference(&direct, &expected, "$"),
             );
         }
+    }
+}
+
+#[test]
+fn generated_and_legacy_public_datatable_inspections_are_identical() {
+    let authoring = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/unreal-project/Content/Fixture/Authoring");
+    let mut fixtures = fs::read_dir(authoring)
+        .expect("authoring fixture directory")
+        .map(|entry| entry.expect("fixture entry").path())
+        .filter(|path| {
+            path.extension().and_then(|extension| extension.to_str()) == Some("uasset")
+                && path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .is_some_and(|stem| stem.starts_with("DT_") || stem.starts_with("CDT_"))
+        })
+        .collect::<Vec<_>>();
+    fixtures.sort();
+    assert_eq!(fixtures.len(), 12, "fixture inventory changed");
+
+    for fixture in fixtures {
+        let path = fixture.to_string_lossy();
+        let bytes = fs::read(&fixture).expect("fixture bytes");
+        let generated = serde_json::to_value(
+            inspect_bytes(&path, &bytes).expect("generated inspection succeeds"),
+        )
+        .expect("generated inspection serializes");
+        let legacy = serde_json::to_value(
+            inspect_bytes_with_schemas(&path, &bytes, &EmptySchemas)
+                .expect("legacy inspection succeeds"),
+        )
+        .expect("legacy inspection serializes");
+        assert_eq!(generated, legacy, "{} public parity", fixture.display());
     }
 }
 

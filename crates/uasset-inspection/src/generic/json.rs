@@ -12,10 +12,11 @@ use uasset_parser::package::{ObjectPath, Package, PackageIndex, TableLocation};
 use uasset_parser::property::{
     MapEntry, PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory,
 };
+use uasset_parser::schema::{SchemaProvider, embedded_source_model};
 
 use super::{
-    DecodeErrorOutput, EmptySchemas, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name,
-    data_asset_kind, enum_cpp_form_name, serialize_f32_as_f64,
+    DecodeErrorOutput, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name, data_asset_kind,
+    enum_cpp_form_name, serialize_f32_as_f64,
 };
 
 const MAX_INITIAL_JSON_CAPACITY: usize = 32 * 1024 * 1024;
@@ -69,10 +70,20 @@ pub fn write_inspection_json(
     bytes: &[u8],
     writer: impl io::Write,
 ) -> Result<InspectionJsonStatus, InspectionJsonError> {
+    write_inspection_json_with_schemas(path, bytes, embedded_source_model(), writer)
+}
+
+/// Streaming equivalent of `inspect_bytes_with_schemas` for callers with project-native models.
+pub fn write_inspection_json_with_schemas(
+    path: &str,
+    bytes: &[u8],
+    schemas: &dyn SchemaProvider,
+    writer: impl io::Write,
+) -> Result<InspectionJsonStatus, InspectionJsonError> {
     let package = Package::parse(bytes).map_err(|error| {
         InspectionJsonError::Inspection(Box::new(ErrorOutput::package(path.to_owned(), &error)))
     })?;
-    let inspection = StreamingInspection::new(path, bytes, package);
+    let inspection = StreamingInspection::new(path, bytes, package, schemas);
     serde_json::to_writer(writer, &inspection)
         .map_err(|error| InspectionJsonError::Serialization(error.to_string()))?;
     Ok(inspection.status())
@@ -106,15 +117,22 @@ struct StreamingInspection<'a> {
     path: &'a str,
     source: &'a [u8],
     package: Package,
+    schemas: &'a dyn SchemaProvider,
     decode_errors: RefCell<Vec<DecodeErrorOutput>>,
 }
 
 impl<'a> StreamingInspection<'a> {
-    fn new(path: &'a str, source: &'a [u8], package: Package) -> Self {
+    fn new(
+        path: &'a str,
+        source: &'a [u8],
+        package: Package,
+        schemas: &'a dyn SchemaProvider,
+    ) -> Self {
         Self {
             path,
             source,
             package,
+            schemas,
             decode_errors: RefCell::new(Vec::new()),
         }
     }
@@ -142,6 +160,7 @@ impl Serialize for StreamingInspection<'_> {
             &StreamingAssetsView {
                 package: &self.package,
                 source: self.source,
+                schemas: self.schemas,
                 decode_errors: &self.decode_errors,
             },
         )?;
@@ -242,6 +261,7 @@ struct SoftObjectPathsView {
 struct StreamingAssetsView<'a> {
     package: &'a Package,
     source: &'a [u8],
+    schemas: &'a dyn SchemaProvider,
     decode_errors: &'a RefCell<Vec<DecodeErrorOutput>>,
 }
 
@@ -250,11 +270,10 @@ impl Serialize for StreamingAssetsView<'_> {
     where
         S: Serializer,
     {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: self.source,
             package: self.package,
-            schemas: &schemas,
+            schemas: self.schemas,
         };
         let mut sequence = serializer.serialize_seq(None)?;
         for export in &self.package.exports {
@@ -295,7 +314,7 @@ impl Serialize for AssetView<'_> {
                 },
                 object_path: table.object_path.as_str(),
                 class_path: None,
-                object_guid: None,
+                object_guid: table.object_guid.as_ref().map(GuidView),
                 row_struct: table.row_struct.as_ref().map(ObjectPath::as_str),
                 parent_tables: ObjectPathsView(&table.parent_tables),
                 string_table_namespace: None,
@@ -947,6 +966,8 @@ enum PropertyValueView<'a> {
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        table_id: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         key: Option<&'a str>,
     },
     Vector {
@@ -1035,12 +1056,21 @@ impl<'a> PropertyValueView<'a> {
                     value: &text.source,
                     history: "none",
                     namespace: None,
+                    table_id: None,
                     key: None,
                 },
                 TextHistory::Base { namespace, key } => Self::Text {
                     value: &text.source,
                     history: "base",
                     namespace: Some(namespace),
+                    table_id: None,
+                    key: Some(key),
+                },
+                TextHistory::StringTableEntry { table_id, key } => Self::Text {
+                    value: &text.source,
+                    history: "string_table",
+                    namespace: None,
+                    table_id: Some(table_id),
                     key: Some(key),
                 },
             },

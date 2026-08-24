@@ -116,6 +116,8 @@ enum SerializationFact {
     StructFlags,
     StructDefaultInstance,
     SkeletonReferenceBones,
+    AnimationSkeletonGuid,
+    AnimSequenceUncookedData,
     StringTableData,
 }
 
@@ -197,6 +199,15 @@ pub fn generate(
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::SkeletonReferenceBones) {
         validate_skeleton_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::AnimationSkeletonGuid) {
+        validate_animation_asset_serializer(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(
+        &serializer_facts,
+        SerializationFact::AnimSequenceUncookedData,
+    ) {
+        validate_anim_sequence_serializer(&functions, &mut diagnostics)?;
     }
     if has_serialization_fact(&serializer_facts, SerializationFact::StringTableData) {
         validate_string_table_helper(&functions, &mut diagnostics)?;
@@ -735,6 +746,20 @@ fn serializer_facts(functions: &[FunctionBody]) -> BTreeMap<String, Vec<Serializ
                     facts.push(SerializationFact::SkeletonReferenceBones);
                     index += 4;
                     continue;
+                } else if function.class_name == "UAnimationAsset"
+                    && token_sequence(tokens, &["Ar", "<", "<", "SkeletonGuid"])
+                    && !facts.contains(&SerializationFact::AnimationSkeletonGuid)
+                {
+                    facts.push(SerializationFact::AnimationSkeletonGuid);
+                    index += 4;
+                    continue;
+                } else if function.class_name == "UAnimSequence"
+                    && token_sequence(tokens, &["FStripDataFlags", "StripFlags"])
+                    && !facts.contains(&SerializationFact::AnimSequenceUncookedData)
+                {
+                    facts.push(SerializationFact::AnimSequenceUncookedData);
+                    index += 2;
+                    continue;
                 } else if function.class_name == "UStringTable"
                     && token_sequence(tokens, &["StringTable", "-", ">", "Serialize"])
                 {
@@ -1134,6 +1159,59 @@ fn validate_skeleton_serializer(
     Ok(())
 }
 
+fn validate_animation_asset_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions.iter().find(|function| {
+        function.class_name == "UAnimationAsset" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "UAnimationAsset::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["Super", ":", ":", "Serialize", "(", "Ar", ")"][..],
+        &["Ar", "<", "<", "SkeletonGuid"][..],
+    ];
+    validate_ordered_serializer_shape(serializer, "AnimationAsset", &required)?;
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized inherited UObject data + FGuid SkeletonGuid".to_owned(),
+    });
+    Ok(())
+}
+
+fn validate_anim_sequence_serializer(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(serializer) = functions.iter().find(|function| {
+        function.class_name == "UAnimSequence" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "UAnimSequence::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["Super", ":", ":", "Serialize", "(", "Ar", ")"][..],
+        &["FStripDataFlags", "StripFlags", "(", "Ar", ")"][..],
+        &["Ar", "<", "<", "RawAnimationData"][..],
+        &["bool", "bSerializeCompressedData"][..],
+        &["Ar", "<", "<", "bSerializeCompressedData"][..],
+        &["SerializeCompressedData", "(", "Ar"][..],
+    ];
+    validate_ordered_serializer_shape(serializer, "AnimSequence", &required)?;
+    diagnostics.push(SourceDiagnostic {
+        path: serializer.path.clone(),
+        line: serializer.line,
+        message: "recognized uncooked FStripDataFlags + raw-track array + compressed-data gate"
+            .to_owned(),
+    });
+    Ok(())
+}
+
 fn validate_ordered_serializer_shape(
     function: &FunctionBody,
     label: &str,
@@ -1218,6 +1296,12 @@ fn effective_serialization(
                 }
                 SerializationFact::SkeletonReferenceBones => {
                     operations.push(SerializationOperation::SkeletonReferenceBones);
+                }
+                SerializationFact::AnimationSkeletonGuid => {
+                    operations.push(SerializationOperation::AnimationSkeletonGuid);
+                }
+                SerializationFact::AnimSequenceUncookedData => {
+                    operations.push(SerializationOperation::AnimSequenceUncookedData);
                 }
                 SerializationFact::StringTableData => {
                     operations.push(SerializationOperation::StringTableData);
@@ -1561,6 +1645,16 @@ mod tests {
                 Super::Serialize(Ar);
                 Ar << ReferenceSkeleton;
             }
+            void UAnimationAsset::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << SkeletonGuid;
+            }
+            void UAnimSequence::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                FStripDataFlags StripFlags(Ar);
+            }
         "#;
         let functions = parse_function_bodies(&lex(source).expect("lex"), "DataTable.cpp");
         let facts = serializer_facts(&functions);
@@ -1616,6 +1710,20 @@ mod tests {
             vec![
                 SerializationFact::Inherit,
                 SerializationFact::SkeletonReferenceBones
+            ]
+        );
+        assert_eq!(
+            facts["UAnimationAsset"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::AnimationSkeletonGuid
+            ]
+        );
+        assert_eq!(
+            facts["UAnimSequence"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::AnimSequenceUncookedData
             ]
         );
     }
@@ -1780,6 +1888,38 @@ mod tests {
             .expect("supported Skeleton shape");
         assert_eq!(diagnostics.len(), 1);
         assert!(diagnostics[0].message.contains("compatibility-opaque"));
+    }
+
+    #[test]
+    fn recognizes_the_uncooked_anim_sequence_boundary_in_order() {
+        let source = r#"
+            void UAnimationAsset::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                Ar << SkeletonGuid;
+            }
+            void UAnimSequence::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                FStripDataFlags StripFlags(Ar);
+                Ar << RawAnimationData;
+                bool bSerializeCompressedData = false;
+                Ar << bSerializeCompressedData;
+                if (bSerializeCompressedData)
+                {
+                    SerializeCompressedData(Ar, false);
+                }
+            }
+        "#;
+        let functions = parse_function_bodies(&lex(source).expect("lex"), "AnimSequence.cpp");
+        let mut diagnostics = Vec::new();
+        validate_animation_asset_serializer(&functions, &mut diagnostics)
+            .expect("supported AnimationAsset shape");
+        validate_anim_sequence_serializer(&functions, &mut diagnostics)
+            .expect("supported AnimSequence shape");
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics[0].message.contains("SkeletonGuid"));
+        assert!(diagnostics[1].message.contains("compressed-data gate"));
     }
 
     #[test]

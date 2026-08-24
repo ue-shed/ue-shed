@@ -1354,30 +1354,7 @@ impl AssetDecoder for AnimSequenceDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
-        let versions = &context.package.summary.versions;
-        if versions.ue4 != crate::version::VersionContext::LATEST_SUPPORTED_UE4
-            || versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
-        {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedVersion,
-                format!(
-                    "AnimSequence native serialization is verified only for UE 5.7 package versions (ue4={}, ue5={})",
-                    versions.ue4, versions.ue5
-                ),
-            ));
-        }
-        if versions
-            .package_flags
-            .contains(crate::version::PackageFlags::COOKED)
-            || versions
-                .package_flags
-                .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY)
-        {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                "cooked or editor-data-stripped AnimSequence packages are outside the supported boundary",
-            ));
-        }
+        validate_anim_sequence_boundary(context.package)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
 
@@ -1385,58 +1362,8 @@ impl AssetDecoder for AnimSequenceDecoder {
         // UObject's optional object-guid footer, UAnimationAsset::SkeletonGuid, FStripDataFlags,
         // the deprecated RawAnimationData array, then bSerializeCompressedData.
         let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
-        let skeleton_guid = reader
-            .read_guid(&format!("{}.SkeletonGuid", export.object_path))
-            .map_err(AssetError::from)?;
-        let global_strip_flags = reader
-            .read_u8(&format!("{}.StripFlags.Global", export.object_path))
-            .map_err(AssetError::from)?;
-        let class_strip_flags = reader
-            .read_u8(&format!("{}.StripFlags.Class", export.object_path))
-            .map_err(AssetError::from)?;
-
-        let legacy_raw_track_count = if global_strip_flags & STRIP_EDITOR_ONLY == 0 {
-            let count = reader
-                .read_i32(&format!("{}.RawAnimationData.Num", export.object_path))
-                .map_err(AssetError::from)?;
-            if count < 0 {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("negative legacy animation track count {count}"),
-                ));
-            }
-            u32::try_from(count).expect("non-negative i32 fits in u32")
-        } else {
-            0
-        };
-        if legacy_raw_track_count != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                format!(
-                    "legacy raw animation tracks are not supported yet (found {legacy_raw_track_count})"
-                ),
-            ));
-        }
-
-        let serialize_compressed_data = reader
-            .read_u32(&format!("{}.SerializeCompressedData", export.object_path))
-            .map_err(AssetError::from)?;
-        let serialized_compressed_data = match serialize_compressed_data {
-            0 => false,
-            1 => true,
-            other => {
-                return Err(AssetError::new(
-                    AssetErrorKind::MalformedData,
-                    format!("invalid archive bool for compressed animation data: {other}"),
-                ));
-            }
-        };
-        if serialized_compressed_data {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                "serialized compressed animation data is outside the uncooked editor-package boundary",
-            ));
-        }
+        let skeleton_guid = decode_animation_skeleton_guid(&mut reader, &export.object_path)?;
+        let animation_data = decode_anim_sequence_uncooked_data(&mut reader, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -1453,12 +1380,118 @@ impl AssetDecoder for AnimSequenceDecoder {
             object_guid,
             properties,
             skeleton_guid,
-            global_strip_flags,
-            class_strip_flags,
-            legacy_raw_track_count,
-            serialized_compressed_data,
+            global_strip_flags: animation_data.global_strip_flags,
+            class_strip_flags: animation_data.class_strip_flags,
+            legacy_raw_track_count: animation_data.legacy_raw_track_count,
+            serialized_compressed_data: animation_data.serialized_compressed_data,
         }))
     }
+}
+
+fn validate_anim_sequence_boundary(package: &Package) -> Result<(), AssetError> {
+    let versions = &package.summary.versions;
+    if versions.ue4 != crate::version::VersionContext::LATEST_SUPPORTED_UE4
+        || versions.ue5 != crate::version::VersionContext::LATEST_SUPPORTED_UE5
+    {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedVersion,
+            format!(
+                "AnimSequence native serialization is verified only for UE 5.7 package versions (ue4={}, ue5={})",
+                versions.ue4, versions.ue5
+            ),
+        ));
+    }
+    if versions
+        .package_flags
+        .contains(crate::version::PackageFlags::COOKED)
+        || versions
+            .package_flags
+            .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY)
+    {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            "cooked or editor-data-stripped AnimSequence packages are outside the supported boundary",
+        ));
+    }
+    Ok(())
+}
+
+fn decode_animation_skeleton_guid(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<Guid, AssetError> {
+    reader
+        .read_guid(&format!("{object_path}.SkeletonGuid"))
+        .map_err(AssetError::from)
+}
+
+struct SourceAnimSequenceData {
+    global_strip_flags: u8,
+    class_strip_flags: u8,
+    legacy_raw_track_count: u32,
+    serialized_compressed_data: bool,
+}
+
+fn decode_anim_sequence_uncooked_data(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<SourceAnimSequenceData, AssetError> {
+    let global_strip_flags = reader
+        .read_u8(&format!("{object_path}.StripFlags.Global"))
+        .map_err(AssetError::from)?;
+    let class_strip_flags = reader
+        .read_u8(&format!("{object_path}.StripFlags.Class"))
+        .map_err(AssetError::from)?;
+
+    let legacy_raw_track_count = if global_strip_flags & STRIP_EDITOR_ONLY == 0 {
+        let count = reader
+            .read_i32(&format!("{object_path}.RawAnimationData.Num"))
+            .map_err(AssetError::from)?;
+        if count < 0 {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("negative legacy animation track count {count}"),
+            ));
+        }
+        u32::try_from(count).expect("non-negative i32 fits in u32")
+    } else {
+        0
+    };
+    if legacy_raw_track_count != 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!(
+                "legacy raw animation tracks are not supported yet (found {legacy_raw_track_count})"
+            ),
+        ));
+    }
+
+    let serialize_compressed_data = reader
+        .read_u32(&format!("{object_path}.SerializeCompressedData"))
+        .map_err(AssetError::from)?;
+    let serialized_compressed_data = match serialize_compressed_data {
+        0 => false,
+        1 => true,
+        other => {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!("invalid archive bool for compressed animation data: {other}"),
+            ));
+        }
+    };
+    if serialized_compressed_data {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            "serialized compressed animation data is outside the uncooked editor-package boundary",
+        ));
+    }
+
+    Ok(SourceAnimSequenceData {
+        global_strip_flags,
+        class_strip_flags,
+        legacy_raw_track_count,
+        serialized_compressed_data,
+    })
 }
 
 /// Consumes a UObject object-guid footer that is followed by more class-specific
@@ -1737,6 +1770,37 @@ pub fn decode_modeled_export(
             bones,
         })));
     }
+    if context.schemas.class_is_a(class_path, ANIM_SEQUENCE_CLASS) {
+        validate_anim_sequence_boundary(context.package)?;
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::AnimSequence)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let skeleton_guid = source.animation_skeleton_guid.ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce SkeletonGuid"
+                ),
+            )
+        })?;
+        let animation_data = source.anim_sequence_data.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce uncooked animation data"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::AnimSequence(DecodedAnimSequence {
+            object_path: export.object_path.clone(),
+            object_guid: source.object_guid,
+            properties: source.properties,
+            skeleton_guid,
+            global_strip_flags: animation_data.global_strip_flags,
+            class_strip_flags: animation_data.class_strip_flags,
+            legacy_raw_track_count: animation_data.legacy_raw_track_count,
+            serialized_compressed_data: animation_data.serialized_compressed_data,
+        })));
+    }
     if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
         validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
         let source = execute_source_serialization(export, context)?;
@@ -1760,6 +1824,8 @@ struct SourceSerializationOutput {
     struct_flags: Option<u32>,
     struct_default_values: Option<PropertyStream>,
     skeleton_bones: Option<Vec<SkeletonBone>>,
+    animation_skeleton_guid: Option<Guid>,
+    anim_sequence_data: Option<SourceAnimSequenceData>,
     string_table: Option<SourceStringTableData>,
 }
 
@@ -1797,6 +1863,8 @@ fn execute_source_serialization(
     let mut struct_flags = None;
     let mut struct_default_values = None;
     let mut skeleton_bones = None;
+    let mut animation_skeleton_guid = None;
+    let mut anim_sequence_data = None;
     let mut string_table = None;
     for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
         match operation {
@@ -1857,6 +1925,18 @@ fn execute_source_serialization(
                     &export.object_path,
                 )?);
             }
+            SerializationOperation::AnimationSkeletonGuid if animation_skeleton_guid.is_none() => {
+                animation_skeleton_guid = Some(decode_animation_skeleton_guid(
+                    &mut reader,
+                    &export.object_path,
+                )?);
+            }
+            SerializationOperation::AnimSequenceUncookedData if anim_sequence_data.is_none() => {
+                anim_sequence_data = Some(decode_anim_sequence_uncooked_data(
+                    &mut reader,
+                    &export.object_path,
+                )?);
+            }
             SerializationOperation::StringTableData if string_table.is_none() => {
                 string_table = Some(decode_string_table_data(&mut reader, &export.object_path)?);
             }
@@ -1868,6 +1948,8 @@ fn execute_source_serialization(
             | SerializationOperation::StructFlags
             | SerializationOperation::StructDefaultInstance
             | SerializationOperation::SkeletonReferenceBones
+            | SerializationOperation::AnimationSkeletonGuid
+            | SerializationOperation::AnimSequenceUncookedData
             | SerializationOperation::StringTableData => {
                 return Err(unsupported_source_plan(class_path, &schema.serialization));
             }
@@ -1877,6 +1959,19 @@ fn execute_source_serialization(
         .serialization
         .contains(&SerializationOperation::SkeletonReferenceBones);
     if reader.remaining() != 0 && !preserves_legacy_opaque_tail {
+        if schema
+            .serialization
+            .contains(&SerializationOperation::AnimSequenceUncookedData)
+        {
+            return Err(AssetError::new(
+                AssetErrorKind::MalformedData,
+                format!(
+                    "AnimSequence export {} left {} trailing bytes",
+                    export.object_path,
+                    reader.remaining()
+                ),
+            ));
+        }
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
             format!(
@@ -1897,6 +1992,8 @@ fn execute_source_serialization(
         struct_flags,
         struct_default_values,
         skeleton_bones,
+        animation_skeleton_guid,
+        anim_sequence_data,
         string_table,
     })
 }
@@ -1913,6 +2010,7 @@ fn unsupported_source_plan(
 
 #[derive(Clone, Copy)]
 enum SourcePlanKind {
+    AnimSequence,
     CurveTable,
     DataAsset,
     DataTable,
@@ -1932,6 +2030,15 @@ fn validate_source_serialization(
     };
     let operations = &schema.serialization;
     let supported = match expected {
+        SourcePlanKind::AnimSequence => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::AnimationSkeletonGuid,
+                SerializationOperation::AnimSequenceUncookedData
+            ]
+        ),
         SourcePlanKind::CurveTable => matches!(
             operations.as_slice(),
             [
@@ -2712,6 +2819,18 @@ mod tests {
         else {
             panic!("expected an AnimSequence decode");
         };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::AnimSequence(generated)) =
+            decode_modeled_export(&export, &generated_context)
+                .expect("source-modeled AnimSequence should decode")
+        else {
+            panic!("expected a source-modeled AnimSequence decode");
+        };
+        assert_eq!(generated, sequence);
 
         assert_eq!(sequence.object_path.as_str(), "/Game/Test/A_Test.A_Test");
         assert_eq!(sequence.skeleton_guid.a, 0x1122_3344);
@@ -2742,6 +2861,55 @@ mod tests {
         let error = decode_export(&export, &context).expect_err("compressed data is unsupported");
         assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
         assert!(error.message().contains("compressed animation data"));
+
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("source-modeled compressed data is unsupported");
+        assert_eq!(generated.kind(), error.kind());
+        assert_eq!(generated.message(), error.message());
+    }
+
+    #[test]
+    fn source_modeled_anim_sequence_preserves_supported_error_boundaries() {
+        let mut trailing = write_anim_sequence_export(0, 0);
+        trailing.push(0xff);
+        let cases = [
+            write_anim_sequence_export(-1, 0),
+            write_anim_sequence_export(1, 0),
+            write_anim_sequence_export(0, 2),
+            trailing,
+        ];
+        for export_bytes in cases {
+            let package = test_package(vec!["None".into()]);
+            let export = test_export(
+                export_bytes.len() as u64,
+                "/Game/Test/A_Test.A_Test",
+                ANIM_SEQUENCE_CLASS,
+            );
+            let legacy_schemas = EmptySchemas;
+            let legacy_context = AssetDecodeContext {
+                source: &export_bytes,
+                package: &package,
+                schemas: &legacy_schemas,
+            };
+            let generated_context = AssetDecodeContext {
+                source: &export_bytes,
+                package: &package,
+                schemas: embedded_source_model(),
+            };
+
+            let legacy = AnimSequenceDecoder
+                .decode(&export, &legacy_context)
+                .expect_err("legacy path rejects unsupported animation data");
+            let generated = decode_modeled_export(&export, &generated_context)
+                .expect_err("source-modeled path rejects unsupported animation data");
+            assert_eq!(generated.kind(), legacy.kind());
+            assert_eq!(generated.message(), legacy.message());
+        }
     }
 
     #[test]
@@ -2769,6 +2937,18 @@ mod tests {
         else {
             panic!("expected an AnimSequence decode");
         };
+        let generated_context = AssetDecodeContext {
+            source: bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::AnimSequence(generated)) =
+            decode_modeled_export(export, &generated_context)
+                .expect("source-modeled real AnimSequence decode")
+        else {
+            panic!("expected a source-modeled AnimSequence decode");
+        };
+        assert_eq!(generated, sequence);
 
         assert!(!sequence.skeleton_guid.is_zero());
         assert_eq!(sequence.global_strip_flags, 0);

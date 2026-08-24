@@ -1,5 +1,5 @@
 {
-	"schema_version": 1,
+	"schema_version": 2,
 	"engine_version": "5.7",
 	"classes": [
 		{
@@ -197,6 +197,23 @@
 				},
 				{
 					"kind": "object_guid"
+				}
+			]
+		},
+		{
+			"path": "/Script/Engine.StringTable",
+			"cpp_name": "UStringTable",
+			"super_path": "/Script/CoreUObject.Object",
+			"fields": [],
+			"serialization": [
+				{
+					"kind": "tagged_properties"
+				},
+				{
+					"kind": "object_guid"
+				},
+				{
+					"kind": "string_table_data"
 				}
 			]
 		},

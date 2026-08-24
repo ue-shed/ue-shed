@@ -108,6 +108,7 @@ enum SerializationFact {
     TaggedProperties,
     ObjectGuid,
     DataTableRows,
+    StringTableData,
 }
 
 #[derive(Clone, Debug)]
@@ -157,8 +158,14 @@ pub fn generate(
         }
     }
 
+    let serializer_facts = serializer_facts(&functions);
     let mut diagnostics = Vec::new();
-    validate_data_table_helper(&functions, &mut diagnostics)?;
+    if has_serialization_fact(&serializer_facts, SerializationFact::DataTableRows) {
+        validate_data_table_helper(&functions, &mut diagnostics)?;
+    }
+    if has_serialization_fact(&serializer_facts, SerializationFact::StringTableData) {
+        validate_string_table_helper(&functions, &mut diagnostics)?;
+    }
 
     let paths = reflected
         .iter()
@@ -178,8 +185,6 @@ pub fn generate(
         .iter()
         .map(|declaration| (declaration.cpp_name.clone(), declaration))
         .collect::<BTreeMap<_, _>>();
-    let serializer_facts = serializer_facts(&functions);
-
     let mut classes = Vec::new();
     let mut structs = Vec::new();
     for declaration in &reflected {
@@ -613,12 +618,25 @@ fn serializer_facts(functions: &[FunctionBody]) -> BTreeMap<String, Vec<Serializ
                     facts.push(SerializationFact::ObjectGuid);
                 } else if function.tokens[index].text == "SaveStructData" {
                     facts.push(SerializationFact::DataTableRows);
+                } else if function.class_name == "UStringTable"
+                    && token_sequence(tokens, &["StringTable", "-", ">", "Serialize"])
+                {
+                    facts.push(SerializationFact::StringTableData);
+                    index += 4;
+                    continue;
                 }
                 index += 1;
             }
             (function.class_name.clone(), facts)
         })
         .collect()
+}
+
+fn has_serialization_fact(
+    facts: &BTreeMap<String, Vec<SerializationFact>>,
+    expected: SerializationFact,
+) -> bool {
+    facts.values().any(|facts| facts.contains(&expected))
 }
 
 fn validate_data_table_helper(
@@ -651,6 +669,49 @@ fn validate_data_table_helper(
         line: helper.line,
         message: "recognized array<Record{Name: FName, Value: RowStruct::SerializeItem}>"
             .to_owned(),
+    });
+    Ok(())
+}
+
+fn validate_string_table_helper(
+    functions: &[FunctionBody],
+    diagnostics: &mut Vec<SourceDiagnostic>,
+) -> Result<(), GeneratorError> {
+    let Some(helper) = functions.iter().find(|function| {
+        function.class_name == "FStringTable" && function.function_name == "Serialize"
+    }) else {
+        return Err(GeneratorError::new(
+            "FStringTable::Serialize was not found in the configured sources",
+        ));
+    };
+    let required = [
+        &["TableNamespace", ".", "SerializeAsString"][..],
+        &["Ar", "<", "<", "NumEntries"][..],
+        &["Key", ".", "SerializeAsString"][..],
+        &["Ar", "<", "<", "SourceString"][..],
+        &["Ar", "<", "<", "TmpKeysToMetaData"][..],
+    ];
+    let mut cursor = 0;
+    for sequence in required {
+        let Some(offset) = helper.tokens[cursor..]
+            .windows(sequence.len())
+            .position(|tokens| token_sequence(tokens, sequence))
+        else {
+            return Err(GeneratorError::new(format!(
+                "{}:{} does not match the supported StringTable serializer; missing ordered token sequence {}",
+                helper.path,
+                helper.line,
+                sequence.join(" ")
+            )));
+        };
+        cursor += offset + sequence.len();
+    }
+    diagnostics.push(SourceDiagnostic {
+        path: helper.path.clone(),
+        line: helper.line,
+        message:
+            "recognized namespace + array<Record{Key: FTextKey, Source: FString}> + metadata map"
+                .to_owned(),
     });
     Ok(())
 }
@@ -698,6 +759,9 @@ fn effective_serialization(
                     operations.push(SerializationOperation::DataTableRows {
                         row_struct_property: "RowStruct".to_owned(),
                     });
+                }
+                SerializationFact::StringTableData => {
+                    operations.push(SerializationOperation::StringTableData);
                 }
             }
         }
@@ -953,6 +1017,11 @@ mod tests {
                 Super::Serialize(Record);
                 if (Ar.IsSaving()) { SaveStructData(Record.EnterField(TEXT("Data"))); }
             }
+            void UStringTable::Serialize(FArchive& Ar)
+            {
+                Super::Serialize(Ar);
+                StringTable->Serialize(Ar);
+            }
         "#;
         let functions = parse_function_bodies(&lex(source).expect("lex"), "DataTable.cpp");
         let facts = serializer_facts(&functions);
@@ -967,6 +1036,36 @@ mod tests {
             facts["UDataTable"],
             vec![SerializationFact::Inherit, SerializationFact::DataTableRows]
         );
+        assert_eq!(
+            facts["UStringTable"],
+            vec![
+                SerializationFact::Inherit,
+                SerializationFact::StringTableData
+            ]
+        );
+    }
+
+    #[test]
+    fn recognizes_the_string_table_payload_shape_in_order() {
+        let source = r#"
+            void FStringTable::Serialize(FArchive& Ar)
+            {
+                TableNamespace.SerializeAsString(Ar);
+                int32 NumEntries = KeysToEntries.Num();
+                Ar << NumEntries;
+                FTextKey Key;
+                Key.SerializeAsString(Ar);
+                FString SourceString;
+                Ar << SourceString;
+                Ar << TmpKeysToMetaData;
+            }
+        "#;
+        let functions = parse_function_bodies(&lex(source).expect("lex"), "StringTableCore.cpp");
+        let mut diagnostics = Vec::new();
+        validate_string_table_helper(&functions, &mut diagnostics)
+            .expect("supported StringTable shape");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].message.contains("metadata map"));
     }
 
     #[test]

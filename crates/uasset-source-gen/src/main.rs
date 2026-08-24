@@ -107,12 +107,12 @@ fn usage() -> String {
 #[cfg(test)]
 mod tests {
     use super::generated_json;
-    use uasset_parser::schema::SourceModel;
+    use uasset_parser::schema::{SOURCE_MODEL_SCHEMA_VERSION, SourceModel};
 
     #[test]
     fn generated_json_uses_repository_tab_indentation() {
         let model = SourceModel {
-            schema_version: 1,
+            schema_version: SOURCE_MODEL_SCHEMA_VERSION,
             engine_version: "test".to_owned(),
             classes: Vec::new(),
             structs: Vec::new(),

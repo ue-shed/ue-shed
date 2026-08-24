@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::package::ObjectPath;
 
-pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 1;
+pub const SOURCE_MODEL_SCHEMA_VERSION: u8 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StructSchema {
@@ -88,6 +88,7 @@ pub enum SerializationOperation {
     TaggedProperties,
     ObjectGuid,
     DataTableRows { row_struct_property: String },
+    StringTableData,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -192,5 +193,17 @@ mod tests {
             &ObjectPath::new("/Script/Engine.PrimaryDataAsset"),
             "/Script/Engine.DataAsset"
         ));
+
+        let string_table = model
+            .find_class(&ObjectPath::new("/Script/Engine.StringTable"))
+            .expect("generated StringTable schema");
+        assert_eq!(
+            string_table.serialization,
+            vec![
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::StringTableData,
+            ]
+        );
     }
 }

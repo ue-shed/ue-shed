@@ -62,6 +62,13 @@ type TextDataAssetEvidence = {
 	}[];
 };
 
+type StringTableEvidence = {
+	readonly objectPath: string;
+	readonly classPath: string;
+	readonly namespace: string;
+	readonly entries: readonly { readonly key: string; readonly source: string }[];
+};
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const evidenceDirectory = process.env.UE_SHED_UNREAL_EVIDENCE_DIR;
 const fixtureRoot = fileURLToPath(new URL("../../../fixtures/unreal-project", import.meta.url));
@@ -157,6 +164,31 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 				});
 			}
 		}
+	});
+
+	it("matches StringTable namespace and entries emitted by Unreal", async () => {
+		// SAFETY: the fixture commandlet owns this versioned evidence shape.
+		const unreal = (await json(
+			join(evidenceDirectory!, "parser-targets", "string-table.json")
+		)) as StringTableEvidence;
+		const inspection = await runReader(
+			readSavedAsset({
+				assetPath: join(fixtureRoot, "Content/Fixture/Text/ST_Game.uasset")
+			})
+		);
+		const asset = inspection.assets.find(
+			(candidate) => candidate.object_path === unreal.objectPath
+		);
+		expect(asset).toBeDefined();
+		if (asset?.kind !== "StringTable") {
+			throw new Error("Expected the saved StringTable export to decode as a StringTable.");
+		}
+
+		expect(unreal.classPath).toBe("/Script/Engine.StringTable");
+		expect(asset.string_table_namespace).toBe(unreal.namespace);
+		const byKey = (left: { readonly key: string }, right: { readonly key: string }) =>
+			left.key.localeCompare(right.key);
+		expect(asset.string_table_entries.toSorted(byKey)).toEqual(unreal.entries.toSorted(byKey));
 	});
 
 	it("decodes every level property tag that is on disk", async () => {

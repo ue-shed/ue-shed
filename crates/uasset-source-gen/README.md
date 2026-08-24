@@ -4,24 +4,28 @@
 It reads reflected declarations and a deliberately small subset of serializer bodies, then emits a
 language-neutral JSON model consumed through `uasset-parser`'s `SchemaProvider` boundary.
 
-The generated model currently proves two target families:
+The generated model currently proves three target families:
 
 - `UDataTable` and `UCompositeDataTable`: inheritance, reflected row schemas, UObject properties and
   GUID footer, and the native row array written by `UDataTable::SaveStructData`.
 - `UDataAsset`: inheritance-based recognition of native subclasses, reflected properties, and the
   inherited UObject serialization layout.
+- `UStringTable`: inherited UObject serialization plus the delegated `FStringTable::Serialize`
+  payload: namespace, keyed source strings, and the metadata map boundary.
 
 The conformance test decodes all 12 DataTable fixtures (10,022 rows total) and the fixture DataAsset
-without any raw property values. It also checks every decoded row/property against the type generated
-from the fixture's Unreal declarations. This includes nested structs, enums, containers, object and
-soft-object references, row handles, `FIntPoint`, and localized/string-table `FText` values.
+without any raw property values, plus the three-entry StringTable fixture. It also checks every
+decoded row/property against the type generated from the fixture's Unreal declarations. This includes
+nested structs, enums, containers, object and soft-object references, row handles, `FIntPoint`, and
+localized/string-table `FText` values.
 
 Modeled classes now take a strict source-driven path before compatibility dispatch. That path
-interprets the generated operation list itself and does not call the handwritten DataTable or
-DataAsset adapters. Conformance compares its decoded DT/CDT models and public inspection JSON with
-the compatibility implementation. The fixture DataAsset comparison records the intentional
-classification improvement from generic `UObject` to its source-proven `UDataAsset` subclass while
-requiring identical properties, GUID, and object identity.
+interprets the generated operation list itself and does not call the handwritten DataTable,
+DataAsset, or StringTable adapters. Conformance compares its decoded DT/CDT and StringTable models and
+public inspection JSON with the compatibility implementation. StringTable is also compared with the
+namespace and entries independently emitted by Unreal. The fixture DataAsset comparison records the
+intentional classification improvement from generic `UObject` to its source-proven `UDataAsset`
+subclass while requiring identical properties, GUID, and object identity.
 
 The native inspection, project-IO, and WASM paths use the embedded engine-only model. The parser and
 inspection libraries also accept an explicit `SchemaProvider`, allowing a generated project model to
@@ -68,6 +72,10 @@ serialization operation sequence before decoding a modeled class.
 Tagged property values remain decoded from the type information serialized in the package, using the
 same bounded codecs in both lanes. Generated declarations validate those values and supply class
 inheritance and native serialization order; they do not override contradictory on-disk evidence.
+
+StringTable metadata is recognized as part of the native layout but remains deliberately unsupported
+by both the generated and compatibility lanes. A non-empty metadata map fails explicitly rather than
+being silently skipped.
 
 Only derived declarations, field types, inheritance, and serialization operations are committed.
 Unreal source is read locally and is never copied into the product or generated artifact.

@@ -1,5 +1,5 @@
 {
-	"schema_version": 1,
+	"schema_version": 2,
 	"engine_version": "5.7",
 	"modules": [
 		{
@@ -9,17 +9,25 @@
 			"sources": ["Runtime/CoreUObject/Private/UObject/Obj.cpp"]
 		},
 		{
+			"name": "Core",
+			"root": "engine_source",
+			"headers": [],
+			"sources": ["Runtime/Core/Private/Internationalization/StringTableCore.cpp"]
+		},
+		{
 			"name": "Engine",
 			"root": "engine_source",
 			"headers": [
 				"Runtime/Engine/Classes/Engine/DataAsset.h",
 				"Runtime/Engine/Classes/Engine/DataTable.h",
-				"Runtime/Engine/Classes/Engine/CompositeDataTable.h"
+				"Runtime/Engine/Classes/Engine/CompositeDataTable.h",
+				"Runtime/Engine/Public/Internationalization/StringTable.h"
 			],
 			"sources": [
 				"Runtime/Engine/Private/DataAsset.cpp",
 				"Runtime/Engine/Private/DataTable.cpp",
-				"Runtime/Engine/Private/CompositeDataTable.cpp"
+				"Runtime/Engine/Private/CompositeDataTable.cpp",
+				"Runtime/Engine/Private/Internationalization/StringTable.cpp"
 			]
 		}
 	]

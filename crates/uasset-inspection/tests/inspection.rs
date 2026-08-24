@@ -204,6 +204,21 @@ fn generated_and_legacy_public_datatable_inspections_are_identical() {
     }
 }
 
+#[test]
+fn generated_and_legacy_public_string_table_inspections_are_identical() {
+    let path = "Content/Fixture/Text/ST_Game.uasset";
+    let generated = serde_json::to_value(
+        inspect_bytes(path, STRING_TABLE).expect("generated inspection succeeds"),
+    )
+    .expect("generated inspection serializes");
+    let legacy = serde_json::to_value(
+        inspect_bytes_with_schemas(path, STRING_TABLE, &EmptySchemas)
+            .expect("legacy inspection succeeds"),
+    )
+    .expect("legacy inspection serializes");
+    assert_eq!(generated, legacy);
+}
+
 fn first_json_difference(actual: &Value, expected: &Value, path: &str) -> String {
     match (actual, expected) {
         (Value::Array(actual), Value::Array(expected)) => {

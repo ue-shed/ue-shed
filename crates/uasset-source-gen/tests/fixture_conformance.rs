@@ -389,3 +389,30 @@ fn generated_data_asset_preserves_the_legacy_uobject_semantics() {
     assert_eq!(generated.properties, handwritten.properties);
     assert_eq!(handwritten.tail.len(), 0);
 }
+
+#[test]
+fn generated_and_legacy_string_table_semantics_are_identical() {
+    let model = source_model();
+    let fixture = workspace_path("fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset");
+    let (_, generated) = decoded_assets(&fixture, &model);
+    let (_, handwritten) = decoded_assets_with(&fixture, &EmptySchemas, false);
+
+    let generated = generated
+        .into_iter()
+        .find_map(|asset| match asset {
+            DecodedAsset::StringTable(table) => Some(table),
+            _ => None,
+        })
+        .expect("source-derived StringTable");
+    let handwritten = handwritten
+        .into_iter()
+        .find_map(|asset| match asset {
+            DecodedAsset::StringTable(table) => Some(table),
+            _ => None,
+        })
+        .expect("handwritten StringTable");
+
+    assert_eq!(generated, handwritten);
+    assert_eq!(generated.namespace, "Fixture.StringTable");
+    assert_eq!(generated.entries.len(), 3);
+}

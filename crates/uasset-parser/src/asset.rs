@@ -454,7 +454,7 @@ impl AssetDecoder for DataTableDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         };
-        validate_source_serialization(context.schemas, class_path, true)?;
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataTable)?;
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let decode_context = DecodeContext {
@@ -670,7 +670,7 @@ impl AssetDecoder for DataAssetDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
-        validate_source_serialization(context.schemas, class_path, false)?;
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
 
         let (properties, class_path, object_guid) =
             decode_uobject_asset_properties(export, context)?;
@@ -709,6 +709,7 @@ impl AssetDecoder for StringTableDecoder {
                 format!("unsupported asset class {class_path}"),
             ));
         }
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::StringTable)?;
 
         let (_properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
@@ -722,39 +723,7 @@ impl AssetDecoder for StringTableDecoder {
             ));
         }
 
-        let namespace = reader.read_fstring(&format!("{}.Namespace", export.object_path))?;
-        let entry_count_offset = reader.tell();
-        let entry_count = reader.read_i32(&format!("{}.Entries.Count", export.object_path))?;
-        if entry_count < 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::MalformedData,
-                format!(
-                    "negative StringTable entry count {entry_count} at byte {entry_count_offset}"
-                ),
-            ));
-        }
-        let capacity = reader.checked_vec_capacity::<StringTableEntry>(
-            usize::try_from(entry_count).expect("i32 fits in usize"),
-            8,
-            &format!("{}.Entries.Count", export.object_path),
-        )?;
-        let mut entries = Vec::with_capacity(capacity);
-        for index in 0..entry_count {
-            let entry_path = format!("{}.Entries[{index}]", export.object_path);
-            let key = reader.read_fstring(&format!("{entry_path}.Key"))?;
-            let source = reader.read_fstring(&format!("{entry_path}.SourceString"))?;
-            entries.push(StringTableEntry { key, source });
-        }
-
-        let metadata_count = reader.read_i32(&format!("{}.MetaData.Count", export.object_path))?;
-        if metadata_count != 0 {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedCapability,
-                format!(
-                    "StringTable metadata map with {metadata_count} entries is not supported yet"
-                ),
-            ));
-        }
+        let data = decode_string_table_data(&mut reader, &export.object_path)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -769,10 +738,52 @@ impl AssetDecoder for StringTableDecoder {
 
         Ok(DecodedAsset::StringTable(DecodedStringTable {
             object_path: export.object_path.clone(),
-            namespace,
-            entries,
+            namespace: data.namespace,
+            entries: data.entries,
         }))
     }
+}
+
+struct SourceStringTableData {
+    namespace: String,
+    entries: Vec<StringTableEntry>,
+}
+
+fn decode_string_table_data(
+    reader: &mut crate::archive::Reader<'_>,
+    object_path: &ObjectPath,
+) -> Result<SourceStringTableData, AssetError> {
+    let namespace = reader.read_fstring(&format!("{object_path}.Namespace"))?;
+    let entry_count_offset = reader.tell();
+    let entry_count = reader.read_i32(&format!("{object_path}.Entries.Count"))?;
+    if entry_count < 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::MalformedData,
+            format!("negative StringTable entry count {entry_count} at byte {entry_count_offset}"),
+        ));
+    }
+    let capacity = reader.checked_vec_capacity::<StringTableEntry>(
+        usize::try_from(entry_count).expect("i32 fits in usize"),
+        8,
+        &format!("{object_path}.Entries.Count"),
+    )?;
+    let mut entries = Vec::with_capacity(capacity);
+    for index in 0..entry_count {
+        let entry_path = format!("{object_path}.Entries[{index}]");
+        let key = reader.read_fstring(&format!("{entry_path}.Key"))?;
+        let source = reader.read_fstring(&format!("{entry_path}.SourceString"))?;
+        entries.push(StringTableEntry { key, source });
+    }
+
+    let metadata_count = reader.read_i32(&format!("{object_path}.MetaData.Count"))?;
+    if metadata_count != 0 {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedCapability,
+            format!("StringTable metadata map with {metadata_count} entries is not supported yet"),
+        ));
+    }
+
+    Ok(SourceStringTableData { namespace, entries })
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1503,8 +1514,8 @@ pub fn decode_export(
     Ok(None)
 }
 
-/// Decodes a DataTable or DataAsset only when the supplied source model owns its class hierarchy
-/// and serialization plan.
+/// Decodes a DataTable, DataAsset, or StringTable only when the supplied source model owns its class
+/// hierarchy and serialization plan.
 ///
 /// Returning `Ok(None)` is deliberate: callers can use this as a strict equivalence lane with no
 /// handwritten class-name fallback, while [`decode_export`] retains compatibility for projects
@@ -1524,7 +1535,7 @@ pub fn decode_modeled_export(
     }
 
     if context.schemas.class_is_a(class_path, DATATABLE_CLASS) {
-        validate_source_serialization(context.schemas, class_path, true)?;
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataTable)?;
         let source = execute_source_serialization(export, context)?;
         let kind = if context
             .schemas
@@ -1552,8 +1563,25 @@ pub fn decode_modeled_export(
             rows,
         })));
     }
+    if context.schemas.class_is_a(class_path, STRINGTABLE_CLASS) {
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::StringTable)?;
+        let mut source = execute_source_serialization(export, context)?;
+        let string_table = source.string_table.take().ok_or_else(|| {
+            AssetError::new(
+                AssetErrorKind::UnsupportedCapability,
+                format!(
+                    "generated serialization layout for {class_path} did not produce StringTable data"
+                ),
+            )
+        })?;
+        return Ok(Some(DecodedAsset::StringTable(DecodedStringTable {
+            object_path: export.object_path.clone(),
+            namespace: string_table.namespace,
+            entries: string_table.entries,
+        })));
+    }
     if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
-        validate_source_serialization(context.schemas, class_path, false)?;
+        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
         let source = execute_source_serialization(export, context)?;
         return Ok(Some(DecodedAsset::DataAsset(DecodedDataAsset {
             object_path: export.object_path.clone(),
@@ -1569,6 +1597,7 @@ struct SourceSerializationOutput {
     properties: PropertyStream,
     object_guid: Option<Guid>,
     rows: Option<Vec<DataTableRow>>,
+    string_table: Option<SourceStringTableData>,
 }
 
 fn execute_source_serialization(
@@ -1599,6 +1628,7 @@ fn execute_source_serialization(
     };
     let mut object_guid = None;
     let mut rows = None;
+    let mut string_table = None;
     for (index, operation) in schema.serialization.iter().enumerate().skip(1) {
         match operation {
             SerializationOperation::ObjectGuid => {
@@ -1619,8 +1649,12 @@ fn execute_source_serialization(
                     &export.object_path,
                 )?);
             }
+            SerializationOperation::StringTableData if string_table.is_none() => {
+                string_table = Some(decode_string_table_data(&mut reader, &export.object_path)?);
+            }
             SerializationOperation::TaggedProperties
-            | SerializationOperation::DataTableRows { .. } => {
+            | SerializationOperation::DataTableRows { .. }
+            | SerializationOperation::StringTableData => {
                 return Err(unsupported_source_plan(class_path, &schema.serialization));
             }
         }
@@ -1640,6 +1674,7 @@ fn execute_source_serialization(
         properties,
         object_guid,
         rows,
+        string_table,
     })
 }
 
@@ -1653,32 +1688,48 @@ fn unsupported_source_plan(
     )
 }
 
+#[derive(Clone, Copy)]
+enum SourcePlanKind {
+    DataAsset,
+    DataTable,
+    StringTable,
+}
+
 fn validate_source_serialization(
     schemas: &dyn SchemaProvider,
     class_path: &ObjectPath,
-    expects_data_table_rows: bool,
+    expected: SourcePlanKind,
 ) -> Result<(), AssetError> {
     let Some(schema) = schemas.find_class(class_path) else {
         return Ok(());
     };
     let operations = &schema.serialization;
-    let common_prefix = matches!(
-        operations.as_slice(),
-        [
-            SerializationOperation::TaggedProperties,
-            SerializationOperation::ObjectGuid
-        ] | [
-            SerializationOperation::TaggedProperties,
-            SerializationOperation::ObjectGuid,
-            SerializationOperation::DataTableRows { .. }
-        ]
-    );
-    let has_data_table_rows = matches!(
-        operations.last(),
-        Some(SerializationOperation::DataTableRows { row_struct_property })
-            if row_struct_property == "RowStruct"
-    );
-    if !common_prefix || has_data_table_rows != expects_data_table_rows {
+    let supported = match expected {
+        SourcePlanKind::DataAsset => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid
+            ]
+        ),
+        SourcePlanKind::DataTable => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::DataTableRows { row_struct_property }
+            ] if row_struct_property == "RowStruct"
+        ),
+        SourcePlanKind::StringTable => matches!(
+            operations.as_slice(),
+            [
+                SerializationOperation::TaggedProperties,
+                SerializationOperation::ObjectGuid,
+                SerializationOperation::StringTableData
+            ]
+        ),
+    };
+    if !supported {
         return Err(AssetError::new(
             AssetErrorKind::UnsupportedCapability,
             format!(
@@ -2828,6 +2879,41 @@ mod tests {
     }
 
     #[test]
+    fn embedded_and_legacy_string_table_semantics_are_identical() {
+        let export_bytes =
+            write_stringtable_export(0, "ST_Simple", &[("HELLO", "Hello from string table")], 0);
+        let package = test_package(vec!["None".into()]);
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/ST_Simple.ST_Simple",
+            STRINGTABLE_CLASS,
+        );
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+
+        let Some(DecodedAsset::StringTable(generated)) =
+            decode_modeled_export(&export, &generated_context).expect("generated decode")
+        else {
+            panic!("expected generated StringTable");
+        };
+        let Some(DecodedAsset::StringTable(legacy)) =
+            decode_export(&export, &legacy_context).expect("legacy decode")
+        else {
+            panic!("expected legacy StringTable");
+        };
+        assert_eq!(generated, legacy);
+    }
+
+    #[test]
     fn rejects_string_table_metadata_until_supported() {
         let export_bytes = write_stringtable_export(0, "ST_Simple", &[], 1);
         let package = test_package(vec!["None".into()]);
@@ -2836,18 +2922,27 @@ mod tests {
             "/Game/Test/ST_Simple.ST_Simple",
             STRINGTABLE_CLASS,
         );
-        let schemas = EmptySchemas;
-        let context = AssetDecodeContext {
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
+            schemas: &legacy_schemas,
+        };
+        let generated_context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: embedded_source_model(),
         };
 
-        let error = StringTableDecoder
-            .decode(&export, &context)
+        let legacy = StringTableDecoder
+            .decode(&export, &legacy_context)
             .expect_err("metadata unsupported");
-        assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
-        assert!(error.message().contains("metadata"));
+        let generated = decode_modeled_export(&export, &generated_context)
+            .expect_err("generated metadata unsupported");
+        assert_eq!(legacy.kind(), AssetErrorKind::UnsupportedCapability);
+        assert!(legacy.message().contains("metadata"));
+        assert_eq!(generated.kind(), legacy.kind());
+        assert_eq!(generated.message(), legacy.message());
     }
 
     fn enum_names() -> Vec<String> {
@@ -3329,7 +3424,7 @@ mod tests {
             DATATABLE_CLASS,
         );
         let model = SourceModel {
-            schema_version: 1,
+            schema_version: crate::schema::SOURCE_MODEL_SCHEMA_VERSION,
             engine_version: "test".to_owned(),
             classes: vec![ClassSchema {
                 path: ObjectPath::new(DATATABLE_CLASS),

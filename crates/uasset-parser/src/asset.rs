@@ -3046,6 +3046,46 @@ mod tests {
     }
 
     #[test]
+    fn generated_and_legacy_real_skeleton_semantics_are_identical() {
+        let bytes = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Animation/SK_Fixture.uasset"
+        );
+        let package = Package::parse(bytes).expect("parse skeleton fixture package");
+        let export = package
+            .exports
+            .iter()
+            .find(|export| {
+                export.class_path.as_ref().map(ObjectPath::as_str) == Some(SKELETON_CLASS)
+            })
+            .expect("Skeleton export");
+        let legacy_schemas = EmptySchemas;
+        let legacy_context = AssetDecodeContext {
+            source: bytes,
+            package: &package,
+            schemas: &legacy_schemas,
+        };
+        let Some(DecodedAsset::Skeleton(legacy)) =
+            decode_export(export, &legacy_context).expect("legacy Skeleton decode")
+        else {
+            panic!("expected legacy Skeleton decode");
+        };
+        let generated_context = AssetDecodeContext {
+            source: bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+        };
+        let Some(DecodedAsset::Skeleton(generated)) =
+            decode_modeled_export(export, &generated_context)
+                .expect("source-modeled Skeleton decode")
+        else {
+            panic!("expected source-modeled Skeleton decode");
+        };
+
+        assert_eq!(generated, legacy);
+        assert!(!generated.bones.is_empty());
+    }
+
+    #[test]
     fn source_modeled_skeleton_preserves_negative_bone_count_error() {
         let mut export_bytes = write_uobject_export(0, &[]);
         push_i32(&mut export_bytes, 0); // object-guid footer

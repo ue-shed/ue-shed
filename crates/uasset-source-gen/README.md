@@ -41,7 +41,8 @@ classification improvement from generic `UObject` to its source-proven `UDataAss
 requiring identical properties, GUID, and object identity. Synthetic differential tests require
 exact generated/legacy equality for CurveTable and UserDefinedEnum, including their supported
 malformed-input boundaries, and do the same for UserDefinedStruct fields and nesting limits.
-Skeleton comparisons cover exact bone output, malformed counts, and the intentionally opaque tail.
+Skeleton comparisons cover the real UE 5.7 fixture and its public inspection JSON, exact bone
+output, malformed counts, and the intentionally opaque tail.
 AnimSequence comparisons cover the real UE 5.7 fixture, the complete supported uncooked trailer,
 and exact malformed or unsupported errors for raw tracks, archive booleans, compressed data, and
 trailing bytes; its public inspection JSON is also identical.

@@ -25,6 +25,8 @@ const DATA_TABLE: &[u8] =
 const ANIMATION: &[u8] = include_bytes!(
     "../../../fixtures/unreal-project/Content/Fixture/Animation/A_FixtureMotion.uasset"
 );
+const SKELETON: &[u8] =
+    include_bytes!("../../../fixtures/unreal-project/Content/Fixture/Animation/SK_Fixture.uasset");
 const PARITY_FIXTURES: &[(&str, &[u8])] = &[
     (
         "Content/Fixture/Authoring/DT_Scalars.uasset",
@@ -148,6 +150,20 @@ fn generated_and_legacy_public_anim_sequence_inspections_are_identical() {
     .expect("generated inspection serializes");
     let legacy = serde_json::to_value(
         inspect_bytes_with_schemas(path, ANIMATION, &EmptySchemas)
+            .expect("legacy inspection succeeds"),
+    )
+    .expect("legacy inspection serializes");
+    assert_eq!(generated, legacy);
+}
+
+#[test]
+fn generated_and_legacy_public_skeleton_inspections_are_identical() {
+    let path = "Content/Fixture/Animation/SK_Fixture.uasset";
+    let generated =
+        serde_json::to_value(inspect_bytes(path, SKELETON).expect("generated inspection succeeds"))
+            .expect("generated inspection serializes");
+    let legacy = serde_json::to_value(
+        inspect_bytes_with_schemas(path, SKELETON, &EmptySchemas)
             .expect("legacy inspection succeeds"),
     )
     .expect("legacy inspection serializes");

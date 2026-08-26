@@ -34,11 +34,15 @@ codecs, errors, and recovery need deep coverage.
 
 ## Local verification
 
-Run the portable repository gate with:
+Depot CI runs the complete portable repository gate on pull requests and `main`:
 
 ```powershell
 pnpm check
 ```
+
+During local iteration, run the smallest check or test that proves the changed behavior. The full
+gate is useful when reproducing Depot CI, preparing a release, or making cross-cutting changes; it
+is not required after every individual edit.
 
 Run every process-level end-to-end journey with:
 
@@ -67,8 +71,8 @@ traces. Failure artifacts are written under `test-results/workbench`.
 
 Installing dependencies also installs the repository-managed pre-commit hook. It runs
 `pnpm check:precommit` (formatting, linting, type checks, architecture, and contract checks) before
-Git creates a commit. The longer `pnpm check` release gate remains required before handoff and in
-portable CI.
+Git creates a commit. Depot CI owns the longer `pnpm check` gate; local verification should stay
+proportional to the change.
 
 ### Unreal gate reporting
 

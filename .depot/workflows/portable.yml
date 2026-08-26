@@ -19,18 +19,11 @@ jobs:
         name: pnpm check
         runs-on: depot-ubuntu-latest
         timeout-minutes: 90
-        env:
-            CARGO_TARGET_DIR: ${{ github.workspace }}/target
         steps:
             - name: Checkout without persisted credentials
               uses: actions/checkout@v6
               with:
                   persist-credentials: false
-            - name: Mount durable Rust target cache
-              uses: depot/cache-mount@v1
-              with:
-                  name: ue-shed-rust-target-linux-x64-v1
-                  path: ${{ github.workspace }}/target
             - name: Install pnpm
               uses: pnpm/action-setup@v6
             - name: Install Node.js

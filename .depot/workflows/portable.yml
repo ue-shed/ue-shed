@@ -42,6 +42,8 @@ jobs:
                   sudo apt-get install --yes gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
+            - name: Install Chromium for browser tests
+              run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps chromium
             - name: Run portable gate
               shell: bash
               run: |

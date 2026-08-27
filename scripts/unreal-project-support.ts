@@ -80,15 +80,20 @@ export function parseUnrealDescriptor(contents: string): JsonObject {
 	return parseJsonObject(withoutTrailingCommas(withoutJsonComments(withoutBom)));
 }
 
-export function registeredEngineRoot(
-	association: string | undefined,
-	queryRegistry: (name: string) => string = (name) =>
+export function registeredEngineRoot({
+	association,
+	platform = process.platform,
+	queryRegistry = (name) =>
 		execFileSync("reg.exe", ["query", registeredBuildsKey, "/v", name], {
 			encoding: "utf8",
 			windowsHide: true
 		})
-) {
-	if (process.platform !== "win32" || !association) return undefined;
+}: {
+	readonly association: string | undefined;
+	readonly platform?: NodeJS.Platform;
+	readonly queryRegistry?: (name: string) => string;
+}) {
+	if (platform !== "win32" || !association) return undefined;
 	let output: string;
 	try {
 		output = queryRegistry(association);

@@ -18,19 +18,27 @@ test("parses Unreal descriptors with comments and trailing commas", () => {
 test("resolves a custom association from Unreal registered builds", () => {
 	const output = `
 HKEY_CURRENT_USER\\Software\\Epic Games\\Unreal Engine\\Builds
-	UE-ManaBreak    REG_SZ    C:/Users/Ryzen/Perforce/Arif_UE-ManaBreak
+	UE-Fixture    REG_SZ    D:/Engines/UE-Fixture
 `;
 
 	assert.equal(
-		registeredEngineRoot("UE-ManaBreak", () => output),
-		"C:/Users/Ryzen/Perforce/Arif_UE-ManaBreak"
+		registeredEngineRoot({
+			association: "UE-Fixture",
+			platform: "win32",
+			queryRegistry: () => output
+		}),
+		"D:/Engines/UE-Fixture"
 	);
 });
 
 test("does not resolve an absent registered association", () => {
 	assert.equal(
-		registeredEngineRoot("UE-Missing", () => {
-			throw new Error("registry value not found");
+		registeredEngineRoot({
+			association: "UE-Missing",
+			platform: "win32",
+			queryRegistry: () => {
+				throw new Error("registry value not found");
+			}
 		}),
 		undefined
 	);

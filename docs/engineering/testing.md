@@ -42,6 +42,9 @@ portable gate locally with:
 pnpm check
 ```
 
+The full local gate also retains packed-package and Data Authoring adoption conformance while those
+hosted release and adoption flows are being redesigned.
+
 During local iteration, run the smallest check or test that proves the changed behavior. The full
 gate is useful when reproducing Depot CI, preparing a release, or making cross-cutting changes; it
 is not required after every individual edit.

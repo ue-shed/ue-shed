@@ -69,9 +69,10 @@ The normal package gate builds and packs every public package, validates metadat
 installs the tarballs into a clean offline consumer, and exercises the saved-project Game Text
 journey. The protected public-package allowlist remains a conformance boundary; it prevents an
 accidentally non-private workspace from being published, but it does not select the release.
-Primary development and release tooling runs on Node.js 26. A separate portable CI lane installs
-the packed public artifacts and runs their consumer journeys on Node.js 22.14, the declared minimum
-for those packages.
+Primary development and release tooling runs on Node.js 26. Public packages still declare Node.js
+22.14 as their minimum, but the former hosted compatibility job incorrectly attempted to build the
+Node 26 monorepo under Node 22 and was removed. A replacement must build artifacts with Node 26,
+then exercise only the packed consumer under Node 22.
 
 Authenticate to npm outside the repository, then publish from the clean committed release:
 
@@ -170,14 +171,16 @@ Text requires no Unreal plugin.
 
 No automation may approve, merge, publish, or silently change the selected downstream version.
 
-## Post-1.0 GitHub release plan
+## Post-1.0 hosted release plan
 
-The checked-in GitHub workflows record the intended release architecture after `1.0.0`; they are not
-the current publication authority.
+Only the portable Depot CI gate is checked in today. Trusted Unreal and Candidate Release workflows
+were removed until their hosted designs are rewritten and exercised; prose describing a future lane
+is not publication authority.
 
 The planned hosted lane consists of:
 
-1. A read-only portable workflow running `pnpm check` on an ephemeral hosted runner.
+1. The existing read-only Depot CI portable workflow running `pnpm check` on an ephemeral hosted
+   runner.
 2. A separately protected Trusted Unreal workflow on a dedicated non-administrator Windows runner
    with Unreal Engine 5.7, no npm token, and no unrelated editor process.
 3. Candidate construction on GitHub-hosted Windows from an exact protected tag.

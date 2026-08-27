@@ -20,7 +20,7 @@ import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import { Effect, Layer, Queue, Ref, Stream } from "effect";
 import { TestClock } from "effect/testing";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect } from "vitest";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { makeWorkbenchWindowTestLayer, WorkbenchWindowTest } from "../adapters/electron-window.js";
@@ -60,6 +60,7 @@ const MapReviewLiveWithDialog = Layer.provide(WorkbenchMapReviewLive, projectTes
 
 const reviewSetPath = "C:/Fixture/.ue-shed/review/sets/fixture.json";
 const projectRoot = "C:/FixtureProject";
+const captureRunDirectory = resolve("fixtures", "map-review", "review", "runs", "run-1");
 
 const fixtureReviewSet = Effect.runSync(
 	decodeReviewSet({
@@ -395,7 +396,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 						makeLocalFilesTestLayer(
 							new Map([
 								[
-									join("C:/Fixture/review/runs/run-1", "artifact.png"),
+									join(captureRunDirectory, "artifact.png"),
 									new Uint8Array([1, 2, 3])
 								]
 							])
@@ -410,7 +411,7 @@ it.effect("loads the review set and reads captured artifacts with bounded concur
 										completedAt: "2026-01-01T00:00:00.000Z",
 										failedViews: 0,
 										id: "run-1",
-										path: "C:/Fixture/review/runs/run-1/run.json",
+										path: join(captureRunDirectory, "run.json"),
 										reviewSetId: fixtureReviewSet.id,
 										status: "completed" as const,
 										successfulViews: 1

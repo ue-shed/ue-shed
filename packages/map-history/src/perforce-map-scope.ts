@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, win32 } from "node:path";
 import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { Effect } from "effect";
@@ -65,16 +65,36 @@ function normalizeDepotRoot(path: string): string {
 }
 
 function normalizeLocalPath(path: string): string {
-	return process.platform === "win32" && path.startsWith("\\\\?\\") ? path.slice(4) : path;
+	if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice(8)}`;
+	return path.startsWith("\\\\?\\") ? path.slice(4) : path;
+}
+
+function isWindowsLocalPath(path: string): boolean {
+	return /^[a-z]:[\\/]/iu.test(path) || path.startsWith("\\\\");
+}
+
+function resolveProjectPath(projectRoot: string, projectPath: string): string {
+	const normalizedProjectRoot = normalizeLocalPath(projectRoot);
+	return isWindowsLocalPath(normalizedProjectRoot)
+		? win32.resolve(normalizedProjectRoot, projectPath)
+		: resolve(normalizedProjectRoot, projectPath);
 }
 
 function projectRelativePath(projectRoot: string, localPath: string): string {
-	const resolvedProjectRoot = resolve(normalizeLocalPath(projectRoot));
-	const resolvedPath = resolve(normalizeLocalPath(localPath));
-	const path = relative(resolvedProjectRoot, resolvedPath);
+	const normalizedProjectRoot = normalizeLocalPath(projectRoot);
+	const normalizedPath = normalizeLocalPath(localPath);
+	const windowsPath =
+		isWindowsLocalPath(normalizedProjectRoot) || isWindowsLocalPath(normalizedPath);
+	const resolvedProjectRoot = windowsPath
+		? win32.resolve(normalizedProjectRoot)
+		: resolve(normalizedProjectRoot);
+	const resolvedPath = windowsPath ? win32.resolve(normalizedPath) : resolve(normalizedPath);
+	const path = windowsPath
+		? win32.relative(resolvedProjectRoot, resolvedPath)
+		: relative(resolvedProjectRoot, resolvedPath);
 	if (
 		path.length === 0 ||
-		isAbsolute(path) ||
+		(windowsPath ? win32.isAbsolute(path) : isAbsolute(path)) ||
 		path === ".." ||
 		path.startsWith("..\\") ||
 		path.startsWith("../")
@@ -315,7 +335,7 @@ export function resolvePresentDayMapScope(query: {
 				projectRoot: query.projectRoot
 			})
 			.pipe(Effect.mapError(savedWorldError));
-		const mapLocalPath = resolve(query.projectRoot, query.mapPath);
+		const mapLocalPath = resolveProjectPath(query.projectRoot, query.mapPath);
 		const mapProjectRelativePath = yield* Effect.try({
 			try: () => projectRelativePath(query.projectRoot, mapLocalPath),
 			catch: (cause) =>

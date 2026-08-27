@@ -34,11 +34,21 @@ codecs, errors, and recovery need deep coverage.
 
 ## Local verification
 
-Run the portable repository gate with:
+Depot CI runs the portable repository checks on pull requests and `main`. The UAsset parser lane is
+added only when its Rust, WASM, package, contract, script, or fixture inputs change. Native-reader
+CLI and fixture integration tests run in that conditional lane, not in the always-on repository
+suite. Run the complete portable gate locally with:
 
 ```powershell
 pnpm check
 ```
+
+The full local gate also retains packed-package and Data Authoring adoption conformance while those
+hosted release and adoption flows are being redesigned.
+
+During local iteration, run the smallest check or test that proves the changed behavior. The full
+gate is useful when reproducing Depot CI, preparing a release, or making cross-cutting changes; it
+is not required after every individual edit.
 
 Run every process-level end-to-end journey with:
 
@@ -67,8 +77,8 @@ traces. Failure artifacts are written under `test-results/workbench`.
 
 Installing dependencies also installs the repository-managed pre-commit hook. It runs
 `pnpm check:precommit` (formatting, linting, type checks, architecture, and contract checks) before
-Git creates a commit. The longer `pnpm check` release gate remains required before handoff and in
-portable CI.
+Git creates a commit. Depot CI owns the longer `pnpm check` gate; local verification should stay
+proportional to the change.
 
 ### Unreal gate reporting
 

@@ -17,6 +17,9 @@ const decodeTextQualityReport = <Input>(input: Input) =>
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliScript = join(repositoryRoot, "scripts", "ue-shed.ts");
 const cliIndex = join(repositoryRoot, "apps", "cli", "src", "index.ts");
+const uassetTestsEnabled = process.env.UE_SHED_UASSET_AUTO_BUILD !== "0";
+// Native-reader scenarios belong to the conditional UAsset lane.
+const nativeIt = it.skipIf(!uassetTestsEnabled);
 const scalarAsset = join(
 	repositoryRoot,
 	"fixtures",
@@ -175,7 +178,7 @@ describe("ue-shed CLI process", () => {
 		expect(comparison.valueChanged).toBe(true);
 	}, 30_000);
 
-	it("inspects a real saved fixture asset through the native reader", () => {
+	nativeIt("inspects a real saved fixture asset through the native reader", () => {
 		const inspection = parseRecord(runSuccessfulCli(["authoring", "inspect", scalarAsset]));
 		const snapshot = decodeAuthoringTableSnapshot(inspection.snapshot);
 
@@ -185,7 +188,7 @@ describe("ue-shed CLI process", () => {
 		expect(snapshot.table.rows.map((row) => row.name)).toEqual(["Scalar_Alpha", "Scalar_Beta"]);
 	});
 
-	it("runs the direct assets workflow against a real saved fixture", () => {
+	nativeIt("runs the direct assets workflow against a real saved fixture", () => {
 		const report = parseRecord(runSuccessfulCli(["assets", "scan", scalarAsset]));
 
 		expect(report.coverage).toMatchObject({
@@ -201,7 +204,8 @@ describe("ue-shed CLI process", () => {
 		]);
 	});
 
-	it("reviews the real saved text corpus with project-authored rules", () => {
+	// oxfmt-ignore
+	nativeIt("reviews the real saved text corpus with project-authored rules", () => {
 		const output: unknown = JSON.parse(
 			runSuccessfulCli(["text", "review", fixtureProject, "--rules", fixtureTextQualityRules])
 		);
@@ -215,7 +219,7 @@ describe("ue-shed CLI process", () => {
 		expect(report.findings.every((finding) => finding.role === "ui.prompt")).toBe(true);
 	}, 30_000);
 
-	it("resolves fixture row references through the public headless command", () => {
+	nativeIt("resolves fixture row references through the public headless command", () => {
 		const report = parseRecord(
 			runSuccessfulCli(["authoring", "relationships", fixtureProject])
 		);
@@ -243,7 +247,7 @@ describe("ue-shed CLI process", () => {
 		);
 	});
 
-	it("projects a read-only joined view through the public headless command", () => {
+	nativeIt("projects a read-only joined view through the public headless command", () => {
 		const view = parseRecord(
 			runSuccessfulCli([
 				"authoring",
@@ -290,7 +294,8 @@ describe("ue-shed CLI process", () => {
 		);
 	});
 
-	it("runs the persistent session lifecycle through separate CLI processes", async () => {
+	// oxfmt-ignore
+	nativeIt("runs the persistent session lifecycle through separate CLI processes", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-cli-sessions-"));
 		try {
 			const created = parseRecord(

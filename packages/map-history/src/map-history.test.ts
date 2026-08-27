@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, resolve } from "node:path";
+import { basename, resolve, win32 } from "node:path";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { describe, expect, it } from "@effect/vitest";
@@ -325,10 +325,10 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 		resolveMapLineage: () =>
 			Effect.succeed({
 				locations: [
-					{ depotPath: mapDepotPath, localPath: resolve(projectRoot, mapPath) },
+					{ depotPath: mapDepotPath, localPath: win32.resolve(projectRoot, mapPath) },
 					{
 						depotPath: movedMapDepotPath,
-						localPath: resolve(projectRoot, movedMapPath)
+						localPath: win32.resolve(projectRoot, movedMapPath)
 					}
 				],
 				moves: [

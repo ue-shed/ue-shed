@@ -12,7 +12,7 @@ import {
 	type P4MaterializeResult
 } from "p4client-ts";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import { MapHistoryError } from "./errors.js";
 
 export interface PerforceChangedFile {
@@ -484,9 +484,11 @@ export function makePerforceHistorySource(
 }
 
 function localRootKey(root: string): string {
-	return resolve(root)
-		.replace(/[\\/]+$/u, "")
-		.toLocaleLowerCase("en-US");
+	const resolved =
+		/^[a-z]:[\\/]/iu.test(root) || root.startsWith("\\\\")
+			? win32.resolve(root)
+			: resolve(root);
+	return resolved.replace(/[\\/]+$/u, "").toLocaleLowerCase("en-US");
 }
 
 const p4ConfigBypassPath = join(tmpdir(), "ue-shed-no-p4config");

@@ -73,6 +73,13 @@ function isWindowsLocalPath(path: string): boolean {
 	return /^[a-z]:[\\/]/iu.test(path) || path.startsWith("\\\\");
 }
 
+function resolveProjectPath(projectRoot: string, projectPath: string): string {
+	const normalizedProjectRoot = normalizeLocalPath(projectRoot);
+	return isWindowsLocalPath(normalizedProjectRoot)
+		? win32.resolve(normalizedProjectRoot, projectPath)
+		: resolve(normalizedProjectRoot, projectPath);
+}
+
 function projectRelativePath(projectRoot: string, localPath: string): string {
 	const normalizedProjectRoot = normalizeLocalPath(projectRoot);
 	const normalizedPath = normalizeLocalPath(localPath);
@@ -328,7 +335,7 @@ export function resolvePresentDayMapScope(query: {
 				projectRoot: query.projectRoot
 			})
 			.pipe(Effect.mapError(savedWorldError));
-		const mapLocalPath = resolve(query.projectRoot, query.mapPath);
+		const mapLocalPath = resolveProjectPath(query.projectRoot, query.mapPath);
 		const mapProjectRelativePath = yield* Effect.try({
 			try: () => projectRelativePath(query.projectRoot, mapLocalPath),
 			catch: (cause) =>

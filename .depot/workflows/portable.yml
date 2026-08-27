@@ -151,7 +151,15 @@ jobs:
               run: |
                   set -o pipefail
                   mkdir -p evidence
-                  pnpm run uasset:check 2>&1 | tee evidence/uasset-check.log
+                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-check.log
+                  pnpm run uasset:check 2>&1 | tee -a evidence/uasset-check.log
+                  node scripts/test.ts \
+                      apps/cli/src/index.e2e.test.ts \
+                      packages/unreal-assets/src/fixture.integration.test.ts \
+                      packages/unreal-assets/src/project-index-process.test.ts \
+                      packages/game-text/src/fixture.integration.test.ts \
+                      packages/enhanced-input/src/dogfood.integration.test.ts \
+                      2>&1 | tee -a evidence/uasset-check.log
             - name: Upload UAsset evidence
               if: always()
               uses: actions/upload-artifact@v7

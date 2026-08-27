@@ -29,10 +29,10 @@ type, or test errors for the user to discover. Fix with `pnpm exec oxfmt .` when
 fails, then rerun the failing command.
 
 Full `pnpm check` also covers `uasset:check`, license/architecture/release gates, and `test`.
-`pnpm run check:repository` runs the always-on Depot lane without native UAsset work. Packed-package
-and Data Authoring adoption conformance remain explicit parts of the full local gate while their
-hosted flows are being redesigned. Individual commands include `typecheck`, `lint`, `format:check`,
-and `test`.
+`pnpm run check:repository` runs the always-on Depot lane without native UAsset work; native-reader
+CLI and fixture integration tests stay in the conditional UAsset lane. Packed-package and Data
+Authoring adoption conformance remain explicit parts of the full local gate while their hosted flows
+are being redesigned. Individual commands include `typecheck`, `lint`, `format:check`, and `test`.
 
 ## Unreal Engine reference
 

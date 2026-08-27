@@ -15,8 +15,67 @@ concurrency:
     group: portable-${{ github.ref }}
     cancel-in-progress: true
 jobs:
-    check:
-        name: pnpm check
+    changes:
+        name: Detect UAsset changes
+        runs-on: depot-ubuntu-latest
+        outputs:
+            uasset: ${{ steps.scope.outputs.uasset }}
+        steps:
+            - name: Checkout repository history
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - name: Detect UAsset parser changes
+              id: scope
+              shell: bash
+              env:
+                  EVENT_NAME: ${{ github.event_name }}
+                  BEFORE_SHA: ${{ github.event.before }}
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+              run: |
+                  set -euo pipefail
+
+                  if [[ "$EVENT_NAME" == "pull_request" ]]; then
+                      range="$BASE_SHA...$HEAD_SHA"
+                  elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+                      range="$BEFORE_SHA..$HEAD_SHA"
+                  else
+                      range="$HEAD_SHA^..$HEAD_SHA"
+                  fi
+
+                  mapfile -t changed_files < <(git diff --name-only "$range")
+                  printf 'Changed files:\n'
+                  printf '  %s\n' "${changed_files[@]}"
+
+                  uasset=false
+                  for path in "${changed_files[@]}"; do
+                      case "$path" in
+                          Cargo.toml | Cargo.lock | \
+                              crates/uasset-*/* | \
+                              packages/uasset/* | packages/uasset-*/* | \
+                              packages/protocol/contracts/uasset-io/* | \
+                              scripts/*uasset* | \
+                              fixtures/unreal-project/*.uasset | \
+                              fixtures/unreal-project/*.umap)
+                              uasset=true
+                              break
+                              ;;
+                          package.json)
+                              if git diff --unified=0 "$range" -- package.json | \
+                                  grep -Eq '^[+-][[:space:]]*"(uasset:|test:uasset)'; then
+                                  uasset=true
+                                  break
+                              fi
+                              ;;
+                      esac
+                  done
+
+                  echo "uasset=$uasset" | tee -a "$GITHUB_OUTPUT"
+    repository:
+        name: Repository checks
+        needs: changes
         runs-on: depot-ubuntu-latest
         timeout-minutes: 90
         steps:
@@ -34,22 +93,14 @@ jobs:
             - name: Install Rust
               run: |
                   rustup toolchain install stable --profile minimal --no-self-update
-                  rustup target add wasm32-unknown-unknown x86_64-pc-windows-gnu
-                  cargo install wasm-pack --locked --version 0.14.0
-            - name: Install Windows cross-toolchain
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install --yes gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
             - name: Install locked dependencies
               run: pnpm install --frozen-lockfile
-            - name: Install Chromium for browser tests
-              run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps chromium
-            - name: Run portable gate
+            - name: Run repository gate
               shell: bash
               run: |
                   set -o pipefail
                   mkdir -p evidence
-                  pnpm check 2>&1 | tee evidence/portable-check.log
+                  pnpm run check:repository 2>&1 | tee evidence/portable-check.log
             - name: Upload portable evidence
               if: always()
               uses: actions/upload-artifact@v7
@@ -68,3 +119,73 @@ jobs:
                       coverage/**
                   if-no-files-found: ignore
                   retention-days: 14
+    uasset:
+        name: UAsset parser
+        needs: changes
+        if: needs.changes.outputs.uasset == 'true'
+        runs-on: depot-ubuntu-latest
+        timeout-minutes: 90
+        steps:
+            - name: Checkout without persisted credentials
+              uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+            - name: Install pnpm
+              uses: pnpm/action-setup@v6
+            - name: Install Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "26"
+                  cache: pnpm
+            - name: Install Rust UAsset toolchains
+              run: |
+                  rustup toolchain install stable --profile minimal --no-self-update
+                  rustup target add wasm32-unknown-unknown x86_64-pc-windows-gnu
+                  cargo install wasm-pack --locked --version 0.14.0
+            - name: Install Windows cross-toolchain
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --yes gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+            - name: Install locked dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Install Chromium for browser tests
+              run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps chromium
+            - name: Run UAsset parser gate
+              shell: bash
+              run: |
+                  set -o pipefail
+                  mkdir -p evidence
+                  pnpm run uasset:check 2>&1 | tee evidence/uasset-check.log
+            - name: Upload UAsset evidence
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: uasset-evidence-${{ github.run_id }}
+                  path: evidence/uasset-check.log
+                  if-no-files-found: error
+                  retention-days: 30
+            - name: Upload UAsset failure diagnostics
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: uasset-failure-${{ github.run_id }}
+                  path: test-results/**
+                  if-no-files-found: ignore
+                  retention-days: 14
+    gate:
+        name: pnpm check
+        needs:
+            - repository
+            - uasset
+        if: always()
+        runs-on: depot-ubuntu-latest
+        steps:
+            - name: Verify portable jobs
+              shell: bash
+              env:
+                  REPOSITORY_RESULT: ${{ needs.repository.result }}
+                  UASSET_RESULT: ${{ needs.uasset.result }}
+              run: |
+                  set -euo pipefail
+                  [[ "$REPOSITORY_RESULT" == "success" ]]
+                  [[ "$UASSET_RESULT" == "success" || "$UASSET_RESULT" == "skipped" ]]

@@ -14,11 +14,13 @@ layer.
 
 ## Commands
 
-Depot CI owns the full portable `pnpm check` gate. During local iteration, run the smallest truthful
-checks for the surface you changed; do not routinely run the full gate after every edit. Run
-`pnpm check` locally only when the user requests it, when changing the portable gate or release
-infrastructure, or when reproducing a CI failure. Never describe a change as fully verified while a
-relevant targeted check or the Depot gate is failing.
+Depot CI owns the full portable gate. Its repository checks run on every pull request, while the
+UAsset parser lane runs only when its Rust, WASM, package, contract, script, or fixture inputs
+change. During local iteration, run the smallest truthful checks for the surface you changed; do not
+routinely run the full gate after every edit. Run `pnpm check` locally only when the user requests
+it, when changing the portable gate or release infrastructure, or when reproducing a CI failure.
+Never describe a change as fully verified while a relevant targeted check or the Depot gate is
+failing.
 
 `pnpm run check:precommit` runs the fast pre-commit subset (`format:check`, `lint`,
 `typecheck`, `test:architecture`, `contract:check`). Use it for broad TypeScript or contract changes.
@@ -27,6 +29,7 @@ type, or test errors for the user to discover. Fix with `pnpm exec oxfmt .` when
 fails, then rerun the failing command.
 
 Full `pnpm check` also covers `uasset:check`, license/architecture/release gates, and `test`.
+`pnpm run check:repository` runs the always-on Depot lane without the conditional UAsset gate.
 Individual commands include `typecheck`, `lint`, `format:check`, and `test`.
 
 ## Unreal Engine reference

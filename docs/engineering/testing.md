@@ -34,7 +34,9 @@ codecs, errors, and recovery need deep coverage.
 
 ## Local verification
 
-Depot CI runs the complete portable repository gate on pull requests and `main`:
+Depot CI runs the portable repository checks on pull requests and `main`. The UAsset parser lane is
+added only when its Rust, WASM, package, contract, script, or fixture inputs change. Run the complete
+portable gate locally with:
 
 ```powershell
 pnpm check

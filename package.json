@@ -6,9 +6,10 @@
 	"license": "MIT",
 	"type": "module",
 	"scripts": {
+		"build:typescript-packages": "pnpm --filter \"./packages/**\" --filter \"!@ue-shed/uasset-inspection-wasm\" --recursive --if-present run build",
 		"check": "pnpm run uasset:check && pnpm run check:repository",
 		"check:precommit": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run stylex:check && pnpm run test:architecture && pnpm run contract:check",
-		"check:repository": "pnpm run engine:check:native && pnpm run typecheck && pnpm run effect:architecture && pnpm run license:check && pnpm run stylex:check && pnpm run test:architecture && pnpm run test:release && pnpm run test:release:packages && pnpm run test:adoption:data-authoring && pnpm run lint && pnpm run format:check && pnpm run contract:check && pnpm run test",
+		"check:repository": "pnpm run build:typescript-packages && pnpm run engine:check:native && pnpm run typecheck && pnpm run effect:architecture && pnpm run license:check && pnpm run stylex:check && pnpm run test:architecture && pnpm run test:release && pnpm run test:release:packages && pnpm run test:adoption:data-authoring && pnpm run lint && pnpm run format:check && pnpm run contract:check && pnpm run test",
 		"changeset": "changeset",
 		"check:unreal": "node scripts/check-unreal.ts",
 		"contract:check": "pnpm --filter @ue-shed/protocol contract:check && pnpm --filter @ue-shed/cameras contract:check && pnpm --filter @ue-shed/niagara contract:check",

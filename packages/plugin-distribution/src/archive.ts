@@ -457,6 +457,22 @@ export async function extractPluginArchiveToDirectory(
 					);
 				}
 			}
+			if (options.manifest.schemaVersion === 3) {
+				const attested = new Map(
+					options.manifest.nativeFiles.map((file) => [file.path, file.sha256])
+				);
+				const nativePaths = Object.keys(files).filter((path) =>
+					/\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(path)
+				);
+				if (nativePaths.length !== attested.size) {
+					throw new Error("Compiled archive native-file attestations are incomplete.");
+				}
+				for (const path of nativePaths) {
+					if (attested.get(path) !== files[path]) {
+						throw new Error(`Compiled archive digest does not match native-file attestation: ${path}`);
+					}
+				}
+			}
 		}
 		return { extractedBytes, fileCount, files };
 	} catch (cause) {

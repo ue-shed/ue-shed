@@ -51,7 +51,7 @@ export const GitCommit = NonEmptyString.check(Schema.isPattern(CommitPattern)).p
 );
 export type GitCommit = Schema.Schema.Type<typeof GitCommit>;
 
-export const PluginBundleSchemaVersion = Schema.Literals([1, 2]);
+export const PluginBundleSchemaVersion = Schema.Literals([1, 2, 3]);
 export type PluginBundleSchemaVersion = Schema.Schema.Type<typeof PluginBundleSchemaVersion>;
 
 export const UnrealVersionRange = Schema.Struct({
@@ -186,6 +186,38 @@ export const CompiledPluginBuildProvenance = Schema.Struct({
 });
 export type CompiledPluginBuildProvenance = typeof CompiledPluginBuildProvenance.Type;
 
+export const PluginBundlePackage = Schema.Struct({
+	bytes: Schema.Int.check(Schema.isGreaterThan(0)),
+	filename: SafeRelativePath,
+	name: NonEmptyString,
+	sha256: Sha256Checksum,
+	version: ReleaseVersion
+});
+export type PluginBundlePackage = typeof PluginBundlePackage.Type;
+
+export const PluginBundleContract = Schema.Struct({
+	name: SafeIdentifier,
+	version: Schema.Struct({
+		major: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+		minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+	})
+});
+export type PluginBundleContract = typeof PluginBundleContract.Type;
+
+export const CompiledPluginNativeFile = Schema.Struct({
+	path: SafeRelativePath,
+	sha256: Sha256Checksum
+});
+export type CompiledPluginNativeFile = typeof CompiledPluginNativeFile.Type;
+
+export const CompiledPluginModule = Schema.Struct({
+	binaryPath: SafeRelativePath,
+	buildId: EngineBuildId,
+	name: PluginId,
+	pluginId: PluginId
+});
+export type CompiledPluginModule = typeof CompiledPluginModule.Type;
+
 const PluginBundleManifestCommonFields = {
 	plugins: Schema.Array(PluginBundlePlugin).check(Schema.isMinLength(1)),
 	provenance: PluginBundleProvenance,
@@ -218,10 +250,36 @@ export const CompiledPluginBundleManifestV2 = Schema.Struct({
 });
 export type CompiledPluginBundleManifestV2 = typeof CompiledPluginBundleManifestV2.Type;
 
+export const SourcePluginBundleManifestV3 = Schema.Struct({
+	...PluginBundleManifestCommonFields,
+	artifact: PluginBundleSourceArtifact,
+	compatibility: SourcePluginCompatibility,
+	contracts: Schema.Array(PluginBundleContract).check(Schema.isMinLength(1)),
+	packages: Schema.Array(PluginBundlePackage).check(Schema.isMinLength(1)),
+	schemaVersion: Schema.Literal(3)
+});
+export type SourcePluginBundleManifestV3 = typeof SourcePluginBundleManifestV3.Type;
+
+export const CompiledPluginBundleManifestV3 = Schema.Struct({
+	...PluginBundleManifestCommonFields,
+	artifact: PluginBundleCompiledArtifact,
+	build: CompiledPluginBuildProvenance,
+	buildRecipe: NonEmptyString,
+	compatibility: CompiledPluginCompatibility,
+	contracts: Schema.Array(PluginBundleContract).check(Schema.isMinLength(1)),
+	modules: Schema.Array(CompiledPluginModule).check(Schema.isMinLength(1)),
+	nativeFiles: Schema.Array(CompiledPluginNativeFile).check(Schema.isMinLength(1)),
+	packages: Schema.Array(PluginBundlePackage).check(Schema.isMinLength(1)),
+	schemaVersion: Schema.Literal(3)
+});
+export type CompiledPluginBundleManifestV3 = typeof CompiledPluginBundleManifestV3.Type;
+
 export const PluginBundleManifest = Schema.Union([
 	SourcePluginBundleManifestV1,
 	SourcePluginBundleManifestV2,
-	CompiledPluginBundleManifestV2
+	CompiledPluginBundleManifestV2,
+	SourcePluginBundleManifestV3,
+	CompiledPluginBundleManifestV3
 ]);
 export type PluginBundleManifest = typeof PluginBundleManifest.Type;
 
@@ -246,6 +304,7 @@ export const PluginBundleManifestValidationCode = Schema.Literals([
 	"cyclic_dependency",
 	"compiled_graph_mismatch",
 	"compiled_identity_mismatch",
+	"attestation_mismatch",
 	"provenance_mismatch",
 	"unsupported_unreal"
 ]);
@@ -303,7 +362,10 @@ function compareVersions(left: string, right: string): number | undefined {
 }
 
 function sourceUnrealRange(
-	manifest: SourcePluginBundleManifestV1 | SourcePluginBundleManifestV2
+	manifest:
+		| SourcePluginBundleManifestV1
+		| SourcePluginBundleManifestV2
+		| SourcePluginBundleManifestV3
 ): UnrealVersionRange {
 	return manifest.schemaVersion === 1
 		? manifest.unreal
@@ -312,13 +374,16 @@ function sourceUnrealRange(
 
 export function isCompiledPluginBundleManifest(
 	manifest: PluginBundleManifest
-): manifest is CompiledPluginBundleManifestV2 {
-	return manifest.schemaVersion === 2 && manifest.artifact.kind === "unreal-editor-plugin-binary";
+): manifest is CompiledPluginBundleManifestV2 | CompiledPluginBundleManifestV3 {
+	return manifest.artifact.kind === "unreal-editor-plugin-binary";
 }
 
 export function isSourcePluginBundleManifest(
 	manifest: PluginBundleManifest
-): manifest is SourcePluginBundleManifestV1 | SourcePluginBundleManifestV2 {
+): manifest is
+	| SourcePluginBundleManifestV1
+	| SourcePluginBundleManifestV2
+	| SourcePluginBundleManifestV3 {
 	return !isCompiledPluginBundleManifest(manifest);
 }
 
@@ -482,6 +547,57 @@ export const validatePluginBundleManifestValue = (
 					"Build the plugin bundle and package artifacts from the same release candidate."
 				)
 			);
+		}
+
+		if (manifest.schemaVersion === 3) {
+			const packageNames = new Set<string>();
+			for (const packageArtifact of manifest.packages) {
+				if (packageArtifact.version !== manifest.releaseVersion) {
+					return yield* validationError(
+						"attestation_mismatch",
+						`Package ${packageArtifact.name}@${packageArtifact.version} does not match release ${manifest.releaseVersion}.`,
+						"Build every package and plugin artifact from the same versioned candidate."
+					);
+				}
+				if (packageNames.has(packageArtifact.name)) {
+					return yield* validationError(
+						"attestation_mismatch",
+						`Package ${packageArtifact.name} is attested more than once.`,
+						"Keep one immutable digest for each package tarball."
+					);
+				}
+				packageNames.add(packageArtifact.name);
+			}
+			if (isCompiledPluginBundleManifest(manifest)) {
+				const pluginIds = new Set(manifest.plugins.map((plugin) => plugin.id));
+				const nativePaths = new Set<string>();
+				for (const file of manifest.nativeFiles) {
+					if (nativePaths.has(file.path)) {
+						return yield* validationError(
+							"attestation_mismatch",
+							`Native file ${file.path} is attested more than once.`,
+							"Keep one digest per compiled archive path."
+						);
+					}
+					nativePaths.add(file.path);
+				}
+				const moduleNames = new Set<string>();
+				for (const module of manifest.modules) {
+					if (
+						module.buildId !== manifest.compatibility.engineBuildId ||
+						!pluginIds.has(module.pluginId) ||
+						!nativePaths.has(module.binaryPath) ||
+						moduleNames.has(module.name)
+					) {
+						return yield* validationError(
+							"attestation_mismatch",
+							`Compiled module ${module.name} contradicts its graph, binary, or engine BuildId.`,
+							"Regenerate module attestations from the exact compiled graph."
+						);
+					}
+					moduleNames.add(module.name);
+				}
+			}
 		}
 
 		if (

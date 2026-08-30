@@ -15,14 +15,20 @@ contain organization-specific paths, credentials, schemas, or registry assumptio
 
 ## Versioned artifacts
 
-Schema version 1 remains the accepted legacy source contract. Schema version 2 is a strict
-discriminated union:
+Schema version 1 remains the accepted legacy source contract. Schema version 2 remains readable for
+existing source and compiled artifacts. Schema version 3 is the release-attested strict union:
 
 - `source` records an Unreal version range and a portable source archive;
 - `compiled` records exact Unreal version, engine `BuildId`, platform, architecture,
   `UnrealEditor`, `Development`, compiler/toolchain provenance, the requested and dependency-first
   resolved graph, descriptor versions, source pins, repository commit, build invocation digest,
   and archive/manifest digests.
+
+Both v3 variants bind the exact npm package tarballs and shared wire-contract versions from the
+release candidate. A compiled v3 manifest additionally lists each built module and exact engine
+`BuildId`, plus a digest for every descriptor, module manifest, native binary, and debug-symbol file
+in the archive. Installation compares those file attestations while extracting, before publishing
+the immutable cache entry.
 
 Unknown schema versions and excess or contradictory source/binary fields are rejected at the
 boundary. Unreal `5.7` alone is never treated as binary compatibility. Extraction also reads each

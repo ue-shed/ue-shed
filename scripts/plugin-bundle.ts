@@ -426,9 +426,12 @@ async function candidateProvenance(
 ) {
 	if (!path) {
 		return {
-			version: releaseVersion,
-			manifestPath: "local-candidate-manifest.json",
-			sha256: `sha256:${"0".repeat(64)}`
+			reference: {
+				version: releaseVersion,
+				manifestPath: "local-candidate-manifest.json",
+				sha256: `sha256:${"0".repeat(64)}`
+			},
+			packages: undefined
 		};
 	}
 	const resolvedPath = resolve(path);
@@ -437,7 +440,13 @@ async function candidateProvenance(
 	const candidate = JSON.parse(raw) as {
 		readonly candidateVersion?: string;
 		readonly version?: string;
-		readonly packages?: ReadonlyArray<{ readonly version?: string }>;
+		readonly packages?: ReadonlyArray<{
+			readonly bytes?: number;
+			readonly filename?: string;
+			readonly name?: string;
+			readonly sha256?: string;
+			readonly version?: string;
+		}>;
 	};
 	const version = candidate.candidateVersion ?? candidate.version;
 	if (version && version !== releaseVersion) {
@@ -452,6 +461,19 @@ async function candidateProvenance(
 				`Candidate package manifest contains versions other than ${releaseVersion}.`
 			);
 		}
+		for (const entry of candidate.packages) {
+			if (
+				typeof entry.name !== "string" ||
+				typeof entry.filename !== "string" ||
+				typeof entry.bytes !== "number" ||
+				!Number.isSafeInteger(entry.bytes) ||
+				entry.bytes <= 0 ||
+				typeof entry.sha256 !== "string" ||
+				!(/^[a-f0-9]{64}$/u.test(entry.sha256) || /^sha256:[a-f0-9]{64}$/u.test(entry.sha256))
+			) {
+				throw new Error("Candidate package manifest has incomplete package provenance.");
+			}
+		}
 	}
 	const relativeManifestPath = toPosix(relative(outputDirectory, resolvedPath));
 	const siblingManifestPath = toPosix(relative(dirname(outputDirectory), resolvedPath));
@@ -462,9 +484,20 @@ async function candidateProvenance(
 				? siblingManifestPath
 				: basename(resolvedPath);
 	return {
-		version: version ?? releaseVersion,
-		manifestPath,
-		sha256: `sha256:${createHash("sha256").update(raw).digest("hex")}`
+		reference: {
+			version: version ?? releaseVersion,
+			manifestPath,
+			sha256: `sha256:${createHash("sha256").update(raw).digest("hex")}`
+		},
+		packages: candidate.packages?.map((entry) => ({
+			bytes: entry.bytes!,
+			filename: entry.filename!,
+			name: entry.name!,
+			sha256: entry.sha256!.startsWith("sha256:")
+				? entry.sha256!
+				: `sha256:${entry.sha256!}`,
+			version: entry.version!
+		}))
 	};
 }
 
@@ -554,10 +587,22 @@ export async function buildPluginBundle({
 			outputDirectory
 		);
 		const archiveDetails = await stat(archivePath);
+		const attestedCandidate = candidateManifestData.packages !== undefined;
 		const manifest = {
-			schemaVersion: 1,
+			schemaVersion: attestedCandidate ? 3 : 1,
 			releaseVersion,
-			unreal: unrealRange,
+			...(attestedCandidate
+				? {
+						compatibility: { kind: "source", unrealVersionRange: unrealRange },
+						contracts: [
+							{
+								name: "ue-shed-review-capture",
+								version: { major: 1, minor: 5 }
+							}
+						],
+						packages: candidateManifestData.packages
+					}
+				: { unreal: unrealRange }),
 			plugins: descriptors.map(
 				({ id, version, directory, descriptorPath, dependencies, engineDependencies }) => ({
 					id,
@@ -576,7 +621,7 @@ export async function buildPluginBundle({
 				sha256: `sha256:${await sha256(archivePath)}`
 			},
 			provenance: {
-				candidateManifest: candidateManifestData,
+				candidateManifest: candidateManifestData.reference,
 				source: {
 					repository,
 					commit: provenanceCommit,

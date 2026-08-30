@@ -104,7 +104,7 @@ async function fixture() {
 					FileVersion: 3,
 					Modules: [{ Name: "UEShedCore", Type: "Runtime" }],
 					Version: 1,
-					VersionName: "0.5.0"
+					VersionName: "0.5.1"
 				})
 			),
 			name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
@@ -124,7 +124,7 @@ async function fixture() {
 					Modules: [{ Name: "UEShedCameras", Type: "Runtime" }],
 					Plugins: [{ Enabled: true, Name: "UEShedCore" }],
 					Version: 1,
-					VersionName: "0.5.0"
+					VersionName: "0.5.1"
 				})
 			),
 			name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
@@ -145,7 +145,7 @@ async function fixture() {
 	const manifest = {
 		artifact: {
 			bytes: sourceArchive.byteLength,
-			id: "ue-shed-plugin-source-0.5.0",
+			id: "ue-shed-plugin-source-0.5.1",
 			kind: "plugin-source",
 			path: "source.tar.gz",
 			sha256: digest(sourceArchive)
@@ -157,7 +157,7 @@ async function fixture() {
 				directory: "UEShedCore",
 				engineDependencies: [],
 				id: "UEShedCore",
-				version: "0.5.0"
+				version: "0.5.1"
 			},
 			{
 				dependencies: ["UEShedCore"],
@@ -165,24 +165,39 @@ async function fixture() {
 				directory: "UEShedCameras",
 				engineDependencies: [],
 				id: "UEShedCameras",
-				version: "0.5.0"
+				version: "0.5.1"
 			}
 		],
 		provenance: {
 			candidateManifest: {
 				manifestPath: "candidate-manifest.json",
 				sha256: `sha256:${"c".repeat(64)}`,
-				version: "0.5.0"
+				version: "0.5.1"
 			},
 			source: {
 				commit: "a".repeat(40),
-				ref: "refs/tags/v0.5.0",
+				ref: "refs/heads/release/0.5.1",
 				repository: "https://github.com/ue-shed/ue-shed"
 			}
 		},
-		releaseVersion: "0.5.0",
-		schemaVersion: 1,
-		unreal: { maximum: "5.7", minimum: "5.7" }
+		releaseVersion: "0.5.1",
+		schemaVersion: 3,
+		compatibility: {
+			kind: "source",
+			unrealVersionRange: { maximum: "5.7", minimum: "5.7" }
+		},
+		contracts: [
+			{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }
+		],
+		packages: [
+			{
+				bytes: 1024,
+				filename: "ue-shed-cameras-0.5.1.tgz",
+				name: "@ue-shed/cameras",
+				sha256: `sha256:${"d".repeat(64)}`,
+				version: "0.5.1"
+			}
+		]
 	};
 	const manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
 	const sourceManifestPath = join(root, "source.manifest.json");
@@ -283,6 +298,34 @@ describe("compiled plugin builder", () => {
 		expect(result.manifest.build.requestedPluginIds).toEqual(["UEShedCameras"]);
 		expect(result.manifest.compatibility.engineBuildId).toBe("47537391");
 		expect(result.manifest.compatibility.engineSourceCommit).toBe(engineSourceCommit);
+		expect(result.manifest.contracts).toEqual([
+			{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }
+		]);
+		expect(result.manifest.packages).toEqual([
+			expect.objectContaining({ name: "@ue-shed/cameras", version: "0.5.1" })
+		]);
+		expect(result.manifest.modules).toEqual([
+			expect.objectContaining({
+				buildId: "47537391",
+				name: "UEShedCameras",
+				pluginId: "UEShedCameras"
+			}),
+			expect.objectContaining({
+				buildId: "47537391",
+				name: "UEShedCore",
+				pluginId: "UEShedCore"
+			})
+		]);
+		expect(result.manifest.nativeFiles).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					path: "Plugins/UEShedCameras/Binaries/Win64/UnrealEditor-UEShedCameras.dll"
+				}),
+				expect.objectContaining({
+					path: "Plugins/UEShedCore/Binaries/Win64/UnrealEditor-UEShedCore.dll"
+				})
+			])
+		);
 		expect(result.manifest.artifact.path).toBe(
 			variantPluginReleaseAssetNames(
 				result.manifest.releaseVersion,

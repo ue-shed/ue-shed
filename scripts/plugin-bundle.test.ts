@@ -82,7 +82,22 @@ function archiveEntries(path: string) {
 test("builds deterministic source archive and excludes local Unreal output", async () => {
 	const fixture = await createFixture();
 	const candidatePath = join(fixture.root, "candidate-manifest.json");
-	await writeFile(candidatePath, '{"candidateVersion":"0.1.0-rc.1"}\n', "utf8");
+	await writeFile(
+		candidatePath,
+		`${JSON.stringify({
+			candidateVersion: "0.1.0-rc.1",
+			packages: [
+				{
+					bytes: 1024,
+					filename: "ue-shed-cameras-0.1.0-rc.1.tgz",
+					name: "@ue-shed/cameras",
+					sha256: "a".repeat(64),
+					version: "0.1.0-rc.1"
+				}
+			]
+		})}\n`,
+		"utf8"
+	);
 	const firstOutput = join(fixture.root, "first");
 	const secondOutput = join(fixture.root, "second");
 	try {
@@ -109,6 +124,19 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 		assert.deepEqual(firstArchive, secondArchive);
 		assert.equal(first.manifest.artifact.sha256, second.manifest.artifact.sha256);
 		assert.equal(first.manifest.artifact.bytes, firstArchive.byteLength);
+		assert.equal(first.manifest.schemaVersion, 3);
+		assert.deepEqual(first.manifest.contracts, [
+			{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }
+		]);
+		assert.deepEqual(first.manifest.packages, [
+			{
+				bytes: 1024,
+				filename: "ue-shed-cameras-0.1.0-rc.1.tgz",
+				name: "@ue-shed/cameras",
+				sha256: `sha256:${"a".repeat(64)}`,
+				version: "0.1.0-rc.1"
+			}
+		]);
 		assert.deepEqual(
 			first.manifest.plugins.map(({ id, version, dependencies, engineDependencies }) => ({
 				id,

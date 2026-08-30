@@ -21,7 +21,7 @@ import { Context, Duration, Effect, Layer, Schema } from "effect";
 import { extractPluginArchive, verifyPluginArtifact } from "./archive.js";
 import { PluginInstallCancelled } from "./errors.js";
 import {
-	CompiledPluginBundleManifestV2,
+	CompiledPluginBundleManifestV3,
 	PluginBundlePlugin,
 	PluginCompilerProvenance,
 	PluginId,
@@ -56,7 +56,7 @@ export type CompiledPluginBuildRequest = typeof CompiledPluginBuildRequest.Type;
 
 export const CompiledPluginBuildResult = Schema.Struct({
 	artifactPath: BoundedPath,
-	manifest: CompiledPluginBundleManifestV2,
+	manifest: CompiledPluginBundleManifestV3,
 	manifestDigest: Sha256Checksum,
 	manifestPath: BoundedPath,
 	outputPath: BoundedPath,
@@ -261,6 +261,10 @@ async function writeDeterministicArchive(options: {
 	readonly signal: AbortSignal;
 }) {
 	const files = await walkFiles(options);
+	const attestedFiles: Array<{
+		readonly path: string;
+		readonly sha256: Sha256Checksum;
+	}> = [];
 	async function* tarBlocks() {
 		for (const file of files) {
 			if (options.signal.aborted) throw cancelled("archive");
@@ -292,6 +296,7 @@ async function writeDeterministicArchive(options: {
 			writeOctal(header, 148, 8, checksum);
 			yield header;
 			let streamedBytes = 0;
+			const fileHash = createHash("sha256");
 			for await (const chunk of createReadStream(
 				join(options.root, ...file.relativePath.split("/")),
 				{
@@ -301,6 +306,7 @@ async function writeDeterministicArchive(options: {
 			)) {
 				if (options.signal.aborted) throw cancelled("archive");
 				streamedBytes += chunk.byteLength;
+				fileHash.update(chunk);
 				if (streamedBytes > file.size) {
 					throw new Error(`Build output changed while archiving: ${file.relativePath}`);
 				}
@@ -309,6 +315,10 @@ async function writeDeterministicArchive(options: {
 			if (streamedBytes !== file.size) {
 				throw new Error(`Build output changed while archiving: ${file.relativePath}`);
 			}
+			attestedFiles.push({
+				path: file.relativePath,
+				sha256: Sha256Checksum.make(`sha256:${fileHash.digest("hex")}`)
+			});
 			const padding = (512 - (file.size % 512)) % 512;
 			if (padding > 0) yield Buffer.alloc(padding);
 		}
@@ -342,8 +352,45 @@ async function writeDeterministicArchive(options: {
 	);
 	return {
 		bytes: artifactBytes,
-		digest: Sha256Checksum.make(`sha256:${hash.digest("hex")}`)
+		digest: Sha256Checksum.make(`sha256:${hash.digest("hex")}`),
+		files: attestedFiles
 	};
+}
+
+async function compiledModuleAttestations(options: {
+	readonly buildId: string;
+	readonly files: ReadonlyArray<{ readonly path: string }>;
+	readonly graphRoot: string;
+	readonly platform: string;
+	readonly plugins: readonly PluginBundlePlugin[];
+}) {
+	const modules: Array<{
+		readonly binaryPath: string;
+		readonly buildId: string;
+		readonly name: string;
+		readonly pluginId: string;
+	}> = [];
+	for (const plugin of options.plugins) {
+		const binaryRoot = `Plugins/${plugin.directory}/Binaries/${options.platform}/`;
+		for (const file of options.files) {
+			if (!file.path.startsWith(binaryRoot) || !file.path.endsWith(".modules")) continue;
+			const evidence = Schema.decodeUnknownSync(UnrealModules)(
+				JSON.parse(await readFile(join(options.graphRoot, ...file.path.split("/")), "utf8"))
+			);
+			if (evidence.BuildId !== options.buildId) {
+				throw new Error(`Built module evidence has unexpected BuildId: ${file.path}`);
+			}
+			for (const [name, binary] of Object.entries(evidence.Modules)) {
+				modules.push({
+					binaryPath: `${binaryRoot}${binary}`,
+					buildId: evidence.BuildId,
+					name,
+					pluginId: plugin.id
+				});
+			}
+		}
+	}
+	return modules.sort((left, right) => left.name.localeCompare(right.name));
 }
 
 async function prepareAggregatePlugin(options: {
@@ -794,7 +841,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											)
 									});
 									const artifactPath = join(publishStage, names.artifact);
-									const artifact = yield* Effect.tryPromise({
+					const artifact = yield* Effect.tryPromise({
 										try: () =>
 											writeDeterministicArchive({
 												destination: artifactPath,
@@ -811,10 +858,36 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 														`Could not create compiled archive: ${String(cause)}`,
 														"Check output limits and retry."
 													)
-									});
-									const manifest = yield* Schema.decodeUnknownEffect(
-										CompiledPluginBundleManifestV2
-									)({
+					});
+					const nativeFiles = artifact.files.filter((file) =>
+						/\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(file.path)
+					);
+					const modules = yield* Effect.tryPromise({
+						try: () =>
+							compiledModuleAttestations({
+								buildId: request.artifact.engineBuildId,
+								files: artifact.files,
+								graphRoot,
+								platform: request.artifact.platform,
+								plugins: state.graph.plugins
+							}),
+						catch: (cause) =>
+							invalid(
+								"validation",
+								`Could not attest compiled modules: ${String(cause)}`,
+								"Inspect UAT module output and rebuild."
+							)
+					});
+					if (state.sourceManifest.schemaVersion !== 3) {
+						return yield* invalid(
+							"validation",
+							"Attested compiled releases require a source manifest v3.",
+							"Build the source bundle from the matching release candidate."
+						);
+					}
+					const manifest = yield* Schema.decodeUnknownEffect(
+						CompiledPluginBundleManifestV3
+					)({
 										artifact: {
 											bytes: artifact.bytes,
 											id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
@@ -822,7 +895,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											path: names.artifact,
 											sha256: artifact.digest
 										},
-										build: {
+						build: {
 											builder: "@ue-shed/plugin-distribution",
 											builderVersion: "1",
 											compiler: request.compiler,
@@ -840,12 +913,30 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 												request.expectedSourceArtifactSha256,
 											sourceManifestSha256:
 												request.expectedSourceManifestSha256
-										},
-										compatibility: { ...request.artifact, kind: "compiled" },
+						},
+						buildRecipe: [
+							"ue-shed plugins build",
+							`--plugin ${request.pluginIds.join(" --plugin ")}`,
+							`--unreal ${request.artifact.unrealVersion}`,
+							`--build-id ${request.artifact.engineBuildId}`,
+							`--platform ${request.artifact.platform}`,
+							`--architecture ${request.artifact.architecture}`,
+							`--compiler ${request.compiler.compiler}`,
+							`--compiler-version ${request.compiler.compilerVersion}`,
+							`--toolchain \"${request.compiler.toolchain}\"`,
+							`--toolchain-version ${request.compiler.toolchainVersion}`,
+							`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
+							`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
+						].join(" "),
+						compatibility: { ...request.artifact, kind: "compiled" },
+						contracts: state.sourceManifest.contracts,
+						modules,
+						nativeFiles,
+						packages: state.sourceManifest.packages,
 										plugins: state.graph.plugins,
 										provenance: state.sourceManifest.provenance,
 										releaseVersion: state.sourceManifest.releaseVersion,
-										schemaVersion: 2
+						schemaVersion: 3
 									}).pipe(
 										Effect.mapError(() =>
 											invalid(

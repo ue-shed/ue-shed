@@ -8,8 +8,8 @@
 #include "Components/SceneCaptureComponent2D.h"
 #include "Camera/CameraTypes.h"
 #include "Engine/SceneCapture2D.h"
+#include "Engine/Level.h"
 #include "Engine/TextureRenderTarget2D.h"
-#include "EngineUtils.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "Misc/FileHelper.h"
@@ -33,6 +33,7 @@ FString JsonString(const TSharedRef<FJsonObject>& Object)
 FString FailureJson(
 	const FString& OperationId,
 	const FString& ViewId,
+	int32 ContractMinor,
 	const TCHAR* Code,
 	const TCHAR* Message,
 	const TCHAR* Recovery,
@@ -43,7 +44,7 @@ FString FailureJson(
 	Contract->SetStringField(TEXT("name"), TEXT("ue-shed-review-capture"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 0);
+	Version->SetNumberField(TEXT("minor"), ContractMinor);
 	Contract->SetObjectField(TEXT("version"), Version);
 	Result->SetObjectField(TEXT("contract"), Contract);
 	Result->SetStringField(TEXT("status"), TEXT("failed"));
@@ -54,6 +55,18 @@ FString FailureJson(
 	Result->SetStringField(TEXT("recovery"), Recovery);
 	Result->SetBoolField(TEXT("retrySafe"), bRetrySafe);
 	return JsonString(Result);
+}
+
+bool HasOnlyFields(
+	const TSharedPtr<FJsonObject>& Object,
+	const TArray<FString>& AllowedFields)
+{
+	if (!Object.IsValid()) return false;
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Object->Values)
+	{
+		if (!AllowedFields.Contains(Field.Key)) return false;
+	}
+	return true;
 }
 
 bool IsSafeIdentifier(const FString& Value)
@@ -82,6 +95,7 @@ bool ReadVector(
 	double Y;
 	double Z;
 	if (!Object->TryGetObjectField(Field, Vector)
+		|| !HasOnlyFields(*Vector, { TEXT("x"), TEXT("y"), TEXT("z") })
 		|| !(*Vector)->TryGetNumberField(TEXT("x"), X)
 		|| !(*Vector)->TryGetNumberField(TEXT("y"), Y)
 		|| !(*Vector)->TryGetNumberField(TEXT("z"), Z))
@@ -102,6 +116,7 @@ bool ReadRotation(
 	double Yaw;
 	double Roll;
 	if (!Object->TryGetObjectField(Field, Rotation)
+		|| !HasOnlyFields(*Rotation, { TEXT("pitch"), TEXT("yaw"), TEXT("roll") })
 		|| !(*Rotation)->TryGetNumberField(TEXT("pitch"), Pitch)
 		|| !(*Rotation)->TryGetNumberField(TEXT("yaw"), Yaw)
 		|| !(*Rotation)->TryGetNumberField(TEXT("roll"), Roll))
@@ -118,7 +133,8 @@ bool ReadBounds(
 	FVector& Extent,
 	FRotator& Rotation)
 {
-	return ReadVector(Object, TEXT("center"), Center)
+	return HasOnlyFields(Object, { TEXT("center"), TEXT("extent"), TEXT("rotation") })
+		&& ReadVector(Object, TEXT("center"), Center)
 		&& ReadVector(Object, TEXT("extent"), Extent)
 		&& ReadRotation(Object, TEXT("rotation"), Rotation)
 		&& Extent.X >= 0.0 && Extent.Y >= 0.0 && Extent.Z >= 0.0;
@@ -130,17 +146,61 @@ bool ReadPose(
 	FRotator& Rotation,
 	double& FieldOfView)
 {
-	return ReadVector(Pose, TEXT("location"), Location)
+	FString AspectRatio;
+	FString Projection;
+	return HasOnlyFields(Pose, {
+			TEXT("aspectRatio"),
+			TEXT("fieldOfViewDegrees"),
+			TEXT("location"),
+			TEXT("projection"),
+			TEXT("rotation")
+		})
+		&& Pose->TryGetStringField(TEXT("aspectRatio"), AspectRatio)
+		&& AspectRatio == TEXT("16:9")
+		&& Pose->TryGetStringField(TEXT("projection"), Projection)
+		&& Projection == TEXT("perspective")
+		&& ReadVector(Pose, TEXT("location"), Location)
 		&& ReadRotation(Pose, TEXT("rotation"), Rotation)
 		&& Pose->TryGetNumberField(TEXT("fieldOfViewDegrees"), FieldOfView)
+		&& FMath::IsFinite(FieldOfView)
 		&& FieldOfView >= 5.0 && FieldOfView <= 170.0;
 }
 
 AActor* FindActorByPath(UWorld* World, const FString& ActorPath)
 {
-	for (TActorIterator<AActor> It(World); It; ++It)
+	if (World == nullptr) return nullptr;
+	for (ULevel* Level : World->GetLevels())
 	{
-		if (It->GetPathName() == ActorPath) return *It;
+		if (Level == nullptr) continue;
+		for (AActor* Actor : Level->Actors)
+		{
+			if (Actor != nullptr && Actor->GetPathName() == ActorPath) return Actor;
+		}
+	}
+	return nullptr;
+}
+
+FString ActorGuidString(const AActor* Actor)
+{
+	return Actor == nullptr || !Actor->GetActorGuid().IsValid()
+		? FString()
+		: Actor->GetActorGuid().ToString(EGuidFormats::UniqueObjectGuid).ToLower();
+}
+
+AActor* FindActorByGuid(UWorld* World, const FString& ActorGuid)
+{
+	FGuid RequestedGuid;
+	if (World == nullptr || !FGuid::Parse(ActorGuid, RequestedGuid) || !RequestedGuid.IsValid())
+	{
+		return nullptr;
+	}
+	for (ULevel* Level : World->GetLevels())
+	{
+		if (Level == nullptr) continue;
+		for (AActor* Actor : Level->Actors)
+		{
+			if (Actor != nullptr && Actor->GetActorGuid() == RequestedGuid) return Actor;
+		}
 	}
 	return nullptr;
 }
@@ -203,6 +263,8 @@ void AddSelectionResult(
 	Bounds->SetObjectField(TEXT("rotation"), RotationJson(Actor->GetActorRotation()));
 	Result->SetStringField(TEXT("status"), TEXT("selected"));
 	Result->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+	const FString ActorGuid = ActorGuidString(Actor);
+	if (!ActorGuid.IsEmpty()) Result->SetStringField(TEXT("actorGuid"), ActorGuid);
 	Result->SetStringField(TEXT("displayName"), Actor->GetActorNameOrLabel());
 	Result->SetStringField(TEXT("mapPath"), Actor->GetWorld()->GetOutermost()->GetName());
 	Result->SetObjectField(TEXT("bounds"), Bounds);
@@ -636,7 +698,7 @@ void UUEShedCameraReviewLibrary::InspectReviewSelection(FString& ResultJson)
 	Contract->SetStringField(TEXT("name"), TEXT("ue-shed-review-selection"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 0);
+	Version->SetNumberField(TEXT("minor"), 1);
 	Contract->SetObjectField(TEXT("version"), Version);
 	Result->SetObjectField(TEXT("contract"), Contract);
 	auto Fail = [&](const TCHAR* Code, const TCHAR* Message, const TCHAR* Recovery)
@@ -683,7 +745,7 @@ void UUEShedCameraReviewLibrary::InspectReviewSubject(
 	Contract->SetStringField(TEXT("name"), TEXT("ue-shed-review-selection"));
 	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
 	Version->SetNumberField(TEXT("major"), 1);
-	Version->SetNumberField(TEXT("minor"), 0);
+	Version->SetNumberField(TEXT("minor"), 1);
 	Contract->SetObjectField(TEXT("version"), Version);
 	Result->SetObjectField(TEXT("contract"), Contract);
 	auto Fail = [&](const TCHAR* Code, const TCHAR* Message, const TCHAR* Recovery)
@@ -713,6 +775,51 @@ void UUEShedCameraReviewLibrary::InspectReviewSubject(
 	{
 		Fail(TEXT("subject_not_found"), TEXT("The persisted review subject was not found."),
 			TEXT("Restore the subject or discard this authoring session."));
+		return;
+	}
+	AddSelectionResult(Result, Actor, false);
+	ResultJson = JsonString(Result);
+}
+
+void UUEShedCameraReviewLibrary::InspectReviewSubjectByGuid(
+	const FString& ActorGuid,
+	FString& ResultJson)
+{
+	const TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	const TSharedRef<FJsonObject> Contract = MakeShared<FJsonObject>();
+	Contract->SetStringField(TEXT("name"), TEXT("ue-shed-review-selection"));
+	const TSharedRef<FJsonObject> Version = MakeShared<FJsonObject>();
+	Version->SetNumberField(TEXT("major"), 1);
+	Version->SetNumberField(TEXT("minor"), 1);
+	Contract->SetObjectField(TEXT("version"), Version);
+	Result->SetObjectField(TEXT("contract"), Contract);
+	auto Fail = [&](const TCHAR* Code, const TCHAR* Message, const TCHAR* Recovery)
+	{
+		Result->SetStringField(TEXT("status"), TEXT("failed"));
+		Result->SetStringField(TEXT("code"), Code);
+		Result->SetStringField(TEXT("message"), Message);
+		Result->SetStringField(TEXT("recovery"), Recovery);
+		Result->SetBoolField(TEXT("retrySafe"), true);
+		ResultJson = JsonString(Result);
+	};
+	if (GEditor == nullptr)
+	{
+		Fail(TEXT("editor_unavailable"), TEXT("The Unreal editor is unavailable."),
+			TEXT("Run spatial authoring in an editor process."));
+		return;
+	}
+	UWorld* World = GEditor->GetEditorWorldContext().World();
+	if (World == nullptr)
+	{
+		Fail(TEXT("map_mismatch"), TEXT("No editor world is open."),
+			TEXT("Open the expected Review Set map and resume again."));
+		return;
+	}
+	AActor* Actor = FindActorByGuid(World, ActorGuid);
+	if (Actor == nullptr)
+	{
+		Fail(TEXT("subject_not_found"), TEXT("The persisted review subject was not found."),
+			TEXT("Restore the authored actor or discard this authoring session."));
 		return;
 	}
 	AddSelectionResult(Result, Actor, false);
@@ -786,10 +893,11 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 {
 	FString OperationId;
 	FString ViewId;
+	int32 ResponseContractMinor = 0;
 	auto Fail = [&](const TCHAR* Code, const TCHAR* Message, const TCHAR* Recovery, bool bRetrySafe)
 	{
 		ResultJson = FailureJson(
-			OperationId, ViewId, Code, Message, Recovery, bRetrySafe);
+			OperationId, ViewId, ResponseContractMinor, Code, Message, Recovery, bRetrySafe);
 	};
 
 	if (RequestJson.Len() > 64 * 1024)
@@ -806,15 +914,19 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 			TEXT("Validate the request against contract version 1."), false);
 		return;
 	}
+	Request->TryGetStringField(TEXT("operationId"), OperationId);
+	Request->TryGetStringField(TEXT("viewId"), ViewId);
 	const TSharedPtr<FJsonObject>* Contract;
 	const TSharedPtr<FJsonObject>* Version;
 	FString ContractName;
 	double ContractMajor;
 	double RequestMinor = 0;
 	if (!Request->TryGetObjectField(TEXT("contract"), Contract)
+		|| !HasOnlyFields(*Contract, { TEXT("name"), TEXT("version") })
 		|| !(*Contract)->TryGetStringField(TEXT("name"), ContractName)
 		|| ContractName != TEXT("ue-shed-review-capture")
 		|| !(*Contract)->TryGetObjectField(TEXT("version"), Version)
+		|| !HasOnlyFields(*Version, { TEXT("major"), TEXT("minor") })
 		|| !(*Version)->TryGetNumberField(TEXT("major"), ContractMajor)
 		|| ContractMajor != 1)
 	{
@@ -822,21 +934,47 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 			TEXT("Negotiate a supported UE Shed Cameras capability."), false);
 		return;
 	}
-	(*Version)->TryGetNumberField(TEXT("minor"), RequestMinor);
-	if (RequestMinor < 0 || RequestMinor > 4 || RequestMinor != FMath::FloorToDouble(RequestMinor))
+	if (!(*Version)->TryGetNumberField(TEXT("minor"), RequestMinor)
+		|| RequestMinor < 0 || RequestMinor > 5
+		|| RequestMinor != FMath::FloorToDouble(RequestMinor))
 	{
 		Fail(TEXT("unsupported_contract"), TEXT("Review capture contract minor is unsupported."),
 			TEXT("Negotiate a supported UE Shed Cameras capability."), false);
 		return;
 	}
+	ResponseContractMinor = static_cast<int32>(RequestMinor);
 	const bool bProjectionRequested = RequestMinor >= 1;
 	const bool bCurrentRequest = RequestMinor >= 2;
 	const bool bRawVisibility = RequestMinor >= 3;
 	const bool bClearCompanionRequested = RequestMinor >= 4;
-	Request->TryGetStringField(TEXT("operationId"), OperationId);
-	Request->TryGetStringField(TEXT("viewId"), ViewId);
+	const bool bStableActorLocator = RequestMinor >= 5;
+	TArray<FString> AllowedRequestFields = {
+		TEXT("contract"),
+		TEXT("operationId"),
+		TEXT("viewId"),
+		TEXT("expectedMapPath"),
+		TEXT("subject"),
+		TEXT("resolution")
+	};
+	if (bCurrentRequest)
+	{
+		AllowedRequestFields.Add(TEXT("assessment"));
+		AllowedRequestFields.Add(TEXT("viewpoint"));
+	}
+	else
+	{
+		AllowedRequestFields.Add(TEXT("approvedPose"));
+	}
+	if (bClearCompanionRequested) AllowedRequestFields.Add(TEXT("clearCompanion"));
+	if (!HasOnlyFields(Request, AllowedRequestFields))
+	{
+		Fail(TEXT("invalid_contract"), TEXT("Review capture fields contradict the requested minor."),
+			TEXT("Remove fields that are not defined by the requested contract minor."), false);
+		return;
+	}
 	FGuid OperationGuid;
-	if (!FGuid::Parse(OperationId, OperationGuid) || !IsSafeIdentifier(ViewId))
+	if (!FGuid::Parse(OperationId, OperationGuid) || !OperationGuid.IsValid()
+		|| !IsSafeIdentifier(ViewId))
 	{
 		Fail(TEXT("invalid_identity"), TEXT("operationId or viewId is invalid."),
 			TEXT("Use a UUID operationId and a safe Review View identifier."), false);
@@ -867,6 +1005,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 
 	const TSharedPtr<FJsonObject>* Subject;
 	FString SubjectKind;
+	FString ActorGuid;
 	FString ActorPath;
 	FVector SubjectCenter;
 	FVector SubjectExtent;
@@ -876,12 +1015,16 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		|| !(*Subject)->TryGetStringField(TEXT("kind"), SubjectKind))
 	{
 		Fail(TEXT("unsupported_subject"), TEXT("The Review View subject is unsupported."),
-			TEXT("Use an actor_path or oriented_bounds subject."), false);
+			TEXT("Use an actor_guid, actor_path, or oriented_bounds subject."), false);
 		return;
 	}
 	if (SubjectKind == TEXT("actor_path"))
 	{
-		if (!(*Subject)->TryGetStringField(TEXT("actorPath"), ActorPath))
+		if (!HasOnlyFields(*Subject, {
+				TEXT("kind"), TEXT("actorPath"), TEXT("diagnosticLabel")
+			})
+			|| !(*Subject)->TryGetStringField(TEXT("actorPath"), ActorPath)
+			|| ActorPath.IsEmpty())
 		{
 			Fail(TEXT("invalid_subject"), TEXT("The actor subject has no actorPath."),
 				TEXT("Validate the Review Set capture subject."), false);
@@ -896,10 +1039,42 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		}
 		SubjectActor->GetActorBounds(false, SubjectCenter, SubjectExtent, true);
 	}
+	else if (SubjectKind == TEXT("actor_guid") && bStableActorLocator)
+	{
+		FGuid ParsedActorGuid;
+		FString LastKnownActorPath;
+		if (!HasOnlyFields(*Subject, {
+				TEXT("kind"),
+				TEXT("actorGuid"),
+				TEXT("lastKnownActorPath"),
+				TEXT("diagnosticLabel")
+			})
+			|| !(*Subject)->TryGetStringField(TEXT("actorGuid"), ActorGuid)
+			|| !FGuid::Parse(ActorGuid, ParsedActorGuid)
+			|| !ParsedActorGuid.IsValid()
+			|| ((*Subject)->TryGetStringField(TEXT("lastKnownActorPath"), LastKnownActorPath)
+				&& !LastKnownActorPath.StartsWith(TEXT("/Game/"))))
+		{
+			Fail(TEXT("invalid_subject"), TEXT("The actor subject has no actorGuid."),
+				TEXT("Validate the Review Set capture subject."), false);
+			return;
+		}
+		SubjectActor = FindActorByGuid(World, ActorGuid);
+		if (SubjectActor == nullptr)
+		{
+			Fail(TEXT("subject_not_found"), TEXT("The Review View subject was not found."),
+				TEXT("Restore the authored actor or update the Review View subject."), true);
+			return;
+		}
+		ActorGuid = ActorGuidString(SubjectActor);
+		ActorPath = SubjectActor->GetPathName();
+		SubjectActor->GetActorBounds(false, SubjectCenter, SubjectExtent, true);
+	}
 	else if (SubjectKind == TEXT("oriented_bounds") && bCurrentRequest)
 	{
 		const TSharedPtr<FJsonObject>* Bounds;
-		if (!(*Subject)->TryGetObjectField(TEXT("bounds"), Bounds)
+		if (!HasOnlyFields(*Subject, { TEXT("kind"), TEXT("bounds") })
+			|| !(*Subject)->TryGetObjectField(TEXT("bounds"), Bounds)
 			|| !ReadBounds(*Bounds, SubjectCenter, SubjectExtent, SubjectBoundsRotation))
 		{
 			Fail(TEXT("invalid_subject"), TEXT("The oriented bounds are invalid."),
@@ -910,7 +1085,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	else
 	{
 		Fail(TEXT("unsupported_subject"), TEXT("The Review View subject is unsupported."),
-			TEXT("Use an actor_path or oriented_bounds subject."), false);
+			TEXT("Use an actor_guid, actor_path, or oriented_bounds subject."), false);
 		return;
 	}
 
@@ -918,8 +1093,40 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	FVector Location;
 	FRotator Rotation;
 	double FieldOfView;
+	FString AssessmentMethod = TEXT("automatic");
+	FString SamplePreset = TEXT("standard");
 	if (bCurrentRequest)
 	{
+		const TSharedPtr<FJsonObject>* Assessment;
+		if (!Request->TryGetObjectField(TEXT("assessment"), Assessment)
+			|| !(*Assessment)->TryGetStringField(TEXT("method"), AssessmentMethod))
+		{
+			Fail(TEXT("invalid_assessment"), TEXT("The visibility assessment is invalid."),
+				TEXT("Provide a supported assessment method for contract minor 2 or newer."), false);
+			return;
+		}
+		if (AssessmentMethod == TEXT("ray_samples"))
+		{
+			if (!HasOnlyFields(*Assessment, { TEXT("method"), TEXT("samplePreset") })
+				|| !(*Assessment)->TryGetStringField(TEXT("samplePreset"), SamplePreset)
+				|| (SamplePreset != TEXT("sparse")
+					&& SamplePreset != TEXT("standard")
+					&& SamplePreset != TEXT("dense")))
+			{
+				Fail(TEXT("invalid_assessment"), TEXT("The ray assessment preset is invalid."),
+					TEXT("Use sparse, standard, or dense ray samples."), false);
+				return;
+			}
+		}
+		else if (!HasOnlyFields(*Assessment, { TEXT("method") })
+			|| (AssessmentMethod != TEXT("automatic")
+				&& AssessmentMethod != TEXT("subject_mask")
+				&& AssessmentMethod != TEXT("depth_compare")))
+		{
+			Fail(TEXT("invalid_assessment"), TEXT("The visibility assessment method is unsupported."),
+				TEXT("Use automatic, ray_samples, subject_mask, or depth_compare."), false);
+			return;
+		}
 		const TSharedPtr<FJsonObject>* Viewpoint;
 		FString ViewpointKind;
 		if (!Request->TryGetObjectField(TEXT("viewpoint"), Viewpoint)
@@ -931,7 +1138,8 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		}
 		if (ViewpointKind == TEXT("world_fixed"))
 		{
-			if (!(*Viewpoint)->TryGetObjectField(TEXT("approvedPose"), Pose)
+			if (!HasOnlyFields(*Viewpoint, { TEXT("kind"), TEXT("approvedPose") })
+				|| !(*Viewpoint)->TryGetObjectField(TEXT("approvedPose"), Pose)
 				|| !ReadPose(*Pose, Location, Rotation, FieldOfView))
 			{
 				Fail(TEXT("invalid_pose"), TEXT("The approved camera pose is invalid."),
@@ -943,11 +1151,26 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		{
 			FVector RelativeLocation;
 			FRotator RelativeRotation;
-			if (!(*Viewpoint)->TryGetObjectField(TEXT("relativePose"), Pose)
+			const TSharedPtr<FJsonObject>* TargetSnapshot;
+			FVector SnapshotLocation;
+			FRotator SnapshotRotation;
+			if (!HasOnlyFields(*Viewpoint, {
+					TEXT("kind"), TEXT("relativePose"), TEXT("targetSnapshot")
+				})
+				|| !(*Viewpoint)->TryGetObjectField(TEXT("relativePose"), Pose)
 				|| !ReadPose(*Pose, RelativeLocation, RelativeRotation, FieldOfView))
 			{
 				Fail(TEXT("invalid_pose"), TEXT("The relative camera pose is invalid."),
 					TEXT("Validate the finite target-relative perspective pose."), false);
+				return;
+			}
+			if (!(*Viewpoint)->TryGetObjectField(TEXT("targetSnapshot"), TargetSnapshot)
+				|| !HasOnlyFields(*TargetSnapshot, { TEXT("location"), TEXT("rotation") })
+				|| !ReadVector(*TargetSnapshot, TEXT("location"), SnapshotLocation)
+				|| !ReadRotation(*TargetSnapshot, TEXT("rotation"), SnapshotRotation))
+			{
+				Fail(TEXT("invalid_viewpoint"), TEXT("The target snapshot is invalid."),
+					TEXT("Provide the saved target location and rotation."), false);
 				return;
 			}
 			const FTransform TargetTransform(
@@ -975,6 +1198,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	double WidthValue;
 	double HeightValue;
 	if (!Request->TryGetObjectField(TEXT("resolution"), Resolution)
+		|| !HasOnlyFields(*Resolution, { TEXT("width"), TEXT("height") })
 		|| !(*Resolution)->TryGetNumberField(TEXT("width"), WidthValue)
 		|| !(*Resolution)->TryGetNumberField(TEXT("height"), HeightValue))
 	{
@@ -1026,6 +1250,15 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 			}
 			if (ClearStrategy == TEXT("hide_explicit"))
 			{
+				if (!HasOnlyFields(*ClearCompanion, {
+						TEXT("actors"), TEXT("status"), TEXT("strategy")
+					}))
+				{
+					Fail(TEXT("invalid_clear_companion"),
+						TEXT("Explicit Clear capture has contradictory fields."),
+						TEXT("Use only actors, status, and strategy."), false);
+					return;
+				}
 				const TArray<TSharedPtr<FJsonValue>>* ActorValues;
 				if (!(*ClearCompanion)->TryGetArrayField(TEXT("actors"), ActorValues)
 					|| ActorValues->IsEmpty() || ActorValues->Num() > 32)
@@ -1052,12 +1285,26 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 					ExplicitClearActorPaths.Add(ActorPathValue);
 				}
 			}
+			else if (!HasOnlyFields(*ClearCompanion, { TEXT("status"), TEXT("strategy") }))
+			{
+				Fail(TEXT("invalid_clear_companion"),
+					TEXT("Isolate-target Clear capture has contradictory fields."),
+					TEXT("Use only status and strategy."), false);
+				return;
+			}
 		}
 		else if (ClearCompanionStatus != TEXT("not_requested"))
 		{
 			Fail(TEXT("invalid_clear_companion"),
 				TEXT("The Clear companion status is unsupported."),
 				TEXT("Use not_requested or requested for the optional Clear companion."), false);
+			return;
+		}
+		else if (!HasOnlyFields(*ClearCompanion, { TEXT("status") }))
+		{
+			Fail(TEXT("invalid_clear_companion"),
+				TEXT("The not-requested Clear instruction has contradictory fields."),
+				TEXT("Use only status for a not-requested Clear companion."), false);
 			return;
 		}
 	}
@@ -1091,14 +1338,6 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	TSharedPtr<FJsonObject> Visibility;
 	if (bCurrentRequest)
 	{
-		const TSharedPtr<FJsonObject>* Assessment;
-		FString AssessmentMethod = TEXT("automatic");
-		FString SamplePreset = TEXT("standard");
-		if (Request->TryGetObjectField(TEXT("assessment"), Assessment))
-		{
-			(*Assessment)->TryGetStringField(TEXT("method"), AssessmentMethod);
-			(*Assessment)->TryGetStringField(TEXT("samplePreset"), SamplePreset);
-		}
 		Visibility = AssessVisibility(
 			World,
 			SubjectActor,
@@ -1290,10 +1529,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	ResultContract->SetStringField(TEXT("name"), TEXT("ue-shed-review-capture"));
 	const TSharedRef<FJsonObject> ResultVersion = MakeShared<FJsonObject>();
 	ResultVersion->SetNumberField(TEXT("major"), 1);
-	ResultVersion->SetNumberField(
-		TEXT("minor"),
-		bClearCompanionRequested ? 4 : bRawVisibility ? 3 : bCurrentRequest ? 2
-			: bProjectionRequested ? 1 : 0);
+	ResultVersion->SetNumberField(TEXT("minor"), RequestMinor);
 	ResultContract->SetObjectField(TEXT("version"), ResultVersion);
 	Result->SetObjectField(TEXT("contract"), ResultContract);
 	Result->SetStringField(TEXT("status"), TEXT("captured"));
@@ -1304,7 +1540,11 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		const TSharedRef<FJsonObject> ResolvedSubject = MakeShared<FJsonObject>();
 		if (SubjectActor != nullptr)
 		{
-			ResolvedSubject->SetStringField(TEXT("kind"), TEXT("actor_path"));
+			ResolvedSubject->SetStringField(TEXT("kind"), SubjectKind);
+			if (SubjectKind == TEXT("actor_guid"))
+			{
+				ResolvedSubject->SetStringField(TEXT("actorGuid"), ActorGuid);
+			}
 			ResolvedSubject->SetStringField(TEXT("actorPath"), SubjectActor->GetPathName());
 			const TSharedRef<FJsonObject> Transform = MakeShared<FJsonObject>();
 			Transform->SetObjectField(

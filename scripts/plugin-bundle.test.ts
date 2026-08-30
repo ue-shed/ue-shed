@@ -125,6 +125,10 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 		assert.equal(first.manifest.artifact.sha256, second.manifest.artifact.sha256);
 		assert.equal(first.manifest.artifact.bytes, firstArchive.byteLength);
 		assert.equal(first.manifest.schemaVersion, 3);
+		assert.ok("contracts" in first.manifest && "packages" in first.manifest);
+		if (!("contracts" in first.manifest) || !("packages" in first.manifest)) {
+			throw new Error("Attested candidate did not produce a schema-v3 source manifest.");
+		}
 		assert.deepEqual(first.manifest.contracts, [
 			{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }
 		]);

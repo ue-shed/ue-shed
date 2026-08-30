@@ -90,10 +90,10 @@ bool ReadVector(
 	const TCHAR* Field,
 	FVector& Result)
 {
-	const TSharedPtr<FJsonObject>* Vector;
-	double X;
-	double Y;
-	double Z;
+	const TSharedPtr<FJsonObject>* Vector = nullptr;
+	double X = 0;
+	double Y = 0;
+	double Z = 0;
 	if (!Object->TryGetObjectField(Field, Vector)
 		|| !HasOnlyFields(*Vector, { TEXT("x"), TEXT("y"), TEXT("z") })
 		|| !(*Vector)->TryGetNumberField(TEXT("x"), X)
@@ -111,10 +111,10 @@ bool ReadRotation(
 	const TCHAR* Field,
 	FRotator& Result)
 {
-	const TSharedPtr<FJsonObject>* Rotation;
-	double Pitch;
-	double Yaw;
-	double Roll;
+	const TSharedPtr<FJsonObject>* Rotation = nullptr;
+	double Pitch = 0;
+	double Yaw = 0;
+	double Roll = 0;
 	if (!Object->TryGetObjectField(Field, Rotation)
 		|| !HasOnlyFields(*Rotation, { TEXT("pitch"), TEXT("yaw"), TEXT("roll") })
 		|| !(*Rotation)->TryGetNumberField(TEXT("pitch"), Pitch)
@@ -916,10 +916,10 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	}
 	Request->TryGetStringField(TEXT("operationId"), OperationId);
 	Request->TryGetStringField(TEXT("viewId"), ViewId);
-	const TSharedPtr<FJsonObject>* Contract;
-	const TSharedPtr<FJsonObject>* Version;
+	const TSharedPtr<FJsonObject>* Contract = nullptr;
+	const TSharedPtr<FJsonObject>* Version = nullptr;
 	FString ContractName;
-	double ContractMajor;
+	double ContractMajor = 0;
 	double RequestMinor = 0;
 	if (!Request->TryGetObjectField(TEXT("contract"), Contract)
 		|| !HasOnlyFields(*Contract, { TEXT("name"), TEXT("version") })
@@ -1092,7 +1092,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	const TSharedPtr<FJsonObject>* Pose;
 	FVector Location;
 	FRotator Rotation;
-	double FieldOfView;
+	double FieldOfView = 0;
 	FString AssessmentMethod = TEXT("automatic");
 	FString SamplePreset = TEXT("standard");
 	if (bCurrentRequest)
@@ -1195,8 +1195,8 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		return;
 	}
 	const TSharedPtr<FJsonObject>* Resolution;
-	double WidthValue;
-	double HeightValue;
+	double WidthValue = 0;
+	double HeightValue = 0;
 	if (!Request->TryGetObjectField(TEXT("resolution"), Resolution)
 		|| !HasOnlyFields(*Resolution, { TEXT("width"), TEXT("height") })
 		|| !(*Resolution)->TryGetNumberField(TEXT("width"), WidthValue)

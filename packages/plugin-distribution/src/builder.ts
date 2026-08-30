@@ -841,7 +841,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											)
 									});
 									const artifactPath = join(publishStage, names.artifact);
-					const artifact = yield* Effect.tryPromise({
+									const artifact = yield* Effect.tryPromise({
 										try: () =>
 											writeDeterministicArchive({
 												destination: artifactPath,
@@ -858,36 +858,36 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 														`Could not create compiled archive: ${String(cause)}`,
 														"Check output limits and retry."
 													)
-					});
-					const nativeFiles = artifact.files.filter((file) =>
-						/\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(file.path)
-					);
-					const modules = yield* Effect.tryPromise({
-						try: () =>
-							compiledModuleAttestations({
-								buildId: request.artifact.engineBuildId,
-								files: artifact.files,
-								graphRoot,
-								platform: request.artifact.platform,
-								plugins: state.graph.plugins
-							}),
-						catch: (cause) =>
-							invalid(
-								"validation",
-								`Could not attest compiled modules: ${String(cause)}`,
-								"Inspect UAT module output and rebuild."
-							)
-					});
-					if (state.sourceManifest.schemaVersion !== 3) {
-						return yield* invalid(
-							"validation",
-							"Attested compiled releases require a source manifest v3.",
-							"Build the source bundle from the matching release candidate."
-						);
-					}
-					const manifest = yield* Schema.decodeUnknownEffect(
-						CompiledPluginBundleManifestV3
-					)({
+									});
+									const nativeFiles = artifact.files.filter((file) =>
+										/\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(file.path)
+									);
+									const modules = yield* Effect.tryPromise({
+										try: () =>
+											compiledModuleAttestations({
+												buildId: request.artifact.engineBuildId,
+												files: artifact.files,
+												graphRoot,
+												platform: request.artifact.platform,
+												plugins: state.graph.plugins
+											}),
+										catch: (cause) =>
+											invalid(
+												"validation",
+												`Could not attest compiled modules: ${String(cause)}`,
+												"Inspect UAT module output and rebuild."
+											)
+									});
+									if (state.sourceManifest.schemaVersion !== 3) {
+										return yield* invalid(
+											"validation",
+											"Attested compiled releases require a source manifest v3.",
+											"Build the source bundle from the matching release candidate."
+										);
+									}
+									const manifest = yield* Schema.decodeUnknownEffect(
+										CompiledPluginBundleManifestV3
+									)({
 										artifact: {
 											bytes: artifact.bytes,
 											id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
@@ -895,7 +895,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											path: names.artifact,
 											sha256: artifact.digest
 										},
-						build: {
+										build: {
 											builder: "@ue-shed/plugin-distribution",
 											builderVersion: "1",
 											compiler: request.compiler,
@@ -913,30 +913,30 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 												request.expectedSourceArtifactSha256,
 											sourceManifestSha256:
 												request.expectedSourceManifestSha256
-						},
-						buildRecipe: [
-							"ue-shed plugins build",
-							`--plugin ${request.pluginIds.join(" --plugin ")}`,
-							`--unreal ${request.artifact.unrealVersion}`,
-							`--build-id ${request.artifact.engineBuildId}`,
-							`--platform ${request.artifact.platform}`,
-							`--architecture ${request.artifact.architecture}`,
-							`--compiler ${request.compiler.compiler}`,
-							`--compiler-version ${request.compiler.compilerVersion}`,
-							`--toolchain \"${request.compiler.toolchain}\"`,
-							`--toolchain-version ${request.compiler.toolchainVersion}`,
-							`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
-							`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
-						].join(" "),
-						compatibility: { ...request.artifact, kind: "compiled" },
-						contracts: state.sourceManifest.contracts,
-						modules,
-						nativeFiles,
-						packages: state.sourceManifest.packages,
+										},
+										buildRecipe: [
+											"ue-shed plugins build",
+											`--plugin ${request.pluginIds.join(" --plugin ")}`,
+											`--unreal ${request.artifact.unrealVersion}`,
+											`--build-id ${request.artifact.engineBuildId}`,
+											`--platform ${request.artifact.platform}`,
+											`--architecture ${request.artifact.architecture}`,
+											`--compiler ${request.compiler.compiler}`,
+											`--compiler-version ${request.compiler.compilerVersion}`,
+											`--toolchain "${request.compiler.toolchain}"`,
+											`--toolchain-version ${request.compiler.toolchainVersion}`,
+											`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
+											`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
+										].join(" "),
+										compatibility: { ...request.artifact, kind: "compiled" },
+										contracts: state.sourceManifest.contracts,
+										modules,
+										nativeFiles,
+										packages: state.sourceManifest.packages,
 										plugins: state.graph.plugins,
 										provenance: state.sourceManifest.provenance,
 										releaseVersion: state.sourceManifest.releaseVersion,
-						schemaVersion: 3
+										schemaVersion: 3
 									}).pipe(
 										Effect.mapError(() =>
 											invalid(

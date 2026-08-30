@@ -14,6 +14,7 @@ import { gzipSync, type ZlibOptions } from "node:zlib";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { isJsonNumber, isJsonObject, isJsonString, parseJsonObject } from "./json.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const defaultPluginRoot = join(repositoryRoot, "unreal", "Plugins");
@@ -436,44 +437,60 @@ async function candidateProvenance(
 	}
 	const resolvedPath = resolve(path);
 	const raw = await readFile(resolvedPath, "utf8");
-	// SAFETY: the candidate's version fields are checked before they influence bundle metadata.
-	const candidate = JSON.parse(raw) as {
-		readonly candidateVersion?: string;
-		readonly version?: string;
-		readonly packages?: ReadonlyArray<{
-			readonly bytes?: number;
-			readonly filename?: string;
-			readonly name?: string;
-			readonly sha256?: string;
-			readonly version?: string;
-		}>;
-	};
-	const version = candidate.candidateVersion ?? candidate.version;
+	const candidate = parseJsonObject(raw);
+	const versionValue = candidate.candidateVersion ?? candidate.version;
+	if (versionValue !== undefined && !isJsonString(versionValue)) {
+		throw new Error("Candidate manifest version must be a string.");
+	}
+	const version = versionValue;
 	if (version && version !== releaseVersion) {
 		throw new Error(
 			`Candidate manifest version ${version} does not match plugin release ${releaseVersion}.`
 		);
 	}
-	if (Array.isArray(candidate.packages)) {
-		const mismatched = candidate.packages.filter((entry) => entry?.version !== releaseVersion);
-		if (mismatched.length > 0) {
-			throw new Error(
-				`Candidate package manifest contains versions other than ${releaseVersion}.`
-			);
+	let packages:
+		| ReadonlyArray<{
+				readonly bytes: number;
+				readonly filename: string;
+				readonly name: string;
+				readonly sha256: string;
+				readonly version: string;
+		  }>
+		| undefined;
+	if (candidate.packages !== undefined) {
+		if (!Array.isArray(candidate.packages)) {
+			throw new Error("Candidate package provenance must be an array.");
 		}
-		for (const entry of candidate.packages) {
+		packages = candidate.packages.map((value) => {
+			if (!isJsonObject(value)) {
+				throw new Error("Candidate package provenance must be an object.");
+			}
+			const { bytes, filename, name, sha256, version: packageVersion } = value;
 			if (
-				typeof entry.name !== "string" ||
-				typeof entry.filename !== "string" ||
-				typeof entry.bytes !== "number" ||
-				!Number.isSafeInteger(entry.bytes) ||
-				entry.bytes <= 0 ||
-				typeof entry.sha256 !== "string" ||
-				!(/^[a-f0-9]{64}$/u.test(entry.sha256) || /^sha256:[a-f0-9]{64}$/u.test(entry.sha256))
+				!isJsonString(name) ||
+				!isJsonString(filename) ||
+				!isJsonNumber(bytes) ||
+				!Number.isSafeInteger(bytes) ||
+				bytes <= 0 ||
+				!isJsonString(sha256) ||
+				!isJsonString(packageVersion) ||
+				!(/^[a-f0-9]{64}$/u.test(sha256) || /^sha256:[a-f0-9]{64}$/u.test(sha256))
 			) {
 				throw new Error("Candidate package manifest has incomplete package provenance.");
 			}
-		}
+			if (packageVersion !== releaseVersion) {
+				throw new Error(
+					`Candidate package manifest contains version ${packageVersion}, expected ${releaseVersion}.`
+				);
+			}
+			return {
+				bytes,
+				filename,
+				name,
+				sha256: sha256.startsWith("sha256:") ? sha256 : `sha256:${sha256}`,
+				version: packageVersion
+			};
+		});
 	}
 	const relativeManifestPath = toPosix(relative(outputDirectory, resolvedPath));
 	const siblingManifestPath = toPosix(relative(dirname(outputDirectory), resolvedPath));
@@ -489,15 +506,7 @@ async function candidateProvenance(
 			manifestPath,
 			sha256: `sha256:${createHash("sha256").update(raw).digest("hex")}`
 		},
-		packages: candidate.packages?.map((entry) => ({
-			bytes: entry.bytes!,
-			filename: entry.filename!,
-			name: entry.name!,
-			sha256: entry.sha256!.startsWith("sha256:")
-				? entry.sha256!
-				: `sha256:${entry.sha256!}`,
-			version: entry.version!
-		}))
+		packages
 	};
 }
 

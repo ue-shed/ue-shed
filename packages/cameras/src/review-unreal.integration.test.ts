@@ -734,7 +734,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		} as const;
 		for (const minor of [0, 1, 2, 3, 4, 5]) {
 			const operationId = randomUUID();
-			const request: Schema.JsonObject = {
+			let request: Schema.JsonObject = {
 				contract: {
 					name: "ue-shed-review-capture",
 					version: { major: 1, minor }
@@ -743,15 +743,19 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 				operationId,
 				resolution: { height: 90, width: 160 },
 				subject: { actorPath: subjectPath, kind: "actor_path" },
-				viewId: `compatible-minor-${minor}`,
-				...(minor < 2
-					? { approvedPose }
+				viewId: `compatible-minor-${minor}`
+			};
+			request =
+				minor < 2
+					? { ...request, approvedPose }
 					: {
+							...request,
 							assessment: { method: "automatic" },
 							viewpoint: { approvedPose, kind: "world_fixed" }
-						}),
-				...(minor >= 4 ? { clearCompanion: { status: "not_requested" } } : {})
-			};
+						};
+			if (minor >= 4) {
+				request = { ...request, clearCompanion: { status: "not_requested" } };
+			}
 			const response = await rawCaptureCall(request);
 			expect(response).toMatchObject({
 				code: "map_mismatch",

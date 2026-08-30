@@ -186,9 +186,7 @@ async function fixture() {
 			kind: "source",
 			unrealVersionRange: { maximum: "5.7", minimum: "5.7" }
 		},
-		contracts: [
-			{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }
-		],
+		contracts: [{ name: "ue-shed-review-capture", version: { major: 1, minor: 5 } }],
 		packages: [
 			{
 				bytes: 1024,

@@ -469,7 +469,9 @@ export async function extractPluginArchiveToDirectory(
 				}
 				for (const path of nativePaths) {
 					if (attested.get(path) !== files[path]) {
-						throw new Error(`Compiled archive digest does not match native-file attestation: ${path}`);
+						throw new Error(
+							`Compiled archive digest does not match native-file attestation: ${path}`
+						);
 					}
 				}
 			}

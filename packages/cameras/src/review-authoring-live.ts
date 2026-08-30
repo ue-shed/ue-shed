@@ -9,8 +9,8 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
 import {
 	ReviewCaptureRequest,
-	ReviewSubjectActorPath,
 	ReviewViewId,
+	SubjectLocator,
 	decodeReviewSelectionResponse,
 	decodeReviewSubjectInspectionResponse,
 	type CaptureProfile,
@@ -74,8 +74,7 @@ function remoteReviewCall(
 			functionName: args.functionName,
 			objectPath: reviewLibraryPath,
 			operation: `camera.review.authoring.${args.functionName}`,
-			parameters: args.parameters,
-			timeout: "5 seconds"
+			parameters: args.parameters
 		})
 		.pipe(
 			Effect.mapError((error) => reviewConnectionError(args.endpoint, args.operation, error))
@@ -94,10 +93,7 @@ export interface PreviewReviewCandidateArgs {
 	readonly endpoint: string;
 	readonly mapPath: string;
 	readonly profile: CaptureProfile;
-	readonly subject: {
-		readonly actorPath: string;
-		readonly displayName: string;
-	};
+	readonly subject: typeof SubjectLocator.Type;
 }
 
 export interface ReviewAuthoringApi {
@@ -105,8 +101,8 @@ export interface ReviewAuthoringApi {
 		endpoint: string
 	) => Effect.Effect<ReviewSelectionResponse, ReviewAuthoringConnectionError>;
 	readonly inspectSubject: (args: {
-		readonly actorPath: string;
 		readonly endpoint: string;
+		readonly subject: typeof SubjectLocator.Type;
 	}) => Effect.Effect<ReviewSubjectInspectionResponse, ReviewAuthoringConnectionError>;
 	readonly previewCandidate: (
 		args: PreviewReviewCandidateArgs
@@ -150,17 +146,15 @@ export const ReviewAuthoringLive = Layer.effect(
 		});
 
 		const inspectSubject = Effect.fn("ReviewAuthoring.inspectSubject")(function* (args: {
-			readonly actorPath: string;
 			readonly endpoint: string;
+			readonly subject: typeof SubjectLocator.Type;
 		}) {
-			const actorPath = yield* Schema.decodeUnknownEffect(ReviewSubjectActorPath)(
-				args.actorPath
-			).pipe(
+			const subject = yield* Schema.decodeUnknownEffect(SubjectLocator)(args.subject).pipe(
 				Effect.mapError(
 					(cause) =>
 						new ReviewAuthoringConnectionError({
 							endpoint: args.endpoint,
-							message: `Invalid persisted subject actor path: ${String(cause)}`,
+							message: `Invalid persisted subject locator: ${String(cause)}`,
 							operation: "inspect_subject",
 							recovery:
 								"Discard the malformed authoring session and create a new one.",
@@ -170,9 +164,15 @@ export const ReviewAuthoringLive = Layer.effect(
 			);
 			const value = yield* remoteReviewCall(client, {
 				endpoint: args.endpoint,
-				functionName: "InspectReviewSubject",
+				functionName:
+					subject.kind === "actor_guid"
+						? "InspectReviewSubjectByGuid"
+						: "InspectReviewSubject",
 				operation: "inspect_subject",
-				parameters: { ActorPath: actorPath }
+				parameters:
+					subject.kind === "actor_guid"
+						? { ActorGuid: subject.actorGuid }
+						: { ActorPath: subject.actorPath }
 			});
 			return yield* decodeReviewSubjectInspectionResponse(value).pipe(
 				Effect.mapError(
@@ -200,20 +200,21 @@ export const ReviewAuthoringLive = Layer.effect(
 			const response = yield* captureReviewView({
 				endpoint: args.endpoint,
 				request: ReviewCaptureRequest.make({
-					approvedPose: args.candidate.approvedPose,
+					assessment: { method: "automatic" },
+					clearCompanion: { status: "not_requested" },
 					contract: {
 						name: "ue-shed-review-capture",
-						version: { major: 1, minor: 1 }
+						version: { major: 1, minor: 5 }
 					},
 					expectedMapPath: args.mapPath,
 					operationId,
 					resolution: args.profile.resolution,
-					subject: {
-						actorPath: args.subject.actorPath,
-						diagnosticLabel: args.subject.displayName,
-						kind: "actor_path"
-					},
-					viewId: previewViewId
+					subject: args.subject,
+					viewId: previewViewId,
+					viewpoint: {
+						approvedPose: args.candidate.approvedPose,
+						kind: "world_fixed"
+					}
 				})
 			}).pipe(
 				Effect.provideService(RemoteControlClient, client),

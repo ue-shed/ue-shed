@@ -46,7 +46,28 @@
 				"mapPackageDirtyAfter": { "type": "boolean" },
 				"subjectProjection": { "$ref": "#/$defs/subjectProjection" },
 				"visibility": { "$ref": "#/$defs/visibilityMeasurement" }
-			}
+			},
+			"allOf": [
+				{
+					"if": {
+						"properties": {
+							"resolvedSubject": {
+								"required": ["kind"],
+								"properties": { "kind": { "const": "actor_guid" } }
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"contract": {
+								"properties": {
+									"version": { "properties": { "minor": { "const": 5 } } }
+								}
+							}
+						}
+					}
+				}
+			]
 		},
 		{
 			"type": "object",
@@ -73,7 +94,7 @@
 				"status": { "const": "captured" },
 				"operationId": { "type": "string", "minLength": 1 },
 				"viewId": { "$ref": "#/$defs/safeId" },
-				"resolvedSubject": { "$ref": "#/$defs/resolvedSubject" },
+				"resolvedSubject": { "$ref": "#/$defs/resolvedSubjectPrevious" },
 				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
 				"mapPath": { "type": "string", "minLength": 1 },
 				"stagingPath": { "type": "string", "minLength": 1 },
@@ -111,7 +132,7 @@
 				"status": { "const": "captured" },
 				"operationId": { "type": "string", "minLength": 1 },
 				"viewId": { "$ref": "#/$defs/safeId" },
-				"resolvedSubject": { "$ref": "#/$defs/resolvedSubject" },
+				"resolvedSubject": { "$ref": "#/$defs/resolvedSubjectPrevious" },
 				"effectiveWorldPose": { "$ref": "#/$defs/pose" },
 				"mapPath": { "type": "string", "minLength": 1 },
 				"stagingPath": { "type": "string", "minLength": 1 },
@@ -216,7 +237,7 @@
 					"required": ["major", "minor"],
 					"properties": {
 						"major": { "const": 1 },
-						"minor": { "const": 4 }
+						"minor": { "enum": [4, 5] }
 					}
 				}
 			}
@@ -267,7 +288,7 @@
 					"required": ["major", "minor"],
 					"properties": {
 						"major": { "const": 1 },
-						"minor": { "type": "integer", "minimum": 0, "maximum": 4 }
+						"minor": { "type": "integer", "minimum": 0, "maximum": 5 }
 					}
 				}
 			}
@@ -316,6 +337,59 @@
 			}
 		},
 		"resolvedSubject": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "actorGuid", "actorPath", "transform"],
+					"properties": {
+						"kind": { "const": "actor_guid" },
+						"actorGuid": {
+							"type": "string",
+							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+						},
+						"actorPath": { "type": "string", "minLength": 1 },
+						"transform": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["location", "rotation"],
+							"properties": {
+								"location": { "$ref": "#/$defs/vector" },
+								"rotation": { "$ref": "#/$defs/rotation" }
+							}
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "actorPath", "transform"],
+					"properties": {
+						"kind": { "const": "actor_path" },
+						"actorPath": { "type": "string", "minLength": 1 },
+						"transform": {
+							"type": "object",
+							"additionalProperties": false,
+							"required": ["location", "rotation"],
+							"properties": {
+								"location": { "$ref": "#/$defs/vector" },
+								"rotation": { "$ref": "#/$defs/rotation" }
+							}
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "bounds"],
+					"properties": {
+						"kind": { "const": "oriented_bounds" },
+						"bounds": { "$ref": "#/$defs/bounds" }
+					}
+				}
+			]
+		},
+		"resolvedSubjectPrevious": {
 			"oneOf": [
 				{
 					"type": "object",

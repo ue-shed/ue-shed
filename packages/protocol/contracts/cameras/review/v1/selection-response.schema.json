@@ -10,6 +10,10 @@
 			"properties": {
 				"contract": { "$ref": "#/$defs/contract" },
 				"status": { "const": "selected" },
+				"actorGuid": {
+					"type": "string",
+					"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+				},
 				"actorPath": { "type": "string", "minLength": 1 },
 				"displayName": { "type": "string", "minLength": 1 },
 				"mapPath": { "type": "string", "minLength": 1 },

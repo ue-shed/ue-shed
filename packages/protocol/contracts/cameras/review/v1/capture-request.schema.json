@@ -18,7 +18,7 @@
 					"required": ["major", "minor"],
 					"properties": {
 						"major": { "const": 1 },
-						"minor": { "type": "integer", "minimum": 0, "maximum": 4 }
+						"minor": { "type": "integer", "minimum": 0, "maximum": 5 }
 					}
 				}
 			}
@@ -28,6 +28,25 @@
 		"expectedMapPath": { "type": "string", "minLength": 1 },
 		"subject": {
 			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "actorGuid"],
+					"properties": {
+						"kind": { "const": "actor_guid" },
+						"actorGuid": {
+							"type": "string",
+							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+						},
+						"lastKnownActorPath": {
+							"type": "string",
+							"minLength": 7,
+							"maxLength": 4096,
+							"pattern": "^/Game/"
+						},
+						"diagnosticLabel": { "type": "string", "minLength": 1 }
+					}
+				},
 				{
 					"type": "object",
 					"additionalProperties": false,
@@ -80,7 +99,7 @@
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "enum": [2, 3, 4] } } }
+							"version": { "properties": { "minor": { "enum": [2, 3, 4, 5] } } }
 						}
 					}
 				}
@@ -93,13 +112,32 @@
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "const": 4 } } }
+							"version": { "properties": { "minor": { "enum": [4, 5] } } }
 						}
 					}
 				}
 			},
 			"then": { "required": ["clearCompanion"] },
 			"else": { "not": { "required": ["clearCompanion"] } }
+		},
+		{
+			"if": {
+				"properties": {
+					"subject": {
+						"required": ["kind"],
+						"properties": { "kind": { "const": "actor_guid" } }
+					}
+				}
+			},
+			"then": {
+				"properties": {
+					"contract": {
+						"properties": {
+							"version": { "properties": { "minor": { "const": 5 } } }
+						}
+					}
+				}
+			}
 		}
 	],
 	"$defs": {

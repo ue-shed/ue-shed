@@ -20,6 +20,16 @@ export const ReviewSubjectActorPath = Schema.String.check(
 );
 export type ReviewSubjectActorPath = Schema.Schema.Type<typeof ReviewSubjectActorPath>;
 
+/**
+ * Unreal's durable authored-actor GUID format (`FGuid::UniqueObjectGuid`). Saved-world readers and
+ * the editor capability use this exact representation so World Partition actor identity does not
+ * depend on the transient live UObject path.
+ */
+export const ReviewSubjectActorGuid = Schema.String.check(
+	Schema.isPattern(/^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$/)
+).pipe(Schema.brand("ReviewSubjectActorGuid"));
+export type ReviewSubjectActorGuid = Schema.Schema.Type<typeof ReviewSubjectActorGuid>;
+
 export const ReviewSetId = SafeIdentifier.pipe(Schema.brand("ReviewSetId"));
 export type ReviewSetId = Schema.Schema.Type<typeof ReviewSetId>;
 
@@ -103,15 +113,26 @@ export const ApprovedPose = Schema.Struct({
 });
 export type ApprovedPose = Schema.Schema.Type<typeof ApprovedPose>;
 
-export const SubjectLocator = Schema.Struct({
+export const ActorPathSubjectLocator = Schema.Struct({
 	actorPath: ReviewSubjectActorPath,
 	diagnosticLabel: Schema.optional(NonEmptyString),
 	kind: Schema.Literal("actor_path")
 });
+export type ActorPathSubjectLocator = Schema.Schema.Type<typeof ActorPathSubjectLocator>;
+
+export const ActorGuidSubjectLocator = Schema.Struct({
+	actorGuid: ReviewSubjectActorGuid,
+	diagnosticLabel: Schema.optional(NonEmptyString),
+	kind: Schema.Literal("actor_guid"),
+	lastKnownActorPath: Schema.optional(ReviewSubjectActorPath)
+});
+export type ActorGuidSubjectLocator = Schema.Schema.Type<typeof ActorGuidSubjectLocator>;
+
+export const SubjectLocator = Schema.Union([ActorGuidSubjectLocator, ActorPathSubjectLocator]);
 export type SubjectLocator = Schema.Schema.Type<typeof SubjectLocator>;
 
 /** A target-specific actor/component locator reserved for visibility intervention evidence. */
-export const ObjectLocator = SubjectLocator;
+export const ObjectLocator = ActorPathSubjectLocator;
 export type ObjectLocator = Schema.Schema.Type<typeof ObjectLocator>;
 
 export const SubjectBounds = Schema.Struct({
@@ -142,6 +163,8 @@ export const OrientedBoundsSubject = Schema.Struct({
 	kind: Schema.Literal("oriented_bounds")
 });
 export type OrientedBoundsSubject = Schema.Schema.Type<typeof OrientedBoundsSubject>;
+
+const ReviewCaptureSubjectPrevious = Schema.Union([ActorPathSubjectLocator, OrientedBoundsSubject]);
 
 export const ReviewCaptureSubject = Schema.Union([SubjectLocator, OrientedBoundsSubject]);
 export type ReviewCaptureSubject = Schema.Schema.Type<typeof ReviewCaptureSubject>;
@@ -359,6 +382,7 @@ const ReviewSelectionContract = Schema.Struct({
 });
 
 const ReviewSelectionSuccess = Schema.Struct({
+	actorGuid: Schema.optional(ReviewSubjectActorGuid),
 	actorPath: ReviewSubjectActorPath,
 	bounds: SubjectBounds,
 	contract: ReviewSelectionContract,
@@ -399,6 +423,24 @@ export const ReviewSubjectInspectionResponse = Schema.Union([
 export type ReviewSubjectInspectionResponse = Schema.Schema.Type<
 	typeof ReviewSubjectInspectionResponse
 >;
+
+/** Prefers durable authored identity while retaining a path only as inspectable fallback evidence. */
+export function subjectLocatorFromSelection(
+	selection: Schema.Schema.Type<typeof ReviewSelectionSuccess>
+): SubjectLocator {
+	return selection.actorGuid === undefined
+		? ActorPathSubjectLocator.make({
+				actorPath: selection.actorPath,
+				diagnosticLabel: selection.displayName,
+				kind: "actor_path"
+			})
+		: ActorGuidSubjectLocator.make({
+				actorGuid: selection.actorGuid,
+				diagnosticLabel: selection.displayName,
+				kind: "actor_guid",
+				lastKnownActorPath: selection.actorPath
+			});
+}
 
 export const ApproveReviewCandidateIntent = Schema.Struct({
 	candidateId: FramingCandidateId,
@@ -744,6 +786,39 @@ export function classifyVisibilityMeasurement(args: {
 				: "partial";
 }
 
+const PreviousActorTarget = Schema.Struct({
+	kind: Schema.Literal("actor"),
+	subject: ActorPathSubjectLocator
+});
+
+const PreviousReviewTarget = Schema.Union([PreviousActorTarget, AreaTarget]);
+
+const PreviousReviewView = Schema.Struct({
+	captureProfileId: CaptureProfileId,
+	displayName: NonEmptyString,
+	framingDiagnostics: Schema.optional(Schema.Array(FramingDiagnostic)),
+	framingRecipe: FramingRecipe,
+	id: ReviewViewId,
+	purpose: NonEmptyString,
+	revision: NumberedReviewViewRevision,
+	tags: Schema.Array(NonEmptyString),
+	target: PreviousReviewTarget,
+	viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint]),
+	visibilityOverrides: Schema.optional(VisibilityOverrides),
+	visibilityPolicyId: VisibilityPolicyId
+}).pipe(
+	Schema.check(
+		Schema.makeFilter((view) =>
+			view.target.kind === "oriented_box" && view.viewpoint.kind === "target_relative"
+				? {
+						issue: "Oriented-area Views must use a world-fixed viewpoint.",
+						path: ["viewpoint"]
+					}
+				: undefined
+		)
+	)
+);
+
 export const ReviewView = Schema.Struct({
 	captureProfileId: CaptureProfileId,
 	displayName: NonEmptyString,
@@ -776,7 +851,7 @@ const ReviewSetCurrent = Schema.Struct({
 	captureProfiles: Schema.Array(CaptureProfile).check(Schema.isMinLength(1)),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-set"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(1) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) })
 	}),
 	description: Schema.optional(NonEmptyString),
 	displayName: NonEmptyString,
@@ -786,6 +861,96 @@ const ReviewSetCurrent = Schema.Struct({
 		mapPath: NonEmptyString
 	}),
 	views: Schema.Array(ReviewView),
+	visibilityPolicies: Schema.Array(VisibilityPolicy).check(Schema.isMinLength(1))
+}).pipe(
+	Schema.check(
+		Schema.makeFilter((reviewSet) => {
+			const profileIds = new Set<string>();
+			for (const profile of reviewSet.captureProfiles) {
+				if (profileIds.has(profile.id)) {
+					return {
+						issue: "Capture Profile IDs must be unique.",
+						path: ["captureProfiles"]
+					};
+				}
+				profileIds.add(profile.id);
+			}
+			const policies = new Map<string, VisibilityPolicy>();
+			for (const policy of reviewSet.visibilityPolicies) {
+				if (policies.has(policy.id)) {
+					return {
+						issue: "Visibility Policy IDs must be unique.",
+						path: ["visibilityPolicies"]
+					};
+				}
+				policies.set(policy.id, policy);
+			}
+			const viewIds = new Set<string>();
+			for (const view of reviewSet.views) {
+				if (viewIds.has(view.id)) {
+					return { issue: "Review View IDs must be unique.", path: ["views"] };
+				}
+				viewIds.add(view.id);
+				if (!profileIds.has(view.captureProfileId)) {
+					return {
+						issue: "Review View references a missing Capture Profile.",
+						path: ["views"]
+					};
+				}
+				const policy = policies.get(view.visibilityPolicyId);
+				if (policy === undefined) {
+					return {
+						issue: "Review View references a missing Visibility Policy.",
+						path: ["views"]
+					};
+				}
+				const overrides = view.visibilityOverrides;
+				if (
+					overrides !== undefined &&
+					(overrides.hideInClear.length > 0 || overrides.neverHide.length > 0) &&
+					policy.output.mode === "natural_only"
+				) {
+					return {
+						issue: "Natural-only policy cannot carry Clear visibility overrides.",
+						path: ["views"]
+					};
+				}
+				if (
+					policy.output.mode === "natural_and_clear" &&
+					policy.output.clearStrategy.type === "hide_explicit" &&
+					(overrides === undefined || overrides.hideInClear.length === 0)
+				) {
+					return {
+						issue: "Explicit-hide Clear policy requires at least one Hide in Clear object.",
+						path: ["views"]
+					};
+				}
+				if (view.target.kind === "oriented_box" && policy.output.mode !== "natural_only") {
+					return {
+						issue: "Area Views support Natural-only visibility in this version.",
+						path: ["views"]
+					};
+				}
+			}
+			return undefined;
+		})
+	)
+);
+
+const PreviousReviewSet = Schema.Struct({
+	captureProfiles: Schema.Array(CaptureProfile).check(Schema.isMinLength(1)),
+	contract: Schema.Struct({
+		name: Schema.Literal("ue-shed-review-set"),
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(1) })
+	}),
+	description: Schema.optional(NonEmptyString),
+	displayName: NonEmptyString,
+	id: ReviewSetId,
+	project: Schema.Struct({
+		id: NonEmptyString,
+		mapPath: NonEmptyString
+	}),
+	views: Schema.Array(PreviousReviewView),
 	visibilityPolicies: Schema.Array(VisibilityPolicy).check(Schema.isMinLength(1))
 }).pipe(
 	Schema.check(
@@ -881,7 +1046,7 @@ const LegacyReviewView = Schema.Struct({
 	framingRecipe: FramingRecipe,
 	id: ReviewViewId,
 	purpose: NonEmptyString,
-	subject: SubjectLocator,
+	subject: ActorPathSubjectLocator,
 	tags: Schema.Array(NonEmptyString)
 });
 
@@ -938,7 +1103,7 @@ function migrateLegacyReviewSet(legacy: Schema.Schema.Type<typeof LegacyReviewSe
 		captureProfiles: legacy.captureProfiles.map(
 			({ variantPolicy: _variantPolicy, ...profile }) => CaptureProfile.make(profile)
 		),
-		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 1 } },
+		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 2 } },
 		...(legacy.description === undefined ? undefined : { description: legacy.description }),
 		displayName: legacy.displayName,
 		id: legacy.id,
@@ -964,18 +1129,61 @@ function migrateLegacyReviewSet(legacy: Schema.Schema.Type<typeof LegacyReviewSe
 	});
 }
 
+function migratePreviousReviewSet(
+	previous: Schema.Schema.Type<typeof PreviousReviewSet>
+): ReviewSet {
+	return ReviewSetCurrent.make({
+		...previous,
+		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 2 } },
+		views: previous.views.map((view) => ReviewView.make(view))
+	});
+}
+
 export const ReviewSet = ReviewSetCurrent;
 export type ReviewSet = Schema.Schema.Type<typeof ReviewSet>;
 
+const ReviewSetContractHeader = Schema.Struct({
+	contract: Schema.Struct({
+		name: Schema.Literal("ue-shed-review-set"),
+		version: Schema.Union([
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(0) }),
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(1) }),
+			Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) })
+		])
+	})
+});
+
+type DecodedReviewSet =
+	| { readonly migrated: false; readonly reviewSet: ReviewSet }
+	| { readonly migrated: true; readonly reviewSet: ReviewSet };
+
 export function decodeReviewSetWithMigration<Input>(input: Input) {
-	return Schema.decodeUnknownEffect(Schema.Union([ReviewSetCurrent, LegacyReviewSet]))(
-		input
-	).pipe(
-		Effect.map((reviewSet) =>
-			"visibilityPolicies" in reviewSet
-				? { migrated: false as const, reviewSet }
-				: { migrated: true as const, reviewSet: migrateLegacyReviewSet(reviewSet) }
-		)
+	return Schema.decodeUnknownEffect(ReviewSetContractHeader)(input).pipe(
+		Effect.flatMap(({ contract }) => {
+			if (contract.version.minor === 2) {
+				return Schema.decodeUnknownEffect(ReviewSetCurrent)(input).pipe(
+					Effect.map((reviewSet): DecodedReviewSet => ({ migrated: false, reviewSet }))
+				);
+			}
+			if (contract.version.minor === 1) {
+				return Schema.decodeUnknownEffect(PreviousReviewSet)(input).pipe(
+					Effect.map(
+						(reviewSet): DecodedReviewSet => ({
+							migrated: true as const,
+							reviewSet: migratePreviousReviewSet(reviewSet)
+						})
+					)
+				);
+			}
+			return Schema.decodeUnknownEffect(LegacyReviewSet)(input).pipe(
+				Effect.map(
+					(reviewSet): DecodedReviewSet => ({
+						migrated: true as const,
+						reviewSet: migrateLegacyReviewSet(reviewSet)
+					})
+				)
+			);
+		})
 	);
 }
 
@@ -1035,11 +1243,47 @@ const ReviewCaptureRequestLegacy = Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
 	}),
-	subject: SubjectLocator,
+	subject: ActorPathSubjectLocator,
 	viewId: ReviewViewId
 });
 
 export const ReviewCaptureRequestCurrent = Schema.Struct({
+	assessment: VisibilityAssessment,
+	clearCompanion: ReviewClearCompanionRequest,
+	contract: Schema.Struct({
+		name: Schema.Literal("ue-shed-review-capture"),
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
+	}),
+	expectedMapPath: NonEmptyString,
+	operationId: NonEmptyString,
+	resolution: Schema.Struct({
+		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
+		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
+	}),
+	subject: ReviewCaptureSubject,
+	viewId: ReviewViewId,
+	viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint])
+}).pipe(
+	Schema.check(
+		Schema.makeFilter((request) =>
+			request.subject.kind === "oriented_bounds"
+				? request.viewpoint.kind === "target_relative"
+					? {
+							issue: "Oriented bounds cannot use a target-relative capture viewpoint.",
+							path: ["viewpoint"]
+						}
+					: request.clearCompanion.status === "requested"
+						? {
+								issue: "Oriented bounds support Natural-only capture in this version.",
+								path: ["clearCompanion"]
+							}
+						: undefined
+				: undefined
+		)
+	)
+);
+
+const ReviewCaptureRequestClearPrevious = Schema.Struct({
 	assessment: VisibilityAssessment,
 	clearCompanion: ReviewClearCompanionRequest,
 	contract: Schema.Struct({
@@ -1052,7 +1296,7 @@ export const ReviewCaptureRequestCurrent = Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
 	}),
-	subject: ReviewCaptureSubject,
+	subject: ReviewCaptureSubjectPrevious,
 	viewId: ReviewViewId,
 	viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint])
 }).pipe(
@@ -1087,7 +1331,7 @@ const ReviewCaptureRequestPreviousCurrent = Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
 	}),
-	subject: ReviewCaptureSubject,
+	subject: ReviewCaptureSubjectPrevious,
 	viewId: ReviewViewId,
 	viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint])
 }).pipe(
@@ -1116,7 +1360,7 @@ const ReviewCaptureRequestPrevious = Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
 	}),
-	subject: ReviewCaptureSubject,
+	subject: ReviewCaptureSubjectPrevious,
 	viewId: ReviewViewId,
 	viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint])
 }).pipe(
@@ -1135,6 +1379,7 @@ const ReviewCaptureRequestPrevious = Schema.Struct({
 
 export const ReviewCaptureRequest = Schema.Union([
 	ReviewCaptureRequestCurrent,
+	ReviewCaptureRequestClearPrevious,
 	ReviewCaptureRequestPreviousCurrent,
 	ReviewCaptureRequestPrevious,
 	ReviewCaptureRequestLegacy
@@ -1170,7 +1415,21 @@ export const ResolvedActorSubject = Schema.Struct({
 });
 export type ResolvedActorSubject = Schema.Schema.Type<typeof ResolvedActorSubject>;
 
-export const ResolvedReviewSubject = Schema.Union([ResolvedActorSubject, OrientedBoundsSubject]);
+export const ResolvedActorGuidSubject = Schema.Struct({
+	actorGuid: ReviewSubjectActorGuid,
+	actorPath: ReviewSubjectActorPath,
+	kind: Schema.Literal("actor_guid"),
+	transform: ActorTransformSnapshot
+});
+export type ResolvedActorGuidSubject = Schema.Schema.Type<typeof ResolvedActorGuidSubject>;
+
+const ResolvedReviewSubjectPrevious = Schema.Union([ResolvedActorSubject, OrientedBoundsSubject]);
+
+export const ResolvedReviewSubject = Schema.Union([
+	ResolvedActorGuidSubject,
+	ResolvedActorSubject,
+	OrientedBoundsSubject
+]);
 export type ResolvedReviewSubject = Schema.Schema.Type<typeof ResolvedReviewSubject>;
 
 const StagedCaptureArtifact = Schema.Struct({
@@ -1273,7 +1532,7 @@ const ReviewCaptureSuccessCurrent = Schema.Struct({
 	clearCompanion: ClearCompanionResult,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
 	}),
 	effectiveWorldPose: ApprovedPose,
 	height: PositiveInteger,
@@ -1282,6 +1541,52 @@ const ReviewCaptureSuccessCurrent = Schema.Struct({
 	mapPath: NonEmptyString,
 	operationId: NonEmptyString,
 	resolvedSubject: ResolvedReviewSubject,
+	stagedArtifacts: Schema.Array(StagedCaptureArtifact).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(2)
+	),
+	status: Schema.Literal("captured"),
+	subjectProjection: ReviewSubjectProjection,
+	viewId: ReviewViewId,
+	visibility: VisibilityMeasurement,
+	width: PositiveInteger
+}).pipe(
+	Schema.check(
+		Schema.makeFilter((response) => {
+			const issue = stagedArtifactVariantIssue(response);
+			if (issue !== undefined) return issue;
+			const hasClearArtifact = response.stagedArtifacts.some(
+				(artifact) => artifact.variant === "clear"
+			);
+			return response.clearCompanion.status === "captured" && !hasClearArtifact
+				? {
+						issue: "A captured Clear companion requires a staged Clear artifact.",
+						path: ["stagedArtifacts"]
+					}
+				: response.clearCompanion.status !== "captured" && hasClearArtifact
+					? {
+							issue: "Only a captured Clear companion may expose a staged Clear artifact.",
+							path: ["stagedArtifacts"]
+						}
+					: undefined;
+		})
+	)
+);
+
+const ReviewCaptureSuccessClearPrevious = Schema.Struct({
+	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+	clearCompanion: ClearCompanionResult,
+	contract: Schema.Struct({
+		name: Schema.Literal("ue-shed-review-capture"),
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) })
+	}),
+	effectiveWorldPose: ApprovedPose,
+	height: PositiveInteger,
+	mapPackageDirtyAfter: Schema.Boolean,
+	mapPackageDirtyBefore: Schema.Boolean,
+	mapPath: NonEmptyString,
+	operationId: NonEmptyString,
+	resolvedSubject: ResolvedReviewSubjectPrevious,
 	stagedArtifacts: Schema.Array(StagedCaptureArtifact).check(
 		Schema.isMinLength(1),
 		Schema.isMaxLength(2)
@@ -1326,7 +1631,7 @@ const ReviewCaptureSuccessPreviousCurrent = Schema.Struct({
 	mapPackageDirtyBefore: Schema.Boolean,
 	mapPath: NonEmptyString,
 	operationId: NonEmptyString,
-	resolvedSubject: ResolvedReviewSubject,
+	resolvedSubject: ResolvedReviewSubjectPrevious,
 	stagingPath: NonEmptyString,
 	status: Schema.Literal("captured"),
 	subjectProjection: ReviewSubjectProjection,
@@ -1347,7 +1652,7 @@ const ReviewCaptureSuccessPrevious = Schema.Struct({
 	mapPackageDirtyBefore: Schema.Boolean,
 	mapPath: NonEmptyString,
 	operationId: NonEmptyString,
-	resolvedSubject: ResolvedReviewSubject,
+	resolvedSubject: ResolvedReviewSubjectPrevious,
 	stagingPath: NonEmptyString,
 	status: Schema.Literal("captured"),
 	subjectProjection: ReviewSubjectProjection,
@@ -1362,7 +1667,7 @@ const ReviewCaptureFailure = Schema.Struct({
 		name: Schema.Literal("ue-shed-review-capture"),
 		version: Schema.Struct({
 			major: Schema.Literal(1),
-			minor: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4 }))
+			minor: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 5 }))
 		})
 	}),
 	message: NonEmptyString,
@@ -1375,6 +1680,7 @@ const ReviewCaptureFailure = Schema.Struct({
 
 export const ReviewCaptureResponse = Schema.Union([
 	ReviewCaptureSuccessCurrent,
+	ReviewCaptureSuccessClearPrevious,
 	ReviewCaptureSuccessPreviousCurrent,
 	ReviewCaptureSuccessPrevious,
 	ReviewCaptureSuccessLegacy,
@@ -1414,6 +1720,7 @@ export const ReviewAuthoringSession = Schema.Struct({
 	}),
 	selectedCandidateId: Schema.optional(FramingCandidateId),
 	subject: Schema.Struct({
+		actorGuid: Schema.optional(ReviewSubjectActorGuid),
 		actorPath: ReviewSubjectActorPath,
 		bounds: SubjectBounds,
 		displayName: NonEmptyString,
@@ -1492,6 +1799,19 @@ export const CaptureRealization = Schema.Union([
 ]);
 export type CaptureRealization = Schema.Schema.Type<typeof CaptureRealization>;
 
+const CaptureRealizationPrevious = Schema.Union([
+	Schema.Struct({
+		effectiveWorldPose: ApprovedPose,
+		resolvedSubject: ResolvedReviewSubjectPrevious,
+		status: Schema.Literal("resolved"),
+		viewpoint: Schema.Union([WorldFixedViewpoint, TargetRelativeViewpoint])
+	}),
+	Schema.Struct({
+		resolvedActorPath: Schema.optional(NonEmptyString),
+		status: Schema.Literal("legacy_not_recorded")
+	})
+]);
+
 function capturedArtifactVariantIssue(result: {
 	readonly artifacts: ReadonlyArray<CaptureArtifact>;
 }) {
@@ -1543,7 +1863,7 @@ const CaptureRunCurrent = Schema.Struct({
 	completedAt: Schema.String,
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-capture-run"),
-		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) })
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
 	}),
 	id: CaptureRunId,
 	invocation: CaptureInvocation,
@@ -1554,10 +1874,40 @@ const CaptureRunCurrent = Schema.Struct({
 	status: Schema.Literals(["completed", "completed_with_failures", "failed"])
 });
 
+const PreviousClearCapturedViewResult = Schema.Struct({
+	artifacts: Schema.Array(CaptureArtifact).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
+	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+	clearCompanion: ClearCompanionResult,
+	realization: CaptureRealizationPrevious,
+	status: Schema.Literal("captured"),
+	viewId: ReviewViewId,
+	viewRevision: CapturedReviewViewRevision,
+	visibilityOverrides: Schema.optional(VisibilityOverrides),
+	visibilityPolicy: Schema.optional(VisibilityPolicy),
+	visibility: VisibilityResult
+}).pipe(Schema.check(Schema.makeFilter(capturedArtifactVariantIssue)));
+
+const PreviousClearViewResult = Schema.Union([PreviousClearCapturedViewResult, FailedViewResult]);
+
+const PreviousClearCaptureRun = Schema.Struct({
+	completedAt: Schema.String,
+	contract: Schema.Struct({
+		name: Schema.Literal("ue-shed-capture-run"),
+		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) })
+	}),
+	id: CaptureRunId,
+	invocation: CaptureInvocation,
+	project: Schema.Struct({ id: NonEmptyString, mapPath: NonEmptyString }),
+	results: Schema.Array(PreviousClearViewResult).check(Schema.isMinLength(1)),
+	reviewSetId: ReviewSetId,
+	startedAt: Schema.String,
+	status: Schema.Literals(["completed", "completed_with_failures", "failed"])
+});
+
 const PreviousCurrentCapturedViewResult = Schema.Struct({
 	artifacts: Schema.Array(CaptureArtifact).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
 	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
-	realization: CaptureRealization,
+	realization: CaptureRealizationPrevious,
 	status: Schema.Literal("captured"),
 	viewId: ReviewViewId,
 	viewRevision: CapturedReviewViewRevision,
@@ -1587,7 +1937,7 @@ const PreviousCurrentCaptureRun = Schema.Struct({
 const PreviousCapturedViewResult = Schema.Struct({
 	artifacts: Schema.Array(CaptureArtifact).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
 	captureDurationMs: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
-	realization: CaptureRealization,
+	realization: CaptureRealizationPrevious,
 	status: Schema.Literal("captured"),
 	viewId: ReviewViewId,
 	viewRevision: CapturedReviewViewRevision,
@@ -1705,12 +2055,21 @@ function migrateLegacyVisibility(
 
 const noClearCompanion = { status: "not_requested" as const };
 
+function migratePreviousClearCaptureRun(
+	previous: Schema.Schema.Type<typeof PreviousClearCaptureRun>
+): CaptureRun {
+	return CaptureRunCurrent.make({
+		...previous,
+		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } }
+	});
+}
+
 function migratePreviousCurrentCaptureRun(
 	previous: Schema.Schema.Type<typeof PreviousCurrentCaptureRun>
 ): CaptureRun {
 	return CaptureRunCurrent.make({
 		...previous,
-		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
+		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } },
 		results: previous.results.map((result) =>
 			result.status === "captured" ? { ...result, clearCompanion: noClearCompanion } : result
 		)
@@ -1722,7 +2081,7 @@ function migratePreviousCaptureRun(
 ): CaptureRun {
 	return CaptureRunCurrent.make({
 		...previous,
-		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
+		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } },
 		results: previous.results.map((result) =>
 			result.status === "captured"
 				? {
@@ -1740,7 +2099,7 @@ function migratePreviousLegacyCaptureRun(
 ): CaptureRun {
 	return CaptureRunCurrent.make({
 		...previous,
-		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
+		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } },
 		results: previous.results.map((result) =>
 			result.status === "captured"
 				? {
@@ -1764,7 +2123,7 @@ function migratePreviousLegacyCaptureRun(
 function migrateLegacyCaptureRun(legacy: Schema.Schema.Type<typeof LegacyCaptureRun>): CaptureRun {
 	return CaptureRunCurrent.make({
 		completedAt: legacy.completedAt,
-		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
+		contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } },
 		id: legacy.id,
 		invocation: legacyInvocation(legacy),
 		project: legacy.project,
@@ -1808,6 +2167,14 @@ export type CaptureRun = Schema.Schema.Type<typeof CaptureRun>;
 export function decodeCaptureRunWithMigration<Input>(input: Input) {
 	return Schema.decodeUnknownEffect(CaptureRunCurrent)(input).pipe(
 		Effect.map((run) => ({ migrated: false as const, run })),
+		Effect.catch(() =>
+			Schema.decodeUnknownEffect(PreviousClearCaptureRun)(input).pipe(
+				Effect.map((run) => ({
+					migrated: true as const,
+					run: migratePreviousClearCaptureRun(run)
+				}))
+			)
+		),
 		Effect.catch(() =>
 			Schema.decodeUnknownEffect(PreviousCurrentCaptureRun)(input).pipe(
 				Effect.map((run) => ({
@@ -1853,8 +2220,10 @@ export function reviewViewApprovedPose(view: ReviewView): ApprovedPose | undefin
 
 export const decodeReviewSet = <Input>(input: Input) =>
 	decodeReviewSetWithMigration(input).pipe(Effect.map(({ reviewSet }) => reviewSet));
-export const decodeReviewCaptureRequest = Schema.decodeUnknownEffect(ReviewCaptureRequest);
-export const decodeReviewCaptureResponse = Schema.decodeUnknownEffect(ReviewCaptureResponse);
+export const decodeReviewCaptureRequest = <Input>(input: Input) =>
+	Schema.decodeUnknownEffect(ReviewCaptureRequest)(input, { onExcessProperty: "error" });
+export const decodeReviewCaptureResponse = <Input>(input: Input) =>
+	Schema.decodeUnknownEffect(ReviewCaptureResponse)(input, { onExcessProperty: "error" });
 export const decodeReviewAssessmentCapabilities = Schema.decodeUnknownEffect(
 	ReviewAssessmentCapabilities
 );

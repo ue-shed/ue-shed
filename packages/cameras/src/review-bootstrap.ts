@@ -55,7 +55,7 @@ export function bootstrapMapReviewSet(args: {
 	return {
 		reviewSet: ReviewSet.make({
 			captureProfiles: [captureProfile],
-			contract: { name: "ue-shed-review-set", version: { major: 1, minor: 1 } },
+			contract: { name: "ue-shed-review-set", version: { major: 1, minor: 2 } },
 			description:
 				"Created from the first selected actor. Review Views remain portable and outside the map.",
 			displayName: mapDisplayName(args.selection.mapPath),

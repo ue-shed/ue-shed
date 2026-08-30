@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import {
 	decodeReviewAssessmentCapabilities,
+	decodeReviewCaptureRequest,
 	decodeReviewCaptureResponse,
 	decodeReviewSelectionResponse,
 	decodeReviewSubjectInspectionResponse,
@@ -21,6 +22,8 @@ function json(path: string): Schema.Json {
 }
 
 const decodeCapture = (input: Schema.Json) => Effect.runSync(decodeReviewCaptureResponse(input));
+const decodeCaptureRequest = (input: Schema.Json) =>
+	Effect.runSync(decodeReviewCaptureRequest(input));
 const decodeAssessmentCapabilities = (input: Schema.Json) =>
 	Effect.runSync(decodeReviewAssessmentCapabilities(input));
 const decodeSubject = (input: Schema.Json) =>
@@ -109,6 +112,22 @@ describe("Map Review language-neutral wire contracts", () => {
 			},
 			stagedArtifacts: [expect.objectContaining({ variant: "pure" })]
 		});
+		expect(
+			decodeCaptureRequest(json("fixtures/capture-request-guid-valid.json"))
+		).toMatchObject({
+			contract: { version: { minor: 5 } },
+			subject: {
+				actorGuid: "00000001-00000002-00000003-00000004",
+				kind: "actor_guid"
+			}
+		});
+		expect(decodeCapture(json("fixtures/capture-guid.json"))).toMatchObject({
+			contract: { version: { minor: 5 } },
+			resolvedSubject: {
+				actorGuid: "00000001-00000002-00000003-00000004",
+				kind: "actor_guid"
+			}
+		});
 
 		expect(
 			Schema.decodeUnknownResult(ReviewSubjectProjection)({
@@ -134,6 +153,12 @@ describe("Map Review language-neutral wire contracts", () => {
 			status: "failed"
 		});
 		expect(() => Effect.runSync(decodeReviewSelectionResponse(subjectFailure))).toThrow();
+		expect(
+			Effect.runSync(decodeReviewSelectionResponse(json("fixtures/selection-selected.json")))
+		).toMatchObject({
+			actorGuid: "00000001-00000002-00000003-00000004",
+			status: "selected"
+		});
 	});
 
 	it("keeps optional assessment capabilities factual and policy-free", () => {

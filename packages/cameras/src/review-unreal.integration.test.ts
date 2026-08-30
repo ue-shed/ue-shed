@@ -24,6 +24,7 @@ import {
 	type ReviewRepository
 } from "./review-repository.js";
 import {
+	decodeReviewCaptureResponse,
 	FramingCandidateId,
 	ReviewCaptureRequest,
 	ReviewCaptureRequestCurrent,
@@ -59,7 +60,7 @@ function naturalCaptureRequest(request: NaturalCaptureRequestInput) {
 		clearCompanion: { status: "not_requested" },
 		contract: {
 			name: "ue-shed-review-capture",
-			version: { major: 1, minor: 4 }
+			version: { major: 1, minor: 5 }
 		}
 	});
 }
@@ -87,6 +88,21 @@ async function editorActorCall(functionName: string, parameters: Schema.JsonObje
 		signal: AbortSignal.timeout(10_000)
 	});
 	expect(response.ok).toBe(true);
+}
+
+async function rawCaptureCall(request: Schema.JsonObject): Promise<ReviewCaptureResponse> {
+	const payload = await Effect.runPromise(
+		Effect.flatMap(RemoteControlClient, (client) =>
+			client.request({
+				endpoint: endpoint!,
+				functionName: "CaptureReviewView",
+				objectPath: reviewLibraryPath,
+				operation: "camera.review.capture.contract",
+				parameters: { RequestJson: JSON.stringify(request) }
+			})
+		).pipe(Effect.provide(RemoteControlClientLive))
+	);
+	return Effect.runSync(decodeReviewCaptureResponse(payload));
 }
 
 describe.skipIf(!endpoint)("real Unreal target and area capture", () => {
@@ -531,7 +547,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		);
 		try {
 			expect(run.status).toBe("completed");
-			expect(run.contract.version).toEqual({ major: 1, minor: 4 });
+			expect(run.contract.version).toEqual({ major: 1, minor: 5 });
 			expect(run.results).toHaveLength(1);
 			const result = run.results[0]!;
 			expect(result.status).toBe("captured");
@@ -567,7 +583,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 				clearCompanion: args.clearCompanion,
 				contract: {
 					name: "ue-shed-review-capture",
-					version: { major: 1, minor: 4 }
+					version: { major: 1, minor: 5 }
 				},
 				expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
 				operationId: args.operationId,
@@ -708,6 +724,78 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		});
 	});
 
+	it("accepts complete compatible 1.x shapes and retains identity on rejection", async () => {
+		const approvedPose = {
+			aspectRatio: "16:9",
+			fieldOfViewDegrees: 60,
+			location: { x: -1_000, y: 0, z: 600 },
+			projection: "perspective",
+			rotation: { pitch: -25, roll: 0, yaw: 0 }
+		} as const;
+		for (const minor of [0, 1, 2, 3, 4, 5]) {
+			const operationId = randomUUID();
+			const request: Schema.JsonObject = {
+				contract: {
+					name: "ue-shed-review-capture",
+					version: { major: 1, minor }
+				},
+				expectedMapPath: "/Game/Fixture/Cameras/MissingMap",
+				operationId,
+				resolution: { height: 90, width: 160 },
+				subject: { actorPath: subjectPath, kind: "actor_path" },
+				viewId: `compatible-minor-${minor}`,
+				...(minor < 2
+					? { approvedPose }
+					: {
+							assessment: { method: "automatic" },
+							viewpoint: { approvedPose, kind: "world_fixed" }
+						}),
+				...(minor >= 4 ? { clearCompanion: { status: "not_requested" } } : {})
+			};
+			const response = await rawCaptureCall(request);
+			expect(response).toMatchObject({
+				code: "map_mismatch",
+				contract: { version: { major: 1, minor } },
+				operationId,
+				status: "failed",
+				viewId: `compatible-minor-${minor}`
+			});
+		}
+
+		const operationId = randomUUID();
+		const unsupported = await rawCaptureCall({
+			contract: {
+				name: "ue-shed-review-capture",
+				version: { major: 1, minor: 6 }
+			},
+			operationId,
+			viewId: "unsupported-future-minor"
+		});
+		expect(unsupported).toMatchObject({
+			code: "unsupported_contract",
+			contract: { version: { major: 1, minor: 0 } },
+			operationId,
+			status: "failed",
+			viewId: "unsupported-future-minor"
+		});
+
+		const contradictory = await rawCaptureCall({
+			approvedPose,
+			assessment: { method: "automatic" },
+			contract: {
+				name: "ue-shed-review-capture",
+				version: { major: 1, minor: 2 }
+			},
+			expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+			operationId: randomUUID(),
+			resolution: { height: 90, width: 160 },
+			subject: { actorPath: subjectPath, kind: "actor_path" },
+			viewId: "contradictory-minor-fields",
+			viewpoint: { approvedPose, kind: "world_fixed" }
+		});
+		expect(contradictory).toMatchObject({ code: "invalid_contract", status: "failed" });
+	});
+
 	it("inspects the selected subject and renders a generated candidate transiently", async () => {
 		await editorActorCall("SetActorSelectionState", {
 			Actor: subjectPath,
@@ -719,6 +807,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 			);
 			expect(selection.status).toBe("selected");
 			if (selection.status !== "selected") return;
+			expect(selection.actorGuid).toMatch(/^[0-9a-f]{8}(?:-[0-9a-f]{8}){3}$/);
 			expect(selection).toMatchObject({
 				actorPath: subjectPath,
 				bounds: { center: { z: 212 }, extent: { x: 393.75, y: 168, z: 252 } },
@@ -736,10 +825,19 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 						...reviewSet.captureProfiles[0]!,
 						resolution: { height: 360, width: 640 }
 					},
-					subject: {
-						actorPath: selection.actorPath,
-						displayName: selection.displayName
-					}
+					subject:
+						selection.actorGuid === undefined
+							? {
+									actorPath: selection.actorPath,
+									diagnosticLabel: selection.displayName,
+									kind: "actor_path"
+								}
+							: {
+									actorGuid: selection.actorGuid,
+									diagnosticLabel: selection.displayName,
+									kind: "actor_guid",
+									lastKnownActorPath: selection.actorPath
+								}
 				}).pipe(Effect.provide(RemoteControlClientLive))
 			);
 			expect({ height: preview.height, width: preview.width }).toEqual({

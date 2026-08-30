@@ -209,7 +209,7 @@ export async function createMapReviewFlowHarness(args: {
 				resolution: { height: 720, width: 1280 }
 			})
 		],
-		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 1 } },
+		contract: { name: "ue-shed-review-set", version: { major: 1, minor: 2 } },
 		description: "Isolated Map Review full-flow evidence.",
 		displayName: "Map Review Flow Gallery",
 		id: ReviewSetId.make("map-review-flow-gallery"),

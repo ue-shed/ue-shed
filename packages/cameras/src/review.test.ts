@@ -30,6 +30,7 @@ import {
 	CaptureInvocation,
 	CaptureInvocationId,
 	CaptureRunId,
+	ReviewCaptureRequestCurrent,
 	ReviewSetId,
 	ReviewViewId,
 	VisibilityClassificationThresholds,
@@ -129,6 +130,24 @@ function runCapture(
 	);
 }
 
+function resolvedSubjectForRequest(subject: typeof ReviewCaptureRequestCurrent.Type.subject) {
+	if (subject.kind === "oriented_bounds") return subject;
+	const transform = {
+		location: { x: 0, y: 0, z: 0 },
+		rotation: { pitch: 0, roll: 0, yaw: 0 }
+	};
+	return subject.kind === "actor_path"
+		? { ...subject, transform }
+		: {
+				actorGuid: subject.actorGuid,
+				actorPath:
+					subject.lastKnownActorPath ??
+					"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+				kind: "actor_guid" as const,
+				transform
+			};
+}
+
 function successfulCapturePort(args: {
 	readonly beforeCapture?: () => Effect.Effect<void>;
 	readonly png: Uint8Array;
@@ -164,16 +183,7 @@ function successfulCapturePort(args: {
 					mapPackageDirtyBefore: false,
 					mapPath: request.expectedMapPath,
 					operationId: request.operationId,
-					resolvedSubject:
-						request.subject.kind === "actor_path"
-							? {
-									...request.subject,
-									transform: {
-										location: { x: 0, y: 0, z: 0 },
-										rotation: { pitch: 0, roll: 0, yaw: 0 }
-									}
-								}
-							: request.subject,
+					resolvedSubject: resolvedSubjectForRequest(request.subject),
 					stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
 					status: "captured" as const,
 					subjectProjection: {
@@ -284,7 +294,7 @@ describe("Map Review contracts", () => {
 
 	it("migrates legacy Review Sets and preserves explicit unversioned result provenance", () => {
 		const reviewSet = fixtureReviewSet();
-		expect(reviewSet.contract.version).toEqual({ major: 1, minor: 1 });
+		expect(reviewSet.contract.version).toEqual({ major: 1, minor: 2 });
 		expect(reviewSet.views[0]).toMatchObject({
 			id: "structure-context",
 			target: { kind: "actor" },
@@ -312,7 +322,8 @@ describe("Map Review contracts", () => {
 						},
 						captureDurationMs: 1,
 						resolvedActorPath:
-							reviewSet.views[0]!.target.kind === "actor"
+							reviewSet.views[0]!.target.kind === "actor" &&
+							reviewSet.views[0]!.target.subject.kind === "actor_path"
 								? reviewSet.views[0]!.target.subject.actorPath
 								: "/Game/Invalid",
 						status: "captured",
@@ -358,7 +369,8 @@ describe("Map Review contracts", () => {
 						captureDurationMs: 1,
 						realization: {
 							resolvedActorPath:
-								reviewSet.views[0]!.target.kind === "actor"
+								reviewSet.views[0]!.target.kind === "actor" &&
+								reviewSet.views[0]!.target.subject.kind === "actor_path"
 									? reviewSet.views[0]!.target.subject.actorPath
 									: "/Game/Invalid",
 							status: "legacy_not_recorded"
@@ -383,7 +395,7 @@ describe("Map Review contracts", () => {
 				status: "completed"
 			})
 		);
-		expect(classifiedRun.contract.version).toEqual({ major: 1, minor: 4 });
+		expect(classifiedRun.contract.version).toEqual({ major: 1, minor: 5 });
 		expect(classifiedRun.results[0]).toMatchObject({
 			visibility: {
 				legacyInterpretation: {
@@ -625,12 +637,12 @@ describe("durable capture loop", () => {
 		await runCapture({ projectRoot, reviewSetPath }, port, () => ids.shift()!);
 		expect(requests).toMatchObject([
 			{
-				contract: { version: { major: 1, minor: 4 } },
+				contract: { version: { major: 1, minor: 5 } },
 				subject: { kind: "actor_path" },
 				viewpoint: { kind: "target_relative" }
 			},
 			{
-				contract: { version: { major: 1, minor: 4 } },
+				contract: { version: { major: 1, minor: 5 } },
 				subject: {
 					bounds: { rotation: { yaw: 30 } },
 					kind: "oriented_bounds"
@@ -774,16 +786,7 @@ describe("durable capture loop", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: request.expectedMapPath,
 							operationId: request.operationId,
-							resolvedSubject:
-								request.subject.kind === "actor_path"
-									? {
-											...request.subject,
-											transform: {
-												location: { x: 0, y: 0, z: 0 },
-												rotation: { pitch: 0, roll: 0, yaw: 0 }
-											}
-										}
-									: request.subject,
+							resolvedSubject: resolvedSubjectForRequest(request.subject),
 							stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
 							status: "captured" as const,
 							subjectProjection: {
@@ -821,7 +824,7 @@ describe("durable capture loop", () => {
 
 		expect(run.status).toBe("completed");
 		expect(run.id).toBe("run-001");
-		expect(run.contract.version).toEqual({ major: 1, minor: 4 });
+		expect(run.contract.version).toEqual({ major: 1, minor: 5 });
 		const persisted = await Effect.runPromise(
 			loadCaptureRun(captureRunPath(projectRoot, run.id)).pipe(
 				Effect.provide(ReviewRepositoryLive)
@@ -1174,13 +1177,7 @@ describe("durable capture loop", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: request.expectedMapPath,
 							operationId: request.operationId,
-							resolvedSubject: {
-								...request.subject,
-								transform: {
-									location: { x: 0, y: 0, z: 0 },
-									rotation: { pitch: 0, roll: 0, yaw: 0 }
-								}
-							},
+							resolvedSubject: resolvedSubjectForRequest(request.subject),
 							stagedArtifacts,
 							status: "captured" as const,
 							subjectProjection: {
@@ -1268,16 +1265,7 @@ describe("durable capture loop", () => {
 					mapPackageDirtyBefore: false,
 					mapPath: request.expectedMapPath,
 					operationId: request.operationId,
-					resolvedSubject:
-						request.subject.kind === "actor_path"
-							? {
-									...request.subject,
-									transform: {
-										location: { x: 0, y: 0, z: 0 },
-										rotation: { pitch: 0, roll: 0, yaw: 0 }
-									}
-								}
-							: request.subject,
+					resolvedSubject: resolvedSubjectForRequest(request.subject),
 					clearCompanion: { status: "not_requested" as const },
 					stagedArtifacts: [{ stagingPath: outside, variant: "pure" as const }],
 					status: "captured",
@@ -1362,16 +1350,7 @@ describe("durable capture loop", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: request.expectedMapPath,
 							operationId: request.operationId,
-							resolvedSubject:
-								request.subject.kind === "actor_path"
-									? {
-											...request.subject,
-											transform: {
-												location: { x: 0, y: 0, z: 0 },
-												rotation: { pitch: 0, roll: 0, yaw: 0 }
-											}
-										}
-									: request.subject,
+							resolvedSubject: resolvedSubjectForRequest(request.subject),
 							stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
 							status: "captured" as const,
 							subjectProjection: {

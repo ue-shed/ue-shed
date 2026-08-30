@@ -838,13 +838,17 @@ describe("ue-shed CLI process", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: capture.expectedMapPath,
 							operationId: capture.operationId,
-							resolvedSubject: {
-								...capture.subject,
-								transform: {
-									location: { x: 0, y: 0, z: 0 },
-									rotation: { pitch: 0, roll: 0, yaw: 0 }
-								}
-							},
+							resolvedSubject:
+								capture.subject.kind === "actor_path"
+									? {
+											actorPath: capture.subject.actorPath,
+											kind: capture.subject.kind,
+											transform: {
+												location: { x: 0, y: 0, z: 0 },
+												rotation: { pitch: 0, roll: 0, yaw: 0 }
+											}
+										}
+									: capture.subject,
 							stagedArtifacts: [{ stagingPath, variant: "pure" }],
 							status: "captured",
 							subjectProjection: {

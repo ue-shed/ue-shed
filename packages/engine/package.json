@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/engine",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Typed Unreal Engine discovery, launch, readiness, PIE, and editor-world control.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -36,15 +36,15 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/protocol": "workspace:0.5.0",
-		"@ue-shed/unreal-connection": "workspace:0.5.0",
+		"@ue-shed/protocol": "workspace:0.5.1",
+		"@ue-shed/unreal-connection": "workspace:0.5.1",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:"
 	},
 	"optionalDependencies": {
-		"@ue-shed/engine-win32-x64": "workspace:0.5.0"
+		"@ue-shed/engine-win32-x64": "workspace:0.5.1"
 	},
 	"engines": {
 		"node": ">=22.14.0"

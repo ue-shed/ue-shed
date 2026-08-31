@@ -264,6 +264,7 @@ fn contract_value(contract: &Contract) -> Value {
 fn operation_kind(operation: &Operation) -> &'static str {
     match operation {
         Operation::Inspect { .. } => "inspect",
+        Operation::Blueprint { .. } => "blueprint",
         Operation::Authoring { .. } => "authoring",
         Operation::Scan { .. } => "scan",
         Operation::ExtractText { .. } => "extract_text",
@@ -286,13 +287,14 @@ fn execute_direct(
         && !matches!(
             &request.operation,
             Operation::Inspect { .. }
+                | Operation::Blueprint { .. }
                 | Operation::Authoring { .. }
                 | Operation::ProjectIndexQuery { .. }
         )
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts inspect, authoring, and project index query operations",
+            "protocol-session accepts inspect, blueprint, authoring, and project index query operations",
             false,
         ));
     }
@@ -302,6 +304,19 @@ fn execute_direct(
                 direct_executor::inspect_with_cancellation(asset_path, cancellation)?;
             emit_typed_result(emitter, &ResultFrame::Inspect { inspection })?;
             Ok(partial)
+        }
+        Operation::Blueprint { asset_path } => {
+            let output = direct_executor::blueprint_with_cancellation(asset_path, cancellation)?;
+            for diagnostic in &output.diagnostics {
+                emit_diagnostic(emitter, diagnostic)?;
+            }
+            emit_typed_result(
+                emitter,
+                &ResultFrame::Blueprint {
+                    blueprint: output.blueprint,
+                },
+            )?;
+            Ok(output.partial)
         }
         Operation::Authoring { asset_path } => {
             let (snapshot, partial) =
@@ -985,7 +1000,7 @@ fn adapt_property_value(
             key,
         } => SavedPropertyValue::Text {
             value,
-            history: adapt_text_history(history)?,
+            history: adapt_text_history(&history)?,
             namespace,
             key,
         },
@@ -1059,7 +1074,7 @@ fn adapt_property_value(
 }
 
 #[cfg(test)]
-fn adapt_text_history(history: &'static str) -> Result<TextHistory, String> {
+fn adapt_text_history(history: &str) -> Result<TextHistory, String> {
     match history {
         "none" => Ok(TextHistory::None),
         "base" => Ok(TextHistory::Base),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,15 @@ const fixture = join(
 	"Fixture",
 	"Authoring",
 	"DT_Scalars.uasset"
+);
+const blueprintFixture = join(
+	repositoryRoot,
+	"fixtures",
+	"unreal-project",
+	"Content",
+	"Fixture",
+	"Blueprints",
+	"BP_GraphFixture.uasset"
 );
 const tempDirectory = mkdtempSync(join(tmpdir(), "ue-shed-uasset-inspection-wasm-"));
 const packDirectory = join(tempDirectory, "pack");
@@ -56,24 +65,33 @@ try {
 		"uasset-inspection-wasm"
 	);
 
-	const bytes = readFileSync(fixture).toString("base64");
+	copyFileSync(fixture, join(consumerDirectory, "DT_Scalars.uasset"));
+	copyFileSync(blueprintFixture, join(consumerDirectory, "BP_GraphFixture.uasset"));
 	const consumerCode = `
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createNodeRuntime as createRootRuntime } from "@ue-shed/uasset-inspection-wasm";
-import { createNodeRuntime, inspect } from "@ue-shed/uasset-inspection-wasm/node";
+import { createNodeRuntime, extractBlueprints, inspect } from "@ue-shed/uasset-inspection-wasm/node";
 import * as browserEntry from "@ue-shed/uasset-inspection-wasm/browser";
-const bytes = Uint8Array.from(Buffer.from(${JSON.stringify(bytes)}, "base64"));
+const bytes = readFileSync("DT_Scalars.uasset");
+const blueprintBytes = readFileSync("BP_GraphFixture.uasset");
 const runtime = createNodeRuntime();
 const result = runtime.inspect("DT_Scalars.uasset", bytes);
+const blueprint = runtime.extractBlueprints("BP_GraphFixture.uasset", blueprintBytes);
 assert.equal(result.schema_version, 8);
 assert.equal(result.status, "ok");
+assert.equal(blueprint.status, "ok");
+assert.ok(blueprint.blueprints[0].graphs.length > 0);
+assert.ok(blueprint.blueprints[0].graphs.flatMap((graph) => graph.nodes).length > 0);
+assert.deepEqual(extractBlueprints("BP_GraphFixture.uasset", blueprintBytes), blueprint);
 assert.deepEqual(inspect("DT_Scalars.uasset", bytes), result);
 assert.deepEqual(createRootRuntime().inspect("DT_Scalars.uasset", bytes), result);
 assert.throws(() => createNodeRuntime({ maxInputBytes: 4 }).inspect("large.uasset", new Uint8Array(5)), (error) => error?.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT");
 assert.throws(() => runtime.inspect("large.uasset", new Uint8Array(runtime.limits.maxInputBytes + 1)), (error) => error?.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT");
 assert.throws(() => createNodeRuntime({ maxOutputBytes: 32 }).inspect("DT_Scalars.uasset", bytes), (error) => error?.code === "UE_SHED_UASSET_WASM_OUTPUT_LIMIT");
 assert.equal(typeof browserEntry.createBrowserRuntime, "function");
-console.log(JSON.stringify({ version: runtime.version(), schemaVersion: result.schema_version, status: result.status, nodeSubpath: true, browserSubpath: true }));
+assert.equal(typeof browserEntry.extractBlueprints, "function");
+console.log(JSON.stringify({ version: runtime.version(), schemaVersion: result.schema_version, status: result.status, blueprintStatus: blueprint.status, nodeSubpath: true, browserSubpath: true }));
 `;
 	const output = execFileSync(process.execPath, ["--input-type=module", "--eval", consumerCode], {
 		cwd: consumerDirectory,
@@ -84,21 +102,25 @@ console.log(JSON.stringify({ version: runtime.version(), schemaVersion: result.s
 	const evidence = JSON.parse(evidenceLine);
 	assert.equal(evidence.schemaVersion, 8);
 	assert.equal(evidence.status, "ok");
+	assert.equal(evidence.blueprintStatus, "ok");
 	assert.equal(evidence.nodeSubpath, true);
 	assert.equal(evidence.browserSubpath, true);
 
 	const declarationConsumer = join(consumerDirectory, "consumer-types.ts");
 	writeFileSync(
 		declarationConsumer,
-		`import { createNodeRuntime as createRootRuntime, type InspectionResult } from "@ue-shed/uasset-inspection-wasm";
-import { createNodeRuntime, type WasmRuntime } from "@ue-shed/uasset-inspection-wasm/node";
-import { createBrowserRuntime, type BrowserRuntimeOptions } from "@ue-shed/uasset-inspection-wasm/browser";
+		`import { createNodeRuntime as createRootRuntime, type BlueprintResult, type InspectionResult } from "@ue-shed/uasset-inspection-wasm";
+import { createNodeRuntime, extractBlueprints, type WasmRuntime } from "@ue-shed/uasset-inspection-wasm/node";
+import { createBrowserRuntime, extractBlueprints as extractBlueprintsInBrowser, type BrowserRuntimeOptions } from "@ue-shed/uasset-inspection-wasm/browser";
 const bytes = new Uint8Array();
 const result: InspectionResult = createRootRuntime().inspect("fixture.uasset", bytes);
 const runtime: WasmRuntime = createNodeRuntime();
+const blueprint: BlueprintResult = extractBlueprints("fixture.uasset", bytes);
 const options: BrowserRuntimeOptions = { maxInputBytes: 1 };
 void result;
 void runtime;
+void blueprint;
+void extractBlueprintsInBrowser("fixture.uasset", bytes);
 void createBrowserRuntime(options);
 `
 	);

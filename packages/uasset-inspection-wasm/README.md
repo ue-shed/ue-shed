@@ -7,7 +7,8 @@ processes, maintain caches, or write assets.
 The first public contract is deliberately small:
 
 - generic inspection returns schema 8;
-- `extractText`, `extractTextures`, and `extractLevelSequences` return compact schema-1 envelopes;
+- `extractText`, `extractTextures`, `extractLevelSequences`, and `extractBlueprints` return compact
+  schema-1 envelopes;
   LevelSequence records use schema 3 and include nested-sequence and cinematic-shot semantics plus
   a recursive inventory of every decoded object, soft-object, and DataTable-row reference in the
   package;
@@ -42,7 +43,8 @@ import {
 	inspect,
 	extractText,
 	extractTextures,
-	extractLevelSequences
+	extractLevelSequences,
+	extractBlueprints
 } from "@ue-shed/uasset-inspection-wasm/node";
 
 const runtime = createNodeRuntime();
@@ -50,12 +52,15 @@ const bytes = new Uint8Array(await readFile("Content/Fixture/Example.uasset"));
 const inspection = runtime.inspect("Content/Fixture/Example.uasset", bytes);
 const text = runtime.extractText("Content/Fixture/Example.uasset", bytes);
 const sequences = runtime.extractLevelSequences("Content/Fixture/Example.uasset", bytes);
+const blueprints = runtime.extractBlueprints("Content/Fixture/Example.uasset", bytes);
 
 // The root Node entry exposes the same operations when a configured runtime is not needed.
 const sameInspection = inspect("Content/Fixture/Example.uasset", bytes);
 void extractTextures;
 void extractLevelSequences;
+void extractBlueprints;
 void sequences;
+void blueprints;
 void sameInspection;
 ```
 

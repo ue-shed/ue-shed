@@ -48,6 +48,7 @@ import type {
 import type { WorkbenchRendererApi } from "./preload-contract.js";
 
 export type {
+	BlueprintGraphReadResult,
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
@@ -69,6 +70,10 @@ export type {
 const workbenchRendererApi = {
 	assetNavigation: {
 		locate: (objectPath: string) => ipcRenderer.invoke("asset-navigation:locate", objectPath)
+	},
+	blueprintGraphs: {
+		choose: () => ipcRenderer.invoke("blueprint-graphs:choose"),
+		read: (assetPath: string) => ipcRenderer.invoke("blueprint-graphs:read", assetPath)
 	},
 	editorSession: {
 		settings: (): Promise<UnrealConnectionSettings> =>

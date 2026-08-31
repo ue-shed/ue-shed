@@ -29,6 +29,17 @@ export function IconGrid() {
 	);
 }
 
+export function IconBlueprint() {
+	return (
+		<Icon>
+			<circle cx="3.5" cy="4" r="1.5" />
+			<circle cx="12.5" cy="8" r="1.5" />
+			<circle cx="3.5" cy="12" r="1.5" />
+			<path d="M5 4h2.2a2 2 0 0 1 2 2v0a2 2 0 0 0 2 2h0M5 12h2.2a2 2 0 0 0 2-2v0a2 2 0 0 1 2-2h0" />
+		</Icon>
+	);
+}
+
 export function IconImage() {
 	return (
 		<Icon>

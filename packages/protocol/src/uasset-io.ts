@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { AuthoringTableSnapshot } from "./authoring.js";
+import { BlueprintGraphProjection } from "./blueprint-graph.js";
 import { SavedWorld } from "./saved-world.js";
 import {
 	SavedAssetInspection,
@@ -178,6 +179,10 @@ export const UAssetIoOperation = Schema.Union([
 	}),
 	Schema.Struct({
 		assetPath: NonEmptyString,
+		kind: Schema.Literal("blueprint")
+	}),
+	Schema.Struct({
+		assetPath: NonEmptyString,
 		kind: Schema.Literal("authoring")
 	}),
 	Schema.Struct({
@@ -231,6 +236,7 @@ export type UAssetIoRequest = Schema.Schema.Type<typeof UAssetIoRequest>;
 
 const UAssetIoOperationKind = Schema.Literals([
 	"inspect",
+	"blueprint",
 	"authoring",
 	"scan",
 	"extract_text",
@@ -246,6 +252,7 @@ export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationK
 /** Typed result frames carried between the IO worker and its Effect consumer. */
 export const UAssetIoResult = Schema.Union([
 	Schema.Struct({ inspection: SavedAssetInspection, kind: Schema.Literal("inspect") }),
+	Schema.Struct({ blueprint: BlueprintGraphProjection, kind: Schema.Literal("blueprint") }),
 	Schema.Struct({ kind: Schema.Literal("authoring"), snapshot: AuthoringTableSnapshot }),
 	Schema.Struct({ entry: SavedAssetScanEntry, kind: Schema.Literal("scan_asset") }),
 	Schema.Struct({ entry: SavedAssetManifestEntry, kind: Schema.Literal("scan_inventory") }),

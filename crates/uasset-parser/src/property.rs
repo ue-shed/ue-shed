@@ -60,16 +60,39 @@ pub enum RawReason {
     DecoderRejected(String),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TextHistory {
     None,
-    Base { namespace: String, key: String },
+    Base {
+        namespace: String,
+        key: String,
+    },
+    NamedFormat {
+        format: Box<TextValue>,
+        arguments: Vec<NamedTextFormatArgument>,
+    },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TextValue {
     pub source: String,
     pub history: TextHistory,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NamedTextFormatArgument {
+    pub name: String,
+    pub value: TextFormatArgumentValue,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TextFormatArgumentValue {
+    Int(i64),
+    UInt(u64),
+    Float(f32),
+    Double(f64),
+    Text(Box<TextValue>),
+    Gender(u64),
 }
 
 #[derive(Clone, Debug, PartialEq)]

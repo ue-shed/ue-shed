@@ -1,4 +1,5 @@
 import {
+	BlueprintGraphRead,
 	isHeaderScanEntry,
 	SavedAssetCatalogInspection,
 	SavedAssetInspection,
@@ -133,6 +134,7 @@ export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>(
 		kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
 		operation: Schema.Literals([
 			"authoring",
+			"blueprint",
 			"catalog",
 			"extract_text",
 			"extract_texture",
@@ -266,6 +268,10 @@ export interface AssetReaderApi {
 	readonly readAsset: (
 		assetPath: string
 	) => Effect.Effect<SavedAssetInspection, AssetReaderError>;
+	/** Reads the saved editor graph without requiring Unreal Engine or loading the Blueprint. */
+	readonly readBlueprint: (
+		assetPath: string
+	) => Effect.Effect<BlueprintGraphRead, AssetReaderError>;
 	readonly readTable: (
 		assetPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
@@ -291,6 +297,7 @@ type AssetReaderTestDefaults =
 	| "configuration"
 	| "extractProjectText"
 	| "extractProjectTextures"
+	| "readBlueprint"
 	| "readSavedWorld"
 	| "savedWorldProgress"
 	| "scanProgress"
@@ -453,7 +460,9 @@ import {
 	UassetProtocolSession,
 	invokeProtocolScan,
 	invokeProtocolSessionSingle,
+	invokeProtocolSessionSingleWithEvidence,
 	invokeProtocolSingle,
+	invokeProtocolSingleWithEvidence,
 	makeProtocolRequest,
 	protocolProjectionStream,
 	updateSavedWorldProgress
@@ -492,7 +501,8 @@ function makeAssetReader(
 	progress: CatalogProgressStore,
 	scanStore: ScanProgressStore,
 	savedWorldStore: SavedWorldProgressStore,
-	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle
+	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle,
+	invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = invokeProtocolSingleWithEvidence
 ): AssetReaderApi {
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
@@ -561,6 +571,28 @@ function makeAssetReader(
 			expected: "inspect",
 			select: (result) => (result.kind === "inspect" ? result.inspection : undefined)
 		});
+	});
+	const readBlueprint = Effect.fn("AssetReader.readBlueprint")(function* (assetPath: string) {
+		const evidence = yield* invokeSingleWithEvidence({
+			configuration,
+			operation: "blueprint",
+			path: assetPath,
+			request: makeProtocolRequest(
+				{ kind: "blueprint", assetPath },
+				{
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
+					timeoutMs: configuration.timeoutMs
+				},
+				{ contractMinor: 2 }
+			),
+			expected: "blueprint",
+			select: (result) => (result.kind === "blueprint" ? result.blueprint : undefined)
+		});
+		return {
+			blueprint: evidence.value,
+			diagnostics: evidence.diagnostics,
+			outcome: evidence.outcome
+		};
 	});
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
 		return yield* invokeSingle({
@@ -650,6 +682,7 @@ function makeAssetReader(
 		extractProjectText,
 		extractProjectTextures,
 		readAsset,
+		readBlueprint,
 		readSavedWorld,
 		readTable,
 		scanProgress,
@@ -675,12 +708,20 @@ function makeScopedAssetReader(
 					session
 				})
 			);
+		const invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = (options) =>
+			mutex.withPermits(1)(
+				invokeProtocolSessionSingleWithEvidence({
+					...options,
+					session
+				})
+			);
 		return makeAssetReader(
 			configuration,
 			{ current: idleCatalogProgress() },
 			{ current: idleScanProgress() },
 			{ current: idleSavedWorldProgress() },
-			invokeSingle
+			invokeSingle,
+			invokeSingleWithEvidence
 		);
 	});
 }
@@ -761,6 +802,18 @@ export function makeAssetReaderTestLayer(service: AssetReaderTestApi): Layer.Lay
 							retrySafe: false
 						})
 					)),
+			readBlueprint:
+				service.readBlueprint ??
+				((assetPath) =>
+					Effect.fail(
+						new AssetReaderError({
+							kind: "process",
+							operation: "blueprint",
+							message: "This test asset reader does not stub readBlueprint.",
+							path: assetPath,
+							retrySafe: false
+						})
+					)),
 			savedWorldProgress:
 				service.savedWorldProgress ?? (() => Effect.succeed(idleSavedWorldProgress())),
 			scanProgress: service.scanProgress ?? (() => Effect.succeed(idleScanProgress())),
@@ -799,6 +852,12 @@ export function readSavedAsset(
 	options: AssetReaderOptions
 ): Effect.Effect<SavedAssetInspection, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readAsset(options.assetPath));
+}
+
+export function readSavedBlueprint(
+	options: AssetReaderOptions
+): Effect.Effect<BlueprintGraphRead, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
 }
 
 export function discoverSavedAssets(

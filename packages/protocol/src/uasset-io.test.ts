@@ -49,8 +49,10 @@ describe("uasset IO protocol v1", () => {
 			Effect.gen(function* () {
 				for (const name of [
 					"valid/scan-request.json",
+					"valid/blueprint-request.json",
 					"valid/accepted-event.json",
 					"valid/inspect-result-event.json",
+					"valid/blueprint-result-event.json",
 					"valid/authoring-result-event.json",
 					"valid/scan-asset-result-event.json",
 					"valid/scan-inventory-result-event.json",

@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 pub enum ResultFrame {
     #[serde(rename = "inspect")]
     Inspect { inspection: SavedAssetInspection },
+    #[serde(rename = "blueprint")]
+    Blueprint {
+        blueprint: uasset_inspection::BlueprintGraphProjection,
+    },
     #[serde(rename = "authoring")]
     Authoring { snapshot: AuthoringTableSnapshot },
     #[serde(rename = "scan_asset")]

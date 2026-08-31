@@ -301,6 +301,20 @@
 						},
 						"kind": {
 							"type": "string",
+							"enum": ["blueprint"]
+						}
+					},
+					"required": ["assetPath", "kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"assetPath": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"kind": {
+							"type": "string",
 							"enum": ["authoring"]
 						}
 					},

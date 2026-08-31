@@ -47,6 +47,13 @@ type FixtureContract = {
 	readonly fixtureVersion: string;
 	readonly engine: { readonly major: number; readonly minor: number };
 	readonly contentRoot: string;
+	readonly blueprintGraph: {
+		readonly assetPath: string;
+		readonly graphs: number;
+		readonly nodes: number;
+		readonly pins: number;
+		readonly links: number;
+	};
 	readonly levelSequence: {
 		readonly assetPath: string;
 		readonly nestedAssetPath: string;
@@ -206,6 +213,7 @@ function readContract(): FixtureContract {
 		!isJsonString(value.fixtureVersion) ||
 		!isJsonObject(value.engine) ||
 		!isJsonObject(value.cameraLoad) ||
+		!isJsonObject(value.blueprintGraph) ||
 		!isJsonObject(value.mapReview) ||
 		!isJsonObject(value.offlineWorld) ||
 		!isJsonObject(value.gameText) ||
@@ -294,6 +302,17 @@ describe("generic Unreal fixture contract", () => {
 			maxEvidence: 8
 		});
 		expect(existsSync(join(fixtureRoot, contract.scenarioStudio.relativeMapPath))).toBe(true);
+	});
+
+	it("declares the saved Blueprint graph fixture", () => {
+		expect(contract.blueprintGraph).toEqual({
+			assetPath: "/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture",
+			graphs: 2,
+			nodes: 6,
+			pins: 15,
+			links: 1
+		});
+		expect(existsSync(generatedAssetPath(contract.blueprintGraph.assetPath))).toBe(true);
 	});
 
 	it("keeps table identities and row identities unique", () => {

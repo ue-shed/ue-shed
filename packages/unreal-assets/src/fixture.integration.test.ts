@@ -16,6 +16,7 @@ import {
 	type AssetReaderError,
 	type SavedAssetScan,
 	readSavedAsset,
+	readSavedBlueprint,
 	readSavedTable,
 	scanSavedProject
 } from "./index.js";
@@ -54,15 +55,15 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixtureRoot }));
-		// 66 `.uasset` packages (including six World Partition external actors, two animation
-		// fixtures, two Level Sequences, and the 25-asset Enhanced Input surface) plus the four maps,
+		// 67 `.uasset` packages (including six World Partition external actors, one Blueprint, two
+		// animation fixtures, two Level Sequences, and the 25-asset Enhanced Input surface) plus four maps,
 		// including Movement Gym. Levels use the same classic package
 		// container, so enumeration selects them too.
-		expect(scan.summary.scannedAssets).toBe(70);
-		expect(scan.summary.emittedAssets).toBe(70);
+		expect(scan.summary.scannedAssets).toBe(71);
+		expect(scan.summary.emittedAssets).toBe(71);
 		expect(scan.summary.skippedAssets).toBe(0);
 		expect(scan.failures).toEqual([]);
-		expect(scan.assets).toHaveLength(70);
+		expect(scan.assets).toHaveLength(71);
 		expect(scan.assets.every((entry) => entry.fileBytes > 0)).toBe(true);
 	}, 15_000);
 
@@ -99,15 +100,33 @@ describe.skipIf(!executable)("batched project scan", () => {
 		}
 	});
 
+	it("reads the UE 5.7 Blueprint fixture through the versioned process boundary", async () => {
+		const assetPath = join(fixtureRoot, "Content/Fixture/Blueprints/BP_GraphFixture.uasset");
+		const read = await runReader(readSavedBlueprint({ assetPath }));
+		const blueprint = read.blueprint;
+		const nodes = blueprint.graphs.flatMap((graph) => graph.nodes);
+
+		expect(read.outcome).toBe("complete");
+		expect(read.diagnostics).toEqual([]);
+		expect(blueprint.object_path).toBe(
+			"/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture"
+		);
+		expect(blueprint.graphs).toHaveLength(2);
+		expect(nodes).toHaveLength(6);
+		expect(nodes.flatMap((node) => node.pins)).toHaveLength(15);
+		expect(blueprint.graphs.flatMap((graph) => graph.links)).toHaveLength(1);
+		expect(blueprint.coverage_gaps).toEqual([]);
+	});
+
 	it("decodes only packages a header filter selects", async () => {
 		const scan = await runReader(
 			scanSavedProject({ classes: ["Texture2D"], projectRoot: fixtureRoot })
 		);
-		expect(scan.summary.scannedAssets).toBe(70);
+		expect(scan.summary.scannedAssets).toBe(71);
 		expect(scan.summary.emittedAssets).toBe(17);
 		// The levels, Level Sequences, saved World Partition actor packages, and every Enhanced Input
 		// asset carry no Texture2D export, so they are ruled out before any decode.
-		expect(scan.summary.skippedAssets).toBe(53);
+		expect(scan.summary.skippedAssets).toBe(54);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -129,9 +148,9 @@ describe.skipIf(!executable)("batched project scan", () => {
 				projectRoot: fixtureRoot
 			})
 		);
-		// Every InputAction and InputMappingContext names TextProperty for its description, and the
-		// LevelSequence names it for its localized timeline channel.
-		expect(scan.summary.emittedAssets).toBe(29);
+		// Every InputAction and InputMappingContext names TextProperty for its description; the
+		// LevelSequence and Blueprint fixtures name it for localized native graph/channel values.
+		expect(scan.summary.emittedAssets).toBe(30);
 		expect(
 			scan.assets
 				.filter(isFullScanEntry)
@@ -232,7 +251,7 @@ describe.skipIf(!executable)("batched project scan", () => {
 			})
 		);
 		expect(scan.summary.depth).toBe("header");
-		expect(scan.summary.scannedAssets).toBe(70);
+		expect(scan.summary.scannedAssets).toBe(71);
 		// The twelve authoring packages, each exporting exactly one table.
 		expect(scan.summary.emittedAssets).toBe(12);
 		const headers = scan.assets.filter(isHeaderScanEntry);

@@ -148,6 +148,7 @@ export const decodeConnectionState = Schema.decodeUnknownEffect(ConnectionState)
 
 export * from "./authoring.js";
 export * from "./authoring-review.js";
+export * from "./blueprint-graph.js";
 export * from "./companion.js";
 export * from "./cameras.js";
 export * from "./editor-play-session.js";

@@ -88,6 +88,7 @@ import {
 	WorldScoutRefreshRate
 } from "@ue-shed/observatory";
 import {
+	BlueprintGraphRead,
 	CameraScheduleConfig,
 	CameraStatus,
 	EditorPlaySessionCommand,
@@ -129,6 +130,28 @@ import {
 } from "./project-workspace-contract.js";
 
 const EmptyArgs = Schema.Tuple([]);
+
+export const BlueprintAssetPath = Schema.Trim.check(
+	Schema.isNonEmpty(),
+	Schema.isMaxLength(32_768)
+);
+export type BlueprintAssetPath = Schema.Schema.Type<typeof BlueprintAssetPath>;
+
+export const BlueprintGraphReadResult = Schema.Union([
+	Schema.Struct({
+		assetPath: BlueprintAssetPath,
+		...BlueprintGraphRead.fields,
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({ status: Schema.Literal("cancelled") }),
+	Schema.Struct({
+		assetPath: Schema.optionalKey(BlueprintAssetPath),
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		status: Schema.Literal("failed")
+	})
+]);
+export type BlueprintGraphReadResult = Schema.Schema.Type<typeof BlueprintGraphReadResult>;
 
 export const RemoteControlPort = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(1),
@@ -650,6 +673,16 @@ export const invokeContracts = {
 		channel: "asset-navigation:locate",
 		args: Schema.Tuple([GameObjectPath]),
 		result: EditorAssetLocateResult
+	}),
+	"blueprint-graphs:read": invoke({
+		channel: "blueprint-graphs:read",
+		args: Schema.Tuple([BlueprintAssetPath]),
+		result: BlueprintGraphReadResult
+	}),
+	"blueprint-graphs:choose": invoke({
+		channel: "blueprint-graphs:choose",
+		args: EmptyArgs,
+		result: BlueprintGraphReadResult
 	}),
 	"input-atlas:configured-scan": invoke({
 		channel: "input-atlas:configured-scan",

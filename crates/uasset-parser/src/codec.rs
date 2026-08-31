@@ -14,6 +14,9 @@ use crate::property::{
 /// UE `INDEX_NONE` marks a full container replace in map property payloads.
 const INDEX_NONE: i32 = -1;
 const MAX_PROPERTY_DECODE_DEPTH: usize = 64;
+const RICH_CURVE_KEY_SERIALIZED_BYTES: u64 = 27;
+const RICH_CURVE_KEY_RAW_REASON: &str =
+    "native FRichCurveKey fields are preserved but not projected";
 use crate::schema::SchemaProvider;
 use crate::version::VersionContext;
 
@@ -407,6 +410,9 @@ fn decode_binary_or_native_value(
                     payload, &path,
                 )?)));
             }
+            Some("RichCurveKey") => {
+                return decode_rich_curve_key_as_raw(payload, &path).map(Some);
+            }
             _ => {}
         }
     }
@@ -651,6 +657,23 @@ fn decode_container_element(
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_spec.name == "StructProperty"
+        && resolve_struct_type_name(context.package, type_spec.tree).as_deref()
+            == Some("RichCurveKey")
+    {
+        let mut element = payload.take_bounded(RICH_CURVE_KEY_SERIALIZED_BYTES, path)?;
+        return decode_rich_curve_key_as_raw(&mut element, path).map(Some);
+    }
+
+    if type_spec.name == "StructProperty"
+        && resolve_struct_type_name(context.package, type_spec.tree).as_deref() == Some("Guid")
+    {
+        let mut element_payload = payload.take_bounded(16, path)?;
+        return Ok(Some(PropertyValue::Guid(
+            element_payload.read_guid(&format!("{path}.Value"))?,
+        )));
+    }
+
     if type_spec.name == "FrameNumber"
         || (type_spec.name == "StructProperty"
             && resolve_struct_type_name(context.package, type_spec.tree).as_deref()
@@ -700,6 +723,39 @@ fn decode_container_element(
         path,
         depth,
     )
+}
+
+/// `FRichCurveKey::Serialize` writes three enum bytes followed by six floats without property
+/// tags. Consume that engine-defined framing so an enclosing reflected object remains decodable;
+/// the semantic fields stay explicitly raw until the generic property schema owns a curve-key
+/// representation.
+fn decode_rich_curve_key_as_raw(
+    payload: &mut Reader<'_>,
+    path: &str,
+) -> Result<PropertyValue, PropertyError> {
+    payload.read_u8(&format!("{path}.InterpMode"))?;
+    payload.read_u8(&format!("{path}.TangentMode"))?;
+    payload.read_u8(&format!("{path}.TangentWeightMode"))?;
+    payload.read_f32(&format!("{path}.Time"))?;
+    payload.read_f32(&format!("{path}.Value"))?;
+    payload.read_f32(&format!("{path}.ArriveTangent"))?;
+    payload.read_f32(&format!("{path}.ArriveTangentWeight"))?;
+    payload.read_f32(&format!("{path}.LeaveTangent"))?;
+    payload.read_f32(&format!("{path}.LeaveTangentWeight"))?;
+    if payload.remaining() != 0 {
+        return Err(PropertyError::new(
+            crate::property::PropertyErrorKind::MalformedData,
+            Some(payload.tell()),
+            path,
+            format!(
+                "FRichCurveKey left {} trailing bytes after native decode",
+                payload.remaining()
+            ),
+        ));
+    }
+    Ok(PropertyValue::Raw {
+        reason: RawReason::DecoderRejected(RICH_CURVE_KEY_RAW_REASON.to_owned()),
+    })
 }
 
 fn unsupported_container_type(
@@ -902,10 +958,15 @@ fn decode_text_value(
     let history_type = payload.read_i8(&format!("{path}.HistoryType"))?;
 
     if history_type == -1 {
-        let _has_culture_invariant =
+        let has_culture_invariant =
             read_archive_bool(payload, &format!("{path}.CultureInvariant"))?;
+        let source = if has_culture_invariant {
+            payload.read_fstring(&format!("{path}.CultureInvariantString"))?
+        } else {
+            String::new()
+        };
         return Ok(Some(TextValue {
-            source: String::new(),
+            source,
             history: TextHistory::None,
         }));
     }
@@ -1463,6 +1524,42 @@ mod tests {
     }
 
     #[test]
+    fn consumes_native_rich_curve_key_array_elements_without_desynchronizing() {
+        let names = vec![
+            "ArrayProperty".into(),
+            "StructProperty".into(),
+            "RichCurveKey".into(),
+        ];
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 1);
+        payload.extend_from_slice(&[1, 2, 3]);
+        for value in [4.0_f32, 5.0, 6.0, 7.0, 8.0, 9.0] {
+            push_f32(&mut payload, value);
+        }
+
+        let value = decode_record(
+            names,
+            0,
+            vec![PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(2, 0),
+                    parameters: Vec::new(),
+                }],
+            }],
+            PropertyTagFlags(0x08),
+            &payload,
+        );
+
+        assert_eq!(
+            value,
+            PropertyValue::Array(vec![PropertyValue::Raw {
+                reason: RawReason::DecoderRejected(RICH_CURVE_KEY_RAW_REASON.to_owned()),
+            }])
+        );
+    }
+
+    #[test]
     fn rejects_absurd_array_count_before_allocating_values() {
         let names = vec!["Value".into(), "ArrayProperty".into(), "IntProperty".into()];
         let payload = i32::MAX.to_le_bytes();
@@ -1931,6 +2028,57 @@ mod tests {
         assert_eq!(entries[0].value, PropertyValue::String("one".into()));
         assert_eq!(entries[1].key, PropertyValue::Int(2));
         assert_eq!(entries[1].value, PropertyValue::String("two".into()));
+    }
+
+    #[test]
+    fn decodes_name_to_guid_map_payload() {
+        let names = vec![
+            "MapProperty".into(),
+            "NameProperty".into(),
+            "StructProperty".into(),
+            "Guid".into(),
+            "Widget".into(),
+        ];
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 0); // KeysToRemove
+        push_i32(&mut payload, 1); // Entries
+        push_i32(&mut payload, 4); // Name index
+        push_i32(&mut payload, 0); // Name number
+        for component in [1_u32, 2, 3, 4] {
+            payload.extend_from_slice(&component.to_le_bytes());
+        }
+
+        let value = decode_record(
+            names,
+            0,
+            vec![
+                PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: Vec::new(),
+                },
+                PropertyTypeName {
+                    name: crate::test_support::name_ref(2, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(3, 0),
+                        parameters: Vec::new(),
+                    }],
+                },
+            ],
+            PropertyTagFlags(0),
+            &payload,
+        );
+        assert_eq!(
+            value,
+            PropertyValue::Map(vec![MapEntry {
+                key: PropertyValue::Name(crate::test_support::name_ref(4, 0)),
+                value: PropertyValue::Guid(Guid {
+                    a: 1,
+                    b: 2,
+                    c: 3,
+                    d: 4,
+                }),
+            }])
+        );
     }
 
     #[test]

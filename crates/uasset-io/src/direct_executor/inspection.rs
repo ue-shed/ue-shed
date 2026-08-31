@@ -202,6 +202,12 @@ fn saved_asset(package: &Package, decoded: DecodedAsset) -> SavedAsset {
             properties: saved_properties(package, object.properties),
             tail_bytes: (!object.tail.is_empty()).then_some(object.tail.len()),
         },
+        DecodedAsset::BlueprintGraphNode(node) => SavedAsset::UObject {
+            object_path: node.object_path.into_string(),
+            class_path: node.class_path.into_string(),
+            properties: saved_properties(package, node.properties),
+            tail_bytes: (!node.tail.is_empty()).then_some(node.tail.len()),
+        },
         DecodedAsset::AnimSequence(sequence) => SavedAsset::UObject {
             object_path: sequence.object_path.into_string(),
             class_path: ANIM_SEQUENCE_CLASS.to_owned(),
@@ -313,6 +319,15 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
                 namespace: Some(namespace),
                 key: Some(key),
             },
+            ParserTextHistory::NamedFormat { format, .. } => {
+                let (history, namespace, key) = text_identity_parts(*format);
+                SavedPropertyValue::Text {
+                    value: text.source,
+                    history,
+                    namespace,
+                    key,
+                }
+            }
         },
         PropertyValue::Vector(value) => SavedPropertyValue::Vector {
             x: finite_f64(value.x),
@@ -390,6 +405,18 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
             },
             size: 0,
         },
+    }
+}
+
+fn text_identity_parts(
+    text: uasset_parser::property::TextValue,
+) -> (TextHistory, Option<String>, Option<String>) {
+    match text.history {
+        ParserTextHistory::None => (TextHistory::None, None, None),
+        ParserTextHistory::Base { namespace, key } => {
+            (TextHistory::Base, Some(namespace), Some(key))
+        }
+        ParserTextHistory::NamedFormat { format, .. } => text_identity_parts(*format),
     }
 }
 

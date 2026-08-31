@@ -62,6 +62,10 @@ export async function extractLevelSequences(path, bytes) {
 	return (await createBrowserRuntime()).extractLevelSequences(path, bytes);
 }
 
+export async function extractBlueprints(path, bytes) {
+	return (await createBrowserRuntime()).extractBlueprints(path, bytes);
+}
+
 export async function version() {
 	return (await createBrowserRuntime()).version();
 }

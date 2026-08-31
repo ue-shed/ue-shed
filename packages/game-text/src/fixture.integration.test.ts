@@ -20,13 +20,14 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 		expect(corpus.coverage).toMatchObject({
 			// The maps, World Partition external actors, animation fixture, and nested-only timeline
 			// carry no text of their own. Every InputAction and InputMappingContext carries one FText
-			// description, while the text timeline contributes three localized keys.
-			discoveredPackages: 70,
-			inspectedPackages: 70,
+			// description, the text timeline contributes three localized keys, and the Blueprint graph
+			// fixture contributes one localized pin label.
+			discoveredPackages: 71,
+			inspectedPackages: 71,
 			failedPackages: 0,
-			textUnits: 36,
-			textOccurrences: 37,
-			resolvedOccurrences: 37,
+			textUnits: 37,
+			textOccurrences: 38,
+			resolvedOccurrences: 38,
 			unsupportedTextProperties: 1
 		});
 		const holdMatches = searchTextCorpus(corpus, "Hold to skip");

@@ -1,6 +1,7 @@
 import { it } from "@effect/vitest";
 import { NiagaraSystemObjectPath } from "@ue-shed/niagara";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
+import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
 import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
@@ -18,6 +19,8 @@ import {
 import { Effect, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
+import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
+import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { invokeChannelNames } from "../ipc-contracts.js";
 import { makeWorkbenchAssetAuditsTestLayer } from "../services/asset-audits.js";
 import { makeWorkbenchAssetNavigationTestLayer } from "../services/asset-navigation.js";
@@ -101,6 +104,15 @@ const sampleCameraStatus: CameraStatus = {
 
 /** Builds the full fake feature-service graph that `register.ts` depends on. */
 function buildRegistrationLayer(recorder: Recorder) {
+	const assetReader = makeAssetReaderTestLayer({
+		discoverAssets: () => Effect.succeed([]),
+		discoverTables: () =>
+			Effect.succeed({ diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] }),
+		readAsset: () => Effect.die("not used"),
+		readTable: () => Effect.die("not used"),
+		source: () => Effect.succeed("configured")
+	});
+	const dialog = makeElectronDialogTestLayer.pipe(Layer.provide(makeWorkbenchWindowTestLayer()));
 	const showcase = makeShowcaseTestLayer({
 		context: () =>
 			recorder.record("showcase.context").pipe(
@@ -626,6 +638,8 @@ function buildRegistrationLayer(recorder: Recorder) {
 	});
 
 	return Layer.mergeAll(
+		assetReader,
+		dialog,
 		showcase,
 		assetAudits,
 		assetNavigation,
@@ -678,7 +692,27 @@ it.effect("registers every schema-owned contract channel exactly once", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(104);
+		expect(result).toHaveLength(106);
+	})
+);
+
+it.effect("dispatches Blueprint reads and preserves actionable reader failures", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) =>
+			ipc.invoke("blueprint-graphs:read", "C:/Project/Content/BP_Example.uasset")
+		);
+		expect(result).toMatchObject({
+			assetPath: "C:/Project/Content/BP_Example.uasset",
+			recovery: expect.stringContaining("5.7"),
+			status: "failed"
+		});
+	})
+);
+
+it.effect("treats a cancelled Blueprint file picker as idle", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) => ipc.invoke("blueprint-graphs:choose"));
+		expect(result).toEqual({ status: "cancelled" });
 	})
 );
 

@@ -1,11 +1,18 @@
 {
 	"schemaVersion": 1,
-	"fixtureVersion": "1.9.0",
+	"fixtureVersion": "1.10.0",
 	"engine": {
 		"major": 5,
 		"minor": 7
 	},
 	"contentRoot": "/Game/Fixture/Authoring",
+	"blueprintGraph": {
+		"assetPath": "/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture",
+		"graphs": 2,
+		"nodes": 6,
+		"pins": 15,
+		"links": 1
+	},
 	"animation": {
 		"contentRoot": "/Game/Fixture/Animation",
 		"skeleton": {

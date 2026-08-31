@@ -81,7 +81,7 @@ export type SavedProperty = SavedPropertyValue & {
 const SavedPropertyValue: Schema.Codec<SavedPropertyValue> = Schema.suspend(
 	() => SavedPropertyValueUnion
 ).annotate({ identifier: "SavedPropertyValue" });
-const SavedProperty: Schema.Codec<SavedProperty> = Schema.suspend(() =>
+export const SavedProperty: Schema.Codec<SavedProperty> = Schema.suspend(() =>
 	SavedPropertyValueUnion.mapMembers(
 		Tuple.map(Schema.fieldsAssign({ name: Schema.String, type: Schema.String }))
 	)

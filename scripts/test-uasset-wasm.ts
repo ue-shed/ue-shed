@@ -168,6 +168,22 @@ assert.deepEqual(
 	]
 );
 
+const blueprintFixture = join(fixtureRoot, "Content/Fixture/Blueprints/BP_GraphFixture.uasset");
+const blueprintPath = relative(repositoryRoot, blueprintFixture).replaceAll("\\", "/");
+const blueprint = runtime.extractBlueprints(blueprintPath, readFileSync(blueprintFixture));
+assert.equal(blueprint.status, "ok");
+assert.equal(blueprint.blueprints.length, 1);
+assert.equal(blueprint.blueprints[0].schema_version, 1);
+assert.ok(blueprint.blueprints[0].graphs.length > 0);
+assert.ok(blueprint.blueprints[0].graphs.flatMap((graph) => graph.nodes).length > 0);
+assert.ok(
+	blueprint.blueprints[0].graphs.flatMap((graph) => graph.nodes.flatMap((node) => node.pins))
+		.length > 0
+);
+assert.ok(blueprint.blueprints[0].graphs.flatMap((graph) => graph.links).length > 0);
+assert.deepEqual(blueprint.blueprints[0].coverage_gaps, []);
+assert.deepEqual(blueprint.diagnostics, []);
+
 const unsupported = runtime.inspect("BigEndian.uasset", Uint8Array.from([0x9e, 0x2a, 0x83, 0xc1]));
 assert.equal(unsupported.schema_version, 8);
 assert.equal(unsupported.status, "error");
@@ -186,6 +202,15 @@ assert.equal(malformedText.status, "error");
 assert.equal(malformedText.path, "Broken.uasset");
 assert.equal(malformedText.kind, "unsupported_format");
 
+const malformedBlueprint = runtime.extractBlueprints(
+	"Broken.uasset",
+	Uint8Array.from([0, 1, 2, 3])
+);
+assert.equal(malformedBlueprint.schema_version, 1);
+assert.equal(malformedBlueprint.status, "error");
+assert.equal(malformedBlueprint.path, "Broken.uasset");
+assert.equal(malformedBlueprint.kind, "unsupported_format");
+
 const narrowRuntime = wasm.createNodeRuntime({ maxInputBytes: 4 });
 assert.throws(
 	() => narrowRuntime.inspect("TooLarge.uasset", new Uint8Array(5)),
@@ -196,7 +221,7 @@ assert.throws(
 );
 
 process.stdout.write(
-	`WASM inspection parity passed for ${fixtures.length} fixtures, compact projections passed for ${projectionFixtures.length} fixtures, and typed failures/limits passed.\n`
+	`WASM inspection parity passed for ${fixtures.length} fixtures, compact projections passed for ${projectionFixtures.length} fixtures plus Blueprint and Level Sequence coverage, and typed failures/limits passed.\n`
 );
 
 function readNativeProjection(

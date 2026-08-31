@@ -9,6 +9,10 @@ import type { MapCaptureProgressEvent } from "@ue-shed/extension-camera-review/m
 
 export const workbenchInvokeChannels = {
 	assetNavigation: { locate: "asset-navigation:locate" },
+	blueprintGraphs: {
+		choose: "blueprint-graphs:choose",
+		read: "blueprint-graphs:read"
+	},
 	editorSession: {
 		settings: "editor-session:settings",
 		setPort: "editor-session:set-port",

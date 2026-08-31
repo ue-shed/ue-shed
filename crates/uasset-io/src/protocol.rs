@@ -62,6 +62,11 @@ pub enum Operation {
         #[serde(rename = "assetPath")]
         asset_path: String,
     },
+    #[serde(rename = "blueprint")]
+    Blueprint {
+        #[serde(rename = "assetPath")]
+        asset_path: String,
+    },
     #[serde(rename = "authoring")]
     Authoring {
         #[serde(rename = "assetPath")]
@@ -199,6 +204,7 @@ pub struct Request {
 #[serde(rename_all = "lowercase")]
 pub enum OperationKind {
     Inspect,
+    Blueprint,
     Authoring,
     Scan,
     #[serde(rename = "extract_text")]
@@ -535,9 +541,9 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
         ));
     }
     match &request.operation {
-        Operation::Inspect { asset_path } | Operation::Authoring { asset_path } => {
-            validate_non_empty(asset_path, "assetPath")
-        }
+        Operation::Inspect { asset_path }
+        | Operation::Blueprint { asset_path }
+        | Operation::Authoring { asset_path } => validate_non_empty(asset_path, "assetPath"),
         Operation::Scan {
             cache_path,
             selection,
@@ -769,6 +775,12 @@ mod tests {
     const VALID_INSPECT_RESULT: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/inspect-result-event.json"
     );
+    const VALID_BLUEPRINT_REQUEST: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/blueprint-request.json"
+    );
+    const VALID_BLUEPRINT_RESULT: &str = include_str!(
+        "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/blueprint-result-event.json"
+    );
     const VALID_AUTHORING_RESULT: &str = include_str!(
         "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/authoring-result-event.json"
     );
@@ -842,11 +854,13 @@ mod tests {
     #[test]
     fn accepts_shared_valid_fixtures() {
         decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
+        decode_request(VALID_BLUEPRINT_REQUEST.as_bytes()).expect("valid Blueprint request");
         decode_event(VALID_ACCEPTED.as_bytes()).expect("valid accepted event");
         decode_event(VALID_COMPLETED.as_bytes()).expect("valid completed event");
         decode_event(VALID_INSPECT_RESULT.as_bytes()).expect("valid inspect result event");
         for fixture in [
             VALID_AUTHORING_RESULT,
+            VALID_BLUEPRINT_RESULT,
             VALID_SCAN_ASSET_RESULT,
             VALID_SCAN_INVENTORY_RESULT,
             VALID_SCAN_SUMMARY_RESULT,

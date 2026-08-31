@@ -1,15 +1,23 @@
 //! WebAssembly adapter for the portable UAsset parser.
 
+use std::collections::HashSet;
 use std::io::{self, Write};
 
 use serde::Serialize;
+use uasset_inspection::blueprint::{
+    BlueprintGraphProjection, is_control_rig_blueprint_package, project_blueprint_graphs,
+    saved_blueprint_graph_node_paths,
+};
 use uasset_inspection::generic::{InspectionJsonError, write_inspection_json};
 use uasset_inspection::level_sequence::{LevelSequenceProjection, project_level_sequence};
 use uasset_inspection::projection::{
     TEXTURE2D_CLASS, TextCoverageGap, TextOccurrence, TextureRecord, project_text_asset,
     project_texture_asset,
 };
-use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
+use uasset_parser::asset::{
+    AssetDecodeContext, AssetErrorKind, DecodedAsset, decode_export,
+    decode_saved_blueprint_graph_node, supports_blueprint_graph_package_version,
+};
 use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
 use wasm_bindgen::prelude::*;
@@ -60,60 +68,62 @@ pub fn extract_text(path: &str, bytes: &[u8]) -> String {
         return error;
     }
     match Package::parse(bytes) {
-        Ok(package) => {
-            if let Some(error) = projection_export_limit(path, package.exports.len()) {
-                return error;
-            }
-            let schemas = EmptySchemas;
-            let context = AssetDecodeContext {
-                source: bytes,
-                package: &package,
-                schemas: &schemas,
-            };
-            let mut occurrences = Vec::new();
-            let mut coverage_gaps = Vec::new();
-            let mut diagnostics = Vec::new();
-            for export in &package.exports {
-                match decode_export(export, &context) {
-                    Ok(Some(asset)) => {
-                        let projection = project_text_asset(&package, &asset);
-                        let current_items = occurrences.len().saturating_add(coverage_gaps.len());
-                        let additional_items = projection
-                            .occurrences
-                            .len()
-                            .saturating_add(projection.coverage_gaps.len());
-                        if exceeds_limit(current_items, additional_items, MAX_PROJECTION_ITEMS) {
-                            return serialize_projection_limit_error(
-                                path,
-                                "text projection item count exceeds the WASM limit",
-                            );
-                        }
-                        occurrences.extend(projection.occurrences);
-                        coverage_gaps.extend(projection.coverage_gaps);
-                    }
-                    Ok(None) => {}
-                    Err(error) => diagnostics.push(ProjectionDiagnostic {
-                        object_path: export.object_path.to_string(),
-                        class_path: export.class_path.as_ref().map(ToString::to_string),
-                        code: asset_error_kind_name(error.kind()),
-                        message: error.message().to_owned(),
-                    }),
-                }
-            }
-            serialize_bounded_projection(
-                path,
-                &TextProjectionOutput {
-                    schema_version: 1,
-                    status: projection_status(&diagnostics),
-                    path,
-                    occurrences,
-                    coverage_gaps,
-                    diagnostics,
-                },
-            )
-        }
+        Ok(package) => extract_text_from_package(path, bytes, &package),
         Err(error) => serialize_projection_error(path, &error),
     }
+}
+
+fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> String {
+    if let Some(error) = projection_export_limit(path, package.exports.len()) {
+        return error;
+    }
+    let schemas = EmptySchemas;
+    let context = AssetDecodeContext {
+        source: bytes,
+        package,
+        schemas: &schemas,
+    };
+    let mut occurrences = Vec::new();
+    let mut coverage_gaps = Vec::new();
+    let mut diagnostics = Vec::new();
+    for export in &package.exports {
+        match decode_export(export, &context) {
+            Ok(Some(asset)) => {
+                let projection = project_text_asset(package, &asset);
+                let current_items = occurrences.len().saturating_add(coverage_gaps.len());
+                let additional_items = projection
+                    .occurrences
+                    .len()
+                    .saturating_add(projection.coverage_gaps.len());
+                if exceeds_limit(current_items, additional_items, MAX_PROJECTION_ITEMS) {
+                    return serialize_projection_limit_error(
+                        path,
+                        "text projection item count exceeds the WASM limit",
+                    );
+                }
+                occurrences.extend(projection.occurrences);
+                coverage_gaps.extend(projection.coverage_gaps);
+            }
+            Ok(None) => {}
+            Err(error) => diagnostics.push(ProjectionDiagnostic {
+                object_path: export.object_path.to_string(),
+                class_path: export.class_path.as_ref().map(ToString::to_string),
+                code: asset_error_kind_name(error.kind()),
+                message: error.message().to_owned(),
+            }),
+        }
+    }
+    serialize_bounded_projection(
+        path,
+        &TextProjectionOutput {
+            schema_version: 1,
+            status: projection_status(&diagnostics),
+            path,
+            occurrences,
+            coverage_gaps,
+            diagnostics,
+        },
+    )
 }
 
 /// Parses one package and emits the compact, portable Texture Audit projection.
@@ -242,6 +252,148 @@ pub fn extract_level_sequences(path: &str, bytes: &[u8]) -> String {
     }
 }
 
+/// Parses one package and emits the compact, portable Blueprint graph projection.
+#[wasm_bindgen]
+pub fn extract_blueprints(path: &str, bytes: &[u8]) -> String {
+    if let Some(error) = input_limit_error(1, path, bytes) {
+        return error;
+    }
+    match Package::parse(bytes) {
+        Ok(package) => extract_blueprints_from_package(path, bytes, &package),
+        Err(error) => serialize_projection_error(path, &error),
+    }
+}
+
+fn extract_blueprints_from_package(path: &str, bytes: &[u8], package: &Package) -> String {
+    if let Some(error) = projection_export_limit(path, package.exports.len()) {
+        return error;
+    }
+    if !supports_blueprint_graph_package_version(&package.summary.versions) {
+        return serialize_projection_error_kind(
+            path,
+            "unsupported_version",
+            format!(
+                "Blueprint graph inspection supports UE 5.7-loadable saved package revisions; {path} uses UE4 {}, UE5 {}",
+                package.summary.versions.ue4, package.summary.versions.ue5
+            ),
+        );
+    }
+    if is_control_rig_blueprint_package(package) {
+        return serialize_projection_error_kind(
+            path,
+            "unsupported_capability",
+            format!(
+                "Control Rig Blueprint {path} uses the separate RigVM graph model, which is not supported by the saved Blueprint graph projection"
+            ),
+        );
+    }
+    let schemas = EmptySchemas;
+    let context = AssetDecodeContext {
+        source: bytes,
+        package,
+        schemas: &schemas,
+    };
+    let mut assets = Vec::new();
+    let mut pending_errors = Vec::new();
+    for export in &package.exports {
+        match decode_export(export, &context) {
+            Ok(Some(asset)) => assets.push(asset),
+            Ok(None) => {}
+            Err(error) => pending_errors.push((
+                export.object_path.to_string(),
+                export.class_path.as_ref().map(ToString::to_string),
+                error.kind(),
+                error.message().to_owned(),
+            )),
+        }
+    }
+    let node_paths: HashSet<_> = saved_blueprint_graph_node_paths(package, &assets)
+        .into_iter()
+        .collect();
+    let mut decoded_node_paths: HashSet<_> = assets
+        .iter()
+        .filter_map(|asset| match asset {
+            DecodedAsset::BlueprintGraphNode(node) => Some(node.object_path.to_string()),
+            _ => None,
+        })
+        .collect();
+    let mut diagnostics = Vec::new();
+    for node_path in &node_paths {
+        if decoded_node_paths.contains(node_path) {
+            continue;
+        }
+        let Some(export) = package
+            .exports
+            .iter()
+            .find(|export| export.object_path.as_str() == node_path)
+        else {
+            continue;
+        };
+        match decode_saved_blueprint_graph_node(export, &context) {
+            Ok(node) => {
+                decoded_node_paths.insert(node_path.clone());
+                assets.push(DecodedAsset::BlueprintGraphNode(node));
+            }
+            Err(error) => diagnostics.push(ProjectionDiagnostic {
+                object_path: node_path.clone(),
+                class_path: export.class_path.as_ref().map(ToString::to_string),
+                code: asset_error_kind_name(error.kind()),
+                message: error.message().to_owned(),
+            }),
+        }
+    }
+    diagnostics.extend(pending_errors.into_iter().filter_map(
+        |(object_path, class_path, kind, message)| {
+            (!node_paths.contains(&object_path)
+                && class_path.as_deref().is_some_and(is_graph_class_candidate))
+            .then(|| ProjectionDiagnostic {
+                object_path,
+                class_path,
+                code: asset_error_kind_name(kind),
+                message,
+            })
+        },
+    ));
+    let blueprints: Vec<_> = project_blueprint_graphs(package, &assets)
+        .into_iter()
+        .collect();
+    let item_count = blueprints
+        .iter()
+        .map(blueprint_graph_item_count)
+        .sum::<usize>();
+    if item_count > MAX_PROJECTION_ITEMS {
+        return serialize_projection_limit_error(
+            path,
+            "Blueprint graph projection item count exceeds the WASM limit",
+        );
+    }
+    let status = if diagnostics.is_empty()
+        && blueprints
+            .iter()
+            .all(|blueprint| blueprint.coverage_gaps.is_empty())
+    {
+        "ok"
+    } else {
+        "partial"
+    };
+    serialize_bounded_projection(
+        path,
+        &BlueprintGraphProjectionOutput {
+            schema_version: 1,
+            status,
+            path,
+            blueprints,
+            diagnostics,
+        },
+    )
+}
+
+fn is_graph_class_candidate(class_path: &str) -> bool {
+    class_path.rsplit('.').next().is_some_and(|class_name| {
+        class_name == "EdGraph" || (class_name.ends_with("Graph") && !class_name.contains("Node"))
+    })
+}
+
 /// Returns the parser/binding package version.
 #[wasm_bindgen]
 pub fn version() -> String {
@@ -298,6 +450,35 @@ struct LevelSequenceProjectionOutput<'a> {
     path: &'a str,
     sequences: Vec<LevelSequenceProjection>,
     diagnostics: Vec<ProjectionDiagnostic>,
+}
+
+#[derive(Serialize)]
+struct BlueprintGraphProjectionOutput<'a> {
+    schema_version: u32,
+    status: &'static str,
+    path: &'a str,
+    blueprints: Vec<BlueprintGraphProjection>,
+    diagnostics: Vec<ProjectionDiagnostic>,
+}
+
+fn blueprint_graph_item_count(blueprint: &BlueprintGraphProjection) -> usize {
+    1_usize
+        .saturating_add(blueprint.coverage_gaps.len())
+        .saturating_add(
+            blueprint
+                .graphs
+                .iter()
+                .map(|graph| {
+                    1_usize.saturating_add(graph.links.len()).saturating_add(
+                        graph
+                            .nodes
+                            .iter()
+                            .map(|node| 1_usize.saturating_add(node.pins.len()))
+                            .sum::<usize>(),
+                    )
+                })
+                .sum::<usize>(),
+        )
 }
 
 fn level_sequence_item_count(sequence: &LevelSequenceProjection) -> usize {
@@ -576,11 +757,85 @@ fn exceeds_limit(current: usize, additional: usize, limit: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
+    use uasset_parser::Package;
+    use uasset_parser::package::ObjectPath;
 
     use super::{
         MAX_EXPORTS, MAX_INPUT_BYTES, MAX_PROJECTION_ITEMS, SerializationFailure, exceeds_limit,
-        inspect, limits, projection_export_limit, serialize_with_limit,
+        extract_blueprints, extract_blueprints_from_package, extract_text_from_package, inspect,
+        limits, projection_export_limit, serialize_with_limit,
     };
+
+    const BLUEPRINT_FIXTURE: &[u8] = include_bytes!(
+        "../../../fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
+    );
+
+    #[test]
+    fn projects_the_real_blueprint_fixture_through_the_wasm_boundary() {
+        let output = extract_blueprints("BP_GraphFixture.uasset", BLUEPRINT_FIXTURE);
+        let value: Value = serde_json::from_str(&output).expect("Blueprint projection is JSON");
+
+        assert_eq!(value["status"], "ok");
+        let blueprint = &value["blueprints"][0];
+        assert_eq!(blueprint["coverage_gaps"].as_array().map(Vec::len), Some(0));
+        assert!(
+            blueprint["graphs"]
+                .as_array()
+                .is_some_and(|graphs| !graphs.is_empty())
+        );
+        assert!(
+            blueprint["graphs"][0]["nodes"]
+                .as_array()
+                .is_some_and(|nodes| !nodes.is_empty())
+        );
+    }
+
+    #[test]
+    fn keeps_blueprint_revision_gating_off_compact_text() {
+        let mut package = Package::parse(BLUEPRINT_FIXTURE).expect("parse Blueprint fixture");
+        package.summary.versions.ue5 = 1016;
+
+        let text =
+            extract_text_from_package("BP_OlderRevision.uasset", BLUEPRINT_FIXTURE, &package);
+        let text: Value = serde_json::from_str(&text).expect("text projection is JSON");
+        assert_ne!(text["status"], "error");
+        assert_eq!(text["diagnostics"].as_array().map(Vec::len), Some(0));
+
+        let blueprint =
+            extract_blueprints_from_package("BP_OlderRevision.uasset", BLUEPRINT_FIXTURE, &package);
+        let blueprint: Value =
+            serde_json::from_str(&blueprint).expect("Blueprint rejection is JSON");
+        assert_eq!(blueprint["status"], "error");
+        assert_eq!(blueprint["kind"], "unsupported_version");
+    }
+
+    #[test]
+    fn keeps_control_rig_gating_off_compact_text() {
+        let mut package = Package::parse(BLUEPRINT_FIXTURE).expect("parse Blueprint fixture");
+        let root = package
+            .exports
+            .iter_mut()
+            .find(|export| {
+                export.class_path.as_ref().map(ObjectPath::as_str)
+                    == Some("/Script/Engine.Blueprint")
+            })
+            .expect("Blueprint root export");
+        root.class_path = Some(ObjectPath::new(
+            "/Script/ControlRigDeveloper.ControlRigBlueprint",
+        ));
+
+        let text = extract_text_from_package("CR_Test.uasset", BLUEPRINT_FIXTURE, &package);
+        let text: Value = serde_json::from_str(&text).expect("text projection is JSON");
+        assert_ne!(text["status"], "error");
+        assert_eq!(text["diagnostics"].as_array().map(Vec::len), Some(0));
+
+        let blueprint =
+            extract_blueprints_from_package("CR_Test.uasset", BLUEPRINT_FIXTURE, &package);
+        let blueprint: Value =
+            serde_json::from_str(&blueprint).expect("Control Rig rejection is JSON");
+        assert_eq!(blueprint["status"], "error");
+        assert_eq!(blueprint["kind"], "unsupported_capability");
+    }
 
     #[test]
     fn rejects_default_oversized_input_at_the_public_boundary() {

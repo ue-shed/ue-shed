@@ -20,6 +20,7 @@ export {
 	getAssetReaderSource,
 	makeAssetReaderTestLayer,
 	readSavedAsset,
+	readSavedBlueprint,
 	readSavedTable,
 	readSavedWorld,
 	SAVED_TABLE_SCAN_CLASSES,
@@ -54,6 +55,9 @@ export {
 } from "./protocol-transport.js";
 export { resolveScanTarget, type ResolvedScanTarget } from "./scan-target.js";
 export {
+	BlueprintGraphDiagnostic,
+	BlueprintGraphProjection,
+	BlueprintGraphRead,
 	decodeSavedAssetCatalogInspection,
 	decodeSavedAssetInspection,
 	decodeSavedWorld,

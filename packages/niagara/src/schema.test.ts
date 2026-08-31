@@ -40,4 +40,24 @@ describe("Niagara preview wire contracts", () => {
 			"Failure"
 		);
 	});
+
+	it("accepts hyphenated Unreal object names in the system object path", async () => {
+		const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(
+			await fixture("request.json")
+		);
+		const hyphenated = {
+			...request,
+			systemObjectPath: "/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3"
+		};
+		expect(
+			Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(hyphenated).systemObjectPath
+		).toBe("/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3");
+		const missingObject = {
+			...request,
+			systemObjectPath: "/Game/VFX/Combat/Blockout_Element"
+		};
+		expect(Schema.decodeUnknownResult(NiagaraPreviewProducerRequest)(missingObject)._tag).toBe(
+			"Failure"
+		);
+	});
 });

@@ -6,6 +6,13 @@ import {
 	type RunNiagaraPreviewOptions
 } from "@ue-shed/niagara";
 import { it } from "@effect/vitest";
+import {
+	makeAssetReaderTestLayer,
+	type AssetReaderError,
+	type AssetReaderTestApi,
+	type SavedAssetScan,
+	type SavedAssetScanOptions
+} from "@ue-shed/unreal-assets";
 import { Effect, Layer, Option, Ref, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -17,7 +24,7 @@ import {
 	makeWorkbenchConfigurationLayer
 } from "../workbench-config.js";
 import { WorkbenchNiagaraPreview, WorkbenchNiagaraPreviewLive } from "./niagara-preview.js";
-import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
+import { WorkbenchProjectUnavailable, makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
 const fixtureManifestUrl = new URL(
 	"../../../../../packages/protocol/contracts/niagara/preview/v1/fixtures/manifest.json",
@@ -40,10 +47,33 @@ function configuration(sourceCheckout: string | undefined) {
 	);
 }
 
-function project(projectRoot: string) {
+function project(
+	projectRoot: string,
+	options?: {
+		readonly candidates?: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+		readonly currentStatus?: "ready" | "not_configured";
+	}
+) {
 	return makeWorkbenchProjectTestLayer({
 		choose: () => Effect.die("not used"),
-		current: () => Effect.die("not used"),
+		current: () =>
+			Effect.succeed(
+				options?.currentStatus === "not_configured"
+					? { status: "not_configured" as const }
+					: {
+							project: {
+								inputAtlas: "deferred" as const,
+								mapCount: 0,
+								packageCount: 0,
+								projectName: "Fixture",
+								projectRoot
+							},
+							status: "ready" as const
+						}
+			),
+		candidates:
+			options?.candidates ??
+			(() => Effect.die("project candidates are not used by this test")),
 		inputAtlas: () => Effect.die("not used"),
 		savedProject: () => Effect.die("not used"),
 		savedTables: () => Effect.die("not used"),
@@ -51,22 +81,58 @@ function project(projectRoot: string) {
 	});
 }
 
+const unusedReader = (operation: string) =>
+	Effect.die(new Error(`Unexpected AssetReader ${operation} call`));
+
 function serviceLayer(options: {
 	readonly projectRoot: string;
 	readonly run: (
 		input: RunNiagaraPreviewOptions
 	) => Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError>;
+	readonly scanProject?: (
+		request: SavedAssetScanOptions
+	) => Effect.Effect<SavedAssetScan, AssetReaderError>;
 	readonly sourceCheckout?: string;
+	readonly candidates?: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+	readonly currentStatus?: "ready" | "not_configured";
 }) {
+	const reader: AssetReaderTestApi = {
+		discoverAssets: () => unusedReader("discoverAssets"),
+		discoverTables: () => unusedReader("discoverTables"),
+		readAsset: () => unusedReader("readAsset"),
+		readTable: () => unusedReader("readTable"),
+		scanProject:
+			options.scanProject ??
+			(() => Effect.die(new Error("Unexpected AssetReader scanProject call"))),
+		source: () => Effect.succeed("configured")
+	};
 	return WorkbenchNiagaraPreviewLive.pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				configuration(options.sourceCheckout),
-				project(options.projectRoot),
-				makeNiagaraPreviewTestLayer(options.run)
+				project(options.projectRoot, options),
+				makeNiagaraPreviewTestLayer(options.run),
+				makeAssetReaderTestLayer(reader)
 			)
 		)
 	);
+}
+
+function headerEntry(
+	path: string,
+	packageName: string,
+	objectPath: string
+): SavedAssetScan["assets"][number] {
+	return {
+		depth: "header" as const,
+		fileBytes: 0,
+		header: {
+			exports: [{ class_path: "/Script/Niagara.NiagaraSystem", object_path: objectPath }],
+			package: { name: packageName },
+			path,
+			schema_version: 8 as const
+		}
+	};
 }
 
 it.effect("composes the selected project with a matching staged source-checkout plugin", () =>
@@ -192,4 +258,164 @@ it.effect("returns a frame only while its bytes match the immutable manifest", (
 			}
 		})
 	)
+);
+
+it.effect("catalogues every saved Niagara System in the selected project", () =>
+	Effect.gen(function* () {
+		const projectRoot = "C:/Projects/Fixture";
+		const capturedRequests: SavedAssetScanOptions[] = [];
+		const layer = serviceLayer({
+			candidates: () =>
+				Effect.succeed({
+					assets: [
+						headerEntry(
+							"Content/FX/NS_Foo.uasset",
+							"/Game/FX/NS_Foo",
+							"/Game/FX/NS_Foo.NS_Foo"
+						),
+						headerEntry(
+							"Content/FX/NS_Bar.uasset",
+							"/Game/FX/NS_Bar",
+							"/Game/FX/NS_Bar.NS_Bar"
+						)
+					],
+					failures: [],
+					summary: {
+						cacheHits: 0,
+						depth: "header",
+						diagnostics: [],
+						emittedAssets: 2,
+						failedAssets: 0,
+						partialAssets: 0,
+						projectRoot,
+						roots: [],
+						scannedAssets: 2,
+						schema_version: 8,
+						skippedAssets: 0
+					}
+				}),
+			projectRoot,
+			run: () => Effect.die("run is not used"),
+			scanProject: (request) => {
+				capturedRequests.push(request);
+				return Effect.succeed({
+					assets: [
+						{
+							depth: "header" as const,
+							fileBytes: 0,
+							header: {
+								exports: [
+									{
+										class_path: "/Script/Niagara.NiagaraSystem",
+										object_path: "/Game/FX/NS_Foo.NS_Foo"
+									},
+									{
+										class_path: "/Script/Niagara.NiagaraSystem",
+										object_path: "/Game/FX/NS_Foo.NS_GrassHit_Lv2-3"
+									},
+									{
+										class_path: "/Script/Niagara.NiagaraSystem",
+										object_path: "malformed without an object name"
+									},
+									{
+										class_path: "/Script/Engine.Texture2D",
+										object_path: "/Game/FX/NS_Foo.T_Noise"
+									}
+								],
+								package: { name: "/Game/FX/NS_Foo" },
+								path: "Content/FX/NS_Foo.uasset",
+								schema_version: 8 as const
+							}
+						},
+						{
+							depth: "header" as const,
+							fileBytes: 0,
+							header: {
+								exports: [
+									{
+										class_path: "/Script/Niagara.NiagaraSystem",
+										object_path: "/Game/FX/NS_Bar.NS_Bar"
+									}
+								],
+								package: { name: "/Game/FX/NS_Bar" },
+								path: "Content/FX/NS_Bar.uasset",
+								schema_version: 8 as const
+							}
+						}
+					],
+					failures: [],
+					summary: {
+						cacheHits: 0,
+						depth: "header",
+						diagnostics: [],
+						emittedAssets: 2,
+						failedAssets: 0,
+						partialAssets: 0,
+						projectRoot,
+						roots: [],
+						scannedAssets: 2,
+						schema_version: 8,
+						skippedAssets: 0
+					}
+				});
+			}
+		});
+		const result = yield* Effect.flatMap(WorkbenchNiagaraPreview, (service) =>
+			service.catalogue()
+		).pipe(Effect.provide(layer));
+		expect(result.status).toBe("ready");
+		if (result.status !== "ready") return;
+		expect(result.entries.map((entry) => entry.objectPath)).toEqual([
+			"/Game/FX/NS_Bar.NS_Bar",
+			"/Game/FX/NS_Foo.NS_Foo",
+			"/Game/FX/NS_Foo.NS_GrassHit_Lv2-3"
+		]);
+		expect(capturedRequests).toHaveLength(1);
+		expect(capturedRequests[0]).toMatchObject({
+			classes: ["/Script/Niagara.NiagaraSystem"],
+			depth: "header",
+			paths: ["Content/FX/NS_Bar.uasset", "Content/FX/NS_Foo.uasset"],
+			projectRoot
+		});
+	})
+);
+
+it.effect("reports a missing project instead of listing systems", () =>
+	Effect.gen(function* () {
+		const layer = serviceLayer({
+			currentStatus: "not_configured",
+			projectRoot: "C:/Projects/Fixture",
+			run: () => Effect.die("run is not used")
+		});
+		const result = yield* Effect.flatMap(WorkbenchNiagaraPreview, (service) =>
+			service.catalogue()
+		).pipe(Effect.provide(layer));
+		expect(result).toEqual({ status: "not_configured" });
+	})
+);
+
+it.effect("maps candidate failures to typed catalogue failures", () =>
+	Effect.gen(function* () {
+		const layer = serviceLayer({
+			candidates: () =>
+				Effect.fail(
+					new WorkbenchProjectUnavailable({
+						message: "Project Index returned a page from a different generation.",
+						recovery: "Refresh the Project Index, then retry."
+					})
+				),
+			projectRoot: "C:/Projects/Fixture",
+			run: () => Effect.die("run is not used")
+		});
+		const result = yield* Effect.flatMap(WorkbenchNiagaraPreview, (service) =>
+			service.catalogue()
+		).pipe(Effect.provide(layer));
+		expect(result).toEqual({
+			error: {
+				message: "Project Index returned a page from a different generation.",
+				recovery: "Refresh the Project Index, then retry."
+			},
+			status: "failed"
+		});
+	})
 );

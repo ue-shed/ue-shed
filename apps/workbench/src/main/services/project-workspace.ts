@@ -6,6 +6,7 @@ import {
 } from "@ue-shed/enhanced-input";
 import { TEXTURE_CLASS } from "@ue-shed/asset-audits";
 import { STRING_TABLE_CLASS, TEXT_PROPERTY_NAME } from "@ue-shed/game-text";
+import { NIAGARA_SYSTEM_CLASS } from "@ue-shed/niagara";
 import type { SavedWorldMap as SavedWorldMapValue } from "@ue-shed/protocol";
 import {
 	AssetReader,
@@ -45,6 +46,7 @@ interface ProjectSummaryInventory {
 export type WorkbenchProjectCandidateKind =
 	| "enhanced_input"
 	| "game_text"
+	| "niagara_system"
 	| "saved_tables"
 	| "texture";
 
@@ -238,6 +240,16 @@ export const WorkbenchProjectLive = Layer.effect(
 							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
 							projectId: summary.projectId,
 							values: [TEXT_PROPERTY_NAME],
+							...(cursor === undefined ? undefined : { cursor })
+						})
+				],
+				niagara_system: [
+					(cursor) =>
+						ProjectIndexQuery.cases.ExactClasses.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [NIAGARA_SYSTEM_CLASS],
 							...(cursor === undefined ? undefined : { cursor })
 						})
 				],

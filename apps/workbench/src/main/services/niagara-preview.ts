@@ -1,6 +1,8 @@
 import {
+	NIAGARA_SYSTEM_CLASS,
 	NiagaraPreview,
 	NiagaraPreviewError,
+	NiagaraSystemObjectPath,
 	decodeNiagaraPreviewRunManifest,
 	type NiagaraPreviewFailure
 } from "@ue-shed/niagara";
@@ -11,7 +13,8 @@ import type {
 	NiagaraPreviewIntent,
 	NiagaraPreviewRunResult
 } from "@ue-shed/extension-niagara-preview/client";
-import { Context, Effect, Layer, Schema } from "effect";
+import { AssetReader, isHeaderScanEntry, type SavedAssetScan } from "@ue-shed/unreal-assets";
+import { Context, Effect, Layer, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -148,6 +151,79 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 		const configuration = yield* WorkbenchConfiguration;
 		const niagara = yield* NiagaraPreview;
 		const project = yield* WorkbenchProject;
+		const assetReader = yield* AssetReader;
+
+		/**
+		 * Header-decode only the Project Index's Niagara System candidates so catalogue entries carry
+		 * each export's true object path; the index projection alone only knows package names.
+		 */
+		const niagaraSystemCatalogue = Effect.fn("Workbench.NiagaraPreview.niagaraSystemCatalogue")(
+			function* (projectRoot: string, candidates: SavedAssetScan) {
+				const paths = candidates.assets
+					.filter(isHeaderScanEntry)
+					.map((entry) => entry.header.path)
+					.sort((left, right) => left.localeCompare(right));
+				if (paths.length === 0) return { entries: [], status: "ready" as const };
+				const scan = yield* assetReader.scanProject({
+					classes: [NIAGARA_SYSTEM_CLASS],
+					depth: "header",
+					paths,
+					projectRoot
+				});
+				const objectPaths = new Set<string>();
+				for (const entry of scan.assets) {
+					if (!isHeaderScanEntry(entry)) continue;
+					for (const exported of entry.header.exports) {
+						if (exported.class_path === NIAGARA_SYSTEM_CLASS) {
+							objectPaths.add(exported.object_path);
+						}
+					}
+				}
+				return {
+					entries: [...objectPaths]
+						.sort((left, right) => left.localeCompare(right))
+						.flatMap((objectPath) => {
+							// One malformed header entry must not reject the whole catalogue.
+							const decoded =
+								Schema.decodeUnknownOption(NiagaraSystemObjectPath)(objectPath);
+							return Option.isSome(decoded) ? [{ objectPath: decoded.value }] : [];
+						}),
+					status: "ready" as const
+				};
+			}
+		);
+
+		const catalogue = Effect.fn("Workbench.NiagaraPreview.catalogue")(function* () {
+			const current = yield* project.current();
+			if (current.status === "not_configured" || current.status === "cancelled") {
+				return { status: "not_configured" as const };
+			}
+			if (current.status === "failed") {
+				return {
+					error: { message: current.error.message, recovery: current.error.recovery },
+					status: "failed" as const
+				};
+			}
+			const readerFailure =
+				"Check that the saved-asset worker can read this project's packages, then retry.";
+			return yield* project.candidates("niagara_system").pipe(
+				Effect.flatMap((candidates) =>
+					niagaraSystemCatalogue(current.project.projectRoot, candidates)
+				),
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
+					Effect.succeed({
+						error: { message: error.message, recovery: error.recovery },
+						status: "failed" as const
+					})
+				),
+				Effect.catchTag("AssetReaderError", (error) =>
+					Effect.succeed({
+						error: { message: error.message, recovery: readerFailure },
+						status: "failed" as const
+					})
+				)
+			);
+		});
 
 		const run = Effect.fn("Workbench.NiagaraPreview.run")(function* (
 			intent: NiagaraPreviewIntent
@@ -301,7 +377,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 			);
 		});
 
-		return WorkbenchNiagaraPreview.of({ frame, run });
+		return WorkbenchNiagaraPreview.of({ catalogue, frame, run });
 	})
 );
 

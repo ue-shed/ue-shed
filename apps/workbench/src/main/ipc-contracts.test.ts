@@ -328,6 +328,7 @@ const validArgsByChannel = {
 			relativePath: "Z00/R000_C000.png"
 		}
 	],
+	"niagara-preview:catalogue": [],
 	"niagara-preview:run": [
 		{
 			settings: {
@@ -633,6 +634,13 @@ const validResultByChannel = {
 		status: "failed"
 	},
 	"map-capture:tile": { bytes: new Uint8Array([1, 2, 3]), status: "ready" },
+	"niagara-preview:catalogue": {
+		entries: [
+			{ objectPath: "/Game/FX/NS_Fixture.NS_Fixture" },
+			{ objectPath: "/Game/FX/NS_Second.NS_Second" }
+		],
+		status: "ready"
+	},
 	"niagara-preview:run": {
 		error: {
 			code: "plugin_unavailable",
@@ -767,9 +775,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 103 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(103);
-	expect(new Set(invokeChannelNames).size).toBe(103);
+it("registers exactly 104 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(104);
+	expect(new Set(invokeChannelNames).size).toBe(104);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

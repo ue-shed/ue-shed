@@ -1,4 +1,5 @@
 import { it } from "@effect/vitest";
+import { NiagaraSystemObjectPath } from "@ue-shed/niagara";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
@@ -483,6 +484,19 @@ function buildRegistrationLayer(recorder: Recorder) {
 			)
 	});
 	const niagaraPreview = makeWorkbenchNiagaraPreviewTestLayer({
+		catalogue: () =>
+			recorder.record("niagaraPreview.catalogue").pipe(
+				Effect.as({
+					entries: [
+						{
+							objectPath: NiagaraSystemObjectPath.make(
+								"/Game/FX/NS_Fixture.NS_Fixture"
+							)
+						}
+					],
+					status: "ready" as const
+				})
+			),
 		frame: (intent) =>
 			recorder
 				.record(`niagaraPreview.frame:${intent.relativePath}`)
@@ -664,7 +678,7 @@ it.effect("registers every schema-owned contract channel exactly once", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(103);
+		expect(result).toHaveLength(104);
 	})
 );
 
@@ -674,6 +688,7 @@ it.effect("dispatches Niagara preview runs and manifest-owned frames", () =>
 			"/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion";
 		const { recorder } = yield* runRegistered((ipc) =>
 			Effect.gen(function* () {
+				yield* ipc.invoke("niagara-preview:catalogue");
 				yield* ipc.invoke("niagara-preview:run", {
 					settings: { frameCount: 2, height: 64, width: 64 },
 					systemObjectPath
@@ -685,6 +700,7 @@ it.effect("dispatches Niagara preview runs and manifest-owned frames", () =>
 			})
 		);
 		expect(yield* recorder.calls()).toEqual([
+			"niagaraPreview.catalogue",
 			`niagaraPreview.run:${systemObjectPath}`,
 			"niagaraPreview.frame:frames/frame_0000.png"
 		]);

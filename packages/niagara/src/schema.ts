@@ -15,10 +15,15 @@ export const NiagaraPreviewRunId = Schema.String.check(
 export type NiagaraPreviewRunId = typeof NiagaraPreviewRunId.Type;
 
 export const NiagaraSystemObjectPath = Schema.NonEmptyString.check(
-	Schema.isPattern(/^\/[A-Za-z0-9_]+\/[A-Za-z0-9_./-]+\.[A-Za-z0-9_]+$/u),
+	// Unreal object names may contain hyphens (e.g. `NS_GrassHit_Lv2-3`), so the object-name
+	// segment accepts them like every other saved-path schema in the repo.
+	Schema.isPattern(/^\/[A-Za-z0-9_]+\/[A-Za-z0-9_./-]+\.[A-Za-z0-9_-]+$/u),
 	Schema.isMaxLength(1024)
 ).pipe(Schema.brand("NiagaraSystemObjectPath"));
 export type NiagaraSystemObjectPath = typeof NiagaraSystemObjectPath.Type;
+
+/** Saved packages exporting this class hold capturable Niagara Systems. */
+export const NIAGARA_SYSTEM_CLASS = "/Script/Niagara.NiagaraSystem";
 
 const RequestContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-niagara-preview-request"),

@@ -37,20 +37,41 @@ export const NiagaraPreviewFrameResult = Schema.Union([
 ]);
 export type NiagaraPreviewFrameResult = typeof NiagaraPreviewFrameResult.Type;
 
+export const NiagaraCatalogueEntry = Schema.Struct({
+	objectPath: NiagaraSystemObjectPath
+});
+export interface NiagaraCatalogueEntry extends Schema.Schema.Type<typeof NiagaraCatalogueEntry> {}
+
+export const NiagaraCatalogueResult = Schema.Union([
+	Schema.Struct({
+		entries: Schema.Array(NiagaraCatalogueEntry),
+		status: Schema.Literal("ready")
+	}),
+	Schema.Struct({ status: Schema.Literal("not_configured") }),
+	Schema.Struct({
+		error: Schema.Struct({ message: Schema.String, recovery: Schema.String }),
+		status: Schema.Literal("failed")
+	})
+]);
+export type NiagaraCatalogueResult = typeof NiagaraCatalogueResult.Type;
+
 export const decodeNiagaraPreviewRunResult = Schema.decodeUnknownEffect(NiagaraPreviewRunResult);
 export const decodeNiagaraPreviewFrameResult =
 	Schema.decodeUnknownEffect(NiagaraPreviewFrameResult);
+export const decodeNiagaraCatalogueResult = Schema.decodeUnknownEffect(NiagaraCatalogueResult);
 
 export class NiagaraPreviewClientError extends Schema.TaggedErrorClass<NiagaraPreviewClientError>()(
 	"NiagaraPreview.ClientError",
 	{
 		cause: Schema.Defect(),
+		message: Schema.String,
 		operation: Schema.String,
 		recovery: Schema.String
 	}
 ) {}
 
 export interface NiagaraPreviewClientApi {
+	readonly catalogue: () => Effect.Effect<NiagaraCatalogueResult, NiagaraPreviewClientError>;
 	readonly frame: (
 		intent: NiagaraPreviewFrameIntent
 	) => Effect.Effect<NiagaraPreviewFrameResult, NiagaraPreviewClientError>;

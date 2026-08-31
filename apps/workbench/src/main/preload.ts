@@ -265,6 +265,7 @@ const workbenchRendererApi = {
 		}
 	},
 	niagaraPreview: {
+		catalogue: () => ipcRenderer.invoke("niagara-preview:catalogue"),
 		run: (intent) => ipcRenderer.invoke("niagara-preview:run", intent),
 		frame: (intent) => ipcRenderer.invoke("niagara-preview:frame", intent)
 	},

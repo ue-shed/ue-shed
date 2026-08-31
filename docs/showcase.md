@@ -371,11 +371,13 @@ pnpm showcase
 ```
 
 Choose **Niagara** from the Workbench nav or **Niagara Preview** from the showcase catalog. The
-fixture opens with Unreal's engine-shipped Simple Explosion system selected, so choose **Capture
-preview**. The first run may spend time compiling shaders. When publication completes, the verified
-PNG sequence plays on a loop at its exported frame rate. Use play, pause, restart, or the coverage
-timeline while inspecting the effective dimensions, timing, engine version, camera, diagnostics,
-and manifest path.
+route lists every saved Niagara System in the selected project from the shared package inventory:
+filter the catalogue, select a system, then choose **Capture preview**. Engine-shipped systems such
+as Simple Explosion live outside the project catalogue, so expand **Use a path outside the project**
+to type one of those paths. The first run may spend time compiling shaders. When publication
+completes, the verified PNG sequence plays on a loop at its exported frame rate. Use play, pause,
+restart, or the coverage timeline while inspecting the effective dimensions, timing, engine version,
+camera, diagnostics, and manifest path.
 
 For another project, install `UEShedNiagara` beneath that project or stage a matching plugin build
 through the normal UE Shed plugin workflow. The route never modifies the source Niagara System and

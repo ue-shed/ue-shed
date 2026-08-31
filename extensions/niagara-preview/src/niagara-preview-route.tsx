@@ -14,18 +14,26 @@ import {
 	For,
 	Match,
 	onCleanup,
+	onMount,
 	Show,
 	Switch
 } from "solid-js";
-import type { NiagaraPreviewClientApi } from "./niagara-preview-client.js";
-import { NiagaraPreviewIntent as NiagaraPreviewIntentSchema } from "./niagara-preview-client.js";
+import type { NiagaraCatalogueEntry, NiagaraPreviewClientApi } from "./niagara-preview-client.js";
+import {
+	NiagaraPreviewClientError,
+	NiagaraPreviewIntent as NiagaraPreviewIntentSchema
+} from "./niagara-preview-client.js";
 
 const defaultSystem = "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion";
 
 type RouteState =
 	| { readonly status: "idle" }
 	| { readonly status: "running" }
-	| { readonly status: "failed"; readonly error: NiagaraPreviewFailure }
+	| {
+			readonly status: "failed";
+			readonly error: NiagaraPreviewFailure;
+			readonly technical?: string;
+	  }
 	| {
 			readonly status: "ready";
 			readonly manifest: NiagaraPreviewRunManifest;
@@ -71,22 +79,85 @@ function failureParts(message: string): FailureParts {
 	return { summary: (firstLine ?? message).slice(0, 160).trim(), technical: message };
 }
 
-function clientFailure(cause: Cause.Cause<unknown>): NiagaraPreviewFailure {
+function systemName(objectPath: string): string {
+	return objectPath.slice(objectPath.lastIndexOf("/") + 1).split(".")[0] ?? objectPath;
+}
+
+function firstClientError(
+	cause: Cause.Cause<NiagaraPreviewClientError>
+): NiagaraPreviewClientError | undefined {
+	for (const reason of cause.reasons) {
+		if (Cause.isFailReason(reason) && reason.error instanceof NiagaraPreviewClientError) {
+			return reason.error;
+		}
+	}
+	return undefined;
+}
+
+// A request that failed before Workbench produced a typed answer (IPC transport or contract
+// decode) still deserves one operator-facing sentence; the full cause stays behind a disclosure.
+interface ClientFailure {
+	readonly error: NiagaraPreviewFailure;
+	readonly technical: string;
+}
+
+function clientFailure(
+	cause: Cause.Cause<NiagaraPreviewClientError>,
+	stage: NiagaraPreviewFailure["stage"] = "capture"
+): ClientFailure {
+	const typed = firstClientError(cause);
+	const technical = Cause.pretty(cause);
+	if (typed === undefined) {
+		const [defect] = Cause.prettyErrors(cause);
+		return {
+			error: {
+				code: "process_failed",
+				message:
+					defect === undefined
+						? "Workbench could not complete the preview request."
+						: `Workbench could not complete the preview request: ${defect.message}`,
+				recovery: "Restart Workbench, verify the selected project, and retry the preview.",
+				retrySafe: true,
+				stage
+			},
+			technical
+		};
+	}
 	return {
-		code: "process_failed",
-		message: Cause.pretty(cause),
-		recovery: "Restart Workbench, verify the selected project, and retry the preview.",
-		retrySafe: true,
-		stage: "capture"
+		error: {
+			code: "process_failed",
+			message: typed.message,
+			recovery: typed.recovery,
+			retrySafe: true,
+			stage
+		},
+		technical
 	};
 }
+
+type CatalogueState =
+	| { readonly status: "loading" }
+	| { readonly status: "not_configured" }
+	| {
+			readonly status: "failed";
+			readonly error: {
+				readonly message: string;
+				readonly recovery: string;
+				readonly technical?: string;
+			};
+	  }
+	| { readonly status: "ready"; readonly entries: readonly NiagaraCatalogueEntry[] };
 
 export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClientApi }) {
 	const runAction = createEffectAction();
 	const frameAction = createEffectAction();
+	const catalogueAction = createEffectAction();
 	const [state, setState] = createSignal<RouteState>({ status: "idle" });
 	const [frameState, setFrameState] = createSignal<FrameState>({ status: "idle" });
 	const [systemObjectPath, setSystemObjectPath] = createSignal(defaultSystem);
+	const [manualOverride, setManualOverride] = createSignal(false);
+	const [catalogue, setCatalogue] = createSignal<CatalogueState>({ status: "loading" });
+	const [catalogueQuery, setCatalogueQuery] = createSignal("");
 	const [captureMode, setCaptureMode] = createSignal<"component_only" | "full_scene">(
 		"component_only"
 	);
@@ -131,6 +202,65 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 		}
 		return current.manifest.artifacts.find(({ index }) => index === frame.index);
 	});
+
+	const filteredCatalogueEntries = createMemo(() => {
+		const current = catalogue();
+		if (current.status !== "ready") return [];
+		const query = catalogueQuery().trim().toLocaleLowerCase();
+		if (query.length === 0) return current.entries;
+		return current.entries.filter((entry) =>
+			entry.objectPath.toLocaleLowerCase().includes(query)
+		);
+	});
+
+	const refreshCatalogue = () => {
+		setCatalogue({ status: "loading" });
+		catalogueAction.run(props.client.catalogue(), {
+			onFailure: (cause) => {
+				const failure = clientFailure(cause, "validation");
+				const parts = failureParts(failure.error.message);
+				setCatalogue({
+					error: {
+						message: parts.summary,
+						recovery: failure.error.recovery,
+						technical: failure.technical
+					},
+					status: "failed"
+				});
+			},
+			onSuccess: (result) => {
+				if (result.status !== "ready") {
+					setCatalogue(
+						result.status === "not_configured"
+							? { status: "not_configured" }
+							: { error: result.error, status: "failed" }
+					);
+					return;
+				}
+				setCatalogue({ entries: result.entries, status: "ready" });
+				const current = systemObjectPath();
+				if (
+					!manualOverride() &&
+					!result.entries.some((entry) => entry.objectPath === current)
+				) {
+					const first = result.entries[0];
+					if (first !== undefined) setSystemObjectPath(first.objectPath);
+				}
+			}
+		});
+	};
+
+	const selectSystem = (objectPath: string) => {
+		setManualOverride(false);
+		setSystemObjectPath(objectPath);
+	};
+
+	const typeSystemPath = (value: string) => {
+		setManualOverride(true);
+		setSystemObjectPath(value);
+	};
+
+	onMount(refreshCatalogue);
 
 	const clearFrameCache = () => {
 		for (const frame of frameCache.values()) URL.revokeObjectURL(frame.url);
@@ -180,7 +310,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 			onFailure: (cause) => {
 				setBufferingFrameIndex(undefined);
 				setIsPlaying(false);
-				setFrameState({ error: clientFailure(cause), status: "failed" });
+				setFrameState({ error: clientFailure(cause).error, status: "failed" });
 			},
 			onSuccess: (result) => {
 				setBufferingFrameIndex(undefined);
@@ -224,7 +354,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 			{
 				onFailure: (cause) => {
 					setBufferingFrameIndex(undefined);
-					setFrameState({ error: clientFailure(cause), status: "failed" });
+					setFrameState({ error: clientFailure(cause).error, status: "failed" });
 				},
 				onSuccess: (loaded) => {
 					setBufferingFrameIndex(undefined);
@@ -284,7 +414,14 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 		setFrameState({ status: "idle" });
 		clearFrameCache();
 		runAction.run(props.client.run(decoded.value), {
-			onFailure: (cause) => setState({ error: clientFailure(cause), status: "failed" }),
+			onFailure: (cause) => {
+				const failure = clientFailure(cause);
+				setState({
+					error: failure.error,
+					status: "failed",
+					technical: failure.technical
+				});
+			},
 			onSuccess: (result) => {
 				if (result.status === "failed") {
 					setState({ error: result.error, status: "failed" });
@@ -334,15 +471,16 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 							{Option.isSome(candidateIntent()) ? "Ready" : "Check these values"}
 						</span>
 					</header>
-					<label {...stylex.props(styles.field, styles.systemField)}>
-						<span>Niagara System object path</span>
-						<input
-							{...stylex.props(styles.input)}
-							value={systemObjectPath()}
-							onInput={(event) => setSystemObjectPath(event.currentTarget.value)}
-							spellcheck={false}
-						/>
-					</label>
+					<SystemCatalogue
+						catalogue={catalogue()}
+						entries={filteredCatalogueEntries()}
+						query={catalogueQuery()}
+						selectedPath={systemObjectPath()}
+						onQuery={setCatalogueQuery}
+						onRefresh={refreshCatalogue}
+						onSelect={selectSystem}
+						onTypePath={typeSystemPath}
+					/>
 					<div {...stylex.props(styles.fieldGrid)}>
 						<NumberField label="Width" value={width()} onInput={setWidth} />
 						<NumberField label="Height" value={height()} onInput={setHeight} />
@@ -411,7 +549,13 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 							</div>
 						</Match>
 						<Match when={failedRun()}>
-							{(failed) => <FailurePanel error={failed().error} onRetry={run} />}
+							{(failed) => (
+								<FailurePanel
+									error={failed().error}
+									onRetry={run}
+									technical={failed().technical}
+								/>
+							)}
 						</Match>
 						<Match when={readyRun()}>
 							{(current) => (
@@ -469,18 +613,158 @@ function EmptyStage() {
 			</div>
 			<h2 {...stylex.props(styles.emptyTitle)}>No frames yet</h2>
 			<p {...stylex.props(styles.emptyDetail)}>
-				Point at a saved Niagara System, choose how many frames you want, and capture a
-				preview.
+				Pick a Niagara System from the catalogue, choose how many frames you want, and
+				capture a preview.
 			</p>
 		</div>
+	);
+}
+
+function SystemCatalogue(props: {
+	readonly catalogue: CatalogueState;
+	readonly entries: readonly NiagaraCatalogueEntry[];
+	readonly query: string;
+	readonly selectedPath: string;
+	readonly onQuery: (value: string) => void;
+	readonly onRefresh: () => void;
+	readonly onSelect: (objectPath: string) => void;
+	readonly onTypePath: (value: string) => void;
+}) {
+	return (
+		<section aria-label="Niagara system catalogue" {...stylex.props(styles.systemCatalogue)}>
+			<header {...stylex.props(styles.catalogueHeader)}>
+				<h2 {...stylex.props(styles.catalogueTitle)}>Niagara system</h2>
+				<button
+					type="button"
+					disabled={props.catalogue.status === "loading"}
+					onClick={props.onRefresh}
+					{...stylex.props(styles.catalogueRefresh)}
+				>
+					{props.catalogue.status === "loading" ? "Listing…" : "Refresh"}
+				</button>
+			</header>
+			<Switch>
+				<Match when={props.catalogue.status === "loading"}>
+					<p {...stylex.props(styles.catalogueStatus)}>Listing saved Niagara Systems…</p>
+				</Match>
+				<Match when={props.catalogue.status === "not_configured"}>
+					<p {...stylex.props(styles.catalogueStatus)}>
+						Choose a Workbench project to list its Niagara Systems, or type a path
+						below.
+					</p>
+				</Match>
+				<Match when={props.catalogue.status === "failed"}>
+					{(() => {
+						const current = props.catalogue;
+						if (current.status !== "failed") return null;
+						return (
+							<div role="alert" {...stylex.props(styles.catalogueFailure)}>
+								<p {...stylex.props(styles.catalogueStatus)}>
+									{current.error.message}
+								</p>
+								<p {...stylex.props(styles.catalogueRecovery)}>
+									{current.error.recovery}
+								</p>
+								<Show when={current.error.technical}>
+									{(technical) => (
+										<details {...stylex.props(styles.catalogueTechnical)}>
+											<summary>Technical details</summary>
+											<code>{technical()}</code>
+										</details>
+									)}
+								</Show>
+							</div>
+						);
+					})()}
+				</Match>
+				<Match when={props.catalogue.status === "ready"}>
+					<Show
+						when={props.entries.length > 0 || props.query.trim().length === 0}
+						fallback={
+							<p {...stylex.props(styles.catalogueStatus)}>
+								No Niagara Systems match “{props.query.trim()}”.
+							</p>
+						}
+					>
+						<label {...stylex.props(styles.catalogueSearch)}>
+							<span aria-hidden="true">⌕</span>
+							<input
+								aria-label="Filter Niagara Systems"
+								value={props.query}
+								onInput={(event) => props.onQuery(event.currentTarget.value)}
+								placeholder="Filter by object path…"
+								spellcheck={false}
+								{...stylex.props(styles.input, styles.catalogueSearchInput)}
+							/>
+						</label>
+						<div {...stylex.props(styles.catalogueList)}>
+							<Show
+								when={props.entries.length > 0}
+								fallback={
+									<p {...stylex.props(styles.catalogueStatus)}>
+										No saved Niagara Systems in this project yet.
+									</p>
+								}
+							>
+								<For each={props.entries}>
+									{(entry) => (
+										<button
+											type="button"
+											aria-pressed={props.selectedPath === entry.objectPath}
+											onClick={() => props.onSelect(entry.objectPath)}
+											{...stylex.props(
+												styles.catalogueRow,
+												props.selectedPath === entry.objectPath &&
+													styles.catalogueRowActive
+											)}
+										>
+											<strong {...stylex.props(styles.catalogueName)}>
+												{systemName(entry.objectPath)}
+											</strong>
+											<small
+												title={entry.objectPath}
+												{...stylex.props(styles.cataloguePath)}
+											>
+												{entry.objectPath}
+											</small>
+										</button>
+									)}
+								</For>
+							</Show>
+						</div>
+					</Show>
+				</Match>
+			</Switch>
+			<Show when={props.selectedPath.length > 0}>
+				<code title={props.selectedPath} {...stylex.props(styles.selectedSystemPath)}>
+					{props.selectedPath}
+				</code>
+			</Show>
+			<details {...stylex.props(styles.manualEntry)}>
+				<summary {...stylex.props(styles.manualSummary)}>
+					Use a path outside the project
+				</summary>
+				<label {...stylex.props(styles.manualField)}>
+					<span>Niagara System object path</span>
+					<input
+						{...stylex.props(styles.input)}
+						value={props.selectedPath}
+						onInput={(event) => props.onTypePath(event.currentTarget.value)}
+						spellcheck={false}
+					/>
+				</label>
+			</details>
+		</section>
 	);
 }
 
 function FailurePanel(props: {
 	readonly error: NiagaraPreviewFailure;
 	readonly onRetry: () => void;
+	readonly technical?: string | undefined;
 }) {
 	const parts = createMemo(() => failureParts(props.error.message));
+	const technical = () => props.technical ?? parts().technical;
 	return (
 		<div role="alert" {...stylex.props(styles.failure)}>
 			<strong {...stylex.props(styles.failureTitle)}>Couldn’t capture this preview</strong>
@@ -504,7 +788,7 @@ function FailurePanel(props: {
 				<summary>Technical details</summary>
 				<code>
 					{props.error.stage} · {props.error.code}
-					{parts().technical === undefined ? "" : `\n${parts().technical}`}
+					{technical() === undefined ? "" : `\n${technical()}`}
 				</code>
 			</details>
 		</div>
@@ -571,9 +855,18 @@ function RunEvidence(props: {
 						</div>
 					</Match>
 					<Match when={props.frameState.status === "failed"}>
-						<div role="alert" {...stylex.props(styles.frameFailure)}>
-							Frame validation failed. Select another frame or recapture the run.
-						</div>
+						{(() => {
+							const current = props.frameState;
+							if (current.status !== "failed") return null;
+							return (
+								<div role="alert" {...stylex.props(styles.frameFailure)}>
+									<strong>{current.error.message}</strong>
+									<span {...stylex.props(styles.frameFailureRecovery)}>
+										{current.error.recovery}
+									</span>
+								</div>
+							);
+						})()}
 					</Match>
 					<Match when={props.frameState.status === "ready"}>
 						{(() => {
@@ -768,7 +1061,149 @@ const styles = stylex.create({
 		padding: "7px 9px",
 		width: "100%"
 	},
-	systemField: { paddingBottom: 14, paddingTop: 14 },
+	systemCatalogue: {
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		display: "grid",
+		paddingBottom: 12
+	},
+	catalogueHeader: {
+		alignItems: "center",
+		display: "flex",
+		gap: tokens.space2,
+		justifyContent: "space-between",
+		padding: "12px 14px 10px"
+	},
+	catalogueTitle: {
+		color: tokens.colorTextStrong,
+		fontSize: 13,
+		fontWeight: 590,
+		letterSpacing: "-0.01em",
+		margin: 0
+	},
+	catalogueRefresh: {
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		borderColor: "transparent",
+		borderRadius: tokens.radiusControl,
+		borderStyle: "solid",
+		borderWidth: 1,
+		color: tokens.colorTextMuted,
+		cursor: "pointer",
+		fontFamily: tokens.fontBody,
+		fontSize: 11,
+		fontWeight: 500,
+		padding: "3px 8px"
+	},
+	catalogueStatus: {
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		lineHeight: 1.5,
+		margin: "0 14px"
+	},
+	catalogueFailure: {
+		backgroundColor: tokens.colorSurfaceInset,
+		borderColor: tokens.colorBorder,
+		borderRadius: tokens.radiusControl,
+		borderStyle: "solid",
+		borderWidth: 1,
+		display: "grid",
+		gap: 4,
+		margin: "0 14px",
+		padding: 10
+	},
+	catalogueRecovery: {
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		lineHeight: 1.5,
+		margin: 0
+	},
+	catalogueTechnical: {
+		color: tokens.colorTextFaint,
+		fontFamily: tokens.fontMono,
+		fontSize: 10,
+		whiteSpace: "pre-wrap"
+	},
+	catalogueSearch: {
+		alignItems: "center",
+		color: tokens.colorTextFaint,
+		display: "flex",
+		gap: 6,
+		padding: "0 14px 10px"
+	},
+	catalogueSearchInput: { fontFamily: tokens.fontMono, fontSize: 12, padding: "6px 9px" },
+	catalogueList: {
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderTopColor: tokens.colorBorder,
+		borderTopStyle: "solid",
+		borderTopWidth: 1,
+		display: "grid",
+		maxHeight: 236,
+		overflowY: "auto"
+	},
+	catalogueRow: {
+		alignItems: "stretch",
+		backgroundColor: { default: "transparent", ":hover": tokens.colorSurfaceHover },
+		borderBottomColor: tokens.colorBorder,
+		borderBottomStyle: "solid",
+		borderBottomWidth: 1,
+		borderLeftColor: "transparent",
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		color: tokens.colorText,
+		cursor: "pointer",
+		display: "grid",
+		fontFamily: tokens.fontBody,
+		gap: 2,
+		padding: "7px 12px",
+		textAlign: "left"
+	},
+	catalogueRowActive: {
+		backgroundColor: tokens.colorAccentWash,
+		borderLeftColor: tokens.colorAccent
+	},
+	catalogueName: {
+		fontSize: 12,
+		fontWeight: 590,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	cataloguePath: {
+		color: tokens.colorTextFaint,
+		fontSize: 11,
+		fontWeight: 400,
+		overflow: "hidden",
+		textOverflow: "ellipsis",
+		whiteSpace: "nowrap"
+	},
+	selectedSystemPath: {
+		color: tokens.colorTextMuted,
+		fontFamily: tokens.fontMono,
+		fontSize: 11,
+		margin: "10px 14px 0",
+		overflowWrap: "anywhere"
+	},
+	manualEntry: {
+		color: tokens.colorTextMuted,
+		fontSize: 12,
+		margin: "10px 14px 0"
+	},
+	manualSummary: {
+		color: tokens.colorTextFaint,
+		cursor: "pointer",
+		fontSize: 11
+	},
+	manualField: {
+		color: tokens.colorTextMuted,
+		display: "grid",
+		fontSize: 11,
+		fontWeight: 500,
+		gap: 6,
+		paddingTop: 8
+	},
 	boundaryNote: {
 		borderColor: tokens.colorBorder,
 		borderRadius: tokens.radiusControl,
@@ -970,7 +1405,14 @@ const styles = stylex.create({
 		color: tokens.colorTextMuted,
 		fontSize: 13
 	},
-	frameFailure: { color: tokens.colorDanger, fontSize: 13, padding: 18 },
+	frameFailure: {
+		color: tokens.colorDanger,
+		display: "grid",
+		fontSize: 13,
+		gap: 6,
+		padding: 18
+	},
+	frameFailureRecovery: { color: tokens.colorTextMuted, fontSize: 12, lineHeight: 1.5 },
 	timeline: {
 		alignItems: "stretch",
 		borderBottomColor: tokens.colorBorder,

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { NiagaraPreviewRunManifest } from "@ue-shed/niagara/browser";
+import { NiagaraPreviewRunManifest, NiagaraSystemObjectPath } from "@ue-shed/niagara/browser";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import type {
 	NiagaraPreviewClientApi,
 	NiagaraPreviewFrameResult
 } from "./niagara-preview-client.js";
+import { NiagaraPreviewClientError } from "./niagara-preview-client.js";
 import { NiagaraPreviewRoute } from "./niagara-preview-route.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -105,16 +106,38 @@ function renderRoute(client: NiagaraPreviewClientApi) {
 	));
 }
 
+const fixtureSystem = NiagaraSystemObjectPath.make("/Game/FX/NS_Fixture.NS_Fixture");
+const fixtureRunPath = "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json";
+
+function makeClient(overrides?: Partial<NiagaraPreviewClientApi>): NiagaraPreviewClientApi {
+	return {
+		catalogue: () =>
+			Effect.succeed({
+				entries: [
+					{ objectPath: fixtureSystem },
+					{ objectPath: NiagaraSystemObjectPath.make("/Game/FX/NS_Second.NS_Second") }
+				],
+				status: "ready" as const
+			}),
+		frame: () =>
+			Effect.succeed({
+				bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+				status: "ready" as const
+			}),
+		run: () =>
+			Effect.succeed({
+				manifest,
+				manifestPath: fixtureRunPath,
+				status: "completed" as const
+			}),
+		...overrides
+	};
+}
+
 describe("NiagaraPreviewRoute", () => {
 	it("captures a run and reviews only manifest-owned frames", async () => {
 		const selected: string[] = [];
-		const client: NiagaraPreviewClientApi = {
-			run: () =>
-				Effect.succeed({
-					manifest,
-					manifestPath: "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json",
-					status: "completed"
-				}),
+		const client = makeClient({
 			frame: (intent) => {
 				selected.push(intent.relativePath);
 				return Effect.succeed({
@@ -122,7 +145,7 @@ describe("NiagaraPreviewRoute", () => {
 					status: "ready"
 				});
 			}
-		};
+		});
 		renderRoute(client);
 
 		expect(screen.getByRole("heading", { name: "Niagara preview" })).toBeDefined();
@@ -143,25 +166,135 @@ describe("NiagaraPreviewRoute", () => {
 	});
 
 	it("plays the captured effect on a loop", async () => {
-		const client: NiagaraPreviewClientApi = {
-			run: () =>
-				Effect.succeed({
-					manifest,
-					manifestPath: "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json",
-					status: "completed"
-				}),
-			frame: () =>
-				Effect.succeed({
-					bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-					status: "ready"
-				})
-		};
-		renderRoute(client);
+		renderRoute(makeClient());
 		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
 		await screen.findByAltText("Niagara preview frame 0");
 		await waitFor(() => expect(screen.getByAltText("Niagara preview frame 1")).toBeDefined(), {
 			timeout: 1_500
 		});
+	});
+
+	it("captures the system selected from the catalogue", async () => {
+		const runs: string[] = [];
+		renderRoute(
+			makeClient({
+				run: (intent) => {
+					runs.push(intent.systemObjectPath);
+					return Effect.succeed({
+						manifest,
+						manifestPath: fixtureRunPath,
+						status: "completed"
+					});
+				}
+			})
+		);
+		await screen.findByRole("button", { name: /NS_Fixture/ });
+		fireEvent.click(screen.getByRole("button", { name: /NS_Second/ }));
+		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
+		await screen.findByText("Verified");
+		expect(runs).toEqual(["/Game/FX/NS_Second.NS_Second"]);
+	});
+
+	it("surfaces catalogue failures with recovery guidance", async () => {
+		renderRoute(
+			makeClient({
+				catalogue: () =>
+					Effect.succeed({
+						error: {
+							message: "Project Index returned a page from a different generation.",
+							recovery: "Refresh the Project Index, then retry."
+						},
+						status: "failed" as const
+					})
+			})
+		);
+		await screen.findByRole("alert");
+		expect(
+			screen.getByText("Project Index returned a page from a different generation.")
+		).toBeDefined();
+		expect(screen.getByText("Refresh the Project Index, then retry.")).toBeDefined();
+		expect(screen.getByRole("button", { name: "Refresh" })).toBeDefined();
+	});
+
+	it("renders catalogue transport failures as one readable sentence", async () => {
+		renderRoute(
+			makeClient({
+				catalogue: () =>
+					Effect.fail(
+						new NiagaraPreviewClientError({
+							cause: new Error(
+								"Error invoking remote method 'niagara-preview:catalogue': Error: channel closed"
+							),
+							message: "The Niagara system catalogue request failed: channel closed",
+							operation: "niagaraPreview.catalogue",
+							recovery: "Restart Workbench and verify the selected project."
+						})
+					)
+			})
+		);
+		await screen.findByRole("alert");
+		expect(
+			screen.getByText("The Niagara system catalogue request failed: channel closed")
+		).toBeDefined();
+		expect(
+			screen.getByText("Restart Workbench and verify the selected project.")
+		).toBeDefined();
+		expect(screen.getByText("Technical details")).toBeDefined();
+		expect(screen.queryByText(/Fail\(NiagaraPreview/)).toBeNull();
+	});
+
+	it("keeps run transport failures readable instead of dumping the cause", async () => {
+		renderRoute(
+			makeClient({
+				run: () =>
+					Effect.fail(
+						new NiagaraPreviewClientError({
+							cause: new Error(
+								"Error invoking remote method 'niagara-preview:run': Error: renderer gone"
+							),
+							message: "The preview capture request failed: renderer gone",
+							operation: "niagaraPreview.run",
+							recovery: "Restart Workbench and verify the selected project."
+						})
+					)
+			})
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
+		await screen.findByRole("alert");
+		expect(screen.getByText("The preview capture request failed: renderer gone")).toBeDefined();
+		expect(
+			screen.getByText("Restart Workbench and verify the selected project.")
+		).toBeDefined();
+		expect(screen.queryByText(/Fail\(NiagaraPreview/)).toBeNull();
+		expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
+	});
+
+	it("keeps a manually typed path for engine content", async () => {
+		const runs: string[] = [];
+		renderRoute(
+			makeClient({
+				run: (intent) => {
+					runs.push(intent.systemObjectPath);
+					return Effect.succeed({
+						manifest,
+						manifestPath: fixtureRunPath,
+						status: "completed"
+					});
+				}
+			})
+		);
+		fireEvent.click(await screen.findByText("Use a path outside the project"));
+		const input = await screen.findByLabelText("Niagara System object path");
+		fireEvent.input(input, {
+			target: {
+				value: "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion"
+			}
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
+		await screen.findByText("Verified");
+		expect(runs).toEqual([
+			"/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion"
+		]);
 	});
 
 	it("keeps the latest cached selection when an older on-demand read completes late", async () => {
@@ -171,22 +304,23 @@ describe("NiagaraPreviewRoute", () => {
 			bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
 			status: "ready"
 		} as const;
-		const client: NiagaraPreviewClientApi = {
-			run: () =>
-				Effect.succeed({
-					manifest: onDemandManifest,
-					manifestPath: "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.json",
-					status: "completed"
-				}),
-			frame: ({ relativePath }) =>
-				relativePath.endsWith("0000.png")
-					? Effect.succeed(readyFrame)
-					: Deferred.await(pendingFrame).pipe(
-							Effect.uninterruptible,
-							Effect.ensuring(Deferred.succeed(pendingFrameSettled, undefined))
-						)
-		};
-		renderRoute(client);
+		renderRoute(
+			makeClient({
+				run: () =>
+					Effect.succeed({
+						manifest: onDemandManifest,
+						manifestPath: fixtureRunPath,
+						status: "completed"
+					}),
+				frame: ({ relativePath }) =>
+					relativePath.endsWith("0000.png")
+						? Effect.succeed(readyFrame)
+						: Deferred.await(pendingFrame).pipe(
+								Effect.uninterruptible,
+								Effect.ensuring(Deferred.succeed(pendingFrameSettled, undefined))
+							)
+			})
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
 		await screen.findByAltText("Niagara preview frame 0");
@@ -206,21 +340,21 @@ describe("NiagaraPreviewRoute", () => {
 	});
 
 	it("keeps typed producer recovery visible", async () => {
-		const client: NiagaraPreviewClientApi = {
-			run: () =>
-				Effect.succeed({
-					error: {
-						code: "baker_camera_missing",
-						message: "No valid saved Baker camera was available.",
-						recovery: "Save a Baker camera on the Niagara System, then retry.",
-						retrySafe: false,
-						stage: "capture"
-					},
-					status: "failed"
-				}),
-			frame: () => Effect.die("frame should not be requested")
-		};
-		renderRoute(client);
+		renderRoute(
+			makeClient({
+				run: () =>
+					Effect.succeed({
+						error: {
+							code: "baker_camera_missing",
+							message: "No valid saved Baker camera was available.",
+							recovery: "Save a Baker camera on the Niagara System, then retry.",
+							retrySafe: false,
+							stage: "capture"
+						},
+						status: "failed" as const
+					})
+			})
+		);
 		fireEvent.click(screen.getByRole("button", { name: "Capture preview" }));
 		await screen.findByRole("alert");
 		expect(screen.getByText("Couldn’t capture this preview")).toBeDefined();

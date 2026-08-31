@@ -130,6 +130,7 @@ export const workbenchInvokeChannels = {
 		tile: "map-capture:tile"
 	},
 	niagaraPreview: {
+		catalogue: "niagara-preview:catalogue",
 		run: "niagara-preview:run",
 		frame: "niagara-preview:frame"
 	},

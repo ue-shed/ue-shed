@@ -6,8 +6,10 @@ UE Shed Niagara Preview turns one saved `UNiagaraSystem` into a portable, immuta
 sequence without modifying project content. The public `@ue-shed/niagara` module and CLI own the
 workflow; Workbench is optional.
 
-Workbench composes the same public service at `#/niagara-preview`. The route accepts one explicit
-system object path and bounded render settings, displays the typed producer recovery when capture
+Workbench composes the same public service at `#/niagara-preview`. The route lists every saved
+Niagara System in the selected project from the shared package inventory, and capture starts from a
+catalogue selection; a typed object path remains available for engine-shipped systems outside the
+project. Capture takes bounded render settings, displays the typed producer recovery when capture
 is refused, and reads back only manifest-owned frames whose byte length and SHA-256 still match the
 immutable run. It adds presentation and project selection, not a second capture implementation.
 

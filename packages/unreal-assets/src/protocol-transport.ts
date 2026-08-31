@@ -714,12 +714,8 @@ export type ProtocolSessionProcessFactory = () => ProtocolSessionProcess;
 
 async function waitForProtocolClose(
 	closePromise: Promise<unknown>,
-	timeoutMs: number | undefined
+	timeoutMs: number
 ): Promise<boolean> {
-	if (timeoutMs === undefined) {
-		await closePromise;
-		return true;
-	}
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		return await Promise.race([
@@ -777,7 +773,7 @@ export class UassetProtocolSession {
 	constructor(
 		private readonly configuration: Pick<
 			AssetReaderConfiguration,
-			"executable" | "protocolObserver"
+			"executable" | "protocolObserver" | "timeoutMs"
 		>,
 		private readonly processFactory: ProtocolSessionProcessFactory = () =>
 			spawnProtocolSession(configuration.executable)
@@ -879,7 +875,7 @@ export class UassetProtocolSession {
 		});
 	}
 
-	private async terminate(timeoutMs?: number): Promise<void> {
+	private async terminate(timeoutMs: number): Promise<void> {
 		const child = this.child;
 		const closePromise = this.closePromise;
 		if (child === undefined) return;
@@ -888,9 +884,7 @@ export class UassetProtocolSession {
 		if (closePromise === undefined) return;
 		const closed = await waitForProtocolClose(
 			closePromise,
-			timeoutMs === undefined
-				? undefined
-				: Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
+			Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
 		);
 		if (closed) {
 			this.releaseProcess(child);
@@ -999,7 +993,9 @@ export class UassetProtocolSession {
 		if (child?.stdin !== null && child?.stdin !== undefined && !child.stdin.destroyed) {
 			child.stdin.end();
 		}
-		await this.terminate();
+		// Scope release is bounded too. If the worker still refuses to close, the
+		// registered close reaction retains ownership and releases it on eventual exit.
+		await this.terminate(this.configuration.timeoutMs);
 	}
 }
 

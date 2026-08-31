@@ -149,9 +149,14 @@ it("bounds termination when a worker ignores kill and never closes", async () =>
 	expect(failure.message).toContain("protocol input closed");
 	expect(worker.killCalls).toBe(1);
 	expect(worker.killed).toBe(false);
+	await Effect.runPromise(
+		Effect.tryPromise(() => session.close()).pipe(Effect.timeout("1 second"))
+	);
+	expect(worker.killCalls).toBe(2);
+	expect(worker.killed).toBe(false);
 	worker.allowCloseOnKill();
 	await session.close();
-	expect(worker.killCalls).toBe(2);
+	expect(worker.killCalls).toBe(3);
 });
 
 it("ignores delayed events from a terminated worker after its replacement starts", async () => {

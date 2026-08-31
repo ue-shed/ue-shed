@@ -714,14 +714,18 @@ export type ProtocolSessionProcessFactory = () => ProtocolSessionProcess;
 
 async function waitForProtocolClose(
 	closePromise: Promise<unknown>,
-	timeoutMs: number
-): Promise<void> {
+	timeoutMs: number | undefined
+): Promise<boolean> {
+	if (timeoutMs === undefined) {
+		await closePromise;
+		return true;
+	}
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
-		await Promise.race([
-			closePromise,
-			new Promise<void>((resolvePromise) => {
-				timer = setTimeout(resolvePromise, timeoutMs);
+		return await Promise.race([
+			closePromise.then(() => true),
+			new Promise<false>((resolvePromise) => {
+				timer = setTimeout(() => resolvePromise(false), timeoutMs);
 			})
 		]);
 	} finally {
@@ -768,6 +772,7 @@ export class UassetProtocolSession {
 	private processError: Error | undefined;
 	private running = false;
 	private stderr = "";
+	private terminating = false;
 
 	constructor(
 		private readonly configuration: Pick<
@@ -782,7 +787,15 @@ export class UassetProtocolSession {
 		if (this.disposed) {
 			throw new ProtocolStreamFailure("process", "Protocol session is closed");
 		}
-		if (this.child !== undefined) return this.child;
+		if (this.child !== undefined) {
+			if (this.terminating) {
+				throw new ProtocolStreamFailure(
+					"process",
+					"Protocol session worker is still terminating"
+				);
+			}
+			return this.child;
+		}
 
 		const child = this.processFactory();
 		if (child.stdin === null || child.stdout === null) {
@@ -792,12 +805,15 @@ export class UassetProtocolSession {
 		child.stdin.setDefaultEncoding("utf8");
 		child.stdout.setEncoding("utf8");
 		const lines = createInterface({ crlfDelay: Infinity, input: child.stdout });
+		this.child = child;
 		this.iterator = lines[Symbol.asyncIterator]();
 		this.stderr = "";
 		this.processError = undefined;
+		this.terminating = false;
 		if (child.stderr !== null) {
 			child.stderr.setEncoding("utf8");
 			child.stderr.on("data", (chunk: string) => {
+				if (this.child !== child) return;
 				if (this.stderr.length < MAX_CAPTURED_STDERR_BYTES) {
 					this.stderr += chunk.slice(0, MAX_CAPTURED_STDERR_BYTES - this.stderr.length);
 				}
@@ -805,12 +821,20 @@ export class UassetProtocolSession {
 		}
 		this.closePromise = new Promise((resolvePromise) => {
 			child.onError((cause) => {
+				if (this.child !== child) return;
 				this.processError = cause;
 			});
 			child.onClose((code, signal) => resolvePromise({ code, signal }));
 		});
-		this.child = child;
 		return child;
+	}
+
+	private releaseProcess(child: ProtocolSessionProcess): void {
+		if (this.child !== child) return;
+		this.child = undefined;
+		this.closePromise = undefined;
+		this.iterator = undefined;
+		this.terminating = false;
 	}
 
 	private async nextLine(
@@ -855,24 +879,23 @@ export class UassetProtocolSession {
 		});
 	}
 
-	private async terminate(timeoutMs = MAX_PROTOCOL_TERMINATION_WAIT_MS): Promise<void> {
+	private async terminate(timeoutMs?: number): Promise<void> {
 		const child = this.child;
 		const closePromise = this.closePromise;
 		if (child === undefined) return;
-		try {
-			if (child.exitCode === null && child.signalCode === null && !child.killed) child.kill();
-			if (closePromise !== undefined) {
-				await waitForProtocolClose(
-					closePromise,
-					Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
-				);
-			}
-		} finally {
-			if (this.child === child) {
-				this.child = undefined;
-				this.closePromise = undefined;
-				this.iterator = undefined;
-			}
+		this.terminating = true;
+		if (child.exitCode === null && child.signalCode === null) child.kill();
+		if (closePromise === undefined) return;
+		const closed = await waitForProtocolClose(
+			closePromise,
+			timeoutMs === undefined
+				? undefined
+				: Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
+		);
+		if (closed) {
+			this.releaseProcess(child);
+		} else {
+			void closePromise.then(() => this.releaseProcess(child));
 		}
 	}
 
@@ -915,9 +938,6 @@ export class UassetProtocolSession {
 					});
 				});
 			} catch (cause) {
-				// A worker may reject its input while remaining alive. Terminate it before
-				// waiting for close so this failure cannot strand the session indefinitely.
-				await this.terminate(options.timeoutMs);
 				const processCause =
 					this.processError ?? (cause instanceof Error ? cause : undefined);
 				throw new ProtocolStreamFailure(
@@ -956,6 +976,8 @@ export class UassetProtocolSession {
 		} finally {
 			if (!terminal) {
 				telemetry.cancelled = options.signal?.aborted ?? false;
+				// Keep the request failure bounded while retaining ownership until the
+				// worker actually closes. A later request cannot replace this child.
 				await this.terminate(options.timeoutMs);
 			}
 			if (telemetry.terminalState === undefined && !telemetry.cancelled) {
@@ -977,10 +999,7 @@ export class UassetProtocolSession {
 		if (child?.stdin !== null && child?.stdin !== undefined && !child.stdin.destroyed) {
 			child.stdin.end();
 		}
-		if (this.closePromise !== undefined) await this.closePromise;
-		this.child = undefined;
-		this.closePromise = undefined;
-		this.iterator = undefined;
+		await this.terminate();
 	}
 }
 

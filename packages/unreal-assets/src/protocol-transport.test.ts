@@ -12,6 +12,11 @@ import {
 class RejectingProtocolInput {
 	destroyed = false;
 
+	constructor(
+		private readonly message = "protocol input closed",
+		private readonly onWrite?: () => void
+	) {}
+
 	end(): void {
 		this.destroyed = true;
 	}
@@ -19,7 +24,8 @@ class RejectingProtocolInput {
 	setDefaultEncoding(_encoding: BufferEncoding): void {}
 
 	write(_chunk: string, callback: (cause?: Error | null) => void): boolean {
-		const failure = Object.assign(new Error("protocol input closed"), { code: "EPIPE" });
+		this.onWrite?.();
+		const failure = Object.assign(new Error(this.message), { code: "EPIPE" });
 		queueMicrotask(() => callback(failure));
 		return false;
 	}
@@ -27,7 +33,7 @@ class RejectingProtocolInput {
 
 class StalledInputProcess implements ProtocolSessionProcess {
 	readonly pid = 42;
-	readonly stdin = new RejectingProtocolInput();
+	readonly stdin: RejectingProtocolInput;
 	readonly stdout = new PassThrough();
 	readonly stderr = new PassThrough();
 	exitCode: number | null = null;
@@ -38,7 +44,13 @@ class StalledInputProcess implements ProtocolSessionProcess {
 		[];
 	private readonly errorListeners: Array<(cause: Error) => void> = [];
 
-	constructor(private readonly closesOnKill = true) {}
+	constructor(
+		private closesOnKill = true,
+		inputMessage?: string,
+		onWrite?: () => void
+	) {
+		this.stdin = new RejectingProtocolInput(inputMessage, onWrite);
+	}
 
 	kill = (): boolean => {
 		this.killCalls += 1;
@@ -58,6 +70,19 @@ class StalledInputProcess implements ProtocolSessionProcess {
 
 	onError(listener: (cause: Error) => void): void {
 		this.errorListeners.push(listener);
+	}
+
+	allowCloseOnKill(): void {
+		this.closesOnKill = true;
+	}
+
+	emitClose(): void {
+		this.signalCode = "SIGTERM";
+		for (const listener of this.closeListeners) listener(null, this.signalCode);
+	}
+
+	emitError(cause: Error): void {
+		for (const listener of this.errorListeners) listener(cause);
 	}
 }
 
@@ -124,5 +149,65 @@ it("bounds termination when a worker ignores kill and never closes", async () =>
 	expect(failure.message).toContain("protocol input closed");
 	expect(worker.killCalls).toBe(1);
 	expect(worker.killed).toBe(false);
+	worker.allowCloseOnKill();
+	await session.close();
+	expect(worker.killCalls).toBe(2);
+});
+
+it("ignores delayed events from a terminated worker after its replacement starts", async () => {
+	const firstPath = "C:/Fixture/BP_First.uasset";
+	const secondPath = "C:/Fixture/BP_Replacement.uasset";
+	const firstWorker = new StalledInputProcess(false);
+	const secondWorker = new StalledInputProcess(true, "replacement input closed", () => {
+		firstWorker.emitError(new Error("stale worker error"));
+	});
+	const workers = [firstWorker, secondWorker];
+	const configuration = {
+		catalogTimeoutMs: 25,
+		executable: "generation-reader",
+		timeoutMs: 25
+	};
+	const session = new UassetProtocolSession(configuration, () => {
+		const worker = workers.shift();
+		if (worker === undefined) throw new Error("unexpected worker request");
+		return worker;
+	});
+
+	await Effect.runPromise(
+		invokeProtocolSessionSingle({
+			configuration,
+			expected: "inspect",
+			operation: "inspect",
+			path: firstPath,
+			request: makeProtocolRequest(
+				{ assetPath: firstPath, kind: "inspect" },
+				{ maximumOutputBytes: 1_024, timeoutMs: 25 }
+			),
+			select: () => undefined,
+			session
+		}).pipe(Effect.flip)
+	);
+	firstWorker.emitClose();
+	await Promise.resolve();
+
+	const failure = await Effect.runPromise(
+		invokeProtocolSessionSingle({
+			configuration,
+			expected: "inspect",
+			operation: "inspect",
+			path: secondPath,
+			request: makeProtocolRequest(
+				{ assetPath: secondPath, kind: "inspect" },
+				{ maximumOutputBytes: 1_024, timeoutMs: 25 }
+			),
+			select: () => undefined,
+			session
+		}).pipe(Effect.timeout("1 second"), Effect.flip)
+	);
+
+	expect(failure).toBeInstanceOf(AssetReaderError);
+	if (!(failure instanceof AssetReaderError)) return;
+	expect(failure.message).toContain("replacement input closed");
+	expect(failure.message).not.toContain("stale worker error");
 	await session.close();
 });

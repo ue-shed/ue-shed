@@ -397,6 +397,14 @@ export async function extractPluginArchiveToDirectory(
 			const platform = options.manifest.compatibility.platform;
 			const binaryExtension =
 				platform === "Win64" ? ".dll" : platform === "Mac" ? ".dylib" : ".so";
+			const extractedModules = new Map<
+				string,
+				{
+					readonly binaryPath: string;
+					readonly buildId: string;
+					readonly pluginId: string;
+				}
+			>();
 			for (const plugin of options.manifest.plugins) {
 				const descriptorPath = `Plugins/${plugin.descriptorPath}`;
 				const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptorEvidence)(
@@ -426,16 +434,14 @@ export async function extractPluginArchiveToDirectory(
 							`.modules BuildId ${evidence.BuildId} does not match ${options.manifest.compatibility.engineBuildId}: ${modulePath}`
 						);
 					}
-					for (const moduleId of Object.keys(evidence.Modules)) {
-						evidencedModules.add(moduleId);
-					}
-					const products = Object.values(evidence.Modules);
-					if (products.length === 0) {
+					const moduleProducts = Object.entries(evidence.Modules);
+					if (moduleProducts.length === 0) {
 						throw new Error(
 							`Compiled plugin ${plugin.id} has empty .modules evidence.`
 						);
 					}
-					for (const product of products) {
+					for (const [moduleId, product] of moduleProducts) {
+						evidencedModules.add(moduleId);
 						const normalizedProduct = safeArchivePath(product);
 						const productPath = `${binaryRoot}${normalizedProduct}`;
 						if (
@@ -446,6 +452,16 @@ export async function extractPluginArchiveToDirectory(
 								`.modules product ${product} is not an extracted ${binaryExtension} binary beneath ${binaryRoot}: ${modulePath}`
 							);
 						}
+						if (extractedModules.has(moduleId)) {
+							throw new Error(
+								`Compiled archive has duplicate .modules evidence for ${moduleId}.`
+							);
+						}
+						extractedModules.set(moduleId, {
+							binaryPath: productPath,
+							buildId: evidence.BuildId,
+							pluginId: plugin.id
+						});
 					}
 				}
 				const missingModules = [...declaredModules].filter(
@@ -458,6 +474,33 @@ export async function extractPluginArchiveToDirectory(
 				}
 			}
 			if (options.manifest.schemaVersion === 3) {
+				const attestedModules = new Map<string, (typeof options.manifest.modules)[number]>(
+					options.manifest.modules.map((module) => [module.name, module])
+				);
+				for (const [name, extracted] of extractedModules) {
+					const attested = attestedModules.get(name);
+					if (attested === undefined) {
+						throw new Error(
+							`Compiled archive module ${name} has no manifest attestation.`
+						);
+					}
+					if (
+						attested.binaryPath !== extracted.binaryPath ||
+						attested.buildId !== extracted.buildId ||
+						attested.pluginId !== extracted.pluginId
+					) {
+						throw new Error(
+							`Compiled module attestation does not match extracted .modules evidence: ${name}.`
+						);
+					}
+				}
+				for (const name of attestedModules.keys()) {
+					if (!extractedModules.has(name)) {
+						throw new Error(
+							`Compiled manifest attests module ${name} without extracted .modules evidence.`
+						);
+					}
+				}
 				const attested = new Map(
 					options.manifest.nativeFiles.map((file) => [file.path, file.sha256])
 				);

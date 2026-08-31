@@ -21,6 +21,10 @@ class RejectingProtocolInput {
 		this.destroyed = true;
 	}
 
+	destroy(): void {
+		this.destroyed = true;
+	}
+
 	setDefaultEncoding(_encoding: BufferEncoding): void {}
 
 	write(_chunk: string, callback: (cause?: Error | null) => void): boolean {
@@ -40,12 +44,13 @@ class StalledInputProcess implements ProtocolSessionProcess {
 	signalCode: string | null = null;
 	killed = false;
 	killCalls = 0;
+	unrefCalls = 0;
 	private readonly closeListeners: Array<(code: number | null, signal: string | null) => void> =
 		[];
 	private readonly errorListeners: Array<(cause: Error) => void> = [];
 
 	constructor(
-		private closesOnKill = true,
+		private readonly closesOnKill = true,
 		inputMessage?: string,
 		onWrite?: () => void
 	) {
@@ -72,8 +77,8 @@ class StalledInputProcess implements ProtocolSessionProcess {
 		this.errorListeners.push(listener);
 	}
 
-	allowCloseOnKill(): void {
-		this.closesOnKill = true;
+	unref(): void {
+		this.unrefCalls += 1;
 	}
 
 	emitClose(): void {
@@ -154,9 +159,10 @@ it("bounds termination when a worker ignores kill and never closes", async () =>
 	);
 	expect(worker.killCalls).toBe(2);
 	expect(worker.killed).toBe(false);
-	worker.allowCloseOnKill();
-	await session.close();
-	expect(worker.killCalls).toBe(3);
+	expect(worker.unrefCalls).toBe(1);
+	expect(worker.stdin.destroyed).toBe(true);
+	expect(worker.stdout.destroyed).toBe(true);
+	expect(worker.stderr.destroyed).toBe(true);
 });
 
 it("ignores delayed events from a terminated worker after its replacement starts", async () => {

@@ -696,6 +696,7 @@ export interface ProtocolSessionProcess {
 	readonly pid: number | undefined;
 	readonly stdin: {
 		readonly destroyed: boolean;
+		readonly destroy: () => void;
 		readonly end: () => void;
 		readonly setDefaultEncoding: (encoding: BufferEncoding) => void;
 		readonly write: (chunk: string, callback: (cause?: Error | null) => void) => boolean;
@@ -708,6 +709,7 @@ export interface ProtocolSessionProcess {
 	readonly kill: () => boolean;
 	readonly onClose: (listener: (code: number | null, signal: string | null) => void) => void;
 	readonly onError: (listener: (cause: Error) => void) => void;
+	readonly unref: () => void;
 }
 
 export type ProtocolSessionProcessFactory = () => ProtocolSessionProcess;
@@ -753,7 +755,8 @@ function spawnProtocolSession(executable: string): ProtocolSessionProcess {
 		},
 		stderr: child.stderr,
 		stdin: child.stdin,
-		stdout: child.stdout
+		stdout: child.stdout,
+		unref: () => child.unref()
 	};
 }
 
@@ -833,6 +836,17 @@ export class UassetProtocolSession {
 		this.terminating = false;
 	}
 
+	private detachProcess(child: ProtocolSessionProcess): void {
+		if (this.child !== child) return;
+		// A worker that ignored termination must not keep Node/Electron alive after
+		// scoped ownership ends. Late events are ignored by the child-generation guards.
+		child.unref();
+		child.stdin?.destroy();
+		child.stdout?.destroy();
+		child.stderr?.destroy();
+		this.releaseProcess(child);
+	}
+
 	private async nextLine(
 		deadline: number,
 		signal: AbortSignal | undefined
@@ -875,13 +889,13 @@ export class UassetProtocolSession {
 		});
 	}
 
-	private async terminate(timeoutMs: number): Promise<void> {
+	private async terminate(timeoutMs: number): Promise<boolean> {
 		const child = this.child;
 		const closePromise = this.closePromise;
-		if (child === undefined) return;
+		if (child === undefined) return true;
 		this.terminating = true;
 		if (child.exitCode === null && child.signalCode === null) child.kill();
-		if (closePromise === undefined) return;
+		if (closePromise === undefined) return false;
 		const closed = await waitForProtocolClose(
 			closePromise,
 			Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
@@ -891,6 +905,7 @@ export class UassetProtocolSession {
 		} else {
 			void closePromise.then(() => this.releaseProcess(child));
 		}
+		return closed;
 	}
 
 	async *events(options: {
@@ -993,9 +1008,10 @@ export class UassetProtocolSession {
 		if (child?.stdin !== null && child?.stdin !== undefined && !child.stdin.destroyed) {
 			child.stdin.end();
 		}
-		// Scope release is bounded too. If the worker still refuses to close, the
-		// registered close reaction retains ownership and releases it on eventual exit.
-		await this.terminate(this.configuration.timeoutMs);
+		// Scope release is bounded too. A worker that still refuses to close is detached
+		// from every host-liveness handle after the final termination attempt.
+		const closed = await this.terminate(this.configuration.timeoutMs);
+		if (!closed && child !== undefined) this.detachProcess(child);
 	}
 }
 

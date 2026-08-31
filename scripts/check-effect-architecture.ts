@@ -131,6 +131,8 @@ const approvedResourceAdapters = new Set([
 	// The opt-in benchmark owns bounded RSS sampling timers around each native worker.
 	"apps/workbench/scripts/benchmark-project-index.ts",
 	"apps/workbench/src/renderer/app-shell.tsx",
+	// Blueprint Graphs owns its bounded search debounce through Solid onCleanup.
+	"apps/workbench/src/renderer/blueprint-graph-viewer.tsx",
 	// The chooser owns focus and progress-polling resources through Solid cleanup adapters.
 	"apps/workbench/src/renderer/project-chooser.tsx",
 	"apps/workbench/src/renderer/index.tsx",

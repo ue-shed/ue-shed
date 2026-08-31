@@ -27,6 +27,19 @@ export async function runRelease({ validateSource, check, confirm, publish }: Re
 	publish();
 }
 
+export function publicationConfirmationPhrase(version: string) {
+	return `publish ${version}`;
+}
+
+export function assertPublicationConfirmation(answer: string, version: string) {
+	const expected = publicationConfirmationPhrase(version);
+	if (answer !== expected) {
+		throw new Error(
+			`Release publication aborted: expected the exact phrase ${JSON.stringify(expected)}.`
+		);
+	}
+}
+
 function executable(name: string) {
 	return process.platform === "win32" ? `${name}.cmd` : name;
 }
@@ -57,9 +70,11 @@ async function confirmPublication() {
 	}
 	const terminal = createInterface({ input: process.stdin, output: process.stdout });
 	try {
-		await terminal.question(
-			`\nAll release checks passed. Press Enter to publish UE Shed ${PUBLIC_VERSION} to npm, or Ctrl+C to abort. `
+		const answer = await terminal.question(
+			`\nAll release checks passed. Type ${JSON.stringify(publicationConfirmationPhrase(PUBLIC_VERSION))} ` +
+				"to begin npm publication and immediate authentication; any other input aborts. "
 		);
+		assertPublicationConfirmation(answer, PUBLIC_VERSION);
 	} finally {
 		terminal.close();
 	}

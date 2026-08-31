@@ -1,5 +1,5 @@
 import { createHash, type BinaryLike } from "node:crypto";
-import { cp, copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, copyFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { basename, dirname, join, resolve } from "node:path";
@@ -118,6 +118,28 @@ try {
 		);
 		assert.match(wasmBuildInfo.tools.wasmOpt, /disabled|no[ -]?opt/iu);
 	}
+	const wasmPublicationDirectory = join(temporaryRoot, "wasm-publication-pack");
+	await mkdir(wasmPublicationDirectory);
+	run(
+		executable("pnpm"),
+		["pack", "--pack-destination", wasmPublicationDirectory],
+		join(repositoryRoot, "packages", "uasset-inspection-wasm")
+	);
+	const wasmPublicationTarballs = (await readdir(wasmPublicationDirectory)).filter((file) =>
+		file.endsWith(".tgz")
+	);
+	assert.equal(
+		wasmPublicationTarballs.length,
+		1,
+		"pnpm must produce one WASM publication tarball"
+	);
+	const wasmPublicationTarball = wasmPublicationTarballs[0];
+	assert.ok(wasmPublicationTarball);
+	assert.equal(
+		sha256(await readFile(join(wasmPublicationDirectory, wasmPublicationTarball))),
+		wasmEntry.sha256,
+		"staged WASM release packing must reproduce pnpm publication bytes"
+	);
 	const gameTextEntry = packed.find((entry) => entry.name === GAME_TEXT_PACKAGE_NAME);
 	assert.ok(gameTextEntry, "the public package graph must contain Game Text");
 	const gameTextFiles = run("tar", ["-tzf", basename(gameTextEntry.path)], packageDirectory)
@@ -289,7 +311,7 @@ try {
 	await writeFile(
 		consumerScript,
 		`${[
-			"import { access, writeFile } from 'node:fs/promises';",
+			"import { access } from 'node:fs/promises';",
 			"import { resolve } from 'node:path';",
 			"import { Effect, Schema } from 'effect';",
 			"import * as protocol from '@ue-shed/protocol';",
@@ -397,16 +419,15 @@ try {
 			"      proposalDirectory: resolve('./custodian-proposals'),",
 			"      targetIds: [target.id]",
 			"    });",
-			"    yield* Effect.promise(() => writeFile(resolve('./custodian-root/PackedFixture/Intermediate/cache.bin'), 'changed-after-review'));",
 			"    return yield* service.execute({",
 			"      proposalPath: proposal.proposalPath,",
-			"      approvalPhrase: proposal.approvalPhrase",
+			"      approvalPhrase: `${proposal.approvalPhrase}-not-approved`",
 			"    });",
 			"  }).pipe(Effect.provide(CustodianNodeLive))",
 			");",
 			"await Effect.runPromise(Schema.decodeUnknownEffect(CustodianReceipt)(custodian));",
-			"if (custodian.status !== 'refused' || custodian.refusal?.code !== 'proposal_stale') {",
-			"  throw new Error('packed Custodian did not refuse stale trash proposal');",
+			"if (custodian.status !== 'refused' || custodian.refusal?.code !== 'approval_mismatch') {",
+			"  throw new Error('packed Custodian did not refuse unapproved cleanup');",
 			"}",
 			"await access(resolve('./custodian-root/PackedFixture/Intermediate/cache.bin'));",
 			"const bytes = observatory.encodeActorStreamPacket({",

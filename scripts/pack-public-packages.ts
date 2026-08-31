@@ -201,10 +201,13 @@ async function packWorkspacePackage(workspacePackage: PublicPackage, outputDirec
 		packDirectory = stagedDirectory;
 	}
 	try {
-		const packCommand = stagedDirectory === undefined ? executable("pnpm") : executable("npm");
-		const packArguments = ["pack", "--pack-destination", outputDirectory];
-		if (stagedDirectory !== undefined) packArguments.push("--ignore-scripts");
-		run(packCommand, packArguments, { cwd: packDirectory });
+		const packArguments = [
+			...(stagedDirectory === undefined ? [] : ["--config.ignore-scripts=true"]),
+			"pack",
+			"--pack-destination",
+			outputDirectory
+		];
+		run(executable("pnpm"), packArguments, { cwd: packDirectory });
 		const filename = (await readdir(outputDirectory)).find(
 			(entry) => !before.has(entry) && entry.endsWith(".tgz")
 		);

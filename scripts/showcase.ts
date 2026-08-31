@@ -8,10 +8,13 @@ const buildOnly = process.argv.includes("--build-only");
 const custodianFixture = process.env.UE_SHED_CUSTODIAN_ROOT
 	? undefined
 	: await createCustodianShowcaseFixture();
-const environment = await createWorkbenchEnvironment({
-	...process.env,
-	UE_SHED_CUSTODIAN_ROOT: process.env.UE_SHED_CUSTODIAN_ROOT ?? custodianFixture?.root
-});
+const environment = await createWorkbenchEnvironment(
+	{
+		...process.env,
+		UE_SHED_CUSTODIAN_ROOT: process.env.UE_SHED_CUSTODIAN_ROOT ?? custodianFixture?.root
+	},
+	{ defaultProject: "remembered" }
+);
 
 console.log(`Remote Control endpoint: ${environment.UE_SHED_REMOTE_CONTROL_ENDPOINT}`);
 

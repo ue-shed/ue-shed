@@ -131,6 +131,7 @@ export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
 export class AssetReaderError extends Schema.TaggedErrorClass<AssetReaderError>()(
 	"AssetReaderError",
 	{
+		code: Schema.optional(Schema.String),
 		kind: Schema.Literals(["timeout", "process", "contract", "discovery", "resource_limit"]),
 		operation: Schema.Literals([
 			"authoring",
@@ -403,6 +404,12 @@ function catalogProgressBridge(catalog: CatalogProgressStore): ScanProgressStore
 }
 
 export const SAVED_TABLE_SCAN_CLASSES = [DATA_TABLE_CLASS, COMPOSITE_DATA_TABLE_CLASS] as const;
+
+/**
+ * Unreal Blueprint asset classes, including editor-defined specializations such as
+ * WidgetBlueprint, share this class-name suffix. Generated classes intentionally do not match.
+ */
+export const BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES = ["Blueprint"] as const;
 
 function tableDescriptorsFrom(entry: SavedAssetScanEntry): SavedTableDescriptor[] {
 	if (!isHeaderScanEntry(entry)) return [];

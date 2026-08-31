@@ -213,10 +213,16 @@ export class ProtocolStreamFailure extends Error {
 		readonly kind: ProtocolFailureKind,
 		message: string,
 		readonly exitCode?: number,
-		readonly stderr?: string
+		readonly stderr?: string,
+		readonly protocolCode?: string
 	) {
 		super(message);
 	}
+}
+
+function processFailureCode(cause: Error | undefined): string | undefined {
+	if (cause === undefined || !("code" in cause)) return undefined;
+	return cause.code === "ENOENT" ? "executable_missing" : undefined;
 }
 
 interface ProtocolTelemetry {
@@ -612,17 +618,21 @@ function protocolFailureFromEvent(
 	return new ProtocolStreamFailure(
 		kind,
 		event.message,
-		event.code === "resource_limit" ? 7 : undefined
+		event.code === "resource_limit" ? 7 : undefined,
+		undefined,
+		event.code
 	);
 }
 
-function mapProtocolFailure(
+/** @internal Maps transport failures without discarding native protocol classification. */
+export function mapProtocolFailure(
 	cause: unknown,
 	operation: AssetReaderError["operation"],
 	path: string
 ): AssetReaderError {
 	if (cause instanceof ProtocolStreamFailure) {
 		return new AssetReaderError({
+			...(cause.protocolCode === undefined ? undefined : { code: cause.protocolCode }),
 			kind: cause.kind === "timeout" ? "timeout" : cause.kind,
 			operation,
 			message: cause.message,
@@ -632,7 +642,9 @@ function mapProtocolFailure(
 			...(cause.exitCode === undefined ? undefined : { exitCode: cause.exitCode })
 		});
 	}
+	const code = cause instanceof Error ? processFailureCode(cause) : undefined;
 	return new AssetReaderError({
+		...(code === undefined ? undefined : { code }),
 		kind: "process",
 		operation,
 		message: cause instanceof Error ? cause.message : String(cause),
@@ -817,12 +829,25 @@ export class UassetProtocolSession {
 			if (stdin === null) {
 				throw new ProtocolStreamFailure("process", "Protocol session input is unavailable");
 			}
-			await new Promise<void>((resolvePromise, rejectPromise) => {
-				stdin.write(`${JSON.stringify(options.request)}\n`, (cause) => {
-					if (cause === null || cause === undefined) resolvePromise();
-					else rejectPromise(cause);
+			try {
+				await new Promise<void>((resolvePromise, rejectPromise) => {
+					stdin.write(`${JSON.stringify(options.request)}\n`, (cause) => {
+						if (cause === null || cause === undefined) resolvePromise();
+						else rejectPromise(cause);
+					});
 				});
-			});
+			} catch (cause) {
+				await this.closePromise;
+				const processCause =
+					this.processError ?? (cause instanceof Error ? cause : undefined);
+				throw new ProtocolStreamFailure(
+					"process",
+					processCause?.message ?? String(cause),
+					undefined,
+					undefined,
+					processFailureCode(processCause)
+				);
+			}
 			const deadline = nowMs() + options.timeoutMs;
 			while (!terminal) {
 				const next = await this.nextLine(deadline, options.signal);
@@ -834,7 +859,8 @@ export class UassetProtocolSession {
 							this.stderr.trim() ||
 							`Protocol session exited ${closed?.code ?? closed?.signal ?? "unknown"}`,
 						closed?.code ?? undefined,
-						this.stderr.trim() || undefined
+						this.stderr.trim() || undefined,
+						processFailureCode(this.processError)
 					);
 				}
 				const chunk = `${next.value}\n`;
@@ -956,10 +982,15 @@ async function* protocolEvents(options: {
 			}
 		}
 		lines.finish();
-		validator.finish();
 		const closedResult = await closePromise;
 		if (processError !== undefined)
-			throw new ProtocolStreamFailure("process", processError.message);
+			throw new ProtocolStreamFailure(
+				"process",
+				processError.message,
+				undefined,
+				undefined,
+				processFailureCode(processError)
+			);
 		if (closedResult.code !== 0) {
 			throw new ProtocolStreamFailure(
 				"process",
@@ -969,6 +1000,7 @@ async function* protocolEvents(options: {
 				stderr.trim() || undefined
 			);
 		}
+		validator.finish();
 	} finally {
 		options.signal?.removeEventListener("abort", onAbort);
 		if (options.telemetry.startedAt === undefined) options.telemetry.startedAt = queuedAt;

@@ -10,6 +10,7 @@ import { NIAGARA_SYSTEM_CLASS } from "@ue-shed/niagara";
 import type { SavedWorldMap as SavedWorldMapValue } from "@ue-shed/protocol";
 import {
 	AssetReader,
+	BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndex,
 	ProjectIndexQuery,
@@ -30,12 +31,14 @@ import { Cache, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema, Str
 import { join } from "node:path";
 import {
 	WorkbenchProjectSummary,
+	type WorkbenchRecentProject,
 	type WorkbenchProjectFailure,
 	type WorkbenchProjectState,
 	type WorkbenchTaskProgress
 } from "../project-workspace-contract.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { savedMapLabel, WorkbenchConfiguration } from "../workbench-config.js";
+import { WorkbenchProjectHistory } from "./project-history.js";
 
 interface ProjectSummaryInventory {
 	readonly indexSummary: ProjectIndexSummary | undefined;
@@ -44,6 +47,7 @@ interface ProjectSummaryInventory {
 }
 
 export type WorkbenchProjectCandidateKind =
+	| "blueprint"
 	| "enhanced_input"
 	| "game_text"
 	| "niagara_system"
@@ -66,7 +70,9 @@ export interface WorkbenchProjectApi {
 	readonly choose: () => Effect.Effect<WorkbenchProjectState>;
 	readonly current: () => Effect.Effect<WorkbenchProjectState>;
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
+	readonly openRecent: (projectRoot: string) => Effect.Effect<WorkbenchProjectState>;
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
+	readonly recent: () => Effect.Effect<readonly WorkbenchRecentProject[]>;
 	/** Selected identity only; config queries must not require a package-index refresh. */
 	readonly selectedProject: () => Effect.Effect<
 		{ readonly projectName: string; readonly projectRoot: string },
@@ -107,13 +113,18 @@ export const WorkbenchProjectLive = Layer.effect(
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
 		const dialog = yield* ElectronDialog;
+		const history = yield* WorkbenchProjectHistory;
 		const assetReader = yield* AssetReader;
 		const projectIndexImplementation = yield* ProjectIndex;
 		const layerScope = yield* Effect.scope;
-		const selectedRoot = yield* Ref.make<Option.Option<string>>(
+		const rememberedProjects =
+			configuration.rememberProjects === false ? [] : yield* history.recent();
+		const initialRoot =
 			configuration.project.status === "configured"
-				? Option.some(configuration.project.projectRoot)
-				: Option.none()
+				? configuration.project.projectRoot
+				: rememberedProjects[0]?.projectRoot;
+		const selectedRoot = yield* Ref.make<Option.Option<string>>(
+			initialRoot === undefined ? Option.none() : Option.some(initialRoot)
 		);
 		const selectedSummary = yield* Ref.make<Option.Option<ProjectSummaryInventory>>(
 			Option.none()
@@ -207,6 +218,16 @@ export const WorkbenchProjectLive = Layer.effect(
 			kind: WorkbenchProjectCandidateKind
 		) {
 			const byKind = {
+				blueprint: [
+					(cursor) =>
+						ProjectIndexQuery.cases.ClassNameSuffixes.make({
+							expectedGeneration: summary.generation,
+							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+							projectId: summary.projectId,
+							values: [...BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES],
+							...(cursor === undefined ? undefined : { cursor })
+						})
+				],
 				enhanced_input: [
 					(cursor) =>
 						ProjectIndexQuery.cases.ClassPrefixes.make({
@@ -550,11 +571,18 @@ export const WorkbenchProjectLive = Layer.effect(
 			capacity: 4,
 			timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero)
 		});
+		const remember = Effect.fn("Workbench.WorkbenchProject.remember")(function* (
+			projectRoot: string
+		) {
+			if (configuration.rememberProjects === false) return;
+			yield* history.record(projectRoot).pipe(Effect.ignore);
+		});
 
 		const current = Effect.fn("Workbench.WorkbenchProject.current")(function* () {
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) return { status: "not_configured" as const };
 			return yield* currentInventory(root.value).pipe(
+				Effect.tap((inventory) => remember(inventory.project.projectRoot)),
 				Effect.map((inventory) => ({
 					project: inventory.project,
 					status: "ready" as const
@@ -572,6 +600,17 @@ export const WorkbenchProjectLive = Layer.effect(
 		const progress = Effect.fn("Workbench.WorkbenchProject.progress")(function* () {
 			return yield* Ref.get(projectIndexProgress);
 		});
+		const open = Effect.fn("Workbench.WorkbenchProject.open")(function* (
+			projectRoot: string,
+			forceRefresh: boolean
+		) {
+			if (forceRefresh) yield* Cache.invalidate(summaryLoads, projectRoot);
+			yield* Ref.set(selectedSummary, Option.none());
+			const inventory = yield* loadSummary(projectRoot);
+			yield* Ref.set(selectedRoot, Option.some(projectRoot));
+			yield* remember(projectRoot);
+			return { project: inventory.project, status: "ready" as const };
+		});
 
 		const choose: WorkbenchProjectApi["choose"] = () =>
 			Effect.gen(function* () {
@@ -581,11 +620,7 @@ export const WorkbenchProjectLive = Layer.effect(
 				if (choice.status === "cancelled") return { status: "cancelled" as const };
 				// Choosing a project is an explicit operator request to index it, so it always
 				// revalidates against disk rather than answering from the reuse window.
-				yield* Cache.invalidate(summaryLoads, choice.path);
-				yield* Ref.set(selectedSummary, Option.none());
-				const inventory = yield* loadSummary(choice.path);
-				yield* Ref.set(selectedRoot, Option.some(choice.path));
-				return { project: inventory.project, status: "ready" as const };
+				return yield* open(choice.path, true);
 			}).pipe(
 				Effect.catch((error) =>
 					Effect.succeed({
@@ -594,6 +629,29 @@ export const WorkbenchProjectLive = Layer.effect(
 					})
 				)
 			);
+		const recent: WorkbenchProjectApi["recent"] = () =>
+			configuration.rememberProjects === false ? Effect.succeed([]) : history.recent();
+		const openRecent: WorkbenchProjectApi["openRecent"] = (projectRoot) =>
+			Effect.gen(function* () {
+				const projects = yield* recent();
+				if (!projects.some((project) => project.projectRoot === projectRoot)) {
+					return {
+						error: mapProjectFailure(
+							"That project is no longer in Workbench's recent list.",
+							"Choose it from disk to add it again."
+						),
+						status: "failed" as const
+					};
+				}
+				return yield* open(projectRoot, false).pipe(
+					Effect.catch((error) =>
+						Effect.succeed({
+							error: mapProjectFailure(error.message, error.recovery),
+							status: "failed" as const
+						})
+					)
+				);
+			});
 
 		const selected = Effect.fn("Workbench.WorkbenchProject.selected")(function* () {
 			const root = yield* Ref.get(selectedRoot);
@@ -754,7 +812,9 @@ export const WorkbenchProjectLive = Layer.effect(
 			choose,
 			current,
 			inputAtlas,
+			openRecent,
 			progress,
+			recent,
 			selectedProject,
 			savedProject,
 			savedTables
@@ -764,9 +824,14 @@ export const WorkbenchProjectLive = Layer.effect(
 
 export type WorkbenchProjectTestApi = Omit<
 	WorkbenchProjectApi,
-	"candidates" | "progress" | "selectedProject"
+	"candidates" | "openRecent" | "progress" | "recent" | "selectedProject"
 > &
-	Partial<Pick<WorkbenchProjectApi, "candidates" | "progress" | "selectedProject">>;
+	Partial<
+		Pick<
+			WorkbenchProjectApi,
+			"candidates" | "openRecent" | "progress" | "recent" | "selectedProject"
+		>
+	>;
 
 export function makeWorkbenchProjectTestLayer(
 	service: WorkbenchProjectTestApi
@@ -787,6 +852,10 @@ export function makeWorkbenchProjectTestLayer(
 						stage: "project_index",
 						total: 0
 					})),
+			openRecent:
+				service.openRecent ??
+				(() => Effect.die("recent project selection is not used by this test")),
+			recent: service.recent ?? (() => Effect.succeed([])),
 			selectedProject:
 				service.selectedProject ??
 				(() => Effect.die("selected project identity is not used by this test"))

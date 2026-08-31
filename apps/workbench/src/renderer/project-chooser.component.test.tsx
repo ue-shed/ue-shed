@@ -38,7 +38,9 @@ afterAll(() => runtime.dispose());
 function renderChooser(args: {
 	readonly choose: ProjectChooserProps["client"]["chooseProject"];
 	readonly current: WorkbenchProjectState;
+	readonly openRecent?: ProjectChooserProps["client"]["openRecentProject"];
 	readonly onChosen?: () => void;
+	readonly recent?: readonly { readonly projectName: string; readonly projectRoot: string }[];
 }) {
 	render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
@@ -46,8 +48,11 @@ function renderChooser(args: {
 				client={{
 					chooseProject: args.choose,
 					launchProject: (mode) => Effect.succeed({ mode, status: "launched" }),
+					openRecentProject:
+						args.openRecent ?? (() => Effect.succeed({ status: "cancelled" })),
 					project: () => Effect.succeed(args.current),
-					projectProgress: () => Effect.succeed(progress)
+					projectProgress: () => Effect.succeed(progress),
+					recentProjects: () => Effect.succeed(args.recent ?? [])
 				}}
 				onChosen={args.onChosen ?? (() => undefined)}
 			/>
@@ -142,6 +147,43 @@ describe("ProjectChooser", () => {
 		expect(screen.getByRole("button", { name: /Plain editor/ })).toBeDefined();
 	});
 
+	it("offers recent projects and switches without reopening the directory picker", async () => {
+		const onChosen = vi.fn();
+		const otherProject: WorkbenchProjectState = {
+			project: {
+				inputAtlas: "deferred",
+				mapCount: 1,
+				packageCount: 8,
+				projectName: "OtherProject",
+				projectRoot: "D:/Projects/OtherProject"
+			},
+			status: "ready"
+		};
+		const openRecent = vi.fn(() => Effect.succeed(otherProject));
+		renderChooser({
+			choose: () => Effect.succeed({ status: "cancelled" }),
+			current: ready,
+			onChosen,
+			openRecent,
+			recent: [ready.project, otherProject.project]
+		});
+
+		await userEvent.setup().click(await screen.findByLabelText("Recent projects"));
+		expect(screen.getByText("Stored only on this device")).toBeDefined();
+		expect(
+			screen.getByRole<HTMLButtonElement>("button", {
+				name: "Open recent project Fixture"
+			}).disabled
+		).toBe(true);
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Open recent project OtherProject" }));
+
+		await waitFor(() => expect(openRecent).toHaveBeenCalledWith("D:/Projects/OtherProject"));
+		expect(await screen.findByRole("button", { name: "OtherProject" })).toBeDefined();
+		expect(onChosen).toHaveBeenCalledOnce();
+	});
+
 	it("launches the full plugin experience without changing the selected project", async () => {
 		const launchProject = vi.fn((mode: "ue_shed" | "normal") =>
 			Effect.succeed({ mode, status: "launched" as const })
@@ -152,8 +194,10 @@ describe("ProjectChooser", () => {
 					client={{
 						chooseProject: () => Effect.succeed(ready),
 						launchProject,
+						openRecentProject: () => Effect.succeed(ready),
 						project: () => Effect.succeed(ready),
-						projectProgress: () => Effect.succeed(progress)
+						projectProgress: () => Effect.succeed(progress),
+						recentProjects: () => Effect.succeed([])
 					}}
 					onChosen={() => undefined}
 				/>

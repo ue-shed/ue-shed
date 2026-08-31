@@ -9,6 +9,7 @@ export type WorkbenchRoute =
 	| "Niagara"
 	| "Texture Audit"
 	| "Camera Lab"
+	| "Blueprint Graphs"
 	| "Config"
 	| "Custodian"
 	| "World Log";
@@ -40,7 +41,8 @@ export class WorkbenchPage {
 			"Map Review",
 			"Niagara Preview",
 			"World Log",
-			"Camera Lab"
+			"Camera Lab",
+			"Blueprint Graphs"
 		]) {
 			await expect(workflows.getByRole("link", { name })).toBeVisible();
 		}

@@ -24,6 +24,22 @@ interface DemandLaunchFixtures {
 	};
 }
 
+interface OfflineBlueprintFixtures {
+	readonly offlineBlueprint: {
+		readonly application: ElectronApplication;
+		readonly harness: FakeFixtureLaunchHarness;
+		readonly workbench: WorkbenchPage;
+	};
+}
+
+interface IndexedBlueprintFixtures {
+	readonly indexedBlueprint: {
+		readonly application: ElectronApplication;
+		readonly harness: FakeFixtureLaunchHarness;
+		readonly workbench: WorkbenchPage;
+	};
+}
+
 interface ElectronLaunchEnvironment {
 	[name: string]: string;
 }
@@ -31,6 +47,7 @@ interface ElectronLaunchEnvironment {
 const require = createRequire(import.meta.url);
 const electronExecutable: unknown = require("electron");
 const workbenchRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const fixtureProjectRoot = resolve(workbenchRoot, "../../fixtures/unreal-project");
 
 if (!Schema.is(Schema.String)(electronExecutable)) {
 	throw new TypeError("The Electron package did not resolve to an executable path");
@@ -46,6 +63,7 @@ function launchEnvironment(overrides: Readonly<Record<string, string>> = {}) {
 	}
 	const environment: ElectronLaunchEnvironment = {
 		ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
+		UE_SHED_REMEMBER_PROJECTS: "false",
 		...overrides
 	};
 	for (const [key, value] of Object.entries(process.env)) {
@@ -123,6 +141,120 @@ export const demandLaunchTest = base.extend<DemandLaunchFixtures>({
 						.screenshot({
 							fullPage: true,
 							path: testInfo.outputPath("demand-launch.png")
+						})
+						.catch(() => undefined);
+					await application
+						.context()
+						.tracing.stop({ path: testInfo.outputPath("trace.zip") })
+						.catch(() => undefined);
+				} else {
+					await application
+						.context()
+						.tracing.stop()
+						.catch(() => undefined);
+				}
+			} finally {
+				await closeApplication(application);
+				await harness.close();
+				await rm(sessionRoot, { force: true, recursive: true });
+			}
+		}
+	}
+});
+
+export const offlineBlueprintTest = base.extend<OfflineBlueprintFixtures>({
+	offlineBlueprint: async ({ browserName: _browserName }, use, testInfo) => {
+		const sessionRoot = await mkdtemp(join(tmpdir(), "ue-shed-workbench-e2e-blueprint-"));
+		const harness = await createFakeFixtureLaunchHarness();
+		const environment = launchEnvironment({
+			...harness.environment,
+			UE_SHED_AUTHORING_SESSION_ROOT: sessionRoot
+		});
+		for (const name of [
+			"UE_SHED_AUTHORING_ASSET",
+			"UE_SHED_PROJECT_NAME",
+			"UE_SHED_PROJECT_ROOT",
+			"UE_SHED_REVIEW_SET",
+			"UE_SHED_SAVED_WORLD_MAP",
+			"UE_SHED_SAVED_WORLD_MAPS",
+			"UE_SHED_TEXTURE_AUDIT_RULES"
+		]) {
+			delete environment[name];
+		}
+		const application = await electron.launch({
+			args: [workbenchRoot],
+			cwd: workbenchRoot,
+			env: environment,
+			executablePath: electronExecutable
+		});
+		const page = await application.firstWindow();
+		const workbench = new WorkbenchPage(page);
+		await application
+			.context()
+			.tracing.start({ screenshots: true, snapshots: true, sources: true });
+
+		try {
+			await use({ application, harness, workbench });
+		} finally {
+			const failed = testInfo.status !== testInfo.expectedStatus;
+			try {
+				if (failed) {
+					await page
+						.screenshot({
+							fullPage: true,
+							path: testInfo.outputPath("offline-blueprint.png")
+						})
+						.catch(() => undefined);
+					await application
+						.context()
+						.tracing.stop({ path: testInfo.outputPath("trace.zip") })
+						.catch(() => undefined);
+				} else {
+					await application
+						.context()
+						.tracing.stop()
+						.catch(() => undefined);
+				}
+			} finally {
+				await closeApplication(application);
+				await harness.close();
+				await rm(sessionRoot, { force: true, recursive: true });
+			}
+		}
+	}
+});
+
+export const indexedBlueprintTest = base.extend<IndexedBlueprintFixtures>({
+	indexedBlueprint: async ({ browserName: _browserName }, use, testInfo) => {
+		const sessionRoot = await mkdtemp(join(tmpdir(), "ue-shed-workbench-e2e-blueprint-index-"));
+		const harness = await createFakeFixtureLaunchHarness();
+		const application = await electron.launch({
+			args: [workbenchRoot],
+			cwd: workbenchRoot,
+			env: launchEnvironment({
+				...harness.environment,
+				UE_SHED_AUTHORING_SESSION_ROOT: sessionRoot,
+				UE_SHED_PROJECT_NAME: "UEShedFixture",
+				UE_SHED_PROJECT_ROOT: fixtureProjectRoot
+			}),
+			executablePath: electronExecutable
+		});
+		const page = await application.firstWindow();
+		const workbench = new WorkbenchPage(page);
+		await application
+			.context()
+			.tracing.start({ screenshots: true, snapshots: true, sources: true });
+
+		try {
+			await use({ application, harness, workbench });
+		} finally {
+			const failed = testInfo.status !== testInfo.expectedStatus;
+			try {
+				if (failed) {
+					await page
+						.screenshot({
+							fullPage: true,
+							path: testInfo.outputPath("indexed-blueprint.png")
 						})
 						.catch(() => undefined);
 					await application

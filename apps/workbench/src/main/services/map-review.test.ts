@@ -106,6 +106,7 @@ const configuredReview: WorkbenchConfigurationApi = {
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
 	project: { status: "not_configured" },
+	rememberProjects: false,
 	remoteControlEndpoint: "http://127.0.0.1:30001",
 	review: { projectRoot, reviewSetPath, status: "configured" },
 	sourceCheckout: { status: "not_configured" },

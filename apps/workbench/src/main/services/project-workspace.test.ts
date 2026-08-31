@@ -16,6 +16,7 @@ import { Effect, Layer, Stream } from "effect";
 import { expect } from "vitest";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
+import { makeWorkbenchProjectHistoryTestLayer } from "./project-history.js";
 import { WorkbenchProject, WorkbenchProjectLive } from "./project-workspace.js";
 
 const projectRoot = "C:/Projects/Selected";
@@ -93,6 +94,68 @@ const dialog = Layer.succeed(
 		chooseSaveFile: () => Effect.die("not used")
 	})
 );
+const history = makeWorkbenchProjectHistoryTestLayer(["D:/Projects/Previous"]);
+
+it.effect("restores recent selection only when no explicit project is configured", () => {
+	const unconfiguredProject = makeWorkbenchConfigurationLayer({
+		authoringAsset: { status: "not_configured" },
+		expectedProject: { status: "not_configured" },
+		project: { status: "not_configured" },
+		remoteControlEndpoint: "http://127.0.0.1:30001",
+		review: { status: "not_configured" },
+		sourceCheckout: { status: "not_configured" },
+		textureAuditRules: { status: "not_configured" }
+	});
+	const disabledProject = makeWorkbenchConfigurationLayer({
+		authoringAsset: { status: "not_configured" },
+		expectedProject: { status: "not_configured" },
+		project: { status: "not_configured" },
+		rememberProjects: false,
+		remoteControlEndpoint: "http://127.0.0.1:30001",
+		review: { status: "not_configured" },
+		sourceCheckout: { status: "not_configured" },
+		textureAuditRules: { status: "not_configured" }
+	});
+	const unusedReader = makeAssetReaderTestLayer({
+		discoverAssets: () => Effect.die("not used"),
+		discoverTables: () => Effect.die("not used"),
+		readAsset: () => Effect.die("not used"),
+		readTable: () => Effect.die("not used"),
+		source: () => Effect.succeed("configured" as const)
+	});
+	const unusedIndex = makeProjectIndexTestLayer({
+		query: () => Effect.die("not used"),
+		rebuild: () => Stream.die("not used"),
+		refresh: () => Stream.die("not used"),
+		status: () => Effect.die("not used")
+	});
+	const remembered = makeWorkbenchProjectHistoryTestLayer(["D:/Projects/Remembered"]);
+	const dependencies = (configuration: typeof unconfiguredProject) =>
+		Layer.mergeAll(configuration, dialog, remembered, unusedReader, unusedIndex);
+
+	return Effect.gen(function* () {
+		const restored = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchProject;
+			return yield* service.selectedProject();
+		}).pipe(
+			Effect.provide(WorkbenchProjectLive),
+			Effect.provide(dependencies(unconfiguredProject))
+		);
+		expect(restored).toEqual({
+			projectName: "Remembered",
+			projectRoot: "D:/Projects/Remembered"
+		});
+
+		const disabled = yield* Effect.gen(function* () {
+			const service = yield* WorkbenchProject;
+			return yield* service.selectedProject().pipe(Effect.flip);
+		}).pipe(
+			Effect.provide(WorkbenchProjectLive),
+			Effect.provide(dependencies(disabledProject))
+		);
+		expect(disabled.message).toBe("No Workbench project is selected.");
+	});
+});
 
 it.effect("uses bounded Project Index pages without loading a legacy inventory", () =>
 	Effect.gen(function* () {
@@ -145,6 +208,19 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 			],
 			projectId: summary.projectId
 		});
+		const blueprintPage = ProjectIndexPage.make({
+			generation: summary.generation,
+			items: [
+				{
+					classes: ["/Script/Engine.Blueprint"],
+					kind: "header",
+					packageName: "/Game/Blueprints/BP_Test",
+					packagePath: "Content/Blueprints/BP_Test.uasset",
+					serializedNames: []
+				}
+			],
+			projectId: summary.projectId
+		});
 		const refresh = Stream.fromIterable([
 			ProjectIndexRefreshEvent.cases.Started.make({ operation: "refresh" }),
 			ProjectIndexRefreshEvent.cases.Progress.make({
@@ -176,6 +252,9 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 			query: (request) => {
 				expect(request.limit).toBe(PROJECT_INDEX_MAX_PAGE_SIZE);
 				if (request._tag === "Maps") return Effect.succeed(page);
+				if (request._tag === "ClassNameSuffixes" && request.values.includes("Blueprint")) {
+					return Effect.succeed(blueprintPage);
+				}
 				if (
 					request._tag === "ExactClasses" &&
 					request.values.includes("/Script/Engine.DataTable")
@@ -204,14 +283,29 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 				depth: "header",
 				header: { path: "Content/Input/IA_Test.uasset" }
 			});
+			const blueprints = yield* service.candidates("blueprint");
+			expect(blueprints.assets).toEqual([
+				expect.objectContaining({
+					header: expect.objectContaining({
+						package: { name: "/Game/Blueprints/BP_Test" },
+						path: "Content/Blueprints/BP_Test.uasset"
+					})
+				})
+			]);
 			expect((yield* service.inputAtlas()).status).toBe("completed");
 			expect((yield* service.savedTables()).tables).toEqual([
 				expect.objectContaining({ objectPath: "/Game/Tables/DT_Test.DT_Test" })
 			]);
 			expect((yield* service.progress()).phase).toBe("ready");
+			expect(yield* service.recent()).toEqual([
+				{ projectName: "Selected", projectRoot },
+				{ projectName: "Previous", projectRoot: "D:/Projects/Previous" }
+			]);
 		}).pipe(
 			Effect.provide(WorkbenchProjectLive),
-			Effect.provide(Layer.mergeAll(configuredProject, dialog, assetReader, projectIndex))
+			Effect.provide(
+				Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+			)
 		);
 	})
 );
@@ -307,7 +401,9 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 			expect(generations).toEqual([1, 1, 2, 2]);
 		}).pipe(
 			Effect.provide(WorkbenchProjectLive),
-			Effect.provide(Layer.mergeAll(configuredProject, dialog, assetReader, projectIndex))
+			Effect.provide(
+				Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+			)
 		);
 	})
 );

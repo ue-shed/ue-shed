@@ -37,6 +37,8 @@ export interface WorkbenchConfigurationApi {
 	readonly custodianRoot?: ConfiguredPath;
 	readonly expectedProject: ExpectedProjectConfiguration;
 	readonly project: ProjectConfiguration;
+	/** Persist and restore Workbench project choices. Explicit test configuration disables this. */
+	readonly rememberProjects: boolean;
 	readonly remoteControlEndpoint: string;
 	readonly review: ReviewConfiguration;
 	/** Optional saved map to inspect without connecting to an Unreal Editor. */
@@ -77,6 +79,9 @@ const cameraPipeNameConfig = Config.schema(NonEmptyConfigString, "UE_SHED_CAMERA
 );
 const projectRootConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_PROJECT_ROOT")
+);
+const rememberProjectsConfig = Config.boolean("UE_SHED_REMEMBER_PROJECTS").pipe(
+	Config.withDefault(true)
 );
 const authoringSessionRootConfig = Config.option(
 	Config.schema(NonEmptyConfigString, "UE_SHED_AUTHORING_SESSION_ROOT")
@@ -144,6 +149,7 @@ export function makeWorkbenchConfiguration(input: {
 	readonly custodianRoot?: Option.Option<string>;
 	readonly expectedProjectName: Option.Option<string>;
 	readonly projectRoot: Option.Option<string>;
+	readonly rememberProjects?: boolean;
 	readonly remoteControlEndpoint: string;
 	readonly repositoryRoot: Option.Option<string>;
 	readonly reviewSet: Option.Option<string>;
@@ -189,6 +195,7 @@ export function makeWorkbenchConfiguration(input: {
 		custodianRoot: configuredPath(input.custodianRoot ?? Option.none()),
 		expectedProject,
 		project,
+		rememberProjects: input.rememberProjects ?? true,
 		remoteControlEndpoint: input.remoteControlEndpoint,
 		review,
 		savedWorldMap: configuredPath(input.savedWorldMap ?? Option.none()),
@@ -213,6 +220,7 @@ export const WorkbenchConfigurationLive = Layer.effect(
 				custodianRoot: yield* custodianRootConfig,
 				expectedProjectName: yield* projectNameConfig,
 				projectRoot: yield* projectRootConfig,
+				rememberProjects: yield* rememberProjectsConfig,
 				remoteControlEndpoint: yield* remoteControlEndpointConfig,
 				repositoryRoot: yield* repositoryRootConfig,
 				reviewSet: yield* reviewSetConfig,
@@ -226,9 +234,17 @@ export const WorkbenchConfigurationLive = Layer.effect(
 );
 
 export const makeWorkbenchConfigurationLayer = (
-	configuration: WorkbenchConfigurationApi
+	configuration: Omit<WorkbenchConfigurationApi, "rememberProjects"> & {
+		readonly rememberProjects?: boolean;
+	}
 ): Layer.Layer<WorkbenchConfiguration> =>
-	Layer.succeed(WorkbenchConfiguration, WorkbenchConfiguration.of(configuration));
+	Layer.succeed(
+		WorkbenchConfiguration,
+		WorkbenchConfiguration.of({
+			...configuration,
+			rememberProjects: configuration.rememberProjects ?? true
+		})
+	);
 
 export const workbenchConfigurationFromUnknown = (
 	values: Readonly<Record<string, string>>

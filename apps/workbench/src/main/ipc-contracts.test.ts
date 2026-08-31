@@ -237,6 +237,8 @@ const validArgsByChannel = {
 	"project-custodian:cancel": ["proposal-1"],
 	"project:current": [],
 	"project:choose": [],
+	"project:recent": [],
+	"project:open-recent": ["C:/Projects/Fixture"],
 	"project:progress": [],
 	"project:launch": ["ue_shed"],
 	"asset-audits:textures:configured-scan": [],
@@ -264,6 +266,7 @@ const validArgsByChannel = {
 	"asset-navigation:locate": ["/Game/Text/ST_Game.ST_Game"],
 	"blueprint-graphs:read": ["C:/Project/Content/BP_Example.uasset"],
 	"blueprint-graphs:choose": [],
+	"blueprint-graphs:search": [{ query: "example" }],
 	"input-atlas:configured-scan": [],
 	"input-atlas:choose-and-scan": [],
 	"authoring:configured-table": [],
@@ -500,6 +503,13 @@ const validResultByChannel = {
 	},
 	"project:current": { status: "not_configured" },
 	"project:choose": { status: "cancelled" },
+	"project:recent": [
+		{
+			projectName: "Fixture",
+			projectRoot: "C:/Projects/Fixture"
+		}
+	],
+	"project:open-recent": { status: "cancelled" },
 	"project:progress": {
 		cacheHits: 0,
 		completed: 0,
@@ -574,6 +584,7 @@ const validResultByChannel = {
 	},
 	"blueprint-graphs:read": { status: "cancelled" },
 	"blueprint-graphs:choose": { status: "cancelled" },
+	"blueprint-graphs:search": { status: "not_configured" },
 	"input-atlas:configured-scan": { status: "not_configured" },
 	"input-atlas:choose-and-scan": { status: "cancelled" },
 	"authoring:configured-table": { status: "not_configured" },
@@ -760,6 +771,7 @@ const malformedArgsByChannel = {
 	"authoring:session:reconcile": [""],
 	"authoring:session:save": [undefined],
 	"blueprint-graphs:read": [""],
+	"blueprint-graphs:search": [{ query: "x".repeat(257) }],
 	"camera:presentation-budget": [Number.NaN],
 	"camera:configure": [{ paused: true }],
 	"content-observatory:start": [{ mapPath: "" }],
@@ -780,9 +792,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 106 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(106);
-	expect(new Set(invokeChannelNames).size).toBe(106);
+it("registers exactly 109 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(109);
+	expect(new Set(invokeChannelNames).size).toBe(109);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

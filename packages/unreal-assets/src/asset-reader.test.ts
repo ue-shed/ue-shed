@@ -6,20 +6,53 @@ import {
 	type BlueprintGraphProjection,
 	ProtocolOutputBudget,
 	ProtocolStreamValidator,
+	assetReaderLayer,
 	discoverSavedAssets,
 	makeAssetReaderTestLayer,
 	protocolCacheOutcome,
+	readSavedBlueprint,
 	readSavedWorld,
 	type SavedWorld
 } from "./index.js";
 import {
 	ProtocolLineDecoder,
 	collectProtocolSingleEvents,
+	ProtocolStreamFailure,
+	mapProtocolFailure,
 	type ProtocolEvent,
 	validateProtocolEvent
 } from "./protocol-transport.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
+
+effectIt.effect("preserves an unavailable reader as a typed process failure", () =>
+	Effect.gen(function* () {
+		const missingExecutable = `C:/__ue_shed_missing_reader_${process.pid}__/uasset.exe`;
+		const error = yield* readSavedBlueprint({ assetPath: "C:/Fixture/BP_Test.uasset" }).pipe(
+			Effect.provide(assetReaderLayer({ executable: missingExecutable })),
+			Effect.flip
+		);
+		expect(error.code).toBe("executable_missing");
+		expect(error.kind).toBe("process");
+		expect(error.path).toBe("C:/Fixture/BP_Test.uasset");
+	})
+);
+
+it("preserves native Blueprint failure codes through the reader error boundary", () => {
+	const error = mapProtocolFailure(
+		new ProtocolStreamFailure(
+			"process",
+			"This saved package revision is unsupported",
+			undefined,
+			undefined,
+			"unsupported_version"
+		),
+		"blueprint",
+		"C:/Fixture/BP_Test.uasset"
+	);
+	expect(error.code).toBe("unsupported_version");
+	expect(error.operation).toBe("blueprint");
+});
 
 effectIt.effect("routes saved-asset discovery through the AssetReader service", () =>
 	Effect.gen(function* () {

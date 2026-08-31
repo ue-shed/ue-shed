@@ -1,5 +1,13 @@
 import { Schema } from "effect";
 
+export const WorkbenchRecentProject = Schema.Struct({
+	projectName: Schema.NonEmptyString,
+	projectRoot: Schema.NonEmptyString
+});
+export interface WorkbenchRecentProject extends Schema.Schema.Type<typeof WorkbenchRecentProject> {}
+
+export const WorkbenchRecentProjects = Schema.Array(WorkbenchRecentProject);
+
 export const WorkbenchProjectSummary = Schema.Struct({
 	/** The Project Index can expose summary/maps before the Input Atlas projection is loaded. */
 	inputAtlas: Schema.Literals(["deferred", "ready", "failed"]),

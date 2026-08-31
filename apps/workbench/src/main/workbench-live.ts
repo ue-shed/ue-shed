@@ -57,6 +57,7 @@ import { WorkbenchMapCaptureLive } from "./services/map-capture.js";
 import { WorkbenchNiagaraPreviewLive } from "./services/niagara-preview.js";
 import { OfflineTexturePreviewLive } from "./services/offline-texture-preview.js";
 import { ProjectLauncherLive } from "./services/project-launcher.js";
+import { WorkbenchProjectHistoryLive } from "./services/project-history.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
 import { WorkbenchCustodianLive } from "./services/project-custodian.js";
 import { ShowcaseLive } from "./services/showcase.js";
@@ -133,9 +134,15 @@ const projectIndexLive = Layer.unwrap(
 
 /** Domain catalog and audit services that only need the base infrastructure. */
 function domainCatalogLayer(hosts: WorkbenchHosts) {
+	const projectHistory = WorkbenchProjectHistoryLive;
 	const project = WorkbenchProjectLive.pipe(
 		Layer.provide(
-			Layer.mergeAll(ElectronDialogLive, EnhancedInputServiceLive, projectIndexLive)
+			Layer.mergeAll(
+				ElectronDialogLive,
+				EnhancedInputServiceLive,
+				projectHistory,
+				projectIndexLive
+			)
 		)
 	);
 	const niagara = NiagaraPreviewLive.pipe(

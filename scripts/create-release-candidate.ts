@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { isJsonString, type JsonValue } from "./json.ts";
 import { packPublicPackages, PUBLIC_VERSION, WASM_PACKAGE_NAME } from "./pack-public-packages.ts";
 import { buildPluginBundle, validatePublicPluginBundle } from "./plugin-bundle.ts";
+import { assertCleanReleaseSource } from "./release-source.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const candidateVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-rc\.(0|[1-9]\d*)$/;
@@ -280,17 +281,6 @@ function tarDirectory({ directory, output }: { directory: string; output: string
 	run("tar", ["-czf", output, "-C", directory, "."]);
 }
 
-function assertCandidateSource(commit: string) {
-	const head = run("git", ["rev-parse", "HEAD"]);
-	if (head !== commit) {
-		throw new Error(`Candidate commit ${commit} does not match checked-out HEAD ${head}.`);
-	}
-	const changes = run("git", ["status", "--porcelain", "--untracked-files=all"]);
-	if (changes !== "") {
-		throw new Error("Candidate construction requires a clean worktree.");
-	}
-}
-
 export async function createReleaseCandidate({
 	version,
 	commit,
@@ -321,7 +311,7 @@ export async function createReleaseCandidate({
 		throw new Error("Actual publication requires a successful Trusted Unreal evidence run.");
 	}
 	if (unrealEvidenceDirectory !== undefined) assertEvidenceDirectory(unrealEvidenceDirectory);
-	assertCandidateSource(commit);
+	assertCleanReleaseSource(commit);
 	const outputDirectory = resolve(output);
 	await ensureEmptyOutput(outputDirectory);
 

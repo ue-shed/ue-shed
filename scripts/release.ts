@@ -3,18 +3,22 @@ import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
+import { assertCleanReleaseSource } from "./release-source.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export interface ReleaseSteps {
+	readonly validateSource: () => void;
 	readonly check: () => void;
 	readonly confirm: () => Promise<void>;
 	readonly publish: () => void;
 }
 
-export async function runRelease({ check, confirm, publish }: ReleaseSteps) {
+export async function runRelease({ validateSource, check, confirm, publish }: ReleaseSteps) {
+	validateSource();
 	check();
 	await confirm();
+	validateSource();
 	publish();
 }
 
@@ -58,6 +62,7 @@ async function confirmPublication() {
 
 async function main() {
 	await runRelease({
+		validateSource: () => assertCleanReleaseSource(),
 		check: () => run(executable("pnpm"), ["check"]),
 		confirm: confirmPublication,
 		publish: () => run(executable("pnpm"), ["exec", "changeset", "publish"])

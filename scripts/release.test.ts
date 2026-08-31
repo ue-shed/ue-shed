@@ -1,6 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runRelease } from "./release.ts";
+import {
+	assertPublicationConfirmation,
+	publicationConfirmationPhrase,
+	runRelease
+} from "./release.ts";
+
+test("requires the exact versioned publication phrase", () => {
+	assert.equal(publicationConfirmationPhrase("0.5.2"), "publish 0.5.2");
+	assert.doesNotThrow(() => assertPublicationConfirmation("publish 0.5.2", "0.5.2"));
+	assert.throws(
+		() => assertPublicationConfirmation("", "0.5.2"),
+		/expected the exact phrase "publish 0\.5\.2"/
+	);
+	assert.throws(
+		() => assertPublicationConfirmation("publish 0.5.1", "0.5.2"),
+		/expected the exact phrase "publish 0\.5\.2"/
+	);
+});
 
 test("waits for confirmation after checks and before publication", async () => {
 	const events: string[] = [];
@@ -92,7 +109,7 @@ test("does not request confirmation or publish when checks fail", async () => {
 	assert.deepEqual(events, ["validate-source", "check"]);
 });
 
-test("does not publish when confirmation is interrupted", async () => {
+test("does not publish when confirmation is blank or interrupted", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() =>
@@ -104,11 +121,11 @@ test("does not publish when confirmation is interrupted", async () => {
 				check: () => events.push("check"),
 				confirm: async () => {
 					events.push("confirm");
-					throw new Error("confirmation interrupted");
+					assertPublicationConfirmation("", "0.5.2");
 				},
 				publish: () => events.push("publish")
 			}),
-		/confirmation interrupted/
+		/expected the exact phrase "publish 0\.5\.2"/
 	);
 	assert.deepEqual(events, ["validate-source", "check", "confirm"]);
 });

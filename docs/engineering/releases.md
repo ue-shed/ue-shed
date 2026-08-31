@@ -69,6 +69,9 @@ The normal package gate builds and packs every public package, validates metadat
 installs the tarballs into a clean offline consumer, and exercises the saved-project Game Text
 journey. The protected public-package allowlist remains a conformance boundary; it prevents an
 accidentally non-private workspace from being published, but it does not select the release.
+The staged WASM package uses pnpm's publication manifest semantics without rerunning its build, and
+the gate compares that complete tarball with a normal workspace `pnpm pack`. A digest difference is
+a release failure even when the runtime payloads happen to match.
 Primary development and release tooling runs on Node.js 26. Public packages still declare Node.js
 22.14 as their minimum, but the former hosted compatibility job incorrectly attempted to build the
 Node 26 monorepo under Node 22 and was removed. A replacement must build artifacts with Node 26,
@@ -83,12 +86,15 @@ git push --tags
 ```
 
 `pnpm release` reruns the complete gate, then pauses indefinitely at an interactive confirmation.
-No npm request or 2FA challenge begins until the operator presses Enter. After confirmation it
-delegates dependency-ordered publication and package tag creation to Changesets with the same
-terminal attached for immediate npm authentication. A new public package uses the same command.
-The command refuses non-interactive publication. Before 1.0, use interactive 2FA or the narrowest
-short-lived granular write token and revoke it after verification. Never put a token in a command,
-tracked `.npmrc`, release manifest, or log. Local releases do not claim hosted OIDC provenance.
+No npm request or 2FA challenge begins until the operator types the exact versioned phrase shown by
+the prompt, for example `publish 0.5.2`. Blank input, buffered Enter, a different version, and any
+other response abort publication. After confirmation it delegates dependency-ordered publication
+and package tag creation to Changesets with the same terminal attached for immediate npm
+authentication. Stay with the terminal after confirming because npm authentication may be
+time-limited. A new public package uses the same command. The command refuses non-interactive
+publication. Before 1.0, use interactive 2FA or the narrowest short-lived granular write token and
+revoke it after verification. Never put a token in a command, tracked `.npmrc`, release manifest, or
+log. Local releases do not claim hosted OIDC provenance.
 
 Verify the published package versions and `latest` dist-tags before announcing the release. Never
 unpublish or rebuild an immutable version as recovery. See Changesets' [CLI

@@ -73,7 +73,6 @@ pub fn is_generic_uobject_class(class_path: &str) -> bool {
         && class_path != USERDEFINEDENUM_CLASS
         && class_path != USERDEFINEDSTRUCT_CLASS
         && class_path != ANIM_SEQUENCE_CLASS
-        && !is_blueprint_graph_node_class(class_path)
         && !is_data_asset_class(class_path)
         && !SKIP_UOBJECT_DECODE_CLASSES.contains(&class_path)
 }
@@ -2089,7 +2088,9 @@ pub fn decode_export(
     if AnimSequenceDecoder.supports(class_path) {
         return AnimSequenceDecoder.decode(export, context).map(Some);
     }
-    if BlueprintGraphNodeDecoder.supports(class_path) {
+    if supports_blueprint_graph_package_version(&context.package.summary.versions)
+        && BlueprintGraphNodeDecoder.supports(class_path)
+    {
         return BlueprintGraphNodeDecoder.decode(export, context).map(Some);
     }
     if UObjectDecoder.supports(class_path) {
@@ -2874,6 +2875,33 @@ mod tests {
         assert_eq!(object.properties.records[0].value, PropertyValue::Int(7));
     }
 
+    #[test]
+    fn generic_decode_keeps_k2_nodes_outside_the_graph_revision_window() {
+        let export_bytes = write_uobject_export(0, &[]);
+        let mut package = test_package(vec!["None".into()]);
+        package.summary.versions.ue5 = 1016;
+        let export = test_export(
+            export_bytes.len() as u64,
+            "/Game/Test/BP_Test.BP_Test:EventGraph.K2Node_CallFunction_0",
+            "/Script/BlueprintGraph.K2Node_CallFunction",
+        );
+        let schemas = EmptySchemas;
+        let context = AssetDecodeContext {
+            source: &export_bytes,
+            package: &package,
+            schemas: &schemas,
+        };
+
+        let Some(DecodedAsset::UObject(object)) =
+            decode_export(&export, &context).expect("generic K2 node decode")
+        else {
+            panic!("expected generic UObject evidence outside the graph revision window");
+        };
+
+        assert_eq!(object.class_path, export.class_path.expect("class path"));
+        assert!(object.tail.is_empty());
+    }
+
     fn write_anim_sequence_export(raw_track_count: i32, serialize_compressed_data: u32) -> Vec<u8> {
         let mut bytes = write_uobject_export(0, &[]);
         push_i32(&mut bytes, 0); // UObject object-guid footer
@@ -3642,6 +3670,9 @@ mod tests {
     #[test]
     fn recognizes_generic_uobject_class_paths() {
         assert!(is_generic_uobject_class("/Script/Engine.Blueprint"));
+        assert!(is_generic_uobject_class(
+            "/Script/BlueprintGraph.K2Node_CallFunction"
+        ));
         assert!(is_generic_uobject_class(
             "/Script/SWAG_RemoteControlDataTable.SWAG_RemoteControlDataTableLibrary"
         ));

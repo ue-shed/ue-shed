@@ -39,6 +39,15 @@ import {
 } from "./asset-reader.js";
 
 export type ProtocolEvent = Schema.Schema.Type<typeof UAssetIoEvent>;
+export type ProtocolDiagnostic = Pick<
+	Extract<ProtocolEvent, { readonly kind: "diagnostic" }>,
+	"code" | "message" | "severity"
+>;
+export interface ProtocolSingleEvidence<A> {
+	readonly diagnostics: readonly ProtocolDiagnostic[];
+	readonly outcome: "complete" | "partial";
+	readonly value: A;
+}
 
 const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
 const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
@@ -1108,7 +1117,7 @@ async function collectProtocolSingle<A>(options: {
 	readonly signal: AbortSignal | undefined;
 	readonly telemetry: ProtocolTelemetry;
 	readonly onEvent?: (event: ProtocolEvent) => void;
-}): Promise<A> {
+}): Promise<ProtocolSingleEvidence<A>> {
 	return collectProtocolSingleEvents({
 		events: protocolEvents({
 			configuration: options.configuration,
@@ -1125,19 +1134,29 @@ async function collectProtocolSingle<A>(options: {
 	});
 }
 
-async function collectProtocolSingleEvents<A>(options: {
+export async function collectProtocolSingleEvents<A>(options: {
 	readonly events: AsyncIterable<ProtocolEvent>;
 	readonly expected: UAssetIoResult["kind"];
 	readonly select: (result: UAssetIoResult) => A | undefined;
-}): Promise<A> {
+}): Promise<ProtocolSingleEvidence<A>> {
 	let selected: A | undefined;
+	let outcome: ProtocolSingleEvidence<A>["outcome"] | undefined;
+	const diagnostics: ProtocolDiagnostic[] = [];
 	for await (const event of options.events) {
 		if (event.kind === "failed" || event.kind === "rejected") {
 			throw protocolFailureFromEvent(event);
 		}
+		if (event.kind === "diagnostic") {
+			diagnostics.push({
+				code: event.code,
+				message: event.message,
+				severity: event.severity
+			});
+		}
 		if (event.kind === "result" && event.result.kind === options.expected) {
 			selected = options.select(event.result);
 		}
+		if (event.kind === "completed") outcome = event.outcome;
 	}
 	if (selected === undefined) {
 		throw new ProtocolStreamFailure(
@@ -1145,10 +1164,16 @@ async function collectProtocolSingleEvents<A>(options: {
 			`Protocol stream did not produce ${options.expected}`
 		);
 	}
-	return selected;
+	if (outcome === undefined) {
+		throw new ProtocolStreamFailure(
+			"contract",
+			`Protocol stream did not complete ${options.expected}`
+		);
+	}
+	return { diagnostics, outcome, value: selected };
 }
 
-export function invokeProtocolSessionSingle<A>(options: {
+export function invokeProtocolSessionSingleWithEvidence<A>(options: {
 	readonly configuration: AssetReaderConfiguration;
 	readonly operation: AssetReaderError["operation"];
 	readonly path: string;
@@ -1157,7 +1182,7 @@ export function invokeProtocolSessionSingle<A>(options: {
 	readonly select: (result: UAssetIoResult) => A | undefined;
 	readonly session: UassetProtocolSession;
 	readonly onEvent?: (event: ProtocolEvent) => void;
-}): Effect.Effect<A, AssetReaderError> {
+}): Effect.Effect<ProtocolSingleEvidence<A>, AssetReaderError> {
 	return Effect.tryPromise({
 		try: (signal) =>
 			collectProtocolSingleEvents({
@@ -1181,7 +1206,22 @@ export function invokeProtocolSessionSingle<A>(options: {
 	);
 }
 
-export function invokeProtocolSingle<A>(options: {
+export function invokeProtocolSessionSingle<A>(options: {
+	readonly configuration: AssetReaderConfiguration;
+	readonly operation: AssetReaderError["operation"];
+	readonly path: string;
+	readonly request: UAssetIoRequest;
+	readonly expected: UAssetIoResult["kind"];
+	readonly select: (result: UAssetIoResult) => A | undefined;
+	readonly session: UassetProtocolSession;
+	readonly onEvent?: (event: ProtocolEvent) => void;
+}): Effect.Effect<A, AssetReaderError> {
+	return invokeProtocolSessionSingleWithEvidence(options).pipe(
+		Effect.map((evidence) => evidence.value)
+	);
+}
+
+export function invokeProtocolSingleWithEvidence<A>(options: {
 	readonly configuration: AssetReaderConfiguration;
 	readonly operation: AssetReaderError["operation"];
 	readonly path: string;
@@ -1189,7 +1229,7 @@ export function invokeProtocolSingle<A>(options: {
 	readonly expected: UAssetIoResult["kind"];
 	readonly select: (result: UAssetIoResult) => A | undefined;
 	readonly onEvent?: (event: ProtocolEvent) => void;
-}): Effect.Effect<A, AssetReaderError> {
+}): Effect.Effect<ProtocolSingleEvidence<A>, AssetReaderError> {
 	const telemetry = makeProtocolTelemetry(false, options.configuration.protocolObserver);
 	const operation = Effect.tryPromise({
 		try: (signal) => collectProtocolSingle({ ...options, signal, telemetry }),
@@ -1210,6 +1250,18 @@ export function invokeProtocolSingle<A>(options: {
 			attributes: { "unreal.operation": options.operation, "unreal.path": options.path }
 		})
 	);
+}
+
+export function invokeProtocolSingle<A>(options: {
+	readonly configuration: AssetReaderConfiguration;
+	readonly operation: AssetReaderError["operation"];
+	readonly path: string;
+	readonly request: UAssetIoRequest;
+	readonly expected: UAssetIoResult["kind"];
+	readonly select: (result: UAssetIoResult) => A | undefined;
+	readonly onEvent?: (event: ProtocolEvent) => void;
+}): Effect.Effect<A, AssetReaderError> {
+	return invokeProtocolSingleWithEvidence(options).pipe(Effect.map((evidence) => evidence.value));
 }
 
 export function protocolProjectionStream<A>(options: {

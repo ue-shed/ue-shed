@@ -3,6 +3,7 @@ import { Effect, Ref } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	AssetReaderError,
+	type BlueprintGraphProjection,
 	ProtocolOutputBudget,
 	ProtocolStreamValidator,
 	discoverSavedAssets,
@@ -11,8 +12,12 @@ import {
 	readSavedWorld,
 	type SavedWorld
 } from "./index.js";
-import { validateProtocolEvent } from "./protocol-transport.js";
-import { ProtocolLineDecoder } from "./protocol-transport.js";
+import {
+	ProtocolLineDecoder,
+	collectProtocolSingleEvents,
+	type ProtocolEvent,
+	validateProtocolEvent
+} from "./protocol-transport.js";
 
 const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${operation} call`));
 
@@ -137,6 +142,69 @@ function completedEvent(sequence = 1, contract: TestProtocolContract = protocolC
 }
 
 describe("AssetReader protocol boundary validation", () => {
+	it("retains diagnostics and a partial terminal outcome for one Blueprint result", async () => {
+		const contract = {
+			name: "uasset-io" as const,
+			version: { major: 1 as const, minor: 2 }
+		};
+		const blueprint: BlueprintGraphProjection = {
+			coverage_gaps: [],
+			graphs: [],
+			object_path: "/Game/Blueprints/BP_Partial.BP_Partial",
+			schema_version: 1
+		};
+		const events = (async function* (): AsyncGenerator<ProtocolEvent> {
+			yield {
+				contract,
+				kind: "accepted",
+				operation: "blueprint",
+				requestId: "blueprint-partial",
+				sequence: 0
+			};
+			yield {
+				code: "unsupported_format",
+				contract,
+				kind: "diagnostic",
+				message: "One node payload was preserved without a typed projection.",
+				requestId: "blueprint-partial",
+				sequence: 1,
+				severity: "warning"
+			};
+			yield {
+				contract,
+				kind: "result",
+				requestId: "blueprint-partial",
+				result: { blueprint, kind: "blueprint" },
+				sequence: 2
+			};
+			yield {
+				contract,
+				kind: "completed",
+				outcome: "partial",
+				requestId: "blueprint-partial",
+				sequence: 3
+			};
+		})();
+
+		await expect(
+			collectProtocolSingleEvents({
+				events,
+				expected: "blueprint",
+				select: (result) => (result.kind === "blueprint" ? result.blueprint : undefined)
+			})
+		).resolves.toEqual({
+			diagnostics: [
+				{
+					code: "unsupported_format",
+					message: "One node payload was preserved without a typed projection.",
+					severity: "warning"
+				}
+			],
+			outcome: "partial",
+			value: blueprint
+		});
+	});
+
 	it("frames chunked NDJSON without retaining one growing concatenated string", () => {
 		const decoder = new ProtocolLineDecoder();
 		expect(decoder.push('{"kind":"res')).toEqual([]);

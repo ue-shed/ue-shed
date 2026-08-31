@@ -88,7 +88,7 @@ import {
 	WorldScoutRefreshRate
 } from "@ue-shed/observatory";
 import {
-	BlueprintGraphProjection,
+	BlueprintGraphRead,
 	CameraScheduleConfig,
 	CameraStatus,
 	EditorPlaySessionCommand,
@@ -140,7 +140,7 @@ export type BlueprintAssetPath = Schema.Schema.Type<typeof BlueprintAssetPath>;
 export const BlueprintGraphReadResult = Schema.Union([
 	Schema.Struct({
 		assetPath: BlueprintAssetPath,
-		blueprint: BlueprintGraphProjection,
+		...BlueprintGraphRead.fields,
 		status: Schema.Literal("ready")
 	}),
 	Schema.Struct({ status: Schema.Literal("cancelled") }),

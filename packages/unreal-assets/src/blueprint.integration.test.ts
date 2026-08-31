@@ -9,9 +9,12 @@ const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 
 describe.skipIf(!executable || !sample)("saved Blueprint graph protocol", () => {
 	it("validates a real UE 5.7 package through the TypeScript process boundary", async () => {
-		const blueprint = await runReader(readSavedBlueprint({ assetPath: sample! }));
+		const read = await runReader(readSavedBlueprint({ assetPath: sample! }));
+		const blueprint = read.blueprint;
 		const nodes = blueprint.graphs.flatMap((graph) => graph.nodes);
 
+		expect(read.outcome).toBe("complete");
+		expect(read.diagnostics).toEqual([]);
 		expect(blueprint.schema_version).toBe(1);
 		expect(blueprint.graphs.length).toBeGreaterThan(0);
 		expect(nodes.length).toBeGreaterThan(0);

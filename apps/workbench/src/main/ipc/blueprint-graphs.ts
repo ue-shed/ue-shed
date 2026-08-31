@@ -24,9 +24,9 @@ export const register = Effect.gen(function* () {
 	const read = Effect.fn("Workbench.BlueprintGraphs.read")(function* (assetPath: string) {
 		return yield* reader.readBlueprint(assetPath).pipe(
 			Effect.map(
-				(blueprint): BlueprintGraphReadResult => ({
+				(read): BlueprintGraphReadResult => ({
 					assetPath,
-					blueprint,
+					...read,
 					status: "ready"
 				})
 			),

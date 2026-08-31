@@ -127,3 +127,20 @@ export interface BlueprintGraphProjection extends Schema.Schema.Type<
 > {}
 
 export const decodeBlueprintGraphProjection = Schema.decodeUnknownEffect(BlueprintGraphProjection);
+
+export const BlueprintGraphDiagnostic = Schema.Struct({
+	code: Schema.NonEmptyString,
+	message: Schema.NonEmptyString,
+	severity: Schema.Literals(["info", "warning"])
+}).annotate({ identifier: "BlueprintGraphDiagnostic" });
+export interface BlueprintGraphDiagnostic extends Schema.Schema.Type<
+	typeof BlueprintGraphDiagnostic
+> {}
+
+/** One saved-graph read, including operation evidence that is not part of graph topology. */
+export const BlueprintGraphRead = Schema.Struct({
+	blueprint: BlueprintGraphProjection,
+	diagnostics: Schema.Array(BlueprintGraphDiagnostic),
+	outcome: Schema.Literals(["complete", "partial"])
+}).annotate({ identifier: "BlueprintGraphRead" });
+export interface BlueprintGraphRead extends Schema.Schema.Type<typeof BlueprintGraphRead> {}

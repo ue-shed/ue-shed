@@ -96,12 +96,6 @@ function pinLabel(pin: BlueprintPin): string {
 	return pin.friendly_name?.source || pin.name || "unnamed";
 }
 
-function resultBlueprint(
-	result: BlueprintGraphReadResult | undefined
-): BlueprintGraphProjection | undefined {
-	return result?.status === "ready" ? result.blueprint : undefined;
-}
-
 export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const action = createEffectAction();
 	const [assetPath, setAssetPath] = createSignal("");
@@ -111,7 +105,11 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const [graphIndex, setGraphIndex] = createSignal(0);
 	const [selectedNodePath, setSelectedNodePath] = createSignal<string>();
 	const [zoom, setZoom] = createSignal(1);
-	const blueprint = createMemo(() => resultBlueprint(result()));
+	const ready = createMemo(() => {
+		const value = result();
+		return value?.status === "ready" ? value : undefined;
+	});
+	const blueprint = createMemo((): BlueprintGraphProjection | undefined => ready()?.blueprint);
 	const failure = createMemo(() => {
 		const value = result();
 		return value?.status === "failed" ? value : undefined;
@@ -133,6 +131,14 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 	const linkCount = createMemo(
 		() => blueprint()?.graphs.reduce((count, item) => count + item.links.length, 0) ?? 0
 	);
+	const partial = createMemo(
+		() => ready()?.outcome === "partial" || (blueprint()?.coverage_gaps.length ?? 0) > 0
+	);
+	const coverageLabel = createMemo(() => {
+		if (ready()?.outcome === "partial") return "Partial decode";
+		const gaps = blueprint()?.coverage_gaps.length ?? 0;
+		return gaps === 0 ? "Topology complete" : `${gaps} coverage gaps`;
+	});
 
 	const accept = (next: BlueprintGraphReadResult) => {
 		setLoading(false);
@@ -265,16 +271,37 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 							<div {...stylex.props(styles.coverage)}>
 								<span
 									{...stylex.props(
-										projection().coverage_gaps.length === 0
-											? styles.coverageDotReady
-											: styles.coverageDotGap
+										partial() ? styles.coverageDotGap : styles.coverageDotReady
 									)}
 								/>
-								{projection().coverage_gaps.length === 0
-									? "Topology complete"
-									: `${projection().coverage_gaps.length} coverage gaps`}
+								{coverageLabel()}
 							</div>
 						</section>
+
+						<Show when={ready()?.outcome === "partial"}>
+							<section
+								aria-label="Blueprint decode diagnostics"
+								{...stylex.props(styles.diagnostics)}
+							>
+								<strong>Partial Blueprint decode</strong>
+								<span>
+									The graph remains inspectable, but some saved evidence could not
+									be projected completely.
+								</span>
+								<ul {...stylex.props(styles.diagnosticList)}>
+									<For each={ready()?.diagnostics}>
+										{(diagnostic) => (
+											<li>
+												<code {...stylex.props(styles.diagnosticCode)}>
+													{diagnostic.code}
+												</code>{" "}
+												{diagnostic.message}
+											</li>
+										)}
+									</For>
+								</ul>
+							</section>
+						</Show>
 
 						<div {...stylex.props(styles.graphTabs)}>
 							<For each={projection().graphs}>
@@ -655,6 +682,30 @@ const styles = stylex.create({
 		backgroundColor: "rgba(235,87,87,.08)",
 		color: tokens.colorText,
 		fontSize: 12
+	},
+	diagnostics: {
+		display: "grid",
+		gap: 4,
+		marginTop: 10,
+		padding: "11px 13px",
+		borderLeftWidth: 3,
+		borderLeftStyle: "solid",
+		borderLeftColor: tokens.colorWarning,
+		backgroundColor: "rgba(242,153,74,.08)",
+		color: tokens.colorText,
+		fontSize: 12
+	},
+	diagnosticList: {
+		display: "grid",
+		gap: 3,
+		margin: "4px 0 0",
+		paddingLeft: 18,
+		color: tokens.colorTextMuted
+	},
+	diagnosticCode: {
+		color: tokens.colorWarning,
+		fontFamily: tokens.fontMono,
+		fontSize: 10
 	},
 	emptyState: {
 		minHeight: 480,

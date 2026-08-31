@@ -86,7 +86,13 @@ const blueprint: BlueprintGraphProjection = {
 describe("BlueprintGraphViewer", () => {
 	it("opens a saved package and renders its graph topology", async () => {
 		const readBlueprint = vi.fn((assetPath: string) =>
-			Effect.succeed({ assetPath, blueprint, status: "ready" as const })
+			Effect.succeed({
+				assetPath,
+				blueprint,
+				diagnostics: [],
+				outcome: "complete" as const,
+				status: "ready" as const
+			})
 		);
 		const view = render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -113,6 +119,41 @@ describe("BlueprintGraphViewer", () => {
 			.setup()
 			.click(screen.getByRole("button", { name: "Inspect Apply Settings" }));
 		expect(screen.getByText("/Script/BlueprintGraph.K2Node_CallFunction")).toBeDefined();
+	});
+
+	it("shows native partial evidence even when topology coverage has no gaps", async () => {
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<BlueprintGraphViewer
+					client={{
+						chooseBlueprint: () => Effect.succeed({ status: "cancelled" as const }),
+						readBlueprint: (assetPath) =>
+							Effect.succeed({
+								assetPath,
+								blueprint,
+								diagnostics: [
+									{
+										code: "unsupported_format",
+										message: "One node payload remains only partially decoded.",
+										severity: "warning" as const
+									}
+								],
+								outcome: "partial" as const,
+								status: "ready" as const
+							})
+					}}
+				/>
+			</EffectRuntimeProvider>
+		));
+
+		await userEvent
+			.setup()
+			.type(screen.getByLabelText("Blueprint package path"), "C:/Project/BP_Partial.uasset");
+		await userEvent.setup().click(screen.getByRole("button", { name: "Open graph" }));
+
+		expect(await screen.findByText("Partial decode")).toBeDefined();
+		expect(screen.queryByText("Topology complete")).toBeNull();
+		expect(screen.getByText("One node payload remains only partially decoded.")).toBeDefined();
 	});
 
 	it("keeps native-reader failures actionable", async () => {

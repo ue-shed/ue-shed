@@ -102,9 +102,12 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("reads the UE 5.7 Blueprint fixture through the versioned process boundary", async () => {
 		const assetPath = join(fixtureRoot, "Content/Fixture/Blueprints/BP_GraphFixture.uasset");
-		const blueprint = await runReader(readSavedBlueprint({ assetPath }));
+		const read = await runReader(readSavedBlueprint({ assetPath }));
+		const blueprint = read.blueprint;
 		const nodes = blueprint.graphs.flatMap((graph) => graph.nodes);
 
+		expect(read.outcome).toBe("complete");
+		expect(read.diagnostics).toEqual([]);
 		expect(blueprint.object_path).toBe(
 			"/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture"
 		);

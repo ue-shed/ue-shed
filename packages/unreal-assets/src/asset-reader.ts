@@ -1,5 +1,5 @@
 import {
-	BlueprintGraphProjection,
+	BlueprintGraphRead,
 	isHeaderScanEntry,
 	SavedAssetCatalogInspection,
 	SavedAssetInspection,
@@ -271,7 +271,7 @@ export interface AssetReaderApi {
 	/** Reads the saved editor graph without requiring Unreal Engine or loading the Blueprint. */
 	readonly readBlueprint: (
 		assetPath: string
-	) => Effect.Effect<BlueprintGraphProjection, AssetReaderError>;
+	) => Effect.Effect<BlueprintGraphRead, AssetReaderError>;
 	readonly readTable: (
 		assetPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
@@ -460,7 +460,9 @@ import {
 	UassetProtocolSession,
 	invokeProtocolScan,
 	invokeProtocolSessionSingle,
+	invokeProtocolSessionSingleWithEvidence,
 	invokeProtocolSingle,
+	invokeProtocolSingleWithEvidence,
 	makeProtocolRequest,
 	protocolProjectionStream,
 	updateSavedWorldProgress
@@ -499,7 +501,8 @@ function makeAssetReader(
 	progress: CatalogProgressStore,
 	scanStore: ScanProgressStore,
 	savedWorldStore: SavedWorldProgressStore,
-	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle
+	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle,
+	invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = invokeProtocolSingleWithEvidence
 ): AssetReaderApi {
 	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
 		Effect.sync(() => progress.current)
@@ -570,7 +573,7 @@ function makeAssetReader(
 		});
 	});
 	const readBlueprint = Effect.fn("AssetReader.readBlueprint")(function* (assetPath: string) {
-		return yield* invokeSingle({
+		const evidence = yield* invokeSingleWithEvidence({
 			configuration,
 			operation: "blueprint",
 			path: assetPath,
@@ -585,6 +588,11 @@ function makeAssetReader(
 			expected: "blueprint",
 			select: (result) => (result.kind === "blueprint" ? result.blueprint : undefined)
 		});
+		return {
+			blueprint: evidence.value,
+			diagnostics: evidence.diagnostics,
+			outcome: evidence.outcome
+		};
 	});
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
 		return yield* invokeSingle({
@@ -700,12 +708,20 @@ function makeScopedAssetReader(
 					session
 				})
 			);
+		const invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = (options) =>
+			mutex.withPermits(1)(
+				invokeProtocolSessionSingleWithEvidence({
+					...options,
+					session
+				})
+			);
 		return makeAssetReader(
 			configuration,
 			{ current: idleCatalogProgress() },
 			{ current: idleScanProgress() },
 			{ current: idleSavedWorldProgress() },
-			invokeSingle
+			invokeSingle,
+			invokeSingleWithEvidence
 		);
 	});
 }
@@ -840,7 +856,7 @@ export function readSavedAsset(
 
 export function readSavedBlueprint(
 	options: AssetReaderOptions
-): Effect.Effect<BlueprintGraphProjection, AssetReaderError, AssetReader> {
+): Effect.Effect<BlueprintGraphRead, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
 }
 

@@ -55,7 +55,9 @@ export {
 } from "./protocol-transport.js";
 export { resolveScanTarget, type ResolvedScanTarget } from "./scan-target.js";
 export {
+	BlueprintGraphDiagnostic,
 	BlueprintGraphProjection,
+	BlueprintGraphRead,
 	decodeSavedAssetCatalogInspection,
 	decodeSavedAssetInspection,
 	decodeSavedWorld,

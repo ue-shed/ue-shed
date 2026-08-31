@@ -26,14 +26,15 @@ import {
 ## Reading one saved Blueprint graph
 
 `readSavedBlueprint` opens one uncooked `.uasset` in the supported UE 5.7 saved-revision window and
-returns a schema-1 saved-graph projection. It includes graph and node identity, saved node positions,
-pin types and defaults, pin hierarchy, canonical links, arbitrary tagged node properties, and
-explicit coverage gaps. Graph and node discovery follows saved membership rather than an engine
-class allowlist, so engine, plugin, and project subclasses share the same topology path. It neither
-starts Unreal nor compiles the Blueprint.
+returns a schema-1 saved-graph projection together with the protocol outcome and diagnostics. The
+projection includes graph and node identity, saved node positions, pin types and defaults, pin
+hierarchy, canonical links, arbitrary tagged node properties, and explicit coverage gaps. Graph and
+node discovery follows saved membership rather than an engine class allowlist, so engine, plugin,
+and project subclasses share the same topology path. It neither starts Unreal nor compiles the
+Blueprint.
 
 ```ts
-const blueprint = yield * readSavedBlueprint({ assetPath });
+const { blueprint, diagnostics, outcome } = yield * readSavedBlueprint({ assetPath });
 const eventGraph = blueprint.graphs.find((graph) => graph.name === "EventGraph");
 ```
 

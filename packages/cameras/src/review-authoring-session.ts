@@ -29,6 +29,7 @@ import {
 	type ReviewCandidateRealization,
 	type ReviewSelectionResponse,
 	type ReviewSubjectProjection,
+	type SubjectLocator,
 	type VisibilityPolicyId
 } from "./review-schema.js";
 
@@ -37,6 +38,40 @@ type ReviewSessionStaleReason = Extract<
 	ReviewAuthoringSessionRecovery,
 	{ readonly status: "stale" }
 >["reasons"][number];
+
+function candidatesForRevision(args: {
+	readonly candidates: readonly FramingCandidate[];
+	readonly view: ReviewSet["views"][number] | undefined;
+}): readonly FramingCandidate[] {
+	if (args.view === undefined || args.view.viewpoint.kind !== "world_fixed") {
+		return args.candidates;
+	}
+	const recipe = args.view.framingRecipe;
+	const matchingIndex = args.candidates.findIndex((candidate) => {
+		if (recipe.kind !== "preset" || candidate.recipe.preset !== recipe.preset) return false;
+		return recipe.version !== 2 || candidate.recipe.version !== 2
+			? true
+			: candidate.recipe.groupId === recipe.groupId &&
+					candidate.recipe.groupIndex === recipe.groupIndex;
+	});
+	const index = matchingIndex >= 0 ? matchingIndex : 0;
+	const candidate = args.candidates[index];
+	if (candidate === undefined) return args.candidates;
+	const current = {
+		...candidate,
+		approvedPose: args.view.viewpoint.approvedPose,
+		diagnostics: [
+			...candidate.diagnostics,
+			{
+				code: "manual_adjustment" as const,
+				message: "Loaded from the saved Review View revision.",
+				severity: "info" as const
+			}
+		],
+		displayName: `Current · ${args.view.displayName}`
+	};
+	return [current, ...args.candidates.filter((_, candidateIndex) => candidateIndex !== index)];
+}
 
 export class ReviewAuthoringSessionError extends Schema.TaggedErrorClass<ReviewAuthoringSessionError>()(
 	"ReviewAuthoringSessionError",
@@ -221,6 +256,21 @@ function parametersFromCandidates(candidates: readonly FramingCandidate[]): Fram
 		: defaultFramingParameters();
 }
 
+function sessionSubjectLocator(subject: ReviewAuthoringSessionDocument["subject"]): SubjectLocator {
+	return subject.actorGuid === undefined
+		? {
+				actorPath: subject.actorPath,
+				diagnosticLabel: subject.displayName,
+				kind: "actor_path"
+			}
+		: {
+				actorGuid: subject.actorGuid,
+				diagnosticLabel: subject.displayName,
+				kind: "actor_guid",
+				lastKnownActorPath: subject.actorPath
+			};
+}
+
 function applyOverrides(args: {
 	readonly candidates: readonly FramingCandidate[];
 	readonly overrides: readonly FramingCandidateOverride[];
@@ -241,11 +291,7 @@ function appendKeptCandidateViews(args: {
 	readonly session: ReviewAuthoringSessionDocument;
 	readonly visibilityPolicyId: VisibilityPolicyId;
 }): ReviewSet {
-	const subject = {
-		actorPath: args.session.subject.actorPath,
-		diagnosticLabel: args.session.subject.displayName,
-		kind: "actor_path" as const
-	};
+	const subject = sessionSubjectLocator(args.session.subject);
 	let views = [...args.reviewSet.views];
 	for (const [index, candidate] of args.candidates.entries()) {
 		const viewId =
@@ -447,6 +493,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					path: args.reviewSetPath
 				},
 				subject: {
+					...(args.selection.actorGuid === undefined
+						? undefined
+						: { actorGuid: args.selection.actorGuid }),
 					actorPath: args.selection.actorPath,
 					bounds: args.selection.bounds,
 					displayName: args.selection.displayName,
@@ -504,7 +553,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					);
 				}
 				return yield* create({
-					candidates: args.candidates,
+					candidates: candidatesForRevision({ candidates: args.candidates, view }),
 					...(destination.kind === "append_view"
 						? { pendingReviewSet: reviewSet }
 						: undefined),
@@ -559,7 +608,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				);
 			}
 			return yield* create({
-				candidates: args.candidates,
+				candidates: candidatesForRevision({ candidates: args.candidates, view }),
 				...(destination.kind === "append_view"
 					? { pendingReviewSet: reviewSet }
 					: undefined),
@@ -608,6 +657,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				? session.candidates
 				: generateFramingCandidates(
 						{
+							...(session.subject.actorGuid === undefined
+								? undefined
+								: { actorGuid: session.subject.actorGuid }),
 							actorPath: session.subject.actorPath,
 							bounds: session.subject.bounds,
 							displayName: session.subject.displayName,
@@ -808,8 +860,8 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			}
 			const subject = yield* authoring
 				.inspectSubject({
-					actorPath: session.subject.actorPath,
-					endpoint: args.endpoint
+					endpoint: args.endpoint,
+					subject: sessionSubjectLocator(session.subject)
 				})
 				.pipe(
 					Effect.mapError((cause) =>
@@ -893,6 +945,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				realizations: [],
 				selectedCandidateId: undefined,
 				subject: {
+					...(args.selection.actorGuid === undefined
+						? undefined
+						: { actorGuid: args.selection.actorGuid }),
 					actorPath: args.selection.actorPath,
 					bounds: args.selection.bounds,
 					displayName: args.selection.displayName,
@@ -955,11 +1010,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 						})
 					)
 				));
-			const subject = {
-				actorPath: session.subject.actorPath,
-				diagnosticLabel: session.subject.displayName,
-				kind: "actor_path" as const
-			};
+			const subject = sessionSubjectLocator(session.subject);
 			let approvedReviewSet: ReviewSet | undefined;
 			if (session.pendingReviewSet === undefined) {
 				const view = reviewSet.views.find((item) => item.id === session.viewId);

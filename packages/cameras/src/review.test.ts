@@ -30,6 +30,7 @@ import {
 	CaptureInvocation,
 	CaptureInvocationId,
 	CaptureRunId,
+	ReviewCaptureRequestCurrent,
 	ReviewSetId,
 	ReviewViewId,
 	VisibilityClassificationThresholds,
@@ -45,6 +46,10 @@ import {
 const decodeReviewSet = <Input>(input: Input) => Effect.runSync(decodeReviewSetEffect(input));
 
 const temporaryDirectories: string[] = [];
+
+function operationId(sequence: number): string {
+	return `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`;
+}
 
 afterEach(async () => {
 	await Promise.all(
@@ -129,6 +134,24 @@ function runCapture(
 	);
 }
 
+function resolvedSubjectForRequest(subject: typeof ReviewCaptureRequestCurrent.Type.subject) {
+	if (subject.kind === "oriented_bounds") return subject;
+	const transform = {
+		location: { x: 0, y: 0, z: 0 },
+		rotation: { pitch: 0, roll: 0, yaw: 0 }
+	};
+	return subject.kind === "actor_path"
+		? { ...subject, transform }
+		: {
+				actorGuid: subject.actorGuid,
+				actorPath:
+					subject.lastKnownActorPath ??
+					"/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
+				kind: "actor_guid" as const,
+				transform
+			};
+}
+
 function successfulCapturePort(args: {
 	readonly beforeCapture?: () => Effect.Effect<void>;
 	readonly png: Uint8Array;
@@ -164,16 +187,7 @@ function successfulCapturePort(args: {
 					mapPackageDirtyBefore: false,
 					mapPath: request.expectedMapPath,
 					operationId: request.operationId,
-					resolvedSubject:
-						request.subject.kind === "actor_path"
-							? {
-									...request.subject,
-									transform: {
-										location: { x: 0, y: 0, z: 0 },
-										rotation: { pitch: 0, roll: 0, yaw: 0 }
-									}
-								}
-							: request.subject,
+					resolvedSubject: resolvedSubjectForRequest(request.subject),
 					stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
 					status: "captured" as const,
 					subjectProjection: {
@@ -284,7 +298,7 @@ describe("Map Review contracts", () => {
 
 	it("migrates legacy Review Sets and preserves explicit unversioned result provenance", () => {
 		const reviewSet = fixtureReviewSet();
-		expect(reviewSet.contract.version).toEqual({ major: 1, minor: 1 });
+		expect(reviewSet.contract.version).toEqual({ major: 1, minor: 2 });
 		expect(reviewSet.views[0]).toMatchObject({
 			id: "structure-context",
 			target: { kind: "actor" },
@@ -312,7 +326,8 @@ describe("Map Review contracts", () => {
 						},
 						captureDurationMs: 1,
 						resolvedActorPath:
-							reviewSet.views[0]!.target.kind === "actor"
+							reviewSet.views[0]!.target.kind === "actor" &&
+							reviewSet.views[0]!.target.subject.kind === "actor_path"
 								? reviewSet.views[0]!.target.subject.actorPath
 								: "/Game/Invalid",
 						status: "captured",
@@ -358,7 +373,8 @@ describe("Map Review contracts", () => {
 						captureDurationMs: 1,
 						realization: {
 							resolvedActorPath:
-								reviewSet.views[0]!.target.kind === "actor"
+								reviewSet.views[0]!.target.kind === "actor" &&
+								reviewSet.views[0]!.target.subject.kind === "actor_path"
 									? reviewSet.views[0]!.target.subject.actorPath
 									: "/Game/Invalid",
 							status: "legacy_not_recorded"
@@ -383,7 +399,7 @@ describe("Map Review contracts", () => {
 				status: "completed"
 			})
 		);
-		expect(classifiedRun.contract.version).toEqual({ major: 1, minor: 4 });
+		expect(classifiedRun.contract.version).toEqual({ major: 1, minor: 5 });
 		expect(classifiedRun.results[0]).toMatchObject({
 			visibility: {
 				legacyInterpretation: {
@@ -539,7 +555,7 @@ describe("durable capture loop", () => {
 				});
 			}
 		};
-		const ids = ["run-subset", "invocation-subset", "operation-subset"];
+		const ids = ["run-subset", "invocation-subset", operationId(1)];
 		const run = await runCapture(
 			{
 				projectRoot,
@@ -621,16 +637,16 @@ describe("durable capture loop", () => {
 				});
 			}
 		};
-		const ids = ["run-targets", "invocation-targets", "operation-relative", "operation-area"];
+		const ids = ["run-targets", "invocation-targets", operationId(2), operationId(3)];
 		await runCapture({ projectRoot, reviewSetPath }, port, () => ids.shift()!);
 		expect(requests).toMatchObject([
 			{
-				contract: { version: { major: 1, minor: 4 } },
+				contract: { version: { major: 1, minor: 5 } },
 				subject: { kind: "actor_path" },
 				viewpoint: { kind: "target_relative" }
 			},
 			{
-				contract: { version: { major: 1, minor: 4 } },
+				contract: { version: { major: 1, minor: 5 } },
 				subject: {
 					bounds: { rotation: { yaw: 30 } },
 					kind: "oriented_bounds"
@@ -669,13 +685,13 @@ describe("durable capture loop", () => {
 				id: CaptureInvocationId.make(id),
 				reviewSetId: reviewSet.id
 			});
-		const firstIds = ["run-daily-1", "operation-daily-1"];
+		const firstIds = ["run-daily-1", operationId(4)];
 		const first = await runCapture(
 			{ invocation: invocation("invoke-daily-1"), projectRoot, reviewSetPath },
 			port,
 			() => firstIds.shift()!
 		);
-		const secondIds = ["run-daily-2", "operation-daily-2"];
+		const secondIds = ["run-daily-2", operationId(5)];
 		const second = await runCapture(
 			{ invocation: invocation("invoke-daily-2"), projectRoot, reviewSetPath },
 			port,
@@ -710,7 +726,7 @@ describe("durable capture loop", () => {
 			id: CaptureInvocationId.make("runtime-invocation"),
 			reviewSetId: reviewSet.id
 		});
-		const ids = ["runtime-run", "runtime-operation"];
+		const ids = ["runtime-run", operationId(6)];
 		const run = await runCapture(
 			{ invocation, projectRoot, reviewSetPath },
 			{
@@ -774,16 +790,7 @@ describe("durable capture loop", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: request.expectedMapPath,
 							operationId: request.operationId,
-							resolvedSubject:
-								request.subject.kind === "actor_path"
-									? {
-											...request.subject,
-											transform: {
-												location: { x: 0, y: 0, z: 0 },
-												rotation: { pitch: 0, roll: 0, yaw: 0 }
-											}
-										}
-									: request.subject,
+							resolvedSubject: resolvedSubjectForRequest(request.subject),
 							stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
 							status: "captured" as const,
 							subjectProjection: {
@@ -815,13 +822,13 @@ describe("durable capture loop", () => {
 					catch: (cause) => cause
 				})
 		};
-		const ids = ["run-001", "invocation-001", "operation-001"];
+		const ids = ["run-001", "invocation-001", operationId(7)];
 
 		const run = await runCapture({ projectRoot, reviewSetPath }, port, () => ids.shift()!);
 
 		expect(run.status).toBe("completed");
 		expect(run.id).toBe("run-001");
-		expect(run.contract.version).toEqual({ major: 1, minor: 4 });
+		expect(run.contract.version).toEqual({ major: 1, minor: 5 });
 		const persisted = await Effect.runPromise(
 			loadCaptureRun(captureRunPath(projectRoot, run.id)).pipe(
 				Effect.provide(ReviewRepositoryLive)
@@ -878,7 +885,7 @@ describe("durable capture loop", () => {
 			)
 		);
 		const destination = callerOwnedReviewCaptureDestination(destinationRoot);
-		const ids = ["run-caller", "invocation-caller", "operation-caller"];
+		const ids = ["run-caller", "invocation-caller", operationId(8)];
 		const png = new Uint8Array([137, 80, 78, 71, 7]);
 
 		const run = await runCapture(
@@ -909,7 +916,7 @@ describe("durable capture loop", () => {
 			)
 		);
 		let captureCalls = 0;
-		const ids = ["run-invalid-root", "invocation-invalid-root", "operation-invalid-root"];
+		const ids = ["run-invalid-root", "invocation-invalid-root", operationId(9)];
 
 		await expect(
 			runCapture(
@@ -946,13 +953,13 @@ describe("durable capture loop", () => {
 			projectRoot
 		});
 		const destination = callerOwnedReviewCaptureDestination(destinationRoot);
-		const firstIds = ["run-replay", "invocation-replay-1", "operation-replay-1"];
+		const firstIds = ["run-replay", "invocation-replay-1", operationId(10)];
 		await runCapture(
 			{ destination, projectRoot, reviewSetPath },
 			port,
 			() => firstIds.shift()!
 		);
-		const replayIds = ["run-replay", "invocation-replay-2", "operation-replay-2"];
+		const replayIds = ["run-replay", "invocation-replay-2", operationId(11)];
 
 		await expect(
 			runCapture({ destination, projectRoot, reviewSetPath }, port, () => replayIds.shift()!)
@@ -1034,7 +1041,7 @@ describe("durable capture loop", () => {
 			png: new Uint8Array([3]),
 			projectRoot
 		});
-		const ids = ["run-cancelled", "invocation-cancelled", "operation-cancelled"];
+		const ids = ["run-cancelled", "invocation-cancelled", operationId(12)];
 		const capture = Effect.flatMap(ReviewCapture, (service) =>
 			service.captureSet({
 				destination,
@@ -1174,13 +1181,7 @@ describe("durable capture loop", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: request.expectedMapPath,
 							operationId: request.operationId,
-							resolvedSubject: {
-								...request.subject,
-								transform: {
-									location: { x: 0, y: 0, z: 0 },
-									rotation: { pitch: 0, roll: 0, yaw: 0 }
-								}
-							},
+							resolvedSubject: resolvedSubjectForRequest(request.subject),
 							stagedArtifacts,
 							status: "captured" as const,
 							subjectProjection: {
@@ -1201,7 +1202,7 @@ describe("durable capture loop", () => {
 				})
 		};
 
-		const firstIds = ["run-clear", "invocation-clear", "operation-clear"];
+		const firstIds = ["run-clear", "invocation-clear", operationId(13)];
 		const first = await runCapture(
 			{ projectRoot, reviewSetPath },
 			port,
@@ -1228,7 +1229,7 @@ describe("durable capture loop", () => {
 		});
 
 		failClear = true;
-		const secondIds = ["run-clear-failed", "invocation-clear-failed", "operation-clear-failed"];
+		const secondIds = ["run-clear-failed", "invocation-clear-failed", operationId(14)];
 		const second = await runCapture(
 			{ projectRoot, reviewSetPath },
 			port,
@@ -1268,16 +1269,7 @@ describe("durable capture loop", () => {
 					mapPackageDirtyBefore: false,
 					mapPath: request.expectedMapPath,
 					operationId: request.operationId,
-					resolvedSubject:
-						request.subject.kind === "actor_path"
-							? {
-									...request.subject,
-									transform: {
-										location: { x: 0, y: 0, z: 0 },
-										rotation: { pitch: 0, roll: 0, yaw: 0 }
-									}
-								}
-							: request.subject,
+					resolvedSubject: resolvedSubjectForRequest(request.subject),
 					clearCompanion: { status: "not_requested" as const },
 					stagedArtifacts: [{ stagingPath: outside, variant: "pure" as const }],
 					status: "captured",
@@ -1295,7 +1287,7 @@ describe("durable capture loop", () => {
 					width: 1280
 				})
 		};
-		const ids = ["run-rejected", "invocation-rejected", "operation-rejected"];
+		const ids = ["run-rejected", "invocation-rejected", operationId(15)];
 		const run = await runCapture({ projectRoot, reviewSetPath }, port, () => ids.shift()!);
 		expect(run.status).toBe("failed");
 		expect(run.results[0]).toMatchObject({
@@ -1316,7 +1308,7 @@ describe("durable capture loop", () => {
 		const port: ReviewCapturePortApi = {
 			capture: () => Effect.die(new Error("capture boom"))
 		};
-		const ids = ["run-cleanup", "invocation-cleanup", "operation-cleanup"];
+		const ids = ["run-cleanup", "invocation-cleanup", operationId(16)];
 		await expect(
 			runCapture({ projectRoot, reviewSetPath }, port, () => ids.shift()!)
 		).rejects.toThrow(/capture boom/);
@@ -1362,16 +1354,7 @@ describe("durable capture loop", () => {
 							mapPackageDirtyBefore: false,
 							mapPath: request.expectedMapPath,
 							operationId: request.operationId,
-							resolvedSubject:
-								request.subject.kind === "actor_path"
-									? {
-											...request.subject,
-											transform: {
-												location: { x: 0, y: 0, z: 0 },
-												rotation: { pitch: 0, roll: 0, yaw: 0 }
-											}
-										}
-									: request.subject,
+							resolvedSubject: resolvedSubjectForRequest(request.subject),
 							stagedArtifacts: [{ stagingPath, variant: "pure" as const }],
 							status: "captured" as const,
 							subjectProjection: {
@@ -1414,7 +1397,7 @@ describe("durable capture loop", () => {
 					}))
 				)
 		};
-		const ids = ["run-promotion", "invocation-promotion", "operation-promotion"];
+		const ids = ["run-promotion", "invocation-promotion", operationId(17)];
 		const makeId = () => {
 			const id = ids.shift();
 			if (!id) throw new Error("Promotion test exhausted its deterministic IDs");

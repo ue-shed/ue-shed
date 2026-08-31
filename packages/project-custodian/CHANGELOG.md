@@ -1,5 +1,12 @@
 # @ue-shed/project-custodian
 
+## 0.5.1
+
+### Patch Changes
+
+- Align this unchanged package with the synchronized UE Shed `0.5.1` patch release. There is no
+  direct behavioral change.
+
 ## 0.5.0
 
 ### Patch Changes

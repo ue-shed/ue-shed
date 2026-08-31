@@ -1,5 +1,19 @@
 # @ue-shed/cameras
 
+## 0.5.1
+
+### Patch Changes
+
+- 8085e3e: Persist durable Unreal actor GUIDs in Review Views and capture requests, resolve subjects by GUID in
+  the Cameras plugin, and initialize revision sessions from the saved camera pose.
+
+    Bind compiled plugin variants to their npm packages and wire contracts, and verify per-module and
+    per-native-file provenance during cold-cache installation.
+
+- @ue-shed/observability@0.5.1
+    - @ue-shed/protocol@0.5.1
+    - @ue-shed/unreal-connection@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

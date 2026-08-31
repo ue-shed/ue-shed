@@ -385,6 +385,12 @@ describe("ReviewAuthoringSessions", () => {
 		);
 		expect(created.pendingReviewSet).toBeUndefined();
 		expect(created.viewId).toBe("structure-context");
+		expect(created.candidates[0]?.displayName).toBe("Current · Structure context");
+		expect(created.candidates[0]?.approvedPose).toEqual(
+			reviewSet.views[0]?.viewpoint.kind === "world_fixed"
+				? reviewSet.views[0].viewpoint.approvedPose
+				: undefined
+		);
 
 		await withSessions(layer, (sessions) =>
 			sessions.approve({
@@ -452,6 +458,7 @@ describe("ReviewAuthoringSessions", () => {
 			stored.views.filter(
 				(view) =>
 					view.target.kind === "actor" &&
+					view.target.subject.kind === "actor_path" &&
 					view.target.subject.actorPath === selection.actorPath
 			)
 		).toHaveLength(3);

@@ -1,5 +1,15 @@
 # @ue-shed/engine
 
+## 0.5.1
+
+### Patch Changes
+
+- Align this package with the synchronized UE Shed `0.5.1` patch release. There is no direct
+  behavioral change.
+
+- @ue-shed/protocol@0.5.1
+    - @ue-shed/unreal-connection@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

@@ -1,9 +1,10 @@
 {
 	"contract": {
 		"name": "ue-shed-review-selection",
-		"version": { "major": 1, "minor": 0 }
+		"version": { "major": 1, "minor": 1 }
 	},
 	"status": "selected",
+	"actorGuid": "00000001-00000002-00000003-00000004",
 	"actorPath": "/Game/Fixture/Cameras/L_CameraLoad.L_CameraLoad:PersistentLevel.ReviewSubject",
 	"displayName": "ReviewSubject",
 	"mapPath": "/Game/Fixture/Cameras/L_CameraLoad",

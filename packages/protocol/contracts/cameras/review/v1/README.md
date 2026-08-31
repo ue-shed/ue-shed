@@ -17,7 +17,15 @@ visibility measurement: the plugin reports what it observed and does not assign 
 original engine-produced classification. Minor version 4 adds one optional Clear companion to the
 same capture operation. Its request carries only an effective producer instruction (`isolate_target`
 or bounded `hide_explicit` actor paths); consumer policy, thresholds, and presentation remain
-outside the wire contract.
+outside the wire contract. Minor version 5 adds the durable `actor_guid` subject locator. The GUID
+is Unreal's authored actor GUID (`FGuid::UniqueObjectGuid`); a last-known actor path is diagnostic
+evidence only and is never used as an identity fallback.
+
+Producers accept every complete, schema-valid 1.x request through the highest minor they advertise.
+They echo the accepted request minor in both success and failure responses. Missing, fractional,
+negative, or future minors; unknown major versions; minor-feature contradictions; and excess fields
+are rejected deterministically. Once a request supplies an operation ID and view ID, a structured
+failure retains those identities even when contract negotiation fails.
 
 The editor resolves an actor-relative pose atomically from the actor's current transform. Its
 response records the resolved target, exact effective world pose, projection, bounded visibility

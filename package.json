@@ -41,7 +41,7 @@
 		"site:media": "node scripts/site-media.ts",
 		"test": "node scripts/test.ts",
 		"test:architecture": "node --test scripts/check-effect-architecture.test.ts scripts/check-license-boundary.test.ts scripts/check-map-history-boundary.test.ts scripts/check-plugin-distribution-boundary.test.ts scripts/check-stylex-shorthands.test.ts scripts/unreal-project.test.ts",
-		"test:release": "node scripts/sync-native-versions.ts --check && node --test scripts/create-release-candidate.test.ts scripts/plugin-bundle.test.ts scripts/release.test.ts",
+		"test:release": "node scripts/sync-native-versions.ts --check && node --test scripts/create-release-candidate.test.ts scripts/plugin-bundle.test.ts scripts/release-source.test.ts scripts/release.test.ts",
 		"test:release:packages": "node scripts/test-public-packages.ts",
 		"test:repository": "node scripts/test.ts --without-uasset",
 		"release:status": "changeset status",

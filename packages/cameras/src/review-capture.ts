@@ -266,7 +266,7 @@ function captureOneView(args: {
 			clearCompanion: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
 			contract: {
 				name: "ue-shed-review-capture",
-				version: { major: 1, minor: 4 }
+				version: { major: 1, minor: 5 }
 			},
 			expectedMapPath: args.reviewSet.project.mapPath,
 			operationId,
@@ -289,7 +289,7 @@ function captureOneView(args: {
 					retrySafe: true,
 					contract: {
 						name: "ue-shed-review-capture" as const,
-						version: { major: 1 as const, minor: 4 as const }
+						version: { major: 1 as const, minor: 5 as const }
 					},
 					status: "failed" as const,
 					viewId: args.view.id
@@ -469,7 +469,7 @@ function captureReviewSetWith(args: {
 					).length;
 					const run = yield* decodeCaptureRun({
 						completedAt: isoNow(yield* Clock.currentTimeMillis),
-						contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 4 } },
+						contract: { name: "ue-shed-capture-run", version: { major: 1, minor: 5 } },
 						id: runId,
 						invocation,
 						project: reviewSet.project,

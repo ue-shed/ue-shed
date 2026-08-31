@@ -178,9 +178,11 @@ async function compiledFixture(
 	options: {
 		readonly buildId: string;
 		readonly engineSourceCommit?: string;
+		readonly manifestModuleMutation?: "extra" | "missing" | "name" | "path";
 		readonly missingModuleProduct?: boolean;
 		readonly modulesBuildId?: string;
 		readonly omitModules?: boolean;
+		readonly schemaVersion?: 2 | 3;
 		readonly unrelatedModuleMapping?: boolean;
 	}
 ) {
@@ -200,7 +202,7 @@ async function compiledFixture(
 	);
 	const names = variantPluginReleaseAssetNames(source.releaseVersion, artifact);
 	const modulesBuildId = options.modulesBuildId ?? options.buildId;
-	const archive = tarArchive(
+	const archiveEntries: TarEntry[] = (
 		[
 			{
 				body: Buffer.from('{"FileVersion":3,"Modules":[{"Name":"UEShedCore"}]}\n'),
@@ -246,8 +248,52 @@ async function compiledFixture(
 						),
 						name: "UEShed/Plugins/UEShedCameras/Binaries/Win64/UnrealEditor.modules"
 					}
-		].filter((entry) => entry !== undefined)
-	);
+		] satisfies ReadonlyArray<TarEntry | undefined>
+	).filter((entry) => entry !== undefined);
+	const archive = tarArchive(archiveEntries);
+	const expectedModules = [
+		{
+			binaryPath: "Plugins/UEShedCore/Binaries/Win64/UnrealEditor-UEShedCore.dll",
+			buildId: options.buildId,
+			name: "UEShedCore",
+			pluginId: "UEShedCore"
+		},
+		{
+			binaryPath: "Plugins/UEShedCameras/Binaries/Win64/UnrealEditor-UEShedCameras.dll",
+			buildId: options.buildId,
+			name: "UEShedCameras",
+			pluginId: "UEShedCameras"
+		}
+	];
+	const manifestModules = expectedModules.map((module) => ({ ...module }));
+	switch (options.manifestModuleMutation) {
+		case "extra":
+			manifestModules.push({
+				...expectedModules[0]!,
+				name: "SubstitutedCore"
+			});
+			break;
+		case "missing":
+			manifestModules.shift();
+			break;
+		case "name":
+			manifestModules[0] = { ...expectedModules[0]!, name: "SubstitutedCore" };
+			break;
+		case "path":
+			manifestModules[0] = {
+				...expectedModules[0]!,
+				binaryPath: "Plugins/UEShedCore/Binaries/Win64/UnrealEditor.modules"
+			};
+			break;
+		case undefined:
+			break;
+	}
+	const nativeFiles = archiveEntries
+		.filter((entry) => /\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(entry.name))
+		.map((entry) => ({
+			path: entry.name.replace(/^UEShed\//u, ""),
+			sha256: digest(entry.body ?? new Uint8Array())
+		}));
 	const manifest = {
 		artifact: {
 			bytes: archive.byteLength,
@@ -278,7 +324,29 @@ async function compiledFixture(
 		plugins: source.manifest.plugins,
 		provenance: source.manifest.provenance,
 		releaseVersion: source.releaseVersion,
-		schemaVersion: 2
+		...(options.schemaVersion === 3
+			? {
+					buildRecipe: "pnpm ue-shed plugin build --request request.json",
+					contracts: [
+						{
+							name: "ue-shed-review-capture",
+							version: { major: 1, minor: 5 }
+						}
+					],
+					modules: manifestModules,
+					nativeFiles,
+					packages: [
+						{
+							bytes: 1,
+							filename: `ue-shed-cameras-${source.releaseVersion}.tgz`,
+							name: "@ue-shed/cameras",
+							sha256: `sha256:${"d".repeat(64)}`,
+							version: source.releaseVersion
+						}
+					],
+					schemaVersion: 3 as const
+				}
+			: { schemaVersion: 2 as const })
 	};
 	const manifestBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
 	const archivePath = join(source.root, names.artifact);
@@ -611,6 +679,46 @@ it.effect("rejects mismatched extracted .modules BuildId evidence", () =>
 		).pipe(Effect.provide(layer));
 		expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
 		expect(error.message).toContain("BuildId");
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("requires schema-v3 module attestations to exactly match extracted .modules", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture({ releaseVersion: "0.5.1" }));
+		for (const mutation of ["name", "path", "missing", "extra"] as const) {
+			const compiled = yield* Effect.promise(() =>
+				compiledFixture(source, {
+					buildId: "47537391",
+					manifestModuleMutation: mutation,
+					schemaVersion: 3
+				})
+			);
+			const layer = liveLayer(
+				localPluginReleaseSourceLayer({
+					artifactPath: compiled.archivePath,
+					manifestPath: compiled.manifestPath
+				}),
+				join(source.root, `module-attestation-${mutation}-cache`)
+			);
+			const error = yield* Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution
+					.install({
+						artifact: compiled.artifact,
+						networkPolicy: "online",
+						pluginIds: ["UEShedCameras"],
+						releaseVersion: source.releaseVersion
+					})
+					.pipe(Effect.flip)
+			).pipe(Effect.provide(layer));
+			expect(error).toBeInstanceOf(MalformedOrUnsafeArchive);
+			expect(error.message.toLowerCase()).toContain("module");
+		}
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {

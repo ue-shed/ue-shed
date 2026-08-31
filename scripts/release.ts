@@ -3,18 +3,27 @@ import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
+import { assertCleanReleaseSource } from "./release-source.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export interface ReleaseSteps {
+	readonly validateSource: () => string;
 	readonly check: () => void;
 	readonly confirm: () => Promise<void>;
 	readonly publish: () => void;
 }
 
-export async function runRelease({ check, confirm, publish }: ReleaseSteps) {
+export async function runRelease({ validateSource, check, confirm, publish }: ReleaseSteps) {
+	const validatedCommit = validateSource();
 	check();
 	await confirm();
+	const publicationCommit = validateSource();
+	if (publicationCommit !== validatedCommit) {
+		throw new Error(
+			`Release source changed from ${validatedCommit} to ${publicationCommit} during validation.`
+		);
+	}
 	publish();
 }
 
@@ -58,6 +67,7 @@ async function confirmPublication() {
 
 async function main() {
 	await runRelease({
+		validateSource: () => assertCleanReleaseSource(),
 		check: () => run(executable("pnpm"), ["check"]),
 		confirm: confirmPublication,
 		publish: () => run(executable("pnpm"), ["exec", "changeset", "publish"])

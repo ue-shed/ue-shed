@@ -18,12 +18,17 @@
 					"required": ["major", "minor"],
 					"properties": {
 						"major": { "const": 1 },
-						"minor": { "type": "integer", "minimum": 0, "maximum": 4 }
+						"minor": { "type": "integer", "minimum": 0, "maximum": 5 }
 					}
 				}
 			}
 		},
-		"operationId": { "type": "string", "format": "uuid" },
+		"operationId": {
+			"type": "string",
+			"format": "uuid",
+			"pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+			"not": { "const": "00000000-0000-0000-0000-000000000000" }
+		},
 		"viewId": { "$ref": "#/$defs/safeId" },
 		"expectedMapPath": { "type": "string", "minLength": 1 },
 		"subject": {
@@ -31,10 +36,35 @@
 				{
 					"type": "object",
 					"additionalProperties": false,
+					"required": ["kind", "actorGuid"],
+					"properties": {
+						"kind": { "const": "actor_guid" },
+						"actorGuid": {
+							"type": "string",
+							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$",
+							"not": { "const": "00000000-00000000-00000000-00000000" }
+						},
+						"lastKnownActorPath": {
+							"type": "string",
+							"minLength": 7,
+							"maxLength": 4096,
+							"pattern": "^/Game/"
+						},
+						"diagnosticLabel": { "type": "string", "minLength": 1 }
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
 					"required": ["kind", "actorPath"],
 					"properties": {
 						"kind": { "const": "actor_path" },
-						"actorPath": { "type": "string", "minLength": 1 },
+						"actorPath": {
+							"type": "string",
+							"minLength": 7,
+							"maxLength": 4096,
+							"pattern": "^/Game/"
+						},
 						"diagnosticLabel": { "type": "string", "minLength": 1 }
 					}
 				},
@@ -80,7 +110,7 @@
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "enum": [2, 3, 4] } } }
+							"version": { "properties": { "minor": { "enum": [2, 3, 4, 5] } } }
 						}
 					}
 				}
@@ -93,13 +123,32 @@
 				"properties": {
 					"contract": {
 						"properties": {
-							"version": { "properties": { "minor": { "const": 4 } } }
+							"version": { "properties": { "minor": { "enum": [4, 5] } } }
 						}
 					}
 				}
 			},
 			"then": { "required": ["clearCompanion"] },
 			"else": { "not": { "required": ["clearCompanion"] } }
+		},
+		{
+			"if": {
+				"properties": {
+					"subject": {
+						"required": ["kind"],
+						"properties": { "kind": { "const": "actor_guid" } }
+					}
+				}
+			},
+			"then": {
+				"properties": {
+					"contract": {
+						"properties": {
+							"version": { "properties": { "minor": { "const": 5 } } }
+						}
+					}
+				}
+			}
 		}
 	],
 	"$defs": {

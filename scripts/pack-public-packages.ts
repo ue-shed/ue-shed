@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { isJsonObject, isJsonString, type JsonObject, type JsonValue } from "./json.ts";
+import { assertCleanReleaseSource } from "./release-source.ts";
 
 export interface PublicPackage {
 	readonly name: string;
@@ -654,6 +655,7 @@ function parseOutput(args: readonly string[]) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	assertCleanReleaseSource();
 	const output = parseOutput(process.argv.slice(2));
 	const packed = await packPublicPackages({ output });
 	console.log(

@@ -13,6 +13,8 @@ import {
 	VisibilityResult
 } from "./review-schema.js";
 
+export { ReviewSubjectActorGuid } from "./review-schema.js";
+
 const IpcFailure = Schema.Struct({ message: Schema.String, recovery: Schema.String });
 const IpcPose = Schema.Struct({
 	aspectRatio: Schema.Literal("16:9"),

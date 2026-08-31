@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/niagara",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Headless Niagara preview capture, validation, and portable run publication.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -41,7 +41,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/engine": "workspace:0.5.0",
+		"@ue-shed/engine": "workspace:0.5.1",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

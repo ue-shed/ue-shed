@@ -53,10 +53,10 @@ restoration against UE 5.7. The authoring and high-count journeys can record tho
 actions with `pnpm record:flow:map-review`; video, traces, logs, checkpoint screenshots, raw Unreal
 images, and durable JSON are described by a versioned relative-path manifest.
 
-Capture contract v1.4 now realizes all three first target/viewpoint meanings: fixed actor, actor
+Capture contract v1.5 now realizes all three first target/viewpoint meanings: fixed actor, actor
 relative to its current transform, and fixed oriented area. Unreal resolves relative actor poses
 inside the capture operation and returns the exact effective world pose and resolved target.
-Capture Run v1.4 retains that realization and raw visibility measurement beside the durable
+Capture Run v1.5 retains that realization and raw visibility measurement beside the durable
 viewpoint. It can additionally retain an optional Clear companion: Pure is always captured first,
 and a Clear failure keeps that Pure evidence while marking the run as a typed partial failure. A
 narrow numeric/current-selection area operation produces portable oriented bounds without creating

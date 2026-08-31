@@ -62,8 +62,10 @@ The install scope is the lease lifetime. Keep that scope open until the supervis
 session has stopped; releasing it removes the cross-process lease record. The immutable cached
 variant remains until the host explicitly calls `prune({ releaseVersion, variantIdentity })`.
 
-Schema-v1 source caches below `releases/<version>` remain readable. New source and compiled
-artifacts coexist below `variants/<version>/<pv2-identity>` and have exact per-variant leases.
+Schema-v1 source caches below `releases/<version>` and schema-v2 manifests remain readable. New
+schema-v3 source and compiled artifacts bind npm tarball, wire-contract, module, native-file, source,
+and engine-build provenance. Variants coexist below `variants/<version>/<pv2-identity>` and have
+exact per-variant leases.
 
 ## CLI
 

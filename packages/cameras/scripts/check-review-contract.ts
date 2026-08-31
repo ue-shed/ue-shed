@@ -37,11 +37,13 @@ const validFixtures: ReadonlyArray<{
 	{ file: "capture-request-area-valid.json", schema: ReviewCaptureRequest },
 	{ file: "capture-request-relative-valid.json", schema: ReviewCaptureRequest },
 	{ file: "capture-request-clear-valid.json", schema: ReviewCaptureRequest },
+	{ file: "capture-request-guid-valid.json", schema: ReviewCaptureRequest },
 	{ file: "capture-request-valid.json", schema: ReviewCaptureRequest },
 	{ file: "assessment-capabilities.json", schema: ReviewAssessmentCapabilities },
 	{ file: "capture-area.json", schema: ReviewCaptureResponse },
 	{ file: "capture-clear.json", schema: ReviewCaptureResponse },
 	{ file: "capture-clear-failed.json", schema: ReviewCaptureResponse },
+	{ file: "capture-guid.json", schema: ReviewCaptureResponse },
 	{ file: "capture-assessed.json", schema: ReviewCaptureResponse },
 	{ file: "capture-assessed-v2.json", schema: ReviewCaptureResponse },
 	{ file: "capture-projected.json", schema: ReviewCaptureResponse },
@@ -62,6 +64,38 @@ const invalidFixtures: ReadonlyArray<{
 	},
 	{ file: "invalid-capture-request-bad-fov.json", schema: ReviewCaptureRequest },
 	{
+		file: "invalid-capture-request-clear-before-minor-4.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-alternate-actor-guid.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-empty-diagnostic-label.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-future-minor.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-guid-before-minor-5.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-malformed-last-known-path.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-nil-operation-id.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-nil-actor-guid.json",
+		schema: ReviewCaptureRequest
+	},
+	{
 		file: "invalid-capture-response-projected-without-margins.json",
 		schema: ReviewCaptureResponse
 	},
@@ -75,7 +109,7 @@ function readJson(file: string): Schema.Json {
 }
 
 function roundTrip(schema: WireSchema, input: Schema.Json): Schema.Json {
-	const decoded = Schema.decodeUnknownSync(schema)(input);
+	const decoded = Schema.decodeUnknownSync(schema)(input, { onExcessProperty: "error" });
 	return Schema.decodeUnknownSync(Schema.Json)(Schema.encodeUnknownSync(schema)(decoded));
 }
 
@@ -92,7 +126,7 @@ for (const { file, schema } of validFixtures) {
 
 for (const { file, schema } of invalidFixtures) {
 	const fixture = readJson(file);
-	const result = Schema.decodeUnknownResult(schema)(fixture);
+	const result = Schema.decodeUnknownResult(schema)(fixture, { onExcessProperty: "error" });
 	if (result._tag !== "Failure") {
 		throw new Error(`invalid fixture ${file} was accepted by Effect schema`);
 	}

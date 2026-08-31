@@ -15,8 +15,8 @@ contain organization-specific paths, credentials, schemas, or registry assumptio
 
 ## Versioned artifacts
 
-Schema version 1 remains the accepted legacy source contract. Schema version 2 is a strict
-discriminated union:
+Schema version 1 remains the accepted legacy source contract. Schema version 2 remains readable for
+existing source and compiled artifacts. Schema version 3 is the release-attested strict union:
 
 - `source` records an Unreal version range and a portable source archive;
 - `compiled` records exact Unreal version, engine `BuildId`, platform, architecture,
@@ -24,9 +24,20 @@ discriminated union:
   resolved graph, descriptor versions, source pins, repository commit, build invocation digest,
   and archive/manifest digests.
 
+Both v3 variants bind the exact npm package tarballs and shared wire-contract versions from the
+release candidate. A compiled v3 manifest additionally lists each built module and exact engine
+`BuildId`, plus a digest for every descriptor, module manifest, native binary, and debug-symbol file
+in the archive. Installation compares those file attestations while extracting, before publishing
+the immutable cache entry.
+
+Provenance records stable artifact names and digests, never build-host filesystem paths. The
+candidate package manifest is identified by its basename, suite version, and SHA-256 digest.
+
 Unknown schema versions and excess or contradictory source/binary fields are rejected at the
 boundary. Unreal `5.7` alone is never treated as binary compatibility. Extraction also reads each
-plugin's `.modules` file and requires its `BuildId` to equal the outer compatibility identity.
+plugin's `.modules` file and requires its `BuildId` to equal the outer compatibility identity. For
+schema v3, the extracted module name, owning plugin, binary path, and BuildId must exactly equal the
+manifest module attestations, with no missing or extra entries.
 
 ## Selection and immutable cache
 
@@ -111,5 +122,9 @@ requests require a later release with a real compiled manifest.
 
 Public release gates reject `ref: "local"`, zero candidate-manifest digests, non-full commits,
 package/plugin version disagreement, missing declared assets, and archive digest disagreement.
+Stable npm packing and publication also require a clean checked-out worktree; publication checks the
+source both before validation and immediately before npm receives any package, and both checks must
+resolve to the same commit. Release-candidate construction additionally requires its full source
+commit to equal checked-out `HEAD`.
 Local experimental output with those placeholders is useful only as local evidence and must never
 be signed or hosted as a release.

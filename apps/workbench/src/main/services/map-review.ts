@@ -17,6 +17,7 @@ import {
 	applyVisibilityPolicyToViews,
 	evaluateReviewCapturePolicy,
 	replaceViewVisibilityPolicy,
+	subjectLocatorFromSelection,
 	type ReviewAuthoringSession,
 	type CaptureRunSummary,
 	type ReviewSet
@@ -1118,7 +1119,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					return profile
 						? Effect.succeed({
 								...(view.target.kind === "actor"
-									? { actorPath: view.target.subject.actorPath }
+									? {
+											actorPath:
+												view.target.subject.kind === "actor_path"
+													? view.target.subject.actorPath
+													: view.target.subject.lastKnownActorPath
+										}
 									: undefined),
 								captureProfileId: profile.id,
 								displayName: view.displayName,
@@ -1756,8 +1762,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							});
 						}
 						const subject = yield* authoring.inspectSubject({
-							actorPath: session.subject.actorPath,
-							endpoint: configuration.remoteControlEndpoint
+							endpoint: configuration.remoteControlEndpoint,
+							subject:
+								session.subject.actorGuid === undefined
+									? {
+											actorPath: session.subject.actorPath,
+											kind: "actor_path"
+										}
+									: {
+											actorGuid: session.subject.actorGuid,
+											kind: "actor_guid",
+											lastKnownActorPath: session.subject.actorPath
+										}
 						});
 						if (subject.status === "failed") {
 							return mapReviewAuthoringFailure({
@@ -1770,10 +1786,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							endpoint: configuration.remoteControlEndpoint,
 							mapPath: session.subject.mapPath,
 							profile: { ...profile, resolution: { height: 180, width: 320 } },
-							subject: {
-								actorPath: subject.actorPath,
-								displayName: subject.displayName
-							}
+							subject: subjectLocatorFromSelection(subject)
 						});
 						const updated = yield* authoringSessions.recordProjection({
 							candidateId: candidate.id,
@@ -1904,10 +1917,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							endpoint: configuration.remoteControlEndpoint,
 							mapPath: selection.mapPath,
 							profile: { ...profile, resolution: { height: 180, width: 320 } },
-							subject: {
-								actorPath: selection.actorPath,
-								displayName: selection.displayName
-							}
+							subject: subjectLocatorFromSelection(selection)
 						});
 						return { ...preview, status: "ready" as const };
 					}).pipe(

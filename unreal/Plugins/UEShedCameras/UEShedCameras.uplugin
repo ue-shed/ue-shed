@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.5.0",
+	"VersionName": "0.5.1",
 	"FriendlyName": "UE Shed Cameras",
 	"Description": "Demand-driven sparse camera capture and bounded local frame streaming.",
 	"Category": "UE Shed",

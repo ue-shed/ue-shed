@@ -124,7 +124,11 @@ test("frames varied gallery subjects with real Unreal previews", async ({
 				endpoint,
 				mapPath: gallery.map,
 				profile,
-				subject: { actorPath, displayName: selection.displayName }
+				subject: {
+					actorPath,
+					diagnosticLabel: selection.displayName,
+					kind: "actor_path"
+				}
 			}).pipe(Effect.provide(RemoteControlClientLive))
 		);
 		expect({ height: preview.height, width: preview.width }).toEqual({
@@ -178,7 +182,7 @@ test("captures occlusion bays and restores explicit Clear interventions", async 
 								: { status: "not_requested" },
 						contract: {
 							name: "ue-shed-review-capture",
-							version: { major: 1, minor: 4 }
+							version: { major: 1, minor: 5 }
 						},
 						expectedMapPath: gallery.map,
 						operationId: randomUUID(),

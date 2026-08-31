@@ -1,0 +1,23 @@
+{
+	"contract": { "name": "ue-shed-review-capture", "version": { "major": 1, "minor": 5 } },
+	"operationId": "66666666-6666-4666-8666-666666666666",
+	"viewId": "nil-actor-guid",
+	"expectedMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+	"subject": {
+		"kind": "actor_guid",
+		"actorGuid": "00000000-00000000-00000000-00000000"
+	},
+	"viewpoint": {
+		"kind": "world_fixed",
+		"approvedPose": {
+			"aspectRatio": "16:9",
+			"fieldOfViewDegrees": 70,
+			"projection": "perspective",
+			"location": { "x": 100, "y": 200, "z": 300 },
+			"rotation": { "pitch": -20, "yaw": 45, "roll": 0 }
+		}
+	},
+	"resolution": { "width": 1280, "height": 720 },
+	"assessment": { "method": "automatic" },
+	"clearCompanion": { "status": "not_requested" }
+}

@@ -1,5 +1,14 @@
 # @ue-shed/config-explorer
 
+## 0.5.1
+
+### Patch Changes
+
+- Align this package with the synchronized UE Shed `0.5.1` patch release. There is no direct
+  behavioral change.
+
+- @ue-shed/engine@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

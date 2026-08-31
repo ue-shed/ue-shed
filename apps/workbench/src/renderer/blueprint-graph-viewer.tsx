@@ -681,7 +681,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 					<input
 						aria-label="Blueprint package path"
 						onInput={(event) => setAssetPath(event.currentTarget.value)}
-						placeholder="C:\Project\Content\Blueprints\BP_Example.uasset"
+						placeholder="C:\\Project\\Content\\Blueprints\\BP_Example.uasset"
 						spellcheck={false}
 						value={assetPath()}
 						{...stylex.props(styles.pathInput)}

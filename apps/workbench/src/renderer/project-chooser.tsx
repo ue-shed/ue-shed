@@ -63,13 +63,15 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			props.onChosen();
 		}
 	};
-	const refresh = (notifyRoutes: boolean) =>
+	const refresh = (notifyRoutes: boolean) => {
+		if (pending()) return;
 		refreshAction.run(props.client.project(), {
 			onFailure: () => {
 				if (project()?.status !== "failed") setProject(undefined);
 			},
 			onSuccess: (next) => applyProject(next, notifyRoutes, false)
 		});
+	};
 	const refreshRecent = () =>
 		recentAction.run(props.client.recentProjects(), {
 			onSuccess: setRecentProjects
@@ -86,6 +88,10 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	const selectProject = (
 		selection: ReturnType<ProjectChooserProps["client"]["chooseProject"]>
 	) => {
+		// A focus event from the native picker must not let an older project refresh replace
+		// the explicit selection after it completes. createEffectAction's generation guard also
+		// covers refreshes backed by uninterruptible foreign work.
+		refreshAction.cancel();
 		setPending(true);
 		// A deliberate retry starts a new lifecycle. The prior failure must not remain visible
 		// behind the progress presentation, but a resulting failure remains after it closes.

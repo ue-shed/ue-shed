@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
 import {
 	SavedAssetManifestEntry,
 	SavedAssetScan,
@@ -689,9 +690,58 @@ export async function* runUassetProtocolEvents(options: {
 	}
 }
 
+/** @internal Narrow process boundary used to verify session termination without a native worker. */
+export interface ProtocolSessionProcess {
+	readonly pid: number | undefined;
+	readonly stdin: {
+		readonly destroyed: boolean;
+		readonly end: () => void;
+		readonly setDefaultEncoding: (encoding: BufferEncoding) => void;
+		readonly write: (chunk: string, callback: (cause?: Error | null) => void) => boolean;
+	} | null;
+	readonly stdout: Readable | null;
+	readonly stderr: Readable | null;
+	readonly exitCode: number | null;
+	readonly signalCode: string | null;
+	readonly killed: boolean;
+	readonly kill: () => boolean;
+	readonly onClose: (listener: (code: number | null, signal: string | null) => void) => void;
+	readonly onError: (listener: (cause: Error) => void) => void;
+}
+
+export type ProtocolSessionProcessFactory = () => ProtocolSessionProcess;
+
+function spawnProtocolSession(executable: string): ProtocolSessionProcess {
+	const child = spawn(executable, ["protocol-session"], { windowsHide: true });
+	return {
+		get exitCode() {
+			return child.exitCode;
+		},
+		get killed() {
+			return child.killed;
+		},
+		get pid() {
+			return child.pid;
+		},
+		get signalCode() {
+			return child.signalCode;
+		},
+		kill: () => child.kill(),
+		onClose: (listener) => {
+			child.once("close", listener);
+		},
+		onError: (listener) => {
+			child.once("error", listener);
+		},
+		stderr: child.stderr,
+		stdin: child.stdin,
+		stdout: child.stdout
+	};
+}
+
 /** A scoped native protocol worker. Calls must be serialized by its owner. */
 export class UassetProtocolSession {
-	private child: ReturnType<typeof spawn> | undefined;
+	private child: ProtocolSessionProcess | undefined;
 	private closePromise:
 		| Promise<{ readonly code: number | null; readonly signal: string | null }>
 		| undefined;
@@ -705,18 +755,18 @@ export class UassetProtocolSession {
 		private readonly configuration: Pick<
 			AssetReaderConfiguration,
 			"executable" | "protocolObserver"
-		>
+		>,
+		private readonly processFactory: ProtocolSessionProcessFactory = () =>
+			spawnProtocolSession(configuration.executable)
 	) {}
 
-	private start(): ReturnType<typeof spawn> {
+	private start(): ProtocolSessionProcess {
 		if (this.disposed) {
 			throw new ProtocolStreamFailure("process", "Protocol session is closed");
 		}
 		if (this.child !== undefined) return this.child;
 
-		const child = spawn(this.configuration.executable, ["protocol-session"], {
-			windowsHide: true
-		});
+		const child = this.processFactory();
 		if (child.stdin === null || child.stdout === null) {
 			child.kill();
 			throw new ProtocolStreamFailure("process", "Protocol session did not expose pipes");
@@ -736,10 +786,10 @@ export class UassetProtocolSession {
 			});
 		}
 		this.closePromise = new Promise((resolvePromise) => {
-			child.once("error", (cause) => {
+			child.onError((cause) => {
 				this.processError = cause;
 			});
-			child.once("close", (code, signal) => resolvePromise({ code, signal }));
+			child.onClose((code, signal) => resolvePromise({ code, signal }));
 		});
 		this.child = child;
 		return child;
@@ -837,7 +887,9 @@ export class UassetProtocolSession {
 					});
 				});
 			} catch (cause) {
-				await this.closePromise;
+				// A worker may reject its input while remaining alive. Terminate it before
+				// waiting for close so this failure cannot strand the session indefinitely.
+				await this.terminate();
 				const processCause =
 					this.processError ?? (cause instanceof Error ? cause : undefined);
 				throw new ProtocolStreamFailure(

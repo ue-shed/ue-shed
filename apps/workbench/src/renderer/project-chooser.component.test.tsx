@@ -40,6 +40,7 @@ function renderChooser(args: {
 	readonly current: WorkbenchProjectState;
 	readonly openRecent?: ProjectChooserProps["client"]["openRecentProject"];
 	readonly onChosen?: () => void;
+	readonly project?: ProjectChooserProps["client"]["project"];
 	readonly recent?: readonly { readonly projectName: string; readonly projectRoot: string }[];
 }) {
 	render(() => (
@@ -50,7 +51,7 @@ function renderChooser(args: {
 					launchProject: (mode) => Effect.succeed({ mode, status: "launched" }),
 					openRecentProject:
 						args.openRecent ?? (() => Effect.succeed({ status: "cancelled" })),
-					project: () => Effect.succeed(args.current),
+					project: args.project ?? (() => Effect.succeed(args.current)),
 					projectProgress: () => Effect.succeed(progress),
 					recentProjects: () => Effect.succeed(args.recent ?? [])
 				}}
@@ -182,6 +183,39 @@ describe("ProjectChooser", () => {
 		await waitFor(() => expect(openRecent).toHaveBeenCalledWith("D:/Projects/OtherProject"));
 		expect(await screen.findByRole("button", { name: "OtherProject" })).toBeDefined();
 		expect(onChosen).toHaveBeenCalledOnce();
+	});
+
+	it("ignores an older project refresh after a recent selection completes", async () => {
+		const staleRefresh = await Effect.runPromise(Deferred.make<WorkbenchProjectState>());
+		const otherProject: WorkbenchProjectState = {
+			project: {
+				inputAtlas: "deferred",
+				mapCount: 1,
+				packageCount: 8,
+				projectName: "OtherProject",
+				projectRoot: "D:/Projects/OtherProject"
+			},
+			status: "ready"
+		};
+		renderChooser({
+			choose: () => Effect.succeed({ status: "cancelled" }),
+			current: ready,
+			openRecent: () => Effect.succeed(otherProject),
+			project: () => Deferred.await(staleRefresh).pipe(Effect.uninterruptible),
+			recent: [ready.project, otherProject.project]
+		});
+
+		await userEvent.setup().click(await screen.findByLabelText("Recent projects"));
+		await userEvent
+			.setup()
+			.click(screen.getByRole("button", { name: "Open recent project OtherProject" }));
+		expect(await screen.findByRole("button", { name: "OtherProject" })).toBeDefined();
+
+		await Effect.runPromise(Deferred.succeed(staleRefresh, ready));
+		await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+
+		expect(screen.getByRole("button", { name: "OtherProject" })).toBeDefined();
+		expect(screen.queryByRole("button", { name: "Fixture" })).toBeNull();
 	});
 
 	it("launches the full plugin experience without changing the selected project", async () => {

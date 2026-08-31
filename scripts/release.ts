@@ -8,17 +8,22 @@ import { assertCleanReleaseSource } from "./release-source.ts";
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
 export interface ReleaseSteps {
-	readonly validateSource: () => void;
+	readonly validateSource: () => string;
 	readonly check: () => void;
 	readonly confirm: () => Promise<void>;
 	readonly publish: () => void;
 }
 
 export async function runRelease({ validateSource, check, confirm, publish }: ReleaseSteps) {
-	validateSource();
+	const validatedCommit = validateSource();
 	check();
 	await confirm();
-	validateSource();
+	const publicationCommit = validateSource();
+	if (publicationCommit !== validatedCommit) {
+		throw new Error(
+			`Release source changed from ${validatedCommit} to ${publicationCommit} during validation.`
+		);
+	}
 	publish();
 }
 

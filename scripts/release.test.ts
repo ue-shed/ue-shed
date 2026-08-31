@@ -5,7 +5,10 @@ import { runRelease } from "./release.ts";
 test("waits for confirmation after checks and before publication", async () => {
 	const events: string[] = [];
 	await runRelease({
-		validateSource: () => events.push("validate-source"),
+		validateSource: () => {
+			events.push("validate-source");
+			return "a".repeat(40);
+		},
 		check: () => events.push("check"),
 		confirm: async () => {
 			events.push("confirm-start");
@@ -53,7 +56,7 @@ test("does not publish when the source changes during release checks", async () 
 				validateSource: () => {
 					validationCount += 1;
 					events.push("validate-source");
-					if (validationCount === 2) throw new Error("release source changed");
+					return validationCount === 1 ? "a".repeat(40) : "b".repeat(40);
 				},
 				check: () => events.push("check"),
 				confirm: async () => {
@@ -61,7 +64,7 @@ test("does not publish when the source changes during release checks", async () 
 				},
 				publish: () => events.push("publish")
 			}),
-		/release source changed/
+		/Release source changed from a{40} to b{40} during validation\./
 	);
 	assert.deepEqual(events, ["validate-source", "check", "confirm", "validate-source"]);
 });
@@ -71,7 +74,10 @@ test("does not request confirmation or publish when checks fail", async () => {
 	await assert.rejects(
 		() =>
 			runRelease({
-				validateSource: () => events.push("validate-source"),
+				validateSource: () => {
+					events.push("validate-source");
+					return "a".repeat(40);
+				},
 				check: () => {
 					events.push("check");
 					throw new Error("checks failed");
@@ -91,7 +97,10 @@ test("does not publish when confirmation is interrupted", async () => {
 	await assert.rejects(
 		() =>
 			runRelease({
-				validateSource: () => events.push("validate-source"),
+				validateSource: () => {
+					events.push("validate-source");
+					return "a".repeat(40);
+				},
 				check: () => events.push("check"),
 				confirm: async () => {
 					events.push("confirm");

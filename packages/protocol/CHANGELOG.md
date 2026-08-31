@@ -2,6 +2,11 @@
 
 ## 0.5.1
 
+### Patch Changes
+
+- Define Review Capture 1.5 with exact non-nil operation UUIDs, durable Unreal actor GUID
+  locators, and bounded optional locator diagnostics shared by TypeScript and Unreal.
+
 ## 0.5.0
 
 ### Patch Changes

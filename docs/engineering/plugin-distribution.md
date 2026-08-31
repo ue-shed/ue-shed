@@ -35,7 +35,9 @@ candidate package manifest is identified by its basename, suite version, and SHA
 
 Unknown schema versions and excess or contradictory source/binary fields are rejected at the
 boundary. Unreal `5.7` alone is never treated as binary compatibility. Extraction also reads each
-plugin's `.modules` file and requires its `BuildId` to equal the outer compatibility identity.
+plugin's `.modules` file and requires its `BuildId` to equal the outer compatibility identity. For
+schema v3, the extracted module name, owning plugin, binary path, and BuildId must exactly equal the
+manifest module attestations, with no missing or extra entries.
 
 ## Selection and immutable cache
 
@@ -121,7 +123,8 @@ requests require a later release with a real compiled manifest.
 Public release gates reject `ref: "local"`, zero candidate-manifest digests, non-full commits,
 package/plugin version disagreement, missing declared assets, and archive digest disagreement.
 Stable npm packing and publication also require a clean checked-out worktree; publication checks the
-source both before validation and immediately before npm receives any package. Release-candidate
-construction additionally requires its full source commit to equal checked-out `HEAD`.
+source both before validation and immediately before npm receives any package, and both checks must
+resolve to the same commit. Release-candidate construction additionally requires its full source
+commit to equal checked-out `HEAD`.
 Local experimental output with those placeholders is useful only as local evidence and must never
 be signed or hosted as a release.

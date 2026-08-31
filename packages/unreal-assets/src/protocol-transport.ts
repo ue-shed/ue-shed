@@ -51,6 +51,7 @@ export interface ProtocolSingleEvidence<A> {
 }
 
 const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
+const MAX_PROTOCOL_TERMINATION_WAIT_MS = 1_000;
 const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
 const validateProtocolEventType = Schema.decodeUnknownExit(
 	Schema.toType(UAssetIoEvent),
@@ -711,6 +712,23 @@ export interface ProtocolSessionProcess {
 
 export type ProtocolSessionProcessFactory = () => ProtocolSessionProcess;
 
+async function waitForProtocolClose(
+	closePromise: Promise<unknown>,
+	timeoutMs: number
+): Promise<void> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			closePromise,
+			new Promise<void>((resolvePromise) => {
+				timer = setTimeout(resolvePromise, timeoutMs);
+			})
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
+
 function spawnProtocolSession(executable: string): ProtocolSessionProcess {
 	const child = spawn(executable, ["protocol-session"], { windowsHide: true });
 	return {
@@ -837,15 +855,25 @@ export class UassetProtocolSession {
 		});
 	}
 
-	private async terminate(): Promise<void> {
+	private async terminate(timeoutMs = MAX_PROTOCOL_TERMINATION_WAIT_MS): Promise<void> {
 		const child = this.child;
 		const closePromise = this.closePromise;
 		if (child === undefined) return;
-		if (child.exitCode === null && child.signalCode === null && !child.killed) child.kill();
-		if (closePromise !== undefined) await closePromise;
-		this.child = undefined;
-		this.closePromise = undefined;
-		this.iterator = undefined;
+		try {
+			if (child.exitCode === null && child.signalCode === null && !child.killed) child.kill();
+			if (closePromise !== undefined) {
+				await waitForProtocolClose(
+					closePromise,
+					Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
+				);
+			}
+		} finally {
+			if (this.child === child) {
+				this.child = undefined;
+				this.closePromise = undefined;
+				this.iterator = undefined;
+			}
+		}
 	}
 
 	async *events(options: {
@@ -889,7 +917,7 @@ export class UassetProtocolSession {
 			} catch (cause) {
 				// A worker may reject its input while remaining alive. Terminate it before
 				// waiting for close so this failure cannot strand the session indefinitely.
-				await this.terminate();
+				await this.terminate(options.timeoutMs);
 				const processCause =
 					this.processError ?? (cause instanceof Error ? cause : undefined);
 				throw new ProtocolStreamFailure(
@@ -928,7 +956,7 @@ export class UassetProtocolSession {
 		} finally {
 			if (!terminal) {
 				telemetry.cancelled = options.signal?.aborted ?? false;
-				await this.terminate();
+				await this.terminate(options.timeoutMs);
 			}
 			if (telemetry.terminalState === undefined && !telemetry.cancelled) {
 				telemetry.terminalState = "failed";

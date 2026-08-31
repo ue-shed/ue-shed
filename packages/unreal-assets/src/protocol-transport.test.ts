@@ -38,9 +38,12 @@ class StalledInputProcess implements ProtocolSessionProcess {
 		[];
 	private readonly errorListeners: Array<(cause: Error) => void> = [];
 
+	constructor(private readonly closesOnKill = true) {}
+
 	kill = (): boolean => {
 		this.killCalls += 1;
 		if (this.killed) return false;
+		if (!this.closesOnKill) return false;
 		this.killed = true;
 		queueMicrotask(() => {
 			this.signalCode = "SIGTERM";
@@ -88,5 +91,38 @@ it("terminates a session when stdin rejects while the worker remains alive", asy
 	expect(failure.message).toContain("protocol input closed");
 	expect(worker.killCalls).toBe(1);
 	expect(worker.killed).toBe(true);
+	await session.close();
+});
+
+it("bounds termination when a worker ignores kill and never closes", async () => {
+	const assetPath = "C:/Fixture/BP_NonCooperative.uasset";
+	const worker = new StalledInputProcess(false);
+	const configuration = {
+		catalogTimeoutMs: 25,
+		executable: "non-cooperative-reader",
+		timeoutMs: 25
+	};
+	const session = new UassetProtocolSession(configuration, () => worker);
+	const failure = await Effect.runPromise(
+		invokeProtocolSessionSingle({
+			configuration,
+			expected: "inspect",
+			operation: "inspect",
+			path: assetPath,
+			request: makeProtocolRequest(
+				{ assetPath, kind: "inspect" },
+				{ maximumOutputBytes: 1_024, timeoutMs: 25 }
+			),
+			select: () => undefined,
+			session
+		}).pipe(Effect.timeout("1 second"), Effect.flip)
+	);
+
+	expect(failure).toBeInstanceOf(AssetReaderError);
+	if (!(failure instanceof AssetReaderError)) return;
+	expect(failure.kind).toBe("process");
+	expect(failure.message).toContain("protocol input closed");
+	expect(worker.killCalls).toBe(1);
+	expect(worker.killed).toBe(false);
 	await session.close();
 });

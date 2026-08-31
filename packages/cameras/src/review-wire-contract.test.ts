@@ -8,6 +8,7 @@ import {
 	decodeReviewCaptureResponse,
 	decodeReviewSelectionResponse,
 	decodeReviewSubjectInspectionResponse,
+	ReviewSubjectActorGuid,
 	ReviewSubjectProjection
 } from "./review-schema.js";
 
@@ -46,6 +47,7 @@ describe("Map Review language-neutral wire contracts", () => {
 		expect(contract.properties.subject.oneOf[0]).toMatchObject({
 			properties: {
 				actorGuid: {
+					not: { const: "00000000-00000000-00000000-00000000" },
 					pattern: "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
 				},
 				diagnosticLabel: { minLength: 1, type: "string" },
@@ -61,10 +63,12 @@ describe("Map Review language-neutral wire contracts", () => {
 			"invalid-capture-request-alternate-actor-guid.json",
 			"invalid-capture-request-empty-diagnostic-label.json",
 			"invalid-capture-request-malformed-last-known-path.json",
+			"invalid-capture-request-nil-actor-guid.json",
 			"invalid-capture-request-nil-operation-id.json"
 		]) {
 			expect(() => decodeCaptureRequest(json(`fixtures/${fixture}`))).toThrow();
 		}
+		expect(() => ReviewSubjectActorGuid.make("00000000-00000000-00000000-00000000")).toThrow();
 	});
 
 	it("keeps capture projection and visibility variants strict across compatible minors", () => {

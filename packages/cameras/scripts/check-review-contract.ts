@@ -92,6 +92,10 @@ const invalidFixtures: ReadonlyArray<{
 		schema: ReviewCaptureRequest
 	},
 	{
+		file: "invalid-capture-request-nil-actor-guid.json",
+		schema: ReviewCaptureRequest
+	},
+	{
 		file: "invalid-capture-response-projected-without-margins.json",
 		schema: ReviewCaptureResponse
 	},

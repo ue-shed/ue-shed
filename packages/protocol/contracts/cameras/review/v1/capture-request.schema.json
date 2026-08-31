@@ -41,7 +41,8 @@
 						"kind": { "const": "actor_guid" },
 						"actorGuid": {
 							"type": "string",
-							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+							"pattern": "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$",
+							"not": { "const": "00000000-00000000-00000000-00000000" }
 						},
 						"lastKnownActorPath": {
 							"type": "string",

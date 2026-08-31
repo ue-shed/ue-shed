@@ -26,7 +26,9 @@ export type ReviewSubjectActorPath = Schema.Schema.Type<typeof ReviewSubjectActo
  * depend on the transient live UObject path.
  */
 export const ReviewSubjectActorGuid = Schema.String.check(
-	Schema.isPattern(/^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$/)
+	Schema.isPattern(
+		/^(?!00000000-00000000-00000000-00000000$)[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$/
+	)
 ).pipe(Schema.brand("ReviewSubjectActorGuid"));
 export type ReviewSubjectActorGuid = Schema.Schema.Type<typeof ReviewSubjectActorGuid>;
 

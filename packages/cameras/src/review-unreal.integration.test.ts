@@ -756,6 +756,13 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 
 		for (const [viewId, subject] of [
 			[
+				"nil-actor-guid",
+				{
+					actorGuid: "00000000-00000000-00000000-00000000",
+					kind: "actor_guid"
+				}
+			],
+			[
 				"alternate-actor-guid",
 				{
 					actorGuid: "12345678-1234-1234-1234-123456789abc",

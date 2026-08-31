@@ -55,5 +55,8 @@
 		"tsup": "^8.5.1",
 		"vite": "^8.1.4",
 		"vite-plugin-solid": "catalog:"
+	},
+	"optionalDependencies": {
+		"@ue-shed/engine-win32-x64": "workspace:0.5.0"
 	}
 }

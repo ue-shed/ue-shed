@@ -345,6 +345,10 @@ importers:
       vite-plugin-solid:
         specifier: 'catalog:'
         version: 2.11.12(solid-js@1.9.14)(supports-color@10.2.2)(vite@8.1.4(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1)(yaml@2.9.0))
+    optionalDependencies:
+      '@ue-shed/engine-win32-x64':
+        specifier: workspace:0.5.0
+        version: link:../../packages/engine-win32-x64
 
   examples/authoring-headless:
     dependencies:

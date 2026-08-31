@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use uasset_parser::asset::{
     ANIM_SEQUENCE_CLASS, DATA_ASSET_CLASS, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS,
@@ -314,6 +314,26 @@ fn asset_output_from_decoded(package: &Package, decoded: DecodedAsset) -> AssetO
             curve_rows: Vec::new(),
             rows: Vec::new(),
         },
+        DecodedAsset::BlueprintGraphNode(node) => AssetOutput {
+            kind: "UObject",
+            object_path: node.object_path.into_string(),
+            class_path: Some(node.class_path.into_string()),
+            object_guid: node.object_guid.map(|guid| guid.to_string()),
+            row_struct: None,
+            parent_tables: Vec::new(),
+            string_table_namespace: None,
+            string_table_entries: Vec::new(),
+            enum_cpp_form: None,
+            enum_entries: Vec::new(),
+            struct_flags: None,
+            struct_fields: Vec::new(),
+            properties: property_outputs(package, node.properties),
+            tail_bytes: node.tail.len(),
+            bones: Vec::new(),
+            row_count: 0,
+            curve_rows: Vec::new(),
+            rows: Vec::new(),
+        },
         DecodedAsset::AnimSequence(sequence) => AssetOutput {
             kind: "UObject",
             object_path: sequence.object_path.into_string(),
@@ -435,7 +455,7 @@ fn enum_cpp_form_name(cpp_form: EnumCppForm) -> &'static str {
     }
 }
 
-fn property_outputs(
+pub(crate) fn property_outputs(
     package: &Package,
     stream: uasset_parser::property::PropertyStream,
 ) -> Vec<PropertyOutput> {
@@ -580,7 +600,7 @@ pub struct StringTableEntryOutput {
     pub source: String,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PropertyOutput {
     pub name: String,
     #[serde(rename = "type")]
@@ -607,13 +627,13 @@ impl PropertyOutput {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MapEntryOutput {
     pub key: PropertyValueOutput,
     pub value: PropertyValueOutput,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "value_kind", rename_all = "snake_case")]
 pub enum PropertyValueOutput {
     Bool {
@@ -643,7 +663,7 @@ pub enum PropertyValueOutput {
     },
     Text {
         value: String,
-        history: &'static str,
+        history: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -807,16 +827,39 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
     match text.history {
         TextHistory::None => PropertyValueOutput::Text {
             value: text.source,
-            history: "none",
+            history: "none".to_owned(),
             namespace: None,
             key: None,
         },
         TextHistory::Base { namespace, key } => PropertyValueOutput::Text {
             value: text.source,
-            history: "base",
+            history: "base".to_owned(),
             namespace: Some(namespace),
             key: Some(key),
         },
+        TextHistory::NamedFormat { format, .. } => {
+            let (history, namespace, key) = text_identity_parts(&format);
+            PropertyValueOutput::Text {
+                value: text.source,
+                history: history.to_owned(),
+                namespace,
+                key,
+            }
+        }
+    }
+}
+
+fn text_identity_parts(
+    text: &uasset_parser::property::TextValue,
+) -> (&'static str, Option<String>, Option<String>) {
+    use uasset_parser::property::TextHistory;
+
+    match &text.history {
+        TextHistory::Base { namespace, key } => {
+            ("base", Some(namespace.clone()), Some(key.clone()))
+        }
+        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
+        TextHistory::None => ("none", None, None),
     }
 }
 

@@ -16,8 +16,15 @@ frames. Version 1.0 operations and the cumulative meaning of `maximumOutputBytes
 Paired TypeScript and native workers negotiate additive operations; a worker that cannot decode an
 operation rejects it before `accepted`.
 
+Minor version 1.2 adds the single-package `blueprint` operation and its versioned saved-graph
+projection. It carries editor graph nodes, arbitrary tagged node properties, native pin data, and
+deduplicated links without requiring Unreal Engine to load the asset. Graph membership drives
+discovery of engine, plugin, and project graph/node subclasses; unsupported saved revisions and
+Control Rig's separate RigVM model fail explicitly.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
-compact texture, and saved-world values each have a named schema; there is no untyped result field.
+compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
+untyped result field.
 The shared inspection schemas are exported from `@ue-shed/protocol` so the Effect reader and the
 Rust worker can converge on one wire shape.
 

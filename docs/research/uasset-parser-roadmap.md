@@ -3,23 +3,23 @@
 This catalog tracks the next improvements to the read-only classic-package parser and its
 TypeScript process boundary. Priorities are ordered by impact divided by implementation effort.
 
-| Priority | Work                                                              | Impact | Effort       | Status                      |
-| -------- | ----------------------------------------------------------------- | ------ | ------------ | --------------------------- |
-| 1        | Preserve UE5 `FVector` double precision                           | High   | Small        | Complete                    |
-| 2        | Preserve structured parser diagnostics in TypeScript              | Medium | Small        | Complete                    |
-| 3        | Add value-level real-fixture conformance tests                    | High   | Medium       | Complete                    |
-| 4        | Define a language-neutral inspection schema                       | High   | Medium       | Planned                     |
-| 5        | Add a minimal batched catalog operation                           | High   | Medium       | Complete                    |
-| 6        | Bound file and stdin input before allocation                      | Medium | Small/medium | Planned                     |
-| 7        | Expand property and native-struct codecs from a capability matrix | High   | Large        | In progress — LevelSequence |
-| 8        | Add fuzz targets and a malformed-package regression corpus        | High   | Medium/large | Planned                     |
-| 9        | Keep capability and compatibility documentation current           | Low    | Small        | Complete                    |
-| 10       | Add bounded header-only package metadata parsing                  | High   | Medium       | Complete                    |
-| 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete                    |
-| 12       | Require a portable `wasm32-unknown-unknown` library build         | High   | Small        | Complete                    |
-| 13       | Add a reproducible native/CLI/Unreal benchmark harness            | High   | Medium       | Complete                    |
-| 14       | Resolve decode-path names by borrow instead of per-property alloc | High   | Small        | Complete                    |
-| 15       | Decide the WASM table-read boundary and value representation      | High   | Medium/large | Planned                     |
+| Priority | Work                                                              | Impact | Effort       | Status                  |
+| -------- | ----------------------------------------------------------------- | ------ | ------------ | ----------------------- |
+| 1        | Preserve UE5 `FVector` double precision                           | High   | Small        | Complete                |
+| 2        | Preserve structured parser diagnostics in TypeScript              | Medium | Small        | Complete                |
+| 3        | Add value-level real-fixture conformance tests                    | High   | Medium       | Complete                |
+| 4        | Define a language-neutral inspection schema                       | High   | Medium       | Planned                 |
+| 5        | Add a minimal batched catalog operation                           | High   | Medium       | Complete                |
+| 6        | Bound file and stdin input before allocation                      | Medium | Small/medium | Planned                 |
+| 7        | Expand property and native-struct codecs from a capability matrix | High   | Large        | In progress — Blueprint |
+| 8        | Add fuzz targets and a malformed-package regression corpus        | High   | Medium/large | Planned                 |
+| 9        | Keep capability and compatibility documentation current           | Low    | Small        | Complete                |
+| 10       | Add bounded header-only package metadata parsing                  | High   | Medium       | Complete                |
+| 11       | Persist and incrementally invalidate the saved-table catalog      | High   | Medium       | Complete                |
+| 12       | Require a portable `wasm32-unknown-unknown` library build         | High   | Small        | Complete                |
+| 13       | Add a reproducible native/CLI/Unreal benchmark harness            | High   | Medium       | Complete                |
+| 14       | Resolve decode-path names by borrow instead of per-property alloc | High   | Small        | Complete                |
+| 15       | Decide the WASM table-read boundary and value representation      | High   | Medium/large | Planned                 |
 
 ## Dependency order
 
@@ -76,6 +76,24 @@ values, native object tails, and unresolved package indices become reference-spe
 instead of a false completeness claim. It does not recursively load referenced packages, evaluate
 Sequencer, blend channels, resolve runtime bindings, or claim semantic coverage of every track and
 channel class.
+
+Blueprint saved-graph inspection is a UE 5.7 increment under item 7. It accepts the saved package
+revisions observed in uncooked assets loadable by the current editor (UE4 522 with UE5 1012, 1013,
+1017, or 1018); that is one editor compatibility target, not general cross-engine support. It
+decodes the native `UEdGraphNode` footer and owning-node pin array, including pin types, defaults,
+localized and named-format text, hierarchy, persistent identifiers, and linked-pin references.
+Graph discovery follows saved `Nodes` arrays beneath the Blueprint root, and those membership
+references prove arbitrary engine, plugin, and project `UEdGraph`/`UEdGraphNode` subclasses without
+a class-name allowlist. Data-only Blueprints produce a valid empty projection.
+
+A schema-1 projection joins graph, node, pin, and canonical link topology while preserving each
+node's arbitrary tagged properties. Node positions are saved evidence, so clients can reconstruct a
+useful read-only graph without loading Unreal. Missing references, unprojected native property
+payloads such as `FRichCurveKey`, and node-subclass native tails remain explicit coverage gaps.
+Control Rig is deliberately rejected because its editor model is RigVM rather than the saved
+`UEdGraph` surface. This does not load referenced packages, reproduce every editor-only
+title-generation behavior, compile Blueprint bytecode, or mutate and resave a package. Other saved
+package versions remain deferred until UE Shed chooses a compatibility window.
 
 Catalog discovery now reads only the package header needed for names, imports, exports, and resolved
 class paths. It does not decode DataTable rows. A versioned cache stores path, size, modified time,

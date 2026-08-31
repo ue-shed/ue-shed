@@ -16,11 +16,32 @@ import {
 	AssetReaderLive,
 	discoverSavedAssets,
 	readSavedAsset,
+	readSavedBlueprint,
 	readSavedWorld,
 	readSavedTable,
 	scanSavedProject
 } from "@ue-shed/unreal-assets";
 ```
+
+## Reading one saved Blueprint graph
+
+`readSavedBlueprint` opens one uncooked `.uasset` in the supported UE 5.7 saved-revision window and
+returns a schema-1 saved-graph projection. It includes graph and node identity, saved node positions,
+pin types and defaults, pin hierarchy, canonical links, arbitrary tagged node properties, and
+explicit coverage gaps. Graph and node discovery follows saved membership rather than an engine
+class allowlist, so engine, plugin, and project subclasses share the same topology path. It neither
+starts Unreal nor compiles the Blueprint.
+
+```ts
+const blueprint = yield * readSavedBlueprint({ assetPath });
+const eventGraph = blueprint.graphs.find((graph) => graph.name === "EventGraph");
+```
+
+The operation is intentionally read-only and currently targets UE4 522 packages with UE5 saved
+revisions 1012, 1013, 1017, or 1018. Cooked/editor-filtered packages, Control Rig's separate RigVM
+model, referenced-package loading, bytecode reconstruction, and package mutation are outside this
+boundary. A non-empty `coverage_gaps` array means the topology remains useful but a reference,
+native property payload, or node-subclass tail was not fully projected.
 
 ## Reading one saved map
 

@@ -22,6 +22,15 @@ const fixture = join(
 	"Authoring",
 	"DT_Scalars.uasset"
 );
+const blueprintFixture = join(
+	repositoryRoot,
+	"fixtures",
+	"unreal-project",
+	"Content",
+	"Fixture",
+	"Blueprints",
+	"BP_GraphFixture.uasset"
+);
 const requireFromWorkbench = createRequire(
 	join(repositoryRoot, "apps", "workbench", "package.json")
 );
@@ -38,6 +47,7 @@ const contentTypes: ContentTypesByExtension = {
 
 assert.ok(statSync(join(packageDist, "browser.js")).isFile(), "build the browser package first");
 const bytes = readFileSync(fixture);
+const blueprintBytes = readFileSync(blueprintFixture);
 const server = createServer((request, response) => {
 	const requestPath = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
 	if (requestPath === "/") {
@@ -48,6 +58,11 @@ const server = createServer((request, response) => {
 	if (requestPath === "/fixture.uasset") {
 		response.writeHead(200, { "content-type": "application/octet-stream" });
 		response.end(bytes);
+		return;
+	}
+	if (requestPath === "/blueprint.uasset") {
+		response.writeHead(200, { "content-type": "application/octet-stream" });
+		response.end(blueprintBytes);
 		return;
 	}
 	if (!requestPath.startsWith("/package/")) {
@@ -93,6 +108,8 @@ try {
 		const runtime = await module.createBrowserRuntime();
 		const response = await fetch(`${baseUrl}/fixture.uasset`);
 		const packageBytes = new Uint8Array(await response.arrayBuffer());
+		const blueprintResponse = await fetch(`${baseUrl}/blueprint.uasset`);
+		const blueprintPackageBytes = new Uint8Array(await blueprintResponse.arrayBuffer());
 		const inspection = runtime.inspect(
 			"Content/Fixture/Authoring/DT_Scalars.uasset",
 			packageBytes
@@ -102,6 +119,22 @@ try {
 			packageBytes
 		);
 		const malformed = runtime.inspect("Broken.uasset", new Uint8Array([0, 1, 2, 3]));
+		const blueprint = runtime.extractBlueprints(
+			"Content/Fixture/Blueprints/BP_GraphFixture.uasset",
+			blueprintPackageBytes
+		);
+		const blueprintFromEntry = await module.extractBlueprints(
+			"Content/Fixture/Blueprints/BP_GraphFixture.uasset",
+			blueprintPackageBytes
+		);
+		let blueprintNodeCount = 0;
+		let blueprintPinCount = 0;
+		for (const graph of blueprint.blueprints[0]?.graphs ?? []) {
+			blueprintNodeCount += graph.nodes.length;
+			for (const node of graph.nodes) {
+				blueprintPinCount += node.pins.length;
+			}
+		}
 		let inputLimitCode;
 		try {
 			const narrowInput = await module.createBrowserRuntime({ maxInputBytes: 4 });
@@ -121,6 +154,10 @@ try {
 			inspection,
 			repeated,
 			malformed,
+			blueprint,
+			blueprintFromEntry,
+			blueprintNodeCount,
+			blueprintPinCount,
 			limits: runtime.limits,
 			inputLimitCode,
 			outputLimitCode
@@ -134,6 +171,12 @@ try {
 	assert.equal(result.malformed.schema_version, 8);
 	assert.equal(result.malformed.status, "error");
 	assert.equal(result.malformed.kind, "unsupported_format");
+	assert.equal(result.blueprint.status, "ok");
+	assert.equal(result.blueprint.blueprints.length, 1);
+	assert.ok(result.blueprint.blueprints[0].graphs.length > 0);
+	assert.ok(result.blueprintNodeCount > 0);
+	assert.ok(result.blueprintPinCount > 0);
+	assert.deepEqual(result.blueprintFromEntry, result.blueprint);
 	assert.equal(result.limits.maxInputBytes, 64 * 1024 * 1024);
 	assert.equal(result.inputLimitCode, "UE_SHED_UASSET_WASM_INPUT_LIMIT");
 	assert.equal(result.outputLimitCode, "UE_SHED_UASSET_WASM_OUTPUT_LIMIT");

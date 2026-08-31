@@ -11,6 +11,7 @@ public class UEShedFixtureEditor : ModuleRules
 			{
 				"AnimationDataController",
 				"AssetRegistry",
+				"BlueprintGraph",
 				"Core",
 				"CoreUObject",
 				"Engine",

@@ -10,6 +10,7 @@ import {
 import { RuntimeHealth } from "@ue-shed/observability/health";
 import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
 import type {
+	BlueprintGraphReadResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
 	EditorSessionStatusResult,
@@ -20,6 +21,7 @@ import type {
 	WorkbenchCameraMetrics
 } from "../main/preload.js";
 import {
+	BlueprintGraphReadResult as BlueprintGraphReadResultSchema,
 	ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema,
 	EditorSessionStatusResult as EditorSessionStatusResultSchema
 } from "../main/ipc-contracts.js";
@@ -120,6 +122,7 @@ function request<A, HostValue, DecodeError>(args: {
 }
 
 const decodeShowcaseContext = Schema.decodeUnknownEffect(ShowcaseContextSchema);
+const decodeBlueprintGraphReadResult = Schema.decodeUnknownEffect(BlueprintGraphReadResultSchema);
 const decodeConfigExplorerQueryResult = Schema.decodeUnknownEffect(ConfigExplorerQueryResultSchema);
 const decodeEditorSessionStatusResult = Schema.decodeUnknownEffect(EditorSessionStatusResultSchema);
 const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResultSchema);
@@ -198,6 +201,10 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 );
 
 export interface WorkbenchRendererClient {
+	readonly chooseBlueprint: () => Effect.Effect<BlueprintGraphReadResult, WorkbenchRendererError>;
+	readonly readBlueprint: (
+		assetPath: string
+	) => Effect.Effect<BlueprintGraphReadResult, WorkbenchRendererError>;
 	readonly configExplorerQuery: (
 		request: ConfigExplorerQuery
 	) => Effect.Effect<ConfigExplorerQueryResult, WorkbenchRendererError>;
@@ -243,6 +250,20 @@ export interface WorkbenchRendererClient {
 }
 
 export const workbenchRendererClient: WorkbenchRendererClient = {
+	chooseBlueprint: Effect.fn("WorkbenchRenderer.chooseBlueprint")(() =>
+		request({
+			decode: decodeBlueprintGraphReadResult,
+			invoke: () => window.ueShed.blueprintGraphs.choose(),
+			operation: "blueprintGraphs.choose"
+		})
+	),
+	readBlueprint: Effect.fn("WorkbenchRenderer.readBlueprint")((assetPath) =>
+		request({
+			decode: decodeBlueprintGraphReadResult,
+			invoke: () => window.ueShed.blueprintGraphs.read(assetPath),
+			operation: "blueprintGraphs.read"
+		})
+	),
 	configExplorerQuery: Effect.fn("WorkbenchRenderer.configExplorerQuery")((query) =>
 		request({
 			decode: decodeConfigExplorerQueryResult,

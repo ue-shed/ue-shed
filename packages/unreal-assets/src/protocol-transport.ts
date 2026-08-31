@@ -303,6 +303,10 @@ function observeProtocolResult(result: UAssetIoResult, telemetry: ProtocolTeleme
 			telemetry.inspectedFiles += 1;
 			if (result.inspection.status === "partial") telemetry.partialFailures += 1;
 			return;
+		case "blueprint":
+			telemetry.inspectedFiles += 1;
+			if (result.blueprint.coverage_gaps.length > 0) telemetry.partialFailures += 1;
+			return;
 		case "authoring":
 		case "saved_world":
 			telemetry.inspectedFiles += 1;

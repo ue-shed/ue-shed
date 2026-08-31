@@ -4,6 +4,7 @@
 //! schedules bounded work, and returns protocol result types. Serialization is deliberately left
 //! to `protocol_adapter`, which is the only process-output seam.
 
+mod blueprint;
 mod catalog;
 #[cfg(test)]
 mod catalog_conformance;
@@ -31,6 +32,7 @@ use crate::protocol_result::{
     SavedAssetScanDiagnostic, SavedAssetScanEntry, SavedAssetScanSummary, SavedPropertyValue,
 };
 
+pub(crate) use blueprint::blueprint_with_cancellation;
 pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::{
     ProjectIndexQuerySession, ProjectIndexRefreshOutput, catalog_was_quarantined, open_catalog,

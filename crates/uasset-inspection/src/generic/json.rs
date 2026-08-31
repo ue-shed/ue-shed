@@ -442,6 +442,35 @@ impl Serialize for AssetView<'_> {
                 curve_rows: CurveRowsView { package, rows: &[] },
                 rows: RowsView { package, rows: &[] },
             },
+            DecodedAsset::BlueprintGraphNode(node) => AssetFields {
+                kind: "UObject",
+                object_path: node.object_path.as_str(),
+                class_path: Some(node.class_path.as_str()),
+                object_guid: node.object_guid.as_ref().map(GuidView),
+                row_struct: None,
+                parent_tables: ObjectPathsView(&[]),
+                string_table_namespace: None,
+                string_table_entries: StringTableEntriesView(&[]),
+                enum_cpp_form: None,
+                enum_entries: EnumEntriesView {
+                    package,
+                    entries: &[],
+                },
+                struct_flags: None,
+                struct_fields: StructFieldsView {
+                    package,
+                    fields: &[],
+                },
+                properties: PropertiesView::new(package, &node.properties),
+                tail_bytes: node.tail.len(),
+                bones: BonesView {
+                    package,
+                    bones: &[],
+                },
+                row_count: 0,
+                curve_rows: CurveRowsView { package, rows: &[] },
+                rows: RowsView { package, rows: &[] },
+            },
             DecodedAsset::AnimSequence(sequence) => AssetFields {
                 kind: "UObject",
                 object_path: sequence.object_path.as_str(),
@@ -1043,6 +1072,15 @@ impl<'a> PropertyValueView<'a> {
                     namespace: Some(namespace),
                     key: Some(key),
                 },
+                TextHistory::NamedFormat { format, .. } => {
+                    let (history, namespace, key) = text_identity_parts(format);
+                    Self::Text {
+                        value: &text.source,
+                        history,
+                        namespace,
+                        key,
+                    }
+                }
             },
             PropertyValue::Vector(value) => Self::Vector {
                 x: value.x,
@@ -1106,6 +1144,16 @@ impl<'a> PropertyValueView<'a> {
                 size: raw_size,
             },
         }
+    }
+}
+
+fn text_identity_parts(
+    text: &uasset_parser::property::TextValue,
+) -> (&'static str, Option<&str>, Option<&str>) {
+    match &text.history {
+        TextHistory::None => ("none", None, None),
+        TextHistory::Base { namespace, key } => ("base", Some(namespace), Some(key)),
+        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
     }
 }
 

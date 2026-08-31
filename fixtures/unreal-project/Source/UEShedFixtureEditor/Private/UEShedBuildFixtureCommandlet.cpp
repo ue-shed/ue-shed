@@ -7,6 +7,9 @@
 #include "Animation/Skeleton.h"
 #include "Engine/CompositeDataTable.h"
 #include "Engine/DataTable.h"
+#include "Engine/Blueprint.h"
+#include "EdGraph/EdGraph.h"
+#include "EdGraphSchema_K2.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -34,6 +37,10 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 #include "InputTriggers.h"
+#include "K2Node_CallFunction.h"
+#include "K2Node_Event.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
 #include "Internationalization/StringTable.h"
 #include "Internationalization/StringTableCore.h"
 #include "Internationalization/Text.h"
@@ -507,6 +514,76 @@ bool VerifyAuditTextures()
 	UE_LOG(LogTemp, Display, TEXT("Texture fixture verification checked %d assets"),
 		Definitions.Num());
 	return bSucceeded;
+}
+
+bool GenerateBlueprintGraphFixture()
+{
+	constexpr const TCHAR* PackageName = TEXT("/Game/Fixture/Blueprints/BP_GraphFixture");
+	constexpr const TCHAR* AssetName = TEXT("BP_GraphFixture");
+	UPackage* Package = FindOrCreatePackage(PackageName);
+	if (Package == nullptr) return false;
+
+	UBlueprint* Blueprint = FindObject<UBlueprint>(Package, AssetName);
+	if (Blueprint == nullptr)
+	{
+		Blueprint = FKismetEditorUtilities::CreateBlueprint(
+			AActor::StaticClass(), Package, AssetName, BPTYPE_Normal);
+		if (Blueprint == nullptr || Blueprint->UbergraphPages.IsEmpty()) return false;
+		FAssetRegistryModule::AssetCreated(Blueprint);
+
+		UEdGraph* EventGraph = Blueprint->UbergraphPages[0];
+		int32 EventNodeY = 80;
+		UK2Node_Event* Event = FKismetEditorUtilities::AddDefaultEventNode(
+			Blueprint, EventGraph, TEXT("ReceiveBeginPlay"), AActor::StaticClass(), EventNodeY);
+		if (Event == nullptr) return false;
+		Event->NodePosX = 64;
+		Event->NodePosY = 80;
+
+		UFunction* HiddenFunction = AActor::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(AActor, SetActorHiddenInGame));
+		if (HiddenFunction == nullptr) return false;
+		FGraphNodeCreator<UK2Node_CallFunction> NodeCreator(*EventGraph);
+		UK2Node_CallFunction* Call = NodeCreator.CreateNode(false);
+		Call->SetFromFunction(HiddenFunction);
+		Call->NodePosX = 440;
+		Call->NodePosY = 80;
+		NodeCreator.Finalize();
+
+		UEdGraphPin* ThenPin = Event->FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+		UEdGraphPin* ExecutePin = Call->GetExecPin();
+		UEdGraphPin* HiddenPin = Call->FindPin(TEXT("bNewHidden"), EGPD_Input);
+		const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+		if (ThenPin == nullptr || ExecutePin == nullptr || HiddenPin == nullptr
+			|| !Schema->TryCreateConnection(ThenPin, ExecutePin))
+		{
+			return false;
+		}
+		HiddenPin->DefaultValue = TEXT("true");
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+	}
+
+	Package->MarkPackageDirty();
+	if (!SaveAsset(Package, Blueprint)) return false;
+	UE_LOG(LogTemp, Display, TEXT("Generated %s"), PackageName);
+	return true;
+}
+
+bool VerifyBlueprintGraphFixture()
+{
+	const UBlueprint* Blueprint = LoadObject<UBlueprint>(
+		nullptr, TEXT("/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture"));
+	if (Blueprint == nullptr || Blueprint->UbergraphPages.IsEmpty()) return false;
+	const UEdGraph* EventGraph = Blueprint->UbergraphPages[0];
+	TArray<UK2Node_Event*> Events;
+	TArray<UK2Node_CallFunction*> Calls;
+	EventGraph->GetNodesOfClass(Events);
+	EventGraph->GetNodesOfClass(Calls);
+	return Events.Num() >= 1 && Calls.Num() >= 1
+		&& Algo::AnyOf(Events, [](const UK2Node_Event* Event)
+		{
+			const UEdGraphPin* ThenPin = Event->FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+			return ThenPin != nullptr && !ThenPin->LinkedTo.IsEmpty();
+		});
 }
 
 bool GenerateAnimationFixtures()
@@ -3358,6 +3435,11 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 	{
 		return (VerifyOnly ? VerifyCameraMap() : GenerateCameraMap()) ? 0 : 1;
 	}
+	if (FParse::Param(*Params, TEXT("BlueprintOnly")))
+	{
+		return (VerifyOnly ? VerifyBlueprintGraphFixture() : GenerateBlueprintGraphFixture())
+			? 0 : 1;
+	}
 
 	bool Succeeded = true;
 	if (!VerifyOnly)
@@ -3372,6 +3454,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = GenerateCameraMap() && Succeeded;
 		Succeeded = GenerateMapReviewGallery() && Succeeded;
 		Succeeded = GenerateAuditTextures() && Succeeded;
+		Succeeded = GenerateBlueprintGraphFixture() && Succeeded;
 		Succeeded = GenerateAnimationFixtures() && Succeeded;
 		Succeeded = GenerateLevelSequenceFixture() && Succeeded;
 		Succeeded = GenerateNestedLevelSequenceFixture() && Succeeded;
@@ -3390,6 +3473,7 @@ int32 UUEShedBuildFixtureCommandlet::Main(const FString& Params)
 		Succeeded = VerifyCameraMap() && Succeeded;
 		Succeeded = VerifyMapReviewGallery() && Succeeded;
 		Succeeded = VerifyAuditTextures() && Succeeded;
+		Succeeded = VerifyBlueprintGraphFixture() && Succeeded;
 		Succeeded = VerifyAnimationFixtures() && Succeeded;
 		Succeeded = VerifyLevelSequenceFixture() && Succeeded;
 		Succeeded = VerifyEnhancedInputFixtures() && Succeeded;

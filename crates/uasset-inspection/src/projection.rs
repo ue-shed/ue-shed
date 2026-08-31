@@ -150,6 +150,18 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             TextEditCapability::ReadOnly,
             &mut output,
         ),
+        DecodedAsset::BlueprintGraphNode(node) => visit_text_stream(
+            package,
+            &node.properties,
+            "",
+            &|property_path| TextLocation::AssetProperty {
+                object_path: node.object_path.to_string(),
+                class_path: node.class_path.to_string(),
+                property_path: property_path.to_owned(),
+            },
+            TextEditCapability::ReadOnly,
+            &mut output,
+        ),
         DecodedAsset::AnimSequence(sequence) => visit_text_stream(
             package,
             &sequence.properties,
@@ -316,6 +328,7 @@ fn identity_for_text(text: &TextValue) -> TextIdentity {
             namespace: namespace.clone(),
             key: key.clone(),
         },
+        TextHistory::NamedFormat { format, .. } => identity_for_text(format),
     }
 }
 

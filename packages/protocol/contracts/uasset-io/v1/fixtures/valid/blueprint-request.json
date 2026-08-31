@@ -1,0 +1,6 @@
+{
+	"contract": { "name": "uasset-io", "version": { "major": 1, "minor": 2 } },
+	"limits": { "maximumOutputBytes": 1048576, "timeoutMs": 30000 },
+	"operation": { "assetPath": "C:/project/Content/BP_Example.uasset", "kind": "blueprint" },
+	"requestId": "blueprint-001"
+}

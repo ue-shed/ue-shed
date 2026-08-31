@@ -1,5 +1,8 @@
 use std::fs;
 
+use uasset_inspection::blueprint::{
+    BlueprintGraphProjection, BlueprintNodeKind, project_blueprint_graphs,
+};
 use uasset_inspection::level_sequence::{
     SequenceReferenceKind, SequenceReferenceScope, SequenceTrackContent, project_level_sequence,
 };
@@ -196,4 +199,90 @@ fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
         projection.reference_coverage_gaps
     );
     assert!(projection.coverage_gaps.is_empty());
+}
+
+fn blueprint_projection(path: &str) -> BlueprintGraphProjection {
+    let bytes = fs::read(path).expect("Blueprint sample package");
+    let package = Package::parse(&bytes).expect("Blueprint sample parses");
+    let schemas = EmptySchemas;
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: &schemas,
+    };
+    let assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|export| {
+            decode_export(export, &context)
+                .unwrap_or_else(|error| panic!("{}: {error}", export.object_path))
+        })
+        .collect();
+    project_blueprint_graphs(&package, &assets).expect("Blueprint graphs")
+}
+
+fn assert_blueprint_topology(projection: &BlueprintGraphProjection) {
+    assert_eq!(projection.schema_version, 1);
+    assert!(!projection.graphs.is_empty());
+    assert!(
+        projection
+            .graphs
+            .iter()
+            .any(|graph| !graph.nodes.is_empty())
+    );
+    assert!(
+        projection
+            .graphs
+            .iter()
+            .flat_map(|graph| &graph.nodes)
+            .any(|node| !node.pins.is_empty())
+    );
+    assert!(
+        projection
+            .graphs
+            .iter()
+            .any(|graph| !graph.links.is_empty())
+    );
+    assert!(
+        projection.coverage_gaps.is_empty(),
+        "sample should be complete enough for graph reconstruction"
+    );
+
+    // Exercise the portable JSON boundary as well as the typed Rust projection.
+    let json = serde_json::to_value(projection).expect("projection serializes");
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["coverage_gaps"], serde_json::json!([]));
+}
+
+#[test]
+fn blueprint_projection_reconstructs_the_ue57_fixture_graph() {
+    let projection = blueprint_projection(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset"
+    ));
+    assert_blueprint_topology(&projection);
+    assert_eq!(projection.graphs.len(), 2);
+    assert_eq!(
+        projection
+            .graphs
+            .iter()
+            .flat_map(|graph| &graph.links)
+            .count(),
+        1
+    );
+    assert!(
+        projection
+            .graphs
+            .iter()
+            .flat_map(|graph| &graph.nodes)
+            .any(|node| node.kind == BlueprintNodeKind::FunctionCall)
+    );
+}
+
+#[test]
+#[ignore = "requires an uncooked UE 5.7 Blueprint; set UASSET_BLUEPRINT_SAMPLE"]
+fn blueprint_projection_reconstructs_graph_topology_from_a_real_package() {
+    let path = std::env::var("UASSET_BLUEPRINT_SAMPLE").expect("UASSET_BLUEPRINT_SAMPLE");
+    let projection = blueprint_projection(&path);
+    assert_blueprint_topology(&projection);
 }

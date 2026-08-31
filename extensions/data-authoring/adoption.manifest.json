@@ -36,6 +36,7 @@
 			"packages/protocol/tsconfig.build.json",
 			"packages/protocol/src/authoring-review.ts",
 			"packages/protocol/src/authoring.ts",
+			"packages/protocol/src/blueprint-graph.ts",
 			"packages/protocol/src/cameras.ts",
 			"packages/protocol/src/companion.ts",
 			"packages/protocol/src/editor-asset-navigation.ts",

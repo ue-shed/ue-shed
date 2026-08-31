@@ -11,6 +11,7 @@ import { ContentObservatoryRoute } from "@ue-shed/extension-content-observatory"
 import { ProjectCustodianRoute } from "@ue-shed/extension-project-custodian";
 import { NiagaraPreviewRoute } from "@ue-shed/extension-niagara-preview";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
+import { BlueprintGraphViewer } from "./blueprint-graph-viewer.js";
 import { ScenarioStudioRoute } from "@ue-shed/extension-scenarios";
 import type { CameraStatus } from "@ue-shed/protocol";
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
@@ -32,6 +33,7 @@ import { projectCustodianClient } from "./project-custodian-client.js";
 import { niagaraPreviewClient } from "./niagara-preview-client.js";
 import {
 	IconGamepad,
+	IconBlueprint,
 	IconGrid,
 	IconHistory,
 	IconImage,
@@ -70,6 +72,13 @@ const navSections: readonly NavSection[] = [
 	{
 		id: "inspect",
 		items: [
+			{
+				description: "Reconstruct saved Blueprint nodes, pins, defaults, and links.",
+				evidence: "blueprints",
+				icon: IconBlueprint,
+				label: "Blueprint Graphs",
+				route: "#/blueprint-graphs"
+			},
 			{
 				description: "Check texture sizes, groups, and compression against your rules.",
 				evidence: "textures",
@@ -226,6 +235,13 @@ function workflowEvidence(
 			detail: `${camera.config.activeCameraCount} scheduled · ${camera.config.resolution}`,
 			label: camera.stats.pipeConnected ? "Camera pipe connected" : "Waiting for an editor",
 			ready: camera.stats.pipeConnected
+		};
+	}
+	if (item.evidence === "blueprints") {
+		return {
+			detail: "Open any uncooked UE 5.7 Blueprint package",
+			label: "Saved graph decoder ready",
+			ready: true
 		};
 	}
 	if (context === undefined) {
@@ -414,6 +430,9 @@ export function AppShell() {
 						</Match>
 						<Match when={route() === "#/config-explorer"}>
 							<ConfigExplorerShowcase client={workbenchRendererClient} />
+						</Match>
+						<Match when={route() === "#/blueprint-graphs"}>
+							<BlueprintGraphViewer client={workbenchRendererClient} />
 						</Match>
 						<Match when={route() === "#/project-custodian"}>
 							<ProjectCustodianRoute client={projectCustodianClient} />

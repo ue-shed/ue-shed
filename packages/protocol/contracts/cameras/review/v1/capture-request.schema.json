@@ -23,7 +23,12 @@
 				}
 			}
 		},
-		"operationId": { "type": "string", "format": "uuid" },
+		"operationId": {
+			"type": "string",
+			"format": "uuid",
+			"pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+			"not": { "const": "00000000-0000-0000-0000-000000000000" }
+		},
 		"viewId": { "$ref": "#/$defs/safeId" },
 		"expectedMapPath": { "type": "string", "minLength": 1 },
 		"subject": {
@@ -53,7 +58,12 @@
 					"required": ["kind", "actorPath"],
 					"properties": {
 						"kind": { "const": "actor_path" },
-						"actorPath": { "type": "string", "minLength": 1 },
+						"actorPath": {
+							"type": "string",
+							"minLength": 7,
+							"maxLength": 4096,
+							"pattern": "^/Game/"
+						},
 						"diagnosticLabel": { "type": "string", "minLength": 1 }
 					}
 				},

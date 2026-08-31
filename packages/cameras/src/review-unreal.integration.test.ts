@@ -724,6 +724,71 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 		});
 	});
 
+	it("rejects nil operation UUIDs and malformed actor GUID locators", async () => {
+		const approvedPose = {
+			aspectRatio: "16:9",
+			fieldOfViewDegrees: 60,
+			location: { x: -1_000, y: 0, z: 600 },
+			projection: "perspective",
+			rotation: { pitch: -25, roll: 0, yaw: 0 }
+		};
+		const base: Schema.JsonObject = {
+			assessment: { method: "automatic" },
+			clearCompanion: { status: "not_requested" },
+			contract: {
+				name: "ue-shed-review-capture",
+				version: { major: 1, minor: 5 }
+			},
+			expectedMapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+			resolution: { height: 90, width: 160 },
+			viewpoint: { approvedPose, kind: "world_fixed" }
+		};
+		const nilIdentity = await rawCaptureCall({
+			...base,
+			operationId: "00000000-0000-0000-0000-000000000000",
+			subject: {
+				actorGuid: "00000001-00000002-00000003-00000004",
+				kind: "actor_guid"
+			},
+			viewId: "nil-operation-id"
+		});
+		expect(nilIdentity).toMatchObject({ code: "invalid_identity", status: "failed" });
+
+		for (const [viewId, subject] of [
+			[
+				"alternate-actor-guid",
+				{
+					actorGuid: "12345678-1234-1234-1234-123456789abc",
+					kind: "actor_guid"
+				}
+			],
+			[
+				"empty-diagnostic-label",
+				{
+					actorGuid: "00000001-00000002-00000003-00000004",
+					diagnosticLabel: "",
+					kind: "actor_guid"
+				}
+			],
+			[
+				"malformed-last-known-path",
+				{
+					actorGuid: "00000001-00000002-00000003-00000004",
+					kind: "actor_guid",
+					lastKnownActorPath: 42
+				}
+			]
+		] satisfies ReadonlyArray<readonly [string, Schema.JsonObject]>) {
+			const response = await rawCaptureCall({
+				...base,
+				operationId: randomUUID(),
+				subject,
+				viewId
+			});
+			expect(response).toMatchObject({ code: "invalid_subject", status: "failed", viewId });
+		}
+	});
+
 	it("accepts complete compatible 1.x shapes and retains identity on rejection", async () => {
 		const approvedPose = {
 			aspectRatio: "16:9",

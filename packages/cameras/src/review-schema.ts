@@ -30,6 +30,13 @@ export const ReviewSubjectActorGuid = Schema.String.check(
 ).pipe(Schema.brand("ReviewSubjectActorGuid"));
 export type ReviewSubjectActorGuid = Schema.Schema.Type<typeof ReviewSubjectActorGuid>;
 
+export const ReviewCaptureOperationId = Schema.String.check(
+	Schema.isPattern(
+		/^(?!00000000-0000-0000-0000-000000000000$)[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+	)
+);
+export type ReviewCaptureOperationId = Schema.Schema.Type<typeof ReviewCaptureOperationId>;
+
 export const ReviewSetId = SafeIdentifier.pipe(Schema.brand("ReviewSetId"));
 export type ReviewSetId = Schema.Schema.Type<typeof ReviewSetId>;
 
@@ -1238,7 +1245,7 @@ const ReviewCaptureRequestLegacy = Schema.Struct({
 		})
 	}),
 	expectedMapPath: NonEmptyString,
-	operationId: NonEmptyString,
+	operationId: ReviewCaptureOperationId,
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
@@ -1255,7 +1262,7 @@ export const ReviewCaptureRequestCurrent = Schema.Struct({
 		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(5) })
 	}),
 	expectedMapPath: NonEmptyString,
-	operationId: NonEmptyString,
+	operationId: ReviewCaptureOperationId,
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
@@ -1291,7 +1298,7 @@ const ReviewCaptureRequestClearPrevious = Schema.Struct({
 		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(4) })
 	}),
 	expectedMapPath: NonEmptyString,
-	operationId: NonEmptyString,
+	operationId: ReviewCaptureOperationId,
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
@@ -1326,7 +1333,7 @@ const ReviewCaptureRequestPreviousCurrent = Schema.Struct({
 		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(3) })
 	}),
 	expectedMapPath: NonEmptyString,
-	operationId: NonEmptyString,
+	operationId: ReviewCaptureOperationId,
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))
@@ -1355,7 +1362,7 @@ const ReviewCaptureRequestPrevious = Schema.Struct({
 		version: Schema.Struct({ major: Schema.Literal(1), minor: Schema.Literal(2) })
 	}),
 	expectedMapPath: NonEmptyString,
-	operationId: NonEmptyString,
+	operationId: ReviewCaptureOperationId,
 	resolution: Schema.Struct({
 		height: Schema.Int.check(Schema.isBetween({ minimum: 90, maximum: 2160 })),
 		width: Schema.Int.check(Schema.isBetween({ minimum: 160, maximum: 3840 }))

@@ -85,6 +85,20 @@ bool IsSafeIdentifier(const FString& Value)
 	return true;
 }
 
+bool IsReviewActorPath(const FString& Value)
+{
+	return Value.Len() >= 7 && Value.Len() <= 4096 && Value.StartsWith(TEXT("/Game/"));
+}
+
+bool ReadOptionalNonEmptyString(
+	const TSharedPtr<FJsonObject>& Object,
+	const TCHAR* Field,
+	FString& Result)
+{
+	if (!Object->HasField(Field)) return true;
+	return Object->TryGetStringField(Field, Result) && !Result.IsEmpty();
+}
+
 bool ReadVector(
 	const TSharedPtr<FJsonObject>& Object,
 	const TCHAR* Field,
@@ -190,7 +204,9 @@ FString ActorGuidString(const AActor* Actor)
 AActor* FindActorByGuid(UWorld* World, const FString& ActorGuid)
 {
 	FGuid RequestedGuid;
-	if (World == nullptr || !FGuid::Parse(ActorGuid, RequestedGuid) || !RequestedGuid.IsValid())
+	if (World == nullptr
+		|| !FGuid::ParseExact(ActorGuid, EGuidFormats::UniqueObjectGuid, RequestedGuid)
+		|| !RequestedGuid.IsValid())
 	{
 		return nullptr;
 	}
@@ -973,7 +989,8 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 		return;
 	}
 	FGuid OperationGuid;
-	if (!FGuid::Parse(OperationId, OperationGuid) || !OperationGuid.IsValid()
+	if (!FGuid::ParseExact(OperationId, EGuidFormats::DigitsWithHyphens, OperationGuid)
+		|| !OperationGuid.IsValid()
 		|| !IsSafeIdentifier(ViewId))
 	{
 		Fail(TEXT("invalid_identity"), TEXT("operationId or viewId is invalid."),
@@ -1020,11 +1037,13 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	}
 	if (SubjectKind == TEXT("actor_path"))
 	{
+		FString DiagnosticLabel;
 		if (!HasOnlyFields(*Subject, {
 				TEXT("kind"), TEXT("actorPath"), TEXT("diagnosticLabel")
 			})
 			|| !(*Subject)->TryGetStringField(TEXT("actorPath"), ActorPath)
-			|| ActorPath.IsEmpty())
+			|| !IsReviewActorPath(ActorPath)
+			|| !ReadOptionalNonEmptyString(*Subject, TEXT("diagnosticLabel"), DiagnosticLabel))
 		{
 			Fail(TEXT("invalid_subject"), TEXT("The actor subject has no actorPath."),
 				TEXT("Validate the Review Set capture subject."), false);
@@ -1043,6 +1062,7 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 	{
 		FGuid ParsedActorGuid;
 		FString LastKnownActorPath;
+		FString DiagnosticLabel;
 		if (!HasOnlyFields(*Subject, {
 				TEXT("kind"),
 				TEXT("actorGuid"),
@@ -1050,10 +1070,13 @@ void UUEShedCameraReviewLibrary::CaptureReviewView(
 				TEXT("diagnosticLabel")
 			})
 			|| !(*Subject)->TryGetStringField(TEXT("actorGuid"), ActorGuid)
-			|| !FGuid::Parse(ActorGuid, ParsedActorGuid)
+			|| !FGuid::ParseExact(
+				ActorGuid, EGuidFormats::UniqueObjectGuid, ParsedActorGuid)
 			|| !ParsedActorGuid.IsValid()
-			|| ((*Subject)->TryGetStringField(TEXT("lastKnownActorPath"), LastKnownActorPath)
-				&& !LastKnownActorPath.StartsWith(TEXT("/Game/"))))
+			|| !ReadOptionalNonEmptyString(
+				*Subject, TEXT("lastKnownActorPath"), LastKnownActorPath)
+			|| (!LastKnownActorPath.IsEmpty() && !IsReviewActorPath(LastKnownActorPath))
+			|| !ReadOptionalNonEmptyString(*Subject, TEXT("diagnosticLabel"), DiagnosticLabel))
 		{
 			Fail(TEXT("invalid_subject"), TEXT("The actor subject has no actorGuid."),
 				TEXT("Validate the Review Set capture subject."), false);

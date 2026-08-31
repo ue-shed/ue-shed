@@ -30,6 +30,43 @@ const decodeSubject = (input: Schema.Json) =>
 	Effect.runSync(decodeReviewSubjectInspectionResponse(input));
 
 describe("Map Review language-neutral wire contracts", () => {
+	it("keeps operation UUIDs and actor GUID locators exact", () => {
+		// SAFETY: this checked-in schema document owns the properties inspected by the test.
+		const contract = json("capture-request.schema.json") as {
+			readonly properties: {
+				readonly operationId: Schema.JsonObject;
+				readonly subject: { readonly oneOf: readonly Schema.JsonObject[] };
+			};
+		};
+		expect(contract.properties.operationId).toMatchObject({
+			format: "uuid",
+			not: { const: "00000000-0000-0000-0000-000000000000" },
+			pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+		});
+		expect(contract.properties.subject.oneOf[0]).toMatchObject({
+			properties: {
+				actorGuid: {
+					pattern: "^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{8}){3}$"
+				},
+				diagnosticLabel: { minLength: 1, type: "string" },
+				lastKnownActorPath: {
+					maxLength: 4_096,
+					minLength: 7,
+					pattern: "^/Game/",
+					type: "string"
+				}
+			}
+		});
+		for (const fixture of [
+			"invalid-capture-request-alternate-actor-guid.json",
+			"invalid-capture-request-empty-diagnostic-label.json",
+			"invalid-capture-request-malformed-last-known-path.json",
+			"invalid-capture-request-nil-operation-id.json"
+		]) {
+			expect(() => decodeCaptureRequest(json(`fixtures/${fixture}`))).toThrow();
+		}
+	});
+
 	it("keeps capture projection and visibility variants strict across compatible minors", () => {
 		// SAFETY: this checked-in schema document owns the properties inspected by the test.
 		const contract = json("capture-response.schema.json") as {

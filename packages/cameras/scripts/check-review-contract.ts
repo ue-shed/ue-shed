@@ -68,11 +68,27 @@ const invalidFixtures: ReadonlyArray<{
 		schema: ReviewCaptureRequest
 	},
 	{
+		file: "invalid-capture-request-alternate-actor-guid.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-empty-diagnostic-label.json",
+		schema: ReviewCaptureRequest
+	},
+	{
 		file: "invalid-capture-request-future-minor.json",
 		schema: ReviewCaptureRequest
 	},
 	{
 		file: "invalid-capture-request-guid-before-minor-5.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-malformed-last-known-path.json",
+		schema: ReviewCaptureRequest
+	},
+	{
+		file: "invalid-capture-request-nil-operation-id.json",
 		schema: ReviewCaptureRequest
 	},
 	{

@@ -34,10 +34,11 @@ codecs, errors, and recovery need deep coverage.
 
 ## Local verification
 
-Depot CI runs the portable repository checks on pull requests and `main`. The UAsset parser lane is
-added only when its Rust, WASM, package, contract, script, or fixture inputs change. Native-reader
-CLI and fixture integration tests run in that conditional lane, not in the always-on repository
-suite. Run the complete portable gate locally with:
+Depot CI runs the portable repository checks on pull requests and `main`. Separate UAsset library
+and IO lanes are added only when their Rust, WASM, package, contract, script, or fixture inputs
+change. Parser and inspection changes also trigger downstream IO conformance; WASM-package-only
+changes do not. Native-reader CLI and fixture integration tests run in the conditional IO lane, not
+in the always-on repository suite. Run the complete portable gate locally with:
 
 ```powershell
 pnpm check
@@ -45,6 +46,13 @@ pnpm check
 
 The full local gate also retains packed-package and Data Authoring adoption conformance while those
 hosted release and adoption flows are being redesigned.
+
+Run the conditional UAsset lanes independently with:
+
+```powershell
+pnpm run uasset:check:libraries
+pnpm run uasset:check:io
+```
 
 During local iteration, run the smallest check or test that proves the changed behavior. The full
 gate is useful when reproducing Depot CI, preparing a release, or making cross-cutting changes; it

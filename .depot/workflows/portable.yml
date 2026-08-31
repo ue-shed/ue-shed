@@ -19,7 +19,8 @@ jobs:
         name: Detect UAsset changes
         runs-on: depot-ubuntu-latest
         outputs:
-            uasset: ${{ steps.scope.outputs.uasset }}
+            uasset_io: ${{ steps.scope.outputs.uasset_io }}
+            uasset_libraries: ${{ steps.scope.outputs.uasset_libraries }}
         steps:
             - name: Checkout repository history
               uses: actions/checkout@v6
@@ -49,30 +50,41 @@ jobs:
                   printf 'Changed files:\n'
                   printf '  %s\n' "${changed_files[@]}"
 
-                  uasset=false
+                  uasset_io=false
+                  uasset_libraries=false
                   for path in "${changed_files[@]}"; do
                       case "$path" in
-                          Cargo.toml | Cargo.lock | \
-                              crates/uasset-*/* | \
-                              packages/uasset/* | packages/uasset-*/* | \
-                              packages/protocol/contracts/uasset-io/* | \
+                          .depot/workflows/portable.yml | Cargo.toml | Cargo.lock | \
+                              crates/uasset-parser/* | crates/uasset-inspection/* | \
+                              crates/uasset-inspection-wasm/* | \
                               scripts/*uasset* | \
                               fixtures/unreal-project/*.uasset | \
                               fixtures/unreal-project/*.umap)
-                              uasset=true
-                              break
+                              uasset_io=true
+                              uasset_libraries=true
+                              ;;
+                          packages/uasset-inspection-wasm/*)
+                              uasset_libraries=true
+                              ;;
+                          crates/uasset-io/* | \
+                              packages/uasset/* | packages/uasset-win32-x64/* | \
+                              packages/unreal-assets/* | \
+                              packages/protocol/contracts/uasset-io/* | \
+                              packages/protocol/src/uasset-*)
+                              uasset_io=true
                               ;;
                           package.json)
                               if git diff --unified=0 "$range" -- package.json | \
                                   grep -Eq '^[+-][[:space:]]*"(uasset:|test:uasset)'; then
-                                  uasset=true
-                                  break
+                                  uasset_io=true
+                                  uasset_libraries=true
                               fi
                               ;;
                       esac
                   done
 
-                  echo "uasset=$uasset" | tee -a "$GITHUB_OUTPUT"
+                  echo "uasset_io=$uasset_io" | tee -a "$GITHUB_OUTPUT"
+                  echo "uasset_libraries=$uasset_libraries" | tee -a "$GITHUB_OUTPUT"
     repository:
         name: Repository checks
         needs: changes
@@ -119,17 +131,24 @@ jobs:
                       coverage/**
                   if-no-files-found: ignore
                   retention-days: 14
-    uasset:
-        name: UAsset parser
+    uasset_libraries:
+        name: UAsset libraries
         needs: changes
-        if: needs.changes.outputs.uasset == 'true'
+        if: needs.changes.outputs.uasset_libraries == 'true'
         runs-on: depot-ubuntu-latest
         timeout-minutes: 90
+        env:
+            CARGO_TARGET_DIR: ${{ github.workspace }}/target
         steps:
             - name: Checkout without persisted credentials
               uses: actions/checkout@v6
               with:
                   persist-credentials: false
+            - name: Mount UAsset library target cache
+              uses: depot/cache-mount@v1
+              with:
+                  name: ue-shed-uasset-libraries-rust-target-linux-x64-v1
+                  path: ${{ github.workspace }}/target
             - name: Install pnpm
               uses: pnpm/action-setup@v6
             - name: Install Node.js
@@ -146,33 +165,89 @@ jobs:
               run: pnpm install --frozen-lockfile
             - name: Install Chromium for browser tests
               run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps chromium
-            - name: Run UAsset parser gate
+            - name: Run UAsset library gate
               shell: bash
               run: |
                   set -o pipefail
                   mkdir -p evidence
-                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-check.log
-                  pnpm run uasset:check 2>&1 | tee -a evidence/uasset-check.log
+                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-libraries-check.log
+                  pnpm run uasset:check:libraries \
+                      2>&1 | tee -a evidence/uasset-libraries-check.log
+            - name: Upload UAsset library evidence
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: uasset-libraries-evidence-${{ github.run_id }}
+                  path: evidence/uasset-libraries-check.log
+                  if-no-files-found: error
+                  retention-days: 30
+            - name: Upload UAsset library failure diagnostics
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: uasset-libraries-failure-${{ github.run_id }}
+                  path: test-results/**
+                  if-no-files-found: ignore
+                  retention-days: 14
+    uasset_io:
+        name: UAsset IO
+        needs: changes
+        if: needs.changes.outputs.uasset_io == 'true'
+        runs-on: depot-ubuntu-latest
+        timeout-minutes: 90
+        env:
+            CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        steps:
+            - name: Checkout without persisted credentials
+              uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+            - name: Mount UAsset IO target cache
+              uses: depot/cache-mount@v1
+              with:
+                  name: ue-shed-uasset-io-rust-target-linux-x64-v1
+                  path: ${{ github.workspace }}/target
+            - name: Install pnpm
+              uses: pnpm/action-setup@v6
+            - name: Install Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "26"
+                  cache: pnpm
+            - name: Install Rust UAsset toolchains
+              run: |
+                  rustup toolchain install stable --profile minimal --no-self-update
+                  rustup target add wasm32-unknown-unknown
+                  cargo install wasm-pack --locked --version 0.14.0
+            - name: Install locked dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Run UAsset IO gate
+              shell: bash
+              run: |
+                  set -o pipefail
+                  mkdir -p evidence
+                  pnpm run build:typescript-packages 2>&1 | tee evidence/uasset-io-check.log
+                  pnpm run uasset:check:io 2>&1 | tee -a evidence/uasset-io-check.log
                   node scripts/test.ts \
                       apps/cli/src/index.e2e.test.ts \
                       packages/unreal-assets/src/fixture.integration.test.ts \
                       packages/unreal-assets/src/project-index-process.test.ts \
                       packages/game-text/src/fixture.integration.test.ts \
                       packages/enhanced-input/src/dogfood.integration.test.ts \
-                      2>&1 | tee -a evidence/uasset-check.log
-            - name: Upload UAsset evidence
+                      2>&1 | tee -a evidence/uasset-io-check.log
+            - name: Upload UAsset IO evidence
               if: always()
               uses: actions/upload-artifact@v7
               with:
-                  name: uasset-evidence-${{ github.run_id }}
-                  path: evidence/uasset-check.log
+                  name: uasset-io-evidence-${{ github.run_id }}
+                  path: evidence/uasset-io-check.log
                   if-no-files-found: error
                   retention-days: 30
-            - name: Upload UAsset failure diagnostics
+            - name: Upload UAsset IO failure diagnostics
               if: failure()
               uses: actions/upload-artifact@v7
               with:
-                  name: uasset-failure-${{ github.run_id }}
+                  name: uasset-io-failure-${{ github.run_id }}
                   path: test-results/**
                   if-no-files-found: ignore
                   retention-days: 14
@@ -180,7 +255,8 @@ jobs:
         name: pnpm check
         needs:
             - repository
-            - uasset
+            - uasset_io
+            - uasset_libraries
         if: always()
         runs-on: depot-ubuntu-latest
         steps:
@@ -188,8 +264,11 @@ jobs:
               shell: bash
               env:
                   REPOSITORY_RESULT: ${{ needs.repository.result }}
-                  UASSET_RESULT: ${{ needs.uasset.result }}
+                  UASSET_IO_RESULT: ${{ needs.uasset_io.result }}
+                  UASSET_LIBRARIES_RESULT: ${{ needs.uasset_libraries.result }}
               run: |
                   set -euo pipefail
                   [[ "$REPOSITORY_RESULT" == "success" ]]
-                  [[ "$UASSET_RESULT" == "success" || "$UASSET_RESULT" == "skipped" ]]
+                  [[ "$UASSET_IO_RESULT" == "success" || "$UASSET_IO_RESULT" == "skipped" ]]
+                  [[ "$UASSET_LIBRARIES_RESULT" == "success" || \
+                      "$UASSET_LIBRARIES_RESULT" == "skipped" ]]

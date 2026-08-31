@@ -14,11 +14,12 @@ layer.
 
 ## Commands
 
-Depot CI owns the full portable gate. Its repository checks run on every pull request, while the
-UAsset parser lane runs only when its Rust, WASM, package, contract, script, or fixture inputs
-change. During local iteration, run the smallest truthful checks for the surface you changed; do not
-routinely run the full gate after every edit. Run `pnpm check` locally only when the user requests
-it, when changing the portable gate or release infrastructure, or when reproducing a CI failure.
+Depot CI owns the full portable gate. Its repository checks run on every pull request. The UAsset
+library and IO lanes run only when their Rust, WASM, package, contract, script, or fixture inputs
+change; parser and inspection changes also trigger downstream IO conformance. During local
+iteration, run the smallest truthful checks for the surface you changed; do not routinely run the
+full gate after every edit. Run `pnpm check` locally only when the user requests it, when changing
+the portable gate or release infrastructure, or when reproducing a CI failure.
 Never describe a change as fully verified while a relevant targeted check or the Depot gate is
 failing.
 
@@ -29,10 +30,12 @@ type, or test errors for the user to discover. Fix with `pnpm exec oxfmt .` when
 fails, then rerun the failing command.
 
 Full `pnpm check` also covers `uasset:check`, license/architecture/release gates, and `test`.
-`pnpm run check:repository` runs the always-on Depot lane without native UAsset work; native-reader
-CLI and fixture integration tests stay in the conditional UAsset lane. Packed-package and Data
-Authoring adoption conformance remain explicit parts of the full local gate while their hosted flows
-are being redesigned. Individual commands include `typecheck`, `lint`, `format:check`, and `test`.
+`pnpm run check:repository` runs the always-on Depot lane without native UAsset work. UAsset parser,
+inspection, and WASM checks use `uasset:check:libraries`; DuckDB-backed IO, native/WASM parity,
+native-reader CLI, and fixture integration tests use `uasset:check:io` and the conditional IO lane.
+Packed-package and Data Authoring adoption conformance remain explicit parts of the full local gate
+while their hosted flows are being redesigned. Individual commands include `typecheck`, `lint`,
+`format:check`, and `test`.
 
 ## Unreal Engine reference
 

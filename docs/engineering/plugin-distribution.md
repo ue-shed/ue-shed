@@ -30,6 +30,9 @@ release candidate. A compiled v3 manifest additionally lists each built module a
 in the archive. Installation compares those file attestations while extracting, before publishing
 the immutable cache entry.
 
+Provenance records stable artifact names and digests, never build-host filesystem paths. The
+candidate package manifest is identified by its basename, suite version, and SHA-256 digest.
+
 Unknown schema versions and excess or contradictory source/binary fields are rejected at the
 boundary. Unreal `5.7` alone is never treated as binary compatibility. Extraction also reads each
 plugin's `.modules` file and requires its `BuildId` to equal the outer compatibility identity.

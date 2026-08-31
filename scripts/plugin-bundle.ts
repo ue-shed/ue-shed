@@ -420,11 +420,7 @@ async function writeArchive({
 	await writeFile(output, gzipSync(tarBytes, gzipOptions));
 }
 
-async function candidateProvenance(
-	path: string | undefined,
-	releaseVersion: string,
-	outputDirectory: string
-) {
+async function candidateProvenance(path: string | undefined, releaseVersion: string) {
 	if (!path) {
 		return {
 			reference: {
@@ -492,18 +488,10 @@ async function candidateProvenance(
 			};
 		});
 	}
-	const relativeManifestPath = toPosix(relative(outputDirectory, resolvedPath));
-	const siblingManifestPath = toPosix(relative(dirname(outputDirectory), resolvedPath));
-	const manifestPath =
-		relativeManifestPath && !relativeManifestPath.startsWith("../")
-			? relativeManifestPath
-			: siblingManifestPath && !siblingManifestPath.startsWith("../")
-				? siblingManifestPath
-				: basename(resolvedPath);
 	return {
 		reference: {
 			version: version ?? releaseVersion,
-			manifestPath,
+			manifestPath: basename(resolvedPath),
 			sha256: `sha256:${createHash("sha256").update(raw).digest("hex")}`
 		},
 		packages
@@ -590,11 +578,7 @@ export async function buildPluginBundle({
 			stageRoot
 		});
 		await writeArchive({ stageRoot, archivePaths, output: archivePath });
-		const candidateManifestData = await candidateProvenance(
-			candidateManifest,
-			releaseVersion,
-			outputDirectory
-		);
+		const candidateManifestData = await candidateProvenance(candidateManifest, releaseVersion);
 		const archiveDetails = await stat(archivePath);
 		const attestedCandidate = candidateManifestData.packages !== undefined;
 		const manifest = {

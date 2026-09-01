@@ -1,8 +1,8 @@
 # Showcase
 
-The showcase is the shortest path from a fresh clone to UE Shed's implemented proving slices. It
-uses the committed generic fixture as its default project and keeps live Unreal an optional
-capability.
+The showcase is the shortest path from a fresh clone to UE Shed's implemented proving slices. The
+interactive Workbench restores the last locally selected project and keeps live Unreal an optional
+capability. Deterministic tests and recordings continue to inject the committed generic fixture.
 
 Workbench surfaces every proving workflow on one operational home: Data Authoring, Input Atlas,
 Game Text, Texture Audit, Config Explorer, Project Custodian, Map Review, Map Capture, World Log, and
@@ -23,14 +23,17 @@ pnpm install
 pnpm showcase
 ```
 
-`showcase` incrementally builds the in-repo `uasset` reader and Workbench, configures the fixture
-project, offline map, and texture-audit rules, and opens the catalog. It does not build or launch
+`showcase` incrementally builds the in-repo `uasset` reader and Workbench, restores the most recently
+opened project on this device, and opens the catalog. On a fresh profile, choose an Unreal project
+from the footer. The adjacent recent-projects menu keeps up to eight successful selections for quick
+switching. Explicit `UE_SHED_PROJECT_ROOT` configuration always wins, which keeps automated fixture
+runs deterministic. Project selection only indexes saved packages; it does not build or launch
 Unreal up front. Texture Audit, Live World in Map Review, and Camera Load Lab each expose a launch
 or connect action when their optional live capability is needed. If an editor is already serving
 Remote Control on the usual local ports, `showcase` attaches to it. Otherwise it reserves the next
-free HTTP/WebSocket pair so a later in-app fixture launch can claim that endpoint. The monitored
-HTTP port is shown beside the editor status in the Workbench header; click it to enter another port.
-The change takes effect immediately and is remembered on that device.
+free HTTP/WebSocket pair so a later in-app launch can claim that endpoint. The monitored HTTP port
+is shown beside the editor status in the Workbench header; click it to enter another port. The
+change takes effect immediately and is remembered on that device.
 
 The source-checkout flow uses `target/debug/uasset.exe` (`target/debug/uasset` on other platforms).
 To exercise another compatible reader build instead, override it before launching:
@@ -385,7 +388,8 @@ never reads a PNG that is outside the selected project's run root or no longer m
 
 ## Using another project
 
-The launcher defaults are only showcase presets. Override them with environment variables:
+The interactive launcher uses local project history by default. Override it for one launch with
+environment variables; the explicit project is then remembered after it indexes successfully:
 
 ```powershell
 $env:UE_SHED_PROJECT_ROOT = "C:\path\to\Project"
@@ -393,6 +397,9 @@ $env:UE_SHED_TEXTURE_AUDIT_RULES = "C:\path\to\texture-rules.json"
 $env:UE_SHED_REMOTE_CONTROL_ENDPOINT = "http://127.0.0.1:30001"
 pnpm showcase
 ```
+
+Disposable automation can set `UE_SHED_REMEMBER_PROJECTS=false`; Workbench E2E and recording lanes
+already do this and continue to select the committed fixture explicitly.
 
 Workbench remains a client of public packages. Deleting it does not remove the CLI or any domain
 capability demonstrated here.

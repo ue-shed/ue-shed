@@ -77,6 +77,11 @@ interface RemoteControlOptions {
 	readonly fetch?: FetchImplementation;
 }
 
+interface WorkbenchEnvironmentOptions extends RemoteControlOptions {
+	readonly defaultProject?: "fixture" | "remembered";
+	readonly rememberProjects?: boolean;
+}
+
 type RemoteCallResult = JsonObject;
 
 export function unrealRemoteControlLaunchArguments(pluginIds: readonly string[], httpPort: number) {
@@ -147,9 +152,18 @@ export async function resolveRemoteControlEndpoint(
 
 export async function createWorkbenchEnvironment(
 	environment: NodeJS.ProcessEnv = process.env,
-	options: RemoteControlOptions = {}
+	options: WorkbenchEnvironmentOptions = {}
 ): Promise<NodeJS.ProcessEnv> {
-	const usingFixtureProject = environment.UE_SHED_PROJECT_ROOT === undefined;
+	const defaultProject = options.defaultProject ?? "fixture";
+	const usingFixtureProject =
+		environment.UE_SHED_PROJECT_ROOT === undefined && defaultProject === "fixture";
+	const projectRoot =
+		environment.UE_SHED_PROJECT_ROOT ?? (usingFixtureProject ? fixtureRoot : undefined);
+	const projectName =
+		environment.UE_SHED_PROJECT_NAME ?? (usingFixtureProject ? "UEShedFixture" : undefined);
+	const rememberProjects =
+		environment.UE_SHED_REMEMBER_PROJECTS ??
+		String(options.rememberProjects ?? defaultProject === "remembered");
 	const reviewSet =
 		environment.UE_SHED_REVIEW_SET ??
 		(usingFixtureProject
@@ -157,8 +171,9 @@ export async function createWorkbenchEnvironment(
 			: undefined);
 	return {
 		...environment,
-		UE_SHED_PROJECT_NAME: environment.UE_SHED_PROJECT_NAME ?? "UEShedFixture",
-		UE_SHED_PROJECT_ROOT: environment.UE_SHED_PROJECT_ROOT ?? fixtureRoot,
+		...(projectName ? { UE_SHED_PROJECT_NAME: projectName } : undefined),
+		...(projectRoot ? { UE_SHED_PROJECT_ROOT: projectRoot } : undefined),
+		UE_SHED_REMEMBER_PROJECTS: rememberProjects,
 		...(environment.UE_SHED_SAVED_WORLD_MAPS
 			? { UE_SHED_SAVED_WORLD_MAPS: environment.UE_SHED_SAVED_WORLD_MAPS }
 			: environment.UE_SHED_SAVED_WORLD_MAP
@@ -166,11 +181,19 @@ export async function createWorkbenchEnvironment(
 				: usingFixtureProject
 					? { UE_SHED_SAVED_WORLD_MAPS: savedWorldMaps }
 					: {}),
-		UE_SHED_AUTHORING_ASSET: environment.UE_SHED_AUTHORING_ASSET ?? authoringAsset,
+		...(environment.UE_SHED_AUTHORING_ASSET
+			? { UE_SHED_AUTHORING_ASSET: environment.UE_SHED_AUTHORING_ASSET }
+			: usingFixtureProject
+				? { UE_SHED_AUTHORING_ASSET: authoringAsset }
+				: undefined),
 		UE_SHED_REMOTE_CONTROL_ENDPOINT: await resolveRemoteControlEndpoint(environment, options),
 		UE_SHED_REPOSITORY_ROOT: repositoryRoot,
 		...(reviewSet ? { UE_SHED_REVIEW_SET: reviewSet } : undefined),
-		UE_SHED_TEXTURE_AUDIT_RULES: environment.UE_SHED_TEXTURE_AUDIT_RULES ?? textureRules,
+		...(environment.UE_SHED_TEXTURE_AUDIT_RULES
+			? { UE_SHED_TEXTURE_AUDIT_RULES: environment.UE_SHED_TEXTURE_AUDIT_RULES }
+			: usingFixtureProject
+				? { UE_SHED_TEXTURE_AUDIT_RULES: textureRules }
+				: undefined),
 		UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable(environment)
 	};
 }

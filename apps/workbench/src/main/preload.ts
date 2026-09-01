@@ -28,6 +28,8 @@ import type { SavedWorld } from "@ue-shed/protocol";
 import type { ScenarioRun, ScenarioRunHandle, ScenarioRunnerStatus } from "@ue-shed/scenarios";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+	BlueprintAssetSearchRequest,
+	BlueprintAssetSearchResult,
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
@@ -42,13 +44,17 @@ import type {
 import type {
 	ProjectLaunchMode,
 	ProjectLaunchResult,
+	WorkbenchRecentProject,
 	WorkbenchProjectState,
 	WorkbenchTaskProgress
 } from "./project-workspace-contract.js";
 import type { WorkbenchRendererApi } from "./preload-contract.js";
 
 export type {
+	BlueprintAssetCandidate,
 	BlueprintGraphReadResult,
+	BlueprintAssetSearchRequest,
+	BlueprintAssetSearchResult,
 	CameraStatusResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
@@ -63,6 +69,7 @@ export type {
 export type {
 	ProjectLaunchMode,
 	ProjectLaunchResult,
+	WorkbenchRecentProject,
 	WorkbenchProjectState,
 	WorkbenchTaskProgress
 } from "./project-workspace-contract.js";
@@ -73,7 +80,9 @@ const workbenchRendererApi = {
 	},
 	blueprintGraphs: {
 		choose: () => ipcRenderer.invoke("blueprint-graphs:choose"),
-		read: (assetPath: string) => ipcRenderer.invoke("blueprint-graphs:read", assetPath)
+		read: (assetPath: string) => ipcRenderer.invoke("blueprint-graphs:read", assetPath),
+		search: (request: BlueprintAssetSearchRequest): Promise<BlueprintAssetSearchResult> =>
+			ipcRenderer.invoke("blueprint-graphs:search", request)
 	},
 	editorSession: {
 		settings: (): Promise<UnrealConnectionSettings> =>
@@ -111,7 +120,11 @@ const workbenchRendererApi = {
 		current: (): Promise<WorkbenchProjectState> => ipcRenderer.invoke("project:current"),
 		launch: (mode: ProjectLaunchMode): Promise<ProjectLaunchResult> =>
 			ipcRenderer.invoke("project:launch", mode),
-		progress: (): Promise<WorkbenchTaskProgress> => ipcRenderer.invoke("project:progress")
+		openRecent: (projectRoot: string): Promise<WorkbenchProjectState> =>
+			ipcRenderer.invoke("project:open-recent", projectRoot),
+		progress: (): Promise<WorkbenchTaskProgress> => ipcRenderer.invoke("project:progress"),
+		recent: (): Promise<readonly WorkbenchRecentProject[]> =>
+			ipcRenderer.invoke("project:recent")
 	},
 	assetAudits: {
 		loadConfiguredProject: () => ipcRenderer.invoke("asset-audits:textures:configured-scan"),

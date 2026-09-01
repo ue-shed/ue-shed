@@ -13,6 +13,7 @@ it.effect("defaults the remote control endpoint when unset", () =>
 		expect(configuration.remoteControlEndpoint).toBe("http://127.0.0.1:30001");
 		expect(configuration.cameraPipeName).toBe("\\\\.\\pipe\\ue-shed-cameras-v1");
 		expect(configuration.project).toEqual({ status: "not_configured" });
+		expect(configuration.rememberProjects).toBe(true);
 		expect(configuration.review).toEqual({ status: "not_configured" });
 		expect(configuration.savedWorldMap).toEqual({ status: "not_configured" });
 		expect(configuration.savedWorldMaps).toEqual({ status: "not_configured" });
@@ -96,6 +97,7 @@ it.effect("loads a complete configured Workbench session", () =>
 				projectRoot: "C:/FixtureProject",
 				sessionStorageRoot: "C:/Temp/authoring-sessions"
 			},
+			rememberProjects: true,
 			remoteControlEndpoint: "http://127.0.0.1:30010",
 			review: {
 				status: "configured",
@@ -128,6 +130,15 @@ it.effect("loads a complete configured Workbench session", () =>
 				UE_SHED_UNREAL_ENGINE_ROOT: "C:/Unreal/UE_5.7"
 			})
 		)
+	)
+);
+
+it.effect("can disable project history for deterministic fixture runs", () =>
+	Effect.gen(function* () {
+		const configuration = yield* WorkbenchConfiguration;
+		expect(configuration.rememberProjects).toBe(false);
+	}).pipe(
+		Effect.provide(workbenchConfigurationFromUnknown({ UE_SHED_REMEMBER_PROJECTS: "false" }))
 	)
 );
 

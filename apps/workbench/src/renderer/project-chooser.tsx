@@ -3,10 +3,11 @@ import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { Schedule, Stream } from "effect";
-import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import type {
 	ProjectLaunchMode,
 	ProjectLaunchResult,
+	WorkbenchRecentProject,
 	WorkbenchProjectState
 } from "../main/project-workspace-contract.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
@@ -14,7 +15,12 @@ import type { WorkbenchRendererClient } from "./workbench-client.js";
 export interface ProjectChooserProps {
 	readonly client: Pick<
 		WorkbenchRendererClient,
-		"chooseProject" | "launchProject" | "project" | "projectProgress"
+		| "chooseProject"
+		| "launchProject"
+		| "openRecentProject"
+		| "project"
+		| "projectProgress"
+		| "recentProjects"
 	>;
 	readonly onChosen: () => void;
 }
@@ -24,6 +30,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	// focus-triggered refresh: each action intentionally cancels only its own prior request.
 	const refreshAction = createEffectAction();
 	const chooseAction = createEffectAction();
+	const recentAction = createEffectAction();
 	const launchAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
 	const [pending, setPending] = createSignal(false);
@@ -34,9 +41,11 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		total: 0
 	});
 	const [project, setProject] = createSignal<WorkbenchProjectState>();
+	const [recentProjects, setRecentProjects] = createSignal<readonly WorkbenchRecentProject[]>([]);
 	const [launching, setLaunching] = createSignal<ProjectLaunchMode>();
 	const [launchResult, setLaunchResult] = createSignal<ProjectLaunchResult>();
 	const [launchMenu, setLaunchMenu] = createSignal<HTMLDetailsElement>();
+	const [recentMenu, setRecentMenu] = createSignal<HTMLDetailsElement>();
 	const applyProject = (
 		next: WorkbenchProjectState,
 		notifyRoutes: boolean,
@@ -54,22 +63,35 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			props.onChosen();
 		}
 	};
-	const refresh = (notifyRoutes: boolean) =>
+	const refresh = (notifyRoutes: boolean) => {
+		if (pending()) return;
 		refreshAction.run(props.client.project(), {
 			onFailure: () => {
 				if (project()?.status !== "failed") setProject(undefined);
 			},
 			onSuccess: (next) => applyProject(next, notifyRoutes, false)
 		});
+	};
+	const refreshRecent = () =>
+		recentAction.run(props.client.recentProjects(), {
+			onSuccess: setRecentProjects
+		});
 
 	onMount(() => {
 		refresh(false);
+		refreshRecent();
 		const onFocus = () => refresh(true);
 		window.addEventListener("focus", onFocus);
 		onCleanup(() => window.removeEventListener("focus", onFocus));
 	});
 
-	const choose = () => {
+	const selectProject = (
+		selection: ReturnType<ProjectChooserProps["client"]["chooseProject"]>
+	) => {
+		// A focus event from the native picker must not let an older project refresh replace
+		// the explicit selection after it completes. createEffectAction's generation guard also
+		// covers refreshes backed by uninterruptible foreign work.
+		refreshAction.cancel();
 		setPending(true);
 		// A deliberate retry starts a new lifecycle. The prior failure must not remain visible
 		// behind the progress presentation, but a resulting failure remains after it closes.
@@ -82,7 +104,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			),
 			{ onValue: setProgress }
 		);
-		chooseAction.run(props.client.chooseProject(), {
+		chooseAction.run(selection, {
 			onFailure: () => {
 				progressSubscription.cancel();
 				setPending(false);
@@ -92,9 +114,16 @@ export function ProjectChooser(props: ProjectChooserProps) {
 				progressSubscription.cancel();
 				setPending(false);
 				applyProject(next, true, true);
+				if (next.status === "ready") {
+					if (recentMenu()) recentMenu()!.open = false;
+					refreshRecent();
+				}
 			}
 		});
 	};
+	const choose = () => selectProject(props.client.chooseProject());
+	const openRecent = (projectRoot: string) =>
+		selectProject(props.client.openRecentProject(projectRoot));
 
 	const label = () => {
 		const current = project();
@@ -142,15 +171,61 @@ export function ProjectChooser(props: ProjectChooserProps) {
 
 	return (
 		<div {...stylex.props(styles.control)}>
-			<button
-				type="button"
-				title={title()}
-				disabled={pending()}
-				onClick={choose}
-				{...stylex.props(styles.chooser)}
-			>
-				{label()}
-			</button>
+			<div {...stylex.props(styles.projectSwitchRow)}>
+				<button
+					type="button"
+					title={title()}
+					disabled={pending()}
+					onClick={choose}
+					{...stylex.props(styles.chooser)}
+				>
+					{label()}
+				</button>
+				<Show when={recentProjects().length > 0}>
+					<details ref={setRecentMenu} {...stylex.props(styles.recentControl)}>
+						<summary
+							aria-label="Recent projects"
+							title="Recent projects"
+							{...stylex.props(styles.recentSummary)}
+						>
+							⌃
+						</summary>
+						<section
+							aria-label="Recently opened projects"
+							{...stylex.props(styles.recentMenu)}
+						>
+							<header {...stylex.props(styles.recentHeader)}>
+								<strong>Recent projects</strong>
+								<span>Stored only on this device</span>
+							</header>
+							<For each={recentProjects()}>
+								{(recent) => {
+									const current = () => title() === recent.projectRoot;
+									return (
+										<button
+											aria-label={`Open recent project ${recent.projectName}`}
+											disabled={pending() || current()}
+											onClick={() => openRecent(recent.projectRoot)}
+											type="button"
+											{...stylex.props(styles.recentProject)}
+										>
+											<span {...stylex.props(styles.recentProjectCopy)}>
+												<strong>{recent.projectName}</strong>
+												<small title={recent.projectRoot}>
+													{recent.projectRoot}
+												</small>
+											</span>
+											<span {...stylex.props(styles.recentProjectState)}>
+												{current() ? "CURRENT" : "OPEN"}
+											</span>
+										</button>
+									);
+								}}
+							</For>
+						</section>
+					</details>
+				</Show>
+			</div>
 			<Show when={project()?.status === "ready"}>
 				<div {...stylex.props(styles.launchRow)}>
 					<span {...stylex.props(styles.offline)}>Offline</span>
@@ -236,6 +311,7 @@ const styles = stylex.create({
 		gap: 6,
 		position: "relative"
 	},
+	projectSwitchRow: { display: "flex", gap: 4, minWidth: 0 },
 	chooser: {
 		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
 		borderStyle: "solid",
@@ -250,7 +326,8 @@ const styles = stylex.create({
 		cursor: { default: "pointer", ":disabled": "wait" },
 		fontSize: 12,
 		fontWeight: 500,
-		width: "100%",
+		flexGrow: 1,
+		minWidth: 0,
 		overflow: "hidden",
 		padding: "6px 10px",
 		textAlign: "left",
@@ -260,6 +337,89 @@ const styles = stylex.create({
 		transitionTimingFunction: tokens.motionEaseOut,
 		transform: { default: "scale(1)", ":active": "scale(0.97)", ":disabled": "scale(1)" },
 		whiteSpace: "nowrap"
+	},
+	recentControl: { flexGrow: 0, flexShrink: 0, position: "relative" },
+	recentSummary: {
+		display: "grid",
+		placeItems: "center",
+		width: 30,
+		height: 30,
+		borderColor: { default: tokens.colorBorderStrong, ":hover": "#4a4e54" },
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		backgroundColor: {
+			default: "rgba(255, 255, 255, 0.03)",
+			":hover": "rgba(255, 255, 255, 0.08)"
+		},
+		color: tokens.colorTextMuted,
+		cursor: "pointer",
+		fontSize: 12,
+		listStyle: "none",
+		transitionDuration: tokens.motionFast,
+		transitionProperty: "background-color, border-color, color, transform",
+		transitionTimingFunction: tokens.motionEaseOut,
+		transform: { default: "scale(1)", ":active": "scale(0.96)" }
+	},
+	recentMenu: {
+		backgroundColor: tokens.colorSurfaceRaised,
+		borderColor: tokens.colorBorderStrong,
+		borderStyle: "solid",
+		borderWidth: 1,
+		borderRadius: tokens.radiusControl,
+		boxShadow: tokens.shadowOverlay,
+		display: "grid",
+		gap: 2,
+		width: 340,
+		maxHeight: 360,
+		overflowY: "auto",
+		padding: 4,
+		position: "absolute",
+		bottom: "calc(100% + 7px)",
+		left: 0,
+		zIndex: 33
+	},
+	recentHeader: {
+		display: "flex",
+		alignItems: "baseline",
+		justifyContent: "space-between",
+		gap: 12,
+		padding: "8px 9px 7px",
+		color: tokens.colorTextStrong,
+		fontSize: 12
+	},
+	recentProject: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: 12,
+		minWidth: 0,
+		borderLeftColor: { default: "transparent", ":hover": tokens.colorAccent },
+		borderLeftStyle: "solid",
+		borderLeftWidth: 2,
+		borderRadius: tokens.radiusBadge,
+		backgroundColor: {
+			default: "transparent",
+			":hover": "rgba(255, 255, 255, 0.055)",
+			":disabled": "rgba(255, 255, 255, 0.025)"
+		},
+		color: { default: tokens.colorText, ":disabled": tokens.colorTextMuted },
+		cursor: { default: "pointer", ":disabled": "default" },
+		padding: "9px 10px",
+		textAlign: "left"
+	},
+	recentProjectCopy: {
+		display: "grid",
+		gap: 3,
+		minWidth: 0,
+		fontSize: 12
+	},
+	recentProjectState: {
+		flexShrink: 0,
+		color: tokens.colorAccent,
+		fontFamily: tokens.fontMono,
+		fontSize: 8,
+		letterSpacing: ".1em"
 	},
 	launchRow: {
 		alignItems: "center",

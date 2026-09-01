@@ -11,6 +11,8 @@ import { RuntimeHealth } from "@ue-shed/observability/health";
 import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
 import type {
 	BlueprintGraphReadResult,
+	BlueprintAssetSearchRequest,
+	BlueprintAssetSearchResult,
 	ConfigExplorerQuery,
 	ConfigExplorerQueryResult,
 	EditorSessionStatusResult,
@@ -22,6 +24,7 @@ import type {
 } from "../main/preload.js";
 import {
 	BlueprintGraphReadResult as BlueprintGraphReadResultSchema,
+	BlueprintAssetSearchResult as BlueprintAssetSearchResultSchema,
 	ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema,
 	EditorSessionStatusResult as EditorSessionStatusResultSchema
 } from "../main/ipc-contracts.js";
@@ -29,6 +32,8 @@ import {
 	ProjectLaunchResult,
 	type ProjectLaunchMode,
 	type ProjectLaunchResult as ProjectLaunchResultValue,
+	WorkbenchRecentProjects,
+	type WorkbenchRecentProject,
 	WorkbenchProjectState,
 	type WorkbenchProjectState as WorkbenchProjectStateValue,
 	WorkbenchTaskProgress,
@@ -123,6 +128,9 @@ function request<A, HostValue, DecodeError>(args: {
 
 const decodeShowcaseContext = Schema.decodeUnknownEffect(ShowcaseContextSchema);
 const decodeBlueprintGraphReadResult = Schema.decodeUnknownEffect(BlueprintGraphReadResultSchema);
+const decodeBlueprintAssetSearchResult = Schema.decodeUnknownEffect(
+	BlueprintAssetSearchResultSchema
+);
 const decodeConfigExplorerQueryResult = Schema.decodeUnknownEffect(ConfigExplorerQueryResultSchema);
 const decodeEditorSessionStatusResult = Schema.decodeUnknownEffect(EditorSessionStatusResultSchema);
 const decodeFixtureLaunchResult = Schema.decodeUnknownEffect(FixtureLaunchResultSchema);
@@ -130,6 +138,7 @@ const decodeWorkbenchCameraMetrics = Schema.decodeUnknownEffect(WorkbenchCameraM
 const decodePresentationBudget = Schema.decodeUnknownEffect(Schema.Number);
 const decodeWorkbenchProjectState = Schema.decodeUnknownEffect(WorkbenchProjectState);
 const decodeProjectLaunchResult = Schema.decodeUnknownEffect(ProjectLaunchResult);
+const decodeWorkbenchRecentProjects = Schema.decodeUnknownEffect(WorkbenchRecentProjects);
 const decodeWorkbenchTaskProgress = Schema.decodeUnknownEffect(WorkbenchTaskProgress);
 const decodeUnrealConnectionSettings = Schema.decodeUnknownEffect(
 	Schema.Struct({
@@ -202,6 +211,9 @@ const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
 
 export interface WorkbenchRendererClient {
 	readonly chooseBlueprint: () => Effect.Effect<BlueprintGraphReadResult, WorkbenchRendererError>;
+	readonly searchBlueprints: (
+		request: BlueprintAssetSearchRequest
+	) => Effect.Effect<BlueprintAssetSearchResult, WorkbenchRendererError>;
 	readonly readBlueprint: (
 		assetPath: string
 	) => Effect.Effect<BlueprintGraphReadResult, WorkbenchRendererError>;
@@ -236,8 +248,15 @@ export interface WorkbenchRendererClient {
 	readonly launchProject: (
 		mode: ProjectLaunchMode
 	) => Effect.Effect<ProjectLaunchResultValue, WorkbenchRendererError>;
+	readonly openRecentProject: (
+		projectRoot: string
+	) => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly chooseProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly project: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly recentProjects: () => Effect.Effect<
+		readonly WorkbenchRecentProject[],
+		WorkbenchRendererError
+	>;
 	readonly projectProgress: () => Effect.Effect<
 		WorkbenchTaskProgressValue,
 		WorkbenchRendererError
@@ -255,6 +274,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			decode: decodeBlueprintGraphReadResult,
 			invoke: () => window.ueShed.blueprintGraphs.choose(),
 			operation: "blueprintGraphs.choose"
+		})
+	),
+	searchBlueprints: Effect.fn("WorkbenchRenderer.searchBlueprints")((searchRequest) =>
+		request({
+			decode: decodeBlueprintAssetSearchResult,
+			invoke: () => window.ueShed.blueprintGraphs.search(searchRequest),
+			operation: "blueprintGraphs.search"
 		})
 	),
 	readBlueprint: Effect.fn("WorkbenchRenderer.readBlueprint")((assetPath) =>
@@ -345,11 +371,25 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: `project.launch.${mode}`
 		})
 	),
+	openRecentProject: Effect.fn("WorkbenchRenderer.openRecentProject")((projectRoot) =>
+		request({
+			decode: decodeWorkbenchProjectState,
+			invoke: () => window.ueShed.project.openRecent(projectRoot),
+			operation: "project.openRecent"
+		})
+	),
 	project: Effect.fn("WorkbenchRenderer.project")(() =>
 		request({
 			decode: decodeWorkbenchProjectState,
 			invoke: () => window.ueShed.project.current(),
 			operation: "project.current"
+		})
+	),
+	recentProjects: Effect.fn("WorkbenchRenderer.recentProjects")(() =>
+		request({
+			decode: decodeWorkbenchRecentProjects,
+			invoke: () => window.ueShed.project.recent(),
+			operation: "project.recent"
 		})
 	),
 	projectProgress: Effect.fn("WorkbenchRenderer.projectProgress")(() =>

@@ -11,7 +11,8 @@ export const workbenchInvokeChannels = {
 	assetNavigation: { locate: "asset-navigation:locate" },
 	blueprintGraphs: {
 		choose: "blueprint-graphs:choose",
-		read: "blueprint-graphs:read"
+		read: "blueprint-graphs:read",
+		search: "blueprint-graphs:search"
 	},
 	editorSession: {
 		settings: "editor-session:settings",
@@ -37,7 +38,9 @@ export const workbenchInvokeChannels = {
 		choose: "project:choose",
 		current: "project:current",
 		launch: "project:launch",
-		progress: "project:progress"
+		openRecent: "project:open-recent",
+		progress: "project:progress",
+		recent: "project:recent"
 	},
 	assetAudits: {
 		loadConfiguredProject: "asset-audits:textures:configured-scan",

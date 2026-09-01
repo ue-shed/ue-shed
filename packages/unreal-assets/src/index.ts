@@ -11,6 +11,7 @@ export {
 	AssetReader,
 	AssetReaderError,
 	AssetReaderLive,
+	BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES,
 	assetReaderLayer,
 	assetReaderMetrics,
 	discoverSavedAssets,

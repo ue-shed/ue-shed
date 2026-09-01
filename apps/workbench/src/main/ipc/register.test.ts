@@ -1,7 +1,7 @@
 import { it } from "@effect/vitest";
 import { NiagaraSystemObjectPath } from "@ue-shed/niagara";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
-import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
+import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import type { TextureAuditRunResult, TexturePreviewResult } from "@ue-shed/asset-audits";
 import type { MapReviewApprovalResult } from "@ue-shed/cameras/review-contracts";
 import type { EnhancedInputRunResult } from "@ue-shed/enhanced-input";
@@ -17,6 +17,7 @@ import {
 	type ScenarioRunnerApi
 } from "@ue-shed/scenarios";
 import { Effect, Layer, Ref } from "effect";
+import { resolve } from "node:path";
 import { expect } from "vitest";
 import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
@@ -102,13 +103,31 @@ const sampleCameraStatus: CameraStatus = {
 	}
 };
 
+interface RegistrationOptions {
+	readonly blueprintErrorCode?: string;
+	readonly blueprintProjectConfigured?: boolean;
+}
+
 /** Builds the full fake feature-service graph that `register.ts` depends on. */
-function buildRegistrationLayer(recorder: Recorder) {
+function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions = {}) {
 	const assetReader = makeAssetReaderTestLayer({
 		discoverAssets: () => Effect.succeed([]),
 		discoverTables: () =>
 			Effect.succeed({ diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] }),
 		readAsset: () => Effect.die("not used"),
+		readBlueprint: (assetPath) =>
+			Effect.fail(
+				new AssetReaderError({
+					...(options.blueprintErrorCode === undefined
+						? undefined
+						: { code: options.blueprintErrorCode }),
+					kind: "process",
+					message: "Blueprint fixture failure",
+					operation: "blueprint",
+					path: assetPath,
+					retrySafe: false
+				})
+			),
 		readTable: () => Effect.die("not used"),
 		source: () => Effect.succeed("configured")
 	});
@@ -247,13 +266,75 @@ function buildRegistrationLayer(recorder: Recorder) {
 	});
 
 	const project = makeWorkbenchProjectTestLayer({
+		candidates: () =>
+			Effect.succeed({
+				assets: [
+					{
+						depth: "header" as const,
+						fileBytes: 0,
+						header: {
+							exports: [
+								{
+									class_name: "WidgetBlueprint",
+									class_path: "/Script/UMGEditor.WidgetBlueprint",
+									object_path: "/Game/UI/WBP_Settings.WBP_Settings"
+								}
+							],
+							matched_names: [],
+							package: { name: "/Game/UI/WBP_Settings" },
+							path: "Content/UI/WBP_Settings.uasset",
+							schema_version: 8 as const
+						}
+					}
+				],
+				failures: [],
+				summary: {
+					cacheHits: 0,
+					depth: "header" as const,
+					diagnostics: [],
+					emittedAssets: 1,
+					failedAssets: 0,
+					partialAssets: 0,
+					projectRoot: "C:/Project",
+					roots: ["C:/Project/Content"],
+					scannedAssets: 1,
+					schema_version: 8 as const,
+					skippedAssets: 0
+				}
+			}),
 		choose: () =>
 			recorder.record("project.choose").pipe(Effect.as({ status: "cancelled" as const })),
 		current: () =>
-			recorder
-				.record("project.current")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+			recorder.record("project.current").pipe(
+				Effect.as(
+					options.blueprintProjectConfigured === true
+						? {
+								project: {
+									inputAtlas: "deferred" as const,
+									mapCount: 0,
+									packageCount: 1,
+									projectName: "Project",
+									projectRoot: "C:/Project"
+								},
+								status: "ready" as const
+							}
+						: { status: "not_configured" as const }
+				)
+			),
 		inputAtlas: () => Effect.die("not used"),
+		openRecent: (projectRoot) =>
+			recorder
+				.record(`project.openRecent:${projectRoot}`)
+				.pipe(Effect.as({ status: "cancelled" as const })),
+		recent: () =>
+			recorder.record("project.recent").pipe(
+				Effect.as([
+					{
+						projectName: "Fixture",
+						projectRoot: "C:/Projects/Fixture"
+					}
+				])
+			),
 		savedTables: () => Effect.die("savedTables is not used"),
 		savedProject: () => Effect.die("not used")
 	});
@@ -670,7 +751,8 @@ function runRegistered<A>(
 			channel: string,
 			...args: ReadonlyArray<unknown>
 		) => Effect.Effect<unknown, unknown>;
-	}) => Effect.Effect<A, unknown>
+	}) => Effect.Effect<A, unknown>,
+	options: RegistrationOptions = {}
 ) {
 	return Effect.gen(function* () {
 		const recorder = yield* makeRecorder();
@@ -679,7 +761,7 @@ function runRegistered<A>(
 				yield* register;
 				return yield* ElectronIpcTest;
 			}),
-			Layer.mergeAll(makeElectronIpcTestLayer(), buildRegistrationLayer(recorder))
+			Layer.mergeAll(makeElectronIpcTestLayer(), buildRegistrationLayer(recorder, options))
 		);
 		const result = yield* body(ipcTest);
 		return { recorder, result };
@@ -692,7 +774,39 @@ it.effect("registers every schema-owned contract channel exactly once", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(106);
+		expect(result).toHaveLength(109);
+	})
+);
+
+it.effect("searches the selected project's indexed Blueprint candidates", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered(
+			(ipc) => ipc.invoke("blueprint-graphs:search", { query: "settings" }),
+			{ blueprintProjectConfigured: true }
+		);
+		expect(result).toEqual({
+			assets: [
+				{
+					assetName: "WBP_Settings",
+					assetPath: resolve("C:/Project", "Content/UI/WBP_Settings.uasset"),
+					className: "WidgetBlueprint",
+					packageName: "/Game/UI/WBP_Settings",
+					relativePath: "Content/UI/WBP_Settings.uasset"
+				}
+			],
+			matchCount: 1,
+			projectName: "Project",
+			status: "ready"
+		});
+	})
+);
+
+it.effect("keeps indexed Blueprint search optional when no project is selected", () =>
+	Effect.gen(function* () {
+		const { result } = yield* runRegistered((ipc) =>
+			ipc.invoke("blueprint-graphs:search", { query: "" })
+		);
+		expect(result).toEqual({ status: "not_configured" });
 	})
 );
 
@@ -703,9 +817,28 @@ it.effect("dispatches Blueprint reads and preserves actionable reader failures",
 		);
 		expect(result).toMatchObject({
 			assetPath: "C:/Project/Content/BP_Example.uasset",
-			recovery: expect.stringContaining("5.7"),
+			reason: "reader_failure",
+			recovery: expect.stringContaining("reader"),
 			status: "failed"
 		});
+	})
+);
+
+it.effect("classifies native Blueprint failures for focused recovery", () =>
+	Effect.gen(function* () {
+		for (const [code, reason] of [
+			["unsupported_version", "unsupported_version"],
+			["unsupported_capability", "control_rig"],
+			["malformed_data", "malformed_package"],
+			["unsupported_format", "unsupported_asset"]
+		] as const) {
+			const { result } = yield* runRegistered(
+				(ipc) =>
+					ipc.invoke("blueprint-graphs:read", "C:/Project/Content/BP_Example.uasset"),
+				{ blueprintErrorCode: code }
+			);
+			expect(result).toMatchObject({ reason, status: "failed" });
+		}
 	})
 );
 
@@ -827,6 +960,22 @@ it.effect("dispatches project:launch with the selected explicit mode", () =>
 		);
 		expect(result).toEqual({ mode: "ue_shed", status: "launched" });
 		expect(yield* recorder.calls()).toEqual(["projectLauncher.launch:ue_shed"]);
+	})
+);
+
+it.effect("lists and opens recent projects through the shared workspace service", () =>
+	Effect.gen(function* () {
+		const { recorder, result } = yield* runRegistered((ipc) =>
+			Effect.gen(function* () {
+				yield* ipc.invoke("project:recent");
+				return yield* ipc.invoke("project:open-recent", "C:/Projects/Fixture");
+			})
+		);
+		expect(result).toEqual({ status: "cancelled" });
+		expect(yield* recorder.calls()).toEqual([
+			"project.recent",
+			"project.openRecent:C:/Projects/Fixture"
+		]);
 	})
 );
 

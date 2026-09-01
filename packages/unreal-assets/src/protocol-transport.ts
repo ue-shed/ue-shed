@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
 import {
 	SavedAssetManifestEntry,
 	SavedAssetScan,
@@ -50,6 +51,7 @@ export interface ProtocolSingleEvidence<A> {
 }
 
 const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
+const MAX_PROTOCOL_TERMINATION_WAIT_MS = 1_000;
 const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
 const validateProtocolEventType = Schema.decodeUnknownExit(
 	Schema.toType(UAssetIoEvent),
@@ -213,10 +215,16 @@ export class ProtocolStreamFailure extends Error {
 		readonly kind: ProtocolFailureKind,
 		message: string,
 		readonly exitCode?: number,
-		readonly stderr?: string
+		readonly stderr?: string,
+		readonly protocolCode?: string
 	) {
 		super(message);
 	}
+}
+
+function processFailureCode(cause: Error | undefined): string | undefined {
+	if (cause === undefined || !("code" in cause)) return undefined;
+	return cause.code === "ENOENT" ? "executable_missing" : undefined;
 }
 
 interface ProtocolTelemetry {
@@ -612,17 +620,21 @@ function protocolFailureFromEvent(
 	return new ProtocolStreamFailure(
 		kind,
 		event.message,
-		event.code === "resource_limit" ? 7 : undefined
+		event.code === "resource_limit" ? 7 : undefined,
+		undefined,
+		event.code
 	);
 }
 
-function mapProtocolFailure(
+/** @internal Maps transport failures without discarding native protocol classification. */
+export function mapProtocolFailure(
 	cause: unknown,
 	operation: AssetReaderError["operation"],
 	path: string
 ): AssetReaderError {
 	if (cause instanceof ProtocolStreamFailure) {
 		return new AssetReaderError({
+			...(cause.protocolCode === undefined ? undefined : { code: cause.protocolCode }),
 			kind: cause.kind === "timeout" ? "timeout" : cause.kind,
 			operation,
 			message: cause.message,
@@ -632,7 +644,9 @@ function mapProtocolFailure(
 			...(cause.exitCode === undefined ? undefined : { exitCode: cause.exitCode })
 		});
 	}
+	const code = cause instanceof Error ? processFailureCode(cause) : undefined;
 	return new AssetReaderError({
+		...(code === undefined ? undefined : { code }),
 		kind: "process",
 		operation,
 		message: cause instanceof Error ? cause.message : String(cause),
@@ -677,9 +691,78 @@ export async function* runUassetProtocolEvents(options: {
 	}
 }
 
+/** @internal Narrow process boundary used to verify session termination without a native worker. */
+export interface ProtocolSessionProcess {
+	readonly pid: number | undefined;
+	readonly stdin: {
+		readonly destroyed: boolean;
+		readonly destroy: () => void;
+		readonly end: () => void;
+		readonly setDefaultEncoding: (encoding: BufferEncoding) => void;
+		readonly write: (chunk: string, callback: (cause?: Error | null) => void) => boolean;
+	} | null;
+	readonly stdout: Readable | null;
+	readonly stderr: Readable | null;
+	readonly exitCode: number | null;
+	readonly signalCode: string | null;
+	readonly killed: boolean;
+	readonly kill: () => boolean;
+	readonly onClose: (listener: (code: number | null, signal: string | null) => void) => void;
+	readonly onError: (listener: (cause: Error) => void) => void;
+	readonly unref: () => void;
+}
+
+export type ProtocolSessionProcessFactory = () => ProtocolSessionProcess;
+
+async function waitForProtocolClose(
+	closePromise: Promise<unknown>,
+	timeoutMs: number
+): Promise<boolean> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			closePromise.then(() => true),
+			new Promise<false>((resolvePromise) => {
+				timer = setTimeout(() => resolvePromise(false), timeoutMs);
+			})
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
+}
+
+function spawnProtocolSession(executable: string): ProtocolSessionProcess {
+	const child = spawn(executable, ["protocol-session"], { windowsHide: true });
+	return {
+		get exitCode() {
+			return child.exitCode;
+		},
+		get killed() {
+			return child.killed;
+		},
+		get pid() {
+			return child.pid;
+		},
+		get signalCode() {
+			return child.signalCode;
+		},
+		kill: () => child.kill(),
+		onClose: (listener) => {
+			child.once("close", listener);
+		},
+		onError: (listener) => {
+			child.once("error", listener);
+		},
+		stderr: child.stderr,
+		stdin: child.stdin,
+		stdout: child.stdout,
+		unref: () => child.unref()
+	};
+}
+
 /** A scoped native protocol worker. Calls must be serialized by its owner. */
 export class UassetProtocolSession {
-	private child: ReturnType<typeof spawn> | undefined;
+	private child: ProtocolSessionProcess | undefined;
 	private closePromise:
 		| Promise<{ readonly code: number | null; readonly signal: string | null }>
 		| undefined;
@@ -688,23 +771,32 @@ export class UassetProtocolSession {
 	private processError: Error | undefined;
 	private running = false;
 	private stderr = "";
+	private terminating = false;
 
 	constructor(
 		private readonly configuration: Pick<
 			AssetReaderConfiguration,
-			"executable" | "protocolObserver"
-		>
+			"executable" | "protocolObserver" | "timeoutMs"
+		>,
+		private readonly processFactory: ProtocolSessionProcessFactory = () =>
+			spawnProtocolSession(configuration.executable)
 	) {}
 
-	private start(): ReturnType<typeof spawn> {
+	private start(): ProtocolSessionProcess {
 		if (this.disposed) {
 			throw new ProtocolStreamFailure("process", "Protocol session is closed");
 		}
-		if (this.child !== undefined) return this.child;
+		if (this.child !== undefined) {
+			if (this.terminating) {
+				throw new ProtocolStreamFailure(
+					"process",
+					"Protocol session worker is still terminating"
+				);
+			}
+			return this.child;
+		}
 
-		const child = spawn(this.configuration.executable, ["protocol-session"], {
-			windowsHide: true
-		});
+		const child = this.processFactory();
 		if (child.stdin === null || child.stdout === null) {
 			child.kill();
 			throw new ProtocolStreamFailure("process", "Protocol session did not expose pipes");
@@ -712,25 +804,47 @@ export class UassetProtocolSession {
 		child.stdin.setDefaultEncoding("utf8");
 		child.stdout.setEncoding("utf8");
 		const lines = createInterface({ crlfDelay: Infinity, input: child.stdout });
+		this.child = child;
 		this.iterator = lines[Symbol.asyncIterator]();
 		this.stderr = "";
 		this.processError = undefined;
+		this.terminating = false;
 		if (child.stderr !== null) {
 			child.stderr.setEncoding("utf8");
 			child.stderr.on("data", (chunk: string) => {
+				if (this.child !== child) return;
 				if (this.stderr.length < MAX_CAPTURED_STDERR_BYTES) {
 					this.stderr += chunk.slice(0, MAX_CAPTURED_STDERR_BYTES - this.stderr.length);
 				}
 			});
 		}
 		this.closePromise = new Promise((resolvePromise) => {
-			child.once("error", (cause) => {
+			child.onError((cause) => {
+				if (this.child !== child) return;
 				this.processError = cause;
 			});
-			child.once("close", (code, signal) => resolvePromise({ code, signal }));
+			child.onClose((code, signal) => resolvePromise({ code, signal }));
 		});
-		this.child = child;
 		return child;
+	}
+
+	private releaseProcess(child: ProtocolSessionProcess): void {
+		if (this.child !== child) return;
+		this.child = undefined;
+		this.closePromise = undefined;
+		this.iterator = undefined;
+		this.terminating = false;
+	}
+
+	private detachProcess(child: ProtocolSessionProcess): void {
+		if (this.child !== child) return;
+		// A worker that ignored termination must not keep Node/Electron alive after
+		// scoped ownership ends. Late events are ignored by the child-generation guards.
+		child.unref();
+		child.stdin?.destroy();
+		child.stdout?.destroy();
+		child.stderr?.destroy();
+		this.releaseProcess(child);
 	}
 
 	private async nextLine(
@@ -775,15 +889,23 @@ export class UassetProtocolSession {
 		});
 	}
 
-	private async terminate(): Promise<void> {
+	private async terminate(timeoutMs: number): Promise<boolean> {
 		const child = this.child;
 		const closePromise = this.closePromise;
-		if (child === undefined) return;
-		if (child.exitCode === null && child.signalCode === null && !child.killed) child.kill();
-		if (closePromise !== undefined) await closePromise;
-		this.child = undefined;
-		this.closePromise = undefined;
-		this.iterator = undefined;
+		if (child === undefined) return true;
+		this.terminating = true;
+		if (child.exitCode === null && child.signalCode === null) child.kill();
+		if (closePromise === undefined) return false;
+		const closed = await waitForProtocolClose(
+			closePromise,
+			Math.min(Math.max(0, timeoutMs), MAX_PROTOCOL_TERMINATION_WAIT_MS)
+		);
+		if (closed) {
+			this.releaseProcess(child);
+		} else {
+			void closePromise.then(() => this.releaseProcess(child));
+		}
+		return closed;
 	}
 
 	async *events(options: {
@@ -817,12 +939,24 @@ export class UassetProtocolSession {
 			if (stdin === null) {
 				throw new ProtocolStreamFailure("process", "Protocol session input is unavailable");
 			}
-			await new Promise<void>((resolvePromise, rejectPromise) => {
-				stdin.write(`${JSON.stringify(options.request)}\n`, (cause) => {
-					if (cause === null || cause === undefined) resolvePromise();
-					else rejectPromise(cause);
+			try {
+				await new Promise<void>((resolvePromise, rejectPromise) => {
+					stdin.write(`${JSON.stringify(options.request)}\n`, (cause) => {
+						if (cause === null || cause === undefined) resolvePromise();
+						else rejectPromise(cause);
+					});
 				});
-			});
+			} catch (cause) {
+				const processCause =
+					this.processError ?? (cause instanceof Error ? cause : undefined);
+				throw new ProtocolStreamFailure(
+					"process",
+					processCause?.message ?? String(cause),
+					undefined,
+					undefined,
+					processFailureCode(processCause)
+				);
+			}
 			const deadline = nowMs() + options.timeoutMs;
 			while (!terminal) {
 				const next = await this.nextLine(deadline, options.signal);
@@ -834,7 +968,8 @@ export class UassetProtocolSession {
 							this.stderr.trim() ||
 							`Protocol session exited ${closed?.code ?? closed?.signal ?? "unknown"}`,
 						closed?.code ?? undefined,
-						this.stderr.trim() || undefined
+						this.stderr.trim() || undefined,
+						processFailureCode(this.processError)
 					);
 				}
 				const chunk = `${next.value}\n`;
@@ -850,7 +985,9 @@ export class UassetProtocolSession {
 		} finally {
 			if (!terminal) {
 				telemetry.cancelled = options.signal?.aborted ?? false;
-				await this.terminate();
+				// Keep the request failure bounded while retaining ownership until the
+				// worker actually closes. A later request cannot replace this child.
+				await this.terminate(options.timeoutMs);
 			}
 			if (telemetry.terminalState === undefined && !telemetry.cancelled) {
 				telemetry.terminalState = "failed";
@@ -871,10 +1008,10 @@ export class UassetProtocolSession {
 		if (child?.stdin !== null && child?.stdin !== undefined && !child.stdin.destroyed) {
 			child.stdin.end();
 		}
-		if (this.closePromise !== undefined) await this.closePromise;
-		this.child = undefined;
-		this.closePromise = undefined;
-		this.iterator = undefined;
+		// Scope release is bounded too. A worker that still refuses to close is detached
+		// from every host-liveness handle after the final termination attempt.
+		const closed = await this.terminate(this.configuration.timeoutMs);
+		if (!closed && child !== undefined) this.detachProcess(child);
 	}
 }
 
@@ -956,10 +1093,15 @@ async function* protocolEvents(options: {
 			}
 		}
 		lines.finish();
-		validator.finish();
 		const closedResult = await closePromise;
 		if (processError !== undefined)
-			throw new ProtocolStreamFailure("process", processError.message);
+			throw new ProtocolStreamFailure(
+				"process",
+				processError.message,
+				undefined,
+				undefined,
+				processFailureCode(processError)
+			);
 		if (closedResult.code !== 0) {
 			throw new ProtocolStreamFailure(
 				"process",
@@ -969,6 +1111,7 @@ async function* protocolEvents(options: {
 				stderr.trim() || undefined
 			);
 		}
+		validator.finish();
 	} finally {
 		options.signal?.removeEventListener("abort", onAbort);
 		if (options.telemetry.startedAt === undefined) options.telemetry.startedAt = queuedAt;

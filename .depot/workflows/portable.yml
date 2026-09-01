@@ -138,17 +138,17 @@ jobs:
         runs-on: depot-ubuntu-latest
         timeout-minutes: 90
         env:
-            CARGO_TARGET_DIR: ${{ github.workspace }}/target
+            CARGO_INCREMENTAL: "0"
+            RUSTC_WRAPPER: sccache
+            SCCACHE_BASEDIRS: ${{ github.workspace }}
+            SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
         steps:
             - name: Checkout without persisted credentials
               uses: actions/checkout@v6
               with:
                   persist-credentials: false
-            - name: Mount UAsset library target cache
-              uses: depot/cache-mount@v1
-              with:
-                  name: ue-shed-uasset-libraries-rust-target-linux-x64-v1
-                  path: ${{ github.workspace }}/target
+            - name: Configure Depot compiler cache
+              uses: mozilla-actions/sccache-action@v0.0.9
             - name: Install pnpm
               uses: pnpm/action-setup@v6
             - name: Install Node.js
@@ -196,17 +196,17 @@ jobs:
         runs-on: depot-ubuntu-latest
         timeout-minutes: 90
         env:
-            CARGO_TARGET_DIR: ${{ github.workspace }}/target
+            CARGO_INCREMENTAL: "0"
+            RUSTC_WRAPPER: sccache
+            SCCACHE_BASEDIRS: ${{ github.workspace }}
+            SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
         steps:
             - name: Checkout without persisted credentials
               uses: actions/checkout@v6
               with:
                   persist-credentials: false
-            - name: Mount UAsset IO target cache
-              uses: depot/cache-mount@v1
-              with:
-                  name: ue-shed-uasset-io-rust-target-linux-x64-v1
-                  path: ${{ github.workspace }}/target
+            - name: Configure Depot compiler cache
+              uses: mozilla-actions/sccache-action@v0.0.9
             - name: Install pnpm
               uses: pnpm/action-setup@v6
             - name: Install Node.js

@@ -59,6 +59,7 @@ test("offers both offline fixture maps only for the fixture preset", async () =>
 		fixtureEnvironment.UE_SHED_SAVED_WORLD_MAPS,
 		"Content/Fixture/Offline/L_OfflineWorld.umap;Content/Fixture/Cameras/L_CameraLoad.umap"
 	);
+	assert.equal(fixtureEnvironment.UE_SHED_REMEMBER_PROJECTS, "false");
 
 	const projectEnvironment = await createWorkbenchEnvironment(
 		{
@@ -69,4 +70,19 @@ test("offers both offline fixture maps only for the fixture preset", async () =>
 		options
 	);
 	assert.equal(projectEnvironment.UE_SHED_SAVED_WORLD_MAPS, undefined);
+});
+
+test("leaves interactive showcase project selection to local history", async () => {
+	const environment = await createWorkbenchEnvironment(
+		{
+			UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30001",
+			UE_SHED_UASSET_EXECUTABLE: "uasset-test"
+		},
+		{ defaultProject: "remembered" }
+	);
+	assert.equal(environment.UE_SHED_PROJECT_ROOT, undefined);
+	assert.equal(environment.UE_SHED_PROJECT_NAME, undefined);
+	assert.equal(environment.UE_SHED_AUTHORING_ASSET, undefined);
+	assert.equal(environment.UE_SHED_TEXTURE_AUDIT_RULES, undefined);
+	assert.equal(environment.UE_SHED_REMEMBER_PROJECTS, "true");
 });

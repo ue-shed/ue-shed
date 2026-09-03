@@ -21,6 +21,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@deck.gl/core": "9.3.11",
+		"@deck.gl/layers": "9.3.11",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/cameras": "workspace:*",
 		"@ue-shed/observability": "workspace:*",

@@ -19,12 +19,18 @@
 		"./point-map-core": {
 			"types": "./src/point-map-core.ts",
 			"default": "./src/point-map-core.ts"
+		},
+		"./point-map-deck": {
+			"types": "./src/point-map-deck.tsx",
+			"default": "./src/point-map-deck.tsx"
 		}
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@deck.gl/core": "9.3.11",
+		"@deck.gl/layers": "9.3.11",
 		"@stylexjs/stylex": "catalog:",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",

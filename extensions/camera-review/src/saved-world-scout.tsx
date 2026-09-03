@@ -8,11 +8,11 @@ import {
 	type ActorExplorerFilters
 } from "@ue-shed/ui";
 import {
-	PointMapCanvas,
 	type PointMapController,
 	type PointMapPoint,
 	type PointMapViewState
 } from "@ue-shed/ui/point-map";
+import { PointMapDeckCanvas } from "@ue-shed/ui/point-map-deck";
 import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Schedule, Stream } from "effect";
@@ -442,12 +442,13 @@ export function SavedWorldScout(props: {
 								>
 									Reset view
 								</button>
-								<PointMapCanvas
+								<PointMapDeckCanvas
 									ariaDescribedBy="saved-world-scout-live"
 									ariaLabel="Top-down saved actor map"
 									class={stylex.props(styles.map).className}
 									onController={(controller) => {
-										pointMap = controller;
+										// SAFETY: Deck controller matches Canvas controller shape (focusKey/resetView/setZoomFactor).
+										pointMap = controller as PointMapController;
 									}}
 									onSelect={selectPoint}
 									onViewChange={setMapView}

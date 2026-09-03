@@ -135,6 +135,35 @@ export const runAuthoringJoin = Effect.fn("Cli.workflow.authoring_join")(
 		)
 );
 
+export const runAuthoringAnalyze = Effect.fn("Cli.workflow.authoring_analyze")(
+	(command: Command<"AuthoringAnalyze">) =>
+		observeCliOperation(
+			command._tag,
+			Effect.gen(function* () {
+				const { buildAnalysisPlan } = yield* Effect.promise(
+					() => import("@ue-shed/authoring")
+				);
+				const reader = yield* AssetReader;
+				const catalog = yield* reader.discoverTables({ projectRoot: command.projectRoot });
+				const matches = catalog.tables.filter(
+					(table) => table.objectPath === command.tableObjectPath
+				);
+				if (matches.length === 0) {
+					return yield* new CliCommandError({
+						message: `No saved DataTable ${command.tableObjectPath} in ${command.projectRoot}.`
+					});
+				}
+				if (matches.length > 1) {
+					return yield* new CliCommandError({
+						message: `Multiple saved DataTables share ${command.tableObjectPath}.`
+					});
+				}
+				const snapshot = yield* reader.readTable(matches[0]!.assetPath);
+				return yield* printJson(buildAnalysisPlan({ snapshot }));
+			}).pipe(Effect.provide(readerLayer(command.reader)))
+		)
+);
+
 export const runAuthoringCatalog = Effect.fn("Cli.workflow.authoring_catalog")(
 	(command: Command<"AuthoringCatalog">) =>
 		observeCliOperation(

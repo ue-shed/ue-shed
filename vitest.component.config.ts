@@ -18,7 +18,7 @@ const stylex = (options: PluginOptions): Plugin => {
 
 export default defineProject({
 	plugins: [solid({ hot: false }), stylex({ fileName: "stylex.css" })],
-	ssr: { noExternal: ["peculiar-sheets"] },
+	ssr: { noExternal: ["peculiar-sheets", "@tanstack/charts"] },
 	test: {
 		environment: "jsdom",
 		include: [

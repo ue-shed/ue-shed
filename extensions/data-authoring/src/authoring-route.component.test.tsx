@@ -377,6 +377,68 @@ describe("AuthoringRoute", () => {
 		expect(screen.queryByText("DT_Inert")).toBeNull();
 	});
 
+	it("projects inferred charts for the filtered table without leaving the catalog", async () => {
+		const client: AuthoringClientApi = {
+			applySession: () => Effect.die("unused"),
+			beginSession: () =>
+				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
+			chooseTable: () => Effect.die("unused"),
+			discardSession: () => Effect.die("unused"),
+			editSession: () => Effect.die("unused"),
+			getCatalogProgress: () =>
+				Effect.succeed({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 1,
+					tablesFound: 1,
+					totalAssets: 1
+				}),
+			listSessions: () =>
+				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
+			loadConfiguredCatalog: () =>
+				Effect.succeed({
+					diagnostics: [],
+					status: "ready" as const,
+					tables: [
+						{
+							authorities: ["saved" as const],
+							completeness: "complete" as const,
+							divergence: [],
+							kind: "data_table" as const,
+							objectPath: snapshot.table.objectPath,
+							parentTables: [],
+							rowStruct: snapshot.table.rowStruct
+						}
+					]
+				}),
+			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			openCatalogTable: () => Effect.die("unused"),
+			openSession: () => Effect.die("unused"),
+			reconcileSession: () => Effect.die("unused"),
+			redoSession: () => Effect.die("unused"),
+			reviewSession: () => Effect.die("unused"),
+			saveSession: () => Effect.die("unused"),
+			undoSession: () => Effect.die("unused")
+		};
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<AuthoringRoute client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		await screen.findByRole("tab", { name: "Charts" });
+		await userEvent.setup().click(screen.getByRole("tab", { name: "Charts" }));
+		expect(await screen.findByText("Count distribution")).toBeDefined();
+		await userEvent
+			.setup()
+			.type(screen.getByRole("textbox", { name: "Filter table rows" }), "Alpha");
+		expect(await screen.findByText("Nothing chartable yet")).toBeDefined();
+		expect(screen.getByRole("navigation", { name: "Project DataTables" })).toBeDefined();
+		expect(screen.getByRole("tab", { name: "Grid" }).getAttribute("aria-selected")).toBe(
+			"false"
+		);
+	});
+
 	it("surfaces rejected Apply errors and keeps the draft staged", async () => {
 		const rejectedView: AuthoringSessionView = {
 			...sessionView,

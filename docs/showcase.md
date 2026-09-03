@@ -66,10 +66,16 @@ its saved package, presents its typed rows and fields, and keeps authority and p
 diagnostics visible without opening Unreal. Use **Open saved table** to inspect another DataTable
 `.uasset`.
 
+On the table sheet, switch **Grid** and **Charts**. Charts profile the currently filtered rows:
+boolean and enum distributions, numeric histograms, grouped averages, and a scatter of the two
+strongest numeric fields. The catalog and inspector stay; filtering the table also filters the
+charts.
+
 The same public capability remains available from a repository shell:
 
 ```powershell
 pnpm ue-shed authoring inspect fixtures\unreal-project\Content\Fixture\Authoring\DT_Scalars.uasset
+pnpm ue-shed authoring analyze fixtures\unreal-project /Game/Fixture/Authoring/DT_Scalars.DT_Scalars
 ```
 
 Run `pnpm ue-shed help` to continue through persistent sessions, typed cell drafts, undo and redo.

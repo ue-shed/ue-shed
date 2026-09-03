@@ -831,6 +831,24 @@ test(`records the ${journey} Workbench journey`, async ({
 			chapters.push(
 				await recordChapter({
 					action: async () => {
+						await page!.getByRole("tab", { name: "Charts" }).click();
+						await expect(page!.getByText("Enabled distribution")).toBeVisible();
+						await expect(page!.getByText("Count distribution")).toBeVisible();
+						await expect(
+							page!.getByRole("navigation", { name: "Project DataTables" })
+						).toBeVisible();
+					},
+					description:
+						"Switch the open table to Charts to see inferred distributions without leaving the catalog.",
+					page,
+					slug: "02-data-authoring-charts",
+					testInfo,
+					title: "Chart the open DataTable"
+				})
+			);
+			chapters.push(
+				await recordChapter({
+					action: async () => {
 						await workbench.openRoute("Texture Audit");
 						await expect(
 							page!.getByRole("navigation", { name: "Breadcrumb" })

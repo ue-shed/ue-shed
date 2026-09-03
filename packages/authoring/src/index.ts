@@ -1,3 +1,4 @@
+export * from "./analysis.js";
 export * from "./draft.js";
 export * from "./fingerprint.js";
 export * from "./joined-views.js";

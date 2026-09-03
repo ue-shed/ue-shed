@@ -1,3 +1,4 @@
+export * from "./authoring-analysis-view.js";
 export * from "./authoring-combined-view.js";
 export * from "./authoring-grid-model.js";
 export * from "./authoring-route.js";

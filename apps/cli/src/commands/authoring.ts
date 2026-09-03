@@ -3,6 +3,7 @@ import { Argument, Command, Flag } from "effect/unstable/cli";
 import { Effect, Schema } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
 import {
+	runAuthoringAnalyze,
 	runAuthoringCatalog,
 	runAuthoringInspect,
 	runAuthoringJoin,
@@ -80,6 +81,22 @@ const authoringJoinCommand = Command.make(
 			...readerFields(reader)
 		})
 ).pipe(Command.withDescription("Build a read-only joined DataTable view."));
+
+const authoringAnalyzeCommand = Command.make(
+	"analyze",
+	{
+		projectRoot: Argument.string("project-root"),
+		tableObjectPath: Argument.string("table"),
+		reader: readerFlag
+	},
+	({ projectRoot, tableObjectPath, reader }) =>
+		runAuthoringAnalyze({
+			_tag: "AuthoringAnalyze",
+			projectRoot,
+			tableObjectPath,
+			...readerFields(reader)
+		})
+).pipe(Command.withDescription("Profile a saved DataTable into suggested charts."));
 
 const authoringCatalogCommand = Command.make(
 	"catalog",
@@ -422,6 +439,7 @@ export const authoringCommand = Command.make("authoring").pipe(
 		authoringTablesCommand,
 		authoringRelationshipsCommand,
 		authoringJoinCommand,
+		authoringAnalyzeCommand,
 		authoringCatalogCommand,
 		authoringParityCommand,
 		authoringInspectCommand,

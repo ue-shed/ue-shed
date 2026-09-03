@@ -111,8 +111,10 @@ silently dropped from a row during editing.
 
 ## Views and specialized workflows
 
-A table grid is the default product, not the only possible surface. Public authoring data can power:
+A table grid is the default product, not the only possible surface. The first-party table sheet
+switches **Grid** and **Charts** over the same filtered rows. Public authoring data can also power:
 
+- inferred charts over the current filtered rows;
 - joined or filtered views over several tables;
 - row-detail forms;
 - purpose-built maintained first-party extensions.

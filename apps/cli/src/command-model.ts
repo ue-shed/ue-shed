@@ -82,6 +82,11 @@ export const CliCommand = Schema.TaggedUnion({
 		sourceTableObjectPath: Schema.String,
 		...Reader
 	},
+	AuthoringAnalyze: {
+		...Project,
+		tableObjectPath: Schema.String,
+		...Reader
+	},
 	AuthoringCatalog: { ...Project, endpoint: Schema.optionalKey(Schema.String), ...Reader },
 	AuthoringParity: { ...Project, endpoint: Schema.String, ...Reader },
 	AuthoringInspect: { assetPath: Schema.String, ...Reader },

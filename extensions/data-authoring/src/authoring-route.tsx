@@ -34,6 +34,7 @@ import {
 	valueSummary
 } from "./authoring-view.js";
 import { AuthoringCombinedView } from "./authoring-combined-view.js";
+import { AuthoringAnalysisView } from "./authoring-analysis-view.js";
 import { AuthoringTableGrid } from "./authoring-table-grid.js";
 import type { AuthoringGridGesture } from "./authoring-grid-model.js";
 
@@ -596,6 +597,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 	const [isPersisting, setIsPersisting] = createSignal(false);
 	const [inspectorTab, setInspectorTab] = createSignal<"cell" | "review" | "sessions">("cell");
 	const [workspaceMode, setWorkspaceMode] = createSignal<"table" | "relationships">("table");
+	const [tableProjection, setTableProjection] = createSignal<"grid" | "charts">("grid");
 	const [authorityPreference, setAuthorityPreference] =
 		createSignal<AuthorityPreference>("automatic");
 	const [selectedAuthority, setSelectedAuthority] = createSignal<AuthoringAuthority>("saved");
@@ -1468,6 +1470,46 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 														{visibleRows().length} /{" "}
 														{snapshot().table.rows.length} rows
 													</span>
+													<div
+														role="tablist"
+														aria-label="Table projection"
+														{...stylex.props(styles.viewTabs)}
+													>
+														<button
+															type="button"
+															role="tab"
+															aria-selected={
+																tableProjection() === "grid"
+															}
+															onClick={() =>
+																setTableProjection("grid")
+															}
+															{...stylex.props(
+																styles.viewTab,
+																tableProjection() === "grid" &&
+																	styles.viewTabActive
+															)}
+														>
+															Grid
+														</button>
+														<button
+															type="button"
+															role="tab"
+															aria-selected={
+																tableProjection() === "charts"
+															}
+															onClick={() =>
+																setTableProjection("charts")
+															}
+															{...stylex.props(
+																styles.viewTab,
+																tableProjection() === "charts" &&
+																	styles.viewTabActive
+															)}
+														>
+															Charts
+														</button>
+													</div>
 													<span {...stylex.props(styles.rowStruct)}>
 														Row struct · {snapshot().table.rowStruct}
 													</span>
@@ -1647,32 +1689,42 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 														)}
 													</Show>
 												</div>
-												<AuthoringTableGrid
-													columns={columns()}
-													disabled={
-														!session() ||
-														isPersisting() ||
-														readOnlyTable()
+												<Show
+													when={tableProjection() === "grid"}
+													fallback={
+														<AuthoringAnalysisView
+															rows={visibleRows()}
+															snapshot={snapshot()}
+														/>
 													}
-													dirtyCells={
-														session()?.review.tables.find(
-															(table) =>
-																table.objectPath ===
-																snapshot().table.objectPath
-														)?.dirtyCells
-													}
-													dirtyRowIds={
-														session()?.review.tables.find(
-															(table) =>
-																table.objectPath ===
-																snapshot().table.objectPath
-														)?.dirtyRowIds
-													}
-													onEditFailure={setSessionNotice}
-													onGesture={handleGridGesture}
-													onSelectionChange={setSelection}
-													rows={visibleRows()}
-												/>
+												>
+													<AuthoringTableGrid
+														columns={columns()}
+														disabled={
+															!session() ||
+															isPersisting() ||
+															readOnlyTable()
+														}
+														dirtyCells={
+															session()?.review.tables.find(
+																(table) =>
+																	table.objectPath ===
+																	snapshot().table.objectPath
+															)?.dirtyCells
+														}
+														dirtyRowIds={
+															session()?.review.tables.find(
+																(table) =>
+																	table.objectPath ===
+																	snapshot().table.objectPath
+															)?.dirtyRowIds
+														}
+														onEditFailure={setSessionNotice}
+														onGesture={handleGridGesture}
+														onSelectionChange={setSelection}
+														rows={visibleRows()}
+													/>
+												</Show>
 											</section>
 
 											<aside {...stylex.props(styles.inspector)}>

@@ -27,6 +27,11 @@ source row and provenance, resolved rows retain the complete target row and prov
 relationships remain visible instead of being dropped. The projection intentionally grants no draft
 authority; edits still target a canonical table session.
 
+A saved table also profiles into a versioned analysis plan: boolean and enum distributions, numeric
+histograms, grouped averages, and a scatter of the two strongest numeric fields. Suggested charts
+never treat ordinary names or strings as categories. `ue-shed authoring analyze <project-root>
+<table-object-path>` prints the same plan without Workbench.
+
 The maintained Data Authoring extension presents that projection as a cross-table evidence matrix.
 Its source selector exposes the project catalog, while a table switchboard can show, hide, or isolate
 participating source and target columns without changing the projection or loading draft authority.

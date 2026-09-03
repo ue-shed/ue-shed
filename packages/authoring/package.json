@@ -8,6 +8,10 @@
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
 		},
+		"./analysis": {
+			"types": "./src/analysis.ts",
+			"default": "./src/analysis.ts"
+		},
 		"./joined-views": {
 			"types": "./src/joined-views.ts",
 			"default": "./src/joined-views.ts"

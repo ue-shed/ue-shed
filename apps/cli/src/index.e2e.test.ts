@@ -294,6 +294,39 @@ describe("ue-shed CLI process", () => {
 		);
 	});
 
+	nativeIt(
+		"profiles a saved DataTable into suggested charts",
+		() => {
+			const plan = parseRecord(
+				runSuccessfulCli(["authoring", "analyze", fixtureProject, scalarTable])
+			);
+			expect(plan.contract).toEqual({
+				name: "unreal-authoring-analysis",
+				version: { major: 1, minor: 0 }
+			});
+			expect(plan.tableObjectPath).toBe(scalarTable);
+			expect(plan.rowCount).toBe(2);
+			expect(plan.charts).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: "category-count",
+						xLabel: "Enabled"
+					}),
+					expect.objectContaining({
+						kind: "histogram",
+						xLabel: "Count"
+					}),
+					expect.objectContaining({
+						kind: "scatter",
+						xLabel: "Count",
+						yLabel: "Ratio"
+					})
+				])
+			);
+		},
+		30_000
+	);
+
 	// oxfmt-ignore
 	nativeIt("runs the persistent session lifecycle through separate CLI processes", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-cli-sessions-"));

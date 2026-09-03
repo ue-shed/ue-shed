@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { LocalFiles } from "../adapters/local-files.js";
 import type { ProjectLaunchMode, ProjectLaunchResult } from "../project-workspace-contract.js";
+import { typescriptCheckoutArgs } from "../typescript-checkout.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
@@ -48,14 +49,13 @@ export const ProjectLauncherLive = Layer.effect(
 			return yield* Effect.scoped(
 				processHost
 					.launch({
-						args: [
-							script,
+						args: typescriptCheckoutArgs(script, [
 							"launch",
 							"--project",
 							selected.project.projectRoot,
 							"--mode",
 							mode
-						],
+						]),
 						cwd,
 						...(configuration.unrealEngineRoot?.status === "configured"
 							? {

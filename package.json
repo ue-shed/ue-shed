@@ -96,6 +96,7 @@
 		"@stylexjs/rollup-plugin": "catalog:",
 		"@testing-library/user-event": "^14.6.1",
 		"@types/node": "^24.6.0",
+		"@typescript/native": "npm:typescript@^7.0.2",
 		"@vitest/coverage-v8": "^4.1.10",
 		"effect": "catalog:",
 		"jsdom": "^29.1.1",
@@ -103,7 +104,7 @@
 		"oxlint": "^1.78.0",
 		"solid-js": "catalog:",
 		"tsx": "^4.21.0",
-		"typescript": "^5.8.0",
+		"typescript": "npm:@typescript/typescript6@^6.0.2",
 		"vite-plugin-solid": "catalog:",
 		"vitest": "^4.1.3"
 	},

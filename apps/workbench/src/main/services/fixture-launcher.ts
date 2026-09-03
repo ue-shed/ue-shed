@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { LocalFiles } from "../adapters/local-files.js";
 import type { FixtureLaunchResult } from "../ipc-contracts.js";
+import { typescriptCheckoutArgs } from "../typescript-checkout.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
@@ -167,7 +168,7 @@ export const FixtureLauncherLive = Layer.effect(
 				Effect.gen(function* () {
 					const exit = yield* fixtureProcess
 						.launch({
-							args: [launchScript, launchArgForMode(mode)],
+							args: typescriptCheckoutArgs(launchScript, [launchArgForMode(mode)]),
 							cwd,
 							executable: process.execPath
 						})

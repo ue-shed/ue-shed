@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 import { FixtureProcessTest, makeFixtureProcessTestLayer } from "../adapters/fixture-process.js";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
+import { typescriptLoader } from "../typescript-checkout.js";
 import { workbenchConfigurationFromUnknown } from "../workbench-config.js";
 import { ProjectLauncher, ProjectLauncherLive } from "./project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
@@ -57,6 +58,8 @@ it.effect("launches the selected project with an explicit UE Shed mode", () =>
 		const launches = yield* processHost.launches();
 		expect(launches).toHaveLength(1);
 		expect(launches[0]?.args).toEqual([
+			"--import",
+			typescriptLoader,
 			script,
 			"launch",
 			"--project",

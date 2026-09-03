@@ -38,12 +38,15 @@ UE Shed code should be functional, typed, observable, and well tested.
 
 ## Stack
 
-TypeScript for public code. Effect for app behavior. SolidJS for first-party UI. StyleX for styles.
-C++ for small Unreal-side features.
+TypeScript 7's native `tsc` type-checks and emits public packages. The `typescript` package
+remains the 6.x JavaScript compiler API until 7.1, which `scripts/check-stylex-shorthands.ts` and
+bundlers still import. Node packages that need Node globals set `"types": ["node"]` in their own
+tsconfig; do not add that default to `tsconfig.base.json`. Effect for app behavior. SolidJS for
+first-party UI. StyleX for styles. C++ for small Unreal-side features.
 
 Repository development, CI, and maintained internal scripts use Node.js 26. Internal scripts are
-erasable TypeScript and are checked by `tsconfig.scripts.json`. Public packages retain their
-declared Node.js 22.14 minimum and their packed artifacts are tested on that exact version. Reserve
-plain `.mjs` for published JavaScript artifacts, tests that directly exercise those artifacts, or
-standalone adoption scripts copied outside the repository, where depending on the repository's
-TypeScript configuration would break portability.
+erasable TypeScript, checked by `tsconfig.scripts.json`, and executed with Node or tsx. Public
+packages retain their declared Node.js 22.14 minimum and their packed artifacts are tested on that
+exact version. Reserve plain `.mjs` for published JavaScript artifacts, tests that directly exercise
+those artifacts, or standalone adoption scripts copied outside the repository, where depending on
+the repository's TypeScript configuration would break portability.

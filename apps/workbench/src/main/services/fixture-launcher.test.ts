@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
+import { typescriptLoader } from "../typescript-checkout.js";
 import {
 	makeWorkbenchConfigurationLayer,
 	type WorkbenchConfigurationApi
@@ -323,6 +324,51 @@ it.effect("launch fails without spawning when the launcher script is missing on 
 			)
 		)
 	)
+);
+
+it.effect("launch runs the checkout fixture script through tsx", () =>
+	Effect.gen(function* () {
+		const recorded = yield* Ref.make<ReadonlyArray<string>>([]);
+		const launched = yield* Ref.make(false);
+		const fixtureProcess = FixtureProcess.of({
+			launch: (options) =>
+				Ref.set(recorded, options.args).pipe(
+					Effect.andThen(Ref.set(launched, true)),
+					Effect.as({ status: "ready" as const })
+				)
+		});
+		const layer = FixtureLauncherLive.pipe(
+			Layer.provide(
+				Layer.mergeAll(
+					makeWorkbenchConfigurationLayer(configuredCheckout),
+					makeFixtureHealthTestLayer({
+						check: () =>
+							Ref.get(launched).pipe(
+								Effect.map(
+									(flag): FixtureHealthResult =>
+										flag ? { status: "ready" } : { status: "not_running" }
+								)
+							)
+					}),
+					scriptOnDisk,
+					Layer.succeed(FixtureProcess, fixtureProcess)
+				)
+			)
+		);
+		const result = yield* Effect.gen(function* () {
+			const launcher = yield* FixtureLauncher;
+			const fiber = yield* Effect.forkChild(launcher.launch("default"));
+			yield* TestClock.adjust("1 second");
+			return yield* Fiber.join(fiber);
+		}).pipe(Effect.provide(layer));
+		expect(result).toEqual({ status: "ready" });
+		expect(yield* Ref.get(recorded)).toEqual([
+			"--import",
+			typescriptLoader,
+			launchScriptPath,
+			"launch"
+		]);
+	})
 );
 
 it.effect("launch spawns once and waits across poll ticks for readiness", () =>

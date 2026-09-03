@@ -3,7 +3,8 @@
 	"compilerOptions": {
 		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
-		"lib": ["ES2023", "DOM"]
+		"lib": ["ES2023", "DOM"],
+		"types": ["vite/client"]
 	},
 	"include": ["src/**/*.ts", "src/**/*.tsx"]
 }

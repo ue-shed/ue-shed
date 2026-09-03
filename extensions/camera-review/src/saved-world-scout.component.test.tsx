@@ -94,6 +94,32 @@ function renderScout() {
 }
 
 describe("SavedWorldScout", () => {
+	it("shows package progress while the saved map is still reading", async () => {
+		const client = {
+			readSavedWorld: () => Effect.never,
+			savedWorldMaps: () => Effect.succeed(maps),
+			savedWorldProgress: () =>
+				Effect.succeed({
+					actorsFound: 0,
+					phase: "scanning" as const,
+					processedPackages: 12,
+					totalPackages: 40
+				})
+		} satisfies Pick<
+			MapReviewClientApi,
+			"readSavedWorld" | "savedWorldMaps" | "savedWorldProgress"
+		>;
+		render(() => (
+			<EffectRuntimeProvider runtime={runtime}>
+				<SavedWorldScout client={client} />
+			</EffectRuntimeProvider>
+		));
+
+		expect(await screen.findByRole("progressbar")).toBeDefined();
+		expect(await screen.findByText("12 / 40 packages")).toBeDefined();
+		expect(screen.getByRole("heading", { name: "Reading saved map…" })).toBeDefined();
+	});
+
 	it("keeps the map picker aligned with the map that finished loading", async () => {
 		const user = userEvent.setup();
 		renderScout();

@@ -105,6 +105,7 @@ export const workbenchInvokeChannels = {
 		worldSnapshot: "map-review:world-snapshot",
 		savedWorld: "map-review:saved-world",
 		savedWorldMaps: "map-review:saved-world-maps",
+		savedWorldProgress: "map-review:saved-world-progress",
 		chooseProjectAndMaps: "map-review:choose-project-and-maps",
 		focusActor: "map-review:focus-actor",
 		approveCandidate: "map-review:approve-candidate",

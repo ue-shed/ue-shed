@@ -3,6 +3,7 @@ import {
 	ActorExplorer,
 	actorExplorerMatches,
 	createEffectAction,
+	createEffectSubscription,
 	SavedMapPicker,
 	type ActorExplorerFilters
 } from "@ue-shed/ui";
@@ -12,12 +13,19 @@ import {
 	type PointMapPoint,
 	type PointMapViewState
 } from "@ue-shed/ui/point-map";
-import type { SavedWorld, SavedWorldMap } from "@ue-shed/protocol";
+import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
-import { Cause } from "effect";
+import { Cause, Schedule, Stream } from "effect";
 import { Show, createMemo, createSignal, onMount } from "solid-js";
 import type { MapReviewClientApi } from "./map-review-client.js";
 import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.js";
+
+const idleSavedWorldProgress = (): SavedWorldProgress => ({
+	actorsFound: 0,
+	phase: "idle",
+	processedPackages: 0,
+	totalPackages: 0
+});
 
 /**
  * Saved-package Map Review surface. It intentionally shares the retained rendering mechanics
@@ -26,12 +34,13 @@ import { formatCoordinate, WorldScoutRetainedStore } from "./world-scout-canvas.
 export function SavedWorldScout(props: {
 	readonly client: Pick<
 		MapReviewClientApi,
-		"readSavedWorld" | "savedWorldMaps" | "chooseProjectAndMaps"
+		"readSavedWorld" | "savedWorldMaps" | "savedWorldProgress" | "chooseProjectAndMaps"
 	>;
 }) {
 	const mapsAction = createEffectAction();
 	const worldAction = createEffectAction();
 	const chooseAction = createEffectAction();
+	const progressSubscription = createEffectSubscription();
 	const store = new WorldScoutRetainedStore();
 	let pointMap: PointMapController | undefined;
 
@@ -40,6 +49,7 @@ export function SavedWorldScout(props: {
 	const [projectLabel, setProjectLabel] = createSignal<string>();
 	const [selectedMapPath, setSelectedMapPath] = createSignal<string>();
 	const [error, setError] = createSignal<string>();
+	const [progress, setProgress] = createSignal<SavedWorldProgress>(idleSavedWorldProgress());
 	const [actorFilters, setActorFilters] = createSignal<ActorExplorerFilters>({
 		classPaths: undefined,
 		query: ""
@@ -132,6 +142,14 @@ export function SavedWorldScout(props: {
 		};
 	});
 
+	const watchProgress = () => {
+		const readProgress = props.client.savedWorldProgress;
+		if (readProgress === undefined) return;
+		progressSubscription.subscribe(
+			Stream.fromEffectSchedule(readProgress(), Schedule.spaced("250 millis")),
+			{ onValue: setProgress }
+		);
+	};
 	const load = (mapPath: string) => {
 		const readSavedWorld = props.client.readSavedWorld;
 		if (readSavedWorld === undefined) {
@@ -141,9 +159,16 @@ export function SavedWorldScout(props: {
 		setError(undefined);
 		setActorFilters({ classPaths: undefined, query: "" });
 		setWorld(undefined);
+		setProgress({ ...idleSavedWorldProgress(), phase: "enumerating" });
+		watchProgress();
 		worldAction.run(readSavedWorld(mapPath), {
-			onFailure: (cause) => setError(Cause.pretty(cause)),
+			onFailure: (cause) => {
+				progressSubscription.cancel();
+				setProgress((current) => ({ ...current, phase: "failed" }));
+				setError(Cause.pretty(cause));
+			},
 			onSuccess: (nextWorld) => {
+				progressSubscription.cancel();
 				store.installSavedWorld(nextWorld);
 				setWorld(nextWorld);
 				setSelectedStreamIndex(undefined);
@@ -281,6 +306,32 @@ export function SavedWorldScout(props: {
 								? "The selected level and its external actor packages are being read from disk."
 								: "Pick a different project or map, then retry."}
 						</p>
+						<Show when={error() === undefined}>
+							<div {...stylex.props(styles.progressBlock)}>
+								<Show
+									when={progress().totalPackages > 0}
+									fallback={
+										<progress
+											aria-label="Saved map load progress"
+											{...stylex.props(styles.progress)}
+										/>
+									}
+								>
+									<progress
+										aria-label="Saved map load progress"
+										max={progress().totalPackages}
+										value={progress().processedPackages}
+										{...stylex.props(styles.progress)}
+									/>
+								</Show>
+								<Show when={progress().totalPackages > 0}>
+									<small>
+										{progress().processedPackages.toLocaleString()} /{" "}
+										{progress().totalPackages.toLocaleString()} packages
+									</small>
+								</Show>
+							</div>
+						</Show>
 						<Show when={error()}>
 							{(message) => (
 								<details {...stylex.props(styles.technical)}>
@@ -566,6 +617,19 @@ const styles = stylex.create({
 		padding: 24,
 		color: tokens.colorTextMuted,
 		textAlign: "center"
+	},
+	progressBlock: {
+		display: "flex",
+		flexDirection: "column",
+		alignItems: "center",
+		gap: 8,
+		width: "100%",
+		maxWidth: 320
+	},
+	progress: {
+		width: "100%",
+		height: 4,
+		accentColor: "#02b8cc"
 	},
 	technical: {
 		maxWidth: 560,

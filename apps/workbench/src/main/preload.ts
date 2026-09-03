@@ -214,6 +214,7 @@ const workbenchRendererApi = {
 		savedWorldMaps: (): Promise<
 			readonly { readonly label: string; readonly mapPath: string }[]
 		> => ipcRenderer.invoke("map-review:saved-world-maps"),
+		savedWorldProgress: () => ipcRenderer.invoke("map-review:saved-world-progress"),
 		chooseProjectAndMaps: () => ipcRenderer.invoke("map-review:choose-project-and-maps"),
 		focusActor: (actorId: string, bringToFront: boolean): Promise<WorldScoutFocusResult> =>
 			ipcRenderer.invoke("map-review:focus-actor", actorId, bringToFront),

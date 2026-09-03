@@ -139,7 +139,8 @@ only after the author keeps a view or captures durable evidence.
 
 Saved Map Review and World Log use the same browser-safe Canvas point-map component for resolved,
 static actor records: class-colored batched points, coordinate grid, fit/reset, pan, zoom, hit
-testing, and keyboard selection. The component also accepts product-provided semantic marker
+testing, and keyboard selection. Saved-map load shows a package-count progress bar while the
+selected level is still being read. The component also accepts product-provided semantic marker
 colors and directed vectors, which lets World Log render a selected changelist's actor diff without
 copying Canvas mechanics. The live scout retains its streaming-aware dense store and adapts the
 same viewport/projection core, so live transform batches do not become generic per-actor objects

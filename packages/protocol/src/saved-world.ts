@@ -123,5 +123,6 @@ export const SavedWorldProgress = Schema.Struct({
 	totalPackages: NonNegativeInt
 });
 export type SavedWorldProgress = Schema.Schema.Type<typeof SavedWorldProgress>;
+export const decodeSavedWorldProgress = Schema.decodeUnknownEffect(SavedWorldProgress);
 
 export const decodeSavedWorld = Schema.decodeUnknownEffect(SavedWorld);

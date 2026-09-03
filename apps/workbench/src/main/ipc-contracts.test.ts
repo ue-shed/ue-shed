@@ -361,6 +361,7 @@ const validArgsByChannel = {
 	"map-review:world-snapshot": [],
 	"map-review:saved-world": ["Content/Fixture/Offline/L_OfflineWorld.umap"],
 	"map-review:saved-world-maps": [],
+	"map-review:saved-world-progress": [],
 	"map-review:choose-project-and-maps": [],
 	"map-review:focus-actor": ["/Game/Fixture.Map:PersistentLevel.Actor", true],
 	"map-review:capture": [{ viewIds: ["view-1"] }],
@@ -700,6 +701,12 @@ const validResultByChannel = {
 	"map-review:saved-world-maps": [
 		{ label: "Offline World", mapPath: "Content/Fixture/Offline/L_OfflineWorld.umap" }
 	],
+	"map-review:saved-world-progress": {
+		actorsFound: 12,
+		phase: "scanning",
+		processedPackages: 40,
+		totalPackages: 84
+	},
 	"map-review:choose-project-and-maps": {
 		status: "configured",
 		projectRoot: "D:/Projects/DemoGame",
@@ -792,9 +799,9 @@ const malformedArgsByChannel = {
 	"map-capture:tile": [{ manifestPath: "", relativePath: "../outside.png" }]
 } satisfies Partial<Record<InvokeChannel, IpcFixtureValue>>;
 
-it("registers exactly 109 invoke channels plus renderer events", () => {
-	expect(invokeChannelNames).toHaveLength(109);
-	expect(new Set(invokeChannelNames).size).toBe(109);
+it("registers exactly 110 invoke channels plus renderer events", () => {
+	expect(invokeChannelNames).toHaveLength(110);
+	expect(new Set(invokeChannelNames).size).toBe(110);
 	expect(cameraFrameEvent.channel).toBe("camera:frame");
 	expect(mapCaptureProgressEvent.channel).toBe("map-capture:progress");
 	expect(worldObservationEvent.channel).toBe("map-review:world-observation");

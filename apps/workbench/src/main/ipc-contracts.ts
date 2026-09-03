@@ -97,7 +97,8 @@ import {
 	EditorAssetLocateResult,
 	SavedWorld,
 	SavedWorldChoice,
-	SavedWorldMap
+	SavedWorldMap,
+	SavedWorldProgress
 } from "@ue-shed/protocol";
 import {
 	ContentObservatoryHistoryRequest,
@@ -964,6 +965,11 @@ export const invokeContracts = {
 		channel: "map-review:saved-world-maps",
 		args: EmptyArgs,
 		result: Schema.Array(SavedWorldMap)
+	}),
+	"map-review:saved-world-progress": invoke({
+		channel: "map-review:saved-world-progress",
+		args: EmptyArgs,
+		result: SavedWorldProgress
 	}),
 	"map-review:choose-project-and-maps": invoke({
 		channel: "map-review:choose-project-and-maps",

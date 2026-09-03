@@ -47,6 +47,7 @@ import {
 	CameraStatus,
 	decodeSavedWorld,
 	decodeSavedWorldChoice,
+	decodeSavedWorldProgress,
 	SavedWorldMap
 } from "@ue-shed/protocol";
 import { Effect, Queue, Schema, Stream } from "effect";
@@ -77,6 +78,13 @@ const loadSavedWorldMaps = () =>
 		decode: Schema.decodeUnknownEffect(Schema.Array(SavedWorldMap)),
 		invoke: () => window.ueShed.mapReview.savedWorldMaps(),
 		operation: "mapReview.savedWorldMaps"
+	});
+
+const loadSavedWorldProgress = () =>
+	request({
+		decode: decodeSavedWorldProgress,
+		invoke: () => window.ueShed.mapReview.savedWorldProgress(),
+		operation: "mapReview.savedWorldProgress"
 	});
 
 const chooseProjectAndMaps = () =>
@@ -265,6 +273,9 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 		loadSavedWorld(mapPath)
 	),
 	savedWorldMaps: Effect.fn("MapReviewClient.savedWorldMaps")(() => loadSavedWorldMaps()),
+	savedWorldProgress: Effect.fn("MapReviewClient.savedWorldProgress")(() =>
+		loadSavedWorldProgress()
+	),
 	chooseProjectAndMaps: Effect.fn("MapReviewClient.chooseProjectAndMaps")(() =>
 		chooseProjectAndMaps()
 	),

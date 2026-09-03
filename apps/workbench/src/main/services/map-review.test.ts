@@ -263,6 +263,12 @@ it.effect("uses the global project's cached .umap inventory for saved map review
 			"Content/Maps/L_Alpha.umap",
 			"Content/Maps/L_Beta.umap"
 		]);
+		expect(yield* service.savedWorldProgress()).toEqual({
+			actorsFound: 0,
+			phase: "idle",
+			processedPackages: 0,
+			totalPackages: 0
+		});
 	}).pipe(
 		Effect.provide(
 			WorkbenchMapReviewTestLive.pipe(

@@ -55,7 +55,12 @@ import {
 	type WorldTransform
 } from "@ue-shed/observatory";
 import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
-import type { SavedWorld, SavedWorldChoice, SavedWorldMap } from "@ue-shed/protocol";
+import type {
+	SavedWorld,
+	SavedWorldChoice,
+	SavedWorldMap,
+	SavedWorldProgress
+} from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
 	Context,
@@ -219,6 +224,8 @@ export interface WorkbenchMapReviewApi {
 	readonly savedWorld: (
 		mapPath: string
 	) => Effect.Effect<SavedWorld, AssetReaderError | SavedWorldUnavailable>;
+	/** Latest native saved-world package progress; poll while `savedWorld` is in flight. */
+	readonly savedWorldProgress: () => Effect.Effect<SavedWorldProgress>;
 	readonly worldSnapshot: () => Effect.Effect<WorldScoutResult>;
 	readonly subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate) => Effect.Effect<void>;
 	readonly setWorldObservationRate: (
@@ -905,6 +912,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				projectRoot: resolved.projectRoot
 			});
 		});
+
+		const savedWorldProgress = Effect.fn("Workbench.WorkbenchMapReview.savedWorldProgress")(
+			() => assetReader.savedWorldProgress()
+		);
 
 		const chooseProjectAndMaps = Effect.fn("Workbench.WorkbenchMapReview.chooseProjectAndMaps")(
 			function* () {
@@ -2018,6 +2029,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			reviewSetLibrary,
 			savedWorldMaps,
 			savedWorld,
+			savedWorldProgress,
 			selectReviewSet,
 			setLivePreviewFps,
 			setWorldObservationRate,
@@ -2034,6 +2046,7 @@ export function makeWorkbenchMapReviewTestLayer(
 		WorkbenchMapReviewApi,
 		| "savedWorld"
 		| "savedWorldMaps"
+		| "savedWorldProgress"
 		| "chooseProjectAndMaps"
 		| "applyVisibilityPolicy"
 		| "replaceVisibilityPolicy"
@@ -2046,6 +2059,7 @@ export function makeWorkbenchMapReviewTestLayer(
 				WorkbenchMapReviewApi,
 				| "savedWorld"
 				| "savedWorldMaps"
+				| "savedWorldProgress"
 				| "chooseProjectAndMaps"
 				| "applyVisibilityPolicy"
 				| "replaceVisibilityPolicy"
@@ -2064,6 +2078,9 @@ export function makeWorkbenchMapReviewTestLayer(
 			savedWorld: service.savedWorld ?? (() => Effect.die("saved world reader not stubbed")),
 			savedWorldMaps:
 				service.savedWorldMaps ?? (() => Effect.die("saved world maps reader not stubbed")),
+			savedWorldProgress:
+				service.savedWorldProgress ??
+				(() => Effect.die("saved world progress reader not stubbed")),
 			chooseProjectAndMaps:
 				service.chooseProjectAndMaps ?? (() => Effect.die("project chooser not stubbed")),
 			createReviewSet:

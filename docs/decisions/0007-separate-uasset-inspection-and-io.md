@@ -108,7 +108,7 @@ uasset executable will no longer be owned by the parser crate. A persistent work
 multiplexing, dynamic operation registries, and bidirectional cancel frames remain deferred until
 measurements justify them.
 
-## Amendment: DuckDB is the canonical Project Index Catalog
+## Historical amendment: DuckDB is the canonical Project Index Catalog (superseded)
 
 Accepted for Plan 037 on 2026-08-06.
 
@@ -127,3 +127,21 @@ adapter.
 The production factory selects DuckDB. The former SQLite adapter, migrations, tests, research
 conversion driver, and client dependency were removed after the conformance soak rather than
 retained as a user-selectable backend.
+
+## Amendment: SQLite is the canonical Project Index Catalog
+
+Accepted on 2026-09-05; supersedes the 2026-08-06 engine selection above.
+
+The production factory selects bundled SQLite through pinned `rusqlite`. DuckDB and Arrow are
+removed from the production dependency graph. There is one production adapter, with no backend
+selector. The storage-neutral Catalog, protocol, and headless library/CLI boundaries are unchanged.
+
+The selection follows the three-size actual-project comparison in
+[the second speed pass](../research/rust-core-speed-round2-2026-09-05.md). SQLite with class postings
+and JSONB serialized-name scans improved fresh scans and executable size, with acceptable warm
+performance. Full serialized-name postings made fresh scans slower; they are not enabled.
+
+The [SQLite engineering guide](../engineering/sqlite-project-index.md) owns current storage behavior.
+Caches use a new `catalogs-v3` namespace and rebuild from source on first refresh. Old DuckDB caches
+are disposable and are neither converted nor deleted automatically. CI compile-time savings remain
+unmeasured until the hosted gate runs.

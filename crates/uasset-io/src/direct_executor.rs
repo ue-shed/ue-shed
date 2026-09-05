@@ -8,10 +8,10 @@ mod blueprint;
 mod catalog;
 #[cfg(test)]
 mod catalog_conformance;
-#[allow(dead_code)]
-mod catalog_duckdb;
 #[cfg(test)]
 mod catalog_memory;
+#[allow(dead_code)]
+mod catalog_sqlite;
 mod inspection;
 mod project_index;
 mod project_index_io;

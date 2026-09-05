@@ -251,8 +251,9 @@ impl Catalog for MemoryCatalog {
 }
 
 impl CatalogSnapshot for MemoryCatalog {
-    fn committed_entries(&self) -> Vec<CatalogSnapshotEntry> {
-        self.committed
+    fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError> {
+        Ok(self
+            .committed
             .as_ref()
             .map(|state| {
                 state
@@ -264,10 +265,14 @@ impl CatalogSnapshot for MemoryCatalog {
                             .header
                             .as_ref()
                             .map(|header| header.profile_version),
+                        header_failure: row
+                            .header
+                            .as_ref()
+                            .is_some_and(|header| header.failure_code.is_some()),
                     })
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 }
 

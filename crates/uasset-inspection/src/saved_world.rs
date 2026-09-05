@@ -343,24 +343,28 @@ fn resolve_component(
     cache: &mut BTreeMap<String, Result<ComponentTransform, ComponentResolution>>,
     resolving: &mut BTreeSet<String>,
 ) -> Result<ComponentTransform, ComponentResolution> {
-    if let Some(cached) = cache.get(path) {
-        return cached.clone();
-    }
-    if !resolving.insert(path.to_owned()) {
-        return Err(ComponentResolution::Cycle(ObjectPath::new(path)));
-    }
-    let result = (|| {
-        if duplicates.contains(path) {
-            return Err(ComponentResolution::Ambiguous(ObjectPath::new(path)));
+    let mut path = path.to_owned();
+    let mut pending = Vec::new();
+    // Attachment depth comes from saved data across packages. Keep traversal on the heap so a
+    // valid, acyclic chain cannot exhaust the native or WASM call stack.
+    let mut result = loop {
+        if let Some(cached) = cache.get(&path) {
+            break cached.clone();
         }
-        let component = components
-            .get(path)
-            .ok_or_else(|| ComponentResolution::MissingParent(ObjectPath::new(path)))?;
+        if !resolving.insert(path.clone()) {
+            break Err(ComponentResolution::Cycle(ObjectPath::new(&path)));
+        }
+        if duplicates.contains(&path) {
+            break Err(ComponentResolution::Ambiguous(ObjectPath::new(&path)));
+        }
+        let Some(component) = components.get(&path) else {
+            break Err(ComponentResolution::MissingParent(ObjectPath::new(&path)));
+        };
         if !component.relative_location.is_finite()
             || !component.relative_rotation.is_finite()
             || !component.relative_scale.is_finite()
         {
-            return Err(ComponentResolution::NonFinite(
+            break Err(ComponentResolution::NonFinite(
                 component.object_path.clone(),
             ));
         }
@@ -370,41 +374,40 @@ fn resolve_component(
             scale: component.relative_scale,
         };
         let Some(parent_path) = component.attach_parent.as_ref() else {
-            return Ok(relative);
+            break Ok(relative);
         };
         if component.absolute_rotation || component.absolute_scale {
-            return Err(ComponentResolution::UnsupportedAbsoluteTransform(
+            break Err(ComponentResolution::UnsupportedAbsoluteTransform(
                 component.object_path.clone(),
             ));
         }
-        let parent = resolve_component(
-            parent_path.as_str(),
-            components,
-            duplicates,
-            cache,
-            resolving,
-        )?;
-        let transform = ComponentTransform {
-            location: if component.absolute_location {
-                relative.location
-            } else {
-                parent
-                    .rotation
-                    .rotate(parent.scale.component_mul(relative.location))
-                    .add(parent.location)
-            },
-            rotation: parent.rotation.multiply(relative.rotation),
-            scale: parent.scale.component_mul(relative.scale),
-        };
-        if !transform.is_finite() {
-            return Err(ComponentResolution::NonFinite(
-                component.object_path.clone(),
-            ));
-        }
-        Ok(transform)
-    })();
-    resolving.remove(path);
-    cache.insert(path.to_owned(), result.clone());
+        pending.push((path, relative, component.absolute_location));
+        path = parent_path.as_str().to_owned();
+    };
+    resolving.remove(&path);
+    cache.insert(path, result.clone());
+    while let Some((path, relative, absolute_location)) = pending.pop() {
+        result = result.and_then(|parent| {
+            let transform = ComponentTransform {
+                location: if absolute_location {
+                    relative.location
+                } else {
+                    parent
+                        .rotation
+                        .rotate(parent.scale.component_mul(relative.location))
+                        .add(parent.location)
+                },
+                rotation: parent.rotation.multiply(relative.rotation),
+                scale: parent.scale.component_mul(relative.scale),
+            };
+            if !transform.is_finite() {
+                return Err(ComponentResolution::NonFinite(ObjectPath::new(&path)));
+            }
+            Ok(transform)
+        });
+        resolving.remove(&path);
+        cache.insert(path, result.clone());
+    }
     result
 }
 
@@ -617,6 +620,46 @@ mod tests {
             components,
             package_name: "/Game/Maps/Fixture".to_owned(),
         }
+    }
+
+    #[test]
+    fn deep_attachment_chain_resolves_without_call_stack_growth() {
+        let count = 20_000;
+        let components = (0..count)
+            .map(|index| {
+                let parent = (index + 1 < count).then(|| format!("Component{}", index + 1));
+                component(
+                    &format!("Component{index}"),
+                    parent.as_deref(),
+                    SavedWorldVector {
+                        x: 1.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    SavedWorldRotator::ZERO,
+                    SavedWorldVector::ONE,
+                )
+            })
+            .collect();
+        let mut fragments = [fragment(
+            vec![actor("DeepActor", Some("Component0"))],
+            components,
+        )];
+        let actors = resolve_saved_world_actors(&fragments);
+        let SavedWorldTransform::Resolved { location, .. } = actors[0].transform else {
+            panic!("deep attachment chain must resolve");
+        };
+        assert_eq!(location.x, f64::from(count));
+
+        fragments[0].components.last_mut().unwrap().attach_parent =
+            Some(ObjectPath::new("Component100"));
+        let actors = resolve_saved_world_actors(&fragments);
+        assert_eq!(
+            actors[0].transform,
+            SavedWorldTransform::AttachmentCycle {
+                component_path: ObjectPath::new("Component100")
+            }
+        );
     }
 
     #[test]

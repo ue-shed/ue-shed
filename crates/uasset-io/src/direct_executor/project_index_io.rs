@@ -18,7 +18,7 @@ use super::catalog::{
     CatalogError, CatalogStatus, Completeness, Generation, ProjectId, QueryItem, QueryKind,
     QueryRequest, RefreshSummary, project_id_from_root,
 };
-use super::catalog_duckdb::DuckdbCatalog;
+use super::catalog_sqlite::SqliteCatalog;
 use super::project_index::{self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress};
 use super::scanner::FilesystemProjectScanner;
 
@@ -41,7 +41,7 @@ struct ActiveQueryCatalog {
     cache_root: String,
     expected_generation: u64,
     project_id: String,
-    catalog: DuckdbCatalog,
+    catalog: SqliteCatalog,
 }
 
 impl ProjectIndexQuerySession {
@@ -117,28 +117,28 @@ pub(crate) struct CatalogWriteEvidence {
     pub(crate) evidence_write_ms: u64,
 }
 
-pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<DuckdbCatalog, Failure> {
+pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<SqliteCatalog, Failure> {
     open_catalog_for_id(cache_root, &project_id_from_root(project_root))
 }
 
 pub(crate) fn open_catalog_for_id(
     cache_root: &str,
     project_id: &ProjectId,
-) -> Result<DuckdbCatalog, Failure> {
-    DuckdbCatalog::open(Path::new(cache_root), project_id).map_err(catalog_to_failure)
+) -> Result<SqliteCatalog, Failure> {
+    SqliteCatalog::open(Path::new(cache_root), project_id).map_err(catalog_to_failure)
 }
 
 pub(crate) fn open_catalog_for_project_id(
     cache_root: &str,
     project_id: &str,
-) -> Result<DuckdbCatalog, Failure> {
+) -> Result<SqliteCatalog, Failure> {
     // Query pages are bounded reads; avoid a full integrity scan for every page-sized worker.
     // Refresh/status opens retain the checked path above and recover corrupted catalogs.
-    DuckdbCatalog::open_for_query(Path::new(cache_root), &ProjectId::new(project_id))
+    SqliteCatalog::open_for_query(Path::new(cache_root), &ProjectId::new(project_id))
         .map_err(catalog_to_failure)
 }
 
-pub(crate) fn catalog_was_quarantined(catalog: &DuckdbCatalog) -> bool {
+pub(crate) fn catalog_was_quarantined(catalog: &SqliteCatalog) -> bool {
     catalog.quarantined_from().is_some()
 }
 
@@ -177,7 +177,7 @@ fn query_expected_generation(query: &ProtocolQuery) -> u64 {
     }
 }
 
-pub(crate) fn status(catalog: &DuckdbCatalog) -> ProjectIndexStatusPayload {
+pub(crate) fn status(catalog: &SqliteCatalog) -> ProjectIndexStatusPayload {
     match project_index::status(catalog) {
         CatalogStatus::Absent => ProjectIndexStatusPayload::Absent,
         CatalogStatus::Ready { summary } => ProjectIndexStatusPayload::Ready {
@@ -187,14 +187,14 @@ pub(crate) fn status(catalog: &DuckdbCatalog) -> ProjectIndexStatusPayload {
 }
 
 pub(crate) fn query(
-    catalog: &DuckdbCatalog,
+    catalog: &SqliteCatalog,
     query: &ProtocolQuery,
 ) -> Result<ProjectIndexPage, Failure> {
     query_catalog(catalog, query)
 }
 
 fn query_catalog(
-    catalog: &DuckdbCatalog,
+    catalog: &SqliteCatalog,
     query: &ProtocolQuery,
 ) -> Result<ProjectIndexPage, Failure> {
     let request = to_catalog_query(query)?;
@@ -208,7 +208,7 @@ fn query_catalog(
 }
 
 pub(crate) fn refresh(
-    catalog: &mut DuckdbCatalog,
+    catalog: &mut SqliteCatalog,
     project_root: &str,
     rebuild: bool,
     cancellation: &CancellationToken,

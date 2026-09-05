@@ -108,7 +108,7 @@ async function typescriptFiles(directory: string): Promise<string[]> {
  * storage-neutral so the same conformance suite runs unchanged against every adapter.
  */
 const CATALOG_STORAGE_ADAPTERS = new Set([
-	join("crates", "uasset-io", "src", "direct_executor", "catalog_duckdb.rs")
+	join("crates", "uasset-io", "src", "direct_executor", "catalog_sqlite.rs")
 ]);
 
 async function checkCatalogStorageBoundary(failures: string[]) {
@@ -155,18 +155,18 @@ async function checkCatalogStorageBoundary(failures: string[]) {
 		join(repositoryRoot, "crates", "uasset-io", "Cargo.toml"),
 		"utf8"
 	);
-	if (/^rusqlite\s*=/m.test(ioManifest)) {
-		failures.push("uasset-io must not retain the retired rusqlite dependency");
+	if (/^duckdb\s*=/m.test(ioManifest)) {
+		failures.push("uasset-io must not retain the retired DuckDB dependency");
 	}
-	const duckdb = ioManifest.match(/^duckdb = \{([^}]*)\}$/m)?.[1] ?? "";
-	if (!/version = "=\d+\.\d+\.\d+"/.test(duckdb)) {
-		failures.push("uasset-io must pin an exact duckdb-rs version");
+	const sqlite = ioManifest.match(/^rusqlite = \{([^}]*)\}$/m)?.[1] ?? "";
+	if (!/version = "=\d+\.\d+\.\d+"/.test(sqlite)) {
+		failures.push("uasset-io must pin an exact rusqlite version");
 	}
-	if (!/default-features = false/.test(duckdb)) {
-		failures.push("uasset-io must disable duckdb default features");
+	if (!/default-features = false/.test(sqlite)) {
+		failures.push("uasset-io must disable rusqlite default features");
 	}
-	if (!/features\s*=\s*\[\s*"appender-arrow"\s*,\s*"bundled"\s*\]/.test(duckdb)) {
-		failures.push("uasset-io must enable only DuckDB's Arrow appender and bundled engine");
+	if (!/features\s*=\s*\[\s*"bundled"\s*\]/.test(sqlite)) {
+		failures.push("uasset-io must enable only SQLite's bundled engine");
 	}
 }
 

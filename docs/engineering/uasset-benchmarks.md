@@ -47,7 +47,7 @@ pnpm benchmark:project-index -- --project <unreal-project-root> --output test-re
 ```
 
 This records `project_index.cold_build` and `project_index.warm_noop` without embedding the supplied
-project path or asset identities in the evidence. Cold builds the DuckDB Catalog, executes the same
+project path or asset identities in the evidence. Cold builds the SQLite Catalog, executes the same
 bounded map/class/prefix/suffix/name workload used by Workbench domains, folds candidate headers,
 and performs targeted Enhanced Input decode. Warm reuses the Catalog and rewrites zero evidence,
 but still enumerates and stats Content to prove the Generation is current. Filesystem caches are not

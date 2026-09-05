@@ -9,10 +9,7 @@ repository = "https://github.com/ue-shed/ue-shed"
 
 [dependencies]
 atomic-write-file = { version = "=0.3.0", default-features = false }
-duckdb = { version = "=1.10505.0", default-features = false, features = [
-	"appender-arrow",
-	"bundled"
-] }
+rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uasset-inspection = { path = "../uasset-inspection" }

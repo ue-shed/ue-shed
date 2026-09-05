@@ -62,6 +62,14 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Canonical SQLite and incremental snapshots (2026-09-05)](research/sqlite-canonical-2026-09-05.md) —
+  production migration, three-size before/after timings, lifecycle validation, and cache repair.
+
+- [Rust core speed pass 2 and actual-project SQLite comparison (2026-09-05)](research/rust-core-speed-round2-2026-09-05.md) —
+  discovery, protocol validation, and real Catalog comparisons across three project sizes.
+- [Rust core review and SQLite reassessment (2026-09-05)](research/rust-core-review-2026-09-05.md) —
+  baseline, implemented fixes, native storage comparisons, and CI tradeoffs.
+
 | Note                                                                                                | Topic                              |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
 | [uasset-parser-roadmap.md](research/uasset-parser-roadmap.md)                                       | Parser expansion roadmap           |

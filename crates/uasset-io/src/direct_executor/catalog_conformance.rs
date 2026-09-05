@@ -382,6 +382,7 @@ pub(crate) fn changed_deleted_renamed_and_sidecar_updates_are_detected<C: Catalo
     assert!(
         catalog
             .committed_relative_paths()
+            .expect("committed paths")
             .contains(&"Content/A.uexp".to_owned())
     );
 }
@@ -400,7 +401,7 @@ pub(crate) fn cancellation_discards_staging_and_keeps_prior_generation<C: Catalo
     )
     .expect("first refresh");
     let generation = completed_summary(&first).generation;
-    let committed_paths = catalog.committed_relative_paths();
+    let committed_paths = catalog.committed_relative_paths().expect("committed paths");
 
     let cancellation = CancellationToken::new();
     cancellation.cancel();
@@ -414,7 +415,10 @@ pub(crate) fn cancellation_discards_staging_and_keeps_prior_generation<C: Catalo
     .expect_err("cancelled refresh");
     assert!(matches!(error, CoordinatorError::Cancelled { .. }));
     assert_eq!(catalog.committed_generation(), Some(generation));
-    assert_eq!(catalog.committed_relative_paths(), committed_paths);
+    assert_eq!(
+        catalog.committed_relative_paths().expect("committed paths"),
+        committed_paths
+    );
     assert!(
         query(&catalog, &request(generation, QueryKind::Maps, 10, None)).is_ok(),
         "the prior generation stays queryable after cancellation"
@@ -446,7 +450,7 @@ pub(crate) fn injected_failure_keeps_prior_generation_and_deletes_nothing<C: Cat
     )
     .expect("first refresh");
     let generation = completed_summary(&first).generation;
-    let committed_paths = catalog.committed_relative_paths();
+    let committed_paths = catalog.committed_relative_paths().expect("committed paths");
 
     // A package that keeps changing under the header read fails the whole refresh.
     scanner.entries = vec![package("Content/Data/DT_Items.uasset", 21, 201)];
@@ -462,7 +466,7 @@ pub(crate) fn injected_failure_keeps_prior_generation_and_deletes_nothing<C: Cat
     assert!(matches!(error, CoordinatorError::Unavailable { .. }));
     assert_eq!(catalog.committed_generation(), Some(generation));
     assert_eq!(
-        catalog.committed_relative_paths(),
+        catalog.committed_relative_paths().expect("committed paths"),
         committed_paths,
         "a failed refresh must not delete unseen packages"
     );
@@ -772,7 +776,12 @@ pub(crate) fn absent_catalog_and_unknown_project_are_explicit<C: CatalogSnapshot
     let mut catalog = make();
     assert!(matches!(catalog.status(), CatalogStatus::Absent));
     assert_eq!(catalog.committed_generation(), None);
-    assert!(catalog.committed_relative_paths().is_empty());
+    assert!(
+        catalog
+            .committed_relative_paths()
+            .expect("committed paths")
+            .is_empty()
+    );
     let absent = query(
         &catalog,
         &request(Generation::new(1), QueryKind::Maps, 10, None),
@@ -895,6 +904,45 @@ pub(crate) fn stale_index_profile_rebuilds_header_evidence_only<C: CatalogSnapsh
     assert_eq!(items.len(), 1);
 }
 
+pub(crate) fn warm_refresh_retries_failed_headers<C: CatalogSnapshot>(make: impl Fn() -> C) {
+    let mut catalog = make();
+    let path = "Content/Retry.uasset";
+    let mut scanner = FakeScanner {
+        entries: vec![package(path, 10, 1)],
+        ..Default::default()
+    };
+    let cancellation = CancellationToken::new();
+    for expected_reads in 1..=2 {
+        let events = refresh(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &cancellation,
+            &mut |_| {},
+        )
+        .expect("refresh with failed header");
+        let summary = completed_summary(&events);
+        assert_eq!(summary.completeness, Completeness::Partial);
+        assert_eq!(summary.diagnostics.len(), 1);
+        assert_eq!(scanner.header_reads.get(), expected_reads);
+    }
+    scanner
+        .headers
+        .insert(path.to_owned(), header("/Game/Retry", &[], &[]));
+    let events = refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &cancellation,
+        &mut |_| {},
+    )
+    .expect("retry recovered header without signature change");
+    let summary = completed_summary(&events);
+    assert_eq!(summary.completeness, Completeness::Complete);
+    assert!(summary.diagnostics.is_empty());
+    assert_eq!(scanner.header_reads.get(), 3);
+}
+
 /// Run the adapter-neutral Catalog conformance suite against one adapter factory.
 macro_rules! catalog_conformance_tests {
     ($module:ident, $make:expr) => {
@@ -902,6 +950,11 @@ macro_rules! catalog_conformance_tests {
             #[allow(unused_imports)]
             use super::*;
             use crate::direct_executor::catalog_conformance as conformance;
+
+            #[test]
+            fn warm_refresh_retries_failed_headers() {
+                conformance::warm_refresh_retries_failed_headers($make);
+            }
 
             #[test]
             fn cold_refresh_then_warm_noop_reads_zero_headers() {

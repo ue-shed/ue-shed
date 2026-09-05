@@ -8,7 +8,14 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageDirectory = join(repositoryRoot, "packages", "uasset-inspection-wasm");
 const browserTest = join(repositoryRoot, "scripts", "test-uasset-wasm-browser.ts");
-const typescriptCompiler = join(repositoryRoot, "node_modules", "typescript", "bin", "tsc");
+const typescriptCompiler = join(
+	repositoryRoot,
+	"node_modules",
+	"@typescript",
+	"native",
+	"bin",
+	"tsc"
+);
 const fixture = join(
 	repositoryRoot,
 	"fixtures",

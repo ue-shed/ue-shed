@@ -116,6 +116,7 @@ pub struct StagedPackage {
 pub struct CatalogSnapshotEntry {
     pub signature: PackageSignature,
     pub header_profile_version: Option<u32>,
+    pub header_failure: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

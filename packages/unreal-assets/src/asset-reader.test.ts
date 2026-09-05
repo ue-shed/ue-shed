@@ -338,4 +338,46 @@ describe("AssetReader protocol boundary validation", () => {
 		expect(() => validateProtocolEvent(unknown, 1)).toThrow();
 		expect(() => validateProtocolEvent(unknown, Number.MAX_SAFE_INTEGER)).toThrow();
 	});
+
+	it("retains nested constraints for bounded Project Index page validation", () => {
+		const header = {
+			classes: ["/Script/Engine.Texture2D"],
+			kind: "header",
+			packageName: "/Game/Fixture/Texture",
+			packagePath: "Content/Fixture/Texture.uasset",
+			serializedNames: ["TextProperty"]
+		};
+		const event = {
+			contract: protocolContract,
+			kind: "result",
+			requestId: "protocol-test",
+			sequence: 1,
+			result: {
+				kind: "project_index_page",
+				page: { generation: 1, projectId: "fixture", items: [header] }
+			}
+		};
+		for (const characters of [1, 128 * 1024, 3 * 1024 * 1024]) {
+			expect(validateProtocolEvent(event, characters)).toEqual(event);
+			for (const invalidHeader of [
+				{ ...header, packagePath: "" },
+				{ ...header, unexpected: true },
+				{ ...header, serializedNames: [""] },
+				{ ...header, classes: Array.from({ length: 65 }, () => "Class") }
+			]) {
+				expect(() =>
+					validateProtocolEvent(
+						{
+							...event,
+							result: {
+								...event.result,
+								page: { ...event.result.page, items: [invalidHeader] }
+							}
+						},
+						characters
+					)
+				).toThrow();
+			}
+		}
+	});
 });

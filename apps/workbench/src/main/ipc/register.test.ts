@@ -774,7 +774,6 @@ it.effect("registers every schema-owned contract channel exactly once", () =>
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
-		expect(result).toHaveLength(109);
 	})
 );
 

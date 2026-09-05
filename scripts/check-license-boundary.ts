@@ -26,41 +26,21 @@ function licensed(license: string, names: string): Record<string, string> {
 export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	{},
 	licensed("(MIT OR Apache-2.0) AND Unicode-3.0", "unicode-ident"),
-	licensed("0BSD OR MIT OR Apache-2.0", "adler2"),
-	licensed(
-		"Apache-2.0",
-		"arrow arrow-arith arrow-buffer arrow-cast arrow-data arrow-ord arrow-row arrow-schema arrow-select arrow-string zopfli"
-	),
-	licensed("Apache-2.0 AND ISC", "ring"),
-	licensed("Apache-2.0 AND MIT", "arrow-array"),
-	licensed("Apache-2.0 OR BSL-1.0", "ryu"),
-	licensed("Apache-2.0 OR ISC OR MIT", "rustls"),
-	licensed("Apache-2.0 OR MIT", "autocfg equivalent indexmap pin-project-lite zeroize"),
-	licensed(
-		"Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
-		"linux-raw-sys rustix wasi wasip2 wit-bindgen"
-	),
+	licensed("Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT", "wasip2 wit-bindgen"),
 	licensed("BSD-2-Clause OR Apache-2.0 OR MIT", "zerocopy zerocopy-derive"),
-	licensed("BSD-3-Clause", "atomic-write-file subtle"),
-	licensed("CC0-1.0", "tiny-keccak"),
-	licensed("CDLA-Permissive-2.0", "webpki-roots"),
-	licensed("ISC", "rustls-webpki untrusted"),
+	licensed("BSD-3-Clause", "atomic-write-file"),
 	licensed(
 		"MIT",
-		"atoi bytes cfg_aliases comfy-table crossterm crossterm_winapi crunchy duckdb engine-process-supervisor libduckdb-sys libm nix redox_syscall simd-adler32 slab strum strum_macros uasset-inspection uasset-io uasset-parser zip zmij"
+		"cfg_aliases engine-process-supervisor libsqlite3-sys rusqlite nix uasset-inspection uasset-io uasset-parser zmij"
 	),
 	licensed(
 		"MIT OR Apache-2.0",
-		"ahash android_system_properties arbitrary base64 bitflags bumpalo cast cc cfg-if chrono const-random const-random-macro core-foundation-sys crc32fast derive_arbitrary errno find-msvc-tools flate2 futures-core futures-task futures-util getrandom half hashbrown hashlink heck http httparse iana-time-zone iana-time-zone-haiku itoa jobserver js-sys libc lock_api log num num-bigint num-complex num-integer num-iter num-rational num-traits once_cell parking_lot parking_lot_core percent-encoding pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core regex regex-automata regex-syntax rustls-pki-types rustversion scopeguard serde serde_core serde_derive serde_json shlex smallvec syn tar unicode-segmentation unicode-width ureq ureq-proto utf8-zero wasm-bindgen wasm-bindgen-macro wasm-bindgen-macro-support wasm-bindgen-shared windows_aarch64_gnullvm windows_aarch64_msvc windows_i686_gnu windows_i686_gnullvm windows_i686_msvc windows_x86_64_gnu windows_x86_64_gnullvm windows_x86_64_msvc windows-core windows-implement windows-interface windows-link windows-result windows-strings windows-sys windows-targets xattr"
+		"bitflags cc cfg-if find-msvc-tools getrandom hashbrown hashlink itoa libc pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core serde serde_core serde_derive serde_json shlex smallvec syn windows-link windows-sys"
 	),
 	licensed("MIT OR Apache-2.0 OR LGPL-2.1-or-later", "r-efi"),
-	licensed("MIT OR Zlib OR Apache-2.0", "miniz_oxide"),
-	licensed(
-		"MIT/Apache-2.0",
-		"fallible-iterator fallible-streaming-iterator filetime lexical-core lexical-parse-float lexical-parse-integer lexical-util lexical-write-float lexical-write-integer vcpkg version_check winapi winapi-i686-pc-windows-gnu winapi-x86_64-pc-windows-gnu"
-	),
-	licensed("Unlicense OR MIT", "aho-corasick memchr"),
-	licensed("Zlib", "foldhash zlib-rs")
+	licensed("MIT/Apache-2.0", "fallible-iterator fallible-streaming-iterator vcpkg"),
+	licensed("Unlicense OR MIT", "memchr"),
+	licensed("Zlib", "foldhash")
 );
 
 const acceptedRustLicenses = new Set([

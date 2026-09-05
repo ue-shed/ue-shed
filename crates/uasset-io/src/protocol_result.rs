@@ -352,9 +352,9 @@ pub enum SavedPropertyValue {
     Text {
         value: String,
         history: TextHistory,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         namespace: Option<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
     #[serde(rename = "object_ref")]
@@ -1407,4 +1407,45 @@ pub enum AuthoringReferenceTarget {
     },
     #[serde(rename = "unknown")]
     Unknown,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SavedPropertyValue, TextHistory};
+
+    #[test]
+    fn text_history_serialization_matches_the_shared_inspection_contract() {
+        for (text, expected) in [
+            (
+                SavedPropertyValue::Text {
+                    value: "Generic label".to_owned(),
+                    history: TextHistory::None,
+                    namespace: None,
+                    key: None,
+                },
+                serde_json::json!({
+                    "value_kind": "text", "value": "Generic label", "history": "none"
+                }),
+            ),
+            (
+                SavedPropertyValue::Text {
+                    value: "Generic label".to_owned(),
+                    history: TextHistory::Base,
+                    namespace: Some("Fixture".to_owned()),
+                    key: Some("Label".to_owned()),
+                },
+                serde_json::json!({
+                    "value_kind": "text", "value": "Generic label", "history": "base",
+                    "namespace": "Fixture", "key": "Label"
+                }),
+            ),
+        ] {
+            let actual = serde_json::to_value(&text).expect("serialize text");
+            assert_eq!(actual, expected);
+            assert_eq!(
+                serde_json::from_value::<SavedPropertyValue>(actual).expect("decode text"),
+                text
+            );
+        }
+    }
 }

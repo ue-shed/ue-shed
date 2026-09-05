@@ -51,6 +51,7 @@ export interface ProtocolSingleEvidence<A> {
 }
 
 const TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS = 8 * 1024 * 1024;
+const PROJECT_INDEX_TYPE_SIDE_MIN_FRAME_CHARACTERS = 128 * 1024;
 const MAX_PROTOCOL_TERMINATION_WAIT_MS = 1_000;
 const exactProtocolParseOptions = { onExcessProperty: "error" } as const;
 const validateProtocolEventType = Schema.decodeUnknownExit(
@@ -59,9 +60,22 @@ const validateProtocolEventType = Schema.decodeUnknownExit(
 );
 const decodeProtocolEvent = Schema.decodeUnknownSync(UAssetIoEvent, exactProtocolParseOptions);
 
-/** @internal Validate one exact wire event through the measured large-frame type-side path. */
+const isProjectIndexPageFrame = Schema.is(
+	Schema.Struct({
+		kind: Schema.Literal("result"),
+		result: Schema.Struct({ kind: Schema.Literal("project_index_page") })
+	})
+);
+
+/** @internal Validate one exact wire event through the measured type-side path. */
 export function validateProtocolEvent<Input>(input: Input, frameCharacters: number): ProtocolEvent {
-	if (frameCharacters < TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS) {
+	// Project Index pages contain validation-only schemas, with no wire transformations. Their
+	// bounded 1–3 MB frames benefit from this path well below the general large-frame threshold.
+	const useTypeSide =
+		frameCharacters >= TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS ||
+		(frameCharacters >= PROJECT_INDEX_TYPE_SIDE_MIN_FRAME_CHARACTERS &&
+			isProjectIndexPageFrame(input));
+	if (!useTypeSide) {
 		return decodeProtocolEvent(input);
 	}
 	const validation = validateProtocolEventType(input);

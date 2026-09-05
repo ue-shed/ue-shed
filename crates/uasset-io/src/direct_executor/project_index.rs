@@ -91,14 +91,15 @@ pub trait ProjectScanner {
 
 /// Snapshot helper used by the coordinator to compute deletions without exposing SQL.
 pub trait CatalogSnapshot: Catalog {
-    fn committed_entries(&self) -> Vec<CatalogSnapshotEntry>;
+    fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError>;
 
     #[allow(dead_code)]
-    fn committed_relative_paths(&self) -> Vec<String> {
-        self.committed_entries()
+    fn committed_relative_paths(&self) -> Result<Vec<String>, CatalogError> {
+        Ok(self
+            .committed_entries()?
             .into_iter()
             .map(|entry| entry.signature.relative_path)
-            .collect()
+            .collect())
     }
 }
 
@@ -204,7 +205,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
     let project_id = project_id_from_root(project_root);
     let mut events = vec![RefreshEvent::Started { rebuild }];
     let prior_entries: BTreeMap<String, CatalogSnapshotEntry> = catalog
-        .committed_entries()
+        .committed_entries()?
         .into_iter()
         .map(|entry| (entry.signature.relative_path.clone(), entry))
         .collect();
@@ -254,7 +255,8 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             let can_reuse = prior.is_some_and(|prior| {
                 prior.signature == *signature
                     && (signature.kind == EntryKind::Sidecar
-                        || prior.header_profile_version == Some(INDEX_PROFILE_VERSION))
+                        || (prior.header_profile_version == Some(INDEX_PROFILE_VERSION)
+                            && !prior.header_failure))
             });
 
             if can_reuse {

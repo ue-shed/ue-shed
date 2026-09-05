@@ -1,0 +1,24 @@
+[package]
+name = "catalog-storage-research"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[workspace]
+
+[dependencies]
+duckdb = { version = "=1.10505.0", default-features = false, features = [
+	"appender-arrow",
+	"bundled"
+] }
+rusqlite = { version = "=0.37.0", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[lints.rust]
+unsafe_code = "forbid"

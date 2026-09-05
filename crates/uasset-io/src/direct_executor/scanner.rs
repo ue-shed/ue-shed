@@ -47,27 +47,28 @@ impl ProjectScanner for FilesystemProjectScanner {
         cancellation: &CancellationToken,
     ) -> Result<Vec<PackageSignature>, CoordinatorError> {
         let root = Path::new(project_root).join("Content");
-        let (packages, sidecars) = discover_paths(&[root], true, cancellation)?;
-        let mut signatures = Vec::with_capacity(packages.len() + sidecars.len());
-        for (paths, kind) in [
-            (packages, EntryKind::Package),
-            (sidecars, EntryKind::Sidecar),
-        ] {
-            for path in paths {
-                checkpoint(cancellation, "read")?;
-                let Some(signature) = read_asset_signature(&path) else {
-                    return Err(CoordinatorError::Unavailable {
-                        message: format!("could not read metadata for {}", path.display()),
-                    });
-                };
-                signatures.push(PackageSignature {
-                    relative_path: project_relative_path(project_root, &path.to_string_lossy()),
-                    kind,
-                    size: signature.size,
-                    modified_nanos: signature.modified_nanos,
-                });
-            }
-        }
+        let mut signatures = Vec::new();
+        visit_scan_files(&root, cancellation, &mut |entry, path| {
+            let kind = if is_package_path(&path) {
+                EntryKind::Package
+            } else if is_sidecar_path(&path) {
+                EntryKind::Sidecar
+            } else {
+                return Ok(());
+            };
+            // Windows directory enumeration already supplies this metadata. Avoid reopening
+            // every package just to stat it. Changed headers are still revalidated after reading.
+            let metadata = entry
+                .metadata()
+                .map_err(|error| discovery_failure(&path, error))?;
+            signatures.push(PackageSignature {
+                relative_path: project_relative_path(project_root, &path.to_string_lossy()),
+                kind,
+                size: metadata.len(),
+                modified_nanos: metadata_modified_nanos(&metadata),
+            });
+            Ok(())
+        })?;
         signatures.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         Ok(signatures)
     }
@@ -88,23 +89,18 @@ impl ProjectScanner for FilesystemProjectScanner {
         }
         let path = Path::new(_project_root).join(&signature.relative_path);
         let package = read_package_header(&path, signature.size, cancellation)?;
-        let classes = package
-            .exports
-            .iter()
-            .filter_map(|export| export.class_path.as_ref().map(ToString::to_string))
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .take(PROJECT_INDEX_MAX_CLASSES)
-            .collect();
+        let classes = bounded_header_values(
+            package
+                .exports
+                .iter()
+                .filter_map(|export| export.class_path.as_ref().map(|path| path.as_str())),
+            PROJECT_INDEX_MAX_CLASSES,
+        );
         // The v1 profile keeps a bounded name-map sample for serialized-name queries.
-        let serialized_names = package
-            .names
-            .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .take(PROJECT_INDEX_MAX_NAMES)
-            .collect();
+        let serialized_names = bounded_header_values(
+            package.names.iter().map(String::as_str),
+            PROJECT_INDEX_MAX_NAMES,
+        );
         Ok(HeaderEvidence {
             profile_version: INDEX_PROFILE_VERSION,
             package_name: package.summary.package_name.clone(),
@@ -177,6 +173,9 @@ impl ProjectScanner for FilesystemProjectScanner {
                     }
                 }
             }
+            // A stopped lane can close before another lane has drained its read-ahead. Close
+            // all receivers before joining, so a worker blocked in send can also stop.
+            drop(receivers);
         });
         match callback_error {
             Some(error) => Err(error),
@@ -232,13 +231,14 @@ pub(crate) fn discover_paths(
             packages.push(root.clone());
             continue;
         }
-        discover_scan_files(
-            root,
-            &mut packages,
-            &mut sidecars,
-            include_sidecars,
-            cancellation,
-        )?;
+        visit_scan_files(root, cancellation, &mut |_, path| {
+            if is_package_path(&path) {
+                packages.push(path);
+            } else if include_sidecars && is_sidecar_path(&path) {
+                sidecars.push(path);
+            }
+            Ok(())
+        })?;
     }
     checkpoint(cancellation, "discovery")?;
     packages.sort();
@@ -248,31 +248,24 @@ pub(crate) fn discover_paths(
     Ok((packages, sidecars))
 }
 
-fn discover_scan_files(
+fn visit_scan_files(
     directory: &Path,
-    packages: &mut Vec<PathBuf>,
-    sidecars: &mut Vec<PathBuf>,
-    include_sidecars: bool,
     cancellation: &CancellationToken,
+    on_file: &mut impl FnMut(fs::DirEntry, PathBuf) -> Result<(), Failure>,
 ) -> Result<(), Failure> {
     checkpoint(cancellation, "discovery")?;
-    let mut entries = fs::read_dir(directory)
-        .map_err(|error| discovery_failure(directory, error))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| discovery_failure(directory, error))?;
-    entries.sort_by_key(std::fs::DirEntry::file_name);
+    let entries = fs::read_dir(directory).map_err(|error| discovery_failure(directory, error))?;
     for entry in entries {
         checkpoint(cancellation, "discovery")?;
+        let entry = entry.map_err(|error| discovery_failure(directory, error))?;
         let path = entry.path();
         let file_type = entry
             .file_type()
             .map_err(|error| discovery_failure(&path, error))?;
         if file_type.is_dir() {
-            discover_scan_files(&path, packages, sidecars, include_sidecars, cancellation)?;
-        } else if file_type.is_file() && is_package_path(&path) {
-            packages.push(path);
-        } else if include_sidecars && file_type.is_file() && is_sidecar_path(&path) {
-            sidecars.push(path);
+            visit_scan_files(&path, cancellation, on_file)?;
+        } else if file_type.is_file() {
+            on_file(entry, path)?;
         }
     }
     checkpoint(cancellation, "discovery")?;
@@ -308,18 +301,21 @@ pub(crate) fn has_extension(path: &Path, extensions: &[&str]) -> bool {
 
 pub(crate) fn read_asset_signature(path: &Path) -> Option<FileSignature> {
     let metadata = fs::metadata(path).ok()?;
-    let modified_nanos = metadata
+    Some(FileSignature {
+        modified_nanos: metadata_modified_nanos(&metadata),
+        path: path.to_owned(),
+        size: metadata.len(),
+    })
+}
+
+fn metadata_modified_nanos(metadata: &fs::Metadata) -> u64 {
+    metadata
         .modified()
         .ok()
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
         .map_or(0, |duration| {
             u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
-        });
-    Some(FileSignature {
-        modified_nanos,
-        path: path.to_owned(),
-        size: metadata.len(),
-    })
+        })
 }
 
 pub(crate) fn read_asset_signature_with_cancellation(
@@ -395,6 +391,25 @@ fn header_failure(code: &'static str) -> Failure {
     }
 }
 
+/// Keep the profile's lexicographically first unique values without cloning discarded evidence.
+/// Auxiliary storage is bounded by the output limit even for very large package name maps.
+fn bounded_header_values<'a>(values: impl Iterator<Item = &'a str>, limit: usize) -> Vec<String> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut selected = BTreeSet::new();
+    for value in values {
+        if selected.len() == limit && selected.last().is_some_and(|last| value >= *last) {
+            continue;
+        }
+        selected.insert(value);
+        if selected.len() > limit {
+            selected.pop_last();
+        }
+    }
+    selected.into_iter().map(str::to_owned).collect()
+}
+
 fn package_error_code(error: &PackageError) -> &'static str {
     match error.kind() {
         PackageErrorKind::MalformedData => "asset_malformed_data",
@@ -410,9 +425,25 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{FilesystemProjectScanner, ProjectScanner};
+    use super::{FilesystemProjectScanner, ProjectScanner, bounded_header_values};
     use crate::cancellation::CancellationToken;
     use crate::direct_executor::catalog::{EntryKind, PackageSignature};
+
+    #[test]
+    fn bounded_header_sample_preserves_order_uniqueness_and_late_small_values() {
+        let mut names: Vec<_> = (0..4096).rev().map(|i| format!("Name{i:04}")).collect();
+        names.extend(["".to_owned(), "Ångström".to_owned(), "名前".to_owned()]);
+        names.extend(names.clone());
+        let mut expected = names.clone();
+        expected.sort();
+        expected.dedup();
+        for limit in [0, 1, 64, 4096, 8192] {
+            assert_eq!(
+                bounded_header_values(names.iter().map(String::as_str), limit),
+                expected.iter().take(limit).cloned().collect::<Vec<_>>()
+            );
+        }
+    }
 
     #[test]
     fn filesystem_scanner_enumerates_content_packages_and_sidecars() {
@@ -425,20 +456,35 @@ mod tests {
         let package = content.join("Data").join("DT_Items.uasset");
         let sidecar = content.join("Data").join("DT_Items.uexp");
         fs::create_dir_all(package.parent().expect("package parent")).expect("create Content");
-        fs::write(&package, []).expect("write package");
-        fs::write(&sidecar, []).expect("write sidecar");
+        fs::write(&package, [1, 2, 3]).expect("write package");
+        fs::write(&sidecar, [4, 5]).expect("write sidecar");
+        fs::write(content.join("Ignored.txt"), [6]).expect("write unrelated file");
 
         let scanner = FilesystemProjectScanner;
         let entries = scanner
             .enumerate(&project_root.to_string_lossy(), &CancellationToken::new())
             .expect("enumerate Content");
-        fs::remove_dir_all(&project_root).expect("remove temporary project");
-
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].relative_path, "Content/Data/DT_Items.uasset");
         assert_eq!(entries[0].kind, EntryKind::Package);
         assert_eq!(entries[1].relative_path, "Content/Data/DT_Items.uexp");
         assert_eq!(entries[1].kind, EntryKind::Sidecar);
+        for entry in &entries {
+            assert_eq!(
+                Some(entry.clone()),
+                scanner
+                    .reread_signature(
+                        &project_root.to_string_lossy(),
+                        &entry.relative_path,
+                        entry.kind,
+                        &CancellationToken::new(),
+                    )
+                    .expect("reread discovered signature")
+            );
+        }
+        assert_eq!(entries[0].size, 3);
+        assert_eq!(entries[1].size, 2);
+        fs::remove_dir_all(&project_root).expect("remove temporary project");
     }
 
     #[test]
@@ -471,5 +517,33 @@ mod tests {
                 .map(|signature| signature.relative_path.clone())
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn parallel_header_stream_stops_when_the_sink_fails() {
+        let signatures = (0..4096)
+            .map(|index| PackageSignature {
+                relative_path: format!("Content/Missing/A_{index:04}.uasset"),
+                kind: EntryKind::Package,
+                size: 1,
+                modified_nanos: 1,
+            })
+            .collect::<Vec<_>>();
+        let mut calls = 0;
+        let error = FilesystemProjectScanner
+            .stream_header_evidence(
+                "C:/Missing",
+                &signatures,
+                &CancellationToken::new(),
+                &mut |_, _| {
+                    calls += 1;
+                    Err(super::CoordinatorError::Unavailable {
+                        message: "sink stopped".to_owned(),
+                    })
+                },
+            )
+            .expect_err("propagate the sink failure without waiting on blocked senders");
+        assert_eq!(calls, 1);
+        assert_eq!(error.to_string(), "sink stopped");
     }
 }

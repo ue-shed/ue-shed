@@ -119,7 +119,7 @@ const PROJECT_INDEX_TIMEOUT_MS = 5 * 60_000;
 
 const usage = `Usage: pnpm benchmark:project-index -- --project <path> [options]
 
-Measures the production DuckDB-backed Project Index without recording project paths or asset identities.
+Measures the production SQLite-backed Project Index without recording project paths or asset identities.
 The primary project is always read-only. Change/deletion scenarios require a separate disposable
 project carrying an exact opt-in marker.
 
@@ -835,11 +835,11 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
 			scenarios: {
 				"project_index.cold_build": scenario(
 					cold,
-					"The DuckDB Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode."
+					"The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode."
 				),
 				"project_index.warm_noop": scenario(
 					warm,
-					"The committed DuckDB snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes."
+					"The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes."
 				),
 				...mutations
 			}

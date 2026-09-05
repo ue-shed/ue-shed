@@ -31,7 +31,7 @@ fails, then rerun the failing command.
 
 Full `pnpm check` also covers `uasset:check`, license/architecture/release gates, and `test`.
 `pnpm run check:repository` runs the always-on Depot lane without native UAsset work. UAsset parser,
-inspection, and WASM checks use `uasset:check:libraries`; DuckDB-backed IO, native/WASM parity,
+inspection, and WASM checks use `uasset:check:libraries`; SQLite-backed IO, native/WASM parity,
 native-reader CLI, and fixture integration tests use `uasset:check:io` and the conditional IO lane.
 Packed-package and Data Authoring adoption conformance remain explicit parts of the full local gate
 while their hosted flows are being redesigned. Individual commands include `typecheck`, `lint`,

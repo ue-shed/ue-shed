@@ -898,21 +898,8 @@ mod tests {
 
     use uasset_parser::asset::{AssetDecodeContext, decode_export};
     use uasset_parser::property::{DataTableRowHandleValue, MapEntry, RawReason};
-    use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 
     use super::*;
-
-    struct EmptySchemas;
-
-    impl SchemaProvider for EmptySchemas {
-        fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-            None
-        }
-
-        fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-            None
-        }
-    }
 
     #[test]
     fn inventories_references_recursively_through_every_container_kind() {
@@ -922,11 +909,9 @@ mod tests {
         ))
         .expect("fixture package");
         let package = Package::parse(&bytes).expect("fixture parses");
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &bytes,
             package: &package,
-            schemas: &schemas,
         };
         let assets: Vec<_> = package
             .exports

@@ -13,19 +13,17 @@
 use std::fmt;
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Span};
-use crate::codec::{DecodeContext, decode_property_stream_values};
+use crate::codec::decode_property_stream_values;
 use crate::package::{Export, ObjectPath, Package, PackageError, PackageIndex};
 use crate::property::{
     NamedTextFormatArgument, PropertyError, PropertyErrorKind, PropertyStream, PropertyValue,
     TextFormatArgumentValue, TextHistory, TextValue, read_tagged_property_stream,
     read_uobject_tagged_property_stream,
 };
-use crate::schema::SchemaProvider;
 
 pub struct AssetDecodeContext<'a> {
     pub source: &'a [u8],
     pub package: &'a Package,
-    pub schemas: &'a dyn SchemaProvider,
 }
 
 pub const DATATABLE_CLASS: &str = "/Script/Engine.DataTable";
@@ -564,11 +562,6 @@ impl AssetDecoder for DataTableDecoder {
         };
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
-        let decode_context = DecodeContext {
-            package: context.package,
-            versions: &context.package.summary.versions,
-            schemas: context.schemas,
-        };
         let row_struct = row_struct_path(context.package, &properties);
         let parent_tables = parent_tables_paths(context.package, &properties);
 
@@ -606,7 +599,7 @@ impl AssetDecoder for DataTableDecoder {
                 &context.package.names,
                 &format!("{row_path}.Value"),
             )?;
-            decode_property_stream_values(context.source, &mut row_properties, &decode_context)?;
+            decode_property_stream_values(context.source, &mut row_properties, context.package)?;
             rows.push(DataTableRow {
                 name,
                 properties: row_properties,
@@ -1105,12 +1098,7 @@ impl AssetDecoder for StructDecoder {
             &context.package.names,
             &format!("{}.DefaultInstance", export.object_path),
         )?;
-        let decode_context = DecodeContext {
-            package: context.package,
-            versions: &context.package.summary.versions,
-            schemas: context.schemas,
-        };
-        decode_property_stream_values(context.source, &mut default_values, &decode_context)?;
+        decode_property_stream_values(context.source, &mut default_values, context.package)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -2155,12 +2143,7 @@ fn decode_uobject_properties<'a>(
         &context.package.names,
         export.object_path.as_str(),
     )?;
-    let decode_context = DecodeContext {
-        package: context.package,
-        versions: &context.package.summary.versions,
-        schemas: context.schemas,
-    };
-    decode_property_stream_values(context.source, &mut properties, &decode_context)?;
+    decode_property_stream_values(context.source, &mut properties, context.package)?;
     Ok((properties, reader))
 }
 
@@ -2421,24 +2404,11 @@ mod tests {
     use crate::archive::{ArchiveErrorKind, ArchiveLimits, Reader};
     use crate::package::{test_export, test_import, test_package};
     use crate::property::PropertyValue;
-    use crate::schema::{ClassSchema, SchemaProvider, StructSchema};
     use crate::test_support::{
         TypeParam, name_ref, push_f32, push_fstring, push_i32, write_datatable_export,
         write_int_property_tag, write_object_array_property_tag, write_object_property_tag,
         write_property_tag, write_property_terminator, write_uobject_export,
     };
-
-    struct EmptySchemas;
-
-    impl SchemaProvider for EmptySchemas {
-        fn find_struct(&self, _path: &ObjectPath) -> Option<&StructSchema> {
-            None
-        }
-
-        fn find_class(&self, _path: &ObjectPath) -> Option<&ClassSchema> {
-            None
-        }
-    }
 
     fn names() -> Vec<String> {
         vec![
@@ -2607,11 +2577,9 @@ mod tests {
             "/Game/Test/DT_Test.DT_Test",
             "/Script/Engine.DataTable",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = DataTableDecoder
@@ -2628,11 +2596,9 @@ mod tests {
         package: Package,
         export: Export,
     ) -> DecodedDataTable {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::DataTable(datatable) = DataTableDecoder
             .decode(&export, &context)
@@ -2670,11 +2636,9 @@ mod tests {
         package: Package,
         export: Export,
     ) -> DecodedCurveTable {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::CurveTable(curve_table) = CurveTableDecoder
             .decode(&export, &context)
@@ -2713,11 +2677,9 @@ mod tests {
         package: Package,
         export: Export,
     ) -> DecodedStringTable {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::StringTable(string_table) = StringTableDecoder
             .decode(&export, &context)
@@ -2802,11 +2764,9 @@ mod tests {
     }
 
     fn decode_enum(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedEnum {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::Enum(decoded_enum) =
             EnumDecoder.decode(&export, &context).expect("decode enum")
@@ -2857,11 +2817,9 @@ mod tests {
             "/Game/Test/SM_Test.SM_Test",
             "/Script/Engine.StaticMesh",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::UObject(object)) =
@@ -2885,11 +2843,9 @@ mod tests {
             "/Game/Test/BP_Test.BP_Test:EventGraph.K2Node_CallFunction_0",
             "/Script/BlueprintGraph.K2Node_CallFunction",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::UObject(object)) =
@@ -2924,11 +2880,9 @@ mod tests {
             "/Game/Test/A_Test.A_Test",
             ANIM_SEQUENCE_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::AnimSequence(sequence)) =
@@ -2956,11 +2910,9 @@ mod tests {
             "/Game/Test/A_Test.A_Test",
             ANIM_SEQUENCE_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = decode_export(&export, &context).expect_err("compressed data is unsupported");
@@ -2981,11 +2933,9 @@ mod tests {
                 export.class_path.as_ref().map(ObjectPath::as_str) == Some(ANIM_SEQUENCE_CLASS)
             })
             .expect("AnimSequence export");
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::AnimSequence(sequence)) =
@@ -3029,11 +2979,9 @@ mod tests {
             "/Game/Test/SKEL_Test.SKEL_Test",
             SKELETON_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::Skeleton(skeleton)) =
@@ -3070,11 +3018,9 @@ mod tests {
             "/Game/Test/SM_Test.SM_Test.FbxStaticMeshImportData_0",
             "/Script/UnrealEd.FbxStaticMeshImportData",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::UObject(object)) = decode_export(&export, &context)
@@ -3100,11 +3046,9 @@ mod tests {
             "/Game/Test/O_Test.O_Test",
             "/Script/Engine.SomePlainObject",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let Some(DecodedAsset::UObject(object)) = decode_export(&export, &context).expect("decode")
@@ -3158,11 +3102,9 @@ mod tests {
             "/Game/Test/DT_Test.DT_Test",
             "/Script/Engine.DataTable",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = DataTableDecoder
@@ -3183,11 +3125,9 @@ mod tests {
             "/Game/Test/DT_Test.DT_Test",
             "/Script/Engine.DataTable",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = DataTableDecoder
@@ -3356,11 +3296,9 @@ mod tests {
             "/Game/Test/ST_Simple.ST_Simple",
             STRINGTABLE_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = StringTableDecoder
@@ -3453,11 +3391,9 @@ mod tests {
             "/Game/Test/E_Color.E_Color",
             USERDEFINEDENUM_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = EnumDecoder
@@ -3516,11 +3452,9 @@ mod tests {
     }
 
     fn decode_struct(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedStruct {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::Struct(decoded) = StructDecoder
             .decode(&export, &context)
@@ -3579,11 +3513,9 @@ mod tests {
             "/Game/Test/S_Test.S_Test",
             USERDEFINEDSTRUCT_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = StructDecoder
@@ -3619,11 +3551,9 @@ mod tests {
             "/Game/Test/S_Test.S_Test",
             USERDEFINEDSTRUCT_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = StructDecoder
@@ -3643,11 +3573,9 @@ mod tests {
             "/Game/Test/BP_Test.BP_Test",
             "/Script/Engine.Blueprint",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = DataTableDecoder
@@ -3684,11 +3612,9 @@ mod tests {
     }
 
     fn decode_uobject(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedUObject {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::UObject(object) = UObjectDecoder
             .decode(&export, &context)
@@ -3734,11 +3660,9 @@ mod tests {
             "/Game/Test/DT_Test.DT_Test",
             "/Script/Engine.DataTable",
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let decoded = decode_export(&export, &context)
@@ -3752,11 +3676,9 @@ mod tests {
         package: Package,
         export: Export,
     ) -> DecodedDataAsset {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
         let DecodedAsset::DataAsset(data_asset) = DataAssetDecoder
             .decode(&export, &context)
@@ -3807,11 +3729,9 @@ mod tests {
             "/Game/Test/DA_Test.DA_Test",
             PRIMARY_DATA_ASSET_CLASS,
         );
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: &export_bytes,
             package: &package,
-            schemas: &schemas,
         };
 
         let error = DataAssetDecoder

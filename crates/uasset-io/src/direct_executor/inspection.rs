@@ -10,7 +10,6 @@ use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
 use uasset_parser::property::{
     PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory as ParserTextHistory,
 };
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
@@ -45,11 +44,9 @@ pub(super) fn inspect_bytes(
     })?;
     let mut assets = Vec::with_capacity(package.exports.len());
     let mut decode_errors = Vec::new();
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: bytes,
         package: &package,
-        schemas: &schemas,
     };
     for export in &package.exports {
         match decode_export(export, &context) {
@@ -479,18 +476,6 @@ fn enum_cpp_form(value: EnumCppForm) -> &'static str {
         EnumCppForm::Regular => "Regular",
         EnumCppForm::Namespaced => "Namespaced",
         EnumCppForm::EnumClass => "EnumClass",
-    }
-}
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &ObjectPath) -> Option<&ClassSchema> {
-        None
     }
 }
 

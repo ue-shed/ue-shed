@@ -17,14 +17,6 @@ const MAX_PROPERTY_DECODE_DEPTH: usize = 64;
 const RICH_CURVE_KEY_SERIALIZED_BYTES: u64 = 27;
 const RICH_CURVE_KEY_RAW_REASON: &str =
     "native FRichCurveKey fields are preserved but not projected";
-use crate::schema::SchemaProvider;
-use crate::version::VersionContext;
-
-pub struct DecodeContext<'a> {
-    pub package: &'a Package,
-    pub versions: &'a VersionContext,
-    pub schemas: &'a dyn SchemaProvider,
-}
 
 #[derive(Clone, Copy)]
 struct TypeSpec<'a> {
@@ -64,19 +56,19 @@ impl fmt::Display for PropertyPath<'_> {
 pub fn decode_property_stream_values(
     source: &[u8],
     stream: &mut PropertyStream,
-    context: &DecodeContext<'_>,
+    package: &Package,
 ) -> Result<(), PropertyError> {
-    decode_property_stream_values_at_depth(source, stream, context, 0)
+    decode_property_stream_values_at_depth(source, stream, package, 0)
 }
 
 fn decode_property_stream_values_at_depth(
     source: &[u8],
     stream: &mut PropertyStream,
-    context: &DecodeContext<'_>,
+    package: &Package,
     depth: usize,
 ) -> Result<(), PropertyError> {
     for record in &mut stream.records {
-        decode_property_record(source, record, context, depth)?;
+        decode_property_record(source, record, package, depth)?;
     }
     Ok(())
 }
@@ -84,7 +76,7 @@ fn decode_property_stream_values_at_depth(
 fn decode_property_record(
     source: &[u8],
     record: &mut PropertyRecord,
-    context: &DecodeContext<'_>,
+    package: &Package,
     depth: usize,
 ) -> Result<(), PropertyError> {
     if record.flags.is_skipped() {
@@ -94,7 +86,7 @@ fn decode_property_record(
         return Ok(());
     }
 
-    let Some(type_name) = context.package.resolve_name_cow(record.type_name.name) else {
+    let Some(type_name) = package.resolve_name_cow(record.type_name.name) else {
         record.value = PropertyValue::Raw {
             reason: RawReason::DecoderRejected("unresolved property type name".to_owned()),
         };
@@ -107,7 +99,7 @@ fn decode_property_record(
     // render the error breadcrumb lazily — nothing here allocates unless a
     // reader actually fails.
     let path = PropertyPath {
-        package: context.package,
+        package,
         name: record.name,
     };
 
@@ -116,7 +108,7 @@ fn decode_property_record(
             type_name.as_ref(),
             &record.type_name,
             &mut payload,
-            context,
+            package,
             &path,
         ) {
             Ok(Some(value)) => value,
@@ -134,7 +126,7 @@ fn decode_property_record(
                     },
                     record.flags,
                     &mut payload,
-                    context,
+                    package,
                     &path,
                     depth,
                 ) {
@@ -165,7 +157,7 @@ fn decode_property_record(
             },
             record.flags,
             &mut payload,
-            context,
+            package,
             &path,
             depth,
         ) {
@@ -199,7 +191,7 @@ fn decode_typed_value(
     type_spec: TypeSpec<'_>,
     flags: PropertyTagFlags,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &(impl fmt::Display + ?Sized),
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
@@ -272,24 +264,24 @@ fn decode_typed_value(
         "SoftObjectProperty" => {
             let path = path.to_string();
             Ok(Some(PropertyValue::SoftObjectPath(
-                decode_soft_object_path(payload, &path, context)?,
+                decode_soft_object_path(payload, &path, package)?,
             )))
         }
         "ArrayProperty" => {
             let path = path.to_string();
-            decode_array_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
+            decode_array_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
         }
         "SetProperty" => {
             let path = path.to_string();
-            decode_set_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
+            decode_set_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
         }
         "MapProperty" => {
             let path = path.to_string();
-            decode_map_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
+            decode_map_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
         }
         "StructProperty" => {
             let path = path.to_string();
-            decode_struct_value(source, type_spec.tree, payload, context, &path, depth).map(Some)
+            decode_struct_value(source, type_spec.tree, payload, package, &path, depth).map(Some)
         }
         _ => Ok(None),
     }
@@ -303,9 +295,9 @@ fn decode_typed_value(
 fn decode_soft_object_path(
     payload: &mut Reader<'_>,
     path: &str,
-    context: &DecodeContext<'_>,
+    package: &Package,
 ) -> Result<String, PropertyError> {
-    if !context.package.soft_object_paths.is_empty() {
+    if !package.soft_object_paths.is_empty() {
         if payload.remaining() != 4 {
             return Err(PropertyError::new(
                 crate::property::PropertyErrorKind::MalformedData,
@@ -334,8 +326,7 @@ fn decode_soft_object_path(
                 format!("soft object path index does not fit in usize: {error}"),
             )
         })?;
-        return context
-            .package
+        return package
             .soft_object_paths
             .get(index)
             .cloned()
@@ -346,7 +337,7 @@ fn decode_soft_object_path(
                     path,
                     format!(
                         "soft object path index {index} is out of range (table size {})",
-                        context.package.soft_object_paths.len()
+                        package.soft_object_paths.len()
                     ),
                 )
             });
@@ -361,7 +352,7 @@ fn decode_binary_or_native_value(
     type_name: &str,
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_name == "StructProperty" {
@@ -369,7 +360,7 @@ fn decode_binary_or_native_value(
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
         let path = path.to_string();
-        match resolve_struct_type_name(context.package, type_tree).as_deref() {
+        match resolve_struct_type_name(package, type_tree).as_deref() {
             Some("Vector") => {
                 return Ok(Some(PropertyValue::Vector(decode_vector_value(
                     payload, &path,
@@ -457,11 +448,11 @@ fn decode_array_value(
     source: &[u8],
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &str,
     depth: usize,
 ) -> Result<PropertyValue, PropertyError> {
-    let (inner_type, inner_name) = resolve_inner_type(context, type_tree, path, "ArrayProperty")?;
+    let (inner_type, inner_name) = resolve_inner_type(package, type_tree, path, "ArrayProperty")?;
 
     let count = payload.read_count(&format!("{path}.Count"))?;
     let capacity = payload.checked_vec_capacity::<PropertyValue>(
@@ -480,7 +471,7 @@ fn decode_array_value(
                     tree: inner_type,
                 },
                 payload,
-                context,
+                package,
                 &element_path,
                 depth,
             )?
@@ -496,11 +487,11 @@ fn decode_set_value(
     source: &[u8],
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &str,
     depth: usize,
 ) -> Result<PropertyValue, PropertyError> {
-    let (element_type, element_name) = resolve_inner_type(context, type_tree, path, "SetProperty")?;
+    let (element_type, element_name) = resolve_inner_type(package, type_tree, path, "SetProperty")?;
 
     let remove_count = payload.read_i32(&format!("{path}.ElementsToRemove.Count"))?;
     if remove_count < 0 {
@@ -525,7 +516,7 @@ fn decode_set_value(
                 tree: element_type,
             },
             payload,
-            context,
+            package,
             &element_path,
             depth,
         )?
@@ -551,7 +542,7 @@ fn decode_set_value(
                     tree: element_type,
                 },
                 payload,
-                context,
+                package,
                 &element_path,
                 depth,
             )?
@@ -567,12 +558,12 @@ fn decode_map_value(
     source: &[u8],
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &str,
     depth: usize,
 ) -> Result<PropertyValue, PropertyError> {
-    let (key_type, key_name) = resolve_map_key_type(context, type_tree, path)?;
-    let (value_type, value_name) = resolve_map_value_type(context, type_tree, path)?;
+    let (key_type, key_name) = resolve_map_key_type(package, type_tree, path)?;
+    let (value_type, value_name) = resolve_map_value_type(package, type_tree, path)?;
 
     let keys_to_remove = payload.read_i32(&format!("{path}.KeysToRemove.Count"))?;
     if keys_to_remove > 0 {
@@ -590,7 +581,7 @@ fn decode_map_value(
                     tree: key_type,
                 },
                 payload,
-                context,
+                package,
                 &key_path,
                 depth,
             )?
@@ -625,7 +616,7 @@ fn decode_map_value(
                 tree: key_type,
             },
             payload,
-            context,
+            package,
             &key_path,
             depth,
         )?
@@ -637,7 +628,7 @@ fn decode_map_value(
                 tree: value_type,
             },
             payload,
-            context,
+            package,
             &value_path,
             depth,
         )?
@@ -653,20 +644,19 @@ fn decode_container_element(
     source: &[u8],
     type_spec: TypeSpec<'_>,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &str,
     depth: usize,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_spec.name == "StructProperty"
-        && resolve_struct_type_name(context.package, type_spec.tree).as_deref()
-            == Some("RichCurveKey")
+        && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("RichCurveKey")
     {
         let mut element = payload.take_bounded(RICH_CURVE_KEY_SERIALIZED_BYTES, path)?;
         return decode_rich_curve_key_as_raw(&mut element, path).map(Some);
     }
 
     if type_spec.name == "StructProperty"
-        && resolve_struct_type_name(context.package, type_spec.tree).as_deref() == Some("Guid")
+        && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("Guid")
     {
         let mut element_payload = payload.take_bounded(16, path)?;
         return Ok(Some(PropertyValue::Guid(
@@ -676,8 +666,7 @@ fn decode_container_element(
 
     if type_spec.name == "FrameNumber"
         || (type_spec.name == "StructProperty"
-            && resolve_struct_type_name(context.package, type_spec.tree).as_deref()
-                == Some("FrameNumber"))
+            && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("FrameNumber"))
     {
         let mut element_payload = payload.take_bounded(4, path)?;
         return Ok(Some(PropertyValue::Int(i64::from(
@@ -685,14 +674,14 @@ fn decode_container_element(
         ))));
     }
 
-    if type_spec.name == "SoftObjectProperty" && !context.package.soft_object_paths.is_empty() {
+    if type_spec.name == "SoftObjectProperty" && !package.soft_object_paths.is_empty() {
         let mut element_payload = payload.take_bounded(4, path)?;
         return decode_typed_value(
             source,
             type_spec,
             PropertyTagFlags::default(),
             &mut element_payload,
-            context,
+            package,
             path,
             depth,
         );
@@ -708,7 +697,7 @@ fn decode_container_element(
             type_spec,
             PropertyTagFlags::default(),
             &mut element_payload,
-            context,
+            package,
             path,
             depth,
         );
@@ -719,7 +708,7 @@ fn decode_container_element(
         type_spec,
         PropertyTagFlags::default(),
         payload,
-        context,
+        package,
         path,
         depth,
     )
@@ -796,7 +785,7 @@ fn fixed_serialized_size(type_name: &str, type_tree: &PropertyTypeName) -> Optio
 }
 
 fn resolve_inner_type<'a>(
-    context: &DecodeContext<'_>,
+    package: &Package,
     type_tree: &'a PropertyTypeName,
     path: &str,
     property_kind: &str,
@@ -809,7 +798,7 @@ fn resolve_inner_type<'a>(
             format!("{property_kind} is missing its inner type parameter"),
         ));
     };
-    let Some(inner_name) = context.package.resolve_name(inner_type.name) else {
+    let Some(inner_name) = package.resolve_name(inner_type.name) else {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
             Some(0),
@@ -821,7 +810,7 @@ fn resolve_inner_type<'a>(
 }
 
 fn resolve_map_key_type<'a>(
-    context: &DecodeContext<'_>,
+    package: &Package,
     type_tree: &'a PropertyTypeName,
     path: &str,
 ) -> Result<(&'a PropertyTypeName, String), PropertyError> {
@@ -833,7 +822,7 @@ fn resolve_map_key_type<'a>(
             "MapProperty is missing its key type parameter",
         ));
     };
-    let Some(key_name) = context.package.resolve_name(key_type.name) else {
+    let Some(key_name) = package.resolve_name(key_type.name) else {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
             Some(0),
@@ -845,7 +834,7 @@ fn resolve_map_key_type<'a>(
 }
 
 fn resolve_map_value_type<'a>(
-    context: &DecodeContext<'_>,
+    package: &Package,
     type_tree: &'a PropertyTypeName,
     path: &str,
 ) -> Result<(&'a PropertyTypeName, String), PropertyError> {
@@ -857,7 +846,7 @@ fn resolve_map_value_type<'a>(
             "MapProperty is missing its value type parameter",
         ));
     };
-    let Some(value_name) = context.package.resolve_name(value_type.name) else {
+    let Some(value_name) = package.resolve_name(value_type.name) else {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
             Some(0),
@@ -872,7 +861,7 @@ fn decode_struct_value(
     source: &[u8],
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &str,
     depth: usize,
 ) -> Result<PropertyValue, PropertyError> {
@@ -885,24 +874,23 @@ fn decode_struct_value(
         ));
     }
     let mut stream =
-        read_tagged_property_stream(payload, context.versions, &context.package.names, path)?;
-    decode_property_stream_values_at_depth(source, &mut stream, context, depth + 1)?;
-    if resolve_struct_type_name(context.package, type_tree).as_deref() == Some("DataTableRowHandle")
-    {
-        return decode_data_table_row_handle(&stream, context, path);
+        read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
+    decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
+    if resolve_struct_type_name(package, type_tree).as_deref() == Some("DataTableRowHandle") {
+        return decode_data_table_row_handle(&stream, package, path);
     }
     Ok(PropertyValue::Struct(stream))
 }
 
 fn decode_data_table_row_handle(
     stream: &PropertyStream,
-    context: &DecodeContext<'_>,
+    package: &Package,
     path: &str,
 ) -> Result<PropertyValue, PropertyError> {
     let mut table = None;
     let mut row_name = None;
     for record in &stream.records {
-        match context.package.resolve_name(record.name).as_deref() {
+        match package.resolve_name(record.name).as_deref() {
             Some("DataTable") => match record.value {
                 PropertyValue::ObjectRef(value) => table = Some(value),
                 _ => {
@@ -1157,23 +1145,10 @@ mod tests {
         PropertyStream, PropertyTagFlags, PropertyTypeName, PropertyValue, RawReason, RotatorValue,
         TextHistory, TextValue, VectorValue, read_tagged_property_stream,
     };
-    use crate::schema::{ClassSchema, SchemaProvider, StructSchema};
     use crate::test_support::{
         TypeParam, push_f32, push_f64, push_fstring, push_i32, ue5_versions, write_property_tag,
         write_property_terminator,
     };
-
-    struct EmptySchemas;
-
-    impl SchemaProvider for EmptySchemas {
-        fn find_struct(&self, _path: &crate::package::ObjectPath) -> Option<&StructSchema> {
-            None
-        }
-
-        fn find_class(&self, _path: &crate::package::ObjectPath) -> Option<&ClassSchema> {
-            None
-        }
-    }
 
     fn decode_record(
         names: Vec<String>,
@@ -1209,14 +1184,8 @@ mod tests {
             },
         };
         let package = test_package(names);
-        let schemas = EmptySchemas;
-        let context = DecodeContext {
-            package: &package,
-            versions: &package.summary.versions,
-            schemas: &schemas,
-        };
         let mut record = record;
-        decode_property_record(&source, &mut record, &context, 0)?;
+        decode_property_record(&source, &mut record, &package, 0)?;
         Ok(record.value)
     }
 
@@ -1235,13 +1204,7 @@ mod tests {
             read_tagged_property_stream(&mut reader, &ue5_versions(), &names, "Test.Struct")
                 .expect("parse struct stream");
         let package = test_package(names);
-        let schemas = EmptySchemas;
-        let context = DecodeContext {
-            package: &package,
-            versions: &package.summary.versions,
-            schemas: &schemas,
-        };
-        decode_property_stream_values(&bytes, &mut stream, &context).expect("decode struct");
+        decode_property_stream_values(&bytes, &mut stream, &package).expect("decode struct");
         stream
     }
 
@@ -1661,14 +1624,8 @@ mod tests {
             read_tagged_property_stream(&mut reader, &ue5_versions(), &names, "Test.Struct")
                 .expect("parse struct stream");
         let package = test_package(names);
-        let schemas = EmptySchemas;
-        let context = DecodeContext {
-            package: &package,
-            versions: &package.summary.versions,
-            schemas: &schemas,
-        };
 
-        let error = decode_property_stream_values(&bytes, &mut stream, &context)
+        let error = decode_property_stream_values(&bytes, &mut stream, &package)
             .expect_err("depth limit should reject nested struct values");
 
         assert_eq!(
@@ -1806,13 +1763,7 @@ mod tests {
                 reason: RawReason::UnsupportedType,
             },
         };
-        let schemas = EmptySchemas;
-        let context = DecodeContext {
-            package: &package,
-            versions: &package.summary.versions,
-            schemas: &schemas,
-        };
-        decode_property_record(&source, &mut record, &context, 0).expect("decode");
+        decode_property_record(&source, &mut record, &package, 0).expect("decode");
         assert_eq!(
             record.value,
             PropertyValue::SoftObjectPath(
@@ -1843,13 +1794,7 @@ mod tests {
                     reason: RawReason::UnsupportedType,
                 },
             };
-            let schemas = EmptySchemas;
-            let context = DecodeContext {
-                package: &package,
-                versions: &package.summary.versions,
-                schemas: &schemas,
-            };
-            decode_property_record(&source, &mut record, &context, 0)?;
+            decode_property_record(&source, &mut record, &package, 0)?;
             Ok(record.value)
         }
 
@@ -1902,14 +1847,8 @@ mod tests {
                 reason: RawReason::UnsupportedType,
             },
         };
-        let schemas = EmptySchemas;
-        let context = DecodeContext {
-            package: &package,
-            versions: &package.summary.versions,
-            schemas: &schemas,
-        };
 
-        decode_property_record(&source, &mut record, &context, 0).expect("decode");
+        decode_property_record(&source, &mut record, &package, 0).expect("decode");
 
         assert_eq!(
             record.value,

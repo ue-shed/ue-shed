@@ -11,7 +11,6 @@ use uasset_parser::package::{
     ObjectPath, PackageError, PackageErrorKind, PackageIndex, TableLocation,
 };
 use uasset_parser::property::{PropertyRecord, PropertyValue, RawReason};
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageSummary};
 
 mod json;
@@ -127,12 +126,7 @@ impl InspectOutput {
         if let Some(table) = &mut output.package.soft_object_paths {
             table.parsed_count = package.soft_object_paths.len();
         }
-        let schemas = EmptySchemas;
-        let context = AssetDecodeContext {
-            source,
-            package,
-            schemas: &schemas,
-        };
+        let context = AssetDecodeContext { source, package };
         for export in &package.exports {
             match decode_export(export, &context) {
                 Ok(Some(decoded)) => {
@@ -471,18 +465,6 @@ fn data_asset_kind(class_path: &str) -> &'static str {
         PRIMARY_DATA_ASSET_CLASS => "PrimaryDataAsset",
         DATA_ASSET_CLASS => "DataAsset",
         _ => "DataAsset",
-    }
-}
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-        None
     }
 }
 

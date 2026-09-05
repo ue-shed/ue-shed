@@ -9,28 +9,13 @@ use uasset_inspection::level_sequence::{
 use uasset_inspection::projection::{project_text_asset, project_texture_asset};
 use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
 use uasset_parser::package::Package;
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-        None
-    }
-}
 
 fn decoded_assets(path: &str) -> (Vec<u8>, Package, Vec<DecodedAsset>) {
     let bytes = fs::read(path).expect("fixture package");
     let package = Package::parse(&bytes).expect("fixture parses");
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: &bytes,
         package: &package,
-        schemas: &schemas,
     };
     let assets = package
         .exports
@@ -204,11 +189,9 @@ fn level_sequence_projection_exposes_subsequences_and_cinematic_shots() {
 fn blueprint_projection(path: &str) -> BlueprintGraphProjection {
     let bytes = fs::read(path).expect("Blueprint sample package");
     let package = Package::parse(&bytes).expect("Blueprint sample parses");
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: &bytes,
         package: &package,
-        schemas: &schemas,
     };
     let assets: Vec<_> = package
         .exports

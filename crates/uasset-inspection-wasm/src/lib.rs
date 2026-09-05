@@ -18,7 +18,6 @@ use uasset_parser::asset::{
     AssetDecodeContext, AssetErrorKind, DecodedAsset, decode_export,
     decode_saved_blueprint_graph_node, supports_blueprint_graph_package_version,
 };
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
 use wasm_bindgen::prelude::*;
 
@@ -77,11 +76,9 @@ fn extract_text_from_package(path: &str, bytes: &[u8], package: &Package) -> Str
     if let Some(error) = projection_export_limit(path, package.exports.len()) {
         return error;
     }
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: bytes,
         package,
-        schemas: &schemas,
     };
     let mut occurrences = Vec::new();
     let mut coverage_gaps = Vec::new();
@@ -137,11 +134,9 @@ pub fn extract_textures(path: &str, bytes: &[u8]) -> String {
             if let Some(error) = projection_export_limit(path, package.exports.len()) {
                 return error;
             }
-            let schemas = EmptySchemas;
             let context = AssetDecodeContext {
                 source: bytes,
                 package: &package,
-                schemas: &schemas,
             };
             let mut records = Vec::new();
             let mut diagnostics = Vec::new();
@@ -204,11 +199,9 @@ pub fn extract_level_sequences(path: &str, bytes: &[u8]) -> String {
             if let Some(error) = projection_export_limit(path, package.exports.len()) {
                 return error;
             }
-            let schemas = EmptySchemas;
             let context = AssetDecodeContext {
                 source: bytes,
                 package: &package,
-                schemas: &schemas,
             };
             let mut assets = Vec::new();
             let mut diagnostics = Vec::new();
@@ -287,11 +280,9 @@ fn extract_blueprints_from_package(path: &str, bytes: &[u8], package: &Package) 
             ),
         );
     }
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: bytes,
         package,
-        schemas: &schemas,
     };
     let mut assets = Vec::new();
     let mut pending_errors = Vec::new();
@@ -410,18 +401,6 @@ pub fn limits() -> String {
         "max_projection_items": MAX_PROJECTION_ITEMS,
     })
     .to_string()
-}
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-        None
-    }
 }
 
 #[derive(Serialize)]

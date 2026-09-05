@@ -6,23 +6,9 @@ use std::time::{Duration, Instant};
 
 use uasset_parser::Package;
 use uasset_parser::asset::{AssetDecodeContext, decode_export};
-use uasset_parser::package::ObjectPath;
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 
 const DEFAULT_RUNS: usize = 50;
 const DEFAULT_WARMUPS: usize = 5;
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &ObjectPath) -> Option<&ClassSchema> {
-        None
-    }
-}
 
 #[derive(Clone, Copy)]
 struct DecodeCounts {
@@ -106,12 +92,7 @@ fn parse_count(
 }
 
 fn decode_package(source: &[u8], package: &Package) -> DecodeCounts {
-    let schemas = EmptySchemas;
-    let context = AssetDecodeContext {
-        source,
-        package,
-        schemas: &schemas,
-    };
+    let context = AssetDecodeContext { source, package };
     let mut counts = DecodeCounts {
         decoded: 0,
         errors: 0,

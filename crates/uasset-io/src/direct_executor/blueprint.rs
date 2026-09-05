@@ -10,7 +10,6 @@ use uasset_parser::asset::{
     AssetDecodeContext, DecodedAsset, decode_export, decode_saved_blueprint_graph_node,
     supports_blueprint_graph_package_version,
 };
-use uasset_parser::schema::{ClassSchema, SchemaProvider, StructSchema};
 
 use super::{Diagnostic, Failure, checkpoint, scan_failure_code};
 use crate::cancellation::CancellationToken;
@@ -69,11 +68,9 @@ fn blueprint_bytes_with_cancellation(
             ..Default::default()
         });
     }
-    let schemas = EmptySchemas;
     let context = AssetDecodeContext {
         source: bytes,
         package: &package,
-        schemas: &schemas,
     };
     let mut assets = Vec::new();
     let mut pending_errors = Vec::new();
@@ -176,17 +173,5 @@ fn asset_error_code(kind: uasset_parser::asset::AssetErrorKind) -> &'static str 
         uasset_parser::asset::AssetErrorKind::UnsupportedFormat => "unsupported_format",
         uasset_parser::asset::AssetErrorKind::UnsupportedVersion => "unsupported_version",
         uasset_parser::asset::AssetErrorKind::UnsupportedCapability => "unsupported_capability",
-    }
-}
-
-struct EmptySchemas;
-
-impl SchemaProvider for EmptySchemas {
-    fn find_struct(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&StructSchema> {
-        None
-    }
-
-    fn find_class(&self, _path: &uasset_parser::package::ObjectPath) -> Option<&ClassSchema> {
-        None
     }
 }

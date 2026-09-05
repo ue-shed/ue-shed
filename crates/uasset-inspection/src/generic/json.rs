@@ -14,8 +14,8 @@ use uasset_parser::property::{
 };
 
 use super::{
-    DecodeErrorOutput, EmptySchemas, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name,
-    data_asset_kind, enum_cpp_form_name, serialize_f32_as_f64,
+    DecodeErrorOutput, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name, data_asset_kind,
+    enum_cpp_form_name, serialize_f32_as_f64,
 };
 
 const MAX_INITIAL_JSON_CAPACITY: usize = 32 * 1024 * 1024;
@@ -250,11 +250,9 @@ impl Serialize for StreamingAssetsView<'_> {
     where
         S: Serializer,
     {
-        let schemas = EmptySchemas;
         let context = AssetDecodeContext {
             source: self.source,
             package: self.package,
-            schemas: &schemas,
         };
         let mut sequence = serializer.serialize_seq(None)?;
         for export in &self.package.exports {

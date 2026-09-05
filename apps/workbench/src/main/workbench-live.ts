@@ -74,6 +74,7 @@ const windowOptions: WorkbenchWindowOptions = {
 	backgroundColor: "#0b0d0d",
 	height: 940,
 	htmlPath: join(import.meta.dirname, "../renderer/index.html"),
+	iconPath: join(import.meta.dirname, "../renderer/favicon.png"),
 	minHeight: 720,
 	minWidth: 1120,
 	preloadPath: join(import.meta.dirname, "preload.cjs"),

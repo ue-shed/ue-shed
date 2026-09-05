@@ -23,6 +23,9 @@ export interface WorkbenchWindowOptions {
 	readonly backgroundColor: string;
 	readonly height: number;
 	readonly htmlPath: string;
+	// PNG only: Electron nativeImage supports PNG/JPEG (plus ICO on Windows), not SVG,
+	// so the window icon points at the rasterized favicon.png beside the renderer build.
+	readonly iconPath?: string;
 	readonly minHeight: number;
 	readonly minWidth: number;
 	readonly preloadPath: string;
@@ -123,6 +126,9 @@ export const workbenchWindowLayer = (
 					new electron.BrowserWindow({
 						backgroundColor: options.backgroundColor,
 						height: options.height,
+						...(options.iconPath === undefined
+							? undefined
+							: { icon: options.iconPath }),
 						minHeight: options.minHeight,
 						minWidth: options.minWidth,
 						show: false,

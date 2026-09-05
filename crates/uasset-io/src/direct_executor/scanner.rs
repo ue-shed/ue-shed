@@ -29,7 +29,7 @@ const MAX_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 // Header parsing and post-read signature checks share these workers. Keep the same global
 // read-ahead bound when scaling up, and respect smaller hosts' available parallelism.
-const MAX_HEADER_WORKERS: usize = 8;
+const MAX_HEADER_WORKERS: usize = 16;
 /// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush.
 const HEADER_RESULT_BUFFER: usize = 1_024;
 

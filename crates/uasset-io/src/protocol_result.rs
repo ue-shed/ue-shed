@@ -12,6 +12,8 @@ pub use project_index_dictionary::{ProjectIndexDictionaryItem, ProjectIndexDicti
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ResultFrame {
+    #[serde(rename = "project_index_count")]
+    ProjectIndexCount { result: ProjectIndexCountResult },
     #[serde(rename = "inspect")]
     Inspect { inspection: SavedAssetInspection },
     #[serde(rename = "blueprint")]
@@ -44,6 +46,14 @@ pub enum ResultFrame {
     ProjectIndexPage { page: ProjectIndexPage },
     #[serde(rename = "project_index_dictionary_page")]
     ProjectIndexDictionaryPage { page: ProjectIndexDictionaryPage },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectIndexCountResult {
+    pub project_id: String,
+    pub generation: u64,
+    pub count: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

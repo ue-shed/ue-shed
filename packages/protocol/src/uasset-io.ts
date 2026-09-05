@@ -103,6 +103,30 @@ export const UAssetIoProjectIndexQuery = Schema.Union([
 ]).annotate({ identifier: "UAssetIoProjectIndexQuery" });
 export type UAssetIoProjectIndexQuery = Schema.Schema.Type<typeof UAssetIoProjectIndexQuery>;
 
+export const UAssetIoProjectIndexFilter = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("maps") }),
+	Schema.Struct({ kind: Schema.Literal("exact_classes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("class_prefixes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("class_name_suffixes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("serialized_names"), values: ProjectIndexQueryValues })
+]);
+export type UAssetIoProjectIndexFilter = typeof UAssetIoProjectIndexFilter.Type;
+
+export const UAssetIoProjectIndexCount = Schema.Struct({
+	projectId: UAssetIoProjectIndexQueryBase.projectId,
+	expectedGeneration: UAssetIoProjectIndexQueryBase.expectedGeneration,
+	filters: Schema.Array(UAssetIoProjectIndexFilter).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(16)
+	)
+}).annotate({ identifier: "UAssetIoProjectIndexCount" });
+
+export const UAssetIoProjectIndexCountResult = Schema.Struct({
+	projectId: UAssetIoProjectIndexQueryBase.projectId,
+	generation: PositiveInt,
+	count: NonNegativeInt
+}).annotate({ identifier: "UAssetIoProjectIndexCountResult" });
+
 export const UAssetIoProjectIndexDiagnostic = Schema.Struct({
 	code: NonEmptyString,
 	message: NonEmptyString,
@@ -240,6 +264,11 @@ export const UAssetIoOperation = Schema.Union([
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
+		kind: Schema.Literal("project_index_count"),
+		request: UAssetIoProjectIndexCount
+	}),
+	Schema.Struct({
+		cacheRoot: NonEmptyString,
 		kind: Schema.Literal("project_index_query"),
 		pageEncoding: Schema.optionalKey(Schema.Literal("dictionary")),
 		query: UAssetIoProjectIndexQuery
@@ -266,12 +295,17 @@ const UAssetIoOperationKind = Schema.Literals([
 	"project_index_status",
 	"project_index_refresh",
 	"project_index_rebuild",
-	"project_index_query"
+	"project_index_query",
+	"project_index_count"
 ]);
 export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationKind>;
 
 /** Typed result frames carried between the IO worker and its Effect consumer. */
 export const UAssetIoResult = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("project_index_count"),
+		result: UAssetIoProjectIndexCountResult
+	}),
 	Schema.Struct({ inspection: SavedAssetInspection, kind: Schema.Literal("inspect") }),
 	Schema.Struct({ blueprint: BlueprintGraphProjection, kind: Schema.Literal("blueprint") }),
 	Schema.Struct({ kind: Schema.Literal("authoring"), snapshot: AuthoringTableSnapshot }),

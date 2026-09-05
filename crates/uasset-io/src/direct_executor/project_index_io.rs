@@ -45,13 +45,12 @@ struct ActiveQueryCatalog {
 }
 
 impl ProjectIndexQuerySession {
-    pub(crate) fn query(
+    fn catalog(
         &mut self,
         cache_root: &str,
-        query: &ProtocolQuery,
-    ) -> Result<ProjectIndexPage, Failure> {
-        let project_id = query_project_id(query);
-        let expected_generation = query_expected_generation(query);
+        project_id: &str,
+        expected_generation: u64,
+    ) -> Result<&BinaryCatalog, Failure> {
         let requires_open = self.active.as_ref().is_none_or(|active| {
             active.cache_root != cache_root
                 || active.project_id != project_id
@@ -65,8 +64,68 @@ impl ProjectIndexQuerySession {
                 catalog: open_catalog_for_project_id(cache_root, project_id)?,
             });
         }
-        let active = self.active.as_ref().expect("query Catalog was initialized");
-        query_catalog(&active.catalog, query)
+        Ok(&self
+            .active
+            .as_ref()
+            .expect("query Catalog was initialized")
+            .catalog)
+    }
+
+    pub(crate) fn count(
+        &mut self,
+        cache_root: &str,
+        request: &crate::protocol::ProjectIndexCount,
+    ) -> Result<crate::protocol_result::ProjectIndexCountResult, Failure> {
+        use super::catalog::{Catalog, CountRequest};
+        use crate::protocol::ProjectIndexFilter;
+        let catalog = self.catalog(cache_root, &request.project_id, request.expected_generation)?;
+        let result = catalog
+            .count(&CountRequest {
+                project_id: ProjectId::new(&request.project_id),
+                expected_generation: Generation::new(request.expected_generation),
+                filters: request
+                    .filters
+                    .iter()
+                    .map(|filter| match filter {
+                        ProjectIndexFilter::Maps => QueryKind::Maps,
+                        ProjectIndexFilter::ExactClasses { values } => QueryKind::ExactClasses {
+                            values: values.clone(),
+                        },
+                        ProjectIndexFilter::ClassPrefixes { values } => QueryKind::ClassPrefixes {
+                            values: values.clone(),
+                        },
+                        ProjectIndexFilter::ClassNameSuffixes { values } => {
+                            QueryKind::ClassNameSuffixes {
+                                values: values.clone(),
+                            }
+                        }
+                        ProjectIndexFilter::SerializedNames { values } => {
+                            QueryKind::SerializedNames {
+                                values: values.clone(),
+                            }
+                        }
+                    })
+                    .collect(),
+            })
+            .map_err(catalog_to_failure)?;
+        Ok(crate::protocol_result::ProjectIndexCountResult {
+            project_id: result.project_id.to_string(),
+            generation: result.generation.get(),
+            count: result.count,
+        })
+    }
+
+    pub(crate) fn query(
+        &mut self,
+        cache_root: &str,
+        query: &ProtocolQuery,
+    ) -> Result<ProjectIndexPage, Failure> {
+        let project_id = query_project_id(query);
+        let expected_generation = query_expected_generation(query);
+        query_catalog(
+            self.catalog(cache_root, project_id, expected_generation)?,
+            query,
+        )
     }
 }
 

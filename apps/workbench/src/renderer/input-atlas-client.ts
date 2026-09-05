@@ -6,7 +6,7 @@ import {
 	InputAtlasClient,
 	InputAtlasClientError,
 	type InputAtlasClientApi
-} from "@ue-shed/extension-input-atlas";
+} from "@ue-shed/extension-input-atlas/client";
 import { Effect } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";

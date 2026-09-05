@@ -46,7 +46,7 @@ environment = os.environ.copy()
 environment["PATH"] = ""
 version = run([node, str(launcher), "--version"], env=environment).stdout.decode().strip()
 def call(operation):
-    request = {"contract": {"name": "uasset-io", "version": {"major": 1, "minor": 1}},
+    request = {"contract": {"name": "uasset-io", "version": {"major": 1, "minor": 4 if operation["kind"] == "project_index_count" else 1}},
         "requestId": "packed-catalog-probe", "limits": {"maximumOutputBytes": 33554432, "timeoutMs": 30000}, "operation": operation}
     events = [json.loads(line) for line in run([node, str(launcher), "protocol"], input=json.dumps(request).encode(), env=environment).stdout.splitlines()]
     assert events[-1]["kind"] == "completed", "packed native operation failed"
@@ -64,8 +64,12 @@ pages = call({"kind": "project_index_query", "cacheRoot": str(cache), "query": {
 assert manifest["summary"]["package_count"] > 0
 assert manifest["summary"]["changed_packages"] == 0
 assert len(pages[0]["page"]["items"]) == manifest["summary"]["map_count"] > 0
+counts = call({"kind": "project_index_count", "cacheRoot": str(cache), "request": {
+    "projectId": manifest["project_id"], "expectedGeneration": manifest["summary"]["generation"],
+    "filters": [{"kind": "maps"}, {"kind": "maps"}]}})
+assert counts[0]["result"]["count"] == manifest["summary"]["map_count"]
 result = {"version": version, "packages": manifest["summary"]["package_count"], "maps": manifest["summary"]["map_count"],
-    "warmChangedPackages": manifest["summary"]["changed_packages"], "emptyPathEnvironment": True,
+    "warmChangedPackages": manifest["summary"]["changed_packages"], "emptyPathEnvironment": True, "aggregateCountsVerified": True,
     "archives": {p.name: {"bytes": p.stat().st_size, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()} for p in archives}}
 (out / "results.json").write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result))

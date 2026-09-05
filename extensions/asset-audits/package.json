@@ -7,6 +7,10 @@
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./client": {
+			"types": "./src/texture-audit-client.ts",
+			"default": "./src/texture-audit-client.ts"
 		}
 	},
 	"scripts": {

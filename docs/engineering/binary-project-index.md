@@ -22,6 +22,9 @@ dictionary. Results follow relative-path order and hydrate bounded pages. Reader
 when opened and retain the physical file, even before their first query. Payloads and selected
 postings are checked when accessed. Refresh opens verify all section checksums and summary counts.
 
+Count requests union up to 16 filters against that same generation. They read checked postings
+and inventory IDs without hydrating headers; a package matching several filters counts once.
+
 A sibling OS file lock excludes other writers and survives quarantine/clear operations. Readers
 do not take that lock. Process termination releases it. A second writer receives a typed unavailable
 error rather than publishing from stale state. Native IO now requires Rust 1.89 for standard file

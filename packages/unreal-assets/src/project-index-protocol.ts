@@ -1,20 +1,22 @@
-import type {
-	UAssetIoEvent,
-	UAssetIoProjectIndexDictionaryPage,
-	UAssetIoProjectIndexPage,
-	UAssetIoProjectIndexSummary
+import {
+	type UAssetIoEvent,
+	type UAssetIoProjectIndexDictionaryPage,
+	type UAssetIoProjectIndexPage,
+	type UAssetIoProjectIndexSummary
 } from "@ue-shed/protocol";
+import { Exit, Schema } from "effect";
 import {
 	ProjectIdentity,
 	ProjectIndexCorruptCatalog,
 	ProjectIndexCursor,
 	type ProjectIndexError,
 	ProjectIndexGeneration,
-	type ProjectIndexHeader,
+	ProjectIndexHeader,
+	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndexIncompatibleWorker,
 	ProjectIndexInvalidRequest,
-	type ProjectIndexMap,
-	type ProjectIndexPage,
+	ProjectIndexMap,
+	ProjectIndexPage,
 	ProjectIndexRefreshEvent,
 	ProjectIndexRefreshFailed,
 	ProjectIndexStaleGeneration,
@@ -22,6 +24,7 @@ import {
 	ProjectIndexUnavailable
 } from "./project-index.js";
 import { ProtocolStreamFailure } from "./protocol-transport.js";
+import { retainValidatedPage } from "./project-index-page-validation.js";
 
 type ProtocolFailed = Extract<UAssetIoEvent, { readonly kind: "failed" }>;
 type ProtocolRejected = Extract<UAssetIoEvent, { readonly kind: "rejected" }>;
@@ -86,9 +89,40 @@ export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): Proj
 	};
 }
 
+// The dictionary lookup below checks integrality, sign, and range together. Keep structural
+// validation here and avoid running equivalent per-index refinements before every lookup.
+const DictionaryReferences = Schema.Array(Schema.Number).check(Schema.isMaxLength(64));
+const DictionaryDomainPage = Schema.Struct({
+	...ProjectIndexPage.fields,
+	items: Schema.Array(
+		Schema.Union([
+			ProjectIndexMap,
+			Schema.Struct({
+				...ProjectIndexHeader.fields,
+				classes: DictionaryReferences,
+				serializedNames: DictionaryReferences
+			})
+		])
+	).check(Schema.isMaxLength(PROJECT_INDEX_MAX_PAGE_SIZE)),
+	strings: Schema.Array(ProjectIndexHeader.fields.classes.value).check(
+		Schema.isMaxLength(PROJECT_INDEX_MAX_PAGE_SIZE * 128)
+	)
+});
+const decodeDictionaryDomainPage = Schema.decodeUnknownExit(DictionaryDomainPage);
+
 export function decodeProjectIndexDictionaryPage(
-	page: UAssetIoProjectIndexDictionaryPage
+	input: UAssetIoProjectIndexDictionaryPage
 ): ProjectIndexPage {
+	// Validate domain bounds while names are shared. Expansion then only follows checked references.
+	const decoded = decodeDictionaryDomainPage(input);
+	if (Exit.isFailure(decoded)) {
+		throw new ProjectIndexUnavailable({
+			message: "The Project Index adapter returned an unbounded or invalid page.",
+			recovery: "Rebuild the Catalog, then retry with a bounded query.",
+			retrySafe: true
+		});
+	}
+	const page = decoded.value;
 	const resolveString = (index: number): string => {
 		const value = page.strings[index];
 		if (value === undefined) {
@@ -99,8 +133,8 @@ export function decodeProjectIndexDictionaryPage(
 		}
 		return value;
 	};
-	return {
-		generation: ProjectIndexGeneration.make(page.generation),
+	return retainValidatedPage({
+		generation: page.generation,
 		items: page.items.map((item) =>
 			item.kind === "map"
 				? item
@@ -110,11 +144,11 @@ export function decodeProjectIndexDictionaryPage(
 						serializedNames: item.serializedNames.map(resolveString)
 					}
 		),
-		projectId: ProjectIdentity.make(page.projectId),
+		projectId: page.projectId,
 		...(page.nextCursor === undefined
 			? undefined
 			: { nextCursor: ProjectIndexCursor.make(page.nextCursor) })
-	};
+	});
 }
 
 /**

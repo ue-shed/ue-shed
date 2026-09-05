@@ -6,6 +6,7 @@ paths). They are not living guidance — prefer product docs, ADRs, and active p
 
 | Plan                                                          | Title                                                                | Status                                      |
 | ------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
+| [047](047-full-flow-performance.md)                           | Measure and optimize the complete project flow                       | DONE — measured and validated               |
 | [001](001-texture-asset-audit-demo.md)                        | Deliver the first Texture Asset Audit demo end to end                | DONE — landed in `c6156f8`                  |
 | [002](002-authoring-boundary-and-grid-gate.md)                | Freeze the product boundary and approve the grid dependency          | DONE                                        |
 | [003](003-authoring-contract-and-catalog.md)                  | Establish the authoritative schema and DataTable catalog             | DONE                                        |

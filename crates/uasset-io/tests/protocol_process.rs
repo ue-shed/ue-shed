@@ -730,6 +730,21 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
     assert!(success, "query failed: {stderr}");
     assert_valid_events(&query_events);
     assert_eq!(query_events[1]["result"]["kind"], "project_index_page");
+    let count_request = project_index_request(serde_json::json!({
+        "kind": "project_index_count", "cacheRoot": cache_root.to_string_lossy(),
+        "request": { "projectId": project_id, "expectedGeneration": warm_summary["result"]["summary"]["generation"], "filters": [{"kind": "maps"}, {"kind": "maps"}] }
+    }));
+    let (success, count_events, stderr) = run_request(count_request.clone());
+    assert!(success, "{stderr}");
+    assert_eq!(
+        count_events[1]["result"]["result"]["count"],
+        warm_summary["result"]["summary"]["mapCount"]
+    );
+    let mut stale_count = count_request;
+    stale_count["operation"]["request"]["expectedGeneration"] = serde_json::json!(99999);
+    let (success, stale_events, _) = run_request(stale_count);
+    assert!(success);
+    assert_eq!(stale_events.last().unwrap()["code"], "stale_generation");
     assert!(
         query_events[1]["result"]["page"]["items"]
             .as_array()

@@ -129,6 +129,30 @@ pub enum Operation {
         page_encoding: Option<ProjectIndexPageEncoding>,
         query: ProjectIndexQuery,
     },
+    #[serde(rename = "project_index_count")]
+    ProjectIndexCount {
+        #[serde(rename = "cacheRoot")]
+        cache_root: String,
+        request: ProjectIndexCount,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectIndexCount {
+    pub project_id: String,
+    pub expected_generation: u64,
+    pub filters: Vec<ProjectIndexFilter>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProjectIndexFilter {
+    Maps,
+    ExactClasses { values: Vec<String> },
+    ClassPrefixes { values: Vec<String> },
+    ClassNameSuffixes { values: Vec<String> },
+    SerializedNames { values: Vec<String> },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -211,6 +235,8 @@ pub struct Request {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum OperationKind {
+    #[serde(rename = "project_index_count")]
+    ProjectIndexCount,
     Inspect,
     Blueprint,
     Authoring,
@@ -605,6 +631,39 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_project_index_query(query)
         }
+        Operation::ProjectIndexCount {
+            cache_root,
+            request,
+        } => {
+            validate_non_empty(cache_root, "cacheRoot")?;
+            validate_non_empty(&request.project_id, "projectId")?;
+            if request.expected_generation == 0
+                || request.filters.is_empty()
+                || request.filters.len() > 16
+            {
+                return Err(ProtocolError(
+                    "counts require a positive generation and between 1 and 16 filters".into(),
+                ));
+            }
+            for filter in &request.filters {
+                let values = match filter {
+                    ProjectIndexFilter::Maps => continue,
+                    ProjectIndexFilter::ExactClasses { values }
+                    | ProjectIndexFilter::ClassPrefixes { values }
+                    | ProjectIndexFilter::ClassNameSuffixes { values }
+                    | ProjectIndexFilter::SerializedNames { values } => values,
+                };
+                if values.is_empty() || values.len() > 64 {
+                    return Err(ProtocolError(
+                        "count filter values require between 1 and 64 entries".into(),
+                    ));
+                }
+                for value in values {
+                    validate_non_empty(value, "filter value")?;
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -713,6 +772,13 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
+        ResultFrame::ProjectIndexCount { result } => {
+            validate_non_empty(&result.project_id, "projectId")?;
+            if result.generation == 0 {
+                return Err(ProtocolError("count generation must be positive".into()));
+            }
+            Ok(())
+        }
         ResultFrame::ProjectIndexDictionaryPage { page } => {
             use crate::protocol_result::ProjectIndexDictionaryItem;
             if page.items.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize
@@ -913,6 +979,8 @@ mod tests {
 
     #[test]
     fn accepts_shared_valid_fixtures() {
+        decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-request.json")).unwrap();
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-result-event.json")).unwrap();
         decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
         decode_request(VALID_BLUEPRINT_REQUEST.as_bytes()).expect("valid Blueprint request");
         decode_event(VALID_ACCEPTED.as_bytes()).expect("valid accepted event");
@@ -950,6 +1018,7 @@ mod tests {
 
     #[test]
     fn rejects_shared_invalid_fixtures() {
+        assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-count-empty-filters.json")).is_err());
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());
         assert!(decode_request(INVALID_PROJECT_INDEX_OVERSIZE.as_bytes()).is_err());

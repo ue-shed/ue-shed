@@ -2,6 +2,8 @@ import { it as effectIt } from "@effect/vitest";
 import { ConfigProvider, Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	countProjectIndex,
+	decodeProjectIndexCount,
 	foldProjectIndexRefresh,
 	decodeProjectIndexPage,
 	getProjectIndexCacheRoot,
@@ -58,6 +60,39 @@ const memoryLayer = projectIndexMemoryLayerWithConfig({
 });
 
 describe("Project Index public contract", () => {
+	effectIt.effect(
+		"counts distinct packages across overlapping filters and rejects invalid bounds",
+		() =>
+			Effect.gen(function* () {
+				const summary = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(refreshProjectIndex({ projectRoot }))
+				);
+				const request = {
+					projectId,
+					expectedGeneration: summary.generation,
+					filters: [
+						{ _tag: "ExactClasses" as const, values: ["/Script/Engine.DataTable"] },
+						{ _tag: "SerializedNames" as const, values: ["TextProperty"] }
+					]
+				};
+				expect((yield* countProjectIndex(request)).count).toBe(1);
+				expect(
+					(yield* countProjectIndex({
+						...request,
+						filters: [...request.filters, { _tag: "Maps" }]
+					})).count
+				).toBe(2);
+				for (const invalid of [
+					{ ...request, filters: [] },
+					{ ...request, filters: Array.from({ length: 17 }, () => ({ _tag: "Maps" })) },
+					{ ...request, filters: [{ _tag: "ExactClasses", values: [] }] }
+				]) {
+					expect((yield* Effect.result(decodeProjectIndexCount(invalid)))._tag).toBe(
+						"Failure"
+					);
+				}
+			}).pipe(Effect.provide(memoryLayer))
+	);
 	effectIt.effect(
 		"reuses only deeply frozen validated pages across adapter and public boundaries",
 		() =>

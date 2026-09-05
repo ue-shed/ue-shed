@@ -62,6 +62,9 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Full project flow performance (2026-09-06)](research/full-flow-2026-09-06.md) —
+  scan/refresh/query experiments, headless counts, parser replay, actual Electron startup, and parity.
+
 - [Project Index query transport (2026-09-06)](research/query-transport-2026-09-06.md) —
   dictionary pages, immutable validated results, transport bytes, and separate stage measurements.
 

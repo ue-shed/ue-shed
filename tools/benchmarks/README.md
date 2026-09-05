@@ -12,11 +12,13 @@ limitations, and the baseline commit.
 Compare complete query outputs across both page encodings with:
 
 ```powershell
-python tools/benchmarks/compare_project_catalogs.py --project <project-root> --reader before=<baseline-reader> --reader after=<new-reader> --dictionary-reader after --output <new-output-directory>
+python tools/benchmarks/compare_project_catalogs.py --project <project-root> --reader before=<baseline-reader> --reader after=<new-reader> --dictionary-reader after --count-reader after --output <new-output-directory>
 ```
 
 The tool expands every dictionary reference before hashing ordered items across all five showcase
 query routes. It requires the requested encoding to be returned and rejects missing references.
+`--count-reader` also compares each v1.4 aggregate with all of its pages, repeats filters to test
+deduplication, and verifies the union across all five query kinds. Omit it for older readers.
 See [query transport measurements](../../docs/research/query-transport-2026-09-06.md) for the
 baseline, intermediate variants, and separate full-flow stage timings.
 

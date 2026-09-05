@@ -1,5 +1,6 @@
 import { Effect, Layer, Ref, Stream } from "effect";
 import {
+	countProjectIndexPages,
 	type ProjectIdentity,
 	type ProjectIndexCacheRoot,
 	type ProjectIndexCursor,
@@ -236,6 +237,7 @@ const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexApi => {
 	});
 
 	return {
+		count: (request) => countProjectIndexPages(query, request),
 		rebuild: (target) => refreshStream(state, target, "rebuild"),
 		refresh: (target) => refreshStream(state, target, "refresh"),
 		query,

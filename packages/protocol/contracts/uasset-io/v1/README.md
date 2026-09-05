@@ -31,6 +31,15 @@ outside that page's dictionary before expanding them. This relational check supp
 Public library query results expand to the original string arrays. Omitting `pageEncoding` retains
 the original result format; an older worker rejects the new field before accepting the request.
 
+Minor version 1.4 adds `project_index_count`, available in both `protocol` and `protocol-session`.
+Its `request` carries `projectId`, `expectedGeneration`, and between 1 and 16 `filters`. Filters use
+the existing query kinds and value bounds, without pagination fields. The result carries the same
+identity and generation plus `count`: the number of distinct package paths matching any filter.
+Overlapping filters, including map and header matches for the same package, count once. Counts read
+the immutable inventory and checked postings without hydrating package evidence. Stale generations
+and corrupt postings fail with the same typed errors as queries. Old workers reject the operation
+before accepting it.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

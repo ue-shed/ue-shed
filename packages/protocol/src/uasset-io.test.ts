@@ -68,6 +68,8 @@ describe("uasset IO protocol v1", () => {
 					"valid/project-index-rebuild-request.json",
 					"valid/project-index-query-request.json",
 					"valid/project-index-dictionary-query-request.json",
+					"valid/project-index-count-request.json",
+					"valid/project-index-count-result-event.json",
 					"valid/project-index-dictionary-page-result-event.json",
 					"valid/project-index-accepted-event.json",
 					"valid/project-index-progress-event.json",
@@ -93,11 +95,14 @@ describe("uasset IO protocol v1", () => {
 					"invalid/event-result-unknown-kind.json",
 					"invalid/project-index-query-oversize-limit.json",
 					"invalid/project-index-page-unbounded.json",
+					"invalid/project-index-count-empty-filters.json",
 					"invalid/project-index-dictionary-page-negative-index.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
 					const decoded =
-						name.includes("-request") || name.includes("oversize-limit")
+						name.includes("-request") ||
+						name.includes("oversize-limit") ||
+						name.includes("count-empty-filters")
 							? yield* Effect.result(decodeUAssetIoRequest(value))
 							: yield* Effect.result(decodeUAssetIoEvent(value));
 					expect(decoded._tag).toBe("Failure");

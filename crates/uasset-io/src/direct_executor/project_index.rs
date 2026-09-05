@@ -4,8 +4,6 @@
 //! and bounded queries. Storage details stay behind the Catalog seam; filesystem details stay behind
 //! the ProjectScanner seam so coordinator tests can inject deterministic fixtures.
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use crate::cancellation::CancellationToken;
 
 use super::catalog::{
@@ -231,18 +229,16 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
 ) -> Result<Vec<RefreshEvent>, CoordinatorError> {
     let project_id = project_id_from_root(project_root);
     let mut events = vec![RefreshEvent::Started { rebuild }];
-    let prior_entries: BTreeMap<String, CatalogSnapshotEntry> = catalog
-        .committed_entries()?
-        .into_iter()
-        .map(|entry| (entry.signature.relative_path.clone(), entry))
-        .collect();
+    let mut prior_entries = catalog.committed_entries()?;
+    prior_entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
     let mut token = Some(catalog.begin_refresh()?);
     let result = (|| {
         let staging = token
             .as_ref()
             .expect("staging token present for refresh body");
         checkpoint(cancellation, "discovery")?;
-        let enumerated = scanner.enumerate(project_root, cancellation)?;
+        let mut enumerated = scanner.enumerate(project_root, cancellation)?;
+        enumerated.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         let total_packages = enumerated
             .iter()
             .filter(|entry| entry.kind == EntryKind::Package)
@@ -261,10 +257,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
         let mut diagnostics = Vec::new();
         let mut completed_packages = 0_u64;
         let mut changed_entries = Vec::new();
-        let observed: BTreeSet<_> = enumerated
-            .iter()
-            .map(|signature| signature.relative_path.clone())
-            .collect();
+        let mut prior_cursor = prior_entries.iter().peekable();
 
         emit_progress(
             &mut events,
@@ -278,7 +271,15 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             if signature.kind == EntryKind::Package {
                 completed_packages += 1;
             }
-            let prior = prior_entries.get(&signature.relative_path);
+            while prior_cursor
+                .peek()
+                .is_some_and(|entry| entry.signature.relative_path < signature.relative_path)
+            {
+                prior_cursor.next();
+            }
+            let prior = prior_cursor
+                .peek()
+                .filter(|entry| entry.signature.relative_path == signature.relative_path);
             let can_reuse = prior.is_some_and(|prior| {
                 prior.signature == *signature
                     && (signature.kind == EntryKind::Sidecar
@@ -316,11 +317,19 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             }
         }
 
+        let mut observed = enumerated.iter().peekable();
         let removed_packages = prior_entries
-            .values()
+            .iter()
             .filter(|entry| {
+                while observed.peek().is_some_and(|signature| {
+                    signature.relative_path < entry.signature.relative_path
+                }) {
+                    observed.next();
+                }
                 entry.signature.kind == EntryKind::Package
-                    && !observed.contains(&entry.signature.relative_path)
+                    && !observed.peek().is_some_and(|signature| {
+                        signature.relative_path == entry.signature.relative_path
+                    })
             })
             .count() as u64;
 

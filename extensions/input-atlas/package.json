@@ -7,6 +7,10 @@
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./client": {
+			"types": "./src/input-atlas-client.ts",
+			"default": "./src/input-atlas-client.ts"
 		}
 	},
 	"scripts": {

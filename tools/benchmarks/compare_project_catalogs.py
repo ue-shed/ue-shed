@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--project", type=Path, required=True)
 parser.add_argument("--reader", action="append", required=True, help="label=executable")
 parser.add_argument("--dictionary-reader", action="append", default=[], help="reader label requesting v1.3 dictionary pages")
+parser.add_argument("--count-reader", action="append", default=[], help="reader label checking v1.4 aggregate counts against complete pages")
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=False)
@@ -26,7 +27,7 @@ queries = [
 
 
 def call(reader, operation):
-    request = {"contract": {"name": "uasset-io", "version": {"major": 1, "minor": 3 if "pageEncoding" in operation else 1}},
+    request = {"contract": {"name": "uasset-io", "version": {"major": 1, "minor": 4 if operation["kind"] == "project_index_count" else 3 if "pageEncoding" in operation else 1}},
                "requestId": "catalog-parity", "limits": {"maximumOutputBytes": 33554432, "timeoutMs": 300000}, "operation": operation}
     process = subprocess.run([str(reader), "protocol"], input=json.dumps(request).encode(), capture_output=True, timeout=330, check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     events = [json.loads(line) for line in process.stdout.splitlines()]
@@ -45,6 +46,7 @@ for spec in args.reader:
     refresh = call(reader, {"kind": "project_index_refresh", "cacheRoot": str(cache), "projectRoot": str(args.project.resolve())})
     summary = next(r["summary"] for r in refresh if r["kind"] == "project_index_summary")
     output = {"packages": summary["packageCount"], "maps": summary["mapCount"], "completeness": summary["completeness"], "queries": []}
+    distinct_paths = set()
     for query in queries:
         cursor = None
         digest = hashlib.sha256()
@@ -69,11 +71,21 @@ for spec in args.reader:
             pages += 1
             count += len(page["items"])
             for item in page["items"]:
+                distinct_paths.add(item["mapPath"] if item["kind"] == "map" else item["packagePath"])
                 digest.update(json.dumps(item, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode() + b"\n")
             cursor = page.get("nextCursor")
             if cursor is None:
                 break
         output["queries"].append({"kind": query["kind"], "items": count, "pages": pages, "sha256": digest.hexdigest()})
+        if label in args.count_reader:
+            result = call(reader, {"kind": "project_index_count", "cacheRoot": str(cache), "request": {"projectId": summary["projectId"], "expectedGeneration": summary["generation"], "filters": [query, query]}})
+            aggregate = next(r["result"] for r in result if r["kind"] == "project_index_count")
+            assert aggregate == {"projectId": summary["projectId"], "generation": summary["generation"], "count": count}, "aggregate differs from paged query"
+    output["distinctPackages"] = len(distinct_paths)
+    if label in args.count_reader:
+        result = call(reader, {"kind": "project_index_count", "cacheRoot": str(cache), "request": {"projectId": summary["projectId"], "expectedGeneration": summary["generation"], "filters": queries}})
+        aggregate = next(r["result"] for r in result if r["kind"] == "project_index_count")
+        assert aggregate == {"projectId": summary["projectId"], "generation": summary["generation"], "count": len(distinct_paths)}, "aggregate union differs from complete pages"
     results[label] = output
     (args.output / "comparison.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print(label, output, flush=True)

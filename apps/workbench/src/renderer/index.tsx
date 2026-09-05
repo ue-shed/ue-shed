@@ -1,8 +1,8 @@
 import { AuthoringClient } from "@ue-shed/authoring-sdk";
-import { TextureAuditClient } from "@ue-shed/extension-asset-audits";
+import { TextureAuditClient } from "@ue-shed/extension-asset-audits/client";
 import { MapReviewClient } from "@ue-shed/extension-camera-review/client";
 import { ContentObservatoryClient } from "@ue-shed/extension-content-observatory/client";
-import { GameTextClient } from "@ue-shed/extension-game-text";
+import { GameTextClient } from "@ue-shed/extension-game-text/client";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Layer, ManagedRuntime } from "effect";
 import { render } from "solid-js/web";

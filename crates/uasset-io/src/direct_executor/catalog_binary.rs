@@ -355,13 +355,36 @@ impl Snapshot {
         }
         let mut sections = Vec::new();
         for i in 0..if verify_all { 5 } else { 3 } {
+            if i >= 3 {
+                // These sections are verified here but decoded only on demand. Keep the
+                // integrity pass bounded instead of allocating a full temporary payload.
+                file.seek(SeekFrom::Start(starts[i]))
+                    .map_err(io_unavailable("seek binary snapshot"))?;
+                let mut remaining = lengths[i];
+                let mut buffer = vec![0; (1024 * 1024).min(remaining as usize)];
+                let mut hash = crc32fast::Hasher::new();
+                while remaining > 0 {
+                    let count = buffer.len().min(remaining as usize);
+                    file.read_exact(&mut buffer[..count]).map_err(|error| {
+                        if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                            corrupt(format!("truncated binary snapshot: {error}"))
+                        } else {
+                            io_unavailable("read binary snapshot")(error)
+                        }
+                    })?;
+                    hash.update(&buffer[..count]);
+                    remaining -= count as u64;
+                }
+                if u64::from(hash.finalize()) != hashes[i] {
+                    return Err(corrupt("binary section checksum mismatch"));
+                }
+                continue;
+            }
             let bytes = read_range(&mut file, starts[i], lengths[i])?;
             if checksum(&bytes) != hashes[i] {
                 return Err(corrupt("binary section checksum mismatch"));
             }
-            if i < 3 {
-                sections.push(bytes);
-            }
+            sections.push(bytes);
         }
         let mut d = Decoder::new(&sections[0]);
         let count = d.count(43)?;
@@ -483,10 +506,14 @@ impl Snapshot {
             self.starts[4] + entry.offset,
             u64::from(entry.len),
         )?;
-        if checksum(&bytes) != entry.checksum {
+        self.decode_packed(id, &bytes)
+    }
+    fn decode_packed(&self, id: usize, bytes: &[u8]) -> Result<PackedRecord, CatalogError> {
+        let entry = &self.inventory[id];
+        if checksum(bytes) != entry.checksum {
             return Err(corrupt("record checksum mismatch"));
         }
-        let mut d = Decoder::new(&bytes);
+        let mut d = Decoder::new(bytes);
         let header = if d.boolean()? {
             let package_name = d.string()?;
             let failure_code = if d.boolean()? {
@@ -532,7 +559,10 @@ impl Snapshot {
     }
     fn header(&self, id: usize) -> Result<Option<HeaderEvidence>, CatalogError> {
         let packed = self.packed(id)?;
-        Ok(packed.header.map(|h| HeaderEvidence {
+        Ok(self.expand_header(packed))
+    }
+    fn expand_header(&self, packed: PackedRecord) -> Option<HeaderEvidence> {
+        packed.header.map(|h| HeaderEvidence {
             profile_version: packed.profile.unwrap(),
             package_name: h.package_name,
             failure_code: h.failure_code,
@@ -546,7 +576,41 @@ impl Snapshot {
                 .into_iter()
                 .map(|id| self.strings[id as usize].clone())
                 .collect(),
-        }))
+        })
+    }
+    fn headers(&self, ids: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
+        let mut headers = Vec::with_capacity(ids.len());
+        let mut first = 0;
+        while first < ids.len() {
+            let entry = &self.inventory[ids[first]];
+            let start = entry.offset;
+            let mut end = start + u64::from(entry.len);
+            let mut last = first + 1;
+            while last < ids.len() {
+                let next = &self.inventory[ids[last]];
+                let next_end = next.offset + u64::from(next.len);
+                if next.offset < end || next.offset - end > 4096 || next_end - start > 256 * 1024 {
+                    break;
+                }
+                end = next_end;
+                last += 1;
+            }
+            // A page-local window avoids one seek/read/allocation per nearby record. Nothing
+            // survives the query: later queries must still detect changed or truncated bytes.
+            let bytes = read_range(
+                &mut self.file.borrow_mut(),
+                self.starts[4] + start,
+                end - start,
+            )?;
+            for &id in &ids[first..last] {
+                let entry = &self.inventory[id];
+                let offset = (entry.offset - start) as usize;
+                let packed = self.decode_packed(id, &bytes[offset..offset + entry.len as usize])?;
+                headers.push(self.expand_header(packed));
+            }
+            first = last;
+        }
+        Ok(headers)
     }
     fn string_id(&self, value: &str) -> Option<u32> {
         self.lexicon
@@ -606,7 +670,7 @@ impl Snapshot {
             }
             QueryKind::Maps => unreachable!(),
         }
-        let mut ids = BTreeSet::new();
+        let mut ids = Vec::new();
         for index in selected {
             let posting = &self.postings[index];
             let bytes = read_range(
@@ -618,27 +682,32 @@ impl Snapshot {
                 return Err(corrupt("posting checksum mismatch"));
             }
             let mut previous = None;
+            let mut selected_count = 0;
             for raw in bytes.chunks_exact(4) {
                 let id = u32::from_le_bytes(raw.try_into().unwrap()) as usize;
                 if id >= self.inventory.len() || previous.is_some_and(|old| old >= id) {
                     return Err(corrupt("invalid posting row order"));
                 }
                 previous = Some(id);
-                if id >= after {
-                    ids.insert(id);
-                    if ids.len() > limit {
-                        ids.pop_last();
-                    }
+                if id >= after && selected_count < limit {
+                    ids.push(id);
+                    selected_count += 1;
                 }
             }
+            // Postings are ordered. Only their first `limit` eligible IDs can contribute to
+            // this page, but validate every row above even after that prefix is collected.
+            // A bounded flat union avoids allocating a tree node for every matching row.
+            ids.sort_unstable();
+            ids.dedup();
+            ids.truncate(limit);
         }
-        Ok(ids.into_iter().collect())
+        Ok(ids)
     }
 }
 
 struct Staging {
     generation: Generation,
-    observed: BTreeSet<String>,
+    observed: Vec<String>,
     changed: BTreeMap<String, PackedRecord>,
     dictionary: Option<Dictionary>,
 }
@@ -868,7 +937,7 @@ impl Catalog for BinaryCatalog {
             .map_or(Generation::new(1), Generation::next);
         self.staging = Some(Staging {
             generation,
-            observed: BTreeSet::new(),
+            observed: Vec::new(),
             changed: BTreeMap::new(),
             dictionary: None,
         });
@@ -877,7 +946,7 @@ impl Catalog for BinaryCatalog {
     }
     fn observe_unchanged(&mut self, token: &StagingToken, path: &str) -> Result<(), CatalogError> {
         self.require_staging(token)?;
-        self.staging.as_mut().unwrap().observed.insert(path.into());
+        self.staging.as_mut().unwrap().observed.push(path.into());
         Ok(())
     }
     fn stage_observed(
@@ -900,7 +969,7 @@ impl Catalog for BinaryCatalog {
         let record = PackedRecord::pack(entry, staging.dictionary.as_mut().unwrap())?;
         staging
             .observed
-            .insert(record.signature.relative_path.clone());
+            .push(record.signature.relative_path.clone());
         staging
             .changed
             .insert(record.signature.relative_path.clone(), record);
@@ -920,11 +989,20 @@ impl Catalog for BinaryCatalog {
             });
         }
         self.load()?;
-        let staging = self.staging.take().unwrap();
+        let mut staging = self.staging.take().unwrap();
+        // Observations arrive in ordered runs. Sort once instead of allocating a tree node on
+        // every observation; dedup retains the set semantics for repeated staging calls.
+        staging.observed.sort_unstable();
+        staging.observed.dedup();
         let mut cleanup = None;
         let (physical_snapshot, previous_snapshot) = if let Some(current) = &self.manifest
             && staging.changed.is_empty()
             && summary.removed_packages == 0
+            && self
+                .snapshot
+                .borrow()
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.inventory.len() == staging.observed.len())
         {
             (
                 current.physical_snapshot.clone(),
@@ -1018,9 +1096,10 @@ impl Catalog for BinaryCatalog {
         let ids = snapshot.matches(&request.kind, after, request.limit + 1)?;
         let more = ids.len() > request.limit;
         let mut items = Vec::with_capacity(ids.len().min(request.limit));
-        for id in ids.into_iter().take(request.limit) {
+        let selected = &ids[..ids.len().min(request.limit)];
+        let headers = snapshot.headers(selected)?;
+        for (&id, header) in selected.iter().zip(headers) {
             let path = snapshot.inventory[id].signature.relative_path.clone();
-            let header = snapshot.header(id)?;
             items.push(if matches!(request.kind, QueryKind::Maps) {
                 QueryItem::Map {
                     package_name: header
@@ -1049,6 +1128,40 @@ impl Catalog for BinaryCatalog {
             generation,
             items,
             next_cursor,
+        })
+    }
+
+    fn count(
+        &self,
+        request: &super::catalog::CountRequest,
+    ) -> Result<super::catalog::CountResult, CatalogError> {
+        super::catalog::validate_count_filters(&request.filters)?;
+        let manifest = require_manifest(&self.manifest, &self.project_id, &request.project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != request.expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: request.expected_generation,
+                actual: generation,
+            });
+        }
+        self.load()?;
+        let cached = self.snapshot.borrow();
+        let snapshot = cached.as_ref().unwrap();
+        // One byte per inventory entry bounds union memory independently of match count.
+        let mut matched = vec![false; snapshot.inventory.len()];
+        let mut count = 0;
+        for filter in &request.filters {
+            for id in snapshot.matches(filter, 0, snapshot.inventory.len())? {
+                if !matched[id] {
+                    matched[id] = true;
+                    count += 1;
+                }
+            }
+        }
+        Ok(super::catalog::CountResult {
+            project_id: request.project_id.clone(),
+            generation,
+            count,
         })
     }
 }
@@ -1502,6 +1615,119 @@ mod tests {
     catalog_conformance_tests!(binary, custom_catalog);
 
     #[test]
+    fn deleting_only_a_sidecar_publishes_the_reduced_inventory() {
+        use crate::direct_executor::catalog_conformance::sidecar;
+        let mut catalog = custom_catalog();
+        let mut scanner = refresh_fixture();
+        scanner
+            .entries
+            .push(sidecar("Content/OnlySidecar.uexp", 12, 1));
+        refresh(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let previous = catalog.manifest.as_ref().unwrap().physical_snapshot.clone();
+        let before = catalog.committed_entries().unwrap().len();
+        scanner
+            .entries
+            .retain(|entry| entry.relative_path != "Content/OnlySidecar.uexp");
+        refresh(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(catalog.committed_entries().unwrap().len(), before - 1);
+        assert_ne!(
+            catalog.manifest.as_ref().unwrap().physical_snapshot,
+            previous
+        );
+        assert_eq!(
+            catalog.manifest.as_ref().unwrap().summary.changed_packages,
+            0
+        );
+        assert_eq!(
+            catalog.manifest.as_ref().unwrap().summary.removed_packages,
+            0
+        );
+    }
+
+    #[test]
+    fn counts_reject_stale_identity_bounds_and_late_posting_corruption() {
+        use super::super::catalog::CountRequest;
+        let mut catalog = custom_catalog();
+        refresh(
+            &mut catalog,
+            &refresh_fixture(),
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let request = CountRequest {
+            project_id: fixture_project_id(),
+            expected_generation: catalog.committed_generation().unwrap(),
+            filters: vec![QueryKind::ClassPrefixes {
+                values: vec!["".into()],
+            }],
+        };
+        assert!(catalog.count(&request).unwrap().count > 0);
+        assert!(matches!(
+            catalog.count(&CountRequest {
+                filters: vec![],
+                ..request.clone()
+            }),
+            Err(CatalogError::InvalidRequest { .. })
+        ));
+        assert!(matches!(
+            catalog.count(&CountRequest {
+                project_id: ProjectId::new("other"),
+                ..request.clone()
+            }),
+            Err(CatalogError::InvalidRequest { .. })
+        ));
+        assert!(matches!(
+            catalog.count(&CountRequest {
+                expected_generation: request.expected_generation.next(),
+                ..request.clone()
+            }),
+            Err(CatalogError::StaleGeneration { .. })
+        ));
+        let snapshot = catalog.snapshot.borrow();
+        let snapshot = snapshot.as_ref().unwrap();
+        let offset = snapshot.starts[3]
+            + snapshot
+                .postings
+                .iter()
+                .find(|p| p.kind == 0)
+                .unwrap()
+                .offset;
+        let path = catalog
+            .directory
+            .join(&catalog.manifest.as_ref().unwrap().physical_snapshot);
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        let mut byte = [0];
+        file.read_exact(&mut byte).unwrap();
+        file.seek(SeekFrom::Start(offset)).unwrap();
+        file.write_all(&[byte[0] ^ 0x80]).unwrap();
+        assert!(matches!(
+            catalog.count(&request),
+            Err(CatalogError::Corrupt { .. })
+        ));
+    }
+
+    #[test]
     fn snapshot_name_collision_never_acquires_cleanup_ownership() {
         let owner = custom_catalog();
         let path = owner.directory.join("existing.catalog");
@@ -1949,7 +2175,21 @@ mod tests {
                 },
                 QueryKind::SerializedNames { values: vec![] },
             ];
+            let union = super::super::catalog::CountRequest {
+                project_id: fixture_project_id(),
+                expected_generation: current,
+                filters: kinds.to_vec(),
+            };
+            assert_eq!(binary.count(&union).unwrap(), sqlite.count(&union).unwrap());
             for kind in kinds {
+                let request = super::super::catalog::CountRequest {
+                    filters: vec![kind.clone(), kind.clone()],
+                    ..union.clone()
+                };
+                assert_eq!(
+                    binary.count(&request).unwrap(),
+                    sqlite.count(&request).unwrap()
+                );
                 for limit in [1, 7, 1024] {
                     assert_eq!(
                         collect_pages(&binary, current, kind.clone(), limit),

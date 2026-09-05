@@ -1483,6 +1483,12 @@ mod tests {
     use crate::direct_executor::project_index::refresh;
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
+    fn release_test_writer(catalog: &mut BinaryCatalog) {
+        // Concurrent process tests can briefly inherit descriptors across fork/exec. Closing our
+        // descriptor alone does not release flock while an inherited alias remains open.
+        // These tests intentionally hand ownership to another writer, so unlock explicitly.
+        catalog.writer_lock.take().unwrap().unlock().unwrap();
+    }
     fn custom_catalog() -> BinaryCatalog {
         let root = std::env::temp_dir().join(format!(
             "ue-shed-binary-catalog-{}-{}",
@@ -1519,7 +1525,7 @@ mod tests {
         FAILURE_POINT.with(|p| p.set(None));
         assert!(result.is_err());
         assert!(owner.begin_refresh().is_err());
-        owner.writer_lock.take();
+        release_test_writer(&mut owner);
         let mut recovered = BinaryCatalog::open(&root, &fixture_project_id()).unwrap();
         assert_eq!(recovered.committed_generation(), Some(Generation::new(1)));
         assert!(recovered.quarantined_from().is_none());
@@ -1590,7 +1596,9 @@ mod tests {
                 fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
             }
             owner.snapshot.take();
-            owner.writer_lock.take();
+            // Model a descriptor alias still alive during an unrelated process spawn.
+            let _inherited = owner.writer_lock.as_ref().unwrap().try_clone().unwrap();
+            release_test_writer(&mut owner);
             let recovered =
                 BinaryCatalog::open(owner.cleanup_root.as_ref().unwrap(), &fixture_project_id())
                     .unwrap();
@@ -1609,7 +1617,7 @@ mod tests {
         assert!(reader.clear_for_rebuild().is_err());
         writer.clear_for_rebuild().unwrap();
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_err());
-        writer.writer_lock.take();
+        release_test_writer(&mut writer);
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_ok());
     }
 
@@ -1693,7 +1701,7 @@ mod tests {
         *bytes.last_mut().unwrap() ^= 0x40;
         fs::write(&path, bytes).unwrap();
         writer.snapshot.take();
-        writer.writer_lock.take();
+        release_test_writer(&mut writer);
         let reader = BinaryCatalog::open_for_query(&root, &fixture_project_id()).unwrap();
         reader.load().unwrap();
         let snapshot = reader.snapshot.borrow();
@@ -1777,7 +1785,7 @@ mod tests {
                     .unwrap();
                 }
                 owner.snapshot.take();
-                owner.writer_lock.take();
+                release_test_writer(&mut owner);
                 let marker = root.join("checkpoint");
                 let mut child = Child(
                     std::process::Command::new(std::env::current_exe().unwrap())

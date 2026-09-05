@@ -7,6 +7,27 @@ the ignored `test-results/` directory. See
 [the 2026-09-05 review](../../docs/research/rust-core-review-2026-09-05.md) for measured results,
 limitations, and the baseline commit.
 
+## Header pipeline profiling
+
+`prepare_header_profile.py <new-output-directory>` copies the native workspace and adds elapsed
+timers only to that copy. Build its `uasset-io` release executable, then run:
+
+```powershell
+python tools/benchmarks/profile_project_headers.py --project <project-root> --reader <instrumented-reader> --output <new-output-directory>
+cargo run --release -p uasset-parser --example benchmark_headers -- <project-root>
+```
+
+The first command makes a fresh disposable Catalog and records aggregate stage timings. Worker
+times overlap: their sum is neither CPU time nor scan wall time. Instrumentation adds overhead;
+use the uninstrumented `benchmark:project-index` command for before/after speed claims.
+
+The replay example samples up to 4,096 packages evenly from sorted discovery and retains at most
+512 MiB of header bytes. Two warmups precede ten parse-and-drop samples with file IO excluded.
+It prints aggregate counts and a deterministic Debug-model digest without asset identities. The
+digest is a regression fingerprint, not a cryptographic proof of equivalence. Loading errors abort
+the replay; header parsing errors contribute to the fingerprint and failure count. Compare complete
+ordered query output with `compare_project_catalogs.py` as well.
+
 ## Binary Catalog hardening and artifacts
 
 The [binary adapter](../../crates/uasset-io/src/direct_executor/catalog_binary.rs) is now the production

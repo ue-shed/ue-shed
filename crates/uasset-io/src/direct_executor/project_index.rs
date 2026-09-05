@@ -41,9 +41,16 @@ pub enum RefreshEvent {
     Completed { summary: RefreshSummary },
 }
 
+/// Evidence and the signature observed immediately after reading it. Keep signature failures
+/// separate: the coordinator propagates these, while header failures become partial evidence.
+pub struct HeaderObservation {
+    pub evidence: HeaderEvidence,
+    pub signature: Result<Option<PackageSignature>, CoordinatorError>,
+}
+
 pub type HeaderEvidenceSink<'a> = dyn FnMut(
         &PackageSignature,
-        Result<HeaderEvidence, CoordinatorError>,
+        Result<HeaderObservation, CoordinatorError>,
     ) -> Result<(), CoordinatorError>
     + 'a;
 
@@ -62,8 +69,8 @@ pub trait ProjectScanner {
         cancellation: &CancellationToken,
     ) -> Result<HeaderEvidence, CoordinatorError>;
 
-    /// Stream independent package headers in signature order. The default preserves deterministic
-    /// test scanners; filesystem adapters may read ahead with bounded parallelism.
+    /// Stream headers with their post-read signatures in signature order. The default preserves
+    /// deterministic test scanners; filesystem adapters may read ahead with bounded parallelism.
     fn stream_header_evidence(
         &self,
         project_root: &str,
@@ -74,7 +81,7 @@ pub trait ProjectScanner {
         for signature in signatures {
             on_header(
                 signature,
-                self.read_header_evidence(project_root, signature, cancellation),
+                observe_header(self, project_root, signature, cancellation),
             )?;
         }
         Ok(())
@@ -87,6 +94,26 @@ pub trait ProjectScanner {
         kind: EntryKind,
         cancellation: &CancellationToken,
     ) -> Result<Option<PackageSignature>, CoordinatorError>;
+}
+
+pub(crate) fn observe_header<S: ProjectScanner + ?Sized>(
+    scanner: &S,
+    project_root: &str,
+    signature: &PackageSignature,
+    cancellation: &CancellationToken,
+) -> Result<HeaderObservation, CoordinatorError> {
+    let evidence = scanner.read_header_evidence(project_root, signature, cancellation)?;
+    checkpoint(cancellation, "read")?;
+    let signature = scanner.reread_signature(
+        project_root,
+        &signature.relative_path,
+        signature.kind,
+        cancellation,
+    );
+    Ok(HeaderObservation {
+        evidence,
+        signature,
+    })
 }
 
 /// Snapshot helper used by the coordinator to compute deletions without exposing SQL.
@@ -393,7 +420,7 @@ fn stage_with_initial_header<S: ProjectScanner>(
     scanner: &S,
     project_root: &str,
     signature: &PackageSignature,
-    first: Result<HeaderEvidence, CoordinatorError>,
+    first: Result<HeaderObservation, CoordinatorError>,
     cancellation: &CancellationToken,
     diagnostics: &mut Vec<CatalogDiagnostic>,
 ) -> Result<StagedPackage, CoordinatorError> {
@@ -403,13 +430,16 @@ fn stage_with_initial_header<S: ProjectScanner>(
         checkpoint(cancellation, "inspection")?;
         let result = next_header
             .take()
-            .unwrap_or_else(|| scanner.read_header_evidence(project_root, &current, cancellation));
-        let header = match result {
-            Ok(mut evidence) => {
+            .unwrap_or_else(|| observe_header(scanner, project_root, &current, cancellation));
+        let (header, revalidated) = match result {
+            Ok(HeaderObservation {
+                mut evidence,
+                signature,
+            }) => {
                 evidence.profile_version = INDEX_PROFILE_VERSION;
                 evidence.classes.truncate(PROJECT_INDEX_MAX_CLASSES);
                 evidence.serialized_names.truncate(PROJECT_INDEX_MAX_NAMES);
-                evidence
+                (evidence, signature)
             }
             Err(CoordinatorError::Cancelled { message }) => {
                 return Err(CoordinatorError::Cancelled { message });
@@ -437,13 +467,7 @@ fn stage_with_initial_header<S: ProjectScanner>(
             }
         };
         checkpoint(cancellation, "read")?;
-        let revalidated = scanner.reread_signature(
-            project_root,
-            &current.relative_path,
-            current.kind,
-            cancellation,
-        )?;
-        match revalidated {
+        match revalidated? {
             Some(next) if next == current => {
                 return Ok(StagedPackage {
                     signature: current,
@@ -532,6 +556,45 @@ mod tests {
     use crate::direct_executor::catalog_memory::MemoryCatalog;
 
     catalog_conformance_tests!(memory_adapter, MemoryCatalog::new);
+
+    #[test]
+    fn worker_signature_error_is_propagated_without_publishing_partial_evidence() {
+        use super::*;
+        use crate::direct_executor::catalog_conformance::FakeScanner;
+
+        let signature = PackageSignature {
+            relative_path: "Content/A.uasset".to_owned(),
+            kind: EntryKind::Package,
+            size: 1,
+            modified_nanos: 1,
+        };
+        let first = Ok(HeaderObservation {
+            evidence: HeaderEvidence {
+                profile_version: INDEX_PROFILE_VERSION,
+                package_name: "/Game/A".to_owned(),
+                classes: Vec::new(),
+                serialized_names: Vec::new(),
+                failure_code: None,
+            },
+            signature: Err(CoordinatorError::Unavailable {
+                message: "signature read failed".to_owned(),
+            }),
+        });
+        let scanner = FakeScanner::default();
+        let mut diagnostics = Vec::new();
+        let error = stage_with_initial_header(
+            &scanner,
+            "C:/Fixture",
+            &signature,
+            first,
+            &CancellationToken::new(),
+            &mut diagnostics,
+        )
+        .expect_err("signature errors must abort refresh");
+        assert_eq!(error.to_string(), "signature read failed");
+        assert!(diagnostics.is_empty());
+        assert_eq!(scanner.header_reads.get(), 0);
+    }
 
     #[test]
     fn package_progress_is_bounded_by_fixed_intervals() {

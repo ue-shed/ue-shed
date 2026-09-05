@@ -62,6 +62,12 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Parallel project discovery (2026-09-05)](research/discovery-2026-09-05.md) —
+  demand-driven worker startup, fresh/warm timings, query profiling, and Linux oracle checks.
+
+- [Header pipeline speed pass (2026-09-05)](research/header-pipeline-2026-09-05.md) —
+  parser replay, parallel signature validation, and three-size scan measurements.
+
 - [Binary Catalog hardening and production selection (2026-09-05)](research/custom-catalog-hardening-2026-09-05.md) —
   final before/after timings, recovery, SQLite oracle, platform artifacts, and CI separation.
 

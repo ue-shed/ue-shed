@@ -1,5 +1,7 @@
 //! Filesystem-backed package discovery and Project Index scanning.
 
+mod discovery;
+
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::Read;
@@ -15,7 +17,7 @@ use super::catalog::{
     EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_CLASSES,
     PROJECT_INDEX_MAX_NAMES, PackageSignature, project_relative_path,
 };
-use super::project_index::{CoordinatorError, HeaderEvidenceSink, ProjectScanner};
+use super::project_index::{CoordinatorError, HeaderEvidenceSink, ProjectScanner, observe_header};
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
 
@@ -25,7 +27,9 @@ pub(crate) const SIDECAR_EXTENSIONS: &[&str] = &["uexp", "ubulk", "uptnl"];
 const HEADER_PROBE_BYTES: usize = 4 * 1024;
 const MAX_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
-const HEADER_WORKERS: usize = 4;
+// Header parsing and post-read signature checks share these workers. Keep the same global
+// read-ahead bound when scaling up, and respect smaller hosts' available parallelism.
+const MAX_HEADER_WORKERS: usize = 8;
 /// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush.
 const HEADER_RESULT_BUFFER: usize = 1_024;
 
@@ -46,31 +50,7 @@ impl ProjectScanner for FilesystemProjectScanner {
         project_root: &str,
         cancellation: &CancellationToken,
     ) -> Result<Vec<PackageSignature>, CoordinatorError> {
-        let root = Path::new(project_root).join("Content");
-        let mut signatures = Vec::new();
-        visit_scan_files(&root, cancellation, &mut |entry, path| {
-            let kind = if is_package_path(&path) {
-                EntryKind::Package
-            } else if is_sidecar_path(&path) {
-                EntryKind::Sidecar
-            } else {
-                return Ok(());
-            };
-            // Windows directory enumeration already supplies this metadata. Avoid reopening
-            // every package just to stat it. Changed headers are still revalidated after reading.
-            let metadata = entry
-                .metadata()
-                .map_err(|error| discovery_failure(&path, error))?;
-            signatures.push(PackageSignature {
-                relative_path: project_relative_path(project_root, &path.to_string_lossy()),
-                kind,
-                size: metadata.len(),
-                modified_nanos: metadata_modified_nanos(&metadata),
-            });
-            Ok(())
-        })?;
-        signatures.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-        Ok(signatures)
+        discovery::enumerate(project_root, cancellation).map_err(Into::into)
     }
 
     fn read_header_evidence(
@@ -120,7 +100,10 @@ impl ProjectScanner for FilesystemProjectScanner {
         if signatures.is_empty() {
             return Ok(());
         }
-        let worker_count = HEADER_WORKERS.min(signatures.len());
+        let worker_count = std::thread::available_parallelism()
+            .map_or(4, std::num::NonZeroUsize::get)
+            .min(MAX_HEADER_WORKERS)
+            .min(signatures.len());
         let lane_capacity = (HEADER_RESULT_BUFFER / worker_count).max(1);
         let mut senders = Vec::with_capacity(worker_count);
         let mut receivers = Vec::with_capacity(worker_count);
@@ -141,8 +124,7 @@ impl ProjectScanner for FilesystemProjectScanner {
                             break;
                         }
                         let signature = &signatures[index];
-                        let result =
-                            self.read_header_evidence(project_root, signature, &cancellation);
+                        let result = observe_header(self, project_root, signature, &cancellation);
                         if sender.send((index, result)).is_err() {
                             break;
                         }

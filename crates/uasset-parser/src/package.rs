@@ -936,26 +936,26 @@ fn read_custom_versions(
         reader.checked_vec_capacity::<CustomVersion>(count, 8, "Summary.CustomVersions.Count")?;
     let mut versions = Vec::with_capacity(capacity);
     for index in 0..count {
-        let path = format!("Summary.CustomVersions[{index}]");
+        let path = IndexedPath::new("Summary.CustomVersions", index);
         let version = match legacy_file_version {
             -2 => CustomVersion {
                 key: Guid {
                     a: 0,
                     b: 0,
                     c: 0,
-                    d: reader.read_u32(&format!("{path}.Tag"))?,
+                    d: reader.read_u32(&format_args!("{path}.Tag"))?,
                 },
-                version: reader.read_i32(&format!("{path}.Version"))?,
+                version: reader.read_i32(&format_args!("{path}.Version"))?,
                 friendly_name: None,
             },
             -5..=-3 => CustomVersion {
-                key: reader.read_guid(&format!("{path}.Key"))?,
-                version: reader.read_i32(&format!("{path}.Version"))?,
-                friendly_name: Some(reader.read_fstring(&format!("{path}.FriendlyName"))?),
+                key: reader.read_guid(&format_args!("{path}.Key"))?,
+                version: reader.read_i32(&format_args!("{path}.Version"))?,
+                friendly_name: Some(reader.read_fstring(&format_args!("{path}.FriendlyName"))?),
             },
             -9..=-6 => CustomVersion {
-                key: reader.read_guid(&format!("{path}.Key"))?,
-                version: reader.read_i32(&format!("{path}.Version"))?,
+                key: reader.read_guid(&format_args!("{path}.Key"))?,
+                version: reader.read_i32(&format_args!("{path}.Version"))?,
                 friendly_name: None,
             },
             _ => {
@@ -1958,6 +1958,26 @@ mod tests {
 
     fn current_summary_fixture(package_flags: u32) -> Vec<u8> {
         summary_fixture(VersionContext::LATEST_SUPPORTED_UE5, package_flags)
+    }
+
+    #[test]
+    fn custom_version_errors_preserve_field_paths_and_duplicate_validation() {
+        let mut bytes = Vec::new();
+        push_i32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0; 16]);
+        bytes.push(0); // A truncated version after a complete GUID.
+        let error = read_custom_versions(&mut Reader::new(&bytes), -9).unwrap_err();
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert_eq!(error.path(), "Summary.CustomVersions[0].Version");
+        assert_eq!(error.offset(), Some(20));
+
+        bytes.clear();
+        push_i32(&mut bytes, 2);
+        bytes.extend_from_slice(&[0; 40]);
+        let error = read_custom_versions(&mut Reader::new(&bytes), -9).unwrap_err();
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert_eq!(error.path(), "Summary.CustomVersions");
+        assert_eq!(error.detail(), "duplicate custom-version GUID");
     }
 
     fn summary_fixture(ue5: i32, package_flags: u32) -> Vec<u8> {

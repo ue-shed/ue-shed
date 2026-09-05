@@ -99,6 +99,13 @@ Queries do not silently refresh. If the expected Generation is stale, refresh an
 if the disposable Catalog is corrupt or incompatible, use `rebuildProjectIndex`. `scanSavedProject`
 remains the explicit compatibility API for callers that genuinely need a generic scan.
 
+Query results are deeply frozen after domain validation. The same validated page can pass through
+the process adapter and public helper without rechecking every name; arbitrary inputs still run
+the complete schema. Copy a result if a consumer needs a mutable working model. The paired native
+adapter requests protocol v1.3 dictionary pages, which share repeated strings during transport and
+expand to the existing public string arrays. Older workers require an upgrade; callers of the
+native v1.1 query format can still omit `pageEncoding` to receive ordinary pages.
+
 `scanSavedProject` invokes `uasset scan <project-root>` once and streams newline-delimited results
 back, so a project-wide scan costs one process instead of one per package. Prefer it over
 `discoverSavedAssets` plus `readSavedAsset` per path.

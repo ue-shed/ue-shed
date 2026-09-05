@@ -12,6 +12,7 @@ import subprocess
 parser = argparse.ArgumentParser()
 parser.add_argument("--project", type=Path, required=True)
 parser.add_argument("--reader", action="append", required=True, help="label=executable")
+parser.add_argument("--dictionary-reader", action="append", default=[], help="reader label requesting v1.3 dictionary pages")
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=False)
@@ -25,7 +26,7 @@ queries = [
 
 
 def call(reader, operation):
-    request = {"contract": {"name": "uasset-io", "version": {"major": 1, "minor": 1}},
+    request = {"contract": {"name": "uasset-io", "version": {"major": 1, "minor": 3 if "pageEncoding" in operation else 1}},
                "requestId": "catalog-parity", "limits": {"maximumOutputBytes": 33554432, "timeoutMs": 300000}, "operation": operation}
     process = subprocess.run([str(reader), "protocol"], input=json.dumps(request).encode(), capture_output=True, timeout=330, check=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     events = [json.loads(line) for line in process.stdout.splitlines()]
@@ -52,8 +53,19 @@ for spec in args.reader:
             request = {**query, "projectId": summary["projectId"], "expectedGeneration": summary["generation"], "limit": 1024}
             if cursor is not None:
                 request["cursor"] = cursor
-            result = call(reader, {"kind": "project_index_query", "cacheRoot": str(cache), "query": request})
-            page = next(r["page"] for r in result if r["kind"] == "project_index_page")
+            operation = {"kind": "project_index_query", "cacheRoot": str(cache), "query": request}
+            if label in args.dictionary_reader:
+                operation["pageEncoding"] = "dictionary"
+            result = call(reader, operation)
+            frame = next(r for r in result if r["kind"] in ["project_index_page", "project_index_dictionary_page"])
+            page = frame["page"]
+            if label in args.dictionary_reader:
+                assert frame["kind"] == "project_index_dictionary_page", "requested encoding was not returned"
+                for item in page["items"]:
+                    if item["kind"] == "header":
+                        for field in ["classes", "serializedNames"]:
+                            assert all(isinstance(i, int) and 0 <= i < len(page["strings"]) for i in item[field])
+                            item[field] = [page["strings"][i] for i in item[field]]
             pages += 1
             count += len(page["items"])
             for item in page["items"]:

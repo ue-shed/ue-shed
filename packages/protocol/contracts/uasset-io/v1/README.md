@@ -22,6 +22,15 @@ deduplicated links without requiring Unreal Engine to load the asset. Graph memb
 discovery of engine, plugin, and project graph/node subclasses; unsupported saved revisions and
 Control Rig's separate RigVM model fail explicitly.
 
+Minor version 1.3 adds optional `pageEncoding: "dictionary"` to `project_index_query` and the
+`project_index_dictionary_page` result. The page carries a local `strings` array; header `classes`
+and `serializedNames` are zero-based references into it. Map items, paths, item ordering, generation,
+and cursors retain their existing meaning. Each page is independent, with at most 1,024 items,
+64 references per header field, and 131,072 dictionary strings. Decoders must reject references
+outside that page's dictionary before expanding them. This relational check supplements JSON Schema.
+Public library query results expand to the original string arrays. Omitting `pageEncoding` retains
+the original result format; an older worker rejects the new field before accepting the request.
+
 Result frames use an explicit result kind. Generic inspection, authoring, scan, compact text,
 compact texture, Blueprint graph, and saved-world values each have a named schema; there is no
 untyped result field.

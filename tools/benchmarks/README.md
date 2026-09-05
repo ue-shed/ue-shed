@@ -9,6 +9,17 @@ limitations, and the baseline commit.
 
 ## Header pipeline profiling
 
+Compare complete query outputs across both page encodings with:
+
+```powershell
+python tools/benchmarks/compare_project_catalogs.py --project <project-root> --reader before=<baseline-reader> --reader after=<new-reader> --dictionary-reader after --output <new-output-directory>
+```
+
+The tool expands every dictionary reference before hashing ordered items across all five showcase
+query routes. It requires the requested encoding to be returned and rejects missing references.
+See [query transport measurements](../../docs/research/query-transport-2026-09-06.md) for the
+baseline, intermediate variants, and separate full-flow stage timings.
+
 `prepare_header_profile.py <new-output-directory>` copies the native workspace and adds elapsed
 timers only to that copy. Build its `uasset-io` release executable, then run:
 

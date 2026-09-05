@@ -446,7 +446,11 @@ fn execute_direct(
             cache_root,
             project_root,
         } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, true),
-        Operation::ProjectIndexQuery { cache_root, query } => {
+        Operation::ProjectIndexQuery {
+            cache_root,
+            query,
+            page_encoding,
+        } => {
             let page = if let Some(session) = query_session {
                 session.query(cache_root, query)?
             } else {
@@ -456,7 +460,12 @@ fn execute_direct(
                 )?;
                 direct_executor::project_index_query_protocol(&catalog, query)?
             };
-            emit_typed_result(emitter, &ResultFrame::ProjectIndexPage { page })?;
+            let result = if page_encoding.is_some() {
+                ResultFrame::ProjectIndexDictionaryPage { page: page.into() }
+            } else {
+                ResultFrame::ProjectIndexPage { page }
+            };
+            emit_typed_result(emitter, &result)?;
             Ok(false)
         }
     }

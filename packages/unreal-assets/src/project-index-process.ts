@@ -26,6 +26,7 @@ import {
 } from "./project-index.js";
 import {
 	decodeProjectIndexWirePage,
+	decodeProjectIndexDictionaryPage,
 	decodeProjectIndexWireSummary,
 	mapProjectIndexProgress,
 	mapProjectIndexProtocolFailure
@@ -140,7 +141,7 @@ const makeRequest = (
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs
 		},
-		{ contractMinor: 1 }
+		{ contractMinor: operation.kind === "project_index_query" ? 3 : 1 }
 	);
 
 const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexError => {
@@ -374,6 +375,7 @@ async function collectQuery(
 		{
 			cacheRoot,
 			kind: "project_index_query",
+			pageEncoding: "dictionary",
 			query: toWireQuery(request)
 		},
 		configuration.timeoutMs
@@ -393,6 +395,10 @@ async function collectQuery(
 			}
 			if (event.kind === "result" && event.result.kind === "project_index_page") {
 				page = decodeProjectIndexWirePage(event.result.page);
+				continue;
+			}
+			if (event.kind === "result" && event.result.kind === "project_index_dictionary_page") {
+				page = decodeProjectIndexDictionaryPage(event.result.page);
 				continue;
 			}
 			if (event.kind === "failed" || event.kind === "rejected") {

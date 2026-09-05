@@ -738,6 +738,35 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
             <= 16
     );
 
+    let mut dictionary_request = query_request.clone();
+    dictionary_request["contract"]["version"]["minor"] = serde_json::json!(3);
+    dictionary_request["operation"]["pageEncoding"] = serde_json::json!("dictionary");
+    dictionary_request["operation"]["query"]["kind"] = serde_json::json!("serialized_names");
+    dictionary_request["operation"]["query"]["values"] = serde_json::json!(["None"]);
+    dictionary_request["operation"]["query"]["limit"] = serde_json::json!(1);
+    let (success, dictionary_events, stderr) = run_request(dictionary_request.clone());
+    assert!(success, "dictionary query failed: {stderr}");
+    assert_valid_events(&dictionary_events);
+    assert_eq!(
+        dictionary_events[1]["result"]["kind"],
+        "project_index_dictionary_page"
+    );
+    assert_eq!(
+        dictionary_events[1]["result"]["page"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(dictionary_events[1]["result"]["page"]["nextCursor"].is_string());
+    let mut limited = dictionary_request.clone();
+    limited["limits"]["maximumOutputBytes"] = serde_json::json!(512);
+    let (success, limited_events, stderr) = run_request(limited);
+    assert!(success, "bounded dictionary query failed: {stderr}");
+    assert_valid_events(&limited_events);
+    assert_eq!(limited_events.last().unwrap()["kind"], "failed");
+    assert_eq!(limited_events.last().unwrap()["code"], "output_limit");
+
     let stale_request = project_index_request(serde_json::json!({
         "kind": "project_index_query",
         "cacheRoot": cache_root.to_string_lossy(),
@@ -774,6 +803,7 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
 
     for (request_id, request, terminal) in [
         ("session-query-one", &query_request, "completed"),
+        ("session-dictionary", &dictionary_request, "completed"),
         ("session-stale", &stale_request, "failed"),
         ("session-query-two", &query_request, "completed"),
     ] {

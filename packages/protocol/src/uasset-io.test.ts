@@ -67,6 +67,8 @@ describe("uasset IO protocol v1", () => {
 					"valid/project-index-refresh-request.json",
 					"valid/project-index-rebuild-request.json",
 					"valid/project-index-query-request.json",
+					"valid/project-index-dictionary-query-request.json",
+					"valid/project-index-dictionary-page-result-event.json",
 					"valid/project-index-accepted-event.json",
 					"valid/project-index-progress-event.json",
 					"valid/project-index-status-result-event.json",
@@ -90,7 +92,8 @@ describe("uasset IO protocol v1", () => {
 					"invalid/event-unknown-kind.json",
 					"invalid/event-result-unknown-kind.json",
 					"invalid/project-index-query-oversize-limit.json",
-					"invalid/project-index-page-unbounded.json"
+					"invalid/project-index-page-unbounded.json",
+					"invalid/project-index-dictionary-page-negative-index.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
 					const decoded =

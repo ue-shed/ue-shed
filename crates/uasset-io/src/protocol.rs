@@ -125,8 +125,16 @@ pub enum Operation {
     ProjectIndexQuery {
         #[serde(rename = "cacheRoot")]
         cache_root: String,
+        #[serde(rename = "pageEncoding")]
+        page_encoding: Option<ProjectIndexPageEncoding>,
         query: ProjectIndexQuery,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub enum ProjectIndexPageEncoding {
+    #[serde(rename = "dictionary")]
+    Dictionary,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -591,7 +599,9 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_non_empty(project_root, "projectRoot")
         }
-        Operation::ProjectIndexQuery { cache_root, query } => {
+        Operation::ProjectIndexQuery {
+            cache_root, query, ..
+        } => {
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_project_index_query(query)
         }
@@ -703,6 +713,56 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
+        ResultFrame::ProjectIndexDictionaryPage { page } => {
+            use crate::protocol_result::ProjectIndexDictionaryItem;
+            if page.items.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize
+                || page.strings.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize * 128
+                || page.generation == 0
+            {
+                return Err(ProtocolError(
+                    "invalid Project Index dictionary page bounds".to_owned(),
+                ));
+            }
+            validate_non_empty(&page.project_id, "projectId")?;
+            if let Some(cursor) = &page.next_cursor {
+                validate_non_empty(cursor, "nextCursor")?;
+            }
+            for value in &page.strings {
+                validate_non_empty(value, "dictionary string")?;
+            }
+            for item in &page.items {
+                match item {
+                    ProjectIndexDictionaryItem::Map {
+                        map_path,
+                        package_name,
+                    } => {
+                        validate_non_empty(map_path, "mapPath")?;
+                        validate_non_empty(package_name, "packageName")?;
+                    }
+                    ProjectIndexDictionaryItem::Header {
+                        classes,
+                        package_name,
+                        package_path,
+                        serialized_names,
+                    } => {
+                        validate_non_empty(package_name, "packageName")?;
+                        validate_non_empty(package_path, "packagePath")?;
+                        for references in [classes, serialized_names] {
+                            if references.len() > 64
+                                || references
+                                    .iter()
+                                    .any(|id| *id as usize >= page.strings.len())
+                            {
+                                return Err(ProtocolError(
+                                    "invalid Project Index dictionary references".to_owned(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
         ResultFrame::ProjectIndexPage { page } => {
             if page.items.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize {
                 return Err(ProtocolError(format!(

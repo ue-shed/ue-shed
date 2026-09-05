@@ -241,17 +241,42 @@ export const decodeProjectIndexQuery = Effect.fn("ProjectIndex.decodeQuery")(
 		)
 );
 
+const decodePage = Schema.decodeUnknownEffect(ProjectIndexPage);
+const validatedPages = new WeakMap<object, ProjectIndexPage>();
+const isObject = Schema.is(Schema.ObjectKeyword);
+
+function retainValidatedPage(page: ProjectIndexPage): ProjectIndexPage {
+	for (const item of page.items) {
+		if (item.kind === "header") {
+			Object.freeze(item.classes);
+			Object.freeze(item.serializedNames);
+		}
+		Object.freeze(item);
+	}
+	Object.freeze(page.items);
+	Object.freeze(page);
+	validatedPages.set(page, page);
+	return page;
+}
+
 export const decodeProjectIndexPage = Effect.fn("ProjectIndex.decodePage")(<Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ProjectIndexPage)(input).pipe(
-		Effect.mapError(
-			() =>
-				new ProjectIndexUnavailable({
-					message: "The Project Index adapter returned an unbounded or invalid page.",
-					recovery: "Rebuild the Catalog, then retry with a bounded query.",
-					retrySafe: true
-				})
-		)
-	)
+	Effect.suspend(() => {
+		// Only an already validated, deeply frozen result can cross another library boundary
+		// without walking every name again. Untrusted or mutable pages always run the schema.
+		const validated = isObject(input) ? validatedPages.get(input) : undefined;
+		if (validated !== undefined) return Effect.succeed(validated);
+		return decodePage(input).pipe(
+			Effect.map(retainValidatedPage),
+			Effect.mapError(
+				() =>
+					new ProjectIndexUnavailable({
+						message: "The Project Index adapter returned an unbounded or invalid page.",
+						recovery: "Rebuild the Catalog, then retry with a bounded query.",
+						retrySafe: true
+					})
+			)
+		);
+	})
 );
 
 export function foldProjectIndexRefresh(

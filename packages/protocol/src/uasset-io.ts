@@ -172,6 +172,26 @@ export interface UAssetIoProjectIndexPage extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexPage
 > {}
 
+const UAssetIoProjectIndexDictionaryHeader = Schema.Struct({
+	...UAssetIoProjectIndexHeader.fields,
+	classes: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64)),
+	serializedNames: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64))
+}).annotate({ identifier: "UAssetIoProjectIndexDictionaryHeader" });
+
+/** v1.3 page-local references; adapters additionally reject indices outside `strings`. */
+export const UAssetIoProjectIndexDictionaryPage = Schema.Struct({
+	...UAssetIoProjectIndexPage.fields,
+	items: Schema.Array(
+		Schema.Union([UAssetIoProjectIndexMap, UAssetIoProjectIndexDictionaryHeader])
+	).check(Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE)),
+	strings: Schema.Array(NonEmptyString).check(
+		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE * 128)
+	)
+}).annotate({ identifier: "UAssetIoProjectIndexDictionaryPage" });
+export interface UAssetIoProjectIndexDictionaryPage extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexDictionaryPage
+> {}
+
 export const UAssetIoOperation = Schema.Union([
 	Schema.Struct({
 		assetPath: NonEmptyString,
@@ -221,6 +241,7 @@ export const UAssetIoOperation = Schema.Union([
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
 		kind: Schema.Literal("project_index_query"),
+		pageEncoding: Schema.optionalKey(Schema.Literal("dictionary")),
 		query: UAssetIoProjectIndexQuery
 	})
 ]).annotate({ identifier: "UAssetIoOperation" });
@@ -274,6 +295,10 @@ export const UAssetIoResult = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("project_index_page"),
 		page: UAssetIoProjectIndexPage
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_dictionary_page"),
+		page: UAssetIoProjectIndexDictionaryPage
 	})
 ]).annotate({ identifier: "UAssetIoResult" });
 export type UAssetIoResult = Schema.Schema.Type<typeof UAssetIoResult>;

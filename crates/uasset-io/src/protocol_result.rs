@@ -6,6 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod project_index_dictionary;
+pub use project_index_dictionary::{ProjectIndexDictionaryItem, ProjectIndexDictionaryPage};
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ResultFrame {
@@ -39,6 +42,8 @@ pub enum ResultFrame {
     ProjectIndexSummary { summary: ProjectIndexSummary },
     #[serde(rename = "project_index_page")]
     ProjectIndexPage { page: ProjectIndexPage },
+    #[serde(rename = "project_index_dictionary_page")]
+    ProjectIndexDictionaryPage { page: ProjectIndexDictionaryPage },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

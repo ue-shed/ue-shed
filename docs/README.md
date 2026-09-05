@@ -62,6 +62,9 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Project Index query transport (2026-09-06)](research/query-transport-2026-09-06.md) —
+  dictionary pages, immutable validated results, transport bytes, and separate stage measurements.
+
 - [Parallel project discovery (2026-09-05)](research/discovery-2026-09-05.md) —
   demand-driven worker startup, fresh/warm timings, query profiling, and Linux oracle checks.
 

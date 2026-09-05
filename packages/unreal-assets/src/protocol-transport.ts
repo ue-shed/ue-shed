@@ -63,7 +63,9 @@ const decodeProtocolEvent = Schema.decodeUnknownSync(UAssetIoEvent, exactProtoco
 const isProjectIndexPageFrame = Schema.is(
 	Schema.Struct({
 		kind: Schema.Literal("result"),
-		result: Schema.Struct({ kind: Schema.Literal("project_index_page") })
+		result: Schema.Struct({
+			kind: Schema.Literals(["project_index_page", "project_index_dictionary_page"])
+		})
 	})
 );
 

@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { decodeUAssetIoEvent } from "@ue-shed/protocol";
+import { decodeUAssetIoEvent, UAssetIoProjectIndexDictionaryPage } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeProjectIndexWirePage,
+	decodeProjectIndexDictionaryPage,
 	decodeProjectIndexWireSummary,
 	mapProjectIndexProgress,
 	mapProjectIndexProtocolFailure
@@ -26,6 +27,75 @@ const fixture = async (name: string): Promise<Schema.Json> =>
 	);
 
 describe("Project Index protocol adapter mappings", () => {
+	it("expands the shared dictionary fixture to the complete original page", async () => {
+		const plain = await Effect.runPromise(
+			decodeUAssetIoEvent(await fixture("valid/project-index-page-result-event.json"))
+		);
+		const compact = await Effect.runPromise(
+			decodeUAssetIoEvent(
+				await fixture("valid/project-index-dictionary-page-result-event.json")
+			)
+		);
+		if (
+			plain.kind !== "result" ||
+			plain.result.kind !== "project_index_page" ||
+			compact.kind !== "result" ||
+			compact.result.kind !== "project_index_dictionary_page"
+		)
+			throw new Error("expected pages");
+		expect(decodeProjectIndexDictionaryPage(compact.result.page)).toEqual(
+			decodeProjectIndexWirePage(plain.result.page)
+		);
+	});
+
+	it("preserves reference order, duplicates, Unicode, and empty arrays", () => {
+		const page = UAssetIoProjectIndexDictionaryPage.make({
+			generation: 1,
+			projectId: "fixture",
+			strings: ["Café", "名前"],
+			items: [
+				{
+					kind: "header",
+					packageName: "/Game/A",
+					packagePath: "Content/A.uasset",
+					classes: [],
+					serializedNames: [1, 0, 1]
+				}
+			]
+		});
+		expect(decodeProjectIndexDictionaryPage(page).items).toEqual([
+			{
+				kind: "header",
+				packageName: "/Game/A",
+				packagePath: "Content/A.uasset",
+				classes: [],
+				serializedNames: ["名前", "Café", "名前"]
+			}
+		]);
+		expect(decodeProjectIndexDictionaryPage({ ...page, strings: [], items: [] }).items).toEqual(
+			[]
+		);
+	});
+
+	it("rejects missing dictionary references before exposing a page", () => {
+		const page = UAssetIoProjectIndexDictionaryPage.make({
+			generation: 1,
+			projectId: "fixture",
+			strings: ["A"],
+			items: [
+				{
+					kind: "header",
+					packageName: "/Game/A",
+					packagePath: "Content/A.uasset",
+					classes: [1],
+					serializedNames: []
+				}
+			]
+		});
+		expect(() => decodeProjectIndexDictionaryPage(page)).toThrow(
+			"dictionary reference is out of bounds"
+		);
+	});
 	it("maps an old worker exit before accepted to incompatible-worker", () => {
 		const error = mapProjectIndexProtocolFailure({
 			exitCode: 2,

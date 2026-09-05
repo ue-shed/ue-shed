@@ -1,0 +1,35 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 3
+		}
+	},
+	"kind": "result",
+	"requestId": "project-index-query-001",
+	"result": {
+		"kind": "project_index_dictionary_page",
+		"page": {
+			"generation": 3,
+			"items": [
+				{
+					"kind": "map",
+					"mapPath": "Content/Maps/L_Fixture.umap",
+					"packageName": "/Game/Maps/L_Fixture"
+				},
+				{
+					"classes": [0],
+					"kind": "header",
+					"packageName": "/Game/Data/DT_Items",
+					"packagePath": "Content/Data/DT_Items.uasset",
+					"serializedNames": [1]
+				}
+			],
+			"nextCursor": "2",
+			"projectId": "fixture-project",
+			"strings": ["/Script/Engine.DataTable", "TextProperty"]
+		}
+	},
+	"sequence": 1
+}

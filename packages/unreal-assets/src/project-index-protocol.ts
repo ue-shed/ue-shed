@@ -1,5 +1,6 @@
 import type {
 	UAssetIoEvent,
+	UAssetIoProjectIndexDictionaryPage,
 	UAssetIoProjectIndexPage,
 	UAssetIoProjectIndexSummary
 } from "@ue-shed/protocol";
@@ -20,6 +21,7 @@ import {
 	type ProjectIndexSummary,
 	ProjectIndexUnavailable
 } from "./project-index.js";
+import { ProtocolStreamFailure } from "./protocol-transport.js";
 
 type ProtocolFailed = Extract<UAssetIoEvent, { readonly kind: "failed" }>;
 type ProtocolRejected = Extract<UAssetIoEvent, { readonly kind: "rejected" }>;
@@ -84,6 +86,37 @@ export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): Proj
 	};
 }
 
+export function decodeProjectIndexDictionaryPage(
+	page: UAssetIoProjectIndexDictionaryPage
+): ProjectIndexPage {
+	const resolveString = (index: number): string => {
+		const value = page.strings[index];
+		if (value === undefined) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Project Index dictionary reference is out of bounds"
+			);
+		}
+		return value;
+	};
+	return {
+		generation: ProjectIndexGeneration.make(page.generation),
+		items: page.items.map((item) =>
+			item.kind === "map"
+				? item
+				: {
+						...item,
+						classes: item.classes.map(resolveString),
+						serializedNames: item.serializedNames.map(resolveString)
+					}
+		),
+		projectId: ProjectIdentity.make(page.projectId),
+		...(page.nextCursor === undefined
+			? undefined
+			: { nextCursor: ProjectIndexCursor.make(page.nextCursor) })
+	};
+}
+
 /**
  * Maps protocol terminal failures for Project Index operations onto typed domain errors.
  * An old worker that exits before `accepted` becomes `ProjectIndexIncompatibleWorker`.
@@ -100,7 +133,7 @@ export function mapProjectIndexProtocolFailure(input: {
 				input.stderr?.trim() ||
 				"The uasset worker rejected the Project Index request before accepting it.",
 			recovery:
-				"Upgrade to a paired uasset-io worker that supports Project Index v1.1, then retry.",
+				"Upgrade to a paired uasset-io worker that supports the requested Project Index operation and encoding, then retry.",
 			retrySafe: false
 		});
 	}
@@ -110,7 +143,7 @@ export function mapProjectIndexProtocolFailure(input: {
 			return new ProjectIndexIncompatibleWorker({
 				message,
 				recovery:
-					"Upgrade to a paired uasset-io worker that supports Project Index v1.1, then retry.",
+					"Upgrade to a paired uasset-io worker that supports the requested Project Index operation and encoding, then retry.",
 				retrySafe: false
 			});
 		}

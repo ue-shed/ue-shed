@@ -6,7 +6,7 @@ use super::project_index::CatalogSnapshot;
 use atomic_write_file::AtomicWriteFile;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -708,7 +708,7 @@ impl Snapshot {
 struct Staging {
     generation: Generation,
     observed: Vec<String>,
-    changed: BTreeMap<String, PackedRecord>,
+    changed: Vec<PackedRecord>,
     dictionary: Option<Dictionary>,
 }
 struct Unpublished {
@@ -938,7 +938,7 @@ impl Catalog for BinaryCatalog {
         self.staging = Some(Staging {
             generation,
             observed: Vec::new(),
-            changed: BTreeMap::new(),
+            changed: Vec::new(),
             dictionary: None,
         });
         self.writes = CatalogWriteCounts::default();
@@ -970,9 +970,7 @@ impl Catalog for BinaryCatalog {
         staging
             .observed
             .push(record.signature.relative_path.clone());
-        staging
-            .changed
-            .insert(record.signature.relative_path.clone(), record);
+        staging.changed.push(record);
         self.writes.staged_evidence_rows += 1;
         self.writes.evidence_write_duration += started.elapsed();
         Ok(())
@@ -1191,10 +1189,19 @@ fn write_snapshot(
     });
     let mut inventory = Vec::new();
     let mut payload = Vec::new();
-    let mut postings: HashMap<(u8, u32), Vec<u32>> = HashMap::new();
+    // String IDs are dense and already validated. Index directly while building postings,
+    // avoiding a hash lookup for every class/name occurrence in the project.
+    let mut postings: [Vec<Vec<u32>>; 2] =
+        std::array::from_fn(|_| vec![Vec::new(); dictionary.strings.len()]);
     // Read retained payloads once. No per-retained-record IO, decode, or string interning.
     let prior_payload = prior.map(|p| p.section(4)).transpose()?.unwrap_or_default();
     let mut remap = vec![None; prior.map_or(0, |p| p.inventory.len())];
+    // Production observations arrive in ordered runs. A stable sort and merge avoids maintaining
+    // a second path-keyed index while scanning, and preserves last-write-wins for repeated paths.
+    staging
+        .changed
+        .sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
+    let mut changed = staging.changed.into_iter().peekable();
     put32(&mut inventory, staging.observed.len())?;
     for (id, name) in staging.observed.iter().enumerate() {
         let old = prior.and_then(|p| {
@@ -1204,8 +1211,22 @@ fn write_snapshot(
                 .map(|i| (i, &p.inventory[i]))
         });
         let offset = payload.len();
-        let (signature, profile, failure, hash) = if let Some(record) = staging.changed.remove(name)
+        let record = if changed
+            .peek()
+            .is_some_and(|r| r.signature.relative_path == *name)
         {
+            let mut record = changed.next().unwrap();
+            while changed
+                .peek()
+                .is_some_and(|r| r.signature.relative_path == *name)
+            {
+                record = changed.next().unwrap();
+            }
+            Some(record)
+        } else {
+            None
+        };
+        let (signature, profile, failure, hash) = if let Some(record) = record {
             record.encode(&mut payload)?;
             let hash = checksum(&payload[offset..]);
             let same_evidence = old.is_some_and(|(_, entry)| {
@@ -1222,7 +1243,7 @@ fn write_snapshot(
             {
                 for (kind, values) in [(0, &header.classes), (1, &header.names)] {
                     for value in values {
-                        let list = postings.entry((kind, *value)).or_default();
+                        let list = &mut postings[kind][*value as usize];
                         if list.last() != Some(&(id as u32)) {
                             list.push(id as u32);
                         }
@@ -1268,7 +1289,7 @@ fn write_snapshot(
     if let Some(prior) = prior {
         let bytes = prior.section(3)?;
         for posting in &prior.postings {
-            let list = postings.entry((posting.kind, posting.value)).or_default();
+            let list = &mut postings[posting.kind as usize][posting.value as usize];
             let changed = !list.is_empty();
             let start = posting.offset as usize;
             let mut previous = None;
@@ -1287,7 +1308,6 @@ fn write_snapshot(
                 list.dedup();
             }
         }
-        postings.retain(|_, list| !list.is_empty());
     }
     let mut strings = Vec::new();
     put32(&mut strings, dictionary.strings.len())?;
@@ -1303,19 +1323,27 @@ fn write_snapshot(
     }
     let mut directory = Vec::new();
     let mut lists = Vec::new();
-    put32(&mut directory, postings.len())?;
-    let mut ordered_postings = postings.into_iter().collect::<Vec<_>>();
-    ordered_postings.sort_unstable_by_key(|(key, _)| *key);
-    for ((kind, value), ids) in ordered_postings {
-        directory.push(kind);
-        directory.extend_from_slice(&value.to_le_bytes());
-        put64(&mut directory, lists.len() as u64);
-        put32(&mut directory, ids.len())?;
-        let start = lists.len();
-        for id in ids {
-            lists.extend_from_slice(&id.to_le_bytes());
+    let posting_count = postings
+        .iter()
+        .flatten()
+        .filter(|ids| !ids.is_empty())
+        .count();
+    put32(&mut directory, posting_count)?;
+    for (kind, values) in postings.into_iter().enumerate() {
+        for (value, ids) in values.into_iter().enumerate() {
+            if ids.is_empty() {
+                continue;
+            }
+            directory.push(kind as u8);
+            directory.extend_from_slice(&(value as u32).to_le_bytes());
+            put64(&mut directory, lists.len() as u64);
+            put32(&mut directory, ids.len())?;
+            let start = lists.len();
+            for id in ids {
+                lists.extend_from_slice(&id.to_le_bytes());
+            }
+            put64(&mut directory, checksum(&lists[start..]));
         }
-        put64(&mut directory, checksum(&lists[start..]));
     }
     let sections = [inventory, strings, directory, lists, payload];
     let mut header = MAGIC.to_vec();
@@ -1613,6 +1641,59 @@ mod tests {
         catalog
     }
     catalog_conformance_tests!(binary, custom_catalog);
+
+    #[test]
+    fn repeated_unordered_staging_keeps_the_last_record_and_its_postings() {
+        use crate::direct_executor::catalog_conformance::{header, package};
+        let mut catalog = custom_catalog();
+        let token = catalog.begin_refresh().unwrap();
+        for (path, name) in [
+            ("Content/Z.uasset", "Old"),
+            ("Content/A.uasset", "Other"),
+            ("Content/Z.uasset", "New"),
+        ] {
+            catalog
+                .stage_observed(
+                    &token,
+                    StagedPackage {
+                        signature: package(path, 1, 1),
+                        header: Some(header("/Game/Fixture", &[], &[name])),
+                    },
+                )
+                .unwrap();
+        }
+        let generation = token.generation;
+        catalog
+            .commit_refresh(
+                token,
+                RefreshSummary {
+                    project_id: fixture_project_id(),
+                    generation,
+                    package_count: 2,
+                    map_count: 0,
+                    changed_packages: 2,
+                    removed_packages: 0,
+                    completeness: Completeness::Complete,
+                    diagnostics: vec![],
+                },
+            )
+            .unwrap();
+        assert_eq!(catalog.committed_entries().unwrap().len(), 2);
+        for (name, expected) in [("Old", 0), ("New", 1), ("Other", 1)] {
+            let page = catalog
+                .query(&QueryRequest {
+                    project_id: fixture_project_id(),
+                    expected_generation: generation,
+                    kind: QueryKind::SerializedNames {
+                        values: vec![name.into()],
+                    },
+                    limit: 10,
+                    cursor: None,
+                })
+                .unwrap();
+            assert_eq!(page.items.len(), expected, "{name}");
+        }
+    }
 
     #[test]
     fn deleting_only_a_sidecar_publishes_the_reduced_inventory() {
@@ -2078,7 +2159,7 @@ mod tests {
         let mut binary = custom_catalog();
         let root = binary.cleanup_root.as_ref().unwrap().clone();
         let mut sqlite = SqliteCatalog::open(&root, &fixture_project_id()).unwrap();
-        let mut state = BTreeMap::new();
+        let mut state = std::collections::BTreeMap::new();
         let mut random = 0x123456789abcdef_u64;
         for generation in 0..12 {
             for _ in 0..40 {

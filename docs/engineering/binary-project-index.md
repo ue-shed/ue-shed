@@ -35,6 +35,10 @@ writes. Changed refreshes reuse unchanged packed bytes and remap existing postin
 only affected memberships. They still write a complete new physical file; this is not an append
 log or an in-place update format. New files are synced and verified before manifest publication.
 
+Staging appends changed records, then stably sorts and merges them with the observed paths at
+commit. Repeated staging of a path keeps its last record. Posting construction indexes the dense
+string IDs directly; persisted ordering and encoding remain deterministic.
+
 Interrupted unpublished files are removed on successful subsequent publication; writer opens also
 clean retired snapshots when a committed manifest exists. Invalid manifests or damaged snapshots
 are quarantined by writers and rebuilt. Query opens report errors without mutating the cache.

@@ -62,6 +62,9 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Fresh Catalog scan optimization (2026-09-06)](research/fresh-scan-2026-09-06.md) —
+  current-pipeline profiling, batched observations, staging/posting construction, and rejected parser checkpoint.
+
 - [Full project flow performance (2026-09-06)](research/full-flow-2026-09-06.md) —
   scan/refresh/query experiments, headless counts, parser replay, actual Electron startup, and parity.
 

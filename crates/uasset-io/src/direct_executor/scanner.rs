@@ -32,6 +32,7 @@ const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 const MAX_HEADER_WORKERS: usize = 16;
 /// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush.
 const HEADER_RESULT_BUFFER: usize = 1_024;
+const HEADER_RESULT_BATCH: usize = 8;
 
 #[derive(Clone)]
 pub(crate) struct FileSignature {
@@ -104,7 +105,7 @@ impl ProjectScanner for FilesystemProjectScanner {
             .map_or(4, std::num::NonZeroUsize::get)
             .min(MAX_HEADER_WORKERS)
             .min(signatures.len());
-        let lane_capacity = (HEADER_RESULT_BUFFER / worker_count).max(1);
+        let lane_capacity = (HEADER_RESULT_BUFFER / worker_count / HEADER_RESULT_BATCH).max(1);
         let mut senders = Vec::with_capacity(worker_count);
         let mut receivers = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
@@ -114,31 +115,52 @@ impl ProjectScanner for FilesystemProjectScanner {
         }
         let stop = AtomicBool::new(false);
         let mut callback_error = None;
+        let mut pending = (0..worker_count)
+            .map(|_| Vec::new().into_iter())
+            .collect::<Vec<_>>();
         std::thread::scope(|scope| {
             for (worker, sender) in senders.into_iter().enumerate() {
                 let cancellation = cancellation.clone();
                 let stop = &stop;
                 scope.spawn(move || {
+                    let mut batch = Vec::with_capacity(HEADER_RESULT_BATCH);
                     for index in (worker..signatures.len()).step_by(worker_count) {
                         if stop.load(Ordering::Relaxed) {
                             break;
                         }
                         let signature = &signatures[index];
                         let result = observe_header(self, project_root, signature, &cancellation);
-                        if sender.send((index, result)).is_err() {
-                            break;
+                        batch.push((index, result));
+                        if batch.len() == HEADER_RESULT_BATCH {
+                            let ready = std::mem::replace(
+                                &mut batch,
+                                Vec::with_capacity(HEADER_RESULT_BATCH),
+                            );
+                            if sender.send(ready).is_err() {
+                                break;
+                            }
                         }
+                    }
+                    if !batch.is_empty() {
+                        let _ = sender.send(batch);
                     }
                 });
             }
-            for index in 0..signatures.len() {
-                let receiver = &receivers[index % worker_count];
-                let received = receiver.recv();
+            for (index, signature) in signatures.iter().enumerate() {
+                let lane = index % worker_count;
+                let received = if let Some(next) = pending[lane].next() {
+                    Ok(next)
+                } else {
+                    receivers[lane].recv().and_then(|batch| {
+                        pending[lane] = batch.into_iter();
+                        pending[lane].next().ok_or(std::sync::mpsc::RecvError)
+                    })
+                };
                 match received {
                     Ok((received_index, result)) => {
                         debug_assert_eq!(received_index, index);
                         if callback_error.is_none()
-                            && let Err(error) = on_header(&signatures[index], result)
+                            && let Err(error) = on_header(signature, result)
                         {
                             stop.store(true, Ordering::Relaxed);
                             callback_error = Some(error);
@@ -472,33 +494,35 @@ mod tests {
     #[test]
     fn parallel_header_stream_preserves_signature_order() {
         let scanner = FilesystemProjectScanner;
-        let signatures = (0..32)
-            .map(|index| PackageSignature {
-                relative_path: format!("Content/Missing/A_{index:02}.uasset"),
-                kind: EntryKind::Package,
-                size: 1,
-                modified_nanos: 1,
-            })
-            .collect::<Vec<_>>();
-        let mut observed = Vec::new();
-        scanner
-            .stream_header_evidence(
-                "C:/Missing",
-                &signatures,
-                &CancellationToken::new(),
-                &mut |signature, _| {
-                    observed.push(signature.relative_path.clone());
-                    Ok(())
-                },
-            )
-            .expect("stream headers");
-        assert_eq!(
-            observed,
-            signatures
-                .iter()
-                .map(|signature| signature.relative_path.clone())
-                .collect::<Vec<_>>()
-        );
+        for count in [1, 31, 129, 2051] {
+            let signatures = (0..count)
+                .map(|index| PackageSignature {
+                    relative_path: format!("Content/Missing/A_{index:02}.uasset"),
+                    kind: EntryKind::Package,
+                    size: 1,
+                    modified_nanos: 1,
+                })
+                .collect::<Vec<_>>();
+            let mut observed = Vec::new();
+            scanner
+                .stream_header_evidence(
+                    "C:/Missing",
+                    &signatures,
+                    &CancellationToken::new(),
+                    &mut |signature, _| {
+                        observed.push(signature.relative_path.clone());
+                        Ok(())
+                    },
+                )
+                .expect("stream headers");
+            assert_eq!(
+                observed,
+                signatures
+                    .iter()
+                    .map(|signature| signature.relative_path.clone())
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]

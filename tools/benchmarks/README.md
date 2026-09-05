@@ -22,8 +22,11 @@ deduplication, and verifies the union across all five query kinds. Omit it for o
 See [query transport measurements](../../docs/research/query-transport-2026-09-06.md) for the
 baseline, intermediate variants, and separate full-flow stage timings.
 
-`prepare_header_profile.py <new-output-directory>` copies the native workspace and adds elapsed
-timers only to that copy. Build its `uasset-io` release executable, then run:
+`prepare_header_profile.py <new-output-directory>` copies the native workspace and tracked fixture
+inputs, excluding Unreal-generated build/output files, and adds elapsed timers only to that copy.
+It covers header workers, batched channel operations, discovery/comparison, and initial Catalog
+record/posting construction, serialization, writing, and verification. Build its `uasset-io` release
+executable, then run:
 
 ```powershell
 python tools/benchmarks/profile_project_headers.py --project <project-root> --reader <instrumented-reader> --output <new-output-directory>

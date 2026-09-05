@@ -1,6 +1,9 @@
 # SQLite Project Index
 
-SQLite is the canonical native Project Index Catalog as of 2026-09-05, using `rusqlite` 0.37.0
+This records the SQLite baseline, superseded later on 2026-09-05 by the
+[binary Catalog](binary-project-index.md). SQLite remains an opt-in test oracle.
+
+The baseline used `rusqlite` 0.37.0
 and its bundled SQLite 3.50.2. `uasset-io` owns the
 adapter; parsing and inspection remain database-free and WASM-compatible. The CLI, libraries,
 and Workbench use the same storage-neutral coordinator and bounded query protocol.

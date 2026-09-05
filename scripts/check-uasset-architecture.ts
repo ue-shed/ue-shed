@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -108,6 +109,7 @@ async function typescriptFiles(directory: string): Promise<string[]> {
  * storage-neutral so the same conformance suite runs unchanged against every adapter.
  */
 const CATALOG_STORAGE_ADAPTERS = new Set([
+	join("crates", "uasset-io", "src", "direct_executor", "catalog_binary.rs"),
 	join("crates", "uasset-io", "src", "direct_executor", "catalog_sqlite.rs")
 ]);
 
@@ -167,6 +169,36 @@ async function checkCatalogStorageBoundary(failures: string[]) {
 	}
 	if (!/features\s*=\s*\[\s*"bundled"\s*\]/.test(sqlite)) {
 		failures.push("uasset-io must enable only SQLite's bundled engine");
+	}
+	if (
+		!/optional = true/.test(sqlite) ||
+		!/^catalog-oracle = \["dep:rusqlite"\]$/m.test(ioManifest)
+	) {
+		failures.push("uasset-io must keep SQLite behind its explicit test oracle feature");
+	}
+	if (/^default\s*=/m.test(ioManifest)) {
+		failures.push("uasset-io must not enable database features by default");
+	}
+	const modules = await readFile(
+		join(repositoryRoot, "crates", "uasset-io", "src", "direct_executor.rs"),
+		"utf8"
+	);
+	if (!modules.includes('#[cfg(all(test, feature = "catalog-oracle"))]\nmod catalog_sqlite;')) {
+		failures.push("the SQLite adapter must compile only in explicit oracle tests");
+	}
+	const dependencies = spawnSync(
+		"cargo",
+		["tree", "--locked", "-p", "uasset-io", "-e", "normal"],
+		{
+			cwd: repositoryRoot,
+			encoding: "utf8",
+			windowsHide: true
+		}
+	);
+	if (dependencies.error || dependencies.status !== 0) {
+		failures.push("could not verify the native Catalog runtime dependency tree");
+	} else if (/\b(?:rusqlite|libsqlite3-sys|duckdb|libduckdb-sys)\b/.test(dependencies.stdout)) {
+		failures.push("the default native runtime must not include a database engine");
 	}
 }
 

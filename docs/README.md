@@ -62,6 +62,12 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Binary Catalog hardening and production selection (2026-09-05)](research/custom-catalog-hardening-2026-09-05.md) —
+  final before/after timings, recovery, SQLite oracle, platform artifacts, and CI separation.
+
+- [Custom binary Catalog prototype (2026-09-05)](research/custom-catalog-prototype-2026-09-05.md) —
+  SQLite-oracle tests, three-size timings, indexed queries, and refresh regressions.
+
 - [Canonical SQLite and incremental snapshots (2026-09-05)](research/sqlite-canonical-2026-09-05.md) —
   production migration, three-size before/after timings, lifecycle validation, and cache repair.
 

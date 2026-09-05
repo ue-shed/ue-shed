@@ -5,6 +5,11 @@ discovery, bounded file reads, cache/signature work, concurrency, compact projec
 native `uasset` executable boundary. It delegates package meaning to `uasset-parser` and portable
 projections to `uasset-inspection`.
 
+The Project Index uses an immutable binary Catalog with no database engine in the default build.
+Native IO requires Rust 1.89. `cargo test -p uasset-io --features catalog-oracle` additionally runs
+the SQLite adapter and differential tests. See
+[the storage guide](../../docs/engineering/binary-project-index.md) for persistence, recovery, and limits.
+
 The `uasset protocol` command accepts one bounded JSON request on stdin and emits validated
 newline-delimited events on stdout. The contract and shared fixtures live in
 `packages/protocol/contracts/uasset-io/v1/`. Human commands remain diagnostic compatibility

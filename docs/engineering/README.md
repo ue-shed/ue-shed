@@ -30,7 +30,8 @@ UE Shed code should be functional, typed, observable, and well tested.
 | [Testing](testing.md)                                                 | Test scope and test types                   |
 | [UAsset benchmarks](uasset-benchmarks.md)                             | Parser, CLI, WASM, and Unreal measurements  |
 | [Project Index storage report](project-index-storage-comparison.html) | Visual comparison of four measured eras     |
-| [SQLite Project Index](sqlite-project-index.md)                       | Canonical Catalog storage and lifecycle     |
+| [Binary Project Index](binary-project-index.md)                       | Canonical Catalog storage and lifecycle     |
+| [SQLite Project Index](sqlite-project-index.md)                       | Previous Catalog and current test oracle    |
 | [DuckDB Project Index research](duckdb-project-index-research.md)     | Catalog engine and Adapter evidence         |
 | [Releases](releases.md)                                               | Local pre-1.0 releases and post-1.0 CI plan |
 | [Plugin distribution](plugin-distribution.md)                         | Immutable Unreal plugin host caches         |

@@ -86,6 +86,18 @@ there; do not invent a second status source in docs.
 - [Custom binary Catalog prototype (2026-09-05)](research/custom-catalog-prototype-2026-09-05.md) —
   SQLite-oracle tests, three-size timings, indexed queries, and refresh regressions.
 
+- [32×32 moving-camera scale test (2026-09-07)](research/map-capture-grid32-2026-09-07.md) — 1,024
+  captured tiles, a 16K assembly, and a six-level viewer pyramid over expanded world bounds.
+
+- [Moving the lit camera: tile seams (2026-09-07)](research/map-capture-moving-camera-2026-09-07.md) —
+  2×2 and 4×4 viewport-camera captures recover detail; render differences and seam visibility are distinct.
+
+- [Plugin-only map capture freeze (2026-09-07)](research/map-capture-freeze-2026-09-07.md) — verified
+  material clocks and tick restoration; persistent tiled lighting differences.
+
+- [Map Capture quality audit (2026-09-06)](research/map-capture-quality-2026-09-06.md) — renderer
+  comparisons, exposure and temporal-state failures, viewport correctness fixes, and alternatives.
+
 - [Canonical SQLite and incremental snapshots (2026-09-05)](research/sqlite-canonical-2026-09-05.md) —
   production migration, three-size before/after timings, lifecycle validation, and cache repair.
 

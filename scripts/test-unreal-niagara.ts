@@ -7,7 +7,12 @@ import {
 	EngineInstallationDiscovery,
 	EngineInstallationDiscoveryLive
 } from "../packages/engine/src/index.ts";
-import { runNiagaraPreview } from "../packages/niagara/src/index.ts";
+import {
+	niagaraBackgroundVariant,
+	niagaraPreviewProfile,
+	runNiagaraPreview,
+	selectNiagaraVariantPresentation
+} from "../packages/niagara/src/index.ts";
 import { prepareUnrealPlugins, unrealEngineTools } from "./unreal-plugin-host.ts";
 import { repositoryRoot } from "./native-tools.ts";
 
@@ -90,8 +95,47 @@ try {
 	if (outcome.manifest.effectiveSettings.captureMode !== "component_only") {
 		throw new Error("Niagara conformance did not preserve component-only default capture.");
 	}
+	const scene = await Effect.runPromise(
+		runNiagaraPreview({
+			explicitEngineRoot: installation.root,
+			outputRoot,
+			pluginDescriptor,
+			projectDescriptor,
+			systemObjectPath: outcome.manifest.systemObjectPath,
+			settings: niagaraPreviewProfile("ground_impact", {
+				durationSeconds: 1,
+				frameCount: 4,
+				width: 64,
+				height: 64
+			})
+		})
+	);
+	if (
+		scene.manifest.alphaPolicy !== "opaque_scene_v1" ||
+		scene.manifest.camera.projection !== "perspective" ||
+		!scene.manifest.artifacts.some((frame) => (frame.activityScore ?? 0) > 0)
+	)
+		throw new Error(
+			"Scene capture must publish opaque frames with visible activity and a fitted camera."
+		);
+	for (const background of ["dark", "light"] as const) {
+		const variant = await Effect.runPromise(
+			runNiagaraPreview({
+				explicitEngineRoot: installation.root,
+				outputRoot,
+				pluginDescriptor,
+				projectDescriptor,
+				systemObjectPath: scene.manifest.systemObjectPath,
+				settings: niagaraBackgroundVariant(scene.manifest, background)
+			})
+		);
+		selectNiagaraVariantPresentation(variant.manifest, scene.manifest);
+		if (variant.manifest.effectiveSettings.background !== background) {
+			throw new Error("Scene variant did not preserve the requested background.");
+		}
+	}
 	console.log(
-		`Niagara trusted conformance passed with ${outcome.manifest.artifacts.length} hashed frames on Unreal ${outcome.manifest.producer.engineVersion}.`
+		`Niagara trusted conformance passed: transparent, fitted scene, and matched dark/light captures on Unreal ${outcome.manifest.producer.engineVersion}.`
 	);
 } finally {
 	await rm(outputRoot, { force: true, recursive: true });

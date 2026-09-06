@@ -8,19 +8,34 @@
 			"type": "object",
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-niagara-preview-request" },
+				"name": {
+					"const": "ue-shed-niagara-preview-request"
+				},
 				"version": {
 					"type": "object",
 					"required": ["major", "minor"],
-					"properties": { "major": { "const": 1 }, "minor": { "const": 0 } },
+					"properties": {
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"enum": [0, 1, 2]
+						}
+					},
 					"additionalProperties": false
 				}
 			},
 			"additionalProperties": false
 		},
-		"runId": { "$ref": "common.schema.json#/$defs/runId" },
-		"settings": { "$ref": "common.schema.json#/$defs/settings" },
-		"systemObjectPath": { "$ref": "common.schema.json#/$defs/systemObjectPath" }
+		"runId": {
+			"$ref": "common.schema.json#/$defs/runId"
+		},
+		"settings": {
+			"$ref": "common.schema.json#/$defs/settings"
+		},
+		"systemObjectPath": {
+			"$ref": "common.schema.json#/$defs/systemObjectPath"
+		}
 	},
 	"additionalProperties": false
 }

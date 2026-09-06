@@ -54,6 +54,28 @@ it.effect("validates Niagara render bounds before launching Unreal", () =>
 	})
 );
 
+it.effect("rejects invalid Niagara exposure before engine discovery", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		yield* runCli([
+			"niagara",
+			"preview",
+			"Fixture.uproject",
+			"/Game/Fixture/Niagara/NS_Preview.NS_Preview",
+			"--profile",
+			"ground_impact",
+			"--background",
+			"dark",
+			"--exposure",
+			"99"
+		]).pipe(Effect.provide(runtimeLayer(output, errors, exitCode)));
+		expect(yield* Ref.get(output)).toContain("invalid_request");
+		expect(yield* Ref.get(exitCode)).toBe(2);
+	})
+);
+
 it.effect("validates the public scenarios command before contacting Unreal", () =>
 	Effect.gen(function* () {
 		const output = yield* Ref.make("");

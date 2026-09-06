@@ -39,11 +39,12 @@ while their hosted flows are being redesigned. Individual commands include `type
 
 ## Unreal Engine reference
 
-Use `C:\Program Files\Epic Games\UE_5.7` as the current local engine install. Verify Unreal APIs
-against `C:\Program Files\Epic Games\UE_5.7\Engine\Source` instead of guessing.
+A local engine install exists, but its location is not a given — discover it (for example, the
+`HKLM:\SOFTWARE\EpicGames\Unreal Engine` registry keys) or ask. On this machine, the default
+location is `D:\ue5\UE_5.7`; verify Unreal APIs against its `Engine\Source` instead of guessing.
 
 This is a development reference, not a product default. Runtime code, fixtures, and tests must use
-engine discovery or explicit configuration rather than depend on this machine path.
+engine discovery or explicit configuration rather than depend on any machine path.
 
 ## TypeScript style
 

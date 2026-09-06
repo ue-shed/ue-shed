@@ -3,3 +3,5 @@ export * from "./report.js";
 export * from "./query.js";
 export * from "./texture.js";
 export * from "./live.js";
+
+export * from "./investigation.js";

@@ -1,9 +1,9 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import { ConfigExplorerNodeLive } from "@ue-shed/config-explorer";
 import { Effect, Layer } from "effect";
 import { resolve } from "node:path";
 import { expect } from "vitest";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { WorkbenchConfigExplorer, WorkbenchConfigExplorerLive } from "./config-explorer.js";
 

@@ -45,7 +45,7 @@ import { offlineTexturePreviewHostLayer } from "./adapters/offline-texture-previ
 import { register as registerWorkbenchIpc } from "./ipc/register.js";
 import { WorkbenchAssetAuditsLive } from "./services/asset-audits.js";
 import { WorkbenchAssetNavigationLive } from "./services/asset-navigation.js";
-import { WorkbenchAuthoringLive, WorkbenchAuthoringSessionsLive } from "./services/authoring.js";
+import { WorkbenchAuthoringLive } from "./services/authoring.js";
 import { CameraPresentationLive } from "./services/camera-presentation.js";
 import { WorkbenchContentObservatoryLive } from "./services/content-observatory.js";
 import { WorkbenchConfigExplorerLive } from "./services/config-explorer.js";
@@ -61,7 +61,10 @@ import { WorkbenchProjectHistoryLive } from "./services/project-history.js";
 import { WorkbenchProjectLive } from "./services/project-workspace.js";
 import { WorkbenchCustodianLive } from "./services/project-custodian.js";
 import { ShowcaseLive } from "./services/showcase.js";
-import { WorkbenchUnrealConnectionLive } from "./services/unreal-connection.js";
+import {
+	WorkbenchUnrealConnection,
+	WorkbenchUnrealConnectionLive
+} from "./services/unreal-connection.js";
 import { WorkbenchConfiguration, WorkbenchConfigurationLive } from "./workbench-config.js";
 
 export interface WorkbenchHosts {
@@ -166,8 +169,8 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 /** Review capture/authoring plus the demand-driven fixture launcher. */
 function reviewAndFixtureLayer(hosts: WorkbenchHosts) {
 	const reviewCapturePort = Layer.unwrap(
-		Effect.map(WorkbenchConfiguration, (configuration) =>
-			reviewCaptureRemotePortLayer(configuration.remoteControlEndpoint)
+		Effect.map(WorkbenchUnrealConnection, (connection) =>
+			reviewCaptureRemotePortLayer(connection.endpoint())
 		)
 	);
 	return Layer.mergeAll(
@@ -180,7 +183,7 @@ function reviewAndFixtureLayer(hosts: WorkbenchHosts) {
 
 /** Workbench-owned application services surfaced directly to IPC registration. */
 function featureLayer(hosts: WorkbenchHosts) {
-	const authoring = WorkbenchAuthoringLive.pipe(Layer.provide(WorkbenchAuthoringSessionsLive));
+	const authoring = WorkbenchAuthoringLive;
 	const authoringClient = AuthoringClientLive.pipe(Layer.provide(authoring));
 	const mapReview = WorkbenchMapReviewLive.pipe(Layer.provide(ObservatoryLive));
 	const contentObservatory = WorkbenchContentObservatoryLive.pipe(

@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { ElectronIpc } from "../adapters/electron-ipc.js";
+import { WorkbenchUnrealConnection } from "../services/unreal-connection.js";
 import { register as registerAssetAudits } from "./asset-audits.js";
 import { register as registerAssetNavigation } from "./asset-navigation.js";
 import { register as registerBlueprintGraphs } from "./blueprint-graphs.js";
@@ -22,7 +24,7 @@ import { register as registerShowcase } from "./showcase.js";
  * Registers every Workbench IPC channel. Runs once during `WorkbenchLive` acquisition so
  * finalizers that remove the handlers are bound to the runtime scope.
  */
-export const register = Effect.all(
+const registerChannels = Effect.all(
 	[
 		registerFixture,
 		registerShowcase,
@@ -45,3 +47,16 @@ export const register = Effect.all(
 	],
 	{ discard: true }
 ).pipe(Effect.withSpan("Workbench.Ipc.register"));
+
+export const register = Effect.gen(function* () {
+	const ipc = yield* ElectronIpc;
+	const connection = yield* WorkbenchUnrealConnection;
+	return yield* registerChannels.pipe(
+		Effect.provideService(ElectronIpc, {
+			register: (contract, handler) =>
+				ipc.register(contract, (...args) =>
+					connection.withCurrent(Effect.suspend(() => handler(...args)))
+				)
+		})
+	);
+});

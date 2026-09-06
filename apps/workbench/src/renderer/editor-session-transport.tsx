@@ -14,7 +14,10 @@ import {
 
 const remoteControlPortStorageKey = "ue-shed.remote-control-port";
 
-export function EditorSessionTransport(props: { readonly client: WorkbenchRendererClient }) {
+export function EditorSessionTransport(props: {
+	readonly client: WorkbenchRendererClient;
+	readonly onTargetChanged?: () => void;
+}) {
 	const action = createEffectAction();
 	const settingsAction = createEffectAction();
 	const subscription = createEffectSubscription();
@@ -26,6 +29,15 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 	const [portDraft, setPortDraft] = createSignal("");
 	const [portMessage, setPortMessage] = createSignal<string>();
 	const actions = createMemo(() => editorSessionTransportActions(state()));
+	const subscribeStatus = () =>
+		subscription.subscribe(props.client.editorSessionStatuses, {
+			onValue: (exit) => {
+				if (Exit.isSuccess(exit)) {
+					setState(exit.value.state);
+					setMessage(undefined);
+				} else setState({ status: "offline" });
+			}
+		});
 
 	const applyPort = (nextPort: number, persist: boolean) => {
 		setSettingsPending(true);
@@ -33,13 +45,18 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 		settingsAction.run(props.client.setUnrealConnectionPort(nextPort), {
 			onFailure: () => {
 				setSettingsPending(false);
-				setPortMessage("Could not change the monitored port.");
+				setPortMessage("Could not change the Unreal target port.");
 			},
 			onSuccess: (settings) => {
+				action.cancel();
+				setPending(false);
+				setMessage(undefined);
+				if (port() !== settings.port) props.onTargetChanged?.();
 				setSettingsPending(false);
 				setPort(settings.port);
 				setPortDraft(String(settings.port));
 				setState({ status: "offline" });
+				subscribeStatus();
 				if (persist) {
 					try {
 						window.localStorage.setItem(
@@ -55,16 +72,7 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 	};
 
 	onMount(() => {
-		subscription.subscribe(props.client.editorSessionStatuses, {
-			onValue: (exit) => {
-				if (Exit.isSuccess(exit)) {
-					setState(exit.value.state);
-					setMessage(undefined);
-				} else {
-					setState({ status: "offline" });
-				}
-			}
-		});
+		subscribeStatus();
 		settingsAction.run(props.client.unrealConnectionSettings(), {
 			onSuccess: (settings) => {
 				setPort(settings.port);
@@ -126,19 +134,20 @@ export function EditorSessionTransport(props: { readonly client: WorkbenchRender
 			<span {...stylex.props(styles.label)}>{editorSessionTransportLabel(state())}</span>
 			<details {...stylex.props(styles.settings)}>
 				<summary
-					aria-label="Change Unreal session monitor port"
-					title="Unreal session monitor port"
+					aria-label="Change Unreal target port"
+					title="Unreal target port"
 					{...stylex.props(styles.settingsSummary)}
 				>
 					:{port() ?? "—"}
 				</summary>
 				<section
-					aria-label="Session monitor settings"
+					aria-label="Unreal target settings"
 					{...stylex.props(styles.settingsPanel)}
 				>
-					<strong {...stylex.props(styles.settingsTitle)}>Session monitor port</strong>
+					<strong {...stylex.props(styles.settingsTitle)}>Unreal target port</strong>
 					<p {...stylex.props(styles.settingsDetail)}>
-						Workbench will immediately monitor this port for an Unreal Editor session.
+						New live operations use this target. Active operations keep their starting
+						target.
 					</p>
 					<form onSubmit={submitPort} {...stylex.props(styles.portForm)}>
 						<input

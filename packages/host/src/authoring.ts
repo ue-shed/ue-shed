@@ -1,8 +1,8 @@
 import {
 	authoringSessionLivePortLayer,
 	authoringSessionServiceLayer,
+	makeAuthoringSessionService,
 	AuthoringSessionLiveError,
-	AuthoringSessions,
 	fingerprintTable,
 	reviewAuthoringSession,
 	workingTable,
@@ -33,7 +33,7 @@ import {
 	type UnrealCapabilityError,
 	type UnrealConnectionError
 } from "@ue-shed/unreal-connection";
-import { Cache, Context, Duration, Effect, Exit, Layer, Option, Ref, Result } from "effect";
+import { Cache, Context, Data, Duration, Effect, Exit, Layer, Option, Ref, Result } from "effect";
 import { ShedHostConfiguration, type ConfiguredProject } from "./configuration.js";
 import { AuthoringFilePicker } from "./file-picker.js";
 import { SavedTableIndex } from "./saved-table-index.js";
@@ -44,6 +44,16 @@ interface CatalogIndex {
 }
 
 const emptyCatalogIndex: CatalogIndex = { assetPaths: new Map(), liveObjectPaths: new Set() };
+
+class ProjectSelection extends Data.Class<Extract<ConfiguredProject, { status: "configured" }>> {}
+class NoProjectSelection extends Data.Class<
+	Extract<ConfiguredProject, { status: "not_configured" }>
+> {}
+
+class AuthoringTarget extends Data.Class<{
+	readonly project: ProjectSelection | NoProjectSelection;
+	readonly endpoint: string;
+}> {}
 
 export interface ShedAuthoringApi {
 	readonly catalogProgress?: () => Effect.Effect<AuthoringCatalogProgress>;
@@ -71,7 +81,7 @@ export class ShedAuthoring extends Context.Service<ShedAuthoring, ShedAuthoringA
 	"@ue-shed/host/ShedAuthoring"
 ) {}
 
-/** Supplies the headless session service only when project persistence is configured. */
+/** @deprecated ShedAuthoringLive now acquires project-scoped repositories on demand. */
 export const ShedAuthoringSessionsLive = Layer.unwrap(
 	Effect.flatMap(ShedHostConfiguration, (configuration) =>
 		Effect.map(configuration.project(), (project) =>
@@ -160,527 +170,604 @@ function catalogReaderFailure(message: string): AuthoringCatalogResult {
 	};
 }
 
-export const ShedAuthoringLive = Layer.effect(
-	ShedAuthoring,
-	Effect.gen(function* () {
-		const configurationService = yield* ShedHostConfiguration;
-		const filePicker = yield* AuthoringFilePicker;
-		const assetReader = yield* AssetReader;
-		const catalog = yield* AuthoringCatalog;
-		const savedTableIndex = yield* SavedTableIndex;
-		const remoteControl = yield* RemoteControlClient;
+const makeShedAuthoring = Effect.gen(function* () {
+	const configurationService = yield* ShedHostConfiguration;
+	const filePicker = yield* AuthoringFilePicker;
+	const assetReader = yield* AssetReader;
+	const catalog = yield* AuthoringCatalog;
+	const savedTableIndex = yield* SavedTableIndex;
+	const remoteControl = yield* RemoteControlClient;
 
-		const catalogIndex = yield* Ref.make<CatalogIndex>(emptyCatalogIndex);
-		const snapshots = yield* Ref.make<ReadonlyMap<string, AuthoringTableSnapshot>>(new Map());
+	const catalogIndex = yield* Ref.make<CatalogIndex>(emptyCatalogIndex);
+	const snapshots = yield* Ref.make<ReadonlyMap<string, AuthoringTableSnapshot>>(new Map());
 
-		const connectionCache = yield* Cache.makeWith(
-			(endpoint: string) =>
-				connectUnrealAuthoring(endpoint).pipe(
-					Effect.provideService(RemoteControlClient, remoteControl)
-				),
-			{
-				capacity: 4,
-				timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero)
-			}
-		);
+	const connectionCache = yield* Cache.makeWith(
+		(endpoint: string) =>
+			connectUnrealAuthoring(endpoint).pipe(
+				Effect.provideService(RemoteControlClient, remoteControl)
+			),
+		{
+			capacity: 4,
+			timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(30) : Duration.zero)
+		}
+	);
 
-		const sessions = yield* Effect.serviceOption(AuthoringSessions);
-
-		const getConnectionResult = Effect.fn("ShedAuthoring.getConnectionResult")(function* () {
-			const endpoint = yield* configurationService.remoteControlEndpoint();
-			return yield* Cache.get(connectionCache, endpoint).pipe(Effect.result);
-		});
-
-		const invalidateConnectionOnLiveFailure = (cause: unknown) =>
-			cause instanceof AuthoringSessionLiveError
-				? configurationService
-						.remoteControlEndpoint()
-						.pipe(
-							Effect.flatMap((endpoint) =>
-								Cache.invalidate(connectionCache, endpoint)
-							)
-						)
-				: Effect.void;
-
-		const loadSavedTable = Effect.fn("ShedAuthoring.loadSavedTable")(function* (
-			assetPath: string
-		) {
-			return yield* assetReader.readTable(assetPath).pipe(
-				Effect.flatMap((snapshot) =>
-					Ref.update(snapshots, (current) =>
-						new Map(current).set(snapshot.table.objectPath, snapshot)
-					).pipe(Effect.as({ snapshot, status: "ready" as const }))
-				),
-				Effect.catch((error) =>
-					Effect.succeed(
-						readerFailure(
-							`Could not read the saved DataTable: ${error.message}`,
-							"Choose a DataTable .uasset from a supported Unreal project and verify the saved-asset reader is available."
-						)
-					)
-				)
-			);
-		});
-
-		const loadLiveTable = Effect.fn("ShedAuthoring.loadLiveTable")(function* (
-			objectPath: string
-		) {
-			const connectionResult = yield* getConnectionResult();
-			if (Result.isFailure(connectionResult)) {
-				return readerFailure(
-					"The live authoring connection is unavailable",
-					"Verify Unreal is connected, then refresh the project catalog."
-				);
-			}
-			return yield* connectionResult.success.getTableSnapshot(objectPath).pipe(
-				Effect.flatMap((snapshot) =>
-					Ref.update(snapshots, (current) =>
-						new Map(current).set(objectPath, snapshot)
-					).pipe(Effect.as({ snapshot, status: "ready" as const }))
-				),
-				Effect.catch((error) =>
-					configurationService.remoteControlEndpoint().pipe(
-						Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)),
-						Effect.as(
-							readerFailure(
-								`Could not read the live DataTable: ${error.message}`,
-								"Verify Unreal is connected, then refresh the project catalog."
-							)
-						)
-					)
-				)
-			);
-		});
-
-		const refreshCatalog = Effect.fn("ShedAuthoring.refreshCatalog")(function* (
-			project: Extract<ConfiguredProject, { readonly status: "configured" }>
-		) {
-			// Answered by the host's project index. In Workbench that is the one inventory the
-			// workspace already built, so opening this route no longer re-enumerates the project.
-			const savedCatalogResult = yield* savedTableIndex.savedTables().pipe(Effect.result);
-			if (Result.isFailure(savedCatalogResult)) {
-				return catalogReaderFailure(
-					`Could not discover saved DataTables: ${savedCatalogResult.failure.message}`
-				);
-			}
-			const savedCatalog = savedCatalogResult.success;
-			const connectionResult = yield* getConnectionResult();
-			const liveConnection = Result.isSuccess(connectionResult)
-				? Option.some(connectionResult.success)
-				: Option.none<UnrealAuthoringConnection>();
-
-			const discovered = yield* Option.match(liveConnection, {
-				onNone: () => catalog.discover({ projectRoot: project.projectRoot, savedCatalog }),
-				onSome: (connection) =>
-					catalog
-						.discover({ projectRoot: project.projectRoot, savedCatalog })
-						.pipe(Effect.provideService(AuthoringLiveConnection, connection))
-			});
-			if (discovered.diagnostics.some((diagnostic) => diagnostic.authority === "live")) {
-				const endpoint = yield* configurationService.remoteControlEndpoint();
-				yield* Cache.invalidate(connectionCache, endpoint);
-			}
-
-			const assetPaths = new Map<string, string>();
-			for (const table of savedCatalog.tables)
-				assetPaths.set(table.objectPath, table.assetPath);
-			const liveObjectPaths = new Set<string>();
-			for (const table of discovered.tables) {
-				if (table.authorities.some((authority) => authority.authority === "live")) {
-					liveObjectPaths.add(table.objectPath);
-				}
-			}
-			yield* Ref.set(catalogIndex, { assetPaths, liveObjectPaths });
-
-			return {
-				diagnostics: [
-					...(Result.isFailure(connectionResult)
-						? [
-								{
-									code: "live_connection_unavailable",
-									message: connectionResult.failure.message
-								}
-							]
-						: []),
-					...discovered.diagnostics.map(({ code, message, path }) => ({
-						code,
-						message,
-						...(path ? { path } : undefined)
-					}))
-				],
-				status: "ready" as const,
-				tables: discovered.tables.map(
-					({ authorities, divergence, kind, objectPath, parentTables, rowStruct }) => ({
-						authorities: authorities.map((authority) => authority.authority),
-						completeness:
-							(
-								authorities.find((authority) => authority.authority === "live") ??
-								authorities[0]
-							)?.completeness ?? "partial",
-						divergence: divergence.status === "detected" ? divergence.fields : [],
-						kind,
-						objectPath,
-						parentTables,
-						rowStruct
+	const project = yield* configurationService.project();
+	const sessions =
+		project.status === "configured"
+			? Option.some(
+					yield* makeAuthoringSessionService({
+						projectRoot: project.projectRoot,
+						...(project.sessionStorageRoot === undefined
+							? undefined
+							: { storageRoot: project.sessionStorageRoot })
 					})
 				)
-			};
-		});
+			: Option.none();
 
-		const configuredTable = Effect.fn("ShedAuthoring.configuredTable")(function* () {
-			const authoringAsset = yield* configurationService.authoringAsset();
-			if (authoringAsset.status !== "configured") {
-				return { status: "not_configured" as const };
-			}
-			return yield* loadSavedTable(authoringAsset.path);
-		});
+	const getConnectionResult = Effect.fn("ShedAuthoring.getConnectionResult")(function* () {
+		const endpoint = yield* configurationService.remoteControlEndpoint();
+		return yield* Cache.get(connectionCache, endpoint).pipe(Effect.result);
+	});
 
-		const configuredCatalog = Effect.fn("ShedAuthoring.configuredCatalog")(function* () {
-			const project = yield* configurationService.project();
-			if (project.status !== "configured") {
-				return { status: "not_configured" as const };
-			}
-			return yield* refreshCatalog(project);
-		});
+	const invalidateConnectionOnLiveFailure = (cause: unknown) =>
+		cause instanceof AuthoringSessionLiveError
+			? configurationService
+					.remoteControlEndpoint()
+					.pipe(Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)))
+			: Effect.void;
 
-		const catalogProgress = Effect.fn("ShedAuthoring.catalogProgress")(() =>
-			assetReader.catalogProgress === undefined
-				? Effect.succeed({
-						cacheHits: 0,
-						phase: "idle" as const,
-						processedAssets: 0,
-						tablesFound: 0,
-						totalAssets: 0
-					})
-				: assetReader.catalogProgress()
-		);
-
-		const chooseTable = Effect.fn("ShedAuthoring.chooseTable")(function* () {
-			const choice = yield* filePicker
-				.chooseFile({
-					extensions: ["uasset"],
-					title: "Open a saved Unreal DataTable"
-				})
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new AuthoringClientError({
-								cause: error,
-								operation: "authoring.chooseTable",
-								recovery: error.recovery
-							})
+	const loadSavedTable = Effect.fn("ShedAuthoring.loadSavedTable")(function* (assetPath: string) {
+		return yield* assetReader.readTable(assetPath).pipe(
+			Effect.flatMap((snapshot) =>
+				Ref.update(snapshots, (current) =>
+					new Map(current).set(snapshot.table.objectPath, snapshot)
+				).pipe(Effect.as({ snapshot, status: "ready" as const }))
+			),
+			Effect.catch((error) =>
+				Effect.succeed(
+					readerFailure(
+						`Could not read the saved DataTable: ${error.message}`,
+						"Choose a DataTable .uasset from a supported Unreal project and verify the saved-asset reader is available."
 					)
-				);
-			if (choice.status === "cancelled") return { status: "cancelled" as const };
-			return yield* loadSavedTable(choice.path);
-		});
+				)
+			)
+		);
+	});
 
-		const openCatalogTable = Effect.fn("ShedAuthoring.openCatalogTable")(function* (
-			objectPath: string,
-			authority: AuthoringAuthority
-		) {
-			let index = yield* Ref.get(catalogIndex);
-			let assetPath = index.assetPaths.get(objectPath);
-			// Resolving the configured project can cost a project-wide index, so it is deferred
-			// to the miss path. A table the catalog already indexed opens without touching it.
-			if (!assetPath && !index.liveObjectPaths.has(objectPath)) {
-				const project = yield* configurationService.project();
-				if (project.status === "configured") {
-					yield* refreshCatalog(project);
-					index = yield* Ref.get(catalogIndex);
-					assetPath = index.assetPaths.get(objectPath);
-				}
-			}
-			if (authority === "live") {
-				return index.liveObjectPaths.has(objectPath)
-					? yield* loadLiveTable(objectPath)
-					: readerFailure(
-							`The live editor does not expose ${objectPath}.`,
-							"Refresh the catalog, reconnect Unreal, or select Saved package."
-						);
-			}
-			if (assetPath) return yield* loadSavedTable(assetPath);
+	const loadLiveTable = Effect.fn("ShedAuthoring.loadLiveTable")(function* (objectPath: string) {
+		const connectionResult = yield* getConnectionResult();
+		if (Result.isFailure(connectionResult)) {
 			return readerFailure(
-				`The saved project no longer contains ${objectPath}.`,
-				"Refresh the catalog or choose another saved DataTable."
+				"The live authoring connection is unavailable",
+				"Verify Unreal is connected, then refresh the project catalog."
 			);
-		});
-
-		const beginSession = Effect.fn("ShedAuthoring.beginSession")(function* (
-			objectPath: string
-		) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			const service = sessions.value;
-			return yield* Effect.gen(function* () {
-				const loaded = yield* Ref.get(snapshots);
-				const snapshot = loaded.get(objectPath);
-				if (!snapshot) {
-					return sessionFailure({
-						message: `No loaded snapshot exists for ${objectPath}`
-					});
-				}
-				const listed = yield* service.list();
-				const existingSessions = listed.sessions.filter((candidate) =>
-					candidate.tableObjectPaths.includes(objectPath)
-				);
-				for (const existing of existingSessions) {
-					const existingDocument = yield* service.open(existing.id);
-					const isInert =
-						existingDocument.draft.undoPointer === 0 &&
-						existingDocument.draft.awaitingSave.length === 0 &&
-						existingDocument.pendingOperation.kind === "none";
-					if (isInert) {
-						yield* service.discard(existing.id);
-						continue;
-					}
-					const existingSnapshot = existingDocument.draft.base[objectPath];
-					if (
-						existingSnapshot?.authority.kind !== snapshot.authority.kind ||
-						fingerprintTable(existingSnapshot) !== fingerprintTable(snapshot)
+		}
+		return yield* connectionResult.success.getTableSnapshot(objectPath).pipe(
+			Effect.flatMap((snapshot) =>
+				Ref.update(snapshots, (current) => new Map(current).set(objectPath, snapshot)).pipe(
+					Effect.as({ snapshot, status: "ready" as const })
+				)
+			),
+			Effect.catch((error) =>
+				configurationService.remoteControlEndpoint().pipe(
+					Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)),
+					Effect.as(
+						readerFailure(
+							`Could not read the live DataTable: ${error.message}`,
+							"Verify Unreal is connected, then refresh the project catalog."
+						)
 					)
-						continue;
-					const document =
-						existing.lifecycle === "closed"
-							? yield* service.resume(existing.id)
-							: existingDocument;
-					return { status: "ready" as const, view: sessionView(document, objectPath) };
-				}
-				const document = yield* service.create([snapshot]);
-				return { status: "ready" as const, view: sessionView(document, objectPath) };
-			}).pipe(Effect.catch((cause) => Effect.succeed(sessionFailure(cause))));
-		});
+				)
+			)
+		);
+	});
 
-		const listSessions = Effect.fn("ShedAuthoring.listSessions")(function* () {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			return yield* sessions.value.list().pipe(
-				Effect.map((result) => ({
-					diagnostics: result.diagnostics.map(({ code, message }) => ({ code, message })),
-					sessions: result.sessions.filter(
-						(session) => session.commandCount > 0 || session.needsSave
-					),
-					status: "ready" as const
-				})),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+	const refreshCatalog = Effect.fn("ShedAuthoring.refreshCatalog")(function* (
+		project: Extract<ConfiguredProject, { readonly status: "configured" }>
+	) {
+		// Answered by the host's project index. In Workbench that is the one inventory the
+		// workspace already built, so opening this route no longer re-enumerates the project.
+		const savedCatalogResult = yield* savedTableIndex.savedTables().pipe(Effect.result);
+		if (Result.isFailure(savedCatalogResult)) {
+			return catalogReaderFailure(
+				`Could not discover saved DataTables: ${savedCatalogResult.failure.message}`
 			);
-		});
-
-		const openSession = Effect.fn("ShedAuthoring.openSession")(function* (sessionId: string) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			const service = sessions.value;
-			return yield* service.open(sessionId).pipe(
-				Effect.flatMap((document) =>
-					document.lifecycle === "closed"
-						? service.resume(sessionId)
-						: Effect.succeed(document)
-				),
-				Effect.map(documentView),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		}
+		const savedCatalog = savedCatalogResult.success;
+		if (savedCatalog.projectRoot !== project.projectRoot) {
+			return catalogReaderFailure(
+				"The selected project changed while discovering tables. Refresh the catalog."
 			);
-		});
+		}
+		const connectionResult = yield* getConnectionResult();
+		const liveConnection = Result.isSuccess(connectionResult)
+			? Option.some(connectionResult.success)
+			: Option.none<UnrealAuthoringConnection>();
 
-		const discardSession = Effect.fn("ShedAuthoring.discardSession")(function* (
-			sessionId: string
-		) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			return yield* sessions.value.discard(sessionId).pipe(
-				Effect.flatMap(() => listSessions()),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
-			);
+		const discovered = yield* Option.match(liveConnection, {
+			onNone: () => catalog.discover({ projectRoot: project.projectRoot, savedCatalog }),
+			onSome: (connection) =>
+				catalog
+					.discover({ projectRoot: project.projectRoot, savedCatalog })
+					.pipe(Effect.provideService(AuthoringLiveConnection, connection))
 		});
+		if (discovered.diagnostics.some((diagnostic) => diagnostic.authority === "live")) {
+			const endpoint = yield* configurationService.remoteControlEndpoint();
+			yield* Cache.invalidate(connectionCache, endpoint);
+		}
 
-		const editSession = Effect.fn("ShedAuthoring.editSession")(function* (
-			intent: AuthoringSessionIntent
-		) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		const assetPaths = new Map<string, string>();
+		for (const table of savedCatalog.tables) assetPaths.set(table.objectPath, table.assetPath);
+		const liveObjectPaths = new Set<string>();
+		for (const table of discovered.tables) {
+			if (table.authorities.some((authority) => authority.authority === "live")) {
+				liveObjectPaths.add(table.objectPath);
 			}
-			const service = sessions.value;
-			const transition =
-				intent.kind === "set_cells"
-					? service.setCells({
-							edits: intent.edits,
-							sessionId: intent.sessionId,
-							tableObjectPath: intent.tableObjectPath
+		}
+		yield* Ref.set(catalogIndex, { assetPaths, liveObjectPaths });
+
+		return {
+			diagnostics: [
+				...(Result.isFailure(connectionResult)
+					? [
+							{
+								code: "live_connection_unavailable",
+								message: connectionResult.failure.message
+							}
+						]
+					: []),
+				...discovered.diagnostics.map(({ code, message, path }) => ({
+					code,
+					message,
+					...(path ? { path } : undefined)
+				}))
+			],
+			status: "ready" as const,
+			tables: discovered.tables.map(
+				({ authorities, divergence, kind, objectPath, parentTables, rowStruct }) => ({
+					authorities: authorities.map((authority) => authority.authority),
+					completeness:
+						(
+							authorities.find((authority) => authority.authority === "live") ??
+							authorities[0]
+						)?.completeness ?? "partial",
+					divergence: divergence.status === "detected" ? divergence.fields : [],
+					kind,
+					objectPath,
+					parentTables,
+					rowStruct
+				})
+			)
+		};
+	});
+
+	const configuredTable = Effect.fn("ShedAuthoring.configuredTable")(function* () {
+		const authoringAsset = yield* configurationService.authoringAsset();
+		if (authoringAsset.status !== "configured") {
+			return { status: "not_configured" as const };
+		}
+		return yield* loadSavedTable(authoringAsset.path);
+	});
+
+	const configuredCatalog = Effect.fn("ShedAuthoring.configuredCatalog")(function* () {
+		const project = yield* configurationService.project();
+		if (project.status !== "configured") {
+			return { status: "not_configured" as const };
+		}
+		return yield* refreshCatalog(project);
+	});
+
+	const catalogProgress = Effect.fn("ShedAuthoring.catalogProgress")(() =>
+		assetReader.catalogProgress === undefined
+			? Effect.succeed({
+					cacheHits: 0,
+					phase: "idle" as const,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				})
+			: assetReader.catalogProgress()
+	);
+
+	const chooseTable = Effect.fn("ShedAuthoring.chooseTable")(function* () {
+		const choice = yield* filePicker
+			.chooseFile({
+				extensions: ["uasset"],
+				title: "Open a saved Unreal DataTable"
+			})
+			.pipe(
+				Effect.mapError(
+					(error) =>
+						new AuthoringClientError({
+							cause: error,
+							operation: "authoring.chooseTable",
+							recovery: error.recovery
 						})
-					: intent.kind === "add_row"
-						? service.addRow({
+				)
+			);
+		if (choice.status === "cancelled") return { status: "cancelled" as const };
+		return yield* loadSavedTable(choice.path);
+	});
+
+	const openCatalogTable = Effect.fn("ShedAuthoring.openCatalogTable")(function* (
+		objectPath: string,
+		authority: AuthoringAuthority
+	) {
+		let index = yield* Ref.get(catalogIndex);
+		let assetPath = index.assetPaths.get(objectPath);
+		// Resolving the configured project can cost a project-wide index, so it is deferred
+		// to the miss path. A table the catalog already indexed opens without touching it.
+		if (!assetPath && !index.liveObjectPaths.has(objectPath)) {
+			const project = yield* configurationService.project();
+			if (project.status === "configured") {
+				yield* refreshCatalog(project);
+				index = yield* Ref.get(catalogIndex);
+				assetPath = index.assetPaths.get(objectPath);
+			}
+		}
+		if (authority === "live") {
+			return index.liveObjectPaths.has(objectPath)
+				? yield* loadLiveTable(objectPath)
+				: readerFailure(
+						`The live editor does not expose ${objectPath}.`,
+						"Refresh the catalog, reconnect Unreal, or select Saved package."
+					);
+		}
+		if (assetPath) return yield* loadSavedTable(assetPath);
+		return readerFailure(
+			`The saved project no longer contains ${objectPath}.`,
+			"Refresh the catalog or choose another saved DataTable."
+		);
+	});
+
+	const beginSession = Effect.fn("ShedAuthoring.beginSession")(function* (objectPath: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		const service = sessions.value;
+		return yield* Effect.gen(function* () {
+			const loaded = yield* Ref.get(snapshots);
+			const snapshot = loaded.get(objectPath);
+			if (!snapshot) {
+				return sessionFailure({
+					message: `No loaded snapshot exists for ${objectPath}`
+				});
+			}
+			const listed = yield* service.list();
+			const existingSessions = listed.sessions.filter((candidate) =>
+				candidate.tableObjectPaths.includes(objectPath)
+			);
+			for (const existing of existingSessions) {
+				const existingDocument = yield* service.open(existing.id);
+				const isInert =
+					existingDocument.draft.undoPointer === 0 &&
+					existingDocument.draft.awaitingSave.length === 0 &&
+					existingDocument.pendingOperation.kind === "none";
+				if (isInert) {
+					yield* service.discard(existing.id);
+					continue;
+				}
+				const existingSnapshot = existingDocument.draft.base[objectPath];
+				if (
+					existingSnapshot?.authority.kind !== snapshot.authority.kind ||
+					fingerprintTable(existingSnapshot) !== fingerprintTable(snapshot)
+				)
+					continue;
+				const document =
+					existing.lifecycle === "closed"
+						? yield* service.resume(existing.id)
+						: existingDocument;
+				return { status: "ready" as const, view: sessionView(document, objectPath) };
+			}
+			const document = yield* service.create([snapshot]);
+			return { status: "ready" as const, view: sessionView(document, objectPath) };
+		}).pipe(Effect.catch((cause) => Effect.succeed(sessionFailure(cause))));
+	});
+
+	const listSessions = Effect.fn("ShedAuthoring.listSessions")(function* () {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		return yield* sessions.value.list().pipe(
+			Effect.map((result) => ({
+				diagnostics: result.diagnostics.map(({ code, message }) => ({ code, message })),
+				sessions: result.sessions.filter(
+					(session) => session.commandCount > 0 || session.needsSave
+				),
+				status: "ready" as const
+			})),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
+
+	const openSession = Effect.fn("ShedAuthoring.openSession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		const service = sessions.value;
+		return yield* service.open(sessionId).pipe(
+			Effect.flatMap((document) =>
+				document.lifecycle === "closed"
+					? service.resume(sessionId)
+					: Effect.succeed(document)
+			),
+			Effect.map(documentView),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
+
+	const discardSession = Effect.fn("ShedAuthoring.discardSession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		return yield* sessions.value.discard(sessionId).pipe(
+			Effect.flatMap(() => listSessions()),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
+
+	const editSession = Effect.fn("ShedAuthoring.editSession")(function* (
+		intent: AuthoringSessionIntent
+	) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		const service = sessions.value;
+		const transition =
+			intent.kind === "set_cells"
+				? service.setCells({
+						edits: intent.edits,
+						sessionId: intent.sessionId,
+						tableObjectPath: intent.tableObjectPath
+					})
+				: intent.kind === "add_row"
+					? service.addRow({
+							sessionId: intent.sessionId,
+							tableObjectPath: intent.tableObjectPath,
+							rowName: intent.rowName,
+							...(intent.atIndex === undefined
+								? undefined
+								: { atIndex: intent.atIndex })
+						})
+					: intent.kind === "duplicate_row"
+						? service.duplicateRow({
 								sessionId: intent.sessionId,
 								tableObjectPath: intent.tableObjectPath,
 								rowName: intent.rowName,
+								sourceRowId: intent.sourceRowId,
 								...(intent.atIndex === undefined
 									? undefined
 									: { atIndex: intent.atIndex })
 							})
-						: intent.kind === "duplicate_row"
-							? service.duplicateRow({
+						: intent.kind === "remove_row"
+							? service.removeRow({
 									sessionId: intent.sessionId,
 									tableObjectPath: intent.tableObjectPath,
-									rowName: intent.rowName,
-									sourceRowId: intent.sourceRowId,
-									...(intent.atIndex === undefined
-										? undefined
-										: { atIndex: intent.atIndex })
+									rowId: intent.rowId
 								})
-							: intent.kind === "remove_row"
-								? service.removeRow({
+							: intent.kind === "rename_row"
+								? service.renameRow({
 										sessionId: intent.sessionId,
 										tableObjectPath: intent.tableObjectPath,
-										rowId: intent.rowId
+										rowId: intent.rowId,
+										rowName: intent.rowName
 									})
-								: intent.kind === "rename_row"
-									? service.renameRow({
-											sessionId: intent.sessionId,
-											tableObjectPath: intent.tableObjectPath,
-											rowId: intent.rowId,
-											rowName: intent.rowName
-										})
-									: service.reorderRows({
-											sessionId: intent.sessionId,
-											tableObjectPath: intent.tableObjectPath,
-											rowIds: intent.rowIds
-										});
-			return yield* transition.pipe(
-				Effect.map((document) => ({
-					status: "ready" as const,
-					view: sessionView(document, intent.tableObjectPath)
-				})),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
-			);
-		});
+								: service.reorderRows({
+										sessionId: intent.sessionId,
+										tableObjectPath: intent.tableObjectPath,
+										rowIds: intent.rowIds
+									});
+		return yield* transition.pipe(
+			Effect.map((document) => ({
+				status: "ready" as const,
+				view: sessionView(document, intent.tableObjectPath)
+			})),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
 
-		const reviewSession = Effect.fn("ShedAuthoring.reviewSession")(function* (
-			sessionId: string
-		) {
-			if (Option.isNone(sessions)) {
-				return { ...sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" }) };
+	const reviewSession = Effect.fn("ShedAuthoring.reviewSession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return { ...sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" }) };
+		}
+		return yield* sessions.value.review(sessionId).pipe(
+			Effect.map((review) => ({ review, status: "ready" as const })),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
+
+	const undoSession = Effect.fn("ShedAuthoring.undoSession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		return yield* sessions.value.undo(sessionId).pipe(
+			Effect.map(documentView),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
+
+	const redoSession = Effect.fn("ShedAuthoring.redoSession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		return yield* sessions.value.redo(sessionId).pipe(
+			Effect.map(documentView),
+			Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
+		);
+	});
+
+	const requireLiveConnection = (): Effect.Effect<
+		UnrealAuthoringConnection,
+		UnrealConnectionError | UnrealCapabilityError
+	> =>
+		configurationService
+			.remoteControlEndpoint()
+			.pipe(Effect.flatMap((endpoint) => Cache.get(connectionCache, endpoint)));
+
+	const applySession = Effect.fn("ShedAuthoring.applySession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		const service = sessions.value;
+		return yield* Effect.gen(function* () {
+			const connection = yield* requireLiveConnection();
+			const limits = connection.manifest.authoringLimits;
+			if (!limits) {
+				return sessionFailure({
+					message: "The editor did not negotiate authoring mutation limits"
+				});
 			}
-			return yield* sessions.value.review(sessionId).pipe(
-				Effect.map((review) => ({ review, status: "ready" as const })),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
-			);
-		});
+			return yield* service
+				.apply(sessionId, limits)
+				.pipe(
+					Effect.provide(authoringSessionLivePortLayer(connection)),
+					Effect.map(documentView)
+				);
+		}).pipe(
+			Effect.catch((cause) =>
+				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			)
+		);
+	});
 
-		const undoSession = Effect.fn("ShedAuthoring.undoSession")(function* (sessionId: string) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			return yield* sessions.value.undo(sessionId).pipe(
-				Effect.map(documentView),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
-			);
-		});
+	const reconcileSession = Effect.fn("ShedAuthoring.reconcileSession")(function* (
+		sessionId: string
+	) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		const service = sessions.value;
+		return yield* Effect.gen(function* () {
+			const connection = yield* requireLiveConnection();
+			return yield* service
+				.reconcileApply(sessionId)
+				.pipe(
+					Effect.provide(authoringSessionLivePortLayer(connection)),
+					Effect.map(documentView)
+				);
+		}).pipe(
+			Effect.catch((cause) =>
+				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			)
+		);
+	});
 
-		const redoSession = Effect.fn("ShedAuthoring.redoSession")(function* (sessionId: string) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			return yield* sessions.value.redo(sessionId).pipe(
-				Effect.map(documentView),
-				Effect.catch((cause) => Effect.succeed(sessionFailure(cause)))
-			);
-		});
+	const saveSession = Effect.fn("ShedAuthoring.saveSession")(function* (sessionId: string) {
+		if (Option.isNone(sessions)) {
+			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
+		}
+		const service = sessions.value;
+		return yield* Effect.gen(function* () {
+			const connection = yield* requireLiveConnection();
+			return yield* service
+				.save(sessionId)
+				.pipe(
+					Effect.provide(authoringSessionLivePortLayer(connection)),
+					Effect.map(documentView)
+				);
+		}).pipe(
+			Effect.catch((cause) =>
+				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			)
+		);
+	});
 
-		const requireLiveConnection = (): Effect.Effect<
-			UnrealAuthoringConnection,
-			UnrealConnectionError | UnrealCapabilityError
-		> =>
-			configurationService
-				.remoteControlEndpoint()
-				.pipe(Effect.flatMap((endpoint) => Cache.get(connectionCache, endpoint)));
+	return ShedAuthoring.of({
+		applySession,
+		beginSession,
+		catalogProgress,
+		chooseTable,
+		configuredCatalog,
+		configuredTable,
+		discardSession,
+		editSession,
+		listSessions,
+		openCatalogTable,
+		openSession,
+		reconcileSession,
+		redoSession,
+		reviewSession,
+		saveSession,
+		undoSession
+	});
+});
 
-		const applySession = Effect.fn("ShedAuthoring.applySession")(function* (sessionId: string) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			const service = sessions.value;
-			return yield* Effect.gen(function* () {
-				const connection = yield* requireLiveConnection();
-				const limits = connection.manifest.authoringLimits;
-				if (!limits) {
-					return sessionFailure({
-						message: "The editor did not negotiate authoring mutation limits"
-					});
-				}
-				return yield* service
-					.apply(sessionId, limits)
-					.pipe(
-						Effect.provide(authoringSessionLivePortLayer(connection)),
-						Effect.map(documentView)
+/** Capture project and endpoint together so live snapshots never cross editor targets. */
+export const ShedAuthoringLive = Layer.effect(
+	ShedAuthoring,
+	Effect.gen(function* () {
+		const configuration = yield* ShedHostConfiguration;
+		const hosts = yield* Cache.makeWith(
+			({ project, endpoint }: AuthoringTarget) =>
+				Effect.gen(function* () {
+					return yield* makeShedAuthoring.pipe(
+						Effect.provideService(ShedHostConfiguration, {
+							...configuration,
+							project: () => Effect.succeed(project),
+							remoteControlEndpoint: () => Effect.succeed(endpoint)
+						})
 					);
-			}).pipe(
-				Effect.catch((cause) =>
-					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
-				)
+				}),
+			{ capacity: 16, timeToLive: () => Duration.infinity }
+		);
+		const selected = Effect.fn("ShedAuthoring.selected")(function* () {
+			const project = yield* configuration.project();
+			const endpoint = yield* configuration.remoteControlEndpoint();
+			return yield* Cache.get(
+				hosts,
+				new AuthoringTarget({
+					endpoint,
+					project:
+						project.status === "configured"
+							? new ProjectSelection(project)
+							: new NoProjectSelection(project)
+				})
 			);
 		});
-
-		const reconcileSession = Effect.fn("ShedAuthoring.reconcileSession")(function* (
-			sessionId: string
-		) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			const service = sessions.value;
-			return yield* Effect.gen(function* () {
-				const connection = yield* requireLiveConnection();
-				return yield* service
-					.reconcileApply(sessionId)
-					.pipe(
-						Effect.provide(authoringSessionLivePortLayer(connection)),
-						Effect.map(documentView)
-					);
-			}).pipe(
-				Effect.catch((cause) =>
-					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
-				)
-			);
-		});
-
-		const saveSession = Effect.fn("ShedAuthoring.saveSession")(function* (sessionId: string) {
-			if (Option.isNone(sessions)) {
-				return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
-			}
-			const service = sessions.value;
-			return yield* Effect.gen(function* () {
-				const connection = yield* requireLiveConnection();
-				return yield* service
-					.save(sessionId)
-					.pipe(
-						Effect.provide(authoringSessionLivePortLayer(connection)),
-						Effect.map(documentView)
-					);
-			}).pipe(
-				Effect.catch((cause) =>
-					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
-				)
-			);
-		});
-
 		return ShedAuthoring.of({
-			applySession,
-			beginSession,
-			catalogProgress,
-			chooseTable,
-			configuredCatalog,
-			configuredTable,
-			discardSession,
-			editSession,
-			listSessions,
-			openCatalogTable,
-			openSession,
-			reconcileSession,
-			redoSession,
-			reviewSession,
-			saveSession,
-			undoSession
+			applySession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.applySession(...args))),
+			beginSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.beginSession(...args))),
+			catalogProgress: () =>
+				selected().pipe(
+					Effect.flatMap(
+						(host) =>
+							host.catalogProgress?.() ??
+							Effect.succeed({
+								cacheHits: 0,
+								phase: "idle" as const,
+								processedAssets: 0,
+								tablesFound: 0,
+								totalAssets: 0
+							})
+					)
+				),
+			chooseTable: () => selected().pipe(Effect.flatMap((host) => host.chooseTable())),
+			configuredCatalog: () =>
+				selected().pipe(Effect.flatMap((host) => host.configuredCatalog())),
+			configuredTable: () =>
+				selected().pipe(Effect.flatMap((host) => host.configuredTable())),
+			discardSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.discardSession(...args))),
+			editSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.editSession(...args))),
+			listSessions: () => selected().pipe(Effect.flatMap((host) => host.listSessions())),
+			openCatalogTable: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.openCatalogTable(...args))),
+			openSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.openSession(...args))),
+			reconcileSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.reconcileSession(...args))),
+			redoSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.redoSession(...args))),
+			reviewSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.reviewSession(...args))),
+			saveSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.saveSession(...args))),
+			undoSession: (...args) =>
+				selected().pipe(Effect.flatMap((host) => host.undoSession(...args)))
 		});
 	})
 );

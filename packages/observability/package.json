@@ -29,6 +29,10 @@
 		"./health": {
 			"types": "./dist/health.d.ts",
 			"import": "./dist/health.js"
+		},
+		"./metrics": {
+			"types": "./dist/metrics.d.ts",
+			"import": "./dist/metrics.js"
 		}
 	},
 	"publishConfig": {

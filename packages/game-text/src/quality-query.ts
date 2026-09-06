@@ -207,6 +207,7 @@ interface IndexedFinding {
 export interface TextQualityQuery {
 	readonly focus: (request: TextQualityFocusRequest) => TextQualityFocus | undefined;
 	readonly search: (request: TextQualitySearchRequest) => TextQualitySearchPage;
+	readonly export: (filter: TextQualityFilter) => TextQualityReport;
 	readonly summary: () => TextQualityQuerySummary;
 }
 
@@ -245,6 +246,12 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 	};
 
 	return {
+		export: (filter) => ({
+			...report,
+			findings: indexed
+				.filter(({ finding }) => filter === "all" || finding.kind === filter)
+				.map(({ finding }) => finding)
+		}),
 		summary: () => summary,
 		search: (request) => {
 			const matched = indexed.filter(

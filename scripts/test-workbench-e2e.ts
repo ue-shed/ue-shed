@@ -4,7 +4,11 @@ const skipBuild = process.argv.includes("--no-build");
 const playwrightArgs = process.argv.slice(2).filter((argument) => argument !== "--no-build");
 const environment = await createWorkbenchEnvironment();
 
-if (!skipBuild) runPnpm(["--filter", "@ue-shed/workbench", "build"], environment);
+if (!skipBuild)
+	runPnpm(
+		["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+		environment
+	);
 runPnpm(
 	[
 		"--filter",

@@ -21,6 +21,7 @@ import {
 	countProjectIndex,
 	type ProjectIndexFilter,
 	refreshProjectIndex,
+	rebuildProjectIndex,
 	savedTableCatalogFromScan,
 	type ProjectIndexCursor,
 	type ProjectIndexError,
@@ -84,16 +85,21 @@ export class WorkbenchProjectUnavailable extends Schema.TaggedErrorClass<Workben
 	}
 ) {}
 
+export type WorkbenchProjectCandidates = SavedAssetScan & { readonly generation: number };
+
 export interface WorkbenchProjectApi {
-	readonly candidateCount: (
+	readonly count: (
 		kind: WorkbenchProjectCandidateKind
 	) => Effect.Effect<number, WorkbenchProjectUnavailable>;
-	/** Fold only one domain's bounded Project Index pages into explicit package candidates. */
+	/** Candidate membership and generation come from the same committed index snapshot. */
 	readonly candidates: (
 		kind: WorkbenchProjectCandidateKind
-	) => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+	) => Effect.Effect<WorkbenchProjectCandidates, WorkbenchProjectUnavailable>;
 	readonly choose: () => Effect.Effect<WorkbenchProjectState>;
+	readonly sample: () => Effect.Effect<WorkbenchProjectState>;
 	readonly current: () => Effect.Effect<WorkbenchProjectState>;
+	/** Re-enumerate disk and publish a committed inventory before feature scans begin. */
+	readonly refresh: (mode?: "refresh" | "rebuild") => Effect.Effect<WorkbenchProjectState>;
 	readonly inputAtlas: () => Effect.Effect<EnhancedInputRunResultValue>;
 	readonly openRecent: (projectRoot: string) => Effect.Effect<WorkbenchProjectState>;
 	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
@@ -108,8 +114,7 @@ export interface WorkbenchProjectApi {
 		WorkbenchProjectUnavailable
 	>;
 	/**
-	 * Saved DataTables from the project index. Answering from the inventory keeps the authoring
-	 * route off a second project-wide enumeration.
+	 * Refresh membership, then decode only saved DataTable candidates from the committed index.
 	 */
 	readonly savedTables: () => Effect.Effect<SavedTableCatalogValue, WorkbenchProjectUnavailable>;
 }
@@ -313,9 +318,12 @@ export const WorkbenchProjectLive = Layer.effect(
 		});
 
 		const refreshSummary = Effect.fn("Workbench.WorkbenchProject.refreshSummary")(function* (
-			projectRoot: string
+			projectRoot: string,
+			mode: "refresh" | "rebuild" = "refresh"
 		) {
-			const summary = yield* refreshProjectIndex({ projectRoot }).pipe(
+			const summary = yield* (mode === "rebuild" ? rebuildProjectIndex : refreshProjectIndex)(
+				{ projectRoot }
+			).pipe(
 				Stream.provideService(ProjectIndex, projectIndexImplementation),
 				Stream.tap((event) =>
 					Ref.update(projectIndexProgress, (previous): WorkbenchTaskProgress => {
@@ -385,6 +393,7 @@ export const WorkbenchProjectLive = Layer.effect(
 			function* (projectRoot: string, summary: ProjectIndexSummary) {
 				const maps = yield* mapsFromProjectIndex(summary);
 				const project = {
+					generation: summary.generation,
 					inputAtlas: "deferred" as const,
 					mapCount: summary.mapCount,
 					packageCount: summary.packageCount,
@@ -396,7 +405,16 @@ export const WorkbenchProjectLive = Layer.effect(
 					maps,
 					project
 				} satisfies ProjectSummaryInventory;
-				yield* Ref.set(selectedSummary, Option.some(result));
+				const root = yield* Ref.get(selectedRoot);
+				if (Option.isSome(root) && root.value === projectRoot) {
+					yield* Ref.update(selectedSummary, (current) =>
+						Option.isSome(current) &&
+						current.value.project.projectRoot === projectRoot &&
+						(current.value.indexSummary?.generation ?? 0) > summary.generation
+							? current
+							: Option.some(result)
+					);
+				}
 				return result;
 			}
 		);
@@ -548,6 +566,41 @@ export const WorkbenchProjectLive = Layer.effect(
 				)
 			);
 		});
+		const refreshLoads = yield* Cache.makeWith(
+			(root: string) =>
+				refreshSummary(root).pipe(
+					Effect.flatMap((summary) => recoverInventory(root, summary)),
+					Effect.tap(() => Cache.invalidate(summaryLoads, root)),
+					Effect.tap(() => Cache.invalidate(inputAtlasLoads, root))
+				),
+			{ capacity: 4, timeToLive: () => Duration.zero }
+		);
+		const refresh = Effect.fn("Workbench.WorkbenchProject.refresh")(function* (
+			mode: "refresh" | "rebuild" = "refresh"
+		) {
+			const root = yield* Ref.get(selectedRoot);
+			if (Option.isNone(root)) return { status: "not_configured" as const };
+			const load =
+				mode === "rebuild"
+					? refreshSummary(root.value, mode).pipe(
+							Effect.flatMap((summary) => recoverInventory(root.value, summary)),
+							Effect.tap(() => Cache.invalidate(summaryLoads, root.value)),
+							Effect.tap(() => Cache.invalidate(inputAtlasLoads, root.value))
+						)
+					: Cache.get(refreshLoads, root.value);
+			return yield* load.pipe(
+				Effect.map((inventory) => ({
+					status: "ready" as const,
+					project: inventory.project
+				})),
+				Effect.catch((error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: mapProjectFailure(error.message, error.recovery)
+					})
+				)
+			);
+		});
 		const progress = Effect.fn("Workbench.WorkbenchProject.progress")(function* () {
 			return yield* Ref.get(projectIndexProgress);
 		});
@@ -557,8 +610,11 @@ export const WorkbenchProjectLive = Layer.effect(
 		) {
 			if (forceRefresh) yield* Cache.invalidate(summaryLoads, projectRoot);
 			yield* Ref.set(selectedSummary, Option.none());
-			const inventory = yield* loadSummary(projectRoot);
+			const inventory = yield* forceRefresh
+				? Cache.get(refreshLoads, projectRoot)
+				: loadSummary(projectRoot);
 			yield* Ref.set(selectedRoot, Option.some(projectRoot));
+			yield* Ref.set(selectedSummary, Option.some(inventory));
 			yield* remember(projectRoot);
 			return { project: inventory.project, status: "ready" as const };
 		});
@@ -580,6 +636,27 @@ export const WorkbenchProjectLive = Layer.effect(
 					})
 				)
 			);
+		const sample = Effect.fn("Workbench.WorkbenchProject.sample")(function* () {
+			if (configuration.sourceCheckout.status !== "configured")
+				return {
+					status: "failed" as const,
+					error: mapProjectFailure(
+						"The sample project is not installed with this host.",
+						"Open your project, or run the showcase from a source checkout."
+					)
+				};
+			return yield* open(
+				join(configuration.sourceCheckout.path, "fixtures", "unreal-project"),
+				true
+			).pipe(
+				Effect.catch((error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: mapProjectFailure(error.message, error.recovery)
+					})
+				)
+			);
+		});
 		const recent: WorkbenchProjectApi["recent"] = () =>
 			configuration.rememberProjects === false ? Effect.succeed([]) : history.recent();
 		const openRecent: WorkbenchProjectApi["openRecent"] = (projectRoot) =>
@@ -721,10 +798,12 @@ export const WorkbenchProjectLive = Layer.effect(
 		const candidates = Effect.fn("Workbench.WorkbenchProject.candidates")(
 			(kind: WorkbenchProjectCandidateKind) =>
 				withSelectedIndex((root, summary) =>
-					headerIndexFromProjectIndex(root, summary, kind)
+					headerIndexFromProjectIndex(root, summary, kind).pipe(
+						Effect.map((index) => ({ ...index, generation: summary.generation }))
+					)
 				)
 		);
-		const candidateCount = Effect.fn("Workbench.WorkbenchProject.candidateCount")(
+		const count = Effect.fn("Workbench.WorkbenchProject.count")(
 			(kind: WorkbenchProjectCandidateKind) =>
 				withSelectedIndex((_root, summary) =>
 					countProjectIndex({
@@ -739,10 +818,6 @@ export const WorkbenchProjectLive = Layer.effect(
 		);
 
 		const savedProject = Effect.fn("Workbench.WorkbenchProject.savedProject")(function* () {
-			const cached = yield* Ref.get(selectedSummary);
-			if (Option.isSome(cached)) {
-				return { maps: cached.value.maps, projectRoot: cached.value.project.projectRoot };
-			}
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) {
 				return yield* new WorkbenchProjectUnavailable({
@@ -750,11 +825,14 @@ export const WorkbenchProjectLive = Layer.effect(
 					recovery: "Choose a project from the Workbench header, then retry."
 				});
 			}
-			const summary = yield* loadSummary(root.value);
+			const summary = yield* currentInventory(root.value);
 			return { maps: summary.maps, projectRoot: summary.project.projectRoot };
 		});
 
 		const savedTables = Effect.fn("Workbench.WorkbenchProject.savedTables")(function* () {
+			const refreshed = yield* refresh();
+			if (refreshed.status === "failed")
+				return yield* new WorkbenchProjectUnavailable(refreshed.error);
 			const summary = yield* selected();
 			const index = yield* candidates("saved_tables");
 			const paths = index.assets.map((entry) => entry.header.path);
@@ -779,10 +857,12 @@ export const WorkbenchProjectLive = Layer.effect(
 		});
 
 		return WorkbenchProject.of({
-			candidateCount,
+			count,
 			candidates,
 			choose,
+			sample,
 			current,
+			refresh,
 			inputAtlas,
 			openRecent,
 			progress,
@@ -796,17 +876,26 @@ export const WorkbenchProjectLive = Layer.effect(
 
 export type WorkbenchProjectTestApi = Omit<
 	WorkbenchProjectApi,
-	"candidateCount" | "candidates" | "openRecent" | "progress" | "recent" | "selectedProject"
+	| "candidates"
+	| "openRecent"
+	| "progress"
+	| "recent"
+	| "selectedProject"
+	| "refresh"
+	| "count"
+	| "sample"
 > &
 	Partial<
 		Pick<
 			WorkbenchProjectApi,
-			| "candidateCount"
 			| "candidates"
 			| "openRecent"
 			| "progress"
 			| "recent"
 			| "selectedProject"
+			| "refresh"
+			| "count"
+			| "sample"
 		>
 	>;
 
@@ -817,9 +906,9 @@ export function makeWorkbenchProjectTestLayer(
 		WorkbenchProject,
 		WorkbenchProject.of({
 			...service,
-			candidateCount:
-				service.candidateCount ??
-				(() => Effect.die("candidate counts are not used by this test")),
+			sample: service.sample ?? (() => Effect.succeed({ status: "not_configured" })),
+			refresh: service.refresh ?? service.current,
+			count: service.count ?? (() => Effect.die("project counts are not used by this test")),
 			candidates:
 				service.candidates ??
 				(() => Effect.die("project candidates are not used by this test")),

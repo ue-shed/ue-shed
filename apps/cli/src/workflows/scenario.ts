@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
 import type { ScenarioRunnerApi } from "@ue-shed/scenarios";
+import { readScenarioDocumentFile } from "@ue-shed/scenarios/files";
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
@@ -11,7 +12,12 @@ export function executeScenarioCommand(
 	runner: Pick<ScenarioRunnerApi, "run">
 ) {
 	return Effect.gen(function* () {
+		const document =
+			command.document === undefined
+				? undefined
+				: yield* readScenarioDocumentFile(command.document);
 		const result = yield* runner.run({
+			...(document === undefined ? undefined : { document }),
 			endpoint: command.endpoint,
 			...(command.evidenceLimit === undefined
 				? undefined

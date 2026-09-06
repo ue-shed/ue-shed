@@ -74,6 +74,16 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 				expect(maps.items.length).toBeLessThanOrEqual(16);
 				expect(maps.generation).toBe(warm.generation);
 				expect(repeatedMaps.generation).toBe(warm.generation);
+				const counted = yield* countProjectIndex({
+					projectId: warm.projectId,
+					expectedGeneration: warm.generation,
+					filters: [
+						{ _tag: "ExactClasses", values: ["/Script/Engine.DataTable"] },
+						{ _tag: "ClassNameSuffixes", values: ["Table"] }
+					]
+				});
+				expect(counted.count).toBeGreaterThan(0);
+				expect(counted.generation).toBe(warm.generation);
 				const count = yield* countProjectIndex({
 					projectId: warm.projectId,
 					expectedGeneration: warm.generation,
@@ -111,7 +121,7 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 			}).pipe(Effect.provide(layer));
 
 			expect(new Set(queryWorkerPids).size).toBe(1);
-			expect(queryWorkerPids.length).toBe(6);
+			expect(queryWorkerPids.length).toBe(7);
 			const sessionPid = queryWorkerPids[0];
 			if (sessionPid !== undefined) {
 				expect(() => process.kill(sessionPid, 0)).toThrow();

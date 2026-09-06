@@ -416,7 +416,7 @@ function CatalogPanel(props: {
 				</Match>
 				<Match when={props.state.status === "not_configured"}>
 					<div {...stylex.props(styles.catalogStatus)}>
-						No project root is configured. Set UE_SHED_PROJECT_ROOT to list tables.
+						Choose a project to list its saved DataTables.
 					</div>
 				</Match>
 				<Match when={props.state.status === "failed"}>
@@ -595,6 +595,21 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 	const [sessions, setSessions] = createSignal<SessionListState>({ status: "loading" });
 	const [sessionNotice, setSessionNotice] = createSignal<string>();
 	const [isPersisting, setIsPersisting] = createSignal(false);
+	let sessionSelectionRevision = 0;
+	const replaceSessionSelection = () => {
+		sessionSelectionRevision += 1;
+		beginAction.cancel();
+	};
+	const captureSessionOwner = () => {
+		const revision = sessionSelectionRevision;
+		const currentSession = session();
+		const snapshot = readySnapshot();
+		return () =>
+			revision === sessionSelectionRevision &&
+			currentSession?.sessionId === session()?.sessionId &&
+			snapshot?.table.objectPath === readySnapshot()?.table.objectPath &&
+			snapshot?.authority === readySnapshot()?.authority;
+	};
 	const [inspectorTab, setInspectorTab] = createSignal<"cell" | "review" | "sessions">("cell");
 	const [workspaceMode, setWorkspaceMode] = createSignal<"table" | "relationships">("table");
 	const [tableProjection, setTableProjection] = createSignal<"grid" | "charts">("grid");
@@ -710,7 +725,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 			)
 		)
 			return;
-		beginAction.cancel();
+		replaceSessionSelection();
 		const preserveCurrent = state().status === "ready";
 		if (preserveCurrent) setIsReplacing(true);
 		else setState({ status: "loading" });
@@ -804,7 +819,7 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 			)
 		)
 			return;
-		beginAction.cancel();
+		replaceSessionSelection();
 		setIsReplacing(true);
 		const preserveCurrent = state().status === "ready";
 		loadAction.run(props.client.openCatalogTable(objectPath, authority), {
@@ -849,14 +864,19 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 
 	const runSessionOperation = (effect: Effect.Effect<AuthoringSessionResult, unknown>): void => {
 		if (isPersisting()) return;
+		const ownsView = captureSessionOwner();
 		setIsPersisting(true);
 		sessionAction.run(effect, {
 			onFailure: (cause) => {
-				setSessionNotice(Cause.pretty(cause));
+				if (ownsView()) setSessionNotice(Cause.pretty(cause));
+				refreshSessions();
 				setIsPersisting(false);
 			},
 			onSuccess: (result) => {
-				acceptSessionResult(result);
+				// A mutation can finish after navigation. Its durable session still belongs
+				// in Recent drafts, but its result must not replace the newly selected table.
+				if (ownsView()) acceptSessionResult(result);
+				else refreshSessions();
 				setIsPersisting(false);
 			}
 		});
@@ -869,6 +889,10 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 			!window.confirm("Open another draft? The active dirty draft will remain persisted.")
 		)
 			return;
+		if (isPersisting()) return;
+		replaceSessionSelection();
+		loadAction.cancel();
+		setIsReplacing(false);
 		runSessionOperation(props.client.openSession(sessionId));
 	};
 
@@ -880,20 +904,22 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 		)
 			return;
 		if (isPersisting()) return;
+		const ownsView = captureSessionOwner();
 		setIsPersisting(true);
 		sessionAction.run(props.client.discardSession(draft.id), {
 			onFailure: (cause) => {
-				setSessionNotice(Cause.pretty(cause));
+				if (ownsView()) setSessionNotice(Cause.pretty(cause));
 				setIsPersisting(false);
 			},
 			onSuccess: (result) => {
 				setSessions(result);
 				setIsPersisting(false);
 				if (result.status === "failed") {
-					setSessionNotice(`${result.error.message} ${result.error.recovery}`);
+					if (ownsView())
+						setSessionNotice(`${result.error.message} ${result.error.recovery}`);
 					return;
 				}
-				if (session()?.sessionId === draft.id) {
+				if (ownsView() && session()?.sessionId === draft.id) {
 					const currentState = state();
 					setSession(undefined);
 					if (currentState.status === "ready") {
@@ -1277,7 +1303,12 @@ export function AuthoringRoute(props: { readonly client: AuthoringClientApi }) {
 											<span>{session()?.dirty ? "●" : "○"}</span>
 											<div {...stylex.props(styles.draftState)}>
 												<strong>
-													{session()?.dirty ? "Draft" : "Applied"}
+													{session()?.dirty
+														? "Draft"
+														: session()?.lastApply?.status ===
+															  "committed"
+															? "Applied"
+															: "Saved snapshot"}
 												</strong>
 												<small {...stylex.props(styles.draftStateDetail)}>
 													{session()

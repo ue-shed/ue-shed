@@ -13,7 +13,7 @@ import type {
 	BlueprintAssetCandidate,
 	BlueprintGraphFailureReason,
 	BlueprintGraphReadResult
-} from "../main/ipc-contracts.js";
+} from "../shared/ipc-contracts.js";
 import { BlueprintGraphViewer } from "./blueprint-graph-viewer.js";
 import { WorkbenchRendererError, type WorkbenchRendererClient } from "./workbench-client.js";
 

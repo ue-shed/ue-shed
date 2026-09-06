@@ -209,6 +209,21 @@ export const ScenarioDocument = Schema.Struct({
 });
 export type ScenarioDocument = Schema.Schema.Type<typeof ScenarioDocument>;
 
+export const ScenarioDocumentFileResult = Schema.Union([
+	Schema.Struct({
+		status: Schema.Literal("completed"),
+		path: Schema.String,
+		document: ScenarioDocument
+	}),
+	Schema.Struct({ status: Schema.Literal("cancelled") }),
+	Schema.Struct({
+		status: Schema.Literal("failed"),
+		message: Schema.String,
+		recovery: Schema.String
+	})
+]);
+export type ScenarioDocumentFileResult = typeof ScenarioDocumentFileResult.Type;
+
 export const ScenarioEvidence = Schema.Struct({
 	id: ScenarioElementId,
 	markerId: ScenarioElementId,

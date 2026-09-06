@@ -1,3 +1,7 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import {
 	makeTextCorpusServiceTestLayer,
@@ -8,9 +12,8 @@ import {
 	TextRoleId
 } from "@ue-shed/game-text";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
-import { Effect, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { expect } from "vitest";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchGameText, WorkbenchGameTextLive } from "./game-text.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
@@ -88,7 +91,8 @@ const projectSummary = {
 	projectName: "FixtureProject",
 	projectRoot: "C:/FixtureProject"
 };
-const projectIndex: SavedAssetScan = {
+const projectIndex: SavedAssetScan & { readonly generation: number } = {
+	generation: 0,
 	assets: [],
 	failures: [],
 	summary: {
@@ -123,6 +127,170 @@ const unselectedProject = makeWorkbenchProjectTestLayer({
 	savedTables: () => Effect.die("savedTables is not used"),
 	savedProject: () => Effect.die("not used")
 });
+
+it.effect("reuses navigation results and refreshes only when requested", () =>
+	Effect.gen(function* () {
+		const scans = yield* Ref.make(0);
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchGameText;
+			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			expect(yield* Ref.get(scans)).toBe(1);
+			expect((yield* service.configuredRefresh(true)).status).toBe("completed");
+			expect(yield* Ref.get(scans)).toBe(2);
+		}).pipe(
+			Effect.provide(
+				gameTextLive.pipe(
+					Layer.provide(selectedProject),
+					Layer.provide(
+						makeTextCorpusServiceTestLayer({
+							scan: () => Effect.die("unused"),
+							scanFromProjectIndex: () =>
+								Ref.update(scans, (value) => value + 1).pipe(Effect.as(emptyCorpus))
+						})
+					)
+				)
+			)
+		);
+	})
+);
+
+it.effect("an old project's scan cannot overwrite a newer project's result", () =>
+	Effect.gen(function* () {
+		const root = yield* Ref.make("C:/A");
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		const current = () =>
+			Ref.get(root).pipe(
+				Effect.map((projectRoot) => ({
+					status: "ready" as const,
+					project: { ...projectSummary, projectRoot }
+				}))
+			);
+		const project = makeWorkbenchProjectTestLayer({
+			current,
+			choose: current,
+			candidates: () =>
+				Ref.get(root).pipe(
+					Effect.map((projectRoot) => ({
+						...projectIndex,
+						summary: { ...projectIndex.summary, projectRoot }
+					}))
+				),
+			inputAtlas: () => Effect.die("unused"),
+			savedProject: () => Effect.die("unused"),
+			savedTables: () => Effect.die("unused")
+		});
+		const corpus = makeTextCorpusServiceTestLayer({
+			scan: () => Effect.die("unused"),
+			scanFromProjectIndex: (index) =>
+				(index.summary.projectRoot === "C:/A"
+					? Deferred.succeed(started, undefined).pipe(
+							Effect.andThen(Deferred.await(release))
+						)
+					: Effect.void
+				).pipe(Effect.as(emptyCorpus))
+		});
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchGameText;
+			const first = yield* Effect.forkChild(service.configuredRefresh(false));
+			yield* Deferred.await(started);
+			yield* Ref.set(root, "C:/B");
+			expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+			yield* Deferred.succeed(release, undefined);
+			expect((yield* Fiber.join(first)).status).toBe("failed");
+			expect(
+				(yield* service.search({ query: "", pageSize: 50, capability: "all", lens: "all" }))
+					.status
+			).toBe("ready");
+		}).pipe(Effect.provide(gameTextLive.pipe(Layer.provide(project), Layer.provide(corpus))));
+	})
+);
+
+for (const phase of ["candidates", "scan"] as const) {
+	it.effect(
+		`rejects a same-project generation change during ${phase} and retries with fresh membership`,
+		() =>
+			Effect.gen(function* () {
+				const generation = yield* Ref.make(1);
+				const started = yield* Deferred.make<void>();
+				const release = yield* Deferred.make<void>();
+				const pause = Deferred.succeed(started, undefined).pipe(
+					Effect.andThen(Deferred.await(release))
+				);
+				const current = () =>
+					Ref.get(generation).pipe(
+						Effect.map((generation) => ({
+							status: "ready" as const,
+							project: { ...projectSummary, generation }
+						}))
+					);
+				const project = makeWorkbenchProjectTestLayer({
+					current,
+					choose: current,
+					candidates: () =>
+						Effect.gen(function* () {
+							const captured = yield* Ref.get(generation);
+							if (phase === "candidates" && captured === 1) yield* pause;
+							return { ...projectIndex, generation: captured };
+						}),
+					inputAtlas: () => Effect.die("unused"),
+					savedProject: () => Effect.die("unused"),
+					savedTables: () => Effect.die("unused")
+				});
+				const scanner = makeTextCorpusServiceTestLayer({
+					scan: () => Effect.die("unused"),
+					scanFromProjectIndex: () =>
+						Effect.gen(function* () {
+							if (phase === "scan" && (yield* Ref.get(generation)) === 1)
+								yield* pause;
+							return emptyCorpus;
+						})
+				});
+				yield* Effect.gen(function* () {
+					const service = yield* WorkbenchGameText;
+					const first = yield* Effect.forkChild(service.configuredRefresh(false));
+					yield* Deferred.await(started);
+					yield* Ref.set(generation, 2);
+					yield* Deferred.succeed(release, undefined);
+					expect((yield* Fiber.join(first)).status).toBe("failed");
+					expect(
+						(yield* service.search({
+							query: "",
+							pageSize: 50,
+							capability: "all",
+							lens: "all"
+						})).status
+					).not.toBe("ready");
+					expect(
+						(yield* service.investigationExport(
+							{
+								mode: "corpus",
+								query: "",
+								capability: "all",
+								lens: "all",
+								qualityFilter: "all"
+							},
+							"json"
+						)).status
+					).toBe("failed");
+					expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+					expect(
+						(yield* service.search({
+							query: "",
+							pageSize: 50,
+							capability: "all",
+							lens: "all"
+						})).status
+					).toBe("ready");
+				}).pipe(
+					Effect.provide(
+						gameTextLive.pipe(Layer.provide(Layer.mergeAll(project, scanner)))
+					)
+				);
+			})
+	);
+}
 
 it.effect("returns not_configured without a project root", () =>
 	Effect.gen(function* () {
@@ -447,3 +615,159 @@ it.effect(
 		);
 	}
 );
+
+it("exports one captured generation when the project changes during the save dialog", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-export-snapshot-"));
+	const path = join(root, "export.json");
+	let activeRoot = projectSummary.projectRoot;
+	let dialogs = 0;
+	try {
+		const current = () =>
+			Effect.sync(() => ({
+				status: "ready" as const,
+				project: { ...projectSummary, projectRoot: activeRoot, generation: 7 }
+			}));
+		const project = makeWorkbenchProjectTestLayer({
+			current,
+			choose: current,
+			candidates: () => Effect.succeed({ ...projectIndex, generation: 7 }),
+			inputAtlas: () => Effect.die("unused"),
+			savedTables: () => Effect.die("unused"),
+			savedProject: () => Effect.die("unused")
+		});
+		const dialog = Layer.succeed(
+			ElectronDialog,
+			ElectronDialog.of({
+				chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
+				chooseFile: () => Effect.succeed({ status: "cancelled" }),
+				chooseFiles: () => Effect.succeed({ status: "cancelled" }),
+				chooseSaveFile: () =>
+					Effect.sync(() => {
+						dialogs++;
+						activeRoot = "C:/AnotherProject";
+						return { status: "selected" as const, path };
+					})
+			})
+		);
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+				const query = {
+					mode: "corpus" as const,
+					query: "",
+					capability: "all" as const,
+					lens: "all" as const,
+					qualityFilter: "all" as const
+				};
+				expect(yield* service.investigationExport(query, "json")).toMatchObject({
+					status: "saved",
+					rowCount: 0,
+					path
+				});
+				expect(yield* service.investigationExport(query, "json")).toMatchObject({
+					status: "failed"
+				});
+			}).pipe(
+				Effect.provide(
+					WorkbenchGameTextLive.pipe(
+						Layer.provide(
+							Layer.mergeAll(
+								project,
+								dialog,
+								makeLocalFilesTestLayer(),
+								makeTextCorpusServiceTestLayer({
+									scan: () => Effect.die("unused"),
+									scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+								})
+							)
+						)
+					)
+				)
+			)
+		);
+		expect(dialogs).toBe(1);
+		expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
+			source: { projectRoot: projectSummary.projectRoot, generation: 7 },
+			result: { mode: "corpus", corpus: { units: [] } }
+		});
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
+it("restores embedded rules without retaining another rule file's write destination", async () => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-preset-rules-"));
+	const presetPath = join(root, "preset.json");
+	const outputPath = join(root, "export.json");
+	let openPath = qualityRulesPath;
+	const original = JSON.stringify(validQualityDocument);
+	const files = new Map([[qualityRulesPath, new TextEncoder().encode(original)]]);
+	const query = {
+		mode: "corpus" as const,
+		query: "",
+		capability: "all" as const,
+		lens: "all" as const,
+		qualityFilter: "all" as const
+	};
+	const preset = {
+		schemaVersion: 1,
+		kind: "game_text",
+		sort: "domain_order",
+		query,
+		rules: validQualityDocument
+	};
+	try {
+		await writeFile(presetPath, JSON.stringify(preset));
+		const dialog = Layer.succeed(
+			ElectronDialog,
+			ElectronDialog.of({
+				chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
+				chooseFiles: () => Effect.succeed({ status: "cancelled" }),
+				chooseFile: () =>
+					Effect.sync(() => ({ status: "selected" as const, path: openPath })),
+				chooseSaveFile: () => Effect.succeed({ status: "selected", path: outputPath })
+			})
+		);
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const service = yield* WorkbenchGameText;
+				expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+				expect((yield* service.chooseQualityRules()).status).toBe("completed");
+				openPath = presetPath;
+				expect((yield* service.investigationOpen()).status).toBe("opened");
+				expect(yield* service.saveQualityRules(validQualityDocument)).toMatchObject({
+					status: "failed",
+					error: { code: "write_failed" }
+				});
+				expect(new TextDecoder().decode(files.get(qualityRulesPath))).toBe(original);
+				const { rules: _rules, ...withoutRules } = preset;
+				yield* Effect.promise(() => writeFile(presetPath, JSON.stringify(withoutRules)));
+				expect((yield* service.investigationOpen()).status).toBe("opened");
+				expect(yield* service.qualitySearch({ filter: "all", pageSize: 50 })).toEqual({
+					status: "not_ready"
+				});
+				expect((yield* service.investigationExport(query, "json")).status).toBe("saved");
+			}).pipe(
+				Effect.provide(
+					WorkbenchGameTextLive.pipe(
+						Layer.provide(
+							Layer.mergeAll(
+								selectedProject,
+								dialog,
+								makeLocalFilesTestLayer(files),
+								makeTextCorpusServiceTestLayer({
+									scan: () => Effect.die("unused"),
+									scanFromProjectIndex: () => Effect.succeed(emptyCorpus)
+								})
+							)
+						)
+					)
+				)
+			)
+		);
+		expect(JSON.parse(await readFile(outputPath, "utf8")).preset.rules).toBeUndefined();
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

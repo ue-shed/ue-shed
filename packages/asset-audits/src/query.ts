@@ -173,6 +173,9 @@ function matchesSelection(record: TextureRecord, selection: TextureDistributionS
 export interface TextureAuditQuery {
 	readonly record: (objectPath: string) => TextureAuditRecord | undefined;
 	readonly search: (request: TextureAuditSearchRequest) => TextureAuditSearchPage;
+	readonly export: (
+		request: Omit<TextureAuditSearchRequest, "cursor" | "pageSize">
+	) => TextureAuditReport;
 	readonly summary: () => TextureAuditQuerySummary;
 }
 
@@ -197,15 +200,27 @@ export function textureAuditQuery(report: TextureAuditReport): TextureAuditQuery
 		distributions: report.distributions
 	};
 
+	const matching = (request: Omit<TextureAuditSearchRequest, "cursor" | "pageSize">) => {
+		const query = request.query.toLocaleLowerCase().trim();
+		return records.filter((record) => {
+			if (request.findingsOnly && !findingsByPath.has(record.objectPath)) return false;
+			if (request.selection && !matchesSelection(record, request.selection)) return false;
+			return query.length === 0 || record.objectPath.toLocaleLowerCase().includes(query);
+		});
+	};
+
 	return {
+		export: (request) => {
+			const records = matching(request);
+			return {
+				...report,
+				records,
+				findings: records.flatMap((record) => findingsByPath.get(record.objectPath) ?? [])
+			};
+		},
 		summary: () => summary,
 		search: (request) => {
-			const query = request.query.toLocaleLowerCase().trim();
-			const matched = records.filter((record) => {
-				if (request.findingsOnly && !findingsByPath.has(record.objectPath)) return false;
-				if (request.selection && !matchesSelection(record, request.selection)) return false;
-				return query.length === 0 || record.objectPath.toLocaleLowerCase().includes(query);
-			});
+			const matched = matching(request);
 			const afterCursor = request.cursor
 				? matched.findIndex((record) => record.objectPath === request.cursor) + 1
 				: 0;

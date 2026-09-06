@@ -7,7 +7,7 @@ import {
 	type EditorPlaySessionCommandResponse,
 	type EditorPlaySessionStateResponse
 } from "@ue-shed/protocol";
-import { RuntimeHealth } from "@ue-shed/observability/health";
+
 import { Effect, Exit, Queue, Schedule, Schema, Stream } from "effect";
 import type {
 	BlueprintGraphReadResult,
@@ -21,13 +21,13 @@ import type {
 	ShowcaseContext,
 	UnrealConnectionSettings,
 	WorkbenchCameraMetrics
-} from "../main/preload.js";
+} from "../shared/ipc-contracts.js";
 import {
 	BlueprintGraphReadResult as BlueprintGraphReadResultSchema,
 	BlueprintAssetSearchResult as BlueprintAssetSearchResultSchema,
 	ConfigExplorerQueryResult as ConfigExplorerQueryResultSchema,
 	EditorSessionStatusResult as EditorSessionStatusResultSchema
-} from "../main/ipc-contracts.js";
+} from "../shared/ipc-contracts.js";
 import {
 	ProjectLaunchResult,
 	type ProjectLaunchMode,
@@ -38,7 +38,7 @@ import {
 	type WorkbenchProjectState as WorkbenchProjectStateValue,
 	WorkbenchTaskProgress,
 	type WorkbenchTaskProgress as WorkbenchTaskProgressValue
-} from "../main/project-workspace-contract.js";
+} from "../shared/project-workspace-contract.js";
 
 export class WorkbenchRendererError extends Schema.TaggedErrorClass<WorkbenchRendererError>()(
 	"WorkbenchRendererError",
@@ -49,64 +49,11 @@ export class WorkbenchRendererError extends Schema.TaggedErrorClass<WorkbenchRen
 	}
 ) {}
 
-const ShowcaseContextSchema = Schema.Struct({
-	fixtureConfigured: Schema.Boolean,
-	health: RuntimeHealth,
-	project: Schema.Union([
-		Schema.Struct({ status: Schema.Literal("not_configured") }),
-		Schema.Struct({
-			message: Schema.NonEmptyString,
-			recovery: Schema.NonEmptyString,
-			status: Schema.Literal("failed")
-		}),
-		Schema.Struct({
-			candidates: Schema.Union([
-				Schema.Struct({
-					dataTablePackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-					enhancedInputPackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-					gameTextPackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-					status: Schema.Literal("ready"),
-					texturePackages: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-				}),
-				Schema.Struct({
-					message: Schema.NonEmptyString,
-					recovery: Schema.NonEmptyString,
-					status: Schema.Literal("failed")
-				})
-			]),
-			mapCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-			packageCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-			projectName: Schema.NonEmptyString,
-			projectRoot: Schema.NonEmptyString,
-			status: Schema.Literal("ready")
-		})
-	]),
-	projectRoot: Schema.optionalKey(Schema.String),
-	reader: Schema.Literals(["configured", "path"]),
-	ruleFile: Schema.optionalKey(Schema.String)
-});
-const FixtureLaunchResultSchema = Schema.Union([
-	Schema.Struct({ status: Schema.Literal("ready") }),
-	Schema.Struct({
-		message: Schema.String,
-		recovery: Schema.String,
-		status: Schema.Literal("failed")
-	})
-]);
-const WorkbenchCameraMetricsSchema = Schema.Struct({
-	bytesReceived: Schema.Number,
-	deliveryReplacements: Schema.Number,
-	electronPrivateMemoryMb: Schema.Number,
-	framesReceived: Schema.Number,
-	gpuProcessPrivateMemoryMb: Schema.Number,
-	malformedFrames: Schema.Number,
-	presentationBudgetMbPerSecond: Schema.Number,
-	presentationFramesSent: Schema.Number,
-	presentationReplacements: Schema.Number,
-	receiverReplacements: Schema.Number,
-	startedMonotonicMs: Schema.Number,
-	transportErrors: Schema.Number
-});
+import {
+	ShowcaseContext as ShowcaseContextSchema,
+	FixtureLaunchResult as FixtureLaunchResultSchema,
+	WorkbenchCameraMetrics as WorkbenchCameraMetricsSchema
+} from "../shared/ipc-contracts.js";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
@@ -252,7 +199,11 @@ export interface WorkbenchRendererClient {
 		projectRoot: string
 	) => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly chooseProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly sampleProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly project: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly refreshProject: (
+		mode?: "refresh" | "rebuild"
+	) => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly recentProjects: () => Effect.Effect<
 		readonly WorkbenchRecentProject[],
 		WorkbenchRendererError
@@ -269,6 +220,13 @@ export interface WorkbenchRendererClient {
 }
 
 export const workbenchRendererClient: WorkbenchRendererClient = {
+	sampleProject: Effect.fn("WorkbenchRenderer.sampleProject")(() =>
+		request({
+			decode: decodeWorkbenchProjectState,
+			invoke: () => window.ueShed.project.sample(),
+			operation: "project.sample"
+		})
+	),
 	chooseBlueprint: Effect.fn("WorkbenchRenderer.chooseBlueprint")(() =>
 		request({
 			decode: decodeBlueprintGraphReadResult,
@@ -384,6 +342,14 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			invoke: () => window.ueShed.project.current(),
 			operation: "project.current"
 		})
+	),
+	refreshProject: Effect.fn("WorkbenchRenderer.refreshProject")(
+		(mode: "refresh" | "rebuild" = "refresh") =>
+			request({
+				decode: decodeWorkbenchProjectState,
+				invoke: () => window.ueShed.project.refresh(mode),
+				operation: "project.refresh"
+			})
 	),
 	recentProjects: Effect.fn("WorkbenchRenderer.recentProjects")(() =>
 		request({

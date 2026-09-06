@@ -183,7 +183,11 @@ async function checkCatalogStorageBoundary(failures: string[]) {
 		join(repositoryRoot, "crates", "uasset-io", "src", "direct_executor.rs"),
 		"utf8"
 	);
-	if (!modules.includes('#[cfg(all(test, feature = "catalog-oracle"))]\nmod catalog_sqlite;')) {
+	if (
+		!modules
+			.replaceAll("\r\n", "\n")
+			.includes('#[cfg(all(test, feature = "catalog-oracle"))]\nmod catalog_sqlite;')
+	) {
 		failures.push("the SQLite adapter must compile only in explicit oracle tests");
 	}
 	const dependencies = spawnSync(

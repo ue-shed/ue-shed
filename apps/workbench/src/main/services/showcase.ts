@@ -1,4 +1,5 @@
 import { AssetReader } from "@ue-shed/unreal-assets";
+import { join } from "node:path";
 import { RuntimeHealthService } from "@ue-shed/observability";
 import { Context, Effect, Layer } from "effect";
 import { LocalFiles } from "../adapters/local-files.js";
@@ -38,10 +39,10 @@ export const ShowcaseLive = Layer.effect(
 
 			const candidates = yield* Effect.all(
 				[
-					project.candidateCount("saved_tables"),
-					project.candidateCount("enhanced_input"),
-					project.candidateCount("game_text"),
-					project.candidateCount("texture")
+					project.count("saved_tables"),
+					project.count("enhanced_input"),
+					project.count("game_text"),
+					project.count("texture")
 				] as const,
 				{ concurrency: 2 }
 			).pipe(
@@ -86,6 +87,17 @@ export const ShowcaseLive = Layer.effect(
 			const projectExists = projectRoot ? yield* localFiles.exists(projectRoot) : false;
 			const ruleFileExists = ruleFile ? yield* localFiles.exists(ruleFile) : false;
 			return {
+				configSampleAvailable:
+					configuration.sourceCheckout.status === "configured" &&
+					(yield* localFiles.exists(
+						join(
+							configuration.sourceCheckout.path,
+							"packages",
+							"config-explorer",
+							"fixtures",
+							"config-source"
+						)
+					)),
 				fixtureConfigured: Boolean(
 					projectRoot && ruleFile && projectExists && ruleFileExists
 				),

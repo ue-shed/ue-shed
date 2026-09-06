@@ -1,9 +1,73 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import { expect } from "vitest";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { WorkbenchAssetNavigation, WorkbenchAssetNavigationLive } from "./asset-navigation.js";
+import {
+	WorkbenchUnrealConnection,
+	makeWorkbenchUnrealConnectionLayer
+} from "./unreal-connection.js";
+
+it.effect("keeps negotiation and navigation on one target during a port change", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const resume = yield* Deferred.make<void>();
+		const requests: string[] = [];
+		const remote = makeRemoteControlClientTestLayer((request) =>
+			Effect.gen(function* () {
+				requests.push(request.endpoint);
+				if (requests.length === 1) {
+					yield* Deferred.succeed(started, undefined);
+					yield* Deferred.await(resume);
+				}
+				return request.functionName === "GetCapabilityManifest"
+					? {
+							assetNavigationObjectPath:
+								"/Script/UEShedCoreEditor.Default__UEShedEditorAssetNavigationLibrary",
+							capabilities: ["editor.asset-navigation.v1"],
+							producerKind: "unreal_editor",
+							projectName: "Fixture",
+							schemaVersion: 1
+						}
+					: {
+							contract: {
+								name: "unreal-editor-asset-navigation",
+								version: { major: 1, minor: 0 }
+							},
+							objectPath: "/Game/Textures/T_Rock.T_Rock",
+							status: "located"
+						};
+			})
+		);
+		const dependencies = Layer.merge(
+			remote,
+			makeWorkbenchUnrealConnectionLayer("http://editor:30001/")
+		);
+		yield* Effect.gen(function* () {
+			const connection = yield* WorkbenchUnrealConnection;
+			const navigation = yield* WorkbenchAssetNavigation;
+			const first = yield* connection
+				.withCurrent(navigation.locate("/Game/Textures/T_Rock.T_Rock"))
+				.pipe(Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* connection.setPort(31001);
+			yield* Deferred.succeed(resume, undefined);
+			expect((yield* Fiber.join(first)).status).toBe("located");
+			expect((yield* navigation.locate("/Game/Textures/T_Rock.T_Rock")).status).toBe(
+				"located"
+			);
+			expect(requests).toEqual([
+				"http://editor:30001",
+				"http://editor:30001",
+				"http://editor:31001",
+				"http://editor:31001"
+			]);
+		}).pipe(
+			Effect.provide(WorkbenchAssetNavigationLive.pipe(Layer.provideMerge(dependencies)))
+		);
+	})
+);
 
 const configuration = makeWorkbenchConfigurationLayer({
 	authoringAsset: { status: "not_configured" },

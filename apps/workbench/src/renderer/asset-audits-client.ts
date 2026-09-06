@@ -1,3 +1,5 @@
+import { TextureInvestigationPresetResult } from "@ue-shed/asset-audits/browser";
+import { InvestigationFileResult } from "@ue-shed/unreal-assets/investigation";
 import {
 	decodeTextureAuditQueryRunResult,
 	decodeTextureAuditRecordResult,
@@ -20,7 +22,7 @@ import {
 	type TextureAuditClientApi,
 	type TextureAuditLaunchResult
 } from "@ue-shed/extension-asset-audits/client";
-import { WorkbenchTaskProgress } from "../main/project-workspace-contract.js";
+import { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
 import { Effect, Schema } from "effect";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
@@ -43,6 +45,26 @@ function request<A, HostValue, DecodeError>(args: {
 }
 
 export const assetAuditsClient: TextureAuditClientApi = TextureAuditClient.of({
+	investigations: {
+		export: (query, format) =>
+			request({
+				operation: "assetAudits.investigationExport",
+				invoke: () => window.ueShed.assetAudits.investigationExport(query, format),
+				decode: Schema.decodeUnknownEffect(InvestigationFileResult)
+			}),
+		save: (query) =>
+			request({
+				operation: "assetAudits.investigationSave",
+				invoke: () => window.ueShed.assetAudits.investigationSave(query),
+				decode: Schema.decodeUnknownEffect(InvestigationFileResult)
+			}),
+		open: () =>
+			request({
+				operation: "assetAudits.investigationOpen",
+				invoke: () => window.ueShed.assetAudits.investigationOpen(),
+				decode: Schema.decodeUnknownEffect(TextureInvestigationPresetResult)
+			})
+	},
 	locateAsset: Effect.fn("TextureAuditClient.locateAsset")(
 		(objectPath: string): Effect.Effect<EditorAssetLocateResult, TextureAuditClientError> =>
 			request({
@@ -52,10 +74,10 @@ export const assetAuditsClient: TextureAuditClientApi = TextureAuditClient.of({
 			})
 	),
 	loadConfiguredProject: Effect.fn("TextureAuditClient.loadConfiguredProject")(
-		(): Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError> =>
+		(refresh = true): Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError> =>
 			request({
 				decode: decodeTextureAuditQueryRunResult,
-				invoke: () => window.ueShed.assetAudits.refreshConfiguredProject(),
+				invoke: () => window.ueShed.assetAudits.refreshConfiguredProject(refresh),
 				operation: "assetAudits.loadConfiguredProject"
 			})
 	),

@@ -21,6 +21,7 @@ import {
 } from "./remote-control-client.js";
 
 export * from "./remote-control-client.js";
+export * from "./selected-target.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const assetNavigationCapability = "editor.asset-navigation.v1";

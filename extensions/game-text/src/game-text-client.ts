@@ -1,4 +1,10 @@
 import type {
+	GameTextInvestigationQuery,
+	GameTextInvestigationPresetResult,
+	InvestigationFileResult,
+	InvestigationFormat
+} from "@ue-shed/game-text/browser";
+import type {
 	TextCorpusFocusRequest,
 	TextCorpusFocusResult,
 	TextCorpusQueryRunResult,
@@ -26,6 +32,16 @@ export class GameTextClientError extends Schema.TaggedErrorClass<GameTextClientE
 ) {}
 
 export interface GameTextClientApi {
+	readonly investigations?: {
+		readonly export: (
+			query: GameTextInvestigationQuery,
+			format: InvestigationFormat
+		) => Effect.Effect<InvestigationFileResult, GameTextClientError>;
+		readonly save: (
+			query: GameTextInvestigationQuery
+		) => Effect.Effect<InvestigationFileResult, GameTextClientError>;
+		readonly open: () => Effect.Effect<GameTextInvestigationPresetResult, GameTextClientError>;
+	};
 	readonly chooseProjectAndScan: () => Effect.Effect<
 		TextCorpusQueryRunResult,
 		GameTextClientError
@@ -33,10 +49,9 @@ export interface GameTextClientApi {
 	readonly focus: (
 		request: TextCorpusFocusRequest
 	) => Effect.Effect<TextCorpusFocusResult, GameTextClientError>;
-	readonly loadConfiguredProject: () => Effect.Effect<
-		TextCorpusQueryRunResult,
-		GameTextClientError
-	>;
+	readonly loadConfiguredProject: (
+		refresh?: boolean
+	) => Effect.Effect<TextCorpusQueryRunResult, GameTextClientError>;
 	readonly locateAsset: (
 		objectPath: string
 	) => Effect.Effect<EditorAssetLocateResult, GameTextClientError>;

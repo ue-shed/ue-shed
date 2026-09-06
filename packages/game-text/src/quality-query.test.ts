@@ -112,3 +112,18 @@ describe("text quality query", () => {
 		});
 	});
 });
+
+it("exports all matching quality findings with complete evidence", () => {
+	const findings = Array.from({ length: 123 }, (_, index) => ({
+		...report.findings[index % 2]!,
+		textUnitId: makeTextUnitId("unit:" + index)
+	}));
+	const model = textQualityQuery({ ...report, findings });
+	expect(model.search({ filter: "all", pageSize: 50 }).findings).toHaveLength(50);
+	expect(model.export("all").findings).toHaveLength(123);
+	const exported = model.export("terminology");
+	expect(exported.findings).toHaveLength(61);
+	expect(exported.findings[0]).toEqual(findings[1]);
+	expect(exported.coverage).toEqual(report.coverage);
+	expect(exported.diagnostics).toEqual(report.diagnostics);
+});

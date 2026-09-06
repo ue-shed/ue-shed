@@ -29,7 +29,10 @@ try {
 	console.log(`Remote Control endpoint: ${environment.UE_SHED_REMOTE_CONTROL_ENDPOINT}`);
 	console.log("Open World Log, choose Map History World, and run the scan.");
 
-	runPnpm(["--filter", "@ue-shed/workbench", "build"], environment);
+	runPnpm(
+		["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+		environment
+	);
 	if (!buildOnly) runPnpm(["--filter", "@ue-shed/workbench", "start"], environment);
 	if (interrupted) throw new Error("World Log showcase was interrupted.");
 } finally {

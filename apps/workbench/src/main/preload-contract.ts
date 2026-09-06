@@ -21,6 +21,8 @@ export const workbenchInvokeChannels = {
 		execute: "editor-session:execute"
 	},
 	scenarios: {
+		openDocument: "scenario:open-document",
+		saveDocument: "scenario:save-document",
 		cancel: "scenario:cancel",
 		start: "scenario:start",
 		status: "scenario:status"
@@ -36,13 +38,18 @@ export const workbenchInvokeChannels = {
 	},
 	project: {
 		choose: "project:choose",
+		sample: "project:sample",
 		current: "project:current",
+		refresh: "project:refresh",
 		launch: "project:launch",
 		openRecent: "project:open-recent",
 		progress: "project:progress",
 		recent: "project:recent"
 	},
 	assetAudits: {
+		investigationExport: "asset-audits:textures:investigation-export",
+		investigationSave: "asset-audits:textures:investigation-save",
+		investigationOpen: "asset-audits:textures:investigation-open",
 		loadConfiguredProject: "asset-audits:textures:configured-scan",
 		chooseProjectAndScan: "asset-audits:textures:choose-and-scan",
 		refreshConfiguredProject: "asset-audits:textures:configured-refresh",
@@ -55,6 +62,9 @@ export const workbenchInvokeChannels = {
 		previewOfflineBatch: "asset-audits:textures:preview-offline-batch"
 	},
 	gameText: {
+		investigationExport: "game-text:investigation-export",
+		investigationSave: "game-text:investigation-save",
+		investigationOpen: "game-text:investigation-open",
 		loadConfiguredProject: "game-text:configured-scan",
 		chooseProjectAndScan: "game-text:choose-and-scan",
 		refreshConfiguredProject: "game-text:configured-refresh",

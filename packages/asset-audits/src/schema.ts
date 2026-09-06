@@ -184,6 +184,7 @@ export const TextureDistributions = Schema.Struct({
 export type TextureDistributions = Schema.Schema.Type<typeof TextureDistributions>;
 
 export const TextureAuditReport = Schema.Struct({
+	ruleSet: Schema.optionalKey(TextureAuditRuleSet),
 	schemaVersion: Schema.Literal(1),
 	status: Schema.Literals(["complete", "partial"]),
 	ruleSetName: Schema.String,

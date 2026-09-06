@@ -4,3 +4,5 @@ export * from "./quality-query.js";
 export * from "./schema.js";
 export * from "./query.js";
 export * from "./search.js";
+
+export * from "./investigation.js";

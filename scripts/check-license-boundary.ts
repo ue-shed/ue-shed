@@ -122,7 +122,7 @@ export function validateLicenseBoundary({
 	if (rootManifest.license !== "MIT") {
 		failures.push("package.json: license must be MIT");
 	}
-	if (!rootLicense.startsWith("MIT License\n")) {
+	if (!/^MIT License\r?\n/.test(rootLicense)) {
 		failures.push("LICENSE: expected the MIT license text");
 	}
 	if (peculiarManifest.version !== "0.11.1") {

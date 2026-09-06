@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import {
 	makeAssetReaderTestLayer,
@@ -6,16 +7,16 @@ import {
 	ProjectIndexPage,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndexRefreshEvent,
+	ProjectIndexRefreshFailed,
 	ProjectIndexStaleGeneration,
 	ProjectIdentity,
 	ProjectIndexGeneration,
 	ProjectIndexSummary,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Effect, Layer, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Stream } from "effect";
 import { expect } from "vitest";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { makeWorkbenchProjectHistoryTestLayer } from "./project-history.js";
 import { WorkbenchProject, WorkbenchProjectLive } from "./project-workspace.js";
 
@@ -95,6 +96,126 @@ const dialog = Layer.succeed(
 	})
 );
 const history = makeWorkbenchProjectHistoryTestLayer(["D:/Projects/Previous"]);
+
+it.effect(
+	"refreshes membership, retains committed data on failure, and fences late project results",
+	() =>
+		Effect.gen(function* () {
+			const started = yield* Deferred.make<void>();
+			const release = yield* Deferred.make<void>();
+			let block = false;
+			let fail = false;
+			let packages = 1;
+			let generation = 0;
+			let picked = projectRoot;
+			let rebuilds = 0;
+			const refresh = (root: string) =>
+				Stream.fromEffect(
+					Effect.gen(function* () {
+						const count = packages;
+						if (block && root === projectRoot) {
+							yield* Deferred.succeed(started, undefined);
+							yield* Deferred.await(release);
+						}
+						if (fail)
+							return yield* new ProjectIndexRefreshFailed({
+								message: "Disk temporarily unavailable",
+								recovery: "Retry refresh",
+								retrySafe: true
+							});
+						return ProjectIndexRefreshEvent.cases.Completed.make({
+							summary: {
+								projectId: ProjectIdentity.make(root),
+								generation: ProjectIndexGeneration.make(++generation),
+								packageCount: count,
+								mapCount: 0,
+								changedPackages: count,
+								removedPackages: 0,
+								completeness: "complete",
+								diagnostics: []
+							}
+						});
+					})
+				);
+			const index = makeProjectIndexTestLayer({
+				status: () => Effect.succeed({ status: "absent" }),
+				refresh: ({ projectRoot }) => refresh(projectRoot),
+				rebuild: ({ projectRoot }) => {
+					rebuilds++;
+					return refresh(projectRoot);
+				},
+				query: (request) =>
+					Effect.succeed({
+						projectId: request.projectId,
+						generation: request.expectedGeneration,
+						items: []
+					})
+			});
+			const reader = makeAssetReaderTestLayer({
+				discoverAssets: () => Effect.die("unused"),
+				discoverTables: () => Effect.die("unused"),
+				readAsset: () => Effect.die("unused"),
+				readTable: () => Effect.die("unused"),
+				source: () => Effect.succeed("configured")
+			});
+			const picker = Layer.succeed(ElectronDialog, {
+				chooseDirectory: () =>
+					Effect.succeed({ status: "selected" as const, path: picked }),
+				chooseFile: () => Effect.die("unused"),
+				chooseFiles: () => Effect.die("unused"),
+				chooseSaveFile: () => Effect.die("unused")
+			});
+			yield* Effect.gen(function* () {
+				const service = yield* WorkbenchProject;
+				expect(yield* service.current()).toMatchObject({
+					status: "ready",
+					project: { packageCount: 1 }
+				});
+				packages = 2;
+				expect(yield* service.refresh()).toMatchObject({
+					status: "ready",
+					project: { packageCount: 2 }
+				});
+				packages = 0;
+				expect(yield* service.refresh()).toMatchObject({
+					status: "ready",
+					project: { packageCount: 0 }
+				});
+				fail = true;
+				expect((yield* service.refresh()).status).toBe("failed");
+				expect(yield* service.current()).toMatchObject({
+					status: "ready",
+					project: { packageCount: 0 }
+				});
+				fail = false;
+				packages = 3;
+				expect(yield* service.refresh("rebuild")).toMatchObject({
+					status: "ready",
+					project: { packageCount: 3 }
+				});
+				expect(rebuilds).toBe(1);
+				block = true;
+				const oldRefresh = yield* service.refresh().pipe(Effect.forkChild);
+				yield* Deferred.await(started);
+				picked = "C:/Projects/Other";
+				packages = 7;
+				expect((yield* service.choose()).status).toBe("ready");
+				yield* Deferred.succeed(release, undefined);
+				yield* Fiber.join(oldRefresh);
+				expect(yield* service.current()).toMatchObject({
+					status: "ready",
+					project: {
+						projectRoot: picked,
+						packageCount: 7
+					}
+				});
+				expect((yield* service.savedProject()).projectRoot).toBe(picked);
+			}).pipe(
+				Effect.provide(WorkbenchProjectLive),
+				Effect.provide(Layer.mergeAll(configuredProject, picker, history, reader, index))
+			);
+		})
+);
 
 it.effect("restores recent selection only when no explicit project is configured", () => {
 	const unconfiguredProject = makeWorkbenchConfigurationLayer({
@@ -398,6 +519,7 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 			expect((yield* service.current()).status).toBe("ready");
 			const candidates = yield* service.candidates("saved_tables");
 			expect(candidates.assets).toHaveLength(1);
+			expect(candidates.generation).toBe(latestGeneration);
 			expect(generations).toEqual([1, 1, 2, 2]);
 		}).pipe(
 			Effect.provide(WorkbenchProjectLive),

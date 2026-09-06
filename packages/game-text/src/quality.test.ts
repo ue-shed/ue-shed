@@ -1,3 +1,4 @@
+import { TextRoleId } from "./quality-schema.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { it } from "@effect/vitest";
@@ -291,5 +292,73 @@ it.effect("rejects duplicate IDs and never constructs an implicit whole-project 
 		if (role === undefined) return;
 		expect(matchesTextRole(menuOccurrence, role)).toBe(true);
 		expect(matchesTextRole(unrelatedOccurrence, role)).toBe(false);
+	})
+);
+
+it.effect("replays embedded quality rules and exports filtered evidence with provenance", () =>
+	Effect.gen(function* () {
+		const {
+			GameTextInvestigationPreset,
+			exportGameTextInvestigation,
+			gameTextInvestigationCsv
+		} = yield* Effect.promise(() => import("./investigation.js"));
+		const { Schema } = yield* Effect.promise(() => import("effect"));
+		const rules = yield* decodeTextQualityRuleDocumentJson(
+			yield* Effect.promise(() => readFile(fixtureRules, "utf8"))
+		);
+		const preset = {
+			schemaVersion: 1 as const,
+			kind: "game_text" as const,
+			sort: "domain_order" as const,
+			query: {
+				mode: "quality" as const,
+				query: "",
+				capability: "all" as const,
+				lens: "all" as const,
+				qualityFilter: "terminology" as const
+			},
+			rules
+		};
+		const decoded = yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(
+			JSON.parse(JSON.stringify(preset))
+		);
+		const source = {
+			projectRoot: "/project",
+			generation: 7,
+			authority: "project_files" as const
+		};
+		const exported = yield* exportGameTextInvestigation(corpus, decoded, source);
+		expect(exported.source).toEqual(source);
+		expect(exported.result.mode).toBe("quality");
+		if (exported.result.mode !== "quality") return;
+		expect(exported.result.report.findings.length).toBeGreaterThan(0);
+		expect(
+			exported.result.report.findings.every((finding) => finding.kind === "terminology")
+		).toBe(true);
+		expect(gameTextInvestigationCsv(exported)).toContain('"metadata"');
+		expect(gameTextInvestigationCsv(exported)).toContain('"record"');
+		expect(
+			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)({
+				...preset,
+				schemaVersion: 2
+			}).pipe(Effect.result)
+		).toMatchObject({ _tag: "Failure" });
+		const invalidRules = {
+			...rules,
+			rules: rules.rules.map((rule) => ({ ...rule, role: TextRoleId.make("missing-role") }))
+		};
+		expect(
+			yield* exportGameTextInvestigation(
+				corpus,
+				{ ...preset, rules: invalidRules },
+				source
+			).pipe(Effect.result)
+		).toMatchObject({ _tag: "Failure" });
+		const { rules: _rules, ...withoutRules } = preset;
+		expect(
+			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(withoutRules).pipe(
+				Effect.result
+			)
+		).toMatchObject({ _tag: "Failure" });
 	})
 );

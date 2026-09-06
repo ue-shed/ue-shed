@@ -1,13 +1,12 @@
+import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	AuthoringFilePicker,
 	AuthoringFilePickerError,
 	AuthoringClientLive,
 	ShedAuthoring,
 	ShedAuthoringLive,
-	ShedAuthoringSessionsLive,
 	SavedTableIndex,
 	ShedHostConfiguration,
-	makeShedHostConfiguration,
 	makeShedAuthoringTestLayer,
 	type ShedAuthoringApi
 } from "@ue-shed/host";
@@ -26,6 +25,7 @@ const WorkbenchShedHostConfigurationLive = Layer.effect(
 	ShedHostConfiguration,
 	Effect.gen(function* () {
 		const configuration = yield* WorkbenchConfiguration;
+		const connection = yield* WorkbenchUnrealConnection;
 		const workspace = yield* Effect.serviceOption(WorkbenchProject);
 		// The table catalog is served by `WorkbenchSavedTableIndexLive` from the workspace
 		// inventory, which owns the reader cache, so no catalog cache path is threaded here.
@@ -33,42 +33,38 @@ const WorkbenchShedHostConfigurationLive = Layer.effect(
 			Option.match(workspace, {
 				onNone: () => Effect.succeed(configuration.project),
 				onSome: (service) =>
-					service.current().pipe(
+					service.selectedProject().pipe(
 						Effect.map((selected) => {
-							if (selected.status !== "ready")
-								return { status: "not_configured" as const };
 							if (
 								configuration.project.status === "configured" &&
-								configuration.project.projectRoot === selected.project.projectRoot
+								configuration.project.projectRoot === selected.projectRoot
 							)
 								return configuration.project;
 							return {
-								projectRoot: selected.project.projectRoot,
+								projectRoot: selected.projectRoot,
 								status: "configured" as const
 							};
-						})
+						}),
+						Effect.catch(() => Effect.succeed({ status: "not_configured" as const }))
 					)
 			});
 		return ShedHostConfiguration.of({
-			authoringAsset: () => Effect.succeed(configuration.authoringAsset),
+			authoringAsset: () =>
+				Option.isNone(workspace)
+					? Effect.succeed(configuration.authoringAsset)
+					: project().pipe(
+							Effect.map((selected) =>
+								selected.status === "configured" &&
+								configuration.project.status === "configured" &&
+								selected.projectRoot === configuration.project.projectRoot
+									? configuration.authoringAsset
+									: { status: "not_configured" as const }
+							)
+						),
 			project,
-			remoteControlEndpoint: () => Effect.succeed(configuration.remoteControlEndpoint)
+			remoteControlEndpoint: connection.endpoint
 		});
 	})
-);
-
-// Session storage is acquired once with the explicit process configuration. The live authoring
-// catalog below can follow the selected Workbench project without making application startup wait
-// for a project-wide inventory scan.
-const WorkbenchStaticShedHostConfigurationLive = Layer.effect(
-	ShedHostConfiguration,
-	Effect.map(WorkbenchConfiguration, (configuration) =>
-		makeShedHostConfiguration({
-			authoringAsset: configuration.authoringAsset,
-			project: configuration.project,
-			remoteControlEndpoint: configuration.remoteControlEndpoint
-		})
-	)
 );
 
 const WorkbenchAuthoringFilePickerLive = Layer.effect(
@@ -94,10 +90,6 @@ const WorkbenchAuthoringFilePickerLive = Layer.effect(
 			)
 		})
 	)
-);
-
-export const WorkbenchAuthoringSessionsLive = ShedAuthoringSessionsLive.pipe(
-	Layer.provide(WorkbenchStaticShedHostConfigurationLive)
 );
 
 /**

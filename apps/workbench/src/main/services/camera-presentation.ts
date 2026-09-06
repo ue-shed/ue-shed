@@ -1,3 +1,4 @@
+import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import { recordCameraReplacements, recordStreamState } from "@ue-shed/observability";
 import {
 	CameraFeed,
@@ -12,7 +13,6 @@ import { Clock, Context, Effect, HashMap, Layer, Option, Queue, Ref, Stream } fr
 import { ElectronApp, type ElectronAppError } from "../adapters/electron-app.js";
 import { WorkbenchWindow } from "../adapters/electron-window.js";
 import type { RendererCameraFrame, WorkbenchCameraMetrics } from "../ipc-contracts.js";
-import { WorkbenchConfiguration } from "../workbench-config.js";
 
 const minimumPresentationBudgetMbPerSecond = 25;
 const maximumPresentationBudgetMbPerSecond = 500;
@@ -98,7 +98,7 @@ export const CameraPresentationLive = Layer.effect(
 		const feed = yield* CameraFeed;
 		const window = yield* WorkbenchWindow;
 		const electronApp = yield* ElectronApp;
-		const configuration = yield* WorkbenchConfiguration;
+		const connection = yield* WorkbenchUnrealConnection;
 		const remoteControl = yield* RemoteControlClient;
 
 		const presentationState = yield* Ref.make({
@@ -216,16 +216,28 @@ export const CameraPresentationLive = Layer.effect(
 		});
 
 		const status = Effect.fn("Workbench.CameraPresentation.status")(() =>
-			getCameraStatus(configuration.remoteControlEndpoint).pipe(
-				Effect.provideService(RemoteControlClient, remoteControl)
-			)
+			connection
+				.endpoint()
+				.pipe(
+					Effect.flatMap((endpoint) =>
+						getCameraStatus(endpoint).pipe(
+							Effect.provideService(RemoteControlClient, remoteControl)
+						)
+					)
+				)
 		);
 
 		const configure = Effect.fn("Workbench.CameraPresentation.configure")(
 			(config: CameraScheduleConfig) =>
-				configureCameras(configuration.remoteControlEndpoint, config).pipe(
-					Effect.provideService(RemoteControlClient, remoteControl)
-				)
+				connection
+					.endpoint()
+					.pipe(
+						Effect.flatMap((endpoint) =>
+							configureCameras(endpoint, config).pipe(
+								Effect.provideService(RemoteControlClient, remoteControl)
+							)
+						)
+					)
 		);
 
 		return CameraPresentation.of({ configure, metrics, setPresentationBudget, status });

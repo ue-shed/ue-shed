@@ -28,6 +28,13 @@ const EditorPlayAction = Schema.Literals([
 
 export const CliCommand = Schema.TaggedUnion({
 	Version: {},
+	InvestigationRun: {
+		...Project,
+		preset: Schema.String,
+		format: Schema.Literals(["json", "csv"]),
+		output: Schema.optionalKey(Schema.String),
+		...Reader
+	},
 	Doctor: {},
 	CustodianReport: { root: Schema.String },
 	CustodianPlan: { root: Schema.String, ignorePressure: Schema.Boolean },
@@ -70,6 +77,7 @@ export const CliCommand = Schema.TaggedUnion({
 		operationId: Schema.optionalKey(Schema.String)
 	},
 	ScenarioRun: {
+		document: Schema.optionalKey(Schema.String),
 		endpoint: Schema.String,
 		evidenceLimit: Schema.optionalKey(PositiveInt)
 	},
@@ -159,6 +167,13 @@ export const CliCommand = Schema.TaggedUnion({
 	ProjectIndexStatus: ProjectIndexTarget,
 	ProjectIndexRefresh: ProjectIndexTarget,
 	ProjectIndexRebuild: ProjectIndexTarget,
+	ProjectIndexCount: {
+		...ProjectIndexTarget,
+		exactClasses: Schema.Array(Schema.NonEmptyString),
+		classPrefixes: Schema.Array(Schema.NonEmptyString),
+		classNameSuffixes: Schema.Array(Schema.NonEmptyString),
+		serializedNames: Schema.Array(Schema.NonEmptyString)
+	},
 	ProjectIndexMaps: {
 		...ProjectIndexTarget,
 		cursor: Schema.optionalKey(Schema.String),

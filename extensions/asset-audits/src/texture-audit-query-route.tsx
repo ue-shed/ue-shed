@@ -1,3 +1,4 @@
+import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
 import * as stylex from "@stylexjs/stylex";
 import { MAX_TEXTURE_PREVIEW_BATCH_SIZE } from "@ue-shed/asset-audits/browser";
 import type {
@@ -15,7 +16,7 @@ import { Button, createEffectAction, createEffectSubscription } from "@ue-shed/u
 import { TaskProgressModal, type TaskProgress } from "@ue-shed/ui/task-progress";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Schedule, Stream } from "effect";
-import { For, Match, Show, Switch, createMemo, createSignal, onMount } from "solid-js";
+import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { TextureAuditClientApi } from "./texture-audit-client.js";
 
 type ViewState =
@@ -135,7 +136,19 @@ function savedPreviewBatchLabel(count: number, loading: boolean): string {
 }
 
 /** Bounded query presentation; full texture records remain in the Workbench main process. */
-export function TextureAuditRoute(props: { readonly client: TextureAuditClientApi }) {
+export interface TextureAuditPreferences {
+	readonly query: string;
+	readonly selection: TextureDistributionSelection | undefined;
+	readonly findingsOnly: boolean;
+	readonly selectedPath: string | undefined;
+	readonly comparisonKind: ComparisonKind;
+}
+export function TextureAuditRoute(props: {
+	readonly client: TextureAuditClientApi;
+	readonly initialPreferences?: TextureAuditPreferences | undefined;
+	readonly onPreferencesChange?: (preferences: TextureAuditPreferences) => void;
+}) {
+	const [investigationRevision, setInvestigationRevision] = createSignal(0);
 	const refreshAction = createEffectAction();
 	const searchAction = createEffectAction();
 	const detailAction = createEffectAction();
@@ -144,18 +157,30 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 	const locateAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
 	const [state, setState] = createSignal<ViewState>({ status: "loading" });
+	const readyState = createMemo(() => {
+		const current = state();
+		return current.status === "ready" ? current : undefined;
+	});
 	const [progress, setProgress] = createSignal<TaskProgress>({
 		completed: 0,
 		phase: "idle",
 		stage: "texture_audit",
 		total: 0
 	});
-	const [query, setQuery] = createSignal("");
-	const [selection, setSelection] = createSignal<TextureDistributionSelection>();
-	const [findingsOnly, setFindingsOnly] = createSignal(false);
-	const [selectedPath, setSelectedPath] = createSignal<string>();
+	const [query, setQuery] = createSignal<string>(props.initialPreferences?.query ?? "");
+	const [selection, setSelection] = createSignal<TextureDistributionSelection | undefined>(
+		props.initialPreferences?.selection ?? undefined
+	);
+	const [findingsOnly, setFindingsOnly] = createSignal<boolean>(
+		props.initialPreferences?.findingsOnly ?? false
+	);
+	const [selectedPath, setSelectedPath] = createSignal<string | undefined>(
+		props.initialPreferences?.selectedPath ?? undefined
+	);
 	const [record, setRecord] = createSignal<TextureAuditRecord>();
-	const [comparisonKind, setComparisonKind] = createSignal<ComparisonKind>("project");
+	const [comparisonKind, setComparisonKind] = createSignal<ComparisonKind>(
+		props.initialPreferences?.comparisonKind ?? "project"
+	);
 	const [preview, setPreview] = createSignal<TexturePreviewResult>();
 	const [savedPreviews, setSavedPreviews] = createSignal<
 		ReadonlyMap<string, TexturePreviewResult>
@@ -195,14 +220,20 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 			? current
 			: undefined;
 	};
-	let searchGeneration = 0;
+	const clearSelection = () => {
+		detailAction.cancel();
+		previewAction.cancel();
+		offlinePreviewAction.cancel();
+		setSelectedPath(undefined);
+		setRecord(undefined);
+		setPreview(undefined);
+		setOfflinePreviewLoading(false);
+	};
 
 	const requestRecord = (objectPath: string) => {
+		clearSelection();
 		setSelectedPath(objectPath);
-		setRecord(undefined);
 		setPreview(savedPreviews().get(objectPath));
-		setOfflinePreviewLoading(false);
-		offlinePreviewAction.cancel();
 		detailAction.run(props.client.record(objectPath), {
 			onFailure: (cause) => setState(failure(cause)),
 			onSuccess: (result) => {
@@ -260,7 +291,6 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 	};
 
 	const requestPage = (cursor?: TextureRecord["objectPath"]) => {
-		const generation = ++searchGeneration;
 		searchAction.run(
 			props.client.search({
 				...(cursor === undefined ? undefined : { cursor }),
@@ -272,7 +302,7 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 			{
 				onFailure: (cause) => setState(failure(cause)),
 				onSuccess: (result) => {
-					if (generation !== searchGeneration || result.status !== "ready") return;
+					if (result.status !== "ready") return;
 					const current = state();
 					if (current.status !== "ready") return;
 					setState({ ...current, page: result.page });
@@ -282,11 +312,7 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 						result.page.records.find((item) => item.objectPath === firstFindingPath) ??
 						result.page.records[0];
 					if (next) requestRecord(next.objectPath);
-					else {
-						setSelectedPath(undefined);
-						setRecord(undefined);
-						setPreview(undefined);
-					}
+					else clearSelection();
 				}
 			}
 		);
@@ -294,29 +320,29 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 
 	const applyRefresh = (result: TextureAuditQueryRunResult) => {
 		progressSubscription.cancel();
+		setInvestigationRevision((value) => value + 1);
 		if (result.status === "completed") {
 			setState({
 				page: { findings: [], records: [], total: 0 },
 				status: "ready",
 				summary: result.summary
 			});
-			setSelectedPath(undefined);
-			setRecord(undefined);
-			setPreview(undefined);
-			setSavedPreviews(new Map());
 			requestPage();
 		} else if (result.status === "failed") setState({ error: result.error, status: "failed" });
 		else setState({ status: result.status });
 	};
 
-	const refresh = () => {
+	const load = (refresh: boolean) => {
+		searchAction.cancel();
+		clearSelection();
+		setSavedPreviews(new Map());
 		setState({ status: "loading" });
 		setProgress({ completed: 0, phase: "idle", stage: "texture_audit", total: 0 });
 		progressSubscription.subscribe(
 			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("100 millis")),
 			{ onValue: setProgress }
 		);
-		refreshAction.run(props.client.loadConfiguredProject(), {
+		refreshAction.run(props.client.loadConfiguredProject(refresh), {
 			onFailure: (cause) => {
 				progressSubscription.cancel();
 				setState(failure(cause));
@@ -325,7 +351,17 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 		});
 	};
 
-	onMount(refresh);
+	onCleanup(() =>
+		props.onPreferencesChange?.({
+			query: query(),
+			selection: selection(),
+			findingsOnly: findingsOnly(),
+			selectedPath: selectedPath(),
+			comparisonKind: comparisonKind()
+		})
+	);
+	const refresh = () => load(true);
+	onMount(() => load(false));
 
 	return (
 		<main {...stylex.props(styles.page)}>
@@ -346,6 +382,26 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 					Rescan assets
 				</Button>
 			</header>
+			<Show when={props.client.investigations}>
+				{(client) => (
+					<InvestigationActions
+						client={client()}
+						disabled={state().status !== "ready"}
+						revision={investigationRevision()}
+						query={{
+							query: query(),
+							findingsOnly: findingsOnly(),
+							...(selection() ? { selection: selection()! } : undefined)
+						}}
+						onOpen={(preset) => {
+							setQuery(preset.query.query);
+							setFindingsOnly(preset.query.findingsOnly);
+							setSelection(preset.query.selection);
+							load(false);
+						}}
+					/>
+				)}
+			</Show>
 			<Switch>
 				<Match when={state().status === "loading"}>
 					<div {...stylex.props(styles.centerState)}>
@@ -391,188 +447,168 @@ export function TextureAuditRoute(props: { readonly client: TextureAuditClientAp
 						);
 					})()}
 				</Match>
-				<Match when={state().status === "ready"}>
-					{(() => {
-						const current = state();
-						if (current.status !== "ready") return null;
-						return (
-							<div {...stylex.props(styles.bench)}>
-								<ScopeRail
-									summary={current.summary}
-									selection={selection()}
-									findingsOnly={findingsOnly()}
-									onFindingsOnly={(value) => {
-										setFindingsOnly(value);
-										requestPage();
-									}}
-									onSelect={(next) => {
-										setSelection(next);
-										requestPage();
-									}}
-								/>
-								<section aria-label="Results" {...stylex.props(styles.catalog)}>
-									<header {...stylex.props(styles.catalogHeader)}>
-										<label {...stylex.props(styles.search)}>
-											<span aria-hidden="true">⌕</span>
-											<input
-												aria-label="Search textures"
-												value={query()}
-												onInput={(event) => {
-													setQuery(event.currentTarget.value);
-													requestPage();
-												}}
-												placeholder="Object path…"
-												{...stylex.props(styles.searchInput)}
-											/>
-										</label>
-										<span {...stylex.props(styles.resultCount)}>
-											{current.page.total.toLocaleString()} shown
-										</span>
-									</header>
-									<div {...stylex.props(styles.columnLabels)}>
-										<span>Asset</span>
-										<span>Dimensions</span>
-									</div>
-									<div {...stylex.props(styles.assetList)}>
-										<For each={current.page.records}>
-											{(item) => {
-												const findingCount = () =>
-													current.page.findings.filter(
-														(finding) =>
-															finding.objectPath === item.objectPath
-													).length;
-												const cached = () => {
-													const result = savedPreviews().get(
-														item.objectPath
-													);
-													return result?.status === "available"
-														? result
-														: undefined;
-												};
-												return (
-													<button
-														type="button"
-														aria-pressed={
-															selectedPath() === item.objectPath
-														}
-														onClick={() =>
-															requestRecord(item.objectPath)
-														}
+				<Match when={readyState()}>
+					{(current) => (
+						<div {...stylex.props(styles.bench)}>
+							<ScopeRail
+								summary={current().summary}
+								selection={selection()}
+								findingsOnly={findingsOnly()}
+								onFindingsOnly={(value) => {
+									setFindingsOnly(value);
+									requestPage();
+								}}
+								onSelect={(next) => {
+									setSelection(next);
+									requestPage();
+								}}
+							/>
+							<section aria-label="Results" {...stylex.props(styles.catalog)}>
+								<header {...stylex.props(styles.catalogHeader)}>
+									<label {...stylex.props(styles.search)}>
+										<span aria-hidden="true">⌕</span>
+										<input
+											aria-label="Search textures"
+											value={query()}
+											onInput={(event) => {
+												setQuery(event.currentTarget.value);
+												requestPage();
+											}}
+											placeholder="Object path…"
+											{...stylex.props(styles.searchInput)}
+										/>
+									</label>
+									<span {...stylex.props(styles.resultCount)}>
+										{current().page.total.toLocaleString()} shown
+									</span>
+								</header>
+								<div {...stylex.props(styles.columnLabels)}>
+									<span>Asset</span>
+									<span>Dimensions</span>
+								</div>
+								<div {...stylex.props(styles.assetList)}>
+									<For each={current().page.records}>
+										{(item) => {
+											const findingCount = () =>
+												current().page.findings.filter(
+													(finding) =>
+														finding.objectPath === item.objectPath
+												).length;
+											const cached = () => {
+												const result = savedPreviews().get(item.objectPath);
+												return result?.status === "available"
+													? result
+													: undefined;
+											};
+											return (
+												<button
+													type="button"
+													aria-pressed={
+														selectedPath() === item.objectPath
+													}
+													onClick={() => requestRecord(item.objectPath)}
+													{...stylex.props(
+														styles.assetRow,
+														selectedPath() === item.objectPath &&
+															styles.assetRowActive
+													)}
+												>
+													<span {...stylex.props(styles.rowPreview)}>
+														<Show
+															when={cached()}
+															fallback={<span>TX</span>}
+														>
+															{(image) => (
+																<img
+																	src={`data:${image().mimeType};base64,${image().dataBase64}`}
+																	alt=""
+																	{...stylex.props(
+																		styles.rowPreviewImage
+																	)}
+																/>
+															)}
+														</Show>
+													</span>
+													<span {...stylex.props(styles.assetIdentity)}>
+														<strong {...stylex.props(styles.assetName)}>
+															{shortName(item.objectPath)}
+														</strong>
+														<small
+															title={item.objectPath}
+															{...stylex.props(styles.assetPath)}
+														>
+															{item.objectPath}
+														</small>
+													</span>
+													<span {...stylex.props(styles.rowEvidence)}>
+														<strong
+															{...stylex.props(styles.rowDimensions)}
+														>
+															{dimensionsLabel(item)}
+														</strong>
+														<small
+															title={evidenceLabel(item.textureGroup)}
+															{...stylex.props(styles.rowGroup)}
+														>
+															{evidenceLabel(item.textureGroup)}
+														</small>
+													</span>
+													<span
 														{...stylex.props(
-															styles.assetRow,
-															selectedPath() === item.objectPath &&
-																styles.assetRowActive
+															styles.rowStatus,
+															findingCount() > 0
+																? styles.rowWarning
+																: styles.rowPass
 														)}
 													>
-														<span {...stylex.props(styles.rowPreview)}>
-															<Show
-																when={cached()}
-																fallback={<span>TX</span>}
-															>
-																{(image) => (
-																	<img
-																		src={`data:${image().mimeType};base64,${image().dataBase64}`}
-																		alt=""
-																		{...stylex.props(
-																			styles.rowPreviewImage
-																		)}
-																	/>
-																)}
-															</Show>
-														</span>
-														<span
-															{...stylex.props(styles.assetIdentity)}
-														>
-															<strong
-																{...stylex.props(styles.assetName)}
-															>
-																{shortName(item.objectPath)}
-															</strong>
-															<small
-																title={item.objectPath}
-																{...stylex.props(styles.assetPath)}
-															>
-																{item.objectPath}
-															</small>
-														</span>
-														<span {...stylex.props(styles.rowEvidence)}>
-															<strong
-																{...stylex.props(
-																	styles.rowDimensions
-																)}
-															>
-																{dimensionsLabel(item)}
-															</strong>
-															<small
-																title={evidenceLabel(
-																	item.textureGroup
-																)}
-																{...stylex.props(styles.rowGroup)}
-															>
-																{evidenceLabel(item.textureGroup)}
-															</small>
-														</span>
-														<span
-															{...stylex.props(
-																styles.rowStatus,
-																findingCount() > 0
-																	? styles.rowWarning
-																	: styles.rowPass
-															)}
-														>
-															{findingCount() > 0
-																? findingCount()
-																: "✓"}
-														</span>
-													</button>
-												);
-											}}
-										</For>
-										<Show when={current.page.records.length === 0}>
-											<p {...stylex.props(styles.noResults)}>
-												No textures match this view.
-											</p>
-										</Show>
-									</div>
-									<Show when={current.page.nextCursor}>
-										{(cursor) => (
-											<button
-												type="button"
-												onClick={() => requestPage(cursor())}
-												{...stylex.props(styles.nextPage)}
-											>
-												Load more
-											</button>
-										)}
+														{findingCount() > 0 ? findingCount() : "✓"}
+													</span>
+												</button>
+											);
+										}}
+									</For>
+									<Show when={current().page.records.length === 0}>
+										<p {...stylex.props(styles.noResults)}>
+											No textures match this view.
+										</p>
 									</Show>
-								</section>
-								<InvestigationPane
-									record={record()}
-									preview={availablePreview()}
-									unavailablePreview={unavailablePreview()}
-									offlinePreviewLoading={offlinePreviewLoading()}
-									offlineBatchCount={offlineBatchPaths().length}
-									comparison={activeComparison()}
-									comparisonKind={comparisonKind()}
-									locateFeedback={locateFeedback()}
-									locateProblem={
-										record()
-											? locateProblem(record()!.record.objectPath)
-											: undefined
-									}
-									locating={
-										record()
-											? locateInProgress(record()!.record.objectPath)
-											: false
-									}
-									onComparison={setComparisonKind}
-									onGeneratePreview={requestOfflinePreview}
-									onLocate={locateAsset}
-									onSelectPeer={requestRecord}
-								/>
-							</div>
-						);
-					})()}
+								</div>
+								<Show when={current().page.nextCursor}>
+									{(cursor) => (
+										<button
+											type="button"
+											onClick={() => requestPage(cursor())}
+											{...stylex.props(styles.nextPage)}
+										>
+											Load more
+										</button>
+									)}
+								</Show>
+							</section>
+							<InvestigationPane
+								record={record()}
+								preview={availablePreview()}
+								unavailablePreview={unavailablePreview()}
+								offlinePreviewLoading={offlinePreviewLoading()}
+								offlineBatchCount={offlineBatchPaths().length}
+								comparison={activeComparison()}
+								comparisonKind={comparisonKind()}
+								locateFeedback={locateFeedback()}
+								locateProblem={
+									record()
+										? locateProblem(record()!.record.objectPath)
+										: undefined
+								}
+								locating={
+									record() ? locateInProgress(record()!.record.objectPath) : false
+								}
+								onComparison={setComparisonKind}
+								onGeneratePreview={requestOfflinePreview}
+								onLocate={locateAsset}
+								onSelectPeer={requestRecord}
+							/>
+						</div>
+					)}
 				</Match>
 			</Switch>
 		</main>

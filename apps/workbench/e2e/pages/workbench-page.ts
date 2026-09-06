@@ -6,12 +6,13 @@ export type WorkbenchRoute =
 	| "Game Text"
 	| "Input Atlas"
 	| "Map Review"
-	| "Niagara"
+	| "Niagara Preview"
 	| "Texture Audit"
 	| "Camera Lab"
 	| "Blueprint Graphs"
-	| "Config"
-	| "Custodian"
+	| "Config Explorer"
+	| "Project Custodian"
+	| "Scenario Studio"
 	| "World Log";
 
 export class WorkbenchPage {
@@ -24,7 +25,7 @@ export class WorkbenchPage {
 	async expectShowcaseReady(): Promise<void> {
 		await expect(this.page).toHaveTitle("UE Shed Workbench");
 		await expect(
-			this.page.getByRole("heading", { level: 1, name: "What do you want to do?" })
+			this.page.getByRole("heading", { level: 1, name: "Explore your Unreal project" })
 		).toBeVisible();
 		const project = this.page.getByRole("region", { name: "Current project" });
 		await expect(project).toContainText("unreal-project");
@@ -44,7 +45,11 @@ export class WorkbenchPage {
 			"Camera Lab",
 			"Blueprint Graphs"
 		]) {
-			await expect(workflows.getByRole("link", { name })).toBeVisible();
+			await expect(
+				workflows
+					.getByRole("link", { name })
+					.filter({ has: this.page.getByRole("heading", { name, exact: true }) })
+			).toBeVisible();
 		}
 		await expect(workflows).toContainText("packages indexed");
 	}

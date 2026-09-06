@@ -9,7 +9,7 @@ import type {
 } from "@ue-shed/authoring-sdk";
 import type { AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { AuthoringRoute } from "./authoring-route.js";
 
@@ -297,6 +297,127 @@ describe("AuthoringRoute", () => {
 			{ authority: "live", objectPath: secondPath }
 		]);
 	});
+
+	it.each(["table", "source", "round trip"] as const)(
+		"keeps late Undo results with their draft after a %s change",
+		async (navigation) => {
+			const releaseUndo = await runtime.runPromise(Deferred.make<void>());
+			let sessionLists = 0;
+			const secondPath = "/Game/Fixture/DT_Second.DT_Second";
+			const saved = cleanSession(snapshot);
+			const liveSnapshot: AuthoringTableSnapshot = {
+				...snapshot,
+				authority: { kind: "live_editor", producerId: "producer", sessionId: "live" }
+			};
+			const secondLive: AuthoringTableSnapshot = {
+				...liveSnapshot,
+				table: {
+					...liveSnapshot.table,
+					objectPath: secondPath,
+					packageName: "/Game/Fixture/DT_Second"
+				}
+			};
+			let opened = snapshot;
+			const requests: Array<{ authority: "saved" | "live"; objectPath: string }> = [];
+			const client: AuthoringClientApi = {
+				applySession: () => Effect.die("unused"),
+				beginSession: () =>
+					Effect.succeed({
+						status: "ready" as const,
+						view: { ...cleanSession(opened), canUndo: true }
+					}),
+				chooseTable: () => Effect.die("unused"),
+				discardSession: () => Effect.die("unused"),
+				editSession: () => Effect.die("unused"),
+				getCatalogProgress: () =>
+					Effect.succeed({
+						cacheHits: 0,
+						phase: "ready" as const,
+						processedAssets: 2,
+						tablesFound: 2,
+						totalAssets: 2
+					}),
+				listSessions: () =>
+					Effect.sync(() => {
+						sessionLists += 1;
+						return { diagnostics: [], sessions: [], status: "ready" as const };
+					}),
+				loadConfiguredCatalog: () =>
+					Effect.succeed({
+						diagnostics: [],
+						status: "ready" as const,
+						tables: [snapshot.table.objectPath, secondPath].map((objectPath) => ({
+							authorities: ["saved" as const, "live" as const],
+							completeness: "complete" as const,
+							divergence: [],
+							kind: "data_table" as const,
+							objectPath,
+							parentTables: [],
+							rowStruct: snapshot.table.rowStruct
+						}))
+					}),
+				loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+				openCatalogTable: (objectPath, authority) =>
+					Effect.sync(() => {
+						requests.push({ authority, objectPath });
+						opened =
+							authority === "saved"
+								? snapshot
+								: objectPath === secondPath
+									? secondLive
+									: liveSnapshot;
+						return { snapshot: opened, status: "ready" as const };
+					}),
+				openSession: () => Effect.succeed({ status: "ready" as const, view: saved }),
+				reconcileSession: () => Effect.die("unused"),
+				redoSession: () => Effect.die("unused"),
+				reviewSession: () => Effect.die("unused"),
+				saveSession: () => Effect.die("unused"),
+				undoSession: () =>
+					Deferred.await(releaseUndo).pipe(
+						Effect.as({ status: "ready" as const, view: cleanSession(liveSnapshot) })
+					)
+			};
+			render(() => (
+				<EffectRuntimeProvider runtime={runtime}>
+					<AuthoringRoute client={client} />
+				</EffectRuntimeProvider>
+			));
+
+			const user = userEvent.setup();
+			await waitFor(() =>
+				expect(requests).toEqual([
+					{ authority: "live", objectPath: snapshot.table.objectPath }
+				])
+			);
+			await user.click(screen.getByRole("button", { name: "Undo" }));
+			if (navigation === "source") {
+				await user.click(screen.getByRole("button", { name: "Saved package" }));
+				await waitFor(() => expect(requests.at(-1)?.authority).toBe("saved"));
+			} else {
+				await user.click(screen.getByRole("button", { name: /^DT_Second.*Data table/ }));
+				await screen.findByText(secondPath);
+				if (navigation === "round trip") {
+					await user.click(screen.getByRole("button", { name: /^DT_Test.*Data table/ }));
+					await screen.findByText(snapshot.table.objectPath);
+				}
+			}
+			const listsBeforeCompletion = sessionLists;
+			await runtime.runPromise(Deferred.succeed(releaseUndo, undefined));
+			await waitFor(() => expect(sessionLists).toBeGreaterThan(listsBeforeCompletion));
+			expect(
+				screen.getByText(navigation === "table" ? secondPath : snapshot.table.objectPath)
+			).toBeDefined();
+			// The old result has canUndo=false. The selected draft must retain its own controls.
+			expect(screen.getByRole("button", { name: "Undo" }).hasAttribute("disabled")).toBe(
+				false
+			);
+			if (navigation === "source")
+				expect(
+					screen.getByRole("button", { name: "Saved package" }).hasAttribute("disabled")
+				).toBe(true);
+		}
+	);
 
 	it("keeps zero-change sessions out of Draft Sessions while retaining unsaved live work", async () => {
 		const pendingSavePath = "/Game/Fixture/DT_PendingSave.DT_PendingSave";

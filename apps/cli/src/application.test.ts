@@ -10,7 +10,7 @@ import { runVersion } from "./core-workflows.js";
 import { runMapHistory } from "./workflows/map.js";
 import { runPluginsList } from "./workflows/plugins.js";
 import { executeScenarioCommand } from "./workflows/scenario.js";
-import { movementGymRuns } from "@ue-shed/scenarios";
+import { movementGymRuns, movementGymScenario, type RunScenarioOptions } from "@ue-shed/scenarios";
 
 it.effect("acquires and finalizes the CLI runtime exactly once", () =>
 	Effect.gen(function* () {
@@ -132,6 +132,35 @@ it.effect("prints the public scenario runner result as structured JSON", () =>
 		const printed = JSON.parse(yield* Ref.get(output)) as { status: string };
 		expect(printed.status).toBe("completed");
 	})
+);
+
+it.effect("replays the exact saved scenario instead of substituting the example", () =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const root = yield* Effect.acquireRelease(
+				Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-cli-scenario-"))),
+				(path) => Effect.promise(() => rm(path, { recursive: true, force: true }))
+			);
+			const path = join(root, "edited.json");
+			const document = { ...movementGymScenario, title: "Saved CLI scenario", seed: 456 };
+			yield* Effect.promise(() => writeFile(path, JSON.stringify(document)));
+			const received = yield* Ref.make<RunScenarioOptions | undefined>(undefined);
+			yield* executeScenarioCommand(
+				{ _tag: "ScenarioRun", endpoint: "http://editor", document: path },
+				{
+					run: (options) =>
+						Ref.set(received, options).pipe(Effect.as(movementGymRuns[0]!))
+				}
+			).pipe(
+				Effect.provideService(CliRuntime, {
+					print: () => Effect.void,
+					printError: () => Effect.void,
+					setExitCode: () => Effect.void
+				})
+			);
+			expect((yield* Ref.get(received))?.document).toEqual(document);
+		})
+	)
 );
 
 it.effect("keeps a failed scenario structured while setting a non-zero outcome", () =>

@@ -14,8 +14,8 @@ import type {
 	BlueprintAssetCandidate,
 	BlueprintAssetSearchResult,
 	BlueprintGraphReadResult
-} from "../main/preload.js";
-import type { BlueprintGraphFailureReason } from "../main/ipc-contracts.js";
+} from "../shared/ipc-contracts.js";
+import type { BlueprintGraphFailureReason } from "../shared/ipc-contracts.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 
 const NODE_WIDTH = 268;

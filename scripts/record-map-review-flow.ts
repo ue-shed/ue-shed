@@ -54,7 +54,10 @@ const environment = await createWorkbenchEnvironment({
 	UE_SHED_REMOTE_CONTROL_ENDPOINT: endpoint
 });
 
-runPnpm(["--filter", "@ue-shed/workbench", "build"], environment);
+runPnpm(
+	["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+	environment
+);
 runPnpm(
 	[
 		"--filter",

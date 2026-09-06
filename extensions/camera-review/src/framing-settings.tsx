@@ -6,7 +6,7 @@ import {
 	FramingCandidateOverrides,
 	FramingGroup,
 	FramingParameters
-} from "@ue-shed/cameras";
+} from "@ue-shed/cameras/browser";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show } from "solid-js";
 import { ScrubbableNumberField } from "./scrubbable-number-field.js";

@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import {
 	makeRemoteControlClientTestLayer,
@@ -10,10 +11,7 @@ import { expect } from "vitest";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
 import { typescriptLoader } from "../typescript-checkout.js";
-import {
-	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationApi
-} from "../workbench-config.js";
+import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import {
 	FixtureHealth,
 	FixtureHealthLive,

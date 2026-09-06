@@ -1,4 +1,10 @@
 import type {
+	TextureInvestigationQuery,
+	TextureInvestigationPresetResult,
+	InvestigationFileResult,
+	InvestigationFormat
+} from "@ue-shed/asset-audits/browser";
+import type {
 	TextureAuditQueryRunResult,
 	TextureAuditRecordResult,
 	TextureAuditSearchRequest,
@@ -31,13 +37,25 @@ export class TextureAuditClientError extends Schema.TaggedErrorClass<TextureAudi
 ) {}
 
 export interface TextureAuditClientApi {
+	readonly investigations?: {
+		readonly export: (
+			query: TextureInvestigationQuery,
+			format: InvestigationFormat
+		) => Effect.Effect<InvestigationFileResult, TextureAuditClientError>;
+		readonly save: (
+			query: TextureInvestigationQuery
+		) => Effect.Effect<InvestigationFileResult, TextureAuditClientError>;
+		readonly open: () => Effect.Effect<
+			TextureInvestigationPresetResult,
+			TextureAuditClientError
+		>;
+	};
 	readonly locateAsset: (
 		objectPath: string
 	) => Effect.Effect<EditorAssetLocateResult, TextureAuditClientError>;
-	readonly loadConfiguredProject: () => Effect.Effect<
-		TextureAuditQueryRunResult,
-		TextureAuditClientError
-	>;
+	readonly loadConfiguredProject: (
+		refresh?: boolean
+	) => Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError>;
 	readonly progress: () => Effect.Effect<TaskProgress, TextureAuditClientError>;
 	readonly chooseProjectAndScan: () => Effect.Effect<
 		TextureAuditQueryRunResult,

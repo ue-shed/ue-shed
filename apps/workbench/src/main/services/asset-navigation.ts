@@ -1,3 +1,4 @@
+import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import type {
 	EditorAssetLocateResult,
 	EditorAssetLocateUnavailableReason
@@ -8,7 +9,6 @@ import {
 	UnrealCapabilityError
 } from "@ue-shed/unreal-connection";
 import { Context, Effect, Layer } from "effect";
-import { WorkbenchConfiguration } from "../workbench-config.js";
 
 export interface WorkbenchAssetNavigationApi {
 	readonly locate: (objectPath: string) => Effect.Effect<EditorAssetLocateResult>;
@@ -40,14 +40,16 @@ function unavailableAssetLocation(options: {
 export const WorkbenchAssetNavigationLive = Layer.effect(
 	WorkbenchAssetNavigation,
 	Effect.gen(function* () {
-		const configuration = yield* WorkbenchConfiguration;
+		const connection = yield* WorkbenchUnrealConnection;
 		const remoteControl = yield* RemoteControlClient;
 		const locate = Effect.fn("Workbench.WorkbenchAssetNavigation.locate")(function* (
 			objectPath: string
 		) {
+			const endpoint = yield* connection.endpoint();
+
 			return yield* locateUnrealAsset({
 				bringToFront: true,
-				endpoint: configuration.remoteControlEndpoint,
+				endpoint: endpoint,
 				objectPath
 			}).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),

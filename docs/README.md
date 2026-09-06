@@ -62,6 +62,9 @@ there; do not invent a second status source in docs.
 
 ## Research
 
+- [Showcase-first project review (2026-09-06)](research/project-review-2026-09-06.md) —
+  first-run and refresh reproductions, UI/runtime observations, architecture, and prioritized improvements.
+
 - [Fresh Catalog scan optimization (2026-09-06)](research/fresh-scan-2026-09-06.md) —
   current-pipeline profiling, batched observations, staging/posting construction, and rejected parser checkpoint.
 

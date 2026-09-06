@@ -1,9 +1,11 @@
 import {
 	AssetReader,
+	countProjectIndex,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndex,
 	ProjectIndexCursor,
 	ProjectIndexQuery,
+	type ProjectIndexFilter,
 	projectIndexProcessLayerFromReader
 } from "@ue-shed/unreal-assets";
 import { Effect, Layer, Stream } from "effect";
@@ -18,6 +20,7 @@ type TargetCommand = Command<
 	| "ProjectIndexRebuild"
 	| "ProjectIndexMaps"
 	| "ProjectIndexQuery"
+	| "ProjectIndexCount"
 >;
 
 function projectIndexLayer(command: TargetCommand) {
@@ -61,6 +64,38 @@ export const runProjectIndexStatus = Effect.fn("Cli.workflow.project_index_statu
 				Effect.flatMap(ProjectIndex, (index) =>
 					index.status({ projectRoot: command.projectRoot })
 				)
+			).pipe(Effect.flatMap(printJson))
+		)
+);
+
+export const runProjectIndexCount = Effect.fn("Cli.workflow.project_index_count")(
+	(command: Command<"ProjectIndexCount">) =>
+		observeCliOperation(
+			command._tag,
+			withIndex(
+				command,
+				Effect.gen(function* () {
+					const summary = yield* readySummary(command.projectRoot);
+					const filters = (
+						[
+							{ _tag: "ExactClasses", values: command.exactClasses },
+							{ _tag: "ClassPrefixes", values: command.classPrefixes },
+							{ _tag: "ClassNameSuffixes", values: command.classNameSuffixes },
+							{ _tag: "SerializedNames", values: command.serializedNames }
+						] satisfies readonly ProjectIndexFilter[]
+					).filter((filter) => filter.values.length > 0);
+					if (filters.length === 0)
+						return {
+							projectId: summary.projectId,
+							generation: summary.generation,
+							count: 0
+						};
+					return yield* countProjectIndex({
+						projectId: summary.projectId,
+						expectedGeneration: summary.generation,
+						filters
+					});
+				})
 			).pipe(Effect.flatMap(printJson))
 		)
 );

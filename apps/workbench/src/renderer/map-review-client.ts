@@ -42,7 +42,7 @@ import {
 	type WorldObservationSample,
 	type WorldObservationState,
 	type WorldScoutResult
-} from "@ue-shed/observatory";
+} from "@ue-shed/observatory/browser";
 import {
 	CameraStatus,
 	decodeSavedWorld,
@@ -51,7 +51,7 @@ import {
 	SavedWorldMap
 } from "@ue-shed/protocol";
 import { Effect, Queue, Schema, Stream } from "effect";
-import type { RendererWorldObservationEvent } from "../main/ipc-contracts.js";
+import type { RendererWorldObservationEvent } from "../shared/ipc-contracts.js";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 const CameraStatusResult = Schema.Union([

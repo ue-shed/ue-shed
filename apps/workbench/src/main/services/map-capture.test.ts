@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import {
 	MapCaptureRepositoryLive,
 	decodeMapTilePyramidManifest,
@@ -17,10 +18,7 @@ import { tmpdir } from "node:os";
 import { afterEach, expect } from "vitest";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
-import {
-	makeWorkbenchConfigurationLayer,
-	type WorkbenchConfigurationApi
-} from "../workbench-config.js";
+import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 

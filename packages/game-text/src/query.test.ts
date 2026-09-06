@@ -95,3 +95,28 @@ describe("text corpus query context", () => {
 		).toContain("shared");
 	});
 });
+
+it("exports every filtered unit with full occurrences and whole-scan coverage", () => {
+	const units = Array.from({ length: 123 }, (_, index) => ({
+		...corpus.units[0]!,
+		id: makeTextUnitId("unit:" + String(index).padStart(3, "0")),
+		source: {
+			status: "consistent" as const,
+			value: 'A very long source, with "quotes"\nand every character preserved ' + index
+		}
+	}));
+	const model = textCorpusQuery({ ...corpus, units });
+	const query = {
+		capability: "source_editable" as const,
+		lens: "long" as const,
+		query: "source"
+	};
+	expect(model.search({ ...query, pageSize: 50 }).units).toHaveLength(50);
+	const exported = model.export(query);
+	expect(exported.units).toHaveLength(123);
+	expect(exported.units[122]?.occurrences).toHaveLength(4);
+	expect(exported.units[122]?.source).toEqual(units[122]?.source);
+	expect(exported.coverage).toEqual(corpus.coverage);
+	expect(model.export({ ...query, query: "no such text" }).units).toEqual([]);
+	expect(model.export({ ...query, capability: "read_only" }).units).toEqual([]);
+});

@@ -22,7 +22,10 @@ const environment = await createWorkbenchEnvironment({
 	UE_SHED_UASSET_EXECUTABLE: ensureUassetExecutable()
 });
 
-runPnpm(["--filter", "@ue-shed/workbench", "build"], environment);
+runPnpm(
+	["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+	environment
+);
 
 process.stdout.write(
 	"[Map Review flow] RUN: authoring-roundtrip against live UE fixture gallery\n"

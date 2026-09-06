@@ -4,7 +4,7 @@ import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { Chart } from "@tanstack/charts/solid";
 import { tooltip } from "@tanstack/charts/tooltip";
 import * as stylex from "@stylexjs/stylex";
-import { type AnalysisChartPlan, buildAnalysisPlan } from "@ue-shed/authoring";
+import { type AnalysisChartPlan, buildAnalysisPlan } from "@ue-shed/authoring/analysis";
 import type { AuthoringRow, AuthoringTableSnapshot } from "@ue-shed/protocol";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo } from "solid-js";

@@ -13,6 +13,7 @@ import {
 } from "./fake-fixture-launch.js";
 
 interface WorkbenchFixtures {
+	readonly application: ElectronApplication;
 	readonly workbench: WorkbenchPage;
 }
 
@@ -74,22 +75,24 @@ function launchEnvironment(overrides: Readonly<Record<string, string>> = {}) {
 }
 
 export const test = base.extend<WorkbenchFixtures>({
-	workbench: async ({ browserName: _browserName }, use, testInfo) => {
+	workbench: async ({ application }, use) => {
+		await use(new WorkbenchPage(await application.firstWindow()));
+	},
+	application: async ({ browserName: _browserName }, use, testInfo) => {
 		const sessionRoot = await mkdtemp(join(tmpdir(), "ue-shed-workbench-e2e-authoring-"));
 		const application = await electron.launch({
-			args: [workbenchRoot],
+			args: [workbenchRoot, `--user-data-dir=${join(sessionRoot, "profile")}`],
 			cwd: workbenchRoot,
 			env: launchEnvironment({ UE_SHED_AUTHORING_SESSION_ROOT: sessionRoot }),
 			executablePath: electronExecutable
 		});
 		const page = await application.firstWindow();
-		const workbench = new WorkbenchPage(page);
 		await application
 			.context()
 			.tracing.start({ screenshots: true, snapshots: true, sources: true });
 
 		try {
-			await use(workbench);
+			await use(application);
 		} finally {
 			const failed = testInfo.status !== testInfo.expectedStatus;
 			if (failed) {
@@ -117,7 +120,7 @@ export const demandLaunchTest = base.extend<DemandLaunchFixtures>({
 			projectName: process.env.UE_SHED_PROJECT_NAME ?? "UEShedFixture"
 		});
 		const application = await electron.launch({
-			args: [workbenchRoot],
+			args: [workbenchRoot, `--user-data-dir=${join(sessionRoot, "profile")}`],
 			cwd: workbenchRoot,
 			env: launchEnvironment({
 				...harness.environment,
@@ -182,7 +185,7 @@ export const offlineBlueprintTest = base.extend<OfflineBlueprintFixtures>({
 			delete environment[name];
 		}
 		const application = await electron.launch({
-			args: [workbenchRoot],
+			args: [workbenchRoot, `--user-data-dir=${join(sessionRoot, "profile")}`],
 			cwd: workbenchRoot,
 			env: environment,
 			executablePath: electronExecutable
@@ -229,7 +232,7 @@ export const indexedBlueprintTest = base.extend<IndexedBlueprintFixtures>({
 		const sessionRoot = await mkdtemp(join(tmpdir(), "ue-shed-workbench-e2e-blueprint-index-"));
 		const harness = await createFakeFixtureLaunchHarness();
 		const application = await electron.launch({
-			args: [workbenchRoot],
+			args: [workbenchRoot, `--user-data-dir=${join(sessionRoot, "profile")}`],
 			cwd: workbenchRoot,
 			env: launchEnvironment({
 				...harness.environment,

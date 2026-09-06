@@ -5,7 +5,7 @@ import {
 	PacketSequence,
 	StreamActorIndex,
 	type WorldActorSnapshot
-} from "@ue-shed/observatory";
+} from "@ue-shed/observatory/browser";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { describe, expect, it } from "vitest";
 import {

@@ -4,7 +4,7 @@ import {
 	VisibilityPolicyId,
 	type VisibilityOverrides,
 	type VisibilityPolicy
-} from "@ue-shed/cameras";
+} from "@ue-shed/cameras/browser";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Schema } from "effect";

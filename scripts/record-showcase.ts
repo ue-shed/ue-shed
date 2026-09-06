@@ -80,7 +80,11 @@ try {
 		UE_SHED_RECORDING_OUTPUT_DIR: resultRoot
 	});
 
-	if (!skipBuild) runPnpm(["--filter", "@ue-shed/workbench", "build"], environment);
+	if (!skipBuild)
+		runPnpm(
+			["--filter", "@ue-shed/workbench...", "--recursive", "--if-present", "run", "build"],
+			environment
+		);
 	runPnpm(
 		[
 			"--filter",

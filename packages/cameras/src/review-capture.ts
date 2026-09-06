@@ -144,13 +144,19 @@ function remoteCapturePort(client: RemoteControlClientApi, endpoint: string): Re
 }
 
 export function reviewCaptureRemotePortLayer(
-	endpoint: string
+	endpoint: string | Effect.Effect<string>
 ): Layer.Layer<ReviewCapturePort, never, RemoteControlClient> {
 	return Layer.effect(
 		ReviewCapturePort,
 		Effect.gen(function* () {
 			const client = yield* RemoteControlClient;
-			return ReviewCapturePort.of(remoteCapturePort(client, endpoint));
+			const selected = Effect.isEffect(endpoint) ? endpoint : Effect.succeed(endpoint);
+			return ReviewCapturePort.of({
+				capture: (request) =>
+					selected.pipe(
+						Effect.flatMap((value) => remoteCapturePort(client, value).capture(request))
+					)
+			});
 		})
 	);
 }

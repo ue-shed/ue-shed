@@ -3,7 +3,7 @@ import { ConfigExplorerRoute } from "@ue-shed/extension-config-explorer";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo, createSignal, onMount } from "solid-js";
-import type { ConfigExplorerQuery, ConfigExplorerQueryResult } from "../main/preload.js";
+import type { ConfigExplorerQuery, ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
 import type { WorkbenchRendererClient } from "./workbench-client.js";
 
 type QueryMode = ConfigExplorerQuery["mode"];

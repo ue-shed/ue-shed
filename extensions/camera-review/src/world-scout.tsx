@@ -1,11 +1,11 @@
 import * as stylex from "@stylexjs/stylex";
-import { recordObservatoryPaintDuration } from "@ue-shed/observability";
+import { recordObservatoryPaintDuration } from "@ue-shed/observability/metrics";
 import {
 	type ObservedActor,
 	WorldScoutRefreshRate,
 	type WorldObservationState,
 	type WorldScoutResult
-} from "@ue-shed/observatory";
+} from "@ue-shed/observatory/browser";
 import {
 	ActorExplorer,
 	actorExplorerMatches,

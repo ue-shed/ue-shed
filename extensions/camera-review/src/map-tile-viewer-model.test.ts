@@ -1,4 +1,4 @@
-import { createMapTileGrid, mapTileChildren } from "@ue-shed/cameras";
+import { createMapTileGrid, mapTileChildren } from "@ue-shed/cameras/browser";
 import { describe, expect, it } from "vitest";
 import {
 	fitMapTileViewport,

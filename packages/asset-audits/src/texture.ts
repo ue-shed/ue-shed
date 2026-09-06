@@ -22,7 +22,7 @@ import {
 	type TextureAuditFinding,
 	type TextureAuditReport,
 	type TextureAuditRule,
-	type TextureAuditRuleSet,
+	TextureAuditRuleSet,
 	type TextureDistributions,
 	type TextureRecord
 } from "./schema.js";
@@ -41,12 +41,23 @@ export class TextureAuditScanError extends Schema.TaggedErrorClass<TextureAuditS
 	TextureAuditPublicError.fields
 ) {}
 
-export const TextureAuditScanOptions = Schema.Struct({
+const TextureAuditScanFields = {
 	concurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	maximumAssets: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
-	projectRoot: Schema.String,
-	ruleFile: Schema.String
-});
+	projectRoot: Schema.String
+};
+export const TextureAuditScanOptions = Schema.Union([
+	Schema.Struct({
+		...TextureAuditScanFields,
+		ruleFile: Schema.String,
+		rules: Schema.optionalKey(TextureAuditRuleSet)
+	}),
+	Schema.Struct({
+		...TextureAuditScanFields,
+		rules: TextureAuditRuleSet,
+		ruleFile: Schema.optionalKey(Schema.String)
+	})
+]);
 export type TextureAuditScanOptions = Schema.Schema.Type<typeof TextureAuditScanOptions>;
 
 const decodeScanOptions = Schema.decodeUnknownEffect(TextureAuditScanOptions);
@@ -431,6 +442,7 @@ function textureAuditFromExtraction(options: {
 				? "partial"
 				: "complete",
 		ruleSetName: options.rules.name,
+		ruleSet: options.rules,
 		coverage: {
 			discoveredPackages:
 				options.discoveredPackages > 0
@@ -551,7 +563,7 @@ function scanTextureAuditWith(
 	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
-		const rules = yield* readRuleSet(options.ruleFile);
+		const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
 		return yield* extractTextureAuditWith(
 			reader,
 			{
@@ -578,7 +590,7 @@ function scanTextureAuditFromProjectIndexWith(
 	reportProgress: (progress: ExtractionProgress) => Effect.Effect<void>
 ): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
 	return Effect.gen(function* () {
-		const rules = yield* readRuleSet(options.ruleFile);
+		const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
 		const paths = texturePackagePathsFromProjectIndex(index);
 		return yield* extractTextureAuditWith(
 			reader,

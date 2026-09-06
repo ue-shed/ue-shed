@@ -218,6 +218,17 @@ effectIt.effect("refreshes and answers bounded queries through the in-memory ada
 			})
 		);
 		expect(tables.items).toEqual([headers[0]]);
+		const count = yield* countProjectIndex({
+			projectId,
+			expectedGeneration: summary.generation,
+			filters: [
+				{ _tag: "ExactClasses", values: ["/Script/Engine.DataTable"] },
+				{ _tag: "ClassPrefixes", values: ["/Script/EnhancedInput."] },
+				{ _tag: "ClassNameSuffixes", values: ["Table"] },
+				{ _tag: "SerializedNames", values: ["TextProperty"] }
+			]
+		});
+		expect(count).toEqual({ count: 1, projectId, generation: summary.generation });
 
 		const prefixes = yield* queryProjectIndex(
 			ProjectIndexQuery.cases.ClassPrefixes.make({

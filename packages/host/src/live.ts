@@ -2,7 +2,7 @@ import { AuthoringCatalogLive } from "@ue-shed/authoring-catalog";
 import { AssetReaderLive } from "@ue-shed/unreal-assets";
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
 import { Layer } from "effect";
-import { AuthoringClientLive, ShedAuthoringLive, ShedAuthoringSessionsLive } from "./authoring.js";
+import { AuthoringClientLive, ShedAuthoringLive } from "./authoring.js";
 import { SavedTableIndexLive } from "./saved-table-index.js";
 
 const infrastructureLive = Layer.mergeAll(AssetReaderLive, RemoteControlClientLive);
@@ -11,7 +11,6 @@ const authoringDependenciesLive = Layer.mergeAll(infrastructureLive, authoringCa
 // A headless host keeps no project inventory, so the table index reads through the asset reader.
 const savedTableIndexLive = SavedTableIndexLive.pipe(Layer.provide(infrastructureLive));
 const shedAuthoringLive = ShedAuthoringLive.pipe(
-	Layer.provide(ShedAuthoringSessionsLive),
 	Layer.provide(savedTableIndexLive),
 	Layer.provide(authoringDependenciesLive)
 );

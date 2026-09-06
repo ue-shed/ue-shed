@@ -4,9 +4,17 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		"./files": {
+			"types": "./src/document-file.ts",
+			"default": "./src/document-file.ts"
+		},
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./browser": {
+			"types": "./src/browser.ts",
+			"default": "./src/browser.ts"
 		}
 	},
 	"scripts": {

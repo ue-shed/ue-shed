@@ -1,3 +1,5 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
+import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
 import { it } from "@effect/vitest";
 import { NiagaraSystemObjectPath } from "@ue-shed/niagara";
 import { aggregateHealth, defaultHealthInput } from "@ue-shed/observability";
@@ -39,8 +41,6 @@ import { makeProjectLauncherTestLayer } from "../services/project-launcher.js";
 import { makeWorkbenchProjectTestLayer } from "../services/project-workspace.js";
 import { makeWorkbenchCustodianTestLayer } from "../services/project-custodian.js";
 import { makeShowcaseTestLayer } from "../services/showcase.js";
-import { makeWorkbenchUnrealConnectionLayer } from "../services/unreal-connection.js";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { register } from "./register.js";
 
 function makeRecorder() {
@@ -268,6 +268,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	const project = makeWorkbenchProjectTestLayer({
 		candidates: () =>
 			Effect.succeed({
+				generation: 0,
 				assets: [
 					{
 						depth: "header" as const,
@@ -902,15 +903,18 @@ it.effect("dispatches Project Custodian scans and guarded cleanup through the se
 	})
 );
 
-it.effect("changes the Remote Control monitor port through editor-session settings", () =>
+it.effect("changes the selected Remote Control port through editor-session settings", () =>
 	Effect.gen(function* () {
 		const { result } = yield* runRegistered((ipc) =>
 			Effect.gen(function* () {
-				expect(yield* ipc.invoke("editor-session:settings")).toEqual({ port: 30001 });
+				expect(yield* ipc.invoke("editor-session:settings")).toEqual({
+					endpoint: "http://127.0.0.1:30001",
+					port: 30001
+				});
 				return yield* ipc.invoke("editor-session:set-port", 31001);
 			})
 		);
-		expect(result).toEqual({ port: 31001 });
+		expect(result).toEqual({ endpoint: "http://127.0.0.1:31001/", port: 31001 });
 	})
 );
 

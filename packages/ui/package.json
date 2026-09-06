@@ -23,6 +23,10 @@
 		"./point-map-deck": {
 			"types": "./src/point-map-deck.tsx",
 			"default": "./src/point-map-deck.tsx"
+		},
+		"./investigation-actions": {
+			"types": "./src/investigation-actions.tsx",
+			"default": "./src/investigation-actions.tsx"
 		}
 	},
 	"scripts": {
@@ -32,6 +36,7 @@
 		"@deck.gl/core": "9.3.11",
 		"@deck.gl/layers": "9.3.11",
 		"@stylexjs/stylex": "catalog:",
+		"@tanstack/solid-virtual": "3.13.37",
 		"@ue-shed/ui-theme": "workspace:*",
 		"effect": "catalog:",
 		"solid-js": "catalog:"

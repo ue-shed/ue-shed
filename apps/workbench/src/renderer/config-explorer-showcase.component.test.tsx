@@ -1,10 +1,10 @@
-import { ConfigExplorerQueryResult } from "../main/ipc-contracts.js";
+import { ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { cleanup, render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import type { ConfigExplorerQuery } from "../main/preload.js";
+import type { ConfigExplorerQuery } from "../shared/ipc-contracts.js";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);

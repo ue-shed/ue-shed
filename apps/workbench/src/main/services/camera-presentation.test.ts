@@ -1,3 +1,4 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import { makeCameraFeedTestLayer, type CameraFrame } from "@ue-shed/cameras";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
@@ -11,7 +12,6 @@ import {
 	WorkbenchWindowError
 } from "../adapters/electron-window.js";
 import { RendererCameraFrame } from "../ipc-contracts.js";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import {
 	CameraPresentation,
 	CameraPresentationLive,

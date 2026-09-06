@@ -1,10 +1,10 @@
+import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer } from "../test-configuration.js";
 import { it } from "@effect/vitest";
 import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
 import { aggregateHealth, defaultHealthInput, runtimeHealthLayer } from "@ue-shed/observability";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { makeLocalFilesTestLayer } from "../adapters/local-files.js";
-import { makeWorkbenchConfigurationLayer } from "../workbench-config.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { Showcase, ShowcaseLive } from "./showcase.js";
 
@@ -33,7 +33,8 @@ const readyProject = makeWorkbenchProjectTestLayer({
 	inputAtlas: () => Effect.die("not used"),
 	savedProject: () => Effect.die("not used"),
 	savedTables: () => Effect.die("not used"),
-	candidateCount: () => Effect.succeed(0)
+	candidates: () => Effect.die("Home must not hydrate candidates"),
+	count: () => Effect.succeed(0)
 });
 
 const unconfiguredProject = makeWorkbenchProjectTestLayer({
@@ -49,6 +50,7 @@ it.effect("reports fixture configured when project and rules exist", () =>
 		const showcase = yield* Showcase;
 		const context = yield* showcase.context();
 		expect(context).toEqual({
+			configSampleAvailable: false,
 			fixtureConfigured: true,
 			health: aggregateHealth(defaultHealthInput),
 			project: {
@@ -104,6 +106,7 @@ it.effect("reports fixture not configured when nothing is set", () =>
 		const showcase = yield* Showcase;
 		const context = yield* showcase.context();
 		expect(context).toEqual({
+			configSampleAvailable: false,
 			fixtureConfigured: false,
 			health: aggregateHealth(defaultHealthInput),
 			project: { status: "not_configured" },

@@ -64,14 +64,16 @@ export class WorkbenchProjectUnavailable extends Schema.TaggedErrorClass<Workben
 	}
 ) {}
 
+export type WorkbenchProjectCandidates = SavedAssetScan & { readonly generation: number };
+
 export interface WorkbenchProjectApi {
 	readonly count: (
 		kind: WorkbenchProjectCandidateKind
 	) => Effect.Effect<number, WorkbenchProjectUnavailable>;
-	/** Fold only one domain's bounded Project Index pages into explicit package candidates. */
+	/** Candidate membership and generation come from the same committed index snapshot. */
 	readonly candidates: (
 		kind: WorkbenchProjectCandidateKind
-	) => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+	) => Effect.Effect<WorkbenchProjectCandidates, WorkbenchProjectUnavailable>;
 	readonly choose: () => Effect.Effect<WorkbenchProjectState>;
 	readonly sample: () => Effect.Effect<WorkbenchProjectState>;
 	readonly current: () => Effect.Effect<WorkbenchProjectState>;
@@ -793,11 +795,13 @@ export const WorkbenchProjectLive = Layer.effect(
 					recovery: "Refresh the Project Index, then retry the feature."
 				});
 			}
+			const generation = summary.indexSummary.generation;
 			return yield* headerIndexFromProjectIndex(
 				summary.project.projectRoot,
 				summary.indexSummary,
 				kind
 			).pipe(
+				Effect.map((index) => ({ ...index, generation })),
 				Effect.catchTag("ProjectIndexStaleGeneration", () =>
 					getProjectIndexStatus({ projectRoot: summary.project.projectRoot }).pipe(
 						Effect.provideService(ProjectIndex, projectIndexImplementation),
@@ -827,11 +831,12 @@ export const WorkbenchProjectLive = Layer.effect(
 									})
 								);
 							}
+							const generation = latest.indexSummary.generation;
 							return headerIndexFromProjectIndex(
 								latest.project.projectRoot,
 								latest.indexSummary,
 								kind
-							);
+							).pipe(Effect.map((index) => ({ ...index, generation })));
 						})
 					)
 				),

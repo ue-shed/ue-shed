@@ -519,6 +519,7 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 			expect((yield* service.current()).status).toBe("ready");
 			const candidates = yield* service.candidates("saved_tables");
 			expect(candidates.assets).toHaveLength(1);
+			expect(candidates.generation).toBe(latestGeneration);
 			expect(generations).toEqual([1, 1, 2, 2]);
 		}).pipe(
 			Effect.provide(WorkbenchProjectLive),

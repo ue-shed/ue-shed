@@ -495,6 +495,7 @@ export function AppShell() {
 	};
 	const [route, setRoute] = createSignal<Route>(routeFromLocation());
 	const [projectRevision, setProjectRevision] = createSignal(1);
+	const [targetRevision, setTargetRevision] = createSignal(1);
 	onMount(() => {
 		document.title = "UE Shed Workbench";
 		if (!window.location.hash) window.location.hash = "/";
@@ -547,7 +548,7 @@ export function AppShell() {
 					/>
 					<EditorSessionTransport
 						client={workbenchRendererClient}
-						onTargetChanged={() => setProjectRevision((revision) => revision + 1)}
+						onTargetChanged={() => setTargetRevision((revision) => revision + 1)}
 					/>
 					<span {...stylex.props(styles.version)}>0.0.0</span>
 				</footer>
@@ -555,6 +556,7 @@ export function AppShell() {
 			<div {...stylex.props(styles.content)}>
 				<Show when={projectRevision()} keyed>
 					{(_revision) => {
+						// Retained project state outlives routes remounted for a new Unreal target.
 						const [scenarioDraft, setScenarioDraft] =
 							createSignal<ScenarioStudioDraft>();
 						const [gameTextPreferences, setGameTextPreferences] =
@@ -562,67 +564,77 @@ export function AppShell() {
 						const [texturePreferences, setTexturePreferences] =
 							createSignal<TextureAuditPreferences>();
 						return (
-							<Suspense fallback={<p role="status">Loading tool…</p>}>
-								<Switch
-									fallback={
-										<ShowcaseHome
-											onChosen={() =>
-												setProjectRevision((revision) => revision + 1)
+							<Show when={targetRevision()} keyed>
+								{(_target) => (
+									<Suspense fallback={<p role="status">Loading tool…</p>}>
+										<Switch
+											fallback={
+												<ShowcaseHome
+													onChosen={() =>
+														setProjectRevision(
+															(revision) => revision + 1
+														)
+													}
+												/>
 											}
-										/>
-									}
-								>
-									<Match when={route() === "#/authoring"}>
-										<AuthoringRoute />
-									</Match>
-									<Match when={route() === "#/asset-audits/textures"}>
-										<TextureAuditRoute
-											initialPreferences={texturePreferences()}
-											onPreferencesChange={setTexturePreferences}
-										/>
-									</Match>
-									<Match when={route() === "#/game-text"}>
-										<GameTextRoute
-											initialPreferences={gameTextPreferences()}
-											onPreferencesChange={setGameTextPreferences}
-										/>
-									</Match>
-									<Match when={route() === "#/input-atlas"}>
-										<InputAtlasRoute />
-									</Match>
-									<Match when={route() === "#/config-explorer"}>
-										<ConfigExplorerShowcase client={workbenchRendererClient} />
-									</Match>
-									<Match when={route() === "#/blueprint-graphs"}>
-										<BlueprintGraphViewer client={workbenchRendererClient} />
-									</Match>
-									<Match when={route() === "#/project-custodian"}>
-										<ProjectCustodianRoute />
-									</Match>
-									<Match when={route() === "#/map-review"}>
-										<MapReviewRoute />
-									</Match>
-									<Match when={route() === "#/map-capture"}>
-										<MapCaptureRoute />
-									</Match>
-									<Match when={route() === "#/niagara-preview"}>
-										<NiagaraPreviewRoute />
-									</Match>
-									<Match when={route() === "#/content-observatory"}>
-										<ContentObservatoryRoute />
-									</Match>
-									<Match when={route() === "#/scenarios"}>
-										<ScenarioStudioRoute
-											initialDraft={scenarioDraft()}
-											onDraftChange={setScenarioDraft}
-											showDemoGuide
-										/>
-									</Match>
-									<Match when={route() === "#/camera-lab"}>
-										<CameraLab />
-									</Match>
-								</Switch>
-							</Suspense>
+										>
+											<Match when={route() === "#/authoring"}>
+												<AuthoringRoute />
+											</Match>
+											<Match when={route() === "#/asset-audits/textures"}>
+												<TextureAuditRoute
+													initialPreferences={texturePreferences()}
+													onPreferencesChange={setTexturePreferences}
+												/>
+											</Match>
+											<Match when={route() === "#/game-text"}>
+												<GameTextRoute
+													initialPreferences={gameTextPreferences()}
+													onPreferencesChange={setGameTextPreferences}
+												/>
+											</Match>
+											<Match when={route() === "#/input-atlas"}>
+												<InputAtlasRoute />
+											</Match>
+											<Match when={route() === "#/config-explorer"}>
+												<ConfigExplorerShowcase
+													client={workbenchRendererClient}
+												/>
+											</Match>
+											<Match when={route() === "#/blueprint-graphs"}>
+												<BlueprintGraphViewer
+													client={workbenchRendererClient}
+												/>
+											</Match>
+											<Match when={route() === "#/project-custodian"}>
+												<ProjectCustodianRoute />
+											</Match>
+											<Match when={route() === "#/map-review"}>
+												<MapReviewRoute />
+											</Match>
+											<Match when={route() === "#/map-capture"}>
+												<MapCaptureRoute />
+											</Match>
+											<Match when={route() === "#/niagara-preview"}>
+												<NiagaraPreviewRoute />
+											</Match>
+											<Match when={route() === "#/content-observatory"}>
+												<ContentObservatoryRoute />
+											</Match>
+											<Match when={route() === "#/scenarios"}>
+												<ScenarioStudioRoute
+													initialDraft={scenarioDraft()}
+													onDraftChange={setScenarioDraft}
+													showDemoGuide
+												/>
+											</Match>
+											<Match when={route() === "#/camera-lab"}>
+												<CameraLab />
+											</Match>
+										</Switch>
+									</Suspense>
+								)}
+							</Show>
 						);
 					}}
 				</Show>

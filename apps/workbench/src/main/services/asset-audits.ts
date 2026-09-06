@@ -43,7 +43,7 @@ import type { WorkbenchWindowError } from "../adapters/electron-window.js";
 import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { OfflineTexturePreview } from "./offline-texture-preview.js";
-import { WorkbenchProject } from "./project-workspace.js";
+import { WorkbenchProject, type WorkbenchProjectCandidates } from "./project-workspace.js";
 
 export interface WorkbenchAssetAuditsApi {
 	readonly investigationExport: (
@@ -182,12 +182,17 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const runRefresh = (
 			projectRoot: string,
 			ruleFile: string | TextureAuditRuleSet,
-			index: SavedAssetScan
+			index: WorkbenchProjectCandidates
 		) =>
 			Effect.gen(function* () {
 				const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
 				const selected = yield* project.current();
-				if (selected.status !== "ready" || selected.project.projectRoot !== projectRoot)
+				if (
+					selected.status !== "ready" ||
+					selected.project.projectRoot !== projectRoot ||
+					(selected.project.generation ?? 0) !== index.generation ||
+					index.summary.projectRoot !== projectRoot
+				)
 					return unavailableQueryProject(
 						"The selected project changed.",
 						"Retry in the selected project."
@@ -200,7 +205,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 								(yield* Ref.get(scanRevision)) !== revision ||
 								latest.status !== "ready" ||
 								latest.project.projectRoot !== projectRoot ||
-								latest.project.generation !== selected.project.generation
+								(latest.project.generation ?? 0) !== index.generation
 							)
 								return unavailableQueryProject(
 									"The project changed during the scan.",
@@ -216,7 +221,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							yield* Ref.set(investigationSnapshot, {
 								source: {
 									projectRoot,
-									generation: selected.project.generation ?? 0,
+									generation: index.generation,
 									authority: "project_files"
 								},
 								model: next
@@ -224,7 +229,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							yield* Ref.set(queryModel, next);
 							yield* Ref.set(modelSelection, {
 								projectRoot,
-								generation: selected.project.generation ?? 0
+								generation: index.generation
 							});
 							return { summary: next.summary(), status: "completed" as const };
 						})
@@ -313,7 +318,10 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 			(key: QueryKey) =>
 				Effect.gen(function* () {
 					const index = yield* project.candidates("texture");
-					if (index.summary.projectRoot !== key.projectRoot)
+					if (
+						index.summary.projectRoot !== key.projectRoot ||
+						index.generation !== key.generation
+					)
 						return unavailableQueryProject(
 							"The selected project changed.",
 							"Retry in the selected project."

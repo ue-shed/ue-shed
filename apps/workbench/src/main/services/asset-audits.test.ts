@@ -11,7 +11,7 @@ import {
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
 import type { SavedAssetScan } from "@ue-shed/unreal-assets";
-import { Effect, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref } from "effect";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
@@ -83,7 +83,8 @@ const projectSummary = {
 	projectName: "FixtureProject",
 	projectRoot: "C:/FixtureProject"
 };
-const projectIndex: SavedAssetScan = {
+const projectIndex: SavedAssetScan & { readonly generation: number } = {
+	generation: 0,
 	assets: [],
 	failures: [],
 	summary: {
@@ -118,6 +119,88 @@ const unselectedProject = makeWorkbenchProjectTestLayer({
 	savedTables: () => Effect.die("savedTables is not used"),
 	savedProject: () => Effect.die("not used")
 });
+
+for (const phase of ["candidates", "scan"] as const) {
+	it.effect(
+		`rejects a same-project generation change during ${phase} and retries with fresh membership`,
+		() =>
+			Effect.gen(function* () {
+				const generation = yield* Ref.make(1);
+				const started = yield* Deferred.make<void>();
+				const release = yield* Deferred.make<void>();
+				const pause = Deferred.succeed(started, undefined).pipe(
+					Effect.andThen(Deferred.await(release))
+				);
+				const current = () =>
+					Ref.get(generation).pipe(
+						Effect.map((generation) => ({
+							status: "ready" as const,
+							project: { ...projectSummary, generation }
+						}))
+					);
+				const project = makeWorkbenchProjectTestLayer({
+					current,
+					choose: current,
+					candidates: () =>
+						Effect.gen(function* () {
+							const captured = yield* Ref.get(generation);
+							if (phase === "candidates" && captured === 1) yield* pause;
+							return { ...projectIndex, generation: captured };
+						}),
+					inputAtlas: () => Effect.die("unused"),
+					savedProject: () => Effect.die("unused"),
+					savedTables: () => Effect.die("unused")
+				});
+				const scanner = makeTextureAuditTestLayer({
+					scan: () => Effect.die("unused"),
+					scanFromProjectIndex: () =>
+						Effect.gen(function* () {
+							if (phase === "scan" && (yield* Ref.get(generation)) === 1)
+								yield* pause;
+							return emptyReport;
+						})
+				});
+				yield* Effect.gen(function* () {
+					const service = yield* WorkbenchAssetAudits;
+					const first = yield* Effect.forkChild(service.configuredRefresh(false));
+					yield* Deferred.await(started);
+					yield* Ref.set(generation, 2);
+					yield* Deferred.succeed(release, undefined);
+					expect((yield* Fiber.join(first)).status).toBe("failed");
+					expect(
+						(yield* service.search({ query: "", pageSize: 50, findingsOnly: false }))
+							.status
+					).not.toBe("ready");
+					expect(
+						(yield* service.investigationExport(
+							{ query: "", findingsOnly: false },
+							"json"
+						)).status
+					).toBe("failed");
+					expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+					expect(
+						(yield* service.search({ query: "", pageSize: 50, findingsOnly: false }))
+							.status
+					).toBe("ready");
+				}).pipe(
+					Effect.provide(
+						WorkbenchAssetAuditsLive.pipe(
+							Layer.provide(
+								Layer.mergeAll(
+									project,
+									scanner,
+									configuration,
+									dialogLayer({}),
+									offlinePreviewLayer,
+									makeRemoteControlClientTestLayer(() => Effect.die("unused"))
+								)
+							)
+						)
+					)
+				);
+			})
+	);
+}
 
 it.effect("returns not_configured when project or rules are absent", () =>
 	Effect.gen(function* () {

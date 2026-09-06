@@ -268,6 +268,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	const project = makeWorkbenchProjectTestLayer({
 		candidates: () =>
 			Effect.succeed({
+				generation: 0,
 				assets: [
 					{
 						depth: "header" as const,

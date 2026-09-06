@@ -13,14 +13,23 @@ import {
 	type ScenarioElementId,
 	type ScenarioRun,
 	type ScenarioRunHandle,
-	type ScenarioSeekPlan,
 	type ScenarioRunnerStatus,
 	type ScenarioTrack
 } from "@ue-shed/scenarios/browser";
 import { createEffectAction, createEffectSubscription } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause, Effect, Option, Schedule, Schema } from "effect";
-import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	batch,
+	createMemo,
+	createSignal,
+	onCleanup,
+	onMount
+} from "solid-js";
 import type { ScenarioStudioClient } from "./client.js";
 
 type TransportState = "paused" | "playing" | "recording";
@@ -237,9 +246,9 @@ export function ScenarioStudioRoute(
 	const liveRunAction = createEffectAction();
 	const cancelRunAction = createEffectAction();
 	const liveStatusSubscription = createEffectSubscription();
-	const [document, setDocument] = createSignal<ScenarioDocument>(
-		props.initialDraft?.document ?? movementGymScenario
-	);
+	const initialDocument = props.initialDraft?.document ?? movementGymScenario;
+	const demoPreview = props.initialDraft === undefined;
+	const [document, setDocument] = createSignal<ScenarioDocument>(initialDocument);
 	const fileAction = createEffectAction();
 	const [savedPath, setSavedPath] = createSignal(props.initialDraft?.savedPath);
 	const [savedJson, setSavedJson] = createSignal(props.initialDraft?.savedJson);
@@ -252,17 +261,22 @@ export function ScenarioStudioRoute(
 			savedJson: savedJson()
 		})
 	);
-	const [activeRun, setActiveRun] = createSignal<ScenarioRun>(firstMovementGymRun());
-	const [selectedId, setSelectedId] = createSignal<ScenarioElementId>(
-		makeScenarioElementId("action_jump")
+	const [runs, setRuns] = createSignal<readonly ScenarioRun[]>(
+		demoPreview ? movementGymRuns : []
 	);
-	const [playheadMs, setPlayheadMs] = createSignal(3370);
+	const [activeRun, setActiveRun] = createSignal<ScenarioRun | undefined>(
+		demoPreview ? firstMovementGymRun() : undefined
+	);
+	const [selectedId, setSelectedId] = createSignal<ScenarioElementId | undefined>(
+		demoPreview ? makeScenarioElementId("action_jump") : clipsInScenario(initialDocument)[0]?.id
+	);
+	const [playheadMs, setPlayheadMs] = createSignal(demoPreview ? 3370 : 0);
 	const [transport, setTransport] = createSignal<TransportState>("paused");
 	const [liveRunState, setLiveRunState] = createSignal<LiveRunState>({ status: "preview" });
 	const [demoGuideOpen, setDemoGuideOpen] = createSignal(props.showDemoGuide ?? false);
 	const [endpoint, setEndpoint] = createSignal("");
-	const [seekPlan, setSeekPlan] = createSignal<ScenarioSeekPlan>(
-		planScenarioSeek({ document: movementGymScenario, targetMs: 3370 })
+	const seekPlan = createMemo(() =>
+		planScenarioSeek({ document: document(), targetMs: playheadMs() })
 	);
 	const restorePlan = createMemo(() => {
 		const plan = seekPlan();
@@ -278,13 +292,16 @@ export function ScenarioStudioRoute(
 	});
 	const [timelineScale, setTimelineScale] = createSignal(1);
 	const [dragState, setDragState] = createSignal<DragState | undefined>();
-	const selectedClip = createMemo(() => findScenarioClip(document(), selectedId()));
+	const selectedClip = createMemo(() => {
+		const id = selectedId();
+		return id ? findScenarioClip(document(), id) : undefined;
+	});
 	const selectedEvidence = createMemo(() =>
-		activeRun().evidence.find((evidence) => evidence.markerId === selectedId())
+		activeRun()?.evidence.find((evidence) => evidence.markerId === selectedId())
 	);
 	const evidenceAtPlayhead = createMemo(
 		() =>
-			[...activeRun().evidence].sort(
+			[...(activeRun()?.evidence ?? [])].sort(
 				(left, right) =>
 					Math.abs(left.atMs - playheadMs()) - Math.abs(right.atMs - playheadMs())
 			)[0]
@@ -364,17 +381,29 @@ export function ScenarioStudioRoute(
 					setFileMessage(result.message + " " + result.recovery);
 				if (result.status === "completed") {
 					playbackAction.cancel();
+					liveRunAction.cancel();
+					cancelRunAction.cancel();
+					liveStatusSubscription.cancel();
 					setTransport("paused");
-					setDocument(result.document);
+					batch(() => {
+						setDocument(result.document);
+						setSelectedId(clipsInScenario(result.document)[0]?.id);
+						setPlayheadMs(0);
+						setDragState(undefined);
+						setTimelineScale(1);
+						setRuns([]);
+						setActiveRun(undefined);
+						setLiveRunState({ status: "preview" });
+					});
 					setSavedPath(result.path);
 					setSavedJson(JSON.stringify(result.document));
-					setPlayheadMs(0);
 					setFileMessage("Opened " + result.path);
 				}
 			}
 		});
 	};
 	const acceptTerminalRun = (run: ScenarioRun) => {
+		setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
 		setActiveRun(run);
 		setPlayheadMs(run.durationMs);
 		setLiveRunState({ run, status: "terminal" });
@@ -410,7 +439,6 @@ export function ScenarioStudioRoute(
 	const restart = () => {
 		stopPlayback();
 		setPlayheadMs(0);
-		setSeekPlan(planScenarioSeek({ document: document(), targetMs: 0 }));
 	};
 	const runLive = () => {
 		if (props.client === undefined || liveBusy() || endpoint().trim() === "") return;
@@ -470,7 +498,6 @@ export function ScenarioStudioRoute(
 	const selectClip = (clip: ScenarioClip) => {
 		setSelectedId(clip.id);
 		setPlayheadMs(clip.startMs);
-		setSeekPlan(planScenarioSeek({ document: document(), targetMs: clip.startMs }));
 	};
 	const moveSelected = (deltaMs: number) => {
 		const clip = selectedClip();
@@ -484,7 +511,6 @@ export function ScenarioStudioRoute(
 			setDocument(result.document);
 			const newStart = findScenarioClip(result.document, clip.id)?.startMs ?? playheadMs();
 			setPlayheadMs(newStart);
-			setSeekPlan(planScenarioSeek({ document: result.document, targetMs: newStart }));
 		}
 	};
 	const seekFromPointer = (event: MouseEvent & { currentTarget: HTMLDivElement }) => {
@@ -492,7 +518,6 @@ export function ScenarioStudioRoute(
 		const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
 		const target = Math.round(ratio * document().durationMs);
 		setPlayheadMs(target);
-		setSeekPlan(planScenarioSeek({ document: document(), targetMs: target }));
 	};
 	const beginDrag = (
 		event: PointerEvent & { currentTarget: HTMLButtonElement },
@@ -533,7 +558,6 @@ export function ScenarioStudioRoute(
 		const moved = findScenarioClip(document(), drag.clipId);
 		if (moved !== undefined) {
 			setPlayheadMs(moved.startMs);
-			setSeekPlan(planScenarioSeek({ document: document(), targetMs: moved.startMs }));
 		}
 	};
 
@@ -592,11 +616,11 @@ export function ScenarioStudioRoute(
 					<div>
 						<strong>
 							{liveRunState().status === "terminal"
-								? activeRun().status === "completed_with_divergence"
+								? activeRun()?.status === "completed_with_divergence"
 									? "Differences found"
-									: activeRun().status === "cancelled"
+									: activeRun()?.status === "cancelled"
 										? "Cancelled"
-										: activeRun().status === "failed"
+										: activeRun()?.status === "failed"
 											? "Run failed"
 											: "Live result"
 								: liveRunState().status === "connecting"
@@ -615,7 +639,7 @@ export function ScenarioStudioRoute(
 								: props.client === undefined
 									? "Unreal client not provided"
 									: liveRunState().status === "terminal"
-										? (activeRun().failure?.message ?? "Structured PIE result")
+										? (activeRun()?.failure?.message ?? "Structured PIE result")
 										: liveGameTimeMs() === undefined
 											? "Ready for a structured PIE result"
 											: `${formatTime(liveGameTimeMs()!)} game time`}
@@ -762,18 +786,20 @@ export function ScenarioStudioRoute(
 						</button>
 					</div>
 					<div {...stylex.props(styles.takeList)}>
-						<For each={movementGymRuns}>
+						<For each={runs()}>
 							{(run, index) => (
 								<button
 									onClick={() => setActiveRun(run)}
 									{...stylex.props(
 										styles.take,
-										activeRun().id === run.id && styles.takeActive
+										activeRun()?.id === run.id && styles.takeActive
 									)}
 								>
-									<span {...stylex.props(styles.takeNumber)}>0{3 - index()}</span>
+									<span {...stylex.props(styles.takeNumber)}>
+										{String(runs().length - index()).padStart(2, "0")}
+									</span>
 									<span {...stylex.props(styles.takeCopy)}>
-										<strong>{run.label.split(" · ")[1]}</strong>
+										<strong>{run.label.split(" · ")[1] ?? run.label}</strong>
 										<small>{formatTime(run.durationMs)}</small>
 									</span>
 									<span
@@ -825,7 +851,7 @@ export function ScenarioStudioRoute(
 					<div {...stylex.props(styles.documentFacts)}>
 						<div {...stylex.props(styles.fact)}>
 							<span>Map</span>
-							<strong>L_MovementGym</strong>
+							<strong>{document().mapPath.split("/").at(-1)}</strong>
 						</div>
 						<div {...stylex.props(styles.fact)}>
 							<span>Clock</span>
@@ -840,8 +866,8 @@ export function ScenarioStudioRoute(
 							<div>
 								<strong>
 									{liveRunState().status === "terminal" &&
-									activeRun().inputIsolation?.established &&
-									activeRun().inputIsolation?.restored
+									activeRun()?.inputIsolation?.established &&
+									activeRun()?.inputIsolation?.restored
 										? "Isolation verified"
 										: liveRunState().status === "active" ||
 											  liveRunState().status === "cancelling"
@@ -852,7 +878,7 @@ export function ScenarioStudioRoute(
 								</strong>
 								<small>
 									{liveRunState().status === "terminal" &&
-									activeRun().inputIsolation?.restored
+									activeRun()?.inputIsolation?.restored
 										? "Slate blocker was restored"
 										: liveRunState().status === "active" ||
 											  liveRunState().status === "cancelling"
@@ -1144,10 +1170,12 @@ export function ScenarioStudioRoute(
 					<p>Captures and game checks from this run, at {formatTime(playheadMs())}.</p>
 					<Show when={liveRunState().status === "terminal"}>
 						<div {...stylex.props(styles.runReceiptSummary)}>
-							<span>{capitalize(activeRun().status.replaceAll("_", " "))}</span>
-							<strong>UE {activeRun().engineVersion}</strong>
+							<span>
+								{capitalize(activeRun()?.status.replaceAll("_", " ") ?? "Not run")}
+							</span>
+							<strong>UE {activeRun()?.engineVersion}</strong>
 							<small>
-								{activeRun().inputIsolation?.restored
+								{activeRun()?.inputIsolation?.restored
 									? "Input restored"
 									: "Restore not proven"}
 							</small>
@@ -1207,9 +1235,9 @@ export function ScenarioStudioRoute(
 				<div {...stylex.props(styles.observationList)}>
 					<header>
 						<span>Captures</span>
-						<small>{activeRun().evidence.length} saved</small>
+						<small>{activeRun()?.evidence.length ?? 0} saved</small>
 					</header>
-					<For each={activeRun().evidence}>
+					<For each={activeRun()?.evidence}>
 						{(evidence) => (
 							<button
 								onClick={() => {
@@ -1233,17 +1261,19 @@ export function ScenarioStudioRoute(
 				<div {...stylex.props(styles.divergenceLedger)}>
 					<header>
 						<span>Differences</span>
-						<small>{activeRun().divergences.length} found</small>
+						<small>{activeRun()?.divergences.length ?? 0} found</small>
 					</header>
 					<Show
-						when={activeRun().divergences.length > 0}
+						when={(activeRun()?.divergences.length ?? 0) > 0}
 						fallback={
 							<p {...stylex.props(styles.cleanRun)}>
-								No differences found in this take.
+								{activeRun()
+									? "No differences found in this take."
+									: "Run this scenario to collect results."}
 							</p>
 						}
 					>
-						<For each={activeRun().divergences}>
+						<For each={activeRun()?.divergences}>
 							{(divergence) => (
 								<button
 									onClick={() => setPlayheadMs(divergence.atMs)}

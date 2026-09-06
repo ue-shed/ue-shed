@@ -22,7 +22,11 @@ import { dirname, join } from "node:path";
 import { expect } from "vitest";
 import { makeWorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchNiagaraPreview, WorkbenchNiagaraPreviewLive } from "./niagara-preview.js";
-import { WorkbenchProjectUnavailable, makeWorkbenchProjectTestLayer } from "./project-workspace.js";
+import {
+	WorkbenchProjectUnavailable,
+	makeWorkbenchProjectTestLayer,
+	type WorkbenchProjectCandidates
+} from "./project-workspace.js";
 
 const fixtureManifestUrl = new URL(
 	"../../../../../packages/protocol/contracts/niagara/preview/v1/fixtures/manifest.json",
@@ -48,7 +52,10 @@ function configuration(sourceCheckout: string | undefined) {
 function project(
 	projectRoot: string,
 	options?: {
-		readonly candidates?: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+		readonly candidates?: () => Effect.Effect<
+			WorkbenchProjectCandidates,
+			WorkbenchProjectUnavailable
+		>;
 		readonly currentStatus?: "ready" | "not_configured";
 	}
 ) {
@@ -91,7 +98,10 @@ function serviceLayer(options: {
 		request: SavedAssetScanOptions
 	) => Effect.Effect<SavedAssetScan, AssetReaderError>;
 	readonly sourceCheckout?: string;
-	readonly candidates?: () => Effect.Effect<SavedAssetScan, WorkbenchProjectUnavailable>;
+	readonly candidates?: () => Effect.Effect<
+		WorkbenchProjectCandidates,
+		WorkbenchProjectUnavailable
+	>;
 	readonly currentStatus?: "ready" | "not_configured";
 }) {
 	const reader: AssetReaderTestApi = {
@@ -265,6 +275,7 @@ it.effect("catalogues every saved Niagara System in the selected project", () =>
 		const layer = serviceLayer({
 			candidates: () =>
 				Effect.succeed({
+					generation: 0,
 					assets: [
 						headerEntry(
 							"Content/FX/NS_Foo.uasset",

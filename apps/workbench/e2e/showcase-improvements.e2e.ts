@@ -104,6 +104,56 @@ test("saves the edited scenario document and reopens it with a matching replay c
 	}
 });
 
+test("keeps project drafts and review preferences when the Unreal target port changes", async ({
+	workbench,
+	application
+}) => {
+	const root = await mkdtemp(join(tmpdir(), "ue-shed-e2e-target-state-"));
+	const path = join(root, "draft.json");
+	try {
+		const page = workbench.page;
+		const changePort = async (port: string) => {
+			const trigger = page.getByLabel("Change Unreal target port");
+			await trigger.click();
+			const settings = page.getByRole("region", { name: "Unreal target settings" });
+			await settings.getByRole("spinbutton", { name: "Remote Control port" }).fill(port);
+			await settings.getByRole("button", { name: "Apply", exact: true }).click();
+			await expect(trigger).toHaveText(":" + port);
+			await trigger.click();
+		};
+		await application.evaluate(({ dialog }, filePath) => {
+			dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+		}, path);
+		await workbench.openRoute("Scenario Studio");
+		await page.getByRole("button", { name: "Nudge later" }).click();
+		await changePort("39992");
+		await page.getByRole("button", { name: "Save draft…" }).click();
+		await expect(page.getByRole("status")).toContainText("Saved " + path);
+		const saved = JSON.parse(await readFile(path, "utf8"));
+		expect(
+			saved.tracks
+				.flatMap((track: { clips: { id: string; startMs: number }[] }) => track.clips)
+				.find((clip: { id: string }) => clip.id === "action_jump").startMs
+		).toBe(2960);
+		await workbench.openRoute("Game Text");
+		const textSearch = page.getByRole("searchbox", { name: "Search game text", exact: true });
+		await textSearch.fill("Look around");
+		await changePort("39993");
+		await expect(textSearch).toHaveValue("Look around");
+		await workbench.openRoute("Texture Audit");
+		const textureSearch = page.getByRole("textbox", { name: "Search textures" });
+		await textureSearch.fill("NonPowerOfTwo");
+		await changePort("39994");
+		await expect(textureSearch).toHaveValue("NonPowerOfTwo");
+		await workbench.openRoute("Game Text");
+		await expect(textSearch).toHaveValue("Look around");
+		await workbench.openRoute("Scenario Studio");
+		await expect(page.getByText(/pnpm ue-shed scenarios run.*--document/)).toContainText(path);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});
+
 test("keeps reviewed and saved Game Text rules across tabs, navigation, and preset export", async ({
 	workbench,
 	application

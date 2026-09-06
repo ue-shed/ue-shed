@@ -91,7 +91,8 @@ const projectSummary = {
 	projectName: "FixtureProject",
 	projectRoot: "C:/FixtureProject"
 };
-const projectIndex: SavedAssetScan = {
+const projectIndex: SavedAssetScan & { readonly generation: number } = {
+	generation: 0,
 	assets: [],
 	failures: [],
 	summary: {
@@ -205,6 +206,91 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 		}).pipe(Effect.provide(gameTextLive.pipe(Layer.provide(project), Layer.provide(corpus))));
 	})
 );
+
+for (const phase of ["candidates", "scan"] as const) {
+	it.effect(
+		`rejects a same-project generation change during ${phase} and retries with fresh membership`,
+		() =>
+			Effect.gen(function* () {
+				const generation = yield* Ref.make(1);
+				const started = yield* Deferred.make<void>();
+				const release = yield* Deferred.make<void>();
+				const pause = Deferred.succeed(started, undefined).pipe(
+					Effect.andThen(Deferred.await(release))
+				);
+				const current = () =>
+					Ref.get(generation).pipe(
+						Effect.map((generation) => ({
+							status: "ready" as const,
+							project: { ...projectSummary, generation }
+						}))
+					);
+				const project = makeWorkbenchProjectTestLayer({
+					current,
+					choose: current,
+					candidates: () =>
+						Effect.gen(function* () {
+							const captured = yield* Ref.get(generation);
+							if (phase === "candidates" && captured === 1) yield* pause;
+							return { ...projectIndex, generation: captured };
+						}),
+					inputAtlas: () => Effect.die("unused"),
+					savedProject: () => Effect.die("unused"),
+					savedTables: () => Effect.die("unused")
+				});
+				const scanner = makeTextCorpusServiceTestLayer({
+					scan: () => Effect.die("unused"),
+					scanFromProjectIndex: () =>
+						Effect.gen(function* () {
+							if (phase === "scan" && (yield* Ref.get(generation)) === 1)
+								yield* pause;
+							return emptyCorpus;
+						})
+				});
+				yield* Effect.gen(function* () {
+					const service = yield* WorkbenchGameText;
+					const first = yield* Effect.forkChild(service.configuredRefresh(false));
+					yield* Deferred.await(started);
+					yield* Ref.set(generation, 2);
+					yield* Deferred.succeed(release, undefined);
+					expect((yield* Fiber.join(first)).status).toBe("failed");
+					expect(
+						(yield* service.search({
+							query: "",
+							pageSize: 50,
+							capability: "all",
+							lens: "all"
+						})).status
+					).not.toBe("ready");
+					expect(
+						(yield* service.investigationExport(
+							{
+								mode: "corpus",
+								query: "",
+								capability: "all",
+								lens: "all",
+								qualityFilter: "all"
+							},
+							"json"
+						)).status
+					).toBe("failed");
+					expect((yield* service.configuredRefresh(false)).status).toBe("completed");
+					expect(
+						(yield* service.search({
+							query: "",
+							pageSize: 50,
+							capability: "all",
+							lens: "all"
+						})).status
+					).toBe("ready");
+				}).pipe(
+					Effect.provide(
+						gameTextLive.pipe(Layer.provide(Layer.mergeAll(project, scanner)))
+					)
+				);
+			})
+	);
+}
 
 it.effect("returns not_configured without a project root", () =>
 	Effect.gen(function* () {
@@ -544,7 +630,7 @@ it("exports one captured generation when the project changes during the save dia
 		const project = makeWorkbenchProjectTestLayer({
 			current,
 			choose: current,
-			candidates: () => Effect.succeed(projectIndex),
+			candidates: () => Effect.succeed({ ...projectIndex, generation: 7 }),
 			inputAtlas: () => Effect.die("unused"),
 			savedTables: () => Effect.die("unused"),
 			savedProject: () => Effect.die("unused")

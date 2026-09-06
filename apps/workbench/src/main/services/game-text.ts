@@ -45,7 +45,7 @@ import { Cache, Context, Data, Duration, Effect, Layer, Ref } from "effect";
 import type { WorkbenchTaskProgress } from "../project-workspace-contract.js";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { LocalFiles } from "../adapters/local-files.js";
-import { WorkbenchProject } from "./project-workspace.js";
+import { WorkbenchProject, type WorkbenchProjectCandidates } from "./project-workspace.js";
 
 export interface WorkbenchGameTextApi {
 	readonly investigationExport: (
@@ -164,11 +164,16 @@ export const WorkbenchGameTextLive = Layer.effect(
 					return undefined;
 				return yield* Ref.get(ref);
 			});
-		const runRefresh = (projectRoot: string, index: SavedAssetScan) =>
+		const runRefresh = (projectRoot: string, index: WorkbenchProjectCandidates) =>
 			Effect.gen(function* () {
 				const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
 				const selected = yield* project.current();
-				if (selected.status !== "ready" || selected.project.projectRoot !== projectRoot)
+				if (
+					selected.status !== "ready" ||
+					selected.project.projectRoot !== projectRoot ||
+					(selected.project.generation ?? 0) !== index.generation ||
+					index.summary.projectRoot !== projectRoot
+				)
 					return unavailableQueryProject(
 						"The selected project changed.",
 						"Retry in the selected project."
@@ -181,7 +186,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 								(yield* Ref.get(scanRevision)) !== revision ||
 								latest.status !== "ready" ||
 								latest.project.projectRoot !== projectRoot ||
-								latest.project.generation !== selected.project.generation
+								(latest.project.generation ?? 0) !== index.generation
 							)
 								return unavailableQueryProject(
 									"The project changed during the scan.",
@@ -191,7 +196,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 							yield* Ref.set(investigationSnapshot, {
 								source: {
 									projectRoot,
-									generation: selected.project.generation ?? 0,
+									generation: index.generation,
 									authority: "project_files"
 								},
 								corpus: report
@@ -205,7 +210,7 @@ export const WorkbenchGameTextLive = Layer.effect(
 							]);
 							yield* Ref.set(modelSelection, {
 								projectRoot,
-								generation: selected.project.generation ?? 0
+								generation: index.generation
 							});
 							return { summary: next.summary(), status: "completed" as const };
 						})
@@ -267,7 +272,10 @@ export const WorkbenchGameTextLive = Layer.effect(
 			(key: QueryKey) =>
 				Effect.gen(function* () {
 					const index = yield* project.candidates("game_text");
-					if (index.summary.projectRoot !== key.projectRoot)
+					if (
+						index.summary.projectRoot !== key.projectRoot ||
+						index.generation !== key.generation
+					)
 						return unavailableQueryProject(
 							"The selected project changed.",
 							"Retry in the selected project."

@@ -9,7 +9,9 @@ export const runNiagaraPreview = Effect.fn("Cli.workflow.niagara_preview")((comm
 	observeCliOperation(
 		command._tag,
 		Effect.gen(function* () {
-			const { runNiagaraPreview } = yield* Effect.promise(() => import("@ue-shed/niagara"));
+			const { runNiagaraPreview, niagaraPreviewProfile } = yield* Effect.promise(
+				() => import("@ue-shed/niagara")
+			);
 			const result = yield* Effect.result(
 				runNiagaraPreview({
 					...(command.engineRoot === undefined
@@ -24,6 +26,24 @@ export const runNiagaraPreview = Effect.fn("Cli.workflow.niagara_preview")((comm
 					projectDescriptor: command.projectDescriptor,
 					...(command.runId === undefined ? undefined : { runId: command.runId }),
 					settings: {
+						...(command.profile === undefined
+							? undefined
+							: niagaraPreviewProfile(command.profile)),
+						...(command.renderMode === undefined
+							? undefined
+							: { renderMode: command.renderMode }),
+						...(command.background === undefined
+							? undefined
+							: { background: command.background }),
+						...(command.cameraMode === undefined
+							? undefined
+							: { cameraMode: command.cameraMode }),
+						...(command.exposureCompensation === undefined
+							? undefined
+							: { exposureCompensation: command.exposureCompensation }),
+						...(command.cameraPadding === undefined
+							? undefined
+							: { cameraPadding: command.cameraPadding }),
 						...(command.captureMode === undefined
 							? undefined
 							: { captureMode: command.captureMode }),

@@ -18,7 +18,9 @@
 		"systemObjectPath"
 	],
 	"properties": {
-		"alphaPolicy": { "const": "scene_opacity_or_emissive_coverage_v1" },
+		"alphaPolicy": {
+			"enum": ["scene_opacity_or_emissive_coverage_v1", "opaque_scene_v1"]
+		},
 		"artifacts": {
 			"type": "array",
 			"minItems": 1,
@@ -37,34 +39,87 @@
 					"width"
 				],
 				"properties": {
-					"bytes": { "type": "integer", "minimum": 1 },
-					"height": { "type": "integer", "minimum": 1, "maximum": 4096 },
-					"index": { "type": "integer", "minimum": 0 },
-					"maximumRgb": { "type": "number", "minimum": 0, "maximum": 1 },
-					"mimeType": { "const": "image/png" },
-					"nonTransparentPixelFraction": { "type": "number", "minimum": 0, "maximum": 1 },
+					"bytes": {
+						"type": "integer",
+						"minimum": 1
+					},
+					"height": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 4096
+					},
+					"index": {
+						"type": "integer",
+						"minimum": 0
+					},
+					"maximumRgb": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 1
+					},
+					"mimeType": {
+						"const": "image/png"
+					},
+					"nonTransparentPixelFraction": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 1
+					},
 					"relativePath": {
 						"type": "string",
 						"pattern": "^frames/frame_[0-9]{4}\\.png$"
 					},
-					"sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-					"timeSeconds": { "type": "number", "minimum": 0 },
-					"width": { "type": "integer", "minimum": 1, "maximum": 4096 }
+					"sha256": {
+						"type": "string",
+						"pattern": "^sha256:[0-9a-f]{64}$"
+					},
+					"timeSeconds": {
+						"type": "number",
+						"minimum": 0
+					},
+					"width": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 4096
+					},
+					"activityScore": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 1
+					},
+					"edgePixelFraction": {
+						"type": "number",
+						"minimum": 0,
+						"maximum": 1
+					}
 				},
 				"additionalProperties": false
 			}
 		},
-		"camera": { "$ref": "common.schema.json#/$defs/camera" },
-		"colorSpace": { "const": "srgb" },
+		"camera": {
+			"$ref": "common.schema.json#/$defs/camera"
+		},
+		"colorSpace": {
+			"const": "srgb"
+		},
 		"contract": {
 			"type": "object",
 			"required": ["name", "version"],
 			"properties": {
-				"name": { "const": "ue-shed-niagara-preview-run" },
+				"name": {
+					"const": "ue-shed-niagara-preview-run"
+				},
 				"version": {
 					"type": "object",
 					"required": ["major", "minor"],
-					"properties": { "major": { "const": 1 }, "minor": { "const": 0 } },
+					"properties": {
+						"major": {
+							"const": 1
+						},
+						"minor": {
+							"enum": [0, 1, 2]
+						}
+					},
 					"additionalProperties": false
 				}
 			},
@@ -76,28 +131,50 @@
 				"type": "object",
 				"required": ["code", "message"],
 				"properties": {
-					"code": { "enum": ["nearly_black", "nearly_empty"] },
-					"message": { "type": "string", "minLength": 1 }
+					"code": {
+						"enum": ["nearly_black", "nearly_empty", "missing_material"]
+					},
+					"message": {
+						"type": "string",
+						"minLength": 1
+					}
 				},
 				"additionalProperties": false
 			}
 		},
-		"effectiveSettings": { "$ref": "common.schema.json#/$defs/effectiveSettings" },
-		"generatedAtUtc": { "type": "string", "minLength": 1 },
+		"effectiveSettings": {
+			"$ref": "common.schema.json#/$defs/effectiveSettings"
+		},
+		"generatedAtUtc": {
+			"type": "string",
+			"minLength": 1
+		},
 		"producer": {
 			"type": "object",
 			"required": ["engineVersion", "receiptContract"],
 			"properties": {
-				"engineVersion": { "type": "string", "minLength": 1 },
+				"engineVersion": {
+					"type": "string",
+					"minLength": 1
+				},
 				"receiptContract": {
 					"type": "object",
 					"required": ["name", "version"],
 					"properties": {
-						"name": { "const": "ue-shed-niagara-preview-receipt" },
+						"name": {
+							"const": "ue-shed-niagara-preview-receipt"
+						},
 						"version": {
 							"type": "object",
 							"required": ["major", "minor"],
-							"properties": { "major": { "const": 1 }, "minor": { "const": 0 } },
+							"properties": {
+								"major": {
+									"const": 1
+								},
+								"minor": {
+									"enum": [0, 1, 2]
+								}
+							},
 							"additionalProperties": false
 						}
 					},
@@ -106,10 +183,18 @@
 			},
 			"additionalProperties": false
 		},
-		"requestedSettings": { "$ref": "common.schema.json#/$defs/settings" },
-		"runId": { "$ref": "common.schema.json#/$defs/runId" },
-		"status": { "const": "complete" },
-		"systemObjectPath": { "$ref": "common.schema.json#/$defs/systemObjectPath" }
+		"requestedSettings": {
+			"$ref": "common.schema.json#/$defs/settings"
+		},
+		"runId": {
+			"$ref": "common.schema.json#/$defs/runId"
+		},
+		"status": {
+			"const": "complete"
+		},
+		"systemObjectPath": {
+			"$ref": "common.schema.json#/$defs/systemObjectPath"
+		}
 	},
 	"additionalProperties": false
 }

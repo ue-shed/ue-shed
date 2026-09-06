@@ -24,6 +24,13 @@ struct FUEShedNiagaraPreviewOptions
 	float StartSeconds = 0.0f;
 	float DurationSeconds = 4.0f;
 	bool bRenderComponentOnly = true;
+	FString RenderMode = TEXT("transparent");
+	FString Background = TEXT("default");
+	TSharedPtr<FJsonObject> CameraOverride;
+	FString CameraMode = TEXT("saved");
+	FString SceneProfile = TEXT("projectile");
+	float ExposureCompensation = 0.0f;
+	float CameraPadding = 1.2f;
 };
 
 struct FUEShedNiagaraPreviewFrame
@@ -32,43 +39,36 @@ struct FUEShedNiagaraPreviewFrame
 	float TimeSeconds = 0.0f;
 	float MaximumRgb = 0.0f;
 	float NonTransparentPixelFraction = 0.0f;
+	float ActivityScore = 0.0f;
+	float EdgePixelFraction = 0.0f;
 	FString RelativePath;
 };
 
 class FUEShedNiagaraCapture final
 {
-public:
+  public:
 	FUEShedNiagaraCapture() = default;
 	~FUEShedNiagaraCapture();
 
 	FUEShedNiagaraCapture(const FUEShedNiagaraCapture&) = delete;
 	FUEShedNiagaraCapture& operator=(const FUEShedNiagaraCapture&) = delete;
 
-	bool Initialize(
-		UNiagaraSystem* InSystem,
-		const FUEShedNiagaraPreviewOptions& InOptions,
-		FString& OutError);
-	bool CaptureFrame(
-		int32 FrameIndex,
-		float AbsoluteTime,
-		const FString& FilePath,
-		FUEShedNiagaraPreviewFrame& OutFrame,
-		FString& OutError);
-	bool WriteProducerReceipt(
-		const FString& FilePath,
-		const TArray<FUEShedNiagaraPreviewFrame>& Frames,
-		FString& OutError) const;
+	bool Initialize(UNiagaraSystem* InSystem, const FUEShedNiagaraPreviewOptions& InOptions,
+					FString& OutError);
+	bool CaptureFrame(int32 FrameIndex, float AbsoluteTime, const FString& FilePath,
+					  FUEShedNiagaraPreviewFrame& OutFrame, FString& OutError);
+	bool WriteProducerReceipt(const FString& FilePath,
+							  const TArray<FUEShedNiagaraPreviewFrame>& Frames,
+							  FString& OutError) const;
 	void FlushPendingWork() const;
 
-private:
+  private:
 	void SetAbsoluteTime(float AbsoluteTime);
 	void ConfigureCaptureCamera();
+	bool FitCaptureCamera(FString& OutError);
 	void CaptureScene() const;
-	bool ExportPng(
-		const FString& FilePath,
-		TArrayView<const FFloat16Color> ImageData,
-		FUEShedNiagaraPreviewFrame& OutFrame,
-		FString& OutError) const;
+	bool ExportPng(const FString& FilePath, TArrayView<const FFloat16Color> ImageData,
+				   FUEShedNiagaraPreviewFrame& OutFrame, FString& OutError) const;
 	void DestroyPreviewScene();
 
 	UNiagaraSystem* System = nullptr;
@@ -79,6 +79,8 @@ private:
 	FFXSystemInterface* CommandletFXSystem = nullptr;
 	TSharedPtr<FAdvancedPreviewScene> PreviewScene;
 	FUEShedNiagaraPreviewOptions Options;
+	TArray<FFloat16Color> BackgroundPixels;
+	int32 MissingMaterialCount = 0;
 	FVector ResolvedCameraLocation = FVector::ZeroVector;
 	FRotator ResolvedCameraRotation = FRotator::ZeroRotator;
 };

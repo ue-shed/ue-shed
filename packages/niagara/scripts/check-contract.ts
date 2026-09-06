@@ -14,6 +14,12 @@ const fixtureRoot = fileURLToPath(
 );
 
 const contracts = [
+	{ file: "background-request.json", schema: NiagaraPreviewProducerRequest },
+	{ file: "background-receipt.json", schema: NiagaraPreviewProducerReceipt },
+	{ file: "background-manifest.json", schema: NiagaraPreviewRunManifest },
+	{ file: "scene-request.json", schema: NiagaraPreviewProducerRequest },
+	{ file: "scene-receipt.json", schema: NiagaraPreviewProducerReceipt },
+	{ file: "scene-manifest.json", schema: NiagaraPreviewRunManifest },
 	{ file: "request.json", schema: NiagaraPreviewProducerRequest },
 	{ file: "receipt.json", schema: NiagaraPreviewProducerReceipt },
 	{ file: "manifest.json", schema: NiagaraPreviewRunManifest }

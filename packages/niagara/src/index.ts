@@ -1,4 +1,5 @@
 export * from "./schema.js";
+export * from "./presentation.js";
 export {
 	NiagaraPreview,
 	NiagaraPreviewError,

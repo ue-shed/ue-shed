@@ -277,14 +277,18 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	MapCaptureRuns: { planId: Schema.String, ...Project },
 	NiagaraPreview: {
+		background: Schema.optionalKey(Schema.Literals(["default", "dark", "light"])),
 		profile: Schema.optionalKey(
 			Schema.Literals(["ground_impact", "projectile", "aura", "environment"])
 		),
 		renderMode: Schema.optionalKey(Schema.Literals(["transparent", "scene"])),
-		background: Schema.optionalKey(Schema.Literals(["default", "dark", "light"])),
 		cameraMode: Schema.optionalKey(Schema.Literals(["saved", "auto_fit"])),
-		exposureCompensation: Schema.optionalKey(Schema.Number),
-		cameraPadding: Schema.optionalKey(Schema.Number),
+		exposureCompensation: Schema.optionalKey(
+			Schema.Number.check(Schema.isBetween({ minimum: -8, maximum: 8 }))
+		),
+		cameraPadding: Schema.optionalKey(
+			Schema.Number.check(Schema.isBetween({ minimum: 1.05, maximum: 3 }))
+		),
 		captureMode: Schema.optionalKey(Schema.Literals(["component_only", "full_scene"])),
 		durationSeconds: Schema.optionalKey(Schema.Number),
 		engineRoot: Schema.optionalKey(Schema.String),

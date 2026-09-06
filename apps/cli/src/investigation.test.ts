@@ -6,7 +6,9 @@ import { expect, it } from "vitest";
 import { runCli } from "./command.js";
 import { CliRuntime } from "./cli-runtime.js";
 
-it.each(["game_text", "texture_audit"])(
+// The repository lane deliberately runs without the native reader. The UAsset IO lane
+// supplies it and runs both real fixture replays below.
+it.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE).each(["game_text", "texture_audit"])(
 	"replays a %s preset through the CLI and native reader",
 	async (kind) => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-cli-investigation-"));

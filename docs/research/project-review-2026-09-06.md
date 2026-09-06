@@ -139,6 +139,19 @@ checks exercise real typing, rule-file persistence, reviewed-rule preset export,
 Logs are under `.tmp/r16-*`. Live Unreal execution, production-project benchmarking, and hosted
 Depot were not run.
 
+## Hosted CI follow-up
+
+The first PR run exposed two test-integration omissions: five Content Observatory tests lacked
+the measurable JSDOM viewport required by the shared actor virtualizer, and two CLI investigation
+replays attempted to start the native UAsset reader in the repository lane that deliberately omits
+it. Actor-explorer consumers now share the same test layout helper. Native investigation replays
+use the existing executable-availability gate and run explicitly in the UAsset IO lane; changes to
+the CLI investigation files also select that lane.
+
+The full component suite passes (145 tests), both CLI investigation replays pass with the real
+native reader, and precommit checks pass. These fixes change test setup and CI routing, not product
+behavior.
+
 ## Scope and evidence
 
 - Read the architecture, engineering/adoption guidance, showcase instructions, active-plan index,

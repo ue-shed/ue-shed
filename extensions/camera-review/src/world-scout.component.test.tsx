@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import "./actor-explorer-test-layout.js";
+import "../../../test-support/actor-explorer-layout.js";
 
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";

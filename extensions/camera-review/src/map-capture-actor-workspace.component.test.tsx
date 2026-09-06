@@ -7,7 +7,7 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import "./actor-explorer-test-layout.js";
+import "../../../test-support/actor-explorer-layout.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MapCaptureActorWorkspace } from "./map-capture-actor-workspace.js";
 

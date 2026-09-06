@@ -126,6 +126,24 @@ This generator retains the earlier copy/rebase experiments for reproducibility.
 fixtures, and protocol contracts. It replaces only the native Catalog adapter in that copy. The scanner, coordinator, inspection, protocol, and showcase client remain shared.
 No production backend flag or dependency is added. Output must be a new directory.
 
+Snapshot preparation requires Git and Python 3.12 or newer. It copies tracked files and
+non-ignored new files from the working tree, preserving local source edits and deletions.
+Ignored Unreal build directories, nested Cargo targets, and local session state are excluded;
+linked inputs are rejected. Use this snapshot helper for new experiments instead of recursively
+copying fixture directories or archiving the working tree.
+
+Keep measurement JSON, logs, source patches, and binary hashes as evidence. Once an experiment
+is complete, remove its disposable databases and clean its dedicated Cargo target with
+`cargo clean --target-dir <experiment-target>`. Archive only the filtered source snapshot.
+Do not keep separate full debug targets for every measurement run. Build caches are regeneratable;
+cleaning them means the next build will take longer.
+
+Run the snapshot regression with:
+
+```sh
+python -m unittest discover -s tools/benchmarks -p 'test_source_snapshot.py' -v
+```
+
 ```powershell
 python tools/benchmarks/prepare_sqlite_catalog.py test-results/sqlite-catalog-source --serialized-names scan
 cargo test --manifest-path test-results/sqlite-catalog-source/Cargo.toml --target-dir target/sqlite-research -p uasset-io --all-targets

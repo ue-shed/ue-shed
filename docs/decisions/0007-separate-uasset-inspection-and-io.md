@@ -145,3 +145,25 @@ The [SQLite engineering guide](../engineering/sqlite-project-index.md) owns curr
 Caches use a new `catalogs-v3` namespace and rebuild from source on first refresh. Old DuckDB caches
 are disposable and are neither converted nor deleted automatically. CI compile-time savings remain
 unmeasured until the hosted gate runs.
+
+## Amendment: binary snapshots are the canonical Project Index Catalog
+
+Accepted later on 2026-09-05; supersedes the SQLite selection above.
+
+The factory selects a small binary adapter for the existing five bounded Catalog query routes.
+Shared strings and packed postings improve fresh builds, name queries, and cache size. Bulk reuse
+of retained records/postings removes much of the prototype's repair regression. Warm performance
+is comparable; short-lived opens and single-package repair retain documented costs.
+
+The cache is disposable derived evidence, not an authoritative database. Format changes rebuild
+under a new namespace (`catalogs-v4`). One OS-locked writer publishes immutable verified snapshots;
+readers keep their selected file. The public Catalog seam and protocol remain storage-neutral.
+
+SQLite is retained behind the explicit `catalog-oracle` test feature and a separate Depot job.
+Default builds and tests have no database engine dependency. Native IO requires Rust 1.89 for
+standard file locks and adds pinned, permissively licensed Rust CRC32 checksumming.
+
+The [binary engineering guide](../engineering/binary-project-index.md) owns current behavior and
+limits; the [hardening report](../research/custom-catalog-hardening-2026-09-05.md) records the
+measurements, recovery tests, and platform evidence. Current native npm publication remains Windows
+x64 only. Linux execution is tested locally; macOS execution and hosted CI savings remain unverified.

@@ -1,0 +1,4604 @@
+{
+	"baselineCommit": "6aee4380fa78753faae10679ae274717ebf13fd1",
+	"branch": "perf/sqlite-next",
+	"productionBackend": "binary Catalog",
+	"binaries": {
+		"sqlite": {
+			"bytes": 6393344,
+			"sha256": "8547b8a48ec55ab10fddc2746b6599a770707e5e06733369c1d46f1b7c2d02cb"
+		},
+		"prototypeV1": {
+			"bytes": 4772864,
+			"sha256": "2326ebe8c5b18948ebd618364cdaeef858db00a95baa1dd9223d9e0b83302260"
+		},
+		"prototypeV2": {
+			"bytes": 4805632,
+			"sha256": "525b444de83e7227642d97838c67295fe1d331f600bf8df0efe0fba1d7370d3c"
+		},
+		"production": {
+			"bytes": 4811264,
+			"sha256": "32acb89498041b3f952f822a4fe82f348472abcffe8d69d817d713c6cd755597"
+		}
+	},
+	"sources": {
+		"crates/uasset-io/src/direct_executor/catalog_binary.rs": {
+			"bytes": 77079,
+			"sha256": "3cf2b148b4b1681b73eba8f186f994069d6cd3c4f4df136879e6ba4b9b7046cf"
+		},
+		"crates/uasset-io/src/direct_executor/catalog_sqlite.rs": {
+			"bytes": 54135,
+			"sha256": "f8a481711baf5ece4934d0d6c7fda016e5a0d76f6c72d3125f261ccaaab33190"
+		},
+		"crates/uasset-io/src/direct_executor/project_index_io.rs": {
+			"bytes": 14976,
+			"sha256": "8e14b18fe911fe249fdc78f8ea9f7c0c4b5c14754b9db5f9d73e0f0a142c34c8"
+		},
+		"crates/uasset-io/Cargo.toml": {
+			"bytes": 827,
+			"sha256": "608170ba7364cdef388555db5a3203e3a0865cd3523f3dff2247676b8b9f7526"
+		},
+		"Cargo.lock": {
+			"bytes": 10112,
+			"sha256": "9331ca1f632a0abdeafcd5a9ff4ce48e62871b73dd66ff1267016d889559bfb8"
+		},
+		"tools/benchmarks/custom-catalog.rs": {
+			"bytes": 47553,
+			"sha256": "f2acf5567d3c26cb271c83f19c9b2c577cb2baa38c06d2f42d0902791ef8c60f"
+		},
+		"tools/benchmarks/custom-catalog-v2.rs": {
+			"bytes": 63384,
+			"sha256": "67b6bf60a9da96c2c6a5f7d886bc1872afb0a90e51692e357f74ef3c03e82e28"
+		}
+	},
+	"blocks": {
+		"small-sqlite": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T13:56:16.752Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "sqlite-base.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 272.188,
+						"meanMs": 187.167,
+						"minMs": 143.661,
+						"p50Ms": 145.653,
+						"p95Ms": 272.188,
+						"samplesMs": [272.188, 143.661, 145.653]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 180590,
+							"durationMs": 272.188,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28020,
+							"nodePeakRssBytes": 155004928,
+							"protocolBytes": 163235,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 6.265,
+								"inputDecodeMs": 34.661,
+								"native": {
+									"committingMs": 5,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 39,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 5,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 27,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 32,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 39.075,
+								"refreshMs": 163.193
+							}
+						},
+						{
+							"cacheBytes": 180588,
+							"durationMs": 143.661,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 153137152,
+							"protocolBytes": 163278,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.386,
+								"inputDecodeMs": 24.566,
+								"native": {
+									"committingMs": 5,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 18,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 5,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 6,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 11,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 25.786,
+								"refreshMs": 34.592
+							}
+						},
+						{
+							"cacheBytes": 180590,
+							"durationMs": 145.653,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 170401792,
+							"protocolBytes": 163291,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.502,
+								"inputDecodeMs": 27.575,
+								"native": {
+									"committingMs": 5,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 19,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 4,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 8,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 12,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 24.185,
+								"refreshMs": 36.402
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 147.28,
+						"meanMs": 145.963,
+						"minMs": 145.168,
+						"p50Ms": 145.44,
+						"p95Ms": 147.28,
+						"samplesMs": [145.44, 145.168, 147.28]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 180589,
+							"durationMs": 145.44,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 4,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 169881600,
+							"protocolBytes": 80993,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.601,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 3,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 20.52,
+								"refreshMs": 18.599
+							}
+						},
+						{
+							"cacheBytes": 180589,
+							"durationMs": 145.168,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 5,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 169885696,
+							"protocolBytes": 80993,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.466,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 3,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 20.291,
+								"refreshMs": 19.6
+							}
+						},
+						{
+							"cacheBytes": 180589,
+							"durationMs": 147.28,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 6,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 171798528,
+							"protocolBytes": 80993,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.312,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 3,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 23.608,
+								"refreshMs": 18.979
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"small-custom": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T13:56:19.187Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "custom-v2.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 231.384,
+						"meanMs": 173.489,
+						"minMs": 143.594,
+						"p50Ms": 145.489,
+						"p95Ms": 231.384,
+						"samplesMs": [231.384, 143.594, 145.489]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 74284,
+							"durationMs": 231.384,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 145342464,
+							"protocolBytes": 163290,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 5.488,
+								"inputDecodeMs": 29.553,
+								"native": {
+									"committingMs": 7,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 22,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 6,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 7,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 13,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 26.279,
+								"refreshMs": 124.013
+							}
+						},
+						{
+							"cacheBytes": 74284,
+							"durationMs": 143.594,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 166809600,
+							"protocolBytes": 163333,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.495,
+								"inputDecodeMs": 24.711,
+								"native": {
+									"committingMs": 7,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 21,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 6,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 6,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 12,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 22.24,
+								"refreshMs": 37.754
+							}
+						},
+						{
+							"cacheBytes": 74284,
+							"durationMs": 145.489,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 167931904,
+							"protocolBytes": 163346,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.482,
+								"inputDecodeMs": 23.129,
+								"native": {
+									"committingMs": 7,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 20,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 6,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 6,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 12,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 19.664,
+								"refreshMs": 35.478
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 151.821,
+						"meanMs": 148.162,
+						"minMs": 143.814,
+						"p50Ms": 148.85,
+						"p95Ms": 151.821,
+						"samplesMs": [151.821, 148.85, 143.814]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 74283,
+							"durationMs": 151.821,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 4,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 166928384,
+							"protocolBytes": 81016,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.407,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 3,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 18.782,
+								"refreshMs": 19.473
+							}
+						},
+						{
+							"cacheBytes": 74283,
+							"durationMs": 148.85,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 5,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 166993920,
+							"protocolBytes": 81016,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.289,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 2,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 18.935,
+								"refreshMs": 18.363
+							}
+						},
+						{
+							"cacheBytes": 74283,
+							"durationMs": 143.814,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 6,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 168587264,
+							"protocolBytes": 81016,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.295,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 2,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 18.058,
+								"refreshMs": 17.667
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"small-binary-final": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T14:24:32.712Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "binary-final.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 174.648,
+						"meanMs": 160.693,
+						"minMs": 151.47,
+						"p50Ms": 155.962,
+						"p95Ms": 174.648,
+						"samplesMs": [174.648, 155.962, 151.47]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 74284,
+							"durationMs": 174.648,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28021,
+							"nodePeakRssBytes": 154824704,
+							"protocolBytes": 163290,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 5.738,
+								"inputDecodeMs": 34.944,
+								"native": {
+									"committingMs": 7,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 23,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 6,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 8,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 14,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 29.755,
+								"refreshMs": 46.23
+							}
+						},
+						{
+							"cacheBytes": 74283,
+							"durationMs": 155.962,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 152993792,
+							"protocolBytes": 163333,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.407,
+								"inputDecodeMs": 25.065,
+								"native": {
+									"committingMs": 9,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 28,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 7,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 10,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 17,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 24.508,
+								"refreshMs": 45.612
+							}
+						},
+						{
+							"cacheBytes": 74284,
+							"durationMs": 151.47,
+							"index": {
+								"changedPackages": 71,
+								"emittedHeaders": 56,
+								"generation": 1,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"inputPackages": 25,
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 171642880,
+							"protocolBytes": 163346,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.501,
+								"inputDecodeMs": 28.161,
+								"native": {
+									"committingMs": 7,
+									"comparingMs": 0,
+									"committedEvidenceRows": 71,
+									"durationMs": 23,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 7,
+									"headerReads": 71,
+									"headerProcessingExcludingEvidenceWritesMs": 7,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 14,
+									"stagedEvidenceRows": 71
+								},
+								"queryMs": 21.29,
+								"refreshMs": 38.783
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 152.26,
+						"meanMs": 151.669,
+						"minMs": 151.274,
+						"p50Ms": 151.474,
+						"p95Ms": 152.26,
+						"samplesMs": [151.474, 151.274, 152.26]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 74283,
+							"durationMs": 151.474,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 4,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 169803776,
+							"protocolBytes": 81016,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.379,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 2,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 19.287,
+								"refreshMs": 19.695
+							}
+						},
+						{
+							"cacheBytes": 74283,
+							"durationMs": 151.274,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 5,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 169869312,
+							"protocolBytes": 81016,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.389,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 2,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 18.949,
+								"refreshMs": 18.354
+							}
+						},
+						{
+							"cacheBytes": 74283,
+							"durationMs": 152.26,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 56,
+								"generation": 6,
+								"inputCandidates": 25,
+								"mapCount": 4,
+								"packageCount": 71,
+								"queryPages": 5,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 28022,
+							"nodePeakRssBytes": 170856448,
+							"protocolBytes": 81016,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 0.302,
+								"native": {
+									"committingMs": 1,
+									"comparingMs": 0,
+									"committedEvidenceRows": 0,
+									"durationMs": 2,
+									"enumeratingMs": 1,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 18.646,
+								"refreshMs": 19.166
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"medium-sqlite": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T13:56:33.936Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "sqlite-base.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 9427.424,
+						"meanMs": 3831.879,
+						"minMs": 957.155,
+						"p50Ms": 1111.057,
+						"p95Ms": 9427.424,
+						"samplesMs": [9427.424, 1111.057, 957.155]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 35324246,
+							"durationMs": 9427.424,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685691,
+							"nodePeakRssBytes": 226344960,
+							"protocolBytes": 4256260,
+							"rustPeakRssBytes": 59236352,
+							"timings": {
+								"foldingMs": 26.115,
+								"inputDecodeMs": 96.981,
+								"native": {
+									"committingMs": 274,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 9016,
+									"enumeratingMs": 29,
+									"evidenceWriteMs": 465,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 8245,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 8710,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 256.707,
+								"refreshMs": 9040.379
+							}
+						},
+						{
+							"cacheBytes": 35324246,
+							"durationMs": 1111.057,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 253984768,
+							"protocolBytes": 4256351,
+							"rustPeakRssBytes": 59674624,
+							"timings": {
+								"foldingMs": 21.306,
+								"inputDecodeMs": 90.717,
+								"native": {
+									"committingMs": 262,
+									"comparingMs": 0,
+									"committedEvidenceRows": 10128,
+									"durationMs": 665,
+									"enumeratingMs": 29,
+									"evidenceWriteMs": 379,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 372,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 253.033,
+								"refreshMs": 683.182
+							}
+						},
+						{
+							"cacheBytes": 35324246,
+							"durationMs": 957.155,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 260055040,
+							"protocolBytes": 4256351,
+							"rustPeakRssBytes": 58839040,
+							"timings": {
+								"foldingMs": 18.148,
+								"inputDecodeMs": 60.258,
+								"native": {
+									"committingMs": 207,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 603,
+									"enumeratingMs": 32,
+									"evidenceWriteMs": 321,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 41,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 362,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 183.058,
+								"refreshMs": 630.16
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 347.99,
+						"meanMs": 340.331,
+						"minMs": 328.702,
+						"p50Ms": 344.302,
+						"p95Ms": 347.99,
+						"samplesMs": [347.99, 344.302, 328.702]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 35324242,
+							"durationMs": 347.99,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 4,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 259424256,
+							"protocolBytes": 3780278,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 23.657,
+								"native": {
+									"committingMs": 5,
+									"comparingMs": 5,
+									"committedEvidenceRows": 0,
+									"durationMs": 46,
+									"enumeratingMs": 35,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 184.876,
+								"refreshMs": 63.685
+							}
+						},
+						{
+							"cacheBytes": 35324242,
+							"durationMs": 344.302,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 5,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 266780672,
+							"protocolBytes": 3780278,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 16.311,
+								"native": {
+									"committingMs": 5,
+									"comparingMs": 6,
+									"committedEvidenceRows": 0,
+									"durationMs": 53,
+									"enumeratingMs": 41,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 179.981,
+								"refreshMs": 72.599
+							}
+						},
+						{
+							"cacheBytes": 35324242,
+							"durationMs": 328.702,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 6,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 273281024,
+							"protocolBytes": 3780278,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 18.739,
+								"native": {
+									"committingMs": 4,
+									"comparingMs": 4,
+									"committedEvidenceRows": 0,
+									"durationMs": 43,
+									"enumeratingMs": 34,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 166.646,
+								"refreshMs": 61.603
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"medium-custom": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T13:56:38.672Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "custom-v2.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 696.418,
+						"meanMs": 642.036,
+						"minMs": 569.019,
+						"p50Ms": 660.672,
+						"p95Ms": 696.418,
+						"samplesMs": [696.418, 569.019, 660.672]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 8629379,
+							"durationMs": 696.418,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 238391296,
+							"protocolBytes": 4256349,
+							"rustPeakRssBytes": 23252992,
+							"timings": {
+								"foldingMs": 19.265,
+								"inputDecodeMs": 69.251,
+								"native": {
+									"committingMs": 45,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 322,
+									"enumeratingMs": 28,
+									"evidenceWriteMs": 102,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 146,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 248,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 161.9,
+								"refreshMs": 345.428
+							}
+						},
+						{
+							"cacheBytes": 8629379,
+							"durationMs": 569.019,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 245063680,
+							"protocolBytes": 4256442,
+							"rustPeakRssBytes": 23064576,
+							"timings": {
+								"foldingMs": 14.736,
+								"inputDecodeMs": 57.322,
+								"native": {
+									"committingMs": 47,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 357,
+									"enumeratingMs": 28,
+									"evidenceWriteMs": 122,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 157,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 279,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 121.017,
+								"refreshMs": 373.808
+							}
+						},
+						{
+							"cacheBytes": 8629379,
+							"durationMs": 660.672,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 299388928,
+							"protocolBytes": 4256442,
+							"rustPeakRssBytes": 38014976,
+							"timings": {
+								"foldingMs": 18.286,
+								"inputDecodeMs": 58.777,
+								"native": {
+									"committingMs": 47,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 343,
+									"enumeratingMs": 28,
+									"evidenceWriteMs": 118,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 147,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 265,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 161.376,
+								"refreshMs": 360.852
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 335.389,
+						"meanMs": 320.744,
+						"minMs": 309.141,
+						"p50Ms": 317.701,
+						"p95Ms": 335.389,
+						"samplesMs": [309.141, 317.701, 335.389]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 8629375,
+							"durationMs": 309.141,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 4,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 297410560,
+							"protocolBytes": 3780316,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 16.859,
+								"native": {
+									"committingMs": 8,
+									"comparingMs": 6,
+									"committedEvidenceRows": 0,
+									"durationMs": 46,
+									"enumeratingMs": 31,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 114.298,
+								"refreshMs": 68.568
+							}
+						},
+						{
+							"cacheBytes": 8629375,
+							"durationMs": 317.701,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 5,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 305524736,
+							"protocolBytes": 3780316,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 15.153,
+								"native": {
+									"committingMs": 6,
+									"comparingMs": 4,
+									"committedEvidenceRows": 0,
+									"durationMs": 41,
+									"enumeratingMs": 29,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 121.348,
+								"refreshMs": 62.926
+							}
+						},
+						{
+							"cacheBytes": 8629375,
+							"durationMs": 335.389,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 6,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 312160256,
+							"protocolBytes": 3780316,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 17.876,
+								"native": {
+									"committingMs": 6,
+									"comparingMs": 5,
+									"committedEvidenceRows": 0,
+									"durationMs": 42,
+									"enumeratingMs": 30,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 131.925,
+								"refreshMs": 64.519
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"medium-binary-final": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T14:24:37.620Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "binary-final.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 697.587,
+						"meanMs": 606.903,
+						"minMs": 542.248,
+						"p50Ms": 580.873,
+						"p95Ms": 697.587,
+						"samplesMs": [697.587, 542.248, 580.873]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 8629379,
+							"durationMs": 697.587,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685692,
+							"nodePeakRssBytes": 186277888,
+							"protocolBytes": 4256349,
+							"rustPeakRssBytes": 38400000,
+							"timings": {
+								"foldingMs": 18.684,
+								"inputDecodeMs": 70.582,
+								"native": {
+									"committingMs": 52,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 389,
+									"enumeratingMs": 34,
+									"evidenceWriteMs": 119,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 182,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 301,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 145.953,
+								"refreshMs": 413.095
+							}
+						},
+						{
+							"cacheBytes": 8629379,
+							"durationMs": 542.248,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 208953344,
+							"protocolBytes": 4256442,
+							"rustPeakRssBytes": 27058176,
+							"timings": {
+								"foldingMs": 13.027,
+								"inputDecodeMs": 56.865,
+								"native": {
+									"committingMs": 50,
+									"comparingMs": 1,
+									"committedEvidenceRows": 10128,
+									"durationMs": 329,
+									"enumeratingMs": 28,
+									"evidenceWriteMs": 116,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 133,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 249,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 117.179,
+								"refreshMs": 352.855
+							}
+						},
+						{
+							"cacheBytes": 8629379,
+							"durationMs": 580.873,
+							"index": {
+								"changedPackages": 10128,
+								"emittedHeaders": 2425,
+								"generation": 1,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"inputPackages": 38,
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 231563264,
+							"protocolBytes": 4256442,
+							"rustPeakRssBytes": 24858624,
+							"timings": {
+								"foldingMs": 13.826,
+								"inputDecodeMs": 55.363,
+								"native": {
+									"committingMs": 53,
+									"comparingMs": 0,
+									"committedEvidenceRows": 10128,
+									"durationMs": 325,
+									"enumeratingMs": 28,
+									"evidenceWriteMs": 114,
+									"headerReads": 10128,
+									"headerProcessingExcludingEvidenceWritesMs": 128,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 242,
+									"stagedEvidenceRows": 10128
+								},
+								"queryMs": 111.93,
+								"refreshMs": 345.02
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 368.796,
+						"meanMs": 336.543,
+						"minMs": 319.519,
+						"p50Ms": 321.313,
+						"p95Ms": 368.796,
+						"samplesMs": [319.519, 368.796, 321.313]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 8629375,
+							"durationMs": 319.519,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 4,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 288727040,
+							"protocolBytes": 3780316,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 13.293,
+								"native": {
+									"committingMs": 6,
+									"comparingMs": 6,
+									"committedEvidenceRows": 0,
+									"durationMs": 42,
+									"enumeratingMs": 29,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 120.495,
+								"refreshMs": 65
+							}
+						},
+						{
+							"cacheBytes": 8629375,
+							"durationMs": 368.796,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 5,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 306917376,
+							"protocolBytes": 3780316,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 27.03,
+								"native": {
+									"committingMs": 6,
+									"comparingMs": 4,
+									"committedEvidenceRows": 0,
+									"durationMs": 40,
+									"enumeratingMs": 29,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 167.391,
+								"refreshMs": 68.997
+							}
+						},
+						{
+							"cacheBytes": 8629375,
+							"durationMs": 321.313,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 2425,
+								"generation": 6,
+								"inputCandidates": 38,
+								"mapCount": 59,
+								"packageCount": 10128,
+								"queryPages": 7,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 1685693,
+							"nodePeakRssBytes": 314601472,
+							"protocolBytes": 3780316,
+							"rustPeakRssBytes": null,
+							"timings": {
+								"foldingMs": 14.777,
+								"native": {
+									"committingMs": 7,
+									"comparingMs": 4,
+									"committedEvidenceRows": 0,
+									"durationMs": 42,
+									"enumeratingMs": 30,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 119.566,
+								"refreshMs": 68.326
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-sqlite": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T14:00:34.626Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "sqlite-base.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 185093.542,
+						"meanMs": 71622.627,
+						"minMs": 14843.148,
+						"p50Ms": 14931.192,
+						"p95Ms": 185093.542,
+						"samplesMs": [185093.542, 14931.192, 14843.148]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 496226652,
+							"durationMs": 185093.542,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 310321152,
+							"protocolBytes": 25838230,
+							"rustPeakRssBytes": 281972736,
+							"timings": {
+								"foldingMs": 92.037,
+								"inputDecodeMs": 214.784,
+								"native": {
+									"committingMs": 2832,
+									"comparingMs": 25,
+									"committedEvidenceRows": 199539,
+									"durationMs": 183399,
+									"enumeratingMs": 2030,
+									"evidenceWriteMs": 7655,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 170855,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 178510,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 1344.344,
+								"refreshMs": 183422.926
+							}
+						},
+						{
+							"cacheBytes": 496226652,
+							"durationMs": 14931.192,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 347213824,
+							"protocolBytes": 25838649,
+							"rustPeakRssBytes": 285560832,
+							"timings": {
+								"foldingMs": 90.047,
+								"inputDecodeMs": 177.112,
+								"native": {
+									"committingMs": 2895,
+									"comparingMs": 26,
+									"committedEvidenceRows": 199539,
+									"durationMs": 13270,
+									"enumeratingMs": 1969,
+									"evidenceWriteMs": 5626,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 2753,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 8379,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 1326.691,
+								"refreshMs": 13296.701
+							}
+						},
+						{
+							"cacheBytes": 496226652,
+							"durationMs": 14843.148,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 347328512,
+							"protocolBytes": 25838649,
+							"rustPeakRssBytes": 349700096,
+							"timings": {
+								"foldingMs": 92.55,
+								"inputDecodeMs": 193.823,
+								"native": {
+									"committingMs": 2778,
+									"comparingMs": 29,
+									"committedEvidenceRows": 199539,
+									"durationMs": 13167,
+									"enumeratingMs": 2000,
+									"evidenceWriteMs": 5507,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 2850,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 8357,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 1336.76,
+								"refreshMs": 13187.015
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 3737.267,
+						"meanMs": 3697.497,
+						"minMs": 3673.522,
+						"p50Ms": 3681.701,
+						"p95Ms": 3737.267,
+						"samplesMs": [3681.701, 3673.522, 3737.267]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 496226647,
+							"durationMs": 3681.701,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 389251072,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 145494016,
+							"timings": {
+								"foldingMs": 92.863,
+								"native": {
+									"committingMs": 60,
+									"comparingMs": 122,
+									"committedEvidenceRows": 0,
+									"durationMs": 2260,
+									"enumeratingMs": 2077,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 1268.481,
+								"refreshMs": 2308.976
+							}
+						},
+						{
+							"cacheBytes": 496226647,
+							"durationMs": 3673.522,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 323399680,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 151064576,
+							"timings": {
+								"foldingMs": 93.709,
+								"native": {
+									"committingMs": 58,
+									"comparingMs": 124,
+									"committedEvidenceRows": 0,
+									"durationMs": 2247,
+									"enumeratingMs": 2064,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 1269.618,
+								"refreshMs": 2289.06
+							}
+						},
+						{
+							"cacheBytes": 496226647,
+							"durationMs": 3737.267,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 337756160,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 133967872,
+							"timings": {
+								"foldingMs": 80.496,
+								"native": {
+									"committingMs": 60,
+									"comparingMs": 123,
+									"committedEvidenceRows": 0,
+									"durationMs": 2299,
+									"enumeratingMs": 2115,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 1308.802,
+								"refreshMs": 2341.13
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-custom": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T14:01:21.157Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "custom-v2.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 10268.374,
+						"meanMs": 9897.955,
+						"minMs": 9682.773,
+						"p50Ms": 9742.718,
+						"p95Ms": 10268.374,
+						"samplesMs": [10268.374, 9682.773, 9742.718]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 10268.374,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 345890816,
+							"protocolBytes": 25838225,
+							"rustPeakRssBytes": 407105536,
+							"timings": {
+								"foldingMs": 93.716,
+								"inputDecodeMs": 210.628,
+								"native": {
+									"committingMs": 645,
+									"comparingMs": 27,
+									"committedEvidenceRows": 199539,
+									"durationMs": 9144,
+									"enumeratingMs": 1972,
+									"evidenceWriteMs": 2090,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 4409,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 6499,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 781.589,
+								"refreshMs": 9169.212
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 9682.773,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 361586688,
+							"protocolBytes": 25838647,
+							"rustPeakRssBytes": 413241344,
+							"timings": {
+								"foldingMs": 81.85,
+								"inputDecodeMs": 172.031,
+								"native": {
+									"committingMs": 708,
+									"comparingMs": 26,
+									"committedEvidenceRows": 199539,
+									"durationMs": 8661,
+									"enumeratingMs": 1952,
+									"evidenceWriteMs": 1981,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 3993,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 5974,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 714.778,
+								"refreshMs": 8679.011
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 9742.718,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 344854528,
+							"protocolBytes": 25838647,
+							"rustPeakRssBytes": 401330176,
+							"timings": {
+								"foldingMs": 120.379,
+								"inputDecodeMs": 197.524,
+								"native": {
+									"committingMs": 626,
+									"comparingMs": 26,
+									"committedEvidenceRows": 199539,
+									"durationMs": 8599,
+									"enumeratingMs": 1945,
+									"evidenceWriteMs": 1938,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 4062,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 6000,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 780.348,
+								"refreshMs": 8617.555
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 3087.884,
+						"meanMs": 3080.407,
+						"minMs": 3065.759,
+						"p50Ms": 3087.577,
+						"p95Ms": 3087.884,
+						"samplesMs": [3087.577, 3087.884, 3065.759]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 3087.577,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 383483904,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 202985472,
+							"timings": {
+								"foldingMs": 90.74,
+								"native": {
+									"committingMs": 77,
+									"comparingMs": 125,
+									"committedEvidenceRows": 0,
+									"durationMs": 2225,
+									"enumeratingMs": 2022,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 667.769,
+								"refreshMs": 2324.114
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 3087.884,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 383488000,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 214806528,
+							"timings": {
+								"foldingMs": 85.096,
+								"native": {
+									"committingMs": 75,
+									"comparingMs": 124,
+									"committedEvidenceRows": 0,
+									"durationMs": 2210,
+									"enumeratingMs": 2010,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 689.746,
+								"refreshMs": 2307.962
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 3065.759,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 443969536,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 221679616,
+							"timings": {
+								"foldingMs": 95.299,
+								"native": {
+									"committingMs": 75,
+									"comparingMs": 127,
+									"committedEvidenceRows": 0,
+									"durationMs": 2173,
+									"enumeratingMs": 1970,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 674.643,
+								"refreshMs": 2271.09
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-binary-final": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T14:25:30.879Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "binary-final.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 12569.758,
+						"meanMs": 11615.663,
+						"minMs": 11047.931,
+						"p50Ms": 11229.301,
+						"p95Ms": 12569.758,
+						"samplesMs": [12569.758, 11047.931, 11229.301]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 12569.758,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 309301248,
+							"protocolBytes": 25838226,
+							"rustPeakRssBytes": 402305024,
+							"timings": {
+								"foldingMs": 96.903,
+								"inputDecodeMs": 222.853,
+								"native": {
+									"committingMs": 652,
+									"comparingMs": 27,
+									"committedEvidenceRows": 199539,
+									"durationMs": 11292,
+									"enumeratingMs": 2652,
+									"evidenceWriteMs": 2313,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 5648,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 7961,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 791.66,
+								"refreshMs": 11316.997
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 11047.931,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 351584256,
+							"protocolBytes": 25838647,
+							"rustPeakRssBytes": 441450496,
+							"timings": {
+								"foldingMs": 100.73,
+								"inputDecodeMs": 191.662,
+								"native": {
+									"committingMs": 681,
+									"comparingMs": 26,
+									"committedEvidenceRows": 199539,
+									"durationMs": 9984,
+									"enumeratingMs": 2000,
+									"evidenceWriteMs": 2235,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 5040,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 7275,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 724.699,
+								"refreshMs": 10003.359
+							}
+						},
+						{
+							"cacheBytes": 137360317,
+							"durationMs": 11229.301,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 352346112,
+							"protocolBytes": 25838648,
+							"rustPeakRssBytes": 406233088,
+							"timings": {
+								"foldingMs": 86.033,
+								"inputDecodeMs": 191.076,
+								"native": {
+									"committingMs": 660,
+									"comparingMs": 27,
+									"committedEvidenceRows": 199539,
+									"durationMs": 10137,
+									"enumeratingMs": 2084,
+									"evidenceWriteMs": 2268,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 5097,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 7365,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 770.531,
+								"refreshMs": 10156.643
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 3419.935,
+						"meanMs": 3208.136,
+						"minMs": 3035.061,
+						"p50Ms": 3169.411,
+						"p95Ms": 3419.935,
+						"samplesMs": [3035.061, 3169.411, 3419.935]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 3035.061,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 348663808,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 210960384,
+							"timings": {
+								"foldingMs": 76.479,
+								"native": {
+									"committingMs": 75,
+									"comparingMs": 121,
+									"committedEvidenceRows": 0,
+									"durationMs": 2191,
+									"enumeratingMs": 1993,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 660.884,
+								"refreshMs": 2292.071
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 3169.411,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 348024832,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 200810496,
+							"timings": {
+								"foldingMs": 89.583,
+								"native": {
+									"committingMs": 80,
+									"comparingMs": 123,
+									"committedEvidenceRows": 0,
+									"durationMs": 2247,
+									"enumeratingMs": 2042,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 727.522,
+								"refreshMs": 2345.607
+							}
+						},
+						{
+							"cacheBytes": 137360312,
+							"durationMs": 3419.935,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 356544512,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 192946176,
+							"timings": {
+								"foldingMs": 80.001,
+								"native": {
+									"committingMs": 82,
+									"comparingMs": 131,
+									"committedEvidenceRows": 0,
+									"durationMs": 2518,
+									"enumeratingMs": 2304,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 712.972,
+								"refreshMs": 2620.367
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		},
+		"large-sqlite-confirm": {
+			"schemaVersion": 4,
+			"generatedAt": "2026-09-05T14:27:26.650Z",
+			"configuration": {
+				"mutationScenarios": "not_requested",
+				"reader": "sqlite-base.exe",
+				"readerBuild": "skipped",
+				"runs": 3,
+				"warmups": 1
+			},
+			"git": {
+				"dirty": true,
+				"revision": "6aee4380fa78753faae10679ae274717ebf13fd1"
+			},
+			"machine": {
+				"architecture": "x64",
+				"cpuCount": 32,
+				"cpuModel": "AMD Ryzen 9 7950X 16-Core Processor            ",
+				"memoryBytes": 67836526592,
+				"nodeVersion": "v26.5.0",
+				"operatingSystem": "win32 10.0.26200",
+				"rustVersion": "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+			},
+			"scenarios": {
+				"project_index.cold_build": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 16822.968,
+						"meanMs": 16427.565,
+						"minMs": 16054.292,
+						"p50Ms": 16405.436,
+						"p95Ms": 16822.968,
+						"samplesMs": [16405.436, 16822.968, 16054.292]
+					},
+					"failureKinds": [],
+					"notes": "The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode.",
+					"samples": [
+						{
+							"cacheBytes": 496226652,
+							"durationMs": 16405.436,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 286650368,
+							"protocolBytes": 25838227,
+							"rustPeakRssBytes": 307814400,
+							"timings": {
+								"foldingMs": 95.994,
+								"inputDecodeMs": 222.046,
+								"native": {
+									"committingMs": 2994,
+									"comparingMs": 26,
+									"committedEvidenceRows": 199539,
+									"durationMs": 14623,
+									"enumeratingMs": 2016,
+									"evidenceWriteMs": 5871,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 3715,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 9586,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 1422.296,
+								"refreshMs": 14648.221
+							}
+						},
+						{
+							"cacheBytes": 496226652,
+							"durationMs": 16822.968,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 287944704,
+							"protocolBytes": 25838649,
+							"rustPeakRssBytes": 285896704,
+							"timings": {
+								"foldingMs": 87.088,
+								"inputDecodeMs": 197.707,
+								"native": {
+									"committingMs": 3008,
+									"comparingMs": 26,
+									"committedEvidenceRows": 199539,
+									"durationMs": 15163,
+									"enumeratingMs": 2163,
+									"evidenceWriteMs": 6080,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 3884,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 9964,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 1339.87,
+								"refreshMs": 15183.021
+							}
+						},
+						{
+							"cacheBytes": 496226652,
+							"durationMs": 16054.292,
+							"index": {
+								"changedPackages": 199539,
+								"emittedHeaders": 14927,
+								"generation": 1,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"inputPackages": 173,
+							"largestProtocolFrameBytes": 2384737,
+							"nodePeakRssBytes": 288743424,
+							"protocolBytes": 25838649,
+							"rustPeakRssBytes": 289787904,
+							"timings": {
+								"foldingMs": 87.467,
+								"inputDecodeMs": 210.384,
+								"native": {
+									"committingMs": 2944,
+									"comparingMs": 25,
+									"committedEvidenceRows": 199539,
+									"durationMs": 14377,
+									"enumeratingMs": 1959,
+									"evidenceWriteMs": 5836,
+									"headerReads": 199539,
+									"headerProcessingExcludingEvidenceWritesMs": 3611,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 9447,
+									"stagedEvidenceRows": 199539
+								},
+								"queryMs": 1348.555,
+								"refreshMs": 14397.735
+							}
+						}
+					],
+					"status": "completed"
+				},
+				"project_index.warm_noop": {
+					"distribution": {
+						"count": 3,
+						"maxMs": 3683.249,
+						"meanMs": 3674.338,
+						"minMs": 3657.835,
+						"p50Ms": 3681.93,
+						"p95Ms": 3683.249,
+						"samplesMs": [3683.249, 3681.93, 3657.835]
+					},
+					"failureKinds": [],
+					"notes": "The committed SQLite snapshot is reused. Refresh still enumerates signatures, while unchanged packages should report zero changed packages, zero header reads, and zero evidence writes.",
+					"samples": [
+						{
+							"cacheBytes": 496226647,
+							"durationMs": 3683.249,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 4,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 354713600,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 144019456,
+							"timings": {
+								"foldingMs": 79.901,
+								"native": {
+									"committingMs": 60,
+									"comparingMs": 122,
+									"committedEvidenceRows": 0,
+									"durationMs": 2244,
+									"enumeratingMs": 2060,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 1303.656,
+								"refreshMs": 2292.828
+							}
+						},
+						{
+							"cacheBytes": 496226647,
+							"durationMs": 3681.93,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 5,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 353591296,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 146165760,
+							"timings": {
+								"foldingMs": 86.215,
+								"native": {
+									"committingMs": 58,
+									"comparingMs": 124,
+									"committedEvidenceRows": 0,
+									"durationMs": 2232,
+									"enumeratingMs": 2048,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 1308.512,
+								"refreshMs": 2280.741
+							}
+						},
+						{
+							"cacheBytes": 496226647,
+							"durationMs": 3657.835,
+							"index": {
+								"changedPackages": 0,
+								"emittedHeaders": 14927,
+								"generation": 6,
+								"inputCandidates": 173,
+								"mapCount": 257,
+								"packageCount": 199539,
+								"queryPages": 18,
+								"removedPackages": 0
+							},
+							"largestProtocolFrameBytes": 2384738,
+							"nodePeakRssBytes": 340676608,
+							"protocolBytes": 24048693,
+							"rustPeakRssBytes": 149794816,
+							"timings": {
+								"foldingMs": 80.987,
+								"native": {
+									"committingMs": 56,
+									"comparingMs": 124,
+									"committedEvidenceRows": 0,
+									"durationMs": 2235,
+									"enumeratingMs": 2054,
+									"evidenceWriteMs": 0,
+									"headerReads": 0,
+									"headerProcessingExcludingEvidenceWritesMs": 0,
+									"removedEvidenceRows": 0,
+									"readingHeadersMs": 0,
+									"stagedEvidenceRows": 0
+								},
+								"queryMs": 1292.568,
+								"refreshMs": 2277.301
+							}
+						}
+					],
+					"status": "completed"
+				}
+			}
+		}
+	},
+	"medians": {
+		"small-sqlite": {
+			"project_index.cold_build": {
+				"totalMs": 145.653,
+				"timings": {
+					"foldingMs": 0.502,
+					"inputDecodeMs": 27.575,
+					"queryMs": 25.786,
+					"refreshMs": 36.402
+				},
+				"resources": {
+					"cacheBytes": 180590,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 155004928
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 145.44,
+				"timings": {
+					"foldingMs": 0.466,
+					"queryMs": 20.52,
+					"refreshMs": 18.979
+				},
+				"resources": {
+					"cacheBytes": 180589,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 169885696
+				}
+			}
+		},
+		"small-custom": {
+			"project_index.cold_build": {
+				"totalMs": 145.489,
+				"timings": {
+					"foldingMs": 0.495,
+					"inputDecodeMs": 24.711,
+					"queryMs": 22.24,
+					"refreshMs": 37.754
+				},
+				"resources": {
+					"cacheBytes": 74284,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 166809600
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 148.85,
+				"timings": {
+					"foldingMs": 0.295,
+					"queryMs": 18.782,
+					"refreshMs": 18.363
+				},
+				"resources": {
+					"cacheBytes": 74283,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 166993920
+				}
+			}
+		},
+		"small-binary-final": {
+			"project_index.cold_build": {
+				"totalMs": 155.962,
+				"timings": {
+					"foldingMs": 0.501,
+					"inputDecodeMs": 28.161,
+					"queryMs": 24.508,
+					"refreshMs": 45.612
+				},
+				"resources": {
+					"cacheBytes": 74284,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 154824704
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 151.474,
+				"timings": {
+					"foldingMs": 0.379,
+					"queryMs": 18.949,
+					"refreshMs": 19.166
+				},
+				"resources": {
+					"cacheBytes": 74283,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 169869312
+				}
+			}
+		},
+		"medium-sqlite": {
+			"project_index.cold_build": {
+				"totalMs": 1111.057,
+				"timings": {
+					"foldingMs": 21.306,
+					"inputDecodeMs": 90.717,
+					"queryMs": 253.033,
+					"refreshMs": 683.182
+				},
+				"resources": {
+					"cacheBytes": 35324246,
+					"rustPeakRssBytes": 59236352,
+					"nodePeakRssBytes": 253984768
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 344.302,
+				"timings": {
+					"foldingMs": 18.739,
+					"queryMs": 179.981,
+					"refreshMs": 63.685
+				},
+				"resources": {
+					"cacheBytes": 35324242,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 266780672
+				}
+			}
+		},
+		"medium-custom": {
+			"project_index.cold_build": {
+				"totalMs": 660.672,
+				"timings": {
+					"foldingMs": 18.286,
+					"inputDecodeMs": 58.777,
+					"queryMs": 161.376,
+					"refreshMs": 360.852
+				},
+				"resources": {
+					"cacheBytes": 8629379,
+					"rustPeakRssBytes": 23252992,
+					"nodePeakRssBytes": 245063680
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 317.701,
+				"timings": {
+					"foldingMs": 16.859,
+					"queryMs": 121.348,
+					"refreshMs": 64.519
+				},
+				"resources": {
+					"cacheBytes": 8629375,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 305524736
+				}
+			}
+		},
+		"medium-binary-final": {
+			"project_index.cold_build": {
+				"totalMs": 580.873,
+				"timings": {
+					"foldingMs": 13.826,
+					"inputDecodeMs": 56.865,
+					"queryMs": 117.179,
+					"refreshMs": 352.855
+				},
+				"resources": {
+					"cacheBytes": 8629379,
+					"rustPeakRssBytes": 27058176,
+					"nodePeakRssBytes": 208953344
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 321.313,
+				"timings": {
+					"foldingMs": 14.777,
+					"queryMs": 120.495,
+					"refreshMs": 68.326
+				},
+				"resources": {
+					"cacheBytes": 8629375,
+					"rustPeakRssBytes": null,
+					"nodePeakRssBytes": 306917376
+				}
+			}
+		},
+		"large-sqlite": {
+			"project_index.cold_build": {
+				"totalMs": 14931.192,
+				"timings": {
+					"foldingMs": 92.037,
+					"inputDecodeMs": 193.823,
+					"queryMs": 1336.76,
+					"refreshMs": 13296.701
+				},
+				"resources": {
+					"cacheBytes": 496226652,
+					"rustPeakRssBytes": 285560832,
+					"nodePeakRssBytes": 347213824
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 3681.701,
+				"timings": {
+					"foldingMs": 92.863,
+					"queryMs": 1269.618,
+					"refreshMs": 2308.976
+				},
+				"resources": {
+					"cacheBytes": 496226647,
+					"rustPeakRssBytes": 145494016,
+					"nodePeakRssBytes": 337756160
+				}
+			}
+		},
+		"large-custom": {
+			"project_index.cold_build": {
+				"totalMs": 9742.718,
+				"timings": {
+					"foldingMs": 93.716,
+					"inputDecodeMs": 197.524,
+					"queryMs": 780.348,
+					"refreshMs": 8679.011
+				},
+				"resources": {
+					"cacheBytes": 137360317,
+					"rustPeakRssBytes": 407105536,
+					"nodePeakRssBytes": 345890816
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 3087.577,
+				"timings": {
+					"foldingMs": 90.74,
+					"queryMs": 674.643,
+					"refreshMs": 2307.962
+				},
+				"resources": {
+					"cacheBytes": 137360312,
+					"rustPeakRssBytes": 214806528,
+					"nodePeakRssBytes": 383488000
+				}
+			}
+		},
+		"large-binary-final": {
+			"project_index.cold_build": {
+				"totalMs": 11229.301,
+				"timings": {
+					"foldingMs": 96.903,
+					"inputDecodeMs": 191.662,
+					"queryMs": 770.531,
+					"refreshMs": 10156.643
+				},
+				"resources": {
+					"cacheBytes": 137360317,
+					"rustPeakRssBytes": 406233088,
+					"nodePeakRssBytes": 351584256
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 3169.411,
+				"timings": {
+					"foldingMs": 80.001,
+					"queryMs": 712.972,
+					"refreshMs": 2345.607
+				},
+				"resources": {
+					"cacheBytes": 137360312,
+					"rustPeakRssBytes": 200810496,
+					"nodePeakRssBytes": 348663808
+				}
+			}
+		},
+		"large-sqlite-confirm": {
+			"project_index.cold_build": {
+				"totalMs": 16405.436,
+				"timings": {
+					"foldingMs": 87.467,
+					"inputDecodeMs": 210.384,
+					"queryMs": 1348.555,
+					"refreshMs": 14648.221
+				},
+				"resources": {
+					"cacheBytes": 496226652,
+					"rustPeakRssBytes": 289787904,
+					"nodePeakRssBytes": 287944704
+				}
+			},
+			"project_index.warm_noop": {
+				"totalMs": 3681.93,
+				"timings": {
+					"foldingMs": 80.987,
+					"queryMs": 1303.656,
+					"refreshMs": 2280.741
+				},
+				"resources": {
+					"cacheBytes": 496226647,
+					"rustPeakRssBytes": 146165760,
+					"nodePeakRssBytes": 353591296
+				}
+			}
+		}
+	},
+	"parity": {
+		"small": {
+			"sqlite": {
+				"packages": 71,
+				"maps": 4,
+				"completeness": "complete",
+				"queries": [
+					{
+						"kind": "maps",
+						"items": 4,
+						"pages": 1,
+						"sha256": "ecfa3cbbb81a9d2fee34be0d2e0202bb43537ae692c16f652d633a513c6e340c"
+					},
+					{
+						"kind": "exact_classes",
+						"items": 30,
+						"pages": 1,
+						"sha256": "aa896c63e688ecc9dcee6199984b01e8563810f6ef373b29c0601ae51858393b"
+					},
+					{
+						"kind": "class_prefixes",
+						"items": 25,
+						"pages": 1,
+						"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+					},
+					{
+						"kind": "class_name_suffixes",
+						"items": 25,
+						"pages": 1,
+						"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+					},
+					{
+						"kind": "serialized_names",
+						"items": 26,
+						"pages": 1,
+						"sha256": "f41a0d53fc4d137943faf15ade5b5c3b52ee9ae67305811cdf6a5a4d0fa917ff"
+					}
+				]
+			},
+			"binary": {
+				"packages": 71,
+				"maps": 4,
+				"completeness": "complete",
+				"queries": [
+					{
+						"kind": "maps",
+						"items": 4,
+						"pages": 1,
+						"sha256": "ecfa3cbbb81a9d2fee34be0d2e0202bb43537ae692c16f652d633a513c6e340c"
+					},
+					{
+						"kind": "exact_classes",
+						"items": 30,
+						"pages": 1,
+						"sha256": "aa896c63e688ecc9dcee6199984b01e8563810f6ef373b29c0601ae51858393b"
+					},
+					{
+						"kind": "class_prefixes",
+						"items": 25,
+						"pages": 1,
+						"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+					},
+					{
+						"kind": "class_name_suffixes",
+						"items": 25,
+						"pages": 1,
+						"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+					},
+					{
+						"kind": "serialized_names",
+						"items": 26,
+						"pages": 1,
+						"sha256": "f41a0d53fc4d137943faf15ade5b5c3b52ee9ae67305811cdf6a5a4d0fa917ff"
+					}
+				]
+			}
+		},
+		"medium": {
+			"sqlite": {
+				"packages": 10128,
+				"maps": 59,
+				"completeness": "complete",
+				"queries": [
+					{
+						"kind": "maps",
+						"items": 59,
+						"pages": 1,
+						"sha256": "d61587073d90aaac8028da219a84b86bc91998268104afd9c86eed86050221cd"
+					},
+					{
+						"kind": "exact_classes",
+						"items": 2274,
+						"pages": 3,
+						"sha256": "8b087de5a03e775367c9547b445adcb28807e01724b42f5d66cb373902b1d9cf"
+					},
+					{
+						"kind": "class_prefixes",
+						"items": 35,
+						"pages": 1,
+						"sha256": "866420b1ca6318cdff196454c3a03baabee05366b6188abfeb8cf15ac8f10f98"
+					},
+					{
+						"kind": "class_name_suffixes",
+						"items": 38,
+						"pages": 1,
+						"sha256": "1cdb75b836bf84865bc7579ba4fe4d801de460e0588c0512ac004fe1d3966a1d"
+					},
+					{
+						"kind": "serialized_names",
+						"items": 117,
+						"pages": 1,
+						"sha256": "3952b4871596b81ed15e78a0079da7c6486f1f974237130a33003f0092c11a5c"
+					}
+				]
+			},
+			"binary": {
+				"packages": 10128,
+				"maps": 59,
+				"completeness": "complete",
+				"queries": [
+					{
+						"kind": "maps",
+						"items": 59,
+						"pages": 1,
+						"sha256": "d61587073d90aaac8028da219a84b86bc91998268104afd9c86eed86050221cd"
+					},
+					{
+						"kind": "exact_classes",
+						"items": 2274,
+						"pages": 3,
+						"sha256": "8b087de5a03e775367c9547b445adcb28807e01724b42f5d66cb373902b1d9cf"
+					},
+					{
+						"kind": "class_prefixes",
+						"items": 35,
+						"pages": 1,
+						"sha256": "866420b1ca6318cdff196454c3a03baabee05366b6188abfeb8cf15ac8f10f98"
+					},
+					{
+						"kind": "class_name_suffixes",
+						"items": 38,
+						"pages": 1,
+						"sha256": "1cdb75b836bf84865bc7579ba4fe4d801de460e0588c0512ac004fe1d3966a1d"
+					},
+					{
+						"kind": "serialized_names",
+						"items": 117,
+						"pages": 1,
+						"sha256": "3952b4871596b81ed15e78a0079da7c6486f1f974237130a33003f0092c11a5c"
+					}
+				]
+			}
+		},
+		"large": {
+			"sqlite": {
+				"packages": 199539,
+				"maps": 257,
+				"completeness": "complete",
+				"queries": [
+					{
+						"kind": "maps",
+						"items": 257,
+						"pages": 1,
+						"sha256": "6dec5e95c6957ffabd8a0c51447a30370c743fc0b376e787cb9606213de094f0"
+					},
+					{
+						"kind": "exact_classes",
+						"items": 12862,
+						"pages": 13,
+						"sha256": "d4da0f7eda464767d49c4964761ea49360aebbe6473b576ec3b333f6ed76fe99"
+					},
+					{
+						"kind": "class_prefixes",
+						"items": 135,
+						"pages": 1,
+						"sha256": "70e5ace144b7cc3553518553175e99c2399147317d6c1d28eaa510426d73baac"
+					},
+					{
+						"kind": "class_name_suffixes",
+						"items": 173,
+						"pages": 1,
+						"sha256": "e92dfacbbae3d7337604a673dc36bb510c77fced62ce96270d5cef9e222bc1f7"
+					},
+					{
+						"kind": "serialized_names",
+						"items": 2009,
+						"pages": 2,
+						"sha256": "f96d6ef77b9125e6c205ee5b293b001bdb393d3005c101041432fd9367a719d7"
+					}
+				]
+			},
+			"binary": {
+				"packages": 199539,
+				"maps": 257,
+				"completeness": "complete",
+				"queries": [
+					{
+						"kind": "maps",
+						"items": 257,
+						"pages": 1,
+						"sha256": "6dec5e95c6957ffabd8a0c51447a30370c743fc0b376e787cb9606213de094f0"
+					},
+					{
+						"kind": "exact_classes",
+						"items": 12862,
+						"pages": 13,
+						"sha256": "d4da0f7eda464767d49c4964761ea49360aebbe6473b576ec3b333f6ed76fe99"
+					},
+					{
+						"kind": "class_prefixes",
+						"items": 135,
+						"pages": 1,
+						"sha256": "70e5ace144b7cc3553518553175e99c2399147317d6c1d28eaa510426d73baac"
+					},
+					{
+						"kind": "class_name_suffixes",
+						"items": 173,
+						"pages": 1,
+						"sha256": "e92dfacbbae3d7337604a673dc36bb510c77fced62ce96270d5cef9e222bc1f7"
+					},
+					{
+						"kind": "serialized_names",
+						"items": 2009,
+						"pages": 2,
+						"sha256": "f96d6ef77b9125e6c205ee5b293b001bdb393d3005c101041432fd9367a719d7"
+					}
+				]
+			}
+		}
+	},
+	"repair": {
+		"sqlite": {
+			"runs": [
+				{
+					"elapsed_ms": 2471.788099996047,
+					"aggregate": {
+						"generation": 2,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 231,
+						"storage_bytes": 992452991,
+						"duration_ms": 2427,
+						"enumerating_ms": 1992,
+						"comparing_ms": 120,
+						"reading_headers_ms": 104,
+						"committing_ms": 210
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 303.15029999474064,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 302.2629000188317,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 297.6306999917142,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 535.8402999991085,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 540.7729000144172,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 526.9634000142105,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 26.04209998389706,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 26.567700027953833,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 25.87739998125471,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				},
+				{
+					"elapsed_ms": 2617.017099983059,
+					"aggregate": {
+						"generation": 3,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 302,
+						"storage_bytes": 992452991,
+						"duration_ms": 2575,
+						"enumerating_ms": 2011,
+						"comparing_ms": 122,
+						"reading_headers_ms": 111,
+						"committing_ms": 329
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 311.56689999625087,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 303.4703000157606,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 301.37010000180453,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 533.5672000073828,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 543.487399991136,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 538.7441999919247,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 27.758899988839403,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 26.152799982810393,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 26.89849998569116,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				},
+				{
+					"elapsed_ms": 2537.4327000172343,
+					"aggregate": {
+						"generation": 4,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 236,
+						"storage_bytes": 992452992,
+						"duration_ms": 2493,
+						"enumerating_ms": 2000,
+						"comparing_ms": 121,
+						"reading_headers_ms": 108,
+						"committing_ms": 262
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 311.7156999942381,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 300.9977999900002,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 303.71710000326857,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 542.5618000153918,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 558.6572000174783,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 541.9170999957714,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 26.696400018408895,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 27.72060001734644,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 28.105200006393716,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				}
+			],
+			"medianMs": 2537.4327000172343,
+			"medianCommitMs": 262,
+			"medianStorageBytes": 992452991,
+			"processNameMedianMs": {
+				"TextProperty": 303.15029999474064,
+				"__UE_SHED_ABSENT_NAME_PROBE__": 540.7729000144172,
+				"None": 26.696400018408895
+			}
+		},
+		"custom": {
+			"runs": [
+				{
+					"elapsed_ms": 2710.587699984899,
+					"aggregate": {
+						"generation": 2,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 496,
+						"storage_bytes": 274720322,
+						"duration_ms": 2610,
+						"enumerating_ms": 1933,
+						"comparing_ms": 119,
+						"reading_headers_ms": 43,
+						"committing_ms": 514
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 100.60940001858398,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 91.99229997466318,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 92.54889999283478,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 85.25840000947937,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 84.70820001093671,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 84.656899998663,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 95.92519997386262,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 96.38580001774244,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 100.4994000250008,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				},
+				{
+					"elapsed_ms": 2807.5086000026204,
+					"aggregate": {
+						"generation": 3,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 518,
+						"storage_bytes": 274720322,
+						"duration_ms": 2703,
+						"enumerating_ms": 1982,
+						"comparing_ms": 120,
+						"reading_headers_ms": 44,
+						"committing_ms": 555
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 90.9727000107523,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 92.05629999632947,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 92.70000000833534,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 85.14179999474436,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 83.24770000763237,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 85.24339998257346,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 95.31510001397692,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 96.07869997853413,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 95.893799996702,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				},
+				{
+					"elapsed_ms": 2759.69740000437,
+					"aggregate": {
+						"generation": 4,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 456,
+						"storage_bytes": 274720321,
+						"duration_ms": 2656,
+						"enumerating_ms": 2000,
+						"comparing_ms": 121,
+						"reading_headers_ms": 45,
+						"committing_ms": 488
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 93.6756000155583,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 92.162000015378,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 92.07720000995323,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 85.74480001698248,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 86.37410000665113,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 86.95229998556897,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 97.34179999213666,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 94.20699998736382,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 92.03749999869615,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				}
+			],
+			"medianMs": 2759.69740000437,
+			"medianCommitMs": 514,
+			"medianStorageBytes": 274720322,
+			"processNameMedianMs": {
+				"TextProperty": 92.162000015378,
+				"__UE_SHED_ABSENT_NAME_PROBE__": 85.24339998257346,
+				"None": 95.92519997386262
+			}
+		},
+		"binary-final": {
+			"runs": [
+				{
+					"elapsed_ms": 2783.7307000008877,
+					"aggregate": {
+						"generation": 2,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 535,
+						"storage_bytes": 274720322,
+						"duration_ms": 2681,
+						"enumerating_ms": 1956,
+						"comparing_ms": 124,
+						"reading_headers_ms": 47,
+						"committing_ms": 553
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 96.76030001719482,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 95.14960000524297,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 102.16219999711029,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 88.65310001419857,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 87.82619997509755,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 84.59780001430772,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 97.82429999904707,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 99.80509997694753,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 97.76619999320246,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				},
+				{
+					"elapsed_ms": 2739.248999976553,
+					"aggregate": {
+						"generation": 3,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 473,
+						"storage_bytes": 274720322,
+						"duration_ms": 2637,
+						"enumerating_ms": 1969,
+						"comparing_ms": 122,
+						"reading_headers_ms": 48,
+						"committing_ms": 497
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 94.32919998653233,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 96.78980000899173,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 95.27439999510534,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 143.27749999938533,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 88.40589999454096,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 93.3900999953039,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 99.11920002195984,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 97.80990000581369,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 97.78700000606477,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				},
+				{
+					"elapsed_ms": 2938.087699993048,
+					"aggregate": {
+						"generation": 4,
+						"packages": 199539,
+						"maps": 257,
+						"changed": 1,
+						"removed": 0,
+						"staged_rows": 1,
+						"committed_rows": 199539,
+						"removed_rows": 0,
+						"evidence_write_ms": 507,
+						"storage_bytes": 274720322,
+						"duration_ms": 2831,
+						"enumerating_ms": 2111,
+						"comparing_ms": 131,
+						"reading_headers_ms": 51,
+						"committing_ms": 538
+					},
+					"queries": {
+						"TextProperty": [
+							{
+								"milliseconds": 97.075900004711,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 94.81799998320639,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 98.50930000538938,
+								"items": 1024,
+								"has_more": true
+							}
+						],
+						"__UE_SHED_ABSENT_NAME_PROBE__": [
+							{
+								"milliseconds": 89.30059999693185,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 90.29520000331104,
+								"items": 0,
+								"has_more": false
+							},
+							{
+								"milliseconds": 88.00809999229386,
+								"items": 0,
+								"has_more": false
+							}
+						],
+						"None": [
+							{
+								"milliseconds": 98.71510000084527,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 100.30650001135655,
+								"items": 1024,
+								"has_more": true
+							},
+							{
+								"milliseconds": 102.40180001710542,
+								"items": 1024,
+								"has_more": true
+							}
+						]
+					}
+				}
+			],
+			"medianMs": 2783.7307000008877,
+			"medianCommitMs": 538,
+			"medianStorageBytes": 274720322,
+			"processNameMedianMs": {
+				"TextProperty": 96.76030001719482,
+				"__UE_SHED_ABSENT_NAME_PROBE__": 88.65310001419857,
+				"None": 98.71510000084527
+			}
+		}
+	},
+	"querySessions": {
+		"v2": {
+			"sqlite": {
+				"setup_ms": 14.995800011092797,
+				"queries": {
+					"TextProperty": [
+						{
+							"milliseconds": 287.7227999852039,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 270.0928999984171,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 269.08470000489615,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 266.83690000209026,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 266.3266999879852,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						}
+					],
+					"__UE_SHED_ABSENT_NAME_PROBE__": [
+						{
+							"milliseconds": 499.72440002602525,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 497.40329998894595,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 496.9512000097893,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 532.4802999966778,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 517.9381000052672,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						}
+					],
+					"None": [
+						{
+							"milliseconds": 14.775300020119175,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.959900002693757,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.873300012666732,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.543700005859137,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.696200002916157,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						}
+					]
+				}
+			},
+			"custom": {
+				"setup_ms": 74.4113999826368,
+				"queries": {
+					"TextProperty": [
+						{
+							"milliseconds": 10.862600000109524,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 9.976600005757064,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 9.752099984325469,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 10.609299992211163,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 12.180999998236075,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						}
+					],
+					"__UE_SHED_ABSENT_NAME_PROBE__": [
+						{
+							"milliseconds": 0.09940000018104911,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.04149999585933983,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.03309999010525644,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.03359999391250312,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.029499991796910763,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						}
+					],
+					"None": [
+						{
+							"milliseconds": 12.323800008744001,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.227200011489913,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.816800019005314,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.598799988860264,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.181299982126802,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						}
+					]
+				}
+			}
+		},
+		"production": {
+			"sqlite": {
+				"setup_ms": 16.775900003267452,
+				"queries": {
+					"TextProperty": [
+						{
+							"milliseconds": 294.0567000187002,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 277.1921000094153,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 285.1894000195898,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 282.3091000027489,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 290.38700001547113,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						}
+					],
+					"__UE_SHED_ABSENT_NAME_PROBE__": [
+						{
+							"milliseconds": 521.8434999987949,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 509.7984000167344,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 506.6458999936003,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 565.415099990787,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 530.2438999933656,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						}
+					],
+					"None": [
+						{
+							"milliseconds": 13.646100007463247,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.622099991654977,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.773700010962784,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.094599991338328,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.282200022833422,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						}
+					]
+				}
+			},
+			"binary": {
+				"setup_ms": 70.24380000075325,
+				"queries": {
+					"TextProperty": [
+						{
+							"milliseconds": 12.91369998943992,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 12.907600001199171,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 13.369300024351105,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 9.107099991524592,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						},
+						{
+							"milliseconds": 9.642799996072426,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "f5889481bf9cee7f1c6f1bf49c28968ad56a87244e2adc43ceb3a25b7eb2a244"
+						}
+					],
+					"__UE_SHED_ABSENT_NAME_PROBE__": [
+						{
+							"milliseconds": 0.09180000051856041,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.055899989092722535,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.04939999780617654,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.03819999983534217,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						},
+						{
+							"milliseconds": 0.04949999856762588,
+							"items": 0,
+							"has_more": false,
+							"sha256": "8f880c5c351dfe6616f48440c9dba55fcc4b6b221f606a6c1b152ce72b21f86a"
+						}
+					],
+					"None": [
+						{
+							"milliseconds": 13.61010002437979,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.599700024817139,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.976599984336644,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.396899993997067,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						},
+						{
+							"milliseconds": 11.739000008674338,
+							"items": 1024,
+							"has_more": true,
+							"sha256": "48819ccc5ed5265c6720225f74980841b087299aa419d7060f1e3fc2b81ef5ea"
+						}
+					]
+				}
+			}
+		}
+	},
+	"artifacts": {
+		"sqlite": {
+			"version": "uasset 0.5.1",
+			"packages": 71,
+			"maps": 4,
+			"warmChangedPackages": 0,
+			"emptyPathEnvironment": true,
+			"archives": {
+				"ue-shed-uasset-win32-x64-0.5.1.tgz": {
+					"bytes": 2598798,
+					"sha256": "b583e9a5ce004709574b99a644d3b6b3459a06b4cdeb4863619025dbffb01b7d"
+				},
+				"ue-shed-uasset-0.5.1.tgz": {
+					"bytes": 3035,
+					"sha256": "24ec20cc0180d4dfe86281508c7146dcad91fbf32cbd82b6c19b82653412d78c"
+				}
+			}
+		},
+		"v2": {
+			"version": "uasset 0.5.1",
+			"packages": 71,
+			"maps": 4,
+			"warmChangedPackages": 0,
+			"emptyPathEnvironment": true,
+			"archives": {
+				"ue-shed-uasset-win32-x64-0.5.1.tgz": {
+					"bytes": 1714664,
+					"sha256": "a75cf95e9519b55ffdabafd79be1ec56df82ba5733e10a8951f2de54aaba9d5f"
+				},
+				"ue-shed-uasset-0.5.1.tgz": {
+					"bytes": 3035,
+					"sha256": "24ec20cc0180d4dfe86281508c7146dcad91fbf32cbd82b6c19b82653412d78c"
+				}
+			}
+		},
+		"final": {
+			"version": "uasset 0.5.1",
+			"packages": 71,
+			"maps": 4,
+			"warmChangedPackages": 0,
+			"emptyPathEnvironment": true,
+			"archives": {
+				"ue-shed-uasset-win32-x64-0.5.1.tgz": {
+					"bytes": 1715624,
+					"sha256": "20295d7816fcc9e520756237a3709495ecf446894d7bcdcc21cd476dc4f23968"
+				},
+				"ue-shed-uasset-0.5.1.tgz": {
+					"bytes": 3035,
+					"sha256": "24ec20cc0180d4dfe86281508c7146dcad91fbf32cbd82b6c19b82653412d78c"
+				}
+			}
+		}
+	},
+	"linuxArtifactParity": {
+		"binary": {
+			"packages": 71,
+			"maps": 4,
+			"completeness": "complete",
+			"queries": [
+				{
+					"kind": "maps",
+					"items": 4,
+					"pages": 1,
+					"sha256": "ecfa3cbbb81a9d2fee34be0d2e0202bb43537ae692c16f652d633a513c6e340c"
+				},
+				{
+					"kind": "exact_classes",
+					"items": 30,
+					"pages": 1,
+					"sha256": "aa896c63e688ecc9dcee6199984b01e8563810f6ef373b29c0601ae51858393b"
+				},
+				{
+					"kind": "class_prefixes",
+					"items": 25,
+					"pages": 1,
+					"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+				},
+				{
+					"kind": "class_name_suffixes",
+					"items": 25,
+					"pages": 1,
+					"sha256": "cf95691e33e5c34b4458be11ce9dc2f554ec7c50cc74c38d39cd2cf89a488ab2"
+				},
+				{
+					"kind": "serialized_names",
+					"items": 26,
+					"pages": 1,
+					"sha256": "f41a0d53fc4d137943faf15ade5b5c3b52ee9ae67305811cdf6a5a4d0fa917ff"
+				}
+			]
+		}
+	},
+	"linuxArtifactHashes": {
+		"uasset": {
+			"bytes": 4606784,
+			"sha256": "337056ac62b7ca89b72de4897fa726ee68c51c91bce98e9292badee72b3e3d8d"
+		},
+		"uasset-linux-x64.tar.gz": {
+			"bytes": 1762802,
+			"sha256": "17f7eff90d68903f9b543213480cb67baf35afbbf7ccc177c309d7de6101f22e"
+		}
+	},
+	"validation": {
+		"windowsOracle": {
+			"libraryPassed": 91,
+			"processPassed": 15,
+			"childHarnessIgnored": 1
+		},
+		"linuxOracle": {
+			"libraryPassed": 90,
+			"processPassed": 15,
+			"childHarnessIgnored": 1
+		},
+		"fullLocalGate": "passed; final recovery fixes additionally rechecked with targeted Rust tests, Clippy, builds, and packed artifacts",
+		"repositoryTests": {
+			"passed": 1038,
+			"skipped": 34
+		},
+		"rust189Check": "passed with an existing unused-variable warning in inspection",
+		"macos": "not executed; no current native npm artifact",
+		"hostedDepot": "not run from this unpushed branch"
+	}
+}

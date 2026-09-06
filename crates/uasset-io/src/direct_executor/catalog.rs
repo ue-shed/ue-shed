@@ -121,7 +121,6 @@ pub struct CatalogSnapshotEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryKind {
-    Count { filters: Vec<QueryKind> },
     Maps,
     ExactClasses { values: Vec<String> },
     ClassPrefixes { values: Vec<String> },
@@ -138,11 +137,23 @@ pub struct QueryRequest {
     pub cursor: Option<String>,
 }
 
+/// Count the union of filters in one immutable generation, without materializing evidence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CountRequest {
+    pub project_id: ProjectId,
+    pub expected_generation: Generation,
+    pub filters: Vec<QueryKind>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CountResult {
+    pub project_id: ProjectId,
+    pub generation: Generation,
+    pub count: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryItem {
-    Count {
-        count: u64,
-    },
     Map {
         map_path: String,
         package_name: String,
@@ -244,6 +255,47 @@ pub trait Catalog {
     fn clear_for_rebuild(&mut self) -> Result<(), CatalogError>;
 
     fn query(&self, request: &QueryRequest) -> Result<QueryPage, CatalogError>;
+
+    fn count(&self, request: &CountRequest) -> Result<CountResult, CatalogError> {
+        validate_count_filters(&request.filters)?;
+        let mut paths = std::collections::BTreeSet::new();
+        for kind in &request.filters {
+            let mut cursor = None;
+            loop {
+                let page = self.query(&QueryRequest {
+                    project_id: request.project_id.clone(),
+                    expected_generation: request.expected_generation,
+                    kind: kind.clone(),
+                    limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+                    cursor,
+                })?;
+                for item in page.items {
+                    paths.insert(match item {
+                        QueryItem::Map { map_path, .. } => map_path,
+                        QueryItem::Header { package_path, .. } => package_path,
+                    });
+                }
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+        }
+        Ok(CountResult {
+            project_id: request.project_id.clone(),
+            generation: request.expected_generation,
+            count: paths.len() as u64,
+        })
+    }
+}
+
+pub fn validate_count_filters(filters: &[QueryKind]) -> Result<(), CatalogError> {
+    if filters.is_empty() || filters.len() > 16 {
+        return Err(CatalogError::InvalidRequest {
+            message: "counts require between 1 and 16 filters".into(),
+        });
+    }
+    Ok(())
 }
 
 /// Canonicalize a project root into a disposable Catalog identity.
@@ -330,7 +382,6 @@ pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogE
 /// Every query item is keyed by its project-relative path, which is also the page cursor.
 pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {
-        QueryItem::Count { .. } => "",
         QueryItem::Map { map_path, .. } => map_path.as_str(),
         QueryItem::Header { package_path, .. } => package_path.as_str(),
     }

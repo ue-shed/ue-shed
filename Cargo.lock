@@ -41,6 +41,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "crc32fast"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "engine-process-supervisor"
 version = "0.5.1"
 dependencies = [
@@ -304,6 +313,7 @@ name = "uasset-io"
 version = "0.5.1"
 dependencies = [
  "atomic-write-file",
+ "crc32fast",
  "rusqlite",
  "serde",
  "serde_json",

@@ -21,7 +21,7 @@ import {
 	decodeTextureAuditLaunchResult,
 	type TextureAuditClientApi,
 	type TextureAuditLaunchResult
-} from "@ue-shed/extension-asset-audits";
+} from "@ue-shed/extension-asset-audits/client";
 import { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
 import { Effect, Schema } from "effect";
 

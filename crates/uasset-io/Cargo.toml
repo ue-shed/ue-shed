@@ -2,18 +2,24 @@
 name = "uasset-io"
 version = "0.5.1"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 description = "Filesystem and process-facing IO for Unreal Engine asset inspection"
 license = "MIT"
 repository = "https://github.com/ue-shed/ue-shed"
 
 [dependencies]
 atomic-write-file = { version = "=0.3.0", default-features = false }
-rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }
+crc32fast = "=1.5.0"
+rusqlite = { version = "=0.37.0", default-features = false, features = [
+	"bundled"
+], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uasset-inspection = { path = "../uasset-inspection" }
 uasset-parser = { path = "../uasset-parser" }
+
+[features]
+catalog-oracle = ["dep:rusqlite"]
 
 [lib]
 name = "uasset_io"

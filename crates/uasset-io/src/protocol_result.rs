@@ -6,9 +6,14 @@
 
 use serde::{Deserialize, Serialize};
 
+mod project_index_dictionary;
+pub use project_index_dictionary::{ProjectIndexDictionaryItem, ProjectIndexDictionaryPage};
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ResultFrame {
+    #[serde(rename = "project_index_count")]
+    ProjectIndexCount { result: ProjectIndexCountResult },
     #[serde(rename = "inspect")]
     Inspect { inspection: SavedAssetInspection },
     #[serde(rename = "blueprint")]
@@ -39,6 +44,16 @@ pub enum ResultFrame {
     ProjectIndexSummary { summary: ProjectIndexSummary },
     #[serde(rename = "project_index_page")]
     ProjectIndexPage { page: ProjectIndexPage },
+    #[serde(rename = "project_index_dictionary_page")]
+    ProjectIndexDictionaryPage { page: ProjectIndexDictionaryPage },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectIndexCountResult {
+    pub project_id: String,
+    pub generation: u64,
+    pub count: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -87,8 +102,6 @@ pub enum ProjectIndexStatusPayload {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ProjectIndexItem {
-    #[serde(rename = "count")]
-    Count { count: u64 },
     #[serde(rename = "map")]
     Map {
         #[serde(rename = "mapPath")]

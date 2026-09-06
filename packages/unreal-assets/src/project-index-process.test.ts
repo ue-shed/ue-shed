@@ -6,8 +6,8 @@ import { it as effectIt } from "@effect/vitest";
 import { Effect, Exit, Stream } from "effect";
 import { describe, expect } from "vitest";
 import {
-	foldProjectIndexRefresh,
 	countProjectIndex,
+	foldProjectIndexRefresh,
 	getProjectIndexStatus,
 	ProjectIndexGeneration,
 	ProjectIndexQuery,
@@ -77,13 +77,27 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 				const counted = yield* countProjectIndex({
 					projectId: warm.projectId,
 					expectedGeneration: warm.generation,
-					exactClasses: ["/Script/Engine.DataTable"],
-					classPrefixes: [],
-					classNameSuffixes: ["Table"],
-					serializedNames: []
+					filters: [
+						{ _tag: "ExactClasses", values: ["/Script/Engine.DataTable"] },
+						{ _tag: "ClassNameSuffixes", values: ["Table"] }
+					]
 				});
 				expect(counted.count).toBeGreaterThan(0);
 				expect(counted.generation).toBe(warm.generation);
+				const count = yield* countProjectIndex({
+					projectId: warm.projectId,
+					expectedGeneration: warm.generation,
+					filters: [{ _tag: "Maps" }, { _tag: "Maps" }]
+				});
+				expect(count.count).toBe(warm.mapCount);
+				const staleCount = yield* Effect.exit(
+					countProjectIndex({
+						projectId: warm.projectId,
+						expectedGeneration: ProjectIndexGeneration.make(99999),
+						filters: [{ _tag: "Maps" }]
+					})
+				);
+				expect(Exit.isFailure(staleCount)).toBe(true);
 
 				const stale = yield* Effect.exit(
 					queryProjectIndex(
@@ -107,7 +121,7 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 			}).pipe(Effect.provide(layer));
 
 			expect(new Set(queryWorkerPids).size).toBe(1);
-			expect(queryWorkerPids.length).toBe(5);
+			expect(queryWorkerPids.length).toBe(7);
 			const sessionPid = queryWorkerPids[0];
 			if (sessionPid !== undefined) {
 				expect(() => process.kill(sessionPid, 0)).toThrow();

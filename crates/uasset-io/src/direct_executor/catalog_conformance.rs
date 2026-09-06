@@ -686,38 +686,8 @@ pub(crate) fn every_query_kind_answers_from_committed_evidence<C: CatalogSnapsho
             assert_eq!(classes, &vec!["/Script/Engine.World".to_owned()]);
             assert!(serialized_names.is_empty());
         }
-        QueryItem::Map { .. } | QueryItem::Count { .. } => {
-            panic!("class queries return header items")
-        }
+        QueryItem::Map { .. } => panic!("class queries return header items"),
     }
-    let counted = collect_pages(
-        &catalog,
-        generation,
-        QueryKind::Count {
-            filters: vec![
-                QueryKind::ClassNameSuffixes {
-                    values: vec!["Table".into()],
-                },
-                QueryKind::SerializedNames {
-                    values: vec!["TextProperty".into()],
-                },
-                QueryKind::ClassPrefixes {
-                    values: vec!["/Script/EnhancedInput.".into()],
-                },
-            ],
-        },
-        1,
-    );
-    assert_eq!(counted, vec![QueryItem::Count { count: 2 }]);
-    assert_eq!(
-        collect_pages(
-            &catalog,
-            generation,
-            QueryKind::Count { filters: vec![] },
-            1
-        ),
-        vec![QueryItem::Count { count: 0 }]
-    );
 }
 
 pub(crate) fn bounded_pages_walk_one_generation_in_stable_order<C: CatalogSnapshot>(

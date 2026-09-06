@@ -18,7 +18,7 @@ export function ensureUassetExecutable(environment: NodeJS.ProcessEnv = process.
 	});
 	if (result.error) {
 		throw new Error(
-			"Could not build the in-repo uasset IO executable. Install Rust 1.88 or newer, or set " +
+			"Could not build the in-repo uasset IO executable. Install Rust 1.89 or newer, or set " +
 				"UE_SHED_UASSET_EXECUTABLE to a compatible executable.",
 			{ cause: result.error }
 		);

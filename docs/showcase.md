@@ -54,7 +54,7 @@ Explorer, Blueprint graphs, footer navigation, virtualized actor-list keyboard a
 files, saved investigations, complete JSON/CSV exports, and retained investigation filters. It requires the native reader and Electron but no live
 Unreal editor. Pass `--no-build` only when those outputs are already current.
 
-Requirements are Node.js 26 or newer, pnpm 11, and Rust 1.88 or newer. Live actions additionally
+Requirements are Node.js 26 or newer, pnpm 11, and Rust 1.89 or newer. Live actions additionally
 require Unreal Engine 5.7 and Visual Studio 2022 with the Unreal Engine C++ workload. The initial
 Workbench and saved-package demos do not require Unreal or Visual Studio. From the repository root:
 

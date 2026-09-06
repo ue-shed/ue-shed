@@ -44,6 +44,22 @@
 			"title": "int",
 			"exclusiveMinimum": 0
 		},
+		"UAssetIoProjectIndexCountResult": {
+			"type": "object",
+			"properties": {
+				"projectId": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"generation": {
+					"$ref": "#/$defs/UAssetIoPositiveInt"
+				},
+				"count": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
+				}
+			},
+			"required": ["projectId", "generation", "count"],
+			"additionalProperties": false
+		},
 		"UAssetInspectionNonNegativeInt": {
 			"type": "integer",
 			"allOf": [
@@ -6758,20 +6774,6 @@
 		"UAssetIoProjectIndexItem": {
 			"anyOf": [
 				{
-					"type": "object",
-					"properties": {
-						"kind": {
-							"type": "string",
-							"enum": ["count"]
-						},
-						"count": {
-							"$ref": "#/$defs/UAssetIoNonNegativeInt"
-						}
-					},
-					"required": ["kind", "count"],
-					"additionalProperties": false
-				},
-				{
 					"$ref": "#/$defs/UAssetIoProjectIndexMap"
 				},
 				{
@@ -6806,8 +6808,106 @@
 			"required": ["generation", "items", "projectId"],
 			"additionalProperties": false
 		},
+		"UAssetIoProjectIndexDictionaryHeader": {
+			"type": "object",
+			"properties": {
+				"classes": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoNonNegativeInt"
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["header"]
+				},
+				"packageName": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"packagePath": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"serializedNames": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoNonNegativeInt"
+					},
+					"allOf": [
+						{
+							"maxItems": 64
+						}
+					]
+				}
+			},
+			"required": ["classes", "kind", "packageName", "packagePath", "serializedNames"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexDictionaryPage": {
+			"type": "object",
+			"properties": {
+				"generation": {
+					"$ref": "#/$defs/UAssetIoPositiveInt"
+				},
+				"items": {
+					"type": "array",
+					"items": {
+						"anyOf": [
+							{
+								"$ref": "#/$defs/UAssetIoProjectIndexMap"
+							},
+							{
+								"$ref": "#/$defs/UAssetIoProjectIndexDictionaryHeader"
+							}
+						]
+					},
+					"allOf": [
+						{
+							"maxItems": 1024
+						}
+					]
+				},
+				"nextCursor": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"projectId": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"strings": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/UAssetIoNonEmptyString"
+					},
+					"allOf": [
+						{
+							"maxItems": 131072
+						}
+					]
+				}
+			},
+			"required": ["generation", "items", "projectId", "strings"],
+			"additionalProperties": false
+		},
 		"UAssetIoResult": {
 			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_count"]
+						},
+						"result": {
+							"$ref": "#/$defs/UAssetIoProjectIndexCountResult"
+						}
+					},
+					"required": ["kind", "result"],
+					"additionalProperties": false
+				},
 				{
 					"type": "object",
 					"properties": {
@@ -6975,6 +7075,20 @@
 					},
 					"required": ["kind", "page"],
 					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["project_index_dictionary_page"]
+						},
+						"page": {
+							"$ref": "#/$defs/UAssetIoProjectIndexDictionaryPage"
+						}
+					},
+					"required": ["kind", "page"],
+					"additionalProperties": false
 				}
 			]
 		},
@@ -7009,7 +7123,8 @@
 								"project_index_status",
 								"project_index_refresh",
 								"project_index_rebuild",
-								"project_index_query"
+								"project_index_query",
+								"project_index_count"
 							]
 						}
 					},

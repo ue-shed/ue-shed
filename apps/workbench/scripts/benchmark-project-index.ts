@@ -835,7 +835,7 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
 			scenarios: {
 				"project_index.cold_build": scenario(
 					cold,
-					"The SQLite Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode."
+					"The Catalog is removed before every sample. The sample includes one refresh, bounded candidate queries, TypeScript folding, and targeted Enhanced Input decode."
 				),
 				"project_index.warm_noop": scenario(
 					warm,

@@ -17,8 +17,9 @@ import {
 	ProjectIndexSummary,
 	SAVED_TABLE_SCAN_CLASSES,
 	getProjectIndexStatus,
-	countProjectIndex,
 	queryProjectIndex,
+	countProjectIndex,
+	type ProjectIndexFilter,
 	refreshProjectIndex,
 	rebuildProjectIndex,
 	savedTableCatalogFromScan,
@@ -55,6 +56,26 @@ export type WorkbenchProjectCandidateKind =
 	| "niagara_system"
 	| "saved_tables"
 	| "texture";
+
+function candidateFilters(kind: WorkbenchProjectCandidateKind): readonly ProjectIndexFilter[] {
+	const byKind = {
+		blueprint: [
+			{ _tag: "ClassNameSuffixes", values: [...BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES] }
+		],
+		enhanced_input: [
+			{ _tag: "ClassPrefixes", values: [ENHANCED_INPUT_CLASS_PREFIX] },
+			{ _tag: "ClassNameSuffixes", values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES] }
+		],
+		game_text: [
+			{ _tag: "ExactClasses", values: [STRING_TABLE_CLASS] },
+			{ _tag: "SerializedNames", values: [TEXT_PROPERTY_NAME] }
+		],
+		niagara_system: [{ _tag: "ExactClasses", values: [NIAGARA_SYSTEM_CLASS] }],
+		saved_tables: [{ _tag: "ExactClasses", values: [...SAVED_TABLE_SCAN_CLASSES] }],
+		texture: [{ _tag: "ExactClasses", values: [TEXTURE_CLASS] }]
+	} satisfies Record<WorkbenchProjectCandidateKind, readonly ProjectIndexFilter[]>;
+	return byKind[kind];
+}
 
 export class WorkbenchProjectUnavailable extends Schema.TaggedErrorClass<WorkbenchProjectUnavailable>()(
 	"WorkbenchProjectUnavailable",
@@ -226,90 +247,16 @@ export const WorkbenchProjectLive = Layer.effect(
 			summary: ProjectIndexSummary,
 			kind: WorkbenchProjectCandidateKind
 		) {
-			const byKind = {
-				blueprint: [
-					(cursor) =>
-						ProjectIndexQuery.cases.ClassNameSuffixes.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [...BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES],
-							...(cursor === undefined ? undefined : { cursor })
-						})
-				],
-				enhanced_input: [
-					(cursor) =>
-						ProjectIndexQuery.cases.ClassPrefixes.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [ENHANCED_INPUT_CLASS_PREFIX],
-							...(cursor === undefined ? undefined : { cursor })
-						}),
-					(cursor) =>
-						ProjectIndexQuery.cases.ClassNameSuffixes.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES],
-							...(cursor === undefined ? undefined : { cursor })
-						})
-				],
-				game_text: [
-					(cursor) =>
-						ProjectIndexQuery.cases.ExactClasses.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [STRING_TABLE_CLASS],
-							...(cursor === undefined ? undefined : { cursor })
-						}),
-					(cursor) =>
-						ProjectIndexQuery.cases.SerializedNames.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [TEXT_PROPERTY_NAME],
-							...(cursor === undefined ? undefined : { cursor })
-						})
-				],
-				niagara_system: [
-					(cursor) =>
-						ProjectIndexQuery.cases.ExactClasses.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [NIAGARA_SYSTEM_CLASS],
-							...(cursor === undefined ? undefined : { cursor })
-						})
-				],
-				saved_tables: [
-					(cursor) =>
-						ProjectIndexQuery.cases.ExactClasses.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [...SAVED_TABLE_SCAN_CLASSES],
-							...(cursor === undefined ? undefined : { cursor })
-						})
-				],
-				texture: [
-					(cursor) =>
-						ProjectIndexQuery.cases.ExactClasses.make({
-							expectedGeneration: summary.generation,
-							limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-							projectId: summary.projectId,
-							values: [TEXTURE_CLASS],
-							...(cursor === undefined ? undefined : { cursor })
-						})
-				]
-			} satisfies Record<
-				WorkbenchProjectCandidateKind,
-				readonly ((cursor: ProjectIndexCursor | undefined) => ProjectIndexQuery)[]
-			>;
-			const factories: readonly ((
-				cursor: ProjectIndexCursor | undefined
-			) => ProjectIndexQuery)[] = byKind[kind];
+			const factories = candidateFilters(kind).map(
+				(filter) =>
+					(cursor: ProjectIndexCursor | undefined): ProjectIndexQuery => ({
+						...filter,
+						expectedGeneration: summary.generation,
+						projectId: summary.projectId,
+						limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+						...(cursor === undefined ? undefined : { cursor })
+					})
+			);
 			const pages = yield* Effect.forEach(factories, (makeRequest) =>
 				projectIndexItems(summary, makeRequest)
 			);
@@ -785,132 +732,91 @@ export const WorkbenchProjectLive = Layer.effect(
 			);
 		});
 
-		const candidates = Effect.fn("Workbench.WorkbenchProject.candidates")(function* (
-			kind: WorkbenchProjectCandidateKind
-		) {
-			const summary = yield* selected();
-			if (summary.indexSummary === undefined) {
-				return yield* new WorkbenchProjectUnavailable({
-					message: "Project Index summary is unavailable.",
-					recovery: "Refresh the Project Index, then retry the feature."
-				});
-			}
-			const generation = summary.indexSummary.generation;
-			return yield* headerIndexFromProjectIndex(
-				summary.project.projectRoot,
-				summary.indexSummary,
-				kind
-			).pipe(
-				Effect.map((index) => ({ ...index, generation })),
-				Effect.catchTag("ProjectIndexStaleGeneration", () =>
-					getProjectIndexStatus({ projectRoot: summary.project.projectRoot }).pipe(
-						Effect.provideService(ProjectIndex, projectIndexImplementation),
-						Effect.mapError(
-							(error) =>
-								new WorkbenchProjectUnavailable({
+		const withSelectedIndex = Effect.fn("Workbench.WorkbenchProject.withSelectedIndex")(
+			function* <A>(
+				read: (
+					projectRoot: string,
+					summary: ProjectIndexSummary
+				) => Effect.Effect<A, WorkbenchProjectUnavailable | ProjectIndexError>
+			) {
+				const summary = yield* selected();
+				if (summary.indexSummary === undefined) {
+					return yield* new WorkbenchProjectUnavailable({
+						message: "Project Index summary is unavailable.",
+						recovery: "Refresh the Project Index, then retry the feature."
+					});
+				}
+				return yield* read(summary.project.projectRoot, summary.indexSummary).pipe(
+					Effect.catchTag("ProjectIndexStaleGeneration", () =>
+						getProjectIndexStatus({ projectRoot: summary.project.projectRoot }).pipe(
+							Effect.provideService(ProjectIndex, projectIndexImplementation),
+							Effect.mapError(
+								(error) =>
+									new WorkbenchProjectUnavailable({
+										message: error.message,
+										recovery: error.recovery
+									})
+							),
+							Effect.flatMap((status) =>
+								status.status === "ready"
+									? recoverInventory(summary.project.projectRoot, status.summary)
+									: refreshSummary(summary.project.projectRoot).pipe(
+											Effect.flatMap((latest) =>
+												recoverInventory(
+													summary.project.projectRoot,
+													latest
+												)
+											)
+										)
+							),
+							Effect.flatMap((latest) => {
+								if (latest.indexSummary === undefined) {
+									return Effect.fail(
+										new WorkbenchProjectUnavailable({
+											message: "Project Index summary is unavailable.",
+											recovery:
+												"Refresh the Project Index, then retry the feature."
+										})
+									);
+								}
+								return read(latest.project.projectRoot, latest.indexSummary);
+							})
+						)
+					),
+					Effect.mapError((error) =>
+						error instanceof WorkbenchProjectUnavailable
+							? error
+							: new WorkbenchProjectUnavailable({
 									message: error.message,
 									recovery: error.recovery
 								})
-						),
-						Effect.flatMap((status) =>
-							status.status === "ready"
-								? recoverInventory(summary.project.projectRoot, status.summary)
-								: refreshSummary(summary.project.projectRoot).pipe(
-										Effect.flatMap((latest) =>
-											recoverInventory(summary.project.projectRoot, latest)
-										)
-									)
-						),
-						Effect.flatMap((latest) => {
-							if (latest.indexSummary === undefined) {
-								return Effect.fail(
-									new WorkbenchProjectUnavailable({
-										message: "Project Index summary is unavailable.",
-										recovery:
-											"Refresh the Project Index, then retry the feature."
-									})
-								);
-							}
-							const generation = latest.indexSummary.generation;
-							return headerIndexFromProjectIndex(
-								latest.project.projectRoot,
-								latest.indexSummary,
-								kind
-							).pipe(Effect.map((index) => ({ ...index, generation })));
-						})
 					)
-				),
-				Effect.mapError((error) =>
-					error instanceof WorkbenchProjectUnavailable
-						? error
-						: new WorkbenchProjectUnavailable({
-								message: error.message,
-								recovery: error.recovery
-							})
-				)
-			);
-		});
-
-		const count = Effect.fn("Workbench.WorkbenchProject.count")(function* (
-			kind: WorkbenchProjectCandidateKind
-		) {
-			const inventory = yield* selected();
-			const summary = inventory.indexSummary;
-			if (!summary)
-				return yield* new WorkbenchProjectUnavailable({
-					message: "Project Index summary is unavailable.",
-					recovery: "Refresh the Project Index."
-				});
-			const queryCount = (summary: ProjectIndexSummary) =>
-				countProjectIndex({
-					projectId: summary.projectId,
-					expectedGeneration: summary.generation,
-					exactClasses:
-						kind === "saved_tables"
-							? [...SAVED_TABLE_SCAN_CLASSES]
-							: kind === "texture"
-								? [TEXTURE_CLASS]
-								: kind === "game_text"
-									? [STRING_TABLE_CLASS]
-									: kind === "niagara_system"
-										? [NIAGARA_SYSTEM_CLASS]
-										: [],
-					classPrefixes: kind === "enhanced_input" ? [ENHANCED_INPUT_CLASS_PREFIX] : [],
-					classNameSuffixes:
-						kind === "enhanced_input"
-							? [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES]
-							: kind === "blueprint"
-								? [...BLUEPRINT_ASSET_CLASS_NAME_SUFFIXES]
-								: [],
-					serializedNames: kind === "game_text" ? [TEXT_PROPERTY_NAME] : []
-				}).pipe(
-					Effect.provideService(ProjectIndex, projectIndexImplementation),
-					Effect.map((result) => result.count)
 				);
-			return yield* queryCount(summary).pipe(
-				Effect.catchTag("ProjectIndexStaleGeneration", () =>
-					getProjectIndexStatus({ projectRoot: inventory.project.projectRoot }).pipe(
-						Effect.provideService(ProjectIndex, projectIndexImplementation),
-						Effect.flatMap((status) =>
-							status.status === "ready"
-								? Effect.succeed(status.summary)
-								: refreshSummary(inventory.project.projectRoot)
-						),
-						Effect.tap((latest) =>
-							recoverInventory(inventory.project.projectRoot, latest)
-						),
-						Effect.flatMap(queryCount)
+			}
+		);
+
+		const candidates = Effect.fn("Workbench.WorkbenchProject.candidates")(
+			(kind: WorkbenchProjectCandidateKind) =>
+				withSelectedIndex((root, summary) =>
+					headerIndexFromProjectIndex(root, summary, kind).pipe(
+						Effect.map((index) => ({ ...index, generation: summary.generation }))
 					)
-				),
-				Effect.mapError(
-					(error) =>
-						new WorkbenchProjectUnavailable({
-							message: error.message,
-							recovery: error.recovery
-						})
 				)
-			);
-		});
+		);
+		const count = Effect.fn("Workbench.WorkbenchProject.count")(
+			(kind: WorkbenchProjectCandidateKind) =>
+				withSelectedIndex((_root, summary) =>
+					countProjectIndex({
+						projectId: summary.projectId,
+						expectedGeneration: summary.generation,
+						filters: candidateFilters(kind)
+					}).pipe(
+						Effect.provideService(ProjectIndex, projectIndexImplementation),
+						Effect.map((result) => result.count)
+					)
+				)
+		);
+
 		const savedProject = Effect.fn("Workbench.WorkbenchProject.savedProject")(function* () {
 			const root = yield* Ref.get(selectedRoot);
 			if (Option.isNone(root)) {

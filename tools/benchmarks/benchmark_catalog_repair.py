@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--project", type=Path, required=True)
 parser.add_argument("--reader", type=Path, required=True)
 parser.add_argument("--cache", type=Path, required=True)
-parser.add_argument("--engine", choices=["duckdb", "sqlite"], required=True)
+parser.add_argument("--engine", choices=["duckdb", "sqlite", "custom"], required=True)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
 assert not args.output.exists(), "refusing to replace prior results"
@@ -27,18 +27,52 @@ manifest_path = manifests[0]
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 snapshot = (manifest_path.parent / manifest["physical_snapshot"]).resolve()
 assert snapshot.is_relative_to(cache), "snapshot leaves the disposable cache"
-if args.engine == "duckdb":
-    import duckdb
-    connection = duckdb.connect(str(snapshot))
+if args.engine == "custom":
+    data = bytearray(snapshot.read_bytes())
+    assert data[:8] in [b"UESHC001", b"UESHC002"], "unsupported binary research format"
+    inventory_length = int.from_bytes(data[8:16], "little")
+    position = 88
+    count = int.from_bytes(data[position:position + 4], "little")
+    position += 4
+    for _ in range(count):
+        path_length = int.from_bytes(data[position:position + 4], "little")
+        position += 4 + path_length
+        kind = data[position]
+        timestamp_offset = position + 9
+        timestamp = int.from_bytes(data[timestamp_offset:timestamp_offset + 8], "little")
+        position += 17
+        has_profile = data[position]
+        position += 1 + 4 * has_profile
+        failure = data[position]
+        position += 21
+        if kind == 0 and not failure and timestamp > 0:
+            data[timestamp_offset:timestamp_offset + 8] = (timestamp - 1).to_bytes(8, "little")
+            break
+    else:
+        raise AssertionError("no repairable package")
+    # Keep the inventory checksum valid so this models a signature mismatch, not corruption.
+    if data[:8] == b"UESHC002":
+        import zlib
+        digest = zlib.crc32(data[88:88 + inventory_length])
+    else:
+        digest = 0xcbf29ce484222325
+        for byte in data[88:88 + inventory_length]:
+            digest = ((digest ^ byte) * 0x100000001b3) & 0xffffffffffffffff
+    data[16:24] = digest.to_bytes(8, "little")
+    snapshot.write_bytes(data)
 else:
-    connection = sqlite3.connect(snapshot)
-row = connection.execute("SELECT relative_path,modified_nanos FROM entry WHERE kind=0 AND failure_code IS NULL AND modified_nanos>0 ORDER BY relative_path LIMIT 1").fetchone()
-assert row is not None
-timestamp = row[1]
-replacement = (int.from_bytes(timestamp, "big") - 1).to_bytes(8, "big") if isinstance(timestamp, bytes) else timestamp - 1
-connection.execute("UPDATE entry SET modified_nanos=? WHERE relative_path=?", [replacement, row[0]])
-connection.commit()
-connection.close()
+    if args.engine == "duckdb":
+        import duckdb
+        connection = duckdb.connect(str(snapshot))
+    else:
+        connection = sqlite3.connect(snapshot)
+    row = connection.execute("SELECT relative_path,modified_nanos FROM entry WHERE kind=0 AND failure_code IS NULL AND modified_nanos>0 ORDER BY relative_path LIMIT 1").fetchone()
+    assert row is not None
+    timestamp = row[1]
+    replacement = (int.from_bytes(timestamp, "big") - 1).to_bytes(8, "big") if isinstance(timestamp, bytes) else timestamp - 1
+    connection.execute("UPDATE entry SET modified_nanos=? WHERE relative_path=?", [replacement, row[0]])
+    connection.commit()
+    connection.close()
 
 
 def call(operation):

@@ -7,9 +7,119 @@ the ignored `test-results/` directory. See
 [the 2026-09-05 review](../../docs/research/rust-core-review-2026-09-05.md) for measured results,
 limitations, and the baseline commit.
 
+## Header pipeline profiling
+
+Compare complete query outputs across both page encodings with:
+
+```powershell
+python tools/benchmarks/compare_project_catalogs.py --project <project-root> --reader before=<baseline-reader> --reader after=<new-reader> --dictionary-reader after --count-reader after --output <new-output-directory>
+```
+
+The tool expands every dictionary reference before hashing ordered items across all five showcase
+query routes. It requires the requested encoding to be returned and rejects missing references.
+`--count-reader` also compares each v1.4 aggregate with all of its pages, repeats filters to test
+deduplication, and verifies the union across all five query kinds. Omit it for older readers.
+See [query transport measurements](../../docs/research/query-transport-2026-09-06.md) for the
+baseline, intermediate variants, and separate full-flow stage timings.
+
+`prepare_header_profile.py <new-output-directory>` copies the native workspace and tracked fixture
+inputs, excluding Unreal-generated build/output files, and adds elapsed timers only to that copy.
+It covers header workers, batched channel operations, discovery/comparison, and initial Catalog
+record/posting construction, serialization, writing, and verification. Build its `uasset-io` release
+executable, then run:
+
+```powershell
+python tools/benchmarks/profile_project_headers.py --project <project-root> --reader <instrumented-reader> --output <new-output-directory>
+cargo run --release -p uasset-parser --example benchmark_headers -- <project-root>
+```
+
+The first command makes a fresh disposable Catalog and records aggregate stage timings. Worker
+times overlap: their sum is neither CPU time nor scan wall time. Instrumentation adds overhead;
+use the uninstrumented `benchmark:project-index` command for before/after speed claims.
+
+The replay example samples up to 4,096 packages evenly from sorted discovery and retains at most
+512 MiB of header bytes. Two warmups precede ten parse-and-drop samples with file IO excluded.
+It prints aggregate counts and a deterministic Debug-model digest without asset identities. The
+digest is a regression fingerprint, not a cryptographic proof of equivalence. Loading errors abort
+the replay; header parsing errors contribute to the fingerprint and failure count. Compare complete
+ordered query output with `compare_project_catalogs.py` as well.
+
+## Binary Catalog hardening and artifacts
+
+The [binary adapter](../../crates/uasset-io/src/direct_executor/catalog_binary.rs) is now the production
+backend. See [the storage guide](../../docs/engineering/binary-project-index.md) and
+[hardening measurements](../../docs/research/custom-catalog-hardening-2026-09-05.md). Normal builds and
+tests exclude SQLite; `cargo test -p uasset-io --all-targets --features catalog-oracle` runs the oracle.
+
+The first prototype remains frozen below. `prepare_custom_catalog.py --version v2` selects the later
+research template with CRC32, bulk reuse, locks, and interruption tests. Its oracle feature is named
+`sqlite-oracle`; run tests with that feature to include SQLite. Source copies exclude build caches.
+Production additionally pins readers on open and checks bounded manifests and summary consistency.
+
+Exercise an assembled Windows native artifact through a fresh, offline-installed npm consumer:
+
+```powershell
+python tools/benchmarks/verify_native_package.py --reader target/release/uasset.exe --output test-results/catalog-package
+```
+
+The tool never publishes. It uses the maintained assembly script, packs copied packages, installs
+them locally with lifecycle scripts disabled, and runs version, fresh/warm refresh, and map queries
+with an empty PATH. The current npm artifact supports Windows x64 only.
+
+## Historical custom binary Catalog prototype
+
+`prepare_custom_catalog.py` copies the native workspace, fixtures, and protocol contracts into a
+fresh research directory. It selects `custom-catalog.rs` only in that copy. SQLite is a dev-only
+oracle in the v1 prototype workspace; the custom release reader
+contains no database engine dependency.
+
+```powershell
+python tools/benchmarks/prepare_custom_catalog.py test-results/custom-catalog-source
+cargo test --manifest-path test-results/custom-catalog-source/Cargo.toml --target-dir target/custom-catalog -p uasset-io --all-targets
+cargo clippy --manifest-path test-results/custom-catalog-source/Cargo.toml --target-dir target/custom-catalog -p uasset-io --all-targets -- -D warnings
+cargo build --locked --release --manifest-path test-results/custom-catalog-source/Cargo.toml --target-dir target/custom-catalog -p uasset-io
+pnpm benchmark:project-index -- --project <project-root> --reader target/custom-catalog/release/uasset.exe --no-build --runs 3 --warmups 1 --output test-results/custom-project.json
+```
+
+The format has five length-delimited sections: compact inventory, shared strings, posting directory,
+postings, and header records. Exact names and classes have direct postings; prefixes/suffixes inspect
+the much smaller class dictionary. IDs follow path order per physical snapshot. Queries load
+metadata once per session and hydrate selected records. Section and record/posting checksums detect
+accidental damage; they are non-cryptographic. Readers reject invalid counts, bounds, UTF-8, and IDs.
+Each section is capped at 512 MiB in this prototype.
+
+Fresh snapshots build their dictionary and indexes in memory. Changed/deleted refreshes rewrite the
+retained records and indexes, retaining old string IDs; unused dictionary strings are not compacted
+until a full rebuild. A warm no-op reuses the physical snapshot. Publication syncs and verifies the
+new file before the atomic manifest switch. Independent old readers keep their open snapshot.
+Cache files are isolated under `catalogs-custom-research-v1`.
+
+Tests run both existing adapter suites and a deterministic SQLite-oracle sequence with inserts,
+deletions, changed classes/names, failed headers, sidecars, Unicode, duplicate filters, and page sizes
+1/7/1024. Additional tests cover damaged/truncated records, forged impossible counts, full unsigned
+signatures, failed publication, no-op reuse, and old readers. This is not a crash/power-loss soak or
+a production persistence contract.
+
+Use `compare_project_catalogs.py` for complete real-project query parity. Its marked disposable
+caches can be passed to `benchmark_catalog_repair.py --engine custom`, which changes one inventory
+timestamp and recomputes its checksum before the measured refresh. Only cache metadata is changed;
+source projects stay read-only. Historical benchmark scenario notes say SQLite; identify experimental
+runs by the supplied reader and report label.
+
+Separate process opening from repeated name queries using those same marked caches:
+
+```powershell
+python tools/benchmarks/benchmark_catalog_query_session.py --reader sqlite=<sqlite-executable> --reader custom=<custom-executable> --cache sqlite=<sqlite-marked-cache> --cache custom=<custom-marked-cache> --output test-results/catalog-query-session.json
+```
+
+The tool times setup once, then five bounded requests per predicate in each reused native session.
+It verifies identical page digests across engines. Timings include protocol transfer and Python JSON
+decoding, so they are not pure engine timings. See [the prototype report](../../docs/research/custom-catalog-prototype-2026-09-05.md)
+for measured gains, opening and mutation regressions, memory, storage, and validation limits.
+
 ## Historical actual-project SQLite Catalog experiment
 
-SQLite is now the production backend. See [the current guide](../../docs/engineering/sqlite-project-index.md).
+SQLite is now a test oracle. See [the historical guide](../../docs/engineering/sqlite-project-index.md).
 This generator retains the earlier copy/rebase experiments for reproducibility.
 
 `prepare_sqlite_catalog.py` prepares an isolated copy of the current Rust workspace, repository
@@ -93,7 +203,7 @@ connection setup, SQL preparation, query execution, hydration, and fingerprintin
 TypeScript, filesystem enumeration, package parsing, or protocol serialization in these timings.
 
 The separate Cargo workspace and lockfile keep the historical DuckDB comparison out
-of production `Cargo.lock`. SQLite is now canonical; these model comparisons remain research only. Its dependencies are permissively licensed: DuckDB/duckdb-rs are MIT,
+of production `Cargo.lock`. These model comparisons remain research only. Their dependencies are permissively licensed: DuckDB/duckdb-rs are MIT,
 rusqlite/libsqlite3-sys are MIT, SQLite is public domain, Arrow is Apache-2.0, and serde/serde_json are
 MIT OR Apache-2.0. This does not authorize shipping another adapter without the repository's release
 and license gates.

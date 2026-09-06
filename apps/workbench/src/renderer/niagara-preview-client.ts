@@ -4,7 +4,7 @@ import {
 	decodeNiagaraPreviewFrameResult,
 	decodeNiagaraPreviewRunResult,
 	type NiagaraPreviewClientApi
-} from "@ue-shed/extension-niagara-preview";
+} from "@ue-shed/extension-niagara-preview/client";
 import { Effect } from "effect";
 
 /** Electron prefixes IPC rejections; keep only the actionable part for the operator-facing sentence. */

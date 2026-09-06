@@ -1,0 +1,20 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 4
+		}
+	},
+	"kind": "result",
+	"requestId": "project-index-query-001",
+	"result": {
+		"kind": "project_index_count",
+		"result": {
+			"projectId": "fixture-project",
+			"generation": 4,
+			"count": 2
+		}
+	},
+	"sequence": 1
+}

@@ -62,85 +62,147 @@
 			"title": "string",
 			"minLength": 1
 		},
+		"UAssetIoProjectIndexCount": {
+			"type": "object",
+			"properties": {
+				"projectId": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"expectedGeneration": {
+					"$ref": "#/$defs/UAssetIoPositiveInt"
+				},
+				"filters": {
+					"type": "array",
+					"items": {
+						"anyOf": [
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["maps"]
+									}
+								},
+								"required": ["kind"],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["exact_classes"]
+									},
+									"values": {
+										"type": "array",
+										"items": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"allOf": [
+											{
+												"minItems": 1
+											},
+											{
+												"maxItems": 64
+											}
+										]
+									}
+								},
+								"required": ["kind", "values"],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["class_prefixes"]
+									},
+									"values": {
+										"type": "array",
+										"items": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"allOf": [
+											{
+												"minItems": 1
+											},
+											{
+												"maxItems": 64
+											}
+										]
+									}
+								},
+								"required": ["kind", "values"],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["class_name_suffixes"]
+									},
+									"values": {
+										"type": "array",
+										"items": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"allOf": [
+											{
+												"minItems": 1
+											},
+											{
+												"maxItems": 64
+											}
+										]
+									}
+								},
+								"required": ["kind", "values"],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"kind": {
+										"type": "string",
+										"enum": ["serialized_names"]
+									},
+									"values": {
+										"type": "array",
+										"items": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"allOf": [
+											{
+												"minItems": 1
+											},
+											{
+												"maxItems": 64
+											}
+										]
+									}
+								},
+								"required": ["kind", "values"],
+								"additionalProperties": false
+							}
+						]
+					},
+					"allOf": [
+						{
+							"minItems": 1
+						},
+						{
+							"maxItems": 16
+						}
+					]
+				}
+			},
+			"required": ["projectId", "expectedGeneration", "filters"],
+			"additionalProperties": false
+		},
 		"UAssetIoProjectIndexQuery": {
 			"anyOf": [
-				{
-					"type": "object",
-					"properties": {
-						"kind": {
-							"type": "string",
-							"enum": ["count"]
-						},
-						"cursor": {
-							"not": {}
-						},
-						"expectedGeneration": {
-							"$ref": "#/$defs/UAssetIoPositiveInt"
-						},
-						"limit": {
-							"type": "number",
-							"enum": [1]
-						},
-						"projectId": {
-							"$ref": "#/$defs/UAssetIoNonEmptyString"
-						},
-						"exactClasses": {
-							"type": "array",
-							"items": {
-								"$ref": "#/$defs/UAssetIoNonEmptyString"
-							},
-							"allOf": [
-								{
-									"maxItems": 64
-								}
-							]
-						},
-						"classPrefixes": {
-							"type": "array",
-							"items": {
-								"$ref": "#/$defs/UAssetIoNonEmptyString"
-							},
-							"allOf": [
-								{
-									"maxItems": 64
-								}
-							]
-						},
-						"classNameSuffixes": {
-							"type": "array",
-							"items": {
-								"$ref": "#/$defs/UAssetIoNonEmptyString"
-							},
-							"allOf": [
-								{
-									"maxItems": 64
-								}
-							]
-						},
-						"serializedNames": {
-							"type": "array",
-							"items": {
-								"$ref": "#/$defs/UAssetIoNonEmptyString"
-							},
-							"allOf": [
-								{
-									"maxItems": 64
-								}
-							]
-						}
-					},
-					"required": [
-						"kind",
-						"expectedGeneration",
-						"limit",
-						"projectId",
-						"exactClasses",
-						"classPrefixes",
-						"classNameSuffixes",
-						"serializedNames"
-					],
-					"additionalProperties": false
-				},
 				{
 					"type": "object",
 					"properties": {
@@ -568,7 +630,28 @@
 						},
 						"kind": {
 							"type": "string",
+							"enum": ["project_index_count"]
+						},
+						"request": {
+							"$ref": "#/$defs/UAssetIoProjectIndexCount"
+						}
+					},
+					"required": ["cacheRoot", "kind", "request"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"cacheRoot": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"kind": {
+							"type": "string",
 							"enum": ["project_index_query"]
+						},
+						"pageEncoding": {
+							"type": "string",
+							"enum": ["dictionary"]
 						},
 						"query": {
 							"$ref": "#/$defs/UAssetIoProjectIndexQuery"

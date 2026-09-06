@@ -125,30 +125,45 @@ pub enum Operation {
     ProjectIndexQuery {
         #[serde(rename = "cacheRoot")]
         cache_root: String,
+        #[serde(rename = "pageEncoding")]
+        page_encoding: Option<ProjectIndexPageEncoding>,
         query: ProjectIndexQuery,
     },
+    #[serde(rename = "project_index_count")]
+    ProjectIndexCount {
+        #[serde(rename = "cacheRoot")]
+        cache_root: String,
+        request: ProjectIndexCount,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectIndexCount {
+    pub project_id: String,
+    pub expected_generation: u64,
+    pub filters: Vec<ProjectIndexFilter>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProjectIndexFilter {
+    Maps,
+    ExactClasses { values: Vec<String> },
+    ClassPrefixes { values: Vec<String> },
+    ClassNameSuffixes { values: Vec<String> },
+    SerializedNames { values: Vec<String> },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub enum ProjectIndexPageEncoding {
+    #[serde(rename = "dictionary")]
+    Dictionary,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum ProjectIndexQuery {
-    #[serde(rename = "count")]
-    Count {
-        cursor: Option<String>,
-        #[serde(rename = "expectedGeneration")]
-        expected_generation: u64,
-        limit: u32,
-        #[serde(rename = "projectId")]
-        project_id: String,
-        #[serde(rename = "exactClasses")]
-        exact_classes: Vec<String>,
-        #[serde(rename = "classPrefixes")]
-        class_prefixes: Vec<String>,
-        #[serde(rename = "classNameSuffixes")]
-        class_name_suffixes: Vec<String>,
-        #[serde(rename = "serializedNames")]
-        serialized_names: Vec<String>,
-    },
     #[serde(rename = "maps")]
     Maps {
         cursor: Option<String>,
@@ -220,6 +235,8 @@ pub struct Request {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum OperationKind {
+    #[serde(rename = "project_index_count")]
+    ProjectIndexCount,
     Inspect,
     Blueprint,
     Authoring,
@@ -608,9 +625,44 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_non_empty(project_root, "projectRoot")
         }
-        Operation::ProjectIndexQuery { cache_root, query } => {
+        Operation::ProjectIndexQuery {
+            cache_root, query, ..
+        } => {
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_project_index_query(query)
+        }
+        Operation::ProjectIndexCount {
+            cache_root,
+            request,
+        } => {
+            validate_non_empty(cache_root, "cacheRoot")?;
+            validate_non_empty(&request.project_id, "projectId")?;
+            if request.expected_generation == 0
+                || request.filters.is_empty()
+                || request.filters.len() > 16
+            {
+                return Err(ProtocolError(
+                    "counts require a positive generation and between 1 and 16 filters".into(),
+                ));
+            }
+            for filter in &request.filters {
+                let values = match filter {
+                    ProjectIndexFilter::Maps => continue,
+                    ProjectIndexFilter::ExactClasses { values }
+                    | ProjectIndexFilter::ClassPrefixes { values }
+                    | ProjectIndexFilter::ClassNameSuffixes { values }
+                    | ProjectIndexFilter::SerializedNames { values } => values,
+                };
+                if values.is_empty() || values.len() > 64 {
+                    return Err(ProtocolError(
+                        "count filter values require between 1 and 64 entries".into(),
+                    ));
+                }
+                for value in values {
+                    validate_non_empty(value, "filter value")?;
+                }
+            }
+            Ok(())
         }
     }
 }
@@ -619,38 +671,6 @@ const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 1024;
 
 fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), ProtocolError> {
     let (project_id, expected_generation, limit, cursor, values) = match query {
-        ProjectIndexQuery::Count {
-            cursor,
-            expected_generation,
-            limit,
-            project_id,
-            exact_classes,
-            class_prefixes,
-            class_name_suffixes,
-            serialized_names,
-        } => {
-            if cursor.is_some() || *limit != 1 {
-                return Err(ProtocolError(
-                    "Count queries require limit 1 and no cursor".into(),
-                ));
-            }
-            for values in [
-                exact_classes,
-                class_prefixes,
-                class_name_suffixes,
-                serialized_names,
-            ] {
-                if values.len() > 64 {
-                    return Err(ProtocolError(
-                        "Count filters allow at most 64 values".into(),
-                    ));
-                }
-                for value in values {
-                    validate_non_empty(value, "count filter")?;
-                }
-            }
-            (project_id, *expected_generation, *limit, cursor, None)
-        }
         ProjectIndexQuery::Maps {
             cursor,
             expected_generation,
@@ -752,6 +772,63 @@ fn validate_event(event: &Event) -> Result<(), ProtocolError> {
 
 fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
     match result {
+        ResultFrame::ProjectIndexCount { result } => {
+            validate_non_empty(&result.project_id, "projectId")?;
+            if result.generation == 0 {
+                return Err(ProtocolError("count generation must be positive".into()));
+            }
+            Ok(())
+        }
+        ResultFrame::ProjectIndexDictionaryPage { page } => {
+            use crate::protocol_result::ProjectIndexDictionaryItem;
+            if page.items.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize
+                || page.strings.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize * 128
+                || page.generation == 0
+            {
+                return Err(ProtocolError(
+                    "invalid Project Index dictionary page bounds".to_owned(),
+                ));
+            }
+            validate_non_empty(&page.project_id, "projectId")?;
+            if let Some(cursor) = &page.next_cursor {
+                validate_non_empty(cursor, "nextCursor")?;
+            }
+            for value in &page.strings {
+                validate_non_empty(value, "dictionary string")?;
+            }
+            for item in &page.items {
+                match item {
+                    ProjectIndexDictionaryItem::Map {
+                        map_path,
+                        package_name,
+                    } => {
+                        validate_non_empty(map_path, "mapPath")?;
+                        validate_non_empty(package_name, "packageName")?;
+                    }
+                    ProjectIndexDictionaryItem::Header {
+                        classes,
+                        package_name,
+                        package_path,
+                        serialized_names,
+                    } => {
+                        validate_non_empty(package_name, "packageName")?;
+                        validate_non_empty(package_path, "packagePath")?;
+                        for references in [classes, serialized_names] {
+                            if references.len() > 64
+                                || references
+                                    .iter()
+                                    .any(|id| *id as usize >= page.strings.len())
+                            {
+                                return Err(ProtocolError(
+                                    "invalid Project Index dictionary references".to_owned(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
         ResultFrame::ProjectIndexPage { page } => {
             if page.items.len() > PROJECT_INDEX_MAX_PAGE_SIZE as usize {
                 return Err(ProtocolError(format!(
@@ -902,6 +979,8 @@ mod tests {
 
     #[test]
     fn accepts_shared_valid_fixtures() {
+        decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-request.json")).unwrap();
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-count-result-event.json")).unwrap();
         decode_request(VALID_REQUEST.as_bytes()).expect("valid request");
         decode_request(VALID_BLUEPRINT_REQUEST.as_bytes()).expect("valid Blueprint request");
         decode_event(VALID_ACCEPTED.as_bytes()).expect("valid accepted event");
@@ -939,6 +1018,7 @@ mod tests {
 
     #[test]
     fn rejects_shared_invalid_fixtures() {
+        assert!(decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-count-empty-filters.json")).is_err());
         assert!(decode_request(INVALID_MAJOR.as_bytes()).is_err());
         assert!(decode_event(INVALID_KIND.as_bytes()).is_err());
         assert!(decode_request(INVALID_PROJECT_INDEX_OVERSIZE.as_bytes()).is_err());

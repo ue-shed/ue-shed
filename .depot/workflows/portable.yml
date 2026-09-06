@@ -253,12 +253,40 @@ jobs:
                   path: test-results/**
                   if-no-files-found: ignore
                   retention-days: 14
+    catalog_oracle:
+        name: SQLite Catalog oracle
+        needs: changes
+        if: needs.changes.outputs.uasset_io == 'true'
+        runs-on: depot-ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: Checkout without persisted credentials
+              uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+            - name: Install Rust
+              run: rustup toolchain install stable --profile minimal --no-self-update
+            - name: Run Catalog differential and recovery tests
+              shell: bash
+              run: |
+                  set -o pipefail
+                  mkdir -p evidence
+                  cargo test --locked -p uasset-io --lib --features catalog-oracle 2>&1 | tee evidence/catalog-oracle.log
+            - name: Upload Catalog oracle evidence
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: catalog-oracle-${{ github.run_id }}
+                  path: evidence/catalog-oracle.log
+                  if-no-files-found: error
+                  retention-days: 30
     gate:
         name: pnpm check
         needs:
             - repository
             - uasset_io
             - uasset_libraries
+            - catalog_oracle
         if: always()
         runs-on: depot-ubuntu-latest
         steps:
@@ -268,9 +296,11 @@ jobs:
                   REPOSITORY_RESULT: ${{ needs.repository.result }}
                   UASSET_IO_RESULT: ${{ needs.uasset_io.result }}
                   UASSET_LIBRARIES_RESULT: ${{ needs.uasset_libraries.result }}
+                  CATALOG_ORACLE_RESULT: ${{ needs.catalog_oracle.result }}
               run: |
                   set -euo pipefail
                   [[ "$REPOSITORY_RESULT" == "success" ]]
                   [[ "$UASSET_IO_RESULT" == "success" || "$UASSET_IO_RESULT" == "skipped" ]]
                   [[ "$UASSET_LIBRARIES_RESULT" == "success" || \
                       "$UASSET_LIBRARIES_RESULT" == "skipped" ]]
+                  [[ "$CATALOG_ORACLE_RESULT" == "success" || "$CATALOG_ORACLE_RESULT" == "skipped" ]]

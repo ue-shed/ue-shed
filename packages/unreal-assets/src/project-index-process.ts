@@ -1,8 +1,16 @@
-import type { UAssetIoOperation, UAssetIoProjectIndexQuery } from "@ue-shed/protocol";
-import { Effect, Layer, Metric, Scope, Semaphore, Stream } from "effect";
+import type {
+	UAssetIoOperation,
+	UAssetIoProjectIndexQuery,
+	UAssetIoProjectIndexFilter
+} from "@ue-shed/protocol";
+import { Effect, Exit, Layer, Metric, Scope, Semaphore, Stream, Schema } from "effect";
 import type { AssetReaderConfiguration, AssetReaderProtocolObservation } from "./asset-reader.js";
 import { DEFAULT_CATALOG_TIMEOUT_MS, MAX_PROTOCOL_OUTPUT_BYTES } from "./asset-reader.js";
 import {
+	type ProjectIndexCount,
+	type ProjectIndexFilter,
+	ProjectIndexCountResult,
+	decodeProjectIndexCount,
 	type ProjectIndexCacheRoot,
 	type ProjectIndexError,
 	type ProjectIndexPage,
@@ -26,6 +34,7 @@ import {
 } from "./project-index.js";
 import {
 	decodeProjectIndexWirePage,
+	decodeProjectIndexDictionaryPage,
 	decodeProjectIndexWireSummary,
 	mapProjectIndexProgress,
 	mapProjectIndexProtocolFailure
@@ -117,17 +126,6 @@ const toWireQuery = (request: ProjectIndexQuery): UAssetIoProjectIndexQuery => {
 		...(request.cursor === undefined ? undefined : { cursor: request.cursor })
 	};
 	switch (request._tag) {
-		case "Count":
-			return {
-				kind: "count",
-				projectId: request.projectId,
-				expectedGeneration: request.expectedGeneration,
-				limit: 1,
-				exactClasses: [...request.exactClasses],
-				classPrefixes: [...request.classPrefixes],
-				classNameSuffixes: [...request.classNameSuffixes],
-				serializedNames: [...request.serializedNames]
-			};
 		case "Maps":
 			return { kind: "maps", ...base };
 		case "ExactClasses":
@@ -141,6 +139,21 @@ const toWireQuery = (request: ProjectIndexQuery): UAssetIoProjectIndexQuery => {
 	}
 };
 
+const toWireFilter = (filter: ProjectIndexFilter): UAssetIoProjectIndexFilter => {
+	switch (filter._tag) {
+		case "Maps":
+			return { kind: "maps" };
+		case "ExactClasses":
+			return { kind: "exact_classes", values: filter.values };
+		case "ClassPrefixes":
+			return { kind: "class_prefixes", values: filter.values };
+		case "ClassNameSuffixes":
+			return { kind: "class_name_suffixes", values: filter.values };
+		case "SerializedNames":
+			return { kind: "serialized_names", values: filter.values };
+	}
+};
+
 const makeRequest = (
 	operation: UAssetIoOperation,
 	timeoutMs: number
@@ -151,7 +164,14 @@ const makeRequest = (
 			maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
 			timeoutMs
 		},
-		{ contractMinor: 1 }
+		{
+			contractMinor:
+				operation.kind === "project_index_count"
+					? 4
+					: operation.kind === "project_index_query"
+						? 3
+						: 1
+		}
 	);
 
 const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexError => {
@@ -385,6 +405,7 @@ async function collectQuery(
 		{
 			cacheRoot,
 			kind: "project_index_query",
+			pageEncoding: "dictionary",
 			query: toWireQuery(request)
 		},
 		configuration.timeoutMs
@@ -404,6 +425,10 @@ async function collectQuery(
 			}
 			if (event.kind === "result" && event.result.kind === "project_index_page") {
 				page = decodeProjectIndexWirePage(event.result.page);
+				continue;
+			}
+			if (event.kind === "result" && event.result.kind === "project_index_dictionary_page") {
+				page = decodeProjectIndexDictionaryPage(event.result.page);
 				continue;
 			}
 			if (event.kind === "failed" || event.kind === "rejected") {
@@ -428,6 +453,73 @@ async function collectQuery(
 		]).pipe(Effect.asVoid)
 	);
 	return page;
+}
+
+const decodeCountResult = Schema.decodeUnknownExit(ProjectIndexCountResult);
+
+async function collectCount(
+	configuration: ProjectIndexProcessConfiguration,
+	session: UassetProtocolSession,
+	cacheRoot: ProjectIndexCacheRoot,
+	request: ProjectIndexCount,
+	signal: AbortSignal | undefined
+): Promise<ProjectIndexCountResult> {
+	const started = Date.now();
+	let sawAccepted = false;
+	let result: ProjectIndexCountResult | undefined;
+	try {
+		for await (const event of session.events({
+			request: makeRequest(
+				{
+					kind: "project_index_count",
+					cacheRoot,
+					request: {
+						projectId: request.projectId,
+						expectedGeneration: request.expectedGeneration,
+						filters: request.filters.map(toWireFilter)
+					}
+				},
+				configuration.timeoutMs
+			),
+			signal,
+			telemetryOperation: "project_index",
+			timeoutMs: configuration.timeoutMs
+		})) {
+			if (event.kind === "accepted") sawAccepted = true;
+			if (event.kind === "result" && event.result.kind === "project_index_count") {
+				const decoded = decodeCountResult(event.result.result);
+				if (Exit.isFailure(decoded))
+					throw new ProjectIndexUnavailable({
+						message: "Project Index returned an invalid count result.",
+						recovery: "Refresh the Catalog, then retry the count.",
+						retrySafe: true
+					});
+				result = decoded.value;
+			}
+			if (event.kind === "failed" || event.kind === "rejected")
+				throw mapProjectIndexProtocolFailure({ event, sawAccepted });
+		}
+	} catch (cause) {
+		throw mapStreamFailure(cause, sawAccepted);
+	}
+	if (
+		result === undefined ||
+		result.projectId !== request.projectId ||
+		result.generation !== request.expectedGeneration
+	)
+		throw new ProjectIndexUnavailable({
+			message: "Project Index count completed without a matching result.",
+			recovery: "Retry the count against the current generation.",
+			retrySafe: true
+		});
+	await Effect.runPromise(
+		Effect.all([
+			Metric.update(projectIndexQueryDuration, Math.max(0, Date.now() - started)),
+			Metric.update(projectIndexGeneration, result.generation),
+			Metric.update(projectIndexTerminalState, "complete")
+		]).pipe(Effect.asVoid)
+	);
+	return result;
 }
 
 function refreshStream(
@@ -482,6 +574,19 @@ function makeProcessService(
 			return yield* decodeProjectIndexPage(page);
 		});
 
+		const count = Effect.fn("ProjectIndexProcess.count")(function* (
+			request: ProjectIndexCount
+		) {
+			const decoded = yield* decodeProjectIndexCount(request);
+			return yield* mutex.withPermits(1)(
+				Effect.tryPromise({
+					try: (signal) =>
+						collectCount(configuration, session, cacheRoot, decoded, signal),
+					catch: (cause) => mapStreamFailure(cause, true)
+				}).pipe(Effect.withSpan("unreal_assets.project_index_count"))
+			);
+		});
+
 		const status = Effect.fn("ProjectIndexProcess.status")(function* (
 			target: ProjectIndexTarget
 		) {
@@ -491,7 +596,7 @@ function makeProcessService(
 			}).pipe(Effect.withSpan("unreal_assets.project_index_status"));
 		});
 
-		return { query, rebuild, refresh, status };
+		return { count, query, rebuild, refresh, status };
 	});
 }
 

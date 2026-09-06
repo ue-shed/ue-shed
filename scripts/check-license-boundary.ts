@@ -35,7 +35,7 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	),
 	licensed(
 		"MIT OR Apache-2.0",
-		"bitflags cc cfg-if find-msvc-tools getrandom hashbrown hashlink itoa libc pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core serde serde_core serde_derive serde_json shlex smallvec syn windows-link windows-sys"
+		"bitflags cc cfg-if crc32fast find-msvc-tools getrandom hashbrown hashlink itoa libc pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core serde serde_core serde_derive serde_json shlex smallvec syn windows-link windows-sys"
 	),
 	licensed("MIT OR Apache-2.0 OR LGPL-2.1-or-later", "r-efi"),
 	licensed("MIT/Apache-2.0", "fallible-iterator fallible-streaming-iterator vcpkg"),
@@ -122,7 +122,7 @@ export function validateLicenseBoundary({
 	if (rootManifest.license !== "MIT") {
 		failures.push("package.json: license must be MIT");
 	}
-	if (!rootLicense.startsWith("MIT License\n")) {
+	if (!/^MIT License\r?\n/.test(rootLicense)) {
 		failures.push("LICENSE: expected the MIT license text");
 	}
 	if (peculiarManifest.version !== "0.11.1") {

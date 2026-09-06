@@ -77,16 +77,6 @@ const UAssetIoProjectIndexQueryBase = {
 
 export const UAssetIoProjectIndexQuery = Schema.Union([
 	Schema.Struct({
-		kind: Schema.Literal("count"),
-		...UAssetIoProjectIndexQueryBase,
-		cursor: Schema.optionalKey(Schema.Never),
-		limit: Schema.Literal(1),
-		exactClasses: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
-		classPrefixes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
-		classNameSuffixes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
-		serializedNames: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64))
-	}),
-	Schema.Struct({
 		kind: Schema.Literal("maps"),
 		...UAssetIoProjectIndexQueryBase
 	}),
@@ -112,6 +102,30 @@ export const UAssetIoProjectIndexQuery = Schema.Union([
 	})
 ]).annotate({ identifier: "UAssetIoProjectIndexQuery" });
 export type UAssetIoProjectIndexQuery = Schema.Schema.Type<typeof UAssetIoProjectIndexQuery>;
+
+export const UAssetIoProjectIndexFilter = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("maps") }),
+	Schema.Struct({ kind: Schema.Literal("exact_classes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("class_prefixes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("class_name_suffixes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("serialized_names"), values: ProjectIndexQueryValues })
+]);
+export type UAssetIoProjectIndexFilter = typeof UAssetIoProjectIndexFilter.Type;
+
+export const UAssetIoProjectIndexCount = Schema.Struct({
+	projectId: UAssetIoProjectIndexQueryBase.projectId,
+	expectedGeneration: UAssetIoProjectIndexQueryBase.expectedGeneration,
+	filters: Schema.Array(UAssetIoProjectIndexFilter).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(16)
+	)
+}).annotate({ identifier: "UAssetIoProjectIndexCount" });
+
+export const UAssetIoProjectIndexCountResult = Schema.Struct({
+	projectId: UAssetIoProjectIndexQueryBase.projectId,
+	generation: PositiveInt,
+	count: NonNegativeInt
+}).annotate({ identifier: "UAssetIoProjectIndexCountResult" });
 
 export const UAssetIoProjectIndexDiagnostic = Schema.Struct({
 	code: NonEmptyString,
@@ -165,7 +179,6 @@ export interface UAssetIoProjectIndexHeader extends Schema.Schema.Type<
 > {}
 
 export const UAssetIoProjectIndexItem = Schema.Union([
-	Schema.Struct({ kind: Schema.Literal("count"), count: NonNegativeInt }),
 	UAssetIoProjectIndexMap,
 	UAssetIoProjectIndexHeader
 ]).annotate({ identifier: "UAssetIoProjectIndexItem" });
@@ -181,6 +194,26 @@ export const UAssetIoProjectIndexPage = Schema.Struct({
 }).annotate({ identifier: "UAssetIoProjectIndexPage" });
 export interface UAssetIoProjectIndexPage extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexPage
+> {}
+
+const UAssetIoProjectIndexDictionaryHeader = Schema.Struct({
+	...UAssetIoProjectIndexHeader.fields,
+	classes: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64)),
+	serializedNames: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64))
+}).annotate({ identifier: "UAssetIoProjectIndexDictionaryHeader" });
+
+/** v1.3 page-local references; adapters additionally reject indices outside `strings`. */
+export const UAssetIoProjectIndexDictionaryPage = Schema.Struct({
+	...UAssetIoProjectIndexPage.fields,
+	items: Schema.Array(
+		Schema.Union([UAssetIoProjectIndexMap, UAssetIoProjectIndexDictionaryHeader])
+	).check(Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE)),
+	strings: Schema.Array(NonEmptyString).check(
+		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE * 128)
+	)
+}).annotate({ identifier: "UAssetIoProjectIndexDictionaryPage" });
+export interface UAssetIoProjectIndexDictionaryPage extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexDictionaryPage
 > {}
 
 export const UAssetIoOperation = Schema.Union([
@@ -231,7 +264,13 @@ export const UAssetIoOperation = Schema.Union([
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
+		kind: Schema.Literal("project_index_count"),
+		request: UAssetIoProjectIndexCount
+	}),
+	Schema.Struct({
+		cacheRoot: NonEmptyString,
 		kind: Schema.Literal("project_index_query"),
+		pageEncoding: Schema.optionalKey(Schema.Literal("dictionary")),
 		query: UAssetIoProjectIndexQuery
 	})
 ]).annotate({ identifier: "UAssetIoOperation" });
@@ -256,12 +295,17 @@ const UAssetIoOperationKind = Schema.Literals([
 	"project_index_status",
 	"project_index_refresh",
 	"project_index_rebuild",
-	"project_index_query"
+	"project_index_query",
+	"project_index_count"
 ]);
 export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationKind>;
 
 /** Typed result frames carried between the IO worker and its Effect consumer. */
 export const UAssetIoResult = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("project_index_count"),
+		result: UAssetIoProjectIndexCountResult
+	}),
 	Schema.Struct({ inspection: SavedAssetInspection, kind: Schema.Literal("inspect") }),
 	Schema.Struct({ blueprint: BlueprintGraphProjection, kind: Schema.Literal("blueprint") }),
 	Schema.Struct({ kind: Schema.Literal("authoring"), snapshot: AuthoringTableSnapshot }),
@@ -285,6 +329,10 @@ export const UAssetIoResult = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("project_index_page"),
 		page: UAssetIoProjectIndexPage
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_dictionary_page"),
+		page: UAssetIoProjectIndexDictionaryPage
 	})
 ]).annotate({ identifier: "UAssetIoResult" });
 export type UAssetIoResult = Schema.Schema.Type<typeof UAssetIoResult>;

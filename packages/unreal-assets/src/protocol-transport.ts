@@ -63,14 +63,17 @@ const decodeProtocolEvent = Schema.decodeUnknownSync(UAssetIoEvent, exactProtoco
 const isProjectIndexPageFrame = Schema.is(
 	Schema.Struct({
 		kind: Schema.Literal("result"),
-		result: Schema.Struct({ kind: Schema.Literal("project_index_page") })
+		result: Schema.Struct({
+			kind: Schema.Literals(["project_index_page", "project_index_dictionary_page"])
+		})
 	})
 );
 
 /** @internal Validate one exact wire event through the measured type-side path. */
 export function validateProtocolEvent<Input>(input: Input, frameCharacters: number): ProtocolEvent {
-	// Project Index pages contain validation-only schemas, with no wire transformations. Their
-	// bounded 1–3 MB frames benefit from this path well below the general large-frame threshold.
+	// Project Index strings usually already satisfy the decoded type (including trimming). Type-side
+	// validation avoids repeating those transformations; the fallback still normalizes wire input.
+	// Their bounded 1–3 MB frames benefit below the general large-frame threshold.
 	const useTypeSide =
 		frameCharacters >= TYPE_SIDE_VALIDATION_MIN_FRAME_CHARACTERS ||
 		(frameCharacters >= PROJECT_INDEX_TYPE_SIDE_MIN_FRAME_CHARACTERS &&

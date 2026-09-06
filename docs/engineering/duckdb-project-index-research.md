@@ -1,7 +1,7 @@
 # DuckDB Project Index research
 
 Status: historical design and benchmark evidence, 2026-08-06. Superseded on 2026-09-05 by
-[the SQLite Catalog](sqlite-project-index.md). At the time of this report, DuckDB was the production Catalog
+[the binary Catalog](binary-project-index.md). At the time of this report, DuckDB was the production Catalog
 implementation.
 
 For the complete visual comparison with the pre-SQLite JSON baseline and both DuckDB Adapter

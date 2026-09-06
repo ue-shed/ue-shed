@@ -1,5 +1,6 @@
 //! Classic Unreal package summary parsing.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -936,26 +937,26 @@ fn read_custom_versions(
         reader.checked_vec_capacity::<CustomVersion>(count, 8, "Summary.CustomVersions.Count")?;
     let mut versions = Vec::with_capacity(capacity);
     for index in 0..count {
-        let path = format!("Summary.CustomVersions[{index}]");
+        let path = IndexedPath::new("Summary.CustomVersions", index);
         let version = match legacy_file_version {
             -2 => CustomVersion {
                 key: Guid {
                     a: 0,
                     b: 0,
                     c: 0,
-                    d: reader.read_u32(&format!("{path}.Tag"))?,
+                    d: reader.read_u32(&format_args!("{path}.Tag"))?,
                 },
-                version: reader.read_i32(&format!("{path}.Version"))?,
+                version: reader.read_i32(&format_args!("{path}.Version"))?,
                 friendly_name: None,
             },
             -5..=-3 => CustomVersion {
-                key: reader.read_guid(&format!("{path}.Key"))?,
-                version: reader.read_i32(&format!("{path}.Version"))?,
-                friendly_name: Some(reader.read_fstring(&format!("{path}.FriendlyName"))?),
+                key: reader.read_guid(&format_args!("{path}.Key"))?,
+                version: reader.read_i32(&format_args!("{path}.Version"))?,
+                friendly_name: Some(reader.read_fstring(&format_args!("{path}.FriendlyName"))?),
             },
             -9..=-6 => CustomVersion {
-                key: reader.read_guid(&format!("{path}.Key"))?,
-                version: reader.read_i32(&format!("{path}.Version"))?,
+                key: reader.read_guid(&format_args!("{path}.Key"))?,
+                version: reader.read_i32(&format_args!("{path}.Version"))?,
                 friendly_name: None,
             },
             _ => {
@@ -1396,12 +1397,19 @@ fn resolve_name_ref(
     names: &[String],
     name: crate::archive::NameRef,
 ) -> Result<String, PackageError> {
+    resolve_name_ref_cow(names, name).map(Cow::into_owned)
+}
+
+fn resolve_name_ref_cow(
+    names: &[String],
+    name: crate::archive::NameRef,
+) -> Result<Cow<'_, str>, PackageError> {
     validate_name_ref(names, name, "NameRef")?;
     let base = &names[usize::try_from(name.index().get()).expect("u32 fits in usize")];
     if name.number() == 0 {
-        Ok(base.clone())
+        Ok(Cow::Borrowed(base))
     } else {
-        Ok(format!("{}_{}", base, name.number() - 1))
+        Ok(Cow::Owned(format!("{}_{}", base, name.number() - 1)))
     }
 }
 
@@ -1409,8 +1417,8 @@ fn resolve_import_class_path(
     import: &Import,
     names: &[String],
 ) -> Result<ObjectPath, PackageError> {
-    let package = resolve_name_ref(names, import.class_package)?;
-    let class = resolve_name_ref(names, import.class_name)?;
+    let package = resolve_name_ref_cow(names, import.class_package)?;
+    let class = resolve_name_ref_cow(names, import.class_name)?;
     Ok(normalize_object_path(ObjectPath(format!(
         "/{package}.{class}"
     ))))
@@ -1507,16 +1515,16 @@ impl<'a> IndexPathResolver<'a> {
             })?;
             (import.object_name, import.outer_index, import.package_name)
         };
-        let object_name = resolve_name_ref(self.names, object_name_ref)?;
+        let object_name = resolve_name_ref_cow(self.names, object_name_ref)?;
         let (resolved, outer_depth) = match outer_index {
             PackageIndex::Null => {
                 if object_name == "None" {
                     (ObjectPath(String::new()), 0)
                 } else if let Some(package_name_ref) = package_name_ref {
-                    let package = resolve_name_ref(self.names, package_name_ref)?;
+                    let package = resolve_name_ref_cow(self.names, package_name_ref)?;
                     (ObjectPath(format!("/{package}.{object_name}")), 0)
                 } else if object_name.starts_with('/') {
-                    (ObjectPath(object_name), 0)
+                    (ObjectPath(object_name.into_owned()), 0)
                 } else {
                     (ObjectPath(format!("/{object_name}")), 0)
                 }
@@ -1529,7 +1537,7 @@ impl<'a> IndexPathResolver<'a> {
                 let depth = outer_depth + 1;
                 self.validate_outer_depth(depth, path)?;
                 if outer.as_str().is_empty() || outer.as_str() == "/None" {
-                    (ObjectPath(object_name), depth)
+                    (ObjectPath(object_name.into_owned()), depth)
                 } else {
                     (ObjectPath(format!("{outer}.{object_name}")), depth)
                 }
@@ -1576,7 +1584,7 @@ impl<'a> IndexPathResolver<'a> {
             })?;
             (export.object_name, export.outer_index)
         };
-        let object_name = resolve_name_ref(self.names, object_name_ref)?;
+        let object_name = resolve_name_ref_cow(self.names, object_name_ref)?;
         let (resolved, outer_depth) = match outer_index {
             PackageIndex::Null => (
                 ObjectPath(format!("{}.{object_name}", self.package_name)),
@@ -1936,6 +1944,27 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn borrowed_names_preserve_numbered_unicode_and_invalid_index_behavior() {
+        let names = vec!["名前".to_owned()];
+        assert_eq!(
+            resolve_name_ref(&names, crate::test_support::name_ref(0, 0)).unwrap(),
+            "名前"
+        );
+        assert_eq!(
+            resolve_name_ref(&names, crate::test_support::name_ref(0, 1)).unwrap(),
+            "名前_0"
+        );
+        assert_eq!(
+            resolve_name_ref(&names, crate::test_support::name_ref(0, 42)).unwrap(),
+            "名前_41"
+        );
+        let error = resolve_name_ref(&names, crate::test_support::name_ref(1, 0)).unwrap_err();
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert_eq!(error.path(), "NameRef");
+        assert_eq!(error.detail(), "name index 1 is outside name map");
+    }
+
     fn push_i32(bytes: &mut Vec<u8>, value: i32) {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
@@ -1958,6 +1987,26 @@ mod tests {
 
     fn current_summary_fixture(package_flags: u32) -> Vec<u8> {
         summary_fixture(VersionContext::LATEST_SUPPORTED_UE5, package_flags)
+    }
+
+    #[test]
+    fn custom_version_errors_preserve_field_paths_and_duplicate_validation() {
+        let mut bytes = Vec::new();
+        push_i32(&mut bytes, 1);
+        bytes.extend_from_slice(&[0; 16]);
+        bytes.push(0); // A truncated version after a complete GUID.
+        let error = read_custom_versions(&mut Reader::new(&bytes), -9).unwrap_err();
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert_eq!(error.path(), "Summary.CustomVersions[0].Version");
+        assert_eq!(error.offset(), Some(20));
+
+        bytes.clear();
+        push_i32(&mut bytes, 2);
+        bytes.extend_from_slice(&[0; 40]);
+        let error = read_custom_versions(&mut Reader::new(&bytes), -9).unwrap_err();
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert_eq!(error.path(), "Summary.CustomVersions");
+        assert_eq!(error.detail(), "duplicate custom-version GUID");
     }
 
     fn summary_fixture(ue5: i32, package_flags: u32) -> Vec<u8> {

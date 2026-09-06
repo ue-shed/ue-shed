@@ -5,6 +5,7 @@ import {
 	ProjectIndex,
 	ProjectIndexCursor,
 	ProjectIndexQuery,
+	type ProjectIndexFilter,
 	projectIndexProcessLayerFromReader
 } from "@ue-shed/unreal-assets";
 import { Effect, Layer, Stream } from "effect";
@@ -75,13 +76,24 @@ export const runProjectIndexCount = Effect.fn("Cli.workflow.project_index_count"
 				command,
 				Effect.gen(function* () {
 					const summary = yield* readySummary(command.projectRoot);
+					const filters = (
+						[
+							{ _tag: "ExactClasses", values: command.exactClasses },
+							{ _tag: "ClassPrefixes", values: command.classPrefixes },
+							{ _tag: "ClassNameSuffixes", values: command.classNameSuffixes },
+							{ _tag: "SerializedNames", values: command.serializedNames }
+						] satisfies readonly ProjectIndexFilter[]
+					).filter((filter) => filter.values.length > 0);
+					if (filters.length === 0)
+						return {
+							projectId: summary.projectId,
+							generation: summary.generation,
+							count: 0
+						};
 					return yield* countProjectIndex({
 						projectId: summary.projectId,
 						expectedGeneration: summary.generation,
-						exactClasses: command.exactClasses,
-						classPrefixes: command.classPrefixes,
-						classNameSuffixes: command.classNameSuffixes,
-						serializedNames: command.serializedNames
+						filters
 					});
 				})
 			).pipe(Effect.flatMap(printJson))

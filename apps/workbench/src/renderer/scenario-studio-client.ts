@@ -1,4 +1,7 @@
-import { ScenarioStudioClientError, type ScenarioStudioClient } from "@ue-shed/extension-scenarios";
+import {
+	ScenarioStudioClientError,
+	type ScenarioStudioClient
+} from "@ue-shed/extension-scenarios/client";
 import {
 	decodeScenarioRun,
 	decodeScenarioStatusResponse,

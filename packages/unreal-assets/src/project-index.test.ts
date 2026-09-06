@@ -2,8 +2,10 @@ import { it as effectIt } from "@effect/vitest";
 import { ConfigProvider, Effect, Layer, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
-	foldProjectIndexRefresh,
 	countProjectIndex,
+	decodeProjectIndexCount,
+	foldProjectIndexRefresh,
+	decodeProjectIndexPage,
 	getProjectIndexCacheRoot,
 	getProjectIndexStatus,
 	PROJECT_INDEX_CACHE_ROOT_ENV,
@@ -58,6 +60,104 @@ const memoryLayer = projectIndexMemoryLayerWithConfig({
 });
 
 describe("Project Index public contract", () => {
+	effectIt.effect(
+		"counts distinct packages across overlapping filters and rejects invalid bounds",
+		() =>
+			Effect.gen(function* () {
+				const summary = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(refreshProjectIndex({ projectRoot }))
+				);
+				const request = {
+					projectId,
+					expectedGeneration: summary.generation,
+					filters: [
+						{ _tag: "ExactClasses" as const, values: ["/Script/Engine.DataTable"] },
+						{ _tag: "SerializedNames" as const, values: ["TextProperty"] }
+					]
+				};
+				expect((yield* countProjectIndex(request)).count).toBe(1);
+				expect(
+					(yield* countProjectIndex({
+						...request,
+						filters: [...request.filters, { _tag: "Maps" }]
+					})).count
+				).toBe(2);
+				for (const invalid of [
+					{ ...request, filters: [] },
+					{ ...request, filters: Array.from({ length: 17 }, () => ({ _tag: "Maps" })) },
+					{ ...request, filters: [{ _tag: "ExactClasses", values: [] }] }
+				]) {
+					expect((yield* Effect.result(decodeProjectIndexCount(invalid)))._tag).toBe(
+						"Failure"
+					);
+				}
+			}).pipe(Effect.provide(memoryLayer))
+	);
+	effectIt.effect(
+		"reuses only deeply frozen validated pages across adapter and public boundaries",
+		() =>
+			Effect.gen(function* () {
+				const input = {
+					generation: 1,
+					projectId: "fixture",
+					items: [
+						{
+							kind: "header",
+							packageName: "/Game/A",
+							packagePath: "Content/A.uasset",
+							classes: ["Class"],
+							serializedNames: ["Name"]
+						}
+					]
+				};
+				const page = yield* decodeProjectIndexPage(input);
+				expect(yield* decodeProjectIndexPage(page)).toBe(page);
+				input.generation = 0;
+				expect((yield* Effect.result(decodeProjectIndexPage(input)))._tag).toBe("Failure");
+				expect(Object.isFrozen(page)).toBe(true);
+				expect(Object.isFrozen(page.items)).toBe(true);
+				const item = page.items[0];
+				if (item?.kind !== "header") throw new Error("expected header");
+				expect(Object.isFrozen(item)).toBe(true);
+				expect(Object.isFrozen(item.classes)).toBe(true);
+				expect(Object.isFrozen(item.serializedNames)).toBe(true);
+				expect(() => Object.assign(item.classes, { 0: "changed" })).toThrow();
+				expect(() => Object.assign(page, { generation: 0 })).toThrow();
+				// Freezing an arbitrary object does not grant validation provenance.
+				const invalid = Object.freeze({ ...page, generation: 0 });
+				const result = yield* Effect.result(decodeProjectIndexPage(invalid));
+				expect(result._tag).toBe("Failure");
+				if (result._tag === "Failure")
+					expect(result.failure._tag).toBe("ProjectIndexUnavailable");
+			})
+	);
+
+	effectIt.effect("keeps domain bounds on dictionary-expanded and ordinary page values", () =>
+		Effect.gen(function* () {
+			const header = {
+				kind: "header",
+				packageName: "/Game/A",
+				packagePath: "Content/A.uasset",
+				classes: ["Class"],
+				serializedNames: ["Name"]
+			};
+			for (const change of [
+				{ classes: ["x".repeat(1025)] },
+				{ serializedNames: Array(65).fill("Name") },
+				{ packagePath: "x".repeat(32768) },
+				{ packageName: "" }
+			]) {
+				const result = yield* Effect.result(
+					decodeProjectIndexPage({
+						generation: 1,
+						projectId: "fixture",
+						items: [{ ...header, ...change }]
+					})
+				);
+				expect(result._tag).toBe("Failure");
+			}
+		})
+	);
 	it("rejects a query above the package-enforced page limit", async () => {
 		const result = await Effect.runPromiseExit(
 			Schema.decodeUnknownEffect(ProjectIndexQuery)({
@@ -121,10 +221,12 @@ effectIt.effect("refreshes and answers bounded queries through the in-memory ada
 		const count = yield* countProjectIndex({
 			projectId,
 			expectedGeneration: summary.generation,
-			exactClasses: ["/Script/Engine.DataTable"],
-			classPrefixes: ["/Script/EnhancedInput."],
-			classNameSuffixes: ["Table"],
-			serializedNames: ["TextProperty"]
+			filters: [
+				{ _tag: "ExactClasses", values: ["/Script/Engine.DataTable"] },
+				{ _tag: "ClassPrefixes", values: ["/Script/EnhancedInput."] },
+				{ _tag: "ClassNameSuffixes", values: ["Table"] },
+				{ _tag: "SerializedNames", values: ["TextProperty"] }
+			]
 		});
 		expect(count).toEqual({ count: 1, projectId, generation: summary.generation });
 

@@ -24,7 +24,7 @@ import {
 	GameTextClient,
 	GameTextClientError,
 	type GameTextClientApi
-} from "@ue-shed/extension-game-text";
+} from "@ue-shed/extension-game-text/client";
 import { WorkbenchTaskProgress } from "../shared/project-workspace-contract.js";
 import { Effect, Schema } from "effect";
 

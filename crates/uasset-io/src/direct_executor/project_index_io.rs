@@ -18,7 +18,7 @@ use super::catalog::{
     CatalogError, CatalogStatus, Completeness, Generation, ProjectId, QueryItem, QueryKind,
     QueryRequest, RefreshSummary, project_id_from_root,
 };
-use super::catalog_sqlite::SqliteCatalog;
+use super::catalog_binary::BinaryCatalog;
 use super::project_index::{self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress};
 use super::scanner::FilesystemProjectScanner;
 
@@ -41,17 +41,16 @@ struct ActiveQueryCatalog {
     cache_root: String,
     expected_generation: u64,
     project_id: String,
-    catalog: SqliteCatalog,
+    catalog: BinaryCatalog,
 }
 
 impl ProjectIndexQuerySession {
-    pub(crate) fn query(
+    fn catalog(
         &mut self,
         cache_root: &str,
-        query: &ProtocolQuery,
-    ) -> Result<ProjectIndexPage, Failure> {
-        let project_id = query_project_id(query);
-        let expected_generation = query_expected_generation(query);
+        project_id: &str,
+        expected_generation: u64,
+    ) -> Result<&BinaryCatalog, Failure> {
         let requires_open = self.active.as_ref().is_none_or(|active| {
             active.cache_root != cache_root
                 || active.project_id != project_id
@@ -65,8 +64,68 @@ impl ProjectIndexQuerySession {
                 catalog: open_catalog_for_project_id(cache_root, project_id)?,
             });
         }
-        let active = self.active.as_ref().expect("query Catalog was initialized");
-        query_catalog(&active.catalog, query)
+        Ok(&self
+            .active
+            .as_ref()
+            .expect("query Catalog was initialized")
+            .catalog)
+    }
+
+    pub(crate) fn count(
+        &mut self,
+        cache_root: &str,
+        request: &crate::protocol::ProjectIndexCount,
+    ) -> Result<crate::protocol_result::ProjectIndexCountResult, Failure> {
+        use super::catalog::{Catalog, CountRequest};
+        use crate::protocol::ProjectIndexFilter;
+        let catalog = self.catalog(cache_root, &request.project_id, request.expected_generation)?;
+        let result = catalog
+            .count(&CountRequest {
+                project_id: ProjectId::new(&request.project_id),
+                expected_generation: Generation::new(request.expected_generation),
+                filters: request
+                    .filters
+                    .iter()
+                    .map(|filter| match filter {
+                        ProjectIndexFilter::Maps => QueryKind::Maps,
+                        ProjectIndexFilter::ExactClasses { values } => QueryKind::ExactClasses {
+                            values: values.clone(),
+                        },
+                        ProjectIndexFilter::ClassPrefixes { values } => QueryKind::ClassPrefixes {
+                            values: values.clone(),
+                        },
+                        ProjectIndexFilter::ClassNameSuffixes { values } => {
+                            QueryKind::ClassNameSuffixes {
+                                values: values.clone(),
+                            }
+                        }
+                        ProjectIndexFilter::SerializedNames { values } => {
+                            QueryKind::SerializedNames {
+                                values: values.clone(),
+                            }
+                        }
+                    })
+                    .collect(),
+            })
+            .map_err(catalog_to_failure)?;
+        Ok(crate::protocol_result::ProjectIndexCountResult {
+            project_id: result.project_id.to_string(),
+            generation: result.generation.get(),
+            count: result.count,
+        })
+    }
+
+    pub(crate) fn query(
+        &mut self,
+        cache_root: &str,
+        query: &ProtocolQuery,
+    ) -> Result<ProjectIndexPage, Failure> {
+        let project_id = query_project_id(query);
+        let expected_generation = query_expected_generation(query);
+        query_catalog(
+            self.catalog(cache_root, project_id, expected_generation)?,
+            query,
+        )
     }
 }
 
@@ -117,35 +176,34 @@ pub(crate) struct CatalogWriteEvidence {
     pub(crate) evidence_write_ms: u64,
 }
 
-pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<SqliteCatalog, Failure> {
+pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<BinaryCatalog, Failure> {
     open_catalog_for_id(cache_root, &project_id_from_root(project_root))
 }
 
 pub(crate) fn open_catalog_for_id(
     cache_root: &str,
     project_id: &ProjectId,
-) -> Result<SqliteCatalog, Failure> {
-    SqliteCatalog::open(Path::new(cache_root), project_id).map_err(catalog_to_failure)
+) -> Result<BinaryCatalog, Failure> {
+    BinaryCatalog::open(Path::new(cache_root), project_id).map_err(catalog_to_failure)
 }
 
 pub(crate) fn open_catalog_for_project_id(
     cache_root: &str,
     project_id: &str,
-) -> Result<SqliteCatalog, Failure> {
+) -> Result<BinaryCatalog, Failure> {
     // Query pages are bounded reads; avoid a full integrity scan for every page-sized worker.
     // Refresh/status opens retain the checked path above and recover corrupted catalogs.
-    SqliteCatalog::open_for_query(Path::new(cache_root), &ProjectId::new(project_id))
+    BinaryCatalog::open_for_query(Path::new(cache_root), &ProjectId::new(project_id))
         .map_err(catalog_to_failure)
 }
 
-pub(crate) fn catalog_was_quarantined(catalog: &SqliteCatalog) -> bool {
+pub(crate) fn catalog_was_quarantined(catalog: &BinaryCatalog) -> bool {
     catalog.quarantined_from().is_some()
 }
 
 pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
     match query {
-        ProtocolQuery::Count { project_id, .. }
-        | ProtocolQuery::Maps { project_id, .. }
+        ProtocolQuery::Maps { project_id, .. }
         | ProtocolQuery::ExactClasses { project_id, .. }
         | ProtocolQuery::ClassPrefixes { project_id, .. }
         | ProtocolQuery::ClassNameSuffixes { project_id, .. }
@@ -155,11 +213,7 @@ pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
 
 fn query_expected_generation(query: &ProtocolQuery) -> u64 {
     match query {
-        ProtocolQuery::Count {
-            expected_generation,
-            ..
-        }
-        | ProtocolQuery::Maps {
+        ProtocolQuery::Maps {
             expected_generation,
             ..
         }
@@ -182,7 +236,7 @@ fn query_expected_generation(query: &ProtocolQuery) -> u64 {
     }
 }
 
-pub(crate) fn status(catalog: &SqliteCatalog) -> ProjectIndexStatusPayload {
+pub(crate) fn status(catalog: &BinaryCatalog) -> ProjectIndexStatusPayload {
     match project_index::status(catalog) {
         CatalogStatus::Absent => ProjectIndexStatusPayload::Absent,
         CatalogStatus::Ready { summary } => ProjectIndexStatusPayload::Ready {
@@ -192,14 +246,14 @@ pub(crate) fn status(catalog: &SqliteCatalog) -> ProjectIndexStatusPayload {
 }
 
 pub(crate) fn query(
-    catalog: &SqliteCatalog,
+    catalog: &BinaryCatalog,
     query: &ProtocolQuery,
 ) -> Result<ProjectIndexPage, Failure> {
     query_catalog(catalog, query)
 }
 
 fn query_catalog(
-    catalog: &SqliteCatalog,
+    catalog: &BinaryCatalog,
     query: &ProtocolQuery,
 ) -> Result<ProjectIndexPage, Failure> {
     let request = to_catalog_query(query)?;
@@ -213,7 +267,7 @@ fn query_catalog(
 }
 
 pub(crate) fn refresh(
-    catalog: &mut SqliteCatalog,
+    catalog: &mut BinaryCatalog,
     project_root: &str,
     rebuild: bool,
     cancellation: &CancellationToken,
@@ -296,37 +350,6 @@ pub(crate) fn progress_phase(phase: RefreshPhase) -> &'static str {
 
 fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
     let (project_id, expected_generation, limit, cursor, kind) = match query {
-        ProtocolQuery::Count {
-            cursor,
-            expected_generation,
-            limit,
-            project_id,
-            exact_classes,
-            class_prefixes,
-            class_name_suffixes,
-            serialized_names,
-        } => (
-            project_id,
-            *expected_generation,
-            *limit,
-            cursor.clone(),
-            QueryKind::Count {
-                filters: vec![
-                    QueryKind::ExactClasses {
-                        values: exact_classes.clone(),
-                    },
-                    QueryKind::ClassPrefixes {
-                        values: class_prefixes.clone(),
-                    },
-                    QueryKind::ClassNameSuffixes {
-                        values: class_name_suffixes.clone(),
-                    },
-                    QueryKind::SerializedNames {
-                        values: serialized_names.clone(),
-                    },
-                ],
-            },
-        ),
         ProtocolQuery::Maps {
             cursor,
             expected_generation,
@@ -441,7 +464,6 @@ fn to_protocol_diagnostic(
 
 fn to_protocol_item(item: QueryItem) -> ProjectIndexItem {
     match item {
-        QueryItem::Count { count } => ProjectIndexItem::Count { count },
         QueryItem::Map {
             map_path,
             package_name,

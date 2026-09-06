@@ -1,5 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
-import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
+import { mapCaptureBackendIssue, savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
 import {
 	Button,
 	SavedMapPicker,
@@ -40,7 +40,7 @@ const decodeRenderProfile = Schema.decodeUnknownSync(
 	Schema.Literals(["full_fidelity", "seam_stable", "scene_capture_defaults", "observation"])
 );
 const decodeCaptureBackend = Schema.decodeUnknownSync(
-	Schema.Literals(["scene_capture_tiles", "viewport_high_resolution"])
+	Schema.Literals(["lit_camera_tiles", "scene_capture_tiles", "viewport_high_resolution"])
 );
 const decodeLodPolicy = Schema.decodeUnknownSync(
 	Schema.Literals(["natural", "per_level_distance_scale"])
@@ -132,7 +132,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	const [draft, setDraft] = createSignal<MapCapturePlanDraft>();
 	const [savedPlanJson, setSavedPlanJson] = createSignal<string>();
 	const [capture, setCapture] = createSignal<CompletedCapture>();
-	const [captureBackend, setCaptureBackend] = createSignal<CaptureBackend>("scene_capture_tiles");
+	const [captureBackend, setCaptureBackend] = createSignal<CaptureBackend>("lit_camera_tiles");
 	const [activeCaptureOperationId, setActiveCaptureOperationId] = createSignal<string>();
 	const [captureProgress, setCaptureProgress] = createSignal<MapCaptureProgressEvent>();
 	const [livePreview, setLivePreview] = createSignal<LivePreviewState>({ status: "idle" });
@@ -488,6 +488,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	function runCapture(openMapFirst: boolean) {
 		const current = plan();
 		if (current === undefined || isCapturing()) return;
+		const backendIssue = mapCaptureBackendIssue(current, captureBackend());
+		if (backendIssue !== undefined) {
+			setNotice({ tone: "error", text: backendIssue });
+			return;
+		}
 		captureSequence += 1;
 		const operationId = `map-capture-${Date.now().toString(36)}-${captureSequence}`;
 		const totalTiles = grid()?.tileCount ?? 1;
@@ -903,6 +908,45 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 										}
 									/>
 									<Toggle
+										label="Manual exposure"
+										checked={
+											current().capture.render.exposureEV100 !== undefined
+										}
+										onChange={(manual) =>
+											updateRender(({ exposureEV100, ...render }) =>
+												manual
+													? {
+															...render,
+															exposureEV100: exposureEV100 ?? 0
+														}
+													: render
+											)
+										}
+									/>
+									<Show
+										when={current().capture.render.exposureEV100 !== undefined}
+										fallback={
+											<p {...stylex.props(styles.note)}>
+												Exposure settles on the whole map, then stays fixed
+												across tiles.
+											</p>
+										}
+									>
+										<NumberField
+											label="Exposure EV100"
+											min={-20}
+											max={30}
+											step={0.25}
+											value={current().capture.render.exposureEV100 ?? 0}
+											onInput={(exposureEV100) =>
+												updateRender((render) => ({
+													...render,
+													exposureEV100
+												}))
+											}
+										/>
+									</Show>
+									<Toggle
 										checked={current().capture.render.effects.fog}
 										label="Fog"
 										onChange={(fog) =>
@@ -938,6 +982,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 											}
 											{...stylex.props(styles.select)}
 										>
+											<option value="lit_camera_tiles">
+												Lit camera tiles · default
+											</option>
 											<option value="scene_capture_tiles">
 												Tiled scene capture
 											</option>

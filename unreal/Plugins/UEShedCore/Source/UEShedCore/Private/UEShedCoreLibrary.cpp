@@ -46,6 +46,7 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Limits->SetNumberField(TEXT("maxGutterPixels"), 32);
 		Root->SetObjectField(TEXT("mapTileCaptureLimits"), Limits);
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.map-tile-capture.v1")));
+		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.lit-map-tile-capture.v1")));
 	}
 	if (FModuleManager::Get().IsModuleLoaded(TEXT("UEShedObservatoryEditor")))
 	{

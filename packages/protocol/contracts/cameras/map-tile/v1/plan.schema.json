@@ -130,6 +130,7 @@
 					"additionalProperties": false,
 					"required": ["effects", "lodPolicy", "profile"],
 					"properties": {
+						"exposureEV100": { "type": "number", "minimum": -20, "maximum": 30 },
 						"effects": {
 							"type": "object",
 							"additionalProperties": false,

@@ -129,6 +129,9 @@ export const runMapCaptureRun = Effect.fn("Cli.workflow.map_capture.run")(
 					}
 				}
 				const outcome = yield* runMapCapture({
+					...(command.captureBackend === undefined
+						? undefined
+						: { captureBackend: command.captureBackend }),
 					...(command.correlationId === undefined
 						? undefined
 						: { correlationId: command.correlationId }),

@@ -5,7 +5,7 @@ import {
 	RemoteControlClient,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
-import { Clock, Context, Effect, Layer, Option, Schema, Stream } from "effect";
+import { Clock, Context, Effect, Layer, Option, Schedule, Schema, Stream } from "effect";
 import {
 	createMapTileGrid,
 	mapTileKeyId,
@@ -15,6 +15,7 @@ import {
 	type MapTileKey
 } from "./map-tile-pyramid.js";
 import { CAMERAS_PACKAGE_VERSION } from "./version.js";
+import { mapCaptureBackendIssue } from "./map-tile-authoring.js";
 import {
 	MapCaptureRepository,
 	MapCaptureRepositoryLive,
@@ -30,6 +31,7 @@ import {
 	type MapCaptureBackend,
 	MapCaptureRunId,
 	MapTileCaptureRequest,
+	MapTileCaptureOperation,
 	decodeMapTileCaptureResponse,
 	decodeMapTilePyramidManifest,
 	type MapCapturePlan,
@@ -40,6 +42,7 @@ import {
 
 const mapTileReviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 const maximumTilesPerRequest = 64;
+const litCameraTilesPerBatch = 4;
 const maximumEnumeratedTiles = 1_000_000;
 
 export class MapCaptureRunError extends Schema.TaggedErrorClass<MapCaptureRunError>()(
@@ -53,6 +56,8 @@ export class MapCaptureRunError extends Schema.TaggedErrorClass<MapCaptureRunErr
 ) {}
 
 export interface MapTileCapturePortApi {
+	/** Release a run's viewport, camera and scene freeze on completion or interruption. */
+	readonly release?: (runId: string) => Effect.Effect<void, unknown>;
 	readonly capture: (
 		request: MapTileCaptureRequestValue
 	) => Effect.Effect<MapTileCaptureResponse, unknown>;
@@ -66,21 +71,90 @@ export class MapTileCapturePort extends Context.Service<
 	MapTileCapturePortApi
 >()("@ue-shed/cameras/MapTileCapturePort") {}
 
-function remoteCapturePort(
+export function makeMapTileCaptureRemotePort(
 	client: RemoteControlClientApi,
 	endpoint: string
 ): MapTileCapturePortApi {
 	return {
-		capture: (request) =>
-			client
+		release: Effect.fn("MapCapture.remoteRelease")(function* (runId: string) {
+			yield* client
 				.request({
 					endpoint,
-					functionName: "CaptureMapTiles",
+					timeout: "5 seconds",
+					functionName: "EndMapTileCapture",
 					objectPath: mapTileReviewLibraryPath,
-					operation: "camera.map_tile.capture.remote",
+					operation: "camera.map_tile.release.remote",
+					parameters: { RunId: runId }
+				})
+				.pipe(
+					Effect.flatMap(
+						Schema.decodeUnknownEffect(Schema.Struct({ released: Schema.Boolean }))
+					)
+				);
+		}),
+		capture: Effect.fn("MapCapture.remoteCapture")(function* (request) {
+			if ((request.captureBackend ?? "lit_camera_tiles") !== "lit_camera_tiles") {
+				return yield* client
+					.request({
+						endpoint,
+						functionName: "CaptureMapTiles",
+						objectPath: mapTileReviewLibraryPath,
+						operation: "camera.map_tile.capture.remote",
+						parameters: { RequestJson: JSON.stringify(request) }
+					})
+					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
+			}
+			const decode = (value: Schema.Json) =>
+				Schema.decodeUnknownEffect(MapTileCaptureOperation)(value).pipe(
+					Effect.flatMap((status) => {
+						const operationId =
+							status.state === "running"
+								? status.operationId
+								: status.response.operationId;
+						return operationId === request.operationId
+							? Effect.succeed(status)
+							: Effect.fail(
+									new MapCaptureRunError({
+										message:
+											"Editor capture response belongs to a different operation.",
+										operation: "capture",
+										recovery:
+											"Reconnect and inspect the active editor capture before retrying."
+									})
+								);
+					})
+				);
+			const start = yield* client
+				.request({
+					endpoint,
+					functionName: "BeginMapTileCapture",
+					objectPath: mapTileReviewLibraryPath,
+					operation: "camera.map_tile.begin.remote",
 					parameters: { RequestJson: JSON.stringify(request) }
 				})
-				.pipe(Effect.flatMap(decodeMapTileCaptureResponse))
+				.pipe(Effect.flatMap(decode));
+			if (start.state === "finished") return start.response;
+			const finished = yield* client
+				.request({
+					endpoint,
+					functionName: "PollMapTileCapture",
+					timeout: "30 seconds",
+					objectPath: mapTileReviewLibraryPath,
+					operation: "camera.map_tile.poll.remote",
+					parameters: { RunId: request.runId, OperationId: request.operationId }
+				})
+				.pipe(
+					Effect.flatMap(decode),
+					Effect.repeat({
+						schedule: Schedule.spaced("200 millis"),
+						while: (status) => status.state === "running"
+					}),
+					Effect.timeout("15 minutes")
+				);
+			if (finished.state !== "finished")
+				return yield* Effect.die("Map capture polling ended without a terminal response.");
+			return finished.response;
+		})
 	};
 }
 
@@ -91,7 +165,7 @@ export function mapTileCaptureRemotePortLayer(
 		MapTileCapturePort,
 		Effect.gen(function* () {
 			const client = yield* RemoteControlClient;
-			return MapTileCapturePort.of(remoteCapturePort(client, endpoint));
+			return MapTileCapturePort.of(makeMapTileCaptureRemotePort(client, endpoint));
 		})
 	);
 }
@@ -267,6 +341,7 @@ function makeRequest(args: {
 	return MapTileCaptureRequest.make({
 		capture: args.plan.capture,
 		captureBackend: args.captureBackend,
+		overviewBounds: args.grid.snappedBounds,
 		contract: { name: "ue-shed-map-tile-capture", version: { major: 1, minor: 0 } },
 		correlationId: args.correlationId,
 		expectedMapPath: args.plan.project.mapPath,
@@ -346,11 +421,19 @@ function runMapCaptureWith(args: {
 }): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
 	return Effect.scoped(
 		Effect.gen(function* () {
-			const captureBackend = args.options.captureBackend ?? "scene_capture_tiles";
+			const captureBackend = args.options.captureBackend ?? "lit_camera_tiles";
 			const plan =
 				"plan" in args.options
 					? args.options.plan
 					: yield* args.repository.loadPlan(args.options.planPath);
+			const backendIssue = mapCaptureBackendIssue(plan, captureBackend);
+			if (backendIssue !== undefined)
+				return yield* new MapCaptureRunError({
+					message: backendIssue,
+					operation: "prepare",
+					recovery:
+						"Update the plan's render settings or select a compatible capture backend."
+				});
 			const projectRoot = yield* validateMapCaptureProjectRoot(args.options.projectRoot);
 			const inspected = yield* inspectMapCapturePlan(plan);
 			const keys = yield* selectedTileKeys({
@@ -387,6 +470,20 @@ function runMapCaptureWith(args: {
 			);
 			const destination =
 				args.options.destination ?? projectLocalMapCaptureDestination(projectRoot);
+			const release = args.port.release;
+			if (captureBackend === "lit_camera_tiles" && release !== undefined) {
+				yield* Effect.addFinalizer(() =>
+					release(runId).pipe(
+						Effect.tapError((error) =>
+							Effect.logError(
+								"Map capture release failed; the editor lease will restore state.",
+								error
+							)
+						),
+						Effect.orElseSucceed(() => undefined)
+					)
+				);
+			}
 			const unrealStagingRoot = resolve(projectRoot, "Saved", "UEShed", "MapTileStaging");
 			const attempt = yield* destination.prepare({ planId: plan.id, runId });
 			yield* Effect.addFinalizer(() =>
@@ -400,7 +497,12 @@ function runMapCaptureWith(args: {
 			const tileBatches =
 				captureBackend === "viewport_high_resolution"
 					? yield* viewportLevelBatches({ grid: inspected.grid, keys })
-					: batches(keys, maximumTilesPerRequest);
+					: batches(
+							keys,
+							captureBackend === "lit_camera_tiles"
+								? litCameraTilesPerBatch
+								: maximumTilesPerRequest
+						);
 			yield* (
 				args.options.onProgress?.({
 					failedTiles: 0,
@@ -630,9 +732,11 @@ function runMapCaptureWith(args: {
 				project: plan.project,
 				provenance: {
 					producer:
-						captureBackend === "viewport_high_resolution"
-							? "unreal-editor-viewport-high-resolution-experimental"
-							: "unreal-editor",
+						captureBackend === "lit_camera_tiles"
+							? "unreal-editor-lit-camera-tiles"
+							: captureBackend === "viewport_high_resolution"
+								? "unreal-editor-viewport-high-resolution-experimental"
+								: "unreal-editor",
 					tool: "ue-shed",
 					toolVersion: CAMERAS_PACKAGE_VERSION
 				},
@@ -668,7 +772,7 @@ function runMapCaptureWith(args: {
 				attributes: {
 					"camera.map_tile.batch.maximum": maximumTilesPerRequest,
 					"camera.map_tile.capture_backend":
-						args.options.captureBackend ?? "scene_capture_tiles"
+						args.options.captureBackend ?? "lit_camera_tiles"
 				}
 			})
 		)

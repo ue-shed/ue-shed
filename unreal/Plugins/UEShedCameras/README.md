@@ -1,5 +1,10 @@
 # UEShedCameras
 
+The editor module includes an opt-in [map freeze experiment](../../../docs/research/map-capture-freeze-2026-09-07.md).
+`UEShed.MapCapture.Freeze time|scene` holds view timestamps and optionally existing primary ticks;
+`UEShed.MapCapture.Resume` restores the session. This is diagnostic infrastructure, not a complete
+simulation pause or a published capture policy. It requires no project-code integration.
+
 Optional runtime camera observation capability. It adapts tagged stock `ASceneCapture2D` actors
 saved in the map and can provision transient `AUEShedCameraSource` instances from external JSON
 camera definitions. It manually schedules scene captures only while a named-pipe consumer is connected,
@@ -30,7 +35,17 @@ The same editor-only boundary exposes `ue-shed-review-selection` v1. It reports 
 actor's path, label, world bounds, orientation, map, and optional active perspective viewport. It
 does not generate framing policy or persist Review Sets; those remain headless host responsibilities.
 
-Map Capture deepens that same transient realization behind the sibling
+Map Capture defaults to `lit_camera_tiles`: one transient CameraActor moves through the Lit editor
+viewport, with vignette disabled, shared exposure, real frame warmup, and plugin-owned scene freezing.
+The asynchronous Begin/Poll/End lifecycle retains ownership across batches and restores editor state
+on completion or interruption, with a 120-second inactivity lease as a fallback. No game-code changes
+are required. A rendering, unlocked editor viewport is required; subtle lighting joins can remain.
+New plans use 16-pixel gutters and disable fog. Optional `capture.render.exposureEV100` fixes the
+camera exposure range. Explicit `scene_capture_tiles` retains the older profiles and LOD scales;
+`viewport_high_resolution` remains an experimental whole-level alternative. The CLI selects these
+with `map-capture run --backend`; omitting the flag uses Lit camera tiles.
+
+The legacy SceneCapture backend uses that same transient realization behind the sibling
 `ue-shed-map-tile-capture` v1 operation. It creates transient orthographic `ASceneCapture2D`
 instances for one bounded tile batch, derives `OrthoWidth` from tile pixels plus gutter and
 world-units-per-pixel, crops the rendered gutter before PNG encoding, and stages only beneath

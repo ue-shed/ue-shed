@@ -19,8 +19,9 @@
 	"properties": {
 		"capture": { "$ref": "plan.schema.json#/$defs/capturePolicy" },
 		"captureBackend": {
-			"enum": ["scene_capture_tiles", "viewport_high_resolution"]
+			"enum": ["lit_camera_tiles", "scene_capture_tiles", "viewport_high_resolution"]
 		},
+		"overviewBounds": { "$ref": "plan.schema.json#/$defs/bounds" },
 		"contract": {
 			"type": "object",
 			"additionalProperties": false,

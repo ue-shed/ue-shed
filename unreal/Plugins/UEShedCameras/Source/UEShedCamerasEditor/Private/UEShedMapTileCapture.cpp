@@ -1,5 +1,6 @@
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedTransientCapture.h"
+#include "UEShedLitMapTileCapture.h"
 
 #include "Async/Async.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -220,6 +221,11 @@ struct FScopedViewportHighResolutionState
 		, ViewportType(InClient.GetViewportType())
 		, ViewLocation(InClient.GetViewLocation())
 		, ViewRotation(InClient.GetViewRotation())
+		, PerspectiveViewMode(InClient.GetPerspViewMode())
+		, OrthographicViewMode(InClient.GetOrthoViewMode())
+		, EngineShowFlags(InClient.EngineShowFlags)
+		, bDrawAxes(InClient.bDrawAxes)
+		, bDrawAxesGame(InClient.bDrawAxesGame)
 		, ScreenshotConfig(GetHighResScreenshotConfig())
 		, ScreenshotResolutionX(GScreenshotResolutionX)
 		, ScreenshotResolutionY(GScreenshotResolutionY)
@@ -256,6 +262,10 @@ struct FScopedViewportHighResolutionState
 		Client.SetViewportType(ViewportType);
 		Client.SetViewLocation(ViewLocation);
 		Client.SetViewRotation(ViewRotation);
+		Client.SetViewModes(PerspectiveViewMode, OrthographicViewMode);
+		Client.EngineShowFlags = EngineShowFlags;
+		Client.bDrawAxes = bDrawAxes;
+		Client.bDrawAxesGame = bDrawAxesGame;
 		if (bInstalledShowFlagsOverride) Client.DisableOverrideEngineShowFlags();
 		GetHighResScreenshotConfig() = ScreenshotConfig;
 		GScreenshotResolutionX = ScreenshotResolutionX;
@@ -271,6 +281,11 @@ struct FScopedViewportHighResolutionState
 	ELevelViewportType ViewportType;
 	FVector ViewLocation;
 	FRotator ViewRotation;
+	EViewModeIndex PerspectiveViewMode;
+	EViewModeIndex OrthographicViewMode;
+	FEngineShowFlags EngineShowFlags;
+	bool bDrawAxes;
+	bool bDrawAxesGame;
 	FVector OrthographicViewLocation;
 	FRotator OrthographicViewRotation;
 	float OrthographicZoom = 1.0f;
@@ -317,6 +332,13 @@ bool CaptureViewportHighResolutionLevel(
 			TEXT("Open a Level Editor viewport for the target map and retry."));
 	}
 	FLevelEditorViewportClient& Client = *GCurrentLevelEditingViewportClient;
+	if (Client.IsAnyActorLocked())
+	{
+		return Fail(
+			TEXT("capture_failed"),
+			TEXT("The active Level Editor viewport is locked to an actor or cinematic camera."),
+			TEXT("Eject from the camera and stop cinematic viewport control before retrying."));
+	}
 	FViewport* Viewport = Client.Viewport;
 	FScopedViewportHighResolutionState SavedState(Client);
 
@@ -427,6 +449,11 @@ bool CaptureViewportHighResolutionLevel(
 	if (SavedState.DisableFogInOrtho != nullptr)
 		SavedState.DisableFogInOrtho->Set(0, ECVF_SetByCode);
 	Client.SetViewportType(LVT_OrthoTop);
+	// Orthographic editor viewports default to wireframe independently of the perspective mode.
+	// Capture must select its own renderer rather than publish the user's ambient debug view.
+	Client.SetViewMode(VMI_Lit);
+	Client.bDrawAxes = false;
+	Client.bDrawAxesGame = false;
 	Client.SetViewLocation(FVector(
 		(FullMinX + FullMaxX) * 0.5,
 		(FullMinY + FullMaxY) * 0.5,
@@ -444,6 +471,12 @@ bool CaptureViewportHighResolutionLevel(
 		[bFog, bVolumetricFog, RenderProfile](FEngineShowFlags& ShowFlags)
 		{
 			ShowFlags.SetGrid(false);
+			ShowFlags.SetGame(true);
+			ShowFlags.SetOnScreenDebug(false);
+			ShowFlags.SetSelection(false);
+			ShowFlags.SetSelectionOutline(false);
+			ShowFlags.SetModeWidgets(false);
+			ShowFlags.SetCompositeEditorPrimitives(false);
 			ShowFlags.SetFog(bFog);
 			ShowFlags.SetVolumetricFog(bVolumetricFog);
 			if (RenderProfile == TEXT("observation"))
@@ -507,12 +540,18 @@ bool CaptureViewportHighResolutionLevel(
 		const int32 SourceY = GutterPixels + Tile.Row * TilePixelSize;
 		for (int32 PixelRow = 0; PixelRow < TilePixelSize; ++PixelRow)
 		{
-			const uint8* Source = FullImage.RawData.GetData()
-				+ (SourceY + PixelRow) * SourceStride
-				+ SourceX * BytesPerPixel;
+			// LVT_OrthoTop puts +X down and +Y left. The manifest and SceneCapture camera
+			// put +X up and +Y right, so rotate the complete image 180 degrees while slicing.
+			const uint8* SourceRow = FullImage.RawData.GetData()
+				+ (RenderHeight - 1 - SourceY - PixelRow) * SourceStride;
 			uint8* Destination = TileImage.RawData.GetData()
 				+ PixelRow * TileImage.GetStrideBytes();
-			FMemory::Memcpy(Destination, Source, TilePixelSize * BytesPerPixel);
+			for (int32 PixelColumn = 0; PixelColumn < TilePixelSize; ++PixelColumn)
+			{
+				const uint8* Source = SourceRow
+					+ (RenderWidth - 1 - SourceX - PixelColumn) * BytesPerPixel;
+				FMemory::Memcpy(Destination + PixelColumn * BytesPerPixel, Source, BytesPerPixel);
+			}
 		}
 		const FString CapturePath = FPaths::Combine(
 			FPaths::ProjectSavedDir(),
@@ -551,9 +590,10 @@ bool CaptureViewportHighResolutionLevel(
 }
 }
 
-void UUEShedCameraReviewLibrary::CaptureMapTiles(
+static void CaptureMapTilesInternal(
 	const FString& RequestJson,
-	FString& ResultJson)
+	FString& ResultJson,
+	bool bAllowAsync)
 {
 	const double StartedSeconds = FPlatformTime::Seconds();
 	FString OperationId(TEXT("unknown"));
@@ -762,15 +802,16 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* Tiles;
-	FString CaptureBackend(TEXT("scene_capture_tiles"));
+	FString CaptureBackend(TEXT("lit_camera_tiles"));
 	Request->TryGetStringField(TEXT("captureBackend"), CaptureBackend);
 	if (CaptureBackend != TEXT("scene_capture_tiles")
+		&& CaptureBackend != TEXT("lit_camera_tiles")
 		&& CaptureBackend != TEXT("viewport_high_resolution"))
 	{
 		Fail(
 			TEXT("invalid_request"),
 			TEXT("The requested Map Capture backend is unsupported."),
-			TEXT("Use scene_capture_tiles or viewport_high_resolution."),
+			TEXT("Use lit_camera_tiles, scene_capture_tiles or viewport_high_resolution."),
 			false);
 		return;
 	}
@@ -810,6 +851,22 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 	int32 Failed = 0;
 	bool bCancelled = false;
 	TSet<FString> UniqueKeys;
+	if (CaptureBackend == TEXT("lit_camera_tiles"))
+	{
+		if (!bAllowAsync)
+		{
+			Fail(TEXT("invalid_request"), TEXT("Lit camera capture requires the asynchronous lifecycle."),
+				TEXT("Use BeginMapTileCapture, PollMapTileCapture and EndMapTileCapture."), false);
+			return;
+		}
+		BeginUEShedLitMapTileCapture(Request, World, ResultJson);
+		return;
+	}
+	if (CaptureBackend != TEXT("lit_camera_tiles") && (*Render)->HasField(TEXT("exposureEV100")))
+	{
+		Fail(TEXT("invalid_request"), TEXT("Manual exposure requires lit_camera_tiles."), TEXT("Remove exposureEV100 or select lit_camera_tiles."), false);
+		return;
+	}
 	if (CaptureBackend == TEXT("viewport_high_resolution"))
 	{
 		FString FailureCode;
@@ -1182,4 +1239,23 @@ void UUEShedCameraReviewLibrary::CaptureMapTiles(
 		Result->SetStringField(TEXT("status"), TEXT("failed"));
 	}
 	ResultJson = MapTileJsonString(Result);
+}
+
+void UUEShedCameraReviewLibrary::CaptureMapTiles(const FString& RequestJson, FString& ResultJson)
+{
+	CaptureMapTilesInternal(RequestJson, ResultJson, false);
+}
+
+void UUEShedCameraReviewLibrary::BeginMapTileCapture(const FString& RequestJson, FString& ResultJson)
+{
+	CaptureMapTilesInternal(RequestJson, ResultJson, true);
+	TSharedPtr<FJsonObject> Result;
+	if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(ResultJson), Result)
+		&& !Result->HasField(TEXT("state")))
+	{
+		const auto Envelope = MakeShared<FJsonObject>();
+		Envelope->SetStringField(TEXT("state"), TEXT("finished"));
+		Envelope->SetObjectField(TEXT("response"), Result);
+		ResultJson = MapTileJsonString(Envelope);
+	}
 }

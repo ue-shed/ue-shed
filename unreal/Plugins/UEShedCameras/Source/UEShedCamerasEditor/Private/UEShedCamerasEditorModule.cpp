@@ -1,3 +1,16 @@
 #include "Modules/ModuleManager.h"
+#include "UEShedMapCaptureFreeze.h"
+#include "UEShedLitMapTileCapture.h"
 
-IMPLEMENT_MODULE(FDefaultModuleImpl, UEShedCamerasEditor)
+class FUEShedCamerasEditorModule final : public IModuleInterface
+{
+public:
+	virtual void StartupModule() override { RegisterUEShedMapCaptureFreeze(); }
+	virtual void ShutdownModule() override
+	{
+		ShutdownUEShedLitMapTileCapture();
+		UnregisterUEShedMapCaptureFreeze();
+	}
+};
+
+IMPLEMENT_MODULE(FUEShedCamerasEditorModule, UEShedCamerasEditor)

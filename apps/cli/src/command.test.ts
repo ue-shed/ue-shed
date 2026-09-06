@@ -179,3 +179,19 @@ it.effect("requires an explicit rule file for Game Text review", () =>
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
 );
+
+it.effect("advertises Lit capture and explicit legacy backends in map capture help", () =>
+	Effect.gen(function* () {
+		const output = yield* Ref.make("");
+		const errors = yield* Ref.make("");
+		const exitCode = yield* Ref.make(0);
+		yield* runCli(["map-capture", "run", "--help"]).pipe(
+			Effect.provide(runtimeLayer(output, errors, exitCode))
+		);
+		expect(yield* Ref.get(output)).toContain("--backend");
+		expect(yield* Ref.get(output)).toContain("lit_camera_tiles");
+		expect(yield* Ref.get(output)).toContain("scene_capture_tiles");
+		expect(yield* Ref.get(errors)).toBe("");
+		expect(yield* Ref.get(exitCode)).toBe(0);
+	})
+);

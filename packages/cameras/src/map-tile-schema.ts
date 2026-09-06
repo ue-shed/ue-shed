@@ -67,6 +67,9 @@ export const MapCaptureDataLayerPolicy = Schema.Union([
 ]);
 
 export const MapCaptureRenderPolicy = Schema.Struct({
+	exposureEV100: Schema.optionalKey(
+		Schema.Finite.check(Schema.isBetween({ minimum: -20, maximum: 30 }))
+	),
 	effects: Schema.Struct({
 		fog: Schema.Boolean,
 		volumetricFog: Schema.Boolean
@@ -155,6 +158,7 @@ export const MapTileCaptureTileRequest = Schema.Struct({
 });
 
 export const MapCaptureBackend = Schema.Literals([
+	"lit_camera_tiles",
 	"scene_capture_tiles",
 	"viewport_high_resolution"
 ]);
@@ -172,6 +176,7 @@ export const MapTileCaptureRequest = Schema.Struct({
 		z: Schema.Finite
 	}),
 	captureBackend: Schema.optionalKey(MapCaptureBackend),
+	overviewBounds: Schema.optionalKey(MapCaptureWorldBounds),
 	contract: Schema.Struct({
 		name: Schema.Literal("ue-shed-map-tile-capture"),
 		version: MapCaptureContractVersion
@@ -282,6 +287,15 @@ export const MapTileCaptureResponse = Schema.Struct({
 	)
 );
 export type MapTileCaptureResponse = typeof MapTileCaptureResponse.Type;
+
+export const MapTileCaptureOperation = Schema.Union([
+	Schema.Struct({
+		state: Schema.Literal("running"),
+		operationId: MapCaptureOperationId,
+		completedTiles: NonNegativeInteger.check(Schema.isLessThanOrEqualTo(64))
+	}),
+	Schema.Struct({ state: Schema.Literal("finished"), response: MapTileCaptureResponse })
+]);
 
 export const MapTilePyramidLevel = Schema.Struct({
 	columns: PositiveInteger,

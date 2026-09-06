@@ -57,10 +57,7 @@ async function fixtureProject(levelCount: number): Promise<{
 				orientation: { pitch: -90, roll: 0, yaw: 0 },
 				render: {
 					effects: { fog: false, volumetricFog: false },
-					lodDistanceScaleByZoom: Array.from({ length: levelCount }, (_value, zoom) =>
-						Math.max(1, 4 / 2 ** zoom)
-					),
-					lodPolicy: "per_level_distance_scale",
+					lodPolicy: "natural",
 					profile: "full_fidelity"
 				},
 				z: 1000
@@ -163,9 +160,21 @@ describe("map capture orchestration", () => {
 	it("validates, hashes, and atomically publishes an exhaustive run", async () => {
 		const project = await fixtureProject(1);
 		const progress: MapCaptureRunProgress[] = [];
+		const released: string[] = [];
 		const port: MapTileCapturePortApi = {
+			release: (runId) =>
+				Effect.sync(() => {
+					released.push(runId);
+				}),
 			capture: (request) =>
 				Effect.tryPromise(async () => {
+					expect(request.captureBackend).toBe("lit_camera_tiles");
+					expect(request.overviewBounds).toEqual({
+						minX: 0,
+						minY: 0,
+						maxX: 64,
+						maxY: 64
+					});
 					const tile = request.tiles[0]!;
 					const stagedPath = resolve(
 						project.projectRoot,
@@ -205,6 +214,8 @@ describe("map capture orchestration", () => {
 			)
 		);
 		expect(outcome.published).toBe(true);
+		expect(released).toEqual(["test-run"]);
+		expect(outcome.manifest.provenance.producer).toBe("unreal-editor-lit-camera-tiles");
 		expect(outcome.manifest.state).toBe("complete");
 		expect(outcome.manifest.tiles[0]?.hash).toMatch(/^sha256:[a-f0-9]{64}$/);
 		expect(outcome.manifestPath).toBe(
@@ -537,14 +548,21 @@ describe("map capture orchestration", () => {
 		temporaryRoots.push(destinationRoot);
 		const captureStarted = await Effect.runPromise(Deferred.make<void>());
 		const neverCapture = await Effect.runPromise(Deferred.make<void>());
-		const port = successfulPort({
-			beforeCapture: () =>
-				Effect.gen(function* () {
-					yield* Deferred.succeed(captureStarted, undefined);
-					yield* Deferred.await(neverCapture);
-				}),
-			projectRoot: project.projectRoot
-		});
+		const released: string[] = [];
+		const port = {
+			...successfulPort({
+				beforeCapture: () =>
+					Effect.gen(function* () {
+						yield* Deferred.succeed(captureStarted, undefined);
+						yield* Deferred.await(neverCapture);
+					}),
+				projectRoot: project.projectRoot
+			}),
+			release: (runId: string) =>
+				Effect.sync(() => {
+					released.push(runId);
+				})
+		};
 		const run = runWithPort(
 			project,
 			port,
@@ -557,6 +575,7 @@ describe("map capture orchestration", () => {
 		const fiber = Effect.runFork(run);
 		await Effect.runPromise(Deferred.await(captureStarted));
 		await Effect.runPromise(Fiber.interrupt(fiber));
+		expect(released).toEqual(["test-run"]);
 		await expect(access(join(destinationRoot, ".staging-test-run"))).rejects.toThrow();
 		await expect(
 			access(join(destinationRoot, "runs", "test-plan", "test-run"))
@@ -706,7 +725,7 @@ describe("map capture orchestration", () => {
 				Effect.ensuring(Deferred.succeed(releaseFirstStore, undefined))
 			);
 			const outcome = yield* Fiber.join(runFiber);
-			expect(captureCalls).toBe(2);
+			expect(captureCalls).toBe(22);
 			expect(outcome.manifest.tiles).toHaveLength(85);
 			expect(outcome.manifest.tiles.map(({ key }) => mapTileKeyId(key))).toEqual(
 				requestedKeys

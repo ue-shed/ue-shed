@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
 	MapCapturePlan,
 	MapTileCaptureRequest,
+	MapTileCaptureOperation,
 	MapTileCaptureResponse,
 	MapTilePyramidManifest,
 	decodeMapTilePyramidManifest
@@ -25,6 +26,9 @@ describe("map tile contracts", () => {
 	for (const [name, schema] of [
 		["plan-valid.json", MapCapturePlan],
 		["capture-request-valid.json", MapTileCaptureRequest],
+		["capture-request-lit-valid.json", MapTileCaptureRequest],
+		["capture-operation-running-valid.json", MapTileCaptureOperation],
+		["capture-operation-finished-valid.json", MapTileCaptureOperation],
 		["capture-response-valid.json", MapTileCaptureResponse],
 		["manifest-valid.json", MapTilePyramidManifest]
 	] as const) {

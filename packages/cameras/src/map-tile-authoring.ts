@@ -1,5 +1,26 @@
 import { Schema } from "effect";
-import { MapCapturePlan, type MapCapturePlan as MapCapturePlanValue } from "./map-tile-schema.js";
+import {
+	MapCapturePlan,
+	type MapCaptureBackend,
+	type MapCapturePlan as MapCapturePlanValue
+} from "./map-tile-schema.js";
+
+export function mapCaptureBackendIssue(
+	plan: MapCapturePlanValue,
+	backend: MapCaptureBackend
+): string | undefined {
+	if (
+		backend === "lit_camera_tiles" &&
+		(plan.capture.render.profile !== "full_fidelity" ||
+			plan.capture.render.lodPolicy !== "natural")
+	) {
+		return "Lit camera tiles require Full fidelity and Natural LOD. Select those settings or choose Tiled scene capture.";
+	}
+	if (backend !== "lit_camera_tiles" && plan.capture.render.exposureEV100 !== undefined) {
+		return "Manual map exposure requires Lit camera tiles. Disable manual exposure to use another capture engine.";
+	}
+	return undefined;
+}
 
 const safeIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const gameMapPathPattern = /^\/Game\/[A-Za-z0-9_./-]+$/;
@@ -36,14 +57,14 @@ export function makeDefaultMapCapturePlan(args: {
 			dataLayers: { mode: "unchanged" },
 			orientation: { pitch: -90, roll: 0, yaw: 0 },
 			render: {
-				effects: { fog: true, volumetricFog: true },
+				effects: { fog: false, volumetricFog: false },
 				lodPolicy: "natural",
 				profile: "full_fidelity"
 			},
 			z: 5000
 		},
 		contract: { name: "ue-shed-map-capture-plan", version: { major: 1, minor: 0 } },
-		gutterPixels: 2,
+		gutterPixels: 16,
 		id: "map-overview",
 		levels: { coarsestUnitsPerPixel: 4, count: 3 },
 		output: { imageFormat: "png", publication: "local_immutable" },

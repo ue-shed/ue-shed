@@ -1,0 +1,41 @@
+{
+	"state": "finished",
+	"response": {
+		"actualMapPath": "/Game/Fixture/Cameras/L_CameraLoad",
+		"contract": {
+			"name": "ue-shed-map-tile-capture",
+			"version": {
+				"major": 1,
+				"minor": 0
+			}
+		},
+		"correlationId": "fixture-correlation",
+		"dirtyState": {
+			"before": false,
+			"after": false
+		},
+		"durationMs": 27.5,
+		"operationId": "fixture-operation",
+		"results": [
+			{
+				"bytes": 1234,
+				"captureDurationMs": 20.25,
+				"height": 256,
+				"key": {
+					"zoom": 0,
+					"row": 0,
+					"column": 0
+				},
+				"stagedPath": "C:/Project/Saved/UEShed/MapTileStaging/fixture-run/Z00/R000_C000.png",
+				"status": "captured",
+				"width": 256
+			}
+		],
+		"status": "completed",
+		"tileCounts": {
+			"failed": 0,
+			"requested": 1,
+			"succeeded": 1
+		}
+	}
+}

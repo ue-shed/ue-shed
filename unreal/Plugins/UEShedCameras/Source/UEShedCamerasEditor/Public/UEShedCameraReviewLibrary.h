@@ -26,4 +26,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
 	static void CaptureMapTiles(const FString& RequestJson, FString& ResultJson);
+
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
+	static void BeginMapTileCapture(const FString& RequestJson, FString& ResultJson);
+
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
+	static void PollMapTileCapture(const FString& RunId, const FString& OperationId, FString& ResultJson);
+
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Map Capture")
+	static void EndMapTileCapture(const FString& RunId, FString& ResultJson);
 };

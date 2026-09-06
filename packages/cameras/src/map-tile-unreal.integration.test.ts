@@ -61,7 +61,13 @@ describe.skipIf(endpoint === undefined)("map tile capture against Unreal", () =>
 		);
 
 		const outcome = await Effect.runPromise(
-			runMapCapture({ endpoint: endpoint!, planPath, projectRoot, runId })
+			runMapCapture({
+				captureBackend: "scene_capture_tiles",
+				endpoint: endpoint!,
+				planPath,
+				projectRoot,
+				runId
+			})
 		);
 		expect(outcome.published).toBe(true);
 		expect(outcome.manifest.state).toBe("complete");

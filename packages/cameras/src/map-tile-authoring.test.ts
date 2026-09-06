@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	makeDefaultMapCapturePlan,
 	mapCaptureSafeIdentifier,
+	mapCaptureBackendIssue,
 	savedMapPathToGameMapPath
 } from "./map-tile-authoring.js";
 
@@ -23,6 +24,21 @@ describe("Map Capture Plan authoring", () => {
 		expect(plan.id).toBe("map-overview");
 		expect(plan.project).toEqual({ id: "My-Unreal-Project", mapPath: "/Game/Maps/L_City" });
 		expect(plan.levels.count).toBe(3);
+		expect(plan.gutterPixels).toBe(16);
+		expect(plan.capture.render.effects).toEqual({ fog: false, volumetricFog: false });
+		expect(mapCaptureBackendIssue(plan, "lit_camera_tiles")).toBeUndefined();
+		expect(
+			mapCaptureBackendIssue(
+				{
+					...plan,
+					capture: {
+						...plan.capture,
+						render: { ...plan.capture.render, profile: "seam_stable" }
+					}
+				},
+				"lit_camera_tiles"
+			)
+		).toContain("Full fidelity");
 	});
 
 	it("keeps generated identifiers inside the portable contract", () => {

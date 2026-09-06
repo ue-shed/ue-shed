@@ -50,6 +50,16 @@ This package does not depend on `@ue-shed/observatory` or `@ue-shed/observabilit
 USOT transform wire contract ships in `@ue-shed/protocol`; the Observatory host package remains a
 separate later public surface.
 
+Map Capture defaults to `lit_camera_tiles`: one transient CameraActor moves through the Lit editor
+viewport, with vignette disabled, shared exposure, real frame warmup, and plugin-owned scene freezing.
+The asynchronous Begin/Poll/End lifecycle retains ownership across batches and restores editor state
+on completion or interruption, with a 120-second inactivity lease as a fallback. No game-code changes
+are required. A rendering, unlocked editor viewport is required; subtle lighting joins can remain.
+New plans use 16-pixel gutters and disable fog. Optional `capture.render.exposureEV100` fixes the
+camera exposure range. Explicit `scene_capture_tiles` retains the older profiles and LOD scales;
+`viewport_high_resolution` remains an experimental whole-level alternative. The CLI selects these
+with `map-capture run --backend`; omitting the flag uses Lit camera tiles.
+
 Generic Map Capture adds an external `Map Capture Plan`, exact tile-pyramid math and selection,
 bounded orthographic editor capture, and immutable hashed manifests without changing Map Review's
 `CaptureProfile` or perspective wire contract. Its language-neutral v1 contracts live under

@@ -6,10 +6,10 @@ UE Shed Map Capture turns a configured Unreal world into a deterministic, multir
 orthographic tile pyramid without saving capture state into the map. Plans, attempts, and immutable
 published runs remain usable from `@ue-shed/cameras` and the CLI without Workbench.
 
-Map Capture is adjacent to Map Review, not another meaning for Review's `CaptureProfile`. It reuses
-the editor's transient scene-capture realization, one-shot PNG staging, expected-map and dirty-state
-checks, typed failures, hashing, and atomic publication. The existing perspective
-`ue-shed-review-capture` v1 surface does not change.
+Map Capture is adjacent to Map Review, not another meaning for Review's `CaptureProfile`. Its
+default backend moves one transient CameraActor through the Lit editor viewport, captures each tile
+with Unreal's screenshot pipeline, and restores the editor afterward. The implementation lives in
+UEShedCameras; it requires no game-code changes. The perspective review contract is unchanged.
 
 ## Geometry and seams
 
@@ -24,27 +24,28 @@ Plans can retain Unreal's natural LOD response or set a scene-capture LOD distan
 zoom level. The scoped distance factor changes only the transient capture component. Explicit
 Nanite, HLOD, or foliage intervention is not inferred from camera height.
 
-Fog and volumetric fog are independent plan settings applied to the transient scene capture's show
-flags. They do not mutate the editor viewport, world actors, global console variables, or saved map.
+The default `lit_camera_tiles` backend preserves the project's Lit camera rendering with
+`full_fidelity` and natural LOD. It disables camera vignette, warms the whole-map view for 512
+Slate frames, then settles each tile for 128 frames before taking its screenshot. The viewport must
+be available and unlocked; this backend needs a rendering editor, including when driven by the CLI.
+It does not run under NullRHI.
 
-Full-fidelity tiles render serially through one transient capture context. The `full_fidelity`
-profile explicitly restores the active project's dynamic GI, reflection, anti-aliasing,
-ray-tracing, tonemapping, and post-processing choices because Unreal's independent scene-capture
-defaults otherwise reduce or disable several of them. `scene_capture_defaults` leaves Unreal's
-SceneCapture renderer defaults unchanged as a visual comparison baseline; tile framing, gutters,
-camera cuts, warm-ups, and publication are otherwise identical. Moving to a tile begins an explicit camera cut, then
-performs two discarded warm-up renders before the PNG render. The cut prevents temporal state from a
-spatially unrelated tile from leaking forward. PNG encoding may remain bounded and concurrent after
-each exact render has been read back. Shared full-frame exposure and true cross-frame tile history
-remain separate seam-correction work; the synchronous warm-up renders do not claim to provide either.
+Whole-map eye adaptation settles once and its exposure is fixed across all batches and zoom levels.
+An optional `capture.render.exposureEV100` (-20 to 30) instead pins the camera's exposure range,
+retaining project exposure compensation. Workbench exposes this as Manual exposure. New plans use
+16 gutter pixels with fog and volumetric fog disabled; existing plans retain their authored choices.
+Fog settings apply through a scoped viewport show-flag override and are restored afterward.
 
-The `seam_stable` profile keeps the restored project lighting, tonemapping, color grading, and
-world-space Lumen fallbacks while disabling temporal AA, eye adaptation, local exposure, motion
-blur, screen-space reflections and AO, Lumen screen traces, lens flares, vignette, and chromatic
-aberration. Unreal falls back from project TAA or TSR to FXAA for that view. Each logical tile and
-its configured gutter render at 2x resolution and are gamma-correct box-downsampled before the
-fixed-size PNG is published. This profile favors cross-tile consistency over view-dependent effects;
-volumetric fog remains an explicit plan choice and can still introduce view-frustum differences.
+The plugin freezes material timestamps and existing primary actor/component ticks during tile
+capture, while renderer frames continue to settle. This reduces time-dependent differences without
+changing game code. It does not freeze every simulation system or make view-dependent lighting
+identical. Subtle lighting joins remain an accepted limitation of this internal-tool capture mode.
+
+Explicit `scene_capture_tiles` preserves the older independent SceneCapture renderer, including its
+`full_fidelity`, `seam_stable`, `scene_capture_defaults`, and `observation` profiles and per-level LOD
+distance scales. Those profiles are not silently substituted for Lit camera rendering. Manual
+exposure requires the Lit backend. The whole-level `viewport_high_resolution` experiment also
+remains available explicitly.
 
 Each tile renders `gutterPixels` beyond all four edges at the level's world-units-per-pixel, then is
 cropped to the fixed tile size before PNG encoding. This lets geometry and post processing sample
@@ -53,11 +54,26 @@ manifest world bounds, and never resample across independent PNG files.
 
 ## Capture and publication
 
+The accepted moving-camera approach is now the default in the public library, CLI, and Workbench.
+The [moving-camera experiment](../research/map-capture-moving-camera-2026-09-07.md),
+[32×32 test](../research/map-capture-grid32-2026-09-07.md), and
+[freeze experiment](../research/map-capture-freeze-2026-09-07.md) record its earlier investigation.
+
+The `cameras.lit-map-tile-capture.v1` capability uses `BeginMapTileCapture`,
+`PollMapTileCapture`, and `EndMapTileCapture` on `UUEShedCameraReviewLibrary`. Begin returns a running
+operation or a finished capture response; polling keeps the editor responsive and renews a
+120-second inactivity lease. One run owns the camera, exposure, and freeze across sequential batches.
+The host always ends that ownership on completion, failure, or interruption. Lease expiry, world
+cleanup, PIE startup, viewport loss, and module shutdown also release it. The plugin restores camera
+framing, both viewport render modes, show flags, exposure, screenshot settings, realtime state,
+material clocks, and actor/component tick state. Captures never save the map.
+
 The v1 editor request captures one or a bounded batch of at most 64 deterministic tile keys. It
 accepts an expected map, capture policy, operation/correlation identity, and tile geometry—not an
 output directory, UObject pointer, or console-variable bag. Output is contained beneath
 `Saved/UEShed/MapTileStaging`.
 
+Lit runs use four-tile batches for regular progress; the protocol still allows up to 64.
 The host pipelines those batches through a one-response bounded buffer. Unreal captures batches in
 strict sequence while the host validates and promotes the previous batch, so filesystem ingestion
 does not leave the editor idle. This never issues concurrent capture requests to the editor, and
@@ -70,6 +86,13 @@ pipeline, restores the viewport and console state, and cuts the single image int
 tiles. This removes per-tile exposure boundaries and exercises the viewport renderer, but Unreal's
 High Resolution Screenshot forces LOD0. The initial test lane accepts at most 8x8 tiles per zoom and
 fails instead of silently falling back when the full image exceeds the GPU texture limit.
+
+The experiment explicitly selects Lit rendering, suppresses editor overlays, and converts the
+editor Top view's orientation to the manifest's +X-north/+Y-east coordinates. It restores the
+previous viewport rendering mode and rejects actor-locked or cinematic-controlled viewports before
+changing framing. These correctness checks do not establish equivalence with every SceneCapture
+render profile. The [quality audit](../research/map-capture-quality-2026-09-06.md) records the remaining
+exposure, temporal-state, lighting-coverage, and renderer-policy limitations.
 
 The capture capability requires the expected editor map to be open and continues to reject explicit
 Data Layer and forced fixed-LOD policies. The separate `editor.world-control.v1` capability can open
@@ -145,7 +168,7 @@ not yet been requested is not reported as a capture error.
 The Workbench `#/map-capture` route is the reference host for creating or opening a portable plan,
 searching the selected project's saved-map inventory, and authoring the executable v1 fields:
 identity, target map, requested world bounds, PNG tile size, pyramid resolution and levels, gutter,
-capture Z, render profile, fog, and LOD policy. The showcase deliberately authors a symmetrical
+capture Z, render profile, exposure, fog, and LOD policy. The showcase deliberately authors a symmetrical
 subset: center X/Y plus one square world size, one Level 0 tile count shared by both axes, one
 resolution shared by X/Y, and one square PNG tile size. Requested cardinal edges remain derived
 readouts. Setting the base grid to 1, 2, or 4 authors an exact 1x1, 2x2, or 4x4 Level 0 grid without
@@ -172,6 +195,16 @@ PNGs as `UTexture2D` assets and build a cooked registry/data asset keyed by gene
 runtime provider supplies texture handles to the same pure selection inputs and may render through
 UMG, Slate, world geometry, or another UI. The core never assumes external PNG access in a cooked
 build and never names a studio registry, map, path, or asset type.
+
+## Integrated validation
+
+The plugin implementation was checked on stock UE 5.7.4 through the public host workflow: a 10x10
+run published 100 hashed 512-pixel tiles, assembled into a 5,120-square image and visually inspected.
+A separate four-tile run verified automatic whole-map exposure. Wrong-map and concurrent requests
+were rejected, an unrelated run could not release capture ownership, and stopping an active batch
+restored camera framing and all 1,395 actor and 1,717 component tick states in the test world.
+Native freeze-state, ownership, and tile-validation automation passed. The rendering evidence used
+a disposable content host; its images and machine-specific receipts remain local artifacts.
 
 ## Contracts and gates
 

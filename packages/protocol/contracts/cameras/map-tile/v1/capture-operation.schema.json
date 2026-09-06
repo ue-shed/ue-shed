@@ -1,0 +1,26 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/map-tile/v1/capture-operation.schema.json",
+	"title": "UE Shed asynchronous map tile operation v1",
+	"oneOf": [
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["state", "operationId", "completedTiles"],
+			"properties": {
+				"state": { "const": "running" },
+				"operationId": { "$ref": "plan.schema.json#/$defs/id" },
+				"completedTiles": { "type": "integer", "minimum": 0, "maximum": 64 }
+			}
+		},
+		{
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["state", "response"],
+			"properties": {
+				"state": { "const": "finished" },
+				"response": { "$ref": "capture-response.schema.json" }
+			}
+		}
+	]
+}

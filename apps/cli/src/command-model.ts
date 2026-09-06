@@ -262,6 +262,9 @@ export const CliCommand = Schema.TaggedUnion({
 	MapCapturePlanValidate: { planPath: Schema.String, ...Project },
 	MapCaptureInspect: { planPath: Schema.String, ...Project },
 	MapCaptureRun: {
+		captureBackend: Schema.optionalKey(
+			Schema.Literals(["lit_camera_tiles", "scene_capture_tiles", "viewport_high_resolution"])
+		),
 		correlationId: Schema.optionalKey(Schema.String),
 		endpoint: Schema.String,
 		openMap: Schema.optionalKey(Schema.Boolean),
@@ -274,6 +277,14 @@ export const CliCommand = Schema.TaggedUnion({
 	},
 	MapCaptureRuns: { planId: Schema.String, ...Project },
 	NiagaraPreview: {
+		profile: Schema.optionalKey(
+			Schema.Literals(["ground_impact", "projectile", "aura", "environment"])
+		),
+		renderMode: Schema.optionalKey(Schema.Literals(["transparent", "scene"])),
+		background: Schema.optionalKey(Schema.Literals(["default", "dark", "light"])),
+		cameraMode: Schema.optionalKey(Schema.Literals(["saved", "auto_fit"])),
+		exposureCompensation: Schema.optionalKey(Schema.Number),
+		cameraPadding: Schema.optionalKey(Schema.Number),
 		captureMode: Schema.optionalKey(Schema.Literals(["component_only", "full_scene"])),
 		durationSeconds: Schema.optionalKey(Schema.Number),
 		engineRoot: Schema.optionalKey(Schema.String),

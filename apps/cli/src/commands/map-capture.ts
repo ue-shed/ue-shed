@@ -43,16 +43,32 @@ const mapCaptureRunCommand = Command.make(
 		planPath: Argument.string("plan"),
 		endpoint: Argument.string("endpoint"),
 		correlationId: optionalFlag("correlation"),
+		captureBackend: Flag.choice("backend", [
+			"lit_camera_tiles",
+			"scene_capture_tiles",
+			"viewport_high_resolution"
+		]).pipe(Flag.optional),
 		openMap: Flag.boolean("open-map").pipe(Flag.optional),
 		levels: levelsFlag,
 		tilesPath: optionalFlag("tiles")
 	},
-	({ projectRoot, planPath, endpoint, correlationId, openMap, levels, tilesPath }) => {
+	({
+		projectRoot,
+		planPath,
+		endpoint,
+		correlationId,
+		captureBackend,
+		openMap,
+		levels,
+		tilesPath
+	}) => {
+		const backend = optionalValue(captureBackend);
 		const correlation = optionalValue(correlationId);
 		const shouldOpenMap = optionalValue(openMap);
 		const tiles = optionalValue(tilesPath);
 		return runMapCaptureRun({
 			_tag: "MapCaptureRun",
+			...(backend === undefined ? undefined : { captureBackend: backend }),
 			...(correlation === undefined ? undefined : { correlationId: correlation }),
 			endpoint,
 			...(shouldOpenMap === undefined ? undefined : { openMap: shouldOpenMap }),

@@ -14,14 +14,28 @@ capture Z does not define detail. The editor renders `gutterPixels` beyond each 
 units-per-pixel and crops back to `tilePixelSize` before PNG encoding. Consumers use clamp-to-edge
 sampling inside each published tile.
 
-`captureBackend` is an optional execution hint, not part of the portable plan. Its default
-`scene_capture_tiles` behavior remains the v1 tile operation. The experimental
-`viewport_high_resolution` value requires one complete zoom level of at most 64 tiles; Unreal
-renders that level through the active Level Editor viewport's High Resolution Screenshot path and
-then cuts the resulting image into the requested tiles.
+`captureBackend` is an optional execution hint, not part of the portable plan. The default is
+`lit_camera_tiles`, requiring `cameras.lit-map-tile-capture.v1` and an unlocked rendering editor
+viewport. It accepts `full_fidelity` with natural LOD. `overviewBounds` supplies the complete run's
+framing for shared exposure calibration; when omitted the first batch's extent is used. Optional
+`capture.render.exposureEV100` pins the camera exposure range instead of calibrating automatically.
+
+Call `BeginMapTileCapture(RequestJson)` to start a batch, then
+`PollMapTileCapture(RunId, OperationId)` until `capture-operation.schema.json` reports `finished`.
+The terminal `response` uses the existing capture-response schema. Polling renews a 120-second
+inactivity lease. A run retains viewport, exposure, and scene-freeze ownership between batches;
+call `EndMapTileCapture(RunId)` in a finalizer on success, failure, and cancellation. End returns
+`{ "released": boolean }`; an unrelated run ID cannot release the owner. Only one batch runs at a
+time, and a run's map and capture policy cannot change between batches.
+
+Explicit `scene_capture_tiles` and `viewport_high_resolution` use the synchronous `CaptureMapTiles`
+operation. The latter requires one complete zoom level of at most 64 tiles. The former retains
+SceneCapture profiles and per-level LOD distance scales. Both reject manual exposure rather than
+silently ignoring it. Synchronous `CaptureMapTiles` rejects the default Lit backend and directs
+clients to the asynchronous lifecycle.
 
 The editor accepts no output path. It stages only below `Saved/UEShed/MapTileStaging`, reports every
-tile outcome and map package dirty state, and restores transient state before returning. The host
+tile outcome and map package dirty state, and restores transient state when run ownership ends. The host
 must validate staging containment, hash artifacts, and atomically publish only a manifest whose
 state is `complete` and whose tile inventory is exhaustive. Partial and cancelled attempts remain
 diagnostic evidence and are never discoverable as completed runs.

@@ -13,6 +13,7 @@ import {
 import {
 	MapCapturePlan,
 	MapTileCaptureRequest,
+	MapTileCaptureOperation,
 	MapTileCaptureResponse,
 	MapTilePyramidManifest
 } from "../src/map-tile-schema.js";
@@ -148,6 +149,9 @@ const mapTileFixtures: ReadonlyArray<{
 }> = [
 	{ file: "plan-valid.json", schema: MapCapturePlan },
 	{ file: "capture-request-valid.json", schema: MapTileCaptureRequest },
+	{ file: "capture-request-lit-valid.json", schema: MapTileCaptureRequest },
+	{ file: "capture-operation-running-valid.json", schema: MapTileCaptureOperation },
+	{ file: "capture-operation-finished-valid.json", schema: MapTileCaptureOperation },
 	{ file: "capture-response-valid.json", schema: MapTileCaptureResponse },
 	{ file: "manifest-valid.json", schema: MapTilePyramidManifest }
 ];
